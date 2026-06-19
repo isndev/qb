@@ -7,7 +7,7 @@
  * or deadlocks, even under high load and with multiple cores.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -101,8 +101,7 @@ public:
     void
     on(const IncrementEvent &event) {
         // Check for valid counter ID and only count up to NUM_OPERATIONS
-        if (event.counter_id >= 0 && event.counter_id < NUM_COUNTERS &&
-            _total_count < NUM_OPERATIONS) {
+        if (event.counter_id >= 0 && event.counter_id < NUM_COUNTERS && _total_count < NUM_OPERATIONS) {
             _counters[event.counter_id] += event.increment_by;
             _total_count++;
 
@@ -144,8 +143,7 @@ private:
     std::mt19937 _rng;
 
 public:
-    WorkerActor(qb::ActorId counter_id, qb::ActorId coordinator_id, int worker_id,
-                int operations)
+    WorkerActor(qb::ActorId counter_id, qb::ActorId coordinator_id, int worker_id, int operations)
         : _counter_actor_id(counter_id)
         , _coordinator_id(coordinator_id)
         , _worker_id(worker_id)
@@ -157,9 +155,8 @@ public:
     bool
     onInit() override {
         // Schedule the first increment (others will be chained)
-        qb::io::async::callback(
-            [this]() { sendNextIncrement(); },
-            1ms * _worker_id); // Slight stagger in startup to reduce contention
+        qb::io::async::callback([this]() { sendNextIncrement(); },
+                                1ms * _worker_id); // Slight stagger in startup to reduce contention
 
         return true;
     }

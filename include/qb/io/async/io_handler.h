@@ -7,7 +7,7 @@
  * tracking, and cleanup of IO sessions.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -101,8 +101,8 @@ public:
     using session_map_t = qb::unordered_map<uuid, std::shared_ptr<_Session>>;
 
 private:
-    session_map_t _sessions; /**< Map of active sessions */
-    std::size_t _max_sessions = QB_DEFAULT_MAX_SESSIONS; /**< Maximum number of sessions allowed */
+    session_map_t _sessions;                               /**< Map of active sessions */
+    std::size_t   _max_sessions = QB_DEFAULT_MAX_SESSIONS; /**< Maximum number of sessions allowed */
     /**
      * @brief Reusable scratch buffer for `stream()` / `stream_if()` broadcast fan-outs.
      *
@@ -113,7 +113,7 @@ private:
      * @note Thread-affine: this handler is single-threaded by design (see class docs).
      */
     mutable std::vector<std::shared_ptr<_Session>> _broadcast_scratch;
-    mutable bool _broadcast_in_progress = false;
+    mutable bool                                   _broadcast_in_progress = false;
 
 public:
     /**
@@ -217,8 +217,7 @@ public:
             return nullptr;
         }
 
-        auto session = std::make_shared<_Session>(static_cast<_Derived &>(*this),
-                                                  std::forward<Args>(args)...);
+        auto session        = std::make_shared<_Session>(static_cast<_Derived &>(*this), std::forward<Args>(args)...);
         auto [it, inserted] = _sessions.emplace(session->id(), session);
 
         if (!inserted) {
@@ -227,7 +226,7 @@ public:
         }
 
         session->transport() = std::move(new_io);
-        auto &registered = *session;
+        auto &registered     = *session;
         registered.start();
         if constexpr (qb::has_on<_Derived, _Session &>)
             static_cast<_Derived &>(*this).on(registered);

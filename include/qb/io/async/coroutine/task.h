@@ -14,7 +14,7 @@
  *    std::monostate (index 0). Without explicit initialization, the variant
  *    may contain a default-constructed T instead, causing await_ready() to
  *    return true prematurely and await_resume() to return uninitialized values.
- *    
+ *
  *    REQUIRED: promise_type() : result_(std::in_place_index<0>) {}
  *
  * 2. LAMBDA COROUTINE CAPTURES (DANGLING REFERENCE PREVENTION):
@@ -57,7 +57,7 @@
  *    other functions.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -90,10 +90,9 @@
 // Debug trace macro (defined early for use in promise_type)
 #ifdef QB_DEBUG_COROUTINES
 #include <iostream>
-#define QB_CORO_TRACE(id, stage) \
-    std::cerr << "[CORO] " << id << ": " << stage << "\n"
+#define QB_CORO_TRACE(id, stage) std::cerr << "[CORO] " << id << ": " << stage << "\n"
 #else
-#define QB_CORO_TRACE(id, stage) ((void)0)
+#define QB_CORO_TRACE(id, stage) ((void) 0)
 #endif
 
 namespace qb::io::async {
@@ -137,7 +136,7 @@ namespace detail {
 class CoroutineFrameAllocator {
 public:
     static constexpr std::size_t kAlign     = 32;
-    static constexpr std::size_t kMaxBucket = 64;   // up to 2 KiB
+    static constexpr std::size_t kMaxBucket = 64; // up to 2 KiB
 
     // Per-thread count of coroutine frames allocated through this pool and not
     // yet freed. Cheap diagnostic (thread_local — coroutines are mono-thread per
@@ -145,45 +144,51 @@ public:
     // baseline after coroutines complete, guarding against frame leaks.
     static inline thread_local long live_frames = 0;
 
-    [[nodiscard]] static void* allocate(std::size_t size) {
+    [[nodiscard]] static void *
+    allocate(std::size_t size) {
         ++live_frames;
         const std::size_t idx = bucket_index(size);
         if (idx == 0 || idx > kMaxBucket) {
             return ::operator new(size);
         }
-        auto& head = buckets()[idx - 1];
+        auto &head = buckets()[idx - 1];
         if (head) {
-            void* p = head;
-            head = *static_cast<void**>(p);
+            void *p = head;
+            head    = *static_cast<void **>(p);
             return p;
         }
         return ::operator new(idx * kAlign);
     }
 
-    static void deallocate(void* p, std::size_t size) noexcept {
-        if (!p) return;
+    static void
+    deallocate(void *p, std::size_t size) noexcept {
+        if (!p)
+            return;
         --live_frames;
         const std::size_t idx = bucket_index(size);
         if (idx == 0 || idx > kMaxBucket) {
             ::operator delete(p);
             return;
         }
-        auto& head = buckets()[idx - 1];
-        *static_cast<void**>(p) = head;
-        head = p;
+        auto &head               = buckets()[idx - 1];
+        *static_cast<void **>(p) = head;
+        head                     = p;
     }
 
 private:
-    static std::size_t bucket_index(std::size_t size) noexcept {
+    static std::size_t
+    bucket_index(std::size_t size) noexcept {
         // Guarantee that each slot can store the intrusive `void*` that we
         // overlay when free.
-        if (size < sizeof(void*)) size = sizeof(void*);
+        if (size < sizeof(void *))
+            size = sizeof(void *);
         return (size + kAlign - 1) / kAlign;
     }
 
     // kMaxBucket slots — each slot is a LIFO head pointer for its size class.
-    using BucketArray = std::array<void*, kMaxBucket>;
-    static BucketArray& buckets() noexcept {
+    using BucketArray = std::array<void *, kMaxBucket>;
+    static BucketArray &
+    buckets() noexcept {
         thread_local BucketArray b{};
         return b;
     }
@@ -193,19 +198,19 @@ private:
 // the pooled new/delete pair. We inject the operators via a macro rather
 // than a CRTP base to keep the promise layout identical (coroutine frames
 // are sensitive to promise size / alignment).
-#define QB_CORO_PROMISE_POOLED_NEW_DELETE()                                     \
-    static void* operator new(std::size_t sz) {                                 \
-        return ::qb::io::async::detail::CoroutineFrameAllocator::allocate(sz);  \
-    }                                                                           \
-    static void operator delete(void* p, std::size_t sz) noexcept {             \
-        ::qb::io::async::detail::CoroutineFrameAllocator::deallocate(p, sz);    \
-    }                                                                           \
-    static void operator delete(void* p) noexcept {                             \
-        /* Unsized delete fallback (used when sized-deallocation is off).   */  \
-        /* We cannot recover the original bucket index, so we surrender the */  \
-        /* block to the global allocator — correct but slower. Modern C++20 */  \
-        /* compilers default to sized deallocation, so this path is cold.   */  \
-        ::operator delete(p);                                                   \
+#define QB_CORO_PROMISE_POOLED_NEW_DELETE()                                    \
+    static void *operator new(std::size_t sz) {                                \
+        return ::qb::io::async::detail::CoroutineFrameAllocator::allocate(sz); \
+    }                                                                          \
+    static void operator delete(void *p, std::size_t sz) noexcept {            \
+        ::qb::io::async::detail::CoroutineFrameAllocator::deallocate(p, sz);   \
+    }                                                                          \
+    static void operator delete(void *p) noexcept {                            \
+        /* Unsized delete fallback (used when sized-deallocation is off).   */ \
+        /* We cannot recover the original bucket index, so we surrender the */ \
+        /* block to the global allocator — correct but slower. Modern C++20 */ \
+        /* compilers default to sized deallocation, so this path is cold.   */ \
+        ::operator delete(p);                                                  \
     }
 
 } // namespace detail
@@ -310,14 +315,14 @@ public:
         /**
          * @brief Pointer to the scheduler managing this coroutine
          */
-        CoroutineScheduler* scheduler_ = nullptr;
+        CoroutineScheduler *scheduler_ = nullptr;
 
         /**
          * @brief Coroutine ID for debugging/tracing
          */
 #ifdef QB_DEBUG_COROUTINES
         static inline std::atomic<std::size_t> next_id{0};
-        std::size_t coro_id_ = next_id.fetch_add(1, std::memory_order_relaxed);
+        std::size_t                            coro_id_ = next_id.fetch_add(1, std::memory_order_relaxed);
 #endif
 
         /**
@@ -327,13 +332,15 @@ public:
          * Without it, the variant may contain a default-constructed T instead of
          * std::monostate, causing is_ready() to return true prematurely.
          */
-        promise_type() : result_(std::in_place_index<0>) {}
+        promise_type()
+            : result_(std::in_place_index<0>) {}
 
         /**
          * @brief Construct the task return object
          * @return task bound to this promise
          */
-        task get_return_object() {
+        task
+        get_return_object() {
             return task{std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
@@ -343,7 +350,8 @@ public:
          * Always suspend initially. The scheduler will resume when ready.
          * This allows proper scheduling and lifecycle management.
          */
-        std::suspend_always initial_suspend() noexcept {
+        std::suspend_always
+        initial_suspend() noexcept {
             return {};
         }
 
@@ -353,14 +361,19 @@ public:
          * Resumes the continuation if one exists, then destroys this coroutine.
          * Uses symmetric transfer for optimal performance.
          */
-        auto final_suspend() noexcept {
+        auto
+        final_suspend() noexcept {
             struct final_awaiter {
                 std::coroutine_handle<> continuation_;
-                CoroutineScheduler*     scheduler_;
+                CoroutineScheduler     *scheduler_;
 
-                bool await_ready() const noexcept { return false; }
+                bool
+                await_ready() const noexcept {
+                    return false;
+                }
 
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept {
+                std::coroutine_handle<>
+                await_suspend(std::coroutine_handle<> h) noexcept {
                     // Awaited task: symmetric-transfer to the continuation,
                     // avoiding stack overflow in deep chains. The awaiting
                     // task<T> object owns and frees this frame.
@@ -375,7 +388,8 @@ public:
                     return std::noop_coroutine();
                 }
 
-                void await_resume() noexcept {}
+                void
+                await_resume() noexcept {}
             };
             return final_awaiter{continuation_, scheduler_};
         }
@@ -385,7 +399,8 @@ public:
          *
          * Stores the exception for rethrowing in await_resume().
          */
-        void unhandled_exception() noexcept {
+        void
+        unhandled_exception() noexcept {
             result_.template emplace<2>(std::current_exception());
         }
 
@@ -393,7 +408,8 @@ public:
          * @brief Store the return value
          * @param value The value to return
          */
-        void return_value(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        void
+        return_value(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
             result_.template emplace<1>(std::move(value));
         }
 
@@ -401,7 +417,8 @@ public:
          * @brief Check if the coroutine has completed
          * @return true if result is available (success or exception)
          */
-        [[nodiscard]] bool is_ready() const noexcept {
+        [[nodiscard]] bool
+        is_ready() const noexcept {
             return result_.index() != 0;
         }
 
@@ -409,7 +426,8 @@ public:
          * @brief Check if the coroutine completed with an exception
          * @return true if an exception was thrown
          */
-        [[nodiscard]] bool has_exception() const noexcept {
+        [[nodiscard]] bool
+        has_exception() const noexcept {
             return result_.index() == 2;
         }
 
@@ -418,7 +436,8 @@ public:
          * @return Reference to the stored value
          * @pre is_ready() && !has_exception()
          */
-        T& value() noexcept {
+        T &
+        value() noexcept {
             return std::get<1>(result_);
         }
 
@@ -427,7 +446,8 @@ public:
          * @return Reference to the exception pointer
          * @pre has_exception()
          */
-        std::exception_ptr& exception() noexcept {
+        std::exception_ptr &
+        exception() noexcept {
             return std::get<2>(result_);
         }
 
@@ -445,7 +465,8 @@ public:
      * @param h The coroutine handle
      * @private
      */
-    explicit task(handle_type h) noexcept : handle_(h) {}
+    explicit task(handle_type h) noexcept
+        : handle_(h) {}
 
     /**
      * @brief Destructor
@@ -461,12 +482,14 @@ public:
     /**
      * @brief Move constructor
      */
-    task(task&& other) noexcept : handle_(std::exchange(other.handle_, {})) {}
+    task(task &&other) noexcept
+        : handle_(std::exchange(other.handle_, {})) {}
 
     /**
      * @brief Move assignment
      */
-    task& operator=(task&& other) noexcept {
+    task &
+    operator=(task &&other) noexcept {
         if (handle_) {
             handle_.destroy();
         }
@@ -475,16 +498,19 @@ public:
     }
 
     // Non-copyable
-    task(const task&) = delete;
-    task& operator=(const task&) = delete;
+    task(const task &)            = delete;
+    task &operator=(const task &) = delete;
 
     /**
      * @brief Awaitable: check if ready
      * @return true if coroutine is complete
      */
-    [[nodiscard]] bool await_ready() const noexcept {
-        if (!handle_) return true;
-        if (handle_.done()) return true;
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        if (!handle_)
+            return true;
+        if (handle_.done())
+            return true;
         return handle_.promise().is_ready();
     }
 
@@ -499,7 +525,8 @@ public:
      * IMPLEMENTATION NOTE: This is defined inline to avoid circular dependency
      * with CoroutineScheduler. Symmetric transfer prevents stack overflow.
      */
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept {
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> caller) noexcept {
         handle_.promise().continuation_ = caller;
         // Symmetric transfer: return the handle to resume
         // The compiler will resume it directly without recursion
@@ -518,8 +545,9 @@ public:
      * `has_exception()`. That can hide the real error. Here we always
      * surface the stored exception first.
      */
-    T await_resume() {
-        auto& promise = handle_.promise();
+    T
+    await_resume() {
+        auto &promise = handle_.promise();
         if (promise.has_exception()) {
             std::rethrow_exception(promise.exception());
         }
@@ -527,8 +555,7 @@ public:
             // Should never happen: await_suspend must have kept us
             // suspended until the promise completed. Fail loudly rather
             // than hand back a garbage T via an uninitialised variant.
-            throw std::logic_error(
-                "task<T>::await_resume called before the coroutine completed");
+            throw std::logic_error("task<T>::await_resume called before the coroutine completed");
         }
         return std::move(promise.value());
     }
@@ -537,7 +564,10 @@ public:
      * @brief Get the coroutine handle
      * @return The handle (may be null)
      */
-    [[nodiscard]] handle_type handle() const noexcept { return handle_; }
+    [[nodiscard]] handle_type
+    handle() const noexcept {
+        return handle_;
+    }
 
     /**
      * @brief Detach the coroutine handle from this task
@@ -547,19 +577,28 @@ public:
      * The task will no longer own the handle and will not
      * destroy it in its destructor.
      */
-    [[nodiscard]] handle_type detach() noexcept { return std::exchange(handle_, {}); }
+    [[nodiscard]] handle_type
+    detach() noexcept {
+        return std::exchange(handle_, {});
+    }
 
     /**
      * @brief Check if the coroutine has completed
      * @return true if done
      */
-    [[nodiscard]] bool done() const noexcept { return !handle_ || handle_.done(); }
+    [[nodiscard]] bool
+    done() const noexcept {
+        return !handle_ || handle_.done();
+    }
 
     /**
      * @brief Check if the coroutine is valid
      * @return true if handle is not null
      */
-    [[nodiscard]] explicit operator bool() const noexcept { return handle_ != nullptr; }
+    [[nodiscard]] explicit
+    operator bool() const noexcept {
+        return handle_ != nullptr;
+    }
 
 private:
     handle_type handle_;
@@ -594,7 +633,7 @@ public:
         /**
          * @brief Scheduler pointer
          */
-        CoroutineScheduler* scheduler_ = nullptr;
+        CoroutineScheduler *scheduler_ = nullptr;
 
         /**
          * @brief Completion flag
@@ -603,31 +642,38 @@ public:
 
 #ifdef QB_DEBUG_COROUTINES
         static inline std::atomic<std::size_t> next_id{0};
-        std::size_t coro_id_ = next_id.fetch_add(1, std::memory_order_relaxed);
+        std::size_t                            coro_id_ = next_id.fetch_add(1, std::memory_order_relaxed);
 #endif
 
-        task get_return_object() noexcept {
+        task
+        get_return_object() noexcept {
             return task{std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() noexcept {
+        std::suspend_always
+        initial_suspend() noexcept {
 #ifdef QB_DEBUG_COROUTINES
             QB_CORO_TRACE(coro_id_, "initial_suspend");
 #endif
             return {};
         }
 
-        auto final_suspend() noexcept {
+        auto
+        final_suspend() noexcept {
             struct final_awaiter {
                 std::coroutine_handle<> continuation_;
-                CoroutineScheduler*     scheduler_;
+                CoroutineScheduler     *scheduler_;
 #ifdef QB_DEBUG_COROUTINES
                 std::size_t coro_id_;
 #endif
 
-                bool await_ready() const noexcept { return false; }
+                bool
+                await_ready() const noexcept {
+                    return false;
+                }
 
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept {
+                std::coroutine_handle<>
+                await_suspend(std::coroutine_handle<> h) noexcept {
 #ifdef QB_DEBUG_COROUTINES
                     QB_CORO_TRACE(coro_id_, "final_suspend");
 #endif
@@ -642,28 +688,35 @@ public:
                     return std::noop_coroutine();
                 }
 
-                void await_resume() noexcept {}
+                void
+                await_resume() noexcept {}
             };
-            return final_awaiter{continuation_, scheduler_
+            return final_awaiter{
+                continuation_, scheduler_
 #ifdef QB_DEBUG_COROUTINES
-                , coro_id_
+                ,
+                coro_id_
 #endif
             };
         }
 
-        void unhandled_exception() noexcept {
+        void
+        unhandled_exception() noexcept {
             exception_ = std::current_exception();
         }
 
-        void return_void() noexcept {
+        void
+        return_void() noexcept {
             completed_ = true;
         }
 
-        [[nodiscard]] bool is_ready() const noexcept {
+        [[nodiscard]] bool
+        is_ready() const noexcept {
             return completed_ || exception_ != nullptr;
         }
 
-        [[nodiscard]] bool has_exception() const noexcept {
+        [[nodiscard]] bool
+        has_exception() const noexcept {
             return exception_ != nullptr;
         }
 
@@ -676,7 +729,8 @@ public:
 
     using handle_type = std::coroutine_handle<promise_type>;
 
-    explicit task(handle_type h) noexcept : handle_(h) {}
+    explicit task(handle_type h) noexcept
+        : handle_(h) {}
 
     ~task() {
         if (handle_) {
@@ -684,9 +738,11 @@ public:
         }
     }
 
-    task(task&& other) noexcept : handle_(std::exchange(other.handle_, {})) {}
+    task(task &&other) noexcept
+        : handle_(std::exchange(other.handle_, {})) {}
 
-    task& operator=(task&& other) noexcept {
+    task &
+    operator=(task &&other) noexcept {
         if (handle_) {
             handle_.destroy();
         }
@@ -694,12 +750,15 @@ public:
         return *this;
     }
 
-    task(const task&) = delete;
-    task& operator=(const task&) = delete;
+    task(const task &)            = delete;
+    task &operator=(const task &) = delete;
 
-    [[nodiscard]] bool await_ready() const noexcept {
-        if (!handle_) return true;
-        if (handle_.done()) return true;
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        if (!handle_)
+            return true;
+        if (handle_.done())
+            return true;
         return handle_.promise().is_ready();
     }
 
@@ -714,19 +773,24 @@ public:
      * IMPLEMENTATION NOTE: This is defined inline to avoid circular dependency
      * with CoroutineScheduler. Symmetric transfer prevents stack overflow.
      */
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept {
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> caller) noexcept {
         handle_.promise().continuation_ = caller;
         // Symmetric transfer: return the handle to resume
         return handle_;
     }
 
-    void await_resume() {
+    void
+    await_resume() {
         if (handle_.promise().has_exception()) {
             std::rethrow_exception(handle_.promise().exception_);
         }
     }
 
-    [[nodiscard]] handle_type handle() const noexcept { return handle_; }
+    [[nodiscard]] handle_type
+    handle() const noexcept {
+        return handle_;
+    }
 
     /**
      * @brief Detach the coroutine handle from this task
@@ -736,10 +800,19 @@ public:
      * The task will no longer own the handle and will not
      * destroy it in its destructor.
      */
-    [[nodiscard]] handle_type detach() noexcept { return std::exchange(handle_, {}); }
+    [[nodiscard]] handle_type
+    detach() noexcept {
+        return std::exchange(handle_, {});
+    }
 
-    [[nodiscard]] bool done() const noexcept { return !handle_ || handle_.done(); }
-    [[nodiscard]] explicit operator bool() const noexcept { return handle_ != nullptr; }
+    [[nodiscard]] bool
+    done() const noexcept {
+        return !handle_ || handle_.done();
+    }
+    [[nodiscard]] explicit
+    operator bool() const noexcept {
+        return handle_ != nullptr;
+    }
 
 private:
     handle_type handle_;

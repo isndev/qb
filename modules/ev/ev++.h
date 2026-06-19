@@ -2,7 +2,7 @@
  * libev simple C++ wrapper classes
  *
  * SPDX-License-Identifier: MIT
- * Copyright (c) 2011-2025 qb - isndev (cpp.actor).
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
  * Part of qb-ev, a modernized cross-platform fork of libev.
  * Based on libev by Marc Alexander Lehmann <libev@schmorp.de>.
@@ -17,17 +17,17 @@
 #define EVPP_H__
 
 #ifdef EV_H
-#    include EV_H
+#include EV_H
 #else
-#    include "ev.h"
+#include "ev.h"
 #endif
 
 #ifndef EV_USE_STDEXCEPT
-#    define EV_USE_STDEXCEPT 1
+#define EV_USE_STDEXCEPT 1
 #endif
 
 #if EV_USE_STDEXCEPT
-#    include <stdexcept>
+#include <stdexcept>
 #endif
 
 namespace ev {
@@ -36,47 +36,47 @@ typedef ev_tstamp tstamp;
 
 enum {
     UNDEF = EV_UNDEF,
-    NONE = EV_NONE,
-    READ = EV_READ,
+    NONE  = EV_NONE,
+    READ  = EV_READ,
     WRITE = EV_WRITE,
 #if EV_COMPAT3
     TIMEOUT = EV_TIMEOUT,
 #endif
-    TIMER = EV_TIMER,
+    TIMER    = EV_TIMER,
     PERIODIC = EV_PERIODIC,
-    SIGNAL = EV_SIGNAL,
-    CHILD = EV_CHILD,
-    STAT = EV_STAT,
-    IDLE = EV_IDLE,
-    CHECK = EV_CHECK,
-    PREPARE = EV_PREPARE,
-    FORK = EV_FORK,
-    ASYNC = EV_ASYNC,
-    EMBED = EV_EMBED,
+    SIGNAL   = EV_SIGNAL,
+    CHILD    = EV_CHILD,
+    STAT     = EV_STAT,
+    IDLE     = EV_IDLE,
+    CHECK    = EV_CHECK,
+    PREPARE  = EV_PREPARE,
+    FORK     = EV_FORK,
+    ASYNC    = EV_ASYNC,
+    EMBED    = EV_EMBED,
 #undef ERROR // some systems stupidly #define ERROR
     ERROR = EV_ERROR
 };
 
 enum {
-    AUTO = EVFLAG_AUTO,
-    NOENV = EVFLAG_NOENV,
+    AUTO      = EVFLAG_AUTO,
+    NOENV     = EVFLAG_NOENV,
     FORKCHECK = EVFLAG_FORKCHECK,
 
-    SELECT = EVBACKEND_SELECT,
-    POLL = EVBACKEND_POLL,
-    EPOLL = EVBACKEND_EPOLL,
-    KQUEUE = EVBACKEND_KQUEUE,
+    SELECT  = EVBACKEND_SELECT,
+    POLL    = EVBACKEND_POLL,
+    EPOLL   = EVBACKEND_EPOLL,
+    KQUEUE  = EVBACKEND_KQUEUE,
     DEVPOLL = EVBACKEND_DEVPOLL,
-    PORT = EVBACKEND_PORT
+    PORT    = EVBACKEND_PORT
 };
 
 enum {
 #if EV_COMPAT3
     NONBLOCK = EVLOOP_NONBLOCK,
-    ONESHOT = EVLOOP_ONESHOT,
+    ONESHOT  = EVLOOP_ONESHOT,
 #endif
     NOWAIT = EVRUN_NOWAIT,
-    ONCE = EVRUN_ONCE
+    ONCE   = EVRUN_ONCE
 };
 
 enum how_t { ONE = EVBREAK_ONE, ALL = EVBREAK_ALL };
@@ -95,19 +95,19 @@ struct bad_loop
 };
 
 #ifdef EV_AX
-#    undef EV_AX
+#undef EV_AX
 #endif
 
 #ifdef EV_AX_
-#    undef EV_AX_
+#undef EV_AX_
 #endif
 
 #if EV_MULTIPLICITY
-#    define EV_AX raw_loop
-#    define EV_AX_ raw_loop,
+#define EV_AX raw_loop
+#define EV_AX_ raw_loop,
 #else
-#    define EV_AX
-#    define EV_AX_
+#define EV_AX
+#define EV_AX_
 #endif
 
 struct loop_ref {
@@ -232,8 +232,7 @@ struct loop_ref {
 
     // function callback
     void
-    once(int fd, int events, tstamp timeout, void (*cb)(int, void *),
-         void *arg = 0) EV_NOEXCEPT {
+    once(int fd, int events, tstamp timeout, void (*cb)(int, void *), void *arg = 0) EV_NOEXCEPT {
         ev_once(EV_AX_ fd, events, timeout, cb, arg);
     }
 
@@ -313,7 +312,6 @@ struct loop_ref {
 
 #if EV_MULTIPLICITY
 struct dynamic_loop : loop_ref {
-
     dynamic_loop(unsigned int flags = AUTO)
         : loop_ref(ev_loop_new(flags)) {
         if (!EV_AX)
@@ -368,11 +366,11 @@ get_default_loop() EV_NOEXCEPT {
 #undef EV_PX
 #undef EV_PX_
 #if EV_MULTIPLICITY
-#    define EV_PX loop_ref EV_A
-#    define EV_PX_ loop_ref EV_A_
+#define EV_PX loop_ref EV_A
+#define EV_PX_ loop_ref EV_A_
 #else
-#    define EV_PX
-#    define EV_PX_
+#define EV_PX
+#define EV_PX_
 #endif
 
 template <class ev_watcher, class watcher>
@@ -380,7 +378,7 @@ struct base : ev_watcher {
     // scoped pause/unpause of a watcher
     struct freeze_guard {
         watcher &w;
-        bool active;
+        bool     active;
 
         freeze_guard(watcher *self) EV_NOEXCEPT
             : w(*self)
@@ -415,7 +413,7 @@ struct base : ev_watcher {
 
     void
     set_(const void *data, void (*cb)(EV_P_ ev_watcher *w, int revents)) EV_NOEXCEPT {
-        this->data = (void *)data;
+        this->data = (void *) data;
         ev_set_cb(static_cast<ev_watcher *>(this), cb);
     }
 
@@ -430,7 +428,7 @@ struct base : ev_watcher {
     static void
     function_thunk(EV_P_ ev_watcher *w, int revents) {
         function(*static_cast<watcher *>(w), revents);
-        (void)loop;
+        (void) loop;
     }
 
     // method callback
@@ -470,8 +468,7 @@ struct base : ev_watcher {
 
     void
     operator()(int events = EV_UNDEF) {
-        return ev_cb(static_cast<ev_watcher *>(this))(static_cast<ev_watcher *>(this),
-                                                      events);
+        return ev_cb(static_cast<ev_watcher *>(this))(static_cast<ev_watcher *>(this), events);
     }
 
     bool
@@ -526,7 +523,7 @@ embeddable_backends() EV_NOEXCEPT {
 }
 
 inline void
-set_allocator(void *(*cb)(void *ptr, long size)EV_NOEXCEPT) EV_NOEXCEPT {
+set_allocator(void *(*cb)(void *ptr, long size) EV_NOEXCEPT) EV_NOEXCEPT {
     ev_set_allocator(cb);
 }
 
@@ -536,11 +533,11 @@ set_syserr_cb(void (*cb)(const char *msg) EV_NOEXCEPT) EV_NOEXCEPT {
 }
 
 #if EV_MULTIPLICITY
-#    define EV_CONSTRUCT(cppstem, cstem) \
-        (EV_PX = get_default_loop()) EV_NOEXCEPT : base<ev_##cstem, cppstem>(EV_A) {}
+#define EV_CONSTRUCT(cppstem, cstem) \
+    (EV_PX = get_default_loop()) EV_NOEXCEPT : base<ev_##cstem, cppstem>(EV_A) {}
 #else
-#    define EV_CONSTRUCT(cppstem, cstem) \
-        () EV_NOEXCEPT {}
+#define EV_CONSTRUCT(cppstem, cstem) \
+    () EV_NOEXCEPT {}
 #endif
 
 /* using a template here would require quite a few more lines,

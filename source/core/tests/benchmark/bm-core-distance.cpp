@@ -11,7 +11,7 @@
  * Uses \c UseRealTime() because \c main.start(true) runs on worker threads.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -55,7 +55,7 @@ public:
 
 class CdPingActor final : public qb::Actor {
     const std::uint64_t _max;
-    const qb::ActorId    _peer;
+    const qb::ActorId   _peer;
 
 public:
     CdPingActor(std::uint64_t const max, qb::ActorId const peer)
@@ -88,18 +88,15 @@ BM_CoreDistance_PingPong(benchmark::State &state) {
 
     for (auto _ : state) {
         state.PauseTiming();
-        qb::Main main;
+        qb::Main   main;
         auto const pong = main.addActor<CdPongActor>(pong_core);
         main.addActor<CdPingActor>(ping_core, ttl, pong);
         state.ResumeTiming();
         main.start(true);
         main.join();
-        state.counters["round_trips_per_s"] =
-            benchmark::Counter(static_cast<double>(ttl),
-                               benchmark::Counter::kIsIterationInvariantRate);
-        const double msgs = static_cast<double>(2ull * ttl + 1ull);
-        state.counters["messages_per_s"] =
-            benchmark::Counter(msgs, benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["round_trips_per_s"] = benchmark::Counter(static_cast<double>(ttl), benchmark::Counter::kIsIterationInvariantRate);
+        const double msgs                   = static_cast<double>(2ull * ttl + 1ull);
+        state.counters["messages_per_s"]    = benchmark::Counter(msgs, benchmark::Counter::kIsIterationInvariantRate);
     }
 }
 
@@ -108,18 +105,15 @@ ArgsCoreDistanceGrid(benchmark::internal::Benchmark *b) {
     const auto cap = qb::bench::cappedBenchmarkCores();
     const auto ttl = 1ull << 14;
     for (std::uint32_t p = 0; p < cap; ++p) {
-        b->Args({static_cast<std::int64_t>(p), static_cast<std::int64_t>(p),
-                 static_cast<std::int64_t>(ttl)});
+        b->Args({static_cast<std::int64_t>(p), static_cast<std::int64_t>(p), static_cast<std::int64_t>(ttl)});
         if (cap > 1u) {
             // Not named "far": Windows headers may #define far (16-bit legacy ABI).
             const std::uint32_t far_core = cap - 1u;
             if (p != far_core)
-                b->Args({static_cast<std::int64_t>(p), static_cast<std::int64_t>(far_core),
-                         static_cast<std::int64_t>(ttl)});
+                b->Args({static_cast<std::int64_t>(p), static_cast<std::int64_t>(far_core), static_cast<std::int64_t>(ttl)});
             const std::uint32_t adj = (p + 1u) % cap;
             if (adj != p)
-                b->Args({static_cast<std::int64_t>(p), static_cast<std::int64_t>(adj),
-                         static_cast<std::int64_t>(ttl)});
+                b->Args({static_cast<std::int64_t>(p), static_cast<std::int64_t>(adj), static_cast<std::int64_t>(ttl)});
         }
     }
 }

@@ -19,17 +19,16 @@ namespace ska {
 namespace detailv10 {
 template <typename T, typename Allocator>
 struct sherwood_v10_entry {
-    static_assert(!std::is_reference_v<T>,
-                  "sherwood_v10_entry: T must not be a reference type. "
-                  "Use a pointer type instead — storing references in a "
-                  "hash table's union storage violates container requirements "
-                  "and produces undefined behaviour under MSVC.");
+    static_assert(!std::is_reference_v<T>, "sherwood_v10_entry: T must not be a reference type. "
+                                           "Use a pointer type instead — storing references in a "
+                                           "hash table's union storage violates container requirements "
+                                           "and produces undefined behaviour under MSVC.");
 
     sherwood_v10_entry() {}
     ~sherwood_v10_entry() {}
 
-    using EntryPointer = typename std::allocator_traits<typename std::allocator_traits<
-        Allocator>::template rebind_alloc<sherwood_v10_entry>>::pointer;
+    using EntryPointer =
+        typename std::allocator_traits<typename std::allocator_traits<Allocator>::template rebind_alloc<sherwood_v10_entry>>::pointer;
 
     EntryPointer next = nullptr;
     union {
@@ -38,8 +37,7 @@ struct sherwood_v10_entry {
 
     static EntryPointer *
     empty_pointer() {
-        static EntryPointer result[3] = {EntryPointer(1), nullptr,
-                                         nullptr};
+        static EntryPointer result[3] = {EntryPointer(1), nullptr, nullptr};
         return result + 1;
     }
 };
@@ -50,36 +48,33 @@ using ska::detailv3::HashPolicySelector;
 using ska::detailv3::KeyOrValueEquality;
 using ska::detailv3::KeyOrValueHasher;
 
-template <typename T, typename FindKey, typename ArgumentHash, typename Hasher,
-          typename ArgumentEqual, typename Equal, typename ArgumentAlloc,
+template <typename T, typename FindKey, typename ArgumentHash, typename Hasher, typename ArgumentEqual, typename Equal, typename ArgumentAlloc,
           typename EntryAlloc, typename BucketAllocator>
 class sherwood_v10_table
     : private EntryAlloc
     , private Hasher
     , private Equal
     , private BucketAllocator {
-    using Entry = detailv10::sherwood_v10_entry<T, ArgumentAlloc>;
-    using AllocatorTraits = std::allocator_traits<EntryAlloc>;
+    using Entry                 = detailv10::sherwood_v10_entry<T, ArgumentAlloc>;
+    using AllocatorTraits       = std::allocator_traits<EntryAlloc>;
     using BucketAllocatorTraits = std::allocator_traits<BucketAllocator>;
-    using EntryPointer = typename AllocatorTraits::pointer;
+    using EntryPointer          = typename AllocatorTraits::pointer;
     struct convertible_to_iterator;
 
 public:
-    using value_type = T;
-    using size_type = size_t;
+    using value_type      = T;
+    using size_type       = size_t;
     using difference_type = std::ptrdiff_t;
-    using hasher = ArgumentHash;
-    using key_equal = ArgumentEqual;
-    using allocator_type = EntryAlloc;
-    using reference = value_type &;
+    using hasher          = ArgumentHash;
+    using key_equal       = ArgumentEqual;
+    using allocator_type  = EntryAlloc;
+    using reference       = value_type &;
     using const_reference = const value_type &;
-    using pointer = value_type *;
-    using const_pointer = const value_type *;
+    using pointer         = value_type *;
+    using const_pointer   = const value_type *;
 
     sherwood_v10_table() {}
-    explicit sherwood_v10_table(size_type bucket_count,
-                                const ArgumentHash &hash = ArgumentHash(),
-                                const ArgumentEqual &equal = ArgumentEqual(),
+    explicit sherwood_v10_table(size_type bucket_count, const ArgumentHash &hash = ArgumentHash(), const ArgumentEqual &equal = ArgumentEqual(),
                                 const ArgumentAlloc &alloc = ArgumentAlloc())
         : EntryAlloc(alloc)
         , Hasher(hash)
@@ -89,48 +84,36 @@ public:
     }
     sherwood_v10_table(size_type bucket_count, const ArgumentAlloc &alloc)
         : sherwood_v10_table(bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
-    sherwood_v10_table(size_type bucket_count, const ArgumentHash &hash,
-                       const ArgumentAlloc &alloc)
+    sherwood_v10_table(size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
         : sherwood_v10_table(bucket_count, hash, ArgumentEqual(), alloc) {}
     explicit sherwood_v10_table(const ArgumentAlloc &alloc)
         : EntryAlloc(alloc)
         , BucketAllocator(alloc) {}
     template <typename It>
-    sherwood_v10_table(It first, It last, size_type bucket_count = 0,
-                       const ArgumentHash &hash = ArgumentHash(),
-                       const ArgumentEqual &equal = ArgumentEqual(),
-                       const ArgumentAlloc &alloc = ArgumentAlloc())
+    sherwood_v10_table(It first, It last, size_type bucket_count = 0, const ArgumentHash &hash = ArgumentHash(),
+                       const ArgumentEqual &equal = ArgumentEqual(), const ArgumentAlloc &alloc = ArgumentAlloc())
         : sherwood_v10_table(bucket_count, hash, equal, alloc) {
         insert(first, last);
     }
     template <typename It>
-    sherwood_v10_table(It first, It last, size_type bucket_count,
-                       const ArgumentAlloc &alloc)
-        : sherwood_v10_table(first, last, bucket_count, ArgumentHash(), ArgumentEqual(),
-                             alloc) {}
+    sherwood_v10_table(It first, It last, size_type bucket_count, const ArgumentAlloc &alloc)
+        : sherwood_v10_table(first, last, bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
     template <typename It>
-    sherwood_v10_table(It first, It last, size_type bucket_count,
-                       const ArgumentHash &hash, const ArgumentAlloc &alloc)
+    sherwood_v10_table(It first, It last, size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
         : sherwood_v10_table(first, last, bucket_count, hash, ArgumentEqual(), alloc) {}
-    sherwood_v10_table(std::initializer_list<T> il, size_type bucket_count = 0,
-                       const ArgumentHash &hash = ArgumentHash(),
-                       const ArgumentEqual &equal = ArgumentEqual(),
-                       const ArgumentAlloc &alloc = ArgumentAlloc())
+    sherwood_v10_table(std::initializer_list<T> il, size_type bucket_count = 0, const ArgumentHash &hash = ArgumentHash(),
+                       const ArgumentEqual &equal = ArgumentEqual(), const ArgumentAlloc &alloc = ArgumentAlloc())
         : sherwood_v10_table(bucket_count, hash, equal, alloc) {
         if (bucket_count == 0)
             reserve(il.size());
         insert(il.begin(), il.end());
     }
-    sherwood_v10_table(std::initializer_list<T> il, size_type bucket_count,
-                       const ArgumentAlloc &alloc)
+    sherwood_v10_table(std::initializer_list<T> il, size_type bucket_count, const ArgumentAlloc &alloc)
         : sherwood_v10_table(il, bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
-    sherwood_v10_table(std::initializer_list<T> il, size_type bucket_count,
-                       const ArgumentHash &hash, const ArgumentAlloc &alloc)
+    sherwood_v10_table(std::initializer_list<T> il, size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
         : sherwood_v10_table(il, bucket_count, hash, ArgumentEqual(), alloc) {}
     sherwood_v10_table(const sherwood_v10_table &other)
-        : sherwood_v10_table(other,
-                             AllocatorTraits::select_on_container_copy_construction(
-                                 other.get_allocator())) {}
+        : sherwood_v10_table(other, AllocatorTraits::select_on_container_copy_construction(other.get_allocator())) {}
     sherwood_v10_table(const sherwood_v10_table &other, const ArgumentAlloc &alloc)
         : EntryAlloc(alloc)
         , Hasher(other)
@@ -168,57 +151,39 @@ public:
             return *this;
 
         clear();
-        static_assert(
-            AllocatorTraits::propagate_on_container_copy_assignment::value ==
-                BucketAllocatorTraits::propagate_on_container_copy_assignment::value,
-            "The allocators have to behave the same way");
+        static_assert(AllocatorTraits::propagate_on_container_copy_assignment::value
+                          == BucketAllocatorTraits::propagate_on_container_copy_assignment::value,
+                      "The allocators have to behave the same way");
         if (AllocatorTraits::propagate_on_container_copy_assignment::value) {
-            if (static_cast<EntryAlloc &>(*this) !=
-                    static_cast<const EntryAlloc &>(other) ||
-                static_cast<BucketAllocator &>(*this) !=
-                    static_cast<const BucketAllocator &>(other)) {
+            if (static_cast<EntryAlloc &>(*this) != static_cast<const EntryAlloc &>(other)
+                || static_cast<BucketAllocator &>(*this) != static_cast<const BucketAllocator &>(other)) {
                 reset_to_empty_state();
             }
-            AssignIfTrue<
-                EntryAlloc,
-                AllocatorTraits::propagate_on_container_copy_assignment::value>()(*this,
-                                                                                  other);
-            AssignIfTrue<
-                BucketAllocator,
-                BucketAllocatorTraits::propagate_on_container_copy_assignment::value>()(
-                *this, other);
+            AssignIfTrue<EntryAlloc, AllocatorTraits::propagate_on_container_copy_assignment::value>()(*this, other);
+            AssignIfTrue<BucketAllocator, BucketAllocatorTraits::propagate_on_container_copy_assignment::value>()(*this, other);
         }
-        _max_load_factor = other._max_load_factor;
+        _max_load_factor             = other._max_load_factor;
         static_cast<Hasher &>(*this) = other;
-        static_cast<Equal &>(*this) = other;
+        static_cast<Equal &>(*this)  = other;
         rehash_for_other_container(other);
         insert(other.begin(), other.end());
         return *this;
     }
     sherwood_v10_table &
     operator=(sherwood_v10_table &&other) noexcept {
-        static_assert(
-            AllocatorTraits::propagate_on_container_move_assignment::value ==
-                BucketAllocatorTraits::propagate_on_container_move_assignment::value,
-            "The allocators have to behave the same way");
+        static_assert(AllocatorTraits::propagate_on_container_move_assignment::value
+                          == BucketAllocatorTraits::propagate_on_container_move_assignment::value,
+                      "The allocators have to behave the same way");
         if (this == std::addressof(other))
             return *this;
         else if (AllocatorTraits::propagate_on_container_move_assignment::value) {
             clear();
             reset_to_empty_state();
-            AssignIfTrue<
-                EntryAlloc,
-                AllocatorTraits::propagate_on_container_move_assignment::value>()(
-                *this, std::move(other));
-            AssignIfTrue<
-                BucketAllocator,
-                BucketAllocatorTraits::propagate_on_container_move_assignment::value>()(
-                *this, std::move(other));
+            AssignIfTrue<EntryAlloc, AllocatorTraits::propagate_on_container_move_assignment::value>()(*this, std::move(other));
+            AssignIfTrue<BucketAllocator, BucketAllocatorTraits::propagate_on_container_move_assignment::value>()(*this, std::move(other));
             swap_pointers(other);
-        } else if (static_cast<EntryAlloc &>(*this) ==
-                       static_cast<EntryAlloc &>(other) &&
-                   static_cast<BucketAllocator &>(*this) ==
-                       static_cast<BucketAllocator &>(other)) {
+        } else if (static_cast<EntryAlloc &>(*this) == static_cast<EntryAlloc &>(other)
+                   && static_cast<BucketAllocator &>(*this) == static_cast<BucketAllocator &>(other)) {
             swap_pointers(other);
         } else {
             clear();
@@ -229,7 +194,7 @@ public:
             other.clear();
         }
         static_cast<Hasher &>(*this) = std::move(other);
-        static_cast<Equal &>(*this) = std::move(other);
+        static_cast<Equal &>(*this)  = std::move(other);
         return *this;
     }
     ~sherwood_v10_table() {
@@ -257,14 +222,14 @@ public:
             : current_element(element)
             , current_bucket(bucket) {}
 
-        EntryPointer current_element = nullptr;
-        EntryPointer *current_bucket = nullptr;
+        EntryPointer  current_element = nullptr;
+        EntryPointer *current_bucket  = nullptr;
 
         using iterator_category = std::forward_iterator_tag;
-        using value_type = ValueType;
-        using difference_type = ptrdiff_t;
-        using pointer = ValueType *;
-        using reference = ValueType &;
+        using value_type        = ValueType;
+        using difference_type   = ptrdiff_t;
+        using pointer           = ValueType *;
+        using reference         = ValueType &;
 
         friend bool
         operator==(const templated_iterator &lhs, const templated_iterator &rhs) {
@@ -306,7 +271,7 @@ public:
             return {current_element, current_bucket};
         }
     };
-    using iterator = templated_iterator<value_type>;
+    using iterator       = templated_iterator<value_type>;
     using const_iterator = templated_iterator<const value_type>;
 
     iterator
@@ -343,7 +308,7 @@ public:
 
     iterator
     find(const FindKey &key) {
-        size_t index = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
+        size_t        index  = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
         EntryPointer *bucket = entries + ptrdiff_t(index);
         for (EntryPointer it = *bucket; it; it = it->next) {
             if (compares_equal(key, it->value))
@@ -379,14 +344,13 @@ public:
     template <typename Key, typename... Args>
     std::pair<iterator, bool>
     emplace(Key &&key, Args &&...args) {
-        size_t index = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
+        size_t        index  = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
         EntryPointer *bucket = entries + ptrdiff_t(index);
         for (EntryPointer it = *bucket; it; it = it->next) {
             if (compares_equal(key, it->value))
                 return {{it, bucket}, false};
         }
-        return emplace_new_key(bucket, std::forward<Key>(key),
-                               std::forward<Args>(args)...);
+        return emplace_new_key(bucket, std::forward<Key>(key), std::forward<Args>(args)...);
     }
 
     std::pair<iterator, bool>
@@ -425,9 +389,7 @@ public:
 
     void
     rehash(size_t num_buckets) {
-        num_buckets = std::max(
-            num_buckets, static_cast<size_t>(std::ceil(
-                             num_elements / static_cast<double>(_max_load_factor))));
+        num_buckets = std::max(num_buckets, static_cast<size_t>(std::ceil(num_elements / static_cast<double>(_max_load_factor))));
         if (num_buckets == 0) {
             reset_to_empty_state();
             return;
@@ -435,10 +397,9 @@ public:
         auto new_prime_index = hash_policy.next_size_over(num_buckets);
         if (num_buckets == bucket_count())
             return;
-        EntryPointer *new_buckets(
-            &*BucketAllocatorTraits::allocate(*this, num_buckets + 1));
+        EntryPointer *new_buckets(&*BucketAllocatorTraits::allocate(*this, num_buckets + 1));
         EntryPointer *end_it = new_buckets + static_cast<ptrdiff_t>(num_buckets + 1);
-        *new_buckets = EntryPointer(1);
+        *new_buckets         = EntryPointer(1);
         ++new_buckets;
         std::fill(new_buckets, end_it, nullptr);
         std::swap(entries, new_buckets);
@@ -448,17 +409,14 @@ public:
         if (!num_buckets)
             return;
 
-        for (EntryPointer *it = new_buckets,
-                          *end = it + static_cast<ptrdiff_t>(num_buckets + 1);
-             it != end; ++it) {
+        for (EntryPointer *it = new_buckets, *end = it + static_cast<ptrdiff_t>(num_buckets + 1); it != end; ++it) {
             for (EntryPointer e = *it; e;) {
-                EntryPointer next = e->next;
-                size_t index = hash_policy.index_for_hash(hash_object(e->value),
-                                                          num_slots_minus_one);
+                EntryPointer  next     = e->next;
+                size_t        index    = hash_policy.index_for_hash(hash_object(e->value), num_slots_minus_one);
                 EntryPointer &new_slot = entries[index];
-                e->next = new_slot;
-                new_slot = e;
-                e = next;
+                e->next                = new_slot;
+                new_slot               = e;
+                e                      = next;
             }
         }
         BucketAllocatorTraits::deallocate(*this, new_buckets - 1, num_buckets + 2);
@@ -468,8 +426,7 @@ public:
     reserve(size_t num_elements) {
         if (!num_elements)
             return;
-        num_elements = static_cast<size_t>(
-            std::ceil(num_elements / static_cast<double>(_max_load_factor)));
+        num_elements = static_cast<size_t>(std::ceil(num_elements / static_cast<double>(_max_load_factor)));
         if (num_elements > bucket_count())
             rehash(num_elements);
     }
@@ -496,7 +453,7 @@ public:
         while (begin_it.current_bucket != end_it.current_bucket) {
             begin_it = erase(begin_it);
         }
-        EntryPointer *bucket = begin_it.current_bucket;
+        EntryPointer *bucket   = begin_it.current_bucket;
         EntryPointer *previous = bucket;
         while (*previous != begin_it.current_element)
             previous = &(*previous)->next;
@@ -525,9 +482,7 @@ public:
     clear() {
         if (!num_slots_minus_one)
             return;
-        for (EntryPointer *it = entries,
-                          *end = it + static_cast<ptrdiff_t>(num_slots_minus_one + 1);
-             it != end; ++it) {
+        for (EntryPointer *it = entries, *end = it + static_cast<ptrdiff_t>(num_slots_minus_one + 1); it != end; ++it) {
             for (EntryPointer e = *it; e;) {
                 EntryPointer next = e->next;
                 AllocatorTraits::destroy(*this, std::addressof(e->value));
@@ -548,8 +503,7 @@ public:
         if (AllocatorTraits::propagate_on_container_swap::value)
             swap(static_cast<EntryAlloc &>(*this), static_cast<EntryAlloc &>(other));
         if (BucketAllocatorTraits::propagate_on_container_swap::value)
-            swap(static_cast<BucketAllocator &>(*this),
-                 static_cast<BucketAllocator &>(other));
+            swap(static_cast<BucketAllocator &>(*this), static_cast<BucketAllocator &>(other));
     }
 
     size_t
@@ -570,8 +524,7 @@ public:
     }
     size_t
     bucket(const FindKey &key) const {
-        return hash_policy.template index_for_hash<0>(hash_object(key),
-                                                      num_slots_minus_one);
+        return hash_policy.template index_for_hash<0>(hash_object(key), num_slots_minus_one);
     }
     float
     load_factor() const {
@@ -596,11 +549,11 @@ public:
     }
 
 private:
-    EntryPointer *entries = Entry::empty_pointer();
-    size_t num_slots_minus_one = 0;
+    EntryPointer                                   *entries             = Entry::empty_pointer();
+    size_t                                          num_slots_minus_one = 0;
     typename HashPolicySelector<ArgumentHash>::type hash_policy;
-    float _max_load_factor = 1.0f;
-    size_t num_elements = 0;
+    float                                           _max_load_factor = 1.0f;
+    size_t                                          num_elements     = 0;
 
     void
     rehash_for_other_container(const sherwood_v10_table &other) {
@@ -627,15 +580,14 @@ private:
         } else {
             EntryPointer new_entry = AllocatorTraits::allocate(*this, 1);
             try {
-                AllocatorTraits::construct(*this, std::addressof(new_entry->value),
-                                           std::forward<Args>(args)...);
+                AllocatorTraits::construct(*this, std::addressof(new_entry->value), std::forward<Args>(args)...);
             } catch (...) {
                 AllocatorTraits::deallocate(*this, new_entry, 1);
                 throw;
             }
             ++num_elements;
             new_entry->next = *bucket;
-            *bucket = new_entry;
+            *bucket         = new_entry;
             return {{new_entry, bucket}, true};
         }
     }
@@ -645,8 +597,7 @@ private:
         if (!num_slots_minus_one)
             return true;
         else
-            return num_elements + 1 >
-                   (num_slots_minus_one + 1) * static_cast<double>(_max_load_factor);
+            return num_elements + 1 > (num_slots_minus_one + 1) * static_cast<double>(_max_load_factor);
     }
 
     void
@@ -657,15 +608,14 @@ private:
     void
     deallocate_data() {
         if (entries != Entry::empty_pointer()) {
-            BucketAllocatorTraits::deallocate(*this, entries - 1,
-                                              num_slots_minus_one + 2);
+            BucketAllocatorTraits::deallocate(*this, entries - 1, num_slots_minus_one + 2);
         }
     }
 
     void
     reset_to_empty_state() {
         deallocate_data();
-        entries = Entry::empty_pointer();
+        entries             = Entry::empty_pointer();
         num_slots_minus_one = 0;
         hash_policy.reset();
     }
@@ -687,7 +637,7 @@ private:
     }
 
     struct convertible_to_iterator {
-        EntryPointer element;
+        EntryPointer  element;
         EntryPointer *bucket;
 
         operator iterator() {
@@ -714,28 +664,21 @@ private:
 };
 } // namespace detailv10
 
-template <typename K, typename V, typename H = std::hash<K>,
-          typename E = std::equal_to<K>, typename A = std::allocator<std::pair<K, V>>>
+template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<K, V>>>
 class unordered_map
     : public detailv10::sherwood_v10_table<
-          std::pair<K, V>, K, H, detailv10::KeyOrValueHasher<K, std::pair<K, V>, H>, E,
-          detailv10::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
+          std::pair<K, V>, K, H, detailv10::KeyOrValueHasher<K, std::pair<K, V>, H>, E, detailv10::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
+          typename std::allocator_traits<A>::template rebind_alloc<detailv10::sherwood_v10_entry<std::pair<K, V>, A>>,
           typename std::allocator_traits<A>::template rebind_alloc<
-              detailv10::sherwood_v10_entry<std::pair<K, V>, A>>,
-          typename std::allocator_traits<A>::template rebind_alloc<
-              typename std::allocator_traits<A>::template rebind_traits<
-                  detailv10::sherwood_v10_entry<std::pair<K, V>, A>>::pointer>> {
+              typename std::allocator_traits<A>::template rebind_traits<detailv10::sherwood_v10_entry<std::pair<K, V>, A>>::pointer>> {
     using Table = detailv10::sherwood_v10_table<
-        std::pair<K, V>, K, H, detailv10::KeyOrValueHasher<K, std::pair<K, V>, H>, E,
-        detailv10::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
+        std::pair<K, V>, K, H, detailv10::KeyOrValueHasher<K, std::pair<K, V>, H>, E, detailv10::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
+        typename std::allocator_traits<A>::template rebind_alloc<detailv10::sherwood_v10_entry<std::pair<K, V>, A>>,
         typename std::allocator_traits<A>::template rebind_alloc<
-            detailv10::sherwood_v10_entry<std::pair<K, V>, A>>,
-        typename std::allocator_traits<A>::template rebind_alloc<
-            typename std::allocator_traits<A>::template rebind_traits<
-                detailv10::sherwood_v10_entry<std::pair<K, V>, A>>::pointer>>;
+            typename std::allocator_traits<A>::template rebind_traits<detailv10::sherwood_v10_entry<std::pair<K, V>, A>>::pointer>>;
 
 public:
-    using key_type = K;
+    using key_type    = K;
     using mapped_type = V;
 
     using Table::Table;
@@ -779,8 +722,7 @@ public:
     template <typename... Args>
     std::pair<typename Table::iterator, bool>
     try_emplace(key_type &&key, Args &&...args) {
-        return try_emplace_impl(std::forward<key_type>(key),
-                                std::forward<Args>(args)...);
+        return try_emplace_impl(std::forward<key_type>(key), std::forward<Args>(args)...);
     }
 
     template <typename... Args>
@@ -791,8 +733,7 @@ public:
     template <typename... Args>
     typename Table::iterator
     try_emplace(typename Table::const_iterator, key_type &&key, Args &&...args) {
-        return try_emplace(std::forward<key_type>(key), std::forward<Args>(args)...)
-            .first;
+        return try_emplace(std::forward<key_type>(key), std::forward<Args>(args)...).first;
     }
 
     template <typename _Obj>
@@ -816,8 +757,7 @@ public:
 
     template <typename _Obj>
     typename Table::iterator
-    insert_or_assign(typename Table::const_iterator, const key_type &__k,
-                     _Obj &&__obj) {
+    insert_or_assign(typename Table::const_iterator, const key_type &__k, _Obj &&__obj) {
         auto __ret = try_emplace(__k, std::forward<_Obj>(__obj));
         if (!__ret.second)
             __ret.first->second = std::forward<_Obj>(__obj);
@@ -827,8 +767,7 @@ public:
     // move-capable overload
     template <typename _Obj>
     typename Table::iterator
-    insert_or_assign(typename Table::const_iterator, key_type &&__k,
-                     _Obj &&__obj) {
+    insert_or_assign(typename Table::const_iterator, key_type &&__k, _Obj &&__obj) {
         auto __ret = try_emplace(std::move(__k), std::forward<_Obj>(__obj));
         if (!__ret.second)
             __ret.first->second = std::forward<_Obj>(__obj);
@@ -838,15 +777,13 @@ public:
     template <typename K2, typename V2, typename H2, typename E2, typename A2>
     void
     merge(unordered_map<K2, V2, H2, E2, A2> &source) {
-        std::copy(std::cbegin(source), std::cend(source),
-                  std::inserter(*this, this->end()));
+        std::copy(std::cbegin(source), std::cend(source), std::inserter(*this, this->end()));
     }
 
     template <typename K2, typename V2, typename H2, typename E2, typename A2>
     void
     merge(unordered_map<K2, V2, H2, E2, A2> &&source) {
-        std::move(std::cbegin(source), std::cend(source),
-                  std::inserter(*this, this->end()));
+        std::move(std::cbegin(source), std::cend(source), std::inserter(*this, this->end()));
     }
 
     friend bool
@@ -879,31 +816,21 @@ private:
     try_emplace_impl(KeyType &&key, Args &&...args) {
         auto res = this->find(key);
         if (res == this->end())
-            return this->emplace(std::forward<KeyType>(key),
-                                 std::forward<Args>(args)...);
+            return this->emplace(std::forward<KeyType>(key), std::forward<Args>(args)...);
         return {{res}, false};
     }
 };
 
-template <typename T, typename H = std::hash<T>, typename E = std::equal_to<T>,
-          typename A = std::allocator<T>>
+template <typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T>>
 class unordered_set
-    : public detailv10::sherwood_v10_table<
-          T, T, H, detailv10::functor_storage<size_t, H>, E,
-          detailv10::functor_storage<bool, E>, A,
-          typename std::allocator_traits<A>::template rebind_alloc<
-              detailv10::sherwood_v10_entry<T, A>>,
-          typename std::allocator_traits<A>::template rebind_alloc<
-              typename std::allocator_traits<A>::template rebind_traits<
-                  detailv10::sherwood_v10_entry<T, A>>::pointer>> {
-    using Table = detailv10::sherwood_v10_table<
-        T, T, H, detailv10::functor_storage<size_t, H>, E,
-        detailv10::functor_storage<bool, E>, A,
-        typename std::allocator_traits<A>::template rebind_alloc<
-            detailv10::sherwood_v10_entry<T, A>>,
-        typename std::allocator_traits<A>::template rebind_alloc<
-            typename std::allocator_traits<A>::template rebind_traits<
-                detailv10::sherwood_v10_entry<T, A>>::pointer>>;
+    : public detailv10::sherwood_v10_table<T, T, H, detailv10::functor_storage<size_t, H>, E, detailv10::functor_storage<bool, E>, A,
+                                           typename std::allocator_traits<A>::template rebind_alloc<detailv10::sherwood_v10_entry<T, A>>,
+                                           typename std::allocator_traits<A>::template rebind_alloc<typename std::allocator_traits<
+                                               A>::template rebind_traits<detailv10::sherwood_v10_entry<T, A>>::pointer>> {
+    using Table = detailv10::sherwood_v10_table<T, T, H, detailv10::functor_storage<size_t, H>, E, detailv10::functor_storage<bool, E>, A,
+                                                typename std::allocator_traits<A>::template rebind_alloc<detailv10::sherwood_v10_entry<T, A>>,
+                                                typename std::allocator_traits<A>::template rebind_alloc<typename std::allocator_traits<
+                                                    A>::template rebind_traits<detailv10::sherwood_v10_entry<T, A>>::pointer>>;
 
 public:
     using key_type = T;

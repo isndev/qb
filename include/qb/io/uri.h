@@ -11,7 +11,7 @@
  * utility functions for character classification according to URI specifications.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -68,8 +68,7 @@ is_unreserved(int c) {
  */
 inline bool
 is_gen_delim(int c) {
-    return c == ':' || c == '/' || c == '?' || c == '#' || c == '[' || c == ']' ||
-           c == '@';
+    return c == ':' || c == '/' || c == '?' || c == '#' || c == '[' || c == ']' || c == '@';
 }
 
 /**
@@ -134,8 +133,7 @@ is_user_info_character(int c) {
  */
 inline bool
 is_authority_character(int c) {
-    return is_unreserved(c) || is_sub_delim(c) || c == '%' || c == '@' || c == ':' ||
-           c == '[' || c == ']';
+    return is_unreserved(c) || is_sub_delim(c) || c == '%' || c == '@' || c == ':' || c == '[' || c == ']';
 }
 
 /**
@@ -145,8 +143,7 @@ is_authority_character(int c) {
  */
 inline bool
 is_path_character(int c) {
-    return is_unreserved(c) || is_sub_delim(c) || c == '%' || c == '/' || c == ':' ||
-           c == '@';
+    return is_unreserved(c) || is_sub_delim(c) || c == '%' || c == '/' || c == ':' || c == '@';
 }
 
 /**
@@ -180,18 +177,17 @@ is_fragment_character(int c) {
  * of special characters and supports IPv4 and IPv6 addressing formats.
  */
 class uri {
-    int              _af = AF_INET; /**< Address family (AF_INET, AF_INET6, AF_UNIX) */
-    bool             _valid = true; /**< Whether the last parse() succeeded (see is_valid()). */
-    std::string      _source;       /**< Source string of the URI */
-    std::string_view _scheme;       /**< URI scheme (e.g., http, https, ftp) */
-    std::string_view _user_info;    /**< User information in the URI */
-    std::string_view _host;         /**< Host name or IP address in the URI */
-    std::string_view _port;         /**< Port number in the URI */
-    std::string_view _path;         /**< Path in the URI */
-    std::string_view _raw_queries;  /**< Raw query string in the URI */
-    std::string_view _fragment;     /**< Fragment in the URI */
-    qb::icase_unordered_map<std::vector<std::string>>
-        _queries; /**< Parsed and decoded query parameters */
+    int                                               _af    = AF_INET; /**< Address family (AF_INET, AF_INET6, AF_UNIX) */
+    bool                                              _valid = true;    /**< Whether the last parse() succeeded (see is_valid()). */
+    std::string                                       _source;          /**< Source string of the URI */
+    std::string_view                                  _scheme;          /**< URI scheme (e.g., http, https, ftp) */
+    std::string_view                                  _user_info;       /**< User information in the URI */
+    std::string_view                                  _host;            /**< Host name or IP address in the URI */
+    std::string_view                                  _port;            /**< Port number in the URI */
+    std::string_view                                  _path;            /**< Path in the URI */
+    std::string_view                                  _raw_queries;     /**< Raw query string in the URI */
+    std::string_view                                  _fragment;        /**< Fragment in the URI */
+    qb::icase_unordered_map<std::vector<std::string>> _queries;         /**< Parsed and decoded query parameters */
 
     constexpr static const char no_path[] = "/"; /**< Default path */
 
@@ -225,7 +221,7 @@ class uri {
      * @param begin Pointer to the beginning of the query string
      * @param end Pointer to the end of the query string
      */
-    void parse_query_parameters(const char* begin, const char* end);
+    void parse_query_parameters(const char *begin, const char *end);
 
 public:
     /**
@@ -279,17 +275,16 @@ public:
     static std::string
     decode(_IT begin, _IT end) {
         std::string out;
-        char c;
-        int  v1 = 0;
-        int  v2 = 0;
+        char        c;
+        int         v1 = 0;
+        int         v2 = 0;
 
         while (begin != end) {
             c = *(begin++);
             if (c == '%') {
                 if (std::distance(begin, end) < 2)
                     break;
-                if ((v1 = tbl[(unsigned char) *(begin++)]) < 0 ||
-                    (v2 = tbl[(unsigned char) *(begin++)]) < 0) {
+                if ((v1 = tbl[(unsigned char) *(begin++)]) < 0 || (v2 = tbl[(unsigned char) *(begin++)]) < 0) {
                     break;
                 }
                 c = static_cast<char>((v1 << 4) | v2);
@@ -477,8 +472,8 @@ public:
      */
     [[nodiscard]] uint16_t
     u_port() const {
-        const auto sv = port();
-        int p = 0;
+        const auto sv        = port();
+        int        p         = 0;
         const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), p);
         // Reject malformed or out-of-range ports rather than silently
         // truncating: e.g. "99999" would otherwise wrap to 34463.
@@ -535,8 +530,7 @@ public:
      */
     template <typename T>
     [[nodiscard]] std::string const &
-    query(T &&name, std::size_t const index = 0,
-          std::string const &not_found = "") const {
+    query(T &&name, std::size_t const index = 0, std::string const &not_found = "") const {
         const auto &it = this->_queries.find(std::forward<T>(name));
         if (it != this->_queries.cend() && index < it->second.size())
             return it->second[index];

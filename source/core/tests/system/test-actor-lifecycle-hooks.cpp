@@ -7,7 +7,7 @@
  * in the correct order and under various termination scenarios.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -192,37 +192,27 @@ verifyLifecycleOrder(const std::vector<std::string> &events) {
         // destructor
         if (actor == "normal_actor") {
             // Check for required events
-            auto constructor_it = std::find(actor_event_list.begin(),
-                                            actor_event_list.end(), "constructor");
-            auto init_it =
-                std::find(actor_event_list.begin(), actor_event_list.end(), "onInit");
-            auto cleanup_it = std::find(actor_event_list.begin(), actor_event_list.end(),
-                                        "cleanup_resources");
-            auto destructor_it = std::find(actor_event_list.begin(),
-                                           actor_event_list.end(), "destructor");
+            auto constructor_it = std::find(actor_event_list.begin(), actor_event_list.end(), "constructor");
+            auto init_it        = std::find(actor_event_list.begin(), actor_event_list.end(), "onInit");
+            auto cleanup_it     = std::find(actor_event_list.begin(), actor_event_list.end(), "cleanup_resources");
+            auto destructor_it  = std::find(actor_event_list.begin(), actor_event_list.end(), "destructor");
 
-            if (constructor_it == actor_event_list.end() ||
-                init_it == actor_event_list.end() ||
-                cleanup_it == actor_event_list.end() ||
-                destructor_it == actor_event_list.end()) {
+            if (constructor_it == actor_event_list.end() || init_it == actor_event_list.end() || cleanup_it == actor_event_list.end()
+                || destructor_it == actor_event_list.end()) {
                 std::cout << "Missing required events for normal_actor" << std::endl;
                 return false;
             }
 
             // Verify sequence
             // Constructor before onInit
-            if (std::distance(actor_event_list.begin(), constructor_it) >
-                std::distance(actor_event_list.begin(), init_it)) {
-                std::cout << "Constructor not before onInit for normal_actor"
-                          << std::endl;
+            if (std::distance(actor_event_list.begin(), constructor_it) > std::distance(actor_event_list.begin(), init_it)) {
+                std::cout << "Constructor not before onInit for normal_actor" << std::endl;
                 return false;
             }
 
             // Cleanup before destructor
-            if (std::distance(actor_event_list.begin(), cleanup_it) >
-                std::distance(actor_event_list.begin(), destructor_it)) {
-                std::cout << "Cleanup not before destructor for normal_actor"
-                          << std::endl;
+            if (std::distance(actor_event_list.begin(), cleanup_it) > std::distance(actor_event_list.begin(), destructor_it)) {
+                std::cout << "Cleanup not before destructor for normal_actor" << std::endl;
                 return false;
             }
         }
@@ -232,23 +222,19 @@ verifyLifecycleOrder(const std::vector<std::string> &events) {
 
         // Immediate kill actor should have an external_kill event
         if (actor == "immediate_kill_actor") {
-            auto external_kill_it = std::find(actor_event_list.begin(),
-                                              actor_event_list.end(), "external_kill");
+            auto external_kill_it = std::find(actor_event_list.begin(), actor_event_list.end(), "external_kill");
             if (external_kill_it == actor_event_list.end()) {
-                std::cout << "Missing external_kill event for immediate_kill_actor"
-                          << std::endl;
+                std::cout << "Missing external_kill event for immediate_kill_actor" << std::endl;
                 return false;
             }
         }
 
         // Delayed stop actor should have a self_kill event
         if (actor == "delayed_stop_actor") {
-            auto self_kill_it =
-                std::find(actor_event_list.begin(), actor_event_list.end(), "self_kill");
+            auto self_kill_it = std::find(actor_event_list.begin(), actor_event_list.end(), "self_kill");
 
             if (self_kill_it == actor_event_list.end()) {
-                std::cout << "Missing self_kill event for delayed_stop_actor"
-                          << std::endl;
+                std::cout << "Missing self_kill event for delayed_stop_actor" << std::endl;
                 return false;
             }
         }

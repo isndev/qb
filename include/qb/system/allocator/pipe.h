@@ -8,7 +8,7 @@
  * data.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - C++ Actor Framework (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - C++ Actor Framework (cpp.actor)
  * @ingroup Container
  */
 

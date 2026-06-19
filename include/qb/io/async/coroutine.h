@@ -178,7 +178,7 @@
  * @endcode
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -217,22 +217,22 @@
  * (stream, client moved to coroutine/old/ - disabled until redesign)
  */
 
-#include "coroutine/scheduler.h"   // Must be first - defines schedule_via_current
-#include "coroutine/task.h"        // Needs schedule_via_current for await_suspend
-#include "coroutine/awaiter.h"     // Needs scheduler
-#include "coroutine/utils.h"       // Needs awaiters
-#include "coroutine/mixin.h"       // Optional CRTP mixin
+#include "coroutine/scheduler.h" // Must be first - defines schedule_via_current
+#include "coroutine/task.h"      // Needs schedule_via_current for await_suspend
+#include "coroutine/awaiter.h"   // Needs scheduler
+#include "coroutine/utils.h"     // Needs awaiters
+#include "coroutine/mixin.h"     // Optional CRTP mixin
 
 // Combinators and utilities
-#include "coroutine/combinators.h" // when_all, when_any, race, timeout
-#include "coroutine/cancellation.h"// cancellation_token, cancellable operations
-#include "coroutine/channel.h"     // channel<T> for coroutine communication
-#include "coroutine/sync.h"        // semaphore, async_mutex, barrier
-#include "coroutine/retry.h"       // with_retry, retry policies
-#include "coroutine/scope.h"       // coroutine_scope, lifetime management
-#include "coroutine/generator.h"   // generator<T> with co_yield
-#include "coroutine/stream.h"      // async_stream<T> transformations
-#include "coroutine/shared_task.h" // shared_task<T> — multi-consumer result
+#include "coroutine/combinators.h"  // when_all, when_any, race, timeout
+#include "coroutine/cancellation.h" // cancellation_token, cancellable operations
+#include "coroutine/channel.h"      // channel<T> for coroutine communication
+#include "coroutine/sync.h"         // semaphore, async_mutex, barrier
+#include "coroutine/retry.h"        // with_retry, retry policies
+#include "coroutine/scope.h"        // coroutine_scope, lifetime management
+#include "coroutine/generator.h"    // generator<T> with co_yield
+#include "coroutine/stream.h"       // async_stream<T> transformations
+#include "coroutine/shared_task.h"  // shared_task<T> — multi-consumer result
 
 /**
  * @namespace qb::io::async

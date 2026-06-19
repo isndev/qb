@@ -7,7 +7,7 @@
  * and continue operation with the correct internal state.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -201,8 +201,7 @@ public:
         to(_stateful_actor_id).push<StateUpdateEvent>("test", 42);
 
         // Create checkpoint after 50ms
-        qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<CheckpointEvent>(); }, 50ms);
+        qb::io::async::callback([this]() { to(_stateful_actor_id).push<CheckpointEvent>(); }, 50ms);
 
         // Query state after 100ms
         qb::io::async::callback(
@@ -213,26 +212,19 @@ public:
             100ms);
 
         // Simulate failure after 150ms
-        qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<SimulateFailureEvent>(); }, 150ms);
+        qb::io::async::callback([this]() { to(_stateful_actor_id).push<SimulateFailureEvent>(); }, 150ms);
 
         // Try query after failure (should be ignored)
-        qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<StateQueryEvent>("test", id()); },
-            200ms);
+        qb::io::async::callback([this]() { to(_stateful_actor_id).push<StateQueryEvent>("test", id()); }, 200ms);
 
         // Restore state after 250ms
-        qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<RestoreStateEvent>(); }, 250ms);
+        qb::io::async::callback([this]() { to(_stateful_actor_id).push<RestoreStateEvent>(); }, 250ms);
 
         // Verify state after 300ms
-        qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<VerifyStateEvent>(); }, 300ms);
+        qb::io::async::callback([this]() { to(_stateful_actor_id).push<VerifyStateEvent>(); }, 300ms);
 
         // Query state after recovery
-        qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<StateQueryEvent>("test", id()); },
-            350ms);
+        qb::io::async::callback([this]() { to(_stateful_actor_id).push<StateQueryEvent>("test", id()); }, 350ms);
 
         // Complete test
         qb::io::async::callback(

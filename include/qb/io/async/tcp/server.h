@@ -8,7 +8,7 @@
  * sessions.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -48,8 +48,7 @@ template <typename _Derived, typename _Session, typename _Prot>
 class server
     : public acceptor<server<_Derived, _Session, _Prot>, _Prot>
     , public io_handler<_Derived, _Session> {
-    using acceptor_type = acceptor<server<_Derived, _Session, _Prot>,
-                                   _Prot>; /**< Type alias for the acceptor base */
+    using acceptor_type = acceptor<server<_Derived, _Session, _Prot>, _Prot>; /**< Type alias for the acceptor base */
 
 public:
     /**
@@ -67,8 +66,7 @@ public:
      */
     void
     on(typename acceptor_type::accepted_socket_type &&new_io) {
-        this->registerSession(
-            std::forward<typename acceptor_type::accepted_socket_type>(new_io));
+        this->registerSession(std::forward<typename acceptor_type::accepted_socket_type>(new_io));
     }
 
     /**

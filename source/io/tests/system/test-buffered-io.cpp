@@ -476,8 +476,7 @@ TEST(BufferedIO, AccessorsCountersAndTypedDisconnectTrackLifecycleState) {
 
     session.disconnect(qb::io::async::event::disconnect_reason::user_initiated);
     EXPECT_FALSE(session.is_connected());
-    EXPECT_EQ(session.disconnection_reason(),
-              static_cast<int>(qb::io::async::event::disconnect_reason::user_initiated));
+    EXPECT_EQ(session.disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::user_initiated));
 
     session.dispose();
     EXPECT_EQ(session.disconnected_events, 1u);
@@ -808,7 +807,7 @@ TEST(ProtocolBase, SizeHeaderHandlesOneAndFourByteHeadersAcrossPartialFrames) {
         ProtocolProbe                     probe;
         SizeHeaderProtocol<std::uint32_t> protocol{probe};
         const auto                        header = SizeHeaderProtocol<std::uint32_t>::Header(4u);
-        const std::string_view header_view{reinterpret_cast<char const *>(&header), sizeof(header)};
+        const std::string_view            header_view{reinterpret_cast<char const *>(&header), sizeof(header)};
 
         probe.append(header_view.substr(0u, 2u));
         EXPECT_EQ(protocol.getMessageSize(), 0u);

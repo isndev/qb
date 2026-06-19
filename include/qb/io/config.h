@@ -11,7 +11,7 @@
  * header-only implementation, and compatibility settings for different platforms.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -118,8 +118,7 @@
 #endif
 // clang-format on
 
-#if defined(UE_BUILD_DEBUG) || defined(UE_BUILD_DEVELOPMENT) || \
-    defined(UE_BUILD_TEST) || defined(UE_BUILD_SHIPPING) || defined(UE_SERVER)
+#if defined(UE_BUILD_DEBUG) || defined(UE_BUILD_DEVELOPMENT) || defined(UE_BUILD_TEST) || defined(UE_BUILD_SHIPPING) || defined(UE_SERVER)
 #define QB_INSIDE_UNREAL 1
 #endif // Unreal Engine 4 integration detection
 
@@ -216,7 +215,7 @@
  * @note Set to 1GB which is safely below UINT_MAX (4GB) while allowing large transfers.
  * @ingroup IO
  */
-#define QB_MAX_IO_SIZE (static_cast<std::size_t>(1) << 30)  // 1GB
+#define QB_MAX_IO_SIZE (static_cast<std::size_t>(1) << 30) // 1GB
 
 /**
  * @def QB_DEFAULT_MAX_SESSIONS
@@ -284,8 +283,8 @@
 #if QB__HAS_UDS
 #include <afunix.h>
 #endif
-using socket_type = SOCKET;  // Modern C++: using alias
-typedef int socklen_t;       // Note: socklen_t is a POSIX type, kept for compatibility
+using socket_type = SOCKET; // Modern C++: using alias
+typedef int socklen_t;      // Note: socklen_t is a POSIX type, kept for compatibility
 #define FD_TO_SOCKET(fd) _get_osfhandle(fd)
 #define OPEN_FD_FROM_SOCKET(sock) _open_osfhandle(sock, 0)
 #define poll WSAPoll
@@ -366,7 +365,7 @@ typedef int socklen_t;       // Note: socklen_t is a POSIX type, kept for compat
  * @details int on Unix systems, SOCKET (unsigned integer) on Windows
  * @ingroup IO
  */
-using socket_type = int;  // Modern C++: using alias
+using socket_type = int; // Modern C++: using alias
 /**
  * @def FD_TO_SOCKET(fd)
  * @brief Converts a file descriptor to a socket handle

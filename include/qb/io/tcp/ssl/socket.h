@@ -7,7 +7,7 @@
  * Requires OpenSSL to be linked and `QB_HAS_SSL` to be defined.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -53,13 +53,13 @@ bool attach_socket(SSL *ssl, ::socket_type native_socket);
  * @details Contains common fields extracted from an X509 certificate.
  */
 struct Certificate {
-    std::string subject; /**< The subject name of the certificate. */
-    std::string issuer;  /**< The issuer name of the certificate. */
-    int64_t     version; /**< The version number of the certificate. */
-    std::string serial_number; /**< The serial number of the certificate as a hex string. */
-    int64_t     not_before;    /**< Certificate validity start date (Unix timestamp). */
-    int64_t     not_after;     /**< Certificate validity end date (Unix timestamp). */
-    std::string signature_algorithm; /**< The signature algorithm used in the certificate. */
+    std::string              subject;                   /**< The subject name of the certificate. */
+    std::string              issuer;                    /**< The issuer name of the certificate. */
+    int64_t                  version;                   /**< The version number of the certificate. */
+    std::string              serial_number;             /**< The serial number of the certificate as a hex string. */
+    int64_t                  not_before;                /**< Certificate validity start date (Unix timestamp). */
+    int64_t                  not_after;                 /**< Certificate validity end date (Unix timestamp). */
+    std::string              signature_algorithm;       /**< The signature algorithm used in the certificate. */
     std::vector<std::string> subject_alternative_names; /**< List of Subject Alternative Names (DNS, IP, etc.). */
 };
 
@@ -91,8 +91,7 @@ SSL_CTX *create_client_context(const SSL_METHOD *method);
  * @return Pointer to the newly created `SSL_CTX` on success, `nullptr` on failure (e.g., if files cannot be loaded).
  * @note The caller is responsible for freeing the returned `SSL_CTX` using `SSL_CTX_free()`.
  */
-SSL_CTX *create_server_context(const SSL_METHOD *method, std::filesystem::path cert_path,
-                               std::filesystem::path key_path);
+SSL_CTX *create_server_context(const SSL_METHOD *method, std::filesystem::path cert_path, std::filesystem::path key_path);
 
 /**
  * @brief Load CA certificates from a file for peer verification.
@@ -170,7 +169,7 @@ bool configure_client_certificate(SSL_CTX *ctx, const std::string &client_cert_p
  * @param protocols A vector of protocol strings (e.g., {"h2", "http/1.1"}).
  * @return true on success, false on failure.
  */
-bool set_alpn_protos_client(SSL_CTX *ctx, const std::vector<std::string>& protocols);
+bool set_alpn_protos_client(SSL_CTX *ctx, const std::vector<std::string> &protocols);
 
 /**
  * @brief Set the ALPN selection callback for a server SSL_CTX.
@@ -271,7 +270,7 @@ bool set_keylog_callback(SSL_CTX *ctx, SSL_CTX_keylog_cb_func callback);
  * @return true on success, false on failure (e.g., file not found, invalid format).
  * @note Important for PFS with DHE cipher suites (TLS 1.2 and earlier).
  */
-bool configure_dh_parameters_server(SSL_CTX* ctx, const std::string& dh_param_file_path);
+bool configure_dh_parameters_server(SSL_CTX *ctx, const std::string &dh_param_file_path);
 
 /**
  * @brief Configure preferred ECDH curves for a server SSL_CTX.
@@ -282,7 +281,7 @@ bool configure_dh_parameters_server(SSL_CTX* ctx, const std::string& dh_param_fi
  * @return true on success, false on failure to set the curves.
  * @note Important for PFS with ECDHE cipher suites. Using `SSL_CTX_set_ecdh_auto(ctx, 1)` is also an option for some OpenSSL versions.
  */
-bool configure_ecdh_curves_server(SSL_CTX* ctx, const std::string& curve_names_list);
+bool configure_ecdh_curves_server(SSL_CTX *ctx, const std::string &curve_names_list);
 
 /**
  * @struct Session
@@ -296,7 +295,10 @@ struct Session {
     // Add any other metadata if needed, e.g., creation time, peer identifier
 
     /** @brief Checks if the session handle is valid (not null). */
-    [[nodiscard]] bool is_valid() const { return _session_handle != nullptr; }
+    [[nodiscard]] bool
+    is_valid() const {
+        return _session_handle != nullptr;
+    }
 };
 
 /**
@@ -304,7 +306,7 @@ struct Session {
  * @ingroup SSL
  * @param session The qb::io::ssl::Session object to free. The internal handle will be nullified.
  */
-void free_session(Session& session);
+void free_session(Session &session);
 
 /**
  * @brief Enable server-side support for TLS 1.3 Post-Handshake Authentication (PHA).
@@ -315,7 +317,7 @@ void free_session(Session& session);
  *       the actual authentication request, typically via an info callback or by checking
  *       SSL_get_post_handshake_auth().
  */
-bool enable_post_handshake_auth_server(SSL_CTX* ctx);
+bool enable_post_handshake_auth_server(SSL_CTX *ctx);
 
 } // namespace qb::io::ssl
 namespace qb::io::tcp::ssl {
@@ -333,15 +335,16 @@ namespace qb::io::tcp::ssl {
  * encrypts/decrypts data for `read` and `write` operations.
  */
 class QB_API socket : public tcp::socket {
-    std::unique_ptr<SSL, void (*)(SSL *)> _ssl_handle; /**< Unique pointer managing the OpenSSL `SSL` object. */
-    bool _connected; /**< Flag indicating if the SSL handshake has successfully completed. */
-    std::string _pending_sni_hostname; /**< Desired SNI hostname to apply to the next/client SSL handle. */
-    std::vector<std::string> _pending_alpn_protocols; /**< Desired ALPN offers to apply before handshake starts. */
-    bool _verify_peer = true; /**< Secure-by-default: verify the server certificate chain + hostname on the auto-created client context. Cleared by set_insecure(). */
+    std::unique_ptr<SSL, void (*)(SSL *)> _ssl_handle;             /**< Unique pointer managing the OpenSSL `SSL` object. */
+    bool                                  _connected;              /**< Flag indicating if the SSL handshake has successfully completed. */
+    std::string                           _pending_sni_hostname;   /**< Desired SNI hostname to apply to the next/client SSL handle. */
+    std::vector<std::string>              _pending_alpn_protocols; /**< Desired ALPN offers to apply before handshake starts. */
+    bool _verify_peer = true; /**< Secure-by-default: verify the server certificate chain + hostname on the auto-created client context. Cleared
+                                 by set_insecure(). */
 
     /**
      * @brief Performs the SSL handshake check after a non-blocking connect.
-     * @return 0 if handshake is complete or still in progress without error, 
+     * @return 0 if handshake is complete or still in progress without error,
      *         a non-zero SSL error code (e.g., `SSL_ERROR_WANT_READ`, `SSL_ERROR_WANT_WRITE`) if it needs more I/O,
      *         or a negative value for other errors.
      * @private
@@ -358,8 +361,7 @@ class QB_API socket : public tcp::socket {
      */
     int connect_in(int af, std::string const &host, uint16_t port) noexcept;
 
-    int connect_in(int af, std::string const &host, uint16_t port,
-                   qb::duration wtimeout) noexcept;
+    int connect_in(int af, std::string const &host, uint16_t port, qb::duration wtimeout) noexcept;
 
     /**
      * @brief Internal method to initiate a non-blocking SSL connection to an address with a specific address family.
@@ -380,7 +382,10 @@ class QB_API socket : public tcp::socket {
 
 public:
     /** @brief Indicates that this socket implementation is secure */
-    constexpr static bool is_secure() noexcept { return true; }
+    constexpr static bool
+    is_secure() noexcept {
+        return true;
+    }
     /**
      * @brief Destructor.
      * @details Ensures the SSL connection is shut down and the `SSL` object is freed if managed.
@@ -441,8 +446,7 @@ public:
     /**
      * @brief Like `connect(endpoint, hostname)` but bounds the underlying TCP connect phase.
      */
-    int connect(endpoint const &ep, std::string const &hostname,
-                qb::duration wtimeout) noexcept;
+    int connect(endpoint const &ep, std::string const &hostname, qb::duration wtimeout) noexcept;
 
     /**
      * @brief Establish a blocking SSL/TLS connection to a remote endpoint specified by a URI.
@@ -603,7 +607,7 @@ public:
      * @return The selected protocol string (e.g., "h2", "http/1.1"), or empty if ALPN was not used or no protocol was selected.
      */
     std::string get_alpn_selected_protocol() const noexcept;
-    
+
     /**
      * @brief Get the last OpenSSL error string for the current SSL handle.
      * @return A string describing the last error on the OpenSSL error queue for this SSL connection.
@@ -660,7 +664,7 @@ public:
      * @return true if the session was successfully set on the SSL handle, false otherwise (e.g., no SSL handle, invalid session).
      * @note Setting a session does not guarantee resumption; the server must also agree.
      */
-    bool set_session(qb::io::ssl::Session& session) noexcept;
+    bool set_session(qb::io::ssl::Session &session) noexcept;
 
     /**
      * @brief Request Post-Handshake Authentication from the server (client-side, TLS 1.3+).
@@ -682,7 +686,7 @@ public:
      * @param hostname The hostname to use for SNI.
      * @return true if SNI was set successfully and an SSL handle exists, false otherwise.
      */
-    bool set_sni_hostname(const std::string& hostname) noexcept;
+    bool set_sni_hostname(const std::string &hostname) noexcept;
 
     /**
      * @brief Set the ALPN protocols to offer for this specific SSL connection (client-side).
@@ -693,7 +697,7 @@ public:
      * @param protocols A vector of protocol strings (e.g., {"h2", "http/1.1"}).
      * @return true if ALPN protocols were set successfully and an SSL handle exists, false otherwise.
      */
-    bool set_alpn_protocols(const std::vector<std::string>& protocols) noexcept;
+    bool set_alpn_protocols(const std::vector<std::string> &protocols) noexcept;
 
     /**
      * @brief Set a custom X.509 certificate verification callback and mode for this SSL connection.
@@ -738,7 +742,8 @@ public:
      */
     [[nodiscard]] bool verify_peer() const noexcept;
 
-    inline int do_handshake() noexcept {
+    inline int
+    do_handshake() noexcept {
         return handCheck();
     }
 

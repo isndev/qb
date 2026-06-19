@@ -7,7 +7,7 @@
  * the framework properly cleans up all resources when actors are terminated.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -135,8 +135,7 @@ public:
     // Release a specific resource
     void
     on(const ReleaseResourceEvent &event) {
-        if (event.resource_id >= 0 &&
-            static_cast<size_t>(event.resource_id) < _resources.size()) {
+        if (event.resource_id >= 0 && static_cast<size_t>(event.resource_id) < _resources.size()) {
             if (_resources[event.resource_id]) {
                 _resources[event.resource_id].reset();
             }

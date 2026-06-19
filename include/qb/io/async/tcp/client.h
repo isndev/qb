@@ -8,7 +8,7 @@
  * standalone clients (for outgoing connections).
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -51,22 +51,20 @@ class client
     friend base_t;
 
 public:
-    using base_io_t = io<_Derived>; /**< Base I/O type */
-    using transport_io_type =
-        typename _Transport::transport_io_type; /**< Transport I/O type */
-    using _Transport::in;        /**< Import the in method from the transport */
-    using _Transport::out;       /**< Import the out method from the transport */
-    using _Transport::transport; /**< Import the transport method from the transport */
-    using base_t::publish;       /**< Import the publish method from the base class */
+    using base_io_t         = io<_Derived>;                           /**< Base I/O type */
+    using transport_io_type = typename _Transport::transport_io_type; /**< Transport I/O type */
+    using _Transport::in;                                             /**< Import the in method from the transport */
+    using _Transport::out;                                            /**< Import the out method from the transport */
+    using _Transport::transport;                                      /**< Import the transport method from the transport */
+    using base_t::publish;                                            /**< Import the publish method from the base class */
 
 protected:
     const uuid _uuid;   /**< Unique identifier for this client */
     _Server   &_server; /**< Reference to the associated server */
 
 public:
-    using IOServer = _Server; /**< Type alias for the server type */
-    constexpr static const bool has_server =
-        true; /**< Flag indicating server association */
+    using IOServer                         = _Server; /**< Type alias for the server type */
+    constexpr static const bool has_server = true;    /**< Flag indicating server association */
 
     /**
      * @brief Default constructor (deleted)
@@ -87,8 +85,7 @@ public:
         , _server(server) {
         if constexpr (qb::has_type_Protocol<_Derived>) {
             if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
-                this->template switch_protocol<typename _Derived::Protocol>(
-                    static_cast<_Derived &>(*this));
+                this->template switch_protocol<typename _Derived::Protocol>(static_cast<_Derived &>(*this));
             }
         }
     }
@@ -184,16 +181,17 @@ class client<_Derived, _Transport, void>
     , _Transport {
     using base_t = io<_Derived>;
     friend base_t;
+
 protected:
-    const uuid _uuid;   /**< Unique identifier for this client */
+    const uuid _uuid; /**< Unique identifier for this client */
+
 public:
-    using base_io_t = io<_Derived>; /**< Base I/O type */
-    using transport_io_type =
-        typename _Transport::transport_io_type; /**< Transport I/O type */
-    using _Transport::in;        /**< Import the in method from the transport */
-    using _Transport::out;       /**< Import the out method from the transport */
-    using _Transport::transport; /**< Import the transport method from the transport */
-    using base_t::publish;       /**< Import the publish method from the base class */
+    using base_io_t         = io<_Derived>;                           /**< Base I/O type */
+    using transport_io_type = typename _Transport::transport_io_type; /**< Transport I/O type */
+    using _Transport::in;                                             /**< Import the in method from the transport */
+    using _Transport::out;                                            /**< Import the out method from the transport */
+    using _Transport::transport;                                      /**< Import the transport method from the transport */
+    using base_t::publish;                                            /**< Import the publish method from the base class */
 
 public:
     /**
@@ -206,8 +204,7 @@ public:
     client() noexcept {
         if constexpr (qb::has_type_Protocol<_Derived>) {
             if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
-                this->template switch_protocol<typename _Derived::Protocol>(
-                    static_cast<_Derived &>(*this));
+                this->template switch_protocol<typename _Derived::Protocol>(static_cast<_Derived &>(*this));
             }
         }
     }

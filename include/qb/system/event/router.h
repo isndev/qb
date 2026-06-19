@@ -11,7 +11,7 @@
  * - Multiple-Event Multiple-Handler (MEMH) for fully dynamic event routing
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -254,8 +254,8 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
     using Trampoline = void (*)(void *, _RawEvent &) noexcept;
 
     struct Entry {
-        void      *handler    = nullptr;
-        Trampoline dispatch   = nullptr;
+        void      *handler  = nullptr;
+        Trampoline dispatch = nullptr;
     };
 
     /**
@@ -278,7 +278,7 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
     qb::unordered_map<_HandlerId, Entry> _subscribed_handlers;
 
 public:
-    semh() = default;
+    semh()           = default;
     ~semh() noexcept = default;
 
     /**
@@ -303,8 +303,8 @@ public:
                     // `[[assume]]`). The load is materialised into locals so
                     // the assumption predicate is side-effect-free (Clang's
                     // `-Wassume` requires this).
-                    const auto dispatch = it.second.dispatch;
-                    auto *const target  = it.second.handler;
+                    const auto  dispatch = it.second.dispatch;
+                    auto *const target   = it.second.handler;
                     QB_ASSUME(dispatch != nullptr);
                     dispatch(target, event);
                 }
@@ -318,8 +318,8 @@ public:
 
         const auto &it = _subscribed_handlers.find(event.getDestination());
         if (likely(it != _subscribed_handlers.cend())) {
-            const auto dispatch = it->second.dispatch;
-            auto *const target  = it->second.handler;
+            const auto  dispatch = it->second.dispatch;
+            auto *const target   = it->second.handler;
             QB_ASSUME(dispatch != nullptr);
             dispatch(target, event);
         }
@@ -337,8 +337,7 @@ public:
     template <typename _Handler>
     void
     subscribe(_Handler &handler) noexcept {
-        _subscribed_handlers[handler.id()] =
-            Entry{static_cast<void *>(&handler), &dispatch_trampoline<_Handler>};
+        _subscribed_handlers[handler.id()] = Entry{static_cast<void *>(&handler), &dispatch_trampoline<_Handler>};
     }
 
     /**
@@ -414,8 +413,8 @@ private:
         }
     };
 
-    _Handler                                                        &_handler;
-    qb::unordered_map<_EventId, std::unique_ptr<IEventResolver>>     _registered_events;
+    _Handler                                                    &_handler;
+    qb::unordered_map<_EventId, std::unique_ptr<IEventResolver>> _registered_events;
 
 public:
     mesh() = delete;
@@ -451,9 +450,7 @@ public:
     template <typename _Event>
     void
     subscribe() {
-        _registered_events.try_emplace(
-            _RawEvent::template type_to_id<_Event>(),
-            std::make_unique<EventResolver<_Event>>());
+        _registered_events.try_emplace(_RawEvent::template type_to_id<_Event>(), std::make_unique<EventResolver<_Event>>());
     }
 
     /**
@@ -559,7 +556,7 @@ private:
     qb::unordered_map<_EventId, std::unique_ptr<IEventResolver>> _registered_events;
 
 public:
-    memh() = default;
+    memh()           = default;
     ~memh() noexcept = default;
 
     /**
@@ -594,13 +591,11 @@ public:
     template <typename _Event>
     void
     subscribe(_Handler &handler) {
-        const auto &it =
-            _registered_events.find(_RawEvent::template type_to_id<_Event>());
+        const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
             auto resolver = std::make_unique<EventResolver<_Event>>();
             resolver->subscribe(handler);
-            _registered_events.emplace(
-                _RawEvent::template type_to_id<_Event>(), std::move(resolver));
+            _registered_events.emplace(_RawEvent::template type_to_id<_Event>(), std::move(resolver));
         } else {
             dynamic_cast<EventResolver<_Event> *>(it->second.get())->subscribe(handler);
         }
@@ -615,8 +610,7 @@ public:
     template <typename _Event>
     void
     unsubscribe(_Handler &handler) const {
-        auto const &it =
-            _registered_events.find(_RawEvent::template type_to_id<_Event>());
+        auto const &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it != _registered_events.cend())
             it->second->unsubscribe(handler.id());
     }
@@ -779,13 +773,12 @@ public:
     struct SafeDispose {
         SafeDispose() {
             std::lock_guard lk(_disposers_mtx);
-            _disposers.try_emplace(_RawEvent::template type_to_id<T>(),
-                                   std::make_unique<Disposer<T>>());
+            _disposers.try_emplace(_RawEvent::template type_to_id<T>(), std::make_unique<Disposer<T>>());
         }
         ~SafeDispose() = default;
     };
 
-    memh() = default;
+    memh()           = default;
     ~memh() noexcept = default;
 
     /**
@@ -821,8 +814,7 @@ public:
                 // rare unhandled non-trivially-destructible type) instead of
                 // taking the core down.
                 std::lock_guard lk(_disposers_mtx);
-                if (const auto dit = _disposers.find(event.getID());
-                    dit != _disposers.cend())
+                if (const auto dit = _disposers.find(event.getID()); dit != _disposers.cend())
                     dit->second->dispose(&event);
             }
         }
@@ -840,13 +832,11 @@ public:
     subscribe(_Handler &handler) {
         static const SafeDispose<_Event> o{};
 
-        const auto &it =
-            _registered_events.find(_RawEvent::template type_to_id<_Event>());
+        const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
             auto resolver = std::make_unique<EventResolver<_Event>>();
             resolver->subscribe(handler);
-            _registered_events.emplace(
-                _RawEvent::template type_to_id<_Event>(), std::move(resolver));
+            _registered_events.emplace(_RawEvent::template type_to_id<_Event>(), std::move(resolver));
         } else {
             dynamic_cast<EventResolver<_Event> *>(it->second.get())->subscribe(handler);
         }
@@ -862,8 +852,7 @@ public:
     template <typename _Event, typename _Handler>
     void
     unsubscribe(_Handler const &handler) const {
-        auto const &it =
-            _registered_events.find(_RawEvent::template type_to_id<_Event>());
+        auto const &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it != _registered_events.cend())
             it->second->unsubscribe(handler.id());
     }

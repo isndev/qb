@@ -8,7 +8,7 @@
  * and minimal synchronization overhead.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -49,15 +49,13 @@ namespace internal {
  */
 template <typename T>
 class ringbuffer : public nocopy {
-    static_assert(std::is_trivially_copyable_v<T>,
-                  "spsc::ringbuffer<T> requires T to be trivially copyable "
-                  "because bulk enqueue/dequeue use std::memcpy");
-    using size_t = std::size_t;
-    constexpr static const int padding_size =
-        QB_LOCKFREE_CACHELINE_BYTES - sizeof(size_t);
-    std::atomic<size_t> write_index_;
-    char padding1[padding_size]{}; /* force read_index and write_index to different cache
-                                      lines */
+    static_assert(std::is_trivially_copyable_v<T>, "spsc::ringbuffer<T> requires T to be trivially copyable "
+                                                   "because bulk enqueue/dequeue use std::memcpy");
+    using size_t                            = std::size_t;
+    constexpr static const int padding_size = QB_LOCKFREE_CACHELINE_BYTES - sizeof(size_t);
+    std::atomic<size_t>        write_index_;
+    char                       padding1[padding_size]{}; /* force read_index and write_index to different cache
+                                                            lines */
     std::atomic<size_t> read_index_;
 
 protected:
@@ -150,9 +148,8 @@ protected:
      */
     bool
     enqueue(T const &t, T *buffer, size_t const max_size) {
-        const size_t write_index = write_index_.load(
-            std::memory_order_relaxed); // only written from enqueue thread
-        const size_t next = next_index(write_index, max_size);
+        const size_t write_index = write_index_.load(std::memory_order_relaxed); // only written from enqueue thread
+        const size_t next        = next_index(write_index, max_size);
 
         if (next == read_index_.load(std::memory_order_acquire))
             return false; /* ringbuffer is full */
@@ -176,12 +173,10 @@ protected:
      */
     template <bool _All>
     size_t
-    enqueue(const T *input_buffer, size_t input_count, T *internal_buffer,
-            size_t const max_size) {
-        const size_t write_index = write_index_.load(
-            std::memory_order_relaxed); // only written from push thread
-        const size_t read_index = read_index_.load(std::memory_order_acquire);
-        const size_t avail      = write_available(write_index, read_index, max_size);
+    enqueue(const T *input_buffer, size_t input_count, T *internal_buffer, size_t const max_size) {
+        const size_t write_index = write_index_.load(std::memory_order_relaxed); // only written from push thread
+        const size_t read_index  = read_index_.load(std::memory_order_acquire);
+        const size_t avail       = write_available(write_index, read_index, max_size);
 
         if constexpr (_All) {
             if (avail < input_count)
@@ -209,8 +204,7 @@ protected:
         } else {
             // std::uninitialized_copy(input_buffer, input_buffer + input_count,
             //                         internal_buffer + write_index);
-            std::memcpy(internal_buffer + write_index, input_buffer,
-                        input_count * sizeof(T));
+            std::memcpy(internal_buffer + write_index, input_buffer, input_count * sizeof(T));
 
             if (new_write_index == max_size)
                 new_write_index = 0;
@@ -230,11 +224,9 @@ protected:
      * @return Number of elements successfully dequeued
      */
     size_t
-    dequeue(T *output_buffer, size_t output_count, T *internal_buffer,
-            size_t const max_size) {
+    dequeue(T *output_buffer, size_t output_count, T *internal_buffer, size_t const max_size) {
         const size_t write_index = write_index_.load(std::memory_order_acquire);
-        const size_t read_index =
-            read_index_.load(std::memory_order_relaxed); // only written from pop thread
+        const size_t read_index  = read_index_.load(std::memory_order_relaxed); // only written from pop thread
 
         const size_t avail = read_available(write_index, read_index, max_size);
 
@@ -261,8 +253,7 @@ protected:
         } else {
             // std::uninitialized_copy(internal_buffer + read_index, internal_buffer +
             // read_index + output_count, output_buffer);
-            std::memcpy(output_buffer, internal_buffer + read_index,
-                        output_count * sizeof(T));
+            std::memcpy(output_buffer, internal_buffer + read_index, output_count * sizeof(T));
 
             if (new_read_index == max_size)
                 new_read_index = 0;
@@ -285,8 +276,7 @@ protected:
     size_t
     consume_all(_Func const &functor, T *internal_buffer, size_t max_size) {
         const size_t write_index = write_index_.load(std::memory_order_acquire);
-        const size_t read_index =
-            read_index_.load(std::memory_order_relaxed); // only written from pop thread
+        const size_t read_index  = read_index_.load(std::memory_order_relaxed); // only written from pop thread
 
         const size_t avail = read_available(write_index, read_index, max_size);
 
@@ -325,8 +315,7 @@ protected:
      */
     const T &
     front(const T *internal_buffer) const {
-        const size_t read_index =
-            read_index_.load(std::memory_order_relaxed); // only written from pop thread
+        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
         return *(internal_buffer + read_index);
     }
 
@@ -338,8 +327,7 @@ protected:
      */
     T &
     front(T *internal_buffer) {
-        const size_t read_index =
-            read_index_.load(std::memory_order_relaxed); // only written from pop thread
+        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
         return *(internal_buffer + read_index);
     }
 
@@ -351,8 +339,7 @@ public:
      */
     [[nodiscard]] bool
     empty() const noexcept {
-        return write_index_.load(std::memory_order_relaxed)
-            == read_index_.load(std::memory_order_relaxed);
+        return write_index_.load(std::memory_order_relaxed) == read_index_.load(std::memory_order_relaxed);
     }
 };
 
@@ -369,7 +356,7 @@ public:
  */
 template <typename T, size_t _MaxSize>
 class ringbuffer : public internal::ringbuffer<T> {
-    using size_t = std::size_t;
+    using size_t                     = std::size_t;
     constexpr static size_t max_size = _MaxSize + 1;
     std::array<T, max_size> array_;
 
@@ -407,8 +394,7 @@ public:
     template <bool _All = true>
     inline size_t
     enqueue(T const *t, size_t size) noexcept {
-        return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.data(),
-                                                               max_size);
+        return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.data(), max_size);
     }
 
     /**
@@ -435,8 +421,7 @@ public:
     template <typename Func>
     inline size_t
     dequeue(Func const &func, T *ret, size_t size) noexcept {
-        const size_t nb_consume =
-            internal::ringbuffer<T>::dequeue(ret, size, array_.data(), max_size);
+        const size_t nb_consume = internal::ringbuffer<T>::dequeue(ret, size, array_.data(), max_size);
         if (nb_consume)
             func(ret, nb_consume);
         return nb_consume;
@@ -467,11 +452,11 @@ public:
 template <typename T>
 class ringbuffer<T, 0> : public internal::ringbuffer<T> {
     using size_t = std::size_t;
-    const size_t          max_size_;
+    const size_t max_size_;
     // unique_ptr<T[]> (array form): the buffer is allocated with new T[...],
     // so it must be released with delete[]. A scalar unique_ptr<T> would call
     // scalar delete on an array allocation (alloc/dealloc-size mismatch, UB).
-    std::unique_ptr<T[]>  array_;
+    std::unique_ptr<T[]> array_;
 
 public:
     /**
@@ -516,8 +501,7 @@ public:
     template <bool _All = true>
     inline size_t
     enqueue(T const *t, size_t size) noexcept {
-        return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.get(),
-                                                               max_size_);
+        return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.get(), max_size_);
     }
 
     /**
@@ -544,8 +528,7 @@ public:
     template <typename Func>
     inline size_t
     dequeue(Func const &func, T *ret, size_t size) noexcept {
-        const size_t nb_consume =
-            internal::ringbuffer<T>::dequeue(ret, size, array_.get(), max_size_);
+        const size_t nb_consume = internal::ringbuffer<T>::dequeue(ret, size, array_.get(), max_size_);
         if (nb_consume)
             func(ret, nb_consume);
         return nb_consume;

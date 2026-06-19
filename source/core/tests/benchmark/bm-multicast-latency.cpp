@@ -17,7 +17,7 @@
  * percentile dump: set environment variable \c QB_ACTOR_BENCH_HISTOGRAM=1.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -53,8 +53,7 @@ BM_Multicast_Latency(benchmark::State &state) {
 
         qb::ActorIdList ids = {};
         for (std::size_t i = 0; i < static_cast<std::size_t>(nb_actor); ++i) {
-            const auto coreid =
-                qb::bench::multicast_consumer_core_for_index(i, nb_core);
+            const auto coreid = qb::bench::multicast_consumer_core_for_index(i, nb_core);
             ids.push_back(main.addActor<ConsumerActor<Event>>(coreid));
         }
         main.addActor<ProducerActor<Event>>(0, ids, nb_events);
@@ -63,21 +62,14 @@ BM_Multicast_Latency(benchmark::State &state) {
         main.start(true);
         main.join();
 
-        const double source_events = static_cast<double>(nb_events);
-        const double deliveries =
-            static_cast<double>(nb_events) * static_cast<double>(nb_actor);
-        state.counters["source_events_per_s"] =
-            benchmark::Counter(source_events,
-                               benchmark::Counter::kIsIterationInvariantRate);
-        state.counters["deliveries_per_s"] =
-            benchmark::Counter(deliveries,
-                               benchmark::Counter::kIsIterationInvariantRate);
-        const auto lat = qb::bench::last_latency_stats_snapshot();
+        const double source_events            = static_cast<double>(nb_events);
+        const double deliveries               = static_cast<double>(nb_events) * static_cast<double>(nb_actor);
+        state.counters["source_events_per_s"] = benchmark::Counter(source_events, benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["deliveries_per_s"]    = benchmark::Counter(deliveries, benchmark::Counter::kIsIterationInvariantRate);
+        const auto lat                        = qb::bench::last_latency_stats_snapshot();
         if (lat.samples) {
-            state.counters["mean_rtt_ns"] =
-                benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
-            state.counters["latency_samples"] =
-                static_cast<double>(lat.samples);
+            state.counters["mean_rtt_ns"]     = benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
+            state.counters["latency_samples"] = static_cast<double>(lat.samples);
         }
     }
 }

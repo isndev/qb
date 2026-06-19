@@ -6,7 +6,7 @@
  * with the libev event loop for efficient suspend/resume operations.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -43,13 +43,12 @@
 /** Enable scheduler/listener lifecycle debug traces (destructor, register_suspended, clear, reset).
  *  Build with -DQB_DEBUG_CORO_LIFECYCLE=1 to trace teardown and suspended counts. */
 #include <cstdio>
-#if (defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE) || \
-    (defined(QB_DEBUG_CORO_LIFECYCLE) && QB_DEBUG_CORO_LIFECYCLE)
+#if (defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE) || (defined(QB_DEBUG_CORO_LIFECYCLE) && QB_DEBUG_CORO_LIFECYCLE)
 // Standard C++20 __VA_OPT__ elides the comma when no trailing args are passed
 // (MSVC needs the conformant preprocessor /Zc:preprocessor, enabled by qb's build).
-#define QB_SCHED_TRACE(fmt, ...) std::fprintf(stderr, "[sched] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
+#define QB_SCHED_TRACE(fmt, ...) std::fprintf(stderr, "[sched] " fmt "\n" __VA_OPT__(, ) __VA_ARGS__)
 #else
-#define QB_SCHED_TRACE(fmt, ...) ((void)0)
+#define QB_SCHED_TRACE(fmt, ...) ((void) 0)
 #endif
 
 // Include task.h for spawn() implementation - must be after CoroutineScheduler declaration
@@ -120,8 +119,7 @@ public:
      * @param loop The libev event loop
      */
     explicit CoroutineScheduler(ev::loop_ref loop = ev::get_default_loop())
-        : loop_(loop) {
-    }
+        : loop_(loop) {}
 
     /**
      * @brief Destructor
@@ -153,7 +151,7 @@ public:
      *   tests.
      */
     ~CoroutineScheduler() {
-        QB_SCHED_TRACE("~CoroutineScheduler() begin this=%p", (void*)this);
+        QB_SCHED_TRACE("~CoroutineScheduler() begin this=%p", (void *) this);
         std::size_t ready_drained = 0;
         while (!ready_queue_.empty()) {
             ready_item item = ready_queue_.front();
@@ -163,15 +161,14 @@ public:
             // object elsewhere — destroying them here would double-free when
             // that task's destructor runs later. Leaking a queued continuation
             // at teardown is strictly safer.
-            if (item.handle && !item.handle.done() &&
-                owned_frames_.erase(item.handle.address())) {
-                QB_SCHED_TRACE("  destroy ready handle=%p owned=%d", (void*)item.handle.address(), item.owned);
+            if (item.handle && !item.handle.done() && owned_frames_.erase(item.handle.address())) {
+                QB_SCHED_TRACE("  destroy ready handle=%p owned=%d", (void *) item.handle.address(), item.owned);
                 item.handle.destroy();
             }
             ++ready_drained;
         }
         QB_SCHED_TRACE("  drained ready_queue: %zu items", ready_drained);
-        (void)ready_drained;
+        (void) ready_drained;
         // Destroy frames deferred by completed spawned coroutines that were not
         // drained by a final run_ready() (e.g. the loop completing them on its
         // last tick before teardown). They are suspended at final_suspend.
@@ -185,9 +182,9 @@ public:
 #ifndef NDEBUG
         if (!suspended_coroutines_.empty()) {
             std::fprintf(stderr,
-                "[coro][warn] ~CoroutineScheduler() leaked %zu suspended frames — "
-                "stop the event loop before destroying the scheduler.\n",
-                suspended_coroutines_.size());
+                         "[coro][warn] ~CoroutineScheduler() leaked %zu suspended frames — "
+                         "stop the event loop before destroying the scheduler.\n",
+                         suspended_coroutines_.size());
         }
 #endif
         QB_SCHED_TRACE("  clearing suspended_coroutines_ (count=%zu), NOT destroying handles", suspended_coroutines_.size());
@@ -197,7 +194,7 @@ public:
         // are intentionally leaked at teardown per Finding 2.B.8 — just drop the
         // bookkeeping; the OS reclaims them at process/thread exit.
         owned_frames_.clear();
-        QB_SCHED_TRACE("~CoroutineScheduler() end this=%p", (void*)this);
+        QB_SCHED_TRACE("~CoroutineScheduler() end this=%p", (void *) this);
     }
 
     /**
@@ -222,7 +219,7 @@ public:
      *
      * @param t The coroutine task to spawn (moved from)
      */
-    void spawn(task<void>&& t);
+    void spawn(task<void> &&t);
 
     /**
      * @brief Spawn a callable (lambda/functor) as a coroutine — closure is owned.
@@ -249,10 +246,10 @@ public:
      * @param fn Callable that returns task<void> (no arguments required)
      */
     template <typename Callable>
-    requires std::invocable<Callable>
-          && std::same_as<std::invoke_result_t<Callable>, task<void>>
-          && (!std::same_as<std::decay_t<Callable>, task<void>>)
-    void spawn(Callable fn) {
+    requires std::invocable<Callable> && std::same_as<std::invoke_result_t<Callable>, task<void>>
+             && (!std::same_as<std::decay_t<Callable>, task<void>>)
+    void
+    spawn(Callable fn) {
         // invoke_owned_ moves fn into its own coroutine frame (value param)
         spawn(invoke_owned_(std::move(fn)));
     }
@@ -271,10 +268,13 @@ public:
      *
      * @param handle The coroutine handle to resume
      */
-    void schedule_resume(std::coroutine_handle<> handle) {
-        if (!handle || handle.done()) return;
-        void* addr = handle.address();
-        if (in_flight_.count(addr)) return;  // dedup: already queued
+    void
+    schedule_resume(std::coroutine_handle<> handle) {
+        if (!handle || handle.done())
+            return;
+        void *addr = handle.address();
+        if (in_flight_.count(addr))
+            return; // dedup: already queued
         in_flight_.insert(addr);
         ready_queue_.push_back({handle, false});
     }
@@ -288,16 +288,19 @@ public:
      *
      * @param handle The coroutine handle to schedule
      */
-    void enqueue_for_later(std::coroutine_handle<> handle) {
-        if (!handle || handle.done()) return;
-        void* addr = handle.address();
+    void
+    enqueue_for_later(std::coroutine_handle<> handle) {
+        if (!handle || handle.done())
+            return;
+        void *addr = handle.address();
         // Finding 2.B.1: without this dedup, calling `enqueue_for_later`
         // twice for the same handle (e.g. a `yield` loop that re-yields)
         // inserts one entry in `in_flight_` (set is idempotent) but pushes
         // **two** queue nodes — the coroutine would be resumed twice while
         // the first resume is still on the stack, which is UB per the
         // coroutine single-resume contract.
-        if (in_flight_.count(addr)) return;
+        if (in_flight_.count(addr))
+            return;
         in_flight_.insert(addr);
         ready_queue_.push_back({handle, false});
     }
@@ -314,7 +317,8 @@ public:
      * @param max_count Maximum number of coroutines to run; 0 = no limit
      * @return Number of coroutines executed
      */
-    std::size_t run_ready(std::size_t max_count = 0) {
+    std::size_t
+    run_ready(std::size_t max_count = 0) {
         // Finding 2.D.1: `run_ready()` must never be called re-entrantly —
         // from inside a coroutine body, from an awaiter's `await_suspend`,
         // or transitively via `listener::run()` invoked by user code that
@@ -334,17 +338,23 @@ public:
         // marching on.
         if (in_run_ready_) {
 #ifndef NDEBUG
-            assert(!in_run_ready_ && "run_ready() called re-entrantly — "
-                   "likely from run_sync() / run_for() invoked inside a "
-                   "coroutine or actor handler. That is forbidden (see "
-                   "qb-io coroutine invariants).");
+            assert(!in_run_ready_
+                   && "run_ready() called re-entrantly — "
+                      "likely from run_sync() / run_for() invoked inside a "
+                      "coroutine or actor handler. That is forbidden (see "
+                      "qb-io coroutine invariants).");
 #endif
             return 0;
         }
         struct ReentrancyGuard {
-            bool& flag;
-            explicit ReentrancyGuard(bool& f) noexcept : flag(f) { flag = true; }
-            ~ReentrancyGuard() noexcept { flag = false; }
+            bool &flag;
+            explicit ReentrancyGuard(bool &f) noexcept
+                : flag(f) {
+                flag = true;
+            }
+            ~ReentrancyGuard() noexcept {
+                flag = false;
+            }
         } guard{in_run_ready_};
 
         std::size_t count = 0;
@@ -359,7 +369,7 @@ public:
             std::coroutine_handle<> handle = item.handle;
 
             if (handle && !handle.done()) {
-                QB_SCHED_TRACE("run_ready resume handle=%p owned=%d", (void*)handle.address(), (int)item.owned);
+                QB_SCHED_TRACE("run_ready resume handle=%p owned=%d", (void *) handle.address(), (int) item.owned);
                 handle.resume();
                 ++count;
                 // Do NOT destroy completed frames here. A spawned coroutine
@@ -396,7 +406,8 @@ public:
      * @brief Check if there are ready coroutines
      * @return true if the ready queue is not empty
      */
-    [[nodiscard]] bool has_ready() const {
+    [[nodiscard]] bool
+    has_ready() const {
         return !ready_queue_.empty();
     }
 
@@ -406,7 +417,8 @@ public:
      * Used by sync bridge helpers (`run_sync`, `run_for`) to reject nested event-loop
      * pumping from inside a coroutine/body already executing under `run_ready()`.
      */
-    [[nodiscard]] bool is_draining_ready() const noexcept {
+    [[nodiscard]] bool
+    is_draining_ready() const noexcept {
         return in_run_ready_;
     }
 
@@ -414,7 +426,8 @@ public:
      * @brief Get the number of pending coroutines.
      * @return Exact size of the ready queue (O(1), mono-thread deque).
      */
-    [[nodiscard]] std::size_t pending_count() const noexcept {
+    [[nodiscard]] std::size_t
+    pending_count() const noexcept {
         return ready_queue_.size();
     }
 
@@ -426,7 +439,8 @@ public:
      * when no listener has set one. NOTE: Fallback uses new and is never deleted
      * (leak until thread exit). Prefer listener::coro_scheduler() so the listener owns it.
      */
-    static CoroutineScheduler& current() {
+    static CoroutineScheduler &
+    current() {
         if (!current_) {
             current_ = new CoroutineScheduler();
         }
@@ -437,7 +451,8 @@ public:
      * @brief Get pointer to current scheduler
      * @return Pointer to thread-local scheduler, or nullptr if not created
      */
-    [[nodiscard]] static CoroutineScheduler* current_ptr() noexcept {
+    [[nodiscard]] static CoroutineScheduler *
+    current_ptr() noexcept {
         return current_;
     }
 
@@ -447,7 +462,8 @@ public:
      *
      * Used by listener to set its internal scheduler as current.
      */
-    static void set_current(CoroutineScheduler* scheduler) noexcept {
+    static void
+    set_current(CoroutineScheduler *scheduler) noexcept {
         current_ = scheduler;
     }
 
@@ -464,7 +480,8 @@ public:
      *   on a watcher — defeating the purpose of the accessor for drain /
      *   shutdown loops.
      */
-    [[nodiscard]] std::size_t active_count() const {
+    [[nodiscard]] std::size_t
+    active_count() const {
         return ready_queue_.size() + suspended_coroutines_.size();
     }
 
@@ -476,10 +493,12 @@ public:
      *
      * @param handle The coroutine handle that is now suspended
      */
-    void register_suspended(std::coroutine_handle<> handle) {
-        if (!handle) return;
+    void
+    register_suspended(std::coroutine_handle<> handle) {
+        if (!handle)
+            return;
         suspended_coroutines_.insert(handle.address());
-        QB_SCHED_TRACE("register_suspended handle=%p total_suspended=%zu", (void*)handle.address(), suspended_coroutines_.size());
+        QB_SCHED_TRACE("register_suspended handle=%p total_suspended=%zu", (void *) handle.address(), suspended_coroutines_.size());
     }
 
     /**
@@ -490,10 +509,12 @@ public:
      *
      * @param handle The coroutine handle that is no longer suspended
      */
-    void unregister_suspended(std::coroutine_handle<> handle) {
-        if (!handle) return;
+    void
+    unregister_suspended(std::coroutine_handle<> handle) {
+        if (!handle)
+            return;
         suspended_coroutines_.erase(handle.address());
-        QB_SCHED_TRACE("unregister_suspended handle=%p remaining_suspended=%zu", (void*)handle.address(), suspended_coroutines_.size());
+        QB_SCHED_TRACE("unregister_suspended handle=%p remaining_suspended=%zu", (void *) handle.address(), suspended_coroutines_.size());
     }
 
     /**
@@ -503,14 +524,15 @@ public:
      * so that no watchers remain active for the next test. Must not be used in ~CoroutineScheduler()
      * at process exit (loop may be tearing down); use only when explicitly resetting the scheduler.
      */
-    void destroy_all_suspended() {
-        std::vector<void*> to_destroy(suspended_coroutines_.begin(), suspended_coroutines_.end());
+    void
+    destroy_all_suspended() {
+        std::vector<void *> to_destroy(suspended_coroutines_.begin(), suspended_coroutines_.end());
         suspended_coroutines_.clear();
-        for (void* addr : to_destroy) {
+        for (void *addr : to_destroy) {
             owned_frames_.erase(addr); // destroyed here — drop the ownership record
             auto handle = std::coroutine_handle<>::from_address(addr);
             if (handle && !handle.done()) {
-                QB_SCHED_TRACE("destroy_all_suspended destroying handle=%p", (void*)addr);
+                QB_SCHED_TRACE("destroy_all_suspended destroying handle=%p", (void *) addr);
                 handle.destroy();
             }
         }
@@ -523,7 +545,8 @@ public:
      * no continuation to resume. The frame is suspended at final_suspend (it
      * cannot destroy itself), so run_ready() destroys it on the current drain.
      */
-    void defer_destroy(std::coroutine_handle<> h) {
+    void
+    defer_destroy(std::coroutine_handle<> h) {
         if (h)
             frames_to_destroy_.push_back(h);
     }
@@ -538,7 +561,8 @@ private:
      * lambda's lifetime.
      */
     template <typename F>
-    static task<void> invoke_owned_(F fn) {
+    static task<void>
+    invoke_owned_(F fn) {
         co_await fn();
     }
 
@@ -547,7 +571,7 @@ private:
     // owned=false for continuations - they destroy themselves
     struct ready_item {
         std::coroutine_handle<> handle;
-        bool owned;
+        bool                    owned;
     };
 
     // Finding 2.B.10: plain std::deque — mono-thread access, no atomics,
@@ -558,7 +582,7 @@ private:
 
     // Deduplication set: prevents double-scheduling of the same handle.
     // Accessed only from the VirtualCore thread — no mutex needed.
-    std::unordered_set<void*> in_flight_;
+    std::unordered_set<void *> in_flight_;
 
     // Frames the scheduler OWNS and must destroy when they complete (those
     // handed over by spawn(), which detaches the task<T>). The per-ready_item
@@ -567,11 +591,11 @@ private:
     // suspends once and then completes would otherwise never be destroyed —
     // a frame leak on every spawn that awaits. This set is the authoritative
     // ownership record; run_ready() destroys a completed handle iff it is here.
-    std::unordered_set<void*> owned_frames_;
+    std::unordered_set<void *> owned_frames_;
 
     // Handles currently suspended (waiting on I/O or timers).
     // Accessed only from the VirtualCore thread — no mutex needed.
-    std::unordered_set<void*> suspended_coroutines_;
+    std::unordered_set<void *> suspended_coroutines_;
 
     // Detached (spawned) frames that reached final_suspend and must be destroyed
     // by the scheduler on the current run_ready() drain. A completing detached
@@ -588,11 +612,12 @@ private:
     ev::loop_ref loop_;
 
     // Thread-local current scheduler (defined in qb-io, e.g. io.cpp — one TU only)
-    static thread_local CoroutineScheduler* current_;
+    static thread_local CoroutineScheduler *current_;
 };
 
 // Global function for awaiters to get current scheduler
-[[nodiscard]] inline CoroutineScheduler* current_scheduler_ptr() noexcept {
+[[nodiscard]] inline CoroutineScheduler *
+current_scheduler_ptr() noexcept {
     return CoroutineScheduler::current_ptr();
 }
 
@@ -612,15 +637,17 @@ private:
  *
  * @param handle The coroutine handle to schedule
  */
-inline void schedule_via_current(std::coroutine_handle<> handle) noexcept {
-    auto* sched = CoroutineScheduler::current_ptr();
+inline void
+schedule_via_current(std::coroutine_handle<> handle) noexcept {
+    auto *sched = CoroutineScheduler::current_ptr();
 #ifndef NDEBUG
     // Finding 2.A.2: fail loudly in debug so misconfigured test harnesses
     // or incorrect thread affinity bugs surface immediately rather than
     // manifesting as a test hang. Only guard when a real handle is queued.
-    assert(sched && "schedule_via_current called without a TLS scheduler — "
-                    "did you forget to create a qb::io::async::listener on "
-                    "this thread?");
+    assert(sched
+           && "schedule_via_current called without a TLS scheduler — "
+              "did you forget to create a qb::io::async::listener on "
+              "this thread?");
 #endif
     if (sched) {
         sched->schedule_resume(handle);
@@ -633,8 +660,9 @@ inline void schedule_via_current(std::coroutine_handle<> handle) noexcept {
  * Used by yield_awaiter to reschedule without allocating an intermediate coroutine.
  * The handle must not already be in the queue (e.g. current coroutine yielding).
  */
-inline void enqueue_for_later_via_current(std::coroutine_handle<> handle) noexcept {
-    if (auto* sched = CoroutineScheduler::current_ptr()) {
+inline void
+enqueue_for_later_via_current(std::coroutine_handle<> handle) noexcept {
+    if (auto *sched = CoroutineScheduler::current_ptr()) {
         sched->enqueue_for_later(handle);
     }
 }
@@ -646,8 +674,9 @@ inline void enqueue_for_later_via_current(std::coroutine_handle<> handle) noexce
  *        type itself). Defined here so the call resolves once scheduler.h is
  *        included (always the case via coroutine.h).
  */
-inline void defer_frame_destruction(std::coroutine_handle<> handle) noexcept {
-    if (auto* sched = CoroutineScheduler::current_ptr()) {
+inline void
+defer_frame_destruction(std::coroutine_handle<> handle) noexcept {
+    if (auto *sched = CoroutineScheduler::current_ptr()) {
         sched->defer_destroy(handle);
     }
 }
@@ -659,9 +688,11 @@ inline void defer_frame_destruction(std::coroutine_handle<> handle) noexcept {
  * on the next run_ready() call. The task's handle is transferred
  * to the scheduler.
  */
-inline void CoroutineScheduler::spawn(task<void>&& t) {
+inline void
+CoroutineScheduler::spawn(task<void> &&t) {
     auto handle = t.detach();
-    if (!handle) return;
+    if (!handle)
+        return;
 
     // Set this scheduler as the coroutine's scheduler
     handle.promise().scheduler_ = this;
@@ -669,7 +700,7 @@ inline void CoroutineScheduler::spawn(task<void>&& t) {
     owned_frames_.insert(handle.address());
     in_flight_.insert(handle.address());
     ready_queue_.push_back({handle, true});
-    QB_SCHED_TRACE("spawn handle=%p in_flight=%zu", (void*)handle.address(), in_flight_.size());
+    QB_SCHED_TRACE("spawn handle=%p in_flight=%zu", (void *) handle.address(), in_flight_.size());
 }
 
 } // namespace qb::io::async

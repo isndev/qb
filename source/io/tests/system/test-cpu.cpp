@@ -62,7 +62,7 @@ TEST(CPU, SpinLoopPauseIsCallable) {
 
 TEST(Resource, WrapsPointerWithCustomDeleter) {
     bool deleted = false;
-    auto ptr = qb::resource(new int(42), [&deleted](int *value) {
+    auto ptr     = qb::resource(new int(42), [&deleted](int *value) {
         deleted = true;
         delete value;
     });
@@ -74,8 +74,8 @@ TEST(Resource, WrapsPointerWithCustomDeleter) {
 }
 
 TEST(Resource, WrapsVoidPointerWithCustomDeleter) {
-    bool deleted = false;
-    void *raw = std::malloc(8);
+    bool  deleted = false;
+    void *raw     = std::malloc(8);
     ASSERT_NE(raw, nullptr);
 
     auto ptr = qb::resource(raw, [&deleted](void *value) {
@@ -106,7 +106,7 @@ TEST(ScopeGuard, MoveTransfersOwnership) {
     int counter = 0;
     {
         qb::scope_guard first([&counter] { ++counter; });
-        auto second = std::move(first);
+        auto            second = std::move(first);
         (void) second;
     }
     EXPECT_EQ(counter, 1);

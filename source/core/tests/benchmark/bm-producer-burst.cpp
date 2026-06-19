@@ -14,7 +14,7 @@
  * \c ceil(messages / burst) if the producer drains exactly \c messages), \c burst_size.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -60,7 +60,9 @@ public:
 };
 
 template <std::uint32_t BurstPerCallbackV>
-class BurstCallbackProducerActor final : public qb::Actor, public qb::ICallback {
+class BurstCallbackProducerActor final
+    : public qb::Actor
+    , public qb::ICallback {
     const qb::ActorId   _dst;
     const std::uint64_t _total;
     std::uint64_t       _sent = 0;
@@ -79,8 +81,7 @@ public:
     void
     onCallback() final {
         constexpr std::uint32_t kBurst = BurstPerCallbackV;
-        const std::uint64_t     chunk =
-            std::min<std::uint64_t>(kBurst, _total - _sent);
+        const std::uint64_t     chunk  = std::min<std::uint64_t>(kBurst, _total - _sent);
         for (std::uint64_t i = 0; i < chunk; ++i)
             push<BurstMsg>(_dst);
         _sent += chunk;
@@ -96,32 +97,27 @@ BM_ProducerBurst_OneWay(benchmark::State &state) {
     const auto producer_c = static_cast<std::uint32_t>(state.range(1));
     const auto consumer_c = static_cast<std::uint32_t>(state.range(2));
 
-    constexpr std::uint64_t kBurst = static_cast<std::uint64_t>(BurstPerCallbackV);
-    const std::uint64_t     expected_callbacks =
-        (total + kBurst - 1ull) / kBurst;
+    constexpr std::uint64_t kBurst             = static_cast<std::uint64_t>(BurstPerCallbackV);
+    const std::uint64_t     expected_callbacks = (total + kBurst - 1ull) / kBurst;
 
     for (auto _ : state) {
         state.PauseTiming();
-        qb::Main main;
+        qb::Main   main;
         auto const sink = main.addActor<BurstSinkActor>(consumer_c, total);
         main.addActor<BurstCallbackProducerActor<BurstPerCallbackV>>(producer_c, sink, total);
         state.ResumeTiming();
         main.start(true);
         main.join();
-        state.counters["messages_per_s"] =
-            benchmark::Counter(static_cast<double>(total),
-                               benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["messages_per_s"] = benchmark::Counter(static_cast<double>(total), benchmark::Counter::kIsIterationInvariantRate);
         state.counters["expected_callbacks_per_s"] =
-            benchmark::Counter(static_cast<double>(expected_callbacks),
-                               benchmark::Counter::kIsIterationInvariantRate);
-        state.counters["burst_size"] =
-            static_cast<double>(BurstPerCallbackV);
+            benchmark::Counter(static_cast<double>(expected_callbacks), benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["burst_size"] = static_cast<double>(BurstPerCallbackV);
     }
 }
 
 static void
 ApplyBurstArgs(benchmark::internal::Benchmark *b) {
-    const auto cap = qb::bench::cappedBenchmarkCores();
+    const auto             cap    = qb::bench::cappedBenchmarkCores();
     constexpr std::int64_t kTotal = 500000;
     b->Args({kTotal, 0, 0});
     if (cap > 1u)

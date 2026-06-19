@@ -3,7 +3,7 @@
  * https://github.com/piscisaureus/wepoll
  *
  * SPDX-License-Identifier: MIT
- * Copyright (c) 2011-2025 qb - isndev (cpp.actor).
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
  * Part of qb-ev. Vendored from wepoll (epoll for Windows) by Bert Belder,
  * with multiple correctness and portability fixes for qb-ev.
@@ -15,45 +15,45 @@
  */
 
 #ifndef WEPOLL_EXPORT
-#    define WEPOLL_EXPORT
+#define WEPOLL_EXPORT
 #endif
 
 #include <stdint.h>
 
 enum events {
-    EPOLLIN = (int)(1U << 0),
-    EPOLLPRI = (int)(1U << 1),
-    EPOLLOUT = (int)(1U << 2),
-    EPOLLERR = (int)(1U << 3),
-    EPOLLHUP = (int)(1U << 4),
-    EPOLLRDNORM = (int)(1U << 6),
-    EPOLLRDBAND = (int)(1U << 7),
-    EPOLLWRNORM = (int)(1U << 8),
-    EPOLLWRBAND = (int)(1U << 9),
-    EPOLLMSG = (int)(1U << 10), /* Never reported. */
-    EPOLLRDHUP = (int)(1U << 13),
-    EPOLLONESHOT = (int)(1U << 31)
+    EPOLLIN      = (int) (1U << 0),
+    EPOLLPRI     = (int) (1U << 1),
+    EPOLLOUT     = (int) (1U << 2),
+    EPOLLERR     = (int) (1U << 3),
+    EPOLLHUP     = (int) (1U << 4),
+    EPOLLRDNORM  = (int) (1U << 6),
+    EPOLLRDBAND  = (int) (1U << 7),
+    EPOLLWRNORM  = (int) (1U << 8),
+    EPOLLWRBAND  = (int) (1U << 9),
+    EPOLLMSG     = (int) (1U << 10), /* Never reported. */
+    EPOLLRDHUP   = (int) (1U << 13),
+    EPOLLONESHOT = (int) (1U << 31)
 };
 
 #define EPOLL_CTL_ADD 1
 #define EPOLL_CTL_MOD 2
 #define EPOLL_CTL_DEL 3
 
-typedef void *HANDLE;
+typedef void     *HANDLE;
 typedef uintptr_t SOCKET;
 
 typedef union epoll_data {
-    void *ptr;
-    int fd;
+    void    *ptr;
+    int      fd;
     uint32_t u32;
     uint64_t u64;
-    SOCKET sock; /* Windows specific */
-    HANDLE hnd;  /* Windows specific */
+    SOCKET   sock; /* Windows specific */
+    HANDLE   hnd;  /* Windows specific */
 } epoll_data_t;
 
 struct epoll_event {
-    uint32_t events;   /* Epoll events and flags */
-    epoll_data_t data; /* User data variable */
+    uint32_t     events; /* Epoll events and flags */
+    epoll_data_t data;   /* User data variable */
 };
 
 #ifdef __cplusplus
@@ -65,11 +65,9 @@ WEPOLL_EXPORT HANDLE epoll_create1(int flags);
 
 WEPOLL_EXPORT int epoll_close(HANDLE ephnd);
 
-WEPOLL_EXPORT int epoll_ctl(HANDLE ephnd, int op, SOCKET sock,
-                            struct epoll_event *event);
+WEPOLL_EXPORT int epoll_ctl(HANDLE ephnd, int op, SOCKET sock, struct epoll_event *event);
 
-WEPOLL_EXPORT int epoll_wait(HANDLE ephnd, struct epoll_event *events, int maxevents,
-                             int timeout);
+WEPOLL_EXPORT int epoll_wait(HANDLE ephnd, struct epoll_event *events, int maxevents, int timeout);
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -83,11 +81,11 @@ WEPOLL_EXPORT int epoll_wait(HANDLE ephnd, struct epoll_event *events, int maxev
 #define WEPOLL_INTERNAL_EXTERN static
 
 #if defined(__clang__)
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wnonportable-system-include-path"
-#    pragma clang diagnostic ignored "-Wreserved-id-macro"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonportable-system-include-path"
+#pragma clang diagnostic ignored "-Wreserved-id-macro"
 #elif defined(_MSC_VER)
-#    pragma warning(push, 1)
+#pragma warning(push, 1)
 #endif
 
 #undef WIN32_LEAN_AND_MEAN
@@ -101,106 +99,92 @@ WEPOLL_EXPORT int epoll_wait(HANDLE ephnd, struct epoll_event *events, int maxev
 #include <ws2tcpip.h>
 
 #if defined(__clang__)
-#    pragma clang diagnostic pop
+#pragma clang diagnostic pop
 #elif defined(_MSC_VER)
-#    pragma warning(pop)
+#pragma warning(pop)
 #endif
 
 WEPOLL_INTERNAL int nt_global_init(void);
 
-typedef LONG NTSTATUS;
+typedef LONG      NTSTATUS;
 typedef NTSTATUS *PNTSTATUS;
 
 #ifndef NT_SUCCESS
-#    define NT_SUCCESS(status) (((NTSTATUS)(status)) >= 0)
+#define NT_SUCCESS(status) (((NTSTATUS) (status)) >= 0)
 #endif
 
 #ifndef STATUS_SUCCESS
-#    define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
+#define STATUS_SUCCESS ((NTSTATUS) 0x00000000L)
 #endif
 
 #ifndef STATUS_PENDING
-#    define STATUS_PENDING ((NTSTATUS)0x00000103L)
+#define STATUS_PENDING ((NTSTATUS) 0x00000103L)
 #endif
 
 #ifndef STATUS_CANCELLED
-#    define STATUS_CANCELLED ((NTSTATUS)0xC0000120L)
+#define STATUS_CANCELLED ((NTSTATUS) 0xC0000120L)
 #endif
 
 #ifndef STATUS_NOT_FOUND
-#    define STATUS_NOT_FOUND ((NTSTATUS)0xC0000225L)
+#define STATUS_NOT_FOUND ((NTSTATUS) 0xC0000225L)
 #endif
 
 typedef struct _IO_STATUS_BLOCK {
-    NTSTATUS Status;
+    NTSTATUS  Status;
     ULONG_PTR Information;
 } IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
 
-typedef VOID(NTAPI *PIO_APC_ROUTINE)(PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock,
-                                     ULONG Reserved);
+typedef VOID(NTAPI *PIO_APC_ROUTINE)(PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG Reserved);
 
 typedef struct _UNICODE_STRING {
     USHORT Length;
     USHORT MaximumLength;
-    PWSTR Buffer;
+    PWSTR  Buffer;
 } UNICODE_STRING, *PUNICODE_STRING;
 
-#define RTL_CONSTANT_STRING(s) \
-    { sizeof(s) - sizeof((s)[0]), sizeof(s), s }
+#define RTL_CONSTANT_STRING(s) {sizeof(s) - sizeof((s)[0]), sizeof(s), s}
 
 typedef struct _OBJECT_ATTRIBUTES {
-    ULONG Length;
-    HANDLE RootDirectory;
+    ULONG           Length;
+    HANDLE          RootDirectory;
     PUNICODE_STRING ObjectName;
-    ULONG Attributes;
-    PVOID SecurityDescriptor;
-    PVOID SecurityQualityOfService;
+    ULONG           Attributes;
+    PVOID           SecurityDescriptor;
+    PVOID           SecurityQualityOfService;
 } OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
 
-#define RTL_CONSTANT_OBJECT_ATTRIBUTES(ObjectName, Attributes) \
-    { sizeof(OBJECT_ATTRIBUTES), NULL, ObjectName, Attributes, NULL, NULL }
+#define RTL_CONSTANT_OBJECT_ATTRIBUTES(ObjectName, Attributes) {sizeof(OBJECT_ATTRIBUTES), NULL, ObjectName, Attributes, NULL, NULL}
 
 #ifndef FILE_OPEN
-#    define FILE_OPEN 0x00000001UL
+#define FILE_OPEN 0x00000001UL
 #endif
 
 #define KEYEDEVENT_WAIT 0x00000001UL
 #define KEYEDEVENT_WAKE 0x00000002UL
-#define KEYEDEVENT_ALL_ACCESS \
-    (STANDARD_RIGHTS_REQUIRED | KEYEDEVENT_WAIT | KEYEDEVENT_WAKE)
+#define KEYEDEVENT_ALL_ACCESS (STANDARD_RIGHTS_REQUIRED | KEYEDEVENT_WAIT | KEYEDEVENT_WAKE)
 
-#define NT_NTDLL_IMPORT_LIST(X)                                                       \
-    X(NTSTATUS, NTAPI, NtCancelIoFileEx,                                              \
-      (HANDLE FileHandle, PIO_STATUS_BLOCK IoRequestToCancel,                         \
-       PIO_STATUS_BLOCK IoStatusBlock))                                               \
-                                                                                      \
-    X(NTSTATUS, NTAPI, NtCreateFile,                                                  \
-      (PHANDLE FileHandle, ACCESS_MASK DesiredAccess,                                 \
-       POBJECT_ATTRIBUTES ObjectAttributes, PIO_STATUS_BLOCK IoStatusBlock,           \
-       PLARGE_INTEGER AllocationSize, ULONG FileAttributes, ULONG ShareAccess,        \
-       ULONG CreateDisposition, ULONG CreateOptions, PVOID EaBuffer, ULONG EaLength)) \
-                                                                                      \
-    X(NTSTATUS, NTAPI, NtCreateKeyedEvent,                                            \
-      (PHANDLE KeyedEventHandle, ACCESS_MASK DesiredAccess,                           \
-       POBJECT_ATTRIBUTES ObjectAttributes, ULONG Flags))                             \
-                                                                                      \
-    X(NTSTATUS, NTAPI, NtDeviceIoControlFile,                                         \
-      (HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, \
-       PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode, PVOID InputBuffer,        \
-       ULONG InputBufferLength, PVOID OutputBuffer, ULONG OutputBufferLength))        \
-                                                                                      \
-    X(NTSTATUS, NTAPI, NtReleaseKeyedEvent,                                           \
-      (HANDLE KeyedEventHandle, PVOID KeyValue, BOOLEAN Alertable,                    \
-       PLARGE_INTEGER Timeout))                                                       \
-                                                                                      \
-    X(NTSTATUS, NTAPI, NtWaitForKeyedEvent,                                           \
-      (HANDLE KeyedEventHandle, PVOID KeyValue, BOOLEAN Alertable,                    \
-       PLARGE_INTEGER Timeout))                                                       \
-                                                                                      \
+#define NT_NTDLL_IMPORT_LIST(X)                                                                                                              \
+    X(NTSTATUS, NTAPI, NtCancelIoFileEx, (HANDLE FileHandle, PIO_STATUS_BLOCK IoRequestToCancel, PIO_STATUS_BLOCK IoStatusBlock))            \
+                                                                                                                                             \
+    X(NTSTATUS, NTAPI, NtCreateFile,                                                                                                         \
+      (PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PIO_STATUS_BLOCK IoStatusBlock,                   \
+       PLARGE_INTEGER AllocationSize, ULONG FileAttributes, ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions, PVOID EaBuffer, \
+       ULONG EaLength))                                                                                                                      \
+                                                                                                                                             \
+    X(NTSTATUS, NTAPI, NtCreateKeyedEvent,                                                                                                   \
+      (PHANDLE KeyedEventHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG Flags))                               \
+                                                                                                                                             \
+    X(NTSTATUS, NTAPI, NtDeviceIoControlFile,                                                                                                \
+      (HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,   \
+       PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer, ULONG OutputBufferLength))                                            \
+                                                                                                                                             \
+    X(NTSTATUS, NTAPI, NtReleaseKeyedEvent, (HANDLE KeyedEventHandle, PVOID KeyValue, BOOLEAN Alertable, PLARGE_INTEGER Timeout))            \
+                                                                                                                                             \
+    X(NTSTATUS, NTAPI, NtWaitForKeyedEvent, (HANDLE KeyedEventHandle, PVOID KeyValue, BOOLEAN Alertable, PLARGE_INTEGER Timeout))            \
+                                                                                                                                             \
     X(ULONG, WINAPI, RtlNtStatusToDosError, (NTSTATUS Status))
 
-#define X(return_type, attributes, name, parameters) \
-    WEPOLL_INTERNAL_EXTERN return_type(attributes *name) parameters;
+#define X(return_type, attributes, name, parameters) WEPOLL_INTERNAL_EXTERN return_type(attributes *name) parameters;
 NT_NTDLL_IMPORT_LIST(X)
 #undef X
 
@@ -214,25 +198,22 @@ NT_NTDLL_IMPORT_LIST(X)
 #define AFD_POLL_CONNECT_FAIL 0x0100
 
 typedef struct _AFD_POLL_HANDLE_INFO {
-    HANDLE Handle;
-    ULONG Events;
+    HANDLE   Handle;
+    ULONG    Events;
     NTSTATUS Status;
 } AFD_POLL_HANDLE_INFO, *PAFD_POLL_HANDLE_INFO;
 
 typedef struct _AFD_POLL_INFO {
-    LARGE_INTEGER Timeout;
-    ULONG NumberOfHandles;
-    ULONG Exclusive;
+    LARGE_INTEGER        Timeout;
+    ULONG                NumberOfHandles;
+    ULONG                Exclusive;
     AFD_POLL_HANDLE_INFO Handles[1];
 } AFD_POLL_INFO, *PAFD_POLL_INFO;
 
-WEPOLL_INTERNAL int afd_create_device_handle(HANDLE iocp_handle,
-                                             HANDLE *afd_device_handle_out);
+WEPOLL_INTERNAL int afd_create_device_handle(HANDLE iocp_handle, HANDLE *afd_device_handle_out);
 
-WEPOLL_INTERNAL int afd_poll(HANDLE afd_device_handle, AFD_POLL_INFO *poll_info,
-                             IO_STATUS_BLOCK *io_status_block);
-WEPOLL_INTERNAL int afd_cancel_poll(HANDLE afd_device_handle,
-                                    IO_STATUS_BLOCK *io_status_block);
+WEPOLL_INTERNAL int afd_poll(HANDLE afd_device_handle, AFD_POLL_INFO *poll_info, IO_STATUS_BLOCK *io_status_block);
+WEPOLL_INTERNAL int afd_cancel_poll(HANDLE afd_device_handle, IO_STATUS_BLOCK *io_status_block);
 
 #define return_map_error(value) \
     do {                        \
@@ -248,36 +229,33 @@ WEPOLL_INTERNAL int afd_cancel_poll(HANDLE afd_device_handle,
 
 WEPOLL_INTERNAL void err_map_win_error(void);
 WEPOLL_INTERNAL void err_set_win_error(DWORD error);
-WEPOLL_INTERNAL int err_check_handle(HANDLE handle);
-WEPOLL_INTERNAL int err_check_socket(SOCKET socket);
+WEPOLL_INTERNAL int  err_check_handle(HANDLE handle);
+WEPOLL_INTERNAL int  err_check_socket(SOCKET socket);
 
 #define IOCTL_AFD_POLL 0x00012024
 
 static UNICODE_STRING afd__device_name = RTL_CONSTANT_STRING(L"\\Device\\Afd\\Wepoll");
 
-static OBJECT_ATTRIBUTES afd__device_attributes =
-    RTL_CONSTANT_OBJECT_ATTRIBUTES(&afd__device_name, 0);
+static OBJECT_ATTRIBUTES afd__device_attributes = RTL_CONSTANT_OBJECT_ATTRIBUTES(&afd__device_name, 0);
 
 int
 afd_create_device_handle(HANDLE iocp_handle, HANDLE *afd_device_handle_out) {
-    HANDLE afd_device_handle;
+    HANDLE          afd_device_handle;
     IO_STATUS_BLOCK iosb;
-    NTSTATUS status;
+    NTSTATUS        status;
 
     /* By opening \Device\Afd without specifying any extended attributes, we'll
      * get a handle that lets us talk to the AFD driver, but that doesn't have an
      * associated endpoint (so it's not a socket). */
-    status =
-        NtCreateFile(&afd_device_handle, SYNCHRONIZE, &afd__device_attributes, &iosb,
-                     NULL, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN, 0, NULL, 0);
+    status = NtCreateFile(&afd_device_handle, SYNCHRONIZE, &afd__device_attributes, &iosb, NULL, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                          FILE_OPEN, 0, NULL, 0);
     if (status != STATUS_SUCCESS)
         return_set_error(-1, RtlNtStatusToDosError(status));
 
     if (CreateIoCompletionPort(afd_device_handle, iocp_handle, 0, 0) == NULL)
         goto error;
 
-    if (!SetFileCompletionNotificationModes(afd_device_handle,
-                                            FILE_SKIP_SET_EVENT_ON_HANDLE))
+    if (!SetFileCompletionNotificationModes(afd_device_handle, FILE_SKIP_SET_EVENT_ON_HANDLE))
         goto error;
 
     *afd_device_handle_out = afd_device_handle;
@@ -289,17 +267,15 @@ error:
 }
 
 int
-afd_poll(HANDLE afd_device_handle, AFD_POLL_INFO *poll_info,
-         IO_STATUS_BLOCK *io_status_block) {
+afd_poll(HANDLE afd_device_handle, AFD_POLL_INFO *poll_info, IO_STATUS_BLOCK *io_status_block) {
     NTSTATUS status;
 
     /* Blocking operation is not supported. */
     assert(io_status_block != NULL);
 
     io_status_block->Status = STATUS_PENDING;
-    status = NtDeviceIoControlFile(afd_device_handle, NULL, NULL, io_status_block,
-                                   io_status_block, IOCTL_AFD_POLL, poll_info,
-                                   sizeof *poll_info, poll_info, sizeof *poll_info);
+    status                  = NtDeviceIoControlFile(afd_device_handle, NULL, NULL, io_status_block, io_status_block, IOCTL_AFD_POLL, poll_info,
+                                                    sizeof *poll_info, poll_info, sizeof *poll_info);
 
     if (status == STATUS_SUCCESS)
         return 0;
@@ -311,7 +287,7 @@ afd_poll(HANDLE afd_device_handle, AFD_POLL_INFO *poll_info,
 
 int
 afd_cancel_poll(HANDLE afd_device_handle, IO_STATUS_BLOCK *io_status_block) {
-    NTSTATUS cancel_status;
+    NTSTATUS        cancel_status;
     IO_STATUS_BLOCK cancel_iosb;
 
     /* If the poll operation has already completed or has been cancelled earlier,
@@ -333,42 +309,33 @@ WEPOLL_INTERNAL int epoll_global_init(void);
 
 WEPOLL_INTERNAL int init(void);
 
-typedef struct port_state port_state_t;
-typedef struct queue queue_t;
-typedef struct sock_state sock_state_t;
+typedef struct port_state   port_state_t;
+typedef struct queue        queue_t;
+typedef struct sock_state   sock_state_t;
 typedef struct ts_tree_node ts_tree_node_t;
 
 WEPOLL_INTERNAL port_state_t *port_new(HANDLE *iocp_handle_out);
-WEPOLL_INTERNAL int port_close(port_state_t *port_state);
-WEPOLL_INTERNAL int port_delete(port_state_t *port_state);
+WEPOLL_INTERNAL int           port_close(port_state_t *port_state);
+WEPOLL_INTERNAL int           port_delete(port_state_t *port_state);
 
-WEPOLL_INTERNAL int port_wait(port_state_t *port_state, struct epoll_event *events,
-                              int maxevents, int timeout);
+WEPOLL_INTERNAL int port_wait(port_state_t *port_state, struct epoll_event *events, int maxevents, int timeout);
 
-WEPOLL_INTERNAL int port_ctl(port_state_t *port_state, int op, SOCKET sock,
-                             struct epoll_event *ev);
+WEPOLL_INTERNAL int port_ctl(port_state_t *port_state, int op, SOCKET sock, struct epoll_event *ev);
 
-WEPOLL_INTERNAL int port_register_socket(port_state_t *port_state,
-                                         sock_state_t *sock_state, SOCKET socket);
-WEPOLL_INTERNAL void port_unregister_socket(port_state_t *port_state,
-                                            sock_state_t *sock_state);
+WEPOLL_INTERNAL int           port_register_socket(port_state_t *port_state, sock_state_t *sock_state, SOCKET socket);
+WEPOLL_INTERNAL void          port_unregister_socket(port_state_t *port_state, sock_state_t *sock_state);
 WEPOLL_INTERNAL sock_state_t *port_find_socket(port_state_t *port_state, SOCKET socket);
 
-WEPOLL_INTERNAL void port_request_socket_update(port_state_t *port_state,
-                                                sock_state_t *sock_state);
-WEPOLL_INTERNAL void port_cancel_socket_update(port_state_t *port_state,
-                                               sock_state_t *sock_state);
+WEPOLL_INTERNAL void port_request_socket_update(port_state_t *port_state, sock_state_t *sock_state);
+WEPOLL_INTERNAL void port_cancel_socket_update(port_state_t *port_state, sock_state_t *sock_state);
 
-WEPOLL_INTERNAL void port_add_deleted_socket(port_state_t *port_state,
-                                             sock_state_t *sock_state);
-WEPOLL_INTERNAL void port_remove_deleted_socket(port_state_t *port_state,
-                                                sock_state_t *sock_state);
+WEPOLL_INTERNAL void port_add_deleted_socket(port_state_t *port_state, sock_state_t *sock_state);
+WEPOLL_INTERNAL void port_remove_deleted_socket(port_state_t *port_state, sock_state_t *sock_state);
 
-WEPOLL_INTERNAL HANDLE port_get_iocp_handle(port_state_t *port_state);
+WEPOLL_INTERNAL HANDLE   port_get_iocp_handle(port_state_t *port_state);
 WEPOLL_INTERNAL queue_t *port_get_poll_group_queue(port_state_t *port_state);
 
-WEPOLL_INTERNAL port_state_t *
-port_state_from_handle_tree_node(ts_tree_node_t *tree_node);
+WEPOLL_INTERNAL port_state_t   *port_state_from_handle_tree_node(ts_tree_node_t *tree_node);
 WEPOLL_INTERNAL ts_tree_node_t *port_state_to_handle_tree_node(port_state_t *port_state);
 
 /* The reflock is a special kind of lock that normally prevents a chunk of
@@ -406,7 +373,7 @@ WEPOLL_INTERNAL void reflock_unref_and_destroy(reflock_t *reflock);
  * of the API functions has at most one failure mode. It is up to the caller to
  * set an appropriate error code when necessary. */
 
-typedef struct tree tree_t;
+typedef struct tree      tree_t;
 typedef struct tree_node tree_node_t;
 
 typedef struct tree {
@@ -417,27 +384,27 @@ typedef struct tree_node {
     tree_node_t *left;
     tree_node_t *right;
     tree_node_t *parent;
-    uintptr_t key;
-    bool red;
+    uintptr_t    key;
+    bool         red;
 } tree_node_t;
 
 WEPOLL_INTERNAL void tree_init(tree_t *tree);
 WEPOLL_INTERNAL void tree_node_init(tree_node_t *node);
 
-WEPOLL_INTERNAL int tree_add(tree_t *tree, tree_node_t *node, uintptr_t key);
+WEPOLL_INTERNAL int  tree_add(tree_t *tree, tree_node_t *node, uintptr_t key);
 WEPOLL_INTERNAL void tree_del(tree_t *tree, tree_node_t *node);
 
 WEPOLL_INTERNAL tree_node_t *tree_find(const tree_t *tree, uintptr_t key);
 WEPOLL_INTERNAL tree_node_t *tree_root(const tree_t *tree);
 
 typedef struct ts_tree {
-    tree_t tree;
+    tree_t  tree;
     SRWLOCK lock;
 } ts_tree_t;
 
 typedef struct ts_tree_node {
     tree_node_t tree_node;
-    reflock_t reflock;
+    reflock_t   reflock;
 } ts_tree_node_t;
 
 WEPOLL_INTERNAL void ts_tree_init(ts_tree_t *rtl);
@@ -461,8 +428,8 @@ epoll_global_init(void) {
 
 static HANDLE
 epoll__create(void) {
-    port_state_t *port_state;
-    HANDLE ephnd;
+    port_state_t   *port_state;
+    HANDLE          ephnd;
     ts_tree_node_t *tree_node;
 
     if (init() < 0)
@@ -473,7 +440,7 @@ epoll__create(void) {
         return NULL;
 
     tree_node = port_state_to_handle_tree_node(port_state);
-    if (ts_tree_add(&epoll__handle_tree, tree_node, (uintptr_t)ephnd) < 0) {
+    if (ts_tree_add(&epoll__handle_tree, tree_node, (uintptr_t) ephnd) < 0) {
         /* Extremely unlikely (IOCP handle collision). Must close IOCP before port_delete. */
         port_close(port_state);
         port_delete(port_state);
@@ -502,12 +469,12 @@ epoll_create1(int flags) {
 int
 epoll_close(HANDLE ephnd) {
     ts_tree_node_t *tree_node;
-    port_state_t *port_state;
+    port_state_t   *port_state;
 
     if (init() < 0)
         return -1;
 
-    tree_node = ts_tree_del_and_ref(&epoll__handle_tree, (uintptr_t)ephnd);
+    tree_node = ts_tree_del_and_ref(&epoll__handle_tree, (uintptr_t) ephnd);
     if (tree_node == NULL) {
         err_set_win_error(ERROR_INVALID_PARAMETER);
         goto err;
@@ -528,8 +495,8 @@ err:
 int
 epoll_ctl(HANDLE ephnd, int op, SOCKET sock, struct epoll_event *ev) {
     ts_tree_node_t *tree_node;
-    port_state_t *port_state;
-    int r;
+    port_state_t   *port_state;
+    int             r;
 
     if (init() < 0)
         return -1;
@@ -537,14 +504,14 @@ epoll_ctl(HANDLE ephnd, int op, SOCKET sock, struct epoll_event *ev) {
     if ((op == EPOLL_CTL_ADD || op == EPOLL_CTL_MOD) && ev == NULL)
         return_set_error(-1, ERROR_INVALID_PARAMETER);
 
-    tree_node = ts_tree_find_and_ref(&epoll__handle_tree, (uintptr_t)ephnd);
+    tree_node = ts_tree_find_and_ref(&epoll__handle_tree, (uintptr_t) ephnd);
     if (tree_node == NULL) {
         err_set_win_error(ERROR_INVALID_PARAMETER);
         goto err;
     }
 
     port_state = port_state_from_handle_tree_node(tree_node);
-    r = port_ctl(port_state, op, sock, ev);
+    r          = port_ctl(port_state, op, sock, ev);
 
     ts_tree_node_unref(tree_node);
 
@@ -564,8 +531,8 @@ err:
 int
 epoll_wait(HANDLE ephnd, struct epoll_event *events, int maxevents, int timeout) {
     ts_tree_node_t *tree_node;
-    port_state_t *port_state;
-    int num_events;
+    port_state_t   *port_state;
+    int             num_events;
 
     if (maxevents <= 0)
         return_set_error(-1, ERROR_INVALID_PARAMETER);
@@ -576,7 +543,7 @@ epoll_wait(HANDLE ephnd, struct epoll_event *events, int maxevents, int timeout)
     if (init() < 0)
         return -1;
 
-    tree_node = ts_tree_find_and_ref(&epoll__handle_tree, (uintptr_t)ephnd);
+    tree_node = ts_tree_find_and_ref(&epoll__handle_tree, (uintptr_t) ephnd);
     if (tree_node == NULL) {
         err_set_win_error(ERROR_INVALID_PARAMETER);
         goto err;
@@ -749,9 +716,9 @@ err_check_socket(SOCKET socket) {
         return_set_error(-1, WSAENOTSOCK);
 
     so_error = 0;
-    len = sizeof so_error;
+    len      = sizeof so_error;
 
-    if (getsockopt(socket, SOL_SOCKET, SO_ERROR, (char*)&so_error, &len) == 0)
+    if (getsockopt(socket, SOL_SOCKET, SO_ERROR, (char *) &so_error, &len) == 0)
         return 0;
 
     if (WSAGetLastError() == WSAENOTSOCK)
@@ -764,20 +731,19 @@ err_check_socket(SOCKET socket) {
 
 #define array_count(a) (sizeof(a) / (sizeof((a)[0])))
 
-#define container_of(ptr, type, member) \
-    ((type *)((uintptr_t)(ptr)-offsetof(type, member)))
+#define container_of(ptr, type, member) ((type *) ((uintptr_t) (ptr) - offsetof(type, member)))
 
-#define unused_var(v) ((void)(v))
+#define unused_var(v) ((void) (v))
 
 /* Polyfill `inline` for older versions of msvc (up to Visual Studio 2013) */
 #if defined(_MSC_VER) && _MSC_VER < 1900
-#    define inline __inline
+#define inline __inline
 #endif
 
-WEPOLL_INTERNAL int ws_global_init(void);
+WEPOLL_INTERNAL int    ws_global_init(void);
 WEPOLL_INTERNAL SOCKET ws_get_base_socket(SOCKET socket);
 
-static bool init__done = false;
+static bool      init__done = false;
 static INIT_ONCE init__once = INIT_ONCE_STATIC_INIT;
 
 static BOOL CALLBACK
@@ -787,8 +753,7 @@ init__once_callback(INIT_ONCE *once, void *parameter, void **context) {
     unused_var(context);
 
     /* N.b. that initialization order matters here. */
-    if (ws_global_init() < 0 || nt_global_init() < 0 || reflock_global_init() < 0 ||
-        epoll_global_init() < 0)
+    if (ws_global_init() < 0 || nt_global_init() < 0 || reflock_global_init() < 0 || epoll_global_init() < 0)
         return FALSE;
 
     init__done = true;
@@ -797,8 +762,7 @@ init__once_callback(INIT_ONCE *once, void *parameter, void **context) {
 
 int
 init(void) {
-    if (!init__done &&
-        !InitOnceExecuteOnce(&init__once, init__once_callback, NULL, NULL))
+    if (!init__done && !InitOnceExecuteOnce(&init__once, init__once_callback, NULL, NULL))
         /* `InitOnceExecuteOnce()` itself is infallible, and it doesn't set any
          * error code when the once-callback returns FALSE. We return -1 here to
          * indicate that global initialization failed; the failing init function is
@@ -820,8 +784,7 @@ typedef void *nt__fn_ptr_cast_t;
 typedef FARPROC nt__fn_ptr_cast_t;
 #endif
 
-#define X(return_type, attributes, name, parameters) \
-    WEPOLL_INTERNAL return_type(attributes *name) parameters = NULL;
+#define X(return_type, attributes, name, parameters) WEPOLL_INTERNAL return_type(attributes *name) parameters = NULL;
 NT_NTDLL_IMPORT_LIST(X)
 #undef X
 
@@ -838,7 +801,7 @@ nt_global_init(void) {
     fn_ptr = GetProcAddress(ntdll, #name);           \
     if (fn_ptr == NULL)                              \
         return -1;                                   \
-    name = (return_type(attributes *) parameters)(nt__fn_ptr_cast_t)fn_ptr;
+    name = (return_type(attributes *) parameters)(nt__fn_ptr_cast_t) fn_ptr;
     NT_NTDLL_IMPORT_LIST(X)
 #undef X
 
@@ -852,12 +815,12 @@ typedef struct poll_group poll_group_t;
 typedef struct queue_node queue_node_t;
 
 WEPOLL_INTERNAL poll_group_t *poll_group_acquire(port_state_t *port);
-WEPOLL_INTERNAL void poll_group_release(poll_group_t *poll_group);
+WEPOLL_INTERNAL void          poll_group_release(poll_group_t *poll_group);
 
 WEPOLL_INTERNAL void poll_group_delete(poll_group_t *poll_group);
 
 WEPOLL_INTERNAL poll_group_t *poll_group_from_queue_node(queue_node_t *queue_node);
-WEPOLL_INTERNAL HANDLE poll_group_get_afd_device_handle(poll_group_t *poll_group);
+WEPOLL_INTERNAL HANDLE        poll_group_get_afd_device_handle(poll_group_t *poll_group);
 
 typedef struct queue_node {
     queue_node_t *prev;
@@ -887,14 +850,14 @@ WEPOLL_INTERNAL bool queue_is_enqueued(const queue_node_t *node);
 
 typedef struct poll_group {
     port_state_t *port_state;
-    queue_node_t queue_node;
-    HANDLE afd_device_handle;
-    size_t group_size;
+    queue_node_t  queue_node;
+    HANDLE        afd_device_handle;
+    size_t        group_size;
 } poll_group_t;
 
 static poll_group_t *
 poll_group__new(port_state_t *port_state) {
-    HANDLE iocp_handle = port_get_iocp_handle(port_state);
+    HANDLE   iocp_handle      = port_get_iocp_handle(port_state);
     queue_t *poll_group_queue = port_get_poll_group_queue(port_state);
 
     poll_group_t *poll_group = malloc(sizeof *poll_group);
@@ -936,11 +899,8 @@ poll_group_get_afd_device_handle(poll_group_t *poll_group) {
 
 poll_group_t *
 poll_group_acquire(port_state_t *port_state) {
-    queue_t *poll_group_queue = port_get_poll_group_queue(port_state);
-    poll_group_t *poll_group =
-        !queue_is_empty(poll_group_queue)
-            ? container_of(queue_last(poll_group_queue), poll_group_t, queue_node)
-            : NULL;
+    queue_t      *poll_group_queue = port_get_poll_group_queue(port_state);
+    poll_group_t *poll_group = !queue_is_empty(poll_group_queue) ? container_of(queue_last(poll_group_queue), poll_group_t, queue_node) : NULL;
 
     if (poll_group == NULL || poll_group->group_size >= POLL_GROUP__MAX_GROUP_SIZE)
         poll_group = poll_group__new(port_state);
@@ -955,8 +915,8 @@ poll_group_acquire(port_state_t *port_state) {
 
 void
 poll_group_release(poll_group_t *poll_group) {
-    port_state_t *port_state = poll_group->port_state;
-    queue_t *poll_group_queue = port_get_poll_group_queue(port_state);
+    port_state_t *port_state       = poll_group->port_state;
+    queue_t      *poll_group_queue = port_get_poll_group_queue(port_state);
 
     poll_group->group_size--;
     assert(poll_group->group_size < POLL_GROUP__MAX_GROUP_SIZE);
@@ -967,34 +927,30 @@ poll_group_release(poll_group_t *poll_group) {
 }
 
 WEPOLL_INTERNAL sock_state_t *sock_new(port_state_t *port_state, SOCKET socket);
-WEPOLL_INTERNAL void sock_delete(port_state_t *port_state, sock_state_t *sock_state);
-WEPOLL_INTERNAL void sock_force_delete(port_state_t *port_state,
-                                       sock_state_t *sock_state);
+WEPOLL_INTERNAL void          sock_delete(port_state_t *port_state, sock_state_t *sock_state);
+WEPOLL_INTERNAL void          sock_force_delete(port_state_t *port_state, sock_state_t *sock_state);
 
-WEPOLL_INTERNAL int sock_set_event(port_state_t *port_state, sock_state_t *sock_state,
-                                   const struct epoll_event *ev);
+WEPOLL_INTERNAL int sock_set_event(port_state_t *port_state, sock_state_t *sock_state, const struct epoll_event *ev);
 
 WEPOLL_INTERNAL int sock_update(port_state_t *port_state, sock_state_t *sock_state);
-WEPOLL_INTERNAL int sock_feed_event(port_state_t *port_state,
-                                    IO_STATUS_BLOCK *io_status_block,
-                                    struct epoll_event *ev);
+WEPOLL_INTERNAL int sock_feed_event(port_state_t *port_state, IO_STATUS_BLOCK *io_status_block, struct epoll_event *ev);
 
 WEPOLL_INTERNAL sock_state_t *sock_state_from_queue_node(queue_node_t *queue_node);
 WEPOLL_INTERNAL queue_node_t *sock_state_to_queue_node(sock_state_t *sock_state);
 WEPOLL_INTERNAL sock_state_t *sock_state_from_tree_node(tree_node_t *tree_node);
-WEPOLL_INTERNAL tree_node_t *sock_state_to_tree_node(sock_state_t *sock_state);
+WEPOLL_INTERNAL tree_node_t  *sock_state_to_tree_node(sock_state_t *sock_state);
 
 #define PORT__MAX_ON_STACK_COMPLETIONS 256
 
 typedef struct port_state {
-    HANDLE iocp_handle;
-    tree_t sock_tree;
-    queue_t sock_update_queue;
-    queue_t sock_deleted_queue;
-    queue_t poll_group_queue;
-    ts_tree_node_t handle_tree_node;
+    HANDLE           iocp_handle;
+    tree_t           sock_tree;
+    queue_t          sock_update_queue;
+    queue_t          sock_deleted_queue;
+    queue_t          poll_group_queue;
+    ts_tree_node_t   handle_tree_node;
     CRITICAL_SECTION lock;
-    size_t active_poll_count;
+    size_t           active_poll_count;
 } port_state_t;
 
 static inline port_state_t *
@@ -1024,7 +980,7 @@ port__create_iocp(void) {
 port_state_t *
 port_new(HANDLE *iocp_handle_out) {
     port_state_t *port_state;
-    HANDLE iocp_handle;
+    HANDLE        iocp_handle;
 
     port_state = port__alloc();
     if (port_state == NULL)
@@ -1055,7 +1011,7 @@ err1:
 
 static inline int
 port__close_iocp(port_state_t *port_state) {
-    HANDLE iocp_handle = port_state->iocp_handle;
+    HANDLE iocp_handle      = port_state->iocp_handle;
     port_state->iocp_handle = NULL;
 
     if (!CloseHandle(iocp_handle))
@@ -1077,7 +1033,7 @@ port_close(port_state_t *port_state) {
 
 int
 port_delete(port_state_t *port_state) {
-    tree_node_t *tree_node;
+    tree_node_t  *tree_node;
     queue_node_t *queue_node;
 
     /* At this point the IOCP port should have been closed. */
@@ -1133,15 +1089,13 @@ port__update_events_if_polling(port_state_t *port_state) {
 }
 
 static inline int
-port__feed_events(port_state_t *port_state, struct epoll_event *events,
-                  OVERLAPPED_ENTRY *iocp_events, DWORD iocp_event_count) {
-    int epoll_event_count = 0;
+port__feed_events(port_state_t *port_state, struct epoll_event *events, OVERLAPPED_ENTRY *iocp_events, DWORD iocp_event_count) {
+    int   epoll_event_count = 0;
     DWORD i;
 
     for (i = 0; i < iocp_event_count; i++) {
-        IO_STATUS_BLOCK *io_status_block =
-            (IO_STATUS_BLOCK *)iocp_events[i].lpOverlapped;
-        struct epoll_event *ev = &events[epoll_event_count];
+        IO_STATUS_BLOCK    *io_status_block = (IO_STATUS_BLOCK *) iocp_events[i].lpOverlapped;
+        struct epoll_event *ev              = &events[epoll_event_count];
 
         epoll_event_count += sock_feed_event(port_state, io_status_block, ev);
     }
@@ -1150,8 +1104,7 @@ port__feed_events(port_state_t *port_state, struct epoll_event *events,
 }
 
 static inline int
-port__poll(port_state_t *port_state, struct epoll_event *events,
-           OVERLAPPED_ENTRY *iocp_events, DWORD maxevents, DWORD timeout) {
+port__poll(port_state_t *port_state, struct epoll_event *events, OVERLAPPED_ENTRY *iocp_events, DWORD maxevents, DWORD timeout) {
     DWORD completion_count;
 
     if (port__update_events(port_state) < 0)
@@ -1161,8 +1114,7 @@ port__poll(port_state_t *port_state, struct epoll_event *events,
 
     LeaveCriticalSection(&port_state->lock);
 
-    BOOL r = GetQueuedCompletionStatusEx(port_state->iocp_handle, iocp_events, maxevents,
-                                         &completion_count, timeout, FALSE);
+    BOOL r = GetQueuedCompletionStatusEx(port_state->iocp_handle, iocp_events, maxevents, &completion_count, timeout, FALSE);
 
     EnterCriticalSection(&port_state->lock);
 
@@ -1175,13 +1127,12 @@ port__poll(port_state_t *port_state, struct epoll_event *events,
 }
 
 int
-port_wait(port_state_t *port_state, struct epoll_event *events, int maxevents,
-          int timeout) {
-    OVERLAPPED_ENTRY stack_iocp_events[PORT__MAX_ON_STACK_COMPLETIONS];
+port_wait(port_state_t *port_state, struct epoll_event *events, int maxevents, int timeout) {
+    OVERLAPPED_ENTRY  stack_iocp_events[PORT__MAX_ON_STACK_COMPLETIONS];
     OVERLAPPED_ENTRY *iocp_events;
-    uint64_t due = 0;
-    DWORD gqcs_timeout;
-    int result;
+    uint64_t          due = 0;
+    DWORD             gqcs_timeout;
+    int               result;
 
     /* Check whether `maxevents` is in range. */
     if (maxevents <= 0)
@@ -1189,15 +1140,15 @@ port_wait(port_state_t *port_state, struct epoll_event *events, int maxevents,
 
     /* Decide whether the IOCP completion list can live on the stack, or allocate
      * memory for it on the heap. */
-    if ((size_t)maxevents <= array_count(stack_iocp_events)) {
+    if ((size_t) maxevents <= array_count(stack_iocp_events)) {
         iocp_events = stack_iocp_events;
     } else {
         size_t nbytes;
 
-        if ((size_t)maxevents > SIZE_MAX / sizeof *iocp_events)
+        if ((size_t) maxevents > SIZE_MAX / sizeof *iocp_events)
             return_set_error(-1, ERROR_INVALID_PARAMETER);
 
-        nbytes = (size_t)maxevents * sizeof *iocp_events;
+        nbytes      = (size_t) maxevents * sizeof *iocp_events;
         iocp_events = malloc(nbytes);
         if (iocp_events == NULL)
             return_set_error(-1, ERROR_NOT_ENOUGH_MEMORY);
@@ -1206,8 +1157,8 @@ port_wait(port_state_t *port_state, struct epoll_event *events, int maxevents,
     /* Compute the timeout for GetQueuedCompletionStatus, and the wait end
      * time, if the user specified a timeout other than zero or infinite. */
     if (timeout > 0) {
-        due = GetTickCount64() + (uint64_t)timeout;
-        gqcs_timeout = (DWORD)timeout;
+        due          = GetTickCount64() + (uint64_t) timeout;
+        gqcs_timeout = (DWORD) timeout;
     } else if (timeout == 0) {
         gqcs_timeout = 0;
     } else {
@@ -1221,8 +1172,7 @@ port_wait(port_state_t *port_state, struct epoll_event *events, int maxevents,
     for (;;) {
         uint64_t now;
 
-        result =
-            port__poll(port_state, events, iocp_events, (DWORD)maxevents, gqcs_timeout);
+        result = port__poll(port_state, events, iocp_events, (DWORD) maxevents, gqcs_timeout);
         if (result < 0 || result > 0)
             break; /* Result, error, or time-out. */
 
@@ -1239,7 +1189,7 @@ port_wait(port_state_t *port_state, struct epoll_event *events, int maxevents,
         }
 
         /* Recompute time-out argument for GetQueuedCompletionStatus. */
-        gqcs_timeout = (DWORD)(due - now);
+        gqcs_timeout = (DWORD) (due - now);
     }
 
     port__update_events_if_polling(port_state);
@@ -1301,14 +1251,14 @@ port__ctl_del(port_state_t *port_state, SOCKET sock) {
 static inline int
 port__ctl_op(port_state_t *port_state, int op, SOCKET sock, struct epoll_event *ev) {
     switch (op) {
-    case EPOLL_CTL_ADD:
-        return port__ctl_add(port_state, sock, ev);
-    case EPOLL_CTL_MOD:
-        return port__ctl_mod(port_state, sock, ev);
-    case EPOLL_CTL_DEL:
-        return port__ctl_del(port_state, sock);
-    default:
-        return_set_error(-1, ERROR_INVALID_PARAMETER);
+        case EPOLL_CTL_ADD:
+            return port__ctl_add(port_state, sock, ev);
+        case EPOLL_CTL_MOD:
+            return port__ctl_mod(port_state, sock, ev);
+        case EPOLL_CTL_DEL:
+            return port__ctl_del(port_state, sock);
+        default:
+            return_set_error(-1, ERROR_INVALID_PARAMETER);
     }
 }
 
@@ -1325,8 +1275,7 @@ port_ctl(port_state_t *port_state, int op, SOCKET sock, struct epoll_event *ev) 
 
 int
 port_register_socket(port_state_t *port_state, sock_state_t *sock_state, SOCKET socket) {
-    if (tree_add(&port_state->sock_tree, sock_state_to_tree_node(sock_state), socket) <
-        0)
+    if (tree_add(&port_state->sock_tree, sock_state_to_tree_node(sock_state), socket) < 0)
         return_set_error(-1, ERROR_ALREADY_EXISTS);
     return 0;
 }
@@ -1424,16 +1373,16 @@ queue_last(const queue_t *queue) {
 
 void
 queue_prepend(queue_t *queue, queue_node_t *node) {
-    node->next = queue->head.next;
-    node->prev = &queue->head;
+    node->next       = queue->head.next;
+    node->prev       = &queue->head;
     node->next->prev = node;
     queue->head.next = node;
 }
 
 void
 queue_append(queue_t *queue, queue_node_t *node) {
-    node->next = &queue->head;
-    node->prev = queue->head.prev;
+    node->next       = &queue->head;
+    node->prev       = queue->head.prev;
     node->prev->next = node;
     queue->head.prev = node;
 }
@@ -1466,18 +1415,17 @@ queue_is_enqueued(const queue_node_t *node) {
     return node->prev != node;
 }
 
-#define REFLOCK__REF ((long)0x00000001UL)
-#define REFLOCK__REF_MASK ((long)0x0fffffffUL)
-#define REFLOCK__DESTROY ((long)0x10000000UL)
-#define REFLOCK__DESTROY_MASK ((long)0xf0000000UL)
-#define REFLOCK__POISON ((long)0x300dead0UL)
+#define REFLOCK__REF ((long) 0x00000001UL)
+#define REFLOCK__REF_MASK ((long) 0x0fffffffUL)
+#define REFLOCK__DESTROY ((long) 0x10000000UL)
+#define REFLOCK__DESTROY_MASK ((long) 0xf0000000UL)
+#define REFLOCK__POISON ((long) 0x300dead0UL)
 
 static HANDLE reflock__keyed_event = NULL;
 
 int
 reflock_global_init(void) {
-    NTSTATUS status =
-        NtCreateKeyedEvent(&reflock__keyed_event, KEYEDEVENT_ALL_ACCESS, NULL, 0);
+    NTSTATUS status = NtCreateKeyedEvent(&reflock__keyed_event, KEYEDEVENT_ALL_ACCESS, NULL, 0);
     if (status != STATUS_SUCCESS)
         return_set_error(-1, RtlNtStatusToDosError(status));
     return 0;
@@ -1524,7 +1472,7 @@ reflock_unref(reflock_t *reflock) {
 
 void
 reflock_unref_and_destroy(reflock_t *reflock) {
-    long state = InterlockedAdd(&reflock->state, REFLOCK__DESTROY - REFLOCK__REF);
+    long state     = InterlockedAdd(&reflock->state, REFLOCK__DESTROY - REFLOCK__REF);
     long ref_count = state & REFLOCK__REF_MASK;
 
     /* Verify that the lock was referenced and not already destroyed. */
@@ -1537,28 +1485,23 @@ reflock_unref_and_destroy(reflock_t *reflock) {
     assert(state == REFLOCK__DESTROY);
 }
 
-#define SOCK__KNOWN_events                                                       \
-    (EPOLLIN | EPOLLPRI | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDNORM | EPOLLRDBAND | \
-     EPOLLWRNORM | EPOLLWRBAND | EPOLLMSG | EPOLLRDHUP)
+#define SOCK__KNOWN_events \
+    (EPOLLIN | EPOLLPRI | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDNORM | EPOLLRDBAND | EPOLLWRNORM | EPOLLWRBAND | EPOLLMSG | EPOLLRDHUP)
 
-typedef enum sock__poll_status {
-    SOCK__POLL_IDLE = 0,
-    SOCK__POLL_PENDING,
-    SOCK__POLL_CANCELLED
-} sock__poll_status_t;
+typedef enum sock__poll_status { SOCK__POLL_IDLE = 0, SOCK__POLL_PENDING, SOCK__POLL_CANCELLED } sock__poll_status_t;
 
 typedef struct sock_state {
-    IO_STATUS_BLOCK io_status_block;
-    AFD_POLL_INFO poll_info;
-    queue_node_t queue_node;
-    tree_node_t tree_node;
-    poll_group_t *poll_group;
-    SOCKET base_socket;
-    epoll_data_t user_data;
-    uint32_t user_events;
-    uint32_t pending_events;
+    IO_STATUS_BLOCK     io_status_block;
+    AFD_POLL_INFO       poll_info;
+    queue_node_t        queue_node;
+    tree_node_t         tree_node;
+    poll_group_t       *poll_group;
+    SOCKET              base_socket;
+    epoll_data_t        user_data;
+    uint32_t            user_events;
+    uint32_t            pending_events;
     sock__poll_status_t poll_status;
-    bool delete_pending;
+    bool                delete_pending;
 } sock_state_t;
 
 static inline sock_state_t *
@@ -1579,18 +1522,17 @@ static inline int
 sock__cancel_poll(sock_state_t *sock_state) {
     assert(sock_state->poll_status == SOCK__POLL_PENDING);
 
-    if (afd_cancel_poll(poll_group_get_afd_device_handle(sock_state->poll_group),
-                        &sock_state->io_status_block) < 0)
+    if (afd_cancel_poll(poll_group_get_afd_device_handle(sock_state->poll_group), &sock_state->io_status_block) < 0)
         return -1;
 
-    sock_state->poll_status = SOCK__POLL_CANCELLED;
+    sock_state->poll_status    = SOCK__POLL_CANCELLED;
     sock_state->pending_events = 0;
     return 0;
 }
 
 sock_state_t *
 sock_new(port_state_t *port_state, SOCKET socket) {
-    SOCKET base_socket;
+    SOCKET        base_socket;
     poll_group_t *poll_group;
     sock_state_t *sock_state;
 
@@ -1612,7 +1554,7 @@ sock_new(port_state_t *port_state, SOCKET socket) {
     memset(sock_state, 0, sizeof *sock_state);
 
     sock_state->base_socket = base_socket;
-    sock_state->poll_group = poll_group;
+    sock_state->poll_group  = poll_group;
 
     tree_node_init(&sock_state->tree_node);
     queue_node_init(&sock_state->queue_node);
@@ -1669,15 +1611,14 @@ sock_force_delete(port_state_t *port_state, sock_state_t *sock_state) {
 }
 
 int
-sock_set_event(port_state_t *port_state, sock_state_t *sock_state,
-               const struct epoll_event *ev) {
+sock_set_event(port_state_t *port_state, sock_state_t *sock_state, const struct epoll_event *ev) {
     /* EPOLLERR and EPOLLHUP are always reported, even when not requested by the
      * caller. However they are disabled after a event has been reported for a
      * socket for which the EPOLLONESHOT flag was set. */
     uint32_t events = ev->events | EPOLLERR | EPOLLHUP;
 
     sock_state->user_events = events;
-    sock_state->user_data = ev->data;
+    sock_state->user_data   = ev->data;
 
     if ((events & SOCK__KNOWN_events & ~sock_state->pending_events) != 0)
         port_request_socket_update(port_state, sock_state);
@@ -1723,8 +1664,7 @@ sock__afd_events_to_events(DWORD afd_events) {
         events |= EPOLLHUP;
     if (afd_events & AFD_POLL_CONNECT_FAIL)
         /* Linux reports all these events after connect() has failed. */
-        events |=
-            EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDNORM | EPOLLWRNORM | EPOLLRDHUP;
+        events |= EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLRDNORM | EPOLLWRNORM | EPOLLRDHUP;
 
     return events;
 }
@@ -1733,9 +1673,7 @@ int
 sock_update(port_state_t *port_state, sock_state_t *sock_state) {
     assert(!sock_state->delete_pending);
 
-    if ((sock_state->poll_status == SOCK__POLL_PENDING) &&
-        (sock_state->user_events & SOCK__KNOWN_events &
-         ~sock_state->pending_events) == 0) {
+    if ((sock_state->poll_status == SOCK__POLL_PENDING) && (sock_state->user_events & SOCK__KNOWN_events & ~sock_state->pending_events) == 0) {
         /* All the events the user is interested in are already being monitored by
          * the pending poll operation. It might spuriously complete because of an
          * event that we're no longer interested in; when that happens we'll submit
@@ -1755,31 +1693,29 @@ sock_update(port_state_t *port_state, sock_state_t *sock_state) {
 
     } else if (sock_state->poll_status == SOCK__POLL_IDLE) {
         /* No poll operation is pending; start one. */
-        sock_state->poll_info.Exclusive = FALSE;
-        sock_state->poll_info.NumberOfHandles = 1;
-        sock_state->poll_info.Timeout.QuadPart = INT64_MAX;
-        sock_state->poll_info.Handles[0].Handle = (HANDLE)sock_state->base_socket;
+        sock_state->poll_info.Exclusive         = FALSE;
+        sock_state->poll_info.NumberOfHandles   = 1;
+        sock_state->poll_info.Timeout.QuadPart  = INT64_MAX;
+        sock_state->poll_info.Handles[0].Handle = (HANDLE) sock_state->base_socket;
         sock_state->poll_info.Handles[0].Status = 0;
-        sock_state->poll_info.Handles[0].Events =
-            sock__events_to_afd_events(sock_state->user_events);
+        sock_state->poll_info.Handles[0].Events = sock__events_to_afd_events(sock_state->user_events);
 
-        if (afd_poll(poll_group_get_afd_device_handle(sock_state->poll_group),
-                     &sock_state->poll_info, &sock_state->io_status_block) < 0) {
+        if (afd_poll(poll_group_get_afd_device_handle(sock_state->poll_group), &sock_state->poll_info, &sock_state->io_status_block) < 0) {
             switch (GetLastError()) {
-            case ERROR_IO_PENDING:
-                /* Overlapped poll operation in progress; this is expected. */
-                break;
-            case ERROR_INVALID_HANDLE:
-                /* Socket closed; it'll be dropped from the epoll set. */
-                return sock__delete(port_state, sock_state, false);
-            default:
-                /* Other errors are propagated to the caller. */
-                return_map_error(-1);
+                case ERROR_IO_PENDING:
+                    /* Overlapped poll operation in progress; this is expected. */
+                    break;
+                case ERROR_INVALID_HANDLE:
+                    /* Socket closed; it'll be dropped from the epoll set. */
+                    return sock__delete(port_state, sock_state, false);
+                default:
+                    /* Other errors are propagated to the caller. */
+                    return_map_error(-1);
             }
         }
 
         /* The poll request was successfully submitted. */
-        sock_state->poll_status = SOCK__POLL_PENDING;
+        sock_state->poll_status    = SOCK__POLL_PENDING;
         sock_state->pending_events = sock_state->user_events;
 
     } else {
@@ -1792,14 +1728,12 @@ sock_update(port_state_t *port_state, sock_state_t *sock_state) {
 }
 
 int
-sock_feed_event(port_state_t *port_state, IO_STATUS_BLOCK *io_status_block,
-                struct epoll_event *ev) {
-    sock_state_t *sock_state =
-        container_of(io_status_block, sock_state_t, io_status_block);
-    AFD_POLL_INFO *poll_info = &sock_state->poll_info;
-    uint32_t events = 0;
+sock_feed_event(port_state_t *port_state, IO_STATUS_BLOCK *io_status_block, struct epoll_event *ev) {
+    sock_state_t  *sock_state = container_of(io_status_block, sock_state_t, io_status_block);
+    AFD_POLL_INFO *poll_info  = &sock_state->poll_info;
+    uint32_t       events     = 0;
 
-    sock_state->poll_status = SOCK__POLL_IDLE;
+    sock_state->poll_status    = SOCK__POLL_IDLE;
     sock_state->pending_events = 0;
 
     if (sock_state->delete_pending) {
@@ -1840,7 +1774,7 @@ sock_feed_event(port_state_t *port_state, IO_STATUS_BLOCK *io_status_block,
     if (sock_state->user_events & EPOLLONESHOT)
         sock_state->user_events = 0;
 
-    ev->data = sock_state->user_data;
+    ev->data   = sock_state->user_data;
     ev->events = events;
     return 1;
 }
@@ -1949,25 +1883,25 @@ tree_node_init(tree_node_t *node) {
     memset(node, 0, sizeof *node);
 }
 
-#define TREE__ROTATE(cis, trans)     \
-    tree_node_t *p = node;           \
-    tree_node_t *q = node->trans;    \
-    tree_node_t *parent = p->parent; \
-                                     \
-    if (parent) {                    \
-        if (parent->left == p)       \
-            parent->left = q;        \
-        else                         \
-            parent->right = q;       \
-    } else {                         \
-        tree->root = q;              \
-    }                                \
-                                     \
-    q->parent = parent;              \
-    p->parent = q;                   \
-    p->trans = q->cis;               \
-    if (p->trans)                    \
-        p->trans->parent = p;        \
+#define TREE__ROTATE(cis, trans)       \
+    tree_node_t *p      = node;        \
+    tree_node_t *q      = node->trans; \
+    tree_node_t *parent = p->parent;   \
+                                       \
+    if (parent) {                      \
+        if (parent->left == p)         \
+            parent->left = q;          \
+        else                           \
+            parent->right = q;         \
+    } else {                           \
+        tree->root = q;                \
+    }                                  \
+                                       \
+    q->parent = parent;                \
+    p->parent = q;                     \
+    p->trans  = q->cis;                \
+    if (p->trans)                      \
+        p->trans->parent = p;          \
     q->cis = p;
 
 static inline void
@@ -1976,10 +1910,7 @@ tree__rotate_left(tree_t *tree, tree_node_t *node) {
 }
 
 static inline void
-tree__rotate_right(tree_t *tree, tree_node_t *node) {
-    TREE__ROTATE(right, left)
-}
-
+tree__rotate_right(tree_t *tree, tree_node_t *node){TREE__ROTATE(right, left)}
 #define TREE__INSERT_OR_DESCEND(side) \
     if (parent->side) {               \
         parent = parent->side;        \
@@ -1988,27 +1919,26 @@ tree__rotate_right(tree_t *tree, tree_node_t *node) {
         break;                        \
     }
 
-#define TREE__REBALANCE_AFTER_INSERT(cis, trans) \
-    tree_node_t *grandparent = parent->parent;   \
-    tree_node_t *uncle = grandparent->trans;     \
-                                                 \
-    if (uncle && uncle->red) {                   \
-        parent->red = uncle->red = false;        \
-        grandparent->red = true;                 \
-        node = grandparent;                      \
-    } else {                                     \
-        if (node == parent->trans) {             \
-            tree__rotate_##cis(tree, parent);    \
-            node = parent;                       \
-            parent = node->parent;               \
-        }                                        \
-        parent->red = false;                     \
-        grandparent->red = true;                 \
-        tree__rotate_##trans(tree, grandparent); \
+#define TREE__REBALANCE_AFTER_INSERT(cis, trans)   \
+    tree_node_t *grandparent = parent->parent;     \
+    tree_node_t *uncle       = grandparent->trans; \
+                                                   \
+    if (uncle && uncle->red) {                     \
+        parent->red = uncle->red = false;          \
+        grandparent->red         = true;           \
+        node                     = grandparent;    \
+    } else {                                       \
+        if (node == parent->trans) {               \
+            tree__rotate_##cis(tree, parent);      \
+            node   = parent;                       \
+            parent = node->parent;                 \
+        }                                          \
+        parent->red      = false;                  \
+        grandparent->red = true;                   \
+        tree__rotate_##trans(tree, grandparent);   \
     }
 
-int
-tree_add(tree_t *tree, tree_node_t *node, uintptr_t key) {
+int tree_add(tree_t *tree, tree_node_t *node, uintptr_t key) {
     tree_node_t *parent;
 
     parent = tree->root;
@@ -2026,10 +1956,10 @@ tree_add(tree_t *tree, tree_node_t *node, uintptr_t key) {
         tree->root = node;
     }
 
-    node->key = key;
+    node->key  = key;
     node->left = node->right = NULL;
-    node->parent = parent;
-    node->red = true;
+    node->parent             = parent;
+    node->red                = true;
 
     for (; parent && parent->red; parent = node->parent) {
         if (parent == parent->parent->left) {
@@ -2043,38 +1973,37 @@ tree_add(tree_t *tree, tree_node_t *node, uintptr_t key) {
     return 0;
 }
 
-#define TREE__REBALANCE_AFTER_REMOVE(cis, trans)       \
-    tree_node_t *sibling = parent->trans;              \
-                                                       \
-    if (sibling->red) {                                \
-        sibling->red = false;                          \
-        parent->red = true;                            \
-        tree__rotate_##cis(tree, parent);              \
-        sibling = parent->trans;                       \
-    }                                                  \
-    if ((sibling->left && sibling->left->red) ||       \
-        (sibling->right && sibling->right->red)) {     \
-        if (!sibling->trans || !sibling->trans->red) { \
-            sibling->cis->red = false;                 \
-            sibling->red = true;                       \
-            tree__rotate_##trans(tree, sibling);       \
-            sibling = parent->trans;                   \
-        }                                              \
-        sibling->red = parent->red;                    \
-        parent->red = sibling->trans->red = false;     \
-        tree__rotate_##cis(tree, parent);              \
-        node = tree->root;                             \
-        break;                                         \
-    }                                                  \
+#define TREE__REBALANCE_AFTER_REMOVE(cis, trans)                                            \
+    tree_node_t *sibling = parent->trans;                                                   \
+                                                                                            \
+    if (sibling->red) {                                                                     \
+        sibling->red = false;                                                               \
+        parent->red  = true;                                                                \
+        tree__rotate_##cis(tree, parent);                                                   \
+        sibling = parent->trans;                                                            \
+    }                                                                                       \
+    if ((sibling->left && sibling->left->red) || (sibling->right && sibling->right->red)) { \
+        if (!sibling->trans || !sibling->trans->red) {                                      \
+            sibling->cis->red = false;                                                      \
+            sibling->red      = true;                                                       \
+            tree__rotate_##trans(tree, sibling);                                            \
+            sibling = parent->trans;                                                        \
+        }                                                                                   \
+        sibling->red = parent->red;                                                         \
+        parent->red = sibling->trans->red = false;                                          \
+        tree__rotate_##cis(tree, parent);                                                   \
+        node = tree->root;                                                                  \
+        break;                                                                              \
+    }                                                                                       \
     sibling->red = true;
 
 void
 tree_del(tree_t *tree, tree_node_t *node) {
     tree_node_t *parent = node->parent;
-    tree_node_t *left = node->left;
-    tree_node_t *right = node->right;
+    tree_node_t *left   = node->left;
+    tree_node_t *right  = node->right;
     tree_node_t *next;
-    bool red;
+    bool         red;
 
     if (!left) {
         next = right;
@@ -2096,24 +2025,24 @@ tree_del(tree_t *tree, tree_node_t *node) {
     }
 
     if (left && right) {
-        red = next->red;
-        next->red = node->red;
-        next->left = left;
+        red          = next->red;
+        next->red    = node->red;
+        next->left   = left;
         left->parent = next;
         if (next != right) {
-            parent = next->parent;
-            next->parent = node->parent;
-            node = next->right;
-            parent->left = node;
-            next->right = right;
+            parent        = next->parent;
+            next->parent  = node->parent;
+            node          = next->right;
+            parent->left  = node;
+            next->right   = right;
             right->parent = next;
         } else {
             next->parent = parent;
-            parent = next;
-            node = next->right;
+            parent       = next;
+            node         = next->right;
         }
     } else {
-        red = node->red;
+        red  = node->red;
         node = next;
     }
 
@@ -2134,7 +2063,7 @@ tree_del(tree_t *tree, tree_node_t *node) {
         } else {
             TREE__REBALANCE_AFTER_REMOVE(right, left)
         }
-        node = parent;
+        node   = parent;
         parent = parent->parent;
     } while (!node->red);
 
@@ -2162,21 +2091,21 @@ tree_root(const tree_t *tree) {
 }
 
 #ifndef SIO_BSP_HANDLE_POLL
-#    define SIO_BSP_HANDLE_POLL 0x4800001D
+#define SIO_BSP_HANDLE_POLL 0x4800001D
 #endif
 
 #ifndef SIO_BASE_HANDLE
-#    define SIO_BASE_HANDLE 0x48000022
+#define SIO_BASE_HANDLE 0x48000022
 #endif
 
 int
 ws_global_init(void) {
-    int r;
+    int     r;
     WSADATA wsa_data;
 
     r = WSAStartup(MAKEWORD(2, 2), &wsa_data);
     if (r != 0)
-        return_set_error(-1, (DWORD)r);
+        return_set_error(-1, (DWORD) r);
 
     return 0;
 }
@@ -2184,10 +2113,9 @@ ws_global_init(void) {
 static inline SOCKET
 ws__ioctl_get_bsp_socket(SOCKET socket, DWORD ioctl) {
     SOCKET bsp_socket;
-    DWORD bytes;
+    DWORD  bytes;
 
-    if (WSAIoctl(socket, ioctl, NULL, 0, &bsp_socket, sizeof bsp_socket, &bytes, NULL,
-                 NULL) != SOCKET_ERROR)
+    if (WSAIoctl(socket, ioctl, NULL, 0, &bsp_socket, sizeof bsp_socket, &bytes, NULL, NULL) != SOCKET_ERROR)
         return bsp_socket;
     else
         return INVALID_SOCKET;
@@ -2196,7 +2124,7 @@ ws__ioctl_get_bsp_socket(SOCKET socket, DWORD ioctl) {
 SOCKET
 ws_get_base_socket(SOCKET socket) {
     SOCKET base_socket;
-    DWORD error;
+    DWORD  error;
 
     for (;;) {
         base_socket = ws__ioctl_get_bsp_socket(socket, SIO_BASE_HANDLE);

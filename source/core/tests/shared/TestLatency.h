@@ -30,8 +30,7 @@ public:
         const auto as_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
         sum_duration += as_ns;
 
-        auto const bucketIndex =
-            static_cast<std::uint64_t>(as_ns.count() / bucketDuration.count());
+        auto const bucketIndex = static_cast<std::uint64_t>(as_ns.count() / bucketDuration.count());
         if (bucketIndex < TBucketCount) {
             buckets[static_cast<std::size_t>(bucketIndex)]++;
             return;
@@ -49,8 +48,7 @@ public:
 
     [[nodiscard]] double
     mean_nanoseconds() const {
-        return count ? static_cast<double>(sum_duration.count()) / static_cast<double>(count)
-                     : 0.;
+        return count ? static_cast<double>(sum_duration.count()) / static_cast<double>(count) : 0.;
     }
 
     template <typename O, typename TRatio = std::chrono::microseconds>
@@ -70,30 +68,22 @@ public:
         double mean = 0;
         for (std::size_t i = 0; i < TBucketCount; ++i) {
             auto current = buckets[i];
-            accumulate_and_print(
-                output, unit, cum, mean, q50, q99, q999, current,
-                std::chrono::duration_cast<TRatio>((i + 1) * bucketDuration));
+            accumulate_and_print(output, unit, cum, mean, q50, q99, q999, current,
+                                 std::chrono::duration_cast<TRatio>((i + 1) * bucketDuration));
         }
 
-        accumulate_and_print(output, unit, cum, mean, q50, q99, q999, outOufBoundCount,
-                             std::chrono::duration_cast<TRatio>(maxDuration));
+        accumulate_and_print(output, unit, cum, mean, q50, q99, q999, outOufBoundCount, std::chrono::duration_cast<TRatio>(maxDuration));
 
         if (std::chrono::duration_cast<TRatio>(mean * bucketDuration).count())
-            output << "# Mean  " << std::setw(10)
-                   << std::chrono::duration_cast<TRatio>(mean * bucketDuration).count()
-                   << unit << std::setw(10) << "# Q50   " << std::setw(10)
-                   << std::chrono::duration_cast<TRatio>(q50 * bucketDuration).count()
-                   << unit << std::setw(10) << "# Q99   " << std::setw(10)
-                   << std::chrono::duration_cast<TRatio>(q99 * bucketDuration).count()
-                   << unit << std::setw(10) << "# Q99.9 " << std::setw(10)
-                   << std::chrono::duration_cast<TRatio>(q999 * bucketDuration).count()
-                   << unit << std::endl;
+            output << "# Mean  " << std::setw(10) << std::chrono::duration_cast<TRatio>(mean * bucketDuration).count() << unit << std::setw(10)
+                   << "# Q50   " << std::setw(10) << std::chrono::duration_cast<TRatio>(q50 * bucketDuration).count() << unit << std::setw(10)
+                   << "# Q99   " << std::setw(10) << std::chrono::duration_cast<TRatio>(q99 * bucketDuration).count() << unit << std::setw(10)
+                   << "# Q99.9 " << std::setw(10) << std::chrono::duration_cast<TRatio>(q999 * bucketDuration).count() << unit << std::endl;
     }
 
     template <typename O, typename T>
     void
-    accumulate_and_print(O &, const char *, size_t &cum, double &mean, size_t &q50,
-                         size_t &q99, size_t &q999, size_t current, T duration) {
+    accumulate_and_print(O &, const char *, size_t &cum, double &mean, size_t &q50, size_t &q99, size_t &q999, size_t current, T duration) {
         if (current == 0)
             return;
 

@@ -7,7 +7,7 @@
  * CPU-specific operations like spinlock pauses.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -44,7 +44,8 @@ namespace qb {
  * @return unique_ptr managing the resource
  */
 template <typename T, typename TCleaner>
-[[nodiscard]] auto resource(T handle, TCleaner cleaner) {
+[[nodiscard]] auto
+resource(T handle, TCleaner cleaner) {
     return std::unique_ptr<std::remove_pointer_t<T>, TCleaner>(handle, std::move(cleaner));
 }
 
@@ -57,7 +58,8 @@ template <typename T, typename TCleaner>
  * @return unique_ptr managing the resource
  */
 template <typename TCleaner>
-[[nodiscard]] auto resource(void* handle, TCleaner cleaner) {
+[[nodiscard]] auto
+resource(void *handle, TCleaner cleaner) {
     return std::unique_ptr<void, TCleaner>(handle, std::move(cleaner));
 }
 
@@ -71,21 +73,32 @@ template <typename TCleaner>
  */
 template <typename F>
 class [[nodiscard]] scope_guard {
-    F _fn;
+    F    _fn;
     bool _active;
+
 public:
     explicit scope_guard(F fn) noexcept(std::is_nothrow_move_constructible_v<F>)
-        : _fn(std::move(fn)), _active(true) {}
-    ~scope_guard() { if (_active) _fn(); }
+        : _fn(std::move(fn))
+        , _active(true) {}
+    ~scope_guard() {
+        if (_active)
+            _fn();
+    }
 
-    scope_guard(scope_guard&& other) noexcept(std::is_nothrow_move_constructible_v<F>)
-        : _fn(std::move(other._fn)), _active(other._active) { other.dismiss(); }
+    scope_guard(scope_guard &&other) noexcept(std::is_nothrow_move_constructible_v<F>)
+        : _fn(std::move(other._fn))
+        , _active(other._active) {
+        other.dismiss();
+    }
 
-    void dismiss() noexcept { _active = false; }
+    void
+    dismiss() noexcept {
+        _active = false;
+    }
 
-    scope_guard(const scope_guard&) = delete;
-    scope_guard& operator=(const scope_guard&) = delete;
-    scope_guard& operator=(scope_guard&&) = delete;
+    scope_guard(const scope_guard &)            = delete;
+    scope_guard &operator=(const scope_guard &) = delete;
+    scope_guard &operator=(scope_guard &&)      = delete;
 };
 
 template <typename F>
@@ -97,13 +110,13 @@ scope_guard(F) -> scope_guard<F>;
  */
 class CPU {
 public:
-    CPU() = delete;
-    CPU(const CPU&) = delete;
-    CPU(CPU&&) noexcept = delete;
-    ~CPU() = delete;
+    CPU()                = delete;
+    CPU(const CPU &)     = delete;
+    CPU(CPU &&) noexcept = delete;
+    ~CPU()               = delete;
 
-    CPU& operator=(const CPU&) = delete;
-    CPU& operator=(CPU&&) noexcept = delete;
+    CPU &operator=(const CPU &)     = delete;
+    CPU &operator=(CPU &&) noexcept = delete;
 
     /**
      * @brief Returns the CPU architecture / brand string
@@ -148,7 +161,8 @@ public:
 #if defined(__SSE2__)
 #include <emmintrin.h>
 namespace qb {
-inline void spin_loop_pause() noexcept {
+inline void
+spin_loop_pause() noexcept {
     _mm_pause();
 }
 } // namespace qb
@@ -156,7 +170,8 @@ inline void spin_loop_pause() noexcept {
 #elif defined(_MSC_VER) && _MSC_VER >= 1800 && (defined(_M_X64) || defined(_M_IX86))
 #include <intrin.h>
 namespace qb {
-inline void spin_loop_pause() noexcept {
+inline void
+spin_loop_pause() noexcept {
     _mm_pause();
 }
 } // namespace qb
@@ -166,7 +181,8 @@ inline void spin_loop_pause() noexcept {
 #include <intrin.h> // __dmb / _ARM64_BARRIER_SY intrinsics
 #endif
 namespace qb {
-inline void spin_loop_pause() noexcept {
+inline void
+spin_loop_pause() noexcept {
 #if defined(__GNUC__) || defined(__clang__)
     __asm__ volatile("yield" ::: "memory");
 #elif defined(_MSC_VER)
@@ -177,7 +193,8 @@ inline void spin_loop_pause() noexcept {
 
 #elif defined(__arm__)
 namespace qb {
-inline void spin_loop_pause() noexcept {
+inline void
+spin_loop_pause() noexcept {
 #if defined(__GNUC__) || defined(__clang__)
     __asm__ volatile("yield" ::: "memory");
 #endif
@@ -186,7 +203,8 @@ inline void spin_loop_pause() noexcept {
 
 #else
 namespace qb {
-inline void spin_loop_pause() noexcept {
+inline void
+spin_loop_pause() noexcept {
     std::this_thread::yield();
 }
 } // namespace qb

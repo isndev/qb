@@ -6,7 +6,7 @@
  * advanced cryptographic functionality.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -45,7 +45,7 @@ protected:
         // Initialize test data
         test_input = {'p', 'a', 's', 's', 'w', 'o', 'r', 'd'};
         test_salt  = qb::crypto::generate_salt(16);
-        test_key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+        test_key   = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
     }
 };
 
@@ -64,8 +64,7 @@ TEST_F(CryptoAdvancedTest, HKDF) {
         std::vector<unsigned char> bytes;
         for (std::size_t i = 0; i < hex.length(); i += 2) {
             std::string byteString = hex.substr(i, 2);
-            bytes.push_back(
-                static_cast<unsigned char>(std::stoi(byteString, nullptr, 16)));
+            bytes.push_back(static_cast<unsigned char>(std::stoi(byteString, nullptr, 16)));
         }
         return bytes;
     };
@@ -76,22 +75,19 @@ TEST_F(CryptoAdvancedTest, HKDF) {
     std::vector<unsigned char> expected_okm = hex_to_bytes(expected_okm_hex);
 
     // Test HKDF
-    std::vector<unsigned char> okm = qb::crypto::hkdf(
-        ikm, salt, info, expected_okm.size(), qb::crypto::DigestAlgorithm::SHA256);
+    std::vector<unsigned char> okm = qb::crypto::hkdf(ikm, salt, info, expected_okm.size(), qb::crypto::DigestAlgorithm::SHA256);
 
     // Check result
     EXPECT_EQ(okm, expected_okm);
 
     // Test with empty info
-    std::vector<unsigned char> okm2 = qb::crypto::hkdf(
-        test_input, test_salt, {}, 32, qb::crypto::DigestAlgorithm::SHA256);
+    std::vector<unsigned char> okm2 = qb::crypto::hkdf(test_input, test_salt, {}, 32, qb::crypto::DigestAlgorithm::SHA256);
 
     // Just check size
     EXPECT_EQ(okm2.size(), 32);
 
     // Test with different digest algorithms
-    std::vector<unsigned char> okm3 = qb::crypto::hkdf(
-        test_input, test_salt, {}, 32, qb::crypto::DigestAlgorithm::SHA512);
+    std::vector<unsigned char> okm3 = qb::crypto::hkdf(test_input, test_salt, {}, 32, qb::crypto::DigestAlgorithm::SHA512);
 
     EXPECT_EQ(okm3.size(), 32);
     EXPECT_NE(okm2, okm3); // Different digest should give different output
@@ -123,11 +119,9 @@ TEST_F(CryptoAdvancedTest, Argon2KeyDerivation) {
     // Test with custom salt to verify reproducibility
     params.salt = "fixed_salt_for_test";
 
-    std::vector<unsigned char> key3 =
-        qb::crypto::argon2_kdf("password123", 32, params, variant);
+    std::vector<unsigned char> key3 = qb::crypto::argon2_kdf("password123", 32, params, variant);
 
-    std::vector<unsigned char> key4 =
-        qb::crypto::argon2_kdf("password123", 32, params, variant);
+    std::vector<unsigned char> key4 = qb::crypto::argon2_kdf("password123", 32, params, variant);
 
     // Keys should be identical with the same salt
     EXPECT_EQ(key3, key4);
@@ -148,8 +142,7 @@ TEST_F(CryptoAdvancedTest, Argon2KeyDerivation) {
     EXPECT_EQ(key1, key2);
 
     // Verify that different passwords produce different keys
-    std::vector<unsigned char> key3 =
-        qb::crypto::argon2_kdf("different_password", 32, params);
+    std::vector<unsigned char> key3 = qb::crypto::argon2_kdf("different_password", 32, params);
 
     EXPECT_NE(key1, key3);
 #endif
@@ -160,24 +153,21 @@ TEST_F(CryptoAdvancedTest, KeyDerivation) {
     // Test with PBKDF2
     std::vector<unsigned char> salt = qb::crypto::generate_salt(16);
 
-    std::vector<unsigned char> key_pbkdf2 =
-        qb::crypto::derive_key("test_password", salt,
-                               32, // 256 bits
-                               qb::crypto::KdfAlgorithm::PBKDF2,
-                               10000 // iterations
-        );
+    std::vector<unsigned char> key_pbkdf2 = qb::crypto::derive_key("test_password", salt,
+                                                                   32, // 256 bits
+                                                                   qb::crypto::KdfAlgorithm::PBKDF2,
+                                                                   10000 // iterations
+    );
 
     EXPECT_EQ(key_pbkdf2.size(), 32);
 
     // Test with HKDF
-    std::vector<unsigned char> key_hkdf = qb::crypto::derive_key(
-        "test_password", salt, 32, qb::crypto::KdfAlgorithm::HKDF);
+    std::vector<unsigned char> key_hkdf = qb::crypto::derive_key("test_password", salt, 32, qb::crypto::KdfAlgorithm::HKDF);
 
     EXPECT_EQ(key_hkdf.size(), 32);
 
     // Test with Argon2
-    std::vector<unsigned char> key_argon2 = qb::crypto::derive_key(
-        "test_password", salt, 32, qb::crypto::KdfAlgorithm::Argon2);
+    std::vector<unsigned char> key_argon2 = qb::crypto::derive_key("test_password", salt, 32, qb::crypto::KdfAlgorithm::Argon2);
 
     EXPECT_EQ(key_argon2.size(), 32);
 
@@ -236,17 +226,15 @@ TEST_F(CryptoAdvancedTest, Base64URL) {
         EXPECT_EQ(encoded.find('='), std::string::npos);
 
         // Test a few specific simple cases if the basic test passes
-        std::vector<std::pair<std::string, std::string>> test_vectors = {
-            {"f", "Zg"}, {"fo", "Zm8"}, {"foo", "Zm9v"}};
+        std::vector<std::pair<std::string, std::string>> test_vectors = {{"f", "Zg"}, {"fo", "Zm8"}, {"foo", "Zm9v"}};
 
         for (const auto &test : test_vectors) {
             std::vector<unsigned char> test_input(test.first.begin(), test.first.end());
-            std::string test_encoded = qb::crypto::base64url_encode(test_input);
+            std::string                test_encoded = qb::crypto::base64url_encode(test_input);
             EXPECT_EQ(test_encoded, test.second);
 
-            std::vector<unsigned char> test_decoded =
-                qb::crypto::base64url_decode(test.second);
-            std::string test_decoded_str(test_decoded.begin(), test_decoded.end());
+            std::vector<unsigned char> test_decoded = qb::crypto::base64url_decode(test.second);
+            std::string                test_decoded_str(test_decoded.begin(), test_decoded.end());
             EXPECT_EQ(test_decoded_str, test.first);
         }
     } catch (const std::exception &e) {
@@ -287,8 +275,7 @@ TEST_F(CryptoAdvancedTest, Tokens) {
     EXPECT_TRUE(verified_payload.empty());
 
     // Test with wrong key
-    std::vector<unsigned char> wrong_key =
-        qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+    std::vector<unsigned char> wrong_key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
 
     verified_payload = qb::crypto::verify_token(token, wrong_key);
     EXPECT_TRUE(verified_payload.empty());
@@ -318,12 +305,9 @@ TEST_F(CryptoAdvancedTest, PasswordHashing) {
         EXPECT_FALSE(qb::crypto::verify_password(password, "invalid_hash_format"));
 
         // Test with different Argon2 variants
-        std::string hash_variant_d =
-            qb::crypto::hash_password(password, qb::crypto::Argon2Variant::Argon2d);
-        std::string hash_variant_i =
-            qb::crypto::hash_password(password, qb::crypto::Argon2Variant::Argon2i);
-        std::string hash_variant_id =
-            qb::crypto::hash_password(password, qb::crypto::Argon2Variant::Argon2id);
+        std::string hash_variant_d  = qb::crypto::hash_password(password, qb::crypto::Argon2Variant::Argon2d);
+        std::string hash_variant_i  = qb::crypto::hash_password(password, qb::crypto::Argon2Variant::Argon2i);
+        std::string hash_variant_id = qb::crypto::hash_password(password, qb::crypto::Argon2Variant::Argon2id);
 
         // Hashes should be different for different variants
         EXPECT_NE(hash_variant_d, hash_variant_i);
@@ -433,11 +417,10 @@ TEST_F(CryptoAdvancedTest, UniqueIV) {
 TEST_F(CryptoAdvancedTest, EncryptWithMetadata) {
     // Test data
     std::vector<unsigned char> plaintext = {'s', 'e', 'c', 'r', 'e', 't'};
-    std::string                metadata = "{\"user\":\"alice\",\"timestamp\":123456789}";
+    std::string                metadata  = "{\"user\":\"alice\",\"timestamp\":123456789}";
 
     // Encrypt
-    std::string encrypted =
-        qb::crypto::encrypt_with_metadata(plaintext, test_key, metadata);
+    std::string encrypted = qb::crypto::encrypt_with_metadata(plaintext, test_key, metadata);
 
     // Encrypted data should not be empty
     EXPECT_FALSE(encrypted.empty());
@@ -453,8 +436,7 @@ TEST_F(CryptoAdvancedTest, EncryptWithMetadata) {
     EXPECT_EQ(result->second, metadata);
 
     // Test with wrong key
-    std::vector<unsigned char> wrong_key =
-        qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+    std::vector<unsigned char> wrong_key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
 
     auto wrong_result = qb::crypto::decrypt_with_metadata(encrypted, wrong_key);
 
@@ -484,8 +466,7 @@ TEST_F(CryptoAdvancedTest, HKDFWithDifferentDigests) {
 
     // Test with different digest algorithms
     std::vector<qb::crypto::DigestAlgorithm> digests = {
-        qb::crypto::DigestAlgorithm::SHA256, qb::crypto::DigestAlgorithm::SHA384,
-        qb::crypto::DigestAlgorithm::SHA512,
+        qb::crypto::DigestAlgorithm::SHA256, qb::crypto::DigestAlgorithm::SHA384, qb::crypto::DigestAlgorithm::SHA512,
         qb::crypto::DigestAlgorithm::SHA1 // Less secure but should work
     };
 
@@ -496,8 +477,7 @@ TEST_F(CryptoAdvancedTest, HKDFWithDifferentDigests) {
     std::vector<std::vector<unsigned char>> results;
 
     for (auto digest : digests) {
-        std::vector<unsigned char> output =
-            qb::crypto::hkdf(input, salt, info, output_size, digest);
+        std::vector<unsigned char> output = qb::crypto::hkdf(input, salt, info, output_size, digest);
 
         // Output should have expected size
         EXPECT_EQ(output.size(), output_size);
@@ -514,34 +494,26 @@ TEST_F(CryptoAdvancedTest, HKDFWithDifferentDigests) {
     }
 
     // Test with empty info (edge case)
-    auto output_empty_info = qb::crypto::hkdf(input, salt, {}, output_size,
-                                              qb::crypto::DigestAlgorithm::SHA256);
+    auto output_empty_info = qb::crypto::hkdf(input, salt, {}, output_size, qb::crypto::DigestAlgorithm::SHA256);
     EXPECT_EQ(output_empty_info.size(), output_size);
 
     // Test with empty salt (edge case)
-    auto output_empty_salt = qb::crypto::hkdf(input, {}, info, output_size,
-                                              qb::crypto::DigestAlgorithm::SHA256);
+    auto output_empty_salt = qb::crypto::hkdf(input, {}, info, output_size, qb::crypto::DigestAlgorithm::SHA256);
     EXPECT_EQ(output_empty_salt.size(), output_size);
 
     // Output with empty salt should be different from output with salt
-    auto output_with_salt = qb::crypto::hkdf(input, salt, info, output_size,
-                                             qb::crypto::DigestAlgorithm::SHA256);
+    auto output_with_salt = qb::crypto::hkdf(input, salt, info, output_size, qb::crypto::DigestAlgorithm::SHA256);
     EXPECT_NE(output_empty_salt, output_with_salt);
 }
 
 TEST_F(CryptoAdvancedTest, HKDFRejectsInvalidDigestAndOversizedOutput) {
     const auto invalid_digest = static_cast<qb::crypto::DigestAlgorithm>(255);
-    EXPECT_THROW(qb::crypto::hkdf(test_input, test_salt, {}, 32, invalid_digest),
-                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::hkdf(test_input, test_salt, {}, 32, invalid_digest), std::runtime_error);
 
     const auto sha256_limit = 255u * 32u;
-    EXPECT_THROW(qb::crypto::hkdf(test_input, test_salt, {}, sha256_limit + 1u,
-                                  qb::crypto::DigestAlgorithm::SHA256),
-                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::hkdf(test_input, test_salt, {}, sha256_limit + 1u, qb::crypto::DigestAlgorithm::SHA256), std::runtime_error);
 
-    const auto empty_output =
-        qb::crypto::hkdf(test_input, test_salt, {}, 0,
-                         qb::crypto::DigestAlgorithm::SHA256);
+    const auto empty_output = qb::crypto::hkdf(test_input, test_salt, {}, 0, qb::crypto::DigestAlgorithm::SHA256);
     EXPECT_TRUE(empty_output.empty());
 }
 
@@ -552,15 +524,9 @@ TEST_F(CryptoAdvancedTest, Argon2VariantsAndInvalidParameters) {
     params.m_cost = 1 << 12;
     params.salt   = "fixed_salt_for_variant_test";
 
-    const auto argon2d =
-        qb::crypto::argon2_kdf("password123", 32, params,
-                               qb::crypto::Argon2Variant::Argon2d);
-    const auto argon2i =
-        qb::crypto::argon2_kdf("password123", 32, params,
-                               qb::crypto::Argon2Variant::Argon2i);
-    const auto argon2id =
-        qb::crypto::argon2_kdf("password123", 32, params,
-                               qb::crypto::Argon2Variant::Argon2id);
+    const auto argon2d  = qb::crypto::argon2_kdf("password123", 32, params, qb::crypto::Argon2Variant::Argon2d);
+    const auto argon2i  = qb::crypto::argon2_kdf("password123", 32, params, qb::crypto::Argon2Variant::Argon2i);
+    const auto argon2id = qb::crypto::argon2_kdf("password123", 32, params, qb::crypto::Argon2Variant::Argon2id);
 
     EXPECT_EQ(argon2d.size(), 32u);
     EXPECT_EQ(argon2i.size(), 32u);
@@ -569,9 +535,7 @@ TEST_F(CryptoAdvancedTest, Argon2VariantsAndInvalidParameters) {
     EXPECT_NE(argon2d, argon2id);
     EXPECT_NE(argon2i, argon2id);
 
-    EXPECT_THROW(qb::crypto::argon2_kdf("password123", 0, params,
-                                        qb::crypto::Argon2Variant::Argon2id),
-                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::argon2_kdf("password123", 0, params, qb::crypto::Argon2Variant::Argon2id), std::runtime_error);
 #else
     GTEST_SKIP() << "Argon2-specific contracts require QB_HAS_ARGON2";
 #endif
@@ -591,49 +555,35 @@ TEST_F(CryptoAdvancedTest, TokensRejectMalformedAndTruncatedInputs) {
     EXPECT_TRUE(qb::crypto::verify_token("not-base64url", test_key).empty());
 
     const std::vector<unsigned char> too_short(11, 0x41);
-    const auto encoded_short = qb::crypto::base64url_encode(too_short);
+    const auto                       encoded_short = qb::crypto::base64url_encode(too_short);
     EXPECT_TRUE(qb::crypto::verify_token(encoded_short, test_key).empty());
 
-    const auto iv = qb::crypto::generate_iv(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
-    const std::string invalid_json = "not-json";
-    const std::vector<unsigned char> invalid_json_bytes(invalid_json.begin(),
-                                                        invalid_json.end());
-    const auto encrypted_invalid_json =
-        qb::crypto::encrypt(invalid_json_bytes, test_key, iv,
-                            qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+    const auto                       iv           = qb::crypto::generate_iv(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+    const std::string                invalid_json = "not-json";
+    const std::vector<unsigned char> invalid_json_bytes(invalid_json.begin(), invalid_json.end());
+    const auto encrypted_invalid_json = qb::crypto::encrypt(invalid_json_bytes, test_key, iv, qb::crypto::SymmetricAlgorithm::AES_256_GCM);
     std::vector<unsigned char> encoded_token;
     encoded_token.insert(encoded_token.end(), iv.begin(), iv.end());
-    encoded_token.insert(encoded_token.end(), encrypted_invalid_json.begin(),
-                         encrypted_invalid_json.end());
+    encoded_token.insert(encoded_token.end(), encrypted_invalid_json.begin(), encrypted_invalid_json.end());
 
-    EXPECT_TRUE(qb::crypto::verify_token(qb::crypto::base64url_encode(encoded_token),
-                                         test_key)
-                    .empty());
+    EXPECT_TRUE(qb::crypto::verify_token(qb::crypto::base64url_encode(encoded_token), test_key).empty());
 }
 
 TEST_F(CryptoAdvancedTest, MetadataEnvelopeRejectsMalformedAndMismatchedAlgorithms) {
     const std::vector<unsigned char> plaintext = {'s', 'e', 'c', 'r', 'e', 't'};
     const std::string                metadata  = "{\"scope\":\"coverage\"}";
 
-    const std::string encrypted =
-        qb::crypto::encrypt_with_metadata(plaintext, test_key, metadata,
-                                          qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+    const std::string encrypted = qb::crypto::encrypt_with_metadata(plaintext, test_key, metadata, qb::crypto::SymmetricAlgorithm::AES_256_GCM);
 
     qb::json envelope = qb::json::parse(encrypted);
-    envelope["alg"] =
-        static_cast<int>(qb::crypto::SymmetricAlgorithm::CHACHA20_POLY1305);
+    envelope["alg"]   = static_cast<int>(qb::crypto::SymmetricAlgorithm::CHACHA20_POLY1305);
 
-    EXPECT_FALSE(qb::crypto::decrypt_with_metadata(envelope.dump(), test_key,
-                                                   qb::crypto::SymmetricAlgorithm::AES_256_GCM)
-                     .has_value());
+    EXPECT_FALSE(qb::crypto::decrypt_with_metadata(envelope.dump(), test_key, qb::crypto::SymmetricAlgorithm::AES_256_GCM).has_value());
     EXPECT_FALSE(qb::crypto::decrypt_with_metadata("{not-json}", test_key).has_value());
     EXPECT_FALSE(qb::crypto::decrypt_with_metadata("{}", test_key).has_value());
 
-    const auto invalid_algorithm =
-        static_cast<qb::crypto::SymmetricAlgorithm>(255);
-    EXPECT_THROW(qb::crypto::encrypt_with_metadata(plaintext, test_key, metadata,
-                                                   invalid_algorithm),
-                 std::runtime_error);
+    const auto invalid_algorithm = static_cast<qb::crypto::SymmetricAlgorithm>(255);
+    EXPECT_THROW(qb::crypto::encrypt_with_metadata(plaintext, test_key, metadata, invalid_algorithm), std::runtime_error);
 }
 
 TEST_F(CryptoAdvancedTest, UniqueIVSupportsShortAndEmptySizes) {
@@ -651,13 +601,11 @@ TEST_F(CryptoAdvancedTest, UniqueIVSupportsShortAndEmptySizes) {
 // Test for secure key serialization and deserialization
 TEST_F(CryptoAdvancedTest, KeySerialization) {
     // Generate a key
-    std::vector<unsigned char> original_key =
-        qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+    std::vector<unsigned char> original_key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
 
     // Create an authenticated serialization with metadata
-    std::string metadata = "{\"purpose\":\"test\",\"created\":\"2023-01-01\"}";
-    std::string serialized =
-        qb::crypto::encrypt_with_metadata(original_key, test_key, metadata);
+    std::string metadata   = "{\"purpose\":\"test\",\"created\":\"2023-01-01\"}";
+    std::string serialized = qb::crypto::encrypt_with_metadata(original_key, test_key, metadata);
 
     // Serialized form should not be empty
     EXPECT_FALSE(serialized.empty());
@@ -673,8 +621,7 @@ TEST_F(CryptoAdvancedTest, KeySerialization) {
     EXPECT_EQ(deserialized_result->second, metadata);
 
     // Test with wrong master key
-    std::vector<unsigned char> wrong_key =
-        qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+    std::vector<unsigned char> wrong_key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
 
     auto wrong_result = qb::crypto::decrypt_with_metadata(serialized, wrong_key);
 
@@ -700,7 +647,7 @@ TEST_F(CryptoAdvancedTest, TokensWithComplexPayloads) {
         // Test with a JSON string payload
         std::string json_payload = "{\"user_id\":123,\"roles\":[\"admin\",\"user\"],"
                                    "\"permissions\":{\"read\":true,\"write\":true}}";
-        std::string json_token = qb::crypto::generate_token(json_payload, test_key, std::chrono::seconds(60));
+        std::string json_token   = qb::crypto::generate_token(json_payload, test_key, std::chrono::seconds(60));
 
         // Token should not be empty
         EXPECT_FALSE(json_token.empty());

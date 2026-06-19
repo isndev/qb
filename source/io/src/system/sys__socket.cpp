@@ -9,7 +9,7 @@
  * blocking and non-blocking operations, as well as IPv4 and IPv6.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -105,11 +105,8 @@ socket::xpconnect(const char *hostname, u_short port, u_short local_port) {
                     if (flags & ipsv_ipv4) {
                         error = pconnect(ep, local_port);
                     } else if (flags & ipsv_ipv6) {
-                        socket::resolve_i(
-                            [&](const endpoint &ep6) {
-                                return 0 == (error = pconnect(ep6, local_port));
-                            },
-                            hostname, port, AF_INET6, AI_V4MAPPED);
+                        socket::resolve_i([&](const endpoint &ep6) { return 0 == (error = pconnect(ep6, local_port)); }, hostname, port,
+                                          AF_INET6, AI_V4MAPPED);
                     }
                     break;
                 case AF_INET6:
@@ -126,8 +123,7 @@ socket::xpconnect(const char *hostname, u_short port, u_short local_port) {
 }
 
 int
-socket::xpconnect_n(const char *hostname, u_short port,
-                    const qb::duration &wtimeout, u_short local_port) {
+socket::xpconnect_n(const char *hostname, u_short port, const qb::duration &wtimeout, u_short local_port) {
     auto flags = getipsv();
     int  error = -1;
     socket::resolve_i(
@@ -137,12 +133,8 @@ socket::xpconnect_n(const char *hostname, u_short port,
                     if (flags & ipsv_ipv4)
                         error = pconnect_n(ep, wtimeout, local_port);
                     else if (flags & ipsv_ipv6) {
-                        socket::resolve_i(
-                            [&](const endpoint &ep6) {
-                                return 0 ==
-                                       (error = pconnect_n(ep6, wtimeout, local_port));
-                            },
-                            hostname, port, AF_INET6, AI_V4MAPPED);
+                        socket::resolve_i([&](const endpoint &ep6) { return 0 == (error = pconnect_n(ep6, wtimeout, local_port)); }, hostname,
+                                          port, AF_INET6, AI_V4MAPPED);
                     }
                     break;
                 case AF_INET6:
@@ -161,32 +153,21 @@ socket::xpconnect_n(const char *hostname, u_short port,
 int
 socket::pconnect(const char *hostname, u_short port, u_short local_port) {
     int error = -1;
-    socket::resolve_i(
-        [&](const endpoint &ep) { return 0 == (error = pconnect(ep, local_port)); },
-        hostname, port);
+    socket::resolve_i([&](const endpoint &ep) { return 0 == (error = pconnect(ep, local_port)); }, hostname, port);
     return error;
 }
 
 int
-socket::pconnect_n(const char *hostname, u_short port,
-                   const qb::duration &wtimeout, u_short local_port) {
+socket::pconnect_n(const char *hostname, u_short port, const qb::duration &wtimeout, u_short local_port) {
     int error = -1;
-    socket::resolve_i(
-        [&](const endpoint &ep) {
-            return 0 == (error = pconnect_n(ep, wtimeout, local_port));
-        },
-        hostname, port);
+    socket::resolve_i([&](const endpoint &ep) { return 0 == (error = pconnect_n(ep, wtimeout, local_port)); }, hostname, port);
     return error;
 }
 
 int
 socket::pconnect_n(const char *hostname, u_short port, u_short local_port) {
     int error = -1;
-    socket::resolve_i(
-        [&](const endpoint &ep) {
-            return 0 == (error = pconnect_n(ep, local_port));
-        },
-        hostname, port);
+    socket::resolve_i([&](const endpoint &ep) { return 0 == (error = pconnect_n(ep, local_port)); }, hostname, port);
     return error;
 }
 
@@ -201,8 +182,7 @@ socket::pconnect(const endpoint &ep, u_short local_port) {
 }
 
 int
-socket::pconnect_n(const endpoint &ep, const qb::duration &wtimeout,
-                   u_short local_port) {
+socket::pconnect_n(const endpoint &ep, const qb::duration &wtimeout, u_short local_port) {
     if (this->reopen(ep.af())) {
         if (local_port != 0 && this->bind(QB_ADDR_ANY(ep.af()), local_port) != 0)
             return -1;
@@ -240,8 +220,7 @@ socket::pserve(const endpoint &ep) {
 }
 
 int
-socket::resolve(std::vector<endpoint> &endpoints, const char *hostname,
-                unsigned short port, int socktype) {
+socket::resolve(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port, int socktype) {
     return resolve_i(
         [&](const endpoint &ep) {
             endpoints.push_back(ep);
@@ -250,8 +229,7 @@ socket::resolve(std::vector<endpoint> &endpoints, const char *hostname,
         hostname, port, AF_UNSPEC, AI_ALL, socktype);
 }
 int
-socket::resolve_v4(std::vector<endpoint> &endpoints, const char *hostname,
-                   unsigned short port, int socktype) {
+socket::resolve_v4(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port, int socktype) {
     return resolve_i(
         [&](const endpoint &ep) {
             endpoints.push_back(ep);
@@ -260,8 +238,7 @@ socket::resolve_v4(std::vector<endpoint> &endpoints, const char *hostname,
         hostname, port, AF_INET, 0, socktype);
 }
 int
-socket::resolve_v6(std::vector<endpoint> &endpoints, const char *hostname,
-                   unsigned short port, int socktype) {
+socket::resolve_v6(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port, int socktype) {
     return resolve_i(
         [&](const endpoint &ep) {
             endpoints.push_back(ep);
@@ -270,8 +247,7 @@ socket::resolve_v6(std::vector<endpoint> &endpoints, const char *hostname,
         hostname, port, AF_INET6, 0, socktype);
 }
 int
-socket::resolve_v4to6(std::vector<endpoint> &endpoints, const char *hostname,
-                      unsigned short port, int socktype) {
+socket::resolve_v4to6(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port, int socktype) {
     return socket::resolve_i(
         [&](const endpoint &ep) {
             endpoints.push_back(ep);
@@ -280,8 +256,7 @@ socket::resolve_v4to6(std::vector<endpoint> &endpoints, const char *hostname,
         hostname, port, AF_INET6, AI_V4MAPPED, socktype);
 }
 int
-socket::resolve_tov6(std::vector<endpoint> &endpoints, const char *hostname,
-                     unsigned short port, int socktype) {
+socket::resolve_tov6(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port, int socktype) {
     return resolve_i(
         [&](const endpoint &ep) {
             endpoints.push_back(ep);
@@ -340,8 +315,7 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
                 // ep.ip().c_str());
                 switch (ep.af()) {
                     case AF_INET:
-                        if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) &&
-                            !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
+                        if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) && !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
                             done = handler(ep);
                         break;
                     case AF_INET6:
@@ -385,8 +359,7 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
             // QB_LOGV("socket::traverse_local_address: ip=%s", ep.ip().c_str());
             switch (ep.af()) {
                 case AF_INET:
-                    if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) &&
-                        !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
+                    if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) && !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
                         done = handler(ep);
                     break;
                 case AF_INET6:
@@ -454,8 +427,7 @@ socket::open(int af, int type, int protocol) {
         // MSG_NOSIGNAL on send(); Windows has no SIGPIPE.
         if (this->fd != invalid_socket) {
             int on = 1;
-            ::setsockopt(this->fd, SOL_SOCKET, SO_NOSIGPIPE,
-                         reinterpret_cast<const char *>(&on), sizeof(on));
+            ::setsockopt(this->fd, SOL_SOCKET, SO_NOSIGPIPE, reinterpret_cast<const char *>(&on), sizeof(on));
         }
 #endif
     }
@@ -478,24 +450,20 @@ socket::open_ex(int af, int type, int protocol) {
         DWORD dwBytes = 0;
         if (nullptr == __accept_ex) {
             GUID guidAcceptEx = WSAID_ACCEPTEX;
-            (void) WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidAcceptEx,
-                            sizeof(guidAcceptEx), &__accept_ex, sizeof(__accept_ex),
+            (void) WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidAcceptEx, sizeof(guidAcceptEx), &__accept_ex, sizeof(__accept_ex),
                             &dwBytes, nullptr, nullptr);
         }
 
         if (nullptr == __connect_ex) {
             GUID guidConnectEx = WSAID_CONNECTEX;
-            (void) WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidConnectEx,
-                            sizeof(guidConnectEx), &__connect_ex, sizeof(__connect_ex),
-                            &dwBytes, nullptr, nullptr);
+            (void) WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidConnectEx, sizeof(guidConnectEx), &__connect_ex,
+                            sizeof(__connect_ex), &dwBytes, nullptr, nullptr);
         }
 
         if (nullptr == __get_accept_ex_sockaddrs) {
             GUID guidGetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS;
-            (void) WSAIoctl(
-                sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidGetAcceptExSockaddrs,
-                sizeof(guidGetAcceptExSockaddrs), &__get_accept_ex_sockaddrs,
-                sizeof(__get_accept_ex_sockaddrs), &dwBytes, nullptr, nullptr);
+            (void) WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidGetAcceptExSockaddrs, sizeof(guidGetAcceptExSockaddrs),
+                            &__get_accept_ex_sockaddrs, sizeof(__get_accept_ex_sockaddrs), &dwBytes, nullptr, nullptr);
         }
 
         this->fd = sock;
@@ -508,31 +476,24 @@ socket::open_ex(int af, int type, int protocol) {
 
 #if !defined(WP8)
 bool
-socket::accept_ex(SOCKET sockfd_listened, SOCKET sockfd_prepared, PVOID lpOutputBuffer,
-                  DWORD dwReceiveDataLength, DWORD dwLocalAddressLength,
-                  DWORD dwRemoteAddressLength, LPDWORD lpdwBytesReceived,
-                  LPOVERLAPPED lpOverlapped) {
-    return __accept_ex(sockfd_listened, sockfd_prepared, lpOutputBuffer,
-                       dwReceiveDataLength, dwLocalAddressLength, dwRemoteAddressLength,
-                       lpdwBytesReceived, lpOverlapped) != FALSE;
+socket::accept_ex(SOCKET sockfd_listened, SOCKET sockfd_prepared, PVOID lpOutputBuffer, DWORD dwReceiveDataLength, DWORD dwLocalAddressLength,
+                  DWORD dwRemoteAddressLength, LPDWORD lpdwBytesReceived, LPOVERLAPPED lpOverlapped) {
+    return __accept_ex(sockfd_listened, sockfd_prepared, lpOutputBuffer, dwReceiveDataLength, dwLocalAddressLength, dwRemoteAddressLength,
+                       lpdwBytesReceived, lpOverlapped)
+           != FALSE;
 }
 
 bool
-socket::connect_ex(SOCKET s, const struct sockaddr *name, int namelen,
-                   PVOID lpSendBuffer, DWORD dwSendDataLength, LPDWORD lpdwBytesSent,
+socket::connect_ex(SOCKET s, const struct sockaddr *name, int namelen, PVOID lpSendBuffer, DWORD dwSendDataLength, LPDWORD lpdwBytesSent,
                    LPOVERLAPPED lpOverlapped) {
-    return __connect_ex(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent,
-                        lpOverlapped);
+    return __connect_ex(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
 }
 
 void
-socket::translate_sockaddrs(PVOID lpOutputBuffer, DWORD dwReceiveDataLength,
-                            DWORD dwLocalAddressLength, DWORD dwRemoteAddressLength,
-                            sockaddr **LocalSockaddr, LPINT LocalSockaddrLength,
-                            sockaddr **RemoteSockaddr, LPINT RemoteSockaddrLength) {
-    __get_accept_ex_sockaddrs(lpOutputBuffer, dwReceiveDataLength, dwLocalAddressLength,
-                              dwRemoteAddressLength, LocalSockaddr, LocalSockaddrLength,
-                              RemoteSockaddr, RemoteSockaddrLength);
+socket::translate_sockaddrs(PVOID lpOutputBuffer, DWORD dwReceiveDataLength, DWORD dwLocalAddressLength, DWORD dwRemoteAddressLength,
+                            sockaddr **LocalSockaddr, LPINT LocalSockaddrLength, sockaddr **RemoteSockaddr, LPINT RemoteSockaddrLength) {
+    __get_accept_ex_sockaddrs(lpOutputBuffer, dwReceiveDataLength, dwLocalAddressLength, dwRemoteAddressLength, LocalSockaddr,
+                              LocalSockaddrLength, RemoteSockaddr, RemoteSockaddrLength);
 }
 #endif
 
@@ -567,8 +528,7 @@ socket::set_nonblocking(socket_type s, bool nonblocking) {
     int flags = ::fcntl(s, F_GETFL, 0);
     if (flags < 0)
         return -1;
-    return ::fcntl(s, F_SETFL,
-                   nonblocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK));
+    return ::fcntl(s, F_SETFL, nonblocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK));
 #endif
 }
 
@@ -629,8 +589,7 @@ socket::accept_n(socket_type &new_sock) const {
             // Accepted sockets are created by ::accept (not open()), so apply the
             // BSD/macOS SIGPIPE suppression here too.
             int on = 1;
-            ::setsockopt(new_sock, SOL_SOCKET, SO_NOSIGPIPE,
-                         reinterpret_cast<const char *>(&on), sizeof(on));
+            ::setsockopt(new_sock, SOL_SOCKET, SO_NOSIGPIPE, reinterpret_cast<const char *>(&on), sizeof(on));
 #endif
             return 0;
         }
@@ -668,8 +627,7 @@ socket::connect(socket_type s, const endpoint &ep) {
 }
 
 int
-socket::connect_n(const char *addr, u_short port,
-                  const qb::duration &wtimeout) {
+socket::connect_n(const char *addr, u_short port, const qb::duration &wtimeout) {
     return connect_n(ip::endpoint(addr, port), wtimeout);
 }
 int
@@ -677,8 +635,7 @@ socket::connect_n(const endpoint &ep, const qb::duration &wtimeout) {
     return this->connect_n(this->fd, ep, wtimeout);
 }
 int
-socket::connect_n(socket_type s, const endpoint &ep,
-                  const qb::duration &wtimeout) {
+socket::connect_n(socket_type s, const endpoint &ep, const qb::duration &wtimeout) {
     if (set_nonblocking(s, true) != 0)
         return -1;
 
@@ -695,8 +652,7 @@ socket::connect_n(socket_type s, const endpoint &ep,
         return -1;
     }
 
-    auto remaining = qb::duration(
-        std::max<qb::duration::rep>(wtimeout.count(), 0));
+    auto remaining = qb::duration(std::max<qb::duration::rep>(wtimeout.count(), 0));
 
     fd_set readfds;
     fd_set writefds;
@@ -713,8 +669,7 @@ socket::connect_n(socket_type s, const endpoint &ep,
 
     int       so_error = 0;
     socklen_t len      = static_cast<socklen_t>(sizeof(so_error));
-    if (::getsockopt(s, SOL_SOCKET, SO_ERROR,
-                     reinterpret_cast<char *>(&so_error), &len) != 0) {
+    if (::getsockopt(s, SOL_SOCKET, SO_ERROR, reinterpret_cast<char *>(&so_error), &len) != 0) {
         set_nonblocking(s, false);
         return -1;
     }
@@ -753,13 +708,11 @@ socket::disconnect(socket_type s) {
 }
 
 int
-socket::send_n(const void *buf, int len, const qb::duration &wtimeout,
-               int flags) {
+socket::send_n(const void *buf, int len, const qb::duration &wtimeout, int flags) {
     return this->send_n(this->fd, buf, len, wtimeout, flags);
 }
 int
-socket::send_n(socket_type s, const void *buf, int len,
-               qb::duration wtimeout, int flags) {
+socket::send_n(socket_type s, const void *buf, int len, qb::duration wtimeout, int flags) {
     int bytes_transferred = 0;
     int n;
     int error = 0;
@@ -768,8 +721,7 @@ socket::send_n(socket_type s, const void *buf, int len,
         return -1;
 
     for (; bytes_transferred < len;) {
-        n = socket::send(s, (const char *) buf + bytes_transferred,
-                         len - bytes_transferred, flags);
+        n = socket::send(s, (const char *) buf + bytes_transferred, len - bytes_transferred, flags);
         if (n > 0) {
             bytes_transferred += n;
             continue;
@@ -779,8 +731,7 @@ socket::send_n(socket_type s, const void *buf, int len,
         if (n == -1 && socket::not_send_error(error)) {
             const auto start = std::chrono::steady_clock::now();
             int const  rtn   = handle_write_ready(s, wtimeout);
-            wtimeout -= std::chrono::duration_cast<qb::duration>(
-                std::chrono::steady_clock::now() - start);
+            wtimeout -= std::chrono::duration_cast<qb::duration>(std::chrono::steady_clock::now() - start);
 
             if (rtn != -1 && wtimeout.count() > 0) {
                 continue;
@@ -795,13 +746,11 @@ socket::send_n(socket_type s, const void *buf, int len,
 }
 
 int
-socket::recv_n(void *buf, int len, const qb::duration &wtimeout,
-               int flags) const {
+socket::recv_n(void *buf, int len, const qb::duration &wtimeout, int flags) const {
     return this->recv_n(this->fd, buf, len, wtimeout, flags);
 }
 int
-socket::recv_n(socket_type s, void *buf, int len, qb::duration wtimeout,
-               int flags) {
+socket::recv_n(socket_type s, void *buf, int len, qb::duration wtimeout, int flags) {
     int bytes_transferred = 0;
     int n;
     int error = 0;
@@ -810,8 +759,7 @@ socket::recv_n(socket_type s, void *buf, int len, qb::duration wtimeout,
         return -1;
 
     for (; bytes_transferred < len;) {
-        n = socket::recv(s, static_cast<char *>(buf) + bytes_transferred,
-                         len - bytes_transferred, flags);
+        n = socket::recv(s, static_cast<char *>(buf) + bytes_transferred, len - bytes_transferred, flags);
         if (n > 0) {
             bytes_transferred += n;
             continue;
@@ -821,8 +769,7 @@ socket::recv_n(socket_type s, void *buf, int len, qb::duration wtimeout,
         if (n == -1 && socket::not_recv_error(error)) {
             const auto start = std::chrono::steady_clock::now();
             int const  rtn   = handle_read_ready(s, wtimeout);
-            wtimeout -= std::chrono::duration_cast<qb::duration>(
-                std::chrono::steady_clock::now() - start);
+            wtimeout -= std::chrono::duration_cast<qb::duration>(std::chrono::steady_clock::now() - start);
 
             if (rtn != -1 && wtimeout.count() > 0) {
                 continue;
@@ -838,8 +785,7 @@ socket::recv_n(socket_type s, void *buf, int len, qb::duration wtimeout,
 
 int
 socket::send(const void *buf, int len, int flags) const {
-    return static_cast<int>(
-        ::send(this->fd, (const char *) buf, len, flags));
+    return static_cast<int>(::send(this->fd, (const char *) buf, len, flags));
 }
 int
 socket::send(socket_type s, const void *buf, int len, int flags) {
@@ -857,15 +803,13 @@ socket::recv(socket_type s, void *buf, int len, int flags) {
 
 int
 socket::sendto(const void *buf, int len, const endpoint &to, int flags) const {
-    return static_cast<int>(::sendto(this->fd, (const char *) buf, len,
-                                     flags, &to.sa_, to.len()));
+    return static_cast<int>(::sendto(this->fd, (const char *) buf, len, flags, &to.sa_, to.len()));
 }
 
 int
 socket::recvfrom(void *buf, int len, endpoint &from, int flags) const {
     socklen_t addrlen{sizeof(from)};
-    int n = static_cast<int>(::recvfrom(this->fd, (char *) buf, len, flags,
-                                        &from.sa_, &addrlen));
+    int       n = static_cast<int>(::recvfrom(this->fd, (char *) buf, len, flags, &from.sa_, &addrlen));
     from.len(addrlen);
     return n;
 }
@@ -891,8 +835,7 @@ socket::handle_read_ready(socket_type s, const qb::duration &wtimeout) {
 }
 
 int
-socket::select(socket_type s, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-               qb::duration wtimeout) {
+socket::select(socket_type s, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, qb::duration wtimeout) {
     int n = 0;
 
     // A negative timeval makes ::select fail with EINVAL on most platforms;
@@ -907,25 +850,22 @@ socket::select(socket_type s, fd_set *readfds, fd_set *writefds, fd_set *exceptf
 
         // Convert at the syscall boundary: timeval needs whole seconds + the
         // sub-second remainder expressed in microseconds.
-        const auto      remaining_us =
-            std::chrono::duration_cast<std::chrono::microseconds>(wtimeout);
+        const auto remaining_us = std::chrono::duration_cast<std::chrono::microseconds>(wtimeout);
         // Saturate the seconds field so a very large timeout cannot overflow
         // timeval::tv_sec (32-bit long on Windows).
-        const long long secs    = remaining_us.count() / std::micro::den;
-        const long long max_sec = static_cast<long long>(
-            (std::numeric_limits<decltype(timeval::tv_sec)>::max)());
-        timeval waitd_tv = {
+        const long long secs     = remaining_us.count() / std::micro::den;
+        const long long max_sec  = static_cast<long long>((std::numeric_limits<decltype(timeval::tv_sec)>::max)());
+        timeval         waitd_tv = {
             static_cast<decltype(timeval::tv_sec)>(secs > max_sec ? max_sec : secs),
-            static_cast<decltype(timeval::tv_usec)>(remaining_us.count() %
-                                                    std::micro::den)};
+            static_cast<decltype(timeval::tv_usec)>(remaining_us.count() % std::micro::den)
+        };
         const auto start = std::chrono::steady_clock::now();
 #if defined(_WIN32)
-        n               = ::select(0, readfds, writefds, exceptfds, &waitd_tv);
+        n = ::select(0, readfds, writefds, exceptfds, &waitd_tv);
 #else
-        n               = ::select(s + 1, readfds, writefds, exceptfds, &waitd_tv);
+        n = ::select(s + 1, readfds, writefds, exceptfds, &waitd_tv);
 #endif
-        wtimeout -= std::chrono::duration_cast<qb::duration>(
-            std::chrono::steady_clock::now() - start);
+        wtimeout -= std::chrono::duration_cast<qb::duration>(std::chrono::steady_clock::now() - start);
 
         if (n < 0 && socket::get_last_errno() == EINTR) {
             if (wtimeout.count() > 0)
@@ -989,8 +929,7 @@ socket::set_keepalive(socket_type s, int flag, int idle, int interval, int probe
     buffer_in.keepalivetime     = idle * 1000;
     buffer_in.keepaliveinterval = interval * 1000;
 
-    return WSAIoctl(s, SIO_KEEPALIVE_VALS, &buffer_in, sizeof(buffer_in),
-                    nullptr, 0, (DWORD *) &probes, nullptr, nullptr);
+    return WSAIoctl(s, SIO_KEEPALIVE_VALS, &buffer_in, sizeof(buffer_in), nullptr, 0, (DWORD *) &probes, nullptr, nullptr);
 #else
     int n = set_optval(s, SOL_SOCKET, SO_KEEPALIVE, flag);
     n += set_optval(s, IPPROTO_TCP, TCP_KEEPIDLE, idle);
@@ -1022,7 +961,8 @@ socket::exclusive_address(bool exclusive) {
 #endif
 }
 
-socket::operator socket_type(void) const {
+socket::
+operator socket_type(void) const {
     return this->fd;
 }
 
@@ -1053,15 +993,14 @@ socket::tcp_rtt(socket_type s) {
 #if defined(NTDDI_WIN10_RS2) && NTDDI_VERSION >= NTDDI_WIN10_RS2
     TCP_INFO_v0 info;
     DWORD       tcpi_ver = 0, bytes_transferred = 0;
-    int         status = WSAIoctl(
-        s, SIO_TCP_INFO,
-        (LPVOID) &tcpi_ver, // lpvInBuffer pointer to a DWORD, version of tcp info
-        (DWORD) sizeof(tcpi_ver),     // size, in bytes, of the input buffer
-        (LPVOID) &info,               // pointer to a TCP_INFO_v0 structure
-        (DWORD) sizeof(info),         // size of the output buffer
-        (LPDWORD) &bytes_transferred, // number of bytes returned
-        (LPWSAOVERLAPPED) nullptr,    // OVERLAPPED structure
-        (LPWSAOVERLAPPED_COMPLETION_ROUTINE) nullptr);
+    int         status = WSAIoctl(s, SIO_TCP_INFO,
+                                  (LPVOID) &tcpi_ver,           // lpvInBuffer pointer to a DWORD, version of tcp info
+                                  (DWORD) sizeof(tcpi_ver),     // size, in bytes, of the input buffer
+                                  (LPVOID) &info,               // pointer to a TCP_INFO_v0 structure
+                                  (DWORD) sizeof(info),         // size of the output buffer
+                                  (LPDWORD) &bytes_transferred, // number of bytes returned
+                                  (LPWSAOVERLAPPED) nullptr,    // OVERLAPPED structure
+                                  (LPWSAOVERLAPPED_COMPLETION_ROUTINE) nullptr);
     /*
     info.RttUs: The current estimated round-trip time for the connection, in
     microseconds. info.MinRttUs: The minimum sampled round trip time, in microseconds.
@@ -1132,11 +1071,10 @@ socket::strerror(int error) {
     // buffer. Valid until the next strerror() call on the same thread.
     thread_local char error_msg[256];
     ZeroMemory(error_msg, sizeof(error_msg));
-    ::FormatMessageA(
-        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |
-            FORMAT_MESSAGE_MAX_WIDTH_MASK /* remove line-end charactors \r\n */,
-        NULL, error, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), // english language
-        error_msg, sizeof(error_msg), NULL);
+    ::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS
+                         | FORMAT_MESSAGE_MAX_WIDTH_MASK /* remove line-end charactors \r\n */,
+                     NULL, error, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), // english language
+                     error_msg, sizeof(error_msg), NULL);
 
     return error_msg;
 #else

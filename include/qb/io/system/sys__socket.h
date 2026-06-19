@@ -12,7 +12,7 @@
  * - Comprehensive socket options management
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -109,7 +109,7 @@ namespace inet {
 // (
 // ((uint32_t)(b3) << 16) & 0x00ff0000 ) | ( ((uint32_t)(b2) << 8) & 0x0000ff00 ) | (
 // (uint32_t)(b1) & 0x000000ff ) )
-static const socket_type invalid_socket = static_cast<socket_type>(-1);  // Modern C++: modern cast
+static const socket_type invalid_socket = static_cast<socket_type>(-1); // Modern C++: modern cast
 
 QB__NS_INLINE
 namespace ip {
@@ -136,11 +136,10 @@ struct ip_header {
         unsigned char value;
         struct {
             unsigned char priority : 3;
-            unsigned char D : 1; // delay: 0(normal), 1(as little as possible)
-            unsigned char T : 1; // throughput: 0(normal), 1(as big as possible)
-            unsigned char R : 1; // reliability: 0(normal), 1(as big as possible)
-            unsigned char
-                C : 1; // transmission cost: 0(normal), 1(as little as possible)
+            unsigned char D : 1;        // delay: 0(normal), 1(as little as possible)
+            unsigned char T : 1;        // throughput: 0(normal), 1(as big as possible)
+            unsigned char R : 1;        // reliability: 0(normal), 1(as big as possible)
+            unsigned char C : 1;        // transmission cost: 0(normal), 1(as little as possible)
             unsigned char reserved : 1; // always be zero
         } detail;
     } TOS;
@@ -220,8 +219,7 @@ struct tcp_header {
     unsigned int   ackno;
     unsigned char  header_length : 4;
     unsigned char  reserved : 4;
-    unsigned char  flg_fin : 1, flg_syn : 1, flg_rst : 1, flg_psh : 1, flg_ack : 1,
-        flg_urg : 1, flg_reserved : 2;
+    unsigned char  flg_fin : 1, flg_syn : 1, flg_rst : 1, flg_psh : 1, flg_ack : 1, flg_urg : 1, flg_reserved : 2;
     unsigned short win_length;
     unsigned short checksum;
     unsigned short urp;
@@ -575,9 +573,7 @@ public:
         // IPv6 representations).
         std::string ipstring(IN_MAX_ADDRSTRLEN, '\0');
 
-        auto str = inaddr_to_string(
-            &ipstring.front(), [](const in_addr *) { return true; },
-            [](const in6_addr *) { return true; });
+        auto str = inaddr_to_string(&ipstring.front(), [](const in_addr *) { return true; }, [](const in6_addr *) { return true; });
 
         ipstring.resize(str ? strlen(str) : 0);
         return ipstring;
@@ -595,17 +591,12 @@ public:
 
         switch (sa_.sa_family) {
             case AF_INET:
-                n = strlen(compat::inet_ntop(AF_INET, &in4_.sin_addr, &addr.front(),
-                                             static_cast<socklen_t>(addr.length())));
-                n += snprintf(&addr.front() + n, QB_MAX_CHAR_USHORT + 1, ":%u",
-                              this->port());
+                n = strlen(compat::inet_ntop(AF_INET, &in4_.sin_addr, &addr.front(), static_cast<socklen_t>(addr.length())));
+                n += snprintf(&addr.front() + n, QB_MAX_CHAR_USHORT + 1, ":%u", this->port());
                 break;
             case AF_INET6:
-                n = strlen(compat::inet_ntop(AF_INET6, &in6_.sin6_addr,
-                                             &addr.front() + 1,
-                                             static_cast<socklen_t>(addr.length() - 1)));
-                n += snprintf(&addr.front() + n, QB_MAX_CHAR_USHORT + 2, "]:%u",
-                              this->port());
+                n = strlen(compat::inet_ntop(AF_INET6, &in6_.sin6_addr, &addr.front() + 1, static_cast<socklen_t>(addr.length() - 1)));
+                n += snprintf(&addr.front() + n, QB_MAX_CHAR_USHORT + 2, "]:%u", this->port());
                 break;
 #if defined(QB_ENABLE_UDS) && QB__HAS_UDS
             case AF_UNIX:
@@ -672,8 +663,7 @@ public:
 
         unsigned char addr_bytes[sizeof(in4_.sin_addr.s_addr) + sizeof(u_short)];
         memcpy(addr_bytes, &in4_.sin_addr.s_addr, sizeof(in4_.sin_addr.s_addr));
-        memcpy(addr_bytes + sizeof(in4_.sin_addr.s_addr), &in4_.sin_port,
-               sizeof(in4_.sin_port));
+        memcpy(addr_bytes + sizeof(in4_.sin_addr.s_addr), &in4_.sin_port, sizeof(in4_.sin_port));
 
         char         snum[sizeof("255")] = {0};
         const size_t _N0                 = sizeof("%N") - 1;
@@ -693,18 +683,15 @@ public:
     // in_addr(ip) to string with pred
     template <typename _Pred4, typename _Pred6>
     const char *
-    inaddr_to_string(char *str /*[IN_MAX_ADDRSTRLEN]*/, _Pred4 &&pred4,
-                     _Pred6 &&pred6) const {
+    inaddr_to_string(char *str /*[IN_MAX_ADDRSTRLEN]*/, _Pred4 &&pred4, _Pred6 &&pred6) const {
         switch (af()) {
             case AF_INET:
                 if (pred4(&in4_.sin_addr))
-                    return compat::inet_ntop(AF_INET, &in4_.sin_addr, str,
-                                             INET_ADDRSTRLEN);
+                    return compat::inet_ntop(AF_INET, &in4_.sin_addr, str, INET_ADDRSTRLEN);
                 break;
             case AF_INET6:
                 if (pred6(&in6_.sin6_addr))
-                    return compat::inet_ntop(AF_INET6, &in6_.sin6_addr, str,
-                                             INET6_ADDRSTRLEN);
+                    return compat::inet_ntop(AF_INET6, &in6_.sin6_addr, str, INET6_ADDRSTRLEN);
                 break;
         }
         return nullptr;
@@ -798,22 +785,16 @@ public: /// portable connect APIs
     // easy to connect a server ipv4 or ipv6 with local ip protocol version detect
     // for support ipv6 ONLY network.
     QB__DECL int xpconnect(const char *hostname, u_short port, u_short local_port = 0);
-    QB__DECL int xpconnect_n(const char *hostname, u_short port,
-                             const qb::duration &wtimeout,
-                             u_short             local_port = 0);
+    QB__DECL int xpconnect_n(const char *hostname, u_short port, const qb::duration &wtimeout, u_short local_port = 0);
 
     // easy to connect a server ipv4 or ipv6.
     QB__DECL int pconnect(const char *hostname, u_short port, u_short local_port = 0);
-    QB__DECL int pconnect_n(const char *hostname, u_short port,
-                            const qb::duration &wtimeout,
-                            u_short             local_port = 0);
+    QB__DECL int pconnect_n(const char *hostname, u_short port, const qb::duration &wtimeout, u_short local_port = 0);
     QB__DECL int pconnect_n(const char *hostname, u_short port, u_short local_port = 0);
 
     // easy to connect a server ipv4 or ipv6.
     QB__DECL int pconnect(const endpoint &ep, u_short local_port = 0);
-    QB__DECL int pconnect_n(const endpoint     &ep,
-                            const qb::duration &wtimeout,
-                            u_short             local_port = 0);
+    QB__DECL int pconnect_n(const endpoint &ep, const qb::duration &wtimeout, u_short local_port = 0);
     QB__DECL int pconnect_n(const endpoint &ep, u_short local_port = 0);
 
     // easy to create a tcp ipv4 or ipv6 server socket.
@@ -915,21 +896,16 @@ public:
 #ifdef _WIN32
     QB__DECL bool open_ex(int af = AF_INET, int type = SOCK_STREAM, int protocol = 0);
 
-    QB__DECL static bool accept_ex(SOCKET sockfd_listened, SOCKET sockfd_prepared,
-                                   PVOID lpOutputBuffer, DWORD dwReceiveDataLength,
-                                   DWORD   dwLocalAddressLength,
-                                   DWORD   dwRemoteAddressLength,
-                                   LPDWORD lpdwBytesReceived, LPOVERLAPPED lpOverlapped);
+    QB__DECL static bool accept_ex(SOCKET sockfd_listened, SOCKET sockfd_prepared, PVOID lpOutputBuffer, DWORD dwReceiveDataLength,
+                                   DWORD dwLocalAddressLength, DWORD dwRemoteAddressLength, LPDWORD lpdwBytesReceived,
+                                   LPOVERLAPPED lpOverlapped);
 
-    QB__DECL static bool connect_ex(SOCKET s, const struct sockaddr *name, int namelen,
-                                    PVOID lpSendBuffer, DWORD dwSendDataLength,
+    QB__DECL static bool connect_ex(SOCKET s, const struct sockaddr *name, int namelen, PVOID lpSendBuffer, DWORD dwSendDataLength,
                                     LPDWORD lpdwBytesSent, LPOVERLAPPED lpOverlapped);
 
-    QB__DECL static void
-    translate_sockaddrs(PVOID lpOutputBuffer, DWORD dwReceiveDataLength,
-                        DWORD dwLocalAddressLength, DWORD dwRemoteAddressLength,
-                        sockaddr **LocalSockaddr, LPINT LocalSockaddrLength,
-                        sockaddr **RemoteSockaddr, LPINT RemoteSockaddrLength);
+    QB__DECL static void translate_sockaddrs(PVOID lpOutputBuffer, DWORD dwReceiveDataLength, DWORD dwLocalAddressLength,
+                                             DWORD dwRemoteAddressLength, sockaddr **LocalSockaddr, LPINT LocalSockaddrLength,
+                                             sockaddr **RemoteSockaddr, LPINT RemoteSockaddrLength);
 #endif
 
     /**
@@ -1051,12 +1027,9 @@ public:
      *non-blocking,
      * so, after this function called, the socket will be always set to blocking mode.
      */
-    QB__DECL int        connect_n(const char *addr, u_short port,
-                                  const qb::duration &wtimeout);
-    QB__DECL int        connect_n(const endpoint     &ep,
-                                  const qb::duration &wtimeout);
-    QB__DECL static int connect_n(socket_type s, const endpoint &ep,
-                                  const qb::duration &wtimeout);
+    QB__DECL int        connect_n(const char *addr, u_short port, const qb::duration &wtimeout);
+    QB__DECL int        connect_n(const endpoint &ep, const qb::duration &wtimeout);
+    QB__DECL static int connect_n(socket_type s, const endpoint &ep, const qb::duration &wtimeout);
 
     /**
      * @brief Establishes a connection to a specified this socket with nonblocking
@@ -1086,10 +1059,8 @@ public:
      *         Oterwise, If retval < len && not_recv_error(get_last_errno()), should
      *close socket.
      */
-    QB__DECL int        send_n(const void *buf, int len,
-                               const qb::duration &wtimeout, int flags = 0);
-    QB__DECL static int send_n(socket_type s, const void *buf, int len,
-                               qb::duration wtimeout, int flags = 0);
+    QB__DECL int        send_n(const void *buf, int len, const qb::duration &wtimeout, int flags = 0);
+    QB__DECL static int send_n(socket_type s, const void *buf, int len, qb::duration wtimeout, int flags = 0);
 
     /**
      * @brief nonblock recv
@@ -1100,10 +1071,8 @@ public:
      *         Oterwise, If retval < len && not_recv_error(get_last_errno()), should
      *close socket.
      */
-    QB__DECL int recv_n(void *buf, int len, const qb::duration &wtimeout,
-                        int flags = 0) const;
-    QB__DECL static int recv_n(socket_type s, void *buf, int len,
-                               qb::duration wtimeout, int flags = 0);
+    QB__DECL int        recv_n(void *buf, int len, const qb::duration &wtimeout, int flags = 0) const;
+    QB__DECL static int recv_n(socket_type s, void *buf, int len, qb::duration wtimeout, int flags = 0);
 
     /**
      * @brief Sends data on this connected socket
@@ -1116,8 +1085,7 @@ public:
      *         Otherwise, a value of SOCKET_ERROR is returned.
      */
     QB__DECL int        send(const void *buf, int len, int flags = MSG_NOSIGNAL) const;
-    QB__DECL static int send(socket_type fd, const void *buf, int len,
-                             int flags = MSG_NOSIGNAL);
+    QB__DECL static int send(socket_type fd, const void *buf, int len, int flags = MSG_NOSIGNAL);
 
     /**
      * @brief Receives data from this connected socket or a bound connectionless socket.
@@ -1130,8 +1098,7 @@ public:
      *         If the connection has been gracefully closed, the return value is [0].
      */
     QB__DECL int        recv(void *buf, int len, int flags = MSG_NOSIGNAL) const;
-    QB__DECL static int recv(socket_type s, void *buf, int len,
-                             int flags = MSG_NOSIGNAL);
+    QB__DECL static int recv(socket_type s, void *buf, int len, int flags = MSG_NOSIGNAL);
 
     /**
      * @brief Sends data on this connected socket
@@ -1143,8 +1110,7 @@ public:
      *parameter.
      *         Otherwise, a value of SOCKET_ERROR is returned.
      */
-    QB__DECL int sendto(const void *buf, int len, const endpoint &to,
-                        int flags = MSG_NOSIGNAL) const;
+    QB__DECL int sendto(const void *buf, int len, const endpoint &to, int flags = MSG_NOSIGNAL) const;
 
     /**
      * @brief Receives a datagram and stores the source address
@@ -1156,16 +1122,13 @@ public:
      *received.
      *         If the connection has been gracefully closed, the return value is [0].
      */
-    QB__DECL int recvfrom(void *buf, int len, endpoint &peer,
-                          int flags = MSG_NOSIGNAL) const;
+    QB__DECL int recvfrom(void *buf, int len, endpoint &peer, int flags = MSG_NOSIGNAL) const;
 
-    QB__DECL int handle_write_ready(const qb::duration &wtimeout) const;
-    QB__DECL static int handle_write_ready(socket_type         s,
-                                           const qb::duration &wtimeout);
+    QB__DECL int        handle_write_ready(const qb::duration &wtimeout) const;
+    QB__DECL static int handle_write_ready(socket_type s, const qb::duration &wtimeout);
 
-    QB__DECL int handle_read_ready(const qb::duration &wtimeout) const;
-    QB__DECL static int handle_read_ready(socket_type         s,
-                                          const qb::duration &wtimeout);
+    QB__DECL int        handle_read_ready(const qb::duration &wtimeout) const;
+    QB__DECL static int handle_read_ready(socket_type s, const qb::duration &wtimeout);
 
     /**
      * @brief Get local address info
@@ -1196,10 +1159,8 @@ public:
      * @returns: [0].successfully
      *          [<0].one or more errors occured
      */
-    QB__DECL int        set_keepalive(int flag = 1, int idle = 7200, int interval = 75,
-                                      int probes = 10);
-    QB__DECL static int set_keepalive(socket_type s, int flag, int idle, int interval,
-                                      int probes);
+    QB__DECL int        set_keepalive(int flag = 1, int idle = 7200, int interval = 75, int probes = 10);
+    QB__DECL static int set_keepalive(socket_type s, int flag, int idle, int interval, int probes);
 
     QB__DECL void reuse_address(bool reuse);
 
@@ -1236,8 +1197,7 @@ public:
     template <typename _Ty>
     inline static int
     set_optval(socket_type sockfd, int level, int optname, const _Ty &optval) {
-        return set_optval(sockfd, level, optname, &optval,
-                          static_cast<socklen_t>(sizeof(_Ty)));
+        return set_optval(sockfd, level, optname, &optval, static_cast<socklen_t>(sizeof(_Ty)));
     }
 
     int
@@ -1245,10 +1205,8 @@ public:
         return set_optval(this->fd, level, optname, optval, optlen);
     }
     static int
-    set_optval(socket_type sockfd, int level, int optname, const void *optval,
-               socklen_t optlen) {
-        return ::setsockopt(sockfd, level, optname,
-                            static_cast<const char *>(optval), optlen);
+    set_optval(socket_type sockfd, int level, int optname, const void *optval, socklen_t optlen) {
+        return ::setsockopt(sockfd, level, optname, static_cast<const char *>(optval), optlen);
     }
 
     /**
@@ -1285,10 +1243,8 @@ public:
         return get_optval(sockfd, level, optname, &optval, &optlen);
     }
     static int
-    get_optval(socket_type sockfd, int level, int optname, void *optval,
-               socklen_t *optlen) {
-        return ::getsockopt(sockfd, level, optname,
-                            static_cast<char *>(optval), optlen);
+    get_optval(socket_type sockfd, int level, int optname, void *optval, socklen_t *optlen) {
+        return ::getsockopt(sockfd, level, optname, static_cast<char *>(optval), optlen);
     }
 
     /**
@@ -1323,12 +1279,10 @@ public:
      *          returned
      */
     int
-    select(fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-           const qb::duration &wtimeout) const {
+    select(fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const qb::duration &wtimeout) const {
         return socket::select(this->fd, readfds, writefds, exceptfds, wtimeout);
     }
-    QB__DECL static int select(socket_type s, fd_set *readfds, fd_set *writefds,
-                               fd_set *exceptfds, qb::duration wtimeout);
+    QB__DECL static int select(socket_type s, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, qb::duration wtimeout);
 
     /**
      * @brief Disables sends or receives on this socket
@@ -1385,8 +1339,7 @@ public:
      * @param socktype Socket type (SOCK_STREAM, SOCK_DGRAM)
      * @return Number of resolved endpoints
      */
-    QB__DECL static int resolve(std::vector<endpoint> &endpoints, const char *hostname,
-                                unsigned short port = 0, int socktype = SOCK_STREAM);
+    QB__DECL static int resolve(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port = 0, int socktype = SOCK_STREAM);
 
     /**
      * @brief Resolve as ipv4 address only.
@@ -1397,9 +1350,7 @@ public:
      * @param socktype Socket type (SOCK_STREAM, SOCK_DGRAM)
      * @return Number of resolved endpoints
      */
-    QB__DECL static int resolve_v4(std::vector<endpoint> &endpoints,
-                                   const char *hostname, unsigned short port = 0,
-                                   int socktype = SOCK_STREAM);
+    QB__DECL static int resolve_v4(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port = 0, int socktype = SOCK_STREAM);
 
     /**
      * @brief Resolve as ipv6 address only.
@@ -1410,9 +1361,7 @@ public:
      * @param socktype Socket type (SOCK_STREAM, SOCK_DGRAM)
      * @return Number of resolved endpoints
      */
-    QB__DECL static int resolve_v6(std::vector<endpoint> &endpoints,
-                                   const char *hostname, unsigned short port = 0,
-                                   int socktype = SOCK_STREAM);
+    QB__DECL static int resolve_v6(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port = 0, int socktype = SOCK_STREAM);
 
     /**
      * @brief Resolve as ipv4 address only and convert to V4MAPPED format.
@@ -1423,8 +1372,7 @@ public:
      * @param socktype Socket type (SOCK_STREAM, SOCK_DGRAM)
      * @return Number of resolved endpoints
      */
-    QB__DECL static int resolve_v4to6(std::vector<endpoint> &endpoints,
-                                      const char *hostname, unsigned short port = 0,
+    QB__DECL static int resolve_v4to6(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port = 0,
                                       int socktype = SOCK_STREAM);
 
     /**
@@ -1436,8 +1384,7 @@ public:
      * @param socktype Socket type (SOCK_STREAM, SOCK_DGRAM)
      * @return Number of resolved endpoints
      */
-    QB__DECL static int resolve_tov6(std::vector<endpoint> &endpoints,
-                                     const char *hostname, unsigned short port = 0,
+    QB__DECL static int resolve_tov6(std::vector<endpoint> &endpoints, const char *hostname, unsigned short port = 0,
                                      int socktype = SOCK_STREAM);
 
     /**
@@ -1453,8 +1400,7 @@ public:
      */
     template <typename _Fty>
     inline static int
-    resolve_i(const _Fty &callback, const char *hostname, unsigned short port = 0,
-              int af = 0, int flags = 0, int socktype = SOCK_STREAM) {
+    resolve_i(const _Fty &callback, const char *hostname, unsigned short port = 0, int af = 0, int flags = 0, int socktype = SOCK_STREAM) {
         addrinfo hint;
         memset(&hint, 0x0, sizeof(hint));
         hint.ai_flags    = flags;
@@ -1501,8 +1447,7 @@ public:
      *
      * @param handler Function to call for each endpoint found
      */
-    QB__DECL static void
-    traverse_local_address(std::function<bool(const ip::endpoint &)> handler);
+    QB__DECL static void traverse_local_address(std::function<bool(const ip::endpoint &)> handler);
 
 protected:
     QB__DECL static void reregister_descriptor(socket_type s, fd_set *fds);
@@ -1560,10 +1505,10 @@ operator==(const qb::io::inet::ip::endpoint &lhs,
 #endif
 
 namespace qb::io {
-enum SocketStatus { 
-    Error = -1,           /**< General socket error */
-    Done,                 /**< Operation completed successfully */
-    CertificateError      /**< SSL/TLS certificate verification failed (possible MITM attack) */
+enum SocketStatus {
+    Error = -1,      /**< General socket error */
+    Done,            /**< Operation completed successfully */
+    CertificateError /**< SSL/TLS certificate verification failed (possible MITM attack) */
 };
 constexpr static const int FD_INVALID = -1;
 
@@ -1575,8 +1520,7 @@ constexpr static const int FD_INVALID = -1;
  */
 inline bool
 socket_no_error(int error) {
-    return error == EWOULDBLOCK || error == EAGAIN || error == EINTR ||
-           error == EINPROGRESS;
+    return error == EWOULDBLOCK || error == EAGAIN || error == EINTR || error == EINPROGRESS;
 }
 } // namespace qb::io
 

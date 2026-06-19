@@ -9,7 +9,7 @@
  * processing thread.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -55,12 +55,10 @@ class ringbuffer : public nocopy {
      * Cache line padding is used to avoid false sharing between producers.
      */
     struct Producer {
-        constexpr static const int padding_size =
-            QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
-        SpinLock lock;                     ///< Lock for this producer
-        char     padding1[padding_size]{}; ///< Padding to avoid false sharing
-        spsc::ringbuffer<T, max_size>
-            _ringbuffer; ///< The producer's dedicated ring buffer
+        constexpr static const int    padding_size = QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
+        SpinLock                      lock;                     ///< Lock for this producer
+        char                          padding1[padding_size]{}; ///< Padding to avoid false sharing
+        spsc::ringbuffer<T, max_size> _ringbuffer;              ///< The producer's dedicated ring buffer
     };
 
     std::array<Producer, nb_producer> _producers; ///< Array of producer structures
@@ -133,8 +131,8 @@ public:
     size_t
     enqueue(T const &t) {
         static thread_local size_t tl_index = 0;
-        const size_t index = tl_index++ % nb_producer;
-        std::lock_guard<SpinLock> lock(_producers[index].lock);
+        const size_t               index    = tl_index++ % nb_producer;
+        std::lock_guard<SpinLock>  lock(_producers[index].lock);
         return _producers[index]._ringbuffer.enqueue(t);
     }
 
@@ -153,8 +151,8 @@ public:
     size_t
     enqueue(T const *t, size_t const size) {
         static thread_local size_t tl_index = 0;
-        const size_t index = tl_index++ % nb_producer;
-        std::lock_guard<SpinLock> lock(_producers[index].lock);
+        const size_t               index    = tl_index++ % nb_producer;
+        std::lock_guard<SpinLock>  lock(_producers[index].lock);
         return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
     }
 
@@ -253,12 +251,10 @@ class ringbuffer<T, max_size, 0> : public nocopy {
      * Cache line padding is used to avoid false sharing between producers.
      */
     struct Producer {
-        constexpr static const int padding_size =
-            QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
-        SpinLock lock;                     ///< Lock for this producer
-        char     padding1[padding_size]{}; ///< Padding to avoid false sharing
-        spsc::ringbuffer<T, max_size>
-            _ringbuffer; ///< The producer's dedicated ring buffer
+        constexpr static const int    padding_size = QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
+        SpinLock                      lock;                     ///< Lock for this producer
+        char                          padding1[padding_size]{}; ///< Padding to avoid false sharing
+        spsc::ringbuffer<T, max_size> _ringbuffer;              ///< The producer's dedicated ring buffer
     };
 
     std::vector<Producer> _producers;   ///< Vector of producer structures
@@ -281,8 +277,7 @@ public:
         // At least one producer is required: the round-robin enqueue paths
         // compute `tl_index % _nb_producer`, which is division-by-zero (UB)
         // when constructed with zero producers.
-        assert(nb_producer > 0 &&
-               "mpsc::ringbuffer requires at least one producer");
+        assert(nb_producer > 0 && "mpsc::ringbuffer requires at least one producer");
     }
 
     /**
@@ -352,8 +347,8 @@ public:
     size_t
     enqueue(T const &t) {
         static thread_local size_t tl_index = 0;
-        const size_t index = tl_index++ % _nb_producer;
-        std::lock_guard<SpinLock> lock(_producers[index].lock);
+        const size_t               index    = tl_index++ % _nb_producer;
+        std::lock_guard<SpinLock>  lock(_producers[index].lock);
         return _producers[index]._ringbuffer.enqueue(t);
     }
 
@@ -372,8 +367,8 @@ public:
     size_t
     enqueue(T const *t, size_t const size) {
         static thread_local size_t tl_index = 0;
-        const size_t index = tl_index++ % _nb_producer;
-        std::lock_guard<SpinLock> lock(_producers[index].lock);
+        const size_t               index    = tl_index++ % _nb_producer;
+        std::lock_guard<SpinLock>  lock(_producers[index].lock);
         return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
     }
 

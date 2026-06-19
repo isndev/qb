@@ -17,7 +17,7 @@
  * Optional percentile dump: set environment variable \c QB_ACTOR_BENCH_HISTOGRAM=1.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -48,9 +48,8 @@
 
 namespace {
 constexpr std::uint32_t kPingPongInitialTtl = 1'000'000u;
-constexpr double        kRoundTripsPerIter = static_cast<double>(kPingPongInitialTtl);
-constexpr double        kMessagesPerIter =
-    2.0 * static_cast<double>(kPingPongInitialTtl) + 1.0;
+constexpr double        kRoundTripsPerIter  = static_cast<double>(kPingPongInitialTtl);
+constexpr double        kMessagesPerIter    = 2.0 * static_cast<double>(kPingPongInitialTtl) + 1.0;
 } // namespace
 
 class PongActor final : public qb::Actor {
@@ -74,8 +73,7 @@ class PingActor final : public qb::Actor {
 public:
     ~PingActor() final {
         if (_latency.sample_count()) {
-            qb::bench::record_last_latency(_latency.mean_nanoseconds(),
-                                          static_cast<std::uint64_t>(_latency.sample_count()));
+            qb::bench::record_last_latency(_latency.mean_nanoseconds(), static_cast<std::uint64_t>(_latency.sample_count()));
         }
         if (std::getenv("QB_ACTOR_BENCH_HISTOGRAM") && _latency.sample_count()) {
             _latency.generate<std::ostream, std::chrono::nanoseconds>(std::cout, "ns");
@@ -108,12 +106,11 @@ public:
 };
 
 void
-thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc,
-            std::atomic<bool> *running) {
+thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc, std::atomic<bool> *running) {
     // pg::latency<..., 900000> holds ~900k size_t buckets (~7 MiB). On Windows the default
     // thread stack is ~1 MiB; keeping that object on the stack overflows and trips __chkstk.
     auto const latency = std::make_unique<pg::latency<1000 * 1000, 900000>>();
-    LightEvent                       events[4096];
+    LightEvent events[4096];
 
     spsc[1].enqueue(LightEvent(kPingPongInitialTtl));
     while (qb::likely(running->load(std::memory_order_relaxed))) {
@@ -131,8 +128,7 @@ thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc,
             events, 4096u);
     }
     if (latency->sample_count()) {
-        qb::bench::record_last_latency(latency->mean_nanoseconds(),
-                                       static_cast<std::uint64_t>(latency->sample_count()));
+        qb::bench::record_last_latency(latency->mean_nanoseconds(), static_cast<std::uint64_t>(latency->sample_count()));
     }
     if (std::getenv("QB_ACTOR_BENCH_HISTOGRAM") && latency->sample_count()) {
         latency->generate<std::ostream, std::chrono::nanoseconds>(std::cout, "ns");
@@ -140,8 +136,7 @@ thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc,
 }
 
 void
-thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc,
-            std::atomic<bool> *running) {
+thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc, std::atomic<bool> *running) {
     LightEvent events[4096];
 
     while (qb::likely(running->load(std::memory_order_relaxed))) {
@@ -158,17 +153,13 @@ thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc,
 
 static void
 record_latency_counters(benchmark::State &state) {
-    state.counters["round_trips_per_s"] =
-        benchmark::Counter(kRoundTripsPerIter,
-                           benchmark::Counter::kIsIterationInvariantRate);
-    state.counters["messages_per_s"] =
-        benchmark::Counter(kMessagesPerIter, benchmark::Counter::kIsIterationInvariantRate);
+    state.counters["round_trips_per_s"] = benchmark::Counter(kRoundTripsPerIter, benchmark::Counter::kIsIterationInvariantRate);
+    state.counters["messages_per_s"]    = benchmark::Counter(kMessagesPerIter, benchmark::Counter::kIsIterationInvariantRate);
 
-    const auto lat = qb::bench::last_latency_stats_snapshot();
+    const auto lat                    = qb::bench::last_latency_stats_snapshot();
     state.counters["latency_samples"] = static_cast<double>(lat.samples);
     if (lat.samples) {
-        state.counters["mean_rtt_ns"] =
-            benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
+        state.counters["mean_rtt_ns"] = benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
     }
 }
 
@@ -177,8 +168,8 @@ BM_Reference_Multi_PingPong_Latency(benchmark::State &state) {
     for (auto _ : state) {
         qb::bench::reset_last_latency_stats();
         std::atomic<bool> running{true};
-        auto spsc = std::make_unique<qb::lockfree::spsc::ringbuffer<LightEvent, 4096>[]>(2);
-        std::thread threads[2];
+        auto              spsc = std::make_unique<qb::lockfree::spsc::ringbuffer<LightEvent, 4096>[]>(2);
+        std::thread       threads[2];
 
         threads[0] = std::thread(thread_ping, spsc.get(), &running);
         threads[1] = std::thread(thread_pong, spsc.get(), &running);
@@ -230,14 +221,8 @@ BM_Multi_PingPong_Latency(benchmark::State &state) {
     }
 }
 
-BENCHMARK(BM_Reference_Multi_PingPong_Latency)
-    ->Unit(benchmark::kMillisecond)
-    ->UseRealTime();
-BENCHMARK(BM_Mono_PingPong_Latency)
-    ->Unit(benchmark::kMillisecond)
-    ->UseRealTime();
-BENCHMARK(BM_Multi_PingPong_Latency)
-    ->Unit(benchmark::kMillisecond)
-    ->UseRealTime();
+BENCHMARK(BM_Reference_Multi_PingPong_Latency)->Unit(benchmark::kMillisecond)->UseRealTime();
+BENCHMARK(BM_Mono_PingPong_Latency)->Unit(benchmark::kMillisecond)->UseRealTime();
+BENCHMARK(BM_Multi_PingPong_Latency)->Unit(benchmark::kMillisecond)->UseRealTime();
 
 BENCHMARK_MAIN();

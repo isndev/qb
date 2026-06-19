@@ -7,7 +7,7 @@
  * this event by implementing the `void on(extracted &&)` method.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -46,8 +46,7 @@ namespace qb::io::async::event {
  * };
  * @endcode
  */
-struct extracted {
-};
+struct extracted {};
 
 } // namespace qb::io::async::event
 

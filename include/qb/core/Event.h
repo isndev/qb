@@ -11,7 +11,7 @@
  * isolation and thread safety in the actor system.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -70,8 +70,7 @@ inline std::atomic<TypeId> _type_id_counter{0};
 template <typename T>
 [[nodiscard]] inline TypeId
 type_id_for() noexcept {
-    static const TypeId id =
-        _type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    static const TypeId id = _type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1;
     return id;
 }
 } // namespace detail
@@ -166,8 +165,7 @@ public:
 private:
     union Header {
         uint32_t : 16, : 8, alive : 1, qos : 2, factor : 5;
-        uint8_t prot[4] = {'q', 'b', '\0',
-                           4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) << 3)};
+        uint8_t prot[4] = {'q', 'b', '\0', 4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) << 3)};
     } state;
     uint16_t bucket_size;
     id_type  id;
@@ -322,16 +320,16 @@ struct SignalEvent : public Event {
  * @brief Represents the current status of an actor in the system
  * @details
  * This enumeration is used to indicate whether an actor is currently active (Alive)
- * or has been terminated/removed from the system (Dead). It is typically used in 
+ * or has been terminated/removed from the system (Dead). It is typically used in
  * status queries and responses between actors and the core system.
- * 
+ *
  * @ingroup EventCore
  */
-enum class ActorStatus : uint32_t { 
+enum class ActorStatus : uint32_t {
     /** @brief The actor is active and operational */
-    Alive, 
+    Alive,
     /** @brief The actor has been terminated or removed from the system */
-    Dead 
+    Dead
 };
 
 /*!
@@ -355,8 +353,7 @@ struct RequireEvent : public Event {
     const uint32_t    type;
     const ActorStatus status;
 
-    explicit RequireEvent(uint32_t const    actor_type,
-                          ActorStatus const actor_status) noexcept
+    explicit RequireEvent(uint32_t const actor_type, ActorStatus const actor_status) noexcept
         : type(actor_type)
         , status(actor_status) {}
 };
@@ -416,7 +413,7 @@ struct FillEvent : public WithData<_Args...> {
  * for transmission between actors and cores.
  * @ingroup EventCore
  */
-using VirtualPipe   = allocator::pipe<EventBucket>;
+using VirtualPipe = allocator::pipe<EventBucket>;
 
 /**
  * @typedef event
@@ -426,7 +423,7 @@ using VirtualPipe   = allocator::pipe<EventBucket>;
  * in the framework.
  * @ingroup EventCore
  */
-using event         = Event;
+using event = Event;
 
 /**
  * @typedef service_event

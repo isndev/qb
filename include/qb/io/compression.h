@@ -11,7 +11,7 @@
  * compression operations.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -70,13 +70,11 @@ enum operation_hint {
  * and whether the operation is complete.
  */
 struct operation_result {
-    std::size_t
-        input_bytes_processed; /**< Number of bytes processed from the input buffer */
-    std::size_t
-         output_bytes_produced; /**< Number of bytes written to the output buffer */
-    bool done; /**< For compress, set when 'last' is true and there was enough space to
-               complete compression; for decompress, set if the end of the
-               decompression stream has been reached */
+    std::size_t input_bytes_processed; /**< Number of bytes processed from the input buffer */
+    std::size_t output_bytes_produced; /**< Number of bytes written to the output buffer */
+    bool        done;                  /**< For compress, set when 'last' is true and there was enough space to
+                                       complete compression; for decompress, set if the end of the
+                                       decompression stream has been reached */
 };
 
 /**
@@ -108,10 +106,8 @@ public:
      * @param done [out] Flag indicating whether compression is complete
      * @return Number of bytes written to the output buffer
      */
-    virtual std::size_t compress(const uint8_t *input, std::size_t input_size,
-                                 uint8_t *output, std::size_t output_size,
-                                 operation_hint hint, std::size_t &input_bytes_processed,
-                                 bool &done) = 0;
+    virtual std::size_t compress(const uint8_t *input, std::size_t input_size, uint8_t *output, std::size_t output_size, operation_hint hint,
+                                 std::size_t &input_bytes_processed, bool &done) = 0;
 
     /**
      * @brief Reset the compressor to its initial state
@@ -156,9 +152,7 @@ public:
      * @param done [out] Flag indicating whether decompression is complete
      * @return Number of bytes written to the output buffer
      */
-    virtual std::size_t decompress(const uint8_t *input, std::size_t input_size,
-                                   uint8_t *output, std::size_t output_size,
-                                   operation_hint hint,
+    virtual std::size_t decompress(const uint8_t *input, std::size_t input_size, uint8_t *output, std::size_t output_size, operation_hint hint,
                                    std::size_t &input_bytes_processed, bool &done) = 0;
 
     /**
@@ -334,8 +328,7 @@ std::shared_ptr<decompress_factory> get_decompress_factory(const std::string &al
  * @param memLevel Memory usage level (1-9, where 9 uses most memory)
  * @return Unique pointer to a gzip compressor provider
  */
-std::unique_ptr<compress_provider> make_gzip_compressor(int compressionLevel, int method,
-                                                        int strategy, int memLevel);
+std::unique_ptr<compress_provider> make_gzip_compressor(int compressionLevel, int method, int strategy, int memLevel);
 
 /**
  * @brief Create a deflate compressor with custom parameters
@@ -346,8 +339,7 @@ std::unique_ptr<compress_provider> make_gzip_compressor(int compressionLevel, in
  * @param memLevel Memory usage level (1-9, where 9 uses most memory)
  * @return Unique pointer to a deflate compressor provider
  */
-std::unique_ptr<compress_provider>
-make_deflate_compressor(int compressionLevel, int method, int strategy, int memLevel);
+std::unique_ptr<compress_provider> make_deflate_compressor(int compressionLevel, int method, int strategy, int memLevel);
 
 } // namespace builtin
 
@@ -358,9 +350,8 @@ make_deflate_compressor(int compressionLevel, int method, int strategy, int memL
  * @param make_compressor Function that creates compressor instances
  * @return Shared pointer to the created compression factory
  */
-std::shared_ptr<compress_factory> make_compress_factory(
-    const std::string                                  &algorithm,
-    std::function<std::unique_ptr<compress_provider>()> make_compressor);
+std::shared_ptr<compress_factory> make_compress_factory(const std::string                                  &algorithm,
+                                                        std::function<std::unique_ptr<compress_provider>()> make_compressor);
 
 /**
  * @brief Create a custom decompression factory
@@ -370,9 +361,8 @@ std::shared_ptr<compress_factory> make_compress_factory(
  * @param make_decompressor Function that creates decompressor instances
  * @return Shared pointer to the created decompression factory
  */
-std::shared_ptr<decompress_factory> make_decompress_factory(
-    const std::string &algorithm, uint16_t weight,
-    std::function<std::unique_ptr<decompress_provider>()> make_decompressor);
+std::shared_ptr<decompress_factory> make_decompress_factory(const std::string &algorithm, uint16_t weight,
+                                                            std::function<std::unique_ptr<decompress_provider>()> make_decompressor);
 
 /**
  * @brief Compress data using a generic output container
@@ -392,8 +382,7 @@ std::shared_ptr<decompress_factory> make_decompress_factory(
  */
 template <typename Output>
 size_t
-compress(Output &output, const char *data, std::size_t size, int level,
-         int window_bits) {
+compress(Output &output, const char *data, std::size_t size, int level, int window_bits) {
 #ifdef DEBUG
     // Verify if size input will fit into unsigned int, type used for zlib's avail_in
     if (size > std::numeric_limits<unsigned int>::max()) {
@@ -424,8 +413,7 @@ compress(Output &output, const char *data, std::size_t size, int level,
 
     DISABLE_WARNING_PUSH
     DISABLE_WARNING_OLD_STYLE_CAST
-    if (deflateInit2(&deflate_s, level, Z_DEFLATED, window_bits, mem_level,
-                     Z_DEFAULT_STRATEGY) != Z_OK) {
+    if (deflateInit2(&deflate_s, level, Z_DEFLATED, window_bits, mem_level, Z_DEFAULT_STRATEGY) != Z_OK) {
         throw std::runtime_error("deflate init failed");
     }
     DISABLE_WARNING_POP
@@ -467,8 +455,7 @@ compress(Output &output, const char *data, std::size_t size, int level,
  * @return Size of the compressed data in bytes
  */
 template <>
-size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
-                int level, int window_bits);
+size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size, int level, int window_bits);
 
 /**
  * @brief Uncompress data using a generic output container
@@ -489,8 +476,7 @@ size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t
  */
 template <typename Output>
 std::size_t
-uncompress(Output &output, const char *data, std::size_t size, std::size_t max,
-           int window_bits) {
+uncompress(Output &output, const char *data, std::size_t size, std::size_t max, int window_bits) {
     z_stream inflate_s;
 
     inflate_s.zalloc   = Z_NULL;
@@ -522,15 +508,13 @@ uncompress(Output &output, const char *data, std::size_t size, std::size_t max,
     std::uint64_t size_64 = size * 2;
     if (size_64 > std::numeric_limits<unsigned int>::max()) {
         inflateEnd(&inflate_s);
-        throw std::runtime_error(
-            "size arg is too large to fit into unsigned int type x2");
+        throw std::runtime_error("size arg is too large to fit into unsigned int type x2");
     }
 #endif
     // Overflow-safe budget check (2 * size without wrapping size_t).
     if (max && size > max / 2) {
         inflateEnd(&inflate_s);
-        throw std::runtime_error(
-            "size may use more memory than intended when decompressing");
+        throw std::runtime_error("size may use more memory than intended when decompressing");
     }
     inflate_s.avail_in            = static_cast<unsigned int>(size);
     std::size_t size_uncompressed = 0;
@@ -577,8 +561,7 @@ uncompress(Output &output, const char *data, std::size_t size, std::size_t max,
  * @return Size of the uncompressed data in bytes
  */
 template <>
-size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
-                  std::size_t max, int window_bits);
+size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size, std::size_t max, int window_bits);
 
 /**
  * @namespace deflate
@@ -602,15 +585,14 @@ namespace deflate {
  */
 template <typename Output>
 size_t
-compress(Output &output, const char *data, std::size_t size,
-         int level = Z_DEFAULT_COMPRESSION) {
+compress(Output &output, const char *data, std::size_t size, int level = Z_DEFAULT_COMPRESSION) {
     constexpr int window_bits = 15; // gzip with windowbits of 15
     return compression::compress(output, data, size, level, window_bits);
 }
 
 /**
  * @brief Specialization of deflate compress for pipe allocator
- * 
+ *
  * @param output Pipe allocator for the compressed data
  * @param data Pointer to the data to compress
  * @param size Size of the data in bytes
@@ -618,8 +600,7 @@ compress(Output &output, const char *data, std::size_t size,
  * @return Size of the compressed data in bytes
  */
 template <>
-size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
-                int level);
+size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size, int level);
 
 /**
  * @struct to_compress
@@ -630,10 +611,10 @@ size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t
  * and provides a place to store the result.
  */
 struct to_compress {
-    const char *data;                          /**< Pointer to the data to compress */
-    std::size_t size;                          /**< Size of the data in bytes */
-    int         level = Z_DEFAULT_COMPRESSION; /**< Compression level */
-    size_t      size_compressed = 0;           /**< [out] Size of the compressed data */
+    const char *data;                                    /**< Pointer to the data to compress */
+    std::size_t size;                                    /**< Size of the data in bytes */
+    int         level           = Z_DEFAULT_COMPRESSION; /**< Compression level */
+    size_t      size_compressed = 0;                     /**< [out] Size of the compressed data */
 };
 
 /**
@@ -659,8 +640,7 @@ compress(Output &output, to_compress &info) {
  * @param level Compression level (1-9, where 9 is max compression)
  * @return String containing the compressed data
  */
-std::string compress(const char *data, std::size_t size,
-                     int level = Z_DEFAULT_COMPRESSION);
+std::string compress(const char *data, std::size_t size, int level = Z_DEFAULT_COMPRESSION);
 
 /**
  * @brief Uncompress data using deflate algorithm with a generic output container
@@ -682,7 +662,7 @@ uncompress(Output &output, const char *data, std::size_t size, std::size_t max =
 
 /**
  * @brief Specialization of deflate uncompress for pipe allocator
- * 
+ *
  * @param output Pipe allocator for the uncompressed data
  * @param data Pointer to the compressed data
  * @param size Size of the compressed data in bytes
@@ -690,8 +670,7 @@ uncompress(Output &output, const char *data, std::size_t size, std::size_t max =
  * @return Size of the uncompressed data in bytes
  */
 template <>
-size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
-                  std::size_t level);
+size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size, std::size_t level);
 
 /**
  * @struct to_uncompress
@@ -702,10 +681,10 @@ size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size
  * and provides a place to store the result.
  */
 struct to_uncompress {
-    const char *data;              /**< Pointer to the compressed data */
-    std::size_t size;              /**< Size of the compressed data in bytes */
-    std::size_t max = 0;           /**< Maximum allowed output size (0 for unlimited) */
-    std::size_t size_uncompressed = 0;         /**< [out] Size of the uncompressed data */
+    const char *data;                  /**< Pointer to the compressed data */
+    std::size_t size;                  /**< Size of the compressed data in bytes */
+    std::size_t max               = 0; /**< Maximum allowed output size (0 for unlimited) */
+    std::size_t size_uncompressed = 0; /**< [out] Size of the uncompressed data */
 };
 
 /**
@@ -754,16 +733,15 @@ namespace gzip {
  */
 inline bool
 is_compressed(const char *data, std::size_t size) {
-    return size > 2 && (
-                           // zlib
-                           (static_cast<uint8_t>(data[0]) == 0x78 &&
-                            (static_cast<uint8_t>(data[1]) == 0x9C ||
-                             static_cast<uint8_t>(data[1]) == 0x01 ||
-                             static_cast<uint8_t>(data[1]) == 0xDA ||
-                             static_cast<uint8_t>(data[1]) == 0x5E)) ||
-                           // gzip
-                           (static_cast<uint8_t>(data[0]) == 0x1F &&
-                            static_cast<uint8_t>(data[1]) == 0x8B));
+    return size > 2
+           && (
+               // zlib
+               (static_cast<uint8_t>(data[0]) == 0x78
+                && (static_cast<uint8_t>(data[1]) == 0x9C || static_cast<uint8_t>(data[1]) == 0x01 || static_cast<uint8_t>(data[1]) == 0xDA
+                    || static_cast<uint8_t>(data[1]) == 0x5E))
+               ||
+               // gzip
+               (static_cast<uint8_t>(data[0]) == 0x1F && static_cast<uint8_t>(data[1]) == 0x8B));
 }
 
 /**
@@ -778,15 +756,14 @@ is_compressed(const char *data, std::size_t size) {
  */
 template <typename Output>
 size_t
-compress(Output &output, const char *data, std::size_t size,
-         int level = Z_DEFAULT_COMPRESSION) {
+compress(Output &output, const char *data, std::size_t size, int level = Z_DEFAULT_COMPRESSION) {
     constexpr int window_bits = 15 + 16; // gzip with windowbits of 15
     return compression::compress(output, data, size, level, window_bits);
 }
 
 /**
  * @brief Specialization of gzip compress for pipe allocator
- * 
+ *
  * @param output Pipe allocator for the compressed data
  * @param data Pointer to the data to compress
  * @param size Size of the data in bytes
@@ -794,8 +771,7 @@ compress(Output &output, const char *data, std::size_t size,
  * @return Size of the compressed data in bytes
  */
 template <>
-size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
-                int level);
+size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size, int level);
 
 /**
  * @struct to_compress
@@ -806,10 +782,10 @@ size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t
  * and provides a place to store the result.
  */
 struct to_compress {
-    const char *data;                          /**< Pointer to the data to compress */
-    std::size_t size;                          /**< Size of the data in bytes */
-    int         level = Z_DEFAULT_COMPRESSION; /**< Compression level */
-    size_t      size_compressed = 0;           /**< [out] Size of the compressed data */
+    const char *data;                                    /**< Pointer to the data to compress */
+    std::size_t size;                                    /**< Size of the data in bytes */
+    int         level           = Z_DEFAULT_COMPRESSION; /**< Compression level */
+    size_t      size_compressed = 0;                     /**< [out] Size of the compressed data */
 };
 
 /**
@@ -835,8 +811,7 @@ compress(Output &output, to_compress &info) {
  * @param level Compression level (1-9, where 9 is max compression)
  * @return String containing the compressed data
  */
-std::string compress(const char *data, std::size_t size,
-                     int level = Z_DEFAULT_COMPRESSION);
+std::string compress(const char *data, std::size_t size, int level = Z_DEFAULT_COMPRESSION);
 
 /**
  * @brief Uncompress data using gzip algorithm with a generic output container
@@ -858,7 +833,7 @@ uncompress(Output &output, const char *data, std::size_t size, std::size_t max =
 
 /**
  * @brief Specialization of gzip uncompress for pipe allocator
- * 
+ *
  * @param output Pipe allocator for the uncompressed data
  * @param data Pointer to the compressed data
  * @param size Size of the compressed data in bytes
@@ -866,8 +841,7 @@ uncompress(Output &output, const char *data, std::size_t size, std::size_t max =
  * @return Size of the uncompressed data in bytes
  */
 template <>
-size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
-                  std::size_t level);
+size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size, std::size_t level);
 
 /**
  * @struct to_uncompress
@@ -878,10 +852,10 @@ size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size
  * and provides a place to store the result.
  */
 struct to_uncompress {
-    const char *data;              /**< Pointer to the compressed data */
-    std::size_t size;              /**< Size of the compressed data in bytes */
-    std::size_t max = 0;           /**< Maximum allowed output size (0 for unlimited) */
-    std::size_t size_uncompressed = 0;         /**< [out] Size of the uncompressed data */
+    const char *data;                  /**< Pointer to the compressed data */
+    std::size_t size;                  /**< Size of the compressed data in bytes */
+    std::size_t max               = 0; /**< Maximum allowed output size (0 for unlimited) */
+    std::size_t size_uncompressed = 0; /**< [out] Size of the uncompressed data */
 };
 
 /**

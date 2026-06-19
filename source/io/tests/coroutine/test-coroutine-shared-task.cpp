@@ -7,7 +7,7 @@
  * fan-out usage, validity checks, and non-default-constructible result types.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -35,18 +35,21 @@ using namespace std::chrono_literals;
 // Shared helpers
 // =============================================================================
 
-static task<int> compute_after(int value, std::chrono::milliseconds delay) {
+static task<int>
+compute_after(int value, std::chrono::milliseconds delay) {
     co_await sleep(delay);
     co_return value;
 }
 
-static task<int> shared_task_thrower() {
+static task<int>
+shared_task_thrower() {
     co_await sleep(5ms);
     throw std::runtime_error("boom");
     co_return 0;
 }
 
-static task<void> shared_task_void_failing() {
+static task<void>
+shared_task_void_failing() {
     co_await sleep(5ms);
     throw std::runtime_error("void-fail");
 }
@@ -57,8 +60,14 @@ static task<void> shared_task_void_failing() {
 
 class SharedTaskTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(SharedTaskTests, SingleConsumer) {
@@ -80,17 +89,16 @@ TEST_F(SharedTaskTests, SingleConsumer) {
 
 TEST_F(SharedTaskTests, MultipleConsumers_SameResult) {
     std::vector<int> results(3, 0);
-    auto sh = make_shared_task(compute_after(99, 10ms));
+    auto             sh = make_shared_task(compute_after(99, 10ms));
 
     // spawn(callable) — closure copied into wrapper frame, safe in loops.
     for (int i = 0; i < 3; ++i) {
-        coro_scheduler().spawn([sh, &results, i]() mutable -> task<void> {
-            results[i] = co_await sh;
-        });
+        coro_scheduler().spawn([sh, &results, i]() mutable -> task<void> { results[i] = co_await sh; });
     }
     run_for(100ms);
 
-    for (int r : results) EXPECT_EQ(r, 99);
+    for (int r : results)
+        EXPECT_EQ(r, 99);
 }
 
 TEST_F(SharedTaskTests, LateJoiner_GetsResultImmediately) {
@@ -118,7 +126,7 @@ TEST_F(SharedTaskTests, HandleIsCopyable) {
 
     int r1 = 0, r2 = 0, r3 = 0;
 
-    coro_scheduler().spawn([sh,  &r1]() mutable -> task<void> { r1 = co_await sh;  });
+    coro_scheduler().spawn([sh, &r1]() mutable -> task<void> { r1 = co_await sh; });
     coro_scheduler().spawn([sh2, &r2]() mutable -> task<void> { r2 = co_await sh2; });
     coro_scheduler().spawn([sh3, &r3]() mutable -> task<void> { r3 = co_await sh3; });
     run_for(100ms);
@@ -129,21 +137,22 @@ TEST_F(SharedTaskTests, HandleIsCopyable) {
 }
 
 TEST_F(SharedTaskTests, ExceptionPropagatedToAllWaiters) {
-    auto sh = make_shared_task(shared_task_thrower());
+    auto              sh = make_shared_task(shared_task_thrower());
     std::vector<bool> caught(3, false);
 
     for (int i = 0; i < 3; ++i) {
         coro_scheduler().spawn([sh, &caught, i]() mutable -> task<void> {
             try {
                 co_await sh;
-            } catch (const std::runtime_error&) {
+            } catch (const std::runtime_error &) {
                 caught[i] = true;
             }
         });
     }
     run_for(100ms);
 
-    for (bool c : caught) EXPECT_TRUE(c);
+    for (bool c : caught)
+        EXPECT_TRUE(c);
 }
 
 TEST_F(SharedTaskTests, ValidAndReadyState) {
@@ -170,11 +179,18 @@ TEST_F(SharedTaskTests, ValidAndReadyState) {
 
 class SharedTaskVoidTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
-static task<void> wait_and_signal(bool& flag, std::chrono::milliseconds delay) {
+static task<void>
+wait_and_signal(bool &flag, std::chrono::milliseconds delay) {
     co_await sleep(delay);
     flag = true;
 }
@@ -205,7 +221,7 @@ TEST_F(SharedTaskVoidTests, LateJoiner) {
 
     coro_scheduler().spawn([sh, &late]() mutable -> task<void> {
         co_await sleep(50ms);
-        co_await sh;   // already done at this point
+        co_await sh; // already done at this point
         late = true;
     });
     run_for(100ms);
@@ -215,12 +231,15 @@ TEST_F(SharedTaskVoidTests, LateJoiner) {
 }
 
 TEST_F(SharedTaskVoidTests, ExceptionPropagated) {
-    auto sh    = make_shared_task(shared_task_void_failing());
+    auto sh     = make_shared_task(shared_task_void_failing());
     bool caught = false;
 
     coro_scheduler().spawn([sh, &caught]() mutable -> task<void> {
-        try { co_await sh; }
-        catch (const std::runtime_error&) { caught = true; }
+        try {
+            co_await sh;
+        } catch (const std::runtime_error &) {
+            caught = true;
+        }
     });
     run_for(50ms);
     EXPECT_TRUE(caught);
@@ -232,22 +251,29 @@ TEST_F(SharedTaskVoidTests, ExceptionPropagated) {
 
 class SharedTaskScopeTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
-static task<int> scope_load_data() {
+static task<int>
+scope_load_data() {
     co_await sleep(10ms);
     co_return 100;
 }
 
 TEST_F(SharedTaskScopeTests, FanOut_MultipleWorkersAwaitSameData) {
     // Load shared data once; fan out to N workers each reading the same result.
-    bool done = false;
+    bool             done = false;
     std::vector<int> outputs;
 
     coro_scheduler().spawn([&done, &outputs]() -> task<void> {
-        auto data_handle = make_shared_task(scope_load_data());
+        auto            data_handle = make_shared_task(scope_load_data());
         coroutine_scope scope;
 
         for (int i = 0; i < 5; ++i) {
@@ -267,7 +293,8 @@ TEST_F(SharedTaskScopeTests, FanOut_MultipleWorkersAwaitSameData) {
     EXPECT_TRUE(done);
     EXPECT_EQ(outputs.size(), 5u);
     int sum = 0;
-    for (int v : outputs) sum += v;
+    for (int v : outputs)
+        sum += v;
     // (100+0)+(100+1)+(100+2)+(100+3)+(100+4) = 510
     EXPECT_EQ(sum, 510);
 }
@@ -278,8 +305,14 @@ TEST_F(SharedTaskScopeTests, FanOut_MultipleWorkersAwaitSameData) {
 
 class SharedTaskAdvancedTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(SharedTaskAdvancedTests, DefaultConstructedIsInvalid) {
@@ -291,7 +324,8 @@ TEST_F(SharedTaskAdvancedTests, DefaultConstructedIsInvalid) {
 TEST_F(SharedTaskAdvancedTests, NonDefaultConstructibleType) {
     struct NoDefault {
         int value;
-        explicit NoDefault(int v) : value(v) {}
+        explicit NoDefault(int v)
+            : value(v) {}
     };
 
     bool done = false;
@@ -332,7 +366,8 @@ TEST_F(SharedTaskAdvancedTests, SharedTaskCopyAndValidState) {
 // Main Entry Point
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();

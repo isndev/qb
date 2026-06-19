@@ -70,8 +70,8 @@ fwd(std::remove_reference_t<T> &&t) noexcept {
 } // namespace qb
 
 // Backward-compatible global aliases
-using qb::mv;
 using qb::fwd;
+using qb::mv;
 
 namespace qb {
 
@@ -84,7 +84,7 @@ template <typename T>
 concept container = requires(T t) {
     typename T::const_iterator;
     { t.begin() } -> std::convertible_to<typename T::const_iterator>;
-    { t.end() }   -> std::convertible_to<typename T::const_iterator>;
+    { t.end() } -> std::convertible_to<typename T::const_iterator>;
 };
 
 /**
@@ -150,9 +150,7 @@ concept clonable = requires(const T t) {
  * @tparam T Type to check
  */
 template <typename T>
-concept has_value_type = requires {
-    typename T::value_type;
-};
+concept has_value_type = requires { typename T::value_type; };
 
 /**
  * @brief Concept for types with size() method
@@ -163,7 +161,6 @@ template <typename T>
 concept has_size_method = requires(T t) {
     { t.size() } -> std::convertible_to<std::size_t>;
 };
-
 
 /**
  * @struct crtp
@@ -185,19 +182,23 @@ struct crtp {
      *
      * @return Reference to the derived class
      */
-    [[nodiscard]] inline T &impl() & noexcept {
+    [[nodiscard]] inline T &
+    impl() & noexcept {
         return static_cast<T &>(*this);
     }
 
-    [[nodiscard]] inline const T &impl() const & noexcept {
+    [[nodiscard]] inline const T &
+    impl() const & noexcept {
         return static_cast<const T &>(*this);
     }
 
-    [[nodiscard]] inline T &&impl() && noexcept {
+    [[nodiscard]] inline T &&
+    impl() && noexcept {
         return static_cast<T &&>(*this);
     }
 
-    [[nodiscard]] inline const T &&impl() const && noexcept {
+    [[nodiscard]] inline const T &&
+    impl() const && noexcept {
         return static_cast<const T &&>(*this);
     }
 };
@@ -346,8 +347,7 @@ struct is_inserter : std::false_type {};
 template <typename T>
 struct is_inserter<
     // Modern C++: use _v suffix and _t alias
-    T, std::enable_if_t<!std::is_void_v<typename T::container_type>>>
-    : std::true_type {};
+    T, std::enable_if_t<!std::is_void_v<typename T::container_type>>> : std::true_type {};
 
 /**
  * @brief Helper variable template for is_inserter
@@ -407,8 +407,7 @@ struct is_terator : std::false_type {};
  */
 template <typename Iter>
 // Modern C++: use _t alias and _v suffix
-struct is_terator<Iter, std::enable_if_t<is_inserter_v<Iter>>>
-    : std::true_type {};
+struct is_terator<Iter, std::enable_if_t<is_inserter_v<Iter>>> : std::true_type {};
 
 /**
  * @brief Specialization for standard iterators
@@ -419,12 +418,9 @@ struct is_terator<Iter, std::enable_if_t<is_inserter_v<Iter>>>
  */
 template <typename Iter>
 // Modern C++: use _t alias
-struct is_terator<Iter,
-                  std::enable_if_t<!std::is_void_v<
-                      typename std::iterator_traits<Iter>::value_type>>>
+struct is_terator<Iter, std::enable_if_t<!std::is_void_v<typename std::iterator_traits<Iter>::value_type>>>
     // Modern C++: use _v suffix
-    : std::integral_constant<bool, !std::is_convertible_v<Iter, std::string_view>> {
-};
+    : std::integral_constant<bool, !std::is_convertible_v<Iter, std::string_view>> {};
 
 /**
  * @struct is_map_iterator
@@ -489,8 +485,7 @@ struct has_push_back : std::false_type {};
 template <typename T>
 struct has_push_back<
     // Modern C++: use _t alias
-    T, std::enable_if_t<std::is_void_v<decltype(std::declval<T>().push_back(
-           std::declval<typename T::value_type>()))>>> : std::true_type {};
+    T, std::enable_if_t<std::is_void_v<decltype(std::declval<T>().push_back(std::declval<typename T::value_type>()))>>> : std::true_type {};
 
 /**
  * @struct has_insert
@@ -510,10 +505,9 @@ struct has_insert : std::false_type {};
 template <typename T>
 struct has_insert<
     // Modern C++: use _t alias
-    T, std::enable_if_t<std::is_same_v<
-           decltype(std::declval<T>().insert(std::declval<typename T::const_iterator>(),
-                                             std::declval<typename T::value_type>())),
-           typename T::iterator>>> : std::true_type {};
+    T, std::enable_if_t<std::is_same_v<decltype(std::declval<T>().insert(std::declval<typename T::const_iterator>(),
+                                                                         std::declval<typename T::value_type>())),
+                                       typename T::iterator>>> : std::true_type {};
 
 /**
  * @brief Helper variable template for has_push_back
@@ -542,8 +536,7 @@ template <typename T>
 struct is_sequence_container
     : std::integral_constant<
           // Modern C++: use _v suffix and _t alias
-          bool, has_push_back_v<T> &&
-                    !std::is_same_v<std::decay_t<T>, std::string>> {};
+          bool, has_push_back_v<T> && !std::is_same_v<std::decay_t<T>, std::string>> {};
 
 /**
  * @struct is_associative_container
@@ -628,8 +621,7 @@ struct index_builder;
  * @tparam Indexes Current sequence of indices
  */
 template <size_t num, size_t... Indexes>
-struct index_builder<num, indexes_tuple<Indexes...>>
-    : index_builder<num - 1, indexes_tuple<Indexes..., sizeof...(Indexes)>> {};
+struct index_builder<num, indexes_tuple<Indexes...>> : index_builder<num - 1, indexes_tuple<Indexes..., sizeof...(Indexes)>> {};
 
 /**
  * @brief Base case for index_builder
@@ -709,71 +701,68 @@ struct expand {
 // ----------------------------------------------------------------------------
 // QB_DEFINE_METHOD_TRAIT — variadic method with optional return type constraint
 // ----------------------------------------------------------------------------
-#define QB_DEFINE_METHOD_TRAIT(name)                                             \
-    namespace qb {                                                               \
-    /** Concept: C& has .name(Args...) callable, any return type. */             \
-    template <typename C, typename... Args>                                      \
-    concept has_##name = requires(C &c) {                                        \
-        { c.name(std::declval<Args>()...) };                                     \
-    };                                                                           \
-    /** Concept: C& has .name(Args...) returning exactly Ret. */                 \
-    template <typename C, typename Ret, typename... Args>                        \
-    concept has_##name##_r = requires(C &c) {                                   \
-        { c.name(std::declval<Args>()...) } -> std::same_as<Ret>;               \
-    };                                                                           \
-    } /* namespace qb */                                                         \
+#define QB_DEFINE_METHOD_TRAIT(name)                                                             \
+    namespace qb {                                                                               \
+    /** Concept: C& has .name(Args...) callable, any return type. */                             \
+    template <typename C, typename... Args>                                                      \
+    concept has_##name = requires(C &c) {                                                        \
+        { c.name(std::declval<Args>()...) };                                                     \
+    };                                                                                           \
+    /** Concept: C& has .name(Args...) returning exactly Ret. */                                 \
+    template <typename C, typename Ret, typename... Args>                                        \
+    concept has_##name##_r = requires(C &c) {                                                    \
+        { c.name(std::declval<Args>()...) } -> std::same_as<Ret>;                                \
+    };                                                                                           \
+    } /* namespace qb */                                                                         \
     /** Legacy trait — declared `struct`; befriend with `friend struct has_method_name<...>`. */ \
-    /** Ret=void → existence only; Ret≠void → exact return (same_as<Ret>). */   \
-    template <typename C, typename Ret, typename... Args>                        \
-    struct has_method_##name                                                     \
-        : std::bool_constant<std::is_void_v<Ret>                                 \
-                                 ? qb::has_##name<C, Args...>                    \
-                                 : qb::has_##name##_r<C, Ret, Args...>> {}
+    /** Ret=void → existence only; Ret≠void → exact return (same_as<Ret>). */                    \
+    template <typename C, typename Ret, typename... Args>                                        \
+    struct has_method_##name : std::bool_constant<std::is_void_v<Ret> ? qb::has_##name<C, Args...> : qb::has_##name##_r<C, Ret, Args...>> {}
 
 // ----------------------------------------------------------------------------
 // QB_DEFINE_PROPERTY_TRAIT — bool-valued property: function OR data member
 // ----------------------------------------------------------------------------
-#define QB_DEFINE_PROPERTY_TRAIT(name)                                           \
-    namespace qb {                                                               \
-    /** Concept: T has .name() -> bool or .name convertible to bool. */          \
-    template <typename T>                                                        \
-    concept has_##name = requires(T &t) {                                        \
-        { t.name() } -> std::convertible_to<bool>;                              \
-    } || requires(T &t) {                                                        \
-        { t.name } -> std::convertible_to<bool>;                                \
-    };                                                                           \
-    } /* namespace qb */                                                         \
-    template <typename T>                                                        \
-    struct has_member_##name : std::bool_constant<qb::has_##name<T>> {};        \
-    template <typename T>                                                        \
+#define QB_DEFINE_PROPERTY_TRAIT(name)                                   \
+    namespace qb {                                                       \
+    /** Concept: T has .name() -> bool or .name convertible to bool. */  \
+    template <typename T>                                                \
+    concept has_##name = requires(T &t) {                                \
+        { t.name() } -> std::convertible_to<bool>;                       \
+    } || requires(T &t) {                                                \
+        { t.name } -> std::convertible_to<bool>;                         \
+    };                                                                   \
+    } /* namespace qb */                                                 \
+    template <typename T>                                                \
+    struct has_member_##name : std::bool_constant<qb::has_##name<T>> {}; \
+    template <typename T>                                                \
     struct has_member_func_##name : std::bool_constant<qb::has_##name<T>> {}
 
 // ----------------------------------------------------------------------------
 // QB_DEFINE_MEMBER_TRAIT — no-arg method existence
 // ----------------------------------------------------------------------------
-#define QB_DEFINE_MEMBER_TRAIT(name)                                             \
-    namespace qb {                                                               \
-    /** Concept: T has .name() callable (any return type). */                    \
-    template <typename T>                                                        \
-    concept has_##name = requires(T &t) {                                        \
-        { t.name() };                                                            \
-    };                                                                           \
-    } /* namespace qb */                                                         \
-    template <typename T>                                                        \
-    struct has_member_##name : std::bool_constant<qb::has_##name<T>> {};        \
-    template <typename T>                                                        \
+#define QB_DEFINE_MEMBER_TRAIT(name)                                     \
+    namespace qb {                                                       \
+    /** Concept: T has .name() callable (any return type). */            \
+    template <typename T>                                                \
+    concept has_##name = requires(T &t) {                                \
+        { t.name() };                                                    \
+    };                                                                   \
+    } /* namespace qb */                                                 \
+    template <typename T>                                                \
+    struct has_member_##name : std::bool_constant<qb::has_##name<T>> {}; \
+    template <typename T>                                                \
     struct has_member_func_##name : std::bool_constant<qb::has_##name<T>> {}
 
 // ----------------------------------------------------------------------------
 // QB_DEFINE_TYPE_TRAIT — nested type alias/typedef detection
 // ----------------------------------------------------------------------------
-#define QB_DEFINE_TYPE_TRAIT(name)                                               \
-    namespace qb {                                                               \
-    /** Concept: T has a nested type member T::name. */                          \
-    template <typename T>                                                        \
-    concept has_type_##name = requires { typename T::name; };                   \
-    } /* namespace qb */                                                         \
-    template <typename T>                                                        \
+#define QB_DEFINE_TYPE_TRAIT(name)                            \
+    namespace qb {                                            \
+    /** Concept: T has a nested type member T::name. */       \
+    template <typename T>                                     \
+    concept has_type_##name = requires { typename T::name; }; \
+    } /* namespace qb */                                      \
+    template <typename T>                                     \
     struct has_member_##name : std::bool_constant<qb::has_type_##name<T>> {}
 
 // ============================================================================
@@ -843,7 +832,8 @@ QB_DEFINE_TYPE_TRAIT(Protocol);
 namespace qb::detail {
 
 template <typename D, typename Base, typename Evt>
-consteval bool compute_has_own_on() {
+consteval bool
+compute_has_own_on() {
     // (1) rvalue-reference signature — compare PMFs cast to D::*.
     if constexpr (requires {
                       static_cast<void (D::*)(Evt &&)>(&D::on);

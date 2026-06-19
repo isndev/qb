@@ -67,7 +67,7 @@ struct BigEvent : qb::Event {
 };
 
 struct DynamicEvent : qb::Event {
-    std::uint64_t   _ttl;
+    std::uint64_t    _ttl;
     std::vector<int> vec;
     explicit DynamicEvent(std::uint64_t ttl)
         : _ttl(ttl)
@@ -130,10 +130,8 @@ BM_PINGPONG(benchmark::State &state) {
     // Per ping/pong pair:
     //   - round trips / chain ~= nb_ping
     //   - delivered messages  ~= 2 * nb_ping + 1 (including final KillEvent)
-    const double round_trips_total =
-        static_cast<double>(nb_ping_actor) * static_cast<double>(nb_ping);
-    const double messages_total =
-        static_cast<double>(nb_ping_actor) * static_cast<double>(2ull * nb_ping + 1ull);
+    const double round_trips_total = static_cast<double>(nb_ping_actor) * static_cast<double>(nb_ping);
+    const double messages_total    = static_cast<double>(nb_ping_actor) * static_cast<double>(2ull * nb_ping + 1ull);
 
     for (auto _ : state) {
         state.PauseTiming();
@@ -158,18 +156,14 @@ BM_PINGPONG(benchmark::State &state) {
     state.counters["actual_pong_actors"]  = static_cast<double>(nb_ping_actor);
     state.counters["actual_total_actors"] = static_cast<double>(nb_ping_actor * 2);
 
-    state.counters["round_trips_per_s"] =
-        benchmark::Counter(round_trips_total, benchmark::Counter::kIsIterationInvariantRate);
+    state.counters["round_trips_per_s"] = benchmark::Counter(round_trips_total, benchmark::Counter::kIsIterationInvariantRate);
 
-    state.counters["messages_per_s"] =
-        benchmark::Counter(messages_total, benchmark::Counter::kIsIterationInvariantRate);
+    state.counters["messages_per_s"] = benchmark::Counter(messages_total, benchmark::Counter::kIsIterationInvariantRate);
 }
 
 BENCHMARK_TEMPLATE(BM_PINGPONG, TinyEvent)
     ->RangeMultiplier(2)
-    ->Ranges({{1, 64},
-              {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT},
-              {1u, max_core_range_for_bench()}})
+    ->Ranges({{1, 64}, {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT}, {1u, max_core_range_for_bench()}})
     ->ArgNames({"NB_PING_ACTOR", "NB_PING", "NB_CORE"})
     ->Iterations(MAX_BENCHMARK_ITERATION)
     ->UseRealTime()
@@ -177,9 +171,7 @@ BENCHMARK_TEMPLATE(BM_PINGPONG, TinyEvent)
 
 BENCHMARK_TEMPLATE(BM_PINGPONG, BigEvent)
     ->RangeMultiplier(2)
-    ->Ranges({{1, 64},
-              {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT},
-              {1u, max_core_range_for_bench()}})
+    ->Ranges({{1, 64}, {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT}, {1u, max_core_range_for_bench()}})
     ->ArgNames({"NB_PING_ACTOR", "NB_PING", "NB_CORE"})
     ->Iterations(MAX_BENCHMARK_ITERATION)
     ->UseRealTime()
@@ -187,9 +179,7 @@ BENCHMARK_TEMPLATE(BM_PINGPONG, BigEvent)
 
 BENCHMARK_TEMPLATE(BM_PINGPONG, DynamicEvent)
     ->RangeMultiplier(2)
-    ->Ranges({{1, 64},
-              {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT},
-              {1u, max_core_range_for_bench()}})
+    ->Ranges({{1, 64}, {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT}, {1u, max_core_range_for_bench()}})
     ->ArgNames({"NB_PING_ACTOR", "NB_PING", "NB_CORE"})
     ->Iterations(MAX_BENCHMARK_ITERATION)
     ->UseRealTime()

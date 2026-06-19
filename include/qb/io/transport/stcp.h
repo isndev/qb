@@ -8,7 +8,7 @@
  * Requires OpenSSL.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -44,7 +44,10 @@ namespace qb::io::transport {
 class stcp : public stream<io::tcp::ssl::socket> {
 public:
     /** @brief Indicates that this transport implementation is secure */
-    static constexpr bool is_secure() noexcept { return true; }
+    static constexpr bool
+    is_secure() noexcept {
+        return true;
+    }
     /**
      * @brief Read data from the secure TCP socket
      * @return Number of bytes read on success, error code on failure
@@ -58,22 +61,21 @@ public:
     read() noexcept {
         static constexpr const std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
 
-        if (this->_max_read_buffer_size < _in_buffer.size() ||
-            bucket_read > this->_max_read_buffer_size - _in_buffer.size()) {
+        if (this->_max_read_buffer_size < _in_buffer.size() || bucket_read > this->_max_read_buffer_size - _in_buffer.size()) {
             return ErrBufferLimitExceeded;
         }
-        
+
         auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
         if (ret >= 0) {
             _in_buffer.free_back(bucket_read - ret);
             const auto pending = SSL_pending(transport().ssl_handle());
             if (pending) {
-                if (this->_max_read_buffer_size < _in_buffer.size() ||
-                    static_cast<std::size_t>(pending) > this->_max_read_buffer_size - _in_buffer.size()) {
+                if (this->_max_read_buffer_size < _in_buffer.size()
+                    || static_cast<std::size_t>(pending) > this->_max_read_buffer_size - _in_buffer.size()) {
                     return ErrBufferLimitExceeded;
                 }
                 const auto pending_sz = static_cast<std::size_t>(pending);
-                const auto ret2 = _in.read(_in_buffer.allocate_back(pending_sz), pending_sz);
+                const auto ret2       = _in.read(_in_buffer.allocate_back(pending_sz), pending_sz);
                 if (ret2 >= 0) {
                     _in_buffer.free_back(pending_sz - static_cast<std::size_t>(ret2));
                     ret += ret2;

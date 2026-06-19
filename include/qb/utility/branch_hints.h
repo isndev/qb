@@ -12,7 +12,7 @@
  * idiomatic way to annotate boolean conditions inline.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -78,27 +78,25 @@ unlikely(bool expr) noexcept {
  * eliminate dead branches (e.g. default-case unreachable after a router
  * lookup, range invariants).
  */
-#if defined(__has_cpp_attribute) && \
-    ((defined(__cplusplus) && __cplusplus >= 202302L) || \
-     (defined(_MSVC_LANG) && _MSVC_LANG >= 202302L))
-#  if __has_cpp_attribute(assume) >= 202207L
-#    define QB_ASSUME(cond) [[assume(cond)]]
-#  endif
+#if defined(__has_cpp_attribute) && ((defined(__cplusplus) && __cplusplus >= 202302L) || (defined(_MSVC_LANG) && _MSVC_LANG >= 202302L))
+#if __has_cpp_attribute(assume) >= 202207L
+#define QB_ASSUME(cond) [[assume(cond)]]
+#endif
 #endif
 #ifndef QB_ASSUME
-#  if defined(__clang__)
-#    define QB_ASSUME(cond) __builtin_assume(cond)
-#  elif defined(_MSC_VER)
-#    define QB_ASSUME(cond) __assume(cond)
-#  elif defined(__GNUC__)
-#    define QB_ASSUME(cond)                                                   \
-        do {                                                                  \
-            if (!(cond))                                                      \
-                __builtin_unreachable();                                      \
-        } while (0)
-#  else
-#    define QB_ASSUME(cond) static_cast<void>(0)
-#  endif
+#if defined(__clang__)
+#define QB_ASSUME(cond) __builtin_assume(cond)
+#elif defined(_MSC_VER)
+#define QB_ASSUME(cond) __assume(cond)
+#elif defined(__GNUC__)
+#define QB_ASSUME(cond)              \
+    do {                             \
+        if (!(cond))                 \
+            __builtin_unreachable(); \
+    } while (0)
+#else
+#define QB_ASSUME(cond) static_cast<void>(0)
+#endif
 #endif
 
 #endif /* QB_UTILS_BRANCH_HINTS_H */

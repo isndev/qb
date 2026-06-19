@@ -7,7 +7,7 @@
  * protocols for handling null-terminated JSON strings and MessagePack encoded JSON.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -45,11 +45,10 @@ inline constexpr std::size_t kJsonMaxNestingDepth = 512;
  * @return true when the maximum nesting depth stays within @p max_depth.
  */
 inline bool
-json_depth_within(const char *data, std::size_t size,
-                  std::size_t max_depth) noexcept {
-    std::size_t depth = 0;
-    bool in_string = false;
-    bool escaped   = false;
+json_depth_within(const char *data, std::size_t size, std::size_t max_depth) noexcept {
+    std::size_t depth     = 0;
+    bool        in_string = false;
+    bool        escaped   = false;
     for (std::size_t i = 0; i < size; ++i) {
         const char c = data[i];
         if (in_string) {
@@ -100,22 +99,64 @@ struct msgpack_depth_sax {
 
     std::size_t depth = 0;
     std::size_t max_depth;
-    explicit msgpack_depth_sax(std::size_t md) noexcept : max_depth(md) {}
+    explicit msgpack_depth_sax(std::size_t md) noexcept
+        : max_depth(md) {}
 
-    bool null() noexcept { return true; }
-    bool boolean(bool) noexcept { return true; }
-    bool number_integer(number_integer_t) noexcept { return true; }
-    bool number_unsigned(number_unsigned_t) noexcept { return true; }
-    bool number_float(number_float_t, const string_t &) noexcept { return true; }
-    bool string(string_t &) noexcept { return true; }
-    bool binary(binary_t &) noexcept { return true; }
-    bool key(string_t &) noexcept { return true; }
-    bool start_object(std::size_t) noexcept { return ++depth <= max_depth; }
-    bool end_object() noexcept { if (depth) --depth; return true; }
-    bool start_array(std::size_t) noexcept { return ++depth <= max_depth; }
-    bool end_array() noexcept { if (depth) --depth; return true; }
+    bool
+    null() noexcept {
+        return true;
+    }
+    bool
+    boolean(bool) noexcept {
+        return true;
+    }
+    bool
+    number_integer(number_integer_t) noexcept {
+        return true;
+    }
+    bool
+    number_unsigned(number_unsigned_t) noexcept {
+        return true;
+    }
+    bool
+    number_float(number_float_t, const string_t &) noexcept {
+        return true;
+    }
+    bool
+    string(string_t &) noexcept {
+        return true;
+    }
+    bool
+    binary(binary_t &) noexcept {
+        return true;
+    }
+    bool
+    key(string_t &) noexcept {
+        return true;
+    }
+    bool
+    start_object(std::size_t) noexcept {
+        return ++depth <= max_depth;
+    }
+    bool
+    end_object() noexcept {
+        if (depth)
+            --depth;
+        return true;
+    }
+    bool
+    start_array(std::size_t) noexcept {
+        return ++depth <= max_depth;
+    }
+    bool
+    end_array() noexcept {
+        if (depth)
+            --depth;
+        return true;
+    }
     template <typename Ex>
-    bool parse_error(std::size_t, const std::string &, const Ex &) noexcept {
+    bool
+    parse_error(std::size_t, const std::string &, const Ex &) noexcept {
         return false;
     }
 };
@@ -125,11 +166,9 @@ struct msgpack_depth_sax {
  *        @p max_depth (and is structurally parseable).
  */
 inline bool
-msgpack_depth_within(const char *data, std::size_t size,
-                     std::size_t max_depth) noexcept {
+msgpack_depth_within(const char *data, std::size_t size, std::size_t max_depth) noexcept {
     msgpack_depth_sax sax(max_depth);
-    return ::nlohmann::json::sax_parse(std::string_view(data, size), &sax,
-                                       ::nlohmann::json::input_format_t::msgpack,
+    return ::nlohmann::json::sax_parse(std::string_view(data, size), &sax, ::nlohmann::json::input_format_t::msgpack,
                                        /*strict=*/true, /*ignore_comments=*/false);
 }
 } // namespace detail
@@ -158,7 +197,7 @@ public:
      * @brief Default constructor (deleted)
      */
     json() = delete;
-    
+
     /**
      * @brief Constructor with I/O reference
      *
@@ -194,8 +233,7 @@ public:
         const auto data   = this->_io.in().cbegin();
         // DoS guard: nlohmann's recursive parser can blow the stack on deeply
         // nested input; reject pathological nesting before parsing.
-        if (!detail::json_depth_within(data, parsed,
-                                       detail::kJsonMaxNestingDepth)) {
+        if (!detail::json_depth_within(data, parsed, detail::kJsonMaxNestingDepth)) {
             this->not_ok();
             return;
         }
@@ -234,7 +272,7 @@ public:
      * @brief Default constructor (deleted)
      */
     json_packed() = delete;
-    
+
     /**
      * @brief Constructor with I/O reference
      *
@@ -278,8 +316,7 @@ public:
             return;
         }
         try {
-            auto json =
-                nlohmann::json::from_msgpack(std::string_view(data, parsed), true, false);
+            auto json = nlohmann::json::from_msgpack(std::string_view(data, parsed), true, false);
             if (json.is_discarded()) {
                 this->not_ok();
                 return;

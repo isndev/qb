@@ -7,7 +7,7 @@
  * identifying a newly accepted connection from the underlying listener socket.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -46,7 +46,7 @@ namespace qb::io::protocol {
 template <typename _IO_, typename _Socket>
 class accept : public async::AProtocol<_IO_> {
 public:
-    /** 
+    /**
      * @typedef message
      * @brief The type of message this protocol produces, which is the accepted socket itself.
      */

@@ -8,7 +8,7 @@
  * string size and chooses the optimal size type for storage.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -85,23 +85,23 @@ struct best_size<_Size, false, true> {
 template <std::size_t _Size = 30>
 class string : public std::array<char, _Size + 1> {
     static_assert(_Size > 0, "String size must be greater than 0");
-    
+
     using base_t    = std::array<char, _Size + 1>;
     using size_type = typename internal::best_size<_Size + 1>::type;
-    
+
 public:
     // Type aliases for compatibility with std::string
     using value_type             = char;
-    using reference              = char&;
-    using const_reference        = const char&;
-    using pointer                = char*;
-    using const_pointer          = const char*;
+    using reference              = char &;
+    using const_reference        = const char &;
+    using pointer                = char *;
+    using const_pointer          = const char *;
     using iterator               = typename base_t::iterator;
     using const_iterator         = typename base_t::const_iterator;
     using reverse_iterator       = typename base_t::reverse_iterator;
     using const_reverse_iterator = typename base_t::const_reverse_iterator;
     using difference_type        = typename base_t::difference_type;
-    
+
     static constexpr std::size_t npos = std::numeric_limits<std::size_t>::max();
 
 private:
@@ -144,7 +144,7 @@ public:
      * @param str C-style string to copy from
      * @param size Number of characters to copy
      */
-    string(const char* str, std::size_t size) noexcept {
+    string(const char *str, std::size_t size) noexcept {
         assign(str, size);
     }
 
@@ -153,7 +153,7 @@ public:
      *
      * @param str Null-terminated C-style string
      */
-    string(const char* str) noexcept {
+    string(const char *str) noexcept {
         assign(str);
     }
 
@@ -172,22 +172,22 @@ public:
     /**
      * @brief Copy constructor
      */
-    string(const string& other) noexcept = default;
+    string(const string &other) noexcept = default;
 
     /**
      * @brief Move constructor
      */
-    string(string&& other) noexcept = default;
+    string(string &&other) noexcept = default;
 
     /**
      * @brief Copy assignment operator
      */
-    string& operator=(const string& other) noexcept = default;
+    string &operator=(const string &other) noexcept = default;
 
     /**
      * @brief Move assignment operator
      */
-    string& operator=(string&& other) noexcept = default;
+    string &operator=(string &&other) noexcept = default;
 
     /**
      * @brief Assign from C-style string and size
@@ -332,7 +332,8 @@ public:
      * @return Reference to the character
      * @throws std::out_of_range if pos >= size()
      */
-    reference at(std::size_t pos) {
+    reference
+    at(std::size_t pos) {
         if (pos >= _size) {
             throw std::out_of_range("qb::string::at: index out of range");
         }
@@ -346,7 +347,8 @@ public:
      * @return Const reference to the character
      * @throws std::out_of_range if pos >= size()
      */
-    const_reference at(std::size_t pos) const {
+    const_reference
+    at(std::size_t pos) const {
         if (pos >= _size) {
             throw std::out_of_range("qb::string::at: index out of range");
         }
@@ -359,7 +361,8 @@ public:
      * @param pos Index of the character
      * @return Reference to the character
      */
-    reference operator[](std::size_t pos) noexcept {
+    reference
+    operator[](std::size_t pos) noexcept {
         return base_t::data()[pos];
     }
 
@@ -369,7 +372,8 @@ public:
      * @param pos Index of the character
      * @return Const reference to the character
      */
-    const_reference operator[](std::size_t pos) const noexcept {
+    const_reference
+    operator[](std::size_t pos) const noexcept {
         return base_t::data()[pos];
     }
 
@@ -378,7 +382,8 @@ public:
      *
      * @return Reference to the first character
      */
-    reference front() noexcept {
+    reference
+    front() noexcept {
         return base_t::data()[0];
     }
 
@@ -387,7 +392,8 @@ public:
      *
      * @return Const reference to the first character
      */
-    const_reference front() const noexcept {
+    const_reference
+    front() const noexcept {
         return base_t::data()[0];
     }
 
@@ -396,7 +402,8 @@ public:
      *
      * @return Reference to the last character
      */
-    reference back() noexcept {
+    reference
+    back() noexcept {
         return base_t::data()[_size - 1];
     }
 
@@ -405,7 +412,8 @@ public:
      *
      * @return Const reference to the last character
      */
-    const_reference back() const noexcept {
+    const_reference
+    back() const noexcept {
         return base_t::data()[_size - 1];
     }
 
@@ -414,7 +422,8 @@ public:
      *
      * @return Pointer to the underlying character array
      */
-    pointer data() noexcept {
+    pointer
+    data() noexcept {
         return base_t::data();
     }
 
@@ -423,7 +432,8 @@ public:
      *
      * @return Const pointer to the underlying character array
      */
-    const_pointer data() const noexcept {
+    const_pointer
+    data() const noexcept {
         return base_t::data();
     }
 
@@ -432,7 +442,8 @@ public:
      *
      * @return Null-terminated C-style string
      */
-    [[nodiscard]] const_pointer c_str() const noexcept {
+    [[nodiscard]] const_pointer
+    c_str() const noexcept {
         return base_t::data();
     }
 
@@ -442,7 +453,8 @@ public:
      *
      * @return Iterator pointing just past the last character
      */
-    iterator end() noexcept {
+    iterator
+    end() noexcept {
         return base_t::begin() + _size;
     }
 
@@ -451,7 +463,8 @@ public:
      *
      * @return Const iterator pointing just past the last character
      */
-    const_iterator end() const noexcept {
+    const_iterator
+    end() const noexcept {
         return base_t::begin() + _size;
     }
 
@@ -460,7 +473,8 @@ public:
      *
      * @return Const iterator pointing just past the last character
      */
-    const_iterator cend() const noexcept {
+    const_iterator
+    cend() const noexcept {
         return base_t::cbegin() + _size;
     }
 
@@ -469,7 +483,8 @@ public:
      *
      * @return Reverse iterator pointing to the last character
      */
-    reverse_iterator rbegin() noexcept {
+    reverse_iterator
+    rbegin() noexcept {
         return std::reverse_iterator(end());
     }
 
@@ -478,7 +493,8 @@ public:
      *
      * @return Const reverse iterator pointing to the last character
      */
-    const_reverse_iterator rbegin() const noexcept {
+    const_reverse_iterator
+    rbegin() const noexcept {
         return std::reverse_iterator(end());
     }
 
@@ -487,7 +503,8 @@ public:
      *
      * @return Const reverse iterator pointing to the last character
      */
-    const_reverse_iterator crbegin() const noexcept {
+    const_reverse_iterator
+    crbegin() const noexcept {
         return std::reverse_iterator(cend());
     }
 
@@ -497,7 +514,8 @@ public:
      *
      * @return true if the string is empty, false otherwise
      */
-    [[nodiscard]] constexpr bool empty() const noexcept {
+    [[nodiscard]] constexpr bool
+    empty() const noexcept {
         return _size == 0;
     }
 
@@ -506,7 +524,8 @@ public:
      *
      * @return Number of characters in the string
      */
-    [[nodiscard]] constexpr std::size_t size() const noexcept {
+    [[nodiscard]] constexpr std::size_t
+    size() const noexcept {
         return _size;
     }
 
@@ -515,7 +534,8 @@ public:
      *
      * @return Number of characters in the string
      */
-    [[nodiscard]] constexpr std::size_t length() const noexcept {
+    [[nodiscard]] constexpr std::size_t
+    length() const noexcept {
         return _size;
     }
 
@@ -524,7 +544,8 @@ public:
      *
      * @return Maximum number of characters the string can hold
      */
-    [[nodiscard]] constexpr std::size_t max_size() const noexcept {
+    [[nodiscard]] constexpr std::size_t
+    max_size() const noexcept {
         return _Size;
     }
 
@@ -533,7 +554,8 @@ public:
      *
      * @return Maximum number of characters the string can hold
      */
-    [[nodiscard]] constexpr std::size_t capacity() const noexcept {
+    [[nodiscard]] constexpr std::size_t
+    capacity() const noexcept {
         return _Size;
     }
 
@@ -543,9 +565,10 @@ public:
      *
      * Sets the string to an empty state with a null terminator
      */
-    void clear() noexcept {
+    void
+    clear() noexcept {
         *base_t::begin() = '\0';
-        _size = 0;
+        _size            = 0;
     }
 
     /**
@@ -554,14 +577,15 @@ public:
      * @param count New size of the string
      * @param ch Character to fill with if expanding
      */
-    void resize(std::size_t count, char ch = '\0') noexcept {
+    void
+    resize(std::size_t count, char ch = '\0') noexcept {
         count = std::min(count, static_cast<std::size_t>(_Size));
-        
+
         if (count > _size) {
             std::fill(base_t::data() + _size, base_t::data() + count, ch);
         }
-        
-        _size = static_cast<size_type>(count);
+
+        _size                 = static_cast<size_type>(count);
         base_t::data()[_size] = '\0';
     }
 
@@ -570,14 +594,15 @@ public:
      *
      * @param other String to swap with
      */
-    void swap(string& other) noexcept {
-        base_t temp_data = *this;
+    void
+    swap(string &other) noexcept {
+        base_t    temp_data = *this;
         size_type temp_size = _size;
-        
+
         *this = other;
         _size = other._size;
-        
-        other = temp_data;
+
+        other       = temp_data;
         other._size = temp_size;
     }
 
@@ -589,13 +614,14 @@ public:
      * @param len Number of characters to extract
      * @return New string containing the substring
      */
-    string substr(std::size_t pos = 0, std::size_t len = npos) const {
+    string
+    substr(std::size_t pos = 0, std::size_t len = npos) const {
         if (pos > _size) {
             throw std::out_of_range("qb::string::substr: position out of range");
         }
-        
+
         std::size_t actual_len = std::min(len, _size - pos);
-        string result;
+        string      result;
         result.assign(base_t::data() + pos, actual_len);
         return result;
     }
@@ -606,7 +632,8 @@ public:
      * @param str String to compare with
      * @return Negative if this < str, 0 if equal, positive if this > str
      */
-    int compare(const string& str) const noexcept {
+    int
+    compare(const string &str) const noexcept {
         return std::strcmp(base_t::data(), str.c_str());
     }
 
@@ -616,7 +643,8 @@ public:
      * @param str C-style string to compare with
      * @return Negative if this < str, 0 if equal, positive if this > str
      */
-    int compare(const char* str) const noexcept {
+    int
+    compare(const char *str) const noexcept {
         return std::strcmp(base_t::data(), str);
     }
 
@@ -628,7 +656,8 @@ public:
      * @param str String to compare with
      * @return Negative if this < str, 0 if equal, positive if this > str
      */
-    int compare(std::size_t pos, std::size_t len, const string& str) const {
+    int
+    compare(std::size_t pos, std::size_t len, const string &str) const {
         return substr(pos, len).compare(str);
     }
 
@@ -640,7 +669,8 @@ public:
      * @param pos Starting position
      * @return Position of first occurrence or npos if not found
      */
-    std::size_t find(const string& str, std::size_t pos = 0) const noexcept {
+    std::size_t
+    find(const string &str, std::size_t pos = 0) const noexcept {
         return find(str.c_str(), pos);
     }
 
@@ -651,10 +681,12 @@ public:
      * @param pos Starting position
      * @return Position of first occurrence or npos if not found
      */
-    std::size_t find(const char* str, std::size_t pos = 0) const noexcept {
-        if (pos >= _size) return npos;
-        
-        const char* result = std::strstr(base_t::data() + pos, str);
+    std::size_t
+    find(const char *str, std::size_t pos = 0) const noexcept {
+        if (pos >= _size)
+            return npos;
+
+        const char *result = std::strstr(base_t::data() + pos, str);
         return result ? static_cast<std::size_t>(result - base_t::data()) : npos;
     }
 
@@ -665,12 +697,13 @@ public:
      * @param pos Starting position
      * @return Position of first occurrence or npos if not found
      */
-    std::size_t find(char ch, std::size_t pos = 0) const noexcept {
-        if (pos >= _size) return npos;
-        
-        const char* result = std::strchr(base_t::data() + pos, ch);
-        return (result && result < base_t::data() + _size) ? 
-               static_cast<std::size_t>(result - base_t::data()) : npos;
+    std::size_t
+    find(char ch, std::size_t pos = 0) const noexcept {
+        if (pos >= _size)
+            return npos;
+
+        const char *result = std::strchr(base_t::data() + pos, ch);
+        return (result && result < base_t::data() + _size) ? static_cast<std::size_t>(result - base_t::data()) : npos;
     }
 
     /**
@@ -680,12 +713,14 @@ public:
      * @param pos Starting position (searches backwards from here)
      * @return Position of last occurrence or npos if not found
      */
-    std::size_t rfind(const char* str, std::size_t pos = npos) const noexcept {
+    std::size_t
+    rfind(const char *str, std::size_t pos = npos) const noexcept {
         std::size_t str_len = std::strlen(str);
-        if (str_len > _size) return npos;
-        
+        if (str_len > _size)
+            return npos;
+
         std::size_t start = std::min(pos, _size - str_len);
-        
+
         for (std::size_t i = start + 1; i > 0; --i) {
             if (std::strncmp(base_t::data() + i - 1, str, str_len) == 0) {
                 return i - 1;
@@ -701,11 +736,13 @@ public:
      * @param pos Starting position (searches backwards from here)
      * @return Position of last occurrence or npos if not found
      */
-    std::size_t rfind(char ch, std::size_t pos = npos) const noexcept {
-        if (_size == 0) return npos;
-        
+    std::size_t
+    rfind(char ch, std::size_t pos = npos) const noexcept {
+        if (_size == 0)
+            return npos;
+
         std::size_t start = std::min(pos, static_cast<std::size_t>(_size - 1));
-        
+
         for (std::size_t i = start + 1; i > 0; --i) {
             if (base_t::data()[i - 1] == ch) {
                 return i - 1;
@@ -721,7 +758,8 @@ public:
      * @param str String to append
      * @return Reference to this string
      */
-    string& append(const string& str) noexcept {
+    string &
+    append(const string &str) noexcept {
         return append(str.c_str(), str.size());
     }
 
@@ -731,7 +769,8 @@ public:
      * @param str C-style string to append
      * @return Reference to this string
      */
-    string& append(const char* str) noexcept {
+    string &
+    append(const char *str) noexcept {
         return append(str, std::strlen(str));
     }
 
@@ -742,14 +781,15 @@ public:
      * @param len Number of characters to append
      * @return Reference to this string
      */
-    string& append(const char* str, std::size_t len) noexcept {
-        std::size_t new_size = std::min(_size + len, static_cast<std::size_t>(_Size));
+    string &
+    append(const char *str, std::size_t len) noexcept {
+        std::size_t new_size   = std::min(_size + len, static_cast<std::size_t>(_Size));
         std::size_t actual_len = new_size - _size;
-        
+
         std::memcpy(base_t::data() + _size, str, actual_len);
-        _size = static_cast<size_type>(new_size);
+        _size                 = static_cast<size_type>(new_size);
         base_t::data()[_size] = '\0';
-        
+
         return *this;
     }
 
@@ -759,7 +799,8 @@ public:
      * @param ch Character to append
      * @return Reference to this string
      */
-    string& append(char ch) noexcept {
+    string &
+    append(char ch) noexcept {
         return append(1, ch);
     }
 
@@ -770,14 +811,15 @@ public:
      * @param ch Character to append
      * @return Reference to this string
      */
-    string& append(std::size_t count, char ch) noexcept {
-        std::size_t new_size = std::min(_size + count, static_cast<std::size_t>(_Size));
+    string &
+    append(std::size_t count, char ch) noexcept {
+        std::size_t new_size     = std::min(_size + count, static_cast<std::size_t>(_Size));
         std::size_t actual_count = new_size - _size;
-        
+
         std::fill_n(base_t::data() + _size, actual_count, ch);
-        _size = static_cast<size_type>(new_size);
+        _size                 = static_cast<size_type>(new_size);
         base_t::data()[_size] = '\0';
-        
+
         return *this;
     }
 
@@ -786,7 +828,8 @@ public:
      *
      * @param ch Character to add
      */
-    void push_back(char ch) noexcept {
+    void
+    push_back(char ch) noexcept {
         if (_size < _Size) {
             base_t::data()[_size] = ch;
             ++_size;
@@ -797,7 +840,8 @@ public:
     /**
      * @brief Remove last character
      */
-    void pop_back() noexcept {
+    void
+    pop_back() noexcept {
         if (_size > 0) {
             --_size;
             base_t::data()[_size] = '\0';
@@ -810,7 +854,8 @@ public:
      * @param str String to append
      * @return Reference to this string
      */
-    string& operator+=(const string& str) noexcept {
+    string &
+    operator+=(const string &str) noexcept {
         return append(str);
     }
 
@@ -820,7 +865,8 @@ public:
      * @param str C-style string to append
      * @return Reference to this string
      */
-    string& operator+=(const char* str) noexcept {
+    string &
+    operator+=(const char *str) noexcept {
         return append(str);
     }
 
@@ -830,7 +876,8 @@ public:
      * @param ch Character to append
      * @return Reference to this string
      */
-    string& operator+=(char ch) noexcept {
+    string &
+    operator+=(char ch) noexcept {
         push_back(ch);
         return *this;
     }
@@ -842,7 +889,8 @@ public:
      * @param prefix Prefix to check
      * @return true if string starts with prefix, false otherwise
      */
-    bool starts_with(const char* prefix) const noexcept {
+    bool
+    starts_with(const char *prefix) const noexcept {
         std::size_t prefix_len = std::strlen(prefix);
         return _size >= prefix_len && std::strncmp(base_t::data(), prefix, prefix_len) == 0;
     }
@@ -853,7 +901,8 @@ public:
      * @param prefix Prefix to check
      * @return true if string starts with prefix, false otherwise
      */
-    bool starts_with(const string& prefix) const noexcept {
+    bool
+    starts_with(const string &prefix) const noexcept {
         return starts_with(prefix.c_str());
     }
 
@@ -863,7 +912,8 @@ public:
      * @param ch Character to check
      * @return true if string starts with character, false otherwise
      */
-    bool starts_with(char ch) const noexcept {
+    bool
+    starts_with(char ch) const noexcept {
         return _size > 0 && base_t::data()[0] == ch;
     }
 
@@ -873,10 +923,10 @@ public:
      * @param suffix Suffix to check
      * @return true if string ends with suffix, false otherwise
      */
-    bool ends_with(const char* suffix) const noexcept {
+    bool
+    ends_with(const char *suffix) const noexcept {
         std::size_t suffix_len = std::strlen(suffix);
-        return _size >= suffix_len && 
-               std::strncmp(base_t::data() + _size - suffix_len, suffix, suffix_len) == 0;
+        return _size >= suffix_len && std::strncmp(base_t::data() + _size - suffix_len, suffix, suffix_len) == 0;
     }
 
     /**
@@ -885,7 +935,8 @@ public:
      * @param suffix Suffix to check
      * @return true if string ends with suffix, false otherwise
      */
-    bool ends_with(const string& suffix) const noexcept {
+    bool
+    ends_with(const string &suffix) const noexcept {
         return ends_with(suffix.c_str());
     }
 
@@ -895,7 +946,8 @@ public:
      * @param ch Character to check
      * @return true if string ends with character, false otherwise
      */
-    bool ends_with(char ch) const noexcept {
+    bool
+    ends_with(char ch) const noexcept {
         return _size > 0 && base_t::data()[_size - 1] == ch;
     }
 
@@ -905,7 +957,8 @@ public:
      * @param str Substring to find
      * @return true if string contains substring, false otherwise
      */
-    bool contains(const char* str) const noexcept {
+    bool
+    contains(const char *str) const noexcept {
         return find(str) != npos;
     }
 
@@ -915,7 +968,8 @@ public:
      * @param str Substring to find
      * @return true if string contains substring, false otherwise
      */
-    bool contains(const string& str) const noexcept {
+    bool
+    contains(const string &str) const noexcept {
         return find(str) != npos;
     }
 
@@ -925,7 +979,8 @@ public:
      * @param ch Character to find
      * @return true if string contains character, false otherwise
      */
-    bool contains(char ch) const noexcept {
+    bool
+    contains(char ch) const noexcept {
         return find(ch) != npos;
     }
 
@@ -938,7 +993,8 @@ public:
      * @return true if strings are equal, false otherwise
      */
     template <typename T>
-    bool operator==(T const &rhs) const noexcept {
+    bool
+    operator==(T const &rhs) const noexcept {
         return rhs == base_t::data();
     }
 
@@ -948,7 +1004,8 @@ public:
      * @param rhs C-style string to compare with
      * @return true if strings are equal, false otherwise
      */
-    bool operator==(char const *rhs) const noexcept {
+    bool
+    operator==(char const *rhs) const noexcept {
         return std::strcmp(base_t::data(), rhs) == 0;
     }
 
@@ -958,7 +1015,8 @@ public:
      * @param rhs String to compare with
      * @return true if strings are equal, false otherwise
      */
-    bool operator==(const string& rhs) const noexcept {
+    bool
+    operator==(const string &rhs) const noexcept {
         return _size == rhs._size && std::strcmp(base_t::data(), rhs.c_str()) == 0;
     }
 
@@ -968,7 +1026,8 @@ public:
      * @param rhs String to compare with
      * @return true if strings are not equal, false otherwise
      */
-    bool operator!=(const string& rhs) const noexcept {
+    bool
+    operator!=(const string &rhs) const noexcept {
         return !(*this == rhs);
     }
 
@@ -978,7 +1037,8 @@ public:
      * @param rhs C-style string to compare with
      * @return true if strings are not equal, false otherwise
      */
-    bool operator!=(const char* rhs) const noexcept {
+    bool
+    operator!=(const char *rhs) const noexcept {
         return !(*this == rhs);
     }
 
@@ -988,7 +1048,8 @@ public:
      * @param rhs String to compare with
      * @return true if this string is lexicographically less than rhs
      */
-    bool operator<(const string& rhs) const noexcept {
+    bool
+    operator<(const string &rhs) const noexcept {
         return compare(rhs) < 0;
     }
 
@@ -998,7 +1059,8 @@ public:
      * @param rhs C-style string to compare with
      * @return true if this string is lexicographically less than rhs
      */
-    bool operator<(const char* rhs) const noexcept {
+    bool
+    operator<(const char *rhs) const noexcept {
         return compare(rhs) < 0;
     }
 
@@ -1008,7 +1070,8 @@ public:
      * @param rhs String to compare with
      * @return true if this string is lexicographically greater than rhs
      */
-    bool operator>(const string& rhs) const noexcept {
+    bool
+    operator>(const string &rhs) const noexcept {
         return compare(rhs) > 0;
     }
 
@@ -1018,7 +1081,8 @@ public:
      * @param rhs C-style string to compare with
      * @return true if this string is lexicographically greater than rhs
      */
-    bool operator>(const char* rhs) const noexcept {
+    bool
+    operator>(const char *rhs) const noexcept {
         return compare(rhs) > 0;
     }
 
@@ -1028,7 +1092,8 @@ public:
      * @param rhs String to compare with
      * @return true if this string is lexicographically less than or equal to rhs
      */
-    bool operator<=(const string& rhs) const noexcept {
+    bool
+    operator<=(const string &rhs) const noexcept {
         return compare(rhs) <= 0;
     }
 
@@ -1038,7 +1103,8 @@ public:
      * @param rhs C-style string to compare with
      * @return true if this string is lexicographically less than or equal to rhs
      */
-    bool operator<=(const char* rhs) const noexcept {
+    bool
+    operator<=(const char *rhs) const noexcept {
         return compare(rhs) <= 0;
     }
 
@@ -1048,7 +1114,8 @@ public:
      * @param rhs String to compare with
      * @return true if this string is lexicographically greater than or equal to rhs
      */
-    bool operator>=(const string& rhs) const noexcept {
+    bool
+    operator>=(const string &rhs) const noexcept {
         return compare(rhs) >= 0;
     }
 
@@ -1058,7 +1125,8 @@ public:
      * @param rhs C-style string to compare with
      * @return true if this string is lexicographically greater than or equal to rhs
      */
-    bool operator>=(const char* rhs) const noexcept {
+    bool
+    operator>=(const char *rhs) const noexcept {
         return compare(rhs) >= 0;
     }
 };
@@ -1075,7 +1143,8 @@ public:
  * @return New string containing concatenated result
  */
 template <std::size_t _Size1, std::size_t _Size2>
-string<std::max(_Size1, _Size2)> operator+(const string<_Size1>& lhs, const string<_Size2>& rhs) noexcept {
+string<std::max(_Size1, _Size2)>
+operator+(const string<_Size1> &lhs, const string<_Size2> &rhs) noexcept {
     string<std::max(_Size1, _Size2)> result(lhs);
     result.append(rhs);
     return result;
@@ -1090,7 +1159,8 @@ string<std::max(_Size1, _Size2)> operator+(const string<_Size1>& lhs, const stri
  * @return New string containing concatenated result
  */
 template <std::size_t _Size>
-string<_Size> operator+(const string<_Size>& lhs, const char* rhs) noexcept {
+string<_Size>
+operator+(const string<_Size> &lhs, const char *rhs) noexcept {
     string<_Size> result(lhs);
     result.append(rhs);
     return result;
@@ -1105,7 +1175,8 @@ string<_Size> operator+(const string<_Size>& lhs, const char* rhs) noexcept {
  * @return New string containing concatenated result
  */
 template <std::size_t _Size>
-string<_Size> operator+(const char* lhs, const string<_Size>& rhs) noexcept {
+string<_Size>
+operator+(const char *lhs, const string<_Size> &rhs) noexcept {
     string<_Size> result(lhs);
     result.append(rhs);
     return result;
@@ -1120,7 +1191,8 @@ string<_Size> operator+(const char* lhs, const string<_Size>& rhs) noexcept {
  * @return New string containing concatenated result
  */
 template <std::size_t _Size>
-string<_Size> operator+(const string<_Size>& lhs, char rhs) noexcept {
+string<_Size>
+operator+(const string<_Size> &lhs, char rhs) noexcept {
     string<_Size> result(lhs);
     result.push_back(rhs);
     return result;
@@ -1135,7 +1207,8 @@ string<_Size> operator+(const string<_Size>& lhs, char rhs) noexcept {
  * @return New string containing concatenated result
  */
 template <std::size_t _Size>
-string<_Size> operator+(char lhs, const string<_Size>& rhs) noexcept {
+string<_Size>
+operator+(char lhs, const string<_Size> &rhs) noexcept {
     string<_Size> result(1, lhs);
     result.append(rhs);
     return result;
@@ -1149,7 +1222,8 @@ string<_Size> operator+(char lhs, const string<_Size>& rhs) noexcept {
  * @param rhs Second string
  */
 template <std::size_t _Size>
-void swap(string<_Size>& lhs, string<_Size>& rhs) noexcept {
+void
+swap(string<_Size> &lhs, string<_Size> &rhs) noexcept {
     lhs.swap(rhs);
 }
 
@@ -1187,12 +1261,14 @@ operator>>(std::istream &is, qb::string<_Size> &str) noexcept {
 
 // Equality operators for reverse comparisons
 template <std::size_t _Size>
-bool operator==(const char* lhs, const string<_Size>& rhs) noexcept {
+bool
+operator==(const char *lhs, const string<_Size> &rhs) noexcept {
     return rhs == lhs;
 }
 
 template <std::size_t _Size>
-bool operator!=(const char* lhs, const string<_Size>& rhs) noexcept {
+bool
+operator!=(const char *lhs, const string<_Size> &rhs) noexcept {
     return rhs != lhs;
 }
 

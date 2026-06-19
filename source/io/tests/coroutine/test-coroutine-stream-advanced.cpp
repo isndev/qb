@@ -7,7 +7,7 @@
  * backpressure behavior.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -40,17 +40,20 @@ namespace {
 
 class AsyncStreamAdvancedTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
 
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
 
 template <typename Predicate>
-void pump_until(Predicate done, qb::duration timeout = 5s) {
+void
+pump_until(Predicate done, qb::duration timeout = 5s) {
     const auto deadline = qb::mono_now() + timeout;
     while (!done() && qb::mono_now() < deadline) {
         qb::io::async::run_for(1ms);
@@ -58,7 +61,7 @@ void pump_until(Predicate done, qb::duration timeout = 5s) {
 }
 
 struct Record {
-    int id{};
+    int         id{};
     std::string name;
 };
 
@@ -66,7 +69,7 @@ struct Record {
 
 TEST_F(AsyncStreamAdvancedTest, AsyncForEachCallbackMaySuspendBetweenItems) {
     std::atomic<bool> done{false};
-    std::vector<int> visited;
+    std::vector<int>  visited;
 
     coro_scheduler().spawn([&]() -> task<void> {
         co_await range_stream(0, 4).for_each([&](int value) -> task<void> {
@@ -86,12 +89,12 @@ TEST_F(AsyncStreamAdvancedTest, AsyncForEachCallbackMaySuspendBetweenItems) {
 
 TEST_F(AsyncStreamAdvancedTest, ComplexRecordsSurviveFilterMapReducePipeline) {
     std::atomic<bool> done{false};
-    std::string joined;
+    std::string       joined;
 
     coro_scheduler().spawn([&]() -> task<void> {
         std::vector<Record> records{{1, "skip"}, {2, "alpha"}, {3, "skip"}, {4, "beta"}};
         joined = co_await async_stream<Record>::from_vector(records)
-                     .filter([](const Record& record) { return record.id % 2 == 0; })
+                     .filter([](const Record &record) { return record.id % 2 == 0; })
                      .map([](Record record) { return record.name; })
                      .reduce(
                          [](std::string acc, std::string value) {
@@ -113,17 +116,16 @@ TEST_F(AsyncStreamAdvancedTest, ComplexRecordsSurviveFilterMapReducePipeline) {
 }
 
 TEST_F(AsyncStreamAdvancedTest, MoveOnlyValuesCanBeConsumedFromSharedChannelStream) {
-    auto source = std::make_shared<channel<std::unique_ptr<int>>>(4);
+    auto              source = std::make_shared<channel<std::unique_ptr<int>>>(4);
     std::atomic<bool> done{false};
-    int sum = 0;
+    int               sum = 0;
 
     coro_scheduler().spawn([source, &done, &sum]() -> task<void> {
-        co_await async_stream<std::unique_ptr<int>>::from_channel_shared(source)
-            .for_each([&](std::unique_ptr<int> value) {
-                if (value) {
-                    sum += *value;
-                }
-            });
+        co_await async_stream<std::unique_ptr<int>>::from_channel_shared(source).for_each([&](std::unique_ptr<int> value) {
+            if (value) {
+                sum += *value;
+            }
+        });
         done.store(true);
         co_return;
     });
@@ -140,7 +142,7 @@ TEST_F(AsyncStreamAdvancedTest, MoveOnlyValuesCanBeConsumedFromSharedChannelStre
 }
 
 TEST_F(AsyncStreamAdvancedTest, DrainToChannelPreservesBackpressureBoundary) {
-    channel<int> out{2};
+    channel<int>      out{2};
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&]() -> task<void> {

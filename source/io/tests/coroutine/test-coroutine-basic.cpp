@@ -7,7 +7,7 @@
  * propagation, nested coroutine composition, and scheduler state inspection.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -36,10 +36,12 @@ using namespace std::chrono_literals;
 
 class TaskLifecycle : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         // Clear the listener to clean up any pending coroutines
         qb::io::async::listener::current.clear();
     }
@@ -66,7 +68,7 @@ TEST_F(TaskLifecycle, TaskIsCreatedAndExecutes) {
     EXPECT_TRUE(t);
     EXPECT_FALSE(t.done());
 
-    auto& sched = coro_scheduler();
+    auto &sched = coro_scheduler();
     sched.spawn(std::move(t));
     for (int i = 0; i < 5 && !executed.load(std::memory_order_acquire); ++i) {
         sched.run_ready();
@@ -91,12 +93,12 @@ TEST_F(TaskLifecycle, TaskReturnsValue) {
 
     // When - Store lambda in variable to preserve captures
     auto result_ptr = &result;
-    auto coro_fn = [result_ptr]() -> task<void> {
+    auto coro_fn    = [result_ptr]() -> task<void> {
         auto inner_fn = []() -> task<int> {
             co_return 42;
         };
         auto inner = inner_fn();
-        int val = co_await inner;
+        int  val   = co_await inner;
         result_ptr->store(val, std::memory_order_release);
         co_return;
     };
@@ -123,9 +125,9 @@ TEST_F(TaskLifecycle, SpawnedTaskContinuesAfterHandleReleased) {
     std::atomic<bool> completed{false};
 
     {
-        auto started_ptr = &started;
+        auto started_ptr   = &started;
         auto completed_ptr = &completed;
-        auto coro_fn = [started_ptr, completed_ptr]() -> task<void> {
+        auto coro_fn       = [started_ptr, completed_ptr]() -> task<void> {
             started_ptr->store(true);
             co_await sleep(100ms);
             completed_ptr->store(true);
@@ -142,7 +144,7 @@ TEST_F(TaskLifecycle, SpawnedTaskContinuesAfterHandleReleased) {
 
     run_for(200ms);
     EXPECT_TRUE(completed);
-    
+
     // Verify scheduler cleaned up
     EXPECT_EQ(coro_scheduler().active_count(), 0);
 }
@@ -153,10 +155,12 @@ TEST_F(TaskLifecycle, SpawnedTaskContinuesAfterHandleReleased) {
 
 class TimerOperations : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -172,11 +176,11 @@ protected:
 TEST_F(TimerOperations, SleepWaitsForDuration) {
     // Given
     std::atomic<bool> completed{false};
-    auto start = std::chrono::steady_clock::now();
+    auto              start = std::chrono::steady_clock::now();
 
     // When
     auto completed_ptr = &completed;
-    auto coro_fn = [completed_ptr]() -> task<void> {
+    auto coro_fn       = [completed_ptr]() -> task<void> {
         co_await sleep(50ms);
         completed_ptr->store(true);
         co_return;
@@ -203,10 +207,10 @@ TEST_F(TimerOperations, SleepWaitsForDuration) {
  */
 TEST_F(TimerOperations, ZeroSleepCompletesImmediately) {
     std::atomic<bool> completed{false};
-    auto start = std::chrono::steady_clock::now();
+    auto              start = std::chrono::steady_clock::now();
 
     auto completed_ptr = &completed;
-    auto coro_fn = [completed_ptr]() -> task<void> {
+    auto coro_fn       = [completed_ptr]() -> task<void> {
         co_await sleep(0ms);
         completed_ptr->store(true);
         co_return;
@@ -235,7 +239,7 @@ TEST_F(TimerOperations, SequentialSleepsAccumulate) {
 
     // When
     auto counter_ptr = &counter;
-    auto coro_fn = [counter_ptr]() -> task<void> {
+    auto coro_fn     = [counter_ptr]() -> task<void> {
         co_await sleep(10ms);
         counter_ptr->fetch_add(1);
 
@@ -261,10 +265,12 @@ TEST_F(TimerOperations, SequentialSleepsAccumulate) {
 
 class ConcurrentExecution : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -280,7 +286,7 @@ protected:
 TEST_F(ConcurrentExecution, MultipleCoroutinesComplete) {
     // Given
     std::atomic<int> completed{0};
-    constexpr int num_coroutines = 10;
+    constexpr int    num_coroutines = 10;
 
     // When
     auto completed_ptr = &completed;
@@ -308,7 +314,7 @@ TEST_F(ConcurrentExecution, MultipleCoroutinesComplete) {
  * Then: Shorter delays complete first
  */
 TEST_F(ConcurrentExecution, ConcurrentTimersAllComplete) {
-    constexpr int num_timers = 5;
+    constexpr int    num_timers = 5;
     std::atomic<int> completed_count{0};
 
     auto completed_ptr = &completed_count;
@@ -331,10 +337,12 @@ TEST_F(ConcurrentExecution, ConcurrentTimersAllComplete) {
 
 class ExceptionHandling : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -358,10 +366,10 @@ TEST_F(ExceptionHandling, ExceptionPropagatesToAwaiter) {
 
     // When
     auto caught_ptr = &caught;
-    auto coro_fn = [caught_ptr, &throwing_fn]() -> task<void> {
+    auto coro_fn    = [caught_ptr, &throwing_fn]() -> task<void> {
         try {
             co_await throwing_fn();
-        } catch (const std::runtime_error& e) {
+        } catch (const std::runtime_error &e) {
             if (std::string(e.what()) == "test exception") {
                 caught_ptr->store(true);
             }
@@ -397,10 +405,10 @@ TEST_F(ExceptionHandling, ExceptionAfterSuspension) {
 
     // When
     auto caught_ptr = &caught;
-    auto coro_fn = [caught_ptr, &inner_fn]() -> task<void> {
+    auto coro_fn    = [caught_ptr, &inner_fn]() -> task<void> {
         try {
-            (void)co_await inner_fn();
-        } catch (const std::runtime_error& e) {
+            (void) co_await inner_fn();
+        } catch (const std::runtime_error &e) {
             if (std::string(e.what()) == "delayed error") {
                 caught_ptr->store(true);
             }
@@ -422,10 +430,12 @@ TEST_F(ExceptionHandling, ExceptionAfterSuspension) {
 
 class CoroutineComposition : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -444,7 +454,7 @@ TEST_F(CoroutineComposition, CanAwaitNestedCoroutine) {
     std::atomic<bool> outer_completed{false};
 
     auto inner_completed_ptr = &inner_completed;
-    auto inner_fn = [inner_completed_ptr]() -> task<int> {
+    auto inner_fn            = [inner_completed_ptr]() -> task<int> {
         co_await sleep(10ms);
         inner_completed_ptr->store(true);
         co_return 42;
@@ -452,7 +462,7 @@ TEST_F(CoroutineComposition, CanAwaitNestedCoroutine) {
 
     // When
     auto outer_completed_ptr = &outer_completed;
-    auto coro_fn = [outer_completed_ptr, &inner_fn]() -> task<void> {
+    auto coro_fn             = [outer_completed_ptr, &inner_fn]() -> task<void> {
         int result = co_await inner_fn();
         EXPECT_EQ(result, 42);
         outer_completed_ptr->store(true);
@@ -478,7 +488,7 @@ TEST_F(CoroutineComposition, CanAwaitNestedCoroutine) {
  */
 TEST_F(CoroutineComposition, SchedulerStateTracking) {
     // Given
-    auto& scheduler = coro_scheduler();
+    auto &scheduler = coro_scheduler();
 
     // Initially empty
     EXPECT_FALSE(scheduler.has_ready());
@@ -508,7 +518,8 @@ TEST_F(CoroutineComposition, SchedulerStateTracking) {
 // Main Entry Point
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();

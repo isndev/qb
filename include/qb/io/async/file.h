@@ -7,7 +7,7 @@
  * file I/O integrated with the event-based asynchronous framework.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -53,10 +53,10 @@ public:
      */
     using transport_io_type = typename qb::io::transport::file::transport_io_type;
 
-    using qb::io::transport::file::in;  /**< Import the in method from the file transport
-                                         */
-    using qb::io::transport::file::out; /**< Import the out method from the file
-                                           transport */
+    using qb::io::transport::file::in;        /**< Import the in method from the file transport
+                                               */
+    using qb::io::transport::file::out;       /**< Import the out method from the file
+                                                 transport */
     using qb::io::transport::file::transport; /**< Import the transport method from the
                                                  file transport */
 
@@ -71,8 +71,7 @@ public:
     explicit file() {
         if constexpr (qb::has_type_Protocol<_Derived>) {
             if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
-                this->template switch_protocol<typename _Derived::Protocol>(
-                    static_cast<_Derived &>(*this));
+                this->template switch_protocol<typename _Derived::Protocol>(static_cast<_Derived &>(*this));
             }
         }
     }

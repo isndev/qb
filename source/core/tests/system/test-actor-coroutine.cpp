@@ -18,7 +18,8 @@ struct StartCoroEvent : public qb::Event {};
 struct CoroCompletedEvent : public qb::Event {
     int result{0};
     CoroCompletedEvent() = default;
-    explicit CoroCompletedEvent(int r) : result(r) {}
+    explicit CoroCompletedEvent(int r)
+        : result(r) {}
 };
 struct MultiCoroStartEvent : public qb::Event {};
 struct CoroIncrementEvent : public qb::Event {};
@@ -28,19 +29,21 @@ struct CoroIncrementEvent : public qb::Event {};
  */
 class BasicCoroActor : public qb::Actor {
 public:
-    bool onInit() override {
+    bool
+    onInit() override {
         registerEvent<CoroCompletedEvent>(*this);
-        
+
         // Spawn coroutine immediately
         spawn_async([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(std::chrono::milliseconds(10));
             ctx.template push<CoroCompletedEvent>(42);
         });
-        
+
         return true;
     }
 
-    void on(const CoroCompletedEvent& ev) {
+    void
+    on(const CoroCompletedEvent &ev) {
         EXPECT_EQ(ev.result, 42);
         kill();
     }
@@ -51,12 +54,13 @@ public:
  */
 class MultiCoroActor : public qb::Actor {
     static constexpr int EXPECTED_COUNT = 5;
-    int completed_{0};
+    int                  completed_{0};
 
 public:
-    bool onInit() override {
+    bool
+    onInit() override {
         registerEvent<CoroIncrementEvent>(*this);
-        
+
         // Spawn multiple coroutines
         for (int i = 0; i < EXPECTED_COUNT; ++i) {
             spawn_async([i](auto ctx) -> qb::io::async::task<void> {
@@ -64,11 +68,12 @@ public:
                 ctx.template push<CoroIncrementEvent>();
             });
         }
-        
+
         return true;
     }
 
-    void on(const CoroIncrementEvent& ev) {
+    void
+    on(const CoroIncrementEvent &ev) {
         ++completed_;
         if (completed_ >= EXPECTED_COUNT) {
             EXPECT_EQ(completed_, EXPECTED_COUNT);
@@ -84,28 +89,30 @@ class ExceptionCoroActor : public qb::Actor {
     bool caught_exception_{false};
 
 public:
-    bool onInit() override {
+    bool
+    onInit() override {
         registerEvent<CoroCompletedEvent>(*this);
-        
+
         spawn_async([](auto ctx) -> qb::io::async::task<void> {
             try {
                 co_await qb::io::async::sleep(std::chrono::milliseconds(5));
                 throw std::runtime_error("Test exception");
-            } catch (const std::exception&) {
+            } catch (const std::exception &) {
                 // Exception caught - send completion
                 ctx.template push<CoroCompletedEvent>(1);
             }
         });
-        
+
         return true;
     }
 
-    void on(const CoroCompletedEvent& ev) {
+    void
+    on(const CoroCompletedEvent &ev) {
         EXPECT_EQ(ev.result, 1);
         caught_exception_ = true;
         kill();
     }
-    
+
     ~ExceptionCoroActor() {
         EXPECT_TRUE(caught_exception_);
     }
@@ -118,24 +125,26 @@ class NestedCoroActor : public qb::Actor {
     int depth_{0};
 
 public:
-    bool onInit() override {
+    bool
+    onInit() override {
         registerEvent<CoroIncrementEvent>(*this);
-        
+
         spawn_async([this](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(std::chrono::milliseconds(5));
-            
+
             // Spawn nested coroutine
             spawn_async([](auto ctx2) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(std::chrono::milliseconds(5));
                 ctx2.template push<CoroIncrementEvent>();
-                ctx2.template push<CoroIncrementEvent>();  // Send twice
+                ctx2.template push<CoroIncrementEvent>(); // Send twice
             });
         });
-        
+
         return true;
     }
 
-    void on(const CoroIncrementEvent& ev) {
+    void
+    on(const CoroIncrementEvent &ev) {
         ++depth_;
         if (depth_ >= 2) {
             EXPECT_EQ(depth_, 2);
@@ -149,24 +158,26 @@ public:
  */
 class SafetyTestActor : public qb::Actor {
 public:
-    bool onInit() override {
+    bool
+    onInit() override {
         registerEvent<CoroCompletedEvent>(*this);
-        
+
         spawn_async([](auto ctx) -> qb::io::async::task<void> {
             // Verify CoroContext provides safe interface
             EXPECT_TRUE(ctx.id().is_valid());
             EXPECT_GT(ctx.time(), 0);
-            
+
             co_await qb::io::async::sleep(std::chrono::milliseconds(5));
-            
+
             // Can only push events (safe)
             ctx.template push<CoroCompletedEvent>(99);
         });
-        
+
         return true;
     }
 
-    void on(const CoroCompletedEvent& ev) {
+    void
+    on(const CoroCompletedEvent &ev) {
         EXPECT_EQ(ev.result, 99);
         kill();
     }
@@ -177,12 +188,13 @@ public:
  */
 class QuickKillActor : public qb::Actor {
 public:
-    bool onInit() override {
+    bool
+    onInit() override {
         spawn_async([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(std::chrono::seconds(10));
             // This should never execute - actor killed before completion
         });
-        
+
         // Kill immediately after spawning
         kill();
         return true;

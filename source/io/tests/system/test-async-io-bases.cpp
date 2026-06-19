@@ -297,9 +297,9 @@ class PipeOutputProbe : public qb::io::async::output<PipeOutputProbe> {
 
     FdTransport               _transport;
     qb::allocator::pipe<char> _out;
-    std::size_t               _max_chunk = 64u;
+    std::size_t               _max_chunk             = 64u;
     std::size_t               _max_write_buffer_size = QB_MAX_WRITE_BUFFER_SIZE;
-    write_mode                _write_mode = write_mode::normal;
+    write_mode                _write_mode            = write_mode::normal;
 
 public:
     using base_io_t = qb::io::async::output<PipeOutputProbe>;
@@ -405,10 +405,10 @@ class PipeDuplexProbe : public qb::io::async::io<PipeDuplexProbe> {
     FdTransport               _transport;
     qb::allocator::pipe<char> _in;
     qb::allocator::pipe<char> _out;
-    std::size_t               _max_chunk = 64u;
+    std::size_t               _max_chunk             = 64u;
     std::size_t               _max_write_buffer_size = QB_MAX_WRITE_BUFFER_SIZE;
-    bool                      _force_read_overflow = false;
-    write_mode                _write_mode = write_mode::normal;
+    bool                      _force_read_overflow   = false;
+    write_mode                _write_mode            = write_mode::normal;
 
 public:
     using base_io_t = qb::io::async::io<PipeDuplexProbe>;
@@ -578,9 +578,7 @@ class FourByteDuplexProtocol : public qb::io::async::AProtocol<PipeDuplexProbe> 
     bool _reply;
 
 public:
-    explicit FourByteDuplexProtocol(PipeDuplexProbe &io,
-                                    bool             invalidate_after_message = false,
-                                    bool             reply = false) noexcept
+    explicit FourByteDuplexProtocol(PipeDuplexProbe &io, bool invalidate_after_message = false, bool reply = false) noexcept
         : AProtocol(io)
         , _invalidate_after_message(invalidate_after_message)
         , _reply(reply) {}
@@ -850,8 +848,7 @@ TEST_F(AsyncIoBaseTest, OutputPublishOverflowRollsBackAndDisconnects) {
 
     EXPECT_EQ(output.pendingWrite(), 4u);
     EXPECT_EQ(std::string_view(output.out().begin(), output.out().size()), "abcd");
-    EXPECT_EQ(output.base().disconnection_reason(),
-              static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+    EXPECT_EQ(output.base().disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
 
     output.base().publish(std::string_view{"ignored"});
     EXPECT_EQ(std::string_view(output.out().begin(), output.out().size()), "abcd");
@@ -987,8 +984,7 @@ TEST_F(AsyncIoBaseTest, DuplexClearedProtocolAndCloseAfterDeliverDisposeCleanly)
     {
         auto            sockets = make_socket_pair();
         PipeDuplexProbe session{sockets.read.get()};
-        ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true, true),
-                  nullptr);
+        ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true, true), nullptr);
 
         session.base().start();
         ASSERT_EQ(::write(sockets.write.get(), "data", 4), 4);
@@ -1025,8 +1021,7 @@ TEST_F(AsyncIoBaseTest, DuplexWriteOverflowRollsBackAndBlocksFurtherPublish) {
 
     EXPECT_EQ(session.pendingWrite(), 4u);
     EXPECT_EQ(std::string_view(session.out().begin(), session.out().size()), "abcd");
-    EXPECT_EQ(session.base().disconnection_reason(),
-              static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+    EXPECT_EQ(session.base().disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
 
     session.base().publish(std::string_view{"ignored"});
     EXPECT_EQ(std::string_view(session.out().begin(), session.out().size()), "abcd");

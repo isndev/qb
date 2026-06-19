@@ -14,7 +14,7 @@
  * These are essential for optimizing memory layout to prevent false sharing and improve cache performance.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -52,9 +52,9 @@
  *          a compile-time constant rather than a runtime function.
  */
 #ifdef KNOWN_L1_CACHE_LINE_SIZE
-    #define QB_LOCKFREE_CACHELINE_BYTES KNOWN_L1_CACHE_LINE_SIZE
+#define QB_LOCKFREE_CACHELINE_BYTES KNOWN_L1_CACHE_LINE_SIZE
 #else
-    #define QB_LOCKFREE_CACHELINE_BYTES 64
+#define QB_LOCKFREE_CACHELINE_BYTES 64
 #endif
 
 #define QB_LOCKFREE_EVENT_BUCKET_BYTES QB_LOCKFREE_CACHELINE_BYTES
@@ -62,8 +62,7 @@
 #ifdef _MSC_VER
 
 #define QB_LOCKFREE_CACHELINE_ALIGNMENT __declspec(align(QB_LOCKFREE_CACHELINE_BYTES))
-#define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT \
-    __declspec(align(QB_LOCKFREE_EVENT_BUCKET_BYTES))
+#define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT __declspec(align(QB_LOCKFREE_EVENT_BUCKET_BYTES))
 
 #if defined(_M_IX86)
 #define QB_LOCKFREE_DCAS_ALIGNMENT

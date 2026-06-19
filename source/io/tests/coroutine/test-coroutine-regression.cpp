@@ -8,7 +8,7 @@
  * behavior.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -38,8 +38,12 @@ using namespace std::chrono_literals;
 
 class CoroutineRegression : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override {
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
         if (qb::io::async::listener::current.has_coro_scheduler()) {
             qb::io::async::run_for(5ms);
             qb::io::async::listener::current.reset_coro_scheduler();
@@ -55,24 +59,25 @@ protected:
 // =============================================================================
 
 TEST_F(CoroutineRegression, ChannelSendValueNotLostOnBufferFull) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> received;
 
     auto test = [&]() -> task<void> {
-        channel<int> ch(1);  // capacity 1
+        channel<int> ch(1); // capacity 1
 
         // Producer: send 3 values into capacity-1 channel
-        coro_scheduler().spawn([](channel<int>* ch) -> task<void> {
+        coro_scheduler().spawn([](channel<int> *ch) -> task<void> {
             co_await ch->send(10);
-            co_await ch->send(20);  // blocks until consumer frees space
-            co_await ch->send(30);  // blocks again
+            co_await ch->send(20); // blocks until consumer frees space
+            co_await ch->send(30); // blocks again
             ch->close();
         }(&ch));
 
         // Consumer: receive all values
         while (true) {
             auto val = co_await ch.recv();
-            if (!val) break;
+            if (!val)
+                break;
             received.push_back(*val);
         }
         done = true;
@@ -95,7 +100,7 @@ TEST_F(CoroutineRegression, ChannelSendValueNotLostOnBufferFull) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, ChannelSendForPushesValueOnWake) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> received;
 
     auto test = [&]() -> task<void> {
@@ -105,7 +110,7 @@ TEST_F(CoroutineRegression, ChannelSendForPushesValueOnWake) {
         co_await ch.send(1);
 
         // Timed send — should succeed once consumer drains
-        coro_scheduler().spawn([](channel<int>* ch, std::vector<int>* out) -> task<void> {
+        coro_scheduler().spawn([](channel<int> *ch, std::vector<int> *out) -> task<void> {
             bool ok = co_await ch->send_for(2, 200ms);
             EXPECT_TRUE(ok);
             ch->close();
@@ -115,7 +120,8 @@ TEST_F(CoroutineRegression, ChannelSendForPushesValueOnWake) {
         co_await sleep(20ms);
         while (true) {
             auto val = co_await ch.recv();
-            if (!val) break;
+            if (!val)
+                break;
             received.push_back(*val);
         }
         done = true;
@@ -140,12 +146,12 @@ TEST_F(CoroutineRegression, ChannelSendForTimerGuardPreventsDoubleSchedule) {
 
     auto test = [&]() -> task<void> {
         channel<int> ch(1);
-        co_await ch.send(99);  // fill buffer
+        co_await ch.send(99); // fill buffer
 
         // Timed send with very short timeout
         bool ok = co_await ch.send_for(42, 5ms);
         // Either timeout or success — no crash from double-schedule
-        (void)ok;
+        (void) ok;
         done = true;
     };
 
@@ -168,12 +174,12 @@ TEST_F(CoroutineRegression, RunSyncDoesNotBusySpin) {
         co_return 42;
     };
 
-    int result = run_sync(slow());
+    int  result  = run_sync(slow());
     auto elapsed = std::chrono::steady_clock::now() - start;
 
     EXPECT_EQ(result, 42);
     EXPECT_GE(elapsed, 40ms);
-    EXPECT_LE(elapsed, 500ms);  // should not take excessively long
+    EXPECT_LE(elapsed, 500ms); // should not take excessively long
 }
 
 TEST_F(CoroutineRegression, RunSyncVoidTask) {
@@ -194,22 +200,16 @@ TEST_F(CoroutineRegression, RunSyncVoidTask) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, ExponentialBackoffNoOverflow) {
-    auto delay = detail::calculate_delay(50, retry_policy{
-        .base_delay = 10ms,
-        .max_delay = std::chrono::hours(24),
-        .strategy = backoff_strategy::exponential
-    });
+    auto delay = detail::calculate_delay(
+        50, retry_policy{.base_delay = 10ms, .max_delay = std::chrono::hours(24), .strategy = backoff_strategy::exponential});
     // 10ms * (1u << 30) = 10ms * 1073741824 ≈ 10737418s, capped at 24h
     EXPECT_LE(delay, std::chrono::hours(24));
     EXPECT_GT(delay, 0ms);
 }
 
 TEST_F(CoroutineRegression, ExponentialJitterBackoffNoOverflow) {
-    auto delay = detail::calculate_delay(100, retry_policy{
-        .base_delay = 1ms,
-        .max_delay = std::chrono::seconds(60),
-        .strategy = backoff_strategy::exponential_jitter
-    });
+    auto delay = detail::calculate_delay(
+        100, retry_policy{.base_delay = 1ms, .max_delay = std::chrono::seconds(60), .strategy = backoff_strategy::exponential_jitter});
     EXPECT_LE(delay, std::chrono::seconds(60));
     EXPECT_GT(delay, 0ms);
 }
@@ -220,11 +220,8 @@ TEST_F(CoroutineRegression, ExponentialJitterBackoffNoOverflow) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, LinearBackoffLargeAttempt) {
-    auto delay = detail::calculate_delay(100000, retry_policy{
-        .base_delay = 1ms,
-        .max_delay = std::chrono::seconds(30),
-        .strategy = backoff_strategy::linear
-    });
+    auto delay = detail::calculate_delay(
+        100000, retry_policy{.base_delay = 1ms, .max_delay = std::chrono::seconds(30), .strategy = backoff_strategy::linear});
     EXPECT_LE(delay, std::chrono::seconds(30));
     EXPECT_GT(delay, 0ms);
 }
@@ -246,8 +243,9 @@ TEST_F(CoroutineRegression, WhenAnyVectorRethrowsException) {
 
         try {
             auto [idx, val] = co_await when_any(std::move(tasks));
-            (void)idx; (void)val;
-        } catch (const std::runtime_error& e) {
+            (void) idx;
+            (void) val;
+        } catch (const std::runtime_error &e) {
             EXPECT_STREQ(e.what(), "boom");
             caught = true;
         }
@@ -287,7 +285,8 @@ TEST_F(CoroutineRegression, WhenAnyVectorEmptyReturnsDefault) {
 
 struct NonDefaultConstructible {
     int value;
-    explicit NonDefaultConstructible(int v) : value(v) {}
+    explicit NonDefaultConstructible(int v)
+        : value(v) {}
     NonDefaultConstructible() = delete;
 };
 
@@ -300,7 +299,7 @@ TEST_F(CoroutineRegression, SharedTaskNonDefaultConstructibleType) {
             co_return NonDefaultConstructible{42};
         };
 
-        auto sh = make_shared_task(compute());
+        auto sh   = make_shared_task(compute());
         auto copy = sh;
 
         auto r1 = co_await sh;
@@ -323,25 +322,24 @@ TEST_F(CoroutineRegression, SharedTaskNonDefaultConstructibleType) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, DebounceNoDataLoss) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> emitted;
 
     auto test = [&]() -> task<void> {
         // Source: emit 1,2,3 rapidly, then pause, then emit 4,5
-        auto source_data = std::make_shared<std::vector<int>>(
-            std::vector<int>{1, 2, 3, 4, 5});
-        auto idx = std::make_shared<size_t>(0);
-        auto paused = std::make_shared<bool>(false);
+        auto source_data = std::make_shared<std::vector<int>>(std::vector<int>{1, 2, 3, 4, 5});
+        auto idx         = std::make_shared<size_t>(0);
+        auto paused      = std::make_shared<bool>(false);
 
-        auto stream = async_stream<int>(
-            [source_data, idx, paused]() -> task<std::optional<int>> {
-                if (*idx >= source_data->size()) co_return std::nullopt;
-                if (*idx == 3 && !*paused) {
-                    *paused = true;
-                    co_await sleep(80ms);  // quiet period between bursts
-                }
-                co_return (*source_data)[(*idx)++];
-            });
+        auto stream = async_stream<int>([source_data, idx, paused]() -> task<std::optional<int>> {
+            if (*idx >= source_data->size())
+                co_return std::nullopt;
+            if (*idx == 3 && !*paused) {
+                *paused = true;
+                co_await sleep(80ms); // quiet period between bursts
+            }
+            co_return (*source_data)[(*idx)++];
+        });
 
         auto debounced = stream.debounce(30ms);
 
@@ -371,13 +369,13 @@ TEST_F(CoroutineRegression, DebounceNoDataLoss) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, BarrierArrivedCorrectly) {
-    bool done = false;
-    int phase2_count = 0;
+    bool done         = false;
+    int  phase2_count = 0;
 
     auto test = [&]() -> task<void> {
         barrier b(3);
 
-        auto worker = [](barrier* b, int* count) -> task<void> {
+        auto worker = [](barrier *b, int *count) -> task<void> {
             co_await sleep(5ms);
             co_await b->arrive_and_wait();
             ++(*count);
@@ -428,7 +426,7 @@ TEST_F(CoroutineRegression, ChannelSendForTimeout) {
 
     auto test = [&]() -> task<void> {
         channel<int> ch(1);
-        co_await ch.send(1);  // fill buffer
+        co_await ch.send(1); // fill buffer
 
         // No consumer — send_for should timeout
         bool ok = co_await ch.send_for(2, 30ms);
@@ -462,8 +460,9 @@ TEST_F(CoroutineRegression, WhenAllPropagatesFirstException) {
 
         try {
             auto [a, b] = co_await when_all(ok_task(), bad_task());
-            (void)a; (void)b;
-        } catch (const std::logic_error& e) {
+            (void) a;
+            (void) b;
+        } catch (const std::logic_error &e) {
             EXPECT_STREQ(e.what(), "when_all_fail");
             caught = true;
         }
@@ -519,7 +518,7 @@ TEST_F(CoroutineRegression, TimeoutAwaiterThrowsOnExpiry) {
 
         try {
             co_await coro_with_timeout(slow(), 20ms);
-        } catch (const timeout_error&) {
+        } catch (const timeout_error &) {
             caught = true;
         }
     };
@@ -548,9 +547,9 @@ TEST_F(CoroutineRegression, CancellableSleepWakesOnCancel) {
         auto start = std::chrono::steady_clock::now();
         try {
             co_await cancellable_sleep(5000ms, token);
-        } catch (const cancelled_error&) {
+        } catch (const cancelled_error &) {
             auto elapsed = std::chrono::steady_clock::now() - start;
-            EXPECT_LT(elapsed, 1000ms);  // should wake much earlier than 5s
+            EXPECT_LT(elapsed, 1000ms); // should wake much earlier than 5s
             done = true;
         }
     };
@@ -615,13 +614,13 @@ TEST_F(CoroutineRegression, AsyncMutexGuardUnlocksOnDestruction) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, RWLockMultipleReadersOneWriter) {
-    bool done = false;
-    int reader_count = 0;
+    bool done         = false;
+    int  reader_count = 0;
 
     auto test = [&]() -> task<void> {
         async_rw_lock rw;
 
-        auto reader = [](async_rw_lock* rw, int* count) -> task<void> {
+        auto reader = [](async_rw_lock *rw, int *count) -> task<void> {
             co_await rw->lock_read();
             ++(*count);
             co_await sleep(10ms);
@@ -653,15 +652,15 @@ TEST_F(CoroutineRegression, LatchCountDownReleasesWaiters) {
     auto test = [&]() -> task<void> {
         async_latch latch(3);
 
-        coro_scheduler().spawn([](async_latch* l) -> task<void> {
+        coro_scheduler().spawn([](async_latch *l) -> task<void> {
             co_await sleep(5ms);
             l->count_down();
         }(&latch));
-        coro_scheduler().spawn([](async_latch* l) -> task<void> {
+        coro_scheduler().spawn([](async_latch *l) -> task<void> {
             co_await sleep(10ms);
             l->count_down();
         }(&latch));
-        coro_scheduler().spawn([](async_latch* l) -> task<void> {
+        coro_scheduler().spawn([](async_latch *l) -> task<void> {
             co_await sleep(15ms);
             l->count_down();
         }(&latch));
@@ -682,13 +681,13 @@ TEST_F(CoroutineRegression, LatchCountDownReleasesWaiters) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, AsyncEventWakesAllWaiters) {
-    bool done = false;
-    int woke_count = 0;
+    bool done       = false;
+    int  woke_count = 0;
 
     auto test = [&]() -> task<void> {
         async_event ev;
 
-        auto waiter = [](async_event* e, int* count) -> task<void> {
+        auto waiter = [](async_event *e, int *count) -> task<void> {
             co_await e->wait();
             ++(*count);
         };
@@ -715,18 +714,18 @@ TEST_F(CoroutineRegression, AsyncEventWakesAllWaiters) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, ScopeJoinAllWaitsForAll) {
-    bool done = false;
-    int completed = 0;
+    bool done      = false;
+    int  completed = 0;
 
     auto test = [&]() -> task<void> {
         coroutine_scope scope;
 
-        scope.spawn([](int* c) -> task<void> {
+        scope.spawn([](int *c) -> task<void> {
             co_await sleep(10ms);
             ++(*c);
         }(&completed));
 
-        scope.spawn([](int* c) -> task<void> {
+        scope.spawn([](int *c) -> task<void> {
             co_await sleep(20ms);
             ++(*c);
         }(&completed));
@@ -750,15 +749,15 @@ TEST_F(CoroutineRegression, ChannelSelectFirstReady) {
     bool done = false;
 
     auto test = [&]() -> task<void> {
-        channel<int> ch_fast(1);
+        channel<int>         ch_fast(1);
         channel<std::string> ch_slow(1);
 
-        coro_scheduler().spawn([](channel<int>* ch) -> task<void> {
+        coro_scheduler().spawn([](channel<int> *ch) -> task<void> {
             co_await sleep(5ms);
             co_await ch->send(42);
         }(&ch_fast));
 
-        coro_scheduler().spawn([](channel<std::string>* ch) -> task<void> {
+        coro_scheduler().spawn([](channel<std::string> *ch) -> task<void> {
             co_await sleep(100ms);
             co_await ch->send(std::string("slow"));
         }(&ch_slow));
@@ -790,13 +789,13 @@ TEST_F(CoroutineRegression, ChannelSelectFirstReady) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, StreamCollectGathersAll) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> result;
 
     auto test = [&]() -> task<void> {
         auto stream = async_stream<int>::from_vector({1, 2, 3, 4, 5});
-        result = co_await stream.collect();
-        done = true;
+        result      = co_await stream.collect();
+        done        = true;
     };
 
     coro_scheduler().spawn(test());
@@ -814,15 +813,13 @@ TEST_F(CoroutineRegression, StreamCollectGathersAll) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, StreamMapFilterPipeline) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> result;
 
     auto test = [&]() -> task<void> {
-        auto stream = async_stream<int>::from_vector({1, 2, 3, 4, 5, 6})
-            .map([](int v) { return v * 2; })
-            .filter([](int v) { return v > 6; });
-        result = co_await stream.collect();
-        done = true;
+        auto stream = async_stream<int>::from_vector({1, 2, 3, 4, 5, 6}).map([](int v) { return v * 2; }).filter([](int v) { return v > 6; });
+        result      = co_await stream.collect();
+        done        = true;
     };
 
     coro_scheduler().spawn(test());
@@ -846,7 +843,7 @@ TEST_F(CoroutineRegression, GeneratorProducesValues) {
         co_yield 3;
     };
 
-    auto g = gen();
+    auto g      = gen();
     auto values = collect_to_vector(g);
 
     ASSERT_EQ(values.size(), 3u);
@@ -860,7 +857,7 @@ TEST_F(CoroutineRegression, GeneratorProducesValues) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, AsyncGeneratorCollect) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> result;
 
     auto test = [&]() -> task<void> {
@@ -871,7 +868,7 @@ TEST_F(CoroutineRegression, AsyncGeneratorCollect) {
         };
 
         result = co_await ag_collect(gen());
-        done = true;
+        done   = true;
     };
 
     coro_scheduler().spawn(test());
@@ -889,19 +886,19 @@ TEST_F(CoroutineRegression, AsyncGeneratorCollect) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, SharedTaskVoidMultipleAwaiters) {
-    bool done = false;
-    int await_count = 0;
+    bool done        = false;
+    int  await_count = 0;
 
     auto test = [&]() -> task<void> {
         auto compute = []() -> task<void> {
             co_await sleep(10ms);
         };
 
-        auto sh = make_shared_task(compute());
+        auto sh    = make_shared_task(compute());
         auto copy1 = sh;
         auto copy2 = sh;
 
-        auto waiter = [](shared_task<void> st, int* count) -> task<void> {
+        auto waiter = [](shared_task<void> st, int *count) -> task<void> {
             co_await st;
             ++(*count);
         };
@@ -927,15 +924,18 @@ TEST_F(CoroutineRegression, SharedTaskVoidMultipleAwaiters) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, WithRetryVoidOverload) {
-    bool done = false;
-    int attempts = 0;
+    bool done     = false;
+    int  attempts = 0;
 
     auto test = [&]() -> task<void> {
-        co_await with_retry([&attempts]() -> task<void> {
-            ++attempts;
-            if (attempts < 2) throw std::runtime_error("fail");
-            co_return;
-        }, retry_policy{.max_attempts = 3, .base_delay = 5ms});
+        co_await with_retry(
+            [&attempts]() -> task<void> {
+                ++attempts;
+                if (attempts < 2)
+                    throw std::runtime_error("fail");
+                co_return;
+            },
+            retry_policy{.max_attempts = 3, .base_delay = 5ms});
         done = true;
     };
 
@@ -952,15 +952,15 @@ TEST_F(CoroutineRegression, WithRetryVoidOverload) {
 
 TEST_F(CoroutineRegression, ChannelCloseWakesPendingSenders) {
     bool caught = false;
-    bool done = false;
+    bool done   = false;
 
     auto test = [&]() -> task<void> {
-        channel<int> ch(0);  // unbuffered
+        channel<int> ch(0); // unbuffered
 
-        coro_scheduler().spawn([](channel<int>* ch, bool* caught_ptr) -> task<void> {
+        coro_scheduler().spawn([](channel<int> *ch, bool *caught_ptr) -> task<void> {
             try {
-                co_await ch->send(1);  // will block (no receiver)
-            } catch (const channel_closed&) {
+                co_await ch->send(1); // will block (no receiver)
+            } catch (const channel_closed &) {
                 *caught_ptr = true;
             }
         }(&ch, &caught));
@@ -983,7 +983,7 @@ TEST_F(CoroutineRegression, ChannelCloseWakesPendingSenders) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, ChannelSendOnClosedThrowsImmediately) {
-    bool caught = false;
+    bool caught   = false;
     bool finished = false;
 
     auto test = [&]() -> task<void> {
@@ -991,7 +991,7 @@ TEST_F(CoroutineRegression, ChannelSendOnClosedThrowsImmediately) {
         ch.close();
         try {
             co_await ch.send(42);
-        } catch (const channel_closed&) {
+        } catch (const channel_closed &) {
             caught = true;
         }
         finished = true;
@@ -1009,14 +1009,14 @@ TEST_F(CoroutineRegression, ChannelSendOnClosedThrowsImmediately) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, SharedTaskNullStateThrowsLogicError) {
-    bool caught = false;
+    bool caught   = false;
     bool finished = false;
 
     auto test = [&]() -> task<void> {
-        shared_task<int> empty;  // no state
+        shared_task<int> empty; // no state
         try {
             co_await empty;
-        } catch (const std::logic_error&) {
+        } catch (const std::logic_error &) {
             caught = true;
         }
         finished = true;
@@ -1034,7 +1034,7 @@ TEST_F(CoroutineRegression, SharedTaskNullStateThrowsLogicError) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, WithDeadlineInThePastThrowsTimeoutImmediately) {
-    bool caught = false;
+    bool caught   = false;
     bool finished = false;
 
     auto make_task = []() -> task<int> {
@@ -1046,7 +1046,7 @@ TEST_F(CoroutineRegression, WithDeadlineInThePastThrowsTimeoutImmediately) {
         auto deadline = std::chrono::steady_clock::now() - 1ms;
         try {
             co_await with_deadline(make_task(), deadline);
-        } catch (const timeout_error&) {
+        } catch (const timeout_error &) {
             caught = true;
         }
         finished = true;
@@ -1066,9 +1066,7 @@ TEST_F(CoroutineRegression, WithDeadlineInThePastThrowsTimeoutImmediately) {
 TEST_F(CoroutineRegression, ActiveCountIncludesSuspendedFrames) {
     size_t count_while_sleeping = 0;
 
-    coro_scheduler().spawn([&]() -> task<void> {
-        co_await sleep(30ms);
-    });
+    coro_scheduler().spawn([&]() -> task<void> { co_await sleep(30ms); });
 
     // Let the coroutine suspend on the sleep watcher before we measure.
     run_for(5ms);
@@ -1076,8 +1074,7 @@ TEST_F(CoroutineRegression, ActiveCountIncludesSuspendedFrames) {
 
     run_for(100ms);
 
-    EXPECT_GE(count_while_sleeping, 1u)
-        << "active_count() silently ignored suspended frames";
+    EXPECT_GE(count_while_sleeping, 1u) << "active_count() silently ignored suspended frames";
 }
 
 // =============================================================================
@@ -1086,7 +1083,7 @@ TEST_F(CoroutineRegression, ActiveCountIncludesSuspendedFrames) {
 
 TEST_F(CoroutineRegression, FromRangeWithTemporaryDoesNotDangle) {
     auto gen = qb::io::async::from_range(std::vector<int>{1, 2, 3, 4, 5});
-    int sum = 0;
+    int  sum = 0;
     while (auto v = gen.next()) {
         sum += *v;
     }
@@ -1123,7 +1120,7 @@ TEST_F(CoroutineRegression, ZipShortCircuitsOnFirstStreamEnd) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, TaskAwaitResumeRethrowsStoredException) {
-    bool caught = false;
+    bool caught   = false;
     bool finished = false;
 
     auto inner = []() -> task<int> {
@@ -1134,8 +1131,8 @@ TEST_F(CoroutineRegression, TaskAwaitResumeRethrowsStoredException) {
     auto test = [&]() -> task<void> {
         try {
             int v = co_await inner();
-            (void)v;
-        } catch (const std::runtime_error& e) {
+            (void) v;
+        } catch (const std::runtime_error &e) {
             caught = std::string(e.what()) == "inner-exploded";
         }
         finished = true;
@@ -1154,17 +1151,12 @@ TEST_F(CoroutineRegression, TaskAwaitResumeRethrowsStoredException) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, LinearBackoffFirstRetryUsesBaseDelay) {
-    retry_policy policy{
-        .base_delay = 25ms,
-        .max_delay = std::chrono::seconds(1),
-        .strategy = backoff_strategy::linear
-    };
+    retry_policy policy{.base_delay = 25ms, .max_delay = std::chrono::seconds(1), .strategy = backoff_strategy::linear};
 
     auto d1 = detail::calculate_delay(1, policy);
     auto d2 = detail::calculate_delay(2, policy);
 
-    EXPECT_GE(d1, 25ms)
-        << "linear backoff first retry must sleep at least base_delay";
+    EXPECT_GE(d1, 25ms) << "linear backoff first retry must sleep at least base_delay";
     EXPECT_GE(d2, 50ms);
 }
 
@@ -1174,28 +1166,23 @@ TEST_F(CoroutineRegression, LinearBackoffFirstRetryUsesBaseDelay) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, WithRetryCatchesNonStdExceptionThrow) {
-    int attempts = 0;
+    int  attempts         = 0;
     bool caught_exhausted = false;
-    bool finished = false;
+    bool finished         = false;
 
     auto flaky = [&]() -> task<int> {
         ++attempts;
-        throw 42;    // non-std::exception (int) — pre-fix would escape
+        throw 42; // non-std::exception (int) — pre-fix would escape
         co_return 0;
     };
 
-    retry_policy fast{
-        .max_attempts = 3,
-        .base_delay = 1ms,
-        .max_delay = 5ms,
-        .strategy = backoff_strategy::fixed
-    };
+    retry_policy fast{.max_attempts = 3, .base_delay = 1ms, .max_delay = 5ms, .strategy = backoff_strategy::fixed};
 
     auto test = [&]() -> task<void> {
         try {
             auto r = co_await with_retry(flaky, fast);
-            (void)r;
-        } catch (const retry_exhausted&) {
+            (void) r;
+        } catch (const retry_exhausted &) {
             caught_exhausted = true;
         }
         finished = true;
@@ -1205,8 +1192,7 @@ TEST_F(CoroutineRegression, WithRetryCatchesNonStdExceptionThrow) {
     run_for(500ms);
 
     EXPECT_EQ(attempts, 3);
-    EXPECT_TRUE(caught_exhausted)
-        << "with_retry must treat non-std::exception throwables as retriable";
+    EXPECT_TRUE(caught_exhausted) << "with_retry must treat non-std::exception throwables as retriable";
     EXPECT_TRUE(finished);
 }
 
@@ -1216,7 +1202,7 @@ TEST_F(CoroutineRegression, WithRetryCatchesNonStdExceptionThrow) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, CancellableOperationPropagatesInnerException) {
-    bool caught = false;
+    bool caught   = false;
     bool finished = false;
 
     auto exploding_task = []() -> task<int> {
@@ -1229,8 +1215,8 @@ TEST_F(CoroutineRegression, CancellableOperationPropagatesInnerException) {
         cancellation_token tok;
         try {
             int v = co_await make_cancellable(exploding_task(), tok, false);
-            (void)v;
-        } catch (const std::runtime_error& e) {
+            (void) v;
+        } catch (const std::runtime_error &e) {
             caught = std::string(e.what()) == "inner-cancellable-boom";
         }
         finished = true;
@@ -1249,14 +1235,14 @@ TEST_F(CoroutineRegression, CancellableOperationPropagatesInnerException) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, DebouncePropagatesSourceException) {
-    bool caught = false;
+    bool caught   = false;
     bool finished = false;
 
     auto test = [&]() -> task<void> {
         // Build a stream whose _next() itself throws on the second pull.
         // debounce's producer loop awaits _next() directly; any exception
         // there must be captured and surfaced on the consumer side.
-        auto counter = std::make_shared<int>(0);
+        auto              counter = std::make_shared<int>(0);
         async_stream<int> src([counter]() -> task<std::optional<int>> {
             ++(*counter);
             if (*counter == 1) {
@@ -1270,8 +1256,8 @@ TEST_F(CoroutineRegression, DebouncePropagatesSourceException) {
 
         try {
             auto collected = co_await std::move(debounced).collect();
-            (void)collected;
-        } catch (const std::runtime_error& e) {
+            (void) collected;
+        } catch (const std::runtime_error &e) {
             caught = std::string(e.what()) == "upstream-boom";
         }
         finished = true;
@@ -1298,22 +1284,21 @@ TEST_F(CoroutineRegression, BackpressureReleasesPermitOnEof) {
         auto sem = std::make_shared<semaphore>(1);
 
         auto drain_one_pass = [&]() -> task<void> {
-            auto src = async_stream<int>::from_vector({10, 20, 30});
+            auto src      = async_stream<int>::from_vector({10, 20, 30});
             auto buffered = std::move(src).backpressure(1, sem);
-            auto result = co_await std::move(buffered).collect();
+            auto result   = co_await std::move(buffered).collect();
             EXPECT_EQ(result.size(), 3u);
         };
 
         co_await drain_one_pass();
-        co_await drain_one_pass();   // would hang if 2.C.5 regresses
+        co_await drain_one_pass(); // would hang if 2.C.5 regresses
         finished = true;
     };
 
     coro_scheduler().spawn(test());
     run_for(1000ms);
 
-    EXPECT_TRUE(finished)
-        << "backpressure EOF leaked a permit on the shared semaphore";
+    EXPECT_TRUE(finished) << "backpressure EOF leaked a permit on the shared semaphore";
 }
 
 // =============================================================================
@@ -1322,14 +1307,14 @@ TEST_F(CoroutineRegression, BackpressureReleasesPermitOnEof) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, SemaphoreAcquireFastPathIsSynchronous) {
-    bool finished = false;
+    bool finished               = false;
     bool acquired_synchronously = false;
 
     auto test = [&]() -> task<void> {
         semaphore sem(1);
 
         // Check await_ready() directly so we can observe synchronous acquire.
-        auto awaiter = sem.acquire();
+        auto awaiter           = sem.acquire();
         acquired_synchronously = awaiter.await_ready();
 
         // Clean up by releasing explicitly; await_resume only decrements if
@@ -1344,8 +1329,7 @@ TEST_F(CoroutineRegression, SemaphoreAcquireFastPathIsSynchronous) {
     coro_scheduler().spawn(test());
     run_for(100ms);
 
-    EXPECT_TRUE(acquired_synchronously)
-        << "semaphore fast-path regressed — acquire suspended unnecessarily";
+    EXPECT_TRUE(acquired_synchronously) << "semaphore fast-path regressed — acquire suspended unnecessarily";
     EXPECT_TRUE(finished);
 }
 
@@ -1357,13 +1341,13 @@ TEST_F(CoroutineRegression, SemaphoreAcquireFastPathIsSynchronous) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, SchedulerCurrentPtrReflectsListenerReset) {
-    auto* before = &qb::io::async::listener::current.coro_scheduler();
+    auto *before = &qb::io::async::listener::current.coro_scheduler();
     ASSERT_EQ(before, CoroutineScheduler::current_ptr());
 
     qb::io::async::listener::current.reset_coro_scheduler();
     EXPECT_EQ(CoroutineScheduler::current_ptr(), nullptr);
 
-    auto* after = &qb::io::async::listener::current.coro_scheduler();
+    auto *after = &qb::io::async::listener::current.coro_scheduler();
     ASSERT_NE(after, nullptr);
     EXPECT_EQ(after, CoroutineScheduler::current_ptr());
     EXPECT_EQ(after, &qb::io::async::listener::current.coro_scheduler());
@@ -1373,7 +1357,8 @@ TEST_F(CoroutineRegression, SchedulerCurrentPtrReflectsListenerReset) {
 // Main
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();

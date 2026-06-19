@@ -11,7 +11,7 @@
  * is located and a service ID that uniquely identifies the actor within that core.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -48,7 +48,7 @@ namespace qb {
  * @details A 16-bit unsigned integer that uniquely identifies a core in the system
  * @ingroup Core
  */
-using CoreId    = uint16_t;
+using CoreId = uint16_t;
 
 /**
  * @typedef ServiceId
@@ -64,7 +64,7 @@ using ServiceId = uint16_t;
  * @details A 16-bit unsigned integer that uniquely identifies types in the type system
  * @ingroup Core
  */
-using TypeId    = uint16_t;
+using TypeId = uint16_t;
 
 /**
  * @typedef EventId
@@ -72,7 +72,7 @@ using TypeId    = uint16_t;
  * @details Equivalent to TypeId, used for identifying event types
  * @ingroup Core
  */
-using EventId   = TypeId;
+using EventId = TypeId;
 
 /**
  * @brief Maximum number of cores supported in a system
@@ -364,7 +364,7 @@ public:
 /**
  * @typedef CoreIdSet
  * @brief Efficient set implementation for storing CoreId values
- * @details 
+ * @details
  * Uses the CoreIdBitSet implementation for memory-efficient and
  * high-performance storage and manipulation of core identifier sets.
  * @ingroup Core
@@ -445,7 +445,7 @@ public:
 /**
  * @class BroadcastId
  * @brief Specialized ActorId for broadcasting messages to all actors on a core
- * @details 
+ * @details
  * BroadcastId is used to send messages to all actors on a specific core.
  * It uses the special BroadcastSid value as the service ID to indicate
  * that the message should be delivered to all actors on the specified core.
@@ -455,10 +455,10 @@ class BroadcastId : public ActorId {
 public:
     BroadcastId() = delete;
     /**
-    * @brief Constructor for BroadcastId.
-    * @param core_id The core ID to broadcast to.
-    * @ingroup Actor
-    */
+     * @brief Constructor for BroadcastId.
+     * @param core_id The core ID to broadcast to.
+     * @ingroup Actor
+     */
     explicit BroadcastId(uint32_t const core_id) noexcept
         : ActorId(BroadcastSid, static_cast<CoreId>(core_id)) {}
 };
@@ -469,7 +469,7 @@ public:
  * @details A vector containing ActorId objects for storing and manipulating collections of actor identifiers
  * @ingroup Core
  */
-using ActorIdList   = std::vector<ActorId>;
+using ActorIdList = std::vector<ActorId>;
 
 /**
  * @typedef ActorIdSet
@@ -477,7 +477,7 @@ using ActorIdList   = std::vector<ActorId>;
  * @details An unordered set containing unique ActorId objects with fast lookup capabilities
  * @ingroup Core
  */
-using ActorIdSet    = std::unordered_set<ActorId>;
+using ActorIdSet = std::unordered_set<ActorId>;
 
 /**
  * @typedef core_id
@@ -485,7 +485,7 @@ using ActorIdSet    = std::unordered_set<ActorId>;
  * @details Provided for naming consistency with other lowercase aliases
  * @ingroup Core
  */
-using core_id       = CoreId;
+using core_id = CoreId;
 
 /**
  * @typedef service_id
@@ -493,7 +493,7 @@ using core_id       = CoreId;
  * @details Provided for naming consistency with other lowercase aliases
  * @ingroup Core
  */
-using service_id    = ServiceId;
+using service_id = ServiceId;
 
 /**
  * @typedef actor_id
@@ -501,7 +501,7 @@ using service_id    = ServiceId;
  * @details Provided for naming consistency with other lowercase aliases
  * @ingroup Core
  */
-using actor_id      = ActorId;
+using actor_id = ActorId;
 
 /**
  * @typedef broadcast_id
@@ -509,7 +509,7 @@ using actor_id      = ActorId;
  * @details Provided for naming consistency with other lowercase aliases
  * @ingroup Core
  */
-using broadcast_id  = BroadcastId;
+using broadcast_id = BroadcastId;
 
 /**
  * @typedef actor_id_list
@@ -525,7 +525,7 @@ using actor_id_list = ActorIdList;
  * @details Provided for naming consistency with other lowercase aliases
  * @ingroup Core
  */
-using actor_is_set  = ActorIdSet;
+using actor_is_set = ActorIdSet;
 
 /**
  * @typedef core_id_set
@@ -533,7 +533,7 @@ using actor_is_set  = ActorIdSet;
  * @details Provided for naming consistency with other lowercase aliases
  * @ingroup Core
  */
-using core_id_set   = CoreIdSet;
+using core_id_set = CoreIdSet;
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 #endif
@@ -544,8 +544,8 @@ namespace std {
  * @struct hash<qb::ActorId>
  * @brief Specialization of std::hash for qb::ActorId
  * @details
- * This hash specialization allows ActorId objects to be used efficiently 
- * in unordered associative containers like std::unordered_set and 
+ * This hash specialization allows ActorId objects to be used efficiently
+ * in unordered associative containers like std::unordered_set and
  * std::unordered_map. The hash function simply uses the numeric representation
  * of the ActorId.
  */

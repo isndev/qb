@@ -8,7 +8,7 @@
  * supports both Windows and POSIX platforms with a consistent interface.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -192,10 +192,10 @@ public:
  * It tracks the read progress and the total expected size of the file.
  */
 class QB_API file_to_pipe {
-    qb::allocator::pipe<char> &_pipe;   /**< Reference to the destination memory pipe. */
-    file                       _handle; /**< Internal `sys::file` handle for reading. */
-    std::size_t _expected_size = 0;     /**< Total size of the file in bytes, determined on open. */
-    std::size_t _read_bytes    = 0;     /**< Number of bytes already read from the file into the pipe. */
+    qb::allocator::pipe<char> &_pipe;              /**< Reference to the destination memory pipe. */
+    file                       _handle;            /**< Internal `sys::file` handle for reading. */
+    std::size_t                _expected_size = 0; /**< Total size of the file in bytes, determined on open. */
+    std::size_t                _read_bytes    = 0; /**< Number of bytes already read from the file into the pipe. */
 
 public:
     /**
@@ -280,9 +280,9 @@ public:
  * to a file specified by path. It tracks the write progress.
  */
 class QB_API pipe_to_file {
-    const qb::allocator::pipe<char> &_pipe;   /**< Reference to the source memory pipe. */
-    file                             _handle; /**< Internal `sys::file` handle for writing. */
-    std::size_t _written_bytes = 0;           /**< Number of bytes already written from the pipe to the file. */
+    const qb::allocator::pipe<char> &_pipe;              /**< Reference to the source memory pipe. */
+    file                             _handle;            /**< Internal `sys::file` handle for writing. */
+    std::size_t                      _written_bytes = 0; /**< Number of bytes already written from the pipe to the file. */
 
 public:
     /**

@@ -33,7 +33,7 @@
  * \c start().
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -128,13 +128,13 @@ public:
 template <bool WithRelay>
 static void
 BM_ForwardVsDirect_PingPong(benchmark::State &state) {
-    const auto ttl        = static_cast<std::uint64_t>(state.range(0));
-    const auto ping_core  = static_cast<std::uint32_t>(state.range(1));
-    const auto pong_core  = static_cast<std::uint32_t>(state.range(2));
+    const auto ttl       = static_cast<std::uint64_t>(state.range(0));
+    const auto ping_core = static_cast<std::uint32_t>(state.range(1));
+    const auto pong_core = static_cast<std::uint32_t>(state.range(2));
 
     for (auto _ : state) {
         state.PauseTiming();
-        qb::Main main;
+        qb::Main   main;
         auto const pong = main.addActor<FwPongActor>(pong_core);
         if constexpr (WithRelay) {
             auto const relay = main.addActor<FwRelayActor>(ping_core, pong);
@@ -145,18 +145,13 @@ BM_ForwardVsDirect_PingPong(benchmark::State &state) {
         state.ResumeTiming();
         main.start(true);
         main.join();
-        state.counters["round_trips_per_s"] =
-            benchmark::Counter(static_cast<double>(ttl),
-                               benchmark::Counter::kIsIterationInvariantRate);
-        const double logical = static_cast<double>(2ull * ttl + 1ull);
-        state.counters["logical_messages_per_s"] =
-            benchmark::Counter(logical, benchmark::Counter::kIsIterationInvariantRate);
-        double actor_deliveries = static_cast<double>(2ull * ttl + 1ull);
+        state.counters["round_trips_per_s"]      = benchmark::Counter(static_cast<double>(ttl), benchmark::Counter::kIsIterationInvariantRate);
+        const double logical                     = static_cast<double>(2ull * ttl + 1ull);
+        state.counters["logical_messages_per_s"] = benchmark::Counter(logical, benchmark::Counter::kIsIterationInvariantRate);
+        double actor_deliveries                  = static_cast<double>(2ull * ttl + 1ull);
         if constexpr (WithRelay)
             actor_deliveries += 1.0;
-        state.counters["actor_deliveries_per_s"] =
-            benchmark::Counter(actor_deliveries,
-                               benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["actor_deliveries_per_s"] = benchmark::Counter(actor_deliveries, benchmark::Counter::kIsIterationInvariantRate);
     }
 }
 

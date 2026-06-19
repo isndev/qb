@@ -7,7 +7,7 @@
  * and logging macros that can be configured at compile time.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -138,7 +138,7 @@ public:
     }
 
     inline std::stringstream &
-    operator<<(std::ostream &(*manip)(std::ostream &)) {
+    operator<<(std::ostream &(*manip)(std::ostream &) ) {
         ss << manip;
         return ss;
     }
@@ -160,23 +160,24 @@ public:
 class cerr {
     static std::mutex io_lock;
     std::stringstream ss;
+
 public:
-    cerr() = default;
+    cerr()             = default;
     cerr(cerr const &) = delete;
     ~cerr();
     template <typename T>
     inline std::stringstream &
     operator<<(T const &data) {
-        ss << data; 
+        ss << data;
         return ss;
     }
 
     inline std::stringstream &
-    operator<<(std::ostream &(*manip)(std::ostream &)) {
+    operator<<(std::ostream &(*manip)(std::ostream &) ) {
         ss << manip;
         return ss;
     }
-};  
+};
 } // namespace io
 } // namespace qb
 

@@ -7,7 +7,7 @@
  * management, and inter-actor communication mechanisms.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -53,8 +53,7 @@ Actor::Actor(ActorId const id) noexcept
 }
 
 Actor::Actor(no_default_events_t) noexcept
-    : _id((assert(VirtualCore::_handler != nullptr
-                  && "Actor must be constructed from within a VirtualCore worker thread."),
+    : _id((assert(VirtualCore::_handler != nullptr && "Actor must be constructed from within a VirtualCore worker thread."),
            VirtualCore::_handler->__generate_id__())) {
     // Intentionally no default event registrations — derived class owns its wiring.
     // Register at minimum KillEvent in onInit() for graceful shutdown.
@@ -179,15 +178,13 @@ Service::Service(ServiceId const sid) noexcept
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::Actor const &actor) {
-    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "."
-       << actor.id().sid() << ")";
+    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << ")";
     return os;
 }
 #endif
 
 std::ostream &
 qb::operator<<(std::ostream &os, qb::Actor const &actor) {
-    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "."
-       << actor.id().sid() << ")";
+    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << ")";
     return os;
 }

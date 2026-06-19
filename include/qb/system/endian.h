@@ -8,7 +8,7 @@
  * portable fallbacks for other compilers.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -86,8 +86,7 @@ is_big_endian() noexcept {
 template <typename T>
 [[nodiscard]] constexpr T
 byteswap(T value) noexcept {
-    static_assert(std::is_arithmetic_v<T> || std::is_enum_v<T>,
-                  "byteswap only supports arithmetic or enum types");
+    static_assert(std::is_arithmetic_v<T> || std::is_enum_v<T>, "byteswap only supports arithmetic or enum types");
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
 
     if constexpr (std::is_integral_v<T>) {

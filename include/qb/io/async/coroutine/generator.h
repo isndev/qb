@@ -5,7 +5,7 @@
  * Generators produce sequences of values lazily.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -34,9 +34,9 @@
 #if defined(QB_DEBUG_AGEN) && QB_DEBUG_AGEN
 // Standard C++20 __VA_OPT__ elides the comma when no trailing args are passed
 // (MSVC needs the conformant preprocessor /Zc:preprocessor, enabled by qb's build).
-#  define QB_AGEN_TRACE(fmt, ...) std::fprintf(stderr, "[agen ] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
+#define QB_AGEN_TRACE(fmt, ...) std::fprintf(stderr, "[agen ] " fmt "\n" __VA_OPT__(, ) __VA_ARGS__)
 #else
-#  define QB_AGEN_TRACE(fmt, ...) (void)0
+#define QB_AGEN_TRACE(fmt, ...) (void) 0
 #endif
 
 namespace qb::io::async {
@@ -74,23 +74,33 @@ template <typename T>
 class generator {
 public:
     struct promise_type {
-        std::optional<T> current_value;
+        std::optional<T>   current_value;
         std::exception_ptr exception;
 
-        auto get_return_object() {
+        auto
+        get_return_object() {
             return generator{std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() { return {}; }
-        std::suspend_always final_suspend() noexcept { return {}; }
+        std::suspend_always
+        initial_suspend() {
+            return {};
+        }
+        std::suspend_always
+        final_suspend() noexcept {
+            return {};
+        }
 
-        void unhandled_exception() {
+        void
+        unhandled_exception() {
             exception = std::current_exception();
         }
 
-        void return_void() {}
+        void
+        return_void() {}
 
-        std::suspend_always yield_value(T value) {
+        std::suspend_always
+        yield_value(T value) {
             current_value = std::move(value);
             return {};
         }
@@ -105,7 +115,8 @@ private:
     handle_type _handle;
 
 public:
-    explicit generator(handle_type h) : _handle(h) {}
+    explicit generator(handle_type h)
+        : _handle(h) {}
 
     ~generator() {
         if (_handle) {
@@ -114,17 +125,20 @@ public:
     }
 
     // Move-only
-    generator(generator&& other) noexcept : _handle(std::exchange(other._handle, {})) {}
-    generator& operator=(generator&& other) noexcept {
+    generator(generator &&other) noexcept
+        : _handle(std::exchange(other._handle, {})) {}
+    generator &
+    operator=(generator &&other) noexcept {
         if (this != &other) {
-            if (_handle) _handle.destroy();
+            if (_handle)
+                _handle.destroy();
             _handle = std::exchange(other._handle, {});
         }
         return *this;
     }
 
-    generator(const generator&) = delete;
-    generator& operator=(const generator&) = delete;
+    generator(const generator &)            = delete;
+    generator &operator=(const generator &) = delete;
 
     /**
      * @brief Iterator for range-based for loops
@@ -133,8 +147,10 @@ public:
         handle_type _handle;
 
     public:
-        iterator() noexcept : _handle(nullptr) {}
-        explicit iterator(handle_type h) : _handle(h) {
+        iterator() noexcept
+            : _handle(nullptr) {}
+        explicit iterator(handle_type h)
+            : _handle(h) {
             if (_handle && !_handle.done()) {
                 _handle.resume();
             }
@@ -145,15 +161,18 @@ public:
             }
         }
 
-        bool operator!=(const iterator& other) const noexcept {
+        bool
+        operator!=(const iterator &other) const noexcept {
             return _handle != other._handle;
         }
 
-        bool operator==(const iterator& other) const noexcept {
+        bool
+        operator==(const iterator &other) const noexcept {
             return _handle == other._handle;
         }
 
-        iterator& operator++() {
+        iterator &
+        operator++() {
             if (_handle && !_handle.done()) {
                 _handle.resume();
             }
@@ -164,18 +183,18 @@ public:
             return *this;
         }
 
-        const T& operator*() const {
+        const T &
+        operator*() const {
             // Finding 2.A.4: operator* must not dereference a null optional.
             // Callers are supposed to check `it != end()` first, but misuse
             // should fail loudly instead of silently returning garbage.
-            assert(_handle && _handle.promise().current_value.has_value()
-                   && "generator::iterator operator* on exhausted iterator");
+            assert(_handle && _handle.promise().current_value.has_value() && "generator::iterator operator* on exhausted iterator");
             return *_handle.promise().current_value;
         }
 
-        const T* operator->() const {
-            assert(_handle && _handle.promise().current_value.has_value()
-                   && "generator::iterator operator-> on exhausted iterator");
+        const T *
+        operator->() const {
+            assert(_handle && _handle.promise().current_value.has_value() && "generator::iterator operator-> on exhausted iterator");
             return &*_handle.promise().current_value;
         }
 
@@ -183,16 +202,18 @@ public:
         // Surface a generator-body exception to the consuming loop instead of
         // silently ending iteration (the previous behavior made a throwing
         // generator indistinguishable from a normally exhausted one).
-        void rethrow_if_failed() {
+        void
+        rethrow_if_failed() {
             if (_handle && _handle.promise().exception) {
-                auto ex  = _handle.promise().exception;
-                _handle  = nullptr; // iteration ends; do not resume a failed frame
+                auto ex = _handle.promise().exception;
+                _handle = nullptr; // iteration ends; do not resume a failed frame
                 std::rethrow_exception(ex);
             }
         }
     };
 
-    iterator begin() {
+    iterator
+    begin() {
         // Null check first: a moved-from generator has a null handle and
         // calling done() on it is undefined behavior.
         if (!_handle || _handle.done()) {
@@ -201,14 +222,16 @@ public:
         return iterator{_handle};
     }
 
-    iterator end() {
+    iterator
+    end() {
         return iterator{};
     }
 
     /**
      * @brief Check if generator has more values
      */
-    bool has_next() const {
+    bool
+    has_next() const {
         return _handle && !_handle.done();
     }
 
@@ -216,7 +239,8 @@ public:
      * @brief Get next value (advances generator)
      * @return Optional value - empty if done
      */
-    std::optional<T> next() {
+    std::optional<T>
+    next() {
         if (!_handle) {
             return std::nullopt;
         }
@@ -236,15 +260,16 @@ public:
             _handle.resume();
             if (_handle.promise().exception)
                 std::rethrow_exception(_handle.promise().exception);
-            if (_handle.done()) return std::nullopt;
+            if (_handle.done())
+                return std::nullopt;
         }
 
         auto result = _handle.promise().current_value;
-        _handle.resume();  // Advance past this yield so has_next() is false after
-                           // the last value. If this resume throws into the
-                           // promise, the exception surfaces on the NEXT call
-                           // (top-of-function check) — the value produced here
-                           // is still legitimately delivered.
+        _handle.resume(); // Advance past this yield so has_next() is false after
+                          // the last value. If this resume throws into the
+                          // promise, the exception surfaces on the NEXT call
+                          // (top-of-function check) — the value produced here
+                          // is still legitimately delivered.
         return result;
     }
 };
@@ -259,35 +284,46 @@ template <typename T>
 class async_generator {
 public:
     struct promise_type {
-        std::optional<T> current_value;
-        std::exception_ptr exception;
+        std::optional<T>        current_value;
+        std::exception_ptr      exception;
         std::coroutine_handle<> continuation;
 
-        auto get_return_object() {
+        auto
+        get_return_object() {
             return async_generator{std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() { return {}; }
+        std::suspend_always
+        initial_suspend() {
+            return {};
+        }
 
-        auto final_suspend() noexcept {
-            QB_AGEN_TRACE("final_suspend continuation=%p",
-                          continuation ? (void*)continuation.address() : nullptr);
+        auto
+        final_suspend() noexcept {
+            QB_AGEN_TRACE("final_suspend continuation=%p", continuation ? (void *) continuation.address() : nullptr);
             struct final_awaiter {
                 std::coroutine_handle<> continuation;
-                bool await_ready() const noexcept { return false; }
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
+                bool
+                await_ready() const noexcept {
+                    return false;
+                }
+                std::coroutine_handle<>
+                await_suspend(std::coroutine_handle<>) noexcept {
                     return continuation ? continuation : std::noop_coroutine();
                 }
-                void await_resume() noexcept {}
+                void
+                await_resume() noexcept {}
             };
             return final_awaiter{continuation};
         }
 
-        void unhandled_exception() {
+        void
+        unhandled_exception() {
             exception = std::current_exception();
         }
 
-        void return_void() {}
+        void
+        return_void() {}
 
         /**
          * @brief Symmetric-transfer yield: resumes the awaiting consumer
@@ -295,17 +331,22 @@ public:
          * the scheduler.  Previously returned std::suspend_always which
          * left both the generator AND the consumer permanently suspended.
          */
-        auto yield_value(T value) {
+        auto
+        yield_value(T value) {
             current_value = std::move(value);
-            QB_AGEN_TRACE("yield_value value ready, transferring to continuation=%p",
-                          continuation ? (void*)continuation.address() : nullptr);
+            QB_AGEN_TRACE("yield_value value ready, transferring to continuation=%p", continuation ? (void *) continuation.address() : nullptr);
             struct yield_awaiter {
                 std::coroutine_handle<> cont;
-                bool await_ready() const noexcept { return false; }
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
+                bool
+                await_ready() const noexcept {
+                    return false;
+                }
+                std::coroutine_handle<>
+                await_suspend(std::coroutine_handle<>) noexcept {
                     return cont ? cont : std::noop_coroutine();
                 }
-                void await_resume() noexcept {}
+                void
+                await_resume() noexcept {}
             };
             return yield_awaiter{continuation};
         }
@@ -317,30 +358,37 @@ private:
     handle_type _handle;
 
 public:
-    explicit async_generator(handle_type h) : _handle(h) {}
+    explicit async_generator(handle_type h)
+        : _handle(h) {}
 
     ~async_generator() {
-        if (_handle) _handle.destroy();
+        if (_handle)
+            _handle.destroy();
     }
 
-    async_generator(async_generator&& other) noexcept
+    async_generator(async_generator &&other) noexcept
         : _handle(std::exchange(other._handle, {})) {}
 
-    async_generator& operator=(async_generator&& other) noexcept {
+    async_generator &
+    operator=(async_generator &&other) noexcept {
         if (this != &other) {
-            if (_handle) _handle.destroy();
+            if (_handle)
+                _handle.destroy();
             _handle = std::exchange(other._handle, {});
         }
         return *this;
     }
 
-    async_generator(const async_generator&) = delete;
-    async_generator& operator=(const async_generator&) = delete;
+    async_generator(const async_generator &)            = delete;
+    async_generator &operator=(const async_generator &) = delete;
 
     struct next_awaiter {
         handle_type handle;
 
-        bool await_ready() const { return false; }
+        bool
+        await_ready() const {
+            return false;
+        }
 
         /**
          * @brief Symmetric transfer to the generator.
@@ -361,16 +409,16 @@ public:
          * await_suspend() returns IMMEDIATELY (tail-call) without any further
          * access to `handle` in this frame.
          */
-        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept {
-            QB_AGEN_TRACE("next await_suspend consumer=%p gen=%p",
-                          (void*)h.address(), (void*)handle.address());
+        std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<> h) noexcept {
+            QB_AGEN_TRACE("next await_suspend consumer=%p gen=%p", (void *) h.address(), (void *) handle.address());
             handle.promise().continuation = h;
-            return handle;  // symmetric transfer — do NOT access handle after this
+            return handle; // symmetric transfer — do NOT access handle after this
         }
 
-        std::optional<T> await_resume() {
-            QB_AGEN_TRACE("next await_resume gen=%p done=%d",
-                          (void*)handle.address(), handle.done() ? 1 : 0);
+        std::optional<T>
+        await_resume() {
+            QB_AGEN_TRACE("next await_resume gen=%p done=%d", (void *) handle.address(), handle.done() ? 1 : 0);
             if (handle.done()) {
                 return std::nullopt;
             }
@@ -381,7 +429,8 @@ public:
         }
     };
 
-    next_awaiter next() {
+    next_awaiter
+    next() {
         return next_awaiter{_handle};
     }
 };
@@ -394,9 +443,10 @@ public:
  * @ingroup Coroutine
  */
 template <typename T>
-std::vector<T> collect_to_vector(generator<T>& gen) {
+std::vector<T>
+collect_to_vector(generator<T> &gen) {
     std::vector<T> result;
-    for (auto& val : gen) {
+    for (auto &val : gen) {
         result.push_back(std::move(val));
     }
     return result;
@@ -423,9 +473,9 @@ std::vector<T> collect_to_vector(generator<T>& gen) {
  * @ingroup Coroutine
  */
 template <typename Range>
-auto from_range(Range range)
-    -> generator<typename std::remove_cvref_t<Range>::value_type> {
-    for (auto& item : range) {
+auto
+from_range(Range range) -> generator<typename std::remove_cvref_t<Range>::value_type> {
+    for (auto &item : range) {
         co_yield item;
     }
 }
@@ -437,7 +487,8 @@ auto from_range(Range range)
  * @ingroup Coroutine
  */
 template <typename T>
-generator<T> empty_generator() {
+generator<T>
+empty_generator() {
     co_return;
 }
 
@@ -449,7 +500,8 @@ generator<T> empty_generator() {
  * @ingroup Coroutine
  */
 template <typename T>
-generator<T> single_generator(T value) {
+generator<T>
+single_generator(T value) {
     co_yield std::move(value);
 }
 
@@ -462,7 +514,8 @@ generator<T> single_generator(T value) {
  * @ingroup Coroutine
  */
 template <typename Iter>
-auto from_iterator(Iter begin, Iter end) -> generator<typename std::iterator_traits<Iter>::value_type> {
+auto
+from_iterator(Iter begin, Iter end) -> generator<typename std::iterator_traits<Iter>::value_type> {
     for (auto it = begin; it != end; ++it) {
         co_yield *it;
     }
@@ -476,7 +529,8 @@ auto from_iterator(Iter begin, Iter end) -> generator<typename std::iterator_tra
  * @ingroup Coroutine
  */
 template <typename T>
-generator<T> iota(T start) {
+generator<T>
+iota(T start) {
     T current = start;
     while (true) {
         co_yield current++;
@@ -492,7 +546,8 @@ generator<T> iota(T start) {
  * @ingroup Coroutine
  */
 template <typename T>
-generator<T> range(T start, T end) {
+generator<T>
+range(T start, T end) {
     for (T i = start; i < end; ++i) {
         co_yield i;
     }
@@ -506,7 +561,8 @@ generator<T> range(T start, T end) {
  * @ingroup Coroutine
  */
 template <typename T>
-generator<T> repeat(T value) {
+generator<T>
+repeat(T value) {
     while (true) {
         co_yield value;
     }
@@ -521,7 +577,8 @@ generator<T> repeat(T value) {
  * @ingroup Coroutine
  */
 template <typename T>
-generator<T> repeat_n(T value, size_t count) {
+generator<T>
+repeat_n(T value, size_t count) {
     for (size_t i = 0; i < count; ++i) {
         co_yield value;
     }
@@ -536,11 +593,12 @@ generator<T> repeat_n(T value, size_t count) {
  * @ingroup Coroutine
  */
 template <typename T>
-generator<T> concat(generator<T> first, generator<T> second) {
-    for (auto& val : first) {
+generator<T>
+concat(generator<T> first, generator<T> second) {
+    for (auto &val : first) {
         co_yield std::move(val);
     }
-    for (auto& val : second) {
+    for (auto &val : second) {
         co_yield std::move(val);
     }
 }
@@ -554,10 +612,12 @@ generator<T> concat(generator<T> first, generator<T> second) {
  * @ingroup Coroutine
  */
 template <typename T>
-generator<T> take(generator<T> gen, size_t count) {
+generator<T>
+take(generator<T> gen, size_t count) {
     size_t i = 0;
-    for (auto& val : gen) {
-        if (i++ >= count) break;
+    for (auto &val : gen) {
+        if (i++ >= count)
+            break;
         co_yield std::move(val);
     }
 }
@@ -571,10 +631,12 @@ generator<T> take(generator<T> gen, size_t count) {
  * @ingroup Coroutine
  */
 template <typename T>
-generator<T> skip(generator<T> gen, size_t count) {
+generator<T>
+skip(generator<T> gen, size_t count) {
     size_t i = 0;
-    for (auto& val : gen) {
-        if (i++ < count) continue;
+    for (auto &val : gen) {
+        if (i++ < count)
+            continue;
         co_yield std::move(val);
     }
 }
@@ -599,12 +661,13 @@ generator<T> skip(generator<T> gen, size_t count) {
  * @ingroup Coroutine
  */
 template <typename T, typename F>
-task<void> ag_for_each(async_generator<T> gen, F f) {
+task<void>
+ag_for_each(async_generator<T> gen, F f) {
     QB_AGEN_TRACE("ag_for_each start");
     [[maybe_unused]] std::size_t n = 0;
     while (auto val = co_await gen.next()) {
         QB_AGEN_TRACE("ag_for_each got item #%zu", n++);
-        if constexpr (std::is_same_v<std::invoke_result_t<F, T&>, task<void>>) {
+        if constexpr (std::is_same_v<std::invoke_result_t<F, T &>, task<void>>) {
             co_await f(*val);
         } else {
             f(*val);
@@ -621,7 +684,8 @@ task<void> ag_for_each(async_generator<T> gen, F f) {
  * @ingroup Coroutine
  */
 template <typename T>
-task<std::vector<T>> ag_collect(async_generator<T> gen) {
+task<std::vector<T>>
+ag_collect(async_generator<T> gen) {
     QB_AGEN_TRACE("ag_collect start");
     std::vector<T> result;
     while (auto val = co_await gen.next()) {
@@ -640,7 +704,8 @@ task<std::vector<T>> ag_collect(async_generator<T> gen) {
  * @ingroup Coroutine
  */
 template <typename T, typename F>
-task<std::vector<std::invoke_result_t<F, T>>> ag_map(async_generator<T> gen, F f) {
+task<std::vector<std::invoke_result_t<F, T>>>
+ag_map(async_generator<T> gen, F f) {
     using R = std::invoke_result_t<F, T>;
     std::vector<R> result;
     while (auto val = co_await gen.next())
@@ -656,10 +721,12 @@ task<std::vector<std::invoke_result_t<F, T>>> ag_map(async_generator<T> gen, F f
  * @ingroup Coroutine
  */
 template <typename T, typename Pred>
-task<std::vector<T>> ag_filter(async_generator<T> gen, Pred pred) {
+task<std::vector<T>>
+ag_filter(async_generator<T> gen, Pred pred) {
     std::vector<T> result;
     while (auto val = co_await gen.next())
-        if (pred(*val)) result.push_back(std::move(*val));
+        if (pred(*val))
+            result.push_back(std::move(*val));
     co_return result;
 }
 
@@ -675,7 +742,8 @@ task<std::vector<T>> ag_filter(async_generator<T> gen, Pred pred) {
  * @ingroup Coroutine
  */
 template <typename T, typename Acc, typename F>
-task<Acc> ag_reduce(async_generator<T> gen, Acc init, F reducer) {
+task<Acc>
+ag_reduce(async_generator<T> gen, Acc init, F reducer) {
     while (auto val = co_await gen.next())
         init = reducer(std::move(init), std::move(*val));
     co_return init;
@@ -686,11 +754,13 @@ task<Acc> ag_reduce(async_generator<T> gen, Acc init, F reducer) {
  * @ingroup Coroutine
  */
 template <typename T>
-async_generator<T> ag_take(async_generator<T> gen, size_t n) {
+async_generator<T>
+ag_take(async_generator<T> gen, size_t n) {
     size_t count = 0;
     while (count < n) {
         auto val = co_await gen.next();
-        if (!val) break;
+        if (!val)
+            break;
         co_yield std::move(*val);
         ++count;
     }
@@ -701,10 +771,12 @@ async_generator<T> ag_take(async_generator<T> gen, size_t n) {
  * @ingroup Coroutine
  */
 template <typename T>
-async_generator<T> ag_skip(async_generator<T> gen, size_t n) {
+async_generator<T>
+ag_skip(async_generator<T> gen, size_t n) {
     size_t skipped = 0;
     while (auto val = co_await gen.next()) {
-        if (skipped++ < n) continue;
+        if (skipped++ < n)
+            continue;
         co_yield std::move(*val);
     }
 }

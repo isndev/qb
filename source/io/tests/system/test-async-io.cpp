@@ -7,7 +7,7 @@
  * capabilities.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -45,8 +45,7 @@ namespace {
 
 std::filesystem::path
 ssl_resource_path(const char *file_name) {
-    return std::filesystem::path(__FILE__).parent_path() / "resources" / "ssl" /
-           file_name;
+    return std::filesystem::path(__FILE__).parent_path() / "resources" / "ssl" / file_name;
 }
 
 } // namespace
@@ -164,8 +163,7 @@ TEST_F(AsyncIOTest, TimeoutUtility) {
     std::atomic<bool> callback_executed{false};
 
     // Create a timeout that will execute after 100ms
-    new async::Timeout<std::function<void()>>(
-        [&callback_executed]() { callback_executed = true; }, 100ms);
+    new async::Timeout<std::function<void()>>([&callback_executed]() { callback_executed = true; }, 100ms);
 
     // Run event loop until callback is executed
     for (auto i = 0; i < 10 && !callback_executed; ++i) {
@@ -181,8 +179,7 @@ TEST_F(AsyncIOTest, ImmediateTimeoutUtility) {
     std::atomic<bool> callback_executed{false};
 
     // Create a timeout that will execute immediately (timeout = 0)
-    new async::Timeout<std::function<void()>>(
-        [&callback_executed]() { callback_executed = true; }, qb::duration::zero());
+    new async::Timeout<std::function<void()>>([&callback_executed]() { callback_executed = true; }, qb::duration::zero());
 
     // Should be executed immediately without running the event loop
     EXPECT_TRUE(callback_executed);
@@ -209,10 +206,8 @@ public:
 
     SignalHandler() {
         // Register signal handlers
-        sigint_watcher =
-            new async::event::signal<SIGINT>(async::listener::current.loop());
-        sigusr1_watcher =
-            new async::event::signal<SIGUSR1>(async::listener::current.loop());
+        sigint_watcher  = new async::event::signal<SIGINT>(async::listener::current.loop());
+        sigusr1_watcher = new async::event::signal<SIGUSR1>(async::listener::current.loop());
 
         // Set callbacks
         sigint_watcher->set<SignalHandler, &SignalHandler::handle_sigint>(this);
@@ -268,8 +263,7 @@ TEST_F(AsyncIOTest, DISABLED_SignalHandling) {
     });
 
     // Run event loop until signals are received
-    for (auto i = 0; i < 20 && (!handler.sigint_received || !handler.sigusr1_received);
-         ++i) {
+    for (auto i = 0; i < 20 && (!handler.sigint_received || !handler.sigusr1_received); ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -350,8 +344,7 @@ public:
 
     bool
     send(const std::string &data) {
-        return client_socket.write(data.c_str(), data.size()) ==
-               static_cast<int>(data.size());
+        return client_socket.write(data.c_str(), data.size()) == static_cast<int>(data.size());
     }
 
     void
@@ -584,8 +577,7 @@ TEST_F(AsyncIOTest, TextProtocolCommunication) {
         async::init();
         TextClient client;
 
-        if (SocketStatus::Done !=
-            client.transport().connect_v4("127.0.0.1", TEXT_PROTOCOL_PORT)) {
+        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", TEXT_PROTOCOL_PORT)) {
             throw std::runtime_error("could not connect to text server");
         }
 
@@ -597,19 +589,14 @@ TEST_F(AsyncIOTest, TextProtocolCommunication) {
         }
 
         // Run event loop until all messages are processed
-        for (auto i = 0u;
-             i < (TEXT_ITERATIONS * 5) &&
-             (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS);
-             ++i) {
+        for (auto i = 0u; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS); ++i) {
             async::run(EVRUN_ONCE);
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     });
 
     // Run server event loop
-    for (auto i = 0u; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS ||
-                                                   msg_count_client < TEXT_ITERATIONS);
-         ++i) {
+    for (auto i = 0u; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS); ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -624,8 +611,7 @@ TEST_F(AsyncIOTest, TextProtocolCommunication) {
 // Test SSL/TLS communication
 class SecureServer;
 
-class SecureServerClient
-    : public use<SecureServerClient>::tcp::ssl::client<SecureServer> {
+class SecureServerClient : public use<SecureServerClient>::tcp::ssl::client<SecureServer> {
 public:
     using Protocol = qb::protocol::text::command<SecureServerClient>;
 
@@ -694,8 +680,7 @@ TEST_F(AsyncIOTest, SSLCommunication) {
 
     // Set up server
     SecureServer server;
-    server.transport().init(ssl::create_server_context(
-        SSLv23_server_method(), cert_file.string(), key_file.string()));
+    server.transport().init(ssl::create_server_context(SSLv23_server_method(), cert_file.string(), key_file.string()));
     constexpr const unsigned short SECURE_TEXT_PROTOCOL_PORT = 64384;
 
     server.transport().listen_v4(SECURE_TEXT_PROTOCOL_PORT);
@@ -709,8 +694,7 @@ TEST_F(AsyncIOTest, SSLCommunication) {
         // Test server uses a self-signed certificate on 127.0.0.1; opt out of
         // the secure-by-default peer verification for this local fixture.
         client.transport().set_insecure();
-        if (SocketStatus::Done !=
-            client.transport().connect_v4("127.0.0.1", SECURE_TEXT_PROTOCOL_PORT)) {
+        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", SECURE_TEXT_PROTOCOL_PORT)) {
             throw std::runtime_error("could not connect to secure server");
         }
 
@@ -722,19 +706,14 @@ TEST_F(AsyncIOTest, SSLCommunication) {
         }
 
         // Run event loop until all messages are processed
-        for (auto i = 0u;
-             i < (TEXT_ITERATIONS * 5) &&
-             (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS);
-             ++i) {
+        for (auto i = 0u; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS); ++i) {
             async::run(EVRUN_ONCE);
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     });
 
     // Run server event loop
-    for (auto i = 0u; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS ||
-                                                   msg_count_client < TEXT_ITERATIONS);
-         ++i) {
+    for (auto i = 0u; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS); ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -748,8 +727,8 @@ TEST_F(AsyncIOTest, SSLCommunication) {
 // Locks in the secure-by-default TLS behavior (MITM hardening): a default
 // client MUST reject a self-signed certificate, and set_insecure() MUST opt out.
 TEST_F(AsyncIOTest, SSLPeerVerificationSecureByDefault) {
-    const auto cert_file = ssl_resource_path("cert.pem");
-    const auto key_file  = ssl_resource_path("key.pem");
+    const auto    cert_file = ssl_resource_path("cert.pem");
+    const auto    key_file  = ssl_resource_path("key.pem");
     std::ifstream cert_check(cert_file), key_check(key_file);
     if (!cert_check.good() || !key_check.good()) {
         GTEST_SKIP() << "SSL certificate/key not found, skipping";
@@ -760,13 +739,12 @@ TEST_F(AsyncIOTest, SSLPeerVerificationSecureByDefault) {
 
     // Self-signed server.
     qb::io::tcp::ssl::listener srv;
-    srv.init(ssl::create_server_context(TLS_server_method(),
-                                        cert_file.string(), key_file.string()));
+    srv.init(ssl::create_server_context(TLS_server_method(), cert_file.string(), key_file.string()));
     ASSERT_TRUE(srv.ssl_handle());
     ASSERT_EQ(srv.listen_v4(kPort), 0);
 
     std::atomic<bool> stop{false};
-    std::thread acceptor([&] {
+    std::thread       acceptor([&] {
         // Drive the TLS handshake for whichever client connects.
         for (int i = 0; i < 400 && !stop.load(); ++i) {
             qb::io::tcp::ssl::socket s;
@@ -788,8 +766,7 @@ TEST_F(AsyncIOTest, SSLPeerVerificationSecureByDefault) {
         qb::io::tcp::ssl::socket c;
         verify_ret = c.connect_v4("127.0.0.1", kPort);
     }
-    EXPECT_NE(verify_ret, 0)
-        << "secure-by-default client accepted a self-signed certificate (MITM hole)";
+    EXPECT_NE(verify_ret, 0) << "secure-by-default client accepted a self-signed certificate (MITM hole)";
 
     // 2) set_insecure() client MUST connect.
     int insecure_ret;
@@ -933,8 +910,7 @@ TEST_F(AsyncIOTest, UDPDatagram) {
     dest.as_in("127.0.0.1", UDP_PORT);
 
     // Send a message
-    ASSERT_EQ(send_socket.write(UDP_MESSAGE.c_str(), UDP_MESSAGE.size(), dest),
-              static_cast<int>(UDP_MESSAGE.size()));
+    ASSERT_EQ(send_socket.write(UDP_MESSAGE.c_str(), UDP_MESSAGE.size(), dest), static_cast<int>(UDP_MESSAGE.size()));
 
     // Receive the message
     char     buffer[1024] = {0};
@@ -953,8 +929,7 @@ public:
 
     PeriodicTimerHandler(double interval) {
         timer_watcher = new ev::timer(async::listener::current.loop());
-        timer_watcher->set<PeriodicTimerHandler, &PeriodicTimerHandler::handle_timer>(
-            this);
+        timer_watcher->set<PeriodicTimerHandler, &PeriodicTimerHandler::handle_timer>(this);
 
         // Start timer with 0 initial delay and specified interval for repeat
         timer_watcher->start(0.0, interval);
@@ -1067,24 +1042,20 @@ TEST_F(AsyncIOTest, MultipleConcurrentTimers) {
     std::atomic<bool> timer3_triggered{false};
 
     // Create timers with different timeouts
-    new async::Timeout<std::function<void()>>(
-        [&timer1_triggered]() { timer1_triggered = true; },
-        50ms // 50ms
+    new async::Timeout<std::function<void()>>([&timer1_triggered]() { timer1_triggered = true; },
+                                              50ms // 50ms
     );
 
-    new async::Timeout<std::function<void()>>(
-        [&timer2_triggered]() { timer2_triggered = true; },
-        100ms // 100ms
+    new async::Timeout<std::function<void()>>([&timer2_triggered]() { timer2_triggered = true; },
+                                              100ms // 100ms
     );
 
-    new async::Timeout<std::function<void()>>(
-        [&timer3_triggered]() { timer3_triggered = true; },
-        150ms // 150ms
+    new async::Timeout<std::function<void()>>([&timer3_triggered]() { timer3_triggered = true; },
+                                              150ms // 150ms
     );
 
     // Run event loop until all timers trigger
-    for (int i = 0;
-         i < 20 && (!timer1_triggered || !timer2_triggered || !timer3_triggered); ++i) {
+    for (int i = 0; i < 20 && (!timer1_triggered || !timer2_triggered || !timer3_triggered); ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1110,11 +1081,10 @@ TEST_F(AsyncIOTest, TimerPrecision) {
 
     new async::Timeout<std::function<void()>>(
         [&]() {
-            fire_time      = clock::now();
+            fire_time       = clock::now();
             timer_triggered = true;
         },
-        std::chrono::duration_cast<qb::duration>(
-            std::chrono::duration<double>(timeout_seconds)));
+        std::chrono::duration_cast<qb::duration>(std::chrono::duration<double>(timeout_seconds)));
 
     // Run the event loop until the timer fires or we exhaust the budget.
     for (auto i = 0; i < 20 && !timer_triggered; ++i) {
@@ -1125,9 +1095,7 @@ TEST_F(AsyncIOTest, TimerPrecision) {
     EXPECT_TRUE(timer_triggered);
 
     if (timer_triggered) {
-        auto elapsed_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(fire_time - create_time)
-                .count();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(fire_time - create_time).count();
 
         // Lower bound: the timer must not have fired before ~50% of the configured
         // timeout. This catches a completely broken timer (fires instantly) while
@@ -1160,9 +1128,8 @@ TEST_F(AsyncIOTest, TimerSynchronization) {
 
     // Create multiple timers accessing the same resource
     for (auto i = 0; i < 5; ++i) {
-        new async::Timeout<std::function<void()>>(
-            [&tester, i]() { tester.critical_section(i); },
-            50ms * (i + 1) // Staggered timeouts
+        new async::Timeout<std::function<void()>>([&tester, i]() { tester.critical_section(i); },
+                                                  50ms * (i + 1) // Staggered timeouts
         );
     }
 
@@ -1185,7 +1152,6 @@ constexpr int NUM_THREADS           = 4;
 constexpr int ITERATIONS_PER_THREAD = 5;
 // Test for multiple threads using async operations
 TEST_F(AsyncIOTest, MultiThreadedAsyncOperations) {
-
     std::vector<std::thread> threads;
     std::atomic<int>         total_completed{0};
 
@@ -1254,9 +1220,8 @@ TEST_F(AsyncIOTest, NestedTimedOperations) {
             operation_count++;
 
             // Create a nested timer
-            new async::Timeout<std::function<void()>>(
-                [&operation_count]() { operation_count++; },
-                50ms // 50ms
+            new async::Timeout<std::function<void()>>([&operation_count]() { operation_count++; },
+                                                      50ms // 50ms
             );
         },
         50ms // 50ms
@@ -1313,9 +1278,8 @@ TEST_F(AsyncIOTest, DroppedTimers) {
 
     // Create multiple timeout objects but don't store references to them
     for (auto i = 0; i < 10; ++i) {
-        new async::Timeout<std::function<void()>>(
-            [&completed_count]() { completed_count++; },
-            20ms * (i + 1) // Stagger timeouts from 20ms to 200ms
+        new async::Timeout<std::function<void()>>([&completed_count]() { completed_count++; },
+                                                  20ms * (i + 1) // Stagger timeouts from 20ms to 200ms
         );
     }
 
@@ -1363,16 +1327,14 @@ TEST_F(AsyncIOTest, AsyncInitCleanupThreads) {
 TEST_F(AsyncIOTest, TimeoutBehavior) {
     // Test immediate execution with zero timeout
     std::atomic<bool> zero_timer_triggered{false};
-    new async::Timeout<std::function<void()>>(
-        [&zero_timer_triggered]() { zero_timer_triggered = true; }, qb::duration::zero());
+    new async::Timeout<std::function<void()>>([&zero_timer_triggered]() { zero_timer_triggered = true; }, qb::duration::zero());
 
     // Should be triggered immediately without running event loop
     EXPECT_TRUE(zero_timer_triggered);
 
     // Test very small positive timeout
     std::atomic<bool> small_timer_triggered{false};
-    new async::Timeout<std::function<void()>>(
-        [&small_timer_triggered]() { small_timer_triggered = true; }, 1ms);
+    new async::Timeout<std::function<void()>>([&small_timer_triggered]() { small_timer_triggered = true; }, 1ms);
 
     // Run event loop a few times
     for (auto i = 0; i < 5 && !small_timer_triggered; ++i) {
@@ -1384,8 +1346,7 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
 
     // Test negative timeout — executes immediately (same as zero)
     std::atomic<bool> negative_timer_triggered{false};
-    new async::Timeout<std::function<void()>>(
-        [&negative_timer_triggered]() { negative_timer_triggered = true; }, -1s);
+    new async::Timeout<std::function<void()>>([&negative_timer_triggered]() { negative_timer_triggered = true; }, -1s);
 
     EXPECT_TRUE(negative_timer_triggered);
 }
@@ -1411,8 +1372,7 @@ TEST_F(AsyncIOTest, ExceptionHandlingInCallbacks) {
         100ms);
 
     // Create a timer that should still trigger
-    new async::Timeout<std::function<void()>>(
-        [&second_timer_triggered]() { second_timer_triggered = true; }, 100ms);
+    new async::Timeout<std::function<void()>>([&second_timer_triggered]() { second_timer_triggered = true; }, 100ms);
 
     // Run event loop
     for (auto i = 0; i < 10 && !second_timer_triggered; ++i) {
@@ -1426,7 +1386,7 @@ TEST_F(AsyncIOTest, ExceptionHandlingInCallbacks) {
 
 // Test resource cleanup
 TEST_F(AsyncIOTest, ResourceCleanup) {
-    const int NUM_TIMERS = 10; // Reduced from 100 to avoid memory issues
+    const int                                  NUM_TIMERS = 10; // Reduced from 100 to avoid memory issues
     std::vector<std::unique_ptr<TimerHandler>> timers;
     timers.reserve(NUM_TIMERS);
 
@@ -1472,15 +1432,16 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
     for (int t = 0; t < 4; ++t) {
         threads.emplace_back([&completed_operations]() {
             async::init();
-            
+
             std::atomic<int> thread_completed{0};
 
             for (int i = 0; i < NUM_OPERATIONS; ++i) {
                 new async::Timeout<std::function<void()>>(
-                    [&completed_operations, &thread_completed]() { 
-                        completed_operations++; 
+                    [&completed_operations, &thread_completed]() {
+                        completed_operations++;
                         thread_completed++;
-                    }, 10ms);
+                    },
+                    10ms);
 
                 // Run event loop occasionally to prevent buildup
                 if (i % 100 == 0) {
@@ -1493,7 +1454,7 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
                 async::run(EVRUN_ONCE);
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
-            
+
             // Extra time to ensure all timers fire
             for (auto i = 0; i < 10; ++i) {
                 async::run(EVRUN_NOWAIT);
@@ -1512,8 +1473,8 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
 
 // Test performance with many concurrent timers
 TEST_F(AsyncIOTest, ManyConcurrentTimers) {
-    const int        NUM_TIMERS = 50; // Reduced from 100 to avoid memory issues
-    std::atomic<int> completed_count{0};
+    const int                                  NUM_TIMERS = 50; // Reduced from 100 to avoid memory issues
+    std::atomic<int>                           completed_count{0};
     std::vector<std::unique_ptr<TimerHandler>> timers;
     timers.reserve(NUM_TIMERS);
 
@@ -1545,8 +1506,8 @@ TEST_F(AsyncIOTest, ManyConcurrentTimers) {
 
 // Test memory usage with many timers
 TEST_F(AsyncIOTest, TimerMemoryUsage) {
-    const int        NUM_TIMERS = 100; // Reduced from 1000 to avoid memory issues
-    std::atomic<int> completed_count{0};
+    const int                                  NUM_TIMERS = 100; // Reduced from 1000 to avoid memory issues
+    std::atomic<int>                           completed_count{0};
     std::vector<std::unique_ptr<TimerHandler>> timers;
     timers.reserve(NUM_TIMERS);
 
@@ -1592,8 +1553,7 @@ TEST_F(AsyncIOTest, EventLoopReinitialization) {
 
     // Create a timer
     std::atomic<bool> timer_triggered{false};
-    new async::Timeout<std::function<void()>>(
-        [&timer_triggered]() { timer_triggered = true; }, 100ms);
+    new async::Timeout<std::function<void()>>([&timer_triggered]() { timer_triggered = true; }, 100ms);
 
     // Run event loop once
     async::run(EVRUN_ONCE);
@@ -1603,8 +1563,7 @@ TEST_F(AsyncIOTest, EventLoopReinitialization) {
 
     // Create another timer
     std::atomic<bool> timer2_triggered{false};
-    new async::Timeout<std::function<void()>>(
-        [&timer2_triggered]() { timer2_triggered = true; }, 100ms);
+    new async::Timeout<std::function<void()>>([&timer2_triggered]() { timer2_triggered = true; }, 100ms);
 
     // Run event loop until both timers trigger
     for (auto i = 0; i < 10 && (!timer_triggered || !timer2_triggered); ++i) {
@@ -1624,15 +1583,16 @@ static std::atomic<bool> g_dz_session_destroyed{false};
 
 class DisconnectZeroServer;
 
-class DisconnectZeroSession
-    : public use<DisconnectZeroSession>::tcp::client<DisconnectZeroServer> {
+class DisconnectZeroSession : public use<DisconnectZeroSession>::tcp::client<DisconnectZeroServer> {
 public:
     using Protocol = qb::protocol::text::command<DisconnectZeroSession>;
 
     explicit DisconnectZeroSession(IOServer &server)
         : client(server) {}
 
-    ~DisconnectZeroSession() { g_dz_session_destroyed = true; }
+    ~DisconnectZeroSession() {
+        g_dz_session_destroyed = true;
+    }
 
     void
     on(Protocol::message &&) {
@@ -1640,11 +1600,13 @@ public:
     }
 };
 
-class DisconnectZeroServer
-    : public use<DisconnectZeroServer>::tcp::server<DisconnectZeroSession> {
+class DisconnectZeroServer : public use<DisconnectZeroServer>::tcp::server<DisconnectZeroSession> {
 public:
     bool session_connected = false;
-    void on(IOSession &) { session_connected = true; }
+    void
+    on(IOSession &) {
+        session_connected = true;
+    }
 };
 
 TEST_F(AsyncIOTest, DisconnectZeroTriggersDisposal) {
@@ -1680,15 +1642,16 @@ static std::atomic<bool> g_cad_session_destroyed{false};
 
 class CloseAfterDeliverServer;
 
-class CloseAfterDeliverSession
-    : public use<CloseAfterDeliverSession>::tcp::client<CloseAfterDeliverServer> {
+class CloseAfterDeliverSession : public use<CloseAfterDeliverSession>::tcp::client<CloseAfterDeliverServer> {
 public:
     using Protocol = qb::protocol::text::command<CloseAfterDeliverSession>;
 
     explicit CloseAfterDeliverSession(IOServer &server)
         : client(server) {}
 
-    ~CloseAfterDeliverSession() { g_cad_session_destroyed = true; }
+    ~CloseAfterDeliverSession() {
+        g_cad_session_destroyed = true;
+    }
 
     void
     on(Protocol::message &&) {
@@ -1697,10 +1660,10 @@ public:
     }
 };
 
-class CloseAfterDeliverServer
-    : public use<CloseAfterDeliverServer>::tcp::server<CloseAfterDeliverSession> {
+class CloseAfterDeliverServer : public use<CloseAfterDeliverServer>::tcp::server<CloseAfterDeliverSession> {
 public:
-    void on(IOSession &) {}
+    void
+    on(IOSession &) {}
 };
 
 TEST_F(AsyncIOTest, CloseAfterDeliverSendsDataThenDisconnects) {
@@ -1712,12 +1675,12 @@ TEST_F(AsyncIOTest, CloseAfterDeliverSendsDataThenDisconnects) {
 
     std::atomic<bool> got_goodbye{false};
     std::atomic<bool> client_done{false};
-    std::thread t([&got_goodbye, &client_done]() {
+    std::thread       t([&got_goodbye, &client_done]() {
         qb::io::tcp::socket sock;
         ASSERT_EQ(sock.connect_v4("127.0.0.1", 64381), SocketStatus::Done);
         sock.write("ping\n", 5);
 
-        char buffer[512]{};
+        char        buffer[512]{};
         std::size_t total = 0;
         for (auto i = 0; i < 50; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -1775,10 +1738,9 @@ TEST_F(AsyncIOTest, CallbackScheduledExecution) {
 
 class BroadcastServer;
 
-class BroadcastSession
-    : public use<BroadcastSession>::tcp::client<BroadcastServer> {
+class BroadcastSession : public use<BroadcastSession>::tcp::client<BroadcastServer> {
 public:
-    using Protocol = qb::protocol::text::command<BroadcastSession>;
+    using Protocol    = qb::protocol::text::command<BroadcastSession>;
     int message_count = 0;
 
     explicit BroadcastSession(IOServer &server)
@@ -1787,19 +1749,23 @@ public:
     void on(Protocol::message &&msg);
 };
 
-class BroadcastServer
-    : public use<BroadcastServer>::tcp::server<BroadcastSession> {
+class BroadcastServer : public use<BroadcastServer>::tcp::server<BroadcastSession> {
 public:
-    int connection_count = 0;
-    bool all_received = false;
+    int  connection_count = 0;
+    bool all_received     = false;
 
-    void on(IOSession &) { ++connection_count; }
+    void
+    on(IOSession &) {
+        ++connection_count;
+    }
 
-    void broadcast_to_all(std::string_view msg) {
+    void
+    broadcast_to_all(std::string_view msg) {
         this->stream(msg, '\n');
     }
 
-    void check_all_received() {
+    void
+    check_all_received() {
         if (connection_count < 3)
             return;
         for (auto &[id, session] : this->sessions()) {
@@ -1810,11 +1776,11 @@ public:
     }
 };
 
-void BroadcastSession::on(Protocol::message &&msg) {
+void
+BroadcastSession::on(Protocol::message &&msg) {
     ++message_count;
     if (msg.text == "broadcast_trigger") {
-        static_cast<BroadcastServer &>(this->server())
-            .broadcast_to_all("hello_all");
+        static_cast<BroadcastServer &>(this->server()).broadcast_to_all("hello_all");
     }
 }
 
@@ -1823,7 +1789,7 @@ TEST_F(AsyncIOTest, BroadcastToMultipleSessions) {
     server.transport().listen_v4(64382);
     server.start();
 
-    constexpr int num_clients = 3;
+    constexpr int            num_clients = 3;
     std::vector<std::thread> clients;
 
     for (int c = 0; c < num_clients; ++c) {
@@ -1859,7 +1825,7 @@ TEST_F(AsyncIOTest, BroadcastToMultipleSessions) {
 
 TEST_F(AsyncIOTest, ConnectorToRefusedPort) {
     std::atomic<bool> callback_fired{false};
-    bool socket_invalid = false;
+    bool              socket_invalid = false;
 
     async::tcp::connect<qb::io::tcp::socket>(
         uri{"tcp://127.0.0.1:1"},
@@ -1926,12 +1892,11 @@ TEST_F(AsyncIOTest, ConnectorSucceedsWithFreshAndExistingSocket) {
     EXPECT_TRUE(fresh_done.load());
     EXPECT_TRUE(fresh_connected);
 
-    std::atomic<bool> existing_done{false};
-    bool              existing_connected = false;
+    std::atomic<bool>   existing_done{false};
+    bool                existing_connected = false;
     qb::io::tcp::socket existing_socket;
     async::tcp::connect<qb::io::tcp::socket>(
-        std::move(existing_socket),
-        uri{"tcp://127.0.0.1:" + std::to_string(port)},
+        std::move(existing_socket), uri{"tcp://127.0.0.1:" + std::to_string(port)},
         [&](qb::io::tcp::socket &&sock) {
             existing_connected = sock.is_open();
             if (sock.is_open()) {
@@ -1958,7 +1923,7 @@ TEST_F(AsyncIOTest, ConnectorSucceedsWithFreshAndExistingSocket) {
 
 TEST_F(AsyncIOTest, ConnectorWithTimeoutExpiry) {
     std::atomic<bool> callback_fired{false};
-    bool socket_invalid = false;
+    bool              socket_invalid = false;
 
     async::tcp::connect<qb::io::tcp::socket>(
         uri{"tcp://192.0.2.1:12345"},
@@ -1997,8 +1962,7 @@ TEST_F(AsyncIOTest, TimeoutExceptionSafetyNoLeak) {
         },
         50ms);
 
-    new async::Timeout<std::function<void()>>(
-        []() { normal_count++; }, 100ms);
+    new async::Timeout<std::function<void()>>([]() { normal_count++; }, 100ms);
 
     for (int i = 0; i < 20 && normal_count == 0; ++i) {
         async::run(EVRUN_ONCE);
@@ -2011,8 +1975,7 @@ TEST_F(AsyncIOTest, TimeoutExceptionSafetyNoLeak) {
 
 TEST_F(AsyncIOTest, NegativeTimeoutTriggersImmediately) {
     std::atomic<bool> triggered{false};
-    new async::Timeout<std::function<void()>>(
-        [&]() { triggered = true; }, -5s);
+    new async::Timeout<std::function<void()>>([&]() { triggered = true; }, -5s);
 
     // Negative timeout should execute immediately without event loop
     EXPECT_TRUE(triggered);
@@ -2020,8 +1983,7 @@ TEST_F(AsyncIOTest, NegativeTimeoutTriggersImmediately) {
 
 TEST_F(AsyncIOTest, ZeroTimeoutTriggersImmediately) {
     std::atomic<bool> triggered{false};
-    new async::Timeout<std::function<void()>>(
-        [&]() { triggered = true; }, qb::duration::zero());
+    new async::Timeout<std::function<void()>>([&]() { triggered = true; }, qb::duration::zero());
 
     EXPECT_TRUE(triggered);
 }
@@ -2029,31 +1991,35 @@ TEST_F(AsyncIOTest, ZeroTimeoutTriggersImmediately) {
 static std::atomic<int> g_rapid_disconnect_count{0};
 class RapidServer;
 
-class RapidSession
-    : public use<RapidSession>::tcp::client<RapidServer> {
+class RapidSession : public use<RapidSession>::tcp::client<RapidServer> {
 public:
     using Protocol = qb::protocol::text::command<RapidSession>;
-    explicit RapidSession(IOServer &server) : client(server) {}
+    explicit RapidSession(IOServer &server)
+        : client(server) {}
 
-    void on(Protocol::message &&) {}
-    void on(async::event::disconnected const &) { g_rapid_disconnect_count++; }
+    void
+    on(Protocol::message &&) {}
+    void
+    on(async::event::disconnected const &) {
+        g_rapid_disconnect_count++;
+    }
 };
 
-class RapidServer
-    : public use<RapidServer>::tcp::server<RapidSession> {
+class RapidServer : public use<RapidServer>::tcp::server<RapidSession> {
 public:
-    void on(IOSession &) {}
+    void
+    on(IOSession &) {}
 };
 
 TEST_F(AsyncIOTest, MultipleRapidDisconnects) {
     static constexpr unsigned short PORT = 64491;
-    g_rapid_disconnect_count = 0;
+    g_rapid_disconnect_count             = 0;
 
     RapidServer server;
     server.transport().listen_v4(PORT);
     server.start();
 
-    static constexpr int NUM_CLIENTS = 10;
+    static constexpr int     NUM_CLIENTS = 10;
     std::vector<std::thread> clients;
 
     for (int i = 0; i < NUM_CLIENTS; ++i) {
@@ -2067,13 +2033,13 @@ TEST_F(AsyncIOTest, MultipleRapidDisconnects) {
     }
 
     auto start = std::chrono::steady_clock::now();
-    while (g_rapid_disconnect_count < NUM_CLIENTS &&
-           std::chrono::steady_clock::now() - start < std::chrono::seconds(5)) {
+    while (g_rapid_disconnect_count < NUM_CLIENTS && std::chrono::steady_clock::now() - start < std::chrono::seconds(5)) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    for (auto &t : clients) t.join();
+    for (auto &t : clients)
+        t.join();
 
     EXPECT_GE(g_rapid_disconnect_count.load(), 1);
 }

@@ -21,7 +21,7 @@
  * @endcode
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0
  */
 
@@ -41,8 +41,10 @@
 namespace qb::io::async {
 
 // Forward declaration
-template <typename T> class shared_task;
-template <typename T> shared_task<T> make_shared_task(task<T>&& t);
+template <typename T>
+class shared_task;
+template <typename T>
+shared_task<T> make_shared_task(task<T> &&t);
 
 /**
  * @brief shared_task<T> — copyable, multi-awaiter coroutine handle
@@ -56,9 +58,9 @@ class shared_task {
     struct state {
         enum class status { pending, ready, failed };
 
-        status                _status{status::pending};
-        std::optional<T>      _value;
-        std::exception_ptr    _error;
+        status                               _status{status::pending};
+        std::optional<T>                     _value;
+        std::exception_ptr                   _error;
         std::vector<std::coroutine_handle<>> _waiters;
 
         state() {
@@ -69,41 +71,50 @@ class shared_task {
             _waiters.reserve(4);
         }
 
-        void complete(T val) {
+        void
+        complete(T val) {
             _value.emplace(std::move(val));
             _status = status::ready;
             flush();
         }
 
-        void fail(std::exception_ptr e) {
+        void
+        fail(std::exception_ptr e) {
             _error  = e;
             _status = status::failed;
             flush();
         }
 
-        bool is_done() const noexcept {
+        bool
+        is_done() const noexcept {
             return _status != status::pending;
         }
 
-        T get() const {
-            if (_status == status::failed) std::rethrow_exception(_error);
+        T
+        get() const {
+            if (_status == status::failed)
+                std::rethrow_exception(_error);
             return *_value;
         }
 
     private:
-        void flush() {
+        void
+        flush() {
             auto w = std::move(_waiters);
-            for (auto h : w) schedule_via_current(h);
+            for (auto h : w)
+                schedule_via_current(h);
         }
     };
 
     std::shared_ptr<state> _state;
 
-    explicit shared_task(std::shared_ptr<state> s) : _state(std::move(s)) {}
+    explicit shared_task(std::shared_ptr<state> s)
+        : _state(std::move(s)) {}
 
     // The runner coroutine: runs the inner task, then notifies all waiters.
     // Parameters are stored by value in the coroutine frame (safe).
-    static task<void> runner(task<T> inner, std::shared_ptr<state> s) {
+    static task<void>
+    runner(task<T> inner, std::shared_ptr<state> s) {
         try {
             s->complete(co_await std::move(inner));
         } catch (...) {
@@ -116,13 +127,19 @@ public:
     shared_task() = default;
 
     // Copyable: all copies share the same computation
-    shared_task(const shared_task&)            = default;
-    shared_task& operator=(const shared_task&) = default;
-    shared_task(shared_task&&)                 = default;
-    shared_task& operator=(shared_task&&)      = default;
+    shared_task(const shared_task &)            = default;
+    shared_task &operator=(const shared_task &) = default;
+    shared_task(shared_task &&)                 = default;
+    shared_task &operator=(shared_task &&)      = default;
 
-    [[nodiscard]] bool valid()    const noexcept { return _state != nullptr; }
-    [[nodiscard]] bool is_ready() const noexcept { return _state && _state->is_done(); }
+    [[nodiscard]] bool
+    valid() const noexcept {
+        return _state != nullptr;
+    }
+    [[nodiscard]] bool
+    is_ready() const noexcept {
+        return _state && _state->is_done();
+    }
 
     // -----------------------------------------------------------------------
     // Awaiter
@@ -130,7 +147,8 @@ public:
     struct awaiter {
         std::shared_ptr<state> s;
 
-        [[nodiscard]] bool await_ready() const noexcept {
+        [[nodiscard]] bool
+        await_ready() const noexcept {
             // Finding 2.A.1: reject `co_await` on a default-constructed /
             // moved-from shared_task loudly. Returning `true` here would
             // make `await_resume` dereference a null state (UB). We return
@@ -138,34 +156,38 @@ public:
             return s ? s->is_done() : false;
         }
 
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             // Same safety check — if the state is null, the caller
             // `co_await`ed an invalid handle. Fail loudly rather than
             // silently corrupt.
             if (!s) {
-                throw std::logic_error(
-                    "co_await on default-constructed shared_task<T>");
+                throw std::logic_error("co_await on default-constructed shared_task<T>");
             }
-            if (s->is_done()) { schedule_via_current(h); return; }
+            if (s->is_done()) {
+                schedule_via_current(h);
+                return;
+            }
             // Pre-reserved capacity (see state::state) makes push_back
             // effectively noexcept for the common case.
             s->_waiters.push_back(h);
         }
 
-        T await_resume() {
+        T
+        await_resume() {
             if (!s) {
-                throw std::logic_error(
-                    "co_await on default-constructed shared_task<T>");
+                throw std::logic_error("co_await on default-constructed shared_task<T>");
             }
             return s->get();
         }
     };
 
-    awaiter operator co_await() const {
+    awaiter
+    operator co_await() const {
         return awaiter{_state};
     }
 
-    friend shared_task<T> make_shared_task<T>(task<T>&& t);
+    friend shared_task<T> make_shared_task<T>(task<T> &&t);
 };
 
 // =============================================================================
@@ -176,8 +198,8 @@ template <>
 class shared_task<void> {
     struct state {
         enum class status { pending, ready, failed };
-        status             _status{status::pending};
-        std::exception_ptr _error;
+        status                               _status{status::pending};
+        std::exception_ptr                   _error;
         std::vector<std::coroutine_handle<>> _waiters;
 
         state() {
@@ -186,29 +208,42 @@ class shared_task<void> {
             _waiters.reserve(4);
         }
 
-        void complete() {
+        void
+        complete() {
             _status = status::ready;
             flush();
         }
-        void fail(std::exception_ptr e) {
+        void
+        fail(std::exception_ptr e) {
             _error  = e;
             _status = status::failed;
             flush();
         }
-        bool is_done() const noexcept { return _status != status::pending; }
-        void get() const { if (_status == status::failed) std::rethrow_exception(_error); }
+        bool
+        is_done() const noexcept {
+            return _status != status::pending;
+        }
+        void
+        get() const {
+            if (_status == status::failed)
+                std::rethrow_exception(_error);
+        }
 
     private:
-        void flush() {
+        void
+        flush() {
             auto w = std::move(_waiters);
-            for (auto h : w) schedule_via_current(h);
+            for (auto h : w)
+                schedule_via_current(h);
         }
     };
 
     std::shared_ptr<state> _state;
-    explicit shared_task(std::shared_ptr<state> s) : _state(std::move(s)) {}
+    explicit shared_task(std::shared_ptr<state> s)
+        : _state(std::move(s)) {}
 
-    static task<void> runner(task<void> inner, std::shared_ptr<state> s) {
+    static task<void>
+    runner(task<void> inner, std::shared_ptr<state> s) {
         try {
             co_await std::move(inner);
             s->complete();
@@ -218,41 +253,54 @@ class shared_task<void> {
     }
 
 public:
-    shared_task() = default;
-    shared_task(const shared_task&)            = default;
-    shared_task& operator=(const shared_task&) = default;
-    shared_task(shared_task&&)                 = default;
-    shared_task& operator=(shared_task&&)      = default;
+    shared_task()                               = default;
+    shared_task(const shared_task &)            = default;
+    shared_task &operator=(const shared_task &) = default;
+    shared_task(shared_task &&)                 = default;
+    shared_task &operator=(shared_task &&)      = default;
 
-    [[nodiscard]] bool valid()    const noexcept { return _state != nullptr; }
-    [[nodiscard]] bool is_ready() const noexcept { return _state && _state->is_done(); }
+    [[nodiscard]] bool
+    valid() const noexcept {
+        return _state != nullptr;
+    }
+    [[nodiscard]] bool
+    is_ready() const noexcept {
+        return _state && _state->is_done();
+    }
 
     struct awaiter {
         std::shared_ptr<state> s;
-        [[nodiscard]] bool await_ready() const noexcept {
+        [[nodiscard]] bool
+        await_ready() const noexcept {
             // Finding 2.A.1: same null-state guard as shared_task<T>.
             return s ? s->is_done() : false;
         }
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             if (!s) {
-                throw std::logic_error(
-                    "co_await on default-constructed shared_task<void>");
+                throw std::logic_error("co_await on default-constructed shared_task<void>");
             }
-            if (s->is_done()) { schedule_via_current(h); return; }
+            if (s->is_done()) {
+                schedule_via_current(h);
+                return;
+            }
             s->_waiters.push_back(h);
         }
-        void await_resume() {
+        void
+        await_resume() {
             if (!s) {
-                throw std::logic_error(
-                    "co_await on default-constructed shared_task<void>");
+                throw std::logic_error("co_await on default-constructed shared_task<void>");
             }
             s->get();
         }
     };
 
-    awaiter operator co_await() const { return awaiter{_state}; }
+    awaiter
+    operator co_await() const {
+        return awaiter{_state};
+    }
 
-    friend shared_task<void> make_shared_task<void>(task<void>&& t);
+    friend shared_task<void> make_shared_task<void>(task<void> &&t);
 };
 
 // =============================================================================
@@ -273,14 +321,16 @@ public:
  * @endcode
  */
 template <typename T>
-shared_task<T> make_shared_task(task<T>&& t) {
+shared_task<T>
+make_shared_task(task<T> &&t) {
     auto s = std::make_shared<typename shared_task<T>::state>();
     coro_scheduler().spawn(shared_task<T>::runner(std::move(t), s));
     return shared_task<T>{s};
 }
 
 template <>
-inline shared_task<void> make_shared_task<void>(task<void>&& t) {
+inline shared_task<void>
+make_shared_task<void>(task<void> &&t) {
     auto s = std::make_shared<typename shared_task<void>::state>();
     coro_scheduler().spawn(shared_task<void>::runner(std::move(t), s));
     return shared_task<void>{s};

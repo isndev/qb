@@ -7,7 +7,7 @@
  * It builds upon the generic `qb::io::socket` wrapper.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -52,7 +52,7 @@ public:
      * This can be adjusted by using set_buffer_size() method.
      */
     constexpr static const std::size_t DefaultDatagramSize = 512;
-    
+
     /**
      * @brief Maximum possible size of a UDP datagram
      *
@@ -181,8 +181,7 @@ public:
      * @return Number of bytes read, or a negative value on error or timeout.
      * @details Uses `qb::io::socket::recv_n` which internally uses `select` for timeout handling.
      */
-    int read_timeout(void *dest, std::size_t len, qb::io::endpoint &peer,
-                     const qb::duration &timeout) const noexcept;
+    int read_timeout(void *dest, std::size_t len, qb::io::endpoint &peer, const qb::duration &timeout) const noexcept;
 
     /**
      * @brief Try to read a datagram from the socket (non-blocking attempt).
@@ -205,8 +204,7 @@ public:
      *         Returns a negative value on error.
      * @see qb::io::socket::sendto(const void*, int, const endpoint&, int)
      */
-    int write(const void *data, std::size_t len,
-              qb::io::endpoint const &to) const noexcept;
+    int write(const void *data, std::size_t len, qb::io::endpoint const &to) const noexcept;
 
     /**
      * @brief Set the socket's send and receive buffer sizes (SO_SNDBUF, SO_RCVBUF).
@@ -231,8 +229,7 @@ public:
      * @return 0 on success, or a non-zero error code on failure.
      * @details Uses `IP_ADD_MEMBERSHIP` or `IPV6_JOIN_GROUP` socket options.
      */
-    int join_multicast_group(const std::string &group, 
-                             const std::string &iface = "") noexcept;
+    int join_multicast_group(const std::string &group, const std::string &iface = "") noexcept;
 
     /**
      * @brief Leave an IPv4 or IPv6 multicast group.
@@ -241,8 +238,7 @@ public:
      * @return 0 on success, or a non-zero error code on failure.
      * @details Uses `IP_DROP_MEMBERSHIP` or `IPV6_LEAVE_GROUP` socket options.
      */
-    int leave_multicast_group(const std::string &group,
-                              const std::string &iface = "") noexcept;
+    int leave_multicast_group(const std::string &group, const std::string &iface = "") noexcept;
 
     /**
      * @brief Set the multicast Time-To-Live (TTL) for outgoing IPv4 packets or hop limit for IPv6.

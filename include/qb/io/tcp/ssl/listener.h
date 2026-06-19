@@ -7,7 +7,7 @@
  * Requires OpenSSL and `QB_HAS_SSL`.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -40,12 +40,15 @@ namespace qb::io::tcp::ssl {
  * it creates and returns a `qb::io::tcp::ssl::socket` ready for secure communication after handshake.
  */
 class QB_API listener : public tcp::listener {
-    std::unique_ptr<SSL_CTX, void (*)(SSL_CTX *)>
-        _ctx; /**< Unique pointer managing the OpenSSL SSL_CTX (context) object. */
-    mutable std::vector<unsigned char> _alpn_wire;
+    std::unique_ptr<SSL_CTX, void (*)(SSL_CTX *)> _ctx; /**< Unique pointer managing the OpenSSL SSL_CTX (context) object. */
+    mutable std::vector<unsigned char>            _alpn_wire;
+
 public:
     /** @brief Indicates that this socket implementation is secure */
-    constexpr static bool is_secure() noexcept { return true; }
+    constexpr static bool
+    is_secure() noexcept {
+        return true;
+    }
     /**
      * @brief Destructor.
      * @details Ensures the `SSL_CTX` is freed if managed by this listener.
@@ -211,14 +214,14 @@ public:
      * @param dh_param_file_path Path to a PEM-encoded DH parameters file.
      * @return true on success, false on failure or if context is not initialized.
      */
-    bool configure_dh_parameters(const std::string& dh_param_file_path);
+    bool configure_dh_parameters(const std::string &dh_param_file_path);
 
     /**
      * @brief Configure preferred ECDH curves for this listener's context.
      * @param curve_names_list Colon-separated list of curve NIDs or names (e.g., "P-256:X25519").
      * @return true on success, false on failure or if context is not initialized.
      */
-    bool configure_ecdh_curves(const std::string& curve_names_list);
+    bool configure_ecdh_curves(const std::string &curve_names_list);
 
     /**
      * @brief Enable server-side support for TLS 1.3 Post-Handshake Authentication.
@@ -233,7 +236,7 @@ public:
      * @param protocols A vector of protocol strings (e.g., {"h2", "http/1.1"}).
      * @return true on success, false if context is not initialized or protocols are invalid.
      */
-    bool set_supported_alpn_protocols(const std::vector<std::string>& protocols);
+    bool set_supported_alpn_protocols(const std::vector<std::string> &protocols);
 
     // --- Getters for SSL_CTX properties ---
 
@@ -283,11 +286,13 @@ public:
 
     /**
      * @brief Set a message callback for the listener's SSL_CTX for detailed protocol tracing.
-     * @param callback The callback function: `void (*cb)(int write_p, int version, int content_type, const void *buf, size_t len, SSL *ssl, void *arg)`.
+     * @param callback The callback function: `void (*cb)(int write_p, int version, int content_type, const void *buf, size_t len, SSL *ssl,
+     * void *arg)`.
      * @param arg User-defined argument for the callback.
      * @return true if context exists, false otherwise.
      */
-    bool set_msg_callback(void (*callback)(int write_p, int version, int content_type, const void *buf, size_t len, SSL *ssl, void *arg), void *arg);
+    bool set_msg_callback(void (*callback)(int write_p, int version, int content_type, const void *buf, size_t len, SSL *ssl, void *arg),
+                          void *arg);
 };
 
 } // namespace qb::io::tcp::ssl

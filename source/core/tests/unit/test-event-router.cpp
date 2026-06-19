@@ -8,7 +8,7 @@
  * routing patterns.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -281,7 +281,8 @@ Test_MEMH(std::size_t expected_count) {
     memhRouter.template unsubscribe<_Event>(actor3);
 
     _Event::_count     = 0;
-    const auto onError = [](auto &) {};
+    const auto onError = [](auto &) {
+    };
     for (std::size_t i = 0; i < 1024u; ++i) {
         for (std::size_t j = 1; j < 6u; ++j) {
             event.dest = ActorId(j);

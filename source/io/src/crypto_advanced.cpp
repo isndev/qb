@@ -10,7 +10,7 @@
  * - Password hashing and verification
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -53,10 +53,8 @@ namespace qb {
 
 // Implementation of HKDF (HMAC-based Key Derivation Function)
 std::vector<unsigned char>
-crypto::hkdf(const std::vector<unsigned char> &input_key_material,
-             const std::vector<unsigned char> &salt,
-             const std::vector<unsigned char> &info, size_t output_length,
-             DigestAlgorithm digest) {
+crypto::hkdf(const std::vector<unsigned char> &input_key_material, const std::vector<unsigned char> &salt,
+             const std::vector<unsigned char> &info, size_t output_length, DigestAlgorithm digest) {
     // Get the EVP_MD for the chosen digest algorithm
     const EVP_MD *md = get_evp_md(digest);
     if (!md) {
@@ -84,8 +82,7 @@ crypto::hkdf(const std::vector<unsigned char> &input_key_material,
     // RFC 5869: L must be <= 255 * HashLen — the block counter is a single
     // byte; beyond 255 blocks it would wrap and silently repeat key stream.
     if (output_length > 255 * digest_len) {
-        throw std::runtime_error(
-            "HKDF output_length exceeds RFC 5869 limit (255 * HashLen)");
+        throw std::runtime_error("HKDF output_length exceeds RFC 5869 limit (255 * HashLen)");
     }
     size_t n = (output_length + digest_len - 1) / digest_len; // Ceiling division
 
@@ -99,8 +96,7 @@ crypto::hkdf(const std::vector<unsigned char> &input_key_material,
 
         // Copy to output
         size_t copy_size = std::min(output_length - ((i - 1) * digest_len), digest_len);
-        std::copy(temp.begin(), temp.begin() + copy_size,
-                  output.begin() + ((i - 1) * digest_len));
+        std::copy(temp.begin(), temp.begin() + copy_size, output.begin() + ((i - 1) * digest_len));
 
         previous = temp;
     }
@@ -110,8 +106,7 @@ crypto::hkdf(const std::vector<unsigned char> &input_key_material,
 
 // Implementation of Argon2 key derivation
 std::vector<unsigned char>
-crypto::argon2_kdf(const std::string &password, size_t key_length,
-                   const Argon2Params &params, Argon2Variant variant) {
+crypto::argon2_kdf(const std::string &password, size_t key_length, const Argon2Params &params, Argon2Variant variant) {
     // Create output buffer
     std::vector<unsigned char> output(key_length, 0);
 
@@ -157,11 +152,10 @@ crypto::argon2_kdf(const std::string &password, size_t key_length,
     );
 
     if (result != ARGON2_OK) {
-        throw std::runtime_error("Argon2 key derivation failed: " +
-                                 std::string(argon2_error_message(result)));
+        throw std::runtime_error("Argon2 key derivation failed: " + std::string(argon2_error_message(result)));
     }
 #else
-    (void)variant;
+    (void) variant;
     // Fallback implementation using PBKDF2 with higher iterations when Argon2 is not
     // available
     std::vector<unsigned char> salt_bytes;
@@ -173,12 +167,11 @@ crypto::argon2_kdf(const std::string &password, size_t key_length,
     }
 
     // Use higher iteration count as fallback
-    int iterations =
-        100000; // Higher iterations to compensate for weaker memory hardness
+    int iterations = 100000; // Higher iterations to compensate for weaker memory hardness
 
-    if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt_bytes.data(),
-                          salt_bytes.size(), iterations, EVP_sha256(), key_length,
-                          output.data()) != 1) {
+    if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt_bytes.data(), salt_bytes.size(), iterations, EVP_sha256(), key_length,
+                          output.data())
+        != 1) {
         throw std::runtime_error("PBKDF2 key derivation failed (Argon2 fallback)");
     }
 #endif
@@ -188,17 +181,16 @@ crypto::argon2_kdf(const std::string &password, size_t key_length,
 
 // Implementation of unified key derivation function
 std::vector<unsigned char>
-crypto::derive_key(const std::string &password, const std::vector<unsigned char> &salt,
-                   size_t key_length, KdfAlgorithm algorithm, int iterations,
-                   const Argon2Params &argon2_params) {
+crypto::derive_key(const std::string &password, const std::vector<unsigned char> &salt, size_t key_length, KdfAlgorithm algorithm,
+                   int iterations, const Argon2Params &argon2_params) {
     switch (algorithm) {
         case KdfAlgorithm::PBKDF2: {
             // Utiliser PKCS5_PBKDF2_HMAC au lieu de l'API EVP_PKEY
             std::vector<unsigned char> output(key_length, 0);
 
-            if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt.data(),
-                                  salt.size(), iterations, EVP_sha256(), key_length,
-                                  output.data()) != 1) {
+            if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt.data(), salt.size(), iterations, EVP_sha256(), key_length,
+                                  output.data())
+                != 1) {
                 throw std::runtime_error("PBKDF2 key derivation failed");
             }
 
@@ -209,19 +201,16 @@ crypto::derive_key(const std::string &password, const std::vector<unsigned char>
             std::vector<unsigned char> empty_info;
 
             // Convert password to bytes if it's provided as a string
-            std::vector<unsigned char> input_key_material(password.begin(),
-                                                          password.end());
+            std::vector<unsigned char> input_key_material(password.begin(), password.end());
 
-            return hkdf(input_key_material, salt, empty_info, key_length,
-                        DigestAlgorithm::SHA256);
+            return hkdf(input_key_material, salt, empty_info, key_length, DigestAlgorithm::SHA256);
         }
         case KdfAlgorithm::Argon2:
         default: {
             // Create a copy of the params that includes the provided salt
             Argon2Params params = argon2_params;
             if (!salt.empty()) {
-                params.salt.assign(reinterpret_cast<const char *>(salt.data()),
-                                   salt.size());
+                params.salt.assign(reinterpret_cast<const char *>(salt.data()), salt.size());
             }
 
             return argon2_kdf(password, key_length, params, Argon2Variant::Argon2id);
@@ -231,8 +220,7 @@ crypto::derive_key(const std::string &password, const std::vector<unsigned char>
 
 // Implementation of secure token generation
 std::string
-crypto::generate_token(const std::string &payload, const std::vector<unsigned char> &key,
-                       qb::duration ttl) {
+crypto::generate_token(const std::string &payload, const std::vector<unsigned char> &key, qb::duration ttl) {
     using json = qb::json;
 
     // Create token data
@@ -240,16 +228,12 @@ crypto::generate_token(const std::string &payload, const std::vector<unsigned ch
     token_data["payload"] = payload;
 
     // Add timestamp and expiration if TTL is provided
-    uint64_t now = std::chrono::duration_cast<std::chrono::seconds>(
-                       std::chrono::system_clock::now().time_since_epoch())
-                       .count();
+    uint64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     token_data["iat"] = now; // Issued at
 
     if (ttl > qb::duration::zero()) {
-        token_data["exp"] =
-            now + static_cast<uint64_t>(
-                      std::chrono::duration_cast<std::chrono::seconds>(ttl).count()); // Expiration
+        token_data["exp"] = now + static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(ttl).count()); // Expiration
     }
 
     // Generate a random IV
@@ -260,8 +244,7 @@ crypto::generate_token(const std::string &payload, const std::vector<unsigned ch
     std::vector<unsigned char> token_bytes(token_str.begin(), token_str.end());
 
     // Encrypt the token data
-    std::vector<unsigned char> encrypted =
-        encrypt(token_bytes, key, iv, SymmetricAlgorithm::AES_256_GCM);
+    std::vector<unsigned char> encrypted = encrypt(token_bytes, key, iv, SymmetricAlgorithm::AES_256_GCM);
 
     // Combine IV and encrypted data
     std::vector<unsigned char> combined;
@@ -290,8 +273,7 @@ crypto::verify_token(const std::string &token, const std::vector<unsigned char> 
         std::vector<unsigned char> ciphertext(decoded.begin() + 12, decoded.end());
 
         // Decrypt the token
-        std::vector<unsigned char> decrypted =
-            decrypt(ciphertext, key, iv, SymmetricAlgorithm::AES_256_GCM);
+        std::vector<unsigned char> decrypted = decrypt(ciphertext, key, iv, SymmetricAlgorithm::AES_256_GCM);
 
         if (decrypted.empty()) {
             return ""; // Decryption failed (authentication tag didn't match)
@@ -303,9 +285,7 @@ crypto::verify_token(const std::string &token, const std::vector<unsigned char> 
 
         // Check expiration
         if (token_data.contains("exp")) {
-            uint64_t now = std::chrono::duration_cast<std::chrono::seconds>(
-                               std::chrono::system_clock::now().time_since_epoch())
-                               .count();
+            uint64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
             if (now > token_data["exp"].get<uint64_t>()) {
                 return ""; // Token has expired
@@ -412,9 +392,7 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
     // Size the encoded buffer exactly via argon2_encodedlen() instead of a fixed
     // 128 bytes, so larger parameters cannot silently overflow into a too-small
     // buffer (ARGON2_ENCODING_FAIL).
-    const size_t encoded_len =
-        argon2_encodedlen(t_cost, m_cost, parallelism,
-                          static_cast<uint32_t>(salt.size()), hash_len, type);
+    const size_t      encoded_len = argon2_encodedlen(t_cost, m_cost, parallelism, static_cast<uint32_t>(salt.size()), hash_len, type);
     std::vector<char> encoded(encoded_len);
 
     // Hash the password
@@ -434,13 +412,12 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
     );
 
     if (result != ARGON2_OK) {
-        throw std::runtime_error("Password hashing failed: " +
-                                 std::string(argon2_error_message(result)));
+        throw std::runtime_error("Password hashing failed: " + std::string(argon2_error_message(result)));
     }
 
     return std::string(encoded.data());
 #else
-    (void)variant;
+    (void) variant;
     // Fallback implementation using PBKDF2-HMAC-SHA256
     std::vector<unsigned char> salt = generate_salt(16);
 
@@ -450,9 +427,9 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
 
     // Generate the hash with PBKDF2
     std::vector<unsigned char> hash_bytes(key_length);
-    if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt.data(), salt.size(),
-                          iterations, EVP_sha256(), key_length,
-                          hash_bytes.data()) != 1) {
+    if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt.data(), salt.size(), iterations, EVP_sha256(), key_length,
+                          hash_bytes.data())
+        != 1) {
         throw std::runtime_error("PBKDF2 password hashing failed (Argon2 fallback)");
     }
 
@@ -537,9 +514,9 @@ crypto::verify_password(const std::string &password, const std::string &hash) {
 
     // Generate hash with the same parameters
     std::vector<unsigned char> computed_hash(stored_hash.size());
-    if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt.data(), salt.size(),
-                          iterations, EVP_sha256(), stored_hash.size(),
-                          computed_hash.data()) != 1) {
+    if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt.data(), salt.size(), iterations, EVP_sha256(), stored_hash.size(),
+                          computed_hash.data())
+        != 1) {
         return false;
     }
 
@@ -562,13 +539,11 @@ crypto::generate_unique_iv(size_t size) {
     // Use the last 8 bytes for timestamp and counter to ensure uniqueness
     if (size >= 8) {
         // Get current time
-        uint64_t timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                 std::chrono::system_clock::now().time_since_epoch())
-                                 .count();
+        uint64_t timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
         // Use static counter for additional uniqueness
         static std::atomic<uint32_t> counter(0);
-        uint32_t current_count = counter.fetch_add(1, std::memory_order_relaxed);
+        uint32_t                     current_count = counter.fetch_add(1, std::memory_order_relaxed);
 
         // Combine timestamp and counter
         uint64_t unique_value = (timestamp << 32) | current_count;
@@ -584,10 +559,8 @@ crypto::generate_unique_iv(size_t size) {
 
 // Implementation of authenticated encryption with metadata
 std::string
-crypto::encrypt_with_metadata(const std::vector<unsigned char> &plaintext,
-                              const std::vector<unsigned char> &key,
-                              const std::string                &metadata,
-                              SymmetricAlgorithm                algorithm) {
+crypto::encrypt_with_metadata(const std::vector<unsigned char> &plaintext, const std::vector<unsigned char> &key, const std::string &metadata,
+                              SymmetricAlgorithm algorithm) {
     using json = qb::json;
 
     try {
@@ -598,8 +571,7 @@ crypto::encrypt_with_metadata(const std::vector<unsigned char> &plaintext,
         std::vector<unsigned char> metadata_bytes(metadata.begin(), metadata.end());
 
         // Encrypt the plaintext with metadata as AAD
-        std::vector<unsigned char> ciphertext =
-            encrypt(plaintext, key, iv, algorithm, metadata_bytes);
+        std::vector<unsigned char> ciphertext = encrypt(plaintext, key, iv, algorithm, metadata_bytes);
 
         // Create the output structure
         json output;
@@ -611,16 +583,13 @@ crypto::encrypt_with_metadata(const std::vector<unsigned char> &plaintext,
         return output.dump();
 
     } catch (const std::exception &e) {
-        throw std::runtime_error("Encryption with metadata failed: " +
-                                 std::string(e.what()));
+        throw std::runtime_error("Encryption with metadata failed: " + std::string(e.what()));
     }
 }
 
 // Implementation of authenticated decryption with metadata verification
 std::optional<std::pair<std::vector<unsigned char>, std::string>>
-crypto::decrypt_with_metadata(const std::string                &ciphertext,
-                              const std::vector<unsigned char> &key,
-                              SymmetricAlgorithm                algorithm) {
+crypto::decrypt_with_metadata(const std::string &ciphertext, const std::vector<unsigned char> &key, SymmetricAlgorithm algorithm) {
     using json = qb::json;
 
     try {
@@ -628,10 +597,9 @@ crypto::decrypt_with_metadata(const std::string                &ciphertext,
         json input = json::parse(ciphertext);
 
         // Extract the components
-        std::vector<unsigned char> iv = base64_decode(input["iv"].get<std::string>());
-        std::vector<unsigned char> encrypted_data =
-            base64_decode(input["ciphertext"].get<std::string>());
-        std::string metadata = input["metadata"].get<std::string>();
+        std::vector<unsigned char> iv             = base64_decode(input["iv"].get<std::string>());
+        std::vector<unsigned char> encrypted_data = base64_decode(input["ciphertext"].get<std::string>());
+        std::string                metadata       = input["metadata"].get<std::string>();
 
         // Algorithm is authoritatively the caller-supplied one. The "alg" field
         // lives in the unauthenticated JSON envelope (only "metadata" is bound as
@@ -639,8 +607,7 @@ crypto::decrypt_with_metadata(const std::string                &ciphertext,
         // CBC — and bypass integrity. Never let the ciphertext dictate the
         // algorithm: reject on mismatch instead of switching.
         if (input.contains("alg")) {
-            SymmetricAlgorithm stored_alg =
-                static_cast<SymmetricAlgorithm>(input["alg"].get<int>());
+            SymmetricAlgorithm stored_alg = static_cast<SymmetricAlgorithm>(input["alg"].get<int>());
             if (stored_alg != algorithm) {
                 return std::nullopt; // envelope algorithm disagrees with expected
             }
@@ -650,8 +617,7 @@ crypto::decrypt_with_metadata(const std::string                &ciphertext,
         std::vector<unsigned char> metadata_bytes(metadata.begin(), metadata.end());
 
         // Decrypt the data with metadata as AAD
-        std::vector<unsigned char> plaintext =
-            decrypt(encrypted_data, key, iv, algorithm, metadata_bytes);
+        std::vector<unsigned char> plaintext = decrypt(encrypted_data, key, iv, algorithm, metadata_bytes);
 
         if (plaintext.empty()) {
             return std::nullopt; // Authentication failed

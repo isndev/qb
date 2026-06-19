@@ -10,7 +10,7 @@
  * \c main.start(true). Core counts use \c qb::bench::cappedBenchmarkCores().
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -83,11 +83,9 @@ BM_Mono_Producer_Consumer(benchmark::State &state) {
 
         main.start(true);
         main.join();
-        const double n = static_cast<double>(kBenchMessages);
-        state.counters["pushes_per_s"] =
-            benchmark::Counter(n, benchmark::Counter::kIsIterationInvariantRate);
-        state.counters["messages_per_s"] =
-            benchmark::Counter(n, benchmark::Counter::kIsIterationInvariantRate);
+        const double n                   = static_cast<double>(kBenchMessages);
+        state.counters["pushes_per_s"]   = benchmark::Counter(n, benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["messages_per_s"] = benchmark::Counter(n, benchmark::Counter::kIsIterationInvariantRate);
     }
 }
 
@@ -95,9 +93,8 @@ static void
 BM_Multi_Producer_Consumer(benchmark::State &state) {
     const auto cap = qb::bench::cappedBenchmarkCores();
     if (cap < 2u) {
-        state.SkipWithError(
-            "BM_Multi_Producer_Consumer requires at least 2 benchmark cores for "
-            "cross-core placement");
+        state.SkipWithError("BM_Multi_Producer_Consumer requires at least 2 benchmark cores for "
+                            "cross-core placement");
         return;
     }
     const std::uint32_t consumer_core = cap - 1u;
@@ -110,19 +107,13 @@ BM_Multi_Producer_Consumer(benchmark::State &state) {
 
         main.start(true);
         main.join();
-        const double n = static_cast<double>(kBenchMessages);
-        state.counters["pushes_per_s"] =
-            benchmark::Counter(n, benchmark::Counter::kIsIterationInvariantRate);
-        state.counters["messages_per_s"] =
-            benchmark::Counter(n, benchmark::Counter::kIsIterationInvariantRate);
+        const double n                   = static_cast<double>(kBenchMessages);
+        state.counters["pushes_per_s"]   = benchmark::Counter(n, benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["messages_per_s"] = benchmark::Counter(n, benchmark::Counter::kIsIterationInvariantRate);
     }
 }
 
-BENCHMARK(BM_Mono_Producer_Consumer)
-    ->Unit(benchmark::kMillisecond)
-    ->UseRealTime();
-BENCHMARK(BM_Multi_Producer_Consumer)
-    ->Unit(benchmark::kMillisecond)
-    ->UseRealTime();
+BENCHMARK(BM_Mono_Producer_Consumer)->Unit(benchmark::kMillisecond)->UseRealTime();
+BENCHMARK(BM_Multi_Producer_Consumer)->Unit(benchmark::kMillisecond)->UseRealTime();
 
 BENCHMARK_MAIN();

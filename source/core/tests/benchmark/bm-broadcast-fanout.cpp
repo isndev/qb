@@ -15,7 +15,7 @@
  * Counters: \c deliveries_per_s, \c waves_per_s, wall time via \c UseRealTime().
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -67,8 +67,7 @@ class FanoutProducerActor final : public qb::Actor {
     const std::uint64_t   _waves;
 
 public:
-    FanoutProducerActor(qb::CoreId const broadcast_core, qb::ActorIdList ids,
-                        std::uint64_t const waves)
+    FanoutProducerActor(qb::CoreId const broadcast_core, qb::ActorIdList ids, std::uint64_t const waves)
         : _broadcast_core(broadcast_core)
         , _ids(std::move(ids))
         , _waves(waves) {}
@@ -77,8 +76,7 @@ public:
     onInit() final {
         if constexpr (Mode == FanoutMode::Broadcast) {
             for (std::uint64_t w = 0; w < _waves; ++w)
-                push<FanoutMsg>(
-                    qb::BroadcastId(static_cast<std::uint32_t>(_broadcast_core)));
+                push<FanoutMsg>(qb::BroadcastId(static_cast<std::uint32_t>(_broadcast_core)));
         } else {
             for (std::uint64_t w = 0; w < _waves; ++w) {
                 for (auto const &id : _ids)
@@ -101,8 +99,7 @@ BM_Fanout_Deliveries(benchmark::State &state) {
 
     if constexpr (Mode == FanoutMode::Broadcast) {
         if (producer_c == consumer_c) {
-            state.SkipWithError(
-                "broadcast fanout: producer_core must differ from consumer_core");
+            state.SkipWithError("broadcast fanout: producer_core must differ from consumer_core");
             return;
         }
     }
@@ -112,7 +109,7 @@ BM_Fanout_Deliveries(benchmark::State &state) {
         g_fanout_target.store(tot, std::memory_order_release);
 
         state.PauseTiming();
-        qb::Main main;
+        qb::Main        main;
         qb::ActorIdList ids;
         ids.reserve(n);
         for (std::uint32_t i = 0; i < n; ++i)
@@ -120,41 +117,34 @@ BM_Fanout_Deliveries(benchmark::State &state) {
 
         const qb::CoreId bcore = static_cast<qb::CoreId>(consumer_c);
         if constexpr (Mode == FanoutMode::Broadcast) {
-            main.addActor<FanoutProducerActor<FanoutMode::Broadcast>>(
-                producer_c, bcore, qb::ActorIdList{}, waves);
+            main.addActor<FanoutProducerActor<FanoutMode::Broadcast>>(producer_c, bcore, qb::ActorIdList{}, waves);
         } else {
-            main.addActor<FanoutProducerActor<FanoutMode::Explicit>>(producer_c, bcore, ids,
-                                                                     waves);
+            main.addActor<FanoutProducerActor<FanoutMode::Explicit>>(producer_c, bcore, ids, waves);
         }
         state.ResumeTiming();
         main.start(true);
         main.join();
-        state.counters["deliveries_per_s"] =
-            benchmark::Counter(static_cast<double>(tot),
-                               benchmark::Counter::kIsIterationInvariantRate);
-        state.counters["waves_per_s"] =
-            benchmark::Counter(static_cast<double>(waves),
-                               benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["deliveries_per_s"] = benchmark::Counter(static_cast<double>(tot), benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["waves_per_s"]      = benchmark::Counter(static_cast<double>(waves), benchmark::Counter::kIsIterationInvariantRate);
     }
 }
 
 static void
 ApplyFanoutExplicitArgs(benchmark::internal::Benchmark *b) {
-    const auto cap = qb::bench::cappedBenchmarkCores();
+    const auto              cap    = qb::bench::cappedBenchmarkCores();
     constexpr std::uint64_t kTotal = 500000;
-    const std::uint32_t     nmax  = std::min<std::uint32_t>(8u, std::max(2u, cap));
+    const std::uint32_t     nmax   = std::min<std::uint32_t>(8u, std::max(2u, cap));
     for (std::uint32_t n = 2; n <= nmax; ++n) {
         const std::uint64_t waves = kTotal / n;
         b->Args({static_cast<std::int64_t>(n), static_cast<std::int64_t>(waves), 0, 0});
         if (cap > 1u)
-            b->Args({static_cast<std::int64_t>(n), static_cast<std::int64_t>(waves), 0,
-                     static_cast<std::int64_t>(cap - 1)});
+            b->Args({static_cast<std::int64_t>(n), static_cast<std::int64_t>(waves), 0, static_cast<std::int64_t>(cap - 1)});
     }
 }
 
 static void
 ApplyFanoutBroadcastArgs(benchmark::internal::Benchmark *b) {
-    const auto cap = qb::bench::cappedBenchmarkCores();
+    const auto              cap    = qb::bench::cappedBenchmarkCores();
     constexpr std::uint64_t kTotal = 500000;
     if (cap <= 1u) {
         b->Args({2, static_cast<std::int64_t>(kTotal / 2), 0, 0});
@@ -163,8 +153,7 @@ ApplyFanoutBroadcastArgs(benchmark::internal::Benchmark *b) {
     const std::uint32_t nmax = std::min<std::uint32_t>(8u, cap);
     for (std::uint32_t n = 2; n <= nmax; ++n) {
         const std::uint64_t waves = kTotal / n;
-        b->Args({static_cast<std::int64_t>(n), static_cast<std::int64_t>(waves), 0,
-                 static_cast<std::int64_t>(cap - 1)});
+        b->Args({static_cast<std::int64_t>(n), static_cast<std::int64_t>(waves), 0, static_cast<std::int64_t>(cap - 1)});
     }
 }
 
