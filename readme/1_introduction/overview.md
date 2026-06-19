@@ -15,7 +15,7 @@ The framework ships as two libraries that compose:
 - **`qb-io`** — the asynchronous runtime: a libev-based event loop, non-blocking TCP, UDP, and SSL/TLS transports, an extensible protocol layer, C++20 coroutines, timers, filesystem watching, and shared utilities (canonical time vocabulary, lock-free queues, cryptography, compression, containers). It is usable on its own, with no dependency on the actor engine.
 - **`qb-core`** — the actor engine built on `qb-io`: lightweight actors, a type-safe event system with ordered delivery, multicore scheduling with optional CPU affinity, and lock-free inter-core message passing.
 
-Higher-level application protocols (HTTP/1.1 and HTTP/2, WebSocket, PostgreSQL, Redis) are provided as optional [qbm modules](../../README.md#module-ecosystem) built on this foundation, not as part of the core distribution.
+Higher-level application protocols (HTTP/1.1, HTTP/2, and HTTP/3, WebSocket, PostgreSQL, Redis) are provided as optional [qbm modules](../../README.md#module-ecosystem) built on this foundation, not as part of the core distribution.
 
 ## The two libraries
 

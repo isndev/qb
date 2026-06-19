@@ -140,15 +140,29 @@ Targets that report rates expose Google Benchmark counters. For example, `bm-pin
 
 <!-- TODO(verify): this page deliberately quotes no measured throughput, latency, or speedup figures. Add numbers only from a reproducible run on named hardware, with the build type, core count, and Google Benchmark version recorded. -->
 
-## The qb-io micro-benchmark
+## The qb-io benchmark suite
 
-`qb-io` ships one separate micro-benchmark, `qb/source/io/tests/system/bench-io-plan.cpp`, which measures allocation-heavy hot paths (callback register/unregister, async callback fire, scoped-callback construction, broadcast scratch reuse). It is **not** a Google Benchmark program — it has its own `main()` and emits a plain-text report — and it builds as the `qb-io-bench-io-plan` executable under `<build>/bin/benches/` whenever the test tree is built (`QB_BUILD_TESTS=ON`, the default), independent of `QB_BUILD_BENCHMARKS`. Like the core benchmarks, it is not a CTest target. (`qb/source/io/tests/system/CMakeLists.txt:63-72`; `qb/source/io/CMakeLists.txt:116-118`; `qb/source/io/tests/system/bench-io-plan.cpp:193-224`.)
+`qb-io` ships its own Google Benchmark suite under `qb/source/io/tests/benchmark/`, following the same conventions as the core suite: each `bm-*.cpp` source is a standalone Google Benchmark program (`#include <benchmark/benchmark.h>`, `BENCHMARK(...)` registrations, `BENCHMARK_MAIN()`), built by `qb_add_benchmark` into a `qb-io-benchmark-<pattern>` target under `<build>/bin/benchmarks/`. The directory is gated by `QB_BUILD_BENCHMARKS` exactly like the core suite — the parent `CMakeLists.txt` wraps `add_subdirectory(benchmark)` in `if (QB_BUILD_BENCHMARKS)`, so nothing builds when the switch is off. Like the core benchmarks, these are not CTest targets and must be launched manually. (`qb/source/io/tests/CMakeLists.txt:32-34`; `qb/source/io/tests/benchmark/CMakeLists.txt`; `qb/cmake/qbFunctions.cmake:377-434`.)
 
-It accepts two optional flags and writes a report to a file (default `/tmp/qb-io-bench.txt`):
+| Source | Executable suffix | Measures |
+|---|---|---|
+| `bm-io-plan.cpp` | `io-plan` | Allocation-heavy listener hot paths: callback register/unregister, async callback fire, scoped-callback construct/cancel, broadcast scratch reuse. |
+| `bm-ev-backends.cpp` | `ev-backends` | The libev event-loop backends and watcher dispatch. |
+| `bm-coroutine.cpp` | `coroutine` | Coroutine scheduler, frame, `co_await`, and timer workloads. |
+| `bm-pipe-buffer.cpp` | `pipe-buffer` | The buffer primitives (`qb::allocator::pipe`) used by transports and protocols. |
+| `bm-file-stream.cpp` | `file-stream` | File helpers and file-backed streams. |
+| `bm-uri.cpp` | `uri` | URI parsing and encoding utilities. |
+| `bm-protocol-framing.cpp` | `protocol-framing` | Protocol framing and message parsing. |
+| `bm-json-pipe.cpp` | `json-pipe` | JSON pipe integration. |
+| `bm-compression.cpp` | `compression` | Compression providers and pipe adapters (built only when `QB_HAS_COMPRESSION`). |
+| `bm-crypto.cpp` | `crypto` | OpenSSL-backed crypto helpers (built only when `QB_HAS_SSL`). |
+
+<!-- src: qb/source/io/tests/benchmark/CMakeLists.txt -->
+
+Build and run them the same way as the core benchmarks — each is a standard Google Benchmark binary that accepts the usual flags:
 
 ```bash
-# src: qb/source/io/tests/system/bench-io-plan.cpp (argument parsing)
-./build/bin/benches/qb-io-bench-io-plan --label baseline --out /tmp/qb-io-bench.txt
+./build/bin/benchmarks/qb-io-benchmark-io-plan
 ```
 
 ## Pitfalls

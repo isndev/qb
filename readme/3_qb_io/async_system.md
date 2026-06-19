@@ -51,7 +51,7 @@ Under `qb-core`, `qb::Main` runs the loop on each `VirtualCore`. Standalone, you
 
 After processing libev events, every `run()` call also drains any ready coroutines through the listener's scheduler.
 
-> **Pitfall — `EVRUN_ONCE` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_LIBEV_USE_TIMERFD=ON`, off by default) and only `ev_io` watchers are active with no heap timers, `EVRUN_ONCE` can block for libev's internal maximum wait time. In pump loops, prefer `run_until` or `run(EVRUN_NOWAIT)`.
+> **Pitfall — `EVRUN_ONCE` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_EV_USE_TIMERFD=ON`, off by default) and only `ev_io` watchers are active with no heap timers, `EVRUN_ONCE` can block for libev's internal maximum wait time. In pump loops, prefer `run_until` or `run(EVRUN_NOWAIT)`.
 
 > **Pitfall — re-entrancy.** `run`, `run_once`, `run_until`, `run_for`, and `run_sync` must not be called from inside a coroutine or actor handler that is itself executing under the coroutine scheduler's ready-drain. Doing so throws `std::logic_error` (and asserts in debug builds).
 
