@@ -66,7 +66,8 @@ changes before committing:
 clang-format -i <changed-files>
 ```
 
-CI enforces formatting on changed C++ files and runs clang-tidy on changed C++ translation units. Keep
+CI enforces `clang-format` on changed C++ files (a `--dry-run --Werror` check); clang-tidy is not run in
+CI, so run it locally via `scripts/clang-tidy.sh` against the `.clang-tidy` config before submitting. Keep
 those checks small and clean in each pull request; broad formatting sweeps should be submitted separately
 from behavioral changes.
 

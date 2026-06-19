@@ -4,7 +4,7 @@
 
 This page explains the design principles behind qb — share-nothing actor isolation, asynchronous-by-default I/O, a layered and modular architecture, explicit modern C++20/23, and lock-free inter-core messaging — and the rationale for each choice.
 
-**Prerequisites:** none — **See also:** [What qb is](./overview.md) · [Core concepts](../2_core_concepts/README.md) · [Threading model](../2_core_concepts/concurrency.md)
+**Prerequisites:** none — **See also:** [What qb is](./overview.md) · [Core concepts](../2_core_concepts/README.md) · [Concurrency in qb](../2_core_concepts/concurrency.md)
 
 ## Summary
 
@@ -85,7 +85,7 @@ qb is engineered for systems where latency and throughput matter. Its performanc
 
 This page describes the rationale; for the mechanism — how cores are scheduled, how mailboxes are drained, and how idle cores back off — see the threading model.
 
-**See:** [Threading model](../2_core_concepts/concurrency.md) · [Lock-free primitives](../7_reference/lockfree_primitives.md) · [Performance tuning](../6_guides/performance_tuning.md)
+**See:** [The threading model](../2_core_concepts/threading_model.md) · [Lock-free primitives](../7_reference/lockfree_primitives.md) · [Performance tuning](../6_guides/performance_tuning.md)
 
 ## How the principles fit together
 
@@ -96,5 +96,6 @@ The choices are mutually reinforcing rather than independent. Share-nothing isol
 - [What qb is and when to use it](./overview.md)
 - [The actor model](../2_core_concepts/actor_model.md)
 - [Asynchronous I/O model](../2_core_concepts/async_io.md)
-- [Threading and concurrency model](../2_core_concepts/concurrency.md)
+- [Concurrency in qb](../2_core_concepts/concurrency.md)
+- [The threading model](../2_core_concepts/threading_model.md)
 - [Getting started guide](../6_guides/getting_started.md)

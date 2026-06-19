@@ -45,8 +45,9 @@ Key design points, each documented on the linked page:
   event handlers and async I/O on the same thread — see [the engine](./engine.md).
 - An actor never migrates between cores; its `_alive` flag is single-writer/single-reader on one
   thread and needs no atomic — see [writing actors](./actor.md).
-- Actors on the **same** core exchange events through a per-actor pipe; actors on **different**
-  cores exchange them through per-core lock-free MPSC mailboxes — see [messaging](./messaging.md).
+- Actors on the **same** core exchange events through the core's local pipe (a per-destination-core
+  buffer); actors on **different** cores exchange them through per-core lock-free MPSC mailboxes —
+  see [messaging](./messaging.md).
 - Actors may run C++20 coroutines through `spawn_async`, returning results to themselves through a
   capture-by-value `qb::CoroContext` — see [actor patterns](./patterns.md) and
   [qb-io coroutines](../3_qb_io/coroutines.md).
@@ -57,7 +58,7 @@ Key design points, each documented on the linked page:
 |---|---|
 | [qb-core features and capabilities](./features.md) | A catalog of the runtime's capabilities — actor lifecycle, the event system, multicore scheduling, coroutine support, and shared utilities — each linked to its in-depth page. |
 | [Writing actors with `qb::Actor`](./actor.md) | Defining, initializing, and tearing down an actor; handling events; the `no_default_events` tag; periodic work via `ICallback`; and per-core services with `qb::ServiceActor`. |
-| [Event messaging between actors](./messaging.md) | How `push`, `send`, `reply`, `forward`, and `broadcast` differ in delivery semantics and ordering, and how events move through the per-actor pipe and per-core mailbox within and across cores. |
+| [Event messaging between actors](./messaging.md) | How `push`, `send`, `reply`, `forward`, and `broadcast` differ in delivery semantics and ordering, and how events move through the per-destination-core pipe and per-core mailbox within and across cores. |
 | [The engine: `qb::Main` and `VirtualCore`](./engine.md) | Engine startup and shutdown, the `CoreInitializer` configuration step, CPU affinity, the `VirtualCore` loop, inter-core flushing, signal handling, and the stop-token cancellation path. |
 | [Actor patterns](./patterns.md) | Composing the `Actor` primitives into recurring designs: finite state machines, service registries, publish/subscribe, request/response with timeouts, supervision, referenced actors with `RefActorHandle`, runtime dependency resolution with `require`, and coroutine flows. |
 
