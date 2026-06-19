@@ -48,6 +48,21 @@ set(CORE_TESTS
         test-quic.cpp
 )
 
+# These tests drive raw POSIX socket/fd syscalls directly (socketpair,
+# ::read/::write/::close, fcntl) which MSVC/winsock does not provide. The qb-io
+# library itself is fully cross-platform; only these low-level test harnesses are
+# POSIX-only, so skip them on Windows (covered on Linux/macOS).
+if(WIN32)
+    list(REMOVE_ITEM CORE_TESTS
+            test-io.cpp
+            test-event-combined.cpp
+            test-buffered-io.cpp
+            test-async-io-bases.cpp
+            test-tcp-socket.cpp
+            test-session-text.cpp
+    )
+endif()
+
 # Create core test targets
 foreach (TEST_SOURCE ${CORE_TESTS})
     # Extract test name from filename (removing extension)
@@ -80,6 +95,11 @@ if(QB_HAS_SSL)
             test-crypto-jwt.cpp
             test-ssl-socket.cpp
     )
+
+    # test-ssl-socket drives raw POSIX socket syscalls; POSIX-only on Windows.
+    if(WIN32)
+        list(REMOVE_ITEM CRYPTO_TESTS test-ssl-socket.cpp)
+    endif()
 
     # Generate targets for each crypto test
     foreach (TEST_SOURCE ${CRYPTO_TESTS})

@@ -57,6 +57,12 @@ set(COROUTINE_TESTS
         test-coroutine-tcp-client-integration.cpp
 )
 
+# test-coroutine-tcp-connector drives raw POSIX socket syscalls (sys/socket.h,
+# fcntl, ::close); POSIX-only, so skip it on Windows (qb-io itself is portable).
+if(WIN32)
+    list(REMOVE_ITEM COROUTINE_TESTS test-coroutine-tcp-connector.cpp)
+endif()
+
 # -----------------------------------------------------------------------------
 # Create test targets
 # -----------------------------------------------------------------------------
