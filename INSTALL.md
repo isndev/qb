@@ -75,7 +75,8 @@ Vendor qb as a submodule first:
 
 ```bash
 git submodule add https://github.com/isndev/qb.git qb
-git -C qb submodule update --init --recursive   # pulls the bundled libev/uuid
+# qb vendors libev/uuid directly (committed files, not submodules), so they
+# arrive with the checkout — no recursive submodule init is needed for qb itself.
 ```
 
 ### Consume an installed copy
@@ -120,8 +121,9 @@ See [production_checklist.md](./readme/6_guides/production_checklist.md) before 
 ## Troubleshooting
 
 - **`CMake 3.24 or higher is required`** — upgrade CMake; the dependency resolution relies on it.
-- **`libev … not found`** — initialize submodules (`git submodule update --init --recursive`); libev is
-  bundled, not fetched.
+- **`libev … not found`** — libev is vendored directly under `qb/modules/ev` (committed files, not a
+  submodule), so a normal clone always ships it. If it is missing, restore it from the repo
+  (`git checkout -- modules/ev`) or re-clone; a `git submodule update` will not bring it back.
 - **SSL features missing** — install OpenSSL development headers; without them `QB_WITH_SSL` is auto-disabled.
 - **Host CPU binary fails on another machine** — the default `QB_ENABLE_NATIVE_ARCH=ON` targets the build
   host; rebuild with `-DQB_ENABLE_NATIVE_ARCH=OFF` for portable artifacts.
