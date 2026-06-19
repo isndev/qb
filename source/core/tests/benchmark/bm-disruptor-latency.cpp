@@ -62,7 +62,7 @@
 namespace {
 
 struct TopologyMetrics {
-    const char *name;
+    const char   *name;
     std::uint64_t deliveries_per_source_event;
     std::uint64_t completed_paths_per_source_event;
     std::uint64_t hops_per_source_event;
@@ -73,44 +73,40 @@ constexpr TopologyMetrics kUnicastMetrics{
     "unicast",
     1, // producer -> consumer
     1, // one terminal path
-    1,
-    1};
+    1, 1
+};
 
 constexpr TopologyMetrics kPipelineMetrics{
     "pipeline",
     3, // p -> c1 -> c2 -> c3
     1, // one terminal path
-    3,
-    1};
+    3, 1
+};
 
 constexpr TopologyMetrics kMulticastMetrics{
     "multicast",
     3, // producer -> c1,c2,c3
     3, // three terminal paths
     1, // one hop depth, three branches
-    3};
+    3
+};
 
 constexpr TopologyMetrics kDiamondMetrics{
     "diamond",
     4, // producer -> left,right and each branch -> end
     2, // two completed branch paths reaching end
     2, // depth 2 on each branch
-    2};
+    2
+};
 
 template <typename Event, typename Setup>
 static void
-run_topology_benchmark(benchmark::State &state,
-                       TopologyMetrics const &metrics,
-                       Setup &&setup) {
+run_topology_benchmark(benchmark::State &state, TopologyMetrics const &metrics, Setup &&setup) {
     const auto nb_events = static_cast<std::uint64_t>(state.range(0));
 
-    const double source_events_total = static_cast<double>(nb_events);
-    const double deliveries_total =
-        static_cast<double>(nb_events) *
-        static_cast<double>(metrics.deliveries_per_source_event);
-    const double completed_paths_total =
-        static_cast<double>(nb_events) *
-        static_cast<double>(metrics.completed_paths_per_source_event);
+    const double source_events_total   = static_cast<double>(nb_events);
+    const double deliveries_total      = static_cast<double>(nb_events) * static_cast<double>(metrics.deliveries_per_source_event);
+    const double completed_paths_total = static_cast<double>(nb_events) * static_cast<double>(metrics.completed_paths_per_source_event);
 
     for (auto _ : state) {
         qb::bench::reset_last_latency_stats();
@@ -123,32 +119,21 @@ run_topology_benchmark(benchmark::State &state,
         main.start(true);
         main.join();
 
-        state.counters["source_events_per_s"] =
-            benchmark::Counter(source_events_total,
-                               benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["source_events_per_s"] = benchmark::Counter(source_events_total, benchmark::Counter::kIsIterationInvariantRate);
 
-        state.counters["deliveries_per_s"] =
-            benchmark::Counter(deliveries_total,
-                               benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["deliveries_per_s"] = benchmark::Counter(deliveries_total, benchmark::Counter::kIsIterationInvariantRate);
 
-        state.counters["completed_paths_per_s"] =
-            benchmark::Counter(completed_paths_total,
-                               benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["completed_paths_per_s"] = benchmark::Counter(completed_paths_total, benchmark::Counter::kIsIterationInvariantRate);
 
-        state.counters["topology_hops_per_event"] =
-            static_cast<double>(metrics.hops_per_source_event);
+        state.counters["topology_hops_per_event"] = static_cast<double>(metrics.hops_per_source_event);
 
-        state.counters["fanout_factor"] =
-            static_cast<double>(metrics.fanout_factor);
+        state.counters["fanout_factor"] = static_cast<double>(metrics.fanout_factor);
 
         const auto lat = qb::bench::last_latency_stats_snapshot();
         if (lat.samples) {
-            state.counters["latency_samples"] =
-                static_cast<double>(lat.samples);
+            state.counters["latency_samples"] = static_cast<double>(lat.samples);
 
-            state.counters["mean_rtt_ns"] =
-                benchmark::Counter(lat.mean_round_trip_ns,
-                                   benchmark::Counter::kAvgIterations);
+            state.counters["mean_rtt_ns"] = benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
         }
     }
 }
@@ -156,170 +141,104 @@ run_topology_benchmark(benchmark::State &state,
 template <typename Event>
 static void
 BM_Unicast_Latency(benchmark::State &state) {
-    run_topology_benchmark<Event>(
-        state,
-        kUnicastMetrics,
-        [](qb::Main &main, std::uint64_t nb_events) {
-            main.addActor<ProducerActor<Event>>(
-                0,
-                qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1)},
-                nb_events);
-        });
+    run_topology_benchmark<Event>(state, kUnicastMetrics, [](qb::Main &main, std::uint64_t nb_events) {
+        main.addActor<ProducerActor<Event>>(0, qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1)}, nb_events);
+    });
 }
 
 template <typename Event>
 static void
 BM_Pipeline_Latency(benchmark::State &state) {
-    run_topology_benchmark<Event>(
-        state,
-        kPipelineMetrics,
-        [](qb::Main &main, std::uint64_t nb_events) {
-            main.addActor<ProducerActor<Event>>(
-                0,
-                qb::ActorIdList{
-                    main.addActor<ConsumerActor<Event>>(
-                        1,
-                        qb::ActorIdList{
-                            main.addActor<ConsumerActor<Event>>(
-                                2,
-                                qb::ActorIdList{
-                                    main.addActor<ConsumerActor<Event>>(3)})})},
-                nb_events);
-        });
+    run_topology_benchmark<Event>(state, kPipelineMetrics, [](qb::Main &main, std::uint64_t nb_events) {
+        main.addActor<ProducerActor<Event>>(
+            0,
+            qb::ActorIdList{main.addActor<ConsumerActor<Event>>(
+                1, qb::ActorIdList{main.addActor<ConsumerActor<Event>>(2, qb::ActorIdList{main.addActor<ConsumerActor<Event>>(3)})})},
+            nb_events);
+    });
 }
 
 template <typename Event>
 static void
 BM_Pipeline_Shared_Latency(benchmark::State &state) {
-    run_topology_benchmark<Event>(
-        state,
-        kPipelineMetrics,
-        [](qb::Main &main, std::uint64_t nb_events) {
-            main.addActor<ProducerActor<Event>>(
-                0,
-                qb::ActorIdList{
-                    main.addActor<ConsumerActor<Event>>(
-                        1,
-                        qb::ActorIdList{
-                            main.addActor<ConsumerActor<Event>>(
-                                1,
-                                qb::ActorIdList{
-                                    main.addActor<ConsumerActor<Event>>(1)})})},
-                nb_events);
-        });
+    run_topology_benchmark<Event>(state, kPipelineMetrics, [](qb::Main &main, std::uint64_t nb_events) {
+        main.addActor<ProducerActor<Event>>(
+            0,
+            qb::ActorIdList{main.addActor<ConsumerActor<Event>>(
+                1, qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1)})})},
+            nb_events);
+    });
 }
 
 template <typename Event>
 static void
 BM_Multicast_Latency(benchmark::State &state) {
-    run_topology_benchmark<Event>(
-        state,
-        kMulticastMetrics,
-        [](qb::Main &main, std::uint64_t nb_events) {
-            main.addActor<ProducerActor<Event>>(
-                0,
-                qb::ActorIdList{
-                    main.addActor<ConsumerActor<Event>>(1),
-                    main.addActor<ConsumerActor<Event>>(2),
-                    main.addActor<ConsumerActor<Event>>(3)},
-                nb_events);
-        });
+    run_topology_benchmark<Event>(state, kMulticastMetrics, [](qb::Main &main, std::uint64_t nb_events) {
+        main.addActor<ProducerActor<Event>>(
+            0,
+            qb::ActorIdList{
+                main.addActor<ConsumerActor<Event>>(1), main.addActor<ConsumerActor<Event>>(2), main.addActor<ConsumerActor<Event>>(3)
+            },
+            nb_events);
+    });
 }
 
 template <typename Event>
 static void
 BM_Multicast_Shared_Latency(benchmark::State &state) {
-    run_topology_benchmark<Event>(
-        state,
-        kMulticastMetrics,
-        [](qb::Main &main, std::uint64_t nb_events) {
-            main.core(0).addActor<ProducerActor<Event>>(
-                main.core(1)
-                    .builder()
-                    .template addActor<ConsumerActor<Event>>()
-                    .template addActor<ConsumerActor<Event>>()
-                    .template addActor<ConsumerActor<Event>>()
-                    .idList(),
-                nb_events);
-        });
+    run_topology_benchmark<Event>(state, kMulticastMetrics, [](qb::Main &main, std::uint64_t nb_events) {
+        main.core(0).addActor<ProducerActor<Event>>(main.core(1)
+                                                        .builder()
+                                                        .template addActor<ConsumerActor<Event>>()
+                                                        .template addActor<ConsumerActor<Event>>()
+                                                        .template addActor<ConsumerActor<Event>>()
+                                                        .idList(),
+                                                    nb_events);
+    });
 }
 
 template <typename Event>
 static void
 BM_Diamond_Latency(benchmark::State &state) {
-    run_topology_benchmark<Event>(
-        state,
-        kDiamondMetrics,
-        [](qb::Main &main, std::uint64_t nb_events) {
-            const auto id_end = main.addActor<ConsumerActor<Event>>(3);
-            main.addActor<ProducerActor<Event>>(
-                0,
-                qb::ActorIdList{
-                    main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{id_end}),
-                    main.addActor<ConsumerActor<Event>>(2, qb::ActorIdList{id_end})},
-                nb_events);
-        });
+    run_topology_benchmark<Event>(state, kDiamondMetrics, [](qb::Main &main, std::uint64_t nb_events) {
+        const auto id_end = main.addActor<ConsumerActor<Event>>(3);
+        main.addActor<ProducerActor<Event>>(
+            0,
+            qb::ActorIdList{
+                main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{id_end}), main.addActor<ConsumerActor<Event>>(2, qb::ActorIdList{id_end})
+            },
+            nb_events);
+    });
 }
 
 template <typename Event>
 static void
 BM_Diamond_Shared_Latency(benchmark::State &state) {
-    run_topology_benchmark<Event>(
-        state,
-        kDiamondMetrics,
-        [](qb::Main &main, std::uint64_t nb_events) {
-            const auto id_end = main.addActor<ConsumerActor<Event>>(2);
-            main.addActor<ProducerActor<Event>>(
-                0,
-                qb::ActorIdList{
-                    main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{id_end}),
-                    main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{id_end})},
-                nb_events);
-        });
+    run_topology_benchmark<Event>(state, kDiamondMetrics, [](qb::Main &main, std::uint64_t nb_events) {
+        const auto id_end = main.addActor<ConsumerActor<Event>>(2);
+        main.addActor<ProducerActor<Event>>(
+            0,
+            qb::ActorIdList{
+                main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{id_end}), main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{id_end})
+            },
+            nb_events);
+    });
 }
 
 } // namespace
 
-BENCHMARK_TEMPLATE(BM_Unicast_Latency, LightEvent)
-    ->Arg(1000000)
-    ->ArgName("NB_EVENTS")
-    ->UseRealTime()
-    ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Unicast_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
 
-BENCHMARK_TEMPLATE(BM_Pipeline_Latency, LightEvent)
-    ->Arg(1000000)
-    ->ArgName("NB_EVENTS")
-    ->UseRealTime()
-    ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Pipeline_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
 
-BENCHMARK_TEMPLATE(BM_Pipeline_Shared_Latency, LightEvent)
-    ->Arg(1000000)
-    ->ArgName("NB_EVENTS")
-    ->UseRealTime()
-    ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Pipeline_Shared_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
 
-BENCHMARK_TEMPLATE(BM_Multicast_Latency, LightEvent)
-    ->Arg(1000000)
-    ->ArgName("NB_EVENTS")
-    ->UseRealTime()
-    ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Multicast_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
 
-BENCHMARK_TEMPLATE(BM_Multicast_Shared_Latency, LightEvent)
-    ->Arg(1000000)
-    ->ArgName("NB_EVENTS")
-    ->UseRealTime()
-    ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Multicast_Shared_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
 
-BENCHMARK_TEMPLATE(BM_Diamond_Latency, LightEvent)
-    ->Arg(1000000)
-    ->ArgName("NB_EVENTS")
-    ->UseRealTime()
-    ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Diamond_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
 
-BENCHMARK_TEMPLATE(BM_Diamond_Shared_Latency, LightEvent)
-    ->Arg(1000000)
-    ->ArgName("NB_EVENTS")
-    ->UseRealTime()
-    ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Diamond_Shared_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

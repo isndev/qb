@@ -22,8 +22,7 @@ class ProducerActor final : public qb::Actor {
 public:
     ~ProducerActor() final {
         if (_latency.sample_count()) {
-            qb::bench::record_last_latency(_latency.mean_nanoseconds(),
-                                          static_cast<std::uint64_t>(_latency.sample_count()));
+            qb::bench::record_last_latency(_latency.mean_nanoseconds(), static_cast<std::uint64_t>(_latency.sample_count()));
         }
         if (_print_histogram || std::getenv("QB_ACTOR_BENCH_HISTOGRAM")) {
             if (_latency.sample_count())

@@ -7,7 +7,7 @@
  * registration and management of event handlers, and methods to run the event loop.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -44,9 +44,9 @@
 #if defined(QB_DEBUG_CORO_LIFECYCLE) && QB_DEBUG_CORO_LIFECYCLE
 // Standard C++20 __VA_OPT__ elides the comma when no trailing args are passed
 // (MSVC needs the conformant preprocessor /Zc:preprocessor, enabled by qb's build).
-#define QB_LISTENER_TRACE(fmt, ...) std::fprintf(stderr, "[listener] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
+#define QB_LISTENER_TRACE(fmt, ...) std::fprintf(stderr, "[listener] " fmt "\n" __VA_OPT__(, ) __VA_ARGS__)
 #else
-#define QB_LISTENER_TRACE(fmt, ...) ((void)0)
+#define QB_LISTENER_TRACE(fmt, ...) ((void) 0)
 #endif
 
 namespace qb::io::async {
@@ -191,7 +191,7 @@ public:
         operator delete(void *p) noexcept {
             if (!p)
                 return;
-            auto &fl = _freelist();
+            auto &fl                 = _freelist();
             *static_cast<void **>(p) = fl.head;
             fl.head                  = p;
         }
@@ -219,7 +219,7 @@ private:
     IRegisteredKernelEvent *_registered_head  = nullptr;
     std::size_t             _registered_count = 0;
 
-    std::size_t _nb_invoked_events = 0; /**< Counter for the number of invoked events */
+    std::size_t _nb_invoked_events      = 0; /**< Counter for the number of invoked events */
     std::size_t _total_events_processed = 0; /**< Total number of events processed since listener creation */
 
     // Coroutine support
@@ -286,17 +286,19 @@ private:
             const char  *name;
             unsigned int flag;
         } table[] = {
-            {"select", EVBACKEND_SELECT},     {"poll", EVBACKEND_POLL},
-            {"epoll", EVBACKEND_EPOLL},       {"kqueue", EVBACKEND_KQUEUE},
-            {"port", EVBACKEND_PORT},         {"linuxaio", EVBACKEND_LINUXAIO},
-            {"iouring", EVBACKEND_IOURING},   {"io_uring", EVBACKEND_IOURING},
-            {"auto", EVFLAG_AUTO},
+            {"select", EVBACKEND_SELECT},   {"poll", EVBACKEND_POLL},        {"epoll", EVBACKEND_EPOLL},
+            {"kqueue", EVBACKEND_KQUEUE},   {"port", EVBACKEND_PORT},        {"linuxaio", EVBACKEND_LINUXAIO},
+            {"iouring", EVBACKEND_IOURING}, {"io_uring", EVBACKEND_IOURING}, {"auto", EVFLAG_AUTO},
         };
 
-        unsigned int req = 0;
+        unsigned int req   = 0;
         bool         known = false;
         for (auto const &e : table)
-            if (std::strcmp(env, e.name) == 0) { req = e.flag; known = true; break; }
+            if (std::strcmp(env, e.name) == 0) {
+                req   = e.flag;
+                known = true;
+                break;
+            }
 
         if (!known) {
             LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' unknown; using auto");
@@ -346,14 +348,22 @@ public:
     [[nodiscard]] static const char *
     backend_name(unsigned int b) noexcept {
         switch (b) {
-        case EVBACKEND_SELECT:   return "select";
-        case EVBACKEND_POLL:     return "poll";
-        case EVBACKEND_EPOLL:    return "epoll";
-        case EVBACKEND_KQUEUE:   return "kqueue";
-        case EVBACKEND_PORT:     return "port";
-        case EVBACKEND_LINUXAIO: return "linuxaio";
-        case EVBACKEND_IOURING:  return "iouring";
-        default:                 return "unknown";
+            case EVBACKEND_SELECT:
+                return "select";
+            case EVBACKEND_POLL:
+                return "poll";
+            case EVBACKEND_EPOLL:
+                return "epoll";
+            case EVBACKEND_KQUEUE:
+                return "kqueue";
+            case EVBACKEND_PORT:
+                return "port";
+            case EVBACKEND_LINUXAIO:
+                return "linuxaio";
+            case EVBACKEND_IOURING:
+                return "iouring";
+            default:
+                return "unknown";
         }
     }
 
@@ -369,8 +379,7 @@ public:
      */
     void
     clear() {
-        QB_LISTENER_TRACE("clear() begin registeredEvents=%zu has_coro_scheduler=%d",
-            _registered_count, _coro_scheduler != nullptr);
+        QB_LISTENER_TRACE("clear() begin registeredEvents=%zu has_coro_scheduler=%d", _registered_count, _coro_scheduler != nullptr);
         if (_registered_head) {
             // Detach every handler but do not delete it here: async::base stores
             // a reference to the embedded event, so deleting the wrapper while
@@ -378,15 +387,15 @@ public:
             // `_async_event`. The owner's destructor will unregister and delete
             // the detached wrapper later.
             IRegisteredKernelEvent *cur = _registered_head;
-            _registered_head  = nullptr;
-            _registered_count = 0;
+            _registered_head            = nullptr;
+            _registered_count           = 0;
             while (cur) {
                 auto *next = cur->_list_next;
                 cur->stop();
-                cur->_list_prev = nullptr;
-                cur->_list_next = nullptr;
+                cur->_list_prev         = nullptr;
+                cur->_list_next         = nullptr;
                 cur->_detached_by_clear = true;
-                cur = next;
+                cur                     = next;
             }
             for (int i = 0; i < 4; ++i)
                 run(EVRUN_NOWAIT);
@@ -450,8 +459,7 @@ public:
     _Event &
     registerEvent(_Actor &actor, _Args &&...args) {
         auto revent = new RegisteredKernelEvent<_Event, _Actor>(_loop, actor);
-        revent->_event.template set<listener, &listener::on<typename _Event::ev_t>>(
-            this);
+        revent->_event.template set<listener, &listener::on<typename _Event::ev_t>>(this);
         revent->_event._interface = revent;
 
         if constexpr (sizeof...(_Args) > 0)
@@ -568,7 +576,7 @@ public:
      * listener is destroyed or reset_coro_scheduler() is called. Do not store
      * this reference across listener teardown (single-thread: use within run/run_for).
      */
-    [[nodiscard]] inline CoroutineScheduler&
+    [[nodiscard]] inline CoroutineScheduler &
     coro_scheduler() {
         if (!_coro_scheduler) {
             _coro_scheduler = std::make_unique<CoroutineScheduler>(_loop);
@@ -630,17 +638,16 @@ init() noexcept {
 
 inline void
 ensure_not_inside_ready_drain(char const *api_name) {
-    if (listener::current.has_coro_scheduler() &&
-        listener::current.coro_scheduler().is_draining_ready()) {
+    if (listener::current.has_coro_scheduler() && listener::current.coro_scheduler().is_draining_ready()) {
 #ifndef NDEBUG
-        assert(!listener::current.coro_scheduler().is_draining_ready() &&
-               "async::run/run_once/run_until must not be called from inside a "
-               "coroutine or actor handler already executing under "
-               "CoroutineScheduler::run_ready()");
+        assert(!listener::current.coro_scheduler().is_draining_ready()
+               && "async::run/run_once/run_until must not be called from inside a "
+                  "coroutine or actor handler already executing under "
+                  "CoroutineScheduler::run_ready()");
 #endif
-        throw std::logic_error(std::string(api_name) +
-                               " must not be called from inside a coroutine or actor "
-                               "handler already executing under run_ready()");
+        throw std::logic_error(std::string(api_name)
+                               + " must not be called from inside a coroutine or actor "
+                                 "handler already executing under run_ready()");
     }
 }
 

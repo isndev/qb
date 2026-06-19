@@ -13,7 +13,7 @@
  * transport-specific operations.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -60,7 +60,8 @@ public:
 protected:
     _IO_              _in;        /**< The underlying IO object */
     input_buffer_type _in_buffer; /**< Buffer for incoming data */
-    std::size_t       _max_read_buffer_size = QB_MAX_READ_BUFFER_SIZE; /**< Maximum allowed size for the input buffer (DoS protection). Configurable at runtime. */
+    std::size_t       _max_read_buffer_size =
+        QB_MAX_READ_BUFFER_SIZE; /**< Maximum allowed size for the input buffer (DoS protection). Configurable at runtime. */
 
 public:
     /**
@@ -137,7 +138,7 @@ public:
      * This method is enabled only if the IO type has a compatible read method.
      * It reads data in fixed-size chunks and adjusts the buffer size based
      * on the actual number of bytes read.
-     * 
+     *
      * @note **Security:** If the buffer size would exceed `max_read_buffer_size()` after
      *       this read, the operation fails with error code -2 to prevent DoS attacks.
      */
@@ -150,20 +151,19 @@ public:
      */
     [[nodiscard]] int
     read() noexcept
-        requires qb::has_read_r<_IO_, int, char *, std::size_t>
+    requires qb::has_read_r<_IO_, int, char *, std::size_t>
     {
         // Use safe buffer size that won't overflow when cast to 32-bit for socket APIs
         constexpr std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
         static_assert(bucket_read <= QB_MAX_IO_SIZE, "Buffer size exceeds safe I/O limits");
-        
-        if (_max_read_buffer_size < _in_buffer.size() ||
-            bucket_read > _max_read_buffer_size - _in_buffer.size()) {
+
+        if (_max_read_buffer_size < _in_buffer.size() || bucket_read > _max_read_buffer_size - _in_buffer.size()) {
             return ErrBufferLimitExceeded;
         }
-        
+
         // Clamp to max I/O size to prevent integer overflow in platform APIs
         const std::size_t read_size = (bucket_read > QB_MAX_IO_SIZE) ? QB_MAX_IO_SIZE : bucket_read;
-        
+
         const auto ret = _in.read(_in_buffer.allocate_back(read_size), read_size);
         if (ret >= 0)
             _in_buffer.free_back(read_size - static_cast<std::size_t>(ret));
@@ -242,7 +242,8 @@ public:
 protected:
     _IO_               _out;        /**< The underlying IO object */
     output_buffer_type _out_buffer; /**< Buffer for outgoing data */
-    std::size_t        _max_write_buffer_size = QB_MAX_WRITE_BUFFER_SIZE; /**< Maximum allowed size for the output buffer (DoS protection). Configurable at runtime. */
+    std::size_t        _max_write_buffer_size =
+        QB_MAX_WRITE_BUFFER_SIZE; /**< Maximum allowed size for the output buffer (DoS protection). Configurable at runtime. */
 
 public:
     /**
@@ -306,7 +307,7 @@ public:
      */
     [[nodiscard]] int
     write() noexcept
-        requires qb::has_write_r<_IO_, int, const char *, std::size_t>
+    requires qb::has_write_r<_IO_, int, const char *, std::size_t>
     {
         const auto ret = _out.write(_out_buffer.begin(), _out_buffer.size());
 
@@ -332,13 +333,11 @@ public:
      */
     [[nodiscard]] char *
     publish(char const *data, std::size_t size) noexcept {
-        if (_max_write_buffer_size < _out_buffer.size() ||
-            size > _max_write_buffer_size - _out_buffer.size()) {
+        if (_max_write_buffer_size < _out_buffer.size() || size > _max_write_buffer_size - _out_buffer.size()) {
             return nullptr;
         }
-        
-        return static_cast<char *>(
-            std::memcpy(_out_buffer.allocate_back(size), data, size));
+
+        return static_cast<char *>(std::memcpy(_out_buffer.allocate_back(size), data, size));
     }
 
     /**
@@ -399,7 +398,8 @@ public:
 
 protected:
     output_buffer_type _out_buffer; /**< Buffer for outgoing data */
-    std::size_t        _max_write_buffer_size = QB_MAX_WRITE_BUFFER_SIZE; /**< Maximum allowed size for the output buffer (DoS protection). Configurable at runtime. */
+    std::size_t        _max_write_buffer_size =
+        QB_MAX_WRITE_BUFFER_SIZE; /**< Maximum allowed size for the output buffer (DoS protection). Configurable at runtime. */
 
 public:
     /**
@@ -442,7 +442,7 @@ public:
      */
     [[nodiscard]] int
     write() noexcept
-        requires qb::has_write_r<_IO_, int, const char *, std::size_t>
+    requires qb::has_write_r<_IO_, int, const char *, std::size_t>
     {
         const auto ret = this->_in.write(_out_buffer.begin(), _out_buffer.size());
         if (ret > 0) {
@@ -485,20 +485,18 @@ public:
      *
      * Copies the specified data to the output buffer for later
      * transmission by the write method.
-     * 
+     *
      * @note **Security:** If the buffer size would exceed `max_write_buffer_size()` after
      *       this operation, returns nullptr to prevent DoS attacks. The caller should
      *       handle this case appropriately (e.g., disconnect the connection).
      */
     [[nodiscard]] char *
     publish(char const *data, std::size_t size) noexcept {
-        if (_max_write_buffer_size < _out_buffer.size() ||
-            size > _max_write_buffer_size - _out_buffer.size()) {
+        if (_max_write_buffer_size < _out_buffer.size() || size > _max_write_buffer_size - _out_buffer.size()) {
             return nullptr;
         }
-        
-        return static_cast<char *>(
-            std::memcpy(_out_buffer.allocate_back(size), data, size));
+
+        return static_cast<char *>(std::memcpy(_out_buffer.allocate_back(size), data, size));
     }
 
     /**

@@ -7,7 +7,7 @@
  * various error conditions while maintaining system stability.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -149,9 +149,9 @@ public:
 
 // Monitor actor to check the status of other actors
 class MonitorActor : public qb::Actor {
-    std::vector<qb::ActorId> _monitored_actors;
-    int                      _num_actors_to_monitor;
-    int                      _num_actors_checked;
+    std::vector<qb::ActorId>                                             _monitored_actors;
+    int                                                                  _num_actors_to_monitor;
+    int                                                                  _num_actors_checked;
     std::unique_ptr<qb::io::async::ScopedTimeout<std::function<void()>>> _timeout;
 
 public:
@@ -167,12 +167,11 @@ public:
         // Keep the timeout owned by the actor so it is cancelled automatically
         // when the actor dies. A fire-and-forget callback capturing `this`
         // can outlive the actor and dereference freed memory on Windows.
-        _timeout = qb::io::async::scoped_callback(
-            std::function<void()>{[this]() {
-                broadcast<qb::KillEvent>();
-                kill();
-            }},
-            500ms); // 500ms timeout (0.5 seconds)
+        _timeout = qb::io::async::scoped_callback(std::function<void()>{[this]() {
+                                                      broadcast<qb::KillEvent>();
+                                                      kill();
+                                                  }},
+                                                  500ms); // 500ms timeout (0.5 seconds)
 
         return true;
     }
@@ -211,8 +210,7 @@ class CoordinatorActor : public qb::Actor {
     int                           _num_actors;
 
 public:
-    CoordinatorActor(int num_actors, ErrorInducingEvent::ErrorType error_type,
-                     bool should_recover)
+    CoordinatorActor(int num_actors, ErrorInducingEvent::ErrorType error_type, bool should_recover)
         : _error_type(error_type)
         , _should_actors_recover(should_recover)
         , _num_actors(num_actors) {}
@@ -269,8 +267,7 @@ TEST(ErrorHandling, ShouldRecoverFromErrors) {
     const int num_actors = 3;
 
     // Add coordinator actor (with recovery enabled)
-    main.addActor<CoordinatorActor>(0, num_actors,
-                                    ErrorInducingEvent::ErrorType::ThrowException,
+    main.addActor<CoordinatorActor>(0, num_actors, ErrorInducingEvent::ErrorType::ThrowException,
                                     true // actors should recover
     );
 
@@ -302,8 +299,7 @@ TEST(ErrorHandling, ShouldTerminateOnUnrecoverableErrors) {
     const int num_actors = 3;
 
     // Add coordinator actor (without recovery)
-    main.addActor<CoordinatorActor>(0, num_actors,
-                                    ErrorInducingEvent::ErrorType::InvalidOperation,
+    main.addActor<CoordinatorActor>(0, num_actors, ErrorInducingEvent::ErrorType::InvalidOperation,
                                     false // actors should not recover
     );
 
@@ -335,8 +331,7 @@ TEST(ErrorHandling, ShouldHandleInvalidActorReferences) {
     const int num_actors = 3;
 
     // Add coordinator actor (with recovery enabled)
-    main.addActor<CoordinatorActor>(0, num_actors,
-                                    ErrorInducingEvent::ErrorType::SendToInvalidActor,
+    main.addActor<CoordinatorActor>(0, num_actors, ErrorInducingEvent::ErrorType::SendToInvalidActor,
                                     true // actors should recover
     );
 

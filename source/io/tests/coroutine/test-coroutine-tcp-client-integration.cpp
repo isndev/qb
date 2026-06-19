@@ -7,7 +7,7 @@
  * multiple parallel clients connecting to a local listener.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -42,17 +42,20 @@ namespace {
 
 class CoroClientIntegrationTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
 
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
 
 template <typename Predicate>
-void pump_until(Predicate done, qb::duration timeout = 3s) {
+void
+pump_until(Predicate done, qb::duration timeout = 3s) {
     const auto deadline = qb::mono_now() + timeout;
     while (!done() && qb::mono_now() < deadline) {
         qb::io::async::run(EVRUN_NOWAIT);
@@ -60,14 +63,15 @@ void pump_until(Predicate done, qb::duration timeout = 3s) {
     }
 }
 
-std::string tcp_uri(int port) {
+std::string
+tcp_uri(int port) {
     return "tcp://127.0.0.1:" + std::to_string(port);
 }
 
-task<std::string> read_until_data(qb::io::tcp::socket &socket,
-                                  qb::duration timeout = 1s) {
-    const auto deadline = qb::mono_now() + timeout;
-    char buffer[256] = {};
+task<std::string>
+read_until_data(qb::io::tcp::socket &socket, qb::duration timeout = 1s) {
+    const auto deadline    = qb::mono_now() + timeout;
+    char       buffer[256] = {};
 
     while (qb::mono_now() < deadline) {
         const int n = socket.read(buffer, sizeof(buffer));
@@ -83,7 +87,7 @@ task<std::string> read_until_data(qb::io::tcp::socket &socket,
 } // namespace
 
 TEST_F(CoroClientIntegrationTest, RequestResponseOverConnectedSocket) {
-    std::atomic<int> server_port{0};
+    std::atomic<int>  server_port{0};
     std::atomic<bool> server_done{false};
 
     std::thread server([&]() {
@@ -93,11 +97,11 @@ TEST_F(CoroClientIntegrationTest, RequestResponseOverConnectedSocket) {
 
         auto socket = listener.accept();
         if (socket.is_open()) {
-            char request[64] = {};
-            const int n = socket.read(request, sizeof(request));
+            char      request[64] = {};
+            const int n           = socket.read(request, sizeof(request));
             if (n > 0 && std::string_view(request, static_cast<std::size_t>(n)) == "PING") {
                 const char reply[] = "PONG";
-                (void)socket.write(reply, std::strlen(reply));
+                (void) socket.write(reply, std::strlen(reply));
             }
             socket.close();
         }
@@ -110,22 +114,20 @@ TEST_F(CoroClientIntegrationTest, RequestResponseOverConnectedSocket) {
     ASSERT_GT(server_port.load(), 0);
 
     std::atomic<bool> client_done{false};
-    std::string response;
-    bool connected = false;
-    bool write_ok = false;
+    std::string       response;
+    bool              connected = false;
+    bool              write_ok  = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(server_port.load())}, 1s);
-        connected = socket.has_value();
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(server_port.load())}, 1s);
+        connected   = socket.has_value();
         if (!socket) {
             client_done.store(true);
             co_return;
         }
 
         const char request[] = "PING";
-        write_ok = socket->write(request, std::strlen(request)) ==
-                   static_cast<int>(std::strlen(request));
+        write_ok             = socket->write(request, std::strlen(request)) == static_cast<int>(std::strlen(request));
         if (!write_ok) {
             socket->close();
             client_done.store(true);
@@ -162,7 +164,7 @@ TEST_F(CoroClientIntegrationTest, ServerCanSendMultipleFramesAndClientReadsThem)
         auto socket = listener.accept();
         if (socket.is_open()) {
             const char payload[] = "ALPHA\nBETA\nGAMMA\n";
-            (void)socket.write(payload, std::strlen(payload));
+            (void) socket.write(payload, std::strlen(payload));
             socket.close();
         }
         listener.disconnect();
@@ -173,11 +175,10 @@ TEST_F(CoroClientIntegrationTest, ServerCanSendMultipleFramesAndClientReadsThem)
     ASSERT_GT(server_port.load(), 0);
 
     std::atomic<bool> done{false};
-    std::string data;
+    std::string       data;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(server_port.load())}, 1s);
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(server_port.load())}, 1s);
         if (!socket) {
             done.store(true);
             co_return;
@@ -208,7 +209,7 @@ TEST_F(CoroClientIntegrationTest, FailedConnectDoesNotPoisonLaterSuccessfulConne
     std::this_thread::sleep_for(50ms);
 
     std::atomic<int> server_port{0};
-    std::thread server([&]() {
+    std::thread      server([&]() {
         qb::io::tcp::listener listener;
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
@@ -222,16 +223,14 @@ TEST_F(CoroClientIntegrationTest, FailedConnectDoesNotPoisonLaterSuccessfulConne
     ASSERT_GT(server_port.load(), 0);
 
     std::atomic<bool> done{false};
-    bool first_failed = false;
-    bool second_succeeded = false;
+    bool              first_failed     = false;
+    bool              second_succeeded = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto failed = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(refused_port)}, 500ms);
+        auto failed  = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(refused_port)}, 500ms);
         first_failed = !failed.has_value();
 
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(server_port.load())}, 1s);
+        auto socket      = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(server_port.load())}, 1s);
         second_succeeded = socket.has_value() && socket->is_open();
         if (socket) {
             socket->close();
@@ -253,7 +252,7 @@ TEST_F(CoroClientIntegrationTest, FailedConnectDoesNotPoisonLaterSuccessfulConne
 }
 
 TEST_F(CoroClientIntegrationTest, MultipleParallelClientsConnectToOneListener) {
-    constexpr int kClients = 3;
+    constexpr int    kClients = 3;
     std::atomic<int> server_port{0};
     std::atomic<int> accepted{0};
 
@@ -281,8 +280,7 @@ TEST_F(CoroClientIntegrationTest, MultipleParallelClientsConnectToOneListener) {
 
     for (int i = 0; i < kClients; ++i) {
         coro_scheduler().spawn([&]() -> task<void> {
-            auto socket = co_await qb::io::async::tcp::connect(
-                qb::io::uri{tcp_uri(server_port.load())}, 1s);
+            auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(server_port.load())}, 1s);
             if (socket) {
                 ++connected;
                 socket->close();

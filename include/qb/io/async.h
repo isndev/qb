@@ -23,7 +23,7 @@
  *         its own set of I/O objects independently.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -50,7 +50,7 @@
 #include "async/udp/client.h"
 #include "async/udp/server.h"
 #include "async/quic.h"
-#include "async/coroutine.h"  // C++20 coroutine support
+#include "async/coroutine.h" // C++20 coroutine support
 #include "config.h"
 
 #include "transport/accept.h"
@@ -148,7 +148,7 @@ struct use {
         template <typename _StreamSession>
         using io_handler = async::quic::io_handler<_Derived, _StreamSession>;
 
-        using session = async::quic::client<_Derived>;
+        using session        = async::quic::client<_Derived>;
         using stream_session = async::quic::client<_Derived>;
 
         template <typename _StreamSession>
@@ -159,8 +159,8 @@ struct use {
 
         template <typename _StreamSession = void>
         using connector = async::quic::connector<_Derived, _StreamSession>;
-        using endpoint = async::quic::endpoint;
-        using stream = async::quic::stream;
+        using endpoint  = async::quic::endpoint;
+        using stream    = async::quic::stream;
     };
 
     using timeout = async::with_timeout<_Derived>;

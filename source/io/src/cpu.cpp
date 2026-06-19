@@ -27,10 +27,11 @@
 namespace {
 
 #if defined(_WIN32) || defined(_WIN64)
-DWORD CountSetBits(ULONG_PTR bit_mask) {
-    DWORD left_shift = static_cast<DWORD>(sizeof(ULONG_PTR) * 8 - 1);
-    DWORD bit_set_count = 0;
-    ULONG_PTR bit_test = (static_cast<ULONG_PTR>(1) << left_shift);
+DWORD
+CountSetBits(ULONG_PTR bit_mask) {
+    DWORD     left_shift    = static_cast<DWORD>(sizeof(ULONG_PTR) * 8 - 1);
+    DWORD     bit_set_count = 0;
+    ULONG_PTR bit_test      = (static_cast<ULONG_PTR>(1) << left_shift);
 
     for (DWORD i = 0; i <= left_shift; ++i) {
         bit_set_count += ((bit_mask & bit_test) ? 1u : 0u);
@@ -45,10 +46,11 @@ DWORD CountSetBits(ULONG_PTR bit_mask) {
 
 namespace qb {
 
-std::string CPU::Architecture() {
+std::string
+CPU::Architecture() {
 #if defined(__APPLE__)
-    char result[1024] = {};
-    size_t size = sizeof(result);
+    char   result[1024] = {};
+    size_t size         = sizeof(result);
 
     if (sysctlbyname("machdep.cpu.brand_string", result, &size, nullptr, 0) == 0) {
         return std::string(result);
@@ -60,7 +62,7 @@ std::string CPU::Architecture() {
     static const std::regex pattern(R"(model name(.*): (.*))");
 
     std::ifstream stream("/proc/cpuinfo");
-    std::string line;
+    std::string   line;
 
     while (std::getline(stream, line)) {
         std::smatch matches;
@@ -73,26 +75,17 @@ std::string CPU::Architecture() {
 
 #elif defined(_WIN32) || defined(_WIN64)
     HKEY hkey_processor = nullptr;
-    LONG error = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                               "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-                               0,
-                               KEY_READ,
-                               &hkey_processor);
+    LONG error          = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0, KEY_READ, &hkey_processor);
     if (error != ERROR_SUCCESS) {
         return "<unknown>";
     }
 
     auto key = resource(hkey_processor, [](HKEY key_handle) { RegCloseKey(key_handle); });
 
-    CHAR buffer[_MAX_PATH] = {};
-    DWORD buffer_size = sizeof(buffer);
+    CHAR  buffer[_MAX_PATH] = {};
+    DWORD buffer_size       = sizeof(buffer);
 
-    error = RegQueryValueExA(key.get(),
-                             "ProcessorNameString",
-                             nullptr,
-                             nullptr,
-                             reinterpret_cast<LPBYTE>(buffer),
-                             &buffer_size);
+    error = RegQueryValueExA(key.get(), "ProcessorNameString", nullptr, nullptr, reinterpret_cast<LPBYTE>(buffer), &buffer_size);
     if (error != ERROR_SUCCESS) {
         return "<unknown>";
     }
@@ -104,9 +97,10 @@ std::string CPU::Architecture() {
 #endif
 }
 
-int CPU::Affinity() {
+int
+CPU::Affinity() {
 #if defined(__APPLE__)
-    int logical = 0;
+    int    logical      = 0;
     size_t logical_size = sizeof(logical);
 
     if (sysctlbyname("hw.logicalcpu", &logical, &logical_size, nullptr, 0) != 0) {
@@ -129,23 +123,26 @@ int CPU::Affinity() {
 #endif
 }
 
-int CPU::LogicalCores() {
+int
+CPU::LogicalCores() {
     return TotalCores().first;
 }
 
-int CPU::PhysicalCores() {
+int
+CPU::PhysicalCores() {
     return TotalCores().second;
 }
 
-std::pair<int, int> CPU::TotalCores() {
+std::pair<int, int>
+CPU::TotalCores() {
 #if defined(__APPLE__)
-    int logical = 0;
+    int    logical      = 0;
     size_t logical_size = sizeof(logical);
     if (sysctlbyname("hw.logicalcpu", &logical, &logical_size, nullptr, 0) != 0) {
         logical = -1;
     }
 
-    int physical = 0;
+    int    physical      = 0;
     size_t physical_size = sizeof(physical);
     if (sysctlbyname("hw.physicalcpu", &physical, &physical_size, nullptr, 0) != 0) {
         physical = -1;
@@ -155,12 +152,12 @@ std::pair<int, int> CPU::TotalCores() {
 
 #elif defined(unix) || defined(__unix) || defined(__unix__)
     const long processors = sysconf(_SC_NPROCESSORS_ONLN);
-    const int count = processors > 0 ? static_cast<int>(processors) : -1;
+    const int  count      = processors > 0 ? static_cast<int>(processors) : -1;
     return {count, count};
 
 #elif defined(_WIN32) || defined(_WIN64)
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = nullptr;
-    DWORD length = 0;
+    DWORD                                 length = 0;
 
     for (;;) {
         const BOOL result = GetLogicalProcessorInformation(buffer, &length);
@@ -181,8 +178,8 @@ std::pair<int, int> CPU::TotalCores() {
     }
 
     std::pair<int, int> result{0, 0};
-    auto* current = buffer;
-    DWORD offset = 0;
+    auto               *current = buffer;
+    DWORD               offset  = 0;
 
     while (offset + sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION) <= length) {
         switch (current->Relationship) {
@@ -213,10 +210,11 @@ std::pair<int, int> CPU::TotalCores() {
 #endif
 }
 
-std::int64_t CPU::ClockSpeed() {
+std::int64_t
+CPU::ClockSpeed() {
 #if defined(__APPLE__)
     std::uint64_t frequency = 0;
-    size_t size = sizeof(frequency);
+    size_t        size      = sizeof(frequency);
 
     if (sysctlbyname("hw.cpufrequency", &frequency, &size, nullptr, 0) == 0) {
         return static_cast<std::int64_t>(frequency);
@@ -228,7 +226,7 @@ std::int64_t CPU::ClockSpeed() {
     static const std::regex pattern(R"(cpu MHz(.*): (.*))");
 
     std::ifstream stream("/proc/cpuinfo");
-    std::string line;
+    std::string   line;
 
     while (std::getline(stream, line)) {
         std::smatch matches;
@@ -241,26 +239,17 @@ std::int64_t CPU::ClockSpeed() {
 
 #elif defined(_WIN32) || defined(_WIN64)
     HKEY hkey_processor = nullptr;
-    LONG error = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                               "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-                               0,
-                               KEY_READ,
-                               &hkey_processor);
+    LONG error          = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0, KEY_READ, &hkey_processor);
     if (error != ERROR_SUCCESS) {
         return -1;
     }
 
     auto key = resource(hkey_processor, [](HKEY key_handle) { RegCloseKey(key_handle); });
 
-    DWORD mhz = 0;
+    DWORD mhz         = 0;
     DWORD buffer_size = sizeof(mhz);
 
-    error = RegQueryValueExA(key.get(),
-                             "~MHz",
-                             nullptr,
-                             nullptr,
-                             reinterpret_cast<LPBYTE>(&mhz),
-                             &buffer_size);
+    error = RegQueryValueExA(key.get(), "~MHz", nullptr, nullptr, reinterpret_cast<LPBYTE>(&mhz), &buffer_size);
     if (error != ERROR_SUCCESS) {
         return -1;
     }
@@ -272,7 +261,8 @@ std::int64_t CPU::ClockSpeed() {
 #endif
 }
 
-bool CPU::HyperThreading() {
+bool
+CPU::HyperThreading() {
     const auto [logical, physical] = TotalCores();
     return logical > 0 && physical > 0 && logical != physical;
 }

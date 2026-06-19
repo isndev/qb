@@ -8,7 +8,7 @@
  * throttling, and shared channel consumption.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -37,10 +37,12 @@ using namespace std::chrono_literals;
 
 class StreamCreationTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -52,7 +54,7 @@ protected:
 TEST_F(StreamCreationTests, FromVector) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{1, 2, 3, 4, 5};
-        auto stream = async_stream<int>::from_vector(data);
+        auto             stream = async_stream<int>::from_vector(data);
 
         auto result = co_await stream.collect();
 
@@ -106,10 +108,12 @@ TEST_F(StreamCreationTests, SingleStream) {
 
 class StreamTransformTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -121,8 +125,7 @@ protected:
 TEST_F(StreamTransformTests, MapTransform) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{1, 2, 3};
-        auto stream = async_stream<int>::from_vector(data)
-            .map([](int x) { return x * 2; });
+        auto             stream = async_stream<int>::from_vector(data).map([](int x) { return x * 2; });
 
         auto result = co_await stream.collect();
 
@@ -141,8 +144,7 @@ TEST_F(StreamTransformTests, MapTransform) {
 TEST_F(StreamTransformTests, FilterTransform) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{1, 2, 3, 4, 5};
-        auto stream = async_stream<int>::from_vector(data)
-            .filter([](int x) { return x % 2 == 0; });
+        auto             stream = async_stream<int>::from_vector(data).filter([](int x) { return x % 2 == 0; });
 
         auto result = co_await stream.collect();
 
@@ -160,8 +162,7 @@ TEST_F(StreamTransformTests, FilterTransform) {
  */
 TEST_F(StreamTransformTests, TakeTransform) {
     auto coro_fn = []() -> task<void> {
-        auto stream = range_stream(0, 100)
-            .take(5);
+        auto stream = range_stream(0, 100).take(5);
 
         auto result = co_await stream.collect();
 
@@ -179,8 +180,7 @@ TEST_F(StreamTransformTests, TakeTransform) {
  */
 TEST_F(StreamTransformTests, SkipTransform) {
     auto coro_fn = []() -> task<void> {
-        auto stream = range_stream(0, 10)
-            .skip(7);
+        auto stream = range_stream(0, 10).skip(7);
 
         auto result = co_await stream.collect();
 
@@ -199,10 +199,10 @@ TEST_F(StreamTransformTests, SkipTransform) {
 TEST_F(StreamTransformTests, ChainedTransforms) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-        auto stream = async_stream<int>::from_vector(data)
-            .filter([](int x) { return x % 2 == 0; })  // 2, 4, 6, 8, 10
-            .map([](int x) { return x * x; })          // 4, 16, 36, 64, 100
-            .take(3);                                  // 4, 16, 36
+        auto             stream = async_stream<int>::from_vector(data)
+                                      .filter([](int x) { return x % 2 == 0; }) // 2, 4, 6, 8, 10
+                                      .map([](int x) { return x * x; })         // 4, 16, 36, 64, 100
+                                      .take(3);                                 // 4, 16, 36
 
         auto result = co_await stream.collect();
 
@@ -220,10 +220,12 @@ TEST_F(StreamTransformTests, ChainedTransforms) {
 
 class StreamOperationTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -235,7 +237,7 @@ protected:
 TEST_F(StreamOperationTests, CountOperation) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{1, 2, 3, 4, 5};
-        auto stream = async_stream<int>::from_vector(data);
+        auto             stream = async_stream<int>::from_vector(data);
 
         size_t count = co_await stream.count();
 
@@ -254,7 +256,7 @@ TEST_F(StreamOperationTests, CountOperation) {
 TEST_F(StreamOperationTests, FirstOperation) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{42, 2, 3};
-        auto stream = async_stream<int>::from_vector(data);
+        auto             stream = async_stream<int>::from_vector(data);
 
         auto first = co_await stream.first();
 
@@ -292,7 +294,7 @@ TEST_F(StreamOperationTests, FirstEmpty) {
 TEST_F(StreamOperationTests, ForEachOperation) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{1, 2, 3};
-        auto stream = async_stream<int>::from_vector(data);
+        auto             stream = async_stream<int>::from_vector(data);
 
         int sum = 0;
         co_await stream.for_each([&sum](int x) { sum += x; });
@@ -312,9 +314,9 @@ TEST_F(StreamOperationTests, ForEachOperation) {
 TEST_F(StreamOperationTests, AnyPredicate) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{1, 2, 3, 4, 5};
-        auto stream = async_stream<int>::from_vector(data);
+        auto             stream = async_stream<int>::from_vector(data);
 
-        bool has_even = co_await stream.any([](int x) { return x % 2 == 0; });
+        bool has_even     = co_await stream.any([](int x) { return x % 2 == 0; });
         bool has_negative = co_await stream.any([](int x) { return x < 0; });
 
         EXPECT_TRUE(has_even);
@@ -333,9 +335,9 @@ TEST_F(StreamOperationTests, AnyPredicate) {
 TEST_F(StreamOperationTests, AllPredicate) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{2, 4, 6, 8};
-        auto stream = async_stream<int>::from_vector(data);
+        auto             stream = async_stream<int>::from_vector(data);
 
-        bool all_even = co_await stream.all([](int x) { return x % 2 == 0; });
+        bool all_even     = co_await stream.all([](int x) { return x % 2 == 0; });
         bool all_positive = co_await stream.all([](int x) { return x > 0; });
 
         EXPECT_TRUE(all_even);
@@ -354,11 +356,10 @@ TEST_F(StreamOperationTests, AllPredicate) {
 TEST_F(StreamOperationTests, FindOperation) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{1, 2, 3, 4, 5};
-        auto stream = async_stream<int>::from_vector(data);
+        auto             stream = async_stream<int>::from_vector(data);
 
-        auto found = co_await stream.find([](int x) { return x > 3; });
-        auto not_found = co_await async_stream<int>::from_vector(data)
-            .find([](int x) { return x > 10; });
+        auto found     = co_await stream.find([](int x) { return x > 3; });
+        auto not_found = co_await async_stream<int>::from_vector(data).find([](int x) { return x > 10; });
 
         EXPECT_TRUE(found.has_value());
         EXPECT_EQ(*found, 4);
@@ -377,7 +378,7 @@ TEST_F(StreamOperationTests, FindOperation) {
 TEST_F(StreamOperationTests, ReduceOperation) {
     auto coro_fn = []() -> task<void> {
         std::vector<int> data{1, 2, 3, 4, 5};
-        auto stream = async_stream<int>::from_vector(data);
+        auto             stream = async_stream<int>::from_vector(data);
 
         int sum = co_await stream.reduce([](int a, int b) { return a + b; }, 0);
 
@@ -395,10 +396,12 @@ TEST_F(StreamOperationTests, ReduceOperation) {
 
 class StreamUtilityTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -448,8 +451,14 @@ TEST_F(StreamUtilityTests, RepeatValue) {
 
 class StreamLifetimeTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 /**
@@ -463,7 +472,8 @@ TEST_F(StreamLifetimeTests, FromChannelDrainsCorrectly) {
 
     auto coro_fn = [&done]() -> task<void> {
         channel<int> ch(10);
-        for (int i = 1; i <= 5; ++i) ch.try_send(i);
+        for (int i = 1; i <= 5; ++i)
+            ch.try_send(i);
         ch.close();
 
         auto stream = async_stream<int>::from_channel(ch);
@@ -488,11 +498,11 @@ TEST_F(StreamLifetimeTests, DeepChainedTransforms) {
 
     auto coro_fn = [&done]() -> task<void> {
         std::vector<int> data{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-        auto stream = async_stream<int>::from_vector(data)
-            .map([](int v) { return v * 2; })          // 2,4,6,8,10,12,14,16,18,20
-            .filter([](int v) { return v % 4 == 0; })  // 4,8,12,16,20
-            .skip(1)                                    // 8,12,16,20
-            .take(3);                                   // 8,12,16
+        auto             stream = async_stream<int>::from_vector(data)
+                                      .map([](int v) { return v * 2; })         // 2,4,6,8,10,12,14,16,18,20
+                                      .filter([](int v) { return v % 4 == 0; }) // 4,8,12,16,20
+                                      .skip(1)                                  // 8,12,16,20
+                                      .take(3);                                 // 8,12,16
 
         auto result = co_await stream.collect();
 
@@ -514,8 +524,8 @@ TEST_F(StreamLifetimeTests, ChainTwoStreams) {
     std::atomic<bool> done{false};
 
     auto coro_fn = [&done]() -> task<void> {
-        auto s1 = async_stream<int>::from_vector({1, 2, 3});
-        auto s2 = async_stream<int>::from_vector({4, 5, 6});
+        auto s1      = async_stream<int>::from_vector({1, 2, 3});
+        auto s2      = async_stream<int>::from_vector({4, 5, 6});
         auto chained = s1.chain(std::move(s2));
         auto result  = co_await chained.collect();
 
@@ -538,7 +548,7 @@ TEST_F(StreamLifetimeTests, BufferBatching) {
 
     auto coro_fn = [&done]() -> task<void> {
         std::vector<int> data{1, 2, 3, 4, 5, 6, 7};
-        auto stream = async_stream<int>::from_vector(data).buffer(3);
+        auto             stream = async_stream<int>::from_vector(data).buffer(3);
 
         auto batches = co_await stream.collect();
 
@@ -580,7 +590,7 @@ TEST_F(StreamLifetimeTests, FromChannelWithAsyncProducer) {
         int  sum    = 0;
         co_await stream.for_each([&sum](int v) { sum += v; });
 
-        EXPECT_EQ(sum, 10);  // 1+2+3+4
+        EXPECT_EQ(sum, 10); // 1+2+3+4
         done = true;
     };
 
@@ -595,8 +605,14 @@ TEST_F(StreamLifetimeTests, FromChannelWithAsyncProducer) {
 
 class StreamAdvancedTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(StreamAdvancedTests, MergeStreamsInterleavesRoundRobin) {
@@ -631,8 +647,8 @@ TEST_F(StreamAdvancedTests, MergeEmptyStreams) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         std::vector<async_stream<int>> vec;
-        auto merged = merge_streams(std::move(vec));
-        auto result = co_await merged.collect();
+        auto                           merged = merge_streams(std::move(vec));
+        auto                           result = co_await merged.collect();
         EXPECT_TRUE(result.empty());
         done = true;
     });
@@ -680,7 +696,7 @@ TEST_F(StreamAdvancedTests, DrainToChannel) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         channel<int> ch(10);
-        auto stream = async_stream<int>::from_vector({10, 20, 30});
+        auto         stream = async_stream<int>::from_vector({10, 20, 30});
         co_await stream.drain_to(ch);
         ch.close();
 
@@ -700,11 +716,9 @@ TEST_F(StreamAdvancedTests, DrainToChannel) {
 TEST_F(StreamAdvancedTests, FromGeneratorSync) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
-        int counter = 0;
-        auto stream = from_generator([&counter]() -> int {
-            return counter++;
-        });
-        auto result = co_await stream.take(5).collect();
+        int  counter = 0;
+        auto stream  = from_generator([&counter]() -> int { return counter++; });
+        auto result  = co_await stream.take(5).collect();
         EXPECT_EQ(result.size(), 5u);
         EXPECT_EQ(result[0], 0);
         EXPECT_EQ(result[4], 4);
@@ -746,7 +760,7 @@ TEST_F(StreamAdvancedTests, BackpressureRespectsBound) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         auto source = async_stream<int>::from_vector({1, 2, 3, 4, 5});
-        auto bp = source.backpressure(2);
+        auto bp     = source.backpressure(2);
         auto result = co_await bp.collect();
         EXPECT_EQ(result.size(), 5u);
         EXPECT_EQ(result[0], 1);
@@ -760,11 +774,11 @@ TEST_F(StreamAdvancedTests, BackpressureRespectsBound) {
 TEST_F(StreamAdvancedTests, ThrottleRateLimits) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
-        auto stream = async_stream<int>::from_vector({1, 2, 3});
+        auto stream    = async_stream<int>::from_vector({1, 2, 3});
         auto throttled = stream.throttle(30ms);
-        auto start = std::chrono::steady_clock::now();
-        auto result = co_await throttled.collect();
-        auto elapsed = std::chrono::steady_clock::now() - start;
+        auto start     = std::chrono::steady_clock::now();
+        auto result    = co_await throttled.collect();
+        auto elapsed   = std::chrono::steady_clock::now() - start;
         EXPECT_EQ(result.size(), 3u);
         EXPECT_GE(elapsed, 50ms);
         done = true;
@@ -795,7 +809,8 @@ TEST_F(StreamAdvancedTests, FromChannelSharedMultipleConsumers) {
 // Main Entry Point
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();

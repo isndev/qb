@@ -104,12 +104,11 @@ void
 msg_callback(int, int, int, const void *, std::size_t, SSL *, void *) {}
 
 int
-select_first_alpn(SSL *, const unsigned char **out, unsigned char *outlen,
-                  const unsigned char *in, unsigned int inlen, void *) {
+select_first_alpn(SSL *, const unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *) {
     if (!in || inlen == 0) {
         return SSL_TLSEXT_ERR_NOACK;
     }
-    *out = in + 1;
+    *out    = in + 1;
     *outlen = in[0];
     return SSL_TLSEXT_ERR_OK;
 }
@@ -151,8 +150,7 @@ public:
 };
 
 ::testing::AssertionResult
-read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size,
-             std::chrono::milliseconds timeout = 2s) {
+read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std::chrono::milliseconds timeout = 2s) {
     auto       *out      = static_cast<char *>(data);
     std::size_t received = 0;
     const auto  deadline = std::chrono::steady_clock::now() + timeout;
@@ -166,8 +164,7 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size,
             continue;
         }
         if (ret < 0) {
-            return ::testing::AssertionFailure()
-                   << "SSL read failed after " << received << "/" << size << " bytes";
+            return ::testing::AssertionFailure() << "SSL read failed after " << received << "/" << size << " bytes";
         }
         std::this_thread::sleep_for(1ms);
     }
@@ -175,14 +172,12 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size,
     if (received == size) {
         return ::testing::AssertionSuccess();
     }
-    return ::testing::AssertionFailure()
-           << "timed out waiting for " << size << " SSL bytes; received " << received
-           << ", last read result=" << last;
+    return ::testing::AssertionFailure() << "timed out waiting for " << size << " SSL bytes; received " << received
+                                         << ", last read result=" << last;
 }
 
 ::testing::AssertionResult
-write_exactly(qb::io::tcp::ssl::socket &socket, const void *data, std::size_t size,
-              std::chrono::milliseconds timeout = 2s) {
+write_exactly(qb::io::tcp::ssl::socket &socket, const void *data, std::size_t size, std::chrono::milliseconds timeout = 2s) {
     const auto *in       = static_cast<const char *>(data);
     std::size_t written  = 0;
     const auto  deadline = std::chrono::steady_clock::now() + timeout;
@@ -196,8 +191,7 @@ write_exactly(qb::io::tcp::ssl::socket &socket, const void *data, std::size_t si
             continue;
         }
         if (ret < 0) {
-            return ::testing::AssertionFailure()
-                   << "SSL write failed after " << written << "/" << size << " bytes";
+            return ::testing::AssertionFailure() << "SSL write failed after " << written << "/" << size << " bytes";
         }
         std::this_thread::sleep_for(1ms);
     }
@@ -205,9 +199,7 @@ write_exactly(qb::io::tcp::ssl::socket &socket, const void *data, std::size_t si
     if (written == size) {
         return ::testing::AssertionSuccess();
     }
-    return ::testing::AssertionFailure()
-           << "timed out writing " << size << " SSL bytes; wrote " << written
-           << ", last write result=" << last;
+    return ::testing::AssertionFailure() << "timed out writing " << size << " SSL bytes; wrote " << written << ", last write result=" << last;
 }
 
 bool
@@ -226,9 +218,7 @@ TEST(SSLContext, NullAndInvalidInputsFailCleanly) {
     EXPECT_TRUE(qb::io::ssl::get_certificate(nullptr).subject.empty());
     EXPECT_EQ(qb::io::ssl::create_client_context(nullptr), nullptr);
     EXPECT_EQ(qb::io::ssl::create_server_context(nullptr, {}, {}), nullptr);
-    EXPECT_EQ(qb::io::ssl::create_server_context(TLS_server_method(),
-                                                 "missing-cert.pem", "missing-key.pem"),
-              nullptr);
+    EXPECT_EQ(qb::io::ssl::create_server_context(TLS_server_method(), "missing-cert.pem", "missing-key.pem"), nullptr);
 
     EXPECT_FALSE(qb::io::ssl::load_ca_certificates(nullptr, "ca.pem"));
     EXPECT_FALSE(qb::io::ssl::load_ca_directory(nullptr, "."));
@@ -265,8 +255,7 @@ TEST(SSLContext, ConfiguresClientAndServerContexts) {
     ASSERT_NE(client, nullptr);
     auto client_guard = std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)>(client, SSL_CTX_free);
 
-    auto *server = qb::io::ssl::create_server_context(TLS_server_method(),
-                                                      files.cert, files.key);
+    auto *server = qb::io::ssl::create_server_context(TLS_server_method(), files.cert, files.key);
     ASSERT_NE(server, nullptr);
     auto server_guard = std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)>(server, SSL_CTX_free);
 
@@ -278,9 +267,7 @@ TEST(SSLContext, ConfiguresClientAndServerContexts) {
     EXPECT_TRUE(qb::io::ssl::set_ciphersuites_tls13(client, "TLS_AES_128_GCM_SHA256"));
     EXPECT_FALSE(qb::io::ssl::set_ciphersuites_tls13(client, ""));
     EXPECT_TRUE(qb::io::ssl::set_tls_protocol_versions(client, TLS1_2_VERSION, 0));
-    EXPECT_TRUE(qb::io::ssl::configure_client_certificate(client,
-                                                         files.cert.string(),
-                                                         files.key.string()));
+    EXPECT_TRUE(qb::io::ssl::configure_client_certificate(client, files.cert.string(), files.key.string()));
     EXPECT_FALSE(qb::io::ssl::configure_client_certificate(client, "", files.key.string()));
     EXPECT_TRUE(qb::io::ssl::set_alpn_protos_client(client, {"h2", "http/1.1"}));
     EXPECT_FALSE(qb::io::ssl::set_alpn_protos_client(client, {}));
@@ -317,15 +304,10 @@ TEST(SSLContext, RejectsInvalidConfigurationOnRealContexts) {
     EXPECT_FALSE(qb::io::ssl::load_ca_certificates(client, "missing-ca.pem"));
     EXPECT_FALSE(qb::io::ssl::set_cipher_list(client, "NO-SUCH-CIPHER"));
     EXPECT_FALSE(qb::io::ssl::set_ciphersuites_tls13(client, "NO_SUCH_TLS13_SUITE"));
-    EXPECT_FALSE(qb::io::ssl::configure_client_certificate(client,
-                                                          "missing-cert.pem",
-                                                          files.key.string()));
-    EXPECT_FALSE(qb::io::ssl::configure_client_certificate(client,
-                                                          files.cert.string(),
-                                                          "missing-key.pem"));
+    EXPECT_FALSE(qb::io::ssl::configure_client_certificate(client, "missing-cert.pem", files.key.string()));
+    EXPECT_FALSE(qb::io::ssl::configure_client_certificate(client, files.cert.string(), "missing-key.pem"));
 
-    auto *server = qb::io::ssl::create_server_context(TLS_server_method(),
-                                                      files.cert, files.key);
+    auto *server = qb::io::ssl::create_server_context(TLS_server_method(), files.cert, files.key);
     ASSERT_NE(server, nullptr);
     auto server_guard = std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)>(server, SSL_CTX_free);
 
@@ -370,8 +352,7 @@ TEST(SSLListener, WrappersExposeContextState) {
         GTEST_SKIP() << "SSL certificate resources are not available";
     }
     qb::io::tcp::ssl::listener listener;
-    listener.init(qb::io::ssl::create_server_context(TLS_server_method(),
-                                                     files.cert, files.key));
+    listener.init(qb::io::ssl::create_server_context(TLS_server_method(), files.cert, files.key));
     ASSERT_NE(listener.ssl_handle(), nullptr);
 
     EXPECT_TRUE(listener.load_ca_certificates_for_client_auth(files.cert.string()));
@@ -524,8 +505,7 @@ TEST(SSLSocket, LoopbackHandshakeExposesNegotiatedState) {
     }
 
     qb::io::tcp::ssl::listener listener;
-    listener.init(qb::io::ssl::create_server_context(TLS_server_method(),
-                                                     files.cert, files.key));
+    listener.init(qb::io::ssl::create_server_context(TLS_server_method(), files.cert, files.key));
     ASSERT_NE(listener.ssl_handle(), nullptr);
     ASSERT_TRUE(listener.set_supported_alpn_protocols({"h2", "http/1.1"}));
     ASSERT_EQ(listener.listen_v4(0), 0);
@@ -534,7 +514,7 @@ TEST(SSLSocket, LoopbackHandshakeExposesNegotiatedState) {
 
     std::atomic<bool> server_ready{false};
     std::atomic<bool> server_ok{false};
-    std::thread server_thread([&] {
+    std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
         ASSERT_EQ(listener.accept(server_socket), 0);
@@ -585,7 +565,7 @@ TEST(SSLSocket, LoopbackHandshakeExposesNegotiatedState) {
     EXPECT_TRUE(session.is_valid());
     {
         qb::io::tcp::ssl::socket resumption_socket;
-        auto *ctx = qb::io::ssl::create_client_context(TLS_client_method());
+        auto                    *ctx = qb::io::ssl::create_client_context(TLS_client_method());
         ASSERT_NE(ctx, nullptr);
         resumption_socket.init(SSL_new(ctx));
         EXPECT_TRUE(resumption_socket.set_session(session));
@@ -611,8 +591,7 @@ TEST(SSLSocket, BlockingUriAndEndpointTimeoutConnectVariantsReachLoopbackServer)
     constexpr int expected_connections = 3;
 
     qb::io::tcp::ssl::listener listener;
-    listener.init(qb::io::ssl::create_server_context(TLS_server_method(),
-                                                     files.cert, files.key));
+    listener.init(qb::io::ssl::create_server_context(TLS_server_method(), files.cert, files.key));
     ASSERT_NE(listener.ssl_handle(), nullptr);
     ASSERT_EQ(listener.listen_v4(0), 0);
     const auto port = listener.local_endpoint().port();
@@ -620,7 +599,7 @@ TEST(SSLSocket, BlockingUriAndEndpointTimeoutConnectVariantsReachLoopbackServer)
 
     std::atomic<bool> server_ready{false};
     std::atomic<int>  server_count{0};
-    std::thread server_thread([&] {
+    std::thread       server_thread([&] {
         server_ready = true;
         for (int i = 0; i < expected_connections; ++i) {
             qb::io::tcp::ssl::socket server_socket;
@@ -655,22 +634,17 @@ TEST(SSLSocket, BlockingUriAndEndpointTimeoutConnectVariantsReachLoopbackServer)
 
     qb::io::tcp::ssl::socket uri_client;
     uri_client.set_insecure();
-    ASSERT_EQ(uri_client.connect(qb::io::uri("tcp://127.0.0.1:" + std::to_string(port))),
-              0);
+    ASSERT_EQ(uri_client.connect(qb::io::uri("tcp://127.0.0.1:" + std::to_string(port))), 0);
     exchange_marker(uri_client, 'a');
 
     qb::io::tcp::ssl::socket timed_uri_client;
     timed_uri_client.set_insecure();
-    ASSERT_EQ(timed_uri_client.connect(qb::io::uri("tcp://127.0.0.1:" + std::to_string(port)),
-                                       1s),
-              0);
+    ASSERT_EQ(timed_uri_client.connect(qb::io::uri("tcp://127.0.0.1:" + std::to_string(port)), 1s), 0);
     exchange_marker(timed_uri_client, 'b');
 
     qb::io::tcp::ssl::socket endpoint_timeout_client;
     endpoint_timeout_client.set_insecure();
-    ASSERT_EQ(endpoint_timeout_client.connect(qb::io::endpoint("127.0.0.1", port),
-                                              "localhost", 1s),
-              0);
+    ASSERT_EQ(endpoint_timeout_client.connect(qb::io::endpoint("127.0.0.1", port), "localhost", 1s), 0);
     exchange_marker(endpoint_timeout_client, 'c');
 
     EXPECT_EQ(server_count.load(), expected_connections);
@@ -684,14 +658,13 @@ TEST(SSLSocket, IPv6AndUnixConnectVariantsCompleteHandshake) {
 
     {
         qb::io::tcp::ssl::listener listener;
-        listener.init(qb::io::ssl::create_server_context(TLS_server_method(),
-                                                         files.cert, files.key));
+        listener.init(qb::io::ssl::create_server_context(TLS_server_method(), files.cert, files.key));
         ASSERT_NE(listener.ssl_handle(), nullptr);
         ASSERT_EQ(listener.listen_v6(0, "::1"), 0);
         const auto port = listener.local_endpoint().port();
         ASSERT_NE(port, 0);
 
-        std::thread server_thread([&] {
+        std::thread       server_thread([&] {
             qb::io::tcp::ssl::socket server_socket;
             ASSERT_EQ(listener.accept(server_socket), 0);
             drive_server_handshake(server_socket);
@@ -719,18 +692,16 @@ TEST(SSLSocket, IPv6AndUnixConnectVariantsCompleteHandshake) {
 
 #ifndef _WIN32
     {
-        const auto path =
-            std::string("/tmp/qb-ssl-socket-uri-") + std::to_string(::getpid()) + ".sock";
-        const auto uri = qb::io::uri("unix://" + path);
+        const auto path = std::string("/tmp/qb-ssl-socket-uri-") + std::to_string(::getpid()) + ".sock";
+        const auto uri  = qb::io::uri("unix://" + path);
         std::remove(path.c_str());
 
         qb::io::tcp::ssl::listener listener;
-        listener.init(qb::io::ssl::create_server_context(TLS_server_method(),
-                                                         files.cert, files.key));
+        listener.init(qb::io::ssl::create_server_context(TLS_server_method(), files.cert, files.key));
         ASSERT_NE(listener.ssl_handle(), nullptr);
         ASSERT_EQ(listener.listen(uri), 0);
 
-        std::thread server_thread([&] {
+        std::thread       server_thread([&] {
             qb::io::tcp::ssl::socket server_socket;
             ASSERT_EQ(listener.accept(server_socket), 0);
             drive_server_handshake(server_socket);
@@ -780,8 +751,7 @@ TEST(SSLSocket, NonBlockingConnectVariantsPrepareSslState) {
     endpoint_client.set_insecure();
     ASSERT_TRUE(endpoint_client.set_sni_hostname("localhost"));
     ASSERT_TRUE(endpoint_client.set_alpn_protocols({"h2"}));
-    const int endpoint_ret =
-        endpoint_client.n_connect(qb::io::endpoint("127.0.0.1", port), "localhost");
+    const int endpoint_ret = endpoint_client.n_connect(qb::io::endpoint("127.0.0.1", port), "localhost");
     expect_progress(endpoint_ret, qb::io::socket::get_last_errno());
     EXPECT_NE(endpoint_client.ssl_handle(), nullptr);
     EXPECT_FALSE(endpoint_client.handshake_complete());
@@ -789,8 +759,7 @@ TEST(SSLSocket, NonBlockingConnectVariantsPrepareSslState) {
 
     qb::io::tcp::ssl::socket uri_client;
     uri_client.set_insecure();
-    const int uri_ret =
-        uri_client.n_connect(qb::io::uri("tcp://127.0.0.1:" + std::to_string(port)));
+    const int uri_ret = uri_client.n_connect(qb::io::uri("tcp://127.0.0.1:" + std::to_string(port)));
     expect_progress(uri_ret, qb::io::socket::get_last_errno());
     EXPECT_NE(uri_client.ssl_handle(), nullptr);
     uri_client.close();
@@ -810,9 +779,8 @@ TEST(SSLSocket, NonBlockingConnectVariantsPrepareSslState) {
     v6_client.close();
 
 #ifndef _WIN32
-    const auto path =
-        std::string("/tmp/qb-ssl-socket-nconnect-") + std::to_string(::getpid()) + ".sock";
-    const auto uri = qb::io::uri("unix://" + path);
+    const auto path = std::string("/tmp/qb-ssl-socket-nconnect-") + std::to_string(::getpid()) + ".sock";
+    const auto uri  = qb::io::uri("unix://" + path);
     std::remove(path.c_str());
 
     qb::io::tcp::listener unix_listener;

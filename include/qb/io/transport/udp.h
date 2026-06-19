@@ -8,7 +8,7 @@
  * and message buffering with destination tracking.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -56,7 +56,10 @@ public:
      *       so that generic code can evaluate `Transport::is_secure()` at
      *       compile time without instantiating an object.
      */
-    static constexpr bool is_secure() noexcept { return false; }
+    static constexpr bool
+    is_secure() noexcept {
+        return false;
+    }
     /**
      * @brief Indicates that this transport implementation resets its input buffer state
      *        when a read operation is pending (characteristic of datagram processing).
@@ -106,8 +109,7 @@ public:
              */
             std::size_t
             operator()(const identity &id) const noexcept {
-                return std::hash<std::string_view>{}(
-                    std::string_view(reinterpret_cast<const char *>(&id), id.len()));
+                return std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char *>(&id), id.len()));
             }
         };
 
@@ -121,9 +123,9 @@ public:
          */
         bool
         operator==(identity const &rhs) const noexcept {
-            return len() == rhs.len() &&
-                   std::string_view(reinterpret_cast<const char *>(this), len()) ==
-                   std::string_view(reinterpret_cast<const char *>(&rhs), rhs.len());
+            return len() == rhs.len()
+                   && std::string_view(reinterpret_cast<const char *>(this), len())
+                          == std::string_view(reinterpret_cast<const char *>(&rhs), rhs.len());
         }
 
         bool
@@ -173,15 +175,13 @@ public:
             // this nested class yet.
             if (proxy._last_pushed_offset == kNoPendingMessage) {
                 proxy._last_pushed_offset = out_buffer.size();
-                auto &m                   = out_buffer.template allocate_size<pushed_message>(
-                    message_padding_size(0));
+                auto &m                   = out_buffer.template allocate_size<pushed_message>(message_padding_size(0));
                 m.ident                   = proxy._remote_dest;
                 m.size                    = 0;
                 m.storage_size            = message_storage_size(0);
             }
 
-            auto *p = reinterpret_cast<udp::pushed_message *>(
-                out_buffer.begin() + proxy._last_pushed_offset);
+            auto      *p                = reinterpret_cast<udp::pushed_message *>(out_buffer.begin() + proxy._last_pushed_offset);
             const auto previous_payload = p->size;
             const auto previous_storage = p->storage_size;
             const auto previous_padding = previous_storage - sizeof(pushed_message) - previous_payload;
@@ -194,14 +194,12 @@ public:
             const auto new_payload = previous_payload + added;
             const auto new_padding = message_padding_size(new_payload);
             const auto max_write   = proxy.max_write_buffer_size();
-            if (new_payload > io::udp::socket::MaxDatagramSize ||
-                (max_write != static_cast<std::size_t>(-1) &&
-                 out_buffer.size() + new_padding > max_write)) {
+            if (new_payload > io::udp::socket::MaxDatagramSize
+                || (max_write != static_cast<std::size_t>(-1) && out_buffer.size() + new_padding > max_write)) {
                 out_buffer.free_back(added);
                 if (previous_padding)
                     out_buffer.allocate_back(previous_padding);
-                p = reinterpret_cast<udp::pushed_message *>(
-                    out_buffer.begin() + proxy._last_pushed_offset);
+                p               = reinterpret_cast<udp::pushed_message *>(out_buffer.begin() + proxy._last_pushed_offset);
                 p->size         = previous_payload;
                 p->storage_size = previous_storage;
                 qb::io::socket::set_last_errno(EMSGSIZE);
@@ -210,8 +208,7 @@ public:
 
             if (new_padding)
                 out_buffer.allocate_back(new_padding);
-            p = reinterpret_cast<udp::pushed_message *>(
-                out_buffer.begin() + proxy._last_pushed_offset);
+            p               = reinterpret_cast<udp::pushed_message *>(out_buffer.begin() + proxy._last_pushed_offset);
             p->size         = new_payload;
             p->storage_size = message_storage_size(new_payload);
             return *this;
@@ -278,8 +275,7 @@ private:
      * header and start a new datagram. Otherwise the value is the byte offset
      * of the current in-progress `pushed_message` inside `_out_buffer`.
      */
-    static constexpr std::size_t kNoPendingMessage =
-        (std::numeric_limits<std::size_t>::max)();
+    static constexpr std::size_t kNoPendingMessage = (std::numeric_limits<std::size_t>::max)();
 
     std::size_t _last_pushed_offset = kNoPendingMessage;
 
@@ -320,8 +316,7 @@ public:
     out() {
         if (_last_pushed_offset == kNoPendingMessage) {
             _last_pushed_offset = _out_buffer.size();
-            auto &m             = _out_buffer.allocate_size<pushed_message>(
-                message_padding_size(0));
+            auto &m             = _out_buffer.allocate_size<pushed_message>(message_padding_size(0));
             m.ident             = _remote_dest;
             m.size              = 0;
             m.storage_size      = message_storage_size(0);
@@ -348,8 +343,7 @@ public:
         const auto remaining = this->_max_read_buffer_size - _in_buffer.size();
         if (remaining >= io::udp::socket::MaxDatagramSize) {
             const auto ret =
-                transport().read(_in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
-                                 io::udp::socket::MaxDatagramSize, _remote_source);
+                transport().read(_in_buffer.allocate_back(io::udp::socket::MaxDatagramSize), io::udp::socket::MaxDatagramSize, _remote_source);
             if (qb::likely(ret > 0)) {
                 _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
                 setDestination(_remote_source);
@@ -366,11 +360,9 @@ public:
         }
 
         std::array<char, io::udp::socket::MaxDatagramSize> datagram;
-        const auto ret =
-            transport().read(datagram.data(), datagram.size(), _remote_source);
+        const auto                                         ret = transport().read(datagram.data(), datagram.size(), _remote_source);
         if (qb::likely(ret > 0 && static_cast<std::size_t>(ret) <= remaining)) {
-            std::memcpy(_in_buffer.allocate_back(static_cast<std::size_t>(ret)),
-                        datagram.data(), static_cast<std::size_t>(ret));
+            std::memcpy(_in_buffer.allocate_back(static_cast<std::size_t>(ret)), datagram.data(), static_cast<std::size_t>(ret));
             setDestination(_remote_source);
         } else if (ret > 0) {
             qb::io::socket::set_last_errno(EMSGSIZE);
@@ -412,8 +404,7 @@ public:
             return -1;
         }
 
-        const auto ret =
-            transport().write(begin, msg.size, msg.ident);
+        const auto ret = transport().write(begin, msg.size, msg.ident);
 
         if (qb::likely(ret >= 0)) {
             // UDP is all-or-nothing: the whole pushed_message is consumed on success.
@@ -464,14 +455,12 @@ public:
 
         const auto max_write = this->max_write_buffer_size();
         const auto required  = message_storage_size(size);
-        if (max_write != static_cast<std::size_t>(-1) &&
-            (required > max_write || _out_buffer.size() > max_write - required)) {
+        if (max_write != static_cast<std::size_t>(-1) && (required > max_write || _out_buffer.size() > max_write - required)) {
             qb::io::socket::set_last_errno(EMSGSIZE);
             return nullptr;
         }
 
-        auto &m = _out_buffer.allocate_size<pushed_message>(
-            required - sizeof(pushed_message));
+        auto &m        = _out_buffer.allocate_size<pushed_message>(required - sizeof(pushed_message));
         m.ident        = to;
         m.size         = size;
         m.storage_size = required;

@@ -7,7 +7,7 @@
  * operations and a protocol for accepting and processing incoming connections.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -51,11 +51,9 @@ class acceptor
     : public input<acceptor<_Derived, _Prot>>
     , public _Prot {
     friend class input<acceptor<_Derived, _Prot>>;
-    using base_t = input<acceptor<_Derived, _Prot>>;
-    using Protocol =
-        protocol::accept<acceptor,
-                         typename _Prot::socket_type>; /**< Protocol type for accepting
-                                                          connections */
+    using base_t   = input<acceptor<_Derived, _Prot>>;
+    using Protocol = protocol::accept<acceptor, typename _Prot::socket_type>; /**< Protocol type for accepting
+                                                                                 connections */
 
 public:
     /**
@@ -117,8 +115,7 @@ public:
      */
     void
     on(typename Protocol::message &&new_socket) {
-        static_cast<_Derived &>(*this).on(
-            std::forward<typename Protocol::message>(new_socket));
+        static_cast<_Derived &>(*this).on(std::forward<typename Protocol::message>(new_socket));
     }
 
     /**
@@ -137,14 +134,10 @@ public:
      *       server-side setup before the first accept fires) can call
      *       `listen_no_start()` instead.
      */
-    [[nodiscard]] bool listen(qb::io::uri uri,
-                [[maybe_unused]] std::filesystem::path cert_file = {},
-                [[maybe_unused]] std::filesystem::path key_file = {},
-                [[maybe_unused]] std::vector<std::string> alpn_protocols = {}) {
-        if (!listen_no_start(std::move(uri),
-                             std::move(cert_file),
-                             std::move(key_file),
-                             std::move(alpn_protocols)))
+    [[nodiscard]] bool
+    listen(qb::io::uri uri, [[maybe_unused]] std::filesystem::path cert_file = {}, [[maybe_unused]] std::filesystem::path key_file = {},
+           [[maybe_unused]] std::vector<std::string> alpn_protocols = {}) {
+        if (!listen_no_start(std::move(uri), std::move(cert_file), std::move(key_file), std::move(alpn_protocols)))
             return false;
         this->start();
         return true;
@@ -158,10 +151,9 @@ public:
      * initialisation (plug protocol upgraders, register lifecycle hooks, …) before
      * the first accept fires.
      */
-    [[nodiscard]] bool listen_no_start(qb::io::uri uri,
-                [[maybe_unused]] std::filesystem::path cert_file = {},
-                [[maybe_unused]] std::filesystem::path key_file = {},
-                [[maybe_unused]] std::vector<std::string> alpn_protocols = {}) {
+    [[nodiscard]] bool
+    listen_no_start(qb::io::uri uri, [[maybe_unused]] std::filesystem::path cert_file = {},
+                    [[maybe_unused]] std::filesystem::path key_file = {}, [[maybe_unused]] std::vector<std::string> alpn_protocols = {}) {
 #ifdef QB_HAS_SSL
         using tpt = std::decay_t<decltype(this->transport())>;
         if constexpr (tpt::is_secure()) {

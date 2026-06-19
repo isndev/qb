@@ -7,7 +7,7 @@
  * utilities, manual iteration, move semantics, and async generator helper functions.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -36,7 +36,7 @@
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 
-#define TLOG(fmt, ...) std::fprintf(stderr, "[test ] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
+#define TLOG(fmt, ...) std::fprintf(stderr, "[test ] " fmt "\n" __VA_OPT__(, ) __VA_ARGS__)
 
 // =============================================================================
 // TEST SUITE: Basic Generator
@@ -74,8 +74,8 @@ TEST_F(GeneratorBasicTests, FibonacciGenerator) {
         for (int i = 0; i < n; ++i) {
             co_yield a;
             int next = a + b;
-            a = b;
-            b = next;
+            a        = b;
+            b        = next;
         }
     };
 
@@ -148,7 +148,8 @@ TEST_F(RangeGeneratorTests, IotaGenerator) {
     std::vector<int> result;
     for (auto val : gen) {
         result.push_back(val);
-        if (result.size() >= 5) break;
+        if (result.size() >= 5)
+            break;
     }
 
     EXPECT_EQ(result, (std::vector<int>{10, 11, 12, 13, 14}));
@@ -164,7 +165,8 @@ TEST_F(RangeGeneratorTests, RepeatGenerator) {
     std::vector<int> result;
     for (auto val : gen) {
         result.push_back(val);
-        if (result.size() >= 3) break;
+        if (result.size() >= 3)
+            break;
     }
 
     EXPECT_EQ(result, (std::vector<int>{7, 7, 7}));
@@ -214,7 +216,8 @@ TEST_F(GeneratorTransformTests, SkipGenerator) {
     std::vector<int> result;
     for (auto val : gen) {
         result.push_back(val);
-        if (result.size() >= 3) break;
+        if (result.size() >= 3)
+            break;
     }
 
     EXPECT_EQ(result, (std::vector<int>{5, 6, 7}));
@@ -225,8 +228,8 @@ TEST_F(GeneratorTransformTests, SkipGenerator) {
  * @brief Chain two generators
  */
 TEST_F(GeneratorTransformTests, ConcatGenerators) {
-    auto gen1 = range(0, 3);
-    auto gen2 = range(10, 13);
+    auto gen1     = range(0, 3);
+    auto gen2     = range(10, 13);
     auto combined = concat(std::move(gen1), std::move(gen2));
 
     std::vector<int> result;
@@ -254,7 +257,7 @@ TEST_F(GeneratorUtilityTests, CollectToVector) {
         co_yield 3;
     };
 
-    auto g = gen();
+    auto g   = gen();
     auto vec = collect_to_vector(g);
 
     EXPECT_EQ(vec, (std::vector<int>{1, 2, 3}));
@@ -309,17 +312,20 @@ TEST_F(GeneratorUtilityTests, ManualIteration) {
 
 class AsyncGeneratorHelpersTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         TLOG("SetUp");
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         TLOG("TearDown");
         qb::io::async::listener::current.clear();
     }
 };
 
-static async_generator<int> range_async(int n) {
+static async_generator<int>
+range_async(int n) {
     TLOG("range_async start n=%d", n);
     for (int i = 0; i < n; ++i) {
         TLOG("range_async sleeping i=%d", i);
@@ -333,7 +339,7 @@ static async_generator<int> range_async(int n) {
 
 TEST_F(AsyncGeneratorHelpersTests, AgForEach_VisitsAll) {
     std::vector<int> visited;
-    bool done = false;
+    bool             done = false;
     TLOG("AgForEach_VisitsAll: spawning");
 
     // Use spawn(callable) — no trailing () — to avoid dangling closure
@@ -348,15 +354,14 @@ TEST_F(AsyncGeneratorHelpersTests, AgForEach_VisitsAll) {
         TLOG("AgForEach coroutine: done=true set, returning");
     });
     run_for(100ms);
-    TLOG("AgForEach_VisitsAll: after run_for done=%d visited.size=%zu",
-         done ? 1 : 0, visited.size());
+    TLOG("AgForEach_VisitsAll: after run_for done=%d visited.size=%zu", done ? 1 : 0, visited.size());
 
     EXPECT_TRUE(done);
     EXPECT_EQ(visited, (std::vector<int>{0, 1, 2, 3, 4}));
 }
 
 TEST_F(AsyncGeneratorHelpersTests, AgCollect_GathersAll) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> result;
     TLOG("AgCollect_GathersAll: spawning");
 
@@ -374,12 +379,12 @@ TEST_F(AsyncGeneratorHelpersTests, AgCollect_GathersAll) {
 }
 
 TEST_F(AsyncGeneratorHelpersTests, AgMap_TransformsAll) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> result;
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
         result = co_await ag_map(range_async(4), [](int v) { return v * 2; });
-        done = true;
+        done   = true;
     });
     run_for(100ms);
 
@@ -388,12 +393,12 @@ TEST_F(AsyncGeneratorHelpersTests, AgMap_TransformsAll) {
 }
 
 TEST_F(AsyncGeneratorHelpersTests, AgFilter_KeepsMatching) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> result;
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
         result = co_await ag_filter(range_async(6), [](int v) { return v % 2 == 0; });
-        done = true;
+        done   = true;
     });
     run_for(100ms);
 
@@ -406,7 +411,7 @@ TEST_F(AsyncGeneratorHelpersTests, AgReduce_SumsAll) {
     int  sum  = 0;
 
     coro_scheduler().spawn([&sum, &done]() -> task<void> {
-        sum = co_await ag_reduce(range_async(5), 0, std::plus<int>{});
+        sum  = co_await ag_reduce(range_async(5), 0, std::plus<int>{});
         done = true;
     });
     run_for(100ms);
@@ -416,12 +421,12 @@ TEST_F(AsyncGeneratorHelpersTests, AgReduce_SumsAll) {
 }
 
 TEST_F(AsyncGeneratorHelpersTests, AgTake_LimitsOutput) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> result;
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
         result = co_await ag_collect(ag_take(range_async(10), 3));
-        done = true;
+        done   = true;
     });
     run_for(100ms);
 
@@ -430,12 +435,12 @@ TEST_F(AsyncGeneratorHelpersTests, AgTake_LimitsOutput) {
 }
 
 TEST_F(AsyncGeneratorHelpersTests, AgSkip_SkipsN) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> result;
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
         result = co_await ag_collect(ag_skip(range_async(6), 3));
-        done = true;
+        done   = true;
     });
     run_for(100ms);
 
@@ -445,36 +450,34 @@ TEST_F(AsyncGeneratorHelpersTests, AgSkip_SkipsN) {
 
 TEST_F(AsyncGeneratorHelpersTests, AgForEach_WithAsyncCallback) {
     std::vector<int> visited;
-    bool done = false;
+    bool             done = false;
     TLOG("AgForEach_WithAsyncCallback: spawning");
 
     coro_scheduler().spawn([&visited, &done]() -> task<void> {
         TLOG("AgForEach_WithAsyncCallback coroutine start");
-        co_await ag_for_each(range_async(3),
-            [&visited](int v) -> task<void> {
-                TLOG("AgForEach_WithAsyncCallback async_cb v=%d sleeping", v);
-                co_await sleep(1ms);
-                TLOG("AgForEach_WithAsyncCallback async_cb v=%d pushing", v);
-                visited.push_back(v * 10);
-            });
+        co_await ag_for_each(range_async(3), [&visited](int v) -> task<void> {
+            TLOG("AgForEach_WithAsyncCallback async_cb v=%d sleeping", v);
+            co_await sleep(1ms);
+            TLOG("AgForEach_WithAsyncCallback async_cb v=%d pushing", v);
+            visited.push_back(v * 10);
+        });
         TLOG("AgForEach_WithAsyncCallback coroutine done");
         done = true;
     });
     run_for(200ms);
-    TLOG("AgForEach_WithAsyncCallback: done=%d visited.size=%zu",
-         done ? 1 : 0, visited.size());
+    TLOG("AgForEach_WithAsyncCallback: done=%d visited.size=%zu", done ? 1 : 0, visited.size());
 
     EXPECT_TRUE(done);
     EXPECT_EQ(visited, (std::vector<int>{0, 10, 20}));
 }
 
 TEST_F(AsyncGeneratorHelpersTests, EmptyGenerator) {
-    bool done = false;
+    bool             done = false;
     std::vector<int> result;
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
         result = co_await ag_collect(range_async(0));
-        done = true;
+        done   = true;
     });
     run_for(50ms);
 
@@ -488,14 +491,20 @@ TEST_F(AsyncGeneratorHelpersTests, EmptyGenerator) {
 
 class GeneratorAdvancedTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(GeneratorAdvancedTests, FromIteratorYieldsRange) {
-    std::vector<int> data = {10, 20, 30, 40};
-    auto gen = from_iterator(data.begin(), data.end());
-    auto result = collect_to_vector(gen);
+    std::vector<int> data   = {10, 20, 30, 40};
+    auto             gen    = from_iterator(data.begin(), data.end());
+    auto             result = collect_to_vector(gen);
     EXPECT_EQ(result.size(), 4u);
     EXPECT_EQ(result[0], 10);
     EXPECT_EQ(result[3], 40);
@@ -503,8 +512,8 @@ TEST_F(GeneratorAdvancedTests, FromIteratorYieldsRange) {
 
 TEST_F(GeneratorAdvancedTests, FromIteratorEmpty) {
     std::vector<int> data;
-    auto gen = from_iterator(data.begin(), data.end());
-    auto result = collect_to_vector(gen);
+    auto             gen    = from_iterator(data.begin(), data.end());
+    auto             result = collect_to_vector(gen);
     EXPECT_TRUE(result.empty());
 }
 
@@ -515,7 +524,7 @@ TEST_F(GeneratorAdvancedTests, GeneratorYieldsThenEnds) {
     };
 
     auto gen = finite_gen();
-    auto it = gen.begin();
+    auto it  = gen.begin();
     EXPECT_NE(it, gen.end());
     EXPECT_EQ(*it, 1);
     ++it;
@@ -536,8 +545,8 @@ TEST_F(GeneratorAdvancedTests, GeneratorHasNextAndNext) {
 }
 
 TEST_F(GeneratorAdvancedTests, GeneratorMoveSemantics) {
-    auto gen1 = range(1, 4);
-    auto gen2 = std::move(gen1);
+    auto gen1   = range(1, 4);
+    auto gen2   = std::move(gen1);
     auto result = collect_to_vector(gen2);
     EXPECT_EQ(result.size(), 3u);
 }
@@ -545,8 +554,8 @@ TEST_F(GeneratorAdvancedTests, GeneratorMoveSemantics) {
 TEST_F(GeneratorAdvancedTests, AsyncGeneratorMoveSemantics) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
-        auto gen1 = range_async(3);
-        auto gen2 = std::move(gen1);
+        auto gen1   = range_async(3);
+        auto gen2   = std::move(gen1);
         auto result = co_await ag_collect(std::move(gen2));
         EXPECT_EQ(result.size(), 3u);
         done = true;
@@ -559,7 +568,8 @@ TEST_F(GeneratorAdvancedTests, AsyncGeneratorMoveSemantics) {
 // Main Entry Point
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

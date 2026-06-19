@@ -7,7 +7,7 @@
  * Suitable for coroutine ready-queues, task queues, and work-stealing tails.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -45,18 +45,20 @@ namespace qb::lockfree {
 template <typename T>
 class mpsc_unbounded_queue : public nocopy {
     struct Node {
-        std::atomic<Node*> next{nullptr};
-        T value;
+        std::atomic<Node *> next{nullptr};
+        T                   value;
 
-        Node() requires std::default_initializable<T> = default;
-        explicit Node(T&& v) noexcept(std::is_nothrow_move_constructible_v<T>)
+        Node()
+        requires std::default_initializable<T>
+        = default;
+        explicit Node(T &&v) noexcept(std::is_nothrow_move_constructible_v<T>)
             : value(std::move(v)) {}
     };
 
-    alignas(64) std::atomic<Node*> head_{nullptr};
-    alignas(64) std::atomic<Node*> tail_{nullptr};
+    alignas(64) std::atomic<Node *> head_{nullptr};
+    alignas(64) std::atomic<Node *> tail_{nullptr};
     std::atomic<std::size_t> count_{0};
-    Node* sentinel_{nullptr};
+    Node                    *sentinel_{nullptr};
 
 public:
     mpsc_unbounded_queue() {
@@ -66,19 +68,20 @@ public:
     }
 
     ~mpsc_unbounded_queue() {
-        Node* n = head_.load(std::memory_order_relaxed);
+        Node *n = head_.load(std::memory_order_relaxed);
         while (n) {
-            Node* next = n->next.load(std::memory_order_relaxed);
+            Node *next = n->next.load(std::memory_order_relaxed);
             delete n;
             n = next;
         }
     }
 
     /** @brief Enqueue one item; lock-free, safe from multiple producers. */
-    void push(T item) {
-        Node* node = new Node(std::move(item));
+    void
+    push(T item) {
+        Node *node = new Node(std::move(item));
         node->next.store(nullptr, std::memory_order_relaxed);
-        Node* prev = tail_.exchange(node, std::memory_order_acq_rel);
+        Node *prev = tail_.exchange(node, std::memory_order_acq_rel);
         prev->next.store(node, std::memory_order_release);
         count_.fetch_add(1, std::memory_order_relaxed);
     }
@@ -88,9 +91,10 @@ public:
      * @param out Receives the popped value if the queue was non-empty.
      * @return true if an item was popped, false if the queue was empty.
      */
-    bool pop(T& out) {
-        Node* node = head_.load(std::memory_order_acquire);
-        Node* next = node->next.load(std::memory_order_acquire);
+    bool
+    pop(T &out) {
+        Node *node = head_.load(std::memory_order_acquire);
+        Node *next = node->next.load(std::memory_order_acquire);
 
         if (next) {
             head_.store(next, std::memory_order_release);
@@ -115,7 +119,8 @@ public:
     }
 
     /** @brief Approximate number of items (consumer may call; can change immediately). */
-    [[nodiscard]] std::size_t size() const {
+    [[nodiscard]] std::size_t
+    size() const {
         return count_.load(std::memory_order_acquire);
     }
 
@@ -123,9 +128,10 @@ public:
      * @brief Check if the queue appears empty (only consumer should use this).
      * Approximate: a producer might push immediately after.
      */
-    [[nodiscard]] bool empty() const {
+    [[nodiscard]] bool
+    empty() const {
         return head_.load(std::memory_order_acquire)->next.load(std::memory_order_acquire) == nullptr
-            && tail_.load(std::memory_order_acquire) == head_.load(std::memory_order_acquire);
+               && tail_.load(std::memory_order_acquire) == head_.load(std::memory_order_acquire);
     }
 };
 

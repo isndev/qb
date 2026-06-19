@@ -62,8 +62,7 @@ format_timestamp(std::ostream &os, uint64_t timestamp) {
     char buffer[32];
     strftime(buffer, 32, "%Y-%m-%d %T.", gmtime);
     char microseconds[7];
-    snprintf(microseconds, 7, "%06llu",
-             static_cast<unsigned long long>(timestamp % 1000000));
+    snprintf(microseconds, 7, "%06llu", static_cast<unsigned long long>(timestamp % 1000000));
     os << '[' << buffer << microseconds << ']';
 }
 
@@ -83,16 +82,13 @@ struct TupleIndex<T, std::tuple<T, Types...>> {
 
 template <typename T, typename U, typename... Types>
 struct TupleIndex<T, std::tuple<U, Types...>> {
-    static constexpr const std::size_t value =
-        1 + TupleIndex<T, std::tuple<Types...>>::value;
+    static constexpr const std::size_t value = 1 + TupleIndex<T, std::tuple<Types...>>::value;
 };
 
 } // anonymous namespace
 
 namespace nanolog {
-typedef std::tuple<char, uint32_t, uint64_t, int32_t, int64_t, double,
-                   NanoLogLine::string_literal_t, char *>
-    SupportedTypes;
+typedef std::tuple<char, uint32_t, uint64_t, int32_t, int64_t, double, NanoLogLine::string_literal_t, char *> SupportedTypes;
 
 char const *
 to_string(LogLevel loglevel) {
@@ -126,8 +122,7 @@ NanoLogLine::encode(Arg arg, uint8_t type_id) {
     encode<Arg>(arg);
 }
 
-NanoLogLine::NanoLogLine(LogLevel level, char const *file, char const *function,
-                         uint32_t line)
+NanoLogLine::NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line)
     : m_bytes_used(0)
     , m_buffer_size(sizeof(m_stack_buffer)) {
     encode<uint64_t>(timestamp_now());
@@ -215,68 +210,35 @@ NanoLogLine::stringify(std::ostream &os, char *start, char const *const end) {
 
     switch (type_id) {
         case 0:
-            stringify(os,
-                      decode(os, start,
-                             static_cast<std::tuple_element<0, SupportedTypes>::type *>(
-                                 nullptr)),
-                      end);
+            stringify(os, decode(os, start, static_cast<std::tuple_element<0, SupportedTypes>::type *>(nullptr)), end);
             return;
         case 1:
-            stringify(os,
-                      decode(os, start,
-                             static_cast<std::tuple_element<1, SupportedTypes>::type *>(
-                                 nullptr)),
-                      end);
+            stringify(os, decode(os, start, static_cast<std::tuple_element<1, SupportedTypes>::type *>(nullptr)), end);
             return;
         case 2:
-            stringify(os,
-                      decode(os, start,
-                             static_cast<std::tuple_element<2, SupportedTypes>::type *>(
-                                 nullptr)),
-                      end);
+            stringify(os, decode(os, start, static_cast<std::tuple_element<2, SupportedTypes>::type *>(nullptr)), end);
             return;
         case 3:
-            stringify(os,
-                      decode(os, start,
-                             static_cast<std::tuple_element<3, SupportedTypes>::type *>(
-                                 nullptr)),
-                      end);
+            stringify(os, decode(os, start, static_cast<std::tuple_element<3, SupportedTypes>::type *>(nullptr)), end);
             return;
         case 4:
-            stringify(os,
-                      decode(os, start,
-                             static_cast<std::tuple_element<4, SupportedTypes>::type *>(
-                                 nullptr)),
-                      end);
+            stringify(os, decode(os, start, static_cast<std::tuple_element<4, SupportedTypes>::type *>(nullptr)), end);
             return;
         case 5:
-            stringify(os,
-                      decode(os, start,
-                             static_cast<std::tuple_element<5, SupportedTypes>::type *>(
-                                 nullptr)),
-                      end);
+            stringify(os, decode(os, start, static_cast<std::tuple_element<5, SupportedTypes>::type *>(nullptr)), end);
             return;
         case 6:
-            stringify(os,
-                      decode(os, start,
-                             static_cast<std::tuple_element<6, SupportedTypes>::type *>(
-                                 nullptr)),
-                      end);
+            stringify(os, decode(os, start, static_cast<std::tuple_element<6, SupportedTypes>::type *>(nullptr)), end);
             return;
         case 7:
-            stringify(os,
-                      decode(os, start,
-                             static_cast<std::tuple_element<7, SupportedTypes>::type *>(
-                                 nullptr)),
-                      end);
+            stringify(os, decode(os, start, static_cast<std::tuple_element<7, SupportedTypes>::type *>(nullptr)), end);
             return;
     }
 }
 
 char *
 NanoLogLine::buffer() {
-    return !m_heap_buffer ? &m_stack_buffer[m_bytes_used]
-                          : &(m_heap_buffer.get())[m_bytes_used];
+    return !m_heap_buffer ? &m_stack_buffer[m_bytes_used] : &(m_heap_buffer.get())[m_bytes_used];
 }
 
 void
@@ -415,9 +377,8 @@ public:
 
         std::atomic_flag flag{};
         char             written;
-        char
-            padding[256 - sizeof(std::atomic_flag) - sizeof(char) - sizeof(NanoLogLine)];
-        NanoLogLine logline;
+        char             padding[256 - sizeof(std::atomic_flag) - sizeof(char) - sizeof(NanoLogLine)];
+        NanoLogLine      logline;
     };
 
     RingBuffer(size_t const size)
@@ -440,10 +401,9 @@ public:
 
     void
     push(NanoLogLine &&logline) override {
-        unsigned int write_index =
-            m_write_index.fetch_add(1, std::memory_order_relaxed) % m_size;
-        Item    &item = m_ring[write_index];
-        SpinLock spinlock(item.flag);
+        unsigned int write_index = m_write_index.fetch_add(1, std::memory_order_relaxed) % m_size;
+        Item        &item        = m_ring[write_index];
+        SpinLock     spinlock(item.flag);
         item.logline = std::move(logline);
         item.written = 1;
     }
@@ -541,8 +501,7 @@ public:
     push(NanoLogLine &&logline) override {
         unsigned int write_index = m_write_index.fetch_add(1, std::memory_order_relaxed);
         if (write_index < Buffer::size) {
-            if (m_current_write_buffer.load(std::memory_order_acquire)
-                    ->push(std::move(logline), write_index)) {
+            if (m_current_write_buffer.load(std::memory_order_acquire)->push(std::move(logline), write_index)) {
                 setup_next_write_buffer();
             }
         } else {
@@ -607,8 +566,7 @@ public:
         // 64-bit multiply + storage: log_file_roll_size_mb * 1024 * 1024 would
         // overflow uint32_t for roll sizes >= 4096 MB, wrapping to a tiny (or
         // zero) byte budget that rolls the file on almost every write.
-        : m_log_file_roll_size_bytes(static_cast<uint64_t>(log_file_roll_size_mb) *
-                                     1024 * 1024)
+        : m_log_file_roll_size_bytes(static_cast<uint64_t>(log_file_roll_size_mb) * 1024 * 1024)
         , m_name(log_file_path) {
         roll_file();
     }
@@ -654,8 +612,7 @@ private:
 
 class NanoLogger {
 public:
-    NanoLogger(NonGuaranteedLogger ngl, std::string const &log_file_path,
-               uint32_t log_file_roll_size_mb)
+    NanoLogger(NonGuaranteedLogger ngl, std::string const &log_file_path, uint32_t log_file_roll_size_mb)
         : m_state(State::INIT)
         , m_buffer_base(new RingBuffer(std::max(1u, ngl.ring_buffer_size_mb) * 1024 * 4))
         , m_file_writer(log_file_path, std::max(1u, log_file_roll_size_mb))
@@ -663,8 +620,7 @@ public:
         m_state.store(State::READY, std::memory_order_release);
     }
 
-    NanoLogger(GuaranteedLogger, std::string const &log_file_path,
-               uint32_t log_file_roll_size_mb)
+    NanoLogger(GuaranteedLogger, std::string const &log_file_path, uint32_t log_file_roll_size_mb)
         : m_state(State::INIT)
         , m_buffer_base(new QueueBuffer())
         , m_file_writer(log_file_path, std::max(1u, log_file_roll_size_mb))
@@ -723,15 +679,13 @@ NanoLog::operator==(NanoLogLine &logline) {
 }
 
 void
-initialize(NonGuaranteedLogger ngl, std::string const &log_file_path,
-           uint32_t log_file_roll_size_mb) {
+initialize(NonGuaranteedLogger ngl, std::string const &log_file_path, uint32_t log_file_roll_size_mb) {
     nanologger.reset(new NanoLogger(ngl, log_file_path, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
 }
 
 void
-initialize(GuaranteedLogger gl, std::string const &log_file_path,
-           uint32_t log_file_roll_size_mb) {
+initialize(GuaranteedLogger gl, std::string const &log_file_path, uint32_t log_file_roll_size_mb) {
     nanologger.reset(new NanoLogger(gl, log_file_path, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
 }

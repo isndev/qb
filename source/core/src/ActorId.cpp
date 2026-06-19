@@ -7,7 +7,7 @@
  * and core ID components.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -23,7 +23,7 @@
  */
 
 #include <qb/core/ActorId.h>
-#include <bit>  // C++20: std::bit_cast for safe type punning
+#include <bit> // C++20: std::bit_cast for safe type punning
 
 namespace qb {
 ActorId::ActorId() noexcept
@@ -40,7 +40,8 @@ ActorId::ActorId(uint32_t id) noexcept {
     *this = std::bit_cast<ActorId>(id);
 }
 
-ActorId::operator uint32_t() const noexcept {
+ActorId::
+operator uint32_t() const noexcept {
     // C++20: std::bit_cast provides well-defined conversion without UB
     return std::bit_cast<uint32_t>(*this);
 }

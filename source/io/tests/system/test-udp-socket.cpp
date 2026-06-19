@@ -79,8 +79,8 @@ struct MinimalAsyncUdpClient : qb::io::async::udp::client<MinimalAsyncUdpClient>
 
 TEST(UDPSocket, ClosedSocketOperationsFailCleanly) {
     qb::io::udp::socket socket;
-    char buffer[8] = {};
-    qb::io::endpoint peer;
+    char                buffer[8] = {};
+    qb::io::endpoint    peer;
 
     EXPECT_FALSE(socket.is_open());
     EXPECT_FALSE(socket.is_bound());
@@ -109,7 +109,7 @@ TEST(UDPSocket, MoveFromGenericSocketTransfersOwnership) {
     qb::io::socket replacement;
     ASSERT_TRUE(replacement.open(AF_INET, SOCK_DGRAM, 0));
     const auto replacement_handle = replacement.native_handle();
-    udp_socket = std::move(replacement);
+    udp_socket                    = std::move(replacement);
 
     EXPECT_FALSE(replacement.is_open());
     EXPECT_TRUE(udp_socket.is_open());
@@ -151,7 +151,7 @@ TEST(UDPSocket, TryReadAndTimeoutRestoreBlockingMode) {
     ASSERT_EQ(socket.bind_v4(0, "127.0.0.1"), 0);
     ASSERT_EQ(socket.test_nonblocking(), 0);
 
-    char buffer[16] = {};
+    char             buffer[16] = {};
     qb::io::endpoint peer;
 
     EXPECT_LE(socket.try_read(buffer, sizeof(buffer), peer), 0);
@@ -172,14 +172,13 @@ TEST(UDPSocket, ReadTimeoutReceivesDatagramAndReportsPeer) {
     ASSERT_NE(port, 0);
 
     constexpr std::string_view payload = "qb udp timeout";
-    qb::io::endpoint dest;
+    qb::io::endpoint           dest;
     dest.as_in("127.0.0.1", port);
-    ASSERT_EQ(sender.write(payload.data(), payload.size(), dest),
-              static_cast<int>(payload.size()));
+    ASSERT_EQ(sender.write(payload.data(), payload.size(), dest), static_cast<int>(payload.size()));
 
-    char buffer[64] = {};
+    char             buffer[64] = {};
     qb::io::endpoint peer;
-    const int read = receiver.read_timeout(buffer, sizeof(buffer), peer, 500ms);
+    const int        read = receiver.read_timeout(buffer, sizeof(buffer), peer, 500ms);
 
     ASSERT_EQ(read, static_cast<int>(payload.size()));
     EXPECT_EQ(std::string_view(buffer, static_cast<std::size_t>(read)), payload);
@@ -231,8 +230,7 @@ TEST(UDPTransport, ProxyOutBuildsAndSendsOneDatagram) {
     ASSERT_TRUE(receiver.transport().init());
     ASSERT_EQ(receiver.transport().bind_v4(0, "127.0.0.1"), 0);
 
-    qb::io::transport::udp::identity dest{
-        qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
+    qb::io::transport::udp::identity dest{qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
     sender.setDestination(dest);
 
     auto &out = sender.out();
@@ -243,8 +241,7 @@ TEST(UDPTransport, ProxyOutBuildsAndSendsOneDatagram) {
 
     ASSERT_EQ(sender.write(), 9);
     ASSERT_EQ(wait_for_datagram(receiver), 9);
-    EXPECT_EQ(std::string_view(receiver.in().begin(), receiver.pendingRead()),
-              "hello udp");
+    EXPECT_EQ(std::string_view(receiver.in().begin(), receiver.pendingRead()), "hello udp");
     EXPECT_EQ(receiver.getSource().ip(), "127.0.0.1");
 }
 
@@ -256,8 +253,7 @@ TEST(UDPTransport, ZeroLengthDatagramUpdatesReplyDestination) {
     ASSERT_TRUE(receiver.transport().init());
     ASSERT_EQ(receiver.transport().bind_v4(0, "127.0.0.1"), 0);
 
-    qb::io::transport::udp::identity receiver_dest{
-        qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
+    qb::io::transport::udp::identity receiver_dest{qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
 
     ASSERT_NE(sender.publish_to(receiver_dest, "", 0), nullptr);
     ASSERT_EQ(sender.write(), 0);
@@ -293,8 +289,7 @@ TEST(UDPTransport, WriteConsumesMultipleQueuedDatagramsInOrder) {
     ASSERT_TRUE(receiver.transport().init());
     ASSERT_EQ(receiver.transport().bind_v4(0, "127.0.0.1"), 0);
 
-    qb::io::transport::udp::identity dest{
-        qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
+    qb::io::transport::udp::identity dest{qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
 
     ASSERT_NE(sender.publish_to(dest, "one", 3), nullptr);
     ASSERT_NE(sender.publish_to(dest, "two", 3), nullptr);
@@ -321,8 +316,7 @@ TEST(UDPTransport, ReadAppendsIntoPartiallyFilledInputBuffer) {
     receiver.set_max_read_buffer_size(16);
     receiver.in() << std::string("head");
 
-    qb::io::transport::udp::identity dest{
-        qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
+    qb::io::transport::udp::identity dest{qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
     ASSERT_NE(sender.publish_to(dest, "tail", 4), nullptr);
     ASSERT_EQ(sender.write(), 4);
 
@@ -332,7 +326,7 @@ TEST(UDPTransport, ReadAppendsIntoPartiallyFilledInputBuffer) {
 }
 
 TEST(UDPTransport, ProxyOutOverflowRollsBackLastAppend) {
-    qb::io::transport::udp transport;
+    qb::io::transport::udp           transport;
     qb::io::transport::udp::identity dest{qb::io::endpoint("127.0.0.1", 9)};
 
     transport.setDestination(dest);
@@ -358,10 +352,8 @@ TEST(UDPTransport, ProxyOutAllocatesNewDatagramAfterDestinationReset) {
     ASSERT_EQ(receiver_a.transport().bind_v4(0, "127.0.0.1"), 0);
     ASSERT_EQ(receiver_b.transport().bind_v4(0, "127.0.0.1"), 0);
 
-    qb::io::transport::udp::identity dest_a{
-        qb::io::endpoint("127.0.0.1", receiver_a.transport().local_endpoint().port())};
-    qb::io::transport::udp::identity dest_b{
-        qb::io::endpoint("127.0.0.1", receiver_b.transport().local_endpoint().port())};
+    qb::io::transport::udp::identity dest_a{qb::io::endpoint("127.0.0.1", receiver_a.transport().local_endpoint().port())};
+    qb::io::transport::udp::identity dest_b{qb::io::endpoint("127.0.0.1", receiver_b.transport().local_endpoint().port())};
 
     sender.setDestination(dest_a);
     auto &saved_out = sender.out();
@@ -389,12 +381,11 @@ TEST(UDPTransport, EmptyWriteAndIdentityComparisonAreStable) {
 
     EXPECT_EQ(first, same);
     EXPECT_NE(first, other);
-    EXPECT_EQ(qb::io::transport::udp::identity::hasher{}(first),
-              qb::io::transport::udp::identity::hasher{}(same));
+    EXPECT_EQ(qb::io::transport::udp::identity::hasher{}(first), qb::io::transport::udp::identity::hasher{}(same));
 }
 
 TEST(UDPTransport, PublishRejectsOversizedOrBufferLimitedDatagrams) {
-    qb::io::transport::udp transport;
+    qb::io::transport::udp           transport;
     qb::io::transport::udp::identity dest{qb::io::endpoint("127.0.0.1", 9)};
 
     std::string oversized(qb::io::udp::socket::MaxDatagramSize + 1, 'x');
@@ -414,9 +405,8 @@ TEST(UDPTransport, ReadReportsBufferLimitForOversizedDatagram) {
     ASSERT_EQ(receiver.transport().bind_v4(0, "127.0.0.1"), 0);
     receiver.set_max_read_buffer_size(4);
 
-    qb::io::transport::udp::identity dest{
-        qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
-    constexpr char payload[] = "too-large";
+    qb::io::transport::udp::identity dest{qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())};
+    constexpr char                   payload[] = "too-large";
     ASSERT_NE(sender.publish_to(dest, payload, sizeof(payload) - 1), nullptr);
     ASSERT_EQ(sender.write(), static_cast<int>(sizeof(payload) - 1));
 

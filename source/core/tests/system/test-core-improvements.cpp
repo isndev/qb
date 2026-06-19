@@ -28,7 +28,7 @@
  *            `std::stop_source`, even with no explicit `stop()` call.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -85,7 +85,7 @@ TEST(TypeId, IsStableAcrossCalls) {
 }
 
 TEST(TypeId, IsCollisionFreeAcrossManyTypes) {
-    constexpr std::size_t kNTypes = 256;
+    constexpr std::size_t   kNTypes = 256;
     std::vector<qb::TypeId> ids;
     ids.reserve(kNTypes);
     collectTypeIds(std::make_index_sequence<kNTypes>{}, ids);
@@ -94,8 +94,7 @@ TEST(TypeId, IsCollisionFreeAcrossManyTypes) {
     // `std::numeric_limits<TypeId>::max()` distinct types, which is far more
     // than any practical application will ever register.
     std::unordered_set<qb::TypeId> uniq(ids.begin(), ids.end());
-    EXPECT_EQ(uniq.size(), ids.size())
-        << "type_id<T>() produced a collision over " << kNTypes << " types";
+    EXPECT_EQ(uniq.size(), ids.size()) << "type_id<T>() produced a collision over " << kNTypes << " types";
     // None of them must be 0 (0 is reserved as "unassigned").
     for (auto id : ids)
         EXPECT_NE(id, qb::TypeId{0}) << "TypeId 0 is reserved";
@@ -113,10 +112,10 @@ TEST(TypeId, ConcurrentFirstInstantiationIsRaceFree) {
     // The magic-static initialiser barrier in `detail::type_id_for<T>` must
     // serialise the post-increment — the result must be *one* unique id,
     // not as many as there are threads.
-    constexpr std::size_t kThreads = 16;
-    std::atomic<bool>      go{false};
+    constexpr std::size_t            kThreads = 16;
+    std::atomic<bool>                go{false};
     std::array<qb::TypeId, kThreads> seen{};
-    std::vector<std::thread>          workers;
+    std::vector<std::thread>         workers;
     workers.reserve(kThreads);
     for (std::size_t i = 0; i < kThreads; ++i) {
         workers.emplace_back([i, &go, &seen] {
@@ -156,8 +155,7 @@ TEST(TypeId, EventTypeToIdMatchesGlobalTypeId) {
     ASSERT_NE(kill_a, nullptr);
     ASSERT_NE(signal_a, nullptr);
     EXPECT_EQ(kill_a, kill_b) << "type_to_id<T>() must be stable across calls";
-    EXPECT_STRNE(kill_a, signal_a)
-        << "distinct event types must map to distinct ids";
+    EXPECT_STRNE(kill_a, signal_a) << "distinct event types must map to distinct ids";
 #endif
 }
 
@@ -172,13 +170,13 @@ struct ServiceTagC {};
 } // namespace
 
 TEST(ServiceIndex, IsUniqueAcrossTagsAndStableUnderConcurrency) {
-    constexpr std::size_t kThreads = 8;
-    std::atomic<bool> go{false};
+    constexpr std::size_t    kThreads = 8;
+    std::atomic<bool>        go{false};
     std::vector<std::thread> workers;
     // We use the public `Actor::getServiceId<Tag>(CoreId)` which routes
     // through `Actor::registerIndex<Tag>()` (the magic-static fixed in 2.3).
     // The lower 16 bits encode the per-tag `ServiceId` we want to compare.
-    constexpr qb::CoreId kCore = 0;
+    constexpr qb::CoreId                kCore = 0;
     std::array<qb::ServiceId, kThreads> a{}, b{}, c{};
     workers.reserve(kThreads);
     for (std::size_t i = 0; i < kThreads; ++i) {
@@ -227,21 +225,16 @@ public:
 
 TEST(NoAffinity, SetAffinityWithSentinelOnlyDoesNotCrash) {
     qb::Main main;
-    main.core(0)
-        .setAffinity(qb::CoreIdSet{qb::NoAffinity})
-        .addActor<TerminateImmediatelyActor>();
+    main.core(0).setAffinity(qb::CoreIdSet{qb::NoAffinity}).addActor<TerminateImmediatelyActor>();
     main.start(false);
-    EXPECT_FALSE(main.hasError())
-        << "CoreIdSet{NoAffinity} must be filtered out, not passed to OS APIs";
+    EXPECT_FALSE(main.hasError()) << "CoreIdSet{NoAffinity} must be filtered out, not passed to OS APIs";
 }
 
 TEST(NoAffinity, SetAffinityWithMixedSentinelAndRealCoreIsSafe) {
     qb::Main main;
     // Real CPU id 0 is always present; the sentinel must be filtered out
     // and the pinning must still target core 0.
-    main.core(0)
-        .setAffinity(qb::CoreIdSet{static_cast<qb::CoreId>(0), qb::NoAffinity})
-        .addActor<TerminateImmediatelyActor>();
+    main.core(0).setAffinity(qb::CoreIdSet{static_cast<qb::CoreId>(0), qb::NoAffinity}).addActor<TerminateImmediatelyActor>();
     main.start(false);
     EXPECT_FALSE(main.hasError());
 }
@@ -252,25 +245,18 @@ TEST(NoAffinity, SetAffinityWithMixedSentinelAndRealCoreIsSafe) {
 
 TEST(MainCoreRange, RejectsExactlyAtMaxCores) {
     qb::Main main;
-    EXPECT_THROW(
-        main.core(static_cast<qb::CoreId>(qb::MaxCores)).addActor<TerminateImmediatelyActor>(),
-        std::range_error)
+    EXPECT_THROW(main.core(static_cast<qb::CoreId>(qb::MaxCores)).addActor<TerminateImmediatelyActor>(), std::range_error)
         << "core(MaxCores) must throw — boundary is half-open";
 }
 
 TEST(MainCoreRange, RejectsAboveMaxCores) {
     qb::Main main;
-    EXPECT_THROW(
-        main.core(static_cast<qb::CoreId>(qb::MaxCores + 100))
-            .addActor<TerminateImmediatelyActor>(),
-        std::range_error);
+    EXPECT_THROW(main.core(static_cast<qb::CoreId>(qb::MaxCores + 100)).addActor<TerminateImmediatelyActor>(), std::range_error);
 }
 
 TEST(MainCoreRange, AcceptsLastValidCoreId) {
     qb::Main main;
-    EXPECT_NO_THROW(
-        main.core(static_cast<qb::CoreId>(qb::MaxCores - 1))
-            .addActor<TerminateImmediatelyActor>())
+    EXPECT_NO_THROW(main.core(static_cast<qb::CoreId>(qb::MaxCores - 1)).addActor<TerminateImmediatelyActor>())
         << "MaxCores - 1 is the last legal CoreId; must not throw";
     main.start(false);
     EXPECT_FALSE(main.hasError());
@@ -284,7 +270,7 @@ namespace {
 
 class HandleChildActor : public qb::Actor {
 public:
-    int data = 42;
+    int data           = 42;
     HandleChildActor() = default;
     bool
     onInit() final {
@@ -315,8 +301,7 @@ public:
         //    return nullptr even though the actor object still exists in the
         //    `_actors` map until the end of this workflow iteration.
         handle->kill();
-        EXPECT_EQ(handle.get(), nullptr)
-            << "RefActorHandle::get() must return nullptr after child kill()";
+        EXPECT_EQ(handle.get(), nullptr) << "RefActorHandle::get() must return nullptr after child kill()";
         EXPECT_FALSE(static_cast<bool>(handle));
         // valid() reflects the *id* validity, not liveness — id stays valid.
         EXPECT_TRUE(handle.valid());
@@ -400,7 +385,7 @@ TEST(NoDefaultEvents, OptInKillEventEnablesExternalKill) {
     // After explicit registerEvent<KillEvent>, push<KillEvent> kills the actor
     // exactly like a default-registered actor would.
     qb::Main main;
-    auto target = main.core(0).addActor<OptOutOptInKillActor>();
+    auto     target = main.core(0).addActor<OptOutOptInKillActor>();
     main.core(0).addActor<KillSenderToOptOutActor>(target);
     main.start(false);
     main.join();
@@ -460,8 +445,7 @@ TEST(AllocateActor, IsRoutedFromStandardFactory) {
     main.core(0).addActor<CustomAllocActor>();
     main.start(false);
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(custom_alloc_counter.load(), 1u)
-        << "qb::allocate_actor<T> must be invoked by TActorFactory::create_impl";
+    EXPECT_EQ(custom_alloc_counter.load(), 1u) << "qb::allocate_actor<T> must be invoked by TActorFactory::create_impl";
 }
 
 TEST(AllocateActor, IsRoutedFromAddRefActor) {
@@ -470,8 +454,7 @@ TEST(AllocateActor, IsRoutedFromAddRefActor) {
     main.core(0).addActor<CustomAllocRefParent>();
     main.start(false);
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(custom_alloc_counter.load(), 1u)
-        << "qb::allocate_actor<T> must also be invoked by VirtualCore::addReferencedActor";
+    EXPECT_EQ(custom_alloc_counter.load(), 1u) << "qb::allocate_actor<T> must also be invoked by VirtualCore::addReferencedActor";
 }
 
 // =============================================================================
@@ -515,7 +498,8 @@ namespace {
 
 struct StressEvent : public qb::Event {
     std::uint32_t seq;
-    explicit StressEvent(std::uint32_t s) noexcept : seq(s) {}
+    explicit StressEvent(std::uint32_t s) noexcept
+        : seq(s) {}
 };
 
 struct StressEosEvent : public qb::Event {};
@@ -540,8 +524,7 @@ public:
     on(StressEosEvent const &) {
         // Only kill once every source has flushed its burst — guarantees
         // we counted every QoS-1 event before tearing down.
-        if (stress_eos_received.fetch_add(1, std::memory_order_acq_rel) + 1
-            == stress_eos_expected) {
+        if (stress_eos_received.fetch_add(1, std::memory_order_acq_rel) + 1 == stress_eos_expected) {
             kill();
         }
     }
@@ -592,7 +575,7 @@ TEST(DeadlockRecovery, QoS1HighBackpressureNoLivelock) {
     stress_eos_expected = kSources;
 
     qb::Main main;
-    auto sink = main.core(0).addActor<StressSinkActor>();
+    auto     sink = main.core(0).addActor<StressSinkActor>();
     for (qb::CoreId c = 1; c <= static_cast<qb::CoreId>(kSources); ++c) {
         main.core(c).addActor<StressSourceActor>(sink, kBurst);
     }
@@ -600,16 +583,12 @@ TEST(DeadlockRecovery, QoS1HighBackpressureNoLivelock) {
     const auto t_start = std::chrono::steady_clock::now();
     main.start(false);
     main.join();
-    const auto elapsed =
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - t_start);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t_start);
 
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(stress_received.load(), kTotal)
-        << "All QoS-1 events must be delivered (no drops, no loss) — "
-           "deadlock recovery must preserve full FIFO semantics";
-    EXPECT_LT(elapsed.count(), 60)
-        << "Deadlock recovery must terminate in bounded time (no livelock)";
+    EXPECT_EQ(stress_received.load(), kTotal) << "All QoS-1 events must be delivered (no drops, no loss) — "
+                                                 "deadlock recovery must preserve full FIFO semantics";
+    EXPECT_LT(elapsed.count(), 60) << "Deadlock recovery must terminate in bounded time (no livelock)";
 }
 
 // =============================================================================
@@ -627,8 +606,14 @@ public:
         registerEvent<qb::SignalEvent>(*this);
         return true; // Stays alive — no kill() call in onInit.
     }
-    void on(qb::KillEvent const &) { kill(); }
-    void on(qb::SignalEvent const &) { kill(); }
+    void
+    on(qb::KillEvent const &) {
+        kill();
+    }
+    void
+    on(qb::SignalEvent const &) {
+        kill();
+    }
 };
 
 } // namespace
@@ -647,10 +632,8 @@ TEST(StopSource, ExplicitStopShutsDownPromptly) {
         main.join();
         EXPECT_FALSE(main.hasError());
     }
-    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - t_start);
-    EXPECT_LT(elapsed.count(), 10)
-        << "Main::stop() must broadcast SIGINT and shut down promptly";
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t_start);
+    EXPECT_LT(elapsed.count(), 10) << "Main::stop() must broadcast SIGINT and shut down promptly";
 }
 
 TEST(StopSource, MainDestructorJoinsRunningWorkers) {
@@ -668,8 +651,6 @@ TEST(StopSource, MainDestructorJoinsRunningWorkers) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         // No explicit stop() — let `~Main()` issue request_stop() + join().
     }
-    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - t_start);
-    EXPECT_LT(elapsed.count(), 10)
-        << "~Main() must shut down promptly via std::stop_source/jthread";
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t_start);
+    EXPECT_LT(elapsed.count(), 10) << "~Main() must shut down promptly via std::stop_source/jthread";
 }

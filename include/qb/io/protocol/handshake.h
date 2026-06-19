@@ -7,7 +7,7 @@
  * identifying a newly accepted connection from the underlying listener socket.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -49,8 +49,9 @@ class handshake : public async::AProtocol<_IO_> {
      * surrounding protocol dispatch loops.
      */
     std::size_t _pending_handshake_size = 0;
+
 public:
-    /** 
+    /**
      * @typedef message
      * @brief The type of message this protocol produces, which is the handshake event.
      */
@@ -67,8 +68,8 @@ public:
      */
     handshake(_IO_ &io) noexcept
         : async::AProtocol<_IO_>(io) {
-            this->set_should_flush(false);
-        }
+        this->set_should_flush(false);
+    }
 
     /**
      * @brief Probe the transport to see whether the handshake has advanced.
@@ -106,7 +107,7 @@ public:
      */
     void
     onMessage(std::size_t /*size*/) noexcept final {
-        _handshake_done = true;
+        _handshake_done         = true;
         _pending_handshake_size = 0;
         this->_io.on(message{});
     }
@@ -116,7 +117,7 @@ public:
      */
     void
     reset() noexcept final {
-        _handshake_done = false;
+        _handshake_done         = false;
         _pending_handshake_size = 0;
     }
 };

@@ -7,7 +7,7 @@
  * that wraps libev events to be used throughout the library.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -53,9 +53,9 @@ class IRegisteredKernelEvent {
     friend class listener;
 
     // Intrusive list links (null when not currently registered).
-    IRegisteredKernelEvent *_list_prev = nullptr;
-    IRegisteredKernelEvent *_list_next = nullptr;
-    bool _detached_by_clear = false;
+    IRegisteredKernelEvent *_list_prev         = nullptr;
+    IRegisteredKernelEvent *_list_next         = nullptr;
+    bool                    _detached_by_clear = false;
 
 public:
     /**

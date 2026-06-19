@@ -12,7 +12,7 @@
 
 struct LightEvent : public qb::Event {
     std::chrono::steady_clock::time_point _timepoint;
-    uint32_t                             _ttl;
+    uint32_t                              _ttl;
 
     LightEvent()
         : _timepoint(std::chrono::steady_clock::now())
@@ -43,9 +43,7 @@ struct TestEvent : public qb::Event {
     checkSum() const {
         auto ret = true;
         if (has_extra_data) {
-            ret = !memcmp(_data,
-                          reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent),
-                          sizeof(_data));
+            ret = !memcmp(_data, reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent), sizeof(_data));
         }
 
         return std::accumulate(std::begin(_data), std::end(_data), 0u) == _sum && ret;

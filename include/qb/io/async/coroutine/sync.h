@@ -7,7 +7,7 @@
  * - async_mutex: Mutual exclusion without blocking
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -77,8 +77,8 @@ public:
      * no other coroutine can observe or modify _available / _waiters.
      */
     struct acquire_awaiter {
-        semaphore& sem;
-        bool _completed = false;
+        semaphore &sem;
+        bool       _completed = false;
 
         // Finding 2.C.10: fast-path for the uncontended case. In a
         // mono-thread cooperative scheduler, `_available > 0` at await_ready()
@@ -86,7 +86,8 @@ public:
         // between await_ready() and await_resume() without an intermediate
         // suspension). Taking the permit here lets the caller proceed
         // synchronously — no coroutine frame suspend/resume round-trip.
-        [[nodiscard]] bool await_ready() noexcept {
+        [[nodiscard]] bool
+        await_ready() noexcept {
             if (sem._available > 0) {
                 --sem._available;
                 ++sem._held;
@@ -96,7 +97,8 @@ public:
             return false;
         }
 
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             // In the unlikely case where await_ready saw no permit but the
             // scheduler re-interleaved (it won't under the single-thread
             // model, but we keep the check for defensive robustness), grab
@@ -111,13 +113,15 @@ public:
             }
         }
 
-        void await_resume() noexcept {}
+        void
+        await_resume() noexcept {}
     };
 
     /**
      * @brief Acquire a permit (suspends if none available)
      */
-    acquire_awaiter acquire() {
+    acquire_awaiter
+    acquire() {
         return acquire_awaiter{*this};
     }
 
@@ -125,7 +129,8 @@ public:
      * @brief Try to acquire without suspending
      * @return true if permit was available and taken
      */
-    bool try_acquire() {
+    bool
+    try_acquire() {
         if (_available > 0) {
             --_available;
             ++_held;
@@ -142,7 +147,8 @@ public:
      * previously, a spurious release() while waiters were queued woke a waiter
      * with a phantom permit, breaking the permit invariant.
      */
-    void release() {
+    void
+    release() {
         if (_held == 0)
             return; // over-release: nothing is actually held
         if (!_waiters.empty()) {
@@ -161,38 +167,49 @@ public:
     /**
      * @brief Number of currently available permits
      */
-    size_t available_permits() const noexcept { return _available; }
+    size_t
+    available_permits() const noexcept {
+        return _available;
+    }
 
     /**
      * @brief Total permits the semaphore was constructed with
      */
-    size_t total_permits() const noexcept { return _permits; }
+    size_t
+    total_permits() const noexcept {
+        return _permits;
+    }
 
     /**
      * @brief RAII guard for semaphore
      */
     class guard {
-        semaphore& _sem;
-        bool _released = false;
+        semaphore &_sem;
+        bool       _released = false;
 
     public:
-        explicit guard(semaphore& s) : _sem(s) {}
+        explicit guard(semaphore &s)
+            : _sem(s) {}
 
         // Non-copyable; move sets _released on the source so the moved-from
         // guard does NOT call release() again when it is destroyed.
-        guard(const guard&) = delete;
-        guard& operator=(const guard&) = delete;
+        guard(const guard &)            = delete;
+        guard &operator=(const guard &) = delete;
 
-        guard(guard&& other) noexcept
+        guard(guard &&other) noexcept
             : _sem(other._sem)
             , _released(other._released) {
-            other._released = true;  // only the new owner releases
+            other._released = true; // only the new owner releases
         }
-        guard& operator=(guard&&) = delete;
+        guard &operator=(guard &&) = delete;
 
-        ~guard() { if (!_released) _sem.release(); }
+        ~guard() {
+            if (!_released)
+                _sem.release();
+        }
 
-        void release() {
+        void
+        release() {
             if (!_released) {
                 _sem.release();
                 _released = true;
@@ -204,15 +221,16 @@ public:
      * @brief Scoped acquire - RAII style
      * @return Task that completes with guard
      */
-    task<guard> scoped_acquire() {
+    task<guard>
+    scoped_acquire() {
         co_await acquire();
         co_return guard(*this);
     }
 
 private:
-    size_t _permits;
-    size_t _available;
-    size_t _held = 0; /**< Permits currently held by acquirers (over-release guard). */
+    size_t                              _permits;
+    size_t                              _available;
+    size_t                              _held = 0; /**< Permits currently held by acquirers (over-release guard). */
     std::deque<std::coroutine_handle<>> _waiters;
 };
 
@@ -257,33 +275,42 @@ public:
      * only one coroutine is active at a time, giving natural mutual exclusion.
      */
     struct lock_awaiter {
-        async_mutex& mtx;
-        bool _completed = false;
+        async_mutex &mtx;
+        bool         _completed = false;
 
-        [[nodiscard]] bool await_ready() const noexcept { return false; }
+        [[nodiscard]] bool
+        await_ready() const noexcept {
+            return false;
+        }
 
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             if (!mtx._locked) {
                 mtx._locked = true;
-                _completed = true;
+                _completed  = true;
                 schedule_via_current(h);
             } else {
                 mtx._waiters.push_back(h);
             }
         }
 
-        void await_resume() noexcept {}
+        void
+        await_resume() noexcept {}
     };
 
     /**
      * @brief Acquire lock (suspends if already held)
      */
-    lock_awaiter lock() { return lock_awaiter{*this}; }
+    lock_awaiter
+    lock() {
+        return lock_awaiter{*this};
+    }
 
     /**
      * @brief Try to lock without suspending
      */
-    bool try_lock() {
+    bool
+    try_lock() {
         if (!_locked) {
             _locked = true;
             return true;
@@ -297,7 +324,8 @@ public:
      * Finding 2.C.11: unlocking an unlocked mutex is a programming error;
      * debug builds now assert on it to catch missing `scoped_lock()` usage.
      */
-    void unlock() {
+    void
+    unlock() {
         assert(_locked && "async_mutex::unlock called on an unlocked mutex");
         if (_waiters.empty()) {
             _locked = false;
@@ -311,22 +339,26 @@ public:
     /**
      * @brief Check if the mutex is currently held
      */
-    bool is_locked() const noexcept { return _locked; }
+    bool
+    is_locked() const noexcept {
+        return _locked;
+    }
 
     /**
      * @brief RAII lock guard
      */
     class guard {
-        async_mutex& _mtx;
-        bool _released = false;
+        async_mutex &_mtx;
+        bool         _released = false;
 
     public:
-        explicit guard(async_mutex& m) : _mtx(m) {}
+        explicit guard(async_mutex &m)
+            : _mtx(m) {}
 
-        guard(const guard&) = delete;
-        guard& operator=(const guard&) = delete;
+        guard(const guard &)            = delete;
+        guard &operator=(const guard &) = delete;
 
-        guard(guard&& other) noexcept
+        guard(guard &&other) noexcept
             : _mtx(other._mtx)
             , _released(other._released) {
             other._released = true;
@@ -338,7 +370,8 @@ public:
             }
         }
 
-        void unlock() {
+        void
+        unlock() {
             if (!_released) {
                 _mtx.unlock();
                 _released = true;
@@ -358,7 +391,8 @@ public:
      * }  // Auto-unlocked here
      * @endcode
      */
-    task<guard> scoped_lock() {
+    task<guard>
+    scoped_lock() {
         co_await lock();
         co_return guard(*this);
     }
@@ -366,10 +400,13 @@ public:
     /**
      * @brief Number of coroutines waiting for the lock
      */
-    size_t waiters_count() const noexcept { return _waiters.size(); }
+    size_t
+    waiters_count() const noexcept {
+        return _waiters.size();
+    }
 
 private:
-    bool _locked = false;
+    bool                                _locked = false;
     std::deque<std::coroutine_handle<>> _waiters;
 };
 
@@ -407,15 +444,17 @@ public:
      * @brief Awaiter for read lock
      */
     struct read_lock_awaiter {
-        async_rw_lock& rw;
-        bool _completed = false;
+        async_rw_lock &rw;
+        bool           _completed = false;
 
-        [[nodiscard]] bool await_ready() const noexcept {
+        [[nodiscard]] bool
+        await_ready() const noexcept {
             return false;
         }
 
         // No OS lock: single-thread cooperative scheduler.
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             if (!rw._write_locked && rw._write_waiters.empty()) {
                 ++rw._readers;
                 _completed = true;
@@ -425,39 +464,47 @@ public:
             }
         }
 
-        void await_resume() noexcept {}
+        void
+        await_resume() noexcept {}
     };
 
     struct write_lock_awaiter {
-        async_rw_lock& rw;
-        bool _completed = false;
+        async_rw_lock &rw;
+        bool           _completed = false;
 
-        [[nodiscard]] bool await_ready() const noexcept { return false; }
+        [[nodiscard]] bool
+        await_ready() const noexcept {
+            return false;
+        }
 
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             if (!rw._write_locked && rw._readers == 0) {
                 rw._write_locked = true;
-                _completed = true;
+                _completed       = true;
                 schedule_via_current(h);
             } else {
                 rw._write_waiters.push_back(h);
             }
         }
 
-        void await_resume() noexcept {}
+        void
+        await_resume() noexcept {}
     };
 
-    read_lock_awaiter lock_read() {
+    read_lock_awaiter
+    lock_read() {
         return read_lock_awaiter{*this};
     }
 
-    write_lock_awaiter lock_write() {
+    write_lock_awaiter
+    lock_write() {
         return write_lock_awaiter{*this};
     }
 
-    void unlock_read() {
-        assert(_readers > 0 &&
-               "async_rw_lock::unlock_read called with no read lock held");
+    void
+    unlock_read() {
+        assert(_readers > 0 && "async_rw_lock::unlock_read called with no read lock held");
         if (_readers == 0)
             return; // release build: ignore instead of size_t underflow
         --_readers;
@@ -469,9 +516,9 @@ public:
         }
     }
 
-    void unlock_write() {
-        assert(_write_locked &&
-               "async_rw_lock::unlock_write called with no write lock held");
+    void
+    unlock_write() {
+        assert(_write_locked && "async_rw_lock::unlock_write called with no write lock held");
         _write_locked = false;
         // Prefer pending readers; fall back to the next writer.
         if (!_read_waiters.empty()) {
@@ -498,24 +545,34 @@ public:
      * would fire a phantom unlock_read() when the promise is destroyed.
      */
     class read_guard {
-        async_rw_lock& _rw;
-        bool _released = false;
+        async_rw_lock &_rw;
+        bool           _released = false;
 
     public:
-        explicit read_guard(async_rw_lock& rw) : _rw(rw) {}
+        explicit read_guard(async_rw_lock &rw)
+            : _rw(rw) {}
 
-        read_guard(const read_guard&) = delete;
-        read_guard& operator=(const read_guard&) = delete;
+        read_guard(const read_guard &)            = delete;
+        read_guard &operator=(const read_guard &) = delete;
 
-        read_guard(read_guard&& other) noexcept
+        read_guard(read_guard &&other) noexcept
             : _rw(other._rw)
             , _released(other._released) {
-            other._released = true;  // only the new owner unlocks
+            other._released = true; // only the new owner unlocks
         }
-        read_guard& operator=(read_guard&&) = delete;
+        read_guard &operator=(read_guard &&) = delete;
 
-        ~read_guard() { if (!_released) _rw.unlock_read(); }
-        void unlock() { if (!_released) { _rw.unlock_read(); _released = true; } }
+        ~read_guard() {
+            if (!_released)
+                _rw.unlock_read();
+        }
+        void
+        unlock() {
+            if (!_released) {
+                _rw.unlock_read();
+                _released = true;
+            }
+        }
     };
 
     /**
@@ -525,39 +582,51 @@ public:
      * from the moved-from guard stored in the task<write_guard> promise.
      */
     class write_guard {
-        async_rw_lock& _rw;
-        bool _released = false;
+        async_rw_lock &_rw;
+        bool           _released = false;
 
     public:
-        explicit write_guard(async_rw_lock& rw) : _rw(rw) {}
+        explicit write_guard(async_rw_lock &rw)
+            : _rw(rw) {}
 
-        write_guard(const write_guard&) = delete;
-        write_guard& operator=(const write_guard&) = delete;
+        write_guard(const write_guard &)            = delete;
+        write_guard &operator=(const write_guard &) = delete;
 
-        write_guard(write_guard&& other) noexcept
+        write_guard(write_guard &&other) noexcept
             : _rw(other._rw)
             , _released(other._released) {
-            other._released = true;  // only the new owner unlocks
+            other._released = true; // only the new owner unlocks
         }
-        write_guard& operator=(write_guard&&) = delete;
+        write_guard &operator=(write_guard &&) = delete;
 
-        ~write_guard() { if (!_released) _rw.unlock_write(); }
-        void unlock() { if (!_released) { _rw.unlock_write(); _released = true; } }
+        ~write_guard() {
+            if (!_released)
+                _rw.unlock_write();
+        }
+        void
+        unlock() {
+            if (!_released) {
+                _rw.unlock_write();
+                _released = true;
+            }
+        }
     };
 
-    task<read_guard> scoped_read_lock() {
+    task<read_guard>
+    scoped_read_lock() {
         co_await lock_read();
         co_return read_guard(*this);
     }
 
-    task<write_guard> scoped_write_lock() {
+    task<write_guard>
+    scoped_write_lock() {
         co_await lock_write();
         co_return write_guard(*this);
     }
 
 private:
-    bool _write_locked = false;
-    size_t _readers = 0;
+    bool                                _write_locked = false;
+    size_t                              _readers      = 0;
     std::deque<std::coroutine_handle<>> _read_waiters;
     std::deque<std::coroutine_handle<>> _write_waiters;
 };
@@ -589,13 +658,17 @@ public:
         , _remaining(count) {}
 
     struct arrive_awaiter {
-        barrier& b;
+        barrier &b;
 
         // Single-thread cooperative: _remaining won't change between
         // await_ready() and await_suspend() since we haven't suspended yet.
-        [[nodiscard]] bool await_ready() const noexcept { return b._remaining == 0; }
+        [[nodiscard]] bool
+        await_ready() const noexcept {
+            return b._remaining == 0;
+        }
 
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             // Finding 2.C.12: help users spot barriers that were not reset
             // between phases — an unexpected await after all arrivals have
             // happened is almost always a missing `reset()`.
@@ -613,24 +686,27 @@ public:
             }
         }
 
-        void await_resume() noexcept {}
+        void
+        await_resume() noexcept {}
     };
 
-    arrive_awaiter arrive_and_wait() {
+    arrive_awaiter
+    arrive_and_wait() {
         return arrive_awaiter{*this};
     }
 
     /**
      * @brief Reset barrier for reuse
      */
-    void reset() {
+    void
+    reset() {
         _remaining = _expected;
         _waiters.clear();
     }
 
 private:
-    size_t _expected;
-    size_t _remaining;
+    size_t                               _expected;
+    size_t                               _remaining;
     std::vector<std::coroutine_handle<>> _waiters;
 };
 
@@ -681,8 +757,8 @@ public:
         , _auto_reset(auto_reset) {}
 
     // Non-copyable (waiters hold a pointer to this)
-    async_event(const async_event&) = delete;
-    async_event& operator=(const async_event&) = delete;
+    async_event(const async_event &)            = delete;
+    async_event &operator=(const async_event &) = delete;
 
     /**
      * @brief Awaiter — suspends until the event is set
@@ -691,30 +767,38 @@ public:
      * executes between await_ready() and await_suspend().
      */
     struct wait_awaiter {
-        async_event& _ev;
+        async_event &_ev;
 
-        [[nodiscard]] bool await_ready() noexcept {
+        [[nodiscard]] bool
+        await_ready() noexcept {
             if (_ev._signaled) {
-                if (_ev._auto_reset) _ev._signaled = false;
+                if (_ev._auto_reset)
+                    _ev._signaled = false;
                 return true;
             }
             return false;
         }
 
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             if (_ev._signaled) {
-                if (_ev._auto_reset) _ev._signaled = false;
+                if (_ev._auto_reset)
+                    _ev._signaled = false;
                 schedule_via_current(h);
             } else {
                 _ev._waiters.push_back(h);
             }
         }
 
-        void await_resume() noexcept {}
+        void
+        await_resume() noexcept {}
     };
 
     /** @brief Suspend until the event is set */
-    wait_awaiter wait() { return wait_awaiter{*this}; }
+    wait_awaiter
+    wait() {
+        return wait_awaiter{*this};
+    }
 
     /**
      * @brief Signal the event
@@ -722,7 +806,8 @@ public:
      * Manual-reset: wakes all current waiters and marks event as set.
      * Auto-reset:   wakes one waiter, or records the signal if no waiter.
      */
-    void set() {
+    void
+    set() {
         if (_auto_reset) {
             if (!_waiters.empty()) {
                 auto h = _waiters.front();
@@ -732,7 +817,7 @@ public:
                 _signaled = true;
             }
         } else {
-            _signaled = true;
+            _signaled    = true;
             auto waiters = std::move(_waiters);
             for (auto h : waiters)
                 schedule_via_current(h);
@@ -740,14 +825,23 @@ public:
     }
 
     /** @brief Clear the event (only meaningful in manual-reset mode) */
-    void reset() noexcept { _signaled = false; }
+    void
+    reset() noexcept {
+        _signaled = false;
+    }
 
-    bool is_set() const noexcept { return _signaled; }
-    size_t waiters_count() const noexcept { return _waiters.size(); }
+    bool
+    is_set() const noexcept {
+        return _signaled;
+    }
+    size_t
+    waiters_count() const noexcept {
+        return _waiters.size();
+    }
 
 private:
-    bool _signaled;
-    bool _auto_reset;
+    bool                                _signaled;
+    bool                                _auto_reset;
     std::deque<std::coroutine_handle<>> _waiters;
 };
 
@@ -781,11 +875,12 @@ private:
  */
 class async_latch {
 public:
-    explicit async_latch(size_t count) noexcept : _count(count) {}
+    explicit async_latch(size_t count) noexcept
+        : _count(count) {}
 
     // Non-copyable (waiters hold a pointer)
-    async_latch(const async_latch&) = delete;
-    async_latch& operator=(const async_latch&) = delete;
+    async_latch(const async_latch &)            = delete;
+    async_latch &operator=(const async_latch &) = delete;
 
     /**
      * @brief Decrement the counter by n (default 1)
@@ -793,39 +888,59 @@ public:
      * Releases all waiters if the counter reaches zero.
      * Safe to call extra times after reaching zero (no-op).
      */
-    void count_down(size_t n = 1) noexcept {
-        if (_count == 0) return;
+    void
+    count_down(size_t n = 1) noexcept {
+        if (_count == 0)
+            return;
         _count = (n >= _count) ? 0 : _count - n;
         if (_count == 0) {
             auto w = std::move(_waiters);
-            for (auto h : w) schedule_via_current(h);
+            for (auto h : w)
+                schedule_via_current(h);
         }
     }
 
-    bool is_ready() const noexcept { return _count == 0; }
-    size_t current_count() const noexcept { return _count; }
+    bool
+    is_ready() const noexcept {
+        return _count == 0;
+    }
+    size_t
+    current_count() const noexcept {
+        return _count;
+    }
 
     struct wait_awaiter {
-        async_latch& _latch;
-        [[nodiscard]] bool await_ready() const noexcept { return _latch._count == 0; }
-        void await_suspend(std::coroutine_handle<> h) {
-            if (_latch._count == 0) schedule_via_current(h);
-            else _latch._waiters.push_back(h);
+        async_latch &_latch;
+        [[nodiscard]] bool
+        await_ready() const noexcept {
+            return _latch._count == 0;
         }
-        void await_resume() noexcept {}
+        void
+        await_suspend(std::coroutine_handle<> h) {
+            if (_latch._count == 0)
+                schedule_via_current(h);
+            else
+                _latch._waiters.push_back(h);
+        }
+        void
+        await_resume() noexcept {}
     };
 
     /** @brief Suspend until the count reaches zero */
-    wait_awaiter wait() { return wait_awaiter{*this}; }
+    wait_awaiter
+    wait() {
+        return wait_awaiter{*this};
+    }
 
     /** @brief count_down(1) then wait() combined */
-    task<void> arrive_and_wait() {
+    task<void>
+    arrive_and_wait() {
         count_down();
         co_await wait();
     }
 
 private:
-    size_t _count;
+    size_t                               _count;
     std::vector<std::coroutine_handle<>> _waiters;
 };
 
@@ -842,13 +957,16 @@ private:
  * @ingroup Coroutine
  */
 template <typename F>
-auto with_semaphore(semaphore& sem, F f) -> task<std::invoke_result_t<F>> {
+auto
+with_semaphore(semaphore &sem, F f) -> task<std::invoke_result_t<F>> {
     co_await sem.acquire();
 
     // Use RAII guard pattern manually
     struct guard {
-        semaphore& s;
-        ~guard() { s.release(); }
+        semaphore &s;
+        ~guard() {
+            s.release();
+        }
     } g{sem};
 
     co_return f();
@@ -863,7 +981,8 @@ auto with_semaphore(semaphore& sem, F f) -> task<std::invoke_result_t<F>> {
  * @ingroup Coroutine
  */
 template <typename F>
-auto with_lock(async_mutex& mtx, F f) -> task<std::invoke_result_t<F>> {
+auto
+with_lock(async_mutex &mtx, F f) -> task<std::invoke_result_t<F>> {
     auto guard = co_await mtx.scoped_lock();
     co_return f();
 }

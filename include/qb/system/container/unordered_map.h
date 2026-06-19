@@ -8,7 +8,7 @@
  * and case-insensitive string map implementations.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -46,9 +46,7 @@ namespace qb {
  * @tparam E The equality function type (defaults to std::equal_to<K>)
  * @tparam A The allocator type
  */
-template <typename K, typename V, typename H = std::hash<K>,
-          typename E = std::equal_to<K>,
-          typename A = std::allocator<std::pair<const K, V>>>
+template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<const K, V>>>
 using unordered_flat_map = ska::flat_hash_map<K, V, H, E, A>;
 
 #ifdef NDEBUG
@@ -66,9 +64,7 @@ using unordered_flat_map = ska::flat_hash_map<K, V, H, E, A>;
  * @tparam A The allocator type
  * @ingroup Container
  */
-template <typename K, typename V, typename H = std::hash<K>,
-          typename E = std::equal_to<K>,
-          typename A = std::allocator<std::pair<const K, V>>>
+template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<const K, V>>>
 using unordered_map = ska::unordered_map<K, V, H, E, A>;
 #else
 /**
@@ -85,9 +81,7 @@ using unordered_map = ska::unordered_map<K, V, H, E, A>;
  * @tparam A The allocator type
  * @ingroup Container
  */
-template <typename K, typename V, typename H = std::hash<K>,
-          typename E = std::equal_to<K>,
-          typename A = std::allocator<std::pair<const K, V>>>
+template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<const K, V>>>
 using unordered_map = std::unordered_map<K, V, H, E, A>;
 #endif
 
@@ -258,8 +252,7 @@ public:
     template <typename T, typename... _Args>
     auto
     emplace(T &&key, _Args &&...args) {
-        return static_cast<base_t &>(*this).emplace(
-            _Trait::convert(std::forward<T>(key)), std::forward<_Args>(args)...);
+        return static_cast<base_t &>(*this).emplace(_Trait::convert(std::forward<T>(key)), std::forward<_Args>(args)...);
     }
 
     /**
@@ -274,8 +267,7 @@ public:
     template <typename T, typename... _Args>
     auto
     try_emplace(T &&key, _Args &&...args) {
-        return static_cast<base_t &>(*this).try_emplace(
-            _Trait::convert(std::forward<T>(key)), std::forward<_Args>(args)...);
+        return static_cast<base_t &>(*this).try_emplace(_Trait::convert(std::forward<T>(key)), std::forward<_Args>(args)...);
     }
 
     /**
@@ -303,8 +295,7 @@ public:
     template <typename T>
     [[nodiscard]] const auto &
     at(T &&key) const {
-        return static_cast<base_t const &>(*this).at(
-            _Trait::convert(std::forward<T>(key)));
+        return static_cast<base_t const &>(*this).at(_Trait::convert(std::forward<T>(key)));
     }
 
     /**
@@ -344,8 +335,7 @@ public:
     template <typename T>
     [[nodiscard]] auto
     find(T &&key) const {
-        return static_cast<base_t const &>(*this).find(
-            _Trait::convert(std::forward<T>(key)));
+        return static_cast<base_t const &>(*this).find(_Trait::convert(std::forward<T>(key)));
     }
 
     /**
@@ -379,10 +369,10 @@ public:
     using base_t::cbegin;
     using base_t::cend;
     using base_t::clear;
+    using base_t::empty;
     using base_t::end;
     using base_t::erase;
     using base_t::size;
-    using base_t::empty;
 
     /**
      * @brief Convert a key to lowercase
@@ -416,8 +406,7 @@ using icase_map = icase_basic_map<std::map<std::string, Value>, _Trait>;
  * @tparam _Trait The trait class for string conversion (defaults to string_to_lower)
  */
 template <typename Value, typename _Trait = string_to_lower>
-using icase_unordered_map =
-    icase_basic_map<qb::unordered_map<std::string, Value>, _Trait>;
+using icase_unordered_map = icase_basic_map<qb::unordered_map<std::string, Value>, _Trait>;
 
 } // namespace qb
 

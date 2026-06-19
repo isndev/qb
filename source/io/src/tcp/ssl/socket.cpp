@@ -8,7 +8,7 @@
  * data transmission.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -50,7 +50,8 @@ utc_tm_to_time_t(struct tm *tm_utc) {
 } // namespace
 
 // Helper function to convert ASN1_TIME to time_t
-static time_t asn1_time_to_time_t(const ASN1_TIME *time) {
+static time_t
+asn1_time_to_time_t(const ASN1_TIME *time) {
     if (!time)
         return 0;
 
@@ -61,8 +62,10 @@ static time_t asn1_time_to_time_t(const ASN1_TIME *time) {
 }
 
 // Helper to convert ASN1_INTEGER to hex string
-static std::string asn1_integer_to_hex_string(const ASN1_INTEGER *bs) {
-    if (!bs) return "";
+static std::string
+asn1_integer_to_hex_string(const ASN1_INTEGER *bs) {
+    if (!bs)
+        return "";
     std::ostringstream oss;
     for (int i = 0; i < bs->length; ++i) {
         oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(bs->data[i]);
@@ -77,8 +80,7 @@ attach_socket(SSL *ssl, ::socket_type native_socket) {
     if (!ssl || native_socket == static_cast<::socket_type>(-1))
         return false;
 
-    SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
-                          SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+    SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
 #if defined(_WIN32)
     if (native_socket > static_cast<::socket_type>((std::numeric_limits<int>::max)())) {
@@ -92,47 +94,55 @@ attach_socket(SSL *ssl, ::socket_type native_socket) {
 
 Certificate
 get_certificate(SSL *ssl) {
-    X509       *cert = nullptr;
-    if (ssl) cert = SSL_get_peer_certificate(ssl);
-    
+    X509 *cert = nullptr;
+    if (ssl)
+        cert = SSL_get_peer_certificate(ssl);
+
     Certificate ret{};
     if (!cert && ssl) {
-         return ret;
+        return ret;
     } else if (!cert && !ssl) {
         return ret;
     }
 
     char *line;
     if (cert != nullptr) {
-        line        = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
-        if (line) { ret.subject = line; OPENSSL_free(line); }
-        line       = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
-        if (line) { ret.issuer = line; OPENSSL_free(line); }
+        line = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+        if (line) {
+            ret.subject = line;
+            OPENSSL_free(line);
+        }
+        line = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
+        if (line) {
+            ret.issuer = line;
+            OPENSSL_free(line);
+        }
         ret.version = X509_get_version(cert);
 
         const ASN1_INTEGER *serial = X509_get_serialNumber(cert);
-        ret.serial_number = asn1_integer_to_hex_string(serial);
+        ret.serial_number          = asn1_integer_to_hex_string(serial);
 
         const ASN1_TIME *not_before_asn1 = X509_get0_notBefore(cert);
-        ret.not_before = asn1_time_to_time_t(not_before_asn1);
+        ret.not_before                   = asn1_time_to_time_t(not_before_asn1);
 
         const ASN1_TIME *not_after_asn1 = X509_get0_notAfter(cert);
-        ret.not_after = asn1_time_to_time_t(not_after_asn1);
+        ret.not_after                   = asn1_time_to_time_t(not_after_asn1);
 
-        int sig_nid = X509_get_signature_nid(cert);
+        int         sig_nid       = X509_get_signature_nid(cert);
         const char *sig_algo_name = OBJ_nid2ln(sig_nid);
-        if (sig_algo_name) ret.signature_algorithm = sig_algo_name;
+        if (sig_algo_name)
+            ret.signature_algorithm = sig_algo_name;
 
-        GENERAL_NAMES *sans = static_cast<GENERAL_NAMES*>(X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
+        GENERAL_NAMES *sans = static_cast<GENERAL_NAMES *>(X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
         if (sans) {
             for (int i = 0, count = sk_GENERAL_NAME_num(sans); i < count; ++i) {
                 GENERAL_NAME *san = sk_GENERAL_NAME_value(sans, i);
-                std::string san_str;
+                std::string   san_str;
                 if (san->type == GEN_DNS) {
                     ASN1_IA5STRING *dns_name = san->d.dNSName;
                     if (dns_name && dns_name->data && dns_name->length > 0) {
-                        san_str = "DNS:" + std::string(reinterpret_cast<const char*>(dns_name->data),
-                                                       static_cast<std::size_t>(dns_name->length));
+                        san_str =
+                            "DNS:" + std::string(reinterpret_cast<const char *>(dns_name->data), static_cast<std::size_t>(dns_name->length));
                     }
                 } else if (san->type == GEN_IPADD) {
                     ASN1_OCTET_STRING *ip_addr = san->d.iPAddress;
@@ -140,18 +150,17 @@ get_certificate(SSL *ssl) {
                         san_str = "IP:";
                         if (ip_addr->length == 4) { // IPv4
                             std::ostringstream oss;
-                            oss << static_cast<int>(ip_addr->data[0]) << "."
-                                << static_cast<int>(ip_addr->data[1]) << "."
-                                << static_cast<int>(ip_addr->data[2]) << "."
-                                << static_cast<int>(ip_addr->data[3]);
+                            oss << static_cast<int>(ip_addr->data[0]) << "." << static_cast<int>(ip_addr->data[1]) << "."
+                                << static_cast<int>(ip_addr->data[2]) << "." << static_cast<int>(ip_addr->data[3]);
                             san_str += oss.str();
                         } else if (ip_addr->length == 16) { // IPv6
-                             std::ostringstream oss;
-                             for(int j=0; j < ip_addr->length; ++j) {
+                            std::ostringstream oss;
+                            for (int j = 0; j < ip_addr->length; ++j) {
                                 oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(ip_addr->data[j]);
-                                if (j % 2 == 1 && j < ip_addr->length -1) oss << ":";
-                             }
-                             san_str += oss.str();
+                                if (j % 2 == 1 && j < ip_addr->length - 1)
+                                    oss << ":";
+                            }
+                            san_str += oss.str();
                         }
                     }
                 }
@@ -174,16 +183,13 @@ create_client_context(const SSL_METHOD *method) {
 }
 
 SSL_CTX *
-create_server_context(const SSL_METHOD *method, std::filesystem::path cert_path,
-                      std::filesystem::path key_path) {
+create_server_context(const SSL_METHOD *method, std::filesystem::path cert_path, std::filesystem::path key_path) {
     SSL_CTX *ctx = nullptr;
     if (!method)
         goto error;
     ctx = SSL_CTX_new(method);
-    if (!ctx ||
-        SSL_CTX_use_certificate_file(ctx, cert_path.string().c_str(), SSL_FILETYPE_PEM) <= 0 ||
-        SSL_CTX_use_PrivateKey_file(ctx, key_path.string().c_str(), SSL_FILETYPE_PEM) <= 0 ||
-        SSL_CTX_check_private_key(ctx) <= 0)
+    if (!ctx || SSL_CTX_use_certificate_file(ctx, cert_path.string().c_str(), SSL_FILETYPE_PEM) <= 0
+        || SSL_CTX_use_PrivateKey_file(ctx, key_path.string().c_str(), SSL_FILETYPE_PEM) <= 0 || SSL_CTX_check_private_key(ctx) <= 0)
         goto error;
 
     return ctx;
@@ -193,8 +199,10 @@ error:
     return nullptr;
 }
 
-bool load_ca_certificates(SSL_CTX *ctx, const std::string &ca_file_path) {
-    if (!ctx || ca_file_path.empty()) return false;
+bool
+load_ca_certificates(SSL_CTX *ctx, const std::string &ca_file_path) {
+    if (!ctx || ca_file_path.empty())
+        return false;
     if (SSL_CTX_load_verify_locations(ctx, ca_file_path.c_str(), nullptr) != 1) {
         // Consider logging ERR_get_error() here
         return false;
@@ -202,8 +210,10 @@ bool load_ca_certificates(SSL_CTX *ctx, const std::string &ca_file_path) {
     return true;
 }
 
-bool load_ca_directory(SSL_CTX *ctx, const std::string &ca_dir_path) {
-    if (!ctx || ca_dir_path.empty()) return false;
+bool
+load_ca_directory(SSL_CTX *ctx, const std::string &ca_dir_path) {
+    if (!ctx || ca_dir_path.empty())
+        return false;
     if (SSL_CTX_load_verify_locations(ctx, nullptr, ca_dir_path.c_str()) != 1) {
         // Consider logging ERR_get_error() here
         return false;
@@ -211,8 +221,10 @@ bool load_ca_directory(SSL_CTX *ctx, const std::string &ca_dir_path) {
     return true;
 }
 
-bool set_cipher_list(SSL_CTX *ctx, const std::string &ciphers) {
-    if (!ctx || ciphers.empty()) return false;
+bool
+set_cipher_list(SSL_CTX *ctx, const std::string &ciphers) {
+    if (!ctx || ciphers.empty())
+        return false;
     if (SSL_CTX_set_cipher_list(ctx, ciphers.c_str()) != 1) {
         // Consider logging ERR_get_error() here
         return false;
@@ -220,8 +232,10 @@ bool set_cipher_list(SSL_CTX *ctx, const std::string &ciphers) {
     return true;
 }
 
-bool set_ciphersuites_tls13(SSL_CTX *ctx, const std::string &ciphersuites) {
-    if (!ctx || ciphersuites.empty()) return false;
+bool
+set_ciphersuites_tls13(SSL_CTX *ctx, const std::string &ciphersuites) {
+    if (!ctx || ciphersuites.empty())
+        return false;
     if (SSL_CTX_set_ciphersuites(ctx, ciphersuites.c_str()) != 1) {
         // Consider logging ERR_get_error() here
         return false;
@@ -229,8 +243,10 @@ bool set_ciphersuites_tls13(SSL_CTX *ctx, const std::string &ciphersuites) {
     return true;
 }
 
-bool set_tls_protocol_versions(SSL_CTX *ctx, int min_version, int max_version) {
-    if (!ctx) return false;
+bool
+set_tls_protocol_versions(SSL_CTX *ctx, int min_version, int max_version) {
+    if (!ctx)
+        return false;
     bool success = true;
     if (min_version != 0) {
         if (SSL_CTX_set_min_proto_version(ctx, min_version) != 1) {
@@ -247,8 +263,10 @@ bool set_tls_protocol_versions(SSL_CTX *ctx, int min_version, int max_version) {
     return success;
 }
 
-bool configure_mtls_server_context(SSL_CTX *ctx, const std::string &client_ca_file_path, int verification_mode) {
-    if (!ctx) return false;
+bool
+configure_mtls_server_context(SSL_CTX *ctx, const std::string &client_ca_file_path, int verification_mode) {
+    if (!ctx)
+        return false;
 
     SSL_CTX_set_verify(ctx, verification_mode, nullptr); // Using OpenSSL's default verify callback
 
@@ -263,8 +281,10 @@ bool configure_mtls_server_context(SSL_CTX *ctx, const std::string &client_ca_fi
     return true;
 }
 
-bool configure_client_certificate(SSL_CTX *ctx, const std::string &client_cert_path, const std::string &client_key_path) {
-    if (!ctx || client_cert_path.empty() || client_key_path.empty()) return false;
+bool
+configure_client_certificate(SSL_CTX *ctx, const std::string &client_cert_path, const std::string &client_key_path) {
+    if (!ctx || client_cert_path.empty() || client_key_path.empty())
+        return false;
 
     if (SSL_CTX_use_certificate_file(ctx, client_cert_path.c_str(), SSL_FILETYPE_PEM) <= 0) {
         // Consider logging ERR_get_error() here
@@ -281,23 +301,27 @@ bool configure_client_certificate(SSL_CTX *ctx, const std::string &client_cert_p
     return true;
 }
 
-
 // Helper to convert std::vector<std::string> to the format OpenSSL needs for ALPN protos
 // (length-prefixed strings concatenated: <len1><proto1><len2><proto2>...)
-static std::vector<unsigned char> serialize_alpn_protocols(const std::vector<std::string>& protocols) {
+static std::vector<unsigned char>
+serialize_alpn_protocols(const std::vector<std::string> &protocols) {
     std::vector<unsigned char> out;
-    for (const auto& proto : protocols) {
-        if (proto.length() > 255) continue; // Protocol too long, skip
+    for (const auto &proto : protocols) {
+        if (proto.length() > 255)
+            continue; // Protocol too long, skip
         out.push_back(static_cast<unsigned char>(proto.length()));
         out.insert(out.end(), proto.begin(), proto.end());
     }
     return out;
 }
 
-bool set_alpn_protos_client(SSL_CTX *ctx, const std::vector<std::string>& protocols) {
-    if (!ctx || protocols.empty()) return false;
+bool
+set_alpn_protos_client(SSL_CTX *ctx, const std::vector<std::string> &protocols) {
+    if (!ctx || protocols.empty())
+        return false;
     std::vector<unsigned char> serialized_protos = serialize_alpn_protocols(protocols);
-    if (serialized_protos.empty()) return false; // No valid protocols to set
+    if (serialized_protos.empty())
+        return false; // No valid protocols to set
 
     if (SSL_CTX_set_alpn_protos(ctx, serialized_protos.data(), static_cast<unsigned int>(serialized_protos.size())) != 0) {
         // SSL_CTX_set_alpn_protos returns 0 on success, non-0 on failure.
@@ -307,14 +331,18 @@ bool set_alpn_protos_client(SSL_CTX *ctx, const std::vector<std::string>& protoc
     return true;
 }
 
-bool set_alpn_selection_callback_server(SSL_CTX *ctx, SSL_CTX_alpn_select_cb_func callback, void *arg) {
-    if (!ctx || !callback) return false;
+bool
+set_alpn_selection_callback_server(SSL_CTX *ctx, SSL_CTX_alpn_select_cb_func callback, void *arg) {
+    if (!ctx || !callback)
+        return false;
     SSL_CTX_set_alpn_select_cb(ctx, callback, arg);
     return true; // SSL_CTX_set_alpn_select_cb doesn't have a direct error return like others, assumes success if non-null callback.
 }
 
-bool enable_server_session_caching(SSL_CTX *ctx, long cache_size) {
-    if (!ctx) return false;
+bool
+enable_server_session_caching(SSL_CTX *ctx, long cache_size) {
+    if (!ctx)
+        return false;
     SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_SERVER);
     if (cache_size != 0) { // 0 means unlimited for SSL_CTX_sess_set_cache_size, OpenSSL default is SSL_SESSION_CACHE_MAX_SIZE_DEFAULT
         SSL_CTX_sess_set_cache_size(ctx, cache_size);
@@ -323,27 +351,35 @@ bool enable_server_session_caching(SSL_CTX *ctx, long cache_size) {
     return true; // These functions typically return the previous value, not direct success/failure. Assuming success.
 }
 
-bool disable_client_session_cache(SSL_CTX *ctx) {
-    if (!ctx) return false;
+bool
+disable_client_session_cache(SSL_CTX *ctx) {
+    if (!ctx)
+        return false;
     SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF | SSL_SESS_CACHE_NO_INTERNAL_STORE);
     return true;
 }
 
-bool set_custom_verify_callback(SSL_CTX *ctx, int (*callback)(int, X509_STORE_CTX *), int verification_mode) {
-    if (!ctx) return false;
+bool
+set_custom_verify_callback(SSL_CTX *ctx, int (*callback)(int, X509_STORE_CTX *), int verification_mode) {
+    if (!ctx)
+        return false;
     SSL_CTX_set_verify(ctx, verification_mode, callback);
     return true;
 }
 
-bool set_ocsp_stapling_client_callback(SSL_CTX *ctx, int (*callback)(SSL *s, void *arg), void *arg) {
-    if (!ctx) return false;
+bool
+set_ocsp_stapling_client_callback(SSL_CTX *ctx, int (*callback)(SSL *s, void *arg), void *arg) {
+    if (!ctx)
+        return false;
     SSL_CTX_set_tlsext_status_cb(ctx, callback);
     SSL_CTX_set_tlsext_status_arg(ctx, arg);
     return true;
 }
 
-bool set_ocsp_stapling_responder_server(SSL_CTX *ctx, int (*callback)(SSL *s, void *arg), void *arg) {
-    if (!ctx) return false;
+bool
+set_ocsp_stapling_responder_server(SSL_CTX *ctx, int (*callback)(SSL *s, void *arg), void *arg) {
+    if (!ctx)
+        return false;
     // For the server to provide an OCSP response, it also uses SSL_CTX_set_tlsext_status_cb.
     // The callback is responsible for calling SSL_set_tlsext_status_ocsp_resp.
     SSL_CTX_set_tlsext_status_cb(ctx, callback);
@@ -351,21 +387,27 @@ bool set_ocsp_stapling_responder_server(SSL_CTX *ctx, int (*callback)(SSL *s, vo
     return true;
 }
 
-bool set_sni_hostname_selection_callback_server(SSL_CTX *ctx, int (*callback)(SSL *s, int *al, void *arg), void *arg) {
-    if (!ctx || !callback) return false;
+bool
+set_sni_hostname_selection_callback_server(SSL_CTX *ctx, int (*callback)(SSL *s, int *al, void *arg), void *arg) {
+    if (!ctx || !callback)
+        return false;
     SSL_CTX_set_tlsext_servername_callback(ctx, callback);
     SSL_CTX_set_tlsext_servername_arg(ctx, arg);
     return true;
 }
 
-bool set_keylog_callback(SSL_CTX *ctx, SSL_CTX_keylog_cb_func callback) {
-    if (!ctx || !callback) return false;
+bool
+set_keylog_callback(SSL_CTX *ctx, SSL_CTX_keylog_cb_func callback) {
+    if (!ctx || !callback)
+        return false;
     SSL_CTX_set_keylog_callback(ctx, callback);
     return true;
 }
 
-bool configure_dh_parameters_server(SSL_CTX* ctx, const std::string& dh_param_file_path) {
-    if (!ctx || dh_param_file_path.empty()) return false;
+bool
+configure_dh_parameters_server(SSL_CTX *ctx, const std::string &dh_param_file_path) {
+    if (!ctx || dh_param_file_path.empty())
+        return false;
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L // OpenSSL 3.0+
     // Use modern EVP_PKEY approach for OpenSSL 3.0+
@@ -418,31 +460,36 @@ bool configure_dh_parameters_server(SSL_CTX* ctx, const std::string& dh_param_fi
     return true;
 }
 
-bool configure_ecdh_curves_server(SSL_CTX* ctx, const std::string& curve_names_list) {
-    if (!ctx) return false;
-    #if OPENSSL_VERSION_NUMBER >= 0x10100000L
+bool
+configure_ecdh_curves_server(SSL_CTX *ctx, const std::string &curve_names_list) {
+    if (!ctx)
+        return false;
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
     if (!curve_names_list.empty()) {
         if (SSL_CTX_set1_curves_list(ctx, curve_names_list.c_str()) != 1) {
             return false;
         }
-    } 
-    #else
-    if (!curve_names_list.empty()) {
-        return false; 
     }
-    #endif
+#else
+    if (!curve_names_list.empty()) {
+        return false;
+    }
+#endif
     return true;
 }
 
-void free_session(Session& session) {
+void
+free_session(Session &session) {
     if (session._session_handle) {
         SSL_SESSION_free(session._session_handle);
         session._session_handle = nullptr;
     }
 }
 
-bool enable_post_handshake_auth_server(SSL_CTX* ctx) {
-    if (!ctx) return false;
+bool
+enable_post_handshake_auth_server(SSL_CTX *ctx) {
+    if (!ctx)
+        return false;
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L // SSL_CTX_set_post_handshake_auth available from 1.1.1
     SSL_CTX_set_post_handshake_auth(ctx, 1);
     return true;
@@ -463,8 +510,7 @@ apply_sni_hostname(SSL *ssl_handle, const std::string &hostname) noexcept {
 }
 
 bool
-apply_alpn_protocols(SSL *ssl_handle,
-                     const std::vector<std::string> &protocols) noexcept {
+apply_alpn_protocols(SSL *ssl_handle, const std::vector<std::string> &protocols) noexcept {
     if (protocols.empty())
         return true;
 
@@ -472,11 +518,7 @@ apply_alpn_protocols(SSL *ssl_handle,
     if (serialized.empty())
         return false;
 
-    return SSL_set_alpn_protos(
-               ssl_handle,
-               serialized.data(),
-               static_cast<unsigned int>(serialized.size()))
-        == 0;
+    return SSL_set_alpn_protos(ssl_handle, serialized.data(), static_cast<unsigned int>(serialized.size())) == 0;
 }
 
 // Secure-by-default peer verification for the client SSL handle created by
@@ -485,8 +527,7 @@ apply_alpn_protocols(SSL *ssl_handle,
 // on the SSL_CTX) and the certificate must match the target hostname/IP. When
 // `insecure` is true (set_insecure()), verification is turned off.
 void
-apply_client_peer_verification(SSL *ssl, const std::string &hostname,
-                               bool insecure) noexcept {
+apply_client_peer_verification(SSL *ssl, const std::string &hostname, bool insecure) noexcept {
     if (!ssl)
         return;
     if (insecure) {
@@ -503,9 +544,8 @@ apply_client_peer_verification(SSL *ssl, const std::string &hostname,
         return;
     X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
     unsigned char ip_buf[sizeof(struct in6_addr)];
-    int rc;
-    if (inet_pton(AF_INET, hostname.c_str(), ip_buf) == 1 ||
-        inet_pton(AF_INET6, hostname.c_str(), ip_buf) == 1) {
+    int           rc;
+    if (inet_pton(AF_INET, hostname.c_str(), ip_buf) == 1 || inet_pton(AF_INET6, hostname.c_str(), ip_buf) == 1) {
         // Literal IP target: match against the certificate's IP SANs.
         rc = X509_VERIFY_PARAM_set1_ip_asc(param, hostname.c_str());
     } else {
@@ -518,8 +558,7 @@ apply_client_peer_verification(SSL *ssl, const std::string &hostname,
         // so the handshake aborts. Silently continuing here would leave only
         // chain verification active and accept a valid-chain cert issued for a
         // DIFFERENT host — a MITM hole.
-        SSL_set_verify(ssl, SSL_VERIFY_PEER,
-                       [](int, X509_STORE_CTX *) -> int { return 0; });
+        SSL_set_verify(ssl, SSL_VERIFY_PEER, [](int, X509_STORE_CTX *) -> int { return 0; });
     }
 }
 
@@ -556,8 +595,8 @@ socket::init(SSL *handle) noexcept {
             apply_pending_client_settings();
         return;
     } else {
-        auto *old_ssl = _ssl_handle.get();
-        auto *old_ctx = SSL_get_SSL_CTX(old_ssl);
+        auto *old_ssl    = _ssl_handle.get();
+        auto *old_ctx    = SSL_get_SSL_CTX(old_ssl);
         bool  was_client = !SSL_is_server(old_ssl);
         _ssl_handle.reset(handle);
         if (was_client && old_ctx)
@@ -573,8 +612,7 @@ socket::apply_pending_client_settings() noexcept {
         return true;
 
     auto *ssl = ssl_handle();
-    return apply_sni_hostname(ssl, _pending_sni_hostname) &&
-           apply_alpn_protocols(ssl, _pending_alpn_protocols);
+    return apply_sni_hostname(ssl, _pending_sni_hostname) && apply_alpn_protocols(ssl, _pending_alpn_protocols);
 }
 
 int
@@ -616,8 +654,7 @@ socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
 }
 
 int
-socket::connect_in(int af, std::string const &host, uint16_t port,
-                     qb::duration wtimeout) noexcept {
+socket::connect_in(int af, std::string const &host, uint16_t port, qb::duration wtimeout) noexcept {
     auto ret = -1;
     qb::io::socket::resolve_i(
         [&, this](const auto &ep) {
@@ -673,8 +710,7 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
 }
 
 int
-socket::connect(endpoint const &ep, std::string const &hostname,
-                qb::duration wtimeout) noexcept {
+socket::connect(endpoint const &ep, std::string const &hostname, qb::duration wtimeout) noexcept {
     auto      ret = tcp::socket::connect(ep, wtimeout);
     const int err = qb::io::socket::get_last_errno();
     if (ret != 0 && !socket_no_error(err) && err != EISCONN)
@@ -947,7 +983,7 @@ socket::get_negotiated_cipher_suite() const noexcept {
     if (!_connected || !_ssl_handle) {
         return "";
     }
-    const char* cipher_name = SSL_get_cipher_name(_ssl_handle.get());
+    const char *cipher_name = SSL_get_cipher_name(_ssl_handle.get());
     return cipher_name ? std::string(cipher_name) : "";
 }
 
@@ -956,7 +992,7 @@ socket::get_negotiated_tls_version() const noexcept {
     if (!_connected || !_ssl_handle) {
         return "";
     }
-    const char* tls_version = SSL_get_version(_ssl_handle.get());
+    const char *tls_version = SSL_get_version(_ssl_handle.get());
     return tls_version ? std::string(tls_version) : "";
 }
 
@@ -966,10 +1002,10 @@ socket::get_alpn_selected_protocol() const noexcept {
         return "";
     }
     const unsigned char *data = nullptr;
-    unsigned int len = 0;
+    unsigned int         len  = 0;
     SSL_get0_alpn_selected(_ssl_handle.get(), &data, &len);
     if (data && len > 0) {
-        return std::string(reinterpret_cast<const char*>(data), len);
+        return std::string(reinterpret_cast<const char *>(data), len);
     }
     return "";
 }
@@ -983,20 +1019,24 @@ socket::get_last_ssl_error_string() const noexcept {
     if (err_code == 0) {
         return "No SSL error in queue";
     }
-    char err_buf[256]; 
+    char err_buf[256];
     ERR_error_string_n(err_code, err_buf, sizeof(err_buf));
     return std::string(err_buf);
 }
 
-bool socket::disable_session_resumption() noexcept {
-    if (!_ssl_handle) return false;
+bool
+socket::disable_session_resumption() noexcept {
+    if (!_ssl_handle)
+        return false;
     SSL_set_options(_ssl_handle.get(), SSL_OP_NO_TICKET | SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
     SSL_set_session(_ssl_handle.get(), nullptr);
     return true;
 }
 
-bool socket::request_ocsp_stapling(bool enable) noexcept {
-    if (!_ssl_handle) return false;
+bool
+socket::request_ocsp_stapling(bool enable) noexcept {
+    if (!_ssl_handle)
+        return false;
     if (enable) {
         if (SSL_set_tlsext_status_type(_ssl_handle.get(), TLSEXT_STATUSTYPE_ocsp) != 1) {
             return false;
@@ -1021,56 +1061,63 @@ socket::get_peer_certificate_chain() const noexcept {
         X509 *cert = sk_X509_value(cert_stack, i);
         if (cert) {
             qb::io::ssl::Certificate cert_details;
-            char *line;
+            char                    *line;
 
             line = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
-            if (line) { cert_details.subject = line; OPENSSL_free(line); }
+            if (line) {
+                cert_details.subject = line;
+                OPENSSL_free(line);
+            }
             line = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
-            if (line) { cert_details.issuer = line; OPENSSL_free(line); }
+            if (line) {
+                cert_details.issuer = line;
+                OPENSSL_free(line);
+            }
             cert_details.version = X509_get_version(cert);
-            
+
             const ASN1_INTEGER *serial = X509_get_serialNumber(cert);
             cert_details.serial_number = asn1_integer_to_hex_string(serial);
 
             const ASN1_TIME *not_before_asn1 = X509_get0_notBefore(cert);
-            cert_details.not_before = asn1_time_to_time_t(not_before_asn1);
+            cert_details.not_before          = asn1_time_to_time_t(not_before_asn1);
 
             const ASN1_TIME *not_after_asn1 = X509_get0_notAfter(cert);
-            cert_details.not_after = asn1_time_to_time_t(not_after_asn1);
+            cert_details.not_after          = asn1_time_to_time_t(not_after_asn1);
 
-            int sig_nid = X509_get_signature_nid(cert);
+            int         sig_nid       = X509_get_signature_nid(cert);
             const char *sig_algo_name = OBJ_nid2ln(sig_nid);
-            if (sig_algo_name) cert_details.signature_algorithm = sig_algo_name;
+            if (sig_algo_name)
+                cert_details.signature_algorithm = sig_algo_name;
 
-            GENERAL_NAMES *sans = static_cast<GENERAL_NAMES*>(X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
+            GENERAL_NAMES *sans = static_cast<GENERAL_NAMES *>(X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
             if (sans) {
                 for (int j = 0, count = sk_GENERAL_NAME_num(sans); j < count; ++j) {
                     GENERAL_NAME *san_entry = sk_GENERAL_NAME_value(sans, j);
-                    std::string san_str_entry;
+                    std::string   san_str_entry;
                     if (san_entry->type == GEN_DNS) {
                         ASN1_IA5STRING *dns_name = san_entry->d.dNSName;
                         if (dns_name && dns_name->data && dns_name->length > 0) {
-                           san_str_entry = "DNS:" + std::string(reinterpret_cast<const char*>(dns_name->data),
-                                                                static_cast<std::size_t>(dns_name->length));
+                            san_str_entry =
+                                "DNS:"
+                                + std::string(reinterpret_cast<const char *>(dns_name->data), static_cast<std::size_t>(dns_name->length));
                         }
                     } else if (san_entry->type == GEN_IPADD) {
                         ASN1_OCTET_STRING *ip_addr = san_entry->d.iPAddress;
-                         if (ip_addr && ip_addr->data) {
+                        if (ip_addr && ip_addr->data) {
                             san_str_entry = "IP:";
                             if (ip_addr->length == 4) { // IPv4
                                 std::ostringstream oss_ip;
-                                oss_ip << static_cast<int>(ip_addr->data[0]) << "."
-                                    << static_cast<int>(ip_addr->data[1]) << "."
-                                    << static_cast<int>(ip_addr->data[2]) << "."
-                                    << static_cast<int>(ip_addr->data[3]);
+                                oss_ip << static_cast<int>(ip_addr->data[0]) << "." << static_cast<int>(ip_addr->data[1]) << "."
+                                       << static_cast<int>(ip_addr->data[2]) << "." << static_cast<int>(ip_addr->data[3]);
                                 san_str_entry += oss_ip.str();
                             } else if (ip_addr->length == 16) { // IPv6
-                                 std::ostringstream oss_ip;
-                                 for(int k=0; k < ip_addr->length; ++k) {
+                                std::ostringstream oss_ip;
+                                for (int k = 0; k < ip_addr->length; ++k) {
                                     oss_ip << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(ip_addr->data[k]);
-                                    if (k % 2 == 1 && k < ip_addr->length -1) oss_ip << ":";
-                                 }
-                                 san_str_entry += oss_ip.str();
+                                    if (k % 2 == 1 && k < ip_addr->length - 1)
+                                        oss_ip << ":";
+                                }
+                                san_str_entry += oss_ip.str();
                             }
                         }
                     }
@@ -1096,15 +1143,18 @@ socket::get_session() const noexcept {
     return sess_obj;
 }
 
-bool socket::set_session(qb::io::ssl::Session& session) noexcept {
+bool
+socket::set_session(qb::io::ssl::Session &session) noexcept {
     if (!_ssl_handle || !session.is_valid()) {
         return false;
     }
     return SSL_set_session(_ssl_handle.get(), session._session_handle) == 1;
 }
 
-bool socket::request_client_post_handshake_auth() noexcept {
-    if (!_connected || !_ssl_handle) return false;
+bool
+socket::request_client_post_handshake_auth() noexcept {
+    if (!_connected || !_ssl_handle)
+        return false;
 
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L // SSL_verify_client_post_handshake available from 1.1.1
     // Check if it's TLS 1.3
@@ -1120,7 +1170,8 @@ bool socket::request_client_post_handshake_auth() noexcept {
 #endif
 }
 
-bool socket::set_sni_hostname(const std::string& hostname) noexcept {
+bool
+socket::set_sni_hostname(const std::string &hostname) noexcept {
     if (hostname.empty())
         return false;
 
@@ -1128,7 +1179,8 @@ bool socket::set_sni_hostname(const std::string& hostname) noexcept {
     return !_ssl_handle || apply_sni_hostname(_ssl_handle.get(), _pending_sni_hostname);
 }
 
-bool socket::set_alpn_protocols(const std::vector<std::string>& protocols) noexcept {
+bool
+socket::set_alpn_protocols(const std::vector<std::string> &protocols) noexcept {
     if (protocols.empty())
         return false;
 
@@ -1136,19 +1188,24 @@ bool socket::set_alpn_protocols(const std::vector<std::string>& protocols) noexc
     return !_ssl_handle || apply_alpn_protocols(_ssl_handle.get(), _pending_alpn_protocols);
 }
 
-bool socket::set_verify_callback(int (*callback)(int, X509_STORE_CTX *), int verification_mode) noexcept {
-    if (!_ssl_handle) return false;
+bool
+socket::set_verify_callback(int (*callback)(int, X509_STORE_CTX *), int verification_mode) noexcept {
+    if (!_ssl_handle)
+        return false;
     SSL_set_verify(_ssl_handle.get(), verification_mode, callback);
     return true; // SSL_set_verify does not return a success/failure for the SSL object itself.
 }
 
-bool socket::set_verify_depth(int depth) noexcept {
-    if (!_ssl_handle) return false;
+bool
+socket::set_verify_depth(int depth) noexcept {
+    if (!_ssl_handle)
+        return false;
     SSL_set_verify_depth(_ssl_handle.get(), depth);
     return true; // SSL_set_verify_depth does not return a success/failure.
 }
 
-void socket::set_insecure() noexcept {
+void
+socket::set_insecure() noexcept {
     _verify_peer = false;
     // If a handle already exists (e.g. user called init() before connecting),
     // drop verification immediately so a subsequent handshake does not enforce it.
@@ -1156,7 +1213,8 @@ void socket::set_insecure() noexcept {
         SSL_set_verify(_ssl_handle.get(), SSL_VERIFY_NONE, nullptr);
 }
 
-bool socket::verify_peer() const noexcept {
+bool
+socket::verify_peer() const noexcept {
     return _verify_peer;
 }
 

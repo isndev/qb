@@ -66,12 +66,12 @@ with_tcp_pair(Server &&server, Client &&client) {
 void
 accept_low_level_connections(qb::io::socket &listener, int expected_count) {
     listener.set_nonblocking(true);
-    int accepted_count = 0;
-    const auto deadline = std::chrono::steady_clock::now() + 3s;
+    int        accepted_count = 0;
+    const auto deadline       = std::chrono::steady_clock::now() + 3s;
 
     while (accepted_count < expected_count && std::chrono::steady_clock::now() < deadline) {
         ::socket_type accepted_handle = qb::io::inet::invalid_socket;
-        const int ret = listener.accept_n(accepted_handle);
+        const int     ret             = listener.accept_n(accepted_handle);
         if (ret == 0) {
             qb::io::socket accepted(accepted_handle);
             ++accepted_count;
@@ -138,8 +138,7 @@ TEST(TCPSocket, UriAndTimeoutConnectVariantsReachLoopbackServer) {
         },
         [](unsigned short port) {
             qb::io::tcp::socket client;
-            const auto          uri =
-                qb::io::uri("tcp://127.0.0.1:" + std::to_string(port));
+            const auto          uri = qb::io::uri("tcp://127.0.0.1:" + std::to_string(port));
 
             ASSERT_EQ(client.connect(uri, 1s), qb::io::SocketStatus::Done);
             EXPECT_TRUE(client.is_open());
@@ -190,8 +189,7 @@ TEST(TCPSocket, NonBlockingUriConnectReportsProgressOrImmediateSuccess) {
     ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
 
     qb::io::tcp::socket client;
-    const auto          uri =
-        qb::io::uri("tcp://127.0.0.1:" + std::to_string(listener.local_endpoint().port()));
+    const auto          uri = qb::io::uri("tcp://127.0.0.1:" + std::to_string(listener.local_endpoint().port()));
 
     const int ret = client.n_connect(uri);
     const int err = qb::io::socket::get_last_errno();
@@ -207,19 +205,16 @@ TEST(TCPSocket, NonBlockingEndpointAndV4ConnectReportProgressOrImmediateSuccess)
     const auto port = listener.local_endpoint().port();
 
     qb::io::tcp::socket endpoint_client;
-    const int endpoint_ret = endpoint_client.n_connect(qb::io::endpoint("127.0.0.1", port));
-    const int endpoint_err = qb::io::socket::get_last_errno();
-    EXPECT_TRUE(endpoint_ret == 0 || endpoint_err == EINPROGRESS ||
-                qb::io::socket::not_send_error(endpoint_err))
-        << "unexpected n_connect endpoint result=" << endpoint_ret
-        << " errno=" << endpoint_err;
+    const int           endpoint_ret = endpoint_client.n_connect(qb::io::endpoint("127.0.0.1", port));
+    const int           endpoint_err = qb::io::socket::get_last_errno();
+    EXPECT_TRUE(endpoint_ret == 0 || endpoint_err == EINPROGRESS || qb::io::socket::not_send_error(endpoint_err))
+        << "unexpected n_connect endpoint result=" << endpoint_ret << " errno=" << endpoint_err;
     endpoint_client.close();
 
     qb::io::tcp::socket v4_client;
-    const int v4_ret = v4_client.n_connect_v4("127.0.0.1", port);
-    const int v4_err = qb::io::socket::get_last_errno();
-    EXPECT_TRUE(v4_ret == 0 || v4_err == EINPROGRESS ||
-                qb::io::socket::not_send_error(v4_err))
+    const int           v4_ret = v4_client.n_connect_v4("127.0.0.1", port);
+    const int           v4_err = qb::io::socket::get_last_errno();
+    EXPECT_TRUE(v4_ret == 0 || v4_err == EINPROGRESS || qb::io::socket::not_send_error(v4_err))
         << "unexpected n_connect_v4 result=" << v4_ret << " errno=" << v4_err;
     v4_client.close();
 }
@@ -277,9 +272,8 @@ TEST(TCPSocket, AlreadyOpenSocketRejectsMismatchedEndpointFamilies) {
 
 TEST(TCPSocket, UnixUriBindListenAndConnectVariantsReachLocalSocket) {
     constexpr int expected_connections = 3;
-    const auto    path =
-        std::string("/tmp/qb-tcp-socket-uri-") + std::to_string(::getpid()) + ".sock";
-    const auto uri = qb::io::uri("unix://" + path);
+    const auto    path                 = std::string("/tmp/qb-tcp-socket-uri-") + std::to_string(::getpid()) + ".sock";
+    const auto    uri                  = qb::io::uri("unix://" + path);
 
     std::remove(path.c_str());
 
@@ -343,20 +337,17 @@ TEST(TCPSocket, BaseSocketMoveConstructionAndAssignmentTransferOwnership) {
 }
 
 TEST(TCPSocket, ReadReportsPeerCloseWithoutStaleErrno) {
-    with_tcp_pair(
-        [](qb::io::tcp::socket accepted) {
-            accepted.disconnect();
-        },
-        [](unsigned short port) {
-            qb::io::tcp::socket client;
-            ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
-            qb::io::socket::set_last_errno(EINVAL);
+    with_tcp_pair([](qb::io::tcp::socket accepted) { accepted.disconnect(); },
+                  [](unsigned short port) {
+                      qb::io::tcp::socket client;
+                      ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
+                      qb::io::socket::set_last_errno(EINVAL);
 
-            char buffer[8] = {};
-            EXPECT_EQ(client.read(buffer, sizeof(buffer)), -1);
-            EXPECT_EQ(qb::io::socket::get_last_errno(), 0);
-            client.close();
-        });
+                      char buffer[8] = {};
+                      EXPECT_EQ(client.read(buffer, sizeof(buffer)), -1);
+                      EXPECT_EQ(qb::io::socket::get_last_errno(), 0);
+                      client.close();
+                  });
 }
 
 TEST(TCPSocket, LowLevelPortableConnectAndTransferHelpers) {
@@ -371,11 +362,9 @@ TEST(TCPSocket, LowLevelPortableConnectAndTransferHelpers) {
         ASSERT_TRUE(accepted.is_open());
 
         char buffer[32] = {};
-        EXPECT_EQ(accepted.recv_n(buffer, static_cast<int>(sizeof("hello")), 1s),
-                  static_cast<int>(sizeof("hello")));
+        EXPECT_EQ(accepted.recv_n(buffer, static_cast<int>(sizeof("hello")), 1s), static_cast<int>(sizeof("hello")));
         EXPECT_STREQ(buffer, "hello");
-        EXPECT_EQ(accepted.send_n("world", static_cast<int>(sizeof("world")), 1s),
-                  static_cast<int>(sizeof("world")));
+        EXPECT_EQ(accepted.send_n("world", static_cast<int>(sizeof("world")), 1s), static_cast<int>(sizeof("world")));
     });
 
     qb::io::socket client;
@@ -383,12 +372,10 @@ TEST(TCPSocket, LowLevelPortableConnectAndTransferHelpers) {
     EXPECT_TRUE(client.is_open());
     EXPECT_EQ(client.peer_endpoint().port(), port);
     EXPECT_GE(client.tcp_rtt(), 0u);
-    EXPECT_EQ(client.send_n("hello", static_cast<int>(sizeof("hello")), 1s),
-              static_cast<int>(sizeof("hello")));
+    EXPECT_EQ(client.send_n("hello", static_cast<int>(sizeof("hello")), 1s), static_cast<int>(sizeof("hello")));
 
     char buffer[32] = {};
-    EXPECT_EQ(client.recv_n(buffer, static_cast<int>(sizeof("world")), 1s),
-              static_cast<int>(sizeof("world")));
+    EXPECT_EQ(client.recv_n(buffer, static_cast<int>(sizeof("world")), 1s), static_cast<int>(sizeof("world")));
     EXPECT_STREQ(buffer, "world");
 
     server_thread.join();
@@ -402,9 +389,7 @@ TEST(TCPSocket, LowLevelPortableConnectVariantsReachLoopbackServer) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] {
-        accept_low_level_connections(listener, expected_connections);
-    });
+    std::thread server_thread([&] { accept_low_level_connections(listener, expected_connections); });
 
     qb::io::socket xp_client;
     EXPECT_EQ(xp_client.xpconnect("127.0.0.1", port), 0);
@@ -419,13 +404,12 @@ TEST(TCPSocket, LowLevelPortableConnectVariantsReachLoopbackServer) {
     p_timeout_client.close();
 
     qb::io::socket endpoint_timeout_client;
-    EXPECT_EQ(endpoint_timeout_client.pconnect_n(qb::io::endpoint("127.0.0.1", port), 1s),
-              0);
+    EXPECT_EQ(endpoint_timeout_client.pconnect_n(qb::io::endpoint("127.0.0.1", port), 1s), 0);
     endpoint_timeout_client.close();
 
     qb::io::socket nonblocking_client;
-    const int ret = nonblocking_client.pconnect_n(qb::io::endpoint("127.0.0.1", port));
-    const int err = qb::io::socket::get_last_errno();
+    const int      ret = nonblocking_client.pconnect_n(qb::io::endpoint("127.0.0.1", port));
+    const int      err = qb::io::socket::get_last_errno();
     EXPECT_TRUE(ret == 0 || err == EINPROGRESS || qb::io::socket::not_send_error(err))
         << "unexpected pconnect_n result=" << ret << " errno=" << err;
     nonblocking_client.close();
@@ -441,35 +425,28 @@ TEST(TCPSocket, LowLevelPortableConnectVariantsCanBindExplicitLocalPorts) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] {
-        accept_low_level_connections(listener, expected_connections);
-    });
+    std::thread server_thread([&] { accept_low_level_connections(listener, expected_connections); });
 
     qb::io::socket blocking_client;
-    const auto      blocking_local_port = reserve_free_tcp_port();
+    const auto     blocking_local_port = reserve_free_tcp_port();
     ASSERT_NE(blocking_local_port, 0);
-    EXPECT_EQ(blocking_client.pconnect(qb::io::endpoint("127.0.0.1", port),
-                                       blocking_local_port),
-              0);
+    EXPECT_EQ(blocking_client.pconnect(qb::io::endpoint("127.0.0.1", port), blocking_local_port), 0);
     EXPECT_EQ(blocking_client.local_endpoint().port(), blocking_local_port);
     blocking_client.close();
 
     qb::io::socket timeout_client;
-    const auto      timeout_local_port = reserve_free_tcp_port();
+    const auto     timeout_local_port = reserve_free_tcp_port();
     ASSERT_NE(timeout_local_port, 0);
-    EXPECT_EQ(timeout_client.pconnect_n(qb::io::endpoint("127.0.0.1", port), 1s,
-                                        timeout_local_port),
-              0);
+    EXPECT_EQ(timeout_client.pconnect_n(qb::io::endpoint("127.0.0.1", port), 1s, timeout_local_port), 0);
     EXPECT_EQ(timeout_client.local_endpoint().port(), timeout_local_port);
     timeout_client.close();
 
     server_thread.join();
 
     qb::io::socket nonblocking_client;
-    const auto      nonblocking_local_port = reserve_free_tcp_port();
+    const auto     nonblocking_local_port = reserve_free_tcp_port();
     ASSERT_NE(nonblocking_local_port, 0);
-    const int ret = nonblocking_client.pconnect_n(qb::io::endpoint("127.0.0.1", port),
-                                                  nonblocking_local_port);
+    const int ret = nonblocking_client.pconnect_n(qb::io::endpoint("127.0.0.1", port), nonblocking_local_port);
     const int err = qb::io::socket::get_last_errno();
     EXPECT_TRUE(ret == 0 || err == EINPROGRESS || qb::io::socket::not_send_error(err))
         << "unexpected pconnect_n local-port result=" << ret << " errno=" << err;
@@ -489,19 +466,13 @@ TEST(TCPSocket, LowLevelPortableConnectVariantsFailWhenLocalPortIsOccupied) {
     ASSERT_NE(occupied_port, 0);
 
     qb::io::socket blocking_client;
-    EXPECT_EQ(blocking_client.pconnect(qb::io::endpoint("127.0.0.1", remote_port),
-                                       occupied_port),
-              -1);
+    EXPECT_EQ(blocking_client.pconnect(qb::io::endpoint("127.0.0.1", remote_port), occupied_port), -1);
 
     qb::io::socket timeout_client;
-    EXPECT_EQ(timeout_client.pconnect_n(qb::io::endpoint("127.0.0.1", remote_port), 1ms,
-                                        occupied_port),
-              -1);
+    EXPECT_EQ(timeout_client.pconnect_n(qb::io::endpoint("127.0.0.1", remote_port), 1ms, occupied_port), -1);
 
     qb::io::socket nonblocking_client;
-    EXPECT_EQ(nonblocking_client.pconnect_n(qb::io::endpoint("127.0.0.1", remote_port),
-                                            occupied_port),
-              -1);
+    EXPECT_EQ(nonblocking_client.pconnect_n(qb::io::endpoint("127.0.0.1", remote_port), occupied_port), -1);
 }
 
 TEST(TCPSocket, LowLevelResolutionAndInterfaceDiscovery) {
@@ -512,16 +483,12 @@ TEST(TCPSocket, LowLevelResolutionAndInterfaceDiscovery) {
     std::vector<qb::io::endpoint> v4_endpoints;
     EXPECT_EQ(qb::io::socket::resolve_v4(v4_endpoints, "127.0.0.1", 4242), 0);
     ASSERT_FALSE(v4_endpoints.empty());
-    EXPECT_TRUE(std::all_of(v4_endpoints.begin(), v4_endpoints.end(), [](const auto &ep) {
-        return ep.af() == AF_INET && ep.port() == 4242;
-    }));
+    EXPECT_TRUE(std::all_of(v4_endpoints.begin(), v4_endpoints.end(), [](const auto &ep) { return ep.af() == AF_INET && ep.port() == 4242; }));
 
     std::vector<qb::io::endpoint> v6_endpoints;
     EXPECT_EQ(qb::io::socket::resolve_v6(v6_endpoints, "::1", 4242), 0);
     ASSERT_FALSE(v6_endpoints.empty());
-    EXPECT_TRUE(std::all_of(v6_endpoints.begin(), v6_endpoints.end(), [](const auto &ep) {
-        return ep.af() == AF_INET6 && ep.port() == 4242;
-    }));
+    EXPECT_TRUE(std::all_of(v6_endpoints.begin(), v6_endpoints.end(), [](const auto &ep) { return ep.af() == AF_INET6 && ep.port() == 4242; }));
 
     std::vector<qb::io::endpoint> mapped_endpoints;
     EXPECT_EQ(qb::io::socket::resolve_v4to6(mapped_endpoints, "127.0.0.1", 4242), 0);
@@ -604,8 +571,7 @@ TEST(TCPSocket, LowLevelNonBlockingAndTimeoutFailuresAreRestored) {
     ASSERT_EQ(udp.bind("127.0.0.1", 0), 0);
     const int disconnect_result = udp.disconnect();
     EXPECT_TRUE(disconnect_result == 0 || disconnect_result == -1)
-        << "unexpected UDP disconnect result=" << disconnect_result
-        << " errno=" << qb::io::socket::get_last_errno();
+        << "unexpected UDP disconnect result=" << disconnect_result << " errno=" << qb::io::socket::get_last_errno();
 }
 
 TEST(TCPSocket, StaticHelpersAndErrorClassifiers) {

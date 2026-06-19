@@ -30,7 +30,7 @@
  * `std::get_time` + `timegm`, all in UTC with no tzdb dependency.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -142,8 +142,7 @@ wall_from_unix_seconds(std::int64_t s) noexcept {
 /// Build a wall instant from whole milliseconds since the Unix epoch.
 [[nodiscard]] inline wall_time
 wall_from_unix_millis(std::int64_t ms) noexcept {
-    return wall_time{std::chrono::duration_cast<std::chrono::system_clock::duration>(
-        std::chrono::milliseconds{ms})};
+    return wall_time{std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::milliseconds{ms})};
 }
 
 // ---------------------------------------------------------------------------
@@ -154,8 +153,8 @@ wall_from_unix_millis(std::int64_t ms) noexcept {
 /// Returns an empty string on failure.
 [[nodiscard]] inline std::string
 format_utc(wall_time tp, std::string_view fmt) {
-    const auto      t = static_cast<std::time_t>(unix_seconds(tp));
-    std::tm         tm{};
+    const auto t = static_cast<std::time_t>(unix_seconds(tp));
+    std::tm    tm{};
 #if defined(_WIN32)
     if (gmtime_s(&tm, &t) != 0)
         return {};
@@ -236,9 +235,7 @@ tsc_ticks() noexcept {
     return val;
 #else
     return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::high_resolution_clock::now().time_since_epoch())
-            .count());
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
 #endif
 }
 
@@ -308,8 +305,7 @@ public:
         : _reason(std::move(reason))
         , _timer([this](duration d) {
             std::fprintf(stdout, "%s: %lldus\n", _reason.c_str(),
-                         static_cast<long long>(
-                             std::chrono::duration_cast<std::chrono::microseconds>(d).count()));
+                         static_cast<long long>(std::chrono::duration_cast<std::chrono::microseconds>(d).count()));
         }) {}
 
     [[nodiscard]] duration

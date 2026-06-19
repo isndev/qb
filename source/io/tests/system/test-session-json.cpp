@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (c) 2011-2025 qb - isndev (cpp.actor). All rights reserved.
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,16 +41,14 @@ namespace {
 
 std::filesystem::path
 ssl_resource_path(const char *file_name) {
-    return std::filesystem::path(__FILE__).parent_path() / "resources" / "ssl" /
-           file_name;
+    return std::filesystem::path(__FILE__).parent_path() / "resources" / "ssl" / file_name;
 }
 
 } // namespace
 
 bool
 all_done() {
-    return msg_count_server_side == (NB_ITERATION) &&
-           msg_count_client_side == NB_ITERATION;
+    return msg_count_server_side == (NB_ITERATION) && msg_count_client_side == NB_ITERATION;
 }
 
 template <typename Predicate>
@@ -82,8 +80,7 @@ public:
 
     void
     on(Protocol::message &&msg) {
-        EXPECT_EQ(msg.json["message"].get<std::string>().size(),
-                  sizeof(STRING_MESSAGE) - 1);
+        EXPECT_EQ(msg.json["message"].get<std::string>().size(), sizeof(STRING_MESSAGE) - 1);
         publish(msg.json, '\0');
         ++msg_count_server_side;
     }
@@ -110,8 +107,7 @@ public:
 
     void
     on(Protocol::message &&msg) {
-        EXPECT_EQ(msg.json["message"].get<std::string>().size(),
-                  sizeof(STRING_MESSAGE) - 1);
+        EXPECT_EQ(msg.json["message"].get<std::string>().size(), sizeof(STRING_MESSAGE) - 1);
         ++msg_count_client_side;
     }
 };
@@ -128,9 +124,7 @@ TEST(Session, JSON_OVER_TCP) {
     std::thread t([]() {
         async::init();
         TestClient client;
-        ASSERT_EQ(client.transport().connect(uri{"tcp://127.0.0.1:" +
-                                                 std::to_string(JSON_TCP_PORT)}),
-                  SocketStatus::Done);
+        ASSERT_EQ(client.transport().connect(uri{"tcp://127.0.0.1:" + std::to_string(JSON_TCP_PORT)}), SocketStatus::Done);
         client.start();
 
         for (auto i = 0u; i < NB_ITERATION; ++i) {
@@ -153,8 +147,7 @@ TEST(Session, JSON_OVER_TCP) {
 
 class TestSecureServer;
 
-class TestSecureServerClient
-    : public use<TestSecureServerClient>::tcp::ssl::client<TestSecureServer> {
+class TestSecureServerClient : public use<TestSecureServerClient>::tcp::ssl::client<TestSecureServer> {
 public:
     using Protocol = qb::protocol::json_packed<TestSecureServerClient>;
 
@@ -163,15 +156,13 @@ public:
 
     void
     on(Protocol::message &&msg) {
-        EXPECT_EQ(msg.json["message"].get<std::string>().size(),
-                  sizeof(STRING_MESSAGE) - 1);
+        EXPECT_EQ(msg.json["message"].get<std::string>().size(), sizeof(STRING_MESSAGE) - 1);
         *this << qb::json::to_msgpack(msg.json) << '\0';
         ++msg_count_server_side;
     }
 };
 
-class TestSecureServer
-    : public use<TestSecureServer>::tcp::ssl::server<TestSecureServerClient> {
+class TestSecureServer : public use<TestSecureServer>::tcp::ssl::server<TestSecureServerClient> {
     std::size_t connection_count = 0u;
 
 public:
@@ -192,8 +183,7 @@ public:
 
     void
     on(Protocol::message &&msg) {
-        EXPECT_EQ(msg.json["message"].get<std::string>().size(),
-                  sizeof(STRING_MESSAGE) - 1);
+        EXPECT_EQ(msg.json["message"].get<std::string>().size(), sizeof(STRING_MESSAGE) - 1);
         ++msg_count_client_side;
     }
 };
@@ -202,14 +192,13 @@ TEST(Session, JSON_OVER_SECURE_TCP) {
     async::init();
     msg_count_server_side = 0;
     msg_count_client_side = 0;
-    const auto cert_file = ssl_resource_path("cert.pem");
-    const auto key_file  = ssl_resource_path("key.pem");
+    const auto cert_file  = ssl_resource_path("cert.pem");
+    const auto key_file   = ssl_resource_path("key.pem");
     ASSERT_TRUE(std::filesystem::exists(cert_file));
     ASSERT_TRUE(std::filesystem::exists(key_file));
 
     TestSecureServer server;
-    server.transport().init(ssl::create_server_context(
-        SSLv23_server_method(), cert_file.string(), key_file.string()));
+    server.transport().init(ssl::create_server_context(SSLv23_server_method(), cert_file.string(), key_file.string()));
     ASSERT_EQ(server.transport().listen_v6(JSON_SECURE_TCP_PORT), 0);
     server.start();
 
@@ -219,15 +208,13 @@ TEST(Session, JSON_OVER_SECURE_TCP) {
         // Self-signed test certificate on ::1: opt out of the secure-by-default
         // peer verification for this local fixture.
         client.transport().set_insecure();
-        if (SocketStatus::Done !=
-            client.transport().connect_v6("::1", JSON_SECURE_TCP_PORT)) {
+        if (SocketStatus::Done != client.transport().connect_v6("::1", JSON_SECURE_TCP_PORT)) {
             throw std::runtime_error("could not connect");
         }
         client.start();
 
         for (auto i = 0u; i < NB_ITERATION; ++i) {
-            client << qb::json::to_msgpack(qb::json{{"message", STRING_MESSAGE}})
-                   << '\0';
+            client << qb::json::to_msgpack(qb::json{{"message", STRING_MESSAGE}}) << '\0';
         }
 
         EXPECT_TRUE(pump_until(all_done, std::chrono::seconds(10)));
@@ -248,12 +235,11 @@ TEST(Session, JSON_OVER_SECURE_TCP) {
 
 class MalformedJsonServer;
 
-class MalformedJsonSession
-    : public use<MalformedJsonSession>::tcp::client<MalformedJsonServer> {
+class MalformedJsonSession : public use<MalformedJsonSession>::tcp::client<MalformedJsonServer> {
 public:
-    using Protocol = qb::protocol::json<MalformedJsonSession>;
+    using Protocol    = qb::protocol::json<MalformedJsonSession>;
     int good_messages = 0;
-    int bad_messages = 0;
+    int bad_messages  = 0;
 
     explicit MalformedJsonSession(IOServer &server)
         : client(server) {}
@@ -267,8 +253,7 @@ public:
     }
 };
 
-class MalformedJsonServer
-    : public use<MalformedJsonServer>::tcp::server<MalformedJsonSession> {
+class MalformedJsonServer : public use<MalformedJsonServer>::tcp::server<MalformedJsonSession> {
 public:
     bool session_connected    = false;
     bool session_disconnected = false;
@@ -299,8 +284,7 @@ TEST(Session, JSON_MALFORMED_RESILIENCE) {
 
     std::thread t([]() {
         qb::io::tcp::socket sock;
-        ASSERT_EQ(sock.connect_v4("127.0.0.1", JSON_MALFORMED_PORT),
-                  qb::io::SocketStatus::Done);
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", JSON_MALFORMED_PORT), qb::io::SocketStatus::Done);
 
         const char good_json[] = "{\"key\":\"value\"}\0";
         sock.write(good_json, sizeof(good_json) - 1);
@@ -360,8 +344,7 @@ public:
 };
 
 template <typename StreamSession>
-class ProtocolQuicServer
-    : public async::quic::server<ProtocolQuicServer<StreamSession>, StreamSession> {
+class ProtocolQuicServer : public async::quic::server<ProtocolQuicServer<StreamSession>, StreamSession> {
 public:
     int connected = 0;
 
@@ -371,8 +354,7 @@ public:
     }
 };
 
-class JsonProtocolQuicClient
-    : public use<JsonProtocolQuicClient>::quic::connector<JsonClientQuicSession> {};
+class JsonProtocolQuicClient : public use<JsonProtocolQuicClient>::quic::connector<JsonClientQuicSession> {};
 
 template <typename Predicate>
 bool
@@ -391,48 +373,48 @@ pump_quic_until(Predicate &&predicate, std::chrono::milliseconds timeout) {
 template <typename Server, typename Client>
 void
 connect_local_quic_pair(Server &server, Client &client) {
-    ASSERT_TRUE(server.listen(uri{"quic://127.0.0.1:0"}, ssl_resource_path("cert.pem"),
-                              ssl_resource_path("key.pem"), {"qb-test"}));
+    ASSERT_TRUE(server.listen(uri{"quic://127.0.0.1:0"}, ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"), {"qb-test"}));
     ASSERT_GT(server.local_endpoint().port(), 0);
 
     quic::tls_config client_tls;
     client_tls.server_name = "localhost";
     client_tls.verify_peer = false;
 
-    const auto endpoint_uri = std::string{"quic://127.0.0.1:"} +
-                              std::to_string(server.local_endpoint().port());
+    const auto endpoint_uri = std::string{"quic://127.0.0.1:"} + std::to_string(server.local_endpoint().port());
     ASSERT_TRUE(client.connect(uri{endpoint_uri}, client_tls, {"qb-test"}));
 
-    ASSERT_TRUE(pump_quic_until([&] {
-        return server.current_state() == async::quic::endpoint::state::connected &&
-               client.current_state() == async::quic::endpoint::state::connected;
-    }, std::chrono::seconds(3)));
+    ASSERT_TRUE(pump_quic_until(
+        [&] {
+            return server.current_state() == async::quic::endpoint::state::connected
+                   && client.current_state() == async::quic::endpoint::state::connected;
+        },
+        std::chrono::seconds(3)));
 }
 
 TEST(Session, JSON_OVER_QUIC) {
 #ifndef QB_HAS_QUIC
     GTEST_SKIP() << "QUIC support is disabled";
 #else
-    if (!std::filesystem::exists(ssl_resource_path("cert.pem")) ||
-        !std::filesystem::exists(ssl_resource_path("key.pem")))
+    if (!std::filesystem::exists(ssl_resource_path("cert.pem")) || !std::filesystem::exists(ssl_resource_path("key.pem")))
         GTEST_SKIP() << "Test SSL certificates are not available";
 
     async::init();
 
     ProtocolQuicServer<EchoJsonQuicSession> server;
-    JsonProtocolQuicClient client;
+    JsonProtocolQuicClient                  client;
     connect_local_quic_pair(server, client);
 
-    auto stream = client.open_bidirectional_stream();
+    auto stream  = client.open_bidirectional_stream();
     auto payload = qb::json{{"message", "hello-json"}, {"n", 42}}.dump();
     payload.push_back('\0');
     client.send_stream_data(stream.id(), payload, true);
 
-    EXPECT_TRUE(pump_quic_until([&] {
-        auto *response = client.stream_session(stream.id());
-        return response && response->last_json.is_object() &&
-               response->last_json.value("message", "") == "hello-json";
-    }, std::chrono::seconds(3)));
+    EXPECT_TRUE(pump_quic_until(
+        [&] {
+            auto *response = client.stream_session(stream.id());
+            return response && response->last_json.is_object() && response->last_json.value("message", "") == "hello-json";
+        },
+        std::chrono::seconds(3)));
 
     auto *server_session = server.stream_session(stream.id());
     auto *client_session = client.stream_session(stream.id());
@@ -450,7 +432,7 @@ TEST(Session, JSON_OVER_QUIC) {
 
 TEST(Session, JSON_MALFORMED_OVER_QUIC) {
     JsonClientQuicSession session{0};
-    std::string malformed = "{not-json}";
+    std::string           malformed = "{not-json}";
     malformed.push_back('\0');
 
     session.append(malformed);

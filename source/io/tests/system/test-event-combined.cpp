@@ -7,7 +7,7 @@
  * including timers, signals, and file events.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -83,8 +83,7 @@ struct EventHandler {
         EXPECT_GE(event.attr.st_size, 0);
 #endif
         ++file_events;
-        std::cout << "Received file event, file size: " << event.attr.st_size
-                  << std::endl;
+        std::cout << "Received file event, file size: " << event.attr.st_size << std::endl;
     }
 
     // Handler for IO events
@@ -117,7 +116,7 @@ send_signal_to_self() {
 #if !QB_PLATFORM_MACOS
     // Use numeric signal value 2 for SIGINT on Linux with direct PID
     std::string cmd = "kill -2 " + std::to_string(get_process_id());
-    int ret = system(cmd.c_str());
+    int         ret = system(cmd.c_str());
     if (ret != 0) {
         std::cerr << "Failed to send signal via system command, ret=" << ret << std::endl;
     }
@@ -151,8 +150,7 @@ TEST(KernelEventsCombined, FileEvent) {
 
     // Register only the file event
     std::cout << "Registering file event..." << std::endl;
-    auto &event =
-        handler.registerEvent<qb::io::async::event::file>(actor, "./test-file.txt", 0);
+    auto &event = handler.registerEvent<qb::io::async::event::file>(actor, "./test-file.txt", 0);
     event.start();
 
     // Run event loop for a short time
@@ -197,9 +195,8 @@ TEST(KernelEventsCombined, BasicTimerAndSignal) {
     EventHandler            actor;
 
     // Register timer and signal events
-    auto &sig_event = handler.registerEvent<qb::io::async::event::signal<SIGINT>>(actor);
-    auto &timer_event =
-        handler.registerEvent<qb::io::async::event::timer>(actor, 0.1, 0.1);
+    auto &sig_event   = handler.registerEvent<qb::io::async::event::signal<SIGINT>>(actor);
+    auto &timer_event = handler.registerEvent<qb::io::async::event::timer>(actor, 0.1, 0.1);
 
     sig_event.start();
     timer_event.start();
@@ -221,8 +218,7 @@ TEST(KernelEventsCombined, BasicTimerAndSignal) {
         handler.run(EVRUN_ONCE);
 
         // Add some debug output
-        std::cout << "Event counts - Timer: " << actor.timer_events
-                  << ", Signal: " << actor.signal_events << std::endl;
+        std::cout << "Event counts - Timer: " << actor.timer_events << ", Signal: " << actor.signal_events << std::endl;
 
         // Break early if we've received the signal and multiple timer events
         if (actor.signal_events > 0 && actor.timer_events >= 5) {
@@ -275,8 +271,7 @@ TEST(KernelEventsCombined, TimerOnly) {
     // Verify events were processed
     EXPECT_GE(actor.timer_events, 2) << "Should have received multiple timer events";
 
-    std::cout << "TimerOnly test complete: " << actor.timer_events << " timer events"
-              << std::endl;
+    std::cout << "TimerOnly test complete: " << actor.timer_events << " timer events" << std::endl;
 
     // Stop the event to clean up
     event.stop();
@@ -308,8 +303,7 @@ TEST(KernelEventsCombined, IOEvents) {
     actor.fd_test = f.native_handle();
 
     // Register IO event
-    auto &event = handler.registerEvent<qb::io::async::event::io>(
-        actor, f.native_handle(), EV_READ);
+    auto &event = handler.registerEvent<qb::io::async::event::io>(actor, f.native_handle(), EV_READ);
     event.start();
 
     // Run event loop for a short time

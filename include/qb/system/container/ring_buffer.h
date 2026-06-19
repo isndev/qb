@@ -7,7 +7,7 @@
  * dynamic-size configurations, and provides thread-safe operations.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -53,9 +53,7 @@ namespace detail {
  */
 template <typename T, size_t N, bool C, bool Overwrite>
 class ring_buffer_iterator {
-    using buffer_t = std::conditional_t<!C,
-                                      ring_buffer<T, N, Overwrite> *,
-                                      ring_buffer<T, N, Overwrite> const *>;
+    using buffer_t = std::conditional_t<!C, ring_buffer<T, N, Overwrite> *, ring_buffer<T, N, Overwrite> const *>;
 
 public:
     using self_type         = ring_buffer_iterator<T, N, C, Overwrite>;
@@ -100,7 +98,8 @@ public:
      *
      * @return Reference to the current element (const or non-const based on iterator type)
      */
-    [[nodiscard]] reference operator*() const noexcept {
+    [[nodiscard]] reference
+    operator*() const noexcept {
         return (*source_)[index_];
     }
 
@@ -109,7 +108,8 @@ public:
      *
      * @return Pointer to the current element (const or non-const based on iterator type)
      */
-    [[nodiscard]] pointer operator->() const noexcept {
+    [[nodiscard]] pointer
+    operator->() const noexcept {
         return &((*source_)[index_]);
     }
 
@@ -181,8 +181,7 @@ private:
  */
 template <typename T, size_t N, bool C, bool Overwrite>
 bool
-operator==(ring_buffer_iterator<T, N, C, Overwrite> const &l,
-           ring_buffer_iterator<T, N, C, Overwrite> const &r) noexcept {
+operator==(ring_buffer_iterator<T, N, C, Overwrite> const &l, ring_buffer_iterator<T, N, C, Overwrite> const &r) noexcept {
     return l.count() == r.count();
 }
 
@@ -199,8 +198,7 @@ operator==(ring_buffer_iterator<T, N, C, Overwrite> const &l,
  */
 template <typename T, size_t N, bool C, bool Overwrite>
 bool
-operator!=(ring_buffer_iterator<T, N, C, Overwrite> const &l,
-           ring_buffer_iterator<T, N, C, Overwrite> const &r) noexcept {
+operator!=(ring_buffer_iterator<T, N, C, Overwrite> const &l, ring_buffer_iterator<T, N, C, Overwrite> const &r) noexcept {
     return l.count() != r.count();
 }
 } // namespace detail
@@ -244,8 +242,7 @@ public:
      *
      * @param rhs The ring buffer to copy from
      */
-    ring_buffer(ring_buffer const &rhs) noexcept(
-        std::is_nothrow_copy_constructible_v<value_type>) {
+    ring_buffer(ring_buffer const &rhs) noexcept(std::is_nothrow_copy_constructible_v<value_type>) {
         copy_impl(rhs);
     }
 
@@ -256,8 +253,7 @@ public:
      * @return Reference to this ring buffer
      */
     ring_buffer &
-    operator=(ring_buffer const &rhs) noexcept(
-        std::is_nothrow_copy_constructible_v<value_type>) {
+    operator=(ring_buffer const &rhs) noexcept(std::is_nothrow_copy_constructible_v<value_type>) {
         if (this == &rhs)
             return *this;
 
@@ -484,8 +480,7 @@ private:
             size_type constructed = 0;
             try {
                 for (; constructed < size_; ++constructed)
-                    new (elements_ + (((tail_ + constructed) % N) * sizeof(T)))
-                        T(rhs[(tail_ + constructed) % N]);
+                    new (elements_ + (((tail_ + constructed) % N) * sizeof(T))) T(rhs[(tail_ + constructed) % N]);
             } catch (...) {
                 for (size_type j = 0; j < constructed; ++j)
                     destroy_at((tail_ + j) % N);

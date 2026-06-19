@@ -7,7 +7,7 @@
  * helpers, wait counts, reset behavior, and producer-consumer handshakes.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -36,10 +36,12 @@ using namespace std::chrono_literals;
 
 class SemaphoreTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -49,17 +51,17 @@ protected:
  * @brief Max N concurrent operations
  */
 TEST_F(SemaphoreTests, LimitsConcurrency) {
-    semaphore sem(2);
+    semaphore        sem(2);
     std::atomic<int> concurrent{0};
     std::atomic<int> max_concurrent{0};
 
     auto worker = [&sem, &concurrent, &max_concurrent]() -> task<void> {
         co_await sem.acquire();
 
-        int current = ++concurrent;
+        int current      = ++concurrent;
         int expected_max = max_concurrent.load();
-        while (current > expected_max &&
-               !max_concurrent.compare_exchange_weak(expected_max, current)) {}
+        while (current > expected_max && !max_concurrent.compare_exchange_weak(expected_max, current)) {
+        }
 
         co_await sleep(20ms);
         --concurrent;
@@ -96,12 +98,12 @@ TEST_F(SemaphoreTests, TryAcquire) {
  * @brief RAII style acquire
  */
 TEST_F(SemaphoreTests, ScopedAcquire) {
-    semaphore sem(1);
+    semaphore         sem(1);
     std::atomic<bool> acquired{false};
 
     auto worker = [&sem, &acquired]() -> task<void> {
         auto guard = co_await sem.scoped_acquire();
-        acquired = true;
+        acquired   = true;
         // Auto-release on scope exit
     };
 
@@ -138,10 +140,12 @@ TEST_F(SemaphoreTests, ReleaseCap) {
 
 class MutexTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -151,12 +155,12 @@ protected:
  * @brief Critical section protection
  */
 TEST_F(MutexTests, SerializesAccess) {
-    async_mutex mtx;
+    async_mutex      mtx;
     std::atomic<int> counter{0};
 
     auto worker = [&mtx, &counter]() -> task<void> {
         auto guard = co_await mtx.scoped_lock();
-        int val = counter;
+        int  val   = counter;
         co_await sleep(5ms);
         counter = val + 1;
     };
@@ -191,10 +195,12 @@ TEST_F(MutexTests, TryLock) {
 
 class RWLockTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -204,17 +210,17 @@ protected:
  * @brief Multiple concurrent readers allowed
  */
 TEST_F(RWLockTests, MultipleReaders) {
-    async_rw_lock rw;
+    async_rw_lock    rw;
     std::atomic<int> readers{0};
     std::atomic<int> max_readers{0};
 
     auto reader = [&rw, &readers, &max_readers]() -> task<void> {
         co_await rw.lock_read();
 
-        int current = ++readers;
+        int current      = ++readers;
         int expected_max = max_readers.load();
-        while (current > expected_max &&
-               !max_readers.compare_exchange_weak(expected_max, current)) {}
+        while (current > expected_max && !max_readers.compare_exchange_weak(expected_max, current)) {
+        }
 
         co_await sleep(20ms);
         --readers;
@@ -235,9 +241,9 @@ TEST_F(RWLockTests, MultipleReaders) {
  * @brief Single writer, no concurrent readers
  */
 TEST_F(RWLockTests, WriterExcludesReaders) {
-    async_rw_lock rw;
+    async_rw_lock     rw;
     std::atomic<bool> writing{false};
-    std::atomic<int> readers_during_write{0};
+    std::atomic<int>  readers_during_write{0};
 
     auto writer = [&rw, &writing]() -> task<void> {
         co_await rw.lock_write();
@@ -272,10 +278,12 @@ TEST_F(RWLockTests, WriterExcludesReaders) {
 
 class BarrierTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -285,7 +293,7 @@ protected:
  * @brief Wait for N coroutines
  */
 TEST_F(BarrierTests, Synchronization) {
-    barrier b(3);
+    barrier          b(3);
     std::atomic<int> arrived{0};
     std::atomic<int> passed{0};
 
@@ -300,7 +308,7 @@ TEST_F(BarrierTests, Synchronization) {
 
     run_for(50ms);
     EXPECT_EQ(arrived, 2);
-    EXPECT_EQ(passed, 0);  // Waiting for 3rd
+    EXPECT_EQ(passed, 0); // Waiting for 3rd
 
     coro_scheduler().spawn(worker());
     run_for(50ms);
@@ -313,13 +321,19 @@ TEST_F(BarrierTests, Synchronization) {
 
 class AsyncEventTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(AsyncEventTests, ManualReset_WakesAllWaiters) {
     async_event ev;
-    int woken = 0;
+    int         woken = 0;
 
     auto waiter = [&ev, &woken]() -> task<void> {
         co_await ev.wait();
@@ -330,7 +344,7 @@ TEST_F(AsyncEventTests, ManualReset_WakesAllWaiters) {
     coro_scheduler().spawn(waiter());
     coro_scheduler().spawn(waiter());
     run_for(10ms);
-    EXPECT_EQ(woken, 0);  // not set yet
+    EXPECT_EQ(woken, 0); // not set yet
 
     ev.set();
     run_for(10ms);
@@ -343,7 +357,7 @@ TEST_F(AsyncEventTests, ManualReset_NewWaiterPassesThrough) {
     int woken = 0;
 
     auto late_waiter = [&ev, &woken]() -> task<void> {
-        co_await ev.wait();  // event already set → returns immediately
+        co_await ev.wait(); // event already set → returns immediately
         ++woken;
     };
     coro_scheduler().spawn(late_waiter());
@@ -363,7 +377,7 @@ TEST_F(AsyncEventTests, ManualReset_ResetClearsSignal) {
     };
     coro_scheduler().spawn(waiter());
     run_for(10ms);
-    EXPECT_EQ(woken, 0);  // cleared
+    EXPECT_EQ(woken, 0); // cleared
 
     ev.set();
     run_for(10ms);
@@ -372,7 +386,7 @@ TEST_F(AsyncEventTests, ManualReset_ResetClearsSignal) {
 
 TEST_F(AsyncEventTests, AutoReset_WakesOneWaiter) {
     async_event ev(/*auto_reset=*/true);
-    int woken = 0;
+    int         woken = 0;
 
     auto waiter = [&ev, &woken]() -> task<void> {
         co_await ev.wait();
@@ -383,28 +397,28 @@ TEST_F(AsyncEventTests, AutoReset_WakesOneWaiter) {
     run_for(10ms);
     EXPECT_EQ(woken, 0);
 
-    ev.set();           // wakes exactly one
+    ev.set(); // wakes exactly one
     run_for(10ms);
     EXPECT_EQ(woken, 1);
 
-    ev.set();           // wakes the second
+    ev.set(); // wakes the second
     run_for(10ms);
     EXPECT_EQ(woken, 2);
 }
 
 TEST_F(AsyncEventTests, AutoReset_SignalStoredWhenNoWaiter) {
     async_event ev(/*auto_reset=*/true);
-    ev.set();           // signal stored
+    ev.set(); // signal stored
     int woken = 0;
 
     auto late = [&ev, &woken]() -> task<void> {
-        co_await ev.wait();  // consumes stored signal
+        co_await ev.wait(); // consumes stored signal
         ++woken;
     };
     coro_scheduler().spawn(late());
     run_for(10ms);
     EXPECT_EQ(woken, 1);
-    EXPECT_FALSE(ev.is_set());  // consumed
+    EXPECT_FALSE(ev.is_set()); // consumed
 }
 
 TEST_F(AsyncEventTests, IsSetReflectsState) {
@@ -447,13 +461,19 @@ TEST_F(AsyncEventTests, ProducerConsumerHandshake) {
 
 class AsyncLatchTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(AsyncLatchTests, BasicCountdown) {
     async_latch latch(3);
-    int woken = 0;
+    int         woken = 0;
 
     auto waiter = [&latch, &woken]() -> task<void> {
         co_await latch.wait();
@@ -470,14 +490,14 @@ TEST_F(AsyncLatchTests, BasicCountdown) {
     latch.count_down();
     run_for(10ms);
     EXPECT_EQ(woken, 0);
-    latch.count_down();  // reaches 0
+    latch.count_down(); // reaches 0
     run_for(10ms);
     EXPECT_EQ(woken, 2);
 }
 
 TEST_F(AsyncLatchTests, AlreadyZeroPassesImmediately) {
-    async_latch latch(0);  // already done
-    int woken = 0;
+    async_latch latch(0); // already done
+    int         woken = 0;
 
     auto waiter = [&latch, &woken]() -> task<void> {
         co_await latch.wait();
@@ -490,7 +510,7 @@ TEST_F(AsyncLatchTests, AlreadyZeroPassesImmediately) {
 
 TEST_F(AsyncLatchTests, ArriveAndWait) {
     async_latch latch(2);
-    int woken = 0;
+    int         woken = 0;
 
     auto worker = [&latch, &woken]() -> task<void> {
         co_await latch.arrive_and_wait();
@@ -504,7 +524,7 @@ TEST_F(AsyncLatchTests, ArriveAndWait) {
 
 TEST_F(AsyncLatchTests, CountDownByN) {
     async_latch latch(10);
-    int woken = 0;
+    int         woken = 0;
 
     auto waiter = [&latch, &woken]() -> task<void> {
         co_await latch.wait();
@@ -521,16 +541,16 @@ TEST_F(AsyncLatchTests, CountDownByN) {
 
 TEST_F(AsyncLatchTests, ExtraCountDownIsSafe) {
     async_latch latch(1);
-    int woken = 0;
+    int         woken = 0;
 
     auto waiter = [&latch, &woken]() -> task<void> {
         co_await latch.wait();
         ++woken;
     };
     coro_scheduler().spawn(waiter());
-    latch.count_down();   // 0
-    latch.count_down();   // no-op
-    latch.count_down();   // no-op
+    latch.count_down(); // 0
+    latch.count_down(); // no-op
+    latch.count_down(); // no-op
     run_for(10ms);
     EXPECT_EQ(woken, 1);
 }
@@ -541,15 +561,21 @@ TEST_F(AsyncLatchTests, ExtraCountDownIsSafe) {
 
 class SyncAdvancedTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(SyncAdvancedTests, WithSemaphoreHelper) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         semaphore sem(1);
-        auto result = co_await with_semaphore(sem, []() { return 42; });
+        auto      result = co_await with_semaphore(sem, []() { return 42; });
         EXPECT_EQ(result, 42);
         EXPECT_EQ(sem.available_permits(), 1u);
         done = true;
@@ -562,7 +588,7 @@ TEST_F(SyncAdvancedTests, WithLockHelper) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         async_mutex mtx;
-        auto result = co_await with_lock(mtx, []() { return std::string("hello"); });
+        auto        result = co_await with_lock(mtx, []() { return std::string("hello"); });
         EXPECT_EQ(result, "hello");
         EXPECT_FALSE(mtx.is_locked());
         done = true;
@@ -575,7 +601,7 @@ TEST_F(SyncAdvancedTests, BarrierResetAndReuse) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         barrier b(2);
-        int phase = 0;
+        int     phase = 0;
 
         auto participant = [&b, &phase](int id) -> task<void> {
             co_await b.arrive_and_wait();
@@ -659,7 +685,8 @@ TEST_F(SyncAdvancedTests, RWLockScopedReadWriteLock) {
 // Main Entry Point
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();

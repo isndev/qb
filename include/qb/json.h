@@ -7,7 +7,7 @@
  * function for parsing JSON strings.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -40,7 +40,7 @@ namespace nlohmann {
  * @details Used for accessing nested JSON values with specific paths
  * @ingroup JSON
  */
-using pointer  = json::pointer;
+using pointer = json::pointer;
 
 /**
  * @typedef object
@@ -48,7 +48,7 @@ using pointer  = json::pointer;
  * @details Represents a complete JSON object with various value types
  * @ingroup JSON
  */
-using object   = json;
+using object = json;
 
 /**
  * @typedef array
@@ -56,7 +56,7 @@ using object   = json;
  * @details Represents an ordered collection of JSON values
  * @ingroup JSON
  */
-using array    = json::array_t;
+using array = json::array_t;
 
 /**
  * @typedef string
@@ -64,7 +64,7 @@ using array    = json::array_t;
  * @details Represents a string value in JSON
  * @ingroup JSON
  */
-using string   = json::string_t;
+using string = json::string_t;
 
 /**
  * @typedef number
@@ -72,7 +72,7 @@ using string   = json::string_t;
  * @details Represents an integer numerical value in JSON
  * @ingroup JSON
  */
-using number   = json::number_integer_t;
+using number = json::number_integer_t;
 
 /**
  * @typedef floating
@@ -88,7 +88,7 @@ using floating = json::number_float_t;
  * @details Represents a boolean value (true/false) in JSON
  * @ingroup JSON
  */
-using boolean  = json::boolean_t;
+using boolean = json::boolean_t;
 
 /**
  * @struct jsonb
@@ -293,7 +293,7 @@ namespace uuids {
 /**
  * @brief Converts a UUID to a JSON object
  * @details Serializes a qb::uuid into a JSON object for storage or transmission
- * 
+ *
  * @param obj JSON object to store the UUID in
  * @param id UUID to serialize
  * @ingroup JSON
@@ -303,7 +303,7 @@ void to_json(qb::json &obj, qb::uuid const &id);
 /**
  * @brief Converts a JSON object to a UUID
  * @details Deserializes a UUID from a JSON object
- * 
+ *
  * @param obj JSON object containing the UUID data
  * @param id UUID object to populate
  * @ingroup JSON

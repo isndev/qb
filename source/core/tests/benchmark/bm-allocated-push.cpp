@@ -11,7 +11,7 @@
  * Uses \c UseRealTime() with \c main.start(true). Sink registers events in \c onInit().
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -34,8 +34,8 @@
 #include "../shared/BenchmarkIterationSink.h"
 
 struct BigPipeMsg final : qb::Event {
-    std::uint64_t              seq = 0;
-    std::uint64_t              pad[127]{};
+    std::uint64_t seq = 0;
+    std::uint64_t pad[127]{};
 
     explicit BigPipeMsg(std::uint64_t const s)
         : seq(s) {}
@@ -69,8 +69,7 @@ class AllocPipeSourceActor final : public qb::Actor {
     const std::size_t   _extra_alloc;
 
 public:
-    AllocPipeSourceActor(qb::ActorId const dst, std::uint64_t const count,
-                         std::size_t const extra_alloc)
+    AllocPipeSourceActor(qb::ActorId const dst, std::uint64_t const count, std::size_t const extra_alloc)
         : _dst(dst)
         , _count(count)
         , _extra_alloc(extra_alloc) {}
@@ -100,25 +99,21 @@ BM_AllocVsPush_BigMsg(benchmark::State &state) {
 
     for (auto _ : state) {
         state.PauseTiming();
-        qb::Main main;
+        qb::Main   main;
         auto const sink = main.addActor<AllocPipeSinkActor>(consumer_c, count);
         main.addActor<AllocPipeSourceActor<UseAllocatedPush>>(producer_c, sink, count, extra);
         state.ResumeTiming();
         main.start(true);
         main.join();
-        const double bytes =
-            static_cast<double>(count) * static_cast<double>(sizeof(BigPipeMsg));
-        state.counters["messages_per_s"] =
-            benchmark::Counter(static_cast<double>(count),
-                               benchmark::Counter::kIsIterationInvariantRate);
-        state.counters["approx_payload_bytes_per_s"] =
-            benchmark::Counter(bytes, benchmark::Counter::kIsIterationInvariantRate);
+        const double bytes               = static_cast<double>(count) * static_cast<double>(sizeof(BigPipeMsg));
+        state.counters["messages_per_s"] = benchmark::Counter(static_cast<double>(count), benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["approx_payload_bytes_per_s"] = benchmark::Counter(bytes, benchmark::Counter::kIsIterationInvariantRate);
     }
 }
 
 static void
 ApplyAllocPushArgs(benchmark::internal::Benchmark *b) {
-    const auto cap = qb::bench::cappedBenchmarkCores();
+    const auto             cap    = qb::bench::cappedBenchmarkCores();
     constexpr std::int64_t kCount = 200000;
     constexpr std::int64_t kExtra = 128;
     b->Args({kCount, 0, 0, kExtra});

@@ -8,7 +8,7 @@
  * set of cryptographic utilities for the QB framework.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -41,15 +41,13 @@ crypto::base64::encode(const std::string &input) noexcept {
     BIO_set_mem_buf(b64, bptr, BIO_CLOSE);
 
     // Write directly to base64-buffer to avoid copy
-    auto base64_length = static_cast<std::size_t>(
-        round(4 * ceil(static_cast<double>(input.size()) / 3.0)));
+    auto base64_length = static_cast<std::size_t>(round(4 * ceil(static_cast<double>(input.size()) / 3.0)));
     base64.resize(base64_length);
     bptr->length = 0;
     bptr->max    = base64_length + 1;
     bptr->data   = &base64[0];
 
-    if (BIO_write(b64, &input[0], static_cast<int>(input.size())) <= 0 ||
-        BIO_flush(b64) <= 0)
+    if (BIO_write(b64, &input[0], static_cast<int>(input.size())) <= 0 || BIO_flush(b64) <= 0)
         base64.clear();
 
     // To keep &base64[0] through BIO_free_all(b64)
@@ -74,10 +72,9 @@ crypto::base64::decode(const std::string &base64) noexcept {
     b64 = BIO_new(BIO_f_base64());
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
 // TODO: Remove in 2022 or later
-#if (defined(OPENSSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER < 0x1000214fL) || \
-    (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x2080000fL)
-    bio =
-        BIO_new_mem_buf(const_cast<char *>(&base64[0]), static_cast<int>(base64.size()));
+#if (defined(OPENSSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER < 0x1000214fL) \
+    || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x2080000fL)
+    bio = BIO_new_mem_buf(const_cast<char *>(&base64[0]), static_cast<int>(base64.size()));
 #else
     bio = BIO_new_mem_buf(&base64[0], static_cast<int>(base64.size()));
 #endif
@@ -96,8 +93,7 @@ crypto::base64::decode(const std::string &base64) noexcept {
 
 /// Returns hex string from bytes in input string.
 std::string
-crypto::to_hex_string(const std::string      &input,
-                      std::string_view const &hex_digits) noexcept {
+crypto::to_hex_string(const std::string &input, std::string_view const &hex_digits) noexcept {
     std::string output;
     output.reserve(input.length() * 2);
     for (unsigned char c : input) {
@@ -113,19 +109,14 @@ DISABLE_WARNING_NARROWING
 int
 crypto::hex_value(unsigned char hex_digit) noexcept {
     static constexpr int hex_values[256] = {
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  -1, -1,
-        -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12,
-        13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  -1, -1, -1, -1, -1, -1,
+        -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     };
 
     return hex_values[hex_digit];
@@ -163,16 +154,14 @@ crypto::evp(std::istream &stream, const EVP_MD *md) noexcept {
         std::streamsize   read_length;
         std::vector<char> buffer(buffer_size);
         while ((read_length = stream.read(&buffer[0], buffer_size).gcount()) > 0)
-            EVP_DigestUpdate(context, buffer.data(),
-                             static_cast<std::size_t>(read_length));
+            EVP_DigestUpdate(context, buffer.data(), static_cast<std::size_t>(read_length));
         unsigned int hash_len = 0;
         hash.resize(EVP_MAX_MD_SIZE);
         // Check the return value: on failure hash_len would be left
         // uninitialized and hash.resize(hash_len) could request a garbage size.
         // Treat failure as an empty hash (fail-closed, matching the empty
         // result returned when the context/init fails above).
-        if (EVP_DigestFinal_ex(context, reinterpret_cast<unsigned char *>(hash.data()),
-                               &hash_len) == 1)
+        if (EVP_DigestFinal_ex(context, reinterpret_cast<unsigned char *>(hash.data()), &hash_len) == 1)
             hash.resize(hash_len);
         else
             hash.clear();
@@ -189,12 +178,10 @@ crypto::md5(const std::string &input, std::size_t iterations) noexcept {
     std::string hash;
 
     hash.resize(MD5_DIGEST_LENGTH);
-    MD5(reinterpret_cast<const unsigned char *>(&input[0]), input.size(),
-        reinterpret_cast<unsigned char *>(&hash[0]));
+    MD5(reinterpret_cast<const unsigned char *>(&input[0]), input.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     for (std::size_t c = 1; c < iterations; ++c)
-        MD5(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-            reinterpret_cast<unsigned char *>(&hash[0]));
+        MD5(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     return hash;
 }
@@ -205,8 +192,7 @@ crypto::md5(std::istream &stream, std::size_t iterations) noexcept {
     std::string hash = evp(stream, EVP_get_digestbyname("MD5"));
 
     for (std::size_t c = 1; c < iterations; ++c)
-        MD5(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-            reinterpret_cast<unsigned char *>(&hash[0]));
+        MD5(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     return hash;
 }
@@ -218,12 +204,10 @@ crypto::sha1(const std::string &input, std::size_t iterations) noexcept {
     std::string hash;
 
     hash.resize(SHA_DIGEST_LENGTH);
-    SHA1(reinterpret_cast<const unsigned char *>(&input[0]), input.size(),
-         reinterpret_cast<unsigned char *>(&hash[0]));
+    SHA1(reinterpret_cast<const unsigned char *>(&input[0]), input.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     for (std::size_t c = 1; c < iterations; ++c)
-        SHA1(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-             reinterpret_cast<unsigned char *>(&hash[0]));
+        SHA1(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     return hash;
 }
@@ -234,8 +218,7 @@ crypto::sha1(std::istream &stream, std::size_t iterations) noexcept {
     std::string hash = evp(stream, EVP_get_digestbyname("SHA1"));
 
     for (std::size_t c = 1; c < iterations; ++c)
-        SHA1(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-             reinterpret_cast<unsigned char *>(&hash[0]));
+        SHA1(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     return hash;
 }
@@ -246,12 +229,10 @@ crypto::sha256(const std::string &input, std::size_t iterations) noexcept {
     std::string hash;
 
     hash.resize(SHA256_DIGEST_LENGTH);
-    SHA256(reinterpret_cast<const unsigned char *>(&input[0]), input.size(),
-           reinterpret_cast<unsigned char *>(&hash[0]));
+    SHA256(reinterpret_cast<const unsigned char *>(&input[0]), input.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     for (std::size_t c = 1; c < iterations; ++c)
-        SHA256(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-               reinterpret_cast<unsigned char *>(&hash[0]));
+        SHA256(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     return hash;
 }
@@ -262,8 +243,7 @@ crypto::sha256(std::istream &stream, std::size_t iterations) noexcept {
     std::string hash = evp(stream, EVP_get_digestbyname("SHA256"));
 
     for (std::size_t c = 1; c < iterations; ++c)
-        SHA256(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-               reinterpret_cast<unsigned char *>(&hash[0]));
+        SHA256(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     return hash;
 }
@@ -274,12 +254,10 @@ crypto::sha512(const std::string &input, std::size_t iterations) noexcept {
     std::string hash;
 
     hash.resize(SHA512_DIGEST_LENGTH);
-    SHA512(reinterpret_cast<const unsigned char *>(&input[0]), input.size(),
-           reinterpret_cast<unsigned char *>(&hash[0]));
+    SHA512(reinterpret_cast<const unsigned char *>(&input[0]), input.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     for (std::size_t c = 1; c < iterations; ++c)
-        SHA512(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-               reinterpret_cast<unsigned char *>(&hash[0]));
+        SHA512(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     return hash;
 }
@@ -290,8 +268,7 @@ crypto::sha512(std::istream &stream, std::size_t iterations) noexcept {
     std::string hash = evp(stream, EVP_get_digestbyname("SHA512"));
 
     for (std::size_t c = 1; c < iterations; ++c)
-        SHA512(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-               reinterpret_cast<unsigned char *>(&hash[0]));
+        SHA512(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
     return hash;
 }
@@ -310,18 +287,16 @@ crypto::sha512(std::istream &stream, std::size_t iterations) noexcept {
  * @return The PBKDF2 derived key.
  */
 std::string
-crypto::pbkdf2(const std::string &password, const std::string &salt, int iterations,
-               int key_size) noexcept {
+crypto::pbkdf2(const std::string &password, const std::string &salt, int iterations, int key_size) noexcept {
     std::string key;
     if (key_size <= 0)
         return key;
     key.resize(static_cast<std::size_t>(key_size));
     // Check the return value: on failure the buffer would be returned
     // uninitialized and silently used as key material.
-    if (PKCS5_PBKDF2_HMAC_SHA1(password.c_str(), static_cast<int>(password.size()),
-                               reinterpret_cast<const unsigned char *>(salt.c_str()),
-                               static_cast<int>(salt.size()), iterations, key_size,
-                               reinterpret_cast<unsigned char *>(&key[0])) != 1) {
+    if (PKCS5_PBKDF2_HMAC_SHA1(password.c_str(), static_cast<int>(password.size()), reinterpret_cast<const unsigned char *>(salt.c_str()),
+                               static_cast<int>(salt.size()), iterations, key_size, reinterpret_cast<unsigned char *>(&key[0]))
+        != 1) {
         key.clear(); // empty result signals failure (noexcept contract)
     }
     return key;
@@ -366,7 +341,7 @@ crypto::base64_decode(const std::string &input) {
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
     bio = BIO_push(b64, bio);
     std::vector<unsigned char> decoded(input.size());
-    int decodedLen = BIO_read(bio, decoded.data(), static_cast<int>(input.size()));
+    int                        decodedLen = BIO_read(bio, decoded.data(), static_cast<int>(input.size()));
     if (decodedLen < 0) {
         BIO_free_all(bio); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("Error reading BIO");
@@ -392,18 +367,16 @@ crypto::hmac_sha256(const std::vector<unsigned char> &key, const std::string &da
     }
     // Spécifier l'algorithme de hachage à utiliser : "SHA256"
     OSSL_PARAM params[2];
-    params[0] =
-        OSSL_PARAM_construct_utf8_string("digest", const_cast<char *>("SHA256"), 0);
+    params[0] = OSSL_PARAM_construct_utf8_string("digest", const_cast<char *>("SHA256"), 0);
     params[1] = OSSL_PARAM_construct_end();
     if (EVP_MAC_init(ctx, key.data(), key.size(), params) != 1) {
         EVP_MAC_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_MAC_free(mac); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        EVP_MAC_free(mac);     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("EVP_MAC_init failed");
     }
-    if (EVP_MAC_update(ctx, reinterpret_cast<const unsigned char *>(data.data()),
-                       data.size()) != 1) {
+    if (EVP_MAC_update(ctx, reinterpret_cast<const unsigned char *>(data.data()), data.size()) != 1) {
         EVP_MAC_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_MAC_free(mac); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        EVP_MAC_free(mac);     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("EVP_MAC_update failed");
     }
     size_t out_len     = 0;
@@ -411,7 +384,7 @@ crypto::hmac_sha256(const std::vector<unsigned char> &key, const std::string &da
     result.resize(out_buf_len);
     if (EVP_MAC_final(ctx, result.data(), &out_len, result.size()) != 1) {
         EVP_MAC_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_MAC_free(mac); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        EVP_MAC_free(mac);     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("EVP_MAC_final failed");
     }
     result.resize(out_len);
@@ -431,8 +404,7 @@ crypto::sha256(const std::vector<unsigned char> &data) {
 
 // xor two vector of same size
 std::vector<unsigned char>
-crypto::xor_bytes(const std::vector<unsigned char> &a,
-                  const std::vector<unsigned char> &b) {
+crypto::xor_bytes(const std::vector<unsigned char> &a, const std::vector<unsigned char> &b) {
     if (a.size() != b.size()) {
         throw std::runtime_error("vectors must have the same size to XOR");
     }
@@ -454,19 +426,18 @@ crypto::generate_secure_random_string(std::size_t len, std::string_view range) {
     // range_size below evaluates to 0, so the do/while rejection loop would
     // spin forever (every byte is >= 0). Reject oversized ranges explicitly.
     if (range.size() > 256) {
-        throw std::invalid_argument(
-            "Character range must not exceed 256 characters");
+        throw std::invalid_argument("Character range must not exceed 256 characters");
     }
     if (len == 0) {
         return "";
     }
 
-    std::string result(len, '\0');
+    std::string       result(len, '\0');
     const std::size_t range_size = range.size();
 
     // Generate random bytes using OpenSSL's CSPRNG
     // We generate more bytes than needed to handle bias from modulo operation
-    const std::size_t bytes_needed = len * 2;  // Extra for bias correction
+    const std::size_t          bytes_needed = len * 2; // Extra for bias correction
     std::vector<unsigned char> random_bytes(bytes_needed);
 
     if (RAND_bytes(random_bytes.data(), static_cast<int>(bytes_needed)) != 1) {
@@ -498,8 +469,7 @@ crypto::generate_secure_random_string(std::size_t len, std::string_view range) {
 
 // Constant-time comparison to prevent timing attacks
 bool
-crypto::constant_time_compare(const std::vector<unsigned char> &a,
-                               const std::vector<unsigned char> &b) noexcept {
+crypto::constant_time_compare(const std::vector<unsigned char> &a, const std::vector<unsigned char> &b) noexcept {
     // If sizes differ, we can't compare - but we still need constant time
     // We compute a dummy comparison to avoid leaking the size difference via timing
     if (a.size() != b.size()) {

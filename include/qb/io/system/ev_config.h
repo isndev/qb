@@ -7,7 +7,7 @@
  * how the underlying event loop (e.g., libev) might be tuned or behave.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -42,14 +42,14 @@ namespace qb::io::event {
  * explicitly controlled through these constants (though libev often handles these automatically).
  */
 struct Config {
-    /** 
+    /**
      * @brief Default timeout for the event loop's polling mechanism.
      * Specifies how long the event loop will wait for events before timing out
      * if no events are immediately available. A sensible default to balance
      * responsiveness and CPU usage.
      */
     static constexpr qb::duration DEFAULT_POLL_TIMEOUT = std::chrono::milliseconds{100};
-    
+
     /**
      * @brief Maximum number of events to retrieve and process in a single polling iteration.
      * Helps to prevent one very active set of file descriptors from starving others
@@ -57,7 +57,7 @@ struct Config {
      * or re-poll.
      */
     static constexpr int MAX_EVENTS_PER_POLL = 64;
-    
+
     /**
      * @brief Hint for whether to prefer edge-triggered notifications if the underlying event system supports it.
      * Edge-triggered (ET) means notifications are delivered only when a state change occurs
@@ -65,7 +65,7 @@ struct Config {
      * This is often used with non-blocking I/O and requires careful state management by the application.
      */
     static constexpr bool USE_EDGE_TRIGGERED = true;
-    
+
     /**
      * @brief Hint for whether to prefer one-shot notifications if the underlying event system supports it.
      * One-shot means that after an event is delivered for a file descriptor, the watcher for that
@@ -73,7 +73,7 @@ struct Config {
      * This can simplify some types of event handling logic.
      */
     static constexpr bool USE_ONESHOT = false;
-    
+
     /**
      * @brief A conceptual maximum number of concurrent connections or active file descriptors.
      * This is often a soft limit or a hint for sizing internal structures, rather than a hard
@@ -84,4 +84,4 @@ struct Config {
 
 } // namespace qb::io::event
 
-#endif // QB_IO_EV_CONFIG_H_ 
+#endif // QB_IO_EV_CONFIG_H_

@@ -19,7 +19,7 @@
  * dangling once the first winner fires and the awaiter is destroyed.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -39,7 +39,7 @@
 
 #include "task.h"
 #include "utils.h"
-#include <qb/system/timestamp.h>  // qb::duration
+#include <qb/system/timestamp.h> // qb::duration
 #include <any>
 #include <chrono>
 #include <cstddef>
@@ -74,26 +74,28 @@ namespace qb::io::async {
 template <typename... Tasks>
 class when_all_awaiter {
 public:
-    using result_type = std::tuple<typename Tasks::value_type...>;
+    using result_type         = std::tuple<typename Tasks::value_type...>;
     static constexpr size_t N = sizeof...(Tasks);
 
 private:
     struct state_t {
         std::tuple<Tasks...> tasks;
-        result_type results{};
+        result_type          results{};
         // Plain size_t: single-thread cooperative — run_one coroutines never
         // execute concurrently, so incrementing is always sequential.
-        size_t completed{0};
+        size_t                  completed{0};
         std::coroutine_handle<> continuation;
-        std::exception_ptr first_exception;
+        std::exception_ptr      first_exception;
 
-        explicit state_t(Tasks... ts) : tasks(std::move(ts)...) {}
+        explicit state_t(Tasks... ts)
+            : tasks(std::move(ts)...) {}
     };
 
     std::shared_ptr<state_t> _state;
 
     template <size_t I>
-    static task<void> run_one(std::shared_ptr<state_t> state) {
+    static task<void>
+    run_one(std::shared_ptr<state_t> state) {
         try {
             std::get<I>(state->results) = co_await std::get<I>(state->tasks);
         } catch (...) {
@@ -107,7 +109,8 @@ private:
     }
 
     template <size_t... Is>
-    void start_all(std::index_sequence<Is...>) {
+    void
+    start_all(std::index_sequence<Is...>) {
         (coro_scheduler().spawn(run_one<Is>(_state)), ...);
     }
 
@@ -115,16 +118,19 @@ public:
     explicit when_all_awaiter(Tasks... tasks)
         : _state(std::make_shared<state_t>(std::move(tasks)...)) {}
 
-    [[nodiscard]] bool await_ready() const noexcept {
+    [[nodiscard]] bool
+    await_ready() const noexcept {
         return N == 0;
     }
 
-    void await_suspend(std::coroutine_handle<> h) {
+    void
+    await_suspend(std::coroutine_handle<> h) {
         _state->continuation = h;
         start_all(std::make_index_sequence<N>{});
     }
 
-    result_type await_resume() {
+    result_type
+    await_resume() {
         if (_state->first_exception) {
             std::rethrow_exception(_state->first_exception);
         }
@@ -139,7 +145,8 @@ public:
  * @ingroup Coroutine
  */
 template <typename... Tasks>
-auto when_all(Tasks... tasks) {
+auto
+when_all(Tasks... tasks) {
     return when_all_awaiter<Tasks...>(std::move(tasks)...);
 }
 
@@ -154,20 +161,23 @@ public:
     explicit when_all_vector_awaiter(std::vector<task<T>> tasks)
         : _state(std::make_shared<state_t>(std::move(tasks))) {}
 
-    [[nodiscard]] bool await_ready() const noexcept {
+    [[nodiscard]] bool
+    await_ready() const noexcept {
         return _state->tasks.empty();
     }
 
-    void await_suspend(std::coroutine_handle<> h) {
-        _state->continuation = h;
-        const size_t n = _state->tasks.size();
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        _state->continuation           = h;
+        const size_t             n     = _state->tasks.size();
         std::shared_ptr<state_t> state = _state;
         for (size_t i = 0; i < n; ++i) {
             coro_scheduler().spawn(run_one(state, i, n));
         }
     }
 
-    result_type await_resume() {
+    result_type
+    await_resume() {
         if (_state->first_exception) {
             std::rethrow_exception(_state->first_exception);
         }
@@ -176,18 +186,19 @@ public:
 
 private:
     struct state_t {
-        std::vector<task<T>> tasks;
-        std::vector<T> results;
-        size_t completed{0};  // single-thread
+        std::vector<task<T>>    tasks;
+        std::vector<T>          results;
+        size_t                  completed{0}; // single-thread
         std::coroutine_handle<> continuation;
-        std::exception_ptr first_exception;
+        std::exception_ptr      first_exception;
         explicit state_t(std::vector<task<T>> t)
             : tasks(std::move(t))
             , results(this->tasks.size()) {}
     };
     std::shared_ptr<state_t> _state;
 
-    static task<void> run_one(std::shared_ptr<state_t> state, size_t i, size_t n) {
+    static task<void>
+    run_one(std::shared_ptr<state_t> state, size_t i, size_t n) {
         try {
             state->results[i] = co_await state->tasks[i];
         } catch (...) {
@@ -208,7 +219,8 @@ private:
  * @ingroup Coroutine
  */
 template <typename T>
-auto when_all(std::vector<task<T>> tasks) {
+auto
+when_all(std::vector<task<T>> tasks) {
     return when_all_vector_awaiter<T>(std::move(tasks));
 }
 
@@ -221,26 +233,33 @@ auto when_all(std::vector<task<T>> tasks) {
  * Uses std::any to avoid variant with duplicate types
  */
 struct when_any_result {
-    size_t index;
-    std::any value;
+    size_t             index;
+    std::any           value;
     std::exception_ptr exception; ///< Non-null when the winning task threw
 
     template <typename T>
-    T get() const {
+    T
+    get() const {
         if (exception)
             std::rethrow_exception(exception);
         return std::any_cast<T>(value);
     }
 
     /// @brief Check whether the winning task completed with an exception
-    [[nodiscard]] bool has_exception() const noexcept { return exception != nullptr; }
+    [[nodiscard]] bool
+    has_exception() const noexcept {
+        return exception != nullptr;
+    }
 };
 
 // Structured binding: auto [index, value] = co_await when_any(...);
 template <size_t I>
-inline constexpr decltype(auto) get(const when_any_result& r) noexcept {
-    if constexpr (I == 0) return r.index;
-    else return static_cast<const std::any&>(r.value);
+inline constexpr decltype(auto)
+get(const when_any_result &r) noexcept {
+    if constexpr (I == 0)
+        return r.index;
+    else
+        return static_cast<const std::any &>(r.value);
 }
 
 } // namespace qb::io::async
@@ -270,10 +289,9 @@ namespace qb::io::async::detail {
 // exposed via tuple_element. This static_assert locks the arity so an
 // accidental addition of a third binding field breaks the build instead of
 // silently shifting existing bindings.
-static_assert(std::tuple_size<when_any_result>::value == 2,
-              "when_any_result must expose exactly (index, value) for "
-              "structured bindings; adjust tuple_element specialisations too");
-}
+static_assert(std::tuple_size<when_any_result>::value == 2, "when_any_result must expose exactly (index, value) for "
+                                                            "structured bindings; adjust tuple_element specialisations too");
+} // namespace qb::io::async::detail
 
 namespace qb::io::async {
 
@@ -288,25 +306,27 @@ namespace qb::io::async {
 template <typename... Tasks>
 class when_any_awaiter {
 public:
-    using result_type = when_any_result;
+    using result_type         = when_any_result;
     static constexpr size_t N = sizeof...(Tasks);
 
 private:
     struct state_t {
-        std::tuple<Tasks...> tasks;
+        std::tuple<Tasks...>           tasks;
         std::optional<when_any_result> result;
         // Plain bool: only one run_one can be executing at a time (cooperative).
-        bool done{false};
+        bool                    done{false};
         std::coroutine_handle<> continuation;
 
-        explicit state_t(Tasks... ts) : tasks(std::move(ts)...) {}
+        explicit state_t(Tasks... ts)
+            : tasks(std::move(ts)...) {}
     };
 
     std::shared_ptr<state_t> _state;
 
     template <size_t I>
-    static task<void> run_one(std::shared_ptr<state_t> state) {
-        using task_type = std::tuple_element_t<I, std::tuple<Tasks...>>;
+    static task<void>
+    run_one(std::shared_ptr<state_t> state) {
+        using task_type  = std::tuple_element_t<I, std::tuple<Tasks...>>;
         using value_type = typename task_type::value_type;
         try {
             std::any stored;
@@ -316,18 +336,14 @@ private:
                 stored = std::any(co_await std::get<I>(state->tasks));
             }
             if (!state->done) {
-                state->done = true;
-                state->result = when_any_result{
-                    I,
-                    std::is_void_v<value_type> ? std::any{} : std::move(stored),
-                    nullptr
-                };
+                state->done   = true;
+                state->result = when_any_result{I, std::is_void_v<value_type> ? std::any{} : std::move(stored), nullptr};
                 if (state->continuation)
                     schedule_via_current(state->continuation);
             }
         } catch (...) {
             if (!state->done) {
-                state->done = true;
+                state->done   = true;
                 state->result = when_any_result{I, std::any{}, std::current_exception()};
                 if (state->continuation)
                     schedule_via_current(state->continuation);
@@ -336,7 +352,8 @@ private:
     }
 
     template <size_t... Is>
-    void start_all(std::index_sequence<Is...>) {
+    void
+    start_all(std::index_sequence<Is...>) {
         (coro_scheduler().spawn(run_one<Is>(_state)), ...);
     }
 
@@ -344,16 +361,19 @@ public:
     explicit when_any_awaiter(Tasks... tasks)
         : _state(std::make_shared<state_t>(std::move(tasks)...)) {}
 
-    [[nodiscard]] bool await_ready() const noexcept {
+    [[nodiscard]] bool
+    await_ready() const noexcept {
         return N == 0;
     }
 
-    void await_suspend(std::coroutine_handle<> h) {
+    void
+    await_suspend(std::coroutine_handle<> h) {
         _state->continuation = h;
         start_all(std::make_index_sequence<N>{});
     }
 
-    result_type await_resume() {
+    result_type
+    await_resume() {
         if (!_state->result) {
             return when_any_result{0, std::any{}, nullptr};
         }
@@ -368,7 +388,8 @@ public:
  * @ingroup Coroutine
  */
 template <typename... Tasks>
-auto when_any(Tasks... tasks) {
+auto
+when_any(Tasks... tasks) {
     return when_any_awaiter<Tasks...>(std::move(tasks)...);
 }
 
@@ -382,53 +403,58 @@ public:
     explicit when_any_vector_awaiter(std::vector<task<T>> tasks)
         : _state(std::make_shared<state_t>(std::move(tasks))) {}
 
-    [[nodiscard]] bool await_ready() const noexcept {
+    [[nodiscard]] bool
+    await_ready() const noexcept {
         return _state->tasks.empty();
     }
 
-    void await_suspend(std::coroutine_handle<> h) {
-        _state->continuation = h;
-        const size_t n = _state->tasks.size();
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        _state->continuation           = h;
+        const size_t             n     = _state->tasks.size();
         std::shared_ptr<state_t> state = _state;
         for (size_t i = 0; i < n; ++i) {
             coro_scheduler().spawn(run_one(state, i, n));
         }
     }
 
-    result_type await_resume() {
+    result_type
+    await_resume() {
         if (_state->exception)
             std::rethrow_exception(_state->exception);
         if (!_state->result)
-            return result_type{0, std::any{}};  // empty vector edge case
+            return result_type{0, std::any{}}; // empty vector edge case
         return std::move(*_state->result);
     }
 
 private:
     struct state_t {
-        std::vector<task<T>> tasks;
+        std::vector<task<T>>       tasks;
         std::optional<result_type> result;
-        std::exception_ptr exception;
-        bool done{false};  // single-thread
-        std::coroutine_handle<> continuation;
-        explicit state_t(std::vector<task<T>> t) : tasks(std::move(t)) {}
+        std::exception_ptr         exception;
+        bool                       done{false}; // single-thread
+        std::coroutine_handle<>    continuation;
+        explicit state_t(std::vector<task<T>> t)
+            : tasks(std::move(t)) {}
     };
     std::shared_ptr<state_t> _state;
 
-    static task<void> run_one(std::shared_ptr<state_t> state, size_t i, size_t n) {
-        (void)n;
+    static task<void>
+    run_one(std::shared_ptr<state_t> state, size_t i, size_t n) {
+        (void) n;
         try {
             auto value = co_await state->tasks[i];
             if (!state->done) {
-                state->done = true;
+                state->done   = true;
                 state->result = result_type{i, std::any(std::move(value))};
                 if (state->continuation)
                     schedule_via_current(state->continuation);
             }
         } catch (...) {
             if (!state->done) {
-                state->done = true;
+                state->done      = true;
                 state->exception = std::current_exception();
-                state->result = result_type{i, std::any{}};
+                state->result    = result_type{i, std::any{}};
                 if (state->continuation)
                     schedule_via_current(state->continuation);
             }
@@ -443,7 +469,8 @@ private:
  * @ingroup Coroutine
  */
 template <typename T>
-auto when_any(std::vector<task<T>> tasks) {
+auto
+when_any(std::vector<task<T>> tasks) {
     return when_any_vector_awaiter<T>(std::move(tasks));
 }
 
@@ -456,7 +483,8 @@ auto when_any(std::vector<task<T>> tasks) {
  */
 class timeout_error : public std::runtime_error {
 public:
-    timeout_error() : std::runtime_error("Operation timed out") {}
+    timeout_error()
+        : std::runtime_error("Operation timed out") {}
 };
 
 /**
@@ -471,23 +499,25 @@ public:
 template <typename T>
 class timeout_awaiter {
     struct state_t {
-        task<T> inner_task;
-        std::optional<T> result;
+        task<T>            inner_task;
+        std::optional<T>   result;
         std::exception_ptr exception;
         // Plain bool: run_task and run_timeout run cooperatively on the same
         // thread — only one can be executing at a time, so the "first wins"
         // check is always sequential.
-        bool completed{false};
-        bool timed_out{false};
+        bool                    completed{false};
+        bool                    timed_out{false};
         std::coroutine_handle<> continuation;
 
-        explicit state_t(task<T>&& t) : inner_task(std::move(t)) {}
+        explicit state_t(task<T> &&t)
+            : inner_task(std::move(t)) {}
     };
 
     std::shared_ptr<state_t> _state;
-    qb::duration _timeout;
+    qb::duration             _timeout;
 
-    static task<void> run_task(std::shared_ptr<state_t> state) {
+    static task<void>
+    run_task(std::shared_ptr<state_t> state) {
         try {
             state->result = co_await state->inner_task;
         } catch (...) {
@@ -500,7 +530,8 @@ class timeout_awaiter {
         }
     }
 
-    static task<void> run_timeout(std::shared_ptr<state_t> state, qb::duration timeout) {
+    static task<void>
+    run_timeout(std::shared_ptr<state_t> state, qb::duration timeout) {
         co_await sleep(timeout);
         if (!state->completed) {
             state->completed = true;
@@ -511,19 +542,24 @@ class timeout_awaiter {
     }
 
 public:
-    timeout_awaiter(task<T>&& t, qb::duration timeout)
+    timeout_awaiter(task<T> &&t, qb::duration timeout)
         : _state(std::make_shared<state_t>(std::move(t)))
         , _timeout(timeout) {}
 
-    [[nodiscard]] bool await_ready() const noexcept { return false; }
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return false;
+    }
 
-    void await_suspend(std::coroutine_handle<> h) {
+    void
+    await_suspend(std::coroutine_handle<> h) {
         _state->continuation = h;
         coro_scheduler().spawn(run_task(_state));
         coro_scheduler().spawn(run_timeout(_state, _timeout));
     }
 
-    T await_resume() {
+    T
+    await_resume() {
         if (_state->timed_out) {
             throw timeout_error();
         }
@@ -551,7 +587,8 @@ public:
  * @ingroup Coroutine
  */
 template <typename T>
-auto coro_with_timeout(task<T>&& t, qb::duration timeout) {
+auto
+coro_with_timeout(task<T> &&t, qb::duration timeout) {
     return timeout_awaiter<T>(std::move(t), timeout);
 }
 
@@ -561,19 +598,21 @@ auto coro_with_timeout(task<T>&& t, qb::duration timeout) {
 template <>
 class timeout_awaiter<void> {
     struct state_t {
-        task<void> inner_task;
-        std::exception_ptr exception;
-        bool completed{false};  // single-thread
-        bool timed_out{false};
+        task<void>              inner_task;
+        std::exception_ptr      exception;
+        bool                    completed{false}; // single-thread
+        bool                    timed_out{false};
         std::coroutine_handle<> continuation;
 
-        explicit state_t(task<void>&& t) : inner_task(std::move(t)) {}
+        explicit state_t(task<void> &&t)
+            : inner_task(std::move(t)) {}
     };
 
     std::shared_ptr<state_t> _state;
-    qb::duration _timeout;
+    qb::duration             _timeout;
 
-    static task<void> run_task(std::shared_ptr<state_t> state) {
+    static task<void>
+    run_task(std::shared_ptr<state_t> state) {
         try {
             co_await state->inner_task;
         } catch (...) {
@@ -581,33 +620,41 @@ class timeout_awaiter<void> {
         }
         if (!state->completed) {
             state->completed = true;
-            if (state->continuation) schedule_via_current(state->continuation);
+            if (state->continuation)
+                schedule_via_current(state->continuation);
         }
     }
 
-    static task<void> run_timeout(std::shared_ptr<state_t> state, qb::duration timeout) {
+    static task<void>
+    run_timeout(std::shared_ptr<state_t> state, qb::duration timeout) {
         co_await sleep(timeout);
         if (!state->completed) {
             state->completed = true;
             state->timed_out = true;
-            if (state->continuation) schedule_via_current(state->continuation);
+            if (state->continuation)
+                schedule_via_current(state->continuation);
         }
     }
 
 public:
-    timeout_awaiter(task<void>&& t, qb::duration timeout)
+    timeout_awaiter(task<void> &&t, qb::duration timeout)
         : _state(std::make_shared<state_t>(std::move(t)))
         , _timeout(timeout) {}
 
-    [[nodiscard]] bool await_ready() const noexcept { return false; }
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return false;
+    }
 
-    void await_suspend(std::coroutine_handle<> h) {
+    void
+    await_suspend(std::coroutine_handle<> h) {
         _state->continuation = h;
         coro_scheduler().spawn(run_task(_state));
         coro_scheduler().spawn(run_timeout(_state, _timeout));
     }
 
-    void await_resume() {
+    void
+    await_resume() {
         if (_state->timed_out) {
             throw timeout_error();
         }
@@ -621,7 +668,8 @@ public:
  * @brief Helper to create timeout awaiter (void specialization)
  * @ingroup Coroutine
  */
-inline auto coro_with_timeout(task<void>&& t, qb::duration timeout) {
+inline auto
+coro_with_timeout(task<void> &&t, qb::duration timeout) {
     return timeout_awaiter<void>(std::move(t), timeout);
 }
 
@@ -641,7 +689,8 @@ inline auto coro_with_timeout(task<void>&& t, qb::duration timeout) {
  * @ingroup Coroutine
  */
 template <typename... Tasks>
-auto race(Tasks... tasks) {
+auto
+race(Tasks... tasks) {
     return when_any(std::move(tasks)...);
 }
 
@@ -652,7 +701,8 @@ auto race(Tasks... tasks) {
  * @ingroup Coroutine
  */
 template <typename T>
-auto race(std::vector<task<T>> tasks) {
+auto
+race(std::vector<task<T>> tasks) {
     return when_any(std::move(tasks));
 }
 

@@ -7,7 +7,7 @@
  * registration, referenced actors, and actor termination via kill events.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -143,9 +143,7 @@ TEST(AddActorUsingCoreBuilder, ShouldNotAddActorWhenEngineIsRunning) {
 TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
     qb::Main main;
 
-    auto builder =
-        main.core(0).builder().addActor<TestServiceActor>(true).addActor<TestActor>(
-            true);
+    auto builder = main.core(0).builder().addActor<TestServiceActor>(true).addActor<TestActor>(true);
     EXPECT_TRUE(static_cast<bool>(builder));
     EXPECT_EQ(builder.idList().size(), 2u);
     EXPECT_EQ(static_cast<uint32_t>(builder.idList()[0]), 1u);

@@ -7,7 +7,7 @@
  * through the communication channel between actors.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -31,10 +31,10 @@ template <typename T, typename... _Args>
 T &
 Pipe::push(_Args &&...args) const noexcept {
     constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
-    auto &data  = pipe->template allocate_back<T>(std::forward<_Args>(args)...);
-    data.id     = data.template type_to_id<T>();
-    data.dest   = dest;
-    data.source = source;
+    auto                 &data        = pipe->template allocate_back<T>(std::forward<_Args>(args)...);
+    data.id                           = data.template type_to_id<T>();
+    data.dest                         = dest;
+    data.source                       = source;
     // C++20: use service_event_type concept
     if constexpr (service_event_type<T>) {
         data.forward = source;
@@ -49,9 +49,8 @@ template <typename T, typename... _Args>
 T &
 Pipe::allocated_push(std::size_t size, _Args &&...args) const noexcept {
     size += sizeof(T);
-    size = size / sizeof(EventBucket) + static_cast<bool>(size % sizeof(EventBucket));
-    auto &data = *(new (reinterpret_cast<T *>(pipe->allocate_back(size)))
-                       T(std::forward<_Args>(args)...));
+    size       = size / sizeof(EventBucket) + static_cast<bool>(size % sizeof(EventBucket));
+    auto &data = *(new (reinterpret_cast<T *>(pipe->allocate_back(size))) T(std::forward<_Args>(args)...));
 
     data.id     = data.template type_to_id<T>();
     data.dest   = dest;

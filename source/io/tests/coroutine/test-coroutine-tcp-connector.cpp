@@ -7,7 +7,7 @@
  * completion guarantees, local listener success paths, and parallel awaiter completion.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -45,17 +45,20 @@ namespace {
 
 class ConnectorIntegrationTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
 
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
 
 template <typename Predicate>
-void pump_until(Predicate done, qb::duration timeout = 2s) {
+void
+pump_until(Predicate done, qb::duration timeout = 2s) {
     const auto deadline = qb::mono_now() + timeout;
     while (!done() && qb::mono_now() < deadline) {
         qb::io::async::run(EVRUN_NOWAIT);
@@ -63,7 +66,8 @@ void pump_until(Predicate done, qb::duration timeout = 2s) {
     }
 }
 
-std::pair<std::string, int> refused_endpoint() {
+std::pair<std::string, int>
+refused_endpoint() {
     constexpr const char *host = "127.0.0.1";
     qb::io::tcp::listener listener;
     if (listener.listen_v4(0, host) != qb::io::SocketStatus::Done) {
@@ -76,7 +80,8 @@ std::pair<std::string, int> refused_endpoint() {
     return {host, port};
 }
 
-std::string tcp_uri(int port) {
+std::string
+tcp_uri(int port) {
     return "tcp://127.0.0.1:" + std::to_string(port);
 }
 
@@ -85,29 +90,30 @@ public:
     enum class connect_result { direct, pending, fail };
 
     struct state {
-        connect_result result = connect_result::direct;
+        connect_result   result = connect_result::direct;
         std::vector<int> handshake_results{1};
-        std::size_t handshake_index = 0u;
-        int fd = -1;
-        int peer_fd = -1;
-        int n_connect_calls = 0;
-        int disconnect_calls = 0;
-        int connected_calls = 0;
-        int get_optval_calls = 0;
-        int set_insecure_calls = 0;
-        int so_error = 0;
-        int get_optval_result = 0;
+        std::size_t      handshake_index    = 0u;
+        int              fd                 = -1;
+        int              peer_fd            = -1;
+        int              n_connect_calls    = 0;
+        int              disconnect_calls   = 0;
+        int              connected_calls    = 0;
+        int              get_optval_calls   = 0;
+        int              set_insecure_calls = 0;
+        int              so_error           = 0;
+        int              get_optval_result  = 0;
     };
 
 private:
     std::shared_ptr<state> _state;
 
-    void ensure_fd() {
+    void
+    ensure_fd() {
         if (_state->fd >= 0)
             return;
         int fds[2] = {-1, -1};
         if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0) {
-            _state->fd = fds[0];
+            _state->fd      = fds[0];
             _state->peer_fd = fds[1];
         }
     }
@@ -119,19 +125,23 @@ public:
     explicit FakeConnectorSocket(std::shared_ptr<state> shared_state)
         : _state(std::move(shared_state)) {}
 
-    [[nodiscard]] std::shared_ptr<state> shared_state() const noexcept {
+    [[nodiscard]] std::shared_ptr<state>
+    shared_state() const noexcept {
         return _state;
     }
 
-    [[nodiscard]] bool is_open() const noexcept {
+    [[nodiscard]] bool
+    is_open() const noexcept {
         return _state && _state->fd >= 0;
     }
 
-    [[nodiscard]] int native_handle() const noexcept {
+    [[nodiscard]] int
+    native_handle() const noexcept {
         return _state ? _state->fd : -1;
     }
 
-    int n_connect(qb::io::uri const&) {
+    int
+    n_connect(qb::io::uri const &) {
         ++_state->n_connect_calls;
         if (_state->result == connect_result::fail) {
             qb::io::socket::set_last_errno(ECONNREFUSED);
@@ -146,32 +156,36 @@ public:
         return 0;
     }
 
-    int handshake_status() {
-        auto index = std::min(_state->handshake_index,
-                              _state->handshake_results.size() - 1u);
+    int
+    handshake_status() {
+        auto       index  = std::min(_state->handshake_index, _state->handshake_results.size() - 1u);
         const auto result = _state->handshake_results[index];
         if (_state->handshake_index + 1u < _state->handshake_results.size())
             ++_state->handshake_index;
         return result;
     }
 
-    int connected() {
+    int
+    connected() {
         ++_state->connected_calls;
         return 0;
     }
 
     template <typename T>
-    int get_optval(int, int, T& out) {
+    int
+    get_optval(int, int, T &out) {
         ++_state->get_optval_calls;
         out = static_cast<T>(_state->so_error);
         return _state->get_optval_result;
     }
 
-    void set_insecure() {
+    void
+    set_insecure() {
         ++_state->set_insecure_calls;
     }
 
-    void disconnect() {
+    void
+    disconnect() {
         ++_state->disconnect_calls;
         if (_state->fd >= 0) {
             ::close(_state->fd);
@@ -192,12 +206,11 @@ struct FakeConnectorTransport {
 
 TEST_F(ConnectorIntegrationTest, AwaiterReturnsEmptyOptionalForInvalidUri) {
     std::atomic<bool> done{false};
-    bool connected = true;
+    bool              connected = true;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{"invalid://uri"}, 100ms);
-        connected = socket.has_value();
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{"invalid://uri"}, 100ms);
+        connected   = socket.has_value();
         done.store(true);
         co_return;
     });
@@ -213,11 +226,11 @@ TEST_F(ConnectorIntegrationTest, AwaiterReturnsEmptyOptionalForRefusedPort) {
     ASSERT_GT(port, 0);
 
     std::atomic<bool> done{false};
-    bool connected = true;
+    bool              connected = true;
 
     coro_scheduler().spawn([&, uri = "tcp://" + host + ":" + std::to_string(port)]() -> task<void> {
         auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{uri}, 500ms);
-        connected = socket.has_value();
+        connected   = socket.has_value();
         done.store(true);
         co_return;
     });
@@ -233,7 +246,7 @@ TEST_F(ConnectorIntegrationTest, CallbackConnectorCompletesExactlyOnceOnRefusedP
     ASSERT_GT(port, 0);
 
     std::atomic<int> completions{0};
-    bool connected = true;
+    bool             connected = true;
 
     qb::io::async::tcp::connect<qb::io::tcp::socket>(
         qb::io::uri{"tcp://" + host + ":" + std::to_string(port)},
@@ -251,15 +264,15 @@ TEST_F(ConnectorIntegrationTest, CallbackConnectorCompletesExactlyOnceOnRefusedP
 
 TEST_F(ConnectorIntegrationTest, CallbackConnectorCoversDirectHandshakeSuccessAndFailure) {
     {
-        auto shared = std::make_shared<FakeConnectorSocket::state>();
-        shared->result = FakeConnectorSocket::connect_result::direct;
+        auto shared               = std::make_shared<FakeConnectorSocket::state>();
+        shared->result            = FakeConnectorSocket::connect_result::direct;
         shared->handshake_results = {1};
         std::atomic<int> completions{0};
-        bool connected = false;
+        bool             connected = false;
 
         qb::io::async::tcp::connect<FakeConnectorSocket>(
             FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:1"},
-            [&](FakeConnectorSocket&& socket) {
+            [&](FakeConnectorSocket &&socket) {
                 connected = socket.is_open();
                 ++completions;
             },
@@ -271,15 +284,15 @@ TEST_F(ConnectorIntegrationTest, CallbackConnectorCoversDirectHandshakeSuccessAn
     }
 
     {
-        auto shared = std::make_shared<FakeConnectorSocket::state>();
-        shared->result = FakeConnectorSocket::connect_result::direct;
+        auto shared               = std::make_shared<FakeConnectorSocket::state>();
+        shared->result            = FakeConnectorSocket::connect_result::direct;
         shared->handshake_results = {-1};
         std::atomic<int> completions{0};
-        bool connected = true;
+        bool             connected = true;
 
         qb::io::async::tcp::connect<FakeConnectorSocket>(
             FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:2"},
-            [&](FakeConnectorSocket&& socket) {
+            [&](FakeConnectorSocket &&socket) {
                 connected = socket.is_open();
                 ++completions;
             },
@@ -294,16 +307,16 @@ TEST_F(ConnectorIntegrationTest, CallbackConnectorCoversDirectHandshakeSuccessAn
 }
 
 TEST_F(ConnectorIntegrationTest, CallbackConnectorDeadlineCompletesPendingHandshakeOnce) {
-    auto shared = std::make_shared<FakeConnectorSocket::state>();
-    shared->result = FakeConnectorSocket::connect_result::pending;
+    auto shared               = std::make_shared<FakeConnectorSocket::state>();
+    shared->result            = FakeConnectorSocket::connect_result::pending;
     shared->handshake_results = {0};
 
     std::atomic<int> completions{0};
-    bool connected = true;
+    bool             connected = true;
 
     qb::io::async::tcp::connect<FakeConnectorSocket>(
         FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:3"},
-        [&](FakeConnectorSocket&& socket) {
+        [&](FakeConnectorSocket &&socket) {
             connected = socket.is_open();
             ++completions;
         },
@@ -318,16 +331,16 @@ TEST_F(ConnectorIntegrationTest, CallbackConnectorDeadlineCompletesPendingHandsh
 }
 
 TEST_F(ConnectorIntegrationTest, CallbackConnectorCompletesPendingHandshakeFromIoEvent) {
-    auto shared = std::make_shared<FakeConnectorSocket::state>();
-    shared->result = FakeConnectorSocket::connect_result::pending;
+    auto shared               = std::make_shared<FakeConnectorSocket::state>();
+    shared->result            = FakeConnectorSocket::connect_result::pending;
     shared->handshake_results = {0, 1};
 
     std::atomic<int> completions{0};
-    bool connected = false;
+    bool             connected = false;
 
     qb::io::async::tcp::connect<FakeConnectorSocket>(
         FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:7"},
-        [&](FakeConnectorSocket&& socket) {
+        [&](FakeConnectorSocket &&socket) {
             connected = socket.is_open();
             ++completions;
         },
@@ -342,16 +355,16 @@ TEST_F(ConnectorIntegrationTest, CallbackConnectorCompletesPendingHandshakeFromI
 }
 
 TEST_F(ConnectorIntegrationTest, CallbackConnectorFailsPendingHandshakeFromIoEvent) {
-    auto shared = std::make_shared<FakeConnectorSocket::state>();
-    shared->result = FakeConnectorSocket::connect_result::pending;
+    auto shared               = std::make_shared<FakeConnectorSocket::state>();
+    shared->result            = FakeConnectorSocket::connect_result::pending;
     shared->handshake_results = {-1};
 
     std::atomic<int> completions{0};
-    bool connected = true;
+    bool             connected = true;
 
     qb::io::async::tcp::connect<FakeConnectorSocket>(
         FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:8"},
-        [&](FakeConnectorSocket&& socket) {
+        [&](FakeConnectorSocket &&socket) {
             connected = socket.is_open();
             ++completions;
         },
@@ -366,7 +379,7 @@ TEST_F(ConnectorIntegrationTest, CallbackConnectorFailsPendingHandshakeFromIoEve
 }
 
 TEST_F(ConnectorIntegrationTest, AwaiterConnectsToLocalListener) {
-    std::atomic<int> server_port{0};
+    std::atomic<int>  server_port{0};
     std::atomic<bool> accepted{false};
 
     std::thread server([&]() {
@@ -385,12 +398,11 @@ TEST_F(ConnectorIntegrationTest, AwaiterConnectsToLocalListener) {
     ASSERT_GT(server_port.load(), 0);
 
     std::atomic<bool> done{false};
-    bool connected = false;
+    bool              connected = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(server_port.load())}, 1s);
-        connected = socket.has_value() && socket->is_open();
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(server_port.load())}, 1s);
+        connected   = socket.has_value() && socket->is_open();
         if (socket) {
             socket->close();
         }
@@ -413,9 +425,9 @@ TEST_F(ConnectorIntegrationTest, ParallelAwaitersAllCompleteOnRefusedPort) {
     auto [host, port] = refused_endpoint();
     ASSERT_GT(port, 0);
 
-    constexpr int kConnectors = 5;
-    std::atomic<int> completions{0};
-    std::atomic<int> successes{0};
+    constexpr int     kConnectors = 5;
+    std::atomic<int>  completions{0};
+    std::atomic<int>  successes{0};
     const std::string uri = "tcp://" + host + ":" + std::to_string(port);
 
     for (int i = 0; i < kConnectors; ++i) {
@@ -436,17 +448,17 @@ TEST_F(ConnectorIntegrationTest, ParallelAwaitersAllCompleteOnRefusedPort) {
 }
 
 TEST_F(ConnectorIntegrationTest, AwaiterWithExistingSocketCompletesAndMovesResult) {
-    auto shared = std::make_shared<FakeConnectorSocket::state>();
-    shared->result = FakeConnectorSocket::connect_result::direct;
+    auto shared               = std::make_shared<FakeConnectorSocket::state>();
+    shared->result            = FakeConnectorSocket::connect_result::direct;
     shared->handshake_results = {1};
 
     std::atomic<bool> done{false};
-    bool connected = false;
+    bool              connected = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect_with_socket<FakeConnectorTransport>(
-            FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:4"}, 0ms);
-        connected = socket.has_value() && socket->is_open();
+        auto socket = co_await qb::io::async::tcp::connect_with_socket<FakeConnectorTransport>(FakeConnectorSocket{shared},
+                                                                                               qb::io::uri{"tcp://fake.local:4"}, 0ms);
+        connected   = socket.has_value() && socket->is_open();
         done.store(true);
         co_return;
     });
@@ -459,21 +471,18 @@ TEST_F(ConnectorIntegrationTest, AwaiterWithExistingSocketCompletesAndMovesResul
 }
 
 TEST_F(ConnectorIntegrationTest, DestroyedAwaiterIgnoresLateConnectorCallback) {
-    auto shared = std::make_shared<FakeConnectorSocket::state>();
-    shared->result = FakeConnectorSocket::connect_result::pending;
+    auto shared               = std::make_shared<FakeConnectorSocket::state>();
+    shared->result            = FakeConnectorSocket::connect_result::pending;
     shared->handshake_results = {0};
 
     {
-        auto awaiter = qb::io::async::tcp::connect_awaiter<FakeConnectorSocket>{
-            qb::io::uri{"tcp://fake.local:5"}, 1ms};
+        auto awaiter              = qb::io::async::tcp::connect_awaiter<FakeConnectorSocket>{qb::io::uri{"tcp://fake.local:5"}, 1ms};
         auto ready_before_destroy = awaiter.await_ready();
         EXPECT_FALSE(ready_before_destroy);
     }
 
     qb::io::async::tcp::connect<FakeConnectorSocket>(
-        FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:6"},
-        [](FakeConnectorSocket&&) {},
-        1ms);
+        FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:6"}, [](FakeConnectorSocket &&) {}, 1ms);
 
     pump_until([&] { return shared->disconnect_calls > 0; }, 200ms);
 

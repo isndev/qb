@@ -7,7 +7,7 @@
  * It follows RFC 7519 specification for JSON Web Tokens.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -81,16 +81,21 @@ public:
      * @ingroup Crypto
      */
     struct ValidationResult {
-        ValidationError error; /**< @brief The validation error code, `NONE` if valid. */
+        ValidationError                    error;   /**< @brief The validation error code, `NONE` if valid. */
         std::map<std::string, std::string> payload; /**< @brief Decoded payload claims if validation was successful. */
-        
+
         /** @brief Checks if the token validation was successful (error is NONE). */
-        bool is_valid() const { return error == ValidationError::NONE; }
-        
+        bool
+        is_valid() const {
+            return error == ValidationError::NONE;
+        }
+
         /** @brief Default constructor, initializes error to NONE. */
-        ValidationResult() : error(ValidationError::NONE) {}
+        ValidationResult()
+            : error(ValidationError::NONE) {}
         /** @brief Constructor to set a specific validation error. */
-        ValidationResult(ValidationError err) : error(err) {}
+        ValidationResult(ValidationError err)
+            : error(err) {}
     };
 
     /**
@@ -102,51 +107,55 @@ public:
         std::string payload;   /**< @brief The decoded payload part of the JWT (JSON string). */
         std::string signature; /**< @brief The signature part of the JWT (Base64URL encoded). */
     };
-    
+
     /**
      * @brief JWT creation options
      * @ingroup Crypto
      */
     struct CreateOptions {
-        Algorithm algorithm; /**< @brief The signing algorithm to use. */
-        std::string key;     /**< @brief Secret key for HMAC algorithms, or PEM-encoded private key for asymmetric algorithms. */
+        Algorithm                  algorithm; /**< @brief The signing algorithm to use. */
+        std::string                key;  /**< @brief Secret key for HMAC algorithms, or PEM-encoded private key for asymmetric algorithms. */
         std::optional<std::string> type; /**< @brief Optional token type, typically "JWT". Added to header `typ` claim. */
-        std::optional<std::string> content_type; /**< @brief Optional content type. Added to header `cty` claim. */
-        std::optional<std::string> key_id;       /**< @brief Optional key ID. Added to header `kid` claim. */
+        std::optional<std::string> content_type;          /**< @brief Optional content type. Added to header `cty` claim. */
+        std::optional<std::string> key_id;                /**< @brief Optional key ID. Added to header `kid` claim. */
         std::map<std::string, std::string> header_claims; /**< @brief Additional custom claims to include in the JWT header. */
-        
-        CreateOptions() : algorithm(Algorithm::HS256), type("JWT") {}
+
+        CreateOptions()
+            : algorithm(Algorithm::HS256)
+            , type("JWT") {}
     };
-    
+
     /**
      * @brief JWT verification options
      * @ingroup Crypto
      */
     struct VerifyOptions {
-        Algorithm algorithm; /**< @brief The algorithm expected for the token signature. */
-        std::string key;     /**< @brief Secret key for HMAC algorithms, or PEM-encoded public key for asymmetric algorithms. */
-        bool verify_expiration; /**< @brief Whether to validate the `exp` (expiration time) claim. Default true. */
-        bool verify_not_before; /**< @brief Whether to validate the `nbf` (not before) claim. Default true. */
-        bool verify_issuer;     /**< @brief Whether to validate the `iss` (issuer) claim. Default false. */
-        std::optional<std::string> issuer; /**< @brief Expected issuer if `verify_issuer` is true. */
-        bool verify_audience;   /**< @brief Whether to validate the `aud` (audience) claim. Default false. */
-        std::optional<std::string> audience; /**< @brief Expected audience if `verify_audience` is true. Can be a single string or a JSON array of strings. */
-        bool verify_subject;    /**< @brief Whether to validate the `sub` (subject) claim. Default false. */
-        std::optional<std::string> subject;  /**< @brief Expected subject if `verify_subject` is true. */
-        bool verify_jti;        /**< @brief Whether to validate the `jti` (JWT ID) claim. Default false. */
-        std::optional<std::string> jti;      /**< @brief Expected JWT ID if `verify_jti` is true. */
-        std::chrono::seconds clock_skew; /**< @brief Clock skew tolerance for `exp` and `nbf` validations. Default 0 seconds. */
-        std::map<std::string, std::string> required_claims; /**< @brief Additional custom claims that must be present in the payload and match the provided values. */
-        
-        VerifyOptions() 
-            : algorithm(Algorithm::HS256),
-              verify_expiration(true),
-              verify_not_before(true),
-              verify_issuer(false),
-              verify_audience(false),
-              verify_subject(false),
-              verify_jti(false),
-              clock_skew(std::chrono::seconds(0)) {}
+        Algorithm                  algorithm; /**< @brief The algorithm expected for the token signature. */
+        std::string                key; /**< @brief Secret key for HMAC algorithms, or PEM-encoded public key for asymmetric algorithms. */
+        bool                       verify_expiration; /**< @brief Whether to validate the `exp` (expiration time) claim. Default true. */
+        bool                       verify_not_before; /**< @brief Whether to validate the `nbf` (not before) claim. Default true. */
+        bool                       verify_issuer;     /**< @brief Whether to validate the `iss` (issuer) claim. Default false. */
+        std::optional<std::string> issuer;            /**< @brief Expected issuer if `verify_issuer` is true. */
+        bool                       verify_audience;   /**< @brief Whether to validate the `aud` (audience) claim. Default false. */
+        std::optional<std::string>
+             audience;       /**< @brief Expected audience if `verify_audience` is true. Can be a single string or a JSON array of strings. */
+        bool verify_subject; /**< @brief Whether to validate the `sub` (subject) claim. Default false. */
+        std::optional<std::string> subject;    /**< @brief Expected subject if `verify_subject` is true. */
+        bool                       verify_jti; /**< @brief Whether to validate the `jti` (JWT ID) claim. Default false. */
+        std::optional<std::string> jti;        /**< @brief Expected JWT ID if `verify_jti` is true. */
+        std::chrono::seconds       clock_skew; /**< @brief Clock skew tolerance for `exp` and `nbf` validations. Default 0 seconds. */
+        std::map<std::string, std::string>
+            required_claims; /**< @brief Additional custom claims that must be present in the payload and match the provided values. */
+
+        VerifyOptions()
+            : algorithm(Algorithm::HS256)
+            , verify_expiration(true)
+            , verify_not_before(true)
+            , verify_issuer(false)
+            , verify_audience(false)
+            , verify_subject(false)
+            , verify_jti(false)
+            , clock_skew(std::chrono::seconds(0)) {}
     };
 
     /**
@@ -156,9 +165,8 @@ public:
      * @param options Options for creating the token
      * @return JWT token string
      */
-    static std::string create(const std::map<std::string, std::string>& payload, 
-                             const CreateOptions& options);
-    
+    static std::string create(const std::map<std::string, std::string> &payload, const CreateOptions &options);
+
     /**
      * @brief Create a JWT token with standard claims and custom payload
      *
@@ -172,16 +180,11 @@ public:
      * @param options Options for creating the token
      * @return JWT token string
      */
-    static std::string create_token(
-        const std::map<std::string, std::string>& payload,
-        const std::string& issuer,
-        const std::string& subject,
-        const std::string& audience,
-        std::chrono::seconds expires_in,
-        std::chrono::seconds not_before = std::chrono::seconds(0),
-        const std::string& jti = "",
-        const CreateOptions& options = CreateOptions());
-    
+    static std::string create_token(const std::map<std::string, std::string> &payload, const std::string &issuer, const std::string &subject,
+                                    const std::string &audience, std::chrono::seconds expires_in,
+                                    std::chrono::seconds not_before = std::chrono::seconds(0), const std::string &jti = "",
+                                    const CreateOptions &options = CreateOptions());
+
     /**
      * @brief Verify a JWT token
      *
@@ -189,8 +192,8 @@ public:
      * @param options Options for verifying the token
      * @return ValidationResult containing error code and payload if valid
      */
-    static ValidationResult verify(const std::string& token, const VerifyOptions& options);
-    
+    static ValidationResult verify(const std::string &token, const VerifyOptions &options);
+
     /**
      * @brief Decode a JWT token without verification
      *
@@ -198,8 +201,8 @@ public:
      * @return TokenParts containing header, payload, and signature
      * @throws std::runtime_error if token format is invalid
      */
-    static TokenParts decode(const std::string& token);
-    
+    static TokenParts decode(const std::string &token);
+
     /**
      * @brief Get string representation of algorithm
      *
@@ -207,14 +210,14 @@ public:
      * @return String representation of algorithm
      */
     static std::string algorithm_to_string(Algorithm algorithm);
-    
+
     /**
      * @brief Get algorithm from string representation
      *
      * @param algorithm_str String representation of algorithm
      * @return Algorithm enum value, or std::nullopt if not recognized
      */
-    static std::optional<Algorithm> algorithm_from_string(const std::string& algorithm_str);
+    static std::optional<Algorithm> algorithm_from_string(const std::string &algorithm_str);
 
 private:
     /**
@@ -224,9 +227,8 @@ private:
      * @param options Options containing algorithm and key
      * @return Signature bytes
      */
-    static std::vector<unsigned char> sign_data(const std::string& data, 
-                                               const CreateOptions& options);
-    
+    static std::vector<unsigned char> sign_data(const std::string &data, const CreateOptions &options);
+
     /**
      * @brief Verify signature using the specified algorithm
      *
@@ -235,10 +237,8 @@ private:
      * @param options Options containing algorithm and key
      * @return true if signature is valid, false otherwise
      */
-    static bool verify_signature(const std::string& data,
-                                const std::vector<unsigned char>& signature,
-                                const VerifyOptions& options);
-    
+    static bool verify_signature(const std::string &data, const std::vector<unsigned char> &signature, const VerifyOptions &options);
+
     /**
      * @brief Convert crypto::DigestAlgorithm to corresponding algorithm for the signing method
      *
@@ -246,7 +246,7 @@ private:
      * @return Corresponding crypto::DigestAlgorithm
      */
     static crypto::DigestAlgorithm get_digest_algorithm(Algorithm algorithm);
-    
+
     /**
      * @brief Get current Unix timestamp
      *
@@ -257,4 +257,4 @@ private:
 
 } // namespace qb
 
-#endif // QB_IO_CRYPTO_JWT_H 
+#endif // QB_IO_CRYPTO_JWT_H

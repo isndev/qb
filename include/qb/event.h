@@ -6,7 +6,7 @@
  * used for inter-actor communication in the QB Actor Framework.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor) // Assuming similar copyright as others
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor) // Assuming similar copyright as others
  * @ingroup EventCore
  */
 

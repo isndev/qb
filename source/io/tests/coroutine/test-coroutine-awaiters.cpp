@@ -7,7 +7,7 @@
  * scheduler integration.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -31,8 +31,8 @@ using namespace qb::io::async;
 using namespace std::chrono_literals;
 
 template <typename Predicate>
-bool wait_until(Predicate &&predicate, std::chrono::milliseconds timeout,
-                std::chrono::milliseconds step = 5ms) {
+bool
+wait_until(Predicate &&predicate, std::chrono::milliseconds timeout, std::chrono::milliseconds step = 5ms) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (!predicate()) {
         qb::io::async::run_for(step);
@@ -49,11 +49,13 @@ bool wait_until(Predicate &&predicate, std::chrono::milliseconds timeout,
 
 class CoroutineAwaiterTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    
-    void TearDown() override {
+
+    void
+    TearDown() override {
         if (qb::io::async::listener::current.has_coro_scheduler()) {
             qb::io::async::run_for(5ms);
             qb::io::async::listener::current.reset_coro_scheduler();
@@ -70,9 +72,14 @@ protected:
  * @brief Simple awaiter that completes immediately
  */
 struct immediate_awaiter {
-    bool await_ready() const noexcept { return true; }
-    void await_suspend(std::coroutine_handle<>) noexcept {}
-    void await_resume() const noexcept {}
+    bool
+    await_ready() const noexcept {
+        return true;
+    }
+    void
+    await_suspend(std::coroutine_handle<>) noexcept {}
+    void
+    await_resume() const noexcept {}
 };
 
 /**
@@ -80,39 +87,59 @@ struct immediate_awaiter {
  */
 struct always_suspend_awaiter {
     std::coroutine_handle<> handle_;
-    
-    bool await_ready() const noexcept { return false; }
-    
-    void await_suspend(std::coroutine_handle<> h) noexcept {
+
+    bool
+    await_ready() const noexcept {
+        return false;
+    }
+
+    void
+    await_suspend(std::coroutine_handle<> h) noexcept {
         handle_ = h;
         // Schedule for immediate resumption
         coro_scheduler().schedule_resume(h);
     }
-    
-    void await_resume() const noexcept {}
+
+    void
+    await_resume() const noexcept {}
 };
 
 /**
  * @brief Awaiter that returns a value
  */
-template<typename T>
+template <typename T>
 struct value_awaiter {
     T value_;
-    
-    explicit value_awaiter(T val) : value_(std::move(val)) {}
-    
-    bool await_ready() const noexcept { return true; }
-    void await_suspend(std::coroutine_handle<>) noexcept {}
-    T await_resume() noexcept { return std::move(value_); }
+
+    explicit value_awaiter(T val)
+        : value_(std::move(val)) {}
+
+    bool
+    await_ready() const noexcept {
+        return true;
+    }
+    void
+    await_suspend(std::coroutine_handle<>) noexcept {}
+    T
+    await_resume() noexcept {
+        return std::move(value_);
+    }
 };
 
 /**
  * @brief Awaiter that throws on resume
  */
 struct throwing_awaiter {
-    bool await_ready() const noexcept { return true; }
-    void await_suspend(std::coroutine_handle<>) noexcept {}
-    void await_resume() const { throw std::runtime_error("awaiter threw"); }
+    bool
+    await_ready() const noexcept {
+        return true;
+    }
+    void
+    await_suspend(std::coroutine_handle<>) noexcept {}
+    void
+    await_resume() const {
+        throw std::runtime_error("awaiter threw");
+    }
 };
 
 /**
@@ -120,17 +147,22 @@ struct throwing_awaiter {
  */
 struct symmetric_transfer_awaiter {
     std::coroutine_handle<> target_;
-    
-    explicit symmetric_transfer_awaiter(std::coroutine_handle<> target) 
+
+    explicit symmetric_transfer_awaiter(std::coroutine_handle<> target)
         : target_(target) {}
-    
-    bool await_ready() const noexcept { return false; }
-    
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
-        return target_;  // Symmetric transfer
+
+    bool
+    await_ready() const noexcept {
+        return false;
     }
-    
-    void await_resume() const noexcept {}
+
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<>) noexcept {
+        return target_; // Symmetric transfer
+    }
+
+    void
+    await_resume() const noexcept {}
 };
 
 // =============================================================================
@@ -143,18 +175,18 @@ struct symmetric_transfer_awaiter {
  */
 TEST_F(CoroutineAwaiterTests, ImmediateAwaiterDoesntSuspend) {
     std::atomic<int> execution_order{0};
-    auto order_ptr = &execution_order;
-    
+    auto             order_ptr = &execution_order;
+
     auto fn = [order_ptr]() -> task<void> {
         order_ptr->store(1);
         co_await immediate_awaiter{};
         order_ptr->store(2);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     coro_scheduler().run_ready();
-    
+
     // Should have completed synchronously
     EXPECT_EQ(execution_order.load(), 2);
 }
@@ -165,17 +197,17 @@ TEST_F(CoroutineAwaiterTests, ImmediateAwaiterDoesntSuspend) {
  */
 TEST_F(CoroutineAwaiterTests, ValueAwaiterReturnsValue) {
     std::atomic<int> result{0};
-    auto result_ptr = &result;
-    
+    auto             result_ptr = &result;
+
     auto fn = [result_ptr]() -> task<void> {
         int val = co_await value_awaiter<int>{42};
         result_ptr->store(val);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(10ms);
-    
+
     EXPECT_EQ(result.load(), 42);
 }
 
@@ -185,8 +217,8 @@ TEST_F(CoroutineAwaiterTests, ValueAwaiterReturnsValue) {
  */
 TEST_F(CoroutineAwaiterTests, MultipleImmediateAwaiters) {
     std::atomic<int> counter{0};
-    auto counter_ptr = &counter;
-    
+    auto             counter_ptr = &counter;
+
     auto fn = [counter_ptr]() -> task<void> {
         counter_ptr->fetch_add(1);
         co_await immediate_awaiter{};
@@ -197,10 +229,10 @@ TEST_F(CoroutineAwaiterTests, MultipleImmediateAwaiters) {
         counter_ptr->fetch_add(1);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     coro_scheduler().run_ready();
-    
+
     EXPECT_EQ(counter.load(), 4);
 }
 
@@ -214,21 +246,21 @@ TEST_F(CoroutineAwaiterTests, MultipleImmediateAwaiters) {
  */
 TEST_F(CoroutineAwaiterTests, AlwaysSuspendAwaiterSuspends) {
     std::atomic<int> stage{0};
-    auto stage_ptr = &stage;
-    
+    auto             stage_ptr = &stage;
+
     auto fn = [stage_ptr]() -> task<void> {
         stage_ptr->store(1);
         co_await always_suspend_awaiter{};
         stage_ptr->store(2);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
-    
+
     // Run one step only: coroutine runs to co_await, suspends, re-enqueues itself
     coro_scheduler().run_ready(1);
     EXPECT_EQ(stage.load(), 1);
-    
+
     // Run again (or run_for) to let it resume and complete
     run_for(10ms);
     EXPECT_EQ(stage.load(), 2);
@@ -240,22 +272,22 @@ TEST_F(CoroutineAwaiterTests, AlwaysSuspendAwaiterSuspends) {
  */
 TEST_F(CoroutineAwaiterTests, AwaiterExceptionPropagates) {
     std::atomic<bool> caught{false};
-    auto caught_ptr = &caught;
-    
+    auto              caught_ptr = &caught;
+
     auto fn = [caught_ptr]() -> task<void> {
         try {
             co_await throwing_awaiter{};
-        } catch (const std::runtime_error& e) {
+        } catch (const std::runtime_error &e) {
             if (std::string(e.what()) == "awaiter threw") {
                 caught_ptr->store(true);
             }
         }
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(10ms);
-    
+
     EXPECT_TRUE(caught.load());
 }
 
@@ -269,33 +301,42 @@ TEST_F(CoroutineAwaiterTests, AwaiterExceptionPropagates) {
  */
 TEST_F(CoroutineAwaiterTests, AwaiterDestroyedAfterAwait) {
     struct TrackedAwaiter {
-        std::atomic<bool>* destroyed;
-        
-        explicit TrackedAwaiter(std::atomic<bool>* d) : destroyed(d) {}
-        ~TrackedAwaiter() { if (destroyed) destroyed->store(true); }
-        
-        bool await_ready() const noexcept { return false; }
-        void await_suspend(std::coroutine_handle<> h) noexcept {
+        std::atomic<bool> *destroyed;
+
+        explicit TrackedAwaiter(std::atomic<bool> *d)
+            : destroyed(d) {}
+        ~TrackedAwaiter() {
+            if (destroyed)
+                destroyed->store(true);
+        }
+
+        bool
+        await_ready() const noexcept {
+            return false;
+        }
+        void
+        await_suspend(std::coroutine_handle<> h) noexcept {
             coro_scheduler().schedule_resume(h);
         }
-        void await_resume() const noexcept {}
+        void
+        await_resume() const noexcept {}
     };
-    
+
     std::atomic<bool> awaiter_destroyed{false};
     std::atomic<bool> after_await{false};
-    auto destroyed_ptr = &awaiter_destroyed;
-    auto after_ptr = &after_await;
-    
+    auto              destroyed_ptr = &awaiter_destroyed;
+    auto              after_ptr     = &after_await;
+
     auto fn = [destroyed_ptr, after_ptr]() -> task<void> {
         co_await TrackedAwaiter{destroyed_ptr};
         // Awaiter should be destroyed before this line
         after_ptr->store(true);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(50ms);
-    
+
     EXPECT_TRUE(after_await.load());
     EXPECT_TRUE(awaiter_destroyed.load());
 }
@@ -306,37 +347,43 @@ TEST_F(CoroutineAwaiterTests, AwaiterDestroyedAfterAwait) {
  */
 TEST_F(CoroutineAwaiterTests, AwaiterWithState) {
     struct StatefulAwaiter {
-        int& result;
-        int value = 0;
-        
-        explicit StatefulAwaiter(int& r) : result(r) {}
-        
-        bool await_ready() const noexcept { return false; }
-        
-        void await_suspend(std::coroutine_handle<> h) noexcept {
-            value = 42;  // Set state during suspension
+        int &result;
+        int  value = 0;
+
+        explicit StatefulAwaiter(int &r)
+            : result(r) {}
+
+        bool
+        await_ready() const noexcept {
+            return false;
+        }
+
+        void
+        await_suspend(std::coroutine_handle<> h) noexcept {
+            value = 42; // Set state during suspension
             coro_scheduler().schedule_resume(h);
         }
-        
-        int await_resume() noexcept { 
-            result = value;  // Use state in resume
-            return value; 
+
+        int
+        await_resume() noexcept {
+            result = value; // Use state in resume
+            return value;
         }
     };
-    
+
     std::atomic<int> result{0};
-    int temp = 0;
-    auto result_ptr = &result;
-    
+    int              temp       = 0;
+    auto             result_ptr = &result;
+
     auto fn = [result_ptr, &temp]() -> task<void> {
         int val = co_await StatefulAwaiter{temp};
         result_ptr->store(val);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(50ms);
-    
+
     EXPECT_EQ(result.load(), 42);
     EXPECT_EQ(temp, 42);
 }
@@ -351,28 +398,28 @@ TEST_F(CoroutineAwaiterTests, AwaiterWithState) {
  */
 TEST_F(CoroutineAwaiterTests, CustomSymmetricTransfer) {
     std::atomic<int> execution_order{0};
-    auto order_ptr = &execution_order;
-    
+    auto             order_ptr = &execution_order;
+
     auto target_fn = [order_ptr]() -> task<void> {
         order_ptr->fetch_add(100);
         co_return;
     };
-    
+
     auto caller_fn = [order_ptr, &target_fn]() -> task<void> {
         order_ptr->fetch_add(1);
-        
+
         auto target = target_fn();
         // Note: Can't easily test symmetric transfer with custom awaiter
         // as it requires access to target's handle
         co_await target;
-        
+
         order_ptr->fetch_add(10);
         co_return;
     };
-    
+
     coro_scheduler().spawn(caller_fn());
     run_for(50ms);
-    
+
     // Should execute: caller(1) + target(100) + caller(10) = 111
     EXPECT_EQ(execution_order.load(), 111);
 }
@@ -387,32 +434,37 @@ TEST_F(CoroutineAwaiterTests, CustomSymmetricTransfer) {
  */
 TEST_F(CoroutineAwaiterTests, ExceptionInAwaitSuspend) {
     struct ThrowInSuspend {
-        bool await_ready() const noexcept { return false; }
-        
-        void await_suspend(std::coroutine_handle<>) {
+        bool
+        await_ready() const noexcept {
+            return false;
+        }
+
+        void
+        await_suspend(std::coroutine_handle<>) {
             throw std::runtime_error("suspend failed");
         }
-        
-        void await_resume() const noexcept {}
+
+        void
+        await_resume() const noexcept {}
     };
-    
+
     std::atomic<bool> caught{false};
-    auto caught_ptr = &caught;
-    
+    auto              caught_ptr = &caught;
+
     auto fn = [caught_ptr]() -> task<void> {
         try {
             co_await ThrowInSuspend{};
-        } catch (const std::runtime_error& e) {
+        } catch (const std::runtime_error &e) {
             if (std::string(e.what()) == "suspend failed") {
                 caught_ptr->store(true);
             }
         }
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(50ms);
-    
+
     EXPECT_TRUE(caught.load());
 }
 
@@ -425,24 +477,24 @@ TEST_F(CoroutineAwaiterTests, ExceptionInAwaitSuspend) {
  * @brief Verify sleep() properly integrates with libev
  */
 TEST_F(CoroutineAwaiterTests, SleepAwaiterIntegration) {
-    auto start = std::chrono::steady_clock::now();
+    auto              start = std::chrono::steady_clock::now();
     std::atomic<bool> completed{false};
-    auto completed_ptr = &completed;
-    
+    auto              completed_ptr = &completed;
+
     auto fn = [completed_ptr]() -> task<void> {
         co_await sleep(50ms);
         completed_ptr->store(true);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(100ms);
-    
+
     auto elapsed = std::chrono::steady_clock::now() - start;
-    
+
     EXPECT_TRUE(completed.load());
     EXPECT_GE(elapsed, 50ms);
-    EXPECT_LT(elapsed, 150ms);  // Reasonable upper bound
+    EXPECT_LT(elapsed, 150ms); // Reasonable upper bound
 }
 
 /**
@@ -451,18 +503,18 @@ TEST_F(CoroutineAwaiterTests, SleepAwaiterIntegration) {
  */
 TEST_F(CoroutineAwaiterTests, ZeroDurationSleep) {
     std::atomic<int> execution_order{0};
-    auto order_ptr = &execution_order;
-    
+    auto             order_ptr = &execution_order;
+
     auto fn = [order_ptr]() -> task<void> {
         order_ptr->store(1);
         co_await sleep(0ms);
         order_ptr->store(2);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     EXPECT_TRUE(wait_until([order_ptr]() { return order_ptr->load() == 2; }, 100ms));
-    
+
     EXPECT_EQ(execution_order.load(), 2);
 }
 
@@ -471,10 +523,10 @@ TEST_F(CoroutineAwaiterTests, ZeroDurationSleep) {
  * @brief Verify sequential sleeps add up correctly
  */
 TEST_F(CoroutineAwaiterTests, MultipleSleepsAccumulate) {
-    auto start = std::chrono::steady_clock::now();
+    auto              start = std::chrono::steady_clock::now();
     std::atomic<bool> completed{false};
-    auto completed_ptr = &completed;
-    
+    auto              completed_ptr = &completed;
+
     auto fn = [completed_ptr]() -> task<void> {
         co_await sleep(20ms);
         co_await sleep(20ms);
@@ -482,14 +534,14 @@ TEST_F(CoroutineAwaiterTests, MultipleSleepsAccumulate) {
         completed_ptr->store(true);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     EXPECT_TRUE(wait_until([completed_ptr]() { return completed_ptr->load(); }, 250ms));
-    
+
     auto elapsed = std::chrono::steady_clock::now() - start;
-    
+
     EXPECT_TRUE(completed.load());
-    EXPECT_GE(elapsed, 60ms);  // At least 3 * 20ms
+    EXPECT_GE(elapsed, 60ms); // At least 3 * 20ms
 }
 
 // =============================================================================
@@ -502,27 +554,27 @@ TEST_F(CoroutineAwaiterTests, MultipleSleepsAccumulate) {
  */
 TEST_F(CoroutineAwaiterTests, MixedAwaiterTypes) {
     std::atomic<int> result{0};
-    auto result_ptr = &result;
-    
+    auto             result_ptr = &result;
+
     auto fn = [result_ptr]() -> task<void> {
         // Immediate awaiter
         co_await immediate_awaiter{};
         result_ptr->fetch_add(1);
-        
+
         // Value awaiter
         int val = co_await value_awaiter<int>{10};
         result_ptr->fetch_add(val);
-        
+
         // Sleep awaiter
         co_await sleep(10ms);
         result_ptr->fetch_add(100);
-        
+
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     EXPECT_TRUE(wait_until([result_ptr]() { return result_ptr->load() == 111; }, 200ms));
-    
+
     // 1 + 10 + 100 = 111
     EXPECT_EQ(result.load(), 111);
 }
@@ -533,8 +585,8 @@ TEST_F(CoroutineAwaiterTests, MixedAwaiterTypes) {
  */
 TEST_F(CoroutineAwaiterTests, AwaiterInLoop) {
     std::atomic<int> iterations{0};
-    auto iter_ptr = &iterations;
-    
+    auto             iter_ptr = &iterations;
+
     auto fn = [iter_ptr]() -> task<void> {
         for (int i = 0; i < 5; ++i) {
             co_await immediate_awaiter{};
@@ -542,10 +594,10 @@ TEST_F(CoroutineAwaiterTests, AwaiterInLoop) {
         }
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(10ms);
-    
+
     EXPECT_EQ(iterations.load(), 5);
 }
 
@@ -559,36 +611,40 @@ TEST_F(CoroutineAwaiterTests, AwaiterInLoop) {
  */
 TEST_F(CoroutineAwaiterTests, AwaiterProtocolOrder) {
     struct ProtocolTracker {
-        std::vector<std::string>* log;
-        
-        explicit ProtocolTracker(std::vector<std::string>* l) : log(l) {}
-        
-        bool await_ready() const noexcept { 
+        std::vector<std::string> *log;
+
+        explicit ProtocolTracker(std::vector<std::string> *l)
+            : log(l) {}
+
+        bool
+        await_ready() const noexcept {
             log->push_back("ready");
-            return false; 
+            return false;
         }
-        
-        void await_suspend(std::coroutine_handle<> h) noexcept {
+
+        void
+        await_suspend(std::coroutine_handle<> h) noexcept {
             log->push_back("suspend");
             coro_scheduler().schedule_resume(h);
         }
-        
-        void await_resume() const noexcept {
+
+        void
+        await_resume() const noexcept {
             log->push_back("resume");
         }
     };
-    
+
     std::vector<std::string> log;
-    auto log_ptr = &log;
-    
+    auto                     log_ptr = &log;
+
     auto fn = [log_ptr]() -> task<void> {
         co_await ProtocolTracker{log_ptr};
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(50ms);
-    
+
     ASSERT_EQ(log.size(), 3);
     EXPECT_EQ(log[0], "ready");
     EXPECT_EQ(log[1], "suspend");
@@ -601,36 +657,42 @@ TEST_F(CoroutineAwaiterTests, AwaiterProtocolOrder) {
  */
 TEST_F(CoroutineAwaiterTests, AwaiterAccessesPromise) {
     struct PromiseAccessor {
-        bool* accessed;
-        
-        explicit PromiseAccessor(bool* a) : accessed(a) {}
-        
-        bool await_ready() const noexcept { return false; }
-        
-        void await_suspend(std::coroutine_handle<> h) noexcept {
+        bool *accessed;
+
+        explicit PromiseAccessor(bool *a)
+            : accessed(a) {}
+
+        bool
+        await_ready() const noexcept {
+            return false;
+        }
+
+        void
+        await_suspend(std::coroutine_handle<> h) noexcept {
             // Verify handle is valid
             if (h && !h.done()) {
                 *accessed = true;
             }
             coro_scheduler().schedule_resume(h);
         }
-        
-        void await_resume() const noexcept {}
+
+        void
+        await_resume() const noexcept {}
     };
-    
+
     std::atomic<bool> accessed{false};
-    bool temp = false;
-    auto accessed_ptr = &accessed;
-    
+    bool              temp         = false;
+    auto              accessed_ptr = &accessed;
+
     auto fn = [accessed_ptr, &temp]() -> task<void> {
         co_await PromiseAccessor{&temp};
         accessed_ptr->store(temp);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(50ms);
-    
+
     EXPECT_TRUE(accessed.load());
 }
 
@@ -645,29 +707,37 @@ TEST_F(CoroutineAwaiterTests, AwaiterAccessesPromise) {
 TEST_F(CoroutineAwaiterTests, MoveOnlyAwaiter) {
     struct MoveOnlyAwaiter {
         std::unique_ptr<int> data;
-        
-        explicit MoveOnlyAwaiter(int val) : data(std::make_unique<int>(val)) {}
-        
-        MoveOnlyAwaiter(const MoveOnlyAwaiter&) = delete;
-        MoveOnlyAwaiter(MoveOnlyAwaiter&&) = default;
-        
-        bool await_ready() const noexcept { return true; }
-        void await_suspend(std::coroutine_handle<>) noexcept {}
-        int await_resume() noexcept { return *data; }
+
+        explicit MoveOnlyAwaiter(int val)
+            : data(std::make_unique<int>(val)) {}
+
+        MoveOnlyAwaiter(const MoveOnlyAwaiter &) = delete;
+        MoveOnlyAwaiter(MoveOnlyAwaiter &&)      = default;
+
+        bool
+        await_ready() const noexcept {
+            return true;
+        }
+        void
+        await_suspend(std::coroutine_handle<>) noexcept {}
+        int
+        await_resume() noexcept {
+            return *data;
+        }
     };
-    
+
     std::atomic<int> result{0};
-    auto result_ptr = &result;
-    
+    auto             result_ptr = &result;
+
     auto fn = [result_ptr]() -> task<void> {
         int val = co_await MoveOnlyAwaiter{42};
         result_ptr->store(val);
         co_return;
     };
-    
+
     coro_scheduler().spawn(fn());
     run_for(10ms);
-    
+
     EXPECT_EQ(result.load(), 42);
 }
 
@@ -675,7 +745,8 @@ TEST_F(CoroutineAwaiterTests, MoveOnlyAwaiter) {
 // MAIN
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

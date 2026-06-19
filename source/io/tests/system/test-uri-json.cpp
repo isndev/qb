@@ -55,8 +55,7 @@ TEST(URI, ParsesAuthorityIpv6DefaultPortQueriesAndFragment) {
     EXPECT_EQ(uri.port(), "443");
     EXPECT_EQ(uri.u_port(), 443u);
     EXPECT_EQ(uri.path(), "/api/v1/resource");
-    EXPECT_EQ(uri.encoded_queries(),
-              "name=qb+framework&dup=1&dup=2&empty=&encoded=%7Bok%7D&&flag");
+    EXPECT_EQ(uri.encoded_queries(), "name=qb+framework&dup=1&dup=2&empty=&encoded=%7Bok%7D&&flag");
     EXPECT_EQ(uri.query("name"), "qb framework");
     EXPECT_EQ(uri.query("dup", 0), "1");
     EXPECT_EQ(uri.query("dup", 1), "2");
@@ -130,9 +129,7 @@ TEST(URI, EncodesDecodesValidatesAndNormalizesPaths) {
     EXPECT_EQ(qb::io::uri::decode(std::string_view("hello+world%21")), "hello world!");
     EXPECT_EQ(qb::io::uri::decode(std::string_view("%ZZ%")), "%ZZ%");
     const std::string invalid_iterator_encoded = "ok%ZZtail";
-    EXPECT_EQ(qb::io::uri::decode(invalid_iterator_encoded.begin(),
-                                  invalid_iterator_encoded.end()),
-              "ok");
+    EXPECT_EQ(qb::io::uri::decode(invalid_iterator_encoded.begin(), invalid_iterator_encoded.end()), "ok");
     EXPECT_TRUE(qb::io::uri::decode(nullptr, 4).empty());
     EXPECT_TRUE(qb::io::uri::encode(nullptr, 4).empty());
 

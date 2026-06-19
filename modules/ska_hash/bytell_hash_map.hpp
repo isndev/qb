@@ -26,9 +26,9 @@ using ska::detailv3::KeyOrValueHasher;
 
 template <typename = void>
 struct sherwood_v8_constants {
-    static constexpr int8_t magic_for_empty = int8_t(0b11111111);
-    static constexpr int8_t magic_for_reserved = int8_t(0b11111110);
-    static constexpr int8_t bits_for_direct_hit = int8_t(0b10000000);
+    static constexpr int8_t magic_for_empty      = int8_t(0b11111111);
+    static constexpr int8_t magic_for_reserved   = int8_t(0b11111110);
+    static constexpr int8_t bits_for_direct_hit  = int8_t(0b10000000);
     static constexpr int8_t magic_for_direct_hit = int8_t(0b00000000);
     static constexpr int8_t magic_for_list_entry = int8_t(0b10000000);
 
@@ -241,36 +241,33 @@ struct sherwood_v8_block {
     }
 };
 
-template <typename T, typename FindKey, typename ArgumentHash, typename Hasher,
-          typename ArgumentEqual, typename Equal, typename ArgumentAlloc,
+template <typename T, typename FindKey, typename ArgumentHash, typename Hasher, typename ArgumentEqual, typename Equal, typename ArgumentAlloc,
           typename ByteAlloc, uint8_t BlockSize>
 class sherwood_v8_table
     : private ByteAlloc
     , private Hasher
     , private Equal {
     using AllocatorTraits = std::allocator_traits<ByteAlloc>;
-    using BlockType = sherwood_v8_block<T, BlockSize>;
-    using BlockPointer = BlockType *;
-    using BytePointer = typename AllocatorTraits::pointer;
+    using BlockType       = sherwood_v8_block<T, BlockSize>;
+    using BlockPointer    = BlockType *;
+    using BytePointer     = typename AllocatorTraits::pointer;
     struct convertible_to_iterator;
     using Constants = sherwood_v8_constants<>;
 
 public:
-    using value_type = T;
-    using size_type = size_t;
+    using value_type      = T;
+    using size_type       = size_t;
     using difference_type = std::ptrdiff_t;
-    using hasher = ArgumentHash;
-    using key_equal = ArgumentEqual;
-    using allocator_type = ByteAlloc;
-    using reference = value_type &;
+    using hasher          = ArgumentHash;
+    using key_equal       = ArgumentEqual;
+    using allocator_type  = ByteAlloc;
+    using reference       = value_type &;
     using const_reference = const value_type &;
-    using pointer = value_type *;
-    using const_pointer = const value_type *;
+    using pointer         = value_type *;
+    using const_pointer   = const value_type *;
 
     sherwood_v8_table() {}
-    explicit sherwood_v8_table(size_type bucket_count,
-                               const ArgumentHash &hash = ArgumentHash(),
-                               const ArgumentEqual &equal = ArgumentEqual(),
+    explicit sherwood_v8_table(size_type bucket_count, const ArgumentHash &hash = ArgumentHash(), const ArgumentEqual &equal = ArgumentEqual(),
                                const ArgumentAlloc &alloc = ArgumentAlloc())
         : ByteAlloc(alloc)
         , Hasher(hash)
@@ -280,47 +277,35 @@ public:
     }
     sherwood_v8_table(size_type bucket_count, const ArgumentAlloc &alloc)
         : sherwood_v8_table(bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
-    sherwood_v8_table(size_type bucket_count, const ArgumentHash &hash,
-                      const ArgumentAlloc &alloc)
+    sherwood_v8_table(size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
         : sherwood_v8_table(bucket_count, hash, ArgumentEqual(), alloc) {}
     explicit sherwood_v8_table(const ArgumentAlloc &alloc)
         : ByteAlloc(alloc) {}
     template <typename It>
-    sherwood_v8_table(It first, It last, size_type bucket_count = 0,
-                      const ArgumentHash &hash = ArgumentHash(),
-                      const ArgumentEqual &equal = ArgumentEqual(),
-                      const ArgumentAlloc &alloc = ArgumentAlloc())
+    sherwood_v8_table(It first, It last, size_type bucket_count = 0, const ArgumentHash &hash = ArgumentHash(),
+                      const ArgumentEqual &equal = ArgumentEqual(), const ArgumentAlloc &alloc = ArgumentAlloc())
         : sherwood_v8_table(bucket_count, hash, equal, alloc) {
         insert(first, last);
     }
     template <typename It>
-    sherwood_v8_table(It first, It last, size_type bucket_count,
-                      const ArgumentAlloc &alloc)
-        : sherwood_v8_table(first, last, bucket_count, ArgumentHash(), ArgumentEqual(),
-                            alloc) {}
+    sherwood_v8_table(It first, It last, size_type bucket_count, const ArgumentAlloc &alloc)
+        : sherwood_v8_table(first, last, bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
     template <typename It>
-    sherwood_v8_table(It first, It last, size_type bucket_count,
-                      const ArgumentHash &hash, const ArgumentAlloc &alloc)
+    sherwood_v8_table(It first, It last, size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
         : sherwood_v8_table(first, last, bucket_count, hash, ArgumentEqual(), alloc) {}
-    sherwood_v8_table(std::initializer_list<T> il, size_type bucket_count = 0,
-                      const ArgumentHash &hash = ArgumentHash(),
-                      const ArgumentEqual &equal = ArgumentEqual(),
-                      const ArgumentAlloc &alloc = ArgumentAlloc())
+    sherwood_v8_table(std::initializer_list<T> il, size_type bucket_count = 0, const ArgumentHash &hash = ArgumentHash(),
+                      const ArgumentEqual &equal = ArgumentEqual(), const ArgumentAlloc &alloc = ArgumentAlloc())
         : sherwood_v8_table(bucket_count, hash, equal, alloc) {
         if (bucket_count == 0)
             rehash(il.size());
         insert(il.begin(), il.end());
     }
-    sherwood_v8_table(std::initializer_list<T> il, size_type bucket_count,
-                      const ArgumentAlloc &alloc)
+    sherwood_v8_table(std::initializer_list<T> il, size_type bucket_count, const ArgumentAlloc &alloc)
         : sherwood_v8_table(il, bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
-    sherwood_v8_table(std::initializer_list<T> il, size_type bucket_count,
-                      const ArgumentHash &hash, const ArgumentAlloc &alloc)
+    sherwood_v8_table(std::initializer_list<T> il, size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
         : sherwood_v8_table(il, bucket_count, hash, ArgumentEqual(), alloc) {}
     sherwood_v8_table(const sherwood_v8_table &other)
-        : sherwood_v8_table(other,
-                            AllocatorTraits::select_on_container_copy_construction(
-                                other.get_allocator())) {}
+        : sherwood_v8_table(other, AllocatorTraits::select_on_container_copy_construction(other.get_allocator())) {}
     sherwood_v8_table(const sherwood_v8_table &other, const ArgumentAlloc &alloc)
         : ByteAlloc(alloc)
         , Hasher(other)
@@ -356,18 +341,14 @@ public:
 
         clear();
         if (AllocatorTraits::propagate_on_container_copy_assignment::value) {
-            if (static_cast<ByteAlloc &>(*this) !=
-                static_cast<const ByteAlloc &>(other)) {
+            if (static_cast<ByteAlloc &>(*this) != static_cast<const ByteAlloc &>(other)) {
                 reset_to_empty_state();
             }
-            AssignIfTrue<
-                ByteAlloc,
-                AllocatorTraits::propagate_on_container_copy_assignment::value>()(*this,
-                                                                                  other);
+            AssignIfTrue<ByteAlloc, AllocatorTraits::propagate_on_container_copy_assignment::value>()(*this, other);
         }
-        _max_load_factor = other._max_load_factor;
+        _max_load_factor             = other._max_load_factor;
         static_cast<Hasher &>(*this) = other;
-        static_cast<Equal &>(*this) = other;
+        static_cast<Equal &>(*this)  = other;
         rehash_for_other_container(other);
         insert(other.begin(), other.end());
         return *this;
@@ -379,10 +360,7 @@ public:
         else if (AllocatorTraits::propagate_on_container_move_assignment::value) {
             clear();
             reset_to_empty_state();
-            AssignIfTrue<
-                ByteAlloc,
-                AllocatorTraits::propagate_on_container_move_assignment::value>()(
-                *this, std::move(other));
+            AssignIfTrue<ByteAlloc, AllocatorTraits::propagate_on_container_move_assignment::value>()(*this, std::move(other));
             swap_pointers(other);
         } else if (static_cast<ByteAlloc &>(*this) == static_cast<ByteAlloc &>(other)) {
             swap_pointers(other);
@@ -395,7 +373,7 @@ public:
             other.clear();
         }
         static_cast<Hasher &>(*this) = std::move(other);
-        static_cast<Equal &>(*this) = std::move(other);
+        static_cast<Equal &>(*this)  = std::move(other);
         return *this;
     }
     ~sherwood_v8_table() {
@@ -421,7 +399,7 @@ public:
     private:
         friend class sherwood_v8_table;
         BlockPointer current = BlockPointer();
-        size_t index = 0;
+        size_t       index   = 0;
 
     public:
         templated_iterator() {}
@@ -430,10 +408,10 @@ public:
             , index(index) {}
 
         using iterator_category = std::forward_iterator_tag;
-        using value_type = ValueType;
-        using difference_type = ptrdiff_t;
-        using pointer = ValueType *;
-        using reference = ValueType &;
+        using value_type        = ValueType;
+        using difference_type   = ptrdiff_t;
+        using pointer           = ValueType *;
+        using reference         = ValueType &;
 
         friend bool
         operator==(const templated_iterator &lhs, const templated_iterator &rhs) {
@@ -451,8 +429,7 @@ public:
                     --current;
                 if (index-- == 0)
                     break;
-            } while (current->control_bytes[index % BlockSize] ==
-                     Constants::magic_for_empty);
+            } while (current->control_bytes[index % BlockSize] == Constants::magic_for_empty);
             return *this;
         }
         templated_iterator
@@ -475,7 +452,7 @@ public:
             return {current, index};
         }
     };
-    using iterator = templated_iterator<value_type>;
+    using iterator       = templated_iterator<value_type>;
     using const_iterator = templated_iterator<const value_type>;
 
     iterator
@@ -507,19 +484,18 @@ public:
 
     inline iterator
     find(const FindKey &key) {
-        size_t index = hash_object(key);
-        size_t num_slots_minus_one = this->num_slots_minus_one;
-        BlockPointer entries = this->entries;
-        index = hash_policy.index_for_hash(index, num_slots_minus_one);
-        bool first = true;
+        size_t       index               = hash_object(key);
+        size_t       num_slots_minus_one = this->num_slots_minus_one;
+        BlockPointer entries             = this->entries;
+        index                            = hash_policy.index_for_hash(index, num_slots_minus_one);
+        bool first                       = true;
         for (;;) {
-            size_t block_index = index / BlockSize;
-            int index_in_block = index % BlockSize;
-            BlockPointer block = entries + block_index;
-            int8_t metadata = block->control_bytes[index_in_block];
+            size_t       block_index    = index / BlockSize;
+            int          index_in_block = index % BlockSize;
+            BlockPointer block          = entries + block_index;
+            int8_t       metadata       = block->control_bytes[index_in_block];
             if (first) {
-                if ((metadata & Constants::bits_for_direct_hit) !=
-                    Constants::magic_for_direct_hit)
+                if ((metadata & Constants::bits_for_direct_hit) != Constants::magic_for_direct_hit)
                     return end();
                 first = false;
             }
@@ -560,29 +536,26 @@ public:
     template <typename Key, typename... Args>
     inline std::pair<iterator, bool>
     emplace(Key &&key, Args &&...args) {
-        size_t index = hash_object(key);
-        size_t num_slots_minus_one = this->num_slots_minus_one;
-        BlockPointer entries = this->entries;
-        index = hash_policy.index_for_hash(index, num_slots_minus_one);
-        bool first = true;
+        size_t       index               = hash_object(key);
+        size_t       num_slots_minus_one = this->num_slots_minus_one;
+        BlockPointer entries             = this->entries;
+        index                            = hash_policy.index_for_hash(index, num_slots_minus_one);
+        bool first                       = true;
         for (;;) {
-            size_t block_index = index / BlockSize;
-            int index_in_block = index % BlockSize;
-            BlockPointer block = entries + block_index;
-            int8_t metadata = block->control_bytes[index_in_block];
+            size_t       block_index    = index / BlockSize;
+            int          index_in_block = index % BlockSize;
+            BlockPointer block          = entries + block_index;
+            int8_t       metadata       = block->control_bytes[index_in_block];
             if (first) {
-                if ((metadata & Constants::bits_for_direct_hit) !=
-                    Constants::magic_for_direct_hit)
-                    return emplace_direct_hit({index, block}, std::forward<Key>(key),
-                                              std::forward<Args>(args)...);
+                if ((metadata & Constants::bits_for_direct_hit) != Constants::magic_for_direct_hit)
+                    return emplace_direct_hit({index, block}, std::forward<Key>(key), std::forward<Args>(args)...);
                 first = false;
             }
             if (compares_equal(key, block->data[index_in_block]))
                 return {{block, index}, false};
             int8_t to_next_index = metadata & Constants::bits_for_distance;
             if (to_next_index == 0)
-                return emplace_new_key({index, block}, std::forward<Key>(key),
-                                       std::forward<Args>(args)...);
+                return emplace_new_key({index, block}, std::forward<Key>(key), std::forward<Args>(args)...);
             index += Constants::jump_distances[to_next_index];
             index = hash_policy.keep_in_range(index, num_slots_minus_one);
         }
@@ -624,9 +597,7 @@ public:
 
     void
     rehash(size_t num_items) {
-        num_items = std::max(num_items,
-                             static_cast<size_t>(std::ceil(
-                                 num_elements / static_cast<double>(_max_load_factor))));
+        num_items = std::max(num_items, static_cast<size_t>(std::ceil(num_elements / static_cast<double>(_max_load_factor))));
         if (num_items == 0) {
             reset_to_empty_state();
             return;
@@ -637,9 +608,8 @@ public:
         size_t num_blocks = num_items / BlockSize;
         if (num_items % BlockSize)
             ++num_blocks;
-        size_t memory_requirement = calculate_memory_requirement(num_blocks);
-        unsigned char *new_memory =
-            &*AllocatorTraits::allocate(*this, memory_requirement);
+        size_t         memory_requirement = calculate_memory_requirement(num_blocks);
+        unsigned char *new_memory         = &*AllocatorTraits::allocate(*this, memory_requirement);
 
         BlockPointer new_buckets = reinterpret_cast<BlockPointer>(new_memory);
 
@@ -657,12 +627,10 @@ public:
         size_t old_num_blocks = num_items / BlockSize;
         if (num_items % BlockSize)
             ++old_num_blocks;
-        for (BlockPointer it = new_buckets, end = new_buckets + old_num_blocks;
-             it != end; ++it) {
+        for (BlockPointer it = new_buckets, end = new_buckets + old_num_blocks; it != end; ++it) {
             for (int i = 0; i < BlockSize; ++i) {
                 int8_t metadata = it->control_bytes[i];
-                if (metadata != Constants::magic_for_empty &&
-                    metadata != Constants::magic_for_reserved) {
+                if (metadata != Constants::magic_for_empty && metadata != Constants::magic_for_reserved) {
                     emplace(std::move(it->data[i]));
                     AllocatorTraits::destroy(*this, it->data + i);
                 }
@@ -687,14 +655,13 @@ public:
         LinkedListIt current = {to_erase.index, to_erase.current};
         if (current.has_next()) {
             LinkedListIt previous = current;
-            LinkedListIt next = current.next(*this);
+            LinkedListIt next     = current.next(*this);
             while (next.has_next()) {
                 previous = next;
-                next = next.next(*this);
+                next     = next.next(*this);
             }
             AllocatorTraits::destroy(*this, std::addressof(*current));
-            AllocatorTraits::construct(*this, std::addressof(*current),
-                                       std::move(*next));
+            AllocatorTraits::construct(*this, std::addressof(*current), std::move(*next));
             AllocatorTraits::destroy(*this, std::addressof(*next));
             next.set_metadata(Constants::magic_for_empty);
             previous.clear_next();
@@ -724,8 +691,8 @@ public:
             if (list_it.is_direct_hit())
                 depth_in_chain.emplace_back(0, list_it);
             else {
-                LinkedListIt root = find_direct_hit(list_it);
-                int distance = 1;
+                LinkedListIt root     = find_direct_hit(list_it);
+                int          distance = 1;
                 for (;;) {
                     LinkedListIt next = root.next(*this);
                     if (next == list_it)
@@ -736,15 +703,12 @@ public:
                 depth_in_chain.emplace_back(distance, list_it);
             }
         }
-        std::sort(depth_in_chain.begin(), depth_in_chain.end(),
-                  [](const auto &a, const auto &b) { return a.first < b.first; });
-        for (auto it = depth_in_chain.rbegin(), end = depth_in_chain.rend(); it != end;
-             ++it) {
+        std::sort(depth_in_chain.begin(), depth_in_chain.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+        for (auto it = depth_in_chain.rbegin(), end = depth_in_chain.rend(); it != end; ++it) {
             erase(it->second.it());
         }
 
-        if (begin_it.current->control_bytes[begin_it.index % BlockSize] ==
-            Constants::magic_for_empty)
+        if (begin_it.current->control_bytes[begin_it.index % BlockSize] == Constants::magic_for_empty)
             return ++iterator{begin_it.current, begin_it.index};
         else
             return {begin_it.current, begin_it.index};
@@ -765,7 +729,7 @@ public:
     clear() {
         if (!num_slots_minus_one)
             return;
-        size_t num_slots = num_slots_minus_one + 1;
+        size_t num_slots  = num_slots_minus_one + 1;
         size_t num_blocks = num_slots / BlockSize;
         if (num_slots % BlockSize)
             ++num_blocks;
@@ -834,16 +798,15 @@ public:
     }
 
 private:
-    BlockPointer entries = BlockType::empty_block();
-    size_t num_slots_minus_one = 0;
+    BlockPointer                                    entries             = BlockType::empty_block();
+    size_t                                          num_slots_minus_one = 0;
     typename HashPolicySelector<ArgumentHash>::type hash_policy;
-    float _max_load_factor = 0.9375f;
-    size_t num_elements = 0;
+    float                                           _max_load_factor = 0.9375f;
+    size_t                                          num_elements     = 0;
 
     size_t
     num_buckets_for_reserve(size_t num_elements) const {
-        return static_cast<size_t>(
-            std::ceil(num_elements / static_cast<double>(_max_load_factor)));
+        return static_cast<size_t>(std::ceil(num_elements / static_cast<double>(_max_load_factor)));
     }
     void
     rehash_for_other_container(const sherwood_v8_table &other) {
@@ -854,8 +817,7 @@ private:
         if (!num_slots_minus_one)
             return true;
         else
-            return num_elements + 1 >
-                   (num_slots_minus_one + 1) * static_cast<double>(_max_load_factor);
+            return num_elements + 1 > (num_slots_minus_one + 1) * static_cast<double>(_max_load_factor);
     }
 
     void
@@ -869,7 +831,7 @@ private:
     }
 
     struct LinkedListIt {
-        size_t index = 0;
+        size_t       index = 0;
         BlockPointer block = nullptr;
 
         LinkedListIt() {}
@@ -887,8 +849,7 @@ private:
         }
         bool
         is_direct_hit() const {
-            return (metadata() & Constants::bits_for_direct_hit) ==
-                   Constants::magic_for_direct_hit;
+            return (metadata() & Constants::bits_for_direct_hit) == Constants::magic_for_direct_hit;
         }
         bool
         is_empty() const {
@@ -913,15 +874,14 @@ private:
 
         LinkedListIt
         next(sherwood_v8_table &table) const {
-            int8_t distance = jump_index();
-            size_t next_index = table.hash_policy.keep_in_range(
-                index + Constants::jump_distances[distance], table.num_slots_minus_one);
+            int8_t distance   = jump_index();
+            size_t next_index = table.hash_policy.keep_in_range(index + Constants::jump_distances[distance], table.num_slots_minus_one);
             return {next_index, table.entries + next_index / BlockSize};
         }
         void
         set_next(int8_t jump_index) {
             int8_t &metadata = block->control_bytes[index_in_block()];
-            metadata = (metadata & ~Constants::bits_for_distance) | jump_index;
+            metadata         = (metadata & ~Constants::bits_for_distance) | jump_index;
         }
         void
         clear_next() {
@@ -936,7 +896,8 @@ private:
         operator!() const {
             return !block;
         }
-        explicit operator bool() const {
+        explicit
+        operator bool() const {
             return block != nullptr;
         }
         bool
@@ -958,22 +919,20 @@ private:
             return emplace(std::forward<Args>(args)...);
         }
         if (block.metadata() == Constants::magic_for_empty) {
-            AllocatorTraits::construct(*this, std::addressof(*block),
-                                       std::forward<Args>(args)...);
+            AllocatorTraits::construct(*this, std::addressof(*block), std::forward<Args>(args)...);
             block.set_metadata(Constants::magic_for_direct_hit);
             ++num_elements;
             return {block.it(), true};
         } else {
-            LinkedListIt parent_block = find_parent_block(block);
-            std::pair<int8_t, LinkedListIt> free_block = find_free_index(parent_block);
+            LinkedListIt                    parent_block = find_parent_block(block);
+            std::pair<int8_t, LinkedListIt> free_block   = find_free_index(parent_block);
             if (!free_block.first) {
                 grow();
                 return emplace(std::forward<Args>(args)...);
             }
             value_type new_value(std::forward<Args>(args)...);
             for (LinkedListIt it = block;;) {
-                AllocatorTraits::construct(*this, std::addressof(*free_block.second),
-                                           std::move(*it));
+                AllocatorTraits::construct(*this, std::addressof(*free_block.second), std::move(*it));
                 AllocatorTraits::destroy(*this, std::addressof(*it));
                 parent_block.set_next(free_block.first);
                 free_block.second.set_metadata(Constants::magic_for_list_entry);
@@ -984,16 +943,15 @@ private:
                 LinkedListIt next = it.next(*this);
                 it.set_metadata(Constants::magic_for_empty);
                 block.set_metadata(Constants::magic_for_reserved);
-                it = next;
+                it           = next;
                 parent_block = free_block.second;
-                free_block = find_free_index(free_block.second);
+                free_block   = find_free_index(free_block.second);
                 if (!free_block.first) {
                     grow();
                     return emplace(std::move(new_value));
                 }
             }
-            AllocatorTraits::construct(*this, std::addressof(*block),
-                                       std::move(new_value));
+            AllocatorTraits::construct(*this, std::addressof(*block), std::move(new_value));
             block.set_metadata(Constants::magic_for_direct_hit);
             ++num_elements;
             return {block.it(), true};
@@ -1012,8 +970,7 @@ private:
             grow();
             return emplace(std::forward<Args>(args)...);
         }
-        AllocatorTraits::construct(*this, std::addressof(*free_block.second),
-                                   std::forward<Args>(args)...);
+        AllocatorTraits::construct(*this, std::addressof(*free_block.second), std::forward<Args>(args)...);
         free_block.second.set_metadata(Constants::magic_for_list_entry);
         parent.set_next(free_block.first);
         ++num_elements;
@@ -1022,9 +979,8 @@ private:
 
     LinkedListIt
     find_direct_hit(LinkedListIt child) const {
-        size_t to_move_hash = hash_object(*child);
-        size_t to_move_index =
-            hash_policy.index_for_hash(to_move_hash, num_slots_minus_one);
+        size_t to_move_hash  = hash_object(*child);
+        size_t to_move_index = hash_policy.index_for_hash(to_move_hash, num_slots_minus_one);
         return {to_move_index, entries + to_move_index / BlockSize};
     }
     LinkedListIt
@@ -1040,11 +996,8 @@ private:
 
     std::pair<int8_t, LinkedListIt>
     find_free_index(LinkedListIt parent) const {
-        for (int8_t jump_index = 1; jump_index < Constants::num_jump_distances;
-             ++jump_index) {
-            size_t index = hash_policy.keep_in_range(
-                parent.index + Constants::jump_distances[jump_index],
-                num_slots_minus_one);
+        for (int8_t jump_index = 1; jump_index < Constants::num_jump_distances; ++jump_index) {
+            size_t       index = hash_policy.keep_in_range(parent.index + Constants::jump_distances[jump_index], num_slots_minus_one);
             BlockPointer block = entries + index / BlockSize;
             if (block->control_bytes[index % BlockSize] == Constants::magic_for_empty)
                 return {jump_index, {index, block}};
@@ -1073,16 +1026,15 @@ private:
         size_t num_blocks = num_slots_minus_one / BlockSize;
         if (num_slots_minus_one % BlockSize)
             ++num_blocks;
-        size_t memory = calculate_memory_requirement(num_blocks);
+        size_t         memory          = calculate_memory_requirement(num_blocks);
         unsigned char *as_byte_pointer = reinterpret_cast<unsigned char *>(begin);
-        AllocatorTraits::deallocate(
-            *this, typename AllocatorTraits::pointer(as_byte_pointer), memory);
+        AllocatorTraits::deallocate(*this, typename AllocatorTraits::pointer(as_byte_pointer), memory);
     }
 
     void
     reset_to_empty_state() {
         deallocate_data(entries, num_slots_minus_one);
-        entries = BlockType::empty_block();
+        entries             = BlockType::empty_block();
         num_slots_minus_one = 0;
         hash_policy.reset();
     }
@@ -1105,7 +1057,7 @@ private:
 
     struct convertible_to_iterator {
         BlockPointer it;
-        size_t index;
+        size_t       index;
 
         operator iterator() {
             if (it->control_bytes[index % BlockSize] == Constants::magic_for_empty)
@@ -1135,7 +1087,7 @@ template <typename First, typename... More>
 struct CalculateBytellBlockSize<First, More...> {
     static constexpr size_t this_value = AlignmentOr8Bytes<First>::value;
     static constexpr size_t base_value = CalculateBytellBlockSize<More...>::value;
-    static constexpr size_t value = this_value > base_value ? this_value : base_value;
+    static constexpr size_t value      = this_value > base_value ? this_value : base_value;
 };
 template <>
 struct CalculateBytellBlockSize<> {
@@ -1143,22 +1095,17 @@ struct CalculateBytellBlockSize<> {
 };
 } // namespace detailv8
 
-template <typename K, typename V, typename H = std::hash<K>,
-          typename E = std::equal_to<K>, typename A = std::allocator<std::pair<K, V>>>
+template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<K, V>>>
 class bytell_hash_map
     : public detailv8::sherwood_v8_table<
-          std::pair<K, V>, K, H, detailv8::KeyOrValueHasher<K, std::pair<K, V>, H>, E,
-          detailv8::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
-          typename std::allocator_traits<A>::template rebind_alloc<unsigned char>,
-          detailv8::CalculateBytellBlockSize<K, V>::value> {
+          std::pair<K, V>, K, H, detailv8::KeyOrValueHasher<K, std::pair<K, V>, H>, E, detailv8::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
+          typename std::allocator_traits<A>::template rebind_alloc<unsigned char>, detailv8::CalculateBytellBlockSize<K, V>::value> {
     using Table = detailv8::sherwood_v8_table<
-        std::pair<K, V>, K, H, detailv8::KeyOrValueHasher<K, std::pair<K, V>, H>, E,
-        detailv8::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
-        typename std::allocator_traits<A>::template rebind_alloc<unsigned char>,
-        detailv8::CalculateBytellBlockSize<K, V>::value>;
+        std::pair<K, V>, K, H, detailv8::KeyOrValueHasher<K, std::pair<K, V>, H>, E, detailv8::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
+        typename std::allocator_traits<A>::template rebind_alloc<unsigned char>, detailv8::CalculateBytellBlockSize<K, V>::value>;
 
 public:
-    using key_type = K;
+    using key_type    = K;
     using mapped_type = V;
 
     using Table::Table;
@@ -1228,8 +1175,7 @@ public:
     template <typename... Args>
     std::pair<typename Table::iterator, bool>
     try_emplace(key_type &&key, Args &&...args) {
-        return try_emplace_impl(std::forward<key_type>(key),
-                                std::forward<Args>(args)...);
+        return try_emplace_impl(std::forward<key_type>(key), std::forward<Args>(args)...);
     }
 
     template <typename... Args>
@@ -1240,8 +1186,7 @@ public:
     template <typename... Args>
     typename Table::iterator
     try_emplace(typename Table::const_iterator, key_type &&key, Args &&...args) {
-        return try_emplace(std::forward<key_type>(key), std::forward<Args>(args)...)
-            .first;
+        return try_emplace(std::forward<key_type>(key), std::forward<Args>(args)...).first;
     }
 
     friend bool
@@ -1274,25 +1219,19 @@ private:
     try_emplace_impl(KeyType &&key, Args &&...args) {
         auto res = this->find(key);
         if (res == this->end())
-            return this->emplace(std::forward<KeyType>(key),
-                                 std::forward<Args>(args)...);
+            return this->emplace(std::forward<KeyType>(key), std::forward<Args>(args)...);
         return {{res}, false};
     }
 };
 
-template <typename T, typename H = std::hash<T>, typename E = std::equal_to<T>,
-          typename A = std::allocator<T>>
+template <typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T>>
 class bytell_hash_set
-    : public detailv8::sherwood_v8_table<
-          T, T, H, detailv8::functor_storage<size_t, H>, E,
-          detailv8::functor_storage<bool, E>, A,
-          typename std::allocator_traits<A>::template rebind_alloc<unsigned char>,
-          detailv8::CalculateBytellBlockSize<T>::value> {
-    using Table = detailv8::sherwood_v8_table<
-        T, T, H, detailv8::functor_storage<size_t, H>, E,
-        detailv8::functor_storage<bool, E>, A,
-        typename std::allocator_traits<A>::template rebind_alloc<unsigned char>,
-        detailv8::CalculateBytellBlockSize<T>::value>;
+    : public detailv8::sherwood_v8_table<T, T, H, detailv8::functor_storage<size_t, H>, E, detailv8::functor_storage<bool, E>, A,
+                                         typename std::allocator_traits<A>::template rebind_alloc<unsigned char>,
+                                         detailv8::CalculateBytellBlockSize<T>::value> {
+    using Table = detailv8::sherwood_v8_table<T, T, H, detailv8::functor_storage<size_t, H>, E, detailv8::functor_storage<bool, E>, A,
+                                              typename std::allocator_traits<A>::template rebind_alloc<unsigned char>,
+                                              detailv8::CalculateBytellBlockSize<T>::value>;
 
 public:
     using key_type = T;

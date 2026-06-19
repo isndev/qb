@@ -8,7 +8,7 @@
  * - check_cancelled: Awaiter for cancellation
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -33,7 +33,7 @@
 // use only (one qb-io VirtualCore thread). Cross-thread cancellation must go
 // through the qb actor event system — an actor on Thread B sends a Cancel event
 // to the actor on Thread A, which then calls token.cancel() on its own thread.
-#include <qb/system/timestamp.h>  // qb::duration
+#include <qb/system/timestamp.h> // qb::duration
 #include <chrono>
 #include <exception>
 #include <functional>
@@ -50,7 +50,8 @@ namespace qb::io::async {
  */
 class cancelled_error : public std::runtime_error {
 public:
-    cancelled_error() : std::runtime_error("Operation was cancelled") {}
+    cancelled_error()
+        : std::runtime_error("Operation was cancelled") {}
 };
 
 // Forward declaration
@@ -79,7 +80,7 @@ public:
     // Plain bool and no mutex: single-thread cooperative scheduler.
     // cancel() and on_cancel() are always called on the same VirtualCore thread.
     struct state {
-        bool cancelled{false};
+        bool                               cancelled{false};
         std::vector<std::function<void()>> callbacks;
     };
 
@@ -87,12 +88,13 @@ private:
     std::shared_ptr<state> _state;
 
 public:
-    cancellation_token() : _state(std::make_shared<state>()) {}
+    cancellation_token()
+        : _state(std::make_shared<state>()) {}
 
-    cancellation_token(const cancellation_token&) = default;
-    cancellation_token(cancellation_token&&) = default;
-    cancellation_token& operator=(const cancellation_token&) = default;
-    cancellation_token& operator=(cancellation_token&&) = default;
+    cancellation_token(const cancellation_token &)            = default;
+    cancellation_token(cancellation_token &&)                 = default;
+    cancellation_token &operator=(const cancellation_token &) = default;
+    cancellation_token &operator=(cancellation_token &&)      = default;
 
     /**
      * @brief Cancel all operations using this token.
@@ -101,23 +103,29 @@ public:
      * this token. For cross-thread cancellation, send a qb actor event to the
      * owning thread and call cancel() from its event handler.
      */
-    void cancel() {
+    void
+    cancel() {
         if (!_state->cancelled) {
             _state->cancelled = true;
-            auto callbacks = std::move(_state->callbacks);
-            for (auto& cb : callbacks)
-                if (cb) cb();
+            auto callbacks    = std::move(_state->callbacks);
+            for (auto &cb : callbacks)
+                if (cb)
+                    cb();
         }
     }
 
-    bool is_cancelled() const noexcept { return _state->cancelled; }
+    bool
+    is_cancelled() const noexcept {
+        return _state->cancelled;
+    }
 
     /**
      * @brief Register a callback invoked when cancel() is called.
      *
      * If already cancelled, the callback is invoked immediately (same thread).
      */
-    void on_cancel(std::function<void()> callback) {
+    void
+    on_cancel(std::function<void()> callback) {
         if (_state->cancelled) {
             callback();
         } else {
@@ -125,11 +133,16 @@ public:
         }
     }
 
-    void throw_if_cancelled() const {
-        if (_state->cancelled) throw cancelled_error();
+    void
+    throw_if_cancelled() const {
+        if (_state->cancelled)
+            throw cancelled_error();
     }
 
-    std::shared_ptr<state> get_state() const { return _state; }
+    std::shared_ptr<state>
+    get_state() const {
+        return _state;
+    }
 };
 
 /**
@@ -141,7 +154,7 @@ public:
  * @endcode
  */
 struct cancellation_awaiter {
-    cancellation_token token;
+    cancellation_token      token;
     std::coroutine_handle<> _handle;
     // Shared liveness flag: the on_cancel callback outlives this awaiter inside
     // the token's callback list. If the awaiting coroutine frame is destroyed
@@ -153,26 +166,32 @@ struct cancellation_awaiter {
     // Explicit constructor: the user-declared destructor below makes this type a
     // non-aggregate, so the brace-init in check_cancelled() needs a constructor.
     cancellation_awaiter(cancellation_token t, std::coroutine_handle<> h)
-        : token(std::move(t)), _handle(h) {}
+        : token(std::move(t))
+        , _handle(h) {}
 
-    [[nodiscard]] bool await_ready() const {
+    [[nodiscard]] bool
+    await_ready() const {
         return token.is_cancelled();
     }
 
-    void await_suspend(std::coroutine_handle<> h) {
-        _handle = h;
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        _handle    = h;
         auto alive = _alive;
         token.on_cancel([h, alive]() {
-            if (*alive) schedule_via_current(h);
+            if (*alive)
+                schedule_via_current(h);
         });
     }
 
-    void await_resume() {
+    void
+    await_resume() {
         token.throw_if_cancelled();
     }
 
     ~cancellation_awaiter() {
-        if (_alive) *_alive = false;
+        if (_alive)
+            *_alive = false;
     }
 };
 
@@ -182,7 +201,8 @@ struct cancellation_awaiter {
  * @return Awaiter that throws cancelled_error when cancelled
  * @ingroup Coroutine
  */
-inline cancellation_awaiter check_cancelled(const cancellation_token& token) {
+inline cancellation_awaiter
+check_cancelled(const cancellation_token &token) {
     return cancellation_awaiter{token, std::coroutine_handle<>{}};
 }
 
@@ -196,13 +216,18 @@ inline cancellation_awaiter check_cancelled(const cancellation_token& token) {
 struct yield_awaiter {
     cancellation_token token;
 
-    [[nodiscard]] bool await_ready() const { return false; }
+    [[nodiscard]] bool
+    await_ready() const {
+        return false;
+    }
 
-    void await_suspend(std::coroutine_handle<> h) {
+    void
+    await_suspend(std::coroutine_handle<> h) {
         enqueue_for_later_via_current(h);
     }
 
-    void await_resume() {
+    void
+    await_resume() {
         token.throw_if_cancelled();
     }
 };
@@ -213,7 +238,8 @@ struct yield_awaiter {
  * @return Awaiter that yields and throws if cancelled
  * @ingroup Coroutine
  */
-inline yield_awaiter yield_or_cancel(const cancellation_token& token) {
+inline yield_awaiter
+yield_or_cancel(const cancellation_token &token) {
     return yield_awaiter{token};
 }
 
@@ -230,35 +256,38 @@ inline yield_awaiter yield_or_cancel(const cancellation_token& token) {
 template <typename T>
 class cancellable_operation {
     struct shared_state {
-        task<T> inner_task;
-        std::optional<T> result;
-        std::exception_ptr error;       ///< inner task exception, propagated on resume
-        bool task_done{false};  // single-thread: no atomic needed
+        task<T>                 inner_task;
+        std::optional<T>        result;
+        std::exception_ptr      error;            ///< inner task exception, propagated on resume
+        bool                    task_done{false}; // single-thread: no atomic needed
         std::coroutine_handle<> continuation;
 
-        explicit shared_state(task<T>&& t) : inner_task(std::move(t)) {}
+        explicit shared_state(task<T> &&t)
+            : inner_task(std::move(t)) {}
     };
 
     std::shared_ptr<shared_state> _shared;
-    cancellation_token _token;
-    bool _throw_on_cancel;
+    cancellation_token            _token;
+    bool                          _throw_on_cancel;
 
 public:
-    cancellable_operation(task<T>&& t, cancellation_token token, bool throw_on_cancel = true)
+    cancellable_operation(task<T> &&t, cancellation_token token, bool throw_on_cancel = true)
         : _shared(std::make_shared<shared_state>(std::move(t)))
         , _token(std::move(token))
         , _throw_on_cancel(throw_on_cancel) {}
 
     struct awaiter {
         std::shared_ptr<shared_state> state;
-        cancellation_token token;
-        bool throw_on_cancel;
+        cancellation_token            token;
+        bool                          throw_on_cancel;
 
-        [[nodiscard]] bool await_ready() const {
+        [[nodiscard]] bool
+        await_ready() const {
             return token.is_cancelled() && throw_on_cancel;
         }
 
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             state->continuation = h;
             coro_scheduler().spawn(task_runner(state));
             if (throw_on_cancel) {
@@ -270,13 +299,15 @@ public:
                 token.on_cancel([s]() {
                     if (!s->task_done) {
                         s->task_done = true;
-                        if (s->continuation) schedule_via_current(s->continuation);
+                        if (s->continuation)
+                            schedule_via_current(s->continuation);
                     }
                 });
             }
         }
 
-        T await_resume() {
+        T
+        await_resume() {
             // Cancellation takes priority: if the caller asked for throwing
             // cancellation and a cancel signal raced with completion, we
             // honor the cancellation contract.
@@ -289,17 +320,18 @@ public:
             if (state->error) {
                 std::rethrow_exception(state->error);
             }
-            if (state->result) return std::move(*state->result);
+            if (state->result)
+                return std::move(*state->result);
             // No result, no error, not cancelled → the inner task completed
             // by returning a value that was not transferred. This should
             // never happen in practice; fail loudly rather than silently.
-            throw std::logic_error(
-                "cancellable_operation: inner task completed without "
-                "delivering a value or an exception");
+            throw std::logic_error("cancellable_operation: inner task completed without "
+                                   "delivering a value or an exception");
         }
 
     private:
-        static task<void> task_runner(std::shared_ptr<shared_state> state) {
+        static task<void>
+        task_runner(std::shared_ptr<shared_state> state) {
             try {
                 state->result = co_await state->inner_task;
             } catch (...) {
@@ -307,12 +339,14 @@ public:
             }
             if (!state->task_done) {
                 state->task_done = true;
-                if (state->continuation) schedule_via_current(state->continuation);
+                if (state->continuation)
+                    schedule_via_current(state->continuation);
             }
         }
     };
 
-    awaiter operator co_await() {
+    awaiter
+    operator co_await() {
         return awaiter{_shared, _token, _throw_on_cancel};
     }
 };
@@ -321,34 +355,37 @@ public:
 template <>
 class cancellable_operation<void> {
     struct shared_state {
-        task<void> inner_task;
-        std::exception_ptr error;       ///< inner task exception, propagated on resume
-        bool task_done{false};  // single-thread
+        task<void>              inner_task;
+        std::exception_ptr      error;            ///< inner task exception, propagated on resume
+        bool                    task_done{false}; // single-thread
         std::coroutine_handle<> continuation;
 
-        explicit shared_state(task<void>&& t) : inner_task(std::move(t)) {}
+        explicit shared_state(task<void> &&t)
+            : inner_task(std::move(t)) {}
     };
 
     std::shared_ptr<shared_state> _shared;
-    cancellation_token _token;
-    bool _throw_on_cancel;
+    cancellation_token            _token;
+    bool                          _throw_on_cancel;
 
 public:
-    cancellable_operation(task<void>&& t, cancellation_token token, bool throw_on_cancel = true)
+    cancellable_operation(task<void> &&t, cancellation_token token, bool throw_on_cancel = true)
         : _shared(std::make_shared<shared_state>(std::move(t)))
         , _token(std::move(token))
         , _throw_on_cancel(throw_on_cancel) {}
 
     struct awaiter {
         std::shared_ptr<shared_state> state;
-        cancellation_token token;
-        bool throw_on_cancel;
+        cancellation_token            token;
+        bool                          throw_on_cancel;
 
-        [[nodiscard]] bool await_ready() const {
+        [[nodiscard]] bool
+        await_ready() const {
             return token.is_cancelled() && throw_on_cancel;
         }
 
-        void await_suspend(std::coroutine_handle<> h) {
+        void
+        await_suspend(std::coroutine_handle<> h) {
             state->continuation = h;
             coro_scheduler().spawn(task_runner(state));
             if (throw_on_cancel) {
@@ -358,13 +395,15 @@ public:
                 token.on_cancel([s]() {
                     if (!s->task_done) {
                         s->task_done = true;
-                        if (s->continuation) schedule_via_current(s->continuation);
+                        if (s->continuation)
+                            schedule_via_current(s->continuation);
                     }
                 });
             }
         }
 
-        void await_resume() {
+        void
+        await_resume() {
             if (token.is_cancelled() && throw_on_cancel)
                 throw cancelled_error();
             // Finding 2.B.2: propagate inner-task exceptions (void overload).
@@ -374,7 +413,8 @@ public:
         }
 
     private:
-        static task<void> task_runner(std::shared_ptr<shared_state> state) {
+        static task<void>
+        task_runner(std::shared_ptr<shared_state> state) {
             try {
                 co_await state->inner_task;
             } catch (...) {
@@ -382,12 +422,14 @@ public:
             }
             if (!state->task_done) {
                 state->task_done = true;
-                if (state->continuation) schedule_via_current(state->continuation);
+                if (state->continuation)
+                    schedule_via_current(state->continuation);
             }
         }
     };
 
-    awaiter operator co_await() {
+    awaiter
+    operator co_await() {
         return awaiter{_shared, _token, _throw_on_cancel};
     }
 };
@@ -401,7 +443,8 @@ public:
  * @ingroup Coroutine
  */
 template <typename T>
-auto make_cancellable(task<T>&& task, cancellation_token token, bool throw_on_cancel = true) {
+auto
+make_cancellable(task<T> &&task, cancellation_token token, bool throw_on_cancel = true) {
     return cancellable_operation<T>(std::move(task), std::move(token), throw_on_cancel);
 }
 
@@ -422,17 +465,21 @@ struct cancellable_sleep_awaiter {
     // Plain bool: single-thread cooperative — the on_cancel callback and the
     // timer_task coroutine run on the same thread and never concurrently.
     struct sleep_state {
-        bool resumed{false};
+        bool                    resumed{false};
         std::coroutine_handle<> handle;
     };
 
-    qb::duration duration;
+    qb::duration       duration;
     cancellation_token token;
 
-    [[nodiscard]] bool await_ready() const { return token.is_cancelled(); }
+    [[nodiscard]] bool
+    await_ready() const {
+        return token.is_cancelled();
+    }
 
-    void await_suspend(std::coroutine_handle<> h) {
-        auto state = std::make_shared<sleep_state>();
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        auto state    = std::make_shared<sleep_state>();
         state->handle = h;
         token.on_cancel([state]() {
             if (!state->resumed) {
@@ -443,13 +490,17 @@ struct cancellable_sleep_awaiter {
         coro_scheduler().spawn(timer_task(duration, std::move(state)));
     }
 
-    void await_resume() { token.throw_if_cancelled(); }
+    void
+    await_resume() {
+        token.throw_if_cancelled();
+    }
 
 private:
     // Static function: d and s are VALUE parameters stored in the coroutine frame.
     // Never use a lambda here — the compiler may store a pointer to the local lambda
     // object rather than a copy, causing a dangling reference after await_suspend returns.
-    static task<void> timer_task(qb::duration d, std::shared_ptr<sleep_state> s) {
+    static task<void>
+    timer_task(qb::duration d, std::shared_ptr<sleep_state> s) {
         co_await sleep(d);
         if (!s->resumed) {
             s->resumed = true;
@@ -465,47 +516,50 @@ private:
  * @return Task that completes after duration or when cancelled
  * @ingroup Coroutine
  */
-inline task<void> cancellable_sleep(qb::duration duration, cancellation_token token) {
+inline task<void>
+cancellable_sleep(qb::duration duration, cancellation_token token) {
     co_await cancellable_sleep_awaiter{duration, std::move(token)};
 }
 
 namespace detail {
 struct with_deadline_timeout_state {
-    bool completed{false};  // single-thread
-    int result{0};
+    bool                    completed{false}; // single-thread
+    int                     result{0};
     std::coroutine_handle<> handle;
 };
 
 struct with_deadline_timeout_awaiter {
     std::shared_ptr<with_deadline_timeout_state> state;
-    std::chrono::steady_clock::time_point deadline;
-    cancellation_token token;
+    std::chrono::steady_clock::time_point        deadline;
+    cancellation_token                           token;
 
-    [[nodiscard]] bool await_ready() const {
+    [[nodiscard]] bool
+    await_ready() const {
         if (token.is_cancelled()) {
-            state->result = 1;
+            state->result    = 1;
             state->completed = true;
             return true;
         }
         return false;
     }
 
-    void await_suspend(std::coroutine_handle<> h) {
+    void
+    await_suspend(std::coroutine_handle<> h) {
         state->handle = h;
         token.on_cancel([s = state]() {
             if (!s->completed) {
                 s->completed = true;
-                s->result = 1;
+                s->result    = 1;
                 schedule_via_current(s->handle);
             }
         });
 
-        auto now = std::chrono::steady_clock::now();
+        auto now       = std::chrono::steady_clock::now();
         auto remaining = std::chrono::duration_cast<qb::duration>(deadline - now);
         if (remaining.count() <= 0) {
             if (!state->completed) {
                 state->completed = true;
-                state->result = 0;
+                state->result    = 0;
                 schedule_via_current(h);
             }
             return;
@@ -514,17 +568,18 @@ struct with_deadline_timeout_awaiter {
         coro_scheduler().spawn(deadline_timer_task(state, remaining));
     }
 
-    int await_resume() const { return state->result; }
+    int
+    await_resume() const {
+        return state->result;
+    }
 
 private:
-    static task<void> deadline_timer_task(
-        std::shared_ptr<with_deadline_timeout_state> s,
-        qb::duration remaining)
-    {
+    static task<void>
+    deadline_timer_task(std::shared_ptr<with_deadline_timeout_state> s, qb::duration remaining) {
         co_await sleep(remaining);
         if (!s->completed) {
             s->completed = true;
-            s->result = 0;
+            s->result    = 0;
             schedule_via_current(s->handle);
         }
     }
@@ -535,11 +590,8 @@ private:
 // local variable in with_deadline's frame and the compiler may store only a
 // pointer to it in the spawned coroutine frame. If with_deadline's frame is
 // destroyed first (e.g. after throwing timeout_error), that pointer dangles.
-inline task<int> with_deadline_run_timeout(
-    std::shared_ptr<with_deadline_timeout_state> s,
-    std::chrono::steady_clock::time_point dl,
-    cancellation_token tok)
-{
+inline task<int>
+with_deadline_run_timeout(std::shared_ptr<with_deadline_timeout_state> s, std::chrono::steady_clock::time_point dl, cancellation_token tok) {
     co_return co_await with_deadline_timeout_awaiter{std::move(s), dl, std::move(tok)};
 }
 
@@ -557,8 +609,8 @@ inline task<int> with_deadline_run_timeout(
  * @ingroup Coroutine
  */
 template <typename T>
-task<T> with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point deadline,
-                      cancellation_token token = {}) {
+task<T>
+with_deadline(task<T> &&operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {}) {
     // Early short-circuit: if the deadline is already in the past when we
     // enter, the contract is already violated — no point running the
     // operation. Throwing synchronously here is safe and matches user
@@ -576,8 +628,7 @@ task<T> with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point
     // if we used a local lambda here, with_deadline's frame might be destroyed
     // (after throwing timeout_error) while the spawned timeout coroutine still
     // holds a pointer to that local lambda object.
-    auto res = co_await when_any(std::move(operation),
-                                 detail::with_deadline_run_timeout(state, deadline, token));
+    auto res = co_await when_any(std::move(operation), detail::with_deadline_run_timeout(state, deadline, token));
 
     // Finding 2.B.5: the operation branch **won** the race — that is
     // authoritative. Do not second-guess it against wall-clock time here:

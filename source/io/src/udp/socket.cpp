@@ -8,7 +8,7 @@
  * domains.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -43,7 +43,7 @@ resolve_iface_index(const std::string &iface) noexcept {
     if (iface.empty())
         return 0;
 
-    unsigned int idx = 0;
+    unsigned int idx   = 0;
     const char  *first = iface.data();
     const char  *last  = first + iface.size();
     auto [ptr, ec]     = std::from_chars(first, last, idx);
@@ -85,8 +85,7 @@ socket::read(void *dest, std::size_t len, qb::io::endpoint &peer) const noexcept
 }
 
 int
-socket::read_timeout(void *dest, std::size_t len, qb::io::endpoint &peer,
-                   const qb::duration &timeout) const noexcept {
+socket::read_timeout(void *dest, std::size_t len, qb::io::endpoint &peer, const qb::duration &timeout) const noexcept {
     if (!is_open()) {
         return -1;
     }
@@ -142,8 +141,7 @@ socket::try_read(void *dest, std::size_t len, qb::io::endpoint &peer) const noex
 }
 
 int
-socket::write(const void *data, std::size_t len,
-              qb::io::endpoint const &to) const noexcept {
+socket::write(const void *data, std::size_t len, qb::io::endpoint const &to) const noexcept {
     return sendto(data, static_cast<int>(len), to);
 }
 
@@ -170,98 +168,94 @@ socket::set_broadcast(bool enable) noexcept {
 }
 
 int
-socket::join_multicast_group(const std::string &group, 
-                           const std::string &iface) noexcept {
+socket::join_multicast_group(const std::string &group, const std::string &iface) noexcept {
     if (!is_open()) {
         return -1;
     }
 
     int af = address_family();
-    
+
     if (af == AF_INET) {
         // IPv4 multicast
         struct ip_mreq mreq;
         memset(&mreq, 0, sizeof(mreq));
-        
+
         // Set multicast group
         if (inet_pton(AF_INET, group.c_str(), &mreq.imr_multiaddr) != 1) {
             return -1;
         }
-        
+
         // Set interface
         if (iface.empty()) {
             mreq.imr_interface.s_addr = htonl(INADDR_ANY);
         } else if (inet_pton(AF_INET, iface.c_str(), &mreq.imr_interface) != 1) {
             return -1;
         }
-        
+
         return set_optval(IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
-    } 
-    else if (af == AF_INET6) {
+    } else if (af == AF_INET6) {
         // IPv6 multicast
         struct ipv6_mreq mreq6;
         memset(&mreq6, 0, sizeof(mreq6));
-        
+
         // Set multicast group
         if (inet_pton(AF_INET6, group.c_str(), &mreq6.ipv6mr_multiaddr) != 1) {
             return -1;
         }
-        
+
         // Set interface index (0 means any interface).
         // Accepts both numeric indices and POSIX interface names (e.g. "eth0").
         mreq6.ipv6mr_interface = resolve_iface_index(iface);
 
         return set_optval(IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq6, sizeof(mreq6));
     }
-    
+
     return -1;
 }
 
 int
-socket::leave_multicast_group(const std::string &group,
-                            const std::string &iface) noexcept {
+socket::leave_multicast_group(const std::string &group, const std::string &iface) noexcept {
     if (!is_open()) {
         return -1;
     }
 
     int af = address_family();
-    
+
     if (af == AF_INET) {
         // IPv4 multicast
         struct ip_mreq mreq;
         memset(&mreq, 0, sizeof(mreq));
-        
+
         // Set multicast group
         if (inet_pton(AF_INET, group.c_str(), &mreq.imr_multiaddr) != 1) {
             return -1;
         }
-        
+
         // Set interface
         if (iface.empty()) {
             mreq.imr_interface.s_addr = htonl(INADDR_ANY);
         } else if (inet_pton(AF_INET, iface.c_str(), &mreq.imr_interface) != 1) {
             return -1;
         }
-        
+
         return set_optval(IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq));
-    } 
-    else if (af == AF_INET6) {
+    } else if (af == AF_INET6) {
         // IPv6 multicast
         struct ipv6_mreq mreq6;
         memset(&mreq6, 0, sizeof(mreq6));
-        
+
         // Set multicast group
         if (inet_pton(AF_INET6, group.c_str(), &mreq6.ipv6mr_multiaddr) != 1) {
             return -1;
         }
-        
+
         // Set interface index (0 means any interface).
         // Accepts both numeric indices and POSIX interface names (e.g. "eth0").
         mreq6.ipv6mr_interface = resolve_iface_index(iface);
 
         return set_optval(IPPROTO_IPV6, IPV6_LEAVE_GROUP, &mreq6, sizeof(mreq6));
     }
-    
+
     return -1;
 }
 
@@ -272,18 +266,17 @@ socket::set_multicast_ttl(int ttl) noexcept {
     }
 
     int af = address_family();
-    
+
     if (af == AF_INET) {
         // Ensure TTL is in valid range
         unsigned char ttl_value = static_cast<unsigned char>(std::max(1, std::min(255, ttl)));
         return set_optval(IPPROTO_IP, IP_MULTICAST_TTL, ttl_value);
-    } 
-    else if (af == AF_INET6) {
+    } else if (af == AF_INET6) {
         // For IPv6, the option is different
         unsigned int hop_limit = static_cast<unsigned int>(std::max(1, std::min(255, ttl)));
         return set_optval(IPPROTO_IPV6, IPV6_MULTICAST_HOPS, hop_limit);
     }
-    
+
     return -1;
 }
 
@@ -294,16 +287,15 @@ socket::set_multicast_loopback(bool enable) noexcept {
     }
 
     int af = address_family();
-    
+
     if (af == AF_INET) {
         unsigned char loop = enable ? 1 : 0;
         return set_optval(IPPROTO_IP, IP_MULTICAST_LOOP, loop);
-    } 
-    else if (af == AF_INET6) {
+    } else if (af == AF_INET6) {
         unsigned int loop = enable ? 1 : 0;
         return set_optval(IPPROTO_IPV6, IPV6_MULTICAST_LOOP, loop);
     }
-    
+
     return -1;
 }
 
@@ -312,7 +304,7 @@ socket::address_family() const noexcept {
     if (!is_open()) {
         return -1;
     }
-    
+
     return local_endpoint().af();
 }
 
@@ -321,7 +313,7 @@ socket::is_bound() const noexcept {
     if (!is_open()) {
         return false;
     }
-    
+
     try {
         auto local = local_endpoint();
         return local.port() != 0;

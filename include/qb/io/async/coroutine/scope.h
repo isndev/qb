@@ -5,7 +5,7 @@
  * Provides structured concurrency for coroutines with automatic cleanup.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -26,7 +26,7 @@
 #include "task.h"
 #include "utils.h"
 #include "cancellation.h"
-#include <qb/system/timestamp.h>  // qb::duration
+#include <qb/system/timestamp.h> // qb::duration
 #include <algorithm>
 #include <vector>
 #include <memory>
@@ -42,9 +42,9 @@
 #include <cstdio>
 // Standard C++20 __VA_OPT__ elides the comma when no trailing args are passed
 // (MSVC needs the conformant preprocessor /Zc:preprocessor, enabled by qb's build).
-#define QB_SCOPE_TRACE(fmt, ...) std::fprintf(stderr, "[scope] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
+#define QB_SCOPE_TRACE(fmt, ...) std::fprintf(stderr, "[scope] " fmt "\n" __VA_OPT__(, ) __VA_ARGS__)
 #else
-#define QB_SCOPE_TRACE(fmt, ...) ((void)0)
+#define QB_SCOPE_TRACE(fmt, ...) ((void) 0)
 #endif
 
 namespace qb::io::async {
@@ -78,14 +78,14 @@ public:
      * @brief Policy for scope cleanup
      */
     enum class cleanup_policy {
-        join_all,    // Wait for all on destruction (best-effort)
-        cancel_all,  // Cancel all on destruction (default)
-        detach       // Let coroutines run independently
+        join_all,   // Wait for all on destruction (best-effort)
+        cancel_all, // Cancel all on destruction (default)
+        detach      // Let coroutines run independently
     };
 
 private:
     struct task_state {
-        bool completed{false};
+        bool               completed{false};
         std::exception_ptr error;
     };
 
@@ -101,47 +101,47 @@ private:
         using handle_slot = std::shared_ptr<std::coroutine_handle<>>;
 
         std::vector<std::shared_ptr<task_state>> tasks;
-        size_t active_count{0};
-        std::vector<handle_slot> join_all_waiter_slots;  ///< one per concurrent join_all
-        std::vector<handle_slot> join_any_waiter_slots;  ///< one per concurrent join_any
-        std::exception_ptr first_error;
+        size_t                                   active_count{0};
+        std::vector<handle_slot>                 join_all_waiter_slots; ///< one per concurrent join_all
+        std::vector<handle_slot>                 join_any_waiter_slots; ///< one per concurrent join_any
+        std::exception_ptr                       first_error;
 
-        static void wake_slots(std::vector<handle_slot>& slots) {
-            for (auto& slot : slots) {
-                if (!slot) continue;
+        static void
+        wake_slots(std::vector<handle_slot> &slots) {
+            for (auto &slot : slots) {
+                if (!slot)
+                    continue;
                 auto h = *slot;
-                if (h && !h.done()) schedule_via_current(h);
+                if (h && !h.done())
+                    schedule_via_current(h);
             }
             slots.clear();
         }
 
-        void on_task_done(std::exception_ptr err) {
-            QB_SCOPE_TRACE("on_task_done enter active_before=%zu err=%d",
-                           active_count, (int)(!!err));
-            if (err && !first_error) first_error = err;
+        void
+        on_task_done(std::exception_ptr err) {
+            QB_SCOPE_TRACE("on_task_done enter active_before=%zu err=%d", active_count, (int) (!!err));
+            if (err && !first_error)
+                first_error = err;
             --active_count;
-            QB_SCOPE_TRACE("on_task_done active_after=%zu any_slots=%zu all_slots=%zu",
-                           active_count,
-                           join_any_waiter_slots.size(),
+            QB_SCOPE_TRACE("on_task_done active_after=%zu any_slots=%zu all_slots=%zu", active_count, join_any_waiter_slots.size(),
                            join_all_waiter_slots.size());
             // join_any: wake all waiters; they re-check which task completed
             if (!join_any_waiter_slots.empty()) {
-                QB_SCOPE_TRACE("on_task_done waking %zu join_any slots",
-                               join_any_waiter_slots.size());
+                QB_SCOPE_TRACE("on_task_done waking %zu join_any slots", join_any_waiter_slots.size());
                 wake_slots(join_any_waiter_slots);
             }
             // join_all: wake only when the very last task finishes
             if (active_count == 0 && !join_all_waiter_slots.empty()) {
-                QB_SCOPE_TRACE("on_task_done waking %zu join_all slots",
-                               join_all_waiter_slots.size());
+                QB_SCOPE_TRACE("on_task_done waking %zu join_all slots", join_all_waiter_slots.size());
                 wake_slots(join_all_waiter_slots);
             }
         }
     };
 
     std::shared_ptr<scope_impl> _impl;
-    cancellation_token _cancel_token;
-    cleanup_policy _policy;
+    cancellation_token          _cancel_token;
+    cleanup_policy              _policy;
 
 public:
     explicit coroutine_scope(cleanup_policy policy = cleanup_policy::cancel_all)
@@ -162,18 +162,18 @@ public:
      *     cancellation terminate cooperatively.
      */
     ~coroutine_scope() {
-        QB_SCOPE_TRACE("dtor policy=%d tasks=%zu", (int)_policy,
-                       _impl ? _impl->tasks.size() : 0u);
-        if (!_impl) return;
+        QB_SCOPE_TRACE("dtor policy=%d tasks=%zu", (int) _policy, _impl ? _impl->tasks.size() : 0u);
+        if (!_impl)
+            return;
         switch (_policy) {
             case cleanup_policy::join_all:
 #ifndef NDEBUG
                 if (_impl->active_count != 0) {
                     std::fprintf(stderr,
-                        "[scope][warn] ~coroutine_scope(join_all) destroyed with "
-                        "%zu active tasks — you should `co_await join_all()` before "
-                        "the scope goes out of scope.\n",
-                        _impl->active_count);
+                                 "[scope][warn] ~coroutine_scope(join_all) destroyed with "
+                                 "%zu active tasks — you should `co_await join_all()` before "
+                                 "the scope goes out of scope.\n",
+                                 _impl->active_count);
                 }
 #endif
                 break;
@@ -189,15 +189,16 @@ public:
     }
 
     // Non-copyable, movable (_impl is a shared_ptr so move is always safe)
-    coroutine_scope(const coroutine_scope&) = delete;
-    coroutine_scope& operator=(const coroutine_scope&) = delete;
+    coroutine_scope(const coroutine_scope &)            = delete;
+    coroutine_scope &operator=(const coroutine_scope &) = delete;
 
-    coroutine_scope(coroutine_scope&& other) noexcept
+    coroutine_scope(coroutine_scope &&other) noexcept
         : _impl(std::move(other._impl))
         , _cancel_token(std::move(other._cancel_token))
         , _policy(other._policy) {}
 
-    coroutine_scope& operator=(coroutine_scope&& other) noexcept {
+    coroutine_scope &
+    operator=(coroutine_scope &&other) noexcept {
         if (this != &other) {
             _impl         = std::move(other._impl);
             _cancel_token = std::move(other._cancel_token);
@@ -213,11 +214,12 @@ public:
      * run_wrapped, which holds a shared_ptr to the scope's impl.
      */
     template <typename T>
-    void spawn(task<T> t) {
+    void
+    spawn(task<T> t) {
         auto state = std::make_shared<task_state>();
         _impl->tasks.push_back(state);
         ++_impl->active_count;
-        QB_SCOPE_TRACE("spawn impl=%p active=%zu", (void*)_impl.get(), _impl->active_count);
+        QB_SCOPE_TRACE("spawn impl=%p active=%zu", (void *) _impl.get(), _impl->active_count);
         coro_scheduler().spawn(run_wrapped(_impl, std::move(state), std::move(t)));
     }
 
@@ -238,9 +240,9 @@ public:
      * @endcode
      */
     template <typename Callable>
-    requires std::invocable<Callable>
-          && (!std::same_as<std::decay_t<Callable>, task<void>>)
-    void spawn(Callable fn) {
+    requires std::invocable<Callable> && (!std::same_as<std::decay_t<Callable>, task<void>>)
+    void
+    spawn(Callable fn) {
         spawn(owned_invoke_(std::move(fn)));
     }
 
@@ -252,16 +254,15 @@ private:
      * coroutine state, so the original closure lifetime does not matter.
      */
     template <typename F>
-    static task<void> owned_invoke_(F fn) {
+    static task<void>
+    owned_invoke_(F fn) {
         co_await fn();
     }
 
     template <typename T>
-    static task<void> run_wrapped(std::shared_ptr<scope_impl> impl,
-                                   std::shared_ptr<task_state> state,
-                                   task<T> inner) {
-        QB_SCOPE_TRACE("run_wrapped entry impl=%p active=%zu",
-                       (void*)impl.get(), impl->active_count);
+    static task<void>
+    run_wrapped(std::shared_ptr<scope_impl> impl, std::shared_ptr<task_state> state, task<T> inner) {
+        QB_SCOPE_TRACE("run_wrapped entry impl=%p active=%zu", (void *) impl.get(), impl->active_count);
         std::exception_ptr err;
         try {
             co_await inner;
@@ -271,14 +272,12 @@ private:
         }
         state->completed = true;
         state->error     = err;
-        QB_SCOPE_TRACE("run_wrapped pre-done impl=%p active_before=%zu",
-                       (void*)impl.get(), impl->active_count);
+        QB_SCOPE_TRACE("run_wrapped pre-done impl=%p active_before=%zu", (void *) impl.get(), impl->active_count);
         impl->on_task_done(err);
-        QB_SCOPE_TRACE("run_wrapped post-done impl=%p", (void*)impl.get());
+        QB_SCOPE_TRACE("run_wrapped post-done impl=%p", (void *) impl.get());
     }
 
 public:
-
     /**
      * @brief Spawn a cancellable task
      * @tparam T Task return type
@@ -286,7 +285,8 @@ public:
      * @param token Cancellation token (uses scope's token if not provided)
      */
     template <typename T>
-    void spawn_cancellable(task<T>&& t, std::optional<cancellation_token> token = std::nullopt) {
+    void
+    spawn_cancellable(task<T> &&t, std::optional<cancellation_token> token = std::nullopt) {
         cancellation_token use_token = token.value_or(_cancel_token);
         // Use a static function (not a lambda) to avoid the dangling-lambda-pointer
         // bug: if a local lambda were used here, the compiler might store a pointer
@@ -299,23 +299,25 @@ private:
     // Static free function: inner and token are VALUE parameters in the coroutine
     // frame, so their lifetime is independent of the call site.
     template <typename T>
-    static task<T> cancellable_wrapper(task<T> inner, cancellation_token token) {
+    static task<T>
+    cancellable_wrapper(task<T> inner, cancellation_token token) {
         co_return co_await make_cancellable(std::move(inner), std::move(token), true);
     }
 
 public:
-
     /**
      * @brief Cancel all tasks in this scope
      */
-    void cancel_all() {
+    void
+    cancel_all() {
         _cancel_token.cancel();
     }
 
     /**
      * @brief Get the scope's cancellation token
      */
-    cancellation_token cancel_token() const {
+    cancellation_token
+    cancel_token() const {
         return _cancel_token;
     }
 
@@ -325,7 +327,8 @@ public:
      * Suspends the caller directly; the last completing task wakes it.
      * Rethrows the first error encountered, if any.
      */
-    task<void> join_all() {
+    task<void>
+    join_all() {
         QB_SCOPE_TRACE("join_all start active=%zu", _impl->active_count);
 
         // Slot is shared with scope_impl. await_resume() nulls *slot so
@@ -336,27 +339,39 @@ public:
             std::shared_ptr<scope_impl>              impl;
             std::shared_ptr<std::coroutine_handle<>> slot;
 
-            [[nodiscard]] bool await_ready() const noexcept { return impl->active_count == 0; }
+            [[nodiscard]] bool
+            await_ready() const noexcept {
+                return impl->active_count == 0;
+            }
 
-            void await_suspend(std::coroutine_handle<> h) {
-                if (impl->active_count == 0) { schedule_via_current(h); return; }
+            void
+            await_suspend(std::coroutine_handle<> h) {
+                if (impl->active_count == 0) {
+                    schedule_via_current(h);
+                    return;
+                }
                 *slot = h;
                 impl->join_all_waiter_slots.push_back(slot);
             }
 
-            void await_resume() noexcept { *slot = {}; }
+            void
+            await_resume() noexcept {
+                *slot = {};
+            }
         };
 
         co_await join_all_awaiter{_impl, slot};
         QB_SCOPE_TRACE("join_all done");
-        if (_impl->first_error) std::rethrow_exception(_impl->first_error);
+        if (_impl->first_error)
+            std::rethrow_exception(_impl->first_error);
     }
 
     /**
      * @brief Wait for any task to complete (event-driven)
      * @return Index of the first completed task, or total_count() if empty
      */
-    task<size_t> join_any() {
+    task<size_t>
+    join_any() {
         QB_SCOPE_TRACE("join_any start tasks=%zu", _impl->tasks.size());
 
         auto slot = std::make_shared<std::coroutine_handle<>>();
@@ -365,24 +380,32 @@ public:
             std::shared_ptr<scope_impl>              impl;
             std::shared_ptr<std::coroutine_handle<>> slot;
 
-            [[nodiscard]] bool await_ready() const noexcept {
-                for (const auto& t : impl->tasks)
-                    if (t->completed) return true;
+            [[nodiscard]] bool
+            await_ready() const noexcept {
+                for (const auto &t : impl->tasks)
+                    if (t->completed)
+                        return true;
                 return false;
             }
 
-            void await_suspend(std::coroutine_handle<> h) {
-                for (const auto& t : impl->tasks) {
-                    if (t->completed) { schedule_via_current(h); return; }
+            void
+            await_suspend(std::coroutine_handle<> h) {
+                for (const auto &t : impl->tasks) {
+                    if (t->completed) {
+                        schedule_via_current(h);
+                        return;
+                    }
                 }
                 *slot = h;
                 impl->join_any_waiter_slots.push_back(slot);
             }
 
-            size_t await_resume() noexcept {
+            size_t
+            await_resume() noexcept {
                 *slot = {};
                 for (size_t i = 0; i < impl->tasks.size(); ++i)
-                    if (impl->tasks[i]->completed) return i;
+                    if (impl->tasks[i]->completed)
+                        return i;
                 return impl->tasks.size();
             }
         };
@@ -400,8 +423,10 @@ public:
      *
      * @return true if all completed within timeout, false on timeout
      */
-    task<bool> join_all_for(qb::duration timeout) {
-        if (_impl->active_count == 0) co_return true;
+    task<bool>
+    join_all_for(qb::duration timeout) {
+        if (_impl->active_count == 0)
+            co_return true;
 
         // Single shared slot used by BOTH on_task_done and the timer.
         // await_resume() nulls it — whichever path wins, the other finds null.
@@ -412,18 +437,26 @@ public:
             std::shared_ptr<std::coroutine_handle<>> slot;
             qb::duration                             timeout_ms;
 
-            [[nodiscard]] bool await_ready() const noexcept { return impl->active_count == 0; }
+            [[nodiscard]] bool
+            await_ready() const noexcept {
+                return impl->active_count == 0;
+            }
 
-            void await_suspend(std::coroutine_handle<> h) {
-                if (impl->active_count == 0) { schedule_via_current(h); return; }
+            void
+            await_suspend(std::coroutine_handle<> h) {
+                if (impl->active_count == 0) {
+                    schedule_via_current(h);
+                    return;
+                }
                 *slot = h;
                 impl->join_all_waiter_slots.push_back(slot);
                 // Timer also holds the slot; reads *slot on expiry.
                 coro_scheduler().spawn(join_all_timer(slot, timeout_ms));
             }
 
-            bool await_resume() noexcept {
-                *slot = {};   // invalidate — timer and on_task_done find null
+            bool
+            await_resume() noexcept {
+                *slot = {}; // invalidate — timer and on_task_done find null
                 return impl->active_count == 0;
             }
         };
@@ -436,24 +469,33 @@ public:
     // -----------------------------------------------------------------------
 
     /** @brief Number of tasks not yet completed */
-    size_t active_count() const noexcept { return _impl->active_count; }
-
-    size_t total_count() const noexcept { return _impl->tasks.size(); }
-
-    /** @brief Remove completed entries from the internal list to free memory */
-    void prune_completed() {
-        auto& tasks = _impl->tasks;
-        tasks.erase(
-            std::remove_if(tasks.begin(), tasks.end(),
-                [](const auto& s) { return s->completed; }),
-            tasks.end());
+    size_t
+    active_count() const noexcept {
+        return _impl->active_count;
     }
 
-    bool empty() const noexcept { return _impl->active_count == 0; }
+    size_t
+    total_count() const noexcept {
+        return _impl->tasks.size();
+    }
+
+    /** @brief Remove completed entries from the internal list to free memory */
+    void
+    prune_completed() {
+        auto &tasks = _impl->tasks;
+        tasks.erase(std::remove_if(tasks.begin(), tasks.end(), [](const auto &s) { return s->completed; }), tasks.end());
+    }
+
+    bool
+    empty() const noexcept {
+        return _impl->active_count == 0;
+    }
 
     /** @brief Rethrow first stored error, if any */
-    void rethrow_if_error() const {
-        if (_impl->first_error) std::rethrow_exception(_impl->first_error);
+    void
+    rethrow_if_error() const {
+        if (_impl->first_error)
+            std::rethrow_exception(_impl->first_error);
     }
 
 private:
@@ -466,12 +508,13 @@ private:
      *
      * Parameters are stored by VALUE in the coroutine frame — no dangling refs.
      */
-    static task<void> join_all_timer(std::shared_ptr<std::coroutine_handle<>> slot,
-                                      qb::duration delay) {
+    static task<void>
+    join_all_timer(std::shared_ptr<std::coroutine_handle<>> slot, qb::duration delay) {
         co_await sleep(delay);
         QB_SCOPE_TRACE("join_all_timer fired");
         auto h = *slot;
-        if (h && !h.done()) schedule_via_current(h);
+        if (h && !h.done())
+            schedule_via_current(h);
     }
 };
 
@@ -489,7 +532,8 @@ private:
  */
 class joining_scope : public coroutine_scope {
 public:
-    joining_scope() : coroutine_scope(cleanup_policy::join_all) {}
+    joining_scope()
+        : coroutine_scope(cleanup_policy::join_all) {}
 };
 
 /**
@@ -497,7 +541,8 @@ public:
  */
 class cancelling_scope : public coroutine_scope {
 public:
-    cancelling_scope() : coroutine_scope(cleanup_policy::cancel_all) {}
+    cancelling_scope()
+        : coroutine_scope(cleanup_policy::cancel_all) {}
 };
 
 /**
@@ -505,7 +550,8 @@ public:
  */
 class detaching_scope : public coroutine_scope {
 public:
-    detaching_scope() : coroutine_scope(cleanup_policy::detach) {}
+    detaching_scope()
+        : coroutine_scope(cleanup_policy::detach) {}
 };
 
 /**
@@ -516,14 +562,15 @@ public:
  * @ingroup Coroutine
  */
 template <typename T>
-task<void> capture_result(task<T> t, std::optional<T>& result) {
+task<void>
+capture_result(task<T> t, std::optional<T> &result) {
     result = co_await std::move(t);
 }
 
 namespace detail {
 template <typename Scope, typename ResultsTuple, typename TasksTuple, size_t... Is>
-void spawn_capture_impl(Scope& scope, ResultsTuple& results, TasksTuple& tasks_tuple,
-                        std::index_sequence<Is...>) {
+void
+spawn_capture_impl(Scope &scope, ResultsTuple &results, TasksTuple &tasks_tuple, std::index_sequence<Is...>) {
     (scope.spawn(capture_result(std::move(std::get<Is>(tasks_tuple)), std::get<Is>(results))), ...);
 }
 } // namespace detail
@@ -536,20 +583,19 @@ void spawn_capture_impl(Scope& scope, ResultsTuple& results, TasksTuple& tasks_t
  * @ingroup Coroutine
  */
 template <typename... Tasks>
-task<std::tuple<typename Tasks::value_type...>> parallel(Tasks... tasks) {
+task<std::tuple<typename Tasks::value_type...>>
+parallel(Tasks... tasks) {
     coroutine_scope scope(coroutine_scope::cleanup_policy::join_all);
 
     using result_tuple = std::tuple<std::optional<typename Tasks::value_type>...>;
-    result_tuple results;
+    result_tuple         results;
     std::tuple<Tasks...> tasks_tuple(std::move(tasks)...);
 
     detail::spawn_capture_impl(scope, results, tasks_tuple, std::index_sequence_for<Tasks...>{});
 
     co_await scope.join_all();
 
-    co_return std::apply([](auto&&... opts) {
-        return std::tuple(*opts...);
-    }, results);
+    co_return std::apply([](auto &&...opts) { return std::tuple(*opts...); }, results);
 }
 
 /**
@@ -560,7 +606,8 @@ task<std::tuple<typename Tasks::value_type...>> parallel(Tasks... tasks) {
  * @ingroup Coroutine
  */
 template <typename F>
-auto with_scope(F f) -> task<typename std::invoke_result_t<F, coroutine_scope&>::value_type> {
+auto
+with_scope(F f) -> task<typename std::invoke_result_t<F, coroutine_scope &>::value_type> {
     coroutine_scope scope;
     co_return co_await f(scope);
 }
@@ -576,7 +623,8 @@ auto with_scope(F f) -> task<typename std::invoke_result_t<F, coroutine_scope&>:
  * @ingroup Coroutine
  */
 template <typename F, typename P>
-task<void> repeat_while(F factory, P should_continue, cancellation_token cancel_token = {}) {
+task<void>
+repeat_while(F factory, P should_continue, cancellation_token cancel_token = {}) {
     while (!cancel_token.is_cancelled() && should_continue()) {
         auto t = factory();
         co_await make_cancellable(std::move(t), cancel_token, false);
@@ -589,7 +637,8 @@ namespace detail {
 // frame by the standard, so there is no dangling-lambda-pointer risk here even
 // when this task is spawned from inside a loop.
 template <typename F, typename Item, typename R>
-task<void> parallel_map_worker(semaphore* sem, F fn, std::optional<R>* result, Item item) {
+task<void>
+parallel_map_worker(semaphore *sem, F fn, std::optional<R> *result, Item item) {
     auto guard = co_await sem->scoped_acquire();
     *result    = co_await fn(item);
 }
@@ -607,19 +656,19 @@ task<void> parallel_map_worker(semaphore* sem, F fn, std::optional<R>* result, I
  * @ingroup Coroutine
  */
 template <typename Range, typename F>
-auto parallel_map(const Range& items, F f, size_t max_concurrency = 10)
-    -> task<std::vector<typename std::invoke_result_t<F, typename Range::value_type>::value_type>>
-{
-    using result_type      = std::invoke_result_t<F, typename Range::value_type>;
+auto
+parallel_map(const Range &items, F f, size_t max_concurrency = 10)
+    -> task<std::vector<typename std::invoke_result_t<F, typename Range::value_type>::value_type>> {
+    using result_type       = std::invoke_result_t<F, typename Range::value_type>;
     using inner_result_type = typename result_type::value_type;
 
-    semaphore sem(max_concurrency);
+    semaphore       sem(max_concurrency);
     coroutine_scope scope;
 
     std::vector<std::optional<inner_result_type>> results(items.size());
 
     size_t i = 0;
-    for (const auto& item : items) {
+    for (const auto &item : items) {
         // Pass sem, f and result slot as raw pointers / by-value copies into a
         // free function. parallel_map suspends at join_all() below, so sem and
         // results[i] remain valid for the entire lifetime of the workers.
@@ -631,7 +680,7 @@ auto parallel_map(const Range& items, F f, size_t max_concurrency = 10)
 
     std::vector<inner_result_type> final_results;
     final_results.reserve(results.size());
-    for (auto& opt : results) {
+    for (auto &opt : results) {
         if (opt) {
             final_results.push_back(std::move(*opt));
         }

@@ -40,7 +40,7 @@
  * - Do not share an awaiter or its watcher across threads; use one listener per thread.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -65,7 +65,7 @@
 // (VirtualCore thread). Plain bools are sufficient for single-thread cooperative.
 #include <memory>
 #include <ev/ev++.h>
-#include <qb/system/timestamp.h>  // qb::duration, qb::detail::to_ev_seconds
+#include <qb/system/timestamp.h> // qb::duration, qb::detail::to_ev_seconds
 
 // scheduler.h must be included before task.h to get schedule_via_current
 #include "scheduler.h"
@@ -106,7 +106,7 @@ struct awaiter_base {
     /**
      * @brief Pointer to the scheduler
      */
-    CoroutineScheduler* scheduler_ = nullptr;
+    CoroutineScheduler *scheduler_ = nullptr;
 
     /**
      * @brief Default constructor
@@ -117,19 +117,23 @@ struct awaiter_base {
      * @brief Construct with handle
      * @param h The coroutine handle
      */
-    explicit awaiter_base(std::coroutine_handle<> h) noexcept : handle_(h) {}
+    explicit awaiter_base(std::coroutine_handle<> h) noexcept
+        : handle_(h) {}
 
     // Non-copyable, non-movable
-    awaiter_base(const awaiter_base&) = delete;
-    awaiter_base& operator=(const awaiter_base&) = delete;
-    awaiter_base(awaiter_base&&) = delete;
-    awaiter_base& operator=(awaiter_base&&) = delete;
+    awaiter_base(const awaiter_base &)            = delete;
+    awaiter_base &operator=(const awaiter_base &) = delete;
+    awaiter_base(awaiter_base &&)                 = delete;
+    awaiter_base &operator=(awaiter_base &&)      = delete;
 
     /**
      * @brief Check if awaiter is ready
      * @return true if the operation completed synchronously
      */
-    [[nodiscard]] bool await_ready() const noexcept { return ready_; }
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return ready_;
+    }
 
     /**
      * @brief Suspend and register with libev
@@ -145,7 +149,10 @@ struct awaiter_base {
      *
      * Called when the operation completes. Stops the watcher.
      */
-    virtual void await_resume() { resumed_ = true; }
+    virtual void
+    await_resume() {
+        resumed_ = true;
+    }
 
     /**
      * @brief Called by libev when event fires
@@ -153,9 +160,11 @@ struct awaiter_base {
      * Schedules the coroutine for resumption via the scheduler.
      * Must run on the thread that owns `listener::current` (libev callback thread).
      */
-    void on_event_ready() noexcept {
+    void
+    on_event_ready() noexcept {
         ready_ = true;
-        if (resumed_) return;  // watcher fired after await_resume — ignore
+        if (resumed_)
+            return; // watcher fired after await_resume — ignore
 
         // Unregister from suspended set before resuming
         if (scheduler_ && handle_) {
@@ -163,8 +172,7 @@ struct awaiter_base {
         }
 
 #ifdef QB_DEBUG_COROUTINES
-        std::cerr << "[AWAITER] on_event_ready: scheduler=" << scheduler_
-                  << " handle=" << handle_.address() << "\n";
+        std::cerr << "[AWAITER] on_event_ready: scheduler=" << scheduler_ << " handle=" << handle_.address() << "\n";
 #endif
 
         if (scheduler_ && handle_) {
@@ -172,8 +180,7 @@ struct awaiter_base {
         }
 #ifdef QB_DEBUG_COROUTINES
         else {
-            std::cerr << "[AWAITER] on_event_ready: NOT scheduling (scheduler="
-                      << scheduler_ << " handle=" << handle_.address() << ")\n";
+            std::cerr << "[AWAITER] on_event_ready: NOT scheduling (scheduler=" << scheduler_ << " handle=" << handle_.address() << ")\n";
         }
 #endif
     }
@@ -184,7 +191,8 @@ struct awaiter_base {
      * Called by derived classes in await_suspend to track this coroutine
      * as waiting for an event.
      */
-    void register_suspended() noexcept {
+    void
+    register_suspended() noexcept {
         if (scheduler_ && handle_) {
             scheduler_->register_suspended(handle_);
         }
@@ -197,7 +205,8 @@ struct awaiter_base {
      * This is needed both on normal resume and on awaiter destruction paths
      * where the coroutine frame goes away before the event fires.
      */
-    void unregister_suspended() noexcept {
+    void
+    unregister_suspended() noexcept {
         if (scheduler_ && handle_) {
             scheduler_->unregister_suspended(handle_);
         }
@@ -276,8 +285,9 @@ struct timer_awaiter : awaiter_base {
      * Stores the handle and starts the libev timer watcher.
      * The scheduler is obtained from the current thread.
      */
-    void await_suspend(std::coroutine_handle<> h) override {
-        handle_ = h;
+    void
+    await_suspend(std::coroutine_handle<> h) override {
+        handle_    = h;
         scheduler_ = CoroutineScheduler::current_ptr();
         if (!scheduler_) {
             // Fallback: create/get the current scheduler
@@ -287,7 +297,7 @@ struct timer_awaiter : awaiter_base {
             enqueue_for_later_via_current(h);
             return;
         }
-        register_suspended();  // Track this coroutine as suspended
+        register_suspended(); // Track this coroutine as suspended
         // Finding 2.C.3: libev caches the current monotonic time in `mn_now`
         // at loop iteration boundaries. If the worker thread has been out of
         // the loop for a while (e.g. a blocking `std::this_thread::sleep_for`
@@ -307,7 +317,8 @@ struct timer_awaiter : awaiter_base {
      * Stops the watcher to prevent it from firing after resumption.
      * Also marks the awaiter as resumed and unregisters from suspended set.
      */
-    void await_resume() override {
+    void
+    await_resume() override {
         if (yield_only_) {
             awaiter_base::await_resume();
             return;
@@ -344,8 +355,9 @@ struct timer_awaiter : awaiter_base {
      *
      * Static callback invoked by libev. Schedules the coroutine for resumption.
      */
-    static void timer_callback(struct ev_loop*, ev_timer* w, int) noexcept {
-        auto* self = static_cast<timer_awaiter*>(w->data);
+    static void
+    timer_callback(struct ev_loop *, ev_timer *w, int) noexcept {
+        auto *self = static_cast<timer_awaiter *>(w->data);
         if (self) {
 #ifdef QB_DEBUG_COROUTINES
             std::cerr << "[TIMER] Timer fired for awaiter " << self << "\n";
@@ -407,14 +419,17 @@ struct socket_awaiter : awaiter_base {
      * @param loop The event loop (defaults to current)
      */
     socket_awaiter(int fd, int events, ev::loop_ref loop = ev::get_default_loop())
-        : fd_(fd), events_(events), loop_(loop) {
+        : fd_(fd)
+        , events_(events)
+        , loop_(loop) {
         ev_io_init(&watcher_, io_callback, fd, events);
         watcher_.data = this;
     }
 
 #if defined(_WIN32)
     socket_awaiter(uintptr_t handle, int events, ev::loop_ref loop = ev::get_default_loop())
-        : events_(events), loop_(loop) {
+        : events_(events)
+        , loop_(loop) {
         ev_io_init_sock(&watcher_, io_callback, handle, events);
         watcher_.data = this;
     }
@@ -427,13 +442,14 @@ struct socket_awaiter : awaiter_base {
      * Stores the handle and starts the libev I/O watcher.
      * The scheduler is obtained from the current thread.
      */
-    void await_suspend(std::coroutine_handle<> h) override {
-        handle_ = h;
+    void
+    await_suspend(std::coroutine_handle<> h) override {
+        handle_    = h;
         scheduler_ = CoroutineScheduler::current_ptr();
         if (!scheduler_) {
             scheduler_ = &CoroutineScheduler::current();
         }
-        register_suspended();  // Track this coroutine as suspended
+        register_suspended(); // Track this coroutine as suspended
         ev_io_start(loop_, &watcher_);
         started_ = true;
     }
@@ -444,7 +460,8 @@ struct socket_awaiter : awaiter_base {
      * Stops the watcher to prevent it from firing after resumption.
      * Also marks the awaiter as resumed and unregisters from suspended set.
      */
-    void await_resume() override {
+    void
+    await_resume() override {
         if (started_ && ev_is_active(&watcher_)) {
             ev_io_stop(loop_, &watcher_);
             started_ = false;
@@ -474,10 +491,11 @@ struct socket_awaiter : awaiter_base {
      *
      * Static callback invoked by libev. Schedules the coroutine for resumption.
      */
-    static void io_callback(struct ev_loop*, ev_io* w, int revents) noexcept {
-        auto* self = static_cast<socket_awaiter*>(w->data);
+    static void
+    io_callback(struct ev_loop *, ev_io *w, int revents) noexcept {
+        auto *self = static_cast<socket_awaiter *>(w->data);
         if (self) {
-            (void)revents;  // Could check which event fired for logging
+            (void) revents; // Could check which event fired for logging
             self->on_event_ready();
         }
     }
@@ -550,27 +568,30 @@ struct async_awaiter : awaiter_base {
      * Callback uses valid_ to avoid use-after-free if the awaiter is
      * destroyed (e.g. exception) before the async operation completes.
      */
-    void await_suspend(std::coroutine_handle<> h) override {
-        handle_ = h;
+    void
+    await_suspend(std::coroutine_handle<> h) override {
+        handle_    = h;
         scheduler_ = CoroutineScheduler::current_ptr();
         if (!scheduler_) {
             scheduler_ = &CoroutineScheduler::current();
         }
         register_suspended();
 
-        valid_ = std::make_shared<bool>(true);
+        valid_                      = std::make_shared<bool>(true);
         std::shared_ptr<bool> valid = valid_;
-        callback_ = [this, valid](ResultType result) {
-            if (!*valid) return;
+        callback_                   = [this, valid](ResultType result) {
+            if (!*valid)
+                return;
             result_ = std::move(result);
-            ready_ = true;
+            ready_  = true;
             on_event_ready();
         };
 
         async_op_(callback_);
     }
 
-    ResultType await_resume() {
+    ResultType
+    await_resume() {
         unregister_suspended();
         awaiter_base::await_resume();
         return std::move(*result_);

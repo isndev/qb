@@ -50,7 +50,7 @@
  * @endcode
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -74,7 +74,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
-#include <qb/system/timestamp.h>  // qb::duration
+#include <qb/system/timestamp.h> // qb::duration
 #include "awaiter.h"
 #include "../listener.h"
 
@@ -97,7 +97,8 @@ namespace qb::io::async {
  * @return timer_awaiter that suspends until duration elapses
  * @ingroup Coroutine
  */
-inline timer_awaiter sleep(qb::duration duration) {
+inline timer_awaiter
+sleep(qb::duration duration) {
     // Use the listener's event loop, not the default loop
     // This ensures timers work with listener::current.run()
     return timer_awaiter{duration, listener::current.loop()};
@@ -122,13 +123,15 @@ inline timer_awaiter sleep(qb::duration duration) {
  * @return socket_awaiter that suspends until readable
  * @ingroup Coroutine
  */
-inline socket_awaiter wait_readable(int fd) {
+inline socket_awaiter
+wait_readable(int fd) {
     // Use the listener's event loop for consistency with sleep()
     return socket_awaiter{fd, EV_READ, listener::current.loop()};
 }
 
 #if defined(_WIN32)
-inline socket_awaiter wait_readable(uintptr_t handle) {
+inline socket_awaiter
+wait_readable(uintptr_t handle) {
     return socket_awaiter{handle, EV_READ, listener::current.loop()};
 }
 #endif
@@ -151,13 +154,15 @@ inline socket_awaiter wait_readable(uintptr_t handle) {
  * @return socket_awaiter that suspends until writable
  * @ingroup Coroutine
  */
-inline socket_awaiter wait_writable(int fd) {
+inline socket_awaiter
+wait_writable(int fd) {
     // Use the listener's event loop for consistency with sleep()
     return socket_awaiter{fd, EV_WRITE, listener::current.loop()};
 }
 
 #if defined(_WIN32)
-inline socket_awaiter wait_writable(uintptr_t handle) {
+inline socket_awaiter
+wait_writable(uintptr_t handle) {
     return socket_awaiter{handle, EV_WRITE, listener::current.loop()};
 }
 #endif
@@ -172,12 +177,14 @@ inline socket_awaiter wait_writable(uintptr_t handle) {
  * @return socket_awaiter
  * @ingroup Coroutine
  */
-inline socket_awaiter wait_for_io(int fd, int events) {
+inline socket_awaiter
+wait_for_io(int fd, int events) {
     return socket_awaiter{fd, events, listener::current.loop()};
 }
 
 #if defined(_WIN32)
-inline socket_awaiter wait_for_io(uintptr_t handle, int events) {
+inline socket_awaiter
+wait_for_io(uintptr_t handle, int events) {
     return socket_awaiter{handle, events, listener::current.loop()};
 }
 #endif
@@ -201,7 +208,8 @@ inline socket_awaiter wait_for_io(uintptr_t handle, int events) {
  * @return Reference to the listener's CoroutineScheduler
  * @ingroup Coroutine
  */
-inline CoroutineScheduler& coro_scheduler() {
+inline CoroutineScheduler &
+coro_scheduler() {
     // Always use the listener's scheduler to ensure consistency
     // This creates the scheduler on first access and sets it as current
     return listener::current.coro_scheduler();
@@ -215,7 +223,8 @@ inline CoroutineScheduler& coro_scheduler() {
  * @param duration Maximum time to run
  * @ingroup Coroutine
  */
-inline void run_for(qb::duration duration) {
+inline void
+run_for(qb::duration duration) {
     ensure_not_inside_ready_drain("run_for()");
     auto end = std::chrono::steady_clock::now() + duration;
     // Process any already-queued coroutines (e.g. from spawn) before the timed loop
@@ -223,23 +232,20 @@ inline void run_for(qb::duration duration) {
         listener::current.coro_scheduler().run_ready();
     }
     while (std::chrono::steady_clock::now() < end) {
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            end - std::chrono::steady_clock::now());
-        if (remaining.count() <= 0) break;
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(end - std::chrono::steady_clock::now());
+        if (remaining.count() <= 0)
+            break;
 
         // Run event loop (listener::run does run_ready() after _loop.run())
         for (int i = 0; i < 16 /*max event loop drain iterations*/; ++i) {
             listener::current.run(EVRUN_NOWAIT);
-            if (!listener::current.has_coro_scheduler() ||
-                !listener::current.coro_scheduler().has_ready()) {
+            if (!listener::current.has_coro_scheduler() || !listener::current.coro_scheduler().has_ready()) {
                 break;
             }
         }
 
         // Small yield so wall clock advances and timers can fire
-        if (!listener::current.size() &&
-            (!listener::current.has_coro_scheduler() ||
-             !listener::current.coro_scheduler().has_ready())) {
+        if (!listener::current.size() && (!listener::current.has_coro_scheduler() || !listener::current.coro_scheduler().has_ready())) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
@@ -275,11 +281,10 @@ inline void run_for(qb::duration duration) {
  * @ingroup Coroutine
  */
 template <typename Awaitable>
-auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
-                                                               decltype(std::declval<std::remove_cvref_t<Awaitable>>().await_resume())>,
-                                                           void,
-                                                           std::remove_cvref_t<decltype(
-                                                               std::declval<std::remove_cvref_t<Awaitable>>().await_resume())>> {
+auto
+run_sync(Awaitable &&awaitable)
+    -> std::conditional_t<std::is_void_v<decltype(std::declval<std::remove_cvref_t<Awaitable>>().await_resume())>, void,
+                          std::remove_cvref_t<decltype(std::declval<std::remove_cvref_t<Awaitable>>().await_resume())>> {
     ensure_not_inside_ready_drain("run_sync()");
     using raw_awaitable = std::remove_cvref_t<Awaitable>;
     using return_type   = decltype(std::declval<raw_awaitable>().await_resume());
@@ -290,15 +295,13 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
     // run_sync returns, so the reference is valid for the pump loop.
     // Return type is explicit value (not decltype(auto)): `return std::move(*optional)` can deduce
     // an rvalue reference into the optional's storage and dangle after this function returns.
-    auto pump = [](bool& done) {
+    auto pump = [](bool &done) {
         while (!done) {
-            bool has_ready = listener::current.has_coro_scheduler() &&
-                             listener::current.coro_scheduler().has_ready();
+            bool has_ready = listener::current.has_coro_scheduler() && listener::current.coro_scheduler().has_ready();
             if (has_ready) {
                 for (int i = 0; i < 16 && !done; ++i) {
                     listener::current.run(EVRUN_NOWAIT);
-                    if (!listener::current.has_coro_scheduler() ||
-                        !listener::current.coro_scheduler().has_ready())
+                    if (!listener::current.has_coro_scheduler() || !listener::current.coro_scheduler().has_ready())
                         break;
                 }
             } else {
@@ -313,17 +316,16 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
     };
 
     if constexpr (std::is_void_v<return_type>) {
-        bool done = false;
+        bool               done = false;
         std::exception_ptr error;
-        coro_scheduler().spawn(
-            [&awaitable, &done, &error]() -> task<void> {
-                try {
-                    co_await awaitable;
-                } catch (...) {
-                    error = std::current_exception();
-                }
-                done = true;
-            });
+        coro_scheduler().spawn([&awaitable, &done, &error]() -> task<void> {
+            try {
+                co_await awaitable;
+            } catch (...) {
+                error = std::current_exception();
+            }
+            done = true;
+        });
         pump(done);
         if (error) {
             std::rethrow_exception(error);
@@ -332,15 +334,14 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
         std::optional<value_type> result;
         bool                      done = false;
         std::exception_ptr        error;
-        coro_scheduler().spawn(
-            [&awaitable, &result, &done, &error]() -> task<void> {
-                try {
-                    result = co_await awaitable;
-                } catch (...) {
-                    error = std::current_exception();
-                }
-                done = true;
-            });
+        coro_scheduler().spawn([&awaitable, &result, &done, &error]() -> task<void> {
+            try {
+                result = co_await awaitable;
+            } catch (...) {
+                error = std::current_exception();
+            }
+            done = true;
+        });
         pump(done);
         if (error) {
             std::rethrow_exception(error);

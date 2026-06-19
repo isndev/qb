@@ -7,7 +7,7 @@
  * core initialization, and system configuration functionality.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -38,37 +38,32 @@ CoreInitializer::addActor(_Args &&...args) noexcept {
     ActorId id = ActorId::NotFound;
     // C++20: use service_type concept instead of std::is_base_of_v
     if constexpr (service_type<_Actor>) {
-        if (_registered_services.find(_Actor::ServiceIndex) ==
-            _registered_services.end()) {
+        if (_registered_services.find(_Actor::ServiceIndex) == _registered_services.end()) {
             _registered_services.insert(_Actor::ServiceIndex);
             id = ActorId(_Actor::ServiceIndex, _index);
         } else {
-            LOG_CRIT("[Start Sequence] Failed to add Service Actor("
-                     << typeid(_Actor).name() << ")"
-                     << " in Core(" << _index << ")"
-                     << " : Already registered");
+            LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
+                                                                     << " in Core(" << _index << ")"
+                                                                     << " : Already registered");
             return id;
         }
     } else {
         if (unlikely(_next_id == std::numeric_limits<ServiceId>::max())) {
-            LOG_CRIT("[Start Sequence] Failed to add Actor("
-                     << typeid(_Actor).name() << ")"
-                     << " in Core(" << _index << ")"
-                     << " : Max number of Actors reached");
+            LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
+                                                             << " in Core(" << _index << ")"
+                                                             << " : Max number of Actors reached");
             return id;
         }
         id = ActorId(_next_id++, _index);
     }
-    _actor_factories.push_back(
-        std::make_unique<TActorFactory<_Actor, _Args...>>(id, std::forward<_Args>(args)...));
+    _actor_factories.push_back(std::make_unique<TActorFactory<_Actor, _Args...>>(id, std::forward<_Args>(args)...));
     return id;
 }
 
 template <typename _Actor, typename... _Args>
 CoreInitializer::ActorBuilder &
 CoreInitializer::ActorBuilder::addActor(_Args &&...args) noexcept {
-    auto id =
-        _initializer.template addActor<_Actor, _Args...>(std::forward<_Args>(args)...);
+    auto id = _initializer.template addActor<_Actor, _Args...>(std::forward<_Args>(args)...);
     if (!id.is_valid())
         _valid = false;
 

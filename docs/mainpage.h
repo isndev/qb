@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (c) 2011-2025 qb - isndev (cpp.actor). All rights reserved.
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,10 +131,16 @@
  * @section main_build_status Build Status
  *   |              | linux | Windows | Coverage |
  *   |:------------:|:-----:|:-------:|:--------:|
- *   |    master    | ![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master) | ![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
- *   |    develop   | ![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop) | ![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
- *   | experimental | ![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental) | ![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
+ *   |    master    | ![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master) | ![Build
+ * status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true) | ![Codecov
+ * branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) | |    develop   | ![Build
+ * Status](https://travis-ci.org/isndev/qb.svg?branch=develop) | ![Build
+ * status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true) | ![Codecov
+ * branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) | | experimental | ![Build
+ * Status](https://travis-ci.org/isndev/qb.svg?branch=experimental) | ![Build
+ * status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true) | ![Codecov
+ * branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
  *
  * #### License
  *   Apache Version 2
- */ 
+ */

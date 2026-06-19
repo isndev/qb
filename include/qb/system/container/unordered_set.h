@@ -7,7 +7,7 @@
  * standard unordered_set using flat hash sets from the ska_hash library.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -42,8 +42,7 @@ namespace qb {
  * @tparam E The equality function type (defaults to std::equal_to<K>)
  * @tparam A The allocator type
  */
-template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>,
-          typename A = std::allocator<K>>
+template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<K>>
 using unordered_flat_set = ska::flat_hash_set<K, H, E, A>;
 
 #ifdef NDEBUG
@@ -59,8 +58,7 @@ using unordered_flat_set = ska::flat_hash_set<K, H, E, A>;
  * @tparam E The equality function type (defaults to std::equal_to<K>)
  * @tparam A The allocator type
  */
-template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>,
-          typename A = std::allocator<K>>
+template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<K>>
 using unordered_set = ska::unordered_set<K, H, E, A>;
 #else
 /**
@@ -76,8 +74,7 @@ using unordered_set = ska::unordered_set<K, H, E, A>;
  * @tparam A The allocator type
  * @ingroup Container
  */
-template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>,
-          typename A = std::allocator<K>>
+template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<K>>
 using unordered_set = std::unordered_set<K, H, E, A>;
 #endif
 

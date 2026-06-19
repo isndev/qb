@@ -7,7 +7,7 @@
  * including message passing via events, lifecycle management, and actor identification.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -53,8 +53,9 @@ class ActorProxy;
 class Service;
 class Event;
 class ICallback;
-class Actor;  // Forward declaration for concepts
-template <typename _Actor> class RefActorHandle;  // Forward for Actor::addRefHandle
+class Actor; // Forward declaration for concepts
+template <typename _Actor>
+class RefActorHandle; // Forward for Actor::addRefHandle
 
 /**
  * @brief Tag type used to opt out of registering the four default event handlers
@@ -191,8 +192,8 @@ class Actor : nocopy {
     friend class Service;
     friend struct std::default_delete<Actor>;
 
-    const char   *name = "unnamed";
-    ActorId       _id;
+    const char *name = "unnamed";
+    ActorId     _id;
     /**
      * @brief Liveness flag — drives actor destruction in the workflow loop.
      *
@@ -390,7 +391,7 @@ public:
      *   } else {
      *     LOG_WARN("Actor " << id() << " received unhandled signal: " << event.signum);
      *     // Default behavior for other signals might be to kill, or call base:
-     *     // Actor::on(event); 
+     *     // Actor::on(event);
      *   }
      * }
      * @endcode
@@ -583,7 +584,7 @@ public:
      *     registerCallback(*this); // Register self for periodic callbacks
      *     return true;
      *   }
-     *   
+     *
      *   void onCallback() override {
      *     // This code will be executed periodically by the VirtualCore
      *     // pollExternalSystem();
@@ -640,7 +641,7 @@ public:
      * //   registerEvent<AnotherEvent>(*this);
      * //   return true;
      * // }
-     * // 
+     * //
      * // void on(const MyCustomEvent& event) {  handle MyCustomEvent... }
      * // void on(AnotherEvent& event) { handle AnotherEvent, can reply/forward }
      * @endcode
@@ -773,8 +774,7 @@ public:
      *       This does not involve the actor framework's event queue.
      */
     template <typename _Event, typename... _Args>
-    [[nodiscard]] _Event build_event(qb::ActorId const source,
-                                     _Args &&...args) const noexcept;
+    [[nodiscard]] _Event build_event(qb::ActorId const source, _Args &&...args) const noexcept;
 
     /**
      * @brief Check if a given ID matches the type ID of `_Type`.
@@ -926,7 +926,7 @@ public:
      * @tparam _Actor The concrete derived actor type to create (must inherit from `qb::Actor`).
      * @tparam _Args Types of arguments to forward to the `_Actor`'s constructor.
      * @param args Arguments to forward to the constructor of `_Actor`.
-     * @return A raw pointer to the newly created `_Actor` instance if successful (i.e., its `onInit()` returned `true`), 
+     * @return A raw pointer to the newly created `_Actor` instance if successful (i.e., its `onInit()` returned `true`),
      *         otherwise `nullptr`.
      * @details
      * Referenced actors are created on the same `VirtualCore` as the calling (parent) actor.
@@ -943,7 +943,7 @@ public:
      * //   // Helper created successfully. Can send events:
      * //   push<TaskEvent>(_helper->id(), task_data);
      * //   // Or, cautiously, call public methods (bypasses event queue):
-     * //   // _helper->doSomethingSynchronously(); 
+     * //   // _helper->doSomethingSynchronously();
      * // } else {
      * //   // LOG_CRIT("Failed to create HelperActor for ParentActor " << id());
      * // }
@@ -969,7 +969,8 @@ public:
      * actor kills itself.
      */
     template <typename _Actor, typename... _Args>
-    [[nodiscard]] RefActorHandle<_Actor> addRefHandle(_Args &&...args) const {
+    [[nodiscard]] RefActorHandle<_Actor>
+    addRefHandle(_Args &&...args) const {
         return RefActorHandle<_Actor>(addRefActor<_Actor>(std::forward<_Args>(args)...));
     }
 
@@ -991,15 +992,15 @@ public:
      * 1. **NEVER access actor member variables after co_await**
      *    - Actor may be destroyed while coroutine is suspended
      *    - Accessing `this->_member` after suspension = UNDEFINED BEHAVIOR
-     * 
+     *
      * 2. **Capture all data by VALUE before first co_await**
      *    - Copy everything you need from actor state BEFORE any co_await
      *    - Never capture `this` or references to actor members
-     * 
+     *
      * 3. **Use ONLY CoroContext after suspension**
      *    - ctx.push<Event>() is safe (events to dead actors are ignored)
      *    - ctx.id() and ctx.time() are safe
-     * 
+     *
      * 4. **Keep coroutines SHORT-LIVED**
      *    - Long-running coroutines increase risk of actor destruction
      *    - Prefer multiple short coroutines over one long one
@@ -1016,30 +1017,31 @@ public:
      *     spawn_async([key, sender](auto ctx) -> qb::io::async::task<void> {
      *         // NO access to 'this' after this point!
      *         auto reply = co_await fetch(key);  // Actor may die here
-     *         
+     *
      *         // ONLY use ctx after co_await
      *         ctx.template push<ResultEvent>(reply);
      *     });
      * }
-     * 
+     *
      * @example ❌ DANGEROUS Pattern (DO NOT USE)
      * void on(RequestEvent& ev) {
      *     spawn_async([this](auto ctx) -> qb::io::async::task<void> {
      *         co_await sleep(100ms);  // Actor may die here
-     *         
+     *
      *         // ❌ CRASH: accessing this->_member after suspension!
      *         this->_member = value;  // UNDEFINED BEHAVIOR
      *     });
      * }
      */
     template <typename Func>
-    void spawn_async(Func&& func) const;
+    void spawn_async(Func &&func) const;
 
     /**
      * @brief Check if actor has active coroutines
      * @return true if any coroutines are still running
      */
-    [[nodiscard]] bool has_active_coroutines() const {
+    [[nodiscard]] bool
+    has_active_coroutines() const {
         return active_coroutines_ && active_coroutines_->load(std::memory_order_relaxed) > 0;
     }
 
@@ -1047,7 +1049,8 @@ public:
      * @brief Get number of active coroutines
      * @return Count of running coroutines
      */
-    [[nodiscard]] std::size_t active_coroutine_count() const {
+    [[nodiscard]] std::size_t
+    active_coroutine_count() const {
         return active_coroutines_ ? active_coroutines_->load(std::memory_order_relaxed) : 0;
     }
 
@@ -1056,7 +1059,8 @@ public:
      * @return Pointer to scheduler, or nullptr if not initialized
      * @private Internal use by VirtualCore for workflow integration
      */
-    [[nodiscard]] qb::io::async::CoroutineScheduler* get_coro_scheduler() const {
+    [[nodiscard]] qb::io::async::CoroutineScheduler *
+    get_coro_scheduler() const {
         return coro_scheduler_;
     }
 
@@ -1070,12 +1074,12 @@ private:
      *
      * Points to the listener's scheduler (not owned by actor).
      * All actors on the same VirtualCore share the scheduler for efficiency.
-     * 
+     *
      * SAFETY: When actor is destroyed, active_coroutines_ is checked.
      * Coroutines must NOT access actor state after suspension - they should
      * only use CoroContext to send events back to the actor.
      */
-    mutable qb::io::async::CoroutineScheduler* coro_scheduler_ = nullptr;
+    mutable qb::io::async::CoroutineScheduler *coro_scheduler_ = nullptr;
 
     /**
      * @brief Shared count of active coroutines.
@@ -1090,8 +1094,7 @@ private:
      *       `make_shared` is a negligible cost compared to the rest of actor
      *       construction and guarantees branch-predicted coroutine spawning.
      */
-    mutable std::shared_ptr<std::atomic<std::size_t>> active_coroutines_ =
-        std::make_shared<std::atomic<std::size_t>>(0);
+    mutable std::shared_ptr<std::atomic<std::size_t>> active_coroutines_ = std::make_shared<std::atomic<std::size_t>>(0);
 };
 
 /**
@@ -1112,7 +1115,8 @@ public:
      * @brief Construct from actor, capturing its ID by value
      * @param actor The parent actor (only used to capture ID)
      */
-    explicit CoroContext(Actor const *actor) : actor_id_(actor->id()) {}
+    explicit CoroContext(Actor const *actor)
+        : actor_id_(actor->id()) {}
 
     /**
      * @brief Send an event to self (the spawning actor's ID)
@@ -1137,7 +1141,10 @@ public:
      * @brief Get the spawning actor's ID (captured at construction)
      * @return ActorId
      */
-    [[nodiscard]] ActorId id() const noexcept { return actor_id_; }
+    [[nodiscard]] ActorId
+    id() const noexcept {
+        return actor_id_;
+    }
 
     /**
      * @brief Get current time from the VirtualCore
@@ -1207,8 +1214,8 @@ public:
  */
 template <typename _Actor>
 class RefActorHandle {
-    ActorId  _id;
-    _Actor  *_cached = nullptr;
+    ActorId _id;
+    _Actor *_cached = nullptr;
 
 public:
     RefActorHandle() noexcept = default;
@@ -1222,10 +1229,16 @@ public:
         , _cached(actor) {}
 
     /** @brief The ActorId of the referenced actor (may be invalid). */
-    [[nodiscard]] ActorId id() const noexcept { return _id; }
+    [[nodiscard]] ActorId
+    id() const noexcept {
+        return _id;
+    }
 
     /** @brief True iff constructed with a non-null actor. */
-    [[nodiscard]] bool valid() const noexcept { return _id.is_valid(); }
+    [[nodiscard]] bool
+    valid() const noexcept {
+        return _id.is_valid();
+    }
 
     /**
      * @brief Safe pointer accessor.
@@ -1235,20 +1248,25 @@ public:
     [[nodiscard]] _Actor *get() const noexcept;
 
     /** @brief `get()` but asserted non-null in debug builds. */
-    [[nodiscard]] _Actor *operator->() const noexcept {
+    [[nodiscard]] _Actor *
+    operator->() const noexcept {
         auto *p = get();
         assert(p && "RefActorHandle dereferenced after referenced actor was destroyed");
         return p;
     }
 
     /** @brief Dereference (undefined if `get() == nullptr`). */
-    [[nodiscard]] _Actor &operator*() const noexcept {
+    [[nodiscard]] _Actor &
+    operator*() const noexcept {
         auto *p = get();
         assert(p && "RefActorHandle dereferenced after referenced actor was destroyed");
         return *p;
     }
 
-    explicit operator bool() const noexcept { return get() != nullptr; }
+    explicit
+    operator bool() const noexcept {
+        return get() != nullptr;
+    }
 };
 
 /**
@@ -1259,12 +1277,12 @@ public:
  */
 class IActorFactory {
 public:
-    virtual ~IActorFactory()                     = default;
+    virtual ~IActorFactory() = default;
     /**
      * @brief Creates an actor instance.
      * @return Pointer to the created Actor.
      */
-    virtual Actor             *create()          = 0;
+    virtual Actor *create() = 0;
     /**
      * @brief Checks if the factory creates a service actor.
      * @return True if it creates a service actor, false otherwise.
@@ -1303,9 +1321,7 @@ public:
     static const char *
     getName() {
 #ifdef __GNUC__
-        static std::unique_ptr<char, void (*)(void *)> res{
-            abi::__cxa_demangle(typeid(_Type).name(), nullptr, nullptr, nullptr),
-            std::free};
+        static std::unique_ptr<char, void (*)(void *)> res{abi::__cxa_demangle(typeid(_Type).name(), nullptr, nullptr, nullptr), std::free};
 
         return res.get();
 #else
@@ -1345,8 +1361,7 @@ struct is_specialization_of<Template, Template<Args...>> : std::true_type {};
  * @tparam T Type to check
  */
 template <typename T>
-concept string_literal = std::is_array_v<T> &&
-                         std::is_same_v<std::remove_extent_t<T>, const char>;
+concept string_literal = std::is_array_v<T> && std::is_same_v<std::remove_extent_t<T>, const char>;
 
 /**
  * @concept reference_wrapper_type
@@ -1355,8 +1370,7 @@ concept string_literal = std::is_array_v<T> &&
  * @tparam T Type to check
  */
 template <typename T>
-concept reference_wrapper_type =
-    is_specialization_of<std::reference_wrapper, std::decay_t<T>>::value;
+concept reference_wrapper_type = is_specialization_of<std::reference_wrapper, std::decay_t<T>>::value;
 
 /**
  * @struct actor_factory_param
@@ -1379,17 +1393,12 @@ struct actor_factory_param {
     /** @brief The resulting type after transformation */
     // Modern C++: using constexpr if chain in the using declaration is not possible,
     // so we keep the std::conditional_t structure but with cleaner concept-based checks
-    using type = std::conditional_t<
-        is_ref_wrapper,
-        no_ref, // Keep ref_wrapper untouched
-
-        std::conditional_t<
-            string_literal<T>,
-            std::string,  // string literals → std::string
-
-            std::decay_t<T> // fallback
-            >
-        >;
+    using type = std::conditional_t<is_ref_wrapper,
+                                    no_ref, // Keep ref_wrapper untouched
+                                    std::conditional_t<string_literal<T>,
+                                                       std::string,    // string literals → std::string
+                                                       std::decay_t<T> // fallback
+                                                       >>;
 };
 
 /**
@@ -1399,7 +1408,7 @@ struct actor_factory_param {
  * - String literals are converted to std::string
  * - Reference wrappers are preserved as-is
  * - Other types are forwarded with their original value categories
- * 
+ *
  * @tparam T The type of the argument to forward
  * @param val The value to forward
  * @return The transformed and properly forwarded value
@@ -1416,7 +1425,8 @@ struct actor_factory_param {
  * @ingroup Actor
  */
 template <typename T>
-[[nodiscard]] inline auto actor_factory_forward(T&& val) {
+[[nodiscard]] inline auto
+actor_factory_forward(T &&val) {
     // C++20: use concept for direct type checking instead of std::is_same_v
     if constexpr (string_literal<T>) {
         return std::string(std::forward<T>(val)); // copy literal to std::string
@@ -1469,32 +1479,37 @@ allocate_actor(_Args &&...args) {
  *          constructor arguments, managing type information via ActorProxy.
  */
 template <typename _Actor, typename... _Args>
-class TActorFactory : public IActorFactory, public ActorProxy {
+class TActorFactory
+    : public IActorFactory
+    , public ActorProxy {
     using Tuple = std::tuple<typename actor_factory_param<_Args>::type...>;
 
     ActorId _id;
-    Tuple _parameters;
+    Tuple   _parameters;
 
 public:
-    explicit TActorFactory(ActorId const id, _Args&&... args)
+    explicit TActorFactory(ActorId const id, _Args &&...args)
         : _id(id)
         , _parameters(actor_factory_forward<_Args>(std::forward<_Args>(args))...) {}
 
-    Actor* create() final {
+    Actor *
+    create() final {
         return create_impl(std::index_sequence_for<_Args...>{});
     }
 
-    [[nodiscard]] bool isService() const final {
+    [[nodiscard]] bool
+    isService() const final {
         // C++20: use concept instead of std::is_base_of_v
         return service_type<_Actor>;
     }
 
 private:
     template <std::size_t... Is>
-    Actor* create_impl(std::index_sequence<Is...>) {
+    Actor *
+    create_impl(std::index_sequence<Is...>) {
         // Routes through the `qb::allocate_actor` customization point so users
         // can plug in pool / arena / PMR strategies without forking the framework.
-        auto* actor = qb::allocate_actor<_Actor>(std::get<Is>(_parameters)...);
+        auto *actor = qb::allocate_actor<_Actor>(std::get<Is>(_parameters)...);
         ActorProxy::setTypeInfo<_Actor>(*actor);
         return actor;
     }
@@ -1525,7 +1540,7 @@ qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor)
 /**
  * @brief Stream output operator for Actor objects
  * @details Formats and outputs actor information to a stream
- * 
+ *
  * @param os Output stream to write to
  * @param actor The Actor object to format and output
  * @return Reference to the output stream

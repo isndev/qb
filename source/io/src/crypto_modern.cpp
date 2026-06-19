@@ -8,7 +8,7 @@
  * cryptographic utilities for the QB framework using the latest OpenSSL APIs.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -39,9 +39,8 @@ get_openssl_error() {
 }
 
 static void
-validate_symmetric_parameters(const EVP_CIPHER                 *cipher,
-                              const std::vector<unsigned char> &key,
-                              const std::vector<unsigned char> &iv, bool is_aead) {
+validate_symmetric_parameters(const EVP_CIPHER *cipher, const std::vector<unsigned char> &key, const std::vector<unsigned char> &iv,
+                              bool is_aead) {
     const auto expected_key_size = static_cast<size_t>(EVP_CIPHER_key_length(cipher));
     const auto expected_iv_size  = static_cast<size_t>(EVP_CIPHER_iv_length(cipher));
 
@@ -53,8 +52,7 @@ validate_symmetric_parameters(const EVP_CIPHER                 *cipher,
         return;
     }
 
-    if ((!is_aead && iv.size() != expected_iv_size) ||
-        (is_aead && iv.size() < expected_iv_size)) {
+    if ((!is_aead && iv.size() != expected_iv_size) || (is_aead && iv.size() < expected_iv_size)) {
         throw std::invalid_argument("Invalid IV size for symmetric algorithm");
     }
 }
@@ -90,7 +88,7 @@ crypto::generate_random_bytes(size_t size) {
     std::vector<unsigned char> bytes(size);
     if (!secure_random_fill(bytes)) {
         throw std::runtime_error("Failed to generate random bytes: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
     return bytes;
 }
@@ -154,10 +152,8 @@ crypto::generate_key(SymmetricAlgorithm algorithm) {
 
 // Symmetric encryption implementation
 std::vector<unsigned char>
-crypto::encrypt(const std::vector<unsigned char> &plaintext,
-                const std::vector<unsigned char> &key,
-                const std::vector<unsigned char> &iv, SymmetricAlgorithm algorithm,
-                const std::vector<unsigned char> &aad) {
+crypto::encrypt(const std::vector<unsigned char> &plaintext, const std::vector<unsigned char> &key, const std::vector<unsigned char> &iv,
+                SymmetricAlgorithm algorithm, const std::vector<unsigned char> &aad) {
     const EVP_CIPHER *cipher  = nullptr;
     int               tag_len = 0;
     bool              is_aead = false;
@@ -203,12 +199,11 @@ crypto::encrypt(const std::vector<unsigned char> &plaintext,
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
         throw std::runtime_error("Failed to create cipher context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     // Pre-allocate output buffer with space for ciphertext and tag (if AEAD)
-    std::vector<unsigned char> ciphertext(plaintext.size() + EVP_MAX_BLOCK_LENGTH +
-                                          tag_len);
+    std::vector<unsigned char> ciphertext(plaintext.size() + EVP_MAX_BLOCK_LENGTH + tag_len);
     int                        out_len   = 0;
     int                        final_len = 0;
 
@@ -216,20 +211,19 @@ crypto::encrypt(const std::vector<unsigned char> &plaintext,
         // Initialize encryption operation
         if (EVP_EncryptInit_ex(ctx, cipher, nullptr, key.data(), iv.data()) != 1) {
             throw std::runtime_error("Failed to initialize encryption: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                     get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Process AAD for AEAD ciphers
         if (is_aead && !aad.empty()) {
             if (EVP_EncryptUpdate(ctx, nullptr, &out_len, aad.data(), aad.size()) != 1) {
                 throw std::runtime_error("Failed to process AAD: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                         get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                         get_openssl_error());       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             }
         }
 
         // Encrypt plaintext
-        if (EVP_EncryptUpdate(ctx, ciphertext.data(), &out_len, plaintext.data(),
-                              plaintext.size()) != 1) {
+        if (EVP_EncryptUpdate(ctx, ciphertext.data(), &out_len, plaintext.data(), plaintext.size()) != 1) {
             throw std::runtime_error("Failed to encrypt data: " + get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
@@ -238,7 +232,7 @@ crypto::encrypt(const std::vector<unsigned char> &plaintext,
         // Finalize encryption
         if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + out_len, &final_len) != 1) {
             throw std::runtime_error("Failed to finalize encryption: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                     get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_error());               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         total_len += final_len;
@@ -246,10 +240,9 @@ crypto::encrypt(const std::vector<unsigned char> &plaintext,
         // For AEAD modes, get the authentication tag
         if (is_aead) {
             std::vector<unsigned char> tag(tag_len);
-            if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, tag_len, tag.data()) !=
-                1) {
+            if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, tag_len, tag.data()) != 1) {
                 throw std::runtime_error("Failed to get authentication tag: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                         get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                         get_openssl_error());                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             }
 
             // Append tag to ciphertext
@@ -263,16 +256,14 @@ crypto::encrypt(const std::vector<unsigned char> &plaintext,
         return ciphertext;
     } catch (const std::exception &) {
         EVP_CIPHER_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw; // rethrow the original exception (throw e; slices derived types)
+        throw;                    // rethrow the original exception (throw e; slices derived types)
     }
 }
 
 // Symmetric decryption implementation
 std::vector<unsigned char>
-crypto::decrypt(const std::vector<unsigned char> &ciphertext,
-                const std::vector<unsigned char> &key,
-                const std::vector<unsigned char> &iv, SymmetricAlgorithm algorithm,
-                const std::vector<unsigned char> &aad) {
+crypto::decrypt(const std::vector<unsigned char> &ciphertext, const std::vector<unsigned char> &key, const std::vector<unsigned char> &iv,
+                SymmetricAlgorithm algorithm, const std::vector<unsigned char> &aad) {
     const EVP_CIPHER *cipher  = nullptr;
     int               tag_len = 0;
     bool              is_aead = false;
@@ -323,7 +314,7 @@ crypto::decrypt(const std::vector<unsigned char> &ciphertext,
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
         throw std::runtime_error("Failed to create cipher context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     // Separate the tag from ciphertext for AEAD modes
@@ -337,8 +328,7 @@ crypto::decrypt(const std::vector<unsigned char> &ciphertext,
     }
 
     // Pre-allocate output buffer
-    std::vector<unsigned char> plaintext(actual_ciphertext.size() +
-                                         EVP_MAX_BLOCK_LENGTH);
+    std::vector<unsigned char> plaintext(actual_ciphertext.size() + EVP_MAX_BLOCK_LENGTH);
     int                        out_len   = 0;
     int                        final_len = 0;
 
@@ -346,29 +336,27 @@ crypto::decrypt(const std::vector<unsigned char> &ciphertext,
         // Initialize decryption operation
         if (EVP_DecryptInit_ex(ctx, cipher, nullptr, key.data(), iv.data()) != 1) {
             throw std::runtime_error("Failed to initialize decryption: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                     get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Process AAD for AEAD ciphers
         if (is_aead && !aad.empty()) {
             if (EVP_DecryptUpdate(ctx, nullptr, &out_len, aad.data(), aad.size()) != 1) {
                 throw std::runtime_error("Failed to process AAD: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                         get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                         get_openssl_error());       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             }
         }
 
         // For AEAD modes, set the authentication tag
         if (is_aead) {
-            if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, tag_len, tag.data()) !=
-                1) {
+            if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, tag_len, tag.data()) != 1) {
                 throw std::runtime_error("Failed to set authentication tag: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                         get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                         get_openssl_error());                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             }
         }
 
         // Decrypt ciphertext
-        if (EVP_DecryptUpdate(ctx, plaintext.data(), &out_len, actual_ciphertext.data(),
-                              actual_ciphertext.size()) != 1) {
+        if (EVP_DecryptUpdate(ctx, plaintext.data(), &out_len, actual_ciphertext.data(), actual_ciphertext.size()) != 1) {
             throw std::runtime_error("Failed to decrypt data: " + get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
@@ -383,8 +371,7 @@ crypto::decrypt(const std::vector<unsigned char> &ciphertext,
                 return std::vector<unsigned char>(); // Return empty vector on auth
                                                      // failure
             } else {
-                throw std::runtime_error("Failed to finalize decryption: " +
-                                         get_openssl_error());
+                throw std::runtime_error("Failed to finalize decryption: " + get_openssl_error());
             }
         }
 
@@ -410,13 +397,13 @@ crypto::hash(const std::vector<unsigned char> &data, DigestAlgorithm algorithm) 
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     if (!ctx) {
         throw std::runtime_error("Failed to create digest context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     try {
         if (EVP_DigestInit_ex(ctx, md, nullptr) != 1) {
             throw std::runtime_error("Failed to initialize digest: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                     get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_error());             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         if (EVP_DigestUpdate(ctx, data.data(), data.size()) != 1) {
@@ -428,7 +415,7 @@ crypto::hash(const std::vector<unsigned char> &data, DigestAlgorithm algorithm) 
 
         if (EVP_DigestFinal_ex(ctx, digest.data(), &digest_len) != 1) {
             throw std::runtime_error("Failed to finalize digest: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                     get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_error());           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         digest.resize(digest_len);
@@ -436,14 +423,13 @@ crypto::hash(const std::vector<unsigned char> &data, DigestAlgorithm algorithm) 
         return digest;
     } catch (const std::exception &) {
         EVP_MD_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw; // rethrow the original exception (throw e; slices derived types)
+        throw;                // rethrow the original exception (throw e; slices derived types)
     }
 }
 
 // HMAC implementation
 std::vector<unsigned char>
-crypto::hmac(const std::vector<unsigned char> &data,
-             const std::vector<unsigned char> &key, DigestAlgorithm algorithm) {
+crypto::hmac(const std::vector<unsigned char> &data, const std::vector<unsigned char> &key, DigestAlgorithm algorithm) {
     const EVP_MD *md = get_evp_md(algorithm);
     if (!md) {
         throw std::runtime_error("Unknown digest algorithm");
@@ -452,48 +438,47 @@ crypto::hmac(const std::vector<unsigned char> &data,
     EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
     if (!mdctx) {
         throw std::runtime_error("Failed to create digest context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     try {
         // Créer la clé pour HMAC
-        EVP_PKEY *pkey =
-            EVP_PKEY_new_mac_key(EVP_PKEY_HMAC, nullptr, key.data(), key.size());
+        EVP_PKEY *pkey = EVP_PKEY_new_mac_key(EVP_PKEY_HMAC, nullptr, key.data(), key.size());
         if (!pkey) {
-            EVP_MD_CTX_free(mdctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            EVP_MD_CTX_free(mdctx);                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             throw std::runtime_error("Failed to create HMAC key: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                     get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_error());           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Initialiser l'opération de signature
         if (EVP_DigestSignInit(mdctx, nullptr, md, nullptr, pkey) != 1) {
-            EVP_PKEY_free(pkey); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            EVP_MD_CTX_free(mdctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            EVP_PKEY_free(pkey);                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            EVP_MD_CTX_free(mdctx);                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             throw std::runtime_error("Failed to initialize HMAC: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                     get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_error());           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Mettre à jour le contexte avec les données
         if (EVP_DigestSignUpdate(mdctx, data.data(), data.size()) != 1) {
-            EVP_PKEY_free(pkey); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            EVP_MD_CTX_free(mdctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            EVP_PKEY_free(pkey);                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            EVP_MD_CTX_free(mdctx);                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             throw std::runtime_error("Failed to update HMAC: " + get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Déterminer la taille du résultat
         size_t hmac_len = 0;
         if (EVP_DigestSignFinal(mdctx, nullptr, &hmac_len) != 1) {
-            EVP_PKEY_free(pkey); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            EVP_MD_CTX_free(mdctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            EVP_PKEY_free(pkey);                                         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            EVP_MD_CTX_free(mdctx);                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             throw std::runtime_error("Failed to determine HMAC size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                     get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_error());               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Récupérer le résultat final
         std::vector<unsigned char> hmac_value(hmac_len);
         if (EVP_DigestSignFinal(mdctx, hmac_value.data(), &hmac_len) != 1) {
-            EVP_PKEY_free(pkey); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            EVP_MD_CTX_free(mdctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            EVP_PKEY_free(pkey);                                                         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+            EVP_MD_CTX_free(mdctx);                                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             throw std::runtime_error("Failed to finalize HMAC: " + get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
@@ -503,7 +488,7 @@ crypto::hmac(const std::vector<unsigned char> &data,
         return hmac_value;
     } catch (const std::exception &) {
         EVP_MD_CTX_free(mdctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw; // rethrow the original exception (throw e; slices derived types)
+        throw;                  // rethrow the original exception (throw e; slices derived types)
     }
 }
 

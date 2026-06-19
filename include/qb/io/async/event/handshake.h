@@ -3,7 +3,7 @@
  * @brief Handshake event for asynchronous input streams.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -41,7 +41,7 @@ namespace qb::io::async::event {
  *     LOG_INFO("Handshake complete.");
  *     // Optionally, close the input stream or take other actions.
  *     // For example, if this is a client, it might decide to disconnect.
- *     // this->disconnect(); 
+ *     // this->disconnect();
  *   }
  * };
  * @endcode

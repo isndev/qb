@@ -30,52 +30,52 @@ namespace qb::io::async::quic {
 
 class endpoint {
 public:
-    enum class state {
-        idle,
-        listening,
-        connecting,
-        connected,
-        closing,
-        closed
-    };
+    enum class state { idle, listening, connecting, connected, closing, closed };
 
 private:
-    qb::io::quic::settings _settings;
-    qb::io::quic::stats _stats;
+    qb::io::quic::settings                 _settings;
+    qb::io::quic::stats                    _stats;
     std::unique_ptr<qb::io::quic::backend> _backend;
-    std::deque<qb::io::quic::packet> _pending_udp_packets;
-    qb::io::udp::socket _socket;
-    qb::io::endpoint _local_endpoint;
-    qb::io::async::event::io *_io_event = nullptr;
-    qb::io::async::event::timer *_timer_event = nullptr;
-    state _state = state::idle;
-    bool _server_role = false;
-    bool _open = false;
+    std::deque<qb::io::quic::packet>       _pending_udp_packets;
+    qb::io::udp::socket                    _socket;
+    qb::io::endpoint                       _local_endpoint;
+    qb::io::async::event::io              *_io_event    = nullptr;
+    qb::io::async::event::timer           *_timer_event = nullptr;
+    state                                  _state       = state::idle;
+    bool                                   _server_role = false;
+    bool                                   _open        = false;
 
 protected:
-    virtual void dispatch(event::connected const&) {}
-    virtual void dispatch(event::connection_closed const&) {}
-    virtual void dispatch(event::stream_started const&) {}
-    virtual void dispatch(event::stream_data const&) {}
-    virtual void dispatch(event::stream_data_acked const&) {}
-    virtual void dispatch(event::stream_closed const&) {}
-    virtual void dispatch(event::datagram const&) {}
-    virtual void after_dispatch_events() {}
+    virtual void
+    dispatch(event::connected const &) {}
+    virtual void
+    dispatch(event::connection_closed const &) {}
+    virtual void
+    dispatch(event::stream_started const &) {}
+    virtual void
+    dispatch(event::stream_data const &) {}
+    virtual void
+    dispatch(event::stream_data_acked const &) {}
+    virtual void
+    dispatch(event::stream_closed const &) {}
+    virtual void
+    dispatch(event::datagram const &) {}
+    virtual void
+    after_dispatch_events() {}
 
-    [[nodiscard]] qb::io::quic::stream_direction stream_direction(std::uint64_t id) const noexcept {
-        return (id & 0x2u) == 0
-            ? qb::io::quic::stream_direction::bidirectional
-            : qb::io::quic::stream_direction::unidirectional;
+    [[nodiscard]] qb::io::quic::stream_direction
+    stream_direction(std::uint64_t id) const noexcept {
+        return (id & 0x2u) == 0 ? qb::io::quic::stream_direction::bidirectional : qb::io::quic::stream_direction::unidirectional;
     }
 
-    [[nodiscard]] qb::io::quic::stream_origin stream_origin(std::uint64_t id) const noexcept {
+    [[nodiscard]] qb::io::quic::stream_origin
+    stream_origin(std::uint64_t id) const noexcept {
         const bool server_initiated = (id & 0x1u) != 0;
-        return server_initiated == _server_role
-            ? qb::io::quic::stream_origin::local
-            : qb::io::quic::stream_origin::remote;
+        return server_initiated == _server_role ? qb::io::quic::stream_origin::local : qb::io::quic::stream_origin::remote;
     }
 
-    void ensure_backend() {
+    void
+    ensure_backend() {
         if (_backend)
             return;
         if (!qb::io::quic::available())
@@ -85,36 +85,39 @@ protected:
             throw std::runtime_error("No QUIC backend is attached to this endpoint.");
     }
 
-    void register_io_watcher() {
+    void
+    register_io_watcher() {
         if (_io_event)
             return;
-        auto& ev = listener::current.registerEvent<qb::io::async::event::io>(
-            *this, _socket.native_handle(), EV_READ);
+        auto &ev  = listener::current.registerEvent<qb::io::async::event::io>(*this, _socket.native_handle(), EV_READ);
         _io_event = &ev;
         _io_event->start();
     }
 
-    void register_timer_watcher() {
+    void
+    register_timer_watcher() {
         if (_timer_event)
             return;
-        auto& ev = listener::current.registerEvent<qb::io::async::event::timer>(*this);
+        auto &ev     = listener::current.registerEvent<qb::io::async::event::timer>(*this);
         _timer_event = &ev;
     }
 
-    void unregister_watchers() noexcept {
+    void
+    unregister_watchers() noexcept {
         if (_io_event) {
             auto *iface = _io_event->_interface;
-            _io_event = nullptr;
+            _io_event   = nullptr;
             listener::current.unregisterEvent(iface);
         }
         if (_timer_event) {
-            auto *iface = _timer_event->_interface;
+            auto *iface  = _timer_event->_interface;
             _timer_event = nullptr;
             listener::current.unregisterEvent(iface);
         }
     }
 
-    void arm_timer() {
+    void
+    arm_timer() {
         if (!_backend || !_timer_event)
             return;
         const auto deadline = _backend->next_timeout();
@@ -122,14 +125,13 @@ protected:
             _timer_event->stop();
             return;
         }
-        const auto now = std::chrono::steady_clock::now();
-        const qb::duration delay = deadline <= now
-            ? qb::duration::zero()
-            : (deadline - now);
+        const auto         now   = std::chrono::steady_clock::now();
+        const qb::duration delay = deadline <= now ? qb::duration::zero() : (deadline - now);
         _timer_event->start(qb::detail::to_ev_seconds(delay));
     }
 
-    void fail_transport(std::uint64_t error_code, std::string_view reason) {
+    void
+    fail_transport(std::uint64_t error_code, std::string_view reason) {
         _pending_udp_packets.clear();
         if (_io_event)
             _io_event->stop();
@@ -138,20 +140,17 @@ protected:
         if (_socket.is_open())
             _socket.close();
         _state = state::closed;
-        _open = false;
+        _open  = false;
         dispatch(qb::io::async::quic::event::connection_closed{
-            0,
-            qb::io::quic::disconnect_reason::transport_error,
-            error_code,
-            std::string(reason)
+            0, qb::io::quic::disconnect_reason::transport_error, error_code, std::string(reason)
         });
     }
 
-    void flush_udp_packets() {
-        std::uint64_t budget = _settings.udp_tx_batch_size ? _settings.udp_tx_batch_size
-                                                           : std::numeric_limits<std::uint64_t>::max();
+    void
+    flush_udp_packets() {
+        std::uint64_t budget = _settings.udp_tx_batch_size ? _settings.udp_tx_batch_size : std::numeric_limits<std::uint64_t>::max();
         while (!_pending_udp_packets.empty() && budget-- > 0) {
-            auto const& pkt = _pending_udp_packets.front();
+            auto const &pkt = _pending_udp_packets.front();
             if (!pkt.remote) {
                 _pending_udp_packets.pop_front();
                 continue;
@@ -160,19 +159,19 @@ protected:
             if (ret < 0) {
                 if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
                     break;
-                fail_transport(static_cast<std::uint64_t>(qb::io::socket::get_last_errno()),
-                               "QUIC UDP write failed");
+                fail_transport(static_cast<std::uint64_t>(qb::io::socket::get_last_errno()), "QUIC UDP write failed");
                 return;
             }
             _pending_udp_packets.pop_front();
         }
     }
 
-    void drain_backend_packets() {
+    void
+    drain_backend_packets() {
         if (!_backend)
             return;
         auto packets = _backend->drain_packets();
-        for (auto& pkt : packets)
+        for (auto &pkt : packets)
             _pending_udp_packets.push_back(std::move(pkt));
         flush_udp_packets();
         if (!_backend)
@@ -185,73 +184,49 @@ protected:
         arm_timer();
     }
 
-    void drain_backend_events() {
+    void
+    drain_backend_events() {
         if (!_backend)
             return;
-        for (auto const& event : _backend->drain_events()) {
+        for (auto const &event : _backend->drain_events()) {
             if (event.type == qb::io::quic::backend_event::kind::connected) {
                 _state = state::connected;
-                dispatch(qb::io::async::quic::event::connected{
-                    event.connection_id,
-                    event.text
-                });
+                dispatch(qb::io::async::quic::event::connected{event.connection_id, event.text});
             } else if (event.type == qb::io::quic::backend_event::kind::connection_closed) {
                 if (!_server_role || event.connection_id == 0) {
                     _state = state::closed;
-                    _open = false;
+                    _open  = false;
                 } else {
-                    _state = _backend->current_stats().active_connections > 0
-                        ? state::connected
-                        : state::listening;
-                    _open = true;
+                    _state = _backend->current_stats().active_connections > 0 ? state::connected : state::listening;
+                    _open  = true;
                 }
                 dispatch(qb::io::async::quic::event::connection_closed{
                     event.connection_id,
-                    event.connection_reason == qb::io::quic::disconnect_reason::none
-                        ? qb::io::quic::disconnect_reason::transport_error
-                        : event.connection_reason,
-                    event.error_code,
-                    event.text
+                    event.connection_reason == qb::io::quic::disconnect_reason::none ? qb::io::quic::disconnect_reason::transport_error
+                                                                                     : event.connection_reason,
+                    event.error_code, event.text
                 });
             } else if (event.type == qb::io::quic::backend_event::kind::stream_started) {
                 dispatch(qb::io::async::quic::event::stream_started{
-                    event.connection_id,
-                    event.stream_id,
-                    stream_direction(event.stream_id),
-                    stream_origin(event.stream_id)
+                    event.connection_id, event.stream_id, stream_direction(event.stream_id), stream_origin(event.stream_id)
                 });
             } else if (event.type == qb::io::quic::backend_event::kind::stream_data) {
                 dispatch(qb::io::async::quic::event::stream_data{
-                    event.connection_id,
-                    event.stream_id,
-                    std::string_view{
-                        reinterpret_cast<const char *>(event.payload.data()),
-                        event.payload.size()
-                    },
-                    event.error_code != 0
+                    event.connection_id, event.stream_id,
+                    std::string_view{reinterpret_cast<const char *>(event.payload.data()), event.payload.size()}, event.error_code != 0
                 });
             } else if (event.type == qb::io::quic::backend_event::kind::stream_data_acked) {
-                dispatch(qb::io::async::quic::event::stream_data_acked{
-                    event.connection_id,
-                    event.stream_id,
-                    event.error_code
-                });
+                dispatch(qb::io::async::quic::event::stream_data_acked{event.connection_id, event.stream_id, event.error_code});
             } else if (event.type == qb::io::quic::backend_event::kind::stream_closed) {
                 dispatch(qb::io::async::quic::event::stream_closed{
-                    event.connection_id,
-                    event.stream_id,
-                    event.stream_reason == qb::io::quic::stream_close_reason::none
-                        ? qb::io::quic::stream_close_reason::reset
-                        : event.stream_reason,
+                    event.connection_id, event.stream_id,
+                    event.stream_reason == qb::io::quic::stream_close_reason::none ? qb::io::quic::stream_close_reason::reset
+                                                                                   : event.stream_reason,
                     event.error_code
                 });
             } else if (event.type == qb::io::quic::backend_event::kind::datagram) {
                 dispatch(qb::io::async::quic::event::datagram{
-                    event.connection_id,
-                    std::string_view{
-                        reinterpret_cast<const char *>(event.payload.data()),
-                        event.payload.size()
-                    }
+                    event.connection_id, std::string_view{reinterpret_cast<const char *>(event.payload.data()), event.payload.size()}
                 });
             }
         }
@@ -263,46 +238,68 @@ public:
     endpoint() = default;
     explicit endpoint(qb::io::quic::settings settings)
         : _settings(settings) {}
-    explicit endpoint(std::unique_ptr<qb::io::quic::backend> backend,
-                      qb::io::quic::settings settings = {})
+    explicit endpoint(std::unique_ptr<qb::io::quic::backend> backend, qb::io::quic::settings settings = {})
         : _settings(settings)
         , _backend(std::move(backend)) {}
 
-    endpoint(endpoint const&) = delete;
-    endpoint& operator=(endpoint const&) = delete;
-    endpoint(endpoint&&) = delete;
-    endpoint& operator=(endpoint&&) = delete;
+    endpoint(endpoint const &)            = delete;
+    endpoint &operator=(endpoint const &) = delete;
+    endpoint(endpoint &&)                 = delete;
+    endpoint &operator=(endpoint &&)      = delete;
 
     virtual ~endpoint() {
         close();
         unregister_watchers();
     }
 
-    [[nodiscard]] bool is_open() const noexcept { return _open; }
-    [[nodiscard]] state current_state() const noexcept { return _state; }
-    [[nodiscard]] qb::io::quic::settings const& settings() const noexcept { return _settings; }
-    [[nodiscard]] qb::io::quic::stats const& stats() const noexcept { return _stats; }
-    [[nodiscard]] qb::io::endpoint const& local_endpoint() const noexcept { return _local_endpoint; }
-    [[nodiscard]] qb::io::quic::backend *backend() noexcept { return _backend.get(); }
-    [[nodiscard]] qb::io::quic::backend const *backend() const noexcept { return _backend.get(); }
+    [[nodiscard]] bool
+    is_open() const noexcept {
+        return _open;
+    }
+    [[nodiscard]] state
+    current_state() const noexcept {
+        return _state;
+    }
+    [[nodiscard]] qb::io::quic::settings const &
+    settings() const noexcept {
+        return _settings;
+    }
+    [[nodiscard]] qb::io::quic::stats const &
+    stats() const noexcept {
+        return _stats;
+    }
+    [[nodiscard]] qb::io::endpoint const &
+    local_endpoint() const noexcept {
+        return _local_endpoint;
+    }
+    [[nodiscard]] qb::io::quic::backend *
+    backend() noexcept {
+        return _backend.get();
+    }
+    [[nodiscard]] qb::io::quic::backend const *
+    backend() const noexcept {
+        return _backend.get();
+    }
 
-    void set_backend(std::unique_ptr<qb::io::quic::backend> backend) noexcept {
+    void
+    set_backend(std::unique_ptr<qb::io::quic::backend> backend) noexcept {
         _backend = std::move(backend);
     }
 
-    void set_settings(qb::io::quic::settings settings) noexcept {
+    void
+    set_settings(qb::io::quic::settings settings) noexcept {
         _settings = settings;
     }
 
-    void poll() {
+    void
+    poll() {
         drain_backend_packets();
         drain_backend_events();
     }
 
-    bool listen(qb::io::uri const& bind_uri,
-                std::filesystem::path const& cert_file,
-                std::filesystem::path const& key_file,
-                std::vector<std::string> const& alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
+    bool
+    listen(qb::io::uri const &bind_uri, std::filesystem::path const &cert_file, std::filesystem::path const &key_file,
+           std::vector<std::string> const &alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
         ensure_backend();
         if (_socket.bind(bind_uri) != 0)
             return false;
@@ -313,9 +310,9 @@ public:
         tls.private_key_file = key_file;
         _backend->configure(_settings);
         _backend->start_server(_local_endpoint, alpn_protocols, tls);
-        _state = state::listening;
+        _state       = state::listening;
         _server_role = true;
-        _open = true;
+        _open        = true;
         register_io_watcher();
         register_timer_watcher();
         _stats = _backend->current_stats();
@@ -323,16 +320,16 @@ public:
         return true;
     }
 
-    bool connect(qb::io::uri const& remote_uri,
-                 std::vector<std::string> const& alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
+    bool
+    connect(qb::io::uri const &remote_uri, std::vector<std::string> const &alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
         qb::io::quic::tls_config tls;
         tls.server_name.assign(remote_uri.host());
         return connect(remote_uri, tls, alpn_protocols);
     }
 
-    bool connect(qb::io::uri const& remote_uri,
-                 qb::io::quic::tls_config tls,
-                 std::vector<std::string> const& alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
+    bool
+    connect(qb::io::uri const &remote_uri, qb::io::quic::tls_config tls,
+            std::vector<std::string> const &alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
         ensure_backend();
         qb::io::endpoint remote;
         if (!remote_uri.host().empty())
@@ -351,9 +348,9 @@ public:
             tls.server_name.assign(remote_uri.host());
         _backend->configure(_settings);
         _backend->start_client(_local_endpoint, remote, alpn_protocols, tls);
-        _state = state::connecting;
+        _state       = state::connecting;
         _server_role = false;
-        _open = true;
+        _open        = true;
         register_io_watcher();
         register_timer_watcher();
         _stats = _backend->current_stats();
@@ -361,61 +358,58 @@ public:
         return true;
     }
 
-    stream open_bidirectional_stream() {
+    stream
+    open_bidirectional_stream() {
         return open_bidirectional_stream(0);
     }
 
-    stream open_bidirectional_stream(std::uint64_t connection_id) {
+    stream
+    open_bidirectional_stream(std::uint64_t connection_id) {
         ensure_backend();
-        const auto id = _backend->open_stream(connection_id,
-                                              qb::io::quic::stream_direction::bidirectional);
-        _stats = _backend->current_stats();
-        return {connection_id, id, qb::io::quic::stream_direction::bidirectional,
-                qb::io::quic::stream_origin::local};
+        const auto id = _backend->open_stream(connection_id, qb::io::quic::stream_direction::bidirectional);
+        _stats        = _backend->current_stats();
+        return {connection_id, id, qb::io::quic::stream_direction::bidirectional, qb::io::quic::stream_origin::local};
     }
 
-    stream open_unidirectional_stream() {
+    stream
+    open_unidirectional_stream() {
         return open_unidirectional_stream(0);
     }
 
-    stream open_unidirectional_stream(std::uint64_t connection_id) {
+    stream
+    open_unidirectional_stream(std::uint64_t connection_id) {
         ensure_backend();
-        const auto id = _backend->open_stream(connection_id,
-                                              qb::io::quic::stream_direction::unidirectional);
-        _stats = _backend->current_stats();
-        return {connection_id, id, qb::io::quic::stream_direction::unidirectional,
-                qb::io::quic::stream_origin::local};
+        const auto id = _backend->open_stream(connection_id, qb::io::quic::stream_direction::unidirectional);
+        _stats        = _backend->current_stats();
+        return {connection_id, id, qb::io::quic::stream_direction::unidirectional, qb::io::quic::stream_origin::local};
     }
 
-    void send_stream_data(std::uint64_t stream_id, std::span<const std::byte> data,
-                          bool fin = false) {
+    void
+    send_stream_data(std::uint64_t stream_id, std::span<const std::byte> data, bool fin = false) {
         send_stream_data(0, stream_id, data, fin);
     }
 
-    void send_stream_data(std::uint64_t connection_id, std::uint64_t stream_id,
-                          std::span<const std::byte> data, bool fin = false) {
+    void
+    send_stream_data(std::uint64_t connection_id, std::uint64_t stream_id, std::span<const std::byte> data, bool fin = false) {
         ensure_backend();
         _backend->send_stream_data(connection_id, stream_id, data, fin);
         drain_backend_packets();
         drain_backend_events();
     }
 
-    void send_stream_data(std::uint64_t stream_id, std::string_view data,
-                          bool fin = false) {
+    void
+    send_stream_data(std::uint64_t stream_id, std::string_view data, bool fin = false) {
         send_stream_data(0, stream_id, data, fin);
     }
 
-    void send_stream_data(std::uint64_t connection_id, std::uint64_t stream_id,
-                          std::string_view data, bool fin = false) {
-        send_stream_data(connection_id, stream_id,
-                         std::span<const std::byte>(
-                             reinterpret_cast<const std::byte *>(data.data()),
-                             data.size()),
+    void
+    send_stream_data(std::uint64_t connection_id, std::uint64_t stream_id, std::string_view data, bool fin = false) {
+        send_stream_data(connection_id, stream_id, std::span<const std::byte>(reinterpret_cast<const std::byte *>(data.data()), data.size()),
                          fin);
     }
 
-    void extend_stream_credit(std::uint64_t connection_id, std::uint64_t stream_id,
-                              std::uint64_t bytes) {
+    void
+    extend_stream_credit(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t bytes) {
         if (!_backend || bytes == 0)
             return;
         _backend->extend_stream_credit(connection_id, stream_id, bytes);
@@ -427,57 +421,57 @@ public:
         drain_backend_events();
     }
 
-    void reset_stream(std::uint64_t stream_id,
-                      std::uint64_t application_error_code = 0) {
+    void
+    reset_stream(std::uint64_t stream_id, std::uint64_t application_error_code = 0) {
         reset_stream(0, stream_id, application_error_code);
     }
 
-    void reset_stream(std::uint64_t connection_id, std::uint64_t stream_id,
-                      std::uint64_t application_error_code) {
+    void
+    reset_stream(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t application_error_code) {
         ensure_backend();
         _backend->reset_stream(connection_id, stream_id, application_error_code);
         drain_backend_packets();
         drain_backend_events();
     }
 
-    void stop_stream(std::uint64_t stream_id,
-                     std::uint64_t application_error_code = 0) {
+    void
+    stop_stream(std::uint64_t stream_id, std::uint64_t application_error_code = 0) {
         stop_stream(0, stream_id, application_error_code);
     }
 
-    void stop_stream(std::uint64_t connection_id, std::uint64_t stream_id,
-                     std::uint64_t application_error_code) {
+    void
+    stop_stream(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t application_error_code) {
         ensure_backend();
         _backend->stop_stream(connection_id, stream_id, application_error_code);
         drain_backend_packets();
         drain_backend_events();
     }
 
-    void send_datagram(std::span<const std::byte> data) {
+    void
+    send_datagram(std::span<const std::byte> data) {
         send_datagram(0, data);
     }
 
-    void send_datagram(std::uint64_t connection_id, std::span<const std::byte> data) {
+    void
+    send_datagram(std::uint64_t connection_id, std::span<const std::byte> data) {
         ensure_backend();
         _backend->send_datagram(connection_id, data);
         drain_backend_packets();
         drain_backend_events();
     }
 
-    void send_datagram(std::string_view data) {
+    void
+    send_datagram(std::string_view data) {
         send_datagram(0, data);
     }
 
-    void send_datagram(std::uint64_t connection_id, std::string_view data) {
-        send_datagram(connection_id,
-                      std::span<const std::byte>(
-                          reinterpret_cast<const std::byte *>(data.data()),
-                          data.size()));
+    void
+    send_datagram(std::uint64_t connection_id, std::string_view data) {
+        send_datagram(connection_id, std::span<const std::byte>(reinterpret_cast<const std::byte *>(data.data()), data.size()));
     }
 
-    void close_connection(std::uint64_t connection_id,
-                          std::uint64_t application_error_code = 0,
-                          std::string_view reason = {}) {
+    void
+    close_connection(std::uint64_t connection_id, std::uint64_t application_error_code = 0, std::string_view reason = {}) {
         if (!_backend)
             return;
         _backend->close_connection(connection_id, application_error_code, reason);
@@ -485,8 +479,8 @@ public:
         drain_backend_events();
     }
 
-    void close(std::uint64_t application_error_code = 0,
-               std::string_view reason = {}) {
+    void
+    close(std::uint64_t application_error_code = 0, std::string_view reason = {}) {
         if (_backend) {
             _backend->close(application_error_code, reason);
             drain_backend_packets();
@@ -499,33 +493,28 @@ public:
         if (_socket.is_open())
             _socket.close();
         _state = state::closed;
-        _open = false;
+        _open  = false;
     }
 
-    void on(qb::io::async::event::io const& event) {
+    void
+    on(qb::io::async::event::io const &event) {
         if (!_backend || !_socket.is_open())
             return;
         if (event._revents & EV_READ) {
-            std::uint64_t budget = _settings.udp_rx_batch_size ? _settings.udp_rx_batch_size
-                                                               : std::numeric_limits<std::uint64_t>::max();
+            std::uint64_t budget = _settings.udp_rx_batch_size ? _settings.udp_rx_batch_size : std::numeric_limits<std::uint64_t>::max();
             while (budget-- > 0) {
                 std::array<std::byte, qb::io::udp::socket::MaxDatagramSize> buffer{};
-                qb::io::endpoint remote;
-                const auto ret = _socket.read(buffer.data(), buffer.size(), remote);
+                qb::io::endpoint                                            remote;
+                const auto                                                  ret = _socket.read(buffer.data(), buffer.size(), remote);
                 if (ret < 0) {
                     if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
                         break;
-                    close(static_cast<std::uint64_t>(qb::io::quic::disconnect_reason::transport_error),
-                          "QUIC UDP read failed");
+                    close(static_cast<std::uint64_t>(qb::io::quic::disconnect_reason::transport_error), "QUIC UDP read failed");
                     return;
                 }
                 if (ret == 0)
                     break;
-                _backend->on_udp_datagram({
-                    remote,
-                    _local_endpoint,
-                    std::span<const std::byte>(buffer.data(), static_cast<std::size_t>(ret))
-                });
+                _backend->on_udp_datagram({remote, _local_endpoint, std::span<const std::byte>(buffer.data(), static_cast<std::size_t>(ret))});
             }
         }
         if (event._revents & EV_WRITE)
@@ -534,7 +523,8 @@ public:
         drain_backend_events();
     }
 
-    void on(qb::io::async::event::timer&) {
+    void
+    on(qb::io::async::event::timer &) {
         if (!_backend)
             return;
         _backend->on_timeout(std::chrono::steady_clock::now());

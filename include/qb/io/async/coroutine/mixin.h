@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2025 isndev (cpp.actor). All rights reserved.
+ * Copyright (C) 2011-2026 isndev (cpp.actor). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,8 +78,9 @@ namespace qb::io::async {
 template <typename Derived>
 class coro_mixin {
 protected:
-    constexpr Derived& derived() noexcept {
-        return static_cast<Derived&>(*this);
+    constexpr Derived &
+    derived() noexcept {
+        return static_cast<Derived &>(*this);
     }
 
 public:
@@ -94,7 +95,8 @@ public:
      *
      * @return Reference to the derived type (CRTP pattern)
      */
-    constexpr Derived& coro() noexcept {
+    constexpr Derived &
+    coro() noexcept {
         return derived();
     }
 };

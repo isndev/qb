@@ -11,7 +11,7 @@
  * while still allowing customization in derived classes.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -86,8 +86,8 @@ protected:
      *          Specifically, it calls `_async_event.stop()` and then `listener::current.unregisterEvent(_async_event._interface)`.
      */
     ~base() {
-        //std::cout << "handle=" << _async_event.fd
-        //          << " disposed async.stop()" << std::endl;
+        // std::cout << "handle=" << _async_event.fd
+        //           << " disposed async.stop()" << std::endl;
         _async_event.stop();
         listener::current.unregisterEvent(_async_event._interface);
     }
@@ -244,7 +244,7 @@ public:
     operator delete(void *p) noexcept {
         if (!p)
             return;
-        auto &fl = _freelist();
+        auto &fl                 = _freelist();
         *static_cast<void **>(p) = fl.head;
         fl.head                  = p;
     }
@@ -263,11 +263,13 @@ public:
      *                depending on `with_timeout` behavior) and this `Timeout` object is deleted.
      */
     Timeout(_Func &&func, qb::duration timeout)
-        : with_timeout<Timeout<_Func>>(timeout > qb::duration::zero() ? timeout
-                                                                       : qb::duration::zero())
+        : with_timeout<Timeout<_Func>>(timeout > qb::duration::zero() ? timeout : qb::duration::zero())
         , _func(std::forward<_Func>(func)) {
         if (timeout <= qb::duration::zero()) {
-            try { _func(); } catch (...) {}
+            try {
+                _func();
+            } catch (...) {
+            }
             _delete_only = true;
             this->_async_event.start(0.);
         }
@@ -282,7 +284,10 @@ public:
     void
     on(event::timer const & /*event*/) {
         if (!_delete_only) {
-            try { _func(); } catch (...) {}
+            try {
+                _func();
+            } catch (...) {
+            }
         }
         delete this;
     }
@@ -350,21 +355,28 @@ class ScopedTimeout : public with_timeout<ScopedTimeout<_Func>> {
 
 public:
     ScopedTimeout(_Func &&func, qb::duration timeout)
-        : with_timeout<ScopedTimeout<_Func>>(timeout > qb::duration::zero()
-                                                 ? timeout
-                                                 : qb::duration::zero())
+        : with_timeout<ScopedTimeout<_Func>>(timeout > qb::duration::zero() ? timeout : qb::duration::zero())
         , _func(std::forward<_Func>(func)) {
         if (timeout <= qb::duration::zero()) {
             _fired = true;
-            try { _func(); } catch (...) {}
+            try {
+                _func();
+            } catch (...) {
+            }
         }
     }
 
     /** @brief Whether the scheduled callback has already executed. */
-    [[nodiscard]] bool fired() const noexcept { return _fired; }
+    [[nodiscard]] bool
+    fired() const noexcept {
+        return _fired;
+    }
 
     /** @brief Cancel the scheduled callback if it has not fired yet. */
-    void cancel() noexcept { this->setTimeout(qb::duration::zero()); }
+    void
+    cancel() noexcept {
+        this->setTimeout(qb::duration::zero());
+    }
 
     /**
      * @brief Internal libev timer callback. Users should not call this directly.
@@ -375,7 +387,10 @@ public:
         if (_fired)
             return;
         _fired = true;
-        try { _func(); } catch (...) {}
+        try {
+            _func();
+        } catch (...) {
+        }
     }
 };
 
@@ -407,8 +422,7 @@ template <typename _Func, typename Rep, typename Period>
 [[nodiscard]] auto
 scoped_callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
     using Timer = ScopedTimeout<std::decay_t<_Func>>;
-    return std::make_unique<Timer>(std::forward<_Func>(func),
-                                   std::chrono::duration_cast<qb::duration>(timeout));
+    return std::make_unique<Timer>(std::forward<_Func>(func), std::chrono::duration_cast<qb::duration>(timeout));
 }
 
 /**
@@ -425,14 +439,14 @@ scoped_callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
  */
 template <typename _Derived>
 class file_watcher : public base<file_watcher<_Derived>, event::file> {
-    using base_t = base<file_watcher<_Derived>, event::file>;
-    IProtocol *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list; /**< Owned protocol instances (RAII). */
-    std::size_t _max_message_size = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size. */
+    using base_t                                      = base<file_watcher<_Derived>, event::file>;
+    IProtocol                              *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
+    std::vector<std::unique_ptr<IProtocol>> _protocol_list;      /**< Owned protocol instances (RAII). */
+    std::size_t                             _max_message_size = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size. */
 
 public:
-    using base_io_t = file_watcher<_Derived>; /**< Base I/O type alias for CRTP. */
-    constexpr static const bool do_read = true; /**< Flag indicating this watcher type reads file content. */
+    using base_io_t                     = file_watcher<_Derived>; /**< Base I/O type alias for CRTP. */
+    constexpr static const bool do_read = true;                   /**< Flag indicating this watcher type reads file content. */
 
     /**
      * @brief Default constructor.
@@ -476,10 +490,10 @@ public:
      * @details Any previously owned protocol is not deleted by this method. The new protocol instance
      *          is added to an internal list and will be cleaned up by the `file_watcher` destructor.
      *          The current active protocol is set to this new instance.
-     * 
+     *
      * @note **Error Handling:** If the protocol constructor throws an exception, it will propagate to the caller.
      *       If `ok()` returns false, the protocol is immediately deleted and `nullptr` is returned.
-     * 
+     *
      * @note **Memory Management:** The protocol instance is owned by this component and will be deleted when
      *       the component is destroyed.
      */
@@ -505,8 +519,7 @@ public:
      *          The `on(event::file&)` handler will be called when changes are detected.
      */
     void
-    start(std::string const &fpath,
-          qb::duration interval = std::chrono::milliseconds(100)) noexcept {
+    start(std::string const &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
         this->_async_event.start(fpath.c_str(), qb::detail::to_ev_seconds(interval));
     }
 
@@ -529,15 +542,15 @@ public:
      *          then processes messages via `_protocol->getMessageSize()` and `_protocol->onMessage()`.
      *          It also invokes `_Derived::eof()` and potentially `_Derived::on(event::pending_read&)`
      *          or `_Derived::on(event::eof&)` based on the read outcome and buffer state.
-     * 
+     *
      * @note **Error Handling:** If this method returns `-1`, the `on(event::file&)` handler will stop
      *       the watcher and close the file. The error is not propagated via an event, but the watcher
      *       will stop monitoring the file. If you need error notification, implement `on(event::file&)`
      *       in your derived class to handle the case where `read_all()` fails.
-     * 
+     *
      * @note Requires `_Derived::do_read` to be true (which it is for `file_watcher` by default).
      *       Assumes `_protocol` is not null if messages are expected.
-     * 
+     *
      * @note **Protocol Validation:** If `_protocol` is null or becomes invalid during processing,
      *       the method returns `-1` immediately. This ensures that invalid protocol states are
      *       detected and handled appropriately.
@@ -572,16 +585,17 @@ public:
                 Derived.flush(msg_size);
             }
             Derived.eof();
-            if constexpr (qb::has_on<_Derived, event::pending_read> ||
-                          qb::has_on<_Derived, event::eof>) {
+            if constexpr (qb::has_on<_Derived, event::pending_read> || qb::has_on<_Derived, event::eof>) {
                 const auto pendingRead = Derived.pendingRead();
                 if (pendingRead) {
                     if constexpr (qb::has_on<_Derived, event::pending_read>) {
-                        auto evt__pending_read = event::pending_read{pendingRead}; Derived.on(std::move(evt__pending_read));
+                        auto evt__pending_read = event::pending_read{pendingRead};
+                        Derived.on(std::move(evt__pending_read));
                     }
                 } else {
                     if constexpr (qb::has_on<_Derived, event::eof>) {
-                        auto evt__eof = event::eof{}; Derived.on(std::move(evt__eof));
+                        auto evt__eof = event::eof{};
+                        Derived.on(std::move(evt__eof));
                     }
                 }
             }
@@ -614,8 +628,8 @@ private:
         }
 
         auto diff_read = event.attr.st_size - event.prev.st_size;
-        if (!_protocol || !_protocol->ok() || !event.attr.st_nlink ||
-            (diff_read < 0 && lseek(Derived.transport().native_handle(), 0, SEEK_SET)))
+        if (!_protocol || !_protocol->ok() || !event.attr.st_nlink
+            || (diff_read < 0 && lseek(Derived.transport().native_handle(), 0, SEEK_SET)))
             ret = -1;
         else if (diff_read) {
             if constexpr (_Derived::do_read) {
@@ -646,7 +660,7 @@ class directory_watcher : public base<directory_watcher<_Derived>, event::file> 
     using base_t = base<directory_watcher<_Derived>, event::file>;
 
 public:
-    using base_io_t = directory_watcher<_Derived>; /**< Base I/O type alias for CRTP. */
+    using base_io_t                     = directory_watcher<_Derived>; /**< Base I/O type alias for CRTP. */
     constexpr static const bool do_read = false; /**< Flag indicating this watcher type does not read directory content directly. */
 
     /**
@@ -667,8 +681,7 @@ public:
      *          The `on(event::file&)` handler will be called when changes to the directory's attributes are detected.
      */
     void
-    start(std::string const &fpath,
-          qb::duration interval = std::chrono::milliseconds(100)) noexcept {
+    start(std::string const &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
         this->_async_event.start(fpath.c_str(), qb::detail::to_ev_seconds(interval));
     }
 
@@ -721,20 +734,20 @@ private:
  */
 template <typename _Derived>
 class input : public base<input<_Derived>, event::io> {
-    using base_t                   = base<input<_Derived>, event::io>;
-    IProtocol *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list; /**< Owned protocol instances (RAII). */
-    bool _on_message  = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
-    bool _is_disposed = false; /**< Internal flag to ensure `dispose()` is called only once. */
-    int _reason = 0; /**< Stores the reason for disconnection if initiated by `disconnect()`. */
-    int _system_error = 0; /**< Stores the system error code (errno) if an I/O error occurred. */
-    std::size_t _max_message_size = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
-    std::size_t _bytes_read = 0; /**< Total number of bytes read from the transport. */
-    std::size_t _messages_processed = 0; /**< Total number of messages successfully processed. */
+    using base_t                                      = base<input<_Derived>, event::io>;
+    IProtocol                              *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
+    std::vector<std::unique_ptr<IProtocol>> _protocol_list;      /**< Owned protocol instances (RAII). */
+    bool        _on_message         = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
+    bool        _is_disposed        = false; /**< Internal flag to ensure `dispose()` is called only once. */
+    int         _reason             = 0;     /**< Stores the reason for disconnection if initiated by `disconnect()`. */
+    int         _system_error       = 0;     /**< Stores the system error code (errno) if an I/O error occurred. */
+    std::size_t _max_message_size   = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
+    std::size_t _bytes_read         = 0;                   /**< Total number of bytes read from the transport. */
+    std::size_t _messages_processed = 0;                   /**< Total number of messages successfully processed. */
 
 public:
-    using base_io_t = input<_Derived>; /**< Base I/O type alias for CRTP. */
-    constexpr static const bool has_server = false; /**< Indicates this component is not inherently a server (e.g., an acceptor). */
+    using base_io_t                        = input<_Derived>; /**< Base I/O type alias for CRTP. */
+    constexpr static const bool has_server = false;           /**< Indicates this component is not inherently a server (e.g., an acceptor). */
 
     /**
      * @brief Default constructor.
@@ -777,13 +790,13 @@ public:
      *         otherwise `nullptr` (and the created protocol instance is deleted).
      * @details The new protocol instance is added to an internal list and will be cleaned up by this `input` component's destructor.
      *          The current active protocol is set to this new instance. Previous protocols in the list are not deleted by this call.
-     * 
+     *
      * @note **Usage:** This method is typically called during initialization or when switching between different message formats.
      *       For example, you might switch from a handshake protocol to a main protocol after authentication.
-     * 
+     *
      * @note **Error Handling:** If the protocol constructor throws an exception, it will propagate to the caller.
      *       If `ok()` returns false, the protocol is immediately deleted and `nullptr` is returned.
-     * 
+     *
      * @note **Memory Management:** The protocol instance is owned by this component and will be deleted when
      *       `clear_protocols()` is called or when the component is destroyed.
      */
@@ -826,15 +839,15 @@ public:
      * @details Sets the underlying transport (obtained via `_Derived::transport()`) to non-blocking mode
      *          and starts the `event::io` watcher to listen for read events (`EV_READ`).
      *          Resets any previous disconnection reason (`_reason = 0`) and system error (`_system_error = 0`).
-     * 
+     *
      * @note **Usage:** This method should be called after setting up the transport (e.g., after `connect()` or `accept()`)
      *       and optionally setting a protocol via `switch_protocol()`. Once started, the component will automatically
      *       read data from the transport and process messages through the active protocol.
-     * 
+     *
      * @note **Actor Integration:** When used within a `qb::Actor`, this is typically called in `onInit()` or after
      *       establishing a connection. The component will then automatically trigger `on(event::io&)` events
      *       which are handled by the derived class's event handlers.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * class MyClient : public qb::Actor, public qb::io::use<MyClient>::tcp::client<> {
@@ -842,17 +855,17 @@ public:
      *   bool onInit() override {
      *     // Set up protocol before starting
      *     this->template switch_protocol<MyProtocol>(*this);
-     *     
+     *
      *     // Connect to server
      *     if (this->transport().connect_v4("127.0.0.1", 8080) < 0) {
      *       return false; // Connection failed
      *     }
-     *     
+     *
      *     // Start reading data
      *     this->start();
      *     return true;
      *   }
-     *   
+     *
      *   void on(MyProtocol::message &&msg) {
      *     // Handle incoming messages
      *   }
@@ -861,9 +874,9 @@ public:
      */
     void
     start() noexcept {
-        _is_disposed = false;
-        _on_message = false;
-        _reason = 0;
+        _is_disposed  = false;
+        _on_message   = false;
+        _reason       = 0;
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
         this->_async_event.start(Derived.transport().native_handle(), EV_READ);
@@ -884,10 +897,10 @@ public:
     /**
      * @brief Checks if the input component is currently listening for read events.
      * @return true if `EV_READ` is set in the event watcher, false otherwise.
-     * 
+     *
      * @note **Usage:** This method can be used to check the current state of the input component
      *       without modifying it. It's useful for debugging, logging, or conditional logic.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->is_reading()) {
@@ -905,11 +918,11 @@ public:
     /**
      * @brief Checks if the input component is connected and ready for operations.
      * @return true if not disposed and no disconnection reason is set, false otherwise.
-     * 
+     *
      * @note **Usage:** This method indicates whether the component is in a valid operational state.
      *       A component is considered connected if it hasn't been disposed and no disconnection
      *       has been initiated (either explicitly via `disconnect()` or due to an error).
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->is_connected()) {
@@ -919,7 +932,7 @@ public:
      *   LOG_WARN("Component is disconnected, cannot perform operations");
      * }
      * @endcode
-     * 
+     *
      * @note This method does not check the underlying transport state (e.g., socket validity).
      *       It only checks the internal state flags. The component may still be in the process
      *       of disconnecting even if this returns true momentarily.
@@ -932,11 +945,11 @@ public:
     /**
      * @brief Checks if there is pending data to be read from the input buffer.
      * @return true if the protocol indicates there is data available in the input buffer, false otherwise.
-     * 
+     *
      * @note **Usage:** This method checks if there is unprocessed data in the input buffer that
      *       the protocol has not yet consumed. This is useful for determining if more data needs
      *       to be read or if the buffer is empty.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->has_pending_data()) {
@@ -946,27 +959,26 @@ public:
      *   LOG_DEBUG("Input buffer is empty or all data has been processed");
      * }
      * @endcode
-     * 
+     *
      * @note This method requires a valid protocol (`_protocol != nullptr` and `_protocol->ok() == true`).
      *       If no protocol is set or the protocol is invalid, this method returns false.
      */
     [[nodiscard]] bool
     has_pending_data() const noexcept {
-        return _protocol && _protocol->ok() &&
-               static_cast<_Derived const &>(*this).pendingRead() > 0;
+        return _protocol && _protocol->ok() && static_cast<_Derived const &>(*this).pendingRead() > 0;
     }
 
     /**
      * @brief Gets the maximum allowed message size for DoS protection.
      * @return The current maximum message size in bytes.
-     * 
+     *
      * @note **Usage:** This method returns the configured maximum message size limit.
      *       Messages exceeding this size will cause the protocol to be marked as invalid
      *       and trigger a disconnection with `reason = -2` (Message too large).
-     * 
+     *
      * @note **Default:** The default value is `QB_MAX_MESSAGE_SIZE` (10MB by default).
      *       This can be changed at runtime via `set_max_message_size()`.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * std::size_t current_limit = this->max_message_size();
@@ -981,20 +993,20 @@ public:
     /**
      * @brief Sets the maximum allowed message size for DoS protection.
      * @param size Maximum message size in bytes. Must be greater than 0.
-     * 
+     *
      * @note **Usage:** This method allows configuring the maximum message size limit at runtime.
      *       Messages exceeding this size will cause the protocol to be marked as invalid
      *       and trigger a disconnection with `reason = -2` (Message too large).
-     * 
+     *
      * @note **Security:** Setting a very large value may expose the application to DoS attacks
      *       via oversized messages. Setting it too small may cause legitimate large messages
      *       to be rejected. Choose a value appropriate for your application's needs.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * // Set a custom limit of 5MB
      * this->set_max_message_size(5 * 1024 * 1024);
-     * 
+     *
      * // Or use a smaller limit for a specific use case
      * this->set_max_message_size(1024 * 1024); // 1MB
      * @endcode
@@ -1007,7 +1019,7 @@ public:
     /**
      * @brief Gets the disconnection reason code.
      * @return The reason code for disconnection. Returns `0` if no disconnection has been initiated.
-     * 
+     *
      * @note **Usage:** This method returns the reason code that was set via `disconnect()` or
      *       automatically set by the framework when an error occurs. Common values:
      *       - `0`: No disconnection initiated (normal state)
@@ -1016,7 +1028,7 @@ public:
      *       - `-1`: Protocol error (automatic, from qb-io)
      *       - `-2`: Message too large (DoS protection, automatic)
      *       - `-3`: Buffer size limit exceeded (DoS protection, automatic)
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->disconnection_reason() != 0) {
@@ -1032,11 +1044,11 @@ public:
     /**
      * @brief Gets the system error code from the last I/O operation.
      * @return The system error code (errno) if an I/O error occurred, `0` otherwise.
-     * 
+     *
      * @note **Usage:** This method returns the system error code that was captured during
      *       the last I/O error. This is useful for detailed error diagnostics and logging.
      *       The error code can be converted to a human-readable message using `std::system_category().message()`.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->system_error() != 0) {
@@ -1055,20 +1067,20 @@ public:
      * @details Stops the event watcher and pauses all I/O operations, but does not call `dispose()`
      *          or trigger `event::disconnected`. This allows the component to be restarted later
      *          via `start()` without going through the full disconnection/reconnection cycle.
-     * 
+     *
      * @note **Usage:** This method is useful for temporarily pausing I/O operations (e.g., during
      *       maintenance, rate limiting, or when waiting for external conditions). Unlike `disconnect()`,
      *       this does not mark the component as disposed, so it can be resumed by calling `start()` again.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * // Temporarily pause reading
      * this->stop();
-     * 
+     *
      * // Later, resume operations
      * this->start();
      * @endcode
-     * 
+     *
      * @note **Difference from `disconnect()`:** `disconnect()` initiates a full cleanup cycle
      *       and triggers `event::disconnected`, while `stop()` only pauses operations and can be resumed.
      */
@@ -1080,10 +1092,10 @@ public:
     /**
      * @brief Gets the total number of bytes read from the transport.
      * @return The cumulative count of bytes read since the component was created.
-     * 
+     *
      * @note **Usage:** This counter is incremented each time data is successfully read from the transport.
      *       It's useful for monitoring, statistics, and debugging purposes.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * std::size_t total_read = this->bytes_read();
@@ -1098,10 +1110,10 @@ public:
     /**
      * @brief Gets the total number of messages successfully processed.
      * @return The cumulative count of messages that have been successfully parsed and processed.
-     * 
+     *
      * @note **Usage:** This counter is incremented each time a complete message is successfully
      *       processed by the protocol. It's useful for monitoring message throughput and statistics.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * std::size_t msg_count = this->messages_processed();
@@ -1126,11 +1138,11 @@ public:
      * @details Sets an internal flag (`_reason`) with the provided reason and feeds an `EV_UNDEF` event to the listener.
      *          This typically causes the `on(event::io&)` handler to enter its error path during the next event loop cycle,
      *          leading to the invocation of the `dispose()` method for cleanup.
-     * 
+     *
      * @note **Actor Integration:** When used within a `qb::Actor`, calling `disconnect()` will trigger
      *       `on(event::disconnected&)` if implemented, allowing the actor to handle the disconnection
      *       gracefully (e.g., attempt reconnection, notify other actors, or call `kill()`).
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * class MyClient : public qb::Actor, public qb::io::use<MyClient>::tcp::client<> {
@@ -1141,7 +1153,7 @@ public:
      *       this->disconnect(0);
      *     }
      *   }
-     *   
+     *
      *   void on(qb::io::async::event::disconnected const& event) {
      *     if (event.reason == 0) {
      *       LOG_INFO("Disconnected normally");
@@ -1152,7 +1164,7 @@ public:
      *   }
      * };
      * @endcode
-     * 
+     *
      * @note This method is safe to call multiple times; subsequent calls will update the reason code
      *       but the disconnection process will only occur once.
      *
@@ -1197,7 +1209,10 @@ private:
             const auto frame_exceeds_pending = [&]() noexcept {
                 if (!this->_protocol->should_flush())
                     return false;
-                if constexpr (requires { Derived.in(); Derived.pendingRead(); })
+                if constexpr (requires {
+                                  Derived.in();
+                                  Derived.pendingRead();
+                              })
                     return ret > Derived.pendingRead();
                 else
                     return false;
@@ -1206,8 +1221,8 @@ private:
             if (unlikely(ret > _max_message_size || frame_exceeds_pending)) {
                 this->_protocol->not_ok();
                 _system_error = 0;
-                _reason = -2; // Message too large (DoS protection)
-                _on_message = false;
+                _reason       = -2; // Message too large (DoS protection)
+                _on_message   = false;
                 return false;
             }
             // Capture protocol pointer before onMessage() — onMessage() may call
@@ -1218,7 +1233,7 @@ private:
             // which would leave `protocol` dangling. should_flush() is a per-protocol
             // invariant (no setter is ever called after construction), so reading it now
             // is equivalent to reading it after and removes every post-onMessage deref.
-            auto *protocol = this->_protocol;
+            auto      *protocol         = this->_protocol;
             const bool old_should_flush = protocol->should_flush();
             protocol->onMessage(ret);
             // Update statistics: message successfully processed
@@ -1232,8 +1247,8 @@ private:
             // Check if the CURRENT (potentially new) protocol became invalid
             if (unlikely(!this->_protocol->ok())) {
                 _system_error = 0;
-                _reason = -1; // Protocol error
-                _on_message = false;
+                _reason       = -1; // Protocol error
+                _on_message   = false;
                 return false;
             }
             // Use the OLD protocol's should_flush() to preserve protocol-switching semantics
@@ -1249,16 +1264,17 @@ private:
      */
     void
     handle_post_read() {
-        if constexpr (qb::has_on<_Derived, event::pending_read> ||
-                      qb::has_on<_Derived, event::eof>) {
+        if constexpr (qb::has_on<_Derived, event::pending_read> || qb::has_on<_Derived, event::eof>) {
             const auto pendingRead = Derived.pendingRead();
             if (pendingRead) {
                 if constexpr (qb::has_on<_Derived, event::pending_read>) {
-                    auto evt__pending_read = event::pending_read{pendingRead}; Derived.on(std::move(evt__pending_read));
+                    auto evt__pending_read = event::pending_read{pendingRead};
+                    Derived.on(std::move(evt__pending_read));
                 }
             } else {
                 if constexpr (qb::has_on<_Derived, event::eof>) {
-                    auto evt__eof = event::eof{}; Derived.on(std::move(evt__eof));
+                    auto evt__eof = event::eof{};
+                    Derived.on(std::move(evt__eof));
                 }
             }
         }
@@ -1301,7 +1317,10 @@ private:
             return;
 
         if constexpr (qb::has_shared_from_this<_Derived>) {
-            try { _self_guard = Derived.shared_from_this(); } catch (std::bad_weak_ptr const&) {}
+            try {
+                _self_guard = Derived.shared_from_this();
+            } catch (std::bad_weak_ptr const &) {
+            }
         } else if constexpr (requires { Derived.shared(); }) {
             _self_guard = Derived.shared();
         }
@@ -1309,8 +1328,8 @@ private:
         if (_reason || !_protocol || !_protocol->ok()) {
             // Protocol error: capture it before disposing
             if (_protocol && !_protocol->ok()) {
-                _system_error = 0; // Protocol error, not system error
-                _reason = -1; // Use reason code -1 for protocol errors (reserved for qb-io)
+                _system_error = 0;  // Protocol error, not system error
+                _reason       = -1; // Use reason code -1 for protocol errors (reserved for qb-io)
             }
             goto error;
         }
@@ -1322,20 +1341,20 @@ private:
                     return;
                 goto error;
             }
-            
+
             // Check for buffer size limit exceeded (DoS protection)
             if (unlikely(ret == static_cast<std::size_t>(-2))) {
                 _system_error = 0;
-                _reason = -3; // Buffer size limit exceeded (DoS protection)
+                _reason       = -3; // Buffer size limit exceeded (DoS protection)
                 goto error;
             }
-            
+
             // Update statistics
             _bytes_read += ret;
-            
+
             if (!process_messages())
                 goto error;
-            
+
             Derived.eof();
             handle_post_read();
             return;
@@ -1346,8 +1365,7 @@ private:
         // When _reason is set (user disconnect(), protocol error, DoS guard), the
         // last WSA error is unrelated/stale — letting it suppress dispose() would
         // silently drop the disconnection and leave a zombie session.
-        if (!_reason &&
-            qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
+        if (!_reason && qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
         if (!_reason)
@@ -1390,7 +1408,8 @@ protected:
         } else {
             this->_async_event.stop();
             if constexpr (qb::has_on<_Derived, event::dispose>) {
-                auto evt__dispose = event::dispose{}; Derived.on(std::move(evt__dispose));
+                auto evt__dispose = event::dispose{};
+                Derived.on(std::move(evt__dispose));
             }
         }
     }
@@ -1434,15 +1453,15 @@ protected:
  */
 template <typename _Derived>
 class output : public base<output<_Derived>, event::io> {
-    using base_t = base<output<_Derived>, event::io>;
-    bool _is_disposed = false; /**< Internal flag to ensure `dispose()` is called only once. */
-    int _reason = 0; /**< Stores the reason for disconnection if initiated by `disconnect()`. */
-    int _system_error = 0; /**< Stores the system error code (errno) if an I/O error occurred. */
-    std::size_t _bytes_written = 0; /**< Total number of bytes written to the transport. */
+    using base_t               = base<output<_Derived>, event::io>;
+    bool        _is_disposed   = false; /**< Internal flag to ensure `dispose()` is called only once. */
+    int         _reason        = 0;     /**< Stores the reason for disconnection if initiated by `disconnect()`. */
+    int         _system_error  = 0;     /**< Stores the system error code (errno) if an I/O error occurred. */
+    std::size_t _bytes_written = 0;     /**< Total number of bytes written to the transport. */
 
 public:
-    using base_io_t = output<_Derived>; /**< Base I/O type alias for CRTP. */
-    constexpr static const bool has_server = false; /**< Indicates this component is not inherently a server. */
+    using base_io_t                        = output<_Derived>; /**< Base I/O type alias for CRTP. */
+    constexpr static const bool has_server = false;            /**< Indicates this component is not inherently a server. */
 
     /**
      * @brief Default constructor.
@@ -1465,15 +1484,15 @@ public:
      * @details Sets the underlying transport (obtained via `_Derived::transport()`) to non-blocking mode
      *          and starts the `event::io` watcher to listen for write events (`EV_WRITE`).
      *          Resets any previous disconnection reason (`_reason = 0`) and system error (`_system_error = 0`).
-     * 
+     *
      * @note **Usage:** This method should be called after setting up the transport (e.g., after `connect()` or `accept()`).
      *       Once started, the component will automatically write buffered data (added via `publish()` or `operator<<`)
      *       to the transport when it becomes writable.
-     * 
+     *
      * @note **Actor Integration:** When used within a `qb::Actor`, this is typically called in `onInit()` or after
      *       establishing a connection. The component will then automatically trigger `on(event::io&)` events
      *       for write readiness, which are handled by the derived class's event handlers.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * class MyClient : public qb::Actor, public qb::io::use<MyClient>::tcp::client<> {
@@ -1483,10 +1502,10 @@ public:
      *     if (this->transport().connect_v4("127.0.0.1", 8080) < 0) {
      *       return false;
      *     }
-     *     
+     *
      *     // Start writing data
      *     this->start();
-     *     
+     *
      *     // Send initial message
      *     *this << "Hello, server!" << Protocol::end;
      *     return true;
@@ -1496,8 +1515,8 @@ public:
      */
     void
     start() noexcept {
-        _is_disposed = false;
-        _reason = 0;
+        _is_disposed  = false;
+        _reason       = 0;
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
         this->_async_event.start(Derived.transport().native_handle(), EV_WRITE);
@@ -1511,17 +1530,16 @@ public:
     void
     ready_to_write() noexcept {
         if (!(this->_async_event.events & EV_WRITE))
-            this->_async_event.start(Derived.transport().native_handle(),
-                                     this->_async_event.events | EV_WRITE);
+            this->_async_event.start(Derived.transport().native_handle(), this->_async_event.events | EV_WRITE);
     }
 
     /**
      * @brief Checks if the output component is currently listening for write events.
      * @return true if `EV_WRITE` is set in the event watcher, false otherwise.
-     * 
+     *
      * @note **Usage:** This method can be used to check the current state of the output component
      *       without modifying it. It's useful for debugging, logging, or conditional logic.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->is_writing()) {
@@ -1539,11 +1557,11 @@ public:
     /**
      * @brief Checks if the output component is connected and ready for operations.
      * @return true if not disposed and no disconnection reason is set, false otherwise.
-     * 
+     *
      * @note **Usage:** This method indicates whether the component is in a valid operational state.
      *       A component is considered connected if it hasn't been disposed and no disconnection
      *       has been initiated (either explicitly via `disconnect()` or due to an error).
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->is_connected()) {
@@ -1553,7 +1571,7 @@ public:
      *   LOG_WARN("Component is disconnected, cannot send data");
      * }
      * @endcode
-     * 
+     *
      * @note This method does not check the underlying transport state (e.g., socket validity).
      *       It only checks the internal state flags. The component may still be in the process
      *       of disconnecting even if this returns true momentarily.
@@ -1566,16 +1584,16 @@ public:
     /**
      * @brief Checks if there is pending data to be written to the output buffer.
      * @return true if there is data in the output buffer waiting to be sent, false otherwise.
-     * 
+     *
      * @note **Usage:** This method checks if there is buffered data that has not yet been written
      *       to the underlying transport. This is useful for determining if the output buffer
      *       is empty or if there is data waiting to be flushed.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * *this << "Message 1" << Protocol::end;
      * *this << "Message 2" << Protocol::end;
-     * 
+     *
      * if (this->has_pending_data()) {
      *   LOG_DEBUG("Output buffer contains " << this->pendingWrite() << " bytes waiting to be sent");
      *   // The data will be written automatically when the transport becomes writable
@@ -1592,7 +1610,7 @@ public:
     /**
      * @brief Gets the disconnection reason code.
      * @return The reason code for disconnection. Returns `0` if no disconnection has been initiated.
-     * 
+     *
      * @note **Usage:** This method returns the reason code that was set via `disconnect()` or
      *       automatically set by the framework when an error occurs. Common values:
      *       - `0`: No disconnection initiated (normal state)
@@ -1601,7 +1619,7 @@ public:
      *       - `-1`: Protocol error (automatic, from qb-io)
      *       - `-2`: Message too large (DoS protection, automatic)
      *       - `-3`: Buffer size limit exceeded (DoS protection, automatic)
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->disconnection_reason() != 0) {
@@ -1617,11 +1635,11 @@ public:
     /**
      * @brief Gets the system error code from the last I/O operation.
      * @return The system error code (errno) if an I/O error occurred, `0` otherwise.
-     * 
+     *
      * @note **Usage:** This method returns the system error code that was captured during
      *       the last I/O error. This is useful for detailed error diagnostics and logging.
      *       The error code can be converted to a human-readable message using `std::system_category().message()`.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->system_error() != 0) {
@@ -1640,20 +1658,20 @@ public:
      * @details Stops the event watcher and pauses all I/O operations, but does not call `dispose()`
      *          or trigger `event::disconnected`. This allows the component to be restarted later
      *          via `start()` without going through the full disconnection/reconnection cycle.
-     * 
+     *
      * @note **Usage:** This method is useful for temporarily pausing I/O operations (e.g., during
      *       maintenance, rate limiting, or when waiting for external conditions). Unlike `disconnect()`,
      *       this does not mark the component as disposed, so it can be resumed by calling `start()` again.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * // Temporarily pause writing
      * this->stop();
-     * 
+     *
      * // Later, resume operations
      * this->start();
      * @endcode
-     * 
+     *
      * @note **Difference from `disconnect()`:** `disconnect()` initiates a full cleanup cycle
      *       and triggers `event::disconnected`, while `stop()` only pauses operations and can be resumed.
      */
@@ -1665,10 +1683,10 @@ public:
     /**
      * @brief Gets the total number of bytes written to the transport.
      * @return The cumulative count of bytes written since the component was created.
-     * 
+     *
      * @note **Usage:** This counter is incremented each time data is successfully written to the transport.
      *       It's useful for monitoring, statistics, and debugging purposes.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * std::size_t total_written = this->bytes_written();
@@ -1694,8 +1712,7 @@ public:
         if (unlikely(_is_disposed || _reason))
             return Derived.out();
         const auto max_write = Derived.max_write_buffer_size();
-        if (unlikely(max_write != static_cast<std::size_t>(-1) &&
-                     Derived.pendingWrite() >= max_write)) {
+        if (unlikely(max_write != static_cast<std::size_t>(-1) && Derived.pendingWrite() >= max_write)) {
             _system_error = 0;
             disconnect(event::disconnect_reason::buffer_overflow);
             return Derived.out();
@@ -1706,8 +1723,7 @@ public:
             const auto before = Derived.pendingWrite();
             (Derived.out() << ... << std::forward<_Args>(args));
             const auto after = Derived.pendingWrite();
-            if (unlikely(max_write != static_cast<std::size_t>(-1) &&
-                         after > max_write)) {
+            if (unlikely(max_write != static_cast<std::size_t>(-1) && after > max_write)) {
                 // Best-effort rollback of the just-appended tail to keep the
                 // write buffer bounded even when callers stream without
                 // checking publish(char*, size) return codes.
@@ -1741,11 +1757,11 @@ public:
      * @details Sets an internal flag (`_reason`) and feeds an `EV_UNDEF` event to the listener.
      *          This typically causes the `on(event::io&)` handler to enter its error path,
      *          leading to the invocation of `dispose()` for cleanup.
-     * 
+     *
      * @note **Actor Integration:** When used within a `qb::Actor`, calling `disconnect()` will trigger
      *       `on(event::disconnected&)` if implemented, allowing the actor to handle the disconnection
      *       gracefully (e.g., attempt reconnection, notify other actors, or call `kill()`).
-     * 
+     *
      * @note This method is safe to call multiple times; subsequent calls will update the reason code
      *       but the disconnection process will only occur once.
      *
@@ -1795,7 +1811,10 @@ private:
         // would dereference freed memory. See the equivalent guard in io::on.
         std::shared_ptr<void> _self_guard;
         if constexpr (qb::has_shared_from_this<_Derived>) {
-            try { _self_guard = Derived.shared_from_this(); } catch (std::bad_weak_ptr const&) {}
+            try {
+                _self_guard = Derived.shared_from_this();
+            } catch (std::bad_weak_ptr const &) {
+            }
         } else if constexpr (requires { Derived.shared(); }) {
             _self_guard = Derived.shared();
         }
@@ -1820,10 +1839,12 @@ private:
             if (!Derived.pendingWrite()) {
                 this->_async_event.set(EV_NONE);
                 if constexpr (qb::has_on<_Derived, event::eos>) {
-                    auto evt__eos = event::eos{}; Derived.on(std::move(evt__eos));
+                    auto evt__eos = event::eos{};
+                    Derived.on(std::move(evt__eos));
                 }
             } else if constexpr (qb::has_on<_Derived, event::pending_write>) {
-                auto evt__pending_write = event::pending_write{Derived.pendingWrite()}; Derived.on(std::move(evt__pending_write));
+                auto evt__pending_write = event::pending_write{Derived.pendingWrite()};
+                Derived.on(std::move(evt__pending_write));
             }
             return;
         }
@@ -1833,8 +1854,7 @@ private:
         // When _reason is set (user disconnect(), protocol error, DoS guard), the
         // last WSA error is unrelated/stale — letting it suppress dispose() would
         // silently drop the disconnection and leave a zombie session.
-        if (!_reason &&
-            qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
+        if (!_reason && qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
         if (!_reason)
@@ -1876,7 +1896,8 @@ protected:
         } else {
             this->_async_event.stop();
             if constexpr (qb::has_on<_Derived, event::dispose>) {
-                auto evt__dispose = event::dispose{}; Derived.on(std::move(evt__dispose));
+                auto evt__dispose = event::dispose{};
+                Derived.on(std::move(evt__dispose));
             }
         }
     }
@@ -1903,20 +1924,20 @@ protected:
  */
 template <typename _Derived>
 class io : public base<io<_Derived>, event::io> {
-    using base_t                   = base<io<_Derived>, event::io>;
-    IProtocol *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list; /**< Owned protocol instances (RAII). */
-    bool _on_message  = false; /**< Internal flag for re-entrance protection in `on(event::io&)`. */
-    bool _is_disposed = false; /**< Internal flag for `dispose()` idempotency. */
-    int _reason = 0; /**< Disconnection reason code. */
-    int _system_error = 0; /**< Stores the system error code (errno) if an I/O error occurred. */
-    std::size_t _max_message_size = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
-    std::size_t _bytes_read = 0; /**< Total number of bytes read from the transport. */
-    std::size_t _bytes_written = 0; /**< Total number of bytes written to the transport. */
-    std::size_t _messages_processed = 0; /**< Total number of messages successfully processed. */
+    using base_t                                      = base<io<_Derived>, event::io>;
+    IProtocol                              *_protocol = nullptr;   /**< Active protocol (non-owning view into _protocol_list). */
+    std::vector<std::unique_ptr<IProtocol>> _protocol_list;        /**< Owned protocol instances (RAII). */
+    bool                                    _on_message   = false; /**< Internal flag for re-entrance protection in `on(event::io&)`. */
+    bool                                    _is_disposed  = false; /**< Internal flag for `dispose()` idempotency. */
+    int                                     _reason       = 0;     /**< Disconnection reason code. */
+    int                                     _system_error = 0;     /**< Stores the system error code (errno) if an I/O error occurred. */
+    std::size_t _max_message_size   = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
+    std::size_t _bytes_read         = 0;                   /**< Total number of bytes read from the transport. */
+    std::size_t _bytes_written      = 0;                   /**< Total number of bytes written to the transport. */
+    std::size_t _messages_processed = 0;                   /**< Total number of messages successfully processed. */
 
 public:
-    typedef io<_Derived>        base_io_t; /**< Base I/O type alias for CRTP. */
+    typedef io<_Derived>        base_io_t;          /**< Base I/O type alias for CRTP. */
     constexpr static const bool has_server = false; /**< Indicates this component is not inherently a server. */
 
     /**
@@ -1955,13 +1976,13 @@ public:
      *         otherwise `nullptr` (and the created protocol instance is deleted).
      * @details The new protocol instance is added to an internal list and will be cleaned up by this `io` component's destructor.
      *          The current active protocol is set to this new instance. Previous protocols in the list are not deleted by this call.
-     * 
+     *
      * @note **Usage:** This method is typically called during initialization or when switching between different message formats.
      *       For example, you might switch from a handshake protocol to a main protocol after authentication.
-     * 
+     *
      * @note **Error Handling:** If the protocol constructor throws an exception, it will propagate to the caller.
      *       If `ok()` returns false, the protocol is immediately deleted and `nullptr` is returned.
-     * 
+     *
      * @note **Memory Management:** The protocol instance is owned by this component and will be deleted when
      *       `clear_protocols()` is called or when the component is destroyed.
      */
@@ -2004,16 +2025,16 @@ public:
      * @details Sets the transport to non-blocking mode and starts listening for read events (`EV_READ`).
      *          Resets any previous disconnection reason (`_reason = 0`) and system error (`_system_error = 0`).
      *          Write events (`EV_WRITE`) are automatically enabled when data is published via `publish()` or `operator<<`.
-     * 
+     *
      * @note **Usage:** This method should be called after setting up the transport (e.g., after `connect()` or `accept()`)
      *       and optionally setting a protocol via `switch_protocol()`. Once started, the component will automatically
      *       read data from the transport and process messages through the active protocol, and write buffered data
      *       when the transport becomes writable.
-     * 
+     *
      * @note **Actor Integration:** When used within a `qb::Actor`, this is typically called in `onInit()` or after
      *       establishing a connection. The component will then automatically trigger `on(event::io&)` events
      *       for both read and write readiness, which are handled by the derived class's event handlers.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * class MyClient : public qb::Actor, public qb::io::use<MyClient>::tcp::client<> {
@@ -2021,20 +2042,20 @@ public:
      *   bool onInit() override {
      *     // Set up protocol before starting
      *     this->template switch_protocol<MyProtocol>(*this);
-     *     
+     *
      *     // Connect to server
      *     if (this->transport().connect_v4("127.0.0.1", 8080) < 0) {
      *       return false;
      *     }
-     *     
+     *
      *     // Start bidirectional I/O
      *     this->start();
-     *     
+     *
      *     // Send initial message
      *     *this << "Hello!" << Protocol::end;
      *     return true;
      *   }
-     *   
+     *
      *   void on(MyProtocol::message &&msg) {
      *     // Handle incoming messages
      *   }
@@ -2043,9 +2064,9 @@ public:
      */
     void
     start() noexcept {
-        _is_disposed = false;
-        _on_message = false;
-        _reason = 0;
+        _is_disposed  = false;
+        _on_message   = false;
+        _reason       = 0;
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
         this->_async_event.start(Derived.transport().native_handle(), EV_READ);
@@ -2065,10 +2086,10 @@ public:
     /**
      * @brief Checks if the I/O component is currently listening for read events.
      * @return true if `EV_READ` is set in the event watcher, false otherwise.
-     * 
+     *
      * @note **Usage:** This method can be used to check the current state of the I/O component
      *       without modifying it. It's useful for debugging, logging, or conditional logic.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->is_reading()) {
@@ -2098,10 +2119,10 @@ public:
     /**
      * @brief Checks if the I/O component is currently listening for write events.
      * @return true if `EV_WRITE` is set in the event watcher, false otherwise.
-     * 
+     *
      * @note **Usage:** This method can be used to check the current state of the I/O component
      *       without modifying it. It's useful for debugging, logging, or conditional logic.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->is_writing()) {
@@ -2119,11 +2140,11 @@ public:
     /**
      * @brief Checks if the I/O component is connected and ready for operations.
      * @return true if not disposed and no disconnection reason is set, false otherwise.
-     * 
+     *
      * @note **Usage:** This method indicates whether the component is in a valid operational state.
      *       A component is considered connected if it hasn't been disposed and no disconnection
      *       has been initiated (either explicitly via `disconnect()` or due to an error).
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->is_connected()) {
@@ -2134,7 +2155,7 @@ public:
      *   LOG_WARN("Component is disconnected, cannot perform operations");
      * }
      * @endcode
-     * 
+     *
      * @note This method does not check the underlying transport state (e.g., socket validity).
      *       It only checks the internal state flags. The component may still be in the process
      *       of disconnecting even if this returns true momentarily.
@@ -2147,11 +2168,11 @@ public:
     /**
      * @brief Checks if there is pending data to be read from the input buffer.
      * @return true if the protocol indicates there is data available in the input buffer, false otherwise.
-     * 
+     *
      * @note **Usage:** This method checks if there is unprocessed data in the input buffer that
      *       the protocol has not yet consumed. This is useful for determining if more data needs
      *       to be read or if the buffer is empty.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->has_pending_read()) {
@@ -2161,29 +2182,28 @@ public:
      *   LOG_DEBUG("Input buffer is empty or all data has been processed");
      * }
      * @endcode
-     * 
+     *
      * @note This method requires a valid protocol (`_protocol != nullptr` and `_protocol->ok() == true`).
      *       If no protocol is set or the protocol is invalid, this method returns false.
      */
     [[nodiscard]] bool
     has_pending_read() const noexcept {
-        return _protocol && _protocol->ok() &&
-               static_cast<_Derived const &>(*this).pendingRead() > 0;
+        return _protocol && _protocol->ok() && static_cast<_Derived const &>(*this).pendingRead() > 0;
     }
 
     /**
      * @brief Checks if there is pending data to be written to the output buffer.
      * @return true if there is data in the output buffer waiting to be sent, false otherwise.
-     * 
+     *
      * @note **Usage:** This method checks if there is buffered data that has not yet been written
      *       to the underlying transport. This is useful for determining if the output buffer
      *       is empty or if there is data waiting to be flushed.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * *this << "Message 1" << Protocol::end;
      * *this << "Message 2" << Protocol::end;
-     * 
+     *
      * if (this->has_pending_write()) {
      *   LOG_DEBUG("Output buffer contains " << this->pendingWrite() << " bytes waiting to be sent");
      *   // The data will be written automatically when the transport becomes writable
@@ -2200,14 +2220,14 @@ public:
     /**
      * @brief Gets the maximum allowed message size for DoS protection.
      * @return The current maximum message size in bytes.
-     * 
+     *
      * @note **Usage:** This method returns the configured maximum message size limit.
      *       Messages exceeding this size will cause the protocol to be marked as invalid
      *       and trigger a disconnection with `reason = -2` (Message too large).
-     * 
+     *
      * @note **Default:** The default value is `QB_MAX_MESSAGE_SIZE` (10MB by default).
      *       This can be changed at runtime via `set_max_message_size()`.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * std::size_t current_limit = this->max_message_size();
@@ -2222,20 +2242,20 @@ public:
     /**
      * @brief Sets the maximum allowed message size for DoS protection.
      * @param size Maximum message size in bytes. Must be greater than 0.
-     * 
+     *
      * @note **Usage:** This method allows configuring the maximum message size limit at runtime.
      *       Messages exceeding this size will cause the protocol to be marked as invalid
      *       and trigger a disconnection with `reason = -2` (Message too large).
-     * 
+     *
      * @note **Security:** Setting a very large value may expose the application to DoS attacks
      *       via oversized messages. Setting it too small may cause legitimate large messages
      *       to be rejected. Choose a value appropriate for your application's needs.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * // Set a custom limit of 5MB
      * this->set_max_message_size(5 * 1024 * 1024);
-     * 
+     *
      * // Or use a smaller limit for a specific use case
      * this->set_max_message_size(1024 * 1024); // 1MB
      * @endcode
@@ -2248,7 +2268,7 @@ public:
     /**
      * @brief Gets the disconnection reason code.
      * @return The reason code for disconnection. Returns `0` if no disconnection has been initiated.
-     * 
+     *
      * @note **Usage:** This method returns the reason code that was set via `disconnect()` or
      *       automatically set by the framework when an error occurs. Common values:
      *       - `0`: No disconnection initiated (normal state)
@@ -2257,7 +2277,7 @@ public:
      *       - `-1`: Protocol error (automatic, from qb-io)
      *       - `-2`: Message too large (DoS protection, automatic)
      *       - `-3`: Buffer size limit exceeded (DoS protection, automatic)
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->disconnection_reason() != 0) {
@@ -2273,11 +2293,11 @@ public:
     /**
      * @brief Gets the system error code from the last I/O operation.
      * @return The system error code (errno) if an I/O error occurred, `0` otherwise.
-     * 
+     *
      * @note **Usage:** This method returns the system error code that was captured during
      *       the last I/O error. This is useful for detailed error diagnostics and logging.
      *       The error code can be converted to a human-readable message using `std::system_category().message()`.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * if (this->system_error() != 0) {
@@ -2296,20 +2316,20 @@ public:
      * @details Stops the event watcher and pauses all I/O operations, but does not call `dispose()`
      *          or trigger `event::disconnected`. This allows the component to be restarted later
      *          via `start()` without going through the full disconnection/reconnection cycle.
-     * 
+     *
      * @note **Usage:** This method is useful for temporarily pausing I/O operations (e.g., during
      *       maintenance, rate limiting, or when waiting for external conditions). Unlike `disconnect()`,
      *       this does not mark the component as disposed, so it can be resumed by calling `start()` again.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * // Temporarily pause I/O operations
      * this->stop();
-     * 
+     *
      * // Later, resume operations
      * this->start();
      * @endcode
-     * 
+     *
      * @note **Difference from `disconnect()`:** `disconnect()` initiates a full cleanup cycle
      *       and triggers `event::disconnected`, while `stop()` only pauses operations and can be resumed.
      */
@@ -2321,10 +2341,10 @@ public:
     /**
      * @brief Gets the total number of bytes read from the transport.
      * @return The cumulative count of bytes read since the component was created.
-     * 
+     *
      * @note **Usage:** This counter is incremented each time data is successfully read from the transport.
      *       It's useful for monitoring, statistics, and debugging purposes.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * std::size_t total_read = this->bytes_read();
@@ -2339,10 +2359,10 @@ public:
     /**
      * @brief Gets the total number of bytes written to the transport.
      * @return The cumulative count of bytes written since the component was created.
-     * 
+     *
      * @note **Usage:** This counter is incremented each time data is successfully written to the transport.
      *       It's useful for monitoring, statistics, and debugging purposes.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * std::size_t total_written = this->bytes_written();
@@ -2357,10 +2377,10 @@ public:
     /**
      * @brief Gets the total number of messages successfully processed.
      * @return The cumulative count of messages that have been successfully parsed and processed.
-     * 
+     *
      * @note **Usage:** This counter is incremented each time a complete message is successfully
      *       processed by the protocol. It's useful for monitoring message throughput and statistics.
-     * 
+     *
      * @note **Example Usage:**
      * @code
      * std::size_t msg_count = this->messages_processed();
@@ -2396,8 +2416,7 @@ public:
         if (unlikely(_is_disposed || _reason))
             return Derived.out();
         const auto max_write = Derived.max_write_buffer_size();
-        if (unlikely(max_write != static_cast<std::size_t>(-1) &&
-                     Derived.pendingWrite() >= max_write)) {
+        if (unlikely(max_write != static_cast<std::size_t>(-1) && Derived.pendingWrite() >= max_write)) {
             _system_error = 0;
             disconnect(event::disconnect_reason::buffer_overflow);
             return Derived.out();
@@ -2408,8 +2427,7 @@ public:
             const auto before = Derived.pendingWrite();
             (Derived.out() << ... << std::forward<_Args>(args));
             const auto after = Derived.pendingWrite();
-            if (unlikely(max_write != static_cast<std::size_t>(-1) &&
-                         after > max_write)) {
+            if (unlikely(max_write != static_cast<std::size_t>(-1) && after > max_write)) {
                 const auto added    = after - before;
                 const auto overflow = after - max_write;
                 if constexpr (requires { Derived.out().free_back(std::size_t{}); }) {
@@ -2440,11 +2458,11 @@ public:
      * @details Sets an internal flag (`_reason`) and feeds an `EV_UNDEF` event to the listener.
      *          This typically causes the `on(event::io&)` handler to enter its error path,
      *          leading to the invocation of `dispose()` for cleanup.
-     * 
+     *
      * @note **Actor Integration:** When used within a `qb::Actor`, calling `disconnect()` will trigger
      *       `on(event::disconnected&)` if implemented, allowing the actor to handle the disconnection
      *       gracefully (e.g., attempt reconnection, notify other actors, or call `kill()`).
-     * 
+     *
      * @note This method is safe to call multiple times; subsequent calls will update the reason code
      *       but the disconnection process will only occur once.
      *
@@ -2485,7 +2503,10 @@ private:
             const auto frame_exceeds_pending = [&]() noexcept {
                 if (!this->_protocol->should_flush())
                     return false;
-                if constexpr (requires { Derived.in(); Derived.pendingRead(); })
+                if constexpr (requires {
+                                  Derived.in();
+                                  Derived.pendingRead();
+                              })
                     return ret > Derived.pendingRead();
                 else
                     return false;
@@ -2493,8 +2514,8 @@ private:
             if (unlikely(ret > _max_message_size || frame_exceeds_pending)) {
                 this->_protocol->not_ok();
                 _system_error = 0;
-                _reason = -2;
-                _on_message = false;
+                _reason       = -2;
+                _on_message   = false;
                 return false;
             }
             // Snapshot the protocol pointer AND its should_flush() before onMessage():
@@ -2503,7 +2524,7 @@ private:
             // protocol's should_flush() governs flushing the bytes of THIS message, and
             // should_flush() is a per-protocol invariant (no setter is ever called), so
             // capturing it now is equivalent and removes every post-onMessage deref.
-            auto *protocol = this->_protocol;
+            auto      *protocol         = this->_protocol;
             const bool old_should_flush = protocol->should_flush();
             protocol->onMessage(ret);
             ++_messages_processed;
@@ -2527,8 +2548,8 @@ private:
                     return true;
                 }
                 _system_error = 0;
-                _reason = -1;
-                _on_message = false;
+                _reason       = -1;
+                _on_message   = false;
                 return false;
             }
             if (likely(old_should_flush))
@@ -2543,16 +2564,17 @@ private:
      */
     void
     handle_post_read() {
-        if constexpr (qb::has_on<_Derived, event::pending_read> ||
-                      qb::has_on<_Derived, event::eof>) {
+        if constexpr (qb::has_on<_Derived, event::pending_read> || qb::has_on<_Derived, event::eof>) {
             const auto pendingRead = Derived.pendingRead();
             if (pendingRead) {
                 if constexpr (qb::has_on<_Derived, event::pending_read>) {
-                    auto evt__pending_read = event::pending_read{pendingRead}; Derived.on(std::move(evt__pending_read));
+                    auto evt__pending_read = event::pending_read{pendingRead};
+                    Derived.on(std::move(evt__pending_read));
                 }
             } else {
                 if constexpr (qb::has_on<_Derived, event::eof>) {
-                    auto evt__eof = event::eof{}; Derived.on(std::move(evt__eof));
+                    auto evt__eof = event::eof{};
+                    Derived.on(std::move(evt__eof));
                 }
             }
         }
@@ -2573,18 +2595,20 @@ private:
             return false;
         }
         auto ret = static_cast<std::size_t>(raw_ret);
-        
+
         _bytes_written += ret;
-        
+
         if (!Derived.pendingWrite()) {
             if (unlikely(_reason || !_protocol || !_protocol->ok()))
                 return false;
             this->_async_event.set(EV_READ);
             if constexpr (qb::has_on<_Derived, event::eos>) {
-                auto evt__eos = event::eos{}; Derived.on(std::move(evt__eos));
+                auto evt__eos = event::eos{};
+                Derived.on(std::move(evt__eos));
             }
         } else if constexpr (qb::has_on<_Derived, event::pending_write>) {
-            auto evt__pending_write = event::pending_write{Derived.pendingWrite()}; Derived.on(std::move(evt__pending_write));
+            auto evt__pending_write = event::pending_write{Derived.pendingWrite()};
+            Derived.on(std::move(evt__pending_write));
         }
         return true;
     }
@@ -2606,20 +2630,23 @@ private:
         // Declaration is at function scope (above all goto targets) to satisfy
         // C++ goto-past-initialization rules.
         std::shared_ptr<void> _self_guard;
-        bool ok = false; // Declare early to avoid goto bypassing initialization
-        
+        bool                  ok = false; // Declare early to avoid goto bypassing initialization
+
         if (_on_message)
             return;
 
         if constexpr (qb::has_shared_from_this<_Derived>) {
-            try { _self_guard = Derived.shared_from_this(); } catch (std::bad_weak_ptr const&) {}
+            try {
+                _self_guard = Derived.shared_from_this();
+            } catch (std::bad_weak_ptr const &) {
+            }
         } else if constexpr (requires { Derived.shared(); }) {
             _self_guard = Derived.shared();
         }
 
         if (_reason)
             goto error;
-        
+
         if (event._revents & EV_READ && _protocol && _protocol->ok()) {
             constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
 
@@ -2633,7 +2660,7 @@ private:
             // Check for buffer size limit exceeded (DoS protection)
             if (unlikely(ret == static_cast<std::size_t>(-2))) {
                 _system_error = 0;
-                _reason = -3; // Buffer size limit exceeded (DoS protection)
+                _reason       = -3; // Buffer size limit exceeded (DoS protection)
                 goto error;
             }
 
@@ -2662,8 +2689,7 @@ private:
         // socket would block (or SSL needs a renegotiation read), handle_write
         // simply leaves bytes in the buffer and the watcher's EV_WRITE
         // registration takes over for the next round.
-        if ((event._revents & EV_WRITE) ||
-            (ok && Derived.pendingWrite() > 0)) {
+        if ((event._revents & EV_WRITE) || (ok && Derived.pendingWrite() > 0)) {
             if (!handle_write())
                 goto error;
             ok = true;
@@ -2677,8 +2703,7 @@ private:
         // When _reason is set (user disconnect(), protocol error, DoS guard), the
         // last WSA error is unrelated/stale — letting it suppress dispose() would
         // silently drop the disconnection and leave a zombie session.
-        if (!_reason &&
-            qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
+        if (!_reason && qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
         if (!_reason)
@@ -2693,7 +2718,7 @@ protected:
      *          Triggers `_Derived::on(event::disconnected&)` (with `_reason`)
      *          or `_Derived::on(event::dispose&)` based on derived class capabilities and server association.
      *          This is the primary cleanup point before the `async::base` destructor unregisters the watcher.
-     * 
+     *
      * @note **Important: Difference between server-associated and standalone clients:**
      *       - **Server-associated clients** (`has_server = true`): Created via `accept()` on a server.
      *         The server manages the lifecycle, so we notify it via `server().disconnected(id())`
@@ -2701,7 +2726,7 @@ protected:
      *       - **Standalone clients** (`has_server = false`): Created via `connect()` for outgoing connections.
      *         These manage their own lifecycle, so we explicitly call `_async_event.stop()` to prevent
      *         further events from being processed after disconnection, before calling `event::dispose`.
-     * 
+     *
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. The sequence is:
      *       1. `on(event::disconnected&)` is called if implemented, allowing the actor to handle the disconnection

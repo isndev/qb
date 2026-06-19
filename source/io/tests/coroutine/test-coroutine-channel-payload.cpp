@@ -7,7 +7,7 @@
  * ownership across consumer coroutines.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -39,17 +39,20 @@ namespace {
 
 class CoroutineClientCompatibilityTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
 
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
 
 template <typename Predicate>
-void pump_until(Predicate done, qb::duration timeout = 500ms) {
+void
+pump_until(Predicate done, qb::duration timeout = 500ms) {
     const auto deadline = qb::mono_now() + timeout;
     while (!done() && qb::mono_now() < deadline) {
         qb::io::async::run_for(1ms);
@@ -63,7 +66,7 @@ TEST_F(CoroutineClientCompatibilityTest, MoveOnlyPayloadRoundTripsThroughChannel
     ASSERT_TRUE(messages.try_send(std::make_unique<int>(42)));
 
     std::atomic<bool> done{false};
-    int value = 0;
+    int               value = 0;
 
     coro_scheduler().spawn([&]() -> task<void> {
         auto msg = co_await messages.recv();
@@ -82,19 +85,19 @@ TEST_F(CoroutineClientCompatibilityTest, MoveOnlyPayloadRoundTripsThroughChannel
 
 TEST_F(CoroutineClientCompatibilityTest, LargePayloadMovesThroughChannelWithoutTruncation) {
     channel<std::vector<char>> messages{1};
-    std::vector<char> payload(128 * 1024, 'x');
+    std::vector<char>          payload(128 * 1024, 'x');
 
     ASSERT_TRUE(messages.try_send(std::move(payload)));
 
     std::atomic<bool> done{false};
-    std::size_t received_size = 0;
-    bool content_ok = false;
+    std::size_t       received_size = 0;
+    bool              content_ok    = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
         auto msg = co_await messages.recv();
         if (msg) {
             received_size = msg->size();
-            content_ok = msg->front() == 'x' && msg->back() == 'x';
+            content_ok    = msg->front() == 'x' && msg->back() == 'x';
         }
         done.store(true);
         co_return;
@@ -108,8 +111,8 @@ TEST_F(CoroutineClientCompatibilityTest, LargePayloadMovesThroughChannelWithoutT
 }
 
 TEST_F(CoroutineClientCompatibilityTest, SharedChannelKeepsSourceAliveAcrossConsumerCoroutine) {
-    auto messages = std::make_shared<channel<std::string>>(2);
-    std::atomic<bool> done{false};
+    auto                     messages = std::make_shared<channel<std::string>>(2);
+    std::atomic<bool>        done{false};
     std::vector<std::string> result;
 
     coro_scheduler().spawn([messages, &done, &result]() -> task<void> {

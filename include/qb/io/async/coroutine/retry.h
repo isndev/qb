@@ -5,7 +5,7 @@
  * Provides retry mechanisms with various backoff strategies.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -25,7 +25,7 @@
 
 #include "task.h"
 #include "utils.h"
-#include <qb/system/timestamp.h>  // qb::duration
+#include <qb/system/timestamp.h> // qb::duration
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -43,7 +43,7 @@ namespace qb::io::async {
  * @brief Exception thrown when all retry attempts are exhausted
  */
 class retry_exhausted : public std::runtime_error {
-    size_t _attempts;
+    size_t             _attempts;
     std::exception_ptr _last_error;
 
 public:
@@ -52,10 +52,17 @@ public:
         , _attempts(attempts)
         , _last_error(last_error) {}
 
-    size_t attempts() const { return _attempts; }
-    std::exception_ptr last_error() const { return _last_error; }
+    size_t
+    attempts() const {
+        return _attempts;
+    }
+    std::exception_ptr
+    last_error() const {
+        return _last_error;
+    }
 
-    void rethrow_last() const {
+    void
+    rethrow_last() const {
         if (_last_error) {
             std::rethrow_exception(_last_error);
         }
@@ -66,28 +73,28 @@ public:
  * @brief Backoff strategy types
  */
 enum class backoff_strategy {
-    fixed,          // Constant delay
-    linear,         // Delay increases linearly
-    exponential,    // Delay doubles each retry
-    exponential_jitter  // Exponential with random jitter
+    fixed,             // Constant delay
+    linear,            // Delay increases linearly
+    exponential,       // Delay doubles each retry
+    exponential_jitter // Exponential with random jitter
 };
 
 /**
  * @brief Retry policy configuration
  */
 struct retry_policy {
-    size_t max_attempts = 3;
-    qb::duration base_delay{std::chrono::milliseconds{100}};
-    qb::duration max_delay{std::chrono::milliseconds{30'000}};  // 30 seconds
+    size_t           max_attempts = 3;
+    qb::duration     base_delay{std::chrono::milliseconds{100}};
+    qb::duration     max_delay{std::chrono::milliseconds{30'000}}; // 30 seconds
     backoff_strategy strategy = backoff_strategy::exponential;
 
     // Predicate to determine if an error is retryable
-    std::function<bool(const std::exception&)> is_retryable = [](const std::exception&) {
+    std::function<bool(const std::exception &)> is_retryable = [](const std::exception &) {
         return true;
     };
 
     // Optional callback for each retry
-    std::function<void(size_t attempt, const std::exception&)> on_retry = nullptr;
+    std::function<void(size_t attempt, const std::exception &)> on_retry = nullptr;
 };
 
 namespace detail {
@@ -111,19 +118,16 @@ namespace detail {
  * avoid overflow before the `max_delay` clamp (otherwise `base_delay *
  * (1u << 30)` silently overflows `chrono::milliseconds`' signed rep).
  */
-inline qb::duration calculate_delay(
-    size_t retry_number,
-    const retry_policy& policy) {
-
+inline qb::duration
+calculate_delay(size_t retry_number, const retry_policy &policy) {
     using ms_rep = std::chrono::milliseconds::rep;
-    if (retry_number < 1) retry_number = 1;
+    if (retry_number < 1)
+        retry_number = 1;
 
     // The backoff/jitter math is deliberately computed in millisecond-resolution
     // integers; the policy fields are qb::duration (nanoseconds), so cast in.
-    const ms_rep base_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(policy.base_delay).count();
-    const ms_rep max_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(policy.max_delay).count();
+    const ms_rep base_ms  = std::chrono::duration_cast<std::chrono::milliseconds>(policy.base_delay).count();
+    const ms_rep max_ms   = std::chrono::duration_cast<std::chrono::milliseconds>(policy.max_delay).count();
     ms_rep       delay_ms = base_ms;
 
     switch (policy.strategy) {
@@ -134,10 +138,9 @@ inline qb::duration calculate_delay(
         case backoff_strategy::linear: {
             // Clamp multiplier before multiplying to avoid overflow on
             // pathological inputs.
-            const ms_rep mult =
-                static_cast<ms_rep>(std::min<size_t>(retry_number, 10000));
+            const ms_rep mult = static_cast<ms_rep>(std::min<size_t>(retry_number, 10000));
             if (base_ms != 0 && mult > (std::numeric_limits<ms_rep>::max() / base_ms))
-                delay_ms = max_ms;      // overflow → clamp
+                delay_ms = max_ms; // overflow → clamp
             else
                 delay_ms = base_ms * mult;
             break;
@@ -145,7 +148,7 @@ inline qb::duration calculate_delay(
 
         case backoff_strategy::exponential: {
             // retry_number is 1-based: first retry uses shift 0 = base_delay.
-            const size_t shift = std::min<size_t>(retry_number - 1, 30);
+            const size_t shift  = std::min<size_t>(retry_number - 1, 30);
             const ms_rep factor = static_cast<ms_rep>(1ULL << shift);
             if (base_ms != 0 && factor > (std::numeric_limits<ms_rep>::max() / base_ms))
                 delay_ms = max_ms;
@@ -169,11 +172,10 @@ inline qb::duration calculate_delay(
                 // cannot overflow when the pre-jitter delay is already huge.
                 if (delay_ms > max_ms)
                     delay_ms = max_ms;
-                static thread_local std::mt19937 rng{std::random_device{}()};
+                static thread_local std::mt19937      rng{std::random_device{}()};
                 std::uniform_int_distribution<ms_rep> dist(0, 49);
-                const ms_rep jitter_pct = dist(rng);
-                if (jitter_pct != 0 &&
-                    delay_ms > (std::numeric_limits<ms_rep>::max)() / jitter_pct / 2)
+                const ms_rep                          jitter_pct = dist(rng);
+                if (jitter_pct != 0 && delay_ms > (std::numeric_limits<ms_rep>::max)() / jitter_pct / 2)
                     delay_ms = max_ms; // would overflow → saturate
                 else
                     delay_ms += (delay_ms * jitter_pct) / 100;
@@ -182,8 +184,10 @@ inline qb::duration calculate_delay(
         }
     }
 
-    if (delay_ms > max_ms) delay_ms = max_ms;
-    if (delay_ms < 0)      delay_ms = 0;
+    if (delay_ms > max_ms)
+        delay_ms = max_ms;
+    if (delay_ms < 0)
+        delay_ms = 0;
     return qb::duration{std::chrono::milliseconds{delay_ms}};
 }
 
@@ -211,24 +215,25 @@ inline qb::duration calculate_delay(
  * @endcode
  */
 template <typename F>
-auto with_retry(F f, retry_policy policy = {})
-    -> task<typename std::invoke_result_t<F>::value_type>
-    requires (!std::same_as<typename std::invoke_result_t<F>::value_type, void>) {
-    using task_type = std::invoke_result_t<F>;
+auto
+with_retry(F f, retry_policy policy = {}) -> task<typename std::invoke_result_t<F>::value_type>
+requires(!std::same_as<typename std::invoke_result_t<F>::value_type, void>)
+{
+    using task_type   = std::invoke_result_t<F>;
     using result_type = typename task_type::value_type;
 
     std::exception_ptr last_error;
-    size_t current_attempt = 0;
+    size_t             current_attempt = 0;
 
     while (current_attempt < policy.max_attempts) {
         // Try the operation
         std::optional<result_type> result;
-        bool success = false;
+        bool                       success = false;
 
         try {
-            result = co_await f();
+            result  = co_await f();
             success = true;
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
             last_error = std::current_exception();
 
             // Check if error is retryable
@@ -274,17 +279,19 @@ auto with_retry(F f, retry_policy policy = {})
  * @tparam F Coroutine function type returning task<void>
  */
 template <typename F>
-auto with_retry(F f, retry_policy policy = {}) -> task<void>
-    requires std::same_as<std::invoke_result_t<F>, task<void>> {
+auto
+with_retry(F f, retry_policy policy = {}) -> task<void>
+requires std::same_as<std::invoke_result_t<F>, task<void>>
+{
     std::exception_ptr last_error;
-    size_t current_attempt = 0;
+    size_t             current_attempt = 0;
 
     while (current_attempt < policy.max_attempts) {
         bool success = false;
         try {
             co_await f();
             success = true;
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
             last_error = std::current_exception();
             if (!policy.is_retryable(e)) {
                 std::rethrow_exception(last_error);
@@ -336,9 +343,9 @@ auto with_retry(F f, retry_policy policy = {}) -> task<void>
  * @endcode
  */
 template <typename F, typename P>
-auto with_retry_until(F f, P is_success, retry_policy policy = {})
-    -> task<typename std::invoke_result_t<F>::value_type> {
-    using task_type = std::invoke_result_t<F>;
+auto
+with_retry_until(F f, P is_success, retry_policy policy = {}) -> task<typename std::invoke_result_t<F>::value_type> {
+    using task_type   = std::invoke_result_t<F>;
     using result_type = typename task_type::value_type;
 
     for (size_t attempt = 0; attempt < policy.max_attempts; ++attempt) {
@@ -355,7 +362,8 @@ auto with_retry_until(F f, P is_success, retry_policy policy = {})
 
         if (policy.on_retry) {
             struct dummy_exception : std::exception {
-                const char* what() const noexcept override {
+                const char *
+                what() const noexcept override {
                     return "Unsuccessful result";
                 }
             } e;
@@ -379,7 +387,8 @@ auto with_retry_until(F f, P is_success, retry_policy policy = {})
  * @ingroup Coroutine
  */
 template <typename F>
-auto retry(F f) -> task<typename std::invoke_result_t<F>::value_type> {
+auto
+retry(F f) -> task<typename std::invoke_result_t<F>::value_type> {
     return with_retry(std::move(f), retry_policy{});
 }
 
@@ -402,9 +411,9 @@ auto retry(F f) -> task<typename std::invoke_result_t<F>::value_type> {
  * @endcode
  */
 template <typename F>
-auto make_retryable(F f, retry_policy policy = {}) {
-    return [f = std::move(f), policy = std::move(policy)]() mutable
-               -> task<typename std::invoke_result_t<F>::value_type> {
+auto
+make_retryable(F f, retry_policy policy = {}) {
+    return [f = std::move(f), policy = std::move(policy)]() mutable -> task<typename std::invoke_result_t<F>::value_type> {
         co_return co_await with_retry(f, policy);
     };
 }
@@ -412,18 +421,17 @@ auto make_retryable(F f, retry_policy policy = {}) {
 /**
  * @brief Policy for transient network errors
  */
-inline retry_policy transient_network_policy() {
+inline retry_policy
+transient_network_policy() {
     return retry_policy{
         .max_attempts = 5,
-        .base_delay = std::chrono::milliseconds(100),
-        .max_delay = std::chrono::seconds(30),
-        .strategy = backoff_strategy::exponential_jitter,
-        .is_retryable = [](const std::exception& e) {
+        .base_delay   = std::chrono::milliseconds(100),
+        .max_delay    = std::chrono::seconds(30),
+        .strategy     = backoff_strategy::exponential_jitter,
+        .is_retryable = [](const std::exception &e) {
             std::string msg = e.what();
-            return msg.find("timeout") != std::string::npos ||
-                   msg.find("connection") != std::string::npos ||
-                   msg.find("reset") != std::string::npos ||
-                   msg.find("temporarily") != std::string::npos;
+            return msg.find("timeout") != std::string::npos || msg.find("connection") != std::string::npos
+                   || msg.find("reset") != std::string::npos || msg.find("temporarily") != std::string::npos;
         }
     };
 }
@@ -431,26 +439,28 @@ inline retry_policy transient_network_policy() {
 /**
  * @brief Policy for idempotent operations (safe to retry)
  */
-inline retry_policy idempotent_policy() {
+inline retry_policy
+idempotent_policy() {
     return retry_policy{
         .max_attempts = 10,
-        .base_delay = std::chrono::milliseconds(50),
-        .max_delay = std::chrono::seconds(60),
-        .strategy = backoff_strategy::exponential_jitter,
-        .is_retryable = [](const std::exception&) { return true; }
+        .base_delay   = std::chrono::milliseconds(50),
+        .max_delay    = std::chrono::seconds(60),
+        .strategy     = backoff_strategy::exponential_jitter,
+        .is_retryable = [](const std::exception &) { return true; }
     };
 }
 
 /**
  * @brief Policy for aggressive fast retry
  */
-inline retry_policy aggressive_retry_policy() {
+inline retry_policy
+aggressive_retry_policy() {
     return retry_policy{
         .max_attempts = 20,
-        .base_delay = std::chrono::milliseconds(10),
-        .max_delay = std::chrono::seconds(5),
-        .strategy = backoff_strategy::linear,
-        .is_retryable = [](const std::exception&) { return true; }
+        .base_delay   = std::chrono::milliseconds(10),
+        .max_delay    = std::chrono::seconds(5),
+        .strategy     = backoff_strategy::linear,
+        .is_retryable = [](const std::exception &) { return true; }
     };
 }
 

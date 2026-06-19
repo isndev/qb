@@ -41,7 +41,7 @@ public:
     NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line);
     ~NanoLogLine();
 
-    NanoLogLine(NanoLogLine &&) = default;
+    NanoLogLine(NanoLogLine &&)            = default;
     NanoLogLine &operator=(NanoLogLine &&) = default;
 
     void stringify(std::ostream &os);
@@ -85,31 +85,30 @@ private:
     void stringify(std::ostream &os, char *start, char const *const end);
 
 private:
-    size_t m_bytes_used;
-    size_t m_buffer_size;
+    size_t                  m_bytes_used;
+    size_t                  m_buffer_size;
     std::unique_ptr<char[]> m_heap_buffer;
-    char m_stack_buffer[256 - 2 * sizeof(size_t) - sizeof(decltype(m_heap_buffer)) -
-                        8 /* Reserved */];
+    char                    m_stack_buffer[256 - 2 * sizeof(size_t) - sizeof(decltype(m_heap_buffer)) - 8 /* Reserved */];
 };
 
 template <>
-NanoLogLine &NanoLogLine::operator<<<char>(char const &arg);
+NanoLogLine &NanoLogLine::operator<< <char>(char const &arg);
 template <>
-NanoLogLine &NanoLogLine::operator<<<char const *>(char const *const &arg);
+NanoLogLine &NanoLogLine::operator<< <char const *>(char const *const &arg);
 template <>
-NanoLogLine &NanoLogLine::operator<<<int32_t>(int32_t const &arg);
+NanoLogLine &NanoLogLine::operator<< <int32_t>(int32_t const &arg);
 template <>
-NanoLogLine &NanoLogLine::operator<<<uint32_t>(uint32_t const &arg);
+NanoLogLine &NanoLogLine::operator<< <uint32_t>(uint32_t const &arg);
 template <>
-NanoLogLine &NanoLogLine::operator<<<int64_t>(int64_t const &arg);
+NanoLogLine &NanoLogLine::operator<< <int64_t>(int64_t const &arg);
 template <>
-NanoLogLine &NanoLogLine::operator<<<uint64_t>(uint64_t const &arg);
+NanoLogLine &NanoLogLine::operator<< <uint64_t>(uint64_t const &arg);
 template <>
-NanoLogLine &NanoLogLine::operator<<<double>(double const &arg);
+NanoLogLine &NanoLogLine::operator<< <double>(double const &arg);
 template <>
-NanoLogLine &NanoLogLine::operator<<<std::string>(std::string const &arg);
+NanoLogLine &NanoLogLine::operator<< <std::string>(std::string const &arg);
 template <>
-NanoLogLine &NanoLogLine::operator<<<std::string_view>(std::string_view const &arg);
+NanoLogLine &NanoLogLine::operator<< <std::string_view>(std::string_view const &arg);
 
 struct NanoLog {
     /*
@@ -152,30 +151,17 @@ struct GuaranteedLogger {};
  * etc.
  * log_file_roll_size_mb - mega bytes after which we roll to next log file.
  */
-void initialize(GuaranteedLogger gl, std::string const &log_file_path,
-                uint32_t log_file_roll_size_mb);
-void initialize(NonGuaranteedLogger ngl, std::string const &log_file_path,
-                uint32_t log_file_roll_size_mb);
+void initialize(GuaranteedLogger gl, std::string const &log_file_path, uint32_t log_file_roll_size_mb);
+void initialize(NonGuaranteedLogger ngl, std::string const &log_file_path, uint32_t log_file_roll_size_mb);
 
 } // namespace nanolog
 
-#define NANO_LOG(LEVEL) \
-    nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
+#define NANO_LOG(LEVEL) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
 #ifdef QB_WITH_LOGGING
-#    define LOG_DEBUG(X)                                       \
-        (void)(nanolog::is_logged(nanolog::LogLevel::DEBUG) && \
-               NANO_LOG(nanolog::LogLevel::DEBUG) << X)
-#    define LOG_VERB(X)                                          \
-        (void)(nanolog::is_logged(nanolog::LogLevel::VERBOSE) && \
-               NANO_LOG(nanolog::LogLevel::VERBOSE) << X)
-#    define LOG_INFO(X)                                       \
-        (void)(nanolog::is_logged(nanolog::LogLevel::INFO) && \
-               NANO_LOG(nanolog::LogLevel::INFO) << X)
-#    define LOG_WARN(X)                                       \
-        (void)(nanolog::is_logged(nanolog::LogLevel::WARN) && \
-               NANO_LOG(nanolog::LogLevel::WARN) << X)
-#    define LOG_CRIT(X)                                       \
-        (void)(nanolog::is_logged(nanolog::LogLevel::CRIT) && \
-               NANO_LOG(nanolog::LogLevel::CRIT) << X)
+#define LOG_DEBUG(X) (void) (nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG) << X)
+#define LOG_VERB(X) (void) (nanolog::is_logged(nanolog::LogLevel::VERBOSE) && NANO_LOG(nanolog::LogLevel::VERBOSE) << X)
+#define LOG_INFO(X) (void) (nanolog::is_logged(nanolog::LogLevel::INFO) && NANO_LOG(nanolog::LogLevel::INFO) << X)
+#define LOG_WARN(X) (void) (nanolog::is_logged(nanolog::LogLevel::WARN) && NANO_LOG(nanolog::LogLevel::WARN) << X)
+#define LOG_CRIT(X) (void) (nanolog::is_logged(nanolog::LogLevel::CRIT) && NANO_LOG(nanolog::LogLevel::CRIT) << X)
 #endif
 #endif /* NANO_LOG_HEADER_GUARD */

@@ -7,16 +7,15 @@
 // Determine pointer width. Checked in priority order: MSVC/Windows first,
 // then GCC/Clang, so clang-cl (which sets both _WIN64 and __GNUC__) resolves
 // to the Windows branch. Guards prevent redefinition warnings.
-#if defined(_WIN64) || defined(__x86_64__) || defined(__ppc64__) || \
-    defined(__aarch64__) || defined(__arm64__) || defined(__LP64__) || \
-    defined(_M_X64) || defined(_M_ARM64)
-#    ifndef ENV64BIT
-#        define ENV64BIT
-#    endif
+#if defined(_WIN64) || defined(__x86_64__) || defined(__ppc64__) || defined(__aarch64__) || defined(__arm64__) || defined(__LP64__) \
+    || defined(_M_X64) || defined(_M_ARM64)
+#ifndef ENV64BIT
+#define ENV64BIT
+#endif
 #elif defined(_WIN32) || defined(__i386__) || defined(__arm__)
-#    ifndef ENV32BIT
-#        define ENV32BIT
-#    endif
+#ifndef ENV32BIT
+#define ENV32BIT
+#endif
 #endif
 
 #include <algorithm>
@@ -30,9 +29,9 @@
 #include <stdexcept>
 
 #ifdef _MSC_VER
-#    define SKA_NOINLINE(...) __declspec(noinline) __VA_ARGS__
+#define SKA_NOINLINE(...) __declspec(noinline) __VA_ARGS__
 #else
-#    define SKA_NOINLINE(...) __VA_ARGS__ __attribute__((noinline))
+#define SKA_NOINLINE(...) __VA_ARGS__ __attribute__((noinline))
 #endif
 
 namespace ska {
@@ -193,8 +192,8 @@ struct sherwood_v3_entry {
         distance_from_desired = -1;
     }
 
-    int8_t distance_from_desired = -1;
-    static constexpr int8_t special_end_value = 0;
+    int8_t                  distance_from_desired = -1;
+    static constexpr int8_t special_end_value     = 0;
     union {
         T value;
     };
@@ -203,11 +202,9 @@ struct sherwood_v3_entry {
 inline int8_t
 log2(size_t value) {
 #if defined(ENV64BIT)
-    static constexpr int8_t table[64] = {
-        63, 0,  58, 1,  59, 47, 53, 2,  60, 39, 48, 27, 54, 33, 42, 3,
-        61, 51, 37, 40, 49, 18, 28, 20, 55, 30, 34, 11, 43, 14, 22, 4,
-        62, 57, 46, 52, 38, 26, 32, 41, 50, 36, 17, 19, 29, 10, 13, 21,
-        56, 45, 25, 31, 35, 16, 9,  12, 44, 24, 15, 8,  23, 7,  6,  5};
+    static constexpr int8_t table[64] = {63, 0,  58, 1,  59, 47, 53, 2,  60, 39, 48, 27, 54, 33, 42, 3,  61, 51, 37, 40, 49, 18,
+                                         28, 20, 55, 30, 34, 11, 43, 14, 22, 4,  62, 57, 46, 52, 38, 26, 32, 41, 50, 36, 17, 19,
+                                         29, 10, 13, 21, 56, 45, 25, 31, 35, 16, 9,  12, 44, 24, 15, 8,  23, 7,  6,  5};
     value |= value >> 1;
     value |= value >> 2;
     value |= value >> 4;
@@ -216,9 +213,8 @@ log2(size_t value) {
     value |= value >> 32;
     return table[((value - (value >> 1)) * 0x07EDD5E59A4E28C2ull) >> 58];
 #elif defined(ENV32BIT)
-    static constexpr int8_t table[32] = {0,  9,  1,  10, 13, 21, 2,  29, 11, 14, 16,
-                                         18, 22, 25, 3,  30, 8,  12, 20, 28, 15, 17,
-                                         24, 7,  19, 27, 23, 6,  26, 5,  4,  31};
+    static constexpr int8_t table[32] = {0, 9,  1,  10, 13, 21, 2,  29, 11, 14, 16, 18, 22, 25, 3, 30,
+                                         8, 12, 20, 28, 15, 17, 24, 7,  19, 27, 23, 6,  26, 5,  4, 31};
     value |= value >> 1;
     value |= value >> 2;
     value |= value >> 4;
@@ -226,7 +222,7 @@ log2(size_t value) {
     value |= value >> 16;
     return table[(value * 0x07C4ACDDu) >> 27];
 #else
-#    error "ska::flat_hash_map: unable to determine pointer width. " \
+#error "ska::flat_hash_map: unable to determine pointer width. " \
            "Define ENV64BIT or ENV32BIT before including this header."
 #endif
 }
@@ -277,34 +273,31 @@ struct HashPolicySelector<T, void_t<typename T::hash_policy>> {
     typedef typename T::hash_policy type;
 };
 
-template <typename T, typename FindKey, typename ArgumentHash, typename Hasher,
-          typename ArgumentEqual, typename Equal, typename ArgumentAlloc,
+template <typename T, typename FindKey, typename ArgumentHash, typename Hasher, typename ArgumentEqual, typename Equal, typename ArgumentAlloc,
           typename EntryAlloc>
 class sherwood_v3_table
     : private EntryAlloc
     , private Hasher
     , private Equal {
-    using Entry = detailv3::sherwood_v3_entry<T>;
+    using Entry           = detailv3::sherwood_v3_entry<T>;
     using AllocatorTraits = std::allocator_traits<EntryAlloc>;
-    using EntryPointer = typename AllocatorTraits::pointer;
+    using EntryPointer    = typename AllocatorTraits::pointer;
     struct convertible_to_iterator;
 
 public:
-    using value_type = T;
-    using size_type = size_t;
+    using value_type      = T;
+    using size_type       = size_t;
     using difference_type = std::ptrdiff_t;
-    using hasher = ArgumentHash;
-    using key_equal = ArgumentEqual;
-    using allocator_type = EntryAlloc;
-    using reference = value_type &;
+    using hasher          = ArgumentHash;
+    using key_equal       = ArgumentEqual;
+    using allocator_type  = EntryAlloc;
+    using reference       = value_type &;
     using const_reference = const value_type &;
-    using pointer = value_type *;
-    using const_pointer = const value_type *;
+    using pointer         = value_type *;
+    using const_pointer   = const value_type *;
 
     sherwood_v3_table() {}
-    explicit sherwood_v3_table(size_type bucket_count,
-                               const ArgumentHash &hash = ArgumentHash(),
-                               const ArgumentEqual &equal = ArgumentEqual(),
+    explicit sherwood_v3_table(size_type bucket_count, const ArgumentHash &hash = ArgumentHash(), const ArgumentEqual &equal = ArgumentEqual(),
                                const ArgumentAlloc &alloc = ArgumentAlloc())
         : EntryAlloc(alloc)
         , Hasher(hash)
@@ -313,47 +306,35 @@ public:
     }
     sherwood_v3_table(size_type bucket_count, const ArgumentAlloc &alloc)
         : sherwood_v3_table(bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
-    sherwood_v3_table(size_type bucket_count, const ArgumentHash &hash,
-                      const ArgumentAlloc &alloc)
+    sherwood_v3_table(size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
         : sherwood_v3_table(bucket_count, hash, ArgumentEqual(), alloc) {}
     explicit sherwood_v3_table(const ArgumentAlloc &alloc)
         : EntryAlloc(alloc) {}
     template <typename It>
-    sherwood_v3_table(It first, It last, size_type bucket_count = 0,
-                      const ArgumentHash &hash = ArgumentHash(),
-                      const ArgumentEqual &equal = ArgumentEqual(),
-                      const ArgumentAlloc &alloc = ArgumentAlloc())
+    sherwood_v3_table(It first, It last, size_type bucket_count = 0, const ArgumentHash &hash = ArgumentHash(),
+                      const ArgumentEqual &equal = ArgumentEqual(), const ArgumentAlloc &alloc = ArgumentAlloc())
         : sherwood_v3_table(bucket_count, hash, equal, alloc) {
         insert(first, last);
     }
     template <typename It>
-    sherwood_v3_table(It first, It last, size_type bucket_count,
-                      const ArgumentAlloc &alloc)
-        : sherwood_v3_table(first, last, bucket_count, ArgumentHash(), ArgumentEqual(),
-                            alloc) {}
+    sherwood_v3_table(It first, It last, size_type bucket_count, const ArgumentAlloc &alloc)
+        : sherwood_v3_table(first, last, bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
     template <typename It>
-    sherwood_v3_table(It first, It last, size_type bucket_count,
-                      const ArgumentHash &hash, const ArgumentAlloc &alloc)
+    sherwood_v3_table(It first, It last, size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
         : sherwood_v3_table(first, last, bucket_count, hash, ArgumentEqual(), alloc) {}
-    sherwood_v3_table(std::initializer_list<T> il, size_type bucket_count = 0,
-                      const ArgumentHash &hash = ArgumentHash(),
-                      const ArgumentEqual &equal = ArgumentEqual(),
-                      const ArgumentAlloc &alloc = ArgumentAlloc())
+    sherwood_v3_table(std::initializer_list<T> il, size_type bucket_count = 0, const ArgumentHash &hash = ArgumentHash(),
+                      const ArgumentEqual &equal = ArgumentEqual(), const ArgumentAlloc &alloc = ArgumentAlloc())
         : sherwood_v3_table(bucket_count, hash, equal, alloc) {
         if (bucket_count == 0)
             rehash(il.size());
         insert(il.begin(), il.end());
     }
-    sherwood_v3_table(std::initializer_list<T> il, size_type bucket_count,
-                      const ArgumentAlloc &alloc)
+    sherwood_v3_table(std::initializer_list<T> il, size_type bucket_count, const ArgumentAlloc &alloc)
         : sherwood_v3_table(il, bucket_count, ArgumentHash(), ArgumentEqual(), alloc) {}
-    sherwood_v3_table(std::initializer_list<T> il, size_type bucket_count,
-                      const ArgumentHash &hash, const ArgumentAlloc &alloc)
+    sherwood_v3_table(std::initializer_list<T> il, size_type bucket_count, const ArgumentHash &hash, const ArgumentAlloc &alloc)
         : sherwood_v3_table(il, bucket_count, hash, ArgumentEqual(), alloc) {}
     sherwood_v3_table(const sherwood_v3_table &other)
-        : sherwood_v3_table(other,
-                            AllocatorTraits::select_on_container_copy_construction(
-                                other.get_allocator())) {}
+        : sherwood_v3_table(other, AllocatorTraits::select_on_container_copy_construction(other.get_allocator())) {}
     sherwood_v3_table(const sherwood_v3_table &other, const ArgumentAlloc &alloc)
         : EntryAlloc(alloc)
         , Hasher(other)
@@ -387,18 +368,14 @@ public:
 
         clear();
         if (AllocatorTraits::propagate_on_container_copy_assignment::value) {
-            if (static_cast<EntryAlloc &>(*this) !=
-                static_cast<const EntryAlloc &>(other)) {
+            if (static_cast<EntryAlloc &>(*this) != static_cast<const EntryAlloc &>(other)) {
                 reset_to_empty_state();
             }
-            AssignIfTrue<
-                EntryAlloc,
-                AllocatorTraits::propagate_on_container_copy_assignment::value>()(*this,
-                                                                                  other);
+            AssignIfTrue<EntryAlloc, AllocatorTraits::propagate_on_container_copy_assignment::value>()(*this, other);
         }
-        _max_load_factor = other._max_load_factor;
+        _max_load_factor             = other._max_load_factor;
         static_cast<Hasher &>(*this) = other;
-        static_cast<Equal &>(*this) = other;
+        static_cast<Equal &>(*this)  = other;
         rehash_for_other_container(other);
         insert(other.begin(), other.end());
         return *this;
@@ -410,13 +387,9 @@ public:
         else if (AllocatorTraits::propagate_on_container_move_assignment::value) {
             clear();
             reset_to_empty_state();
-            AssignIfTrue<
-                EntryAlloc,
-                AllocatorTraits::propagate_on_container_move_assignment::value>()(
-                *this, std::move(other));
+            AssignIfTrue<EntryAlloc, AllocatorTraits::propagate_on_container_move_assignment::value>()(*this, std::move(other));
             swap_pointers(other);
-        } else if (static_cast<EntryAlloc &>(*this) ==
-                   static_cast<EntryAlloc &>(other)) {
+        } else if (static_cast<EntryAlloc &>(*this) == static_cast<EntryAlloc &>(other)) {
             swap_pointers(other);
         } else {
             clear();
@@ -427,7 +400,7 @@ public:
             other.clear();
         }
         static_cast<Hasher &>(*this) = std::move(other);
-        static_cast<Equal &>(*this) = std::move(other);
+        static_cast<Equal &>(*this)  = std::move(other);
         return *this;
     }
     ~sherwood_v3_table() {
@@ -456,10 +429,10 @@ public:
         EntryPointer current = EntryPointer();
 
         using iterator_category = std::forward_iterator_tag;
-        using value_type = ValueType;
-        using difference_type = ptrdiff_t;
-        using pointer = ValueType *;
-        using reference = ValueType &;
+        using value_type        = ValueType;
+        using difference_type   = ptrdiff_t;
+        using pointer           = ValueType *;
+        using reference         = ValueType &;
 
         friend bool
         operator==(const templated_iterator &lhs, const templated_iterator &rhs) {
@@ -497,7 +470,7 @@ public:
             return {current};
         }
     };
-    using iterator = templated_iterator<value_type>;
+    using iterator       = templated_iterator<value_type>;
     using const_iterator = templated_iterator<const value_type>;
 
     iterator
@@ -533,10 +506,9 @@ public:
 
     iterator
     find(const FindKey &key) {
-        size_t index = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
-        EntryPointer it = entries + ptrdiff_t(index);
-        for (int8_t distance = 0; it->distance_from_desired >= distance;
-             ++distance, ++it) {
+        size_t       index = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
+        EntryPointer it    = entries + ptrdiff_t(index);
+        for (int8_t distance = 0; it->distance_from_desired >= distance; ++distance, ++it) {
             if (compares_equal(key, it->value))
                 return {it};
         }
@@ -570,16 +542,14 @@ public:
     template <typename Key, typename... Args>
     std::pair<iterator, bool>
     emplace(Key &&key, Args &&...args) {
-        size_t index = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
-        EntryPointer current_entry = entries + ptrdiff_t(index);
-        int8_t distance_from_desired = 0;
-        for (; current_entry->distance_from_desired >= distance_from_desired;
-             ++current_entry, ++distance_from_desired) {
+        size_t       index                 = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
+        EntryPointer current_entry         = entries + ptrdiff_t(index);
+        int8_t       distance_from_desired = 0;
+        for (; current_entry->distance_from_desired >= distance_from_desired; ++current_entry, ++distance_from_desired) {
             if (compares_equal(key, current_entry->value))
                 return {{current_entry}, false};
         }
-        return emplace_new_key(distance_from_desired, current_entry,
-                               std::forward<Key>(key), std::forward<Args>(args)...);
+        return emplace_new_key(distance_from_desired, current_entry, std::forward<Key>(key), std::forward<Args>(args)...);
     }
 
     std::pair<iterator, bool>
@@ -618,9 +588,7 @@ public:
 
     void
     rehash(size_t num_buckets) {
-        num_buckets = std::max(
-            num_buckets, static_cast<size_t>(std::ceil(
-                             num_elements / static_cast<double>(_max_load_factor))));
+        num_buckets = std::max(num_buckets, static_cast<size_t>(std::ceil(num_elements / static_cast<double>(_max_load_factor))));
         if (num_buckets == 0) {
             reset_to_empty_state();
             return;
@@ -628,11 +596,9 @@ public:
         auto new_prime_index = hash_policy.next_size_over(num_buckets);
         if (num_buckets == bucket_count())
             return;
-        int8_t new_max_lookups = compute_max_lookups(num_buckets);
-        EntryPointer new_buckets(
-            AllocatorTraits::allocate(*this, num_buckets + new_max_lookups));
-        EntryPointer special_end_item =
-            new_buckets + static_cast<ptrdiff_t>(num_buckets + new_max_lookups - 1);
+        int8_t       new_max_lookups = compute_max_lookups(num_buckets);
+        EntryPointer new_buckets(AllocatorTraits::allocate(*this, num_buckets + new_max_lookups));
+        EntryPointer special_end_item = new_buckets + static_cast<ptrdiff_t>(num_buckets + new_max_lookups - 1);
         for (EntryPointer it = new_buckets; it != special_end_item; ++it)
             it->distance_from_desired = -1;
         special_end_item->distance_from_desired = Entry::special_end_value;
@@ -641,12 +607,9 @@ public:
         --num_slots_minus_one;
         hash_policy.commit(new_prime_index);
         int8_t old_max_lookups = max_lookups;
-        max_lookups = new_max_lookups;
-        num_elements = 0;
-        for (EntryPointer
-                 it = new_buckets,
-                 end = it + static_cast<ptrdiff_t>(num_buckets + old_max_lookups);
-             it != end; ++it) {
+        max_lookups            = new_max_lookups;
+        num_elements           = 0;
+        for (EntryPointer it = new_buckets, end = it + static_cast<ptrdiff_t>(num_buckets + old_max_lookups); it != end; ++it) {
             if (it->has_value()) {
                 emplace(std::move(it->value));
                 it->destroy_value();
@@ -671,8 +634,7 @@ public:
         EntryPointer current = to_erase.current;
         current->destroy_value();
         --num_elements;
-        for (EntryPointer next = current + ptrdiff_t(1); !next->is_at_desired_position();
-             ++current, ++next) {
+        for (EntryPointer next = current + ptrdiff_t(1); !next->is_at_desired_position(); ++current, ++next) {
             current->emplace(next->distance_from_desired - 1, std::move(next->value));
             next->destroy_value();
         }
@@ -691,18 +653,14 @@ public:
         }
         if (end_it == this->end())
             return this->end();
-        ptrdiff_t num_to_move =
-            std::min(static_cast<ptrdiff_t>(end_it.current->distance_from_desired),
-                     end_it.current - begin_it.current);
-        EntryPointer to_return = end_it.current - num_to_move;
+        ptrdiff_t    num_to_move = std::min(static_cast<ptrdiff_t>(end_it.current->distance_from_desired), end_it.current - begin_it.current);
+        EntryPointer to_return   = end_it.current - num_to_move;
         for (EntryPointer it = end_it.current; !it->is_at_desired_position();) {
             EntryPointer target = it - num_to_move;
-            target->emplace(it->distance_from_desired - num_to_move,
-                            std::move(it->value));
+            target->emplace(it->distance_from_desired - num_to_move, std::move(it->value));
             it->destroy_value();
             ++it;
-            num_to_move =
-                std::min(static_cast<ptrdiff_t>(it->distance_from_desired), num_to_move);
+            num_to_move = std::min(static_cast<ptrdiff_t>(it->distance_from_desired), num_to_move);
         }
         return {to_return};
     }
@@ -720,10 +678,7 @@ public:
 
     void
     clear() {
-        for (EntryPointer
-                 it = entries,
-                 end = it + static_cast<ptrdiff_t>(num_slots_minus_one + max_lookups);
-             it != end; ++it) {
+        for (EntryPointer it = entries, end = it + static_cast<ptrdiff_t>(num_slots_minus_one + max_lookups); it != end; ++it) {
             if (it->has_value())
                 it->destroy_value();
         }
@@ -788,12 +743,12 @@ public:
     }
 
 private:
-    EntryPointer entries = Entry::empty_default_table();
-    size_t num_slots_minus_one = 0;
+    EntryPointer                                    entries             = Entry::empty_default_table();
+    size_t                                          num_slots_minus_one = 0;
     typename HashPolicySelector<ArgumentHash>::type hash_policy;
-    int8_t max_lookups = detailv3::min_lookups - 1;
-    float _max_load_factor = 0.5f;
-    size_t num_elements = 0;
+    int8_t                                          max_lookups      = detailv3::min_lookups - 1;
+    float                                           _max_load_factor = 0.5f;
+    size_t                                          num_elements     = 0;
 
     static int8_t
     compute_max_lookups(size_t num_buckets) {
@@ -803,8 +758,7 @@ private:
 
     size_t
     num_buckets_for_reserve(size_t num_elements) const {
-        return static_cast<size_t>(std::ceil(
-            num_elements / std::min(0.5, static_cast<double>(_max_load_factor))));
+        return static_cast<size_t>(std::ceil(num_elements / std::min(0.5, static_cast<double>(_max_load_factor))));
     }
     void
     rehash_for_other_container(const sherwood_v3_table &other) {
@@ -824,17 +778,14 @@ private:
 
     template <typename Key, typename... Args>
     SKA_NOINLINE(std::pair<iterator, bool>)
-    emplace_new_key(int8_t distance_from_desired, EntryPointer current_entry, Key &&key,
-                    Args &&...args) {
+    emplace_new_key(int8_t distance_from_desired, EntryPointer current_entry, Key &&key, Args &&...args) {
         using std::swap;
-        if (num_slots_minus_one == 0 || distance_from_desired == max_lookups ||
-            num_elements + 1 >
-                (num_slots_minus_one + 1) * static_cast<double>(_max_load_factor)) {
+        if (num_slots_minus_one == 0 || distance_from_desired == max_lookups
+            || num_elements + 1 > (num_slots_minus_one + 1) * static_cast<double>(_max_load_factor)) {
             grow();
             return emplace(std::forward<Key>(key), std::forward<Args>(args)...);
         } else if (current_entry->is_empty()) {
-            current_entry->emplace(distance_from_desired, std::forward<Key>(key),
-                                   std::forward<Args>(args)...);
+            current_entry->emplace(distance_from_desired, std::forward<Key>(key), std::forward<Args>(args)...);
             ++num_elements;
             return {{current_entry}, true};
         }
@@ -870,15 +821,14 @@ private:
     void
     deallocate_data(EntryPointer begin, size_t num_slots_minus_one, int8_t max_lookups) {
         if (begin != Entry::empty_default_table()) {
-            AllocatorTraits::deallocate(*this, begin,
-                                        num_slots_minus_one + max_lookups + 1);
+            AllocatorTraits::deallocate(*this, begin, num_slots_minus_one + max_lookups + 1);
         }
     }
 
     void
     reset_to_empty_state() {
         deallocate_data(entries, num_slots_minus_one, max_lookups);
-        entries = Entry::empty_default_table();
+        entries             = Entry::empty_default_table();
         num_slots_minus_one = 0;
         hash_policy.reset();
         max_lookups = detailv3::min_lookups - 1;
@@ -1686,194 +1636,195 @@ struct prime_number_hash_policy {
         // ClosestPrime(p * 2^(1/3)) and ClosestPrime(p * 2^(2/3)) and put those in the
         // gaps
         // 5. get PrevPrime(2^64) and put it at the end
-        static constexpr const size_t prime_list[] = {2u,
-                                                      3u,
-                                                      5u,
-                                                      7u,
-                                                      11u,
-                                                      13u,
-                                                      17u,
-                                                      23u,
-                                                      29u,
-                                                      37u,
-                                                      47u,
-                                                      59u,
-                                                      73u,
-                                                      97u,
-                                                      127u,
-                                                      151u,
-                                                      197u,
-                                                      251u,
-                                                      313u,
-                                                      397u,
-                                                      499u,
-                                                      631u,
-                                                      797u,
-                                                      1009u,
-                                                      1259u,
-                                                      1597u,
-                                                      2011u,
-                                                      2539u,
-                                                      3203u,
-                                                      4027u,
-                                                      5087u,
-                                                      6421u,
-                                                      8089u,
-                                                      10193u,
-                                                      12853u,
-                                                      16193u,
-                                                      20399u,
-                                                      25717u,
-                                                      32401u,
-                                                      40823u,
-                                                      51437u,
-                                                      64811u,
-                                                      81649u,
-                                                      102877u,
-                                                      129607u,
-                                                      163307u,
-                                                      205759u,
-                                                      259229u,
-                                                      326617u,
-                                                      411527u,
-                                                      518509u,
-                                                      653267u,
-                                                      823117u,
-                                                      1037059u,
-                                                      1306601u,
-                                                      1646237u,
-                                                      2074129u,
-                                                      2613229u,
-                                                      3292489u,
-                                                      4148279u,
-                                                      5226491u,
-                                                      6584983u,
-                                                      8296553u,
-                                                      10453007u,
-                                                      13169977u,
-                                                      16593127u,
-                                                      20906033u,
-                                                      26339969u,
-                                                      33186281u,
-                                                      41812097u,
-                                                      52679969u,
-                                                      66372617u,
-                                                      83624237u,
-                                                      105359939u,
-                                                      132745199u,
-                                                      167248483u,
-                                                      210719881u,
-                                                      265490441u,
-                                                      334496971u,
-                                                      421439783u,
-                                                      530980861u,
-                                                      668993977u,
-                                                      842879579u,
-                                                      1061961721u,
-                                                      1337987929u,
-                                                      1685759167u,
-                                                      2123923447u,
-                                                      2675975881u,
-                                                      3371518343u,
-                                                      4247846927u
+        static constexpr const size_t prime_list[] = {
+            2u,
+            3u,
+            5u,
+            7u,
+            11u,
+            13u,
+            17u,
+            23u,
+            29u,
+            37u,
+            47u,
+            59u,
+            73u,
+            97u,
+            127u,
+            151u,
+            197u,
+            251u,
+            313u,
+            397u,
+            499u,
+            631u,
+            797u,
+            1009u,
+            1259u,
+            1597u,
+            2011u,
+            2539u,
+            3203u,
+            4027u,
+            5087u,
+            6421u,
+            8089u,
+            10193u,
+            12853u,
+            16193u,
+            20399u,
+            25717u,
+            32401u,
+            40823u,
+            51437u,
+            64811u,
+            81649u,
+            102877u,
+            129607u,
+            163307u,
+            205759u,
+            259229u,
+            326617u,
+            411527u,
+            518509u,
+            653267u,
+            823117u,
+            1037059u,
+            1306601u,
+            1646237u,
+            2074129u,
+            2613229u,
+            3292489u,
+            4148279u,
+            5226491u,
+            6584983u,
+            8296553u,
+            10453007u,
+            13169977u,
+            16593127u,
+            20906033u,
+            26339969u,
+            33186281u,
+            41812097u,
+            52679969u,
+            66372617u,
+            83624237u,
+            105359939u,
+            132745199u,
+            167248483u,
+            210719881u,
+            265490441u,
+            334496971u,
+            421439783u,
+            530980861u,
+            668993977u,
+            842879579u,
+            1061961721u,
+            1337987929u,
+            1685759167u,
+            2123923447u,
+            2675975881u,
+            3371518343u,
+            4247846927u
 #ifdef ENV64BIT
-                                                      ,
-                                                      5351951779llu,
-                                                      6743036717llu,
-                                                      8495693897llu,
-                                                      10703903591llu,
-                                                      13486073473llu,
-                                                      16991387857llu,
-                                                      21407807219llu,
-                                                      26972146961llu,
-                                                      33982775741llu,
-                                                      42815614441llu,
-                                                      53944293929llu,
-                                                      67965551447llu,
-                                                      85631228929llu,
-                                                      107888587883llu,
-                                                      135931102921llu,
-                                                      171262457903llu,
-                                                      215777175787llu,
-                                                      271862205833llu,
-                                                      342524915839llu,
-                                                      431554351609llu,
-                                                      543724411781llu,
-                                                      685049831731llu,
-                                                      863108703229llu,
-                                                      1087448823553llu,
-                                                      1370099663459llu,
-                                                      1726217406467llu,
-                                                      2174897647073llu,
-                                                      2740199326961llu,
-                                                      3452434812973llu,
-                                                      4349795294267llu,
-                                                      5480398654009llu,
-                                                      6904869625999llu,
-                                                      8699590588571llu,
-                                                      10960797308051llu,
-                                                      13809739252051llu,
-                                                      17399181177241llu,
-                                                      21921594616111llu,
-                                                      27619478504183llu,
-                                                      34798362354533llu,
-                                                      43843189232363llu,
-                                                      55238957008387llu,
-                                                      69596724709081llu,
-                                                      87686378464759llu,
-                                                      110477914016779llu,
-                                                      139193449418173llu,
-                                                      175372756929481llu,
-                                                      220955828033581llu,
-                                                      278386898836457llu,
-                                                      350745513859007llu,
-                                                      441911656067171llu,
-                                                      556773797672909llu,
-                                                      701491027718027llu,
-                                                      883823312134381llu,
-                                                      1113547595345903llu,
-                                                      1402982055436147llu,
-                                                      1767646624268779llu,
-                                                      2227095190691797llu,
-                                                      2805964110872297llu,
-                                                      3535293248537579llu,
-                                                      4454190381383713llu,
-                                                      5611928221744609llu,
-                                                      7070586497075177llu,
-                                                      8908380762767489llu,
-                                                      11223856443489329llu,
-                                                      14141172994150357llu,
-                                                      17816761525534927llu,
-                                                      22447712886978529llu,
-                                                      28282345988300791llu,
-                                                      35633523051069991llu,
-                                                      44895425773957261llu,
-                                                      56564691976601587llu,
-                                                      71267046102139967llu,
-                                                      89790851547914507llu,
-                                                      113129383953203213llu,
-                                                      142534092204280003llu,
-                                                      179581703095829107llu,
-                                                      226258767906406483llu,
-                                                      285068184408560057llu,
-                                                      359163406191658253llu,
-                                                      452517535812813007llu,
-                                                      570136368817120201llu,
-                                                      718326812383316683llu,
-                                                      905035071625626043llu,
-                                                      1140272737634240411llu,
-                                                      1436653624766633509llu,
-                                                      1810070143251252131llu,
-                                                      2280545475268481167llu,
-                                                      2873307249533267101llu,
-                                                      3620140286502504283llu,
-                                                      4561090950536962147llu,
-                                                      5746614499066534157llu,
-                                                      7240280573005008577llu,
-                                                      9122181901073924329llu,
-                                                      11493228998133068689llu,
-                                                      14480561146010017169llu,
-                                                      18446744073709551557llu
+            ,
+            5351951779llu,
+            6743036717llu,
+            8495693897llu,
+            10703903591llu,
+            13486073473llu,
+            16991387857llu,
+            21407807219llu,
+            26972146961llu,
+            33982775741llu,
+            42815614441llu,
+            53944293929llu,
+            67965551447llu,
+            85631228929llu,
+            107888587883llu,
+            135931102921llu,
+            171262457903llu,
+            215777175787llu,
+            271862205833llu,
+            342524915839llu,
+            431554351609llu,
+            543724411781llu,
+            685049831731llu,
+            863108703229llu,
+            1087448823553llu,
+            1370099663459llu,
+            1726217406467llu,
+            2174897647073llu,
+            2740199326961llu,
+            3452434812973llu,
+            4349795294267llu,
+            5480398654009llu,
+            6904869625999llu,
+            8699590588571llu,
+            10960797308051llu,
+            13809739252051llu,
+            17399181177241llu,
+            21921594616111llu,
+            27619478504183llu,
+            34798362354533llu,
+            43843189232363llu,
+            55238957008387llu,
+            69596724709081llu,
+            87686378464759llu,
+            110477914016779llu,
+            139193449418173llu,
+            175372756929481llu,
+            220955828033581llu,
+            278386898836457llu,
+            350745513859007llu,
+            441911656067171llu,
+            556773797672909llu,
+            701491027718027llu,
+            883823312134381llu,
+            1113547595345903llu,
+            1402982055436147llu,
+            1767646624268779llu,
+            2227095190691797llu,
+            2805964110872297llu,
+            3535293248537579llu,
+            4454190381383713llu,
+            5611928221744609llu,
+            7070586497075177llu,
+            8908380762767489llu,
+            11223856443489329llu,
+            14141172994150357llu,
+            17816761525534927llu,
+            22447712886978529llu,
+            28282345988300791llu,
+            35633523051069991llu,
+            44895425773957261llu,
+            56564691976601587llu,
+            71267046102139967llu,
+            89790851547914507llu,
+            113129383953203213llu,
+            142534092204280003llu,
+            179581703095829107llu,
+            226258767906406483llu,
+            285068184408560057llu,
+            359163406191658253llu,
+            452517535812813007llu,
+            570136368817120201llu,
+            718326812383316683llu,
+            905035071625626043llu,
+            1140272737634240411llu,
+            1436653624766633509llu,
+            1810070143251252131llu,
+            2280545475268481167llu,
+            2873307249533267101llu,
+            3620140286502504283llu,
+            4561090950536962147llu,
+            5746614499066534157llu,
+            7240280573005008577llu,
+            9122181901073924329llu,
+            11493228998133068689llu,
+            14480561146010017169llu,
+            18446744073709551557llu
 #endif
         };
         static constexpr size_t (*const mod_functions[])(size_t) = {
@@ -2069,9 +2020,8 @@ struct prime_number_hash_policy {
             &mod18446744073709551557
 #endif
         };
-        const size_t *found =
-            std::lower_bound(std::begin(prime_list), std::end(prime_list) - 1, size);
-        size = *found;
+        const size_t *found = std::lower_bound(std::begin(prime_list), std::end(prime_list) - 1, size);
+        size                = *found;
         return mod_functions[1 + found - prime_list];
     }
     void
@@ -2144,22 +2094,18 @@ private:
     int8_t shift = 63;
 };
 
-template <typename K, typename V, typename H = std::hash<K>,
-          typename E = std::equal_to<K>, typename A = std::allocator<std::pair<K, V>>>
+template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<K, V>>>
 class flat_hash_map
     : public detailv3::sherwood_v3_table<
-          std::pair<K, V>, K, H, detailv3::KeyOrValueHasher<K, std::pair<K, V>, H>, E,
-          detailv3::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
-          typename std::allocator_traits<A>::template rebind_alloc<
-              detailv3::sherwood_v3_entry<std::pair<K, V>>>> {
-    using Table = detailv3::sherwood_v3_table<
-        std::pair<K, V>, K, H, detailv3::KeyOrValueHasher<K, std::pair<K, V>, H>, E,
-        detailv3::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
-        typename std::allocator_traits<A>::template rebind_alloc<
-            detailv3::sherwood_v3_entry<std::pair<K, V>>>>;
+          std::pair<K, V>, K, H, detailv3::KeyOrValueHasher<K, std::pair<K, V>, H>, E, detailv3::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
+          typename std::allocator_traits<A>::template rebind_alloc<detailv3::sherwood_v3_entry<std::pair<K, V>>>> {
+    using Table =
+        detailv3::sherwood_v3_table<std::pair<K, V>, K, H, detailv3::KeyOrValueHasher<K, std::pair<K, V>, H>, E,
+                                    detailv3::KeyOrValueEquality<K, std::pair<K, V>, E>, A,
+                                    typename std::allocator_traits<A>::template rebind_alloc<detailv3::sherwood_v3_entry<std::pair<K, V>>>>;
 
 public:
-    using key_type = K;
+    using key_type    = K;
     using mapped_type = V;
 
     using Table::Table;
@@ -2229,8 +2175,7 @@ public:
     template <typename... Args>
     std::pair<typename Table::iterator, bool>
     try_emplace(key_type &&key, Args &&...args) {
-        return try_emplace_impl(std::forward<key_type>(key),
-                                std::forward<Args>(args)...);
+        return try_emplace_impl(std::forward<key_type>(key), std::forward<Args>(args)...);
     }
 
     template <typename... Args>
@@ -2241,8 +2186,7 @@ public:
     template <typename... Args>
     typename Table::iterator
     try_emplace(typename Table::const_iterator, key_type &&key, Args &&...args) {
-        return try_emplace(std::forward<key_type>(key), std::forward<Args>(args)...)
-            .first;
+        return try_emplace(std::forward<key_type>(key), std::forward<Args>(args)...).first;
     }
 
     friend bool
@@ -2275,25 +2219,17 @@ private:
     try_emplace_impl(KeyType &&key, Args &&...args) {
         auto res = this->find(key);
         if (res == this->end())
-            return this->emplace(std::forward<KeyType>(key),
-                                 std::forward<Args>(args)...);
+            return this->emplace(std::forward<KeyType>(key), std::forward<Args>(args)...);
         return {{res}, false};
     }
 };
 
-template <typename T, typename H = std::hash<T>, typename E = std::equal_to<T>,
-          typename A = std::allocator<T>>
+template <typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T>>
 class flat_hash_set
-    : public detailv3::sherwood_v3_table<
-          T, T, H, detailv3::functor_storage<size_t, H>, E,
-          detailv3::functor_storage<bool, E>, A,
-          typename std::allocator_traits<A>::template rebind_alloc<
-              detailv3::sherwood_v3_entry<T>>> {
-    using Table = detailv3::sherwood_v3_table<
-        T, T, H, detailv3::functor_storage<size_t, H>, E,
-        detailv3::functor_storage<bool, E>, A,
-        typename std::allocator_traits<A>::template rebind_alloc<
-            detailv3::sherwood_v3_entry<T>>>;
+    : public detailv3::sherwood_v3_table<T, T, H, detailv3::functor_storage<size_t, H>, E, detailv3::functor_storage<bool, E>, A,
+                                         typename std::allocator_traits<A>::template rebind_alloc<detailv3::sherwood_v3_entry<T>>> {
+    using Table = detailv3::sherwood_v3_table<T, T, H, detailv3::functor_storage<size_t, H>, E, detailv3::functor_storage<bool, E>, A,
+                                              typename std::allocator_traits<A>::template rebind_alloc<detailv3::sherwood_v3_entry<T>>>;
 
 public:
     using key_type = T;

@@ -8,7 +8,7 @@
  * client message backpressure.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -43,17 +43,20 @@ namespace {
 
 class CoroutineClientIOOperationsTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
 
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
 
 template <typename Predicate>
-void pump_until(Predicate done, qb::duration timeout = 2s) {
+void
+pump_until(Predicate done, qb::duration timeout = 2s) {
     const auto deadline = qb::mono_now() + timeout;
     while (!done() && qb::mono_now() < deadline) {
         qb::io::async::run(EVRUN_NOWAIT);
@@ -61,16 +64,17 @@ void pump_until(Predicate done, qb::duration timeout = 2s) {
     }
 }
 
-std::string tcp_uri(int port) {
+std::string
+tcp_uri(int port) {
     return "tcp://127.0.0.1:" + std::to_string(port);
 }
 
 } // namespace
 
 TEST_F(CoroutineClientIOOperationsTest, ConnectedSocketCanWriteToServer) {
-    std::atomic<int> server_port{0};
+    std::atomic<int>  server_port{0};
     std::atomic<bool> server_done{false};
-    std::string received;
+    std::string       received;
 
     std::thread server([&]() {
         qb::io::tcp::listener listener;
@@ -79,8 +83,8 @@ TEST_F(CoroutineClientIOOperationsTest, ConnectedSocketCanWriteToServer) {
 
         auto socket = listener.accept();
         if (socket.is_open()) {
-            char buffer[64] = {};
-            const int n = socket.read(buffer, sizeof(buffer));
+            char      buffer[64] = {};
+            const int n          = socket.read(buffer, sizeof(buffer));
             if (n > 0) {
                 received.assign(buffer, static_cast<std::size_t>(n));
             }
@@ -95,15 +99,13 @@ TEST_F(CoroutineClientIOOperationsTest, ConnectedSocketCanWriteToServer) {
     ASSERT_GT(server_port.load(), 0);
 
     std::atomic<bool> client_done{false};
-    bool write_ok = false;
+    bool              write_ok = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(server_port.load())}, 1s);
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(server_port.load())}, 1s);
         if (socket) {
             const char payload[] = "PING";
-            write_ok = socket->write(payload, std::strlen(payload)) ==
-                       static_cast<int>(std::strlen(payload));
+            write_ok             = socket->write(payload, std::strlen(payload)) == static_cast<int>(std::strlen(payload));
             socket->close();
         }
         client_done.store(true);
@@ -133,7 +135,7 @@ TEST_F(CoroutineClientIOOperationsTest, ConnectedSocketCanReadServerReply) {
         auto socket = listener.accept();
         if (socket.is_open()) {
             const char reply[] = "PONG";
-            (void)socket.write(reply, std::strlen(reply));
+            (void) socket.write(reply, std::strlen(reply));
             socket.close();
         }
         listener.disconnect();
@@ -144,14 +146,13 @@ TEST_F(CoroutineClientIOOperationsTest, ConnectedSocketCanReadServerReply) {
     ASSERT_GT(server_port.load(), 0);
 
     std::atomic<bool> done{false};
-    std::string reply;
+    std::string       reply;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(server_port.load())}, 1s);
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(server_port.load())}, 1s);
         if (socket) {
-            char buffer[64] = {};
-            const int n = socket->read(buffer, sizeof(buffer));
+            char      buffer[64] = {};
+            const int n          = socket->read(buffer, sizeof(buffer));
             if (n > 0) {
                 reply.assign(buffer, static_cast<std::size_t>(n));
             }
@@ -172,7 +173,7 @@ TEST_F(CoroutineClientIOOperationsTest, ConnectedSocketCanReadServerReply) {
 }
 
 TEST_F(CoroutineClientIOOperationsTest, ConnectWithExistingSocketSucceeds) {
-    std::atomic<int> server_port{0};
+    std::atomic<int>  server_port{0};
     std::atomic<bool> accepted{false};
 
     std::thread server([&]() {
@@ -191,7 +192,7 @@ TEST_F(CoroutineClientIOOperationsTest, ConnectWithExistingSocketSucceeds) {
     ASSERT_GT(server_port.load(), 0);
 
     std::atomic<bool> done{false};
-    bool connected = false;
+    bool              connected = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
         qb::io::tcp::socket existing_socket;
@@ -200,10 +201,8 @@ TEST_F(CoroutineClientIOOperationsTest, ConnectWithExistingSocketSucceeds) {
             co_return;
         }
 
-        auto socket = co_await qb::io::async::tcp::connect_with_socket(
-            std::move(existing_socket),
-            qb::io::uri{tcp_uri(server_port.load())},
-            1s);
+        auto socket =
+            co_await qb::io::async::tcp::connect_with_socket(std::move(existing_socket), qb::io::uri{tcp_uri(server_port.load())}, 1s);
         connected = socket.has_value() && socket->is_open();
         if (socket) {
             socket->close();
@@ -229,7 +228,7 @@ TEST_F(CoroutineClientIOOperationsTest, SequentialConnectionAttemptsCanReuseTheS
 
     for (int attempt = 0; attempt < 3; ++attempt) {
         std::atomic<int> server_port{0};
-        std::thread server([&]() {
+        std::thread      server([&]() {
             qb::io::tcp::listener listener;
             ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
             server_port.store(static_cast<int>(listener.local_endpoint().port()));

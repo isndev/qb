@@ -7,7 +7,7 @@
  * actor management, and core communication functionality.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -38,16 +38,14 @@ VirtualCore::registerEvent(_Actor &actor) noexcept {
     // sent to a default/NotFound ActorId.
     if (unlikely(!actor.id().is_valid()))
         return;
-    LOG_INFO("Actor(" << actor.id() << ") subscribed to "
-                      << ActorProxy::getName<_Event>());
+    LOG_INFO("Actor(" << actor.id() << ") subscribed to " << ActorProxy::getName<_Event>());
     _router.subscribe<_Event>(actor);
 }
 
 template <typename _Event, typename _Actor>
 void
 VirtualCore::unregisterEvent(_Actor &actor) noexcept {
-    LOG_INFO("Actor(" << actor.id() << ") unsubscribed to "
-                      << ActorProxy::getName<_Event>());
+    LOG_INFO("Actor(" << actor.id() << ") unsubscribed to " << ActorProxy::getName<_Event>());
     _router.unsubscribe<_Event>(actor);
 }
 
@@ -57,7 +55,7 @@ VirtualCore::addReferencedActor(_Init &&...init) noexcept {
     // Route through the same allocation customization point used by TActorFactory so
     // users who override qb::allocate_actor<_Actor> get consistent behaviour for
     // both engine-created and dynamically-added actors (PMR/pool support, 2.13).
-    auto *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
+    auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
     std::unique_ptr<_Actor> actor_ptr(raw_actor);
     // Use the ActorProxy customization point so dynamically created actors get the
     // same demangled name and typed id_type as factory-created ones.
@@ -123,8 +121,7 @@ VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) noexc
 
     // C++20: use event_qos0_type and service_event_type concepts
     if constexpr (event_qos0_type<T>) {
-        static_assert(std::is_trivially_destructible_v<T>,
-                      "EventQOS < 2 require to be trivially destructible");
+        static_assert(std::is_trivially_destructible_v<T>, "EventQOS < 2 require to be trivially destructible");
     }
 
     if constexpr (service_event_type<T>) {

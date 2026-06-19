@@ -7,7 +7,7 @@
  * It builds upon the generic `qb::io::socket` wrapper.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -51,8 +51,7 @@ class QB_API socket : protected qb::io::socket {
      */
     int connect_in(int af, std::string const &host, uint16_t port) noexcept;
 
-    int connect_in(int af, std::string const &host, uint16_t port,
-                   qb::duration wtimeout) noexcept;
+    int connect_in(int af, std::string const &host, uint16_t port, qb::duration wtimeout) noexcept;
 
     /**
      * @brief Internal method to perform a non-blocking connect.
@@ -78,7 +77,10 @@ public:
     using qb::io::socket::test_nonblocking;
 
     /** @brief Indicates that this socket implementation is not secure */
-    constexpr static bool is_secure() noexcept { return false; }
+    constexpr static bool
+    is_secure() noexcept {
+        return false;
+    }
     /**
      * @brief Default constructor. Creates an uninitialized TCP socket.
      *        Call `init()` before use.

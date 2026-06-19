@@ -7,7 +7,7 @@
  * It provides reliable stream-based communication with support for both IPv4 and IPv6.
  *
  * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -86,8 +86,7 @@ socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
 }
 
 int
-socket::connect_in(int af, std::string const &host, uint16_t port,
-                   qb::duration wtimeout) noexcept {
+socket::connect_in(int af, std::string const &host, uint16_t port, qb::duration wtimeout) noexcept {
     auto ret = -1;
     qb::io::socket::resolve_i(
         [&, this](const auto &ep) {
