@@ -1,11 +1,24 @@
 cmake_minimum_required(VERSION 3.22)
-project(libev C)
+project(qb-ev
+  VERSION 5.0.0
+  DESCRIPTION "A modernized, cross-platform fork of libev (drop-in ev_* API)"
+  HOMEPAGE_URL "https://github.com/isndev/qb-ev"
+  LANGUAGES C)
+
+# Detect whether we are the top-level project (standalone) or consumed as a
+# subdirectory (e.g. by qb-io via add_subdirectory). Used to gate standalone-only
+# conveniences without changing behaviour for embedding projects.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(QB_EV_STANDALONE ON)
+else()
+  set(QB_EV_STANDALONE OFF)
+endif()
 
 # ----------------------------------------------------------------------------
-# Versioning
+# Versioning (keep in sync with ev.h EV_VERSION_MAJOR / EV_VERSION_MINOR)
 # ----------------------------------------------------------------------------
-set(LIBEV_VERSION 4.35)
-set(LIBEV_VERSION_CURRENT 4)
+set(LIBEV_VERSION ${PROJECT_VERSION})
+set(LIBEV_VERSION_CURRENT ${PROJECT_VERSION_MAJOR})
 set(LIBEV_VERSION_AGE 0)
 set(LIBEV_VERSION_REVISION 0)
 
@@ -19,22 +32,30 @@ option(BUILD_STATIC_LIBS "Build libev as a static library" ON)
 # below from overriding the project-wide CMAKE_POSITION_INDEPENDENT_CODE.
 option(BUILD_PIC_STATIC_LIBS "Build static lib as PIC" ON)
 
-# qb always needs the static `ev` target to exist (qb-io DEPENDS ev). Force it on
-# even if a parent project set the generic BUILD_STATIC_LIBS cache entry to OFF.
-set(BUILD_STATIC_LIBS ON)
+# Library kind. When embedded (e.g. by qb-io via add_subdirectory) the `ev` target
+# MUST be static: qb-io DEPENDS on it and links it directly. When built standalone
+# we honour the conventional BUILD_SHARED_LIBS so packagers can produce a shared
+# libev. (BUILD_STATIC_LIBS is retained for backward compatibility.)
+if(QB_EV_STANDALONE AND BUILD_SHARED_LIBS)
+  set(EV_LIBRARY_TYPE SHARED)
+else()
+  set(EV_LIBRARY_TYPE STATIC)
+  # Force the static target to exist even if a parent set BUILD_STATIC_LIBS=OFF.
+  set(BUILD_STATIC_LIBS ON)
+endif()
 # Default OFF: matches legacy ev_config.h (#define EV_USE_TIMERFD 0). Enabling makes
 # ev_run use MAX_BLOCKTIME2 when timerfd is active and timercnt==0, which stalls
-# epoll_wait (regression #1 on event I/O tests). Opt in with -D QB_LIBEV_USE_TIMERFD=ON.
-option(QB_LIBEV_USE_TIMERFD "Enable libev timerfd (time-jump detection; affects idle waittime)" OFF)
-option(QB_LIBEV_STRICT_WARNINGS "Build bundled libev with strict compiler warnings" ON)
-option(QB_LIBEV_WARNING_AUDIT "Enable extra noisy libev warning diagnostics for modernization audits" OFF)
+# epoll_wait (regression #1 on event I/O tests). Opt in with -D QB_EV_USE_TIMERFD=ON.
+option(QB_EV_USE_TIMERFD "Enable libev timerfd (time-jump detection; affects idle waittime)" OFF)
+option(QB_EV_STRICT_WARNINGS "Build bundled libev with strict compiler warnings" ON)
+option(QB_EV_WARNING_AUDIT "Enable extra noisy libev warning diagnostics for modernization audits" OFF)
 
 # The audit diagnostics layer on top of the strict baseline (the strict block
 # below is what applies them). Enabling the audit without the baseline would
 # silently apply no warnings at all, so make the dependency explicit.
-if(QB_LIBEV_WARNING_AUDIT AND NOT QB_LIBEV_STRICT_WARNINGS)
-  message(STATUS "[libev] QB_LIBEV_WARNING_AUDIT=ON forces QB_LIBEV_STRICT_WARNINGS=ON")
-  set(QB_LIBEV_STRICT_WARNINGS ON)
+if(QB_EV_WARNING_AUDIT AND NOT QB_EV_STRICT_WARNINGS)
+  message(STATUS "[qb-ev] QB_EV_WARNING_AUDIT=ON forces QB_EV_STRICT_WARNINGS=ON")
+  set(QB_EV_STRICT_WARNINGS ON)
 endif()
 
 # ----------------------------------------------------------------------------
@@ -162,7 +183,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(HAVE_SIGNALFD AND HAVE_SYS_SIGNALFD_H)
         set(EV_USE_SIGNALFD 1)
     endif()
-    if(QB_LIBEV_USE_TIMERFD AND HAVE_SYS_TIMERFD_H)
+    if(QB_EV_USE_TIMERFD AND HAVE_SYS_TIMERFD_H)
         set(EV_USE_TIMERFD 1)
     endif()
     # Check for io_uring
@@ -214,8 +235,8 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ev_config.h DESTINATION include)
 # ----------------------------------------------------------------------------
 set(LIBEV_SRCS ev.c event.c)
 
-if(BUILD_STATIC_LIBS)
-  add_library(ev STATIC ${LIBEV_SRCS})
+if(BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
+  add_library(ev ${EV_LIBRARY_TYPE} ${LIBEV_SRCS})
 
 #   target_compile_definitions(ev PRIVATE
 #     EV_USE_EPOLL=${EV_USE_EPOLL}
@@ -232,7 +253,7 @@ if(BUILD_STATIC_LIBS)
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   )
 
-  if(QB_LIBEV_STRICT_WARNINGS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+  if(QB_EV_STRICT_WARNINGS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     # Keep the vendored event loop visible to modern compilers. The baseline is
     # intentionally warning-clean enough for day-to-day builds; the audit option
     # below enables noisier conversion/cast diagnostics for dedicated cleanups.
@@ -269,7 +290,7 @@ if(BUILD_STATIC_LIBS)
       )
     endif()
 
-    if(QB_LIBEV_WARNING_AUDIT)
+    if(QB_EV_WARNING_AUDIT)
       target_compile_options(ev PRIVATE
         -Wcast-qual
         -Wconversion
@@ -278,7 +299,7 @@ if(BUILD_STATIC_LIBS)
     endif()
   endif()
 
-  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang" AND NOT QB_LIBEV_WARNING_AUDIT)
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang" AND NOT QB_EV_WARNING_AUDIT)
     target_compile_options(ev PRIVATE
       -Wno-unused-parameter
       -Wno-unused-function
@@ -293,19 +314,59 @@ if(BUILD_STATIC_LIBS)
     POSITION_INDEPENDENT_CODE ${BUILD_PIC_STATIC_LIBS}
     VERSION ${LIBEV_VERSION_CURRENT}.${LIBEV_VERSION_AGE}.${LIBEV_VERSION_REVISION}
     SOVERSION ${LIBEV_VERSION_CURRENT}
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
   )
+
+  # Namespaced aliases: consumers link `qb-ev::ev` (brand) or `ev::ev` (drop-in).
+  add_library(qb-ev::ev ALIAS ev)
+  if(NOT TARGET ev::ev)
+    add_library(ev::ev ALIAS ev)
+  endif()
+
+  # --------------------------------------------------------------------------
+  # Install + package config — find_package(qb-ev) (and ev::ev compat alias)
+  # --------------------------------------------------------------------------
+  include(GNUInstallDirs)
+  include(CMakePackageConfigHelpers)
 
   install(TARGETS ev
-    EXPORT evTargets
-    ARCHIVE DESTINATION lib
-    INCLUDES DESTINATION include
+    EXPORT qb-evTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 
-  install(FILES ev.h DESTINATION include)
+  install(FILES ev.h ev++.h event.h event_compat.h
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-  install(EXPORT evTargets
-    FILE evTargets.cmake
-    NAMESPACE ev::
-    DESTINATION lib/cmake/ev
+  install(EXPORT qb-evTargets
+    FILE qb-evTargets.cmake
+    NAMESPACE qb-ev::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb-ev
+  )
+
+  file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfig.cmake.in
+"@PACKAGE_INIT@
+include(\"\${CMAKE_CURRENT_LIST_DIR}/qb-evTargets.cmake\")
+# Drop-in compatibility alias for projects that expect the ev:: namespace.
+if(NOT TARGET ev::ev)
+  add_library(ev::ev ALIAS qb-ev::ev)
+endif()
+")
+  configure_package_config_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb-ev
+  )
+  write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+  )
+  install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb-ev
   )
 endif()
