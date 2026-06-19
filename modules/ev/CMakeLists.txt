@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(qb-ev
+project(libev
   VERSION 5.0.0
   DESCRIPTION "A modernized, cross-platform fork of libev (drop-in ev_* API)"
   HOMEPAGE_URL "https://github.com/isndev/qb-ev"
@@ -317,20 +317,20 @@ if(BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     WINDOWS_EXPORT_ALL_SYMBOLS ON
   )
 
-  # Namespaced aliases: consumers link `qb-ev::ev` (brand) or `ev::ev` (drop-in).
-  add_library(qb-ev::ev ALIAS ev)
+  # Namespaced aliases: consumers link `qb::ev` (brand) or `ev::ev` (drop-in).
+  add_library(qb::ev ALIAS ev)
   if(NOT TARGET ev::ev)
     add_library(ev::ev ALIAS ev)
   endif()
 
   # --------------------------------------------------------------------------
-  # Install + package config — find_package(qb-ev) (and ev::ev compat alias)
+  # Install + package config — find_package(libev) (and ev::ev compat alias)
   # --------------------------------------------------------------------------
   include(GNUInstallDirs)
   include(CMakePackageConfigHelpers)
 
   install(TARGETS ev
-    EXPORT qb-evTargets
+    EXPORT libevTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -340,33 +340,33 @@ if(BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
   install(FILES ev.h ev++.h event.h event_compat.h
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-  install(EXPORT qb-evTargets
-    FILE qb-evTargets.cmake
-    NAMESPACE qb-ev::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb-ev
+  install(EXPORT libevTargets
+    FILE libevTargets.cmake
+    NAMESPACE qb::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libev
   )
 
-  file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfig.cmake.in
+  file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/libevConfig.cmake.in
 "@PACKAGE_INIT@
-include(\"\${CMAKE_CURRENT_LIST_DIR}/qb-evTargets.cmake\")
+include(\"\${CMAKE_CURRENT_LIST_DIR}/libevTargets.cmake\")
 # Drop-in compatibility alias for projects that expect the ev:: namespace.
 if(NOT TARGET ev::ev)
-  add_library(ev::ev ALIAS qb-ev::ev)
+  add_library(ev::ev ALIAS qb::ev)
 endif()
 ")
   configure_package_config_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb-ev
+    ${CMAKE_CURRENT_BINARY_DIR}/libevConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/libevConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libev
   )
   write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfigVersion.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/libevConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
   )
   install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/qb-evConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb-ev
+    ${CMAKE_CURRENT_BINARY_DIR}/libevConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/libevConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libev
   )
 endif()
