@@ -533,6 +533,18 @@ function(qb_register_module)
         endif()
     endif()
     
+    # Expose the module's parent directory as an include root so consumers reach
+    # the module umbrella header by its prefix (e.g. <http/http.h>, <http/ws.h>,
+    # <redis/redis.h>, <pgsql/pgsql.h>). The module's own sources use relative
+    # includes ("../http.h"), but external consumers (examples, downstream apps)
+    # include by module prefix. Marked SYSTEM to match QB_MODULES_DIR handling.
+    get_filename_component(_qb_module_include_root "${CMAKE_CURRENT_SOURCE_DIR}" DIRECTORY)
+    _qb_target_usage_scope(${module_target} _qb_module_scope)
+    target_include_directories(${module_target}
+        SYSTEM ${_qb_module_scope}
+            "$<BUILD_INTERFACE:${_qb_module_include_root}>"
+    )
+
     # Create alias
     add_library(${module_alias} ALIAS ${module_target})
     
