@@ -14,6 +14,17 @@
  * - loop_destroy skips close(backend_fd) before iouring_destroy (see ev.c) to avoid double-close.
  *
  * Requires a kernel new enough for IORING_OP_POLL_ADD (libev gates the backend in ev.c).
+ *
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2011-2025 qb - isndev (cpp.actor).
+ *
+ * Part of qb-ev, a modernized cross-platform fork of libev.
+ * Based on libev by Marc Alexander Lehmann <libev@schmorp.de>.
+ *   Upstream: http://software.schmorp.de/pkg/libev.html
+ *
+ * Released under the MIT License (see LICENSE). Portions derived from libev
+ * remain Copyright (c) Marc Alexander Lehmann under the BSD-2-Clause license;
+ * see THIRD-PARTY-NOTICES.
  */
 
 #include <linux/io_uring.h>

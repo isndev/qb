@@ -58,7 +58,7 @@
 #define EV_FEATURES 0x7f
 
 /* Project and version macros */
-#define EV_PACKAGE "@CMAKE_CURRENT_PROJECT_NAME@"
+#define EV_PACKAGE "@PROJECT_NAME@"
 #define EV_VERSION "@LIBEV_VERSION@"
 
 #endif /* EV_CONFIG_H_ */

@@ -99,18 +99,18 @@ endif()
 # libev (using internal bundled version)
 # -----------------------------------------------------------------------------
 # qb uses a custom bundled version of libev in modules/ev
-set(QB_LIBEV_DIR "${QB_MODULES_DIR}/ev")
+set(QB_EV_DIR "${QB_MODULES_DIR}/ev")
 
-if(EXISTS "${QB_LIBEV_DIR}")
+if(EXISTS "${QB_EV_DIR}")
     set(LIBEV_FOUND TRUE)
     set(QB_HAS_LIBEV TRUE)
-    qb_status_message("Using bundled libev from: ${QB_LIBEV_DIR}")
+    qb_status_message("Using bundled libev from: ${QB_EV_DIR}")
     
     # The bundled libev will be built as part of the internal modules
     # We don't need to create an imported target here as it will be handled
     # by the internal module system
 else()
-    qb_error_message("Bundled libev not found at: ${QB_LIBEV_DIR}")
+    qb_error_message("Bundled libev not found at: ${QB_EV_DIR}")
     set(LIBEV_FOUND FALSE)
     set(QB_HAS_LIBEV FALSE)
 endif()

@@ -666,7 +666,7 @@ run(int flag = 0) {
  *
  * Equivalent to `listener::current.run(EVRUN_ONCE)`.
  *
- * @warning With libev monotonic clock and timerfd enabled (`QB_LIBEV_USE_TIMERFD=ON`),
+ * @warning With libev monotonic clock and timerfd enabled (`QB_EV_USE_TIMERFD=ON`),
  *          `EVRUN_ONCE` can block for libev's internal maximum waittime when there are
  *          only `ev_io` watchers and no heap timers (`timercnt == 0`). Prefer
  *          `run_until` / `run(EVRUN_NOWAIT)` in pumps, or keep timerfd disabled (default).
