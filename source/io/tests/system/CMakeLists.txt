@@ -186,10 +186,15 @@ if(QB_HAS_SSL)
                 COMMENT "Copying SSL certificates to test binary directory"
         )
 
-        # Make ssl-dependent tests depend on certificate generation
-        add_dependencies(${PROJECT_NAME}-gtest-test-async-io generate_ssl_certs)
-        add_dependencies(${PROJECT_NAME}-gtest-test-ssl-socket generate_ssl_certs)
-        add_dependencies(${PROJECT_NAME}-gtest-test-session-text generate_ssl_certs)
+        # Make ssl-dependent tests depend on certificate generation. Some of these
+        # are POSIX-only and excluded on Windows, so only wire targets that exist.
+        foreach (_ssl_dep ${PROJECT_NAME}-gtest-test-async-io
+                          ${PROJECT_NAME}-gtest-test-ssl-socket
+                          ${PROJECT_NAME}-gtest-test-session-text)
+            if (TARGET ${_ssl_dep})
+                add_dependencies(${_ssl_dep} generate_ssl_certs)
+            endif ()
+        endforeach ()
 
         # Tests using SSL will look for certificates in their runtime directory
         qb_status_message("SSL certificate generation enabled (OpenSSL ${OPENSSL_VERSION_OUTPUT})")
