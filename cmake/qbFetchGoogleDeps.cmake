@@ -33,6 +33,15 @@ endif()
 
 include(FetchContent)
 
+# When GTest/benchmark resolve to a *system* package (find_package, e.g. a
+# locally-installed GoogleTest), the imported targets (GTest::gtest_main, ...)
+# are created in THIS directory scope and are NOT visible to sibling module
+# subdirectories (qbm/*), which are added from the project root. That makes
+# qb_add_test's `if(TARGET GTest::gtest_main)` false inside modules and fails
+# with "no GTest target". Promote find_package imported targets to GLOBAL so
+# module tests can see and link them. (CMAKE_FIND_PACKAGE_TARGETS_GLOBAL: CMake >= 3.24)
+set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL TRUE)
+
 # -----------------------------------------------------------------------------
 # GoogleTest
 # -----------------------------------------------------------------------------
