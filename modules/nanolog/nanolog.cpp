@@ -30,7 +30,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <cstring>
 #include <ctime>
 #include <fstream>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <qb/utility/build_macros.h>
 #include <queue>
 #include <thread>

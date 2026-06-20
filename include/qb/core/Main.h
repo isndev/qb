@@ -37,7 +37,7 @@
 #include <vector>
 // include from qb
 #include <qb/system/lockfree/mpsc.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <qb/utility/compat.h>
 #include "CoreSet.h"
 #include "Event.h"

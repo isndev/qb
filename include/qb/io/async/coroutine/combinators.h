@@ -39,7 +39,7 @@
 
 #include "task.h"
 #include "utils.h"
-#include <qb/system/timestamp.h> // qb::duration
+#include <qb/system/time.h> // qb::duration
 #include <any>
 #include <chrono>
 #include <cstddef>

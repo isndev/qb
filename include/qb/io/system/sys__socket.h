@@ -40,7 +40,7 @@
 #include <vector>
 
 #include <qb/io/config.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 #if !defined(_WS2IPDEF_)
 /**
@@ -1425,7 +1425,14 @@ public:
             }
         }
 
+        // The callback (e.g. a non-blocking connect) leaves the meaningful error in
+        // the per-thread socket error slot. On Windows freeaddrinfo() resets
+        // WSAGetLastError() to 0, which would hide a legitimate WSAEWOULDBLOCK /
+        // WSAEINPROGRESS from the caller; preserve it across the call so
+        // get_last_errno() stays reliable right after a resolve+connect.
+        const int last_error = socket::get_last_errno();
         freeaddrinfo(answerlist);
+        socket::set_last_errno(last_error);
 
         return error;
     }
@@ -1454,6 +1461,15 @@ protected:
 
 private:
     socket_type fd;
+#if defined(_WIN32)
+    // Winsock has no FIONBIO getter: there is no portable way to *query* whether
+    // a socket is in non-blocking mode. Probing it (e.g. a zero-length recv) is
+    // unreliable on datagram sockets — it blocks when the socket is empty and
+    // silently consumes a pending datagram otherwise. We therefore track the mode
+    // ourselves: it is set to the OS default (blocking) at creation and updated by
+    // set_nonblocking(). Mutable because set_nonblocking()/test_nonblocking() are const.
+    mutable int _nonblocking = 0;
+#endif
 }; // namespace inet
 
 } // namespace inet

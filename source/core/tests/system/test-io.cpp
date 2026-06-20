@@ -26,7 +26,7 @@
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <qb/string.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 struct TestEvent : public qb::Event {};
 

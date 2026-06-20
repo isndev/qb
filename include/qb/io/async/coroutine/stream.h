@@ -25,7 +25,7 @@
 
 #include "task.h"
 #include "channel.h"
-#include <qb/system/timestamp.h> // qb::duration
+#include <qb/system/time.h> // qb::duration
 #include <chrono>
 #include <cstddef>
 #include <exception>

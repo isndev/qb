@@ -9,7 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <string>
 #include <string_view>
 

@@ -33,7 +33,7 @@
 // use only (one qb-io VirtualCore thread). Cross-thread cancellation must go
 // through the qb actor event system — an actor on Thread B sends a Cancel event
 // to the actor on Thread A, which then calls token.cancel() on its own thread.
-#include <qb/system/timestamp.h> // qb::duration
+#include <qb/system/time.h> // qb::duration
 #include <chrono>
 #include <exception>
 #include <functional>

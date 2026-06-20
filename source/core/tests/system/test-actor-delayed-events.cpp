@@ -29,7 +29,7 @@
 #include <qb/io.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <vector>
 
 using namespace std::chrono_literals;

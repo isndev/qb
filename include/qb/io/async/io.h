@@ -30,7 +30,7 @@
 #define QB_IO_ASYNC_IO_H
 
 #include <memory>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <qb/utility/type_traits.h>
 #include "../config.h"
 #include "../system/sys__socket.h"

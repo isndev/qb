@@ -27,7 +27,7 @@
 
 #include <cstdint>
 #include <chrono>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 namespace qb::io::event {
 

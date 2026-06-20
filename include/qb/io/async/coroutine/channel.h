@@ -29,7 +29,7 @@
 // NOTE: No <mutex> — the channel is used exclusively within a single qb-io
 // thread under the cooperative scheduler. "Multi-Producer" here means multiple
 // coroutines; they are all on the same thread and never run concurrently.
-#include <qb/system/timestamp.h> // qb::duration
+#include <qb/system/time.h> // qb::duration
 #include <chrono>
 #include <deque>
 #include <exception>

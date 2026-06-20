@@ -212,6 +212,14 @@ socket::pserve(const endpoint &ep) {
 
     set_optval(SOL_SOCKET, SO_REUSEADDR, 1);
 
+    // Make IPv6 listeners dual-stack (accept IPv4-mapped clients too). Linux defaults
+    // IPV6_V6ONLY to 0, but Windows and the BSDs/macOS default it to 1, so an IPv6
+    // server there silently rejects IPv4 clients — e.g. a client resolving "localhost"
+    // to 127.0.0.1 cannot reach a listen_v6("::") server. Forcing it off matches the
+    // Linux behaviour the tests assume and is a no-op for a specific address like "::1".
+    if (ep.af() == AF_INET6)
+        set_optval(IPPROTO_IPV6, IPV6_V6ONLY, 0);
+
     int n = this->bind(ep);
     if (n != 0)
         return n;
@@ -402,6 +410,10 @@ socket::operator=(socket_type handle) {
     if (this->fd != handle) {
         this->close();
         this->fd = handle;
+#if defined(_WIN32)
+        // New (externally created) handle: assume the OS default (blocking).
+        this->_nonblocking = 0;
+#endif
     }
     return *this;
 }
@@ -413,6 +425,9 @@ socket::operator=(socket &&right) {
 socket &
 socket::swap(socket &rhs) {
     std::swap(this->fd, rhs.fd);
+#if defined(_WIN32)
+    std::swap(this->_nonblocking, rhs._nonblocking);
+#endif
     return *this;
 }
 
@@ -420,6 +435,10 @@ bool
 socket::open(int af, int type, int protocol) {
     if (invalid_socket == this->fd) {
         this->fd = ::socket(af, type, protocol);
+#if defined(_WIN32)
+        // A freshly created socket is in blocking mode on Windows.
+        this->_nonblocking = 0;
+#endif
 #if defined(SO_NOSIGPIPE) && !defined(__linux__) && !defined(_WIN32)
         // BSD/macOS: writing to a socket whose peer has closed raises SIGPIPE,
         // which by default terminates the process. MSG_NOSIGNAL is a no-op there
@@ -517,7 +536,14 @@ socket::release_handle(void) {
 
 int
 socket::set_nonblocking(bool nonblocking) const {
-    return set_nonblocking(this->fd, nonblocking);
+    const int r = set_nonblocking(this->fd, nonblocking);
+#if defined(_WIN32)
+    // Track the mode we just set so test_nonblocking() can report it without an
+    // (impossible on Winsock) kernel query.
+    if (r == 0)
+        _nonblocking = nonblocking ? 1 : 0;
+#endif
+    return r;
 }
 int
 socket::set_nonblocking(socket_type s, bool nonblocking) {
@@ -534,7 +560,13 @@ socket::set_nonblocking(socket_type s, bool nonblocking) {
 
 int
 socket::test_nonblocking() const {
+#if defined(_WIN32)
+    // The static probe (zero-length recv) blocks on an empty datagram socket and
+    // consumes a pending datagram otherwise; return the tracked mode instead.
+    return _nonblocking;
+#else
     return socket::test_nonblocking(this->fd);
+#endif
 }
 int
 socket::test_nonblocking(socket_type s) {
@@ -648,7 +680,15 @@ socket::connect_n(socket_type s, const endpoint &ep, const qb::duration &wtimeou
 
     const int connect_errno = socket::get_last_errno();
     if (!connect_syscall_in_progress(connect_errno)) {
+        // set_nonblocking() issues an ioctlsocket() on Windows, which resets
+        // WSAGetLastError() to 0 — wiping the connect error before the caller can
+        // read it. Restore it so callers still see the real reason, in particular
+        // EISCONN when re-connecting an already-connected socket for a synchronous
+        // TLS upgrade (the SSL layer keys off EISCONN to skip the redundant TCP
+        // connect and proceed to the handshake). POSIX fcntl() leaves errno intact;
+        // this makes Windows behave identically.
         set_nonblocking(s, false);
+        socket::set_last_errno(connect_errno);
         return -1;
     }
 
@@ -674,8 +714,8 @@ socket::connect_n(socket_type s, const endpoint &ep, const qb::duration &wtimeou
         return -1;
     }
     if (so_error != 0) {
-        socket::set_last_errno(so_error);
         set_nonblocking(s, false);
+        socket::set_last_errno(so_error); // after set_nonblocking: it clears WSAGetLastError() on Windows
         return -1;
     }
 
@@ -1095,14 +1135,25 @@ socket::gai_strerror(int error) {
 
 // initialize win32 socket library
 #ifdef _WIN32
+#include <timeapi.h> // timeBeginPeriod / timeEndPeriod (1ms timer resolution)
+#pragma comment(lib, "winmm.lib")
 namespace {
 struct ws2_32_gc {
     WSADATA dat = {0};
 
     ws2_32_gc(void) {
         WSAStartup(0x0202, &dat);
+        // Raise the system timer resolution to 1ms. By default Windows quantizes
+        // timers, Sleep() and the wait timeouts used by the event loop (select /
+        // GetQueuedCompletionStatusEx) to ~15.6ms. That coarse granularity rounds
+        // every short ev_timer / async sleep up to the next ~15.6ms tick, which
+        // both slows the whole async stack down and makes sub-15ms timing
+        // (coroutine sleeps, timeouts) wildly imprecise versus Linux/macOS. 1ms
+        // matches the behaviour the rest of the framework assumes.
+        timeBeginPeriod(1);
     }
     ~ws2_32_gc(void) {
+        timeEndPeriod(1);
 #ifndef QB_HAS_SSL
         WSACleanup();
 #endif // QB_HAS_SSL

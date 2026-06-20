@@ -26,7 +26,7 @@
 #define QB_IO_TCP_SOCKET_H_
 #include "../system/sys__socket.h"
 #include "../uri.h"
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 namespace qb::io::tcp {
 

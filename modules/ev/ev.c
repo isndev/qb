@@ -4868,6 +4868,33 @@ ev_stop(EV_P_ W w) {
 
 /*****************************************************************************/
 
+/* Change the watched events of an *active* io watcher in place, without the
+ * stop/start cycle a caller would otherwise use. On Windows this is essential:
+ * ev_io_stop() does an eager epoll_ctl(EPOLL_CTL_DEL) and recycles the int<->SOCKET
+ * fd-pool slot, so a stop/start to merely toggle EV_WRITE on/off churns the wepoll
+ * registration (DEL+ADD) and drops readiness that was already pending on the socket.
+ * Updating w->events and marking the fd for reify lets fd_reify() issue a single
+ * EPOLL_CTL_MOD, mirroring upstream libev's ev_io_modify(). */
+ecb_noinline void
+ev_io_modify(EV_P_ ev_io *w, int events) EV_NOEXCEPT {
+    EV_FREQUENT_CHECK;
+
+    events &= EV_READ | EV_WRITE;
+
+    /* Nothing to do if the watched set is unchanged (preserve EV__IOFDSET). */
+    if (w->events == ((w->events & EV__IOFDSET) | events))
+        return;
+
+    w->events = (w->events & EV__IOFDSET) | events;
+
+    /* Only an active watcher has a backend registration to update; an inactive
+     * one will pick the new mask up when ev_io_start() registers it. */
+    if (ev_is_active(w))
+        fd_change(EV_A_ w->fd, 0);
+
+    EV_FREQUENT_CHECK;
+}
+
 ecb_noinline void
 ev_io_start(EV_P_ ev_io *w) EV_NOEXCEPT {
     int fd = w->fd;

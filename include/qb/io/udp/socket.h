@@ -26,7 +26,7 @@
 #define QB_IO_UDP_SOCKET_H_
 #include "../system/sys__socket.h"
 #include "../uri.h"
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <chrono>
 #include <string>
 

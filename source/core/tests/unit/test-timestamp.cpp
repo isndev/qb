@@ -22,7 +22,7 @@
  */
 
 #include <gtest/gtest.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <chrono>
 #include <thread>
 
@@ -162,6 +162,132 @@ TEST(Parse, Iso8601UtcRoundTrip) {
     auto tp = qb::from_iso8601("2023-01-15T12:30:45Z");
     ASSERT_TRUE(tp.has_value());
     EXPECT_EQ(qb::to_iso8601(*tp), "2023-01-15T12:30:45Z");
+}
+
+// ---------------------------------------------------------------------------
+// Portable UTC calendar conversions (safe_gmtime / safe_timegm / civil math).
+// Pure integer, thread-safe, valid for all time_t including negative (pre-1970)
+// — the cases the Windows CRT gmtime_s / _mkgmtime reject.
+// ---------------------------------------------------------------------------
+
+TEST(Calendar, DaysFromCivilKnownAnchors) {
+    using qb::detail::days_from_civil;
+    EXPECT_EQ(days_from_civil(1970, 1, 1), 0);       // Unix epoch
+    EXPECT_EQ(days_from_civil(1969, 12, 31), -1);    // day before the epoch
+    EXPECT_EQ(days_from_civil(2000, 1, 1), 10957);   // PostgreSQL epoch offset
+    EXPECT_EQ(days_from_civil(1900, 1, 1), -25567);  // 70y before, with the 1900 non-leap
+}
+
+TEST(Calendar, CivilFromDaysRoundTrip) {
+    // Round-trip every day across ~600 years straddling the epoch.
+    for (std::int64_t day = -100000; day <= 120000; day += 7) {
+        const auto c = qb::detail::civil_from_days(day);
+        EXPECT_EQ(qb::detail::days_from_civil(c.year, c.month, c.day), day) << "day=" << day;
+    }
+    const auto epoch = qb::detail::civil_from_days(0);
+    EXPECT_EQ(epoch.year, 1970);
+    EXPECT_EQ(epoch.month, 1u);
+    EXPECT_EQ(epoch.day, 1u);
+    const auto before = qb::detail::civil_from_days(-1);
+    EXPECT_EQ(before.year, 1969);
+    EXPECT_EQ(before.month, 12u);
+    EXPECT_EQ(before.day, 31u);
+}
+
+TEST(Calendar, SafeGmtimeKnownFields) {
+    std::tm tm{};
+    ASSERT_TRUE(qb::safe_gmtime(0, tm)); // 1970-01-01T00:00:00Z, a Thursday
+    EXPECT_EQ(tm.tm_year, 70);
+    EXPECT_EQ(tm.tm_mon, 0);
+    EXPECT_EQ(tm.tm_mday, 1);
+    EXPECT_EQ(tm.tm_hour, 0);
+    EXPECT_EQ(tm.tm_wday, 4); // Thursday
+    EXPECT_EQ(tm.tm_yday, 0);
+
+    ASSERT_TRUE(qb::safe_gmtime(1'673'785'845, tm)); // 2023-01-15T12:30:45Z, a Sunday
+    EXPECT_EQ(tm.tm_year, 123);
+    EXPECT_EQ(tm.tm_mon, 0);
+    EXPECT_EQ(tm.tm_mday, 15);
+    EXPECT_EQ(tm.tm_hour, 12);
+    EXPECT_EQ(tm.tm_min, 30);
+    EXPECT_EQ(tm.tm_sec, 45);
+    EXPECT_EQ(tm.tm_wday, 0);  // Sunday
+    EXPECT_EQ(tm.tm_yday, 14); // 0-indexed from Jan 1
+}
+
+TEST(Calendar, SafeGmtimePreEpochFields) {
+    std::tm tm{};
+    ASSERT_TRUE(qb::safe_gmtime(-1, tm)); // 1969-12-31T23:59:59Z, a Wednesday
+    EXPECT_EQ(tm.tm_year, 69);
+    EXPECT_EQ(tm.tm_mon, 11);
+    EXPECT_EQ(tm.tm_mday, 31);
+    EXPECT_EQ(tm.tm_hour, 23);
+    EXPECT_EQ(tm.tm_min, 59);
+    EXPECT_EQ(tm.tm_sec, 59);
+    EXPECT_EQ(tm.tm_wday, 3);   // Wednesday
+    EXPECT_EQ(tm.tm_yday, 364); // 1969 is not a leap year
+}
+
+TEST(Calendar, SafeGmtimeTimegmRoundTrip) {
+    // The whole point: exact round-trip across negative (pre-1970), zero, modern
+    // and far-future instants — identical on every platform.
+    const std::int64_t samples[] = {
+        -62135596800LL,  // 0001-01-01T00:00:00Z
+        -2208988800LL,   // 1900-01-01T00:00:00Z
+        -14182940LL,     // 1969-07-20T20:17:40Z (Apollo 11)
+        -1LL,            // 1969-12-31T23:59:59Z
+        0LL,             // 1970-01-01T00:00:00Z
+        1LL, 1'673'785'845LL, 4'102'444'800LL, // 2100-01-01T00:00:00Z
+        253'402'300'799LL,                     // 9999-12-31T23:59:59Z
+    };
+    for (std::int64_t s : samples) {
+        std::tm tm{};
+        ASSERT_TRUE(qb::safe_gmtime(static_cast<std::time_t>(s), tm)) << "s=" << s;
+        EXPECT_EQ(static_cast<std::int64_t>(qb::safe_timegm(tm)), s) << "s=" << s;
+    }
+}
+
+TEST(Calendar, LeapYearBoundaries) {
+    // 2000 is a leap year (divisible by 400), 1900 is not (divisible by 100).
+    EXPECT_EQ(qb::detail::days_from_civil(2000, 2, 29) + 1, qb::detail::days_from_civil(2000, 3, 1));
+    EXPECT_EQ(qb::detail::days_from_civil(1900, 2, 28) + 1, qb::detail::days_from_civil(1900, 3, 1));
+    EXPECT_EQ(qb::detail::days_from_civil(2024, 2, 29) + 1, qb::detail::days_from_civil(2024, 3, 1));
+    std::tm tm{};
+    ASSERT_TRUE(qb::safe_gmtime(qb::safe_timegm([] { std::tm t{}; t.tm_year = 100; t.tm_mon = 1; t.tm_mday = 29; return t; }()), tm));
+    EXPECT_EQ(tm.tm_mon, 1); // still February
+    EXPECT_EQ(tm.tm_mday, 29);
+}
+
+TEST(Calendar, SafeLocaltimeFillsFields) {
+    // Local time is TZ-dependent, so only assert it succeeds and fills a sane
+    // calendar (the value depends on the host zone). Thread-safe (own tm).
+    std::tm tm{};
+    ASSERT_TRUE(qb::safe_localtime(1'673'785'845, tm));
+    EXPECT_GE(tm.tm_mday, 1);
+    EXPECT_LE(tm.tm_mday, 31);
+    EXPECT_EQ(tm.tm_year, 123); // 2023 regardless of zone (a midday UTC instant)
+}
+
+TEST(Format, PreUnixEpoch) {
+    // Regression for the latent Windows core bug: gmtime_s/_mkgmtime reject a
+    // negative time_t, which used to make format_utc/parse_utc fail before 1970.
+    auto moon = qb::wall_from_unix_seconds(-14'182'940); // 1969-07-20T20:17:40Z
+    EXPECT_EQ(qb::to_iso8601(moon), "1969-07-20T20:17:40Z");
+    EXPECT_EQ(qb::format_utc(moon, "%Y-%m-%d"), "1969-07-20");
+
+    auto epoch_minus_1 = qb::wall_from_unix_seconds(-1);
+    EXPECT_EQ(qb::to_iso8601(epoch_minus_1), "1969-12-31T23:59:59Z");
+}
+
+TEST(Parse, PreUnixEpochRoundTrip) {
+    auto tp = qb::from_iso8601("1969-07-20T20:17:40Z");
+    ASSERT_TRUE(tp.has_value());
+    EXPECT_EQ(qb::unix_seconds(*tp), -14'182'940);
+    EXPECT_EQ(qb::to_iso8601(*tp), "1969-07-20T20:17:40Z");
+
+    auto far_past = qb::from_iso8601("1900-01-01T00:00:00Z");
+    ASSERT_TRUE(far_past.has_value());
+    EXPECT_EQ(qb::unix_seconds(*far_past), -2'208'988'800);
 }
 
 // ---------------------------------------------------------------------------

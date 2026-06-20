@@ -56,7 +56,7 @@
 #include <qb/system/container/unordered_map.h>
 #include <qb/system/event/router.h>
 #include <qb/system/lockfree/mpsc.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <qb/utility/compat.h>
 #include "Actor.h"
 #include "Event.h"

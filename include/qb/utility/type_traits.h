@@ -701,23 +701,42 @@ struct expand {
 // ----------------------------------------------------------------------------
 // QB_DEFINE_METHOD_TRAIT — variadic method with optional return type constraint
 // ----------------------------------------------------------------------------
+// The detection requires-expression lives INSIDE has_method_##name (a struct in the global
+// namespace) on purpose. A class that keeps its name() handlers private grants the detector
+// access with `friend struct has_method_##name<Self, void, Evt>;`. Access for a
+// requires-expression is checked in the scope where it is *written*: writing it here means
+// that friendship is honoured. A named concept in namespace qb would be checked in qb's scope
+// (never a friend), so on conformant compilers (MSVC) it cannot see private handlers and
+// silently reports false — which disables `if constexpr`-gated event dispatch (e.g. HTTP
+// keep-alive's eos handler). The qb::has_##name concepts therefore only *read* the
+// friend-computed value and add no access requirement of their own.
+//   Ret=void → existence only; Ret≠void → exact return (same_as<Ret>).
+//   Befriend with `friend struct has_method_##name<Self, void, Evt>;` for private name().
 #define QB_DEFINE_METHOD_TRAIT(name)                                                             \
+    template <typename C, typename Ret, typename... Args>                                        \
+    struct has_method_##name {                                                                   \
+        static constexpr bool                                                                    \
+        _qb_detect() noexcept {                                                                  \
+            if constexpr (std::is_void_v<Ret>)                                                   \
+                return requires(C &c) { { c.name(std::declval<Args>()...) }; };                  \
+            else                                                                                 \
+                return requires(C &c) { { c.name(std::declval<Args>()...) } -> std::same_as<Ret>; }; \
+        }                                                                                        \
+        static constexpr bool value = _qb_detect();                                              \
+        using value_type            = bool;                                                      \
+        using type                  = std::bool_constant<value>;                                 \
+        constexpr                   operator bool() const noexcept { return value; }             \
+        constexpr bool              operator()() const noexcept { return value; }                \
+    };                                                                                           \
     namespace qb {                                                                               \
     /** Concept: C& has .name(Args...) callable, any return type. */                             \
     template <typename C, typename... Args>                                                      \
-    concept has_##name = requires(C &c) {                                                        \
-        { c.name(std::declval<Args>()...) };                                                     \
-    };                                                                                           \
+    concept has_##name = ::has_method_##name<C, void, Args...>::value;                           \
     /** Concept: C& has .name(Args...) returning exactly Ret. */                                 \
     template <typename C, typename Ret, typename... Args>                                        \
-    concept has_##name##_r = requires(C &c) {                                                    \
-        { c.name(std::declval<Args>()...) } -> std::same_as<Ret>;                                \
-    };                                                                                           \
+    concept has_##name##_r = ::has_method_##name<C, Ret, Args...>::value;                         \
     } /* namespace qb */                                                                         \
-    /** Legacy trait — declared `struct`; befriend with `friend struct has_method_name<...>`. */ \
-    /** Ret=void → existence only; Ret≠void → exact return (same_as<Ret>). */                    \
-    template <typename C, typename Ret, typename... Args>                                        \
-    struct has_method_##name : std::bool_constant<std::is_void_v<Ret> ? qb::has_##name<C, Args...> : qb::has_##name##_r<C, Ret, Args...>> {}
+    static_assert(true, "require trailing semicolon")
 
 // ----------------------------------------------------------------------------
 // QB_DEFINE_PROPERTY_TRAIT — bool-valued property: function OR data member

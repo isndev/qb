@@ -26,6 +26,11 @@
 #include <cerrno>
 #include <limits>
 #include <qb/io/system/file.h>
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#include <windows.h>
+#endif
 
 namespace qb::io::sys {
 
@@ -69,7 +74,52 @@ int
 file::open(std::string const &fname, int const flags, int const mode) noexcept {
     close();
 #ifdef _WIN32
-    _handle = ::_open(fname.c_str(), flags, mode);
+    // Translate the POSIX open() flags to CreateFile parameters so we can request
+    // FILE_SHARE_DELETE. The CRT _open() opens without delete-sharing, which on
+    // Windows blocks deleting or renaming the file while a descriptor is held —
+    // POSIX allows unlink-while-open. Sharing delete restores that cross-platform
+    // behaviour. The OS HANDLE is wrapped back into a CRT fd via _open_osfhandle()
+    // so read()/write()/lseek()/close() below keep working unchanged.
+    DWORD access;
+    switch (flags & (_O_RDONLY | _O_WRONLY | _O_RDWR)) {
+        case _O_WRONLY: access = GENERIC_WRITE; break;
+        case _O_RDWR:   access = GENERIC_READ | GENERIC_WRITE; break;
+        default:        access = GENERIC_READ; break; // _O_RDONLY == 0
+    }
+    if (flags & _O_APPEND)
+        access |= FILE_APPEND_DATA;
+
+    DWORD disposition;
+    if (flags & _O_CREAT) {
+        if (flags & _O_EXCL)        disposition = CREATE_NEW;
+        else if (flags & _O_TRUNC)  disposition = CREATE_ALWAYS;
+        else                        disposition = OPEN_ALWAYS;
+    } else {
+        disposition = (flags & _O_TRUNC) ? TRUNCATE_EXISTING : OPEN_EXISTING;
+    }
+
+    const HANDLE h = ::CreateFileA(fname.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, disposition,
+                                   FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        _handle = FD_INVALID;
+    } else {
+        // Preserve the descriptor's text/binary/append/read-only semantics; with
+        // neither _O_TEXT nor _O_BINARY, _open_osfhandle() falls back to _fmode,
+        // matching the previous _open() behaviour.
+        int osf = 0;
+        if ((flags & (_O_RDONLY | _O_WRONLY | _O_RDWR)) == _O_RDONLY)
+            osf |= _O_RDONLY;
+        if (flags & _O_APPEND)
+            osf |= _O_APPEND;
+        if (flags & _O_TEXT)
+            osf |= _O_TEXT;
+        if (flags & _O_BINARY)
+            osf |= _O_BINARY;
+        _handle = ::_open_osfhandle(reinterpret_cast<intptr_t>(h), osf);
+        if (_handle == FD_INVALID)
+            ::CloseHandle(h);
+    }
+    (void) mode;
 #else
     _handle = ::open(fname.c_str(), flags, mode);
 #endif

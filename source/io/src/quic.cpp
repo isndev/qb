@@ -996,6 +996,14 @@ private:
     write_application_close(std::uint64_t application_error_code, std::string_view reason) {
         if (!_conn || _closing)
             return;
+        // A QUIC application error code is encoded as a varint and MUST be < 2^62,
+        // otherwise ngtcp2 aborts in ngtcp2_put_uvarintlen() while encoding the
+        // CONNECTION_CLOSE frame. Some internal call sites pass a negative
+        // disconnect_reason cast to uint64_t (e.g. transport_error == -1 ->
+        // 0xffff...), which is out of range; clamp those to 0 (no specific error).
+        constexpr std::uint64_t kMaxQuicVarint = (static_cast<std::uint64_t>(1) << 62) - 1;
+        if (application_error_code > kMaxQuicVarint)
+            application_error_code = 0;
         ngtcp2_ccerr ccerr;
         ngtcp2_ccerr_default(&ccerr);
         ngtcp2_ccerr_set_application_error(&ccerr, application_error_code, reinterpret_cast<const uint8_t *>(reason.data()), reason.size());

@@ -185,7 +185,14 @@ socket::n_connect_in(int af, std::string const &host, uint16_t port) noexcept {
 int
 socket::n_connect(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
-        if (local_endpoint().af() != ep.af())
+        // local_endpoint() (getsockname) returns AF_UNSPEC for a socket that was
+        // opened but not yet bound — notably on Windows, where getsockname fails
+        // with WSAEINVAL on an unbound socket (POSIX reports the open family). Only
+        // reject a *known* family mismatch; otherwise proceed and let connect()
+        // surface any genuine incompatibility. Without this, connecting through an
+        // existing unbound socket (connect_with_socket) always failed on Windows.
+        const int local_af = local_endpoint().af();
+        if (local_af != AF_UNSPEC && local_af != ep.af())
             return -1;
     } else if (init(ep.af()))
         return -1;

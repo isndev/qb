@@ -696,10 +696,10 @@ ev_is_default_loop (void) EV_NOEXCEPT
         ev_set_cb((ev), cb_);                                   \
     } while (0)
 
-#define ev_io_modify(ev, events_)                                \
-    do {                                                         \
-        (ev)->events = ((ev)->events & EV__IOFDSET) | (events_); \
-    } while (0)
+/* ev_io_modify() is a real function (see ev.c): it must notify the backend via
+ * fd_change() so the kernel registration is updated in place (EPOLL_CTL_MOD),
+ * instead of the old macro that only touched w->events and relied on callers
+ * doing a stop/start cycle. Declared with the other ev_io_* prototypes below. */
 #if defined _WIN32
     EV_API_DECL int ev_win32_socket_fd(uintptr_t handle) EV_NOEXCEPT;
 #define ev_io_set(ev, fd_, events_)             \
@@ -877,6 +877,7 @@ ev_is_default_loop (void) EV_NOEXCEPT
 
     EV_API_DECL void ev_io_start(EV_P_ ev_io * w) EV_NOEXCEPT;
     EV_API_DECL void ev_io_stop(EV_P_ ev_io * w) EV_NOEXCEPT;
+    EV_API_DECL void ev_io_modify(EV_P_ ev_io * w, int events) EV_NOEXCEPT;
 
     EV_API_DECL void ev_timer_start(EV_P_ ev_timer * w) EV_NOEXCEPT;
     EV_API_DECL void ev_timer_stop(EV_P_ ev_timer * w) EV_NOEXCEPT;

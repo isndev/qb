@@ -26,7 +26,7 @@
 #include "task.h"
 #include "utils.h"
 #include "cancellation.h"
-#include <qb/system/timestamp.h> // qb::duration
+#include <qb/system/time.h> // qb::duration
 #include <algorithm>
 #include <vector>
 #include <memory>
