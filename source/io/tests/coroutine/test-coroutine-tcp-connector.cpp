@@ -298,6 +298,11 @@ TEST_F(ConnectorIntegrationTest, CallbackConnectorCoversDirectHandshakeSuccessAn
             },
             0ms, false);
 
+        // A connect *failure* is delivered from the event loop (never re-entrantly
+        // inside connect()), so it completes on the next loop turn - pump for it.
+        // (A direct *success*, above, is still delivered synchronously.)
+        pump_until([&] { return completions.load() > 0; });
+
         EXPECT_EQ(completions.load(), 1);
         EXPECT_FALSE(connected);
         EXPECT_EQ(shared->n_connect_calls, 1);
