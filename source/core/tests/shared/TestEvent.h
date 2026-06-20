@@ -4,7 +4,7 @@
 #include <cstring>
 #include <numeric>
 #include <qb/event.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <random>
 
 #ifndef QB_TESTEVENT_H

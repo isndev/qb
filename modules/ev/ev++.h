@@ -592,8 +592,10 @@ set(uintptr_t handle, int events) EV_NOEXCEPT {
 
 void
 set(int events) EV_NOEXCEPT {
-    freeze_guard freeze(this);
-    ev_io_modify(static_cast<ev_io *>(this), events);
+    // Modify the watched events in place (no stop/start): on Windows the freeze
+    // stop/start did an eager epoll_ctl(DEL)+ADD that dropped already-pending
+    // readiness on the socket. ev_io_modify() issues a single EPOLL_CTL_MOD.
+    ev_io_modify(EV_A_ static_cast<ev_io *>(this), events);
 }
 
 void

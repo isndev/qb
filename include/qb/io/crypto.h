@@ -38,7 +38,7 @@
 #include <chrono>
 #include <cmath>
 #include <iomanip>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <istream>
 #include <openssl/aes.h>
 #include <openssl/buffer.h>

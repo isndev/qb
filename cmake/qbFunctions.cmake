@@ -655,7 +655,14 @@ function(qb_setup_test_resources)
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${TEST_RESOURCES_DIR}"
                 COMMAND ${CMAKE_COMMAND} -E copy_directory
                     "${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}/ssl"
-                COMMENT "Copying SSL resources to test directory: ${TEST_RESOURCES_DIR}/ssl"
+                # Tests load certificates by bare name ("cert.pem"/"key.pem") and run
+                # with WORKING_DIRECTORY = the test bin dir (see qb_add_test), so also
+                # stage the resources directly there. Without this the SSL tests can
+                # only find the certs from a hand-copied bin/tests, otherwise they
+                # silently skip (or crash, for tests that don't guard a null context).
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}"
+                COMMENT "Copying SSL resources to test directory: ${TEST_RESOURCES_DIR} (+/ssl)"
             )
             
             # Set folder for IDE organization

@@ -53,6 +53,7 @@
 #define QB_IO_ASYNC_TCP_CONNECTOR_H
 
 #include <atomic>
+#include <chrono>
 #include <concepts>
 #include <memory>
 #include <type_traits>
@@ -127,6 +128,31 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
         socket_.disconnect();
         if (mark_completed_once())
             deliver(Socket_{});
+    }
+
+    // Deliver an *immediate* (synchronous) connect failure on the next event-loop
+    // turn instead of inline. n_connect() can fail synchronously — notably on
+    // Windows, where a non-blocking connect to a closed loopback port reports the
+    // refusal right away rather than deferring it via WSAEWOULDBLOCK — and
+    // delivering the failure inline re-enters the caller (e.g. a client that pushes
+    // a request from inside its own disconnect/failure handler, which then re-enters
+    // that handler and drops work queued during the current pass). Posting it keeps
+    // connect() uniformly asynchronous on every platform: the completion callback is
+    // never invoked re-entrantly from run(), exactly matching the POSIX path where a
+    // non-blocking connect goes EINPROGRESS and the result is reported from the loop
+    // (EV_WRITE / deadline). A minimal positive delay is required because
+    // async::callback() with a non-positive delay executes the functor inline.
+    void
+    deliver_failure_deferred() {
+        if (!self_hold_)
+            self_hold_ = this->shared_from_this();
+        std::weak_ptr<connector> weak = this->shared_from_this();
+        qb::io::async::callback(
+            [weak]() {
+                if (auto self = weak.lock())
+                    self->deliver_failure();
+            },
+            std::chrono::nanoseconds(1));
     }
 
     enum class finalize_result { done, pending, failed };
@@ -237,12 +263,12 @@ public:
                     if (arm_io(EV_READ | EV_WRITE)) {
                         arm_deadline();
                     } else {
-                        deliver_failure();
+                        deliver_failure_deferred();
                     }
                     break;
                 case finalize_result::failed:
                     LOG_DEBUG("Failed to finalize direct connect to " << remote_.source());
-                    deliver_failure();
+                    deliver_failure_deferred();
             }
             return;
         }
@@ -252,7 +278,7 @@ public:
         }
 
         LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << qb::io::socket::get_last_errno());
-        deliver_failure();
+        deliver_failure_deferred();
     }
 
     /**

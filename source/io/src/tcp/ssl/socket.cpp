@@ -25,6 +25,7 @@
 
 #include <limits>
 #include <qb/io/tcp/ssl/socket.h>
+#include <qb/system/time.h> // qb::safe_timegm (portable UTC tm->time_t)
 #include <openssl/err.h>    // For error handling
 #include <openssl/x509v3.h> // For advanced certificate properties and OCSP, SANs
 #include <openssl/dh.h>     // For Diffie-Hellman parameters
@@ -40,11 +41,9 @@ namespace {
 
 time_t
 utc_tm_to_time_t(struct tm *tm_utc) {
-#if defined(_WIN32)
-    return _mkgmtime(tm_utc);
-#else
-    return timegm(tm_utc);
-#endif
+    // Portable UTC tm -> time_t. _mkgmtime rejects pre-1970 on Windows; qb's
+    // pure-integer version is exact on every platform (matters for X.509 dates).
+    return qb::safe_timegm(*tm_utc);
 }
 
 } // namespace

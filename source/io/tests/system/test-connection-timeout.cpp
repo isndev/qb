@@ -28,6 +28,8 @@
 #include <iostream>
 #include <qb/io/async.h>
 #include <qb/io/async/event/all.h>
+#include <qb/io/async/tcp/connector.h>
+#include <qb/io/tcp/listener.h>
 #include <qb/io/tcp/socket.h>
 #include <qb/io/udp/socket.h>
 #include <string>
@@ -129,15 +131,6 @@ TEST_F(ConnectionTimeoutTest, TCPConnectionTimeout) {
  * Tests TCP connection timeout behavior with async operations
  */
 TEST_F(ConnectionTimeoutTest, AsyncTCPTimeout) {
-#ifdef _WIN32
-    // On Windows, n_connect_v4() calls freeaddrinfo() *after* connect(), which
-    // resets WSAGetLastError() to 0.  The WSAEWOULDBLOCK code is no longer
-    // readable by the time the test checks it.  The actual timeout behaviour is
-    // already verified by TCPConnectionTimeout (handle_write_ready).
-    GTEST_SKIP() << "Windows: freeaddrinfo() clears WSAGetLastError() in the "
-                    "n_connect_v4 resolve chain; post-connect error code is unreliable.";
-#endif
-
     qb::io::tcp::socket socket;
     ASSERT_EQ(0, socket.init());
     ASSERT_EQ(0, socket.set_nonblocking(true));
@@ -209,13 +202,6 @@ TEST_F(ConnectionTimeoutTest, UDPDatagramTimeout) {
  * Tests non-blocking socket behavior with timeouts
  */
 TEST_F(ConnectionTimeoutTest, NonBlockingSocketBehavior) {
-#ifdef _WIN32
-    // Same root cause as AsyncTCPTimeout: freeaddrinfo() inside n_connect_v4()
-    // clears WSAGetLastError() before this test can inspect it.
-    GTEST_SKIP() << "Windows: freeaddrinfo() clears WSAGetLastError() in the "
-                    "n_connect_v4 resolve chain; post-connect error code is unreliable.";
-#endif
-
     qb::io::tcp::socket socket;
     ASSERT_EQ(0, socket.init());
     ASSERT_EQ(0, socket.set_nonblocking(true));
@@ -252,6 +238,76 @@ TEST_F(ConnectionTimeoutTest, NonBlockingSocketBehavior) {
         // If status <= 0, it timed out or had an error as expected on macOS
         EXPECT_LE(status, 0);
     }
+}
+
+/**
+ * The async connector must never invoke its completion callback re-entrantly
+ * inside connect(): a non-blocking connect to a closed loopback port fails
+ * *synchronously* on Windows (WSAECONNREFUSED) where POSIX goes EINPROGRESS,
+ * and an inline failure re-enters callers that enqueue work from their own
+ * failure handler. The result must always arrive from the event loop.
+ */
+TEST_F(ConnectionTimeoutTest, AsyncConnectFailureDeliveredFromLoopNotReentrant) {
+    qb::io::async::init();
+
+    std::atomic<bool> fired{false};
+    std::atomic<bool> reentrant{false};
+    std::atomic<bool> socket_open{true};
+    bool              connect_returned = false;
+
+    qb::io::async::tcp::connect<qb::io::tcp::socket>(
+        qb::io::uri("tcp://127.0.0.1:1"), // closed loopback port -> refused
+        [&](qb::io::tcp::socket sock) {
+            if (!connect_returned)
+                reentrant = true; // fired before connect() returned == re-entrant
+            socket_open = sock.is_open();
+            fired       = true;
+        },
+        std::chrono::seconds(2));
+    connect_returned = true;
+
+    // Must not have fired synchronously within connect().
+    EXPECT_FALSE(fired.load()) << "connect callback fired synchronously inside connect()";
+
+    // Pump the loop until the deferred failure is delivered.
+    for (int i = 0; i < 400 && !fired.load(); ++i) {
+        qb::io::async::run(EVRUN_NOWAIT);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    EXPECT_TRUE(fired.load()) << "connect failure was never delivered from the loop";
+    EXPECT_FALSE(reentrant.load()) << "connect callback must not be invoked re-entrantly";
+    EXPECT_FALSE(socket_open.load()) << "a failed connect must yield an empty socket";
+}
+
+/**
+ * Re-connecting an already-connected socket through the timed path
+ * (qb::io::socket::connect_n) must surface EISCONN — the signal the synchronous
+ * TLS upgrade relies on. connect_n() calls set_nonblocking(), whose ioctlsocket
+ * clears WSAGetLastError() on Windows; without restoring it the caller would see
+ * errno 0 and treat "already connected" as a hard failure (this broke pgsql SSL).
+ */
+TEST_F(ConnectionTimeoutTest, ReconnectAlreadyConnectedSocketSurfacesEISCONN) {
+    qb::io::tcp::listener server;
+    ASSERT_EQ(0, server.listen_v4(0)); // ephemeral port
+    const auto port = server.local_endpoint().port();
+
+    qb::io::tcp::socket client;
+    ASSERT_EQ(0, client.connect_v4("127.0.0.1", port));
+    qb::io::tcp::socket accepted;
+    ASSERT_EQ(0, server.accept(accepted));
+
+    // Re-connect the (already-connected) socket via the timed path.
+    const auto ep  = client.peer_endpoint();
+    const int  rc  = client.connect(ep, std::chrono::seconds(1));
+    const int  err = qb::io::socket::get_last_errno();
+
+    EXPECT_NE(0, rc) << "re-connecting a connected socket should not report success";
+    EXPECT_EQ(EISCONN, err) << "EISCONN must survive set_nonblocking() (cleared on Windows, restored by the fix)";
+
+    client.disconnect();
+    accepted.disconnect();
+    server.disconnect();
 }
 
 } // namespace qb::io::tests

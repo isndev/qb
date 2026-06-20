@@ -30,7 +30,7 @@
 #include <string>
 #include <vector>
 #include <openssl/ssl.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include "../socket.h"
 
 namespace qb::io::ssl {

@@ -74,7 +74,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
-#include <qb/system/timestamp.h> // qb::duration
+#include <qb/system/time.h> // qb::duration
 #include "awaiter.h"
 #include "../listener.h"
 

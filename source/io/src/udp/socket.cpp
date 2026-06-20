@@ -76,6 +76,20 @@ socket::init(int af) noexcept {
     // Enable broadcasting by default
     set_optval(SOL_SOCKET, SO_BROADCAST, 1);
 
+#if defined(_WIN32)
+    // Disable SIO_UDP_CONNRESET. By default on Windows, when a datagram sent from
+    // this socket elicits an ICMP "port unreachable", the NEXT recvfrom() fails
+    // with WSAECONNRESET (10054). A connectionless socket has no connection to
+    // reset, so this is spurious — POSIX never surfaces it — and it tears down
+    // otherwise healthy UDP/QUIC peers on Windows (a closing peer triggers it).
+    // Turning it off makes recvfrom() behave like POSIX.
+    if (ret) {
+        BOOL  behavior = FALSE;
+        DWORD bytes    = 0;
+        ::WSAIoctl(native_handle(), SIO_UDP_CONNRESET, &behavior, sizeof(behavior), nullptr, 0, &bytes, nullptr, nullptr);
+    }
+#endif
+
     return ret;
 }
 

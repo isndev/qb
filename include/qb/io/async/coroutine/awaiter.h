@@ -65,7 +65,7 @@
 // (VirtualCore thread). Plain bools are sufficient for single-thread cooperative.
 #include <memory>
 #include <ev/ev++.h>
-#include <qb/system/timestamp.h> // qb::duration, qb::detail::to_ev_seconds
+#include <qb/system/time.h> // qb::duration, qb::detail::to_ev_seconds
 
 // scheduler.h must be included before task.h to get schedule_via_current
 #include "scheduler.h"

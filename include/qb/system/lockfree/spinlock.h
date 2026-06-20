@@ -27,7 +27,7 @@
 #define QB_SPINLOCK_H
 #include <atomic>
 #include <qb/system/cpu.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 namespace qb::lockfree {
 

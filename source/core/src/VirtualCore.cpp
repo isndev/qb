@@ -28,7 +28,7 @@
 #include <qb/event.h>
 #include <qb/io/async/listener.h>
 #include <qb/system/cpu.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 #ifdef __APPLE__
 #include <mach/mach.h>
