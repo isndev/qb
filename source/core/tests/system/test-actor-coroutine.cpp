@@ -34,7 +34,7 @@ public:
         registerEvent<CoroCompletedEvent>(*this);
 
         // Spawn coroutine immediately
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(std::chrono::milliseconds(10));
             ctx.template push<CoroCompletedEvent>(42);
         });
@@ -63,7 +63,7 @@ public:
 
         // Spawn multiple coroutines
         for (int i = 0; i < EXPECTED_COUNT; ++i) {
-            spawn_async([i](auto ctx) -> qb::io::async::task<void> {
+            spawn_detached([i](auto ctx) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(std::chrono::milliseconds(5 * (i + 1)));
                 ctx.template push<CoroIncrementEvent>();
             });
@@ -93,7 +93,7 @@ public:
     onInit() override {
         registerEvent<CoroCompletedEvent>(*this);
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             try {
                 co_await qb::io::async::sleep(std::chrono::milliseconds(5));
                 throw std::runtime_error("Test exception");
@@ -129,11 +129,11 @@ public:
     onInit() override {
         registerEvent<CoroIncrementEvent>(*this);
 
-        spawn_async([this](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([this](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(std::chrono::milliseconds(5));
 
             // Spawn nested coroutine
-            spawn_async([](auto ctx2) -> qb::io::async::task<void> {
+            spawn_detached([](auto ctx2) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(std::chrono::milliseconds(5));
                 ctx2.template push<CoroIncrementEvent>();
                 ctx2.template push<CoroIncrementEvent>(); // Send twice
@@ -162,7 +162,7 @@ public:
     onInit() override {
         registerEvent<CoroCompletedEvent>(*this);
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             // Verify CoroContext provides safe interface
             EXPECT_TRUE(ctx.id().is_valid());
             EXPECT_GT(ctx.time(), 0);
@@ -190,7 +190,7 @@ class QuickKillActor : public qb::Actor {
 public:
     bool
     onInit() override {
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(std::chrono::seconds(10));
             // This should never execute - actor killed before completion
         });

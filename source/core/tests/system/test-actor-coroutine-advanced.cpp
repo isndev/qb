@@ -8,7 +8,7 @@
  *   - shared_ptr counter lifetime after actor death
  *   - CoroContext::push / push_to inter-actor messaging
  *   - Multiple sequential co_await with large captured state
- *   - Chained sub-tasks inside spawn_async
+ *   - Chained sub-tasks inside spawn_detached
  *   - Rapid spawn/complete stress cycles
  *   - Actor self-kill while coroutines are pending
  *   - Two-actor coroutine ping-pong pattern
@@ -92,7 +92,7 @@ public:
         std::string big_data(64, 'A');
         int         magic = 0xCAFE;
 
-        spawn_async([big_data, magic](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([big_data, magic](auto ctx) -> qb::io::async::task<void> {
             // 1st suspension
             co_await qb::io::async::sleep(5ms);
             EXPECT_EQ(magic, 0xCAFE);
@@ -148,7 +148,7 @@ public:
 
         std::vector<int> data = {10, 20, 30, 40, 50};
 
-        spawn_async([data](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([data](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(5ms);
             EXPECT_EQ(data.size(), 5u);
             int sum = 0;
@@ -203,7 +203,7 @@ public:
         EXPECT_EQ(active_coroutine_count(), 0u);
 
         for (int i = 0; i < NUM_COROS; ++i) {
-            spawn_async([](auto ctx) -> qb::io::async::task<void> {
+            spawn_detached([](auto ctx) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(10ms);
                 ctx.template push<DoneEvent>();
             });
@@ -221,7 +221,7 @@ public:
             // the coroutines have completed and guard destructors have fired.
             // But the current run_ready tick may not have destroyed all yet.
             // Schedule a delayed check via one more coroutine.
-            spawn_async([](auto ctx) -> qb::io::async::task<void> {
+            spawn_detached([](auto ctx) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(5ms);
                 // By now the 3 originals should be done.
                 // This coroutine itself is the only active one.
@@ -246,7 +246,7 @@ TEST(ActorCoroutineAdvanced, CounterAccuracy) {
 }
 
 // ===========================================================================
-// 4. Chained sub-tasks: co_await a helper task inside spawn_async
+// 4. Chained sub-tasks: co_await a helper task inside spawn_detached
 // ===========================================================================
 
 namespace {
@@ -273,7 +273,7 @@ public:
         registerEvent<ValueEvent>(*this);
 
         int base = 5;
-        spawn_async([base](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([base](auto ctx) -> qb::io::async::task<void> {
             int result = co_await async_pipeline(base);
             // 5 + 10 = 15, 15 + 20 = 35
             ctx.template push<ValueEvent>(result);
@@ -338,13 +338,13 @@ public:
     bool
     onInit() override {
         ActorId dest = target_;
-        spawn_async([dest](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([dest](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(10ms);
             ctx.template push_to<ValueEvent>(dest, 777);
         });
 
         // Self-kill after a short delay to let coroutine complete
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(50ms);
             ctx.template push<DoneEvent>();
         });
@@ -387,7 +387,7 @@ public:
         registerEvent<DoneEvent>(*this);
 
         for (int i = 0; i < TOTAL; ++i) {
-            spawn_async([i](auto ctx) -> qb::io::async::task<void> {
+            spawn_detached([i](auto ctx) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(std::chrono::milliseconds(1 + (i % 5)));
                 ctx.template push<DoneEvent>();
             });
@@ -425,7 +425,7 @@ public:
     bool
     onInit() override {
         for (int i = 0; i < 5; ++i) {
-            spawn_async([](auto) -> qb::io::async::task<void> {
+            spawn_detached([](auto) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(500ms);
                 // Should never reach here if actor dies first
             });
@@ -461,7 +461,7 @@ public:
         registerEvent<DoneEvent>(*this);
 
         // Self-destruct timeout
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(500ms);
             ctx.template push<DoneEvent>();
         });
@@ -496,7 +496,7 @@ public:
 
         ActorId dest = pong_;
         for (int i = 0; i < ROUNDS; ++i) {
-            spawn_async([dest, i](auto ctx) -> qb::io::async::task<void> {
+            spawn_detached([dest, i](auto ctx) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(std::chrono::milliseconds(5 * (i + 1)));
                 ctx.template push_to<CoroPingEvent>(dest, ctx.id(), i);
             });
@@ -548,7 +548,7 @@ public:
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             try {
                 auto thrower = []() -> qb::io::async::task<int> {
                     co_await qb::io::async::sleep(5ms);
@@ -620,7 +620,7 @@ public:
     void
     on(const TriggerEvent &ev) {
         int val = ev.value;
-        spawn_async([val](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([val](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(5ms);
             ctx.template push<ValueEvent>(val * 10);
         });
@@ -658,7 +658,7 @@ public:
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(0ms);
             ctx.template push<ValueEvent>(42);
         });
@@ -699,7 +699,7 @@ public:
         registerEvent<DoneEvent>(*this);
         ActorId self = id();
 
-        spawn_async([self](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([self](auto ctx) -> qb::io::async::task<void> {
             EXPECT_EQ(ctx.id(), self);
             co_await qb::io::async::sleep(5ms);
             EXPECT_EQ(ctx.id(), self);
@@ -744,7 +744,7 @@ public:
         registerEvent<DoneEvent>(*this);
         int wid = worker_id_;
 
-        spawn_async([wid](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([wid](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(std::chrono::milliseconds(5 + wid));
             g_multi_actor_sum.fetch_add(wid, std::memory_order_relaxed);
             ctx.template push<DoneEvent>();
@@ -788,7 +788,7 @@ public:
 
         for (int i = 0; i < N; ++i) {
             // i captured by VALUE — each coroutine gets its own copy
-            spawn_async([i](auto ctx) -> qb::io::async::task<void> {
+            spawn_detached([i](auto ctx) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(std::chrono::milliseconds(5));
                 ctx.template push<ValueEvent>(i);
             });
@@ -818,7 +818,7 @@ TEST(ActorCoroutineAdvanced, LoopVariableCapturedByValue) {
 }
 
 // ===========================================================================
-// 15. Nested spawn_async inside first coroutine (spawn from coro body)
+// 15. Nested spawn_detached inside first coroutine (spawn from coro body)
 // ===========================================================================
 
 class NestedSpawnActor : public qb::Actor {
@@ -829,11 +829,11 @@ public:
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
-        spawn_async([this](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([this](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(5ms);
 
             // Spawn a second coroutine from within the first
-            spawn_async([](auto ctx2) -> qb::io::async::task<void> {
+            spawn_detached([](auto ctx2) -> qb::io::async::task<void> {
                 co_await qb::io::async::sleep(5ms);
                 ctx2.template push<ValueEvent>(2);
             });
@@ -875,7 +875,7 @@ class OrphanCoroActor : public qb::Actor {
 public:
     bool
     onInit() override {
-        spawn_async([](auto) -> qb::io::async::task<void> {
+        spawn_detached([](auto) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(30ms);
             g_orphan_coro_completed.store(true, std::memory_order_relaxed);
         });
@@ -894,7 +894,7 @@ public:
     onInit() override {
         registerEvent<DoneEvent>(*this);
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(200ms);
             ctx.template push<DoneEvent>();
         });
@@ -937,7 +937,7 @@ public:
         registerEvent<DoneEvent>(*this);
         int val = value_;
 
-        spawn_async([val](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([val](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(10ms);
             g_multicore_sum.fetch_add(val, std::memory_order_relaxed);
             ctx.template push<DoneEvent>();
@@ -978,7 +978,7 @@ public:
 
         auto ptr = std::make_unique<int>(42);
 
-        spawn_async([p = std::move(ptr)](auto ctx) mutable -> qb::io::async::task<void> {
+        spawn_detached([p = std::move(ptr)](auto ctx) mutable -> qb::io::async::task<void> {
             EXPECT_NE(p, nullptr);
             EXPECT_EQ(*p, 42);
 
@@ -1026,7 +1026,7 @@ public:
     onInit() override {
         registerEvent<DoneEvent>(*this);
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             g_immediate_coro_ran.store(true, std::memory_order_relaxed);
             ctx.template push<DoneEvent>();
             co_return;
@@ -1064,7 +1064,7 @@ public:
         registerEvent<ValueEvent>(*this);
         static constexpr int DEPTH = 20;
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             int accumulator = 0;
             for (int i = 0; i < DEPTH; ++i) {
                 co_await qb::io::async::sleep(1ms);
@@ -1095,7 +1095,7 @@ TEST(ActorCoroutineAdvanced, DeepSequentialSuspensions) {
 }
 
 // ===========================================================================
-// 21. when_all combinator inside spawn_async
+// 21. when_all combinator inside spawn_detached
 // ===========================================================================
 
 class WhenAllActor : public qb::Actor {
@@ -1106,7 +1106,7 @@ public:
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             auto work = [](int x) -> qb::io::async::task<int> {
                 co_await qb::io::async::sleep(std::chrono::milliseconds(5));
                 co_return x * 2;
@@ -1152,7 +1152,7 @@ public:
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             auto fast_work = []() -> qb::io::async::task<int> {
                 co_await qb::io::async::sleep(5ms);
                 co_return 99;
@@ -1197,7 +1197,7 @@ public:
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             auto slow_work = []() -> qb::io::async::task<int> {
                 co_await qb::io::async::sleep(500ms);
                 co_return 0;
@@ -1268,13 +1268,13 @@ public:
         registerEvent<DoneEvent>(*this);
         ActorId dest = target_;
 
-        spawn_async([dest](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([dest](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(10ms);
             ctx.template push_to<ValueEvent>(dest, 1234);
         });
 
         // Self-destruct after sending
-        spawn_async([](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(50ms);
             ctx.template push<DoneEvent>();
         });
@@ -1335,7 +1335,7 @@ public:
     void
     on(const WaveEvent &ev) {
         int w = ev.wave;
-        spawn_async([w](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([w](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(std::chrono::milliseconds(5 * w));
             ctx.template push<ValueEvent>(w * 100);
         });
@@ -1378,7 +1378,7 @@ public:
         std::vector<double> weights = {1.5, 2.5, 3.5};
         ActorId             self    = id();
 
-        spawn_async([num, name, weights, self](auto ctx) -> qb::io::async::task<void> {
+        spawn_detached([num, name, weights, self](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(5ms);
 
             EXPECT_EQ(num, 7);

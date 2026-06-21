@@ -96,7 +96,7 @@ To signal a *local* failure, return `false` from `onInit()` to abort an actor's 
 
 ## Can I use coroutines inside an actor?
 
-Yes — through one entry point, `spawn_async()`, and under strict lifetime rules. It is the only supported way to run a coroutine from within an actor (`qb/include/qb/core/Actor.h:1035`).
+Yes — through two entry points, `spawn()` (recommended) and `spawn_detached()`, under strict lifetime rules. They are the only supported way to run a coroutine from within an actor (`qb/include/qb/core/Actor.h:1080` and `:1043`). `spawn()` *scopes* the coroutine to the actor — it is cancelled when the actor is killed — and hands it a `qb::ScopedCoroContext` with cancellation-aware operations and the native `ask()` request/response helper; `spawn_detached()` runs the coroutine detached, so it outlives the actor and receives a plain `qb::CoroContext`. Prefer `spawn()` unless the work must deliberately outlive its actor.
 
 A spawned coroutine runs in an isolated context and **must not touch actor state after a `co_await`**: the actor may be destroyed while the coroutine is suspended, so dereferencing `this` or an actor member after suspension is undefined behavior. The rules:
 
@@ -105,7 +105,7 @@ A spawned coroutine runs in an isolated context and **must not touch actor state
 - Keep coroutines short-lived; a long-running coroutine widens the window in which the actor can die underneath it.
 
 ```cpp
-// src: derived from qb/include/qb/core/Actor.h spawn_async contract (Actor.h:1010)
+// src: derived from qb/include/qb/core/Actor.h spawn contract (Actor.h:1080)
 #include <qb/actor.h>          // qb::Actor, CoroContext
 #include <qb/io/async.h>       // qb::io::async::task
 
@@ -116,7 +116,7 @@ void on(RequestEvent &ev) {
     auto key    = ev.key;       // by value
     auto sender = ev.sender;    // ActorId, by value
 
-    spawn_async([key, sender](auto ctx) -> qb::io::async::task<void> {
+    spawn([key, sender](auto ctx) -> qb::io::async::task<void> {
         auto reply = co_await fetch(key);                  // actor may be destroyed here
         // push_to() targets another actor by id; safe even if the spawning actor is gone.
         ctx.template push_to<ResultEvent>(sender, reply);
@@ -180,6 +180,6 @@ The header files under `qb/include/qb/` are ground truth for every signature, te
 
 - [Error handling and resilience](../6_guides/error_handling.md) — the fail-stop boundary and supervision patterns in full
 - [Messaging](../4_qb_core/messaging.md) — `push`/`send`/`broadcast`, event payloads, and ordering
-- [C++20 coroutines](../3_qb_io/coroutines.md) — the coroutine layer `spawn_async` runs on
+- [C++20 coroutines](../3_qb_io/coroutines.md) — the coroutine layer `spawn_detached` runs on
 - [The threading model](../2_core_concepts/threading_model.md) — why no mutexes are needed in actor code
 - [SECURITY.md](../../SECURITY.md) · [SUPPORT.md](../../SUPPORT.md) · [CONTRIBUTING.md](../../CONTRIBUTING.md) · [INSTALL.md](../../INSTALL.md)

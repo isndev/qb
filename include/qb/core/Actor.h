@@ -24,10 +24,18 @@
 
 #ifndef QB_ACTOR_H
 #define QB_ACTOR_H
+#include <algorithm>
+#include <any>
 #include <atomic>
 #include <cassert>
+#include <chrono>
+#include <cstdint>
+#include <exception>
+#include <functional>
+#include <stdexcept>
 #include <map>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -981,9 +989,13 @@ public:
      */
 
     /**
-     * @brief Launch an async coroutine in isolated context
+     * @brief Launch a **detached** async coroutine in an isolated context (low-level).
      *
-     * This is the ONLY way to use coroutines within an Actor.
+     * @note Prefer `spawn()` for anything bound to this actor: it is cancelled
+     *       automatically when the actor is killed. Use `spawn_detached` only for
+     *       fire-and-forget work that must intentionally **outlive** the actor (it is
+     *       NOT cancelled on kill — it runs to completion, orphaned).
+     *
      * The coroutine runs in an isolated context and cannot directly
      * access Actor state. Communication must happen via push<Event>().
      *
@@ -1014,7 +1026,7 @@ public:
      *     std::string key = ev.key;
      *     ActorId sender = ev.sender;
      *
-     *     spawn_async([key, sender](auto ctx) -> qb::io::async::task<void> {
+     *     spawn_detached([key, sender](auto ctx) -> qb::io::async::task<void> {
      *         // NO access to 'this' after this point!
      *         auto reply = co_await fetch(key);  // Actor may die here
      *
@@ -1025,7 +1037,7 @@ public:
      *
      * @example ❌ DANGEROUS Pattern (DO NOT USE)
      * void on(RequestEvent& ev) {
-     *     spawn_async([this](auto ctx) -> qb::io::async::task<void> {
+     *     spawn_detached([this](auto ctx) -> qb::io::async::task<void> {
      *         co_await sleep(100ms);  // Actor may die here
      *
      *         // ❌ CRASH: accessing this->_member after suspension!
@@ -1034,7 +1046,44 @@ public:
      * }
      */
     template <typename Func>
-    void spawn_async(Func &&func) const;
+    void spawn_detached(Func &&func) const;
+
+    /**
+     * @brief Launch a coroutine **scoped to this actor's lifetime** (recommended).
+     *
+     * Like `spawn_detached`, but the coroutine is bound to a per-actor cancellation
+     * scope. When the actor is killed/destroyed, the scope is cancelled: any
+     * coroutine awaiting a *cancellation-aware* operation provided by
+     * `ScopedCoroContext` (`ctx.sleep(...)`, `ctx.cancellation_point()`,
+     * `ctx.cancellable(...)`) wakes within the next loop iteration, throws
+     * `qb::io::async::cancelled_error`, and unwinds cleanly (RAII + catch run).
+     *
+     * This makes actor coroutines **safe and bounded by construction**: a killed
+     * actor no longer leaves a coroutine blocked on a long timeout/I/O. The lambda
+     * receives a `qb::ScopedCoroContext` (a superset of `CoroContext` that also
+     * carries the scope token).
+     *
+     * The same capture discipline as `spawn_detached` still applies — **capture by
+     * value, never `this`** (the scope bounds the lifetime, it does not make
+     * member access after suspension legal).
+     *
+     * @tparam Func Coroutine function type taking a `ScopedCoroContext`, returning `task<void>`.
+     * @param func Coroutine to execute.
+     *
+     * @code
+     * void on(FetchEvent &e) {
+     *     auto key = e.key;
+     *     auto who = e.getSource();
+     *     spawn([key, who](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+     *         co_await ctx.sleep(50ms);        // cancelled if the actor is killed
+     *         ctx.push_to<ResultEvent>(who);
+     *     });
+     * }
+     * @endcode
+     * @see spawn_detached, ScopedCoroContext, qb::io::async::cancellation_token
+     */
+    template <typename Func>
+    void spawn(Func &&func) const;
 
     /**
      * @brief Check if actor has active coroutines
@@ -1044,6 +1093,33 @@ public:
     has_active_coroutines() const {
         return active_coroutines_ && active_coroutines_->load(std::memory_order_relaxed) > 0;
     }
+
+    /**
+     * @brief Whether this actor has lazily created its coroutine cancellation scope.
+     * @return true once `spawn()` has been called at least once.
+     */
+    [[nodiscard]] bool
+    has_coro_scope() const noexcept {
+        return static_cast<bool>(_coro_scope);
+    }
+
+    /**
+     * @brief Resolve a pending `ask` from a response event (call from `on(E&)`).
+     * @tparam E A `qb::AskEvent` subtype used as the request/response envelope.
+     * @param e The received event (a response carries the stamped `correlation_id`).
+     * @return `true` if `e` matched a pending ask of this actor and was delivered to the
+     *         waiting coroutine; `false` if it is an unrelated/unsolicited event — handle
+     *         it normally in that case.
+     * @details
+     * The `ask` pattern round-trips a single event type: the asker sends it via
+     * `qb::ask(ctx, ...)`, the responder fills its response fields and `reply()`s it back
+     * (which preserves `correlation_id`), and the asker's `on(E&)` handler routes it here.
+     * @code
+     * void on(MyExchange &e) { if (resolve_ask(e)) return; // ... unsolicited handling ... }
+     * @endcode
+     */
+    template <typename E>
+    bool resolve_ask(E &e) const noexcept;
 
     /**
      * @brief Get number of active coroutines
@@ -1090,16 +1166,44 @@ private:
      *
      * @note Eagerly allocated in the Actor constructor (finding 2.12) — this
      *       trades one heap allocation per actor construction for the removal
-     *       of a `nullptr` check on every `spawn_async()` hot path. A single
+     *       of a `nullptr` check on every `spawn_detached()` hot path. A single
      *       `make_shared` is a negligible cost compared to the rest of actor
      *       construction and guarantees branch-predicted coroutine spawning.
      */
     mutable std::shared_ptr<std::atomic<std::size_t>> active_coroutines_ = std::make_shared<std::atomic<std::size_t>>(0);
+
+    /**
+     * @brief Per-actor coroutine cancellation scope (lazy, empty by default).
+     *
+     * Created on the first `spawn()` call only, so actors that never spawn a
+     * scoped coroutine pay **zero** cost (an empty token allocates nothing). Cancelled
+     * when the actor is killed/destroyed so that coroutine awaiting a cancellation-aware
+     * `ScopedCoroContext` operation is unwound promptly. Captured by value into each
+     * scoped coroutine frame, so its shared state safely outlives the actor.
+     */
+    mutable qb::io::async::cancellation_token _coro_scope{qb::io::async::null_token};
+
+    /**
+     * @brief Resolve / revalidate the cached coroutine scheduler against the TLS one.
+     * @details Shared hot path of `spawn_detached` / `spawn` (finding 2.D.4).
+     *          `current_ptr()` is a plain thread_local load; the comparison is one cmp+jne.
+     */
+    void __resolve_coro_scheduler__() const noexcept;
+
+    /** @brief Lazily allocate the real cancellation scope on first scoped spawn. */
+    void __ensure_coro_scope__() const;
+
+    /**
+     * @brief Cancel the coroutine scope if it exists (cancel-on-kill / on-destroy).
+     * @details Idempotent. Called by `kill()` (promptness) and by
+     *          `VirtualCore::removeActor` (catch-all for every destruction path).
+     */
+    void __cancel_coro_scope__() const noexcept;
 };
 
 /**
  * @class CoroContext
- * @brief Safe context for coroutines spawned via spawn_async()
+ * @brief Safe context for coroutines spawned via spawn_detached()
  * @ingroup Actor
  *
  * Provides a restricted interface for coroutines to interact with
@@ -1151,6 +1255,262 @@ public:
      * @return Timestamp in nanoseconds
      */
     [[nodiscard]] uint64_t time() const noexcept;
+};
+
+/**
+ * @struct AskEvent
+ * @ingroup Actor
+ * @brief Base event for the request/response `ask` pattern.
+ * @details
+ * The `ask` pattern round-trips a **single** event type: `qb::ask(ctx, target, E{...}, t)`
+ * sends it (the framework stamps `correlation_id`), the responder fills its response fields
+ * and `reply()`s it back (which reuses the event object, preserving `correlation_id`), and
+ * the asker's `on(E&)` handler routes it via `resolve_ask(e)` to resume the awaiting
+ * coroutine. Derive your exchange event from `qb::AskEvent` (alias `qb::ask_event`).
+ */
+struct AskEvent : qb::Event {
+    std::uint64_t correlation_id{0}; ///< Stamped by `ask()`, preserved by `reply()`; do not set manually.
+};
+
+namespace detail {
+
+/**
+ * @brief Type-erased pending-ask slot, stored by address in the per-core registry.
+ * @details Function-pointer dispatch (no vtable) keeps it POD/allocation-friendly. Lives
+ *          inside the `ask_awaiter` (which lives in the ask() coroutine frame).
+ */
+struct ask_slot {
+    qb::ActorId owner;
+    bool        done    = false;
+    void       *self    = nullptr;
+    void (*deliver)(void *self, qb::Event &resp) noexcept = nullptr;
+};
+
+[[nodiscard]] std::uint64_t ask_next_id() noexcept;
+void                        ask_register(std::uint64_t id, ask_slot *slot) noexcept;
+void                        ask_unregister(std::uint64_t id) noexcept;
+bool                        ask_deliver(std::uint64_t id, qb::ActorId owner, qb::Event &resp) noexcept;
+[[nodiscard]] ev::loop_ref  ask_loop() noexcept;
+
+/**
+ * @brief Single awaiter backing `qb::ask` — three wake sources
+ *        (response / timeout / actor-scope cancel) guarded by one `done` flag.
+ *
+ * @details
+ * Deliberately a custom awaiter rather than a composition of `with_deadline` /
+ * `when_any` + `cancellable_sleep`: those spawn **detached** timeout/branch tasks
+ * that linger until they complete (up to the timeout). On a hot request/response
+ * path that would leave one zombie timer per in-flight ask. This awaiter instead
+ * arms a single `ev_timer` and **stops it immediately** on response — no detached
+ * helper, nothing lingering. It lives in the ask() coroutine frame (address-stable)
+ * and is non-movable (the registry holds it by address).
+ */
+template <typename E>
+struct ask_awaiter {
+    ask_slot                          slot{};
+    std::uint64_t                     id;
+    qb::duration                      timeout;
+    qb::io::async::cancellation_token token;
+    std::optional<E>                  result;
+    std::coroutine_handle<>           cont;
+    ev_timer                          timer{};
+    bool                              timer_started = false;
+    enum class kind { pending, ok, timed_out, cancelled } outcome = kind::pending;
+    std::shared_ptr<bool>             alive = std::make_shared<bool>(true);
+
+    ask_awaiter(std::uint64_t aid, qb::ActorId owner, qb::duration t, qb::io::async::cancellation_token tok)
+        : id(aid)
+        , timeout(t)
+        , token(std::move(tok)) {
+        slot.owner   = owner;
+        slot.self    = this;
+        slot.deliver = &ask_awaiter::deliver_thunk;
+    }
+    ask_awaiter(const ask_awaiter &)            = delete;
+    ask_awaiter(ask_awaiter &&)                 = delete;
+    ask_awaiter &operator=(const ask_awaiter &) = delete;
+
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return token.is_cancelled();
+    }
+
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        cont = h;
+        if (token.is_cancelled()) { // outcome stays `pending` → await_resume throws cancelled.
+            qb::io::async::schedule_via_current(h);
+            return;
+        }
+        ask_register(id, &slot);
+        if (timeout.count() > 0) {
+            ev_timer_init(&timer, &ask_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
+            timer.data = this;
+            auto loop  = ask_loop();
+            ev_now_update(static_cast<struct ev_loop *>(loop));
+            ev_timer_start(loop, &timer);
+            timer_started = true;
+        }
+        auto a = alive;
+        token.on_cancel([this, a]() {
+            if (*a && !slot.done) {
+                slot.done = true;
+                outcome   = kind::cancelled;
+                qb::io::async::schedule_via_current(cont);
+            }
+        });
+    }
+
+    E
+    await_resume() {
+        finish();
+        switch (outcome) {
+            case kind::ok:
+                return std::move(*result);
+            case kind::timed_out:
+                throw qb::io::async::timeout_error();
+            default: // pending (entry-cancelled) or cancelled
+                throw qb::io::async::cancelled_error();
+        }
+    }
+
+    ~ask_awaiter() {
+        if (alive)
+            *alive = false;
+        finish();
+    }
+
+private:
+    void
+    finish() noexcept {
+        ask_unregister(id);
+        if (timer_started) {
+            if (ev_is_active(&timer))
+                ev_timer_stop(ask_loop(), &timer);
+            timer_started = false;
+        }
+    }
+
+    static void
+    deliver_thunk(void *self, qb::Event &resp) noexcept {
+        auto *me = static_cast<ask_awaiter *>(self);
+        if (me->slot.done)
+            return;
+        me->slot.done = true;
+        me->outcome   = kind::ok;
+        me->result.emplace(std::move(static_cast<E &>(resp)));
+        qb::io::async::schedule_via_current(me->cont);
+    }
+
+    static void
+    on_timeout(struct ev_loop *, ev_timer *w, int) noexcept {
+        auto *me = static_cast<ask_awaiter *>(w->data);
+        if (me && !me->slot.done) {
+            me->slot.done = true;
+            me->outcome   = kind::timed_out;
+            qb::io::async::schedule_via_current(me->cont);
+        }
+    }
+};
+
+} // namespace detail
+
+/**
+ * @class ScopedCoroContext
+ * @brief Context for coroutines spawned via `Actor::spawn()`.
+ * @ingroup Actor
+ *
+ * A superset of `CoroContext`: it carries the spawning actor's `ActorId` **and** its
+ * per-actor cancellation scope (`qb::io::async::cancellation_token`). Its `sleep`,
+ * `cancellation_point` and `cancellable` helpers route that token, so a coroutine that
+ * only awaits these is **automatically cancelled when the actor is killed/destroyed**
+ * (it throws `qb::io::async::cancelled_error` and unwinds). Inherits the safe
+ * `push` / `push_to` / `id` / `time` surface from `CoroContext`.
+ *
+ * @note Still **never capture `this`** — the scope bounds the coroutine's lifetime but
+ *       does not legalize actor-member access after a `co_await`.
+ */
+class ScopedCoroContext : public CoroContext {
+    qb::io::async::cancellation_token _scope;
+
+public:
+    /**
+     * @brief Construct from actor + its cancellation scope.
+     * @param actor The spawning actor (only its id is captured, via CoroContext).
+     * @param scope The actor's coroutine cancellation token (copied by value).
+     */
+    ScopedCoroContext(Actor const *actor, qb::io::async::cancellation_token scope)
+        : CoroContext(actor)
+        , _scope(std::move(scope)) {}
+
+    /** @brief The actor's cancellation scope token (cancelled on kill/destroy). */
+    [[nodiscard]] const qb::io::async::cancellation_token &
+    token() const noexcept {
+        return _scope;
+    }
+
+    /** @brief True once the actor scope has been cancelled (e.g. the actor was killed). */
+    [[nodiscard]] bool
+    cancelled() const noexcept {
+        return _scope.is_cancelled();
+    }
+
+    /**
+     * @brief Derive a child token linked to the actor scope.
+     * @return A fresh token that is cancelled whenever the actor scope is cancelled.
+     * @details Use it to scope a sub-operation that can also be cancelled independently
+     *          (cancel the child without affecting the actor scope).
+     */
+    [[nodiscard]] qb::io::async::cancellation_token
+    child_token() const {
+        qb::io::async::cancellation_token child;
+        _scope.on_cancel([child]() mutable { child.cancel(); });
+        return child;
+    }
+
+    /**
+     * @brief Cancellation-aware sleep: wakes immediately if the actor scope is cancelled.
+     * @param d Duration to sleep.
+     * @return An awaitable `task<void>` throwing `cancelled_error` on cancellation.
+     */
+    [[nodiscard]] qb::io::async::task<void>
+    sleep(qb::duration d) const {
+        return qb::io::async::cancellable_sleep(d, _scope);
+    }
+
+    /**
+     * @brief Cooperative cancellation point: yields to the scheduler, then throws
+     *        `cancelled_error` if the actor scope was cancelled meanwhile.
+     * @return A yield awaiter; sprinkle `co_await ctx.cancellation_point();` inside a
+     *         compute loop so a killed actor's coroutine bails between iterations.
+     */
+    [[nodiscard]] qb::io::async::yield_awaiter
+    cancellation_point() const {
+        return qb::io::async::yield_or_cancel(_scope);
+    }
+
+    /**
+     * @brief Suspend until the actor scope is cancelled, then throw `cancelled_error`.
+     * @return An awaiter; `co_await ctx.until_cancelled();` parks a coroutine that has no
+     *         other work to do until its actor is killed (no timer/helper allocated).
+     */
+    [[nodiscard]] qb::io::async::cancellation_awaiter
+    until_cancelled() const {
+        return qb::io::async::check_cancelled(_scope);
+    }
+
+    /**
+     * @brief Wrap any `task<T>` so it is cancelled together with the actor scope.
+     * @tparam T Result type of the wrapped task.
+     * @param t The task to make cancellable.
+     * @return A cancellable operation awaitable.
+     */
+    template <typename T>
+    [[nodiscard]] auto
+    cancellable(qb::io::async::task<T> &&t) const {
+        return qb::io::async::make_cancellable(std::move(t), _scope);
+    }
+
 };
 
 /**
@@ -1532,6 +1892,31 @@ using actor = Actor;
  */
 template <typename Tag>
 using service_actor = ServiceActor<Tag>;
+
+/**
+ * @typedef coro_context
+ * @brief Alias for the CoroContext class
+ * @details Provided for naming consistency with other lowercase aliases in the framework
+ * @ingroup Actor
+ */
+using coro_context = CoroContext;
+
+/**
+ * @typedef scoped_coro_context
+ * @brief Alias for the ScopedCoroContext class
+ * @details Provided for naming consistency with other lowercase aliases in the framework
+ * @ingroup Actor
+ */
+using scoped_coro_context = ScopedCoroContext;
+
+/**
+ * @typedef ask_event
+ * @brief Alias for the AskEvent class
+ * @details Provided for naming consistency with other lowercase aliases in the framework
+ * @ingroup Actor
+ */
+using ask_event = AskEvent;
+
 
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor);

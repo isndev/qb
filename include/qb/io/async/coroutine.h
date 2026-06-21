@@ -285,7 +285,7 @@
  *         auto key = req.key;
  *         auto sender = req.sender;
  *
- *         spawn_async([this, key, sender](auto ctx) -> qb::io::async::task<void> {
+ *         spawn_detached([this, key, sender](auto ctx) -> qb::io::async::task<void> {
  *             auto result = co_await fetch(key);
  *             ctx.push<Result>(ctx.id(), sender, result);
  *         });
@@ -297,7 +297,7 @@
  *
  * 1. **Event handlers return void**: Never use `task<void> on(Event&)`
  * 2. **Capture by value**: No references/pointers to Actor members
- * 3. **Use ctx interface**: In spawn_async, use ctx.push() not this->push()
+ * 3. **Use ctx interface**: In spawn_detached, use ctx.push() not this->push()
  * 4. **No direct state access**: Communicate via events only
  *
  * @see task
@@ -342,7 +342,7 @@
  *         auto key = req.key;
  *         auto sender = req.sender;
  *
- *         spawn_async([this, key, sender](auto ctx) -> task<void> {
+ *         spawn_detached([this, key, sender](auto ctx) -> task<void> {
  *             // Runs in isolated context
  *             auto data = co_await fetch(key);
  *             ctx.push<Result>(ctx.id(), sender, data);  // via event
@@ -358,19 +358,19 @@
  * ## The Rules
  *
  * 1. **Handlers return void**: `void on(Event&)` only
- * 2. **Spawn async for coroutines**: Use `spawn_async()` for I/O
+ * 2. **Spawn async for coroutines**: Use `spawn_detached()` for I/O
  * 3. **Capture by value**: Copy data into the lambda
  * 4. **Return via events**: `ctx.push<Event>()` only
  * 5. **Process in sync handler**: Handle results in `void on(Event&)`
  *
  * ## Why This Works
  *
- * - `spawn_async()` runs coroutines in isolated context
+ * - `spawn_detached()` runs coroutines in isolated context
  * - Coroutines can't access Actor state directly
  * - Communication is via events (Actor model)
  * - Results processed by sync handlers (exclusive access)
  *
- * @see Actor::spawn_async()
+ * @see Actor::spawn_detached()
  */
 
 #endif // QB_IO_ASYNC_COROUTINE_H

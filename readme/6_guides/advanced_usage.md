@@ -232,7 +232,12 @@ engine.core(1).setAffinity(qb::CoreIdSet{2});      // pin core-1 worker to CPU 2
 
 ## Coroutine patterns inside actors
 
-`spawn_async()` is the only supported way to run a C++20 coroutine inside an actor. It launches the coroutine in an *isolated context* on the actor's own `VirtualCore` and returns immediately; the actor keeps processing other events while the coroutine is suspended at a `co_await`. The coroutine layer itself — `task<T>`, awaiters, `sleep`, channels, scopes — is owned by [C++20 coroutines](../3_qb_io/coroutines.md). This section covers the actor-safety contract, which is specific to `spawn_async`.
+`Actor::spawn()` and `Actor::spawn_detached()` are the two supported ways to run a C++20 coroutine inside an actor. Both launch the coroutine in an *isolated context* on the actor's own `VirtualCore` and return immediately; the actor keeps processing other events while the coroutine is suspended at a `co_await`. They differ only in lifetime:
+
+- **`spawn()` — recommended default.** *Scoped* to the actor: `kill()` cancels it at the next cancellation-aware suspension point. Its callable receives a `qb::ScopedCoroContext` with cancellation-aware operations (`ctx.sleep`, `ctx.until_cancelled`, `ctx.cancellation_point`, `ctx.cancellable`). Request/response patterns (`qb::ask`, `qb::ask_all`, `qb::run_saga`, …) are free functions in `qb/patterns.h` built on it.
+- **`spawn_detached()` — fire-and-forget.** *Detached* from the actor's lifetime: it runs to completion even after the actor is destroyed and is never cancelled. Its callable receives a plain `qb::CoroContext`. Use it only when the work must deliberately outlive its actor.
+
+The coroutine layer itself — `task<T>`, awaiters, `sleep`, channels, scopes — is owned by [C++20 coroutines](../3_qb_io/coroutines.md). This section covers the actor-safety contract, which both entry points share.
 
 ### The isolation rule
 
@@ -253,7 +258,7 @@ void on(StartProcessing &req) {
     uint64_t    start  = time();           // VirtualCore time, nanoseconds
     qb::ActorId sender = req.getSource();
 
-    spawn_async([req_id, data, start, sender](auto ctx)
+    spawn([req_id, data, start, sender](auto ctx)
                     -> qb::io::async::task<void> {
         // Isolated context: NO access to actor members here.
         std::string result = co_await AsyncService::process_data(data);
@@ -270,14 +275,15 @@ The result arrives as an ordinary event handler — `on(ProcessingComplete&)` �
 
 ### Lifecycle
 
-- `spawn_async()` must be called from the actor's `VirtualCore` worker thread; it debug-asserts that a coroutine scheduler exists on the calling thread.
+- `spawn()` and `spawn_detached()` must be called from the actor's `VirtualCore` worker thread; each debug-asserts that a coroutine scheduler exists on the calling thread.
 - Each call creates two coroutine frames by design (a lifetime-tracking wrapper plus your body). The wrapper increments a `shared_ptr<atomic>` counter that outlives the actor, so a suspended coroutine cannot use-after-free its owner.
+- A `spawn()` coroutine also joins the actor's cancellation scope; `kill()` cancels the scope, so any of its coroutines parked on a cancellation-aware op (`ctx.sleep`, `qb::ask`, `ctx.until_cancelled`, `ctx.cancellation_point`) unwind promptly instead of running to a long timeout. A `spawn_detached()` coroutine is never cancelled and runs to completion.
 - `has_active_coroutines()` reports whether any spawned coroutine is still in flight — useful when deciding whether it is safe to `kill()`.
 
 **Pitfalls.**
 
 - Capturing `this` or any reference into the spawned lambda is a dangling-pointer / data-race bug that sanitizers may not catch, because the corruption happens only when the actor dies mid-suspension. Capture by value.
-- Never call a blocking `run_sync()` on a coroutine from inside an actor handler — it blocks the entire `VirtualCore` thread, stalling every actor on that core. Drive coroutines through `spawn_async` only.
+- Never call a blocking `run_sync()` on a coroutine from inside an actor handler — it blocks the entire `VirtualCore` thread, stalling every actor on that core. Drive coroutines through `spawn` (or `spawn_detached`) only.
 
 ## Service actors for shared logic
 
@@ -361,7 +367,7 @@ A service-facing actor typically:
 The example applications under `examples/qbm/` (HTTP servers with routing and middleware, the WebSocket chat, Redis pub/sub and streams, PostgreSQL transactions) demonstrate full wiring. Two composition styles recur:
 
 - **Callback style.** The module client takes a completion callback that fires on the actor's core when the operation finishes; inside it the actor pushes a result event. Suitable for fire-and-forget and simple request/response.
-- **Coroutine style.** The actor `spawn_async`-es a coroutine that `co_await`s the module operation, then returns the result through `ctx.push<Event>(...)`. This reads as straight-line code and composes naturally with the isolation rule above — capture the request by value, await, push back. Suitable for multi-step flows (read from Redis, then query PostgreSQL, then reply).
+- **Coroutine style.** The actor `spawn_detached`-es a coroutine that `co_await`s the module operation, then returns the result through `ctx.push<Event>(...)`. This reads as straight-line code and composes naturally with the isolation rule above — capture the request by value, await, push back. Suitable for multi-step flows (read from Redis, then query PostgreSQL, then reply).
 
 **Pitfalls.**
 

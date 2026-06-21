@@ -15,7 +15,7 @@ This page covers the mechanisms an actor uses to stay non-blocking:
 - `qb::io::async::callback` — schedule a callable to run later on the same core's loop.
 - `qb::io::async::scoped_callback` — the same, but cancellable through a caller-owned handle.
 - `qb::io::async::with_timeout<T>` — a CRTP mixin that fires after a span of inactivity.
-- `Actor::spawn_async` — drive a coroutine on the core's loop, awaiting I/O without blocking.
+- `Actor::spawn_detached` — drive a coroutine on the core's loop, awaiting I/O without blocking.
 - Wrapping unavoidable blocking work (such as synchronous file I/O) in a callback or a dedicated worker actor.
 
 ## The single-thread-per-core contract
@@ -238,17 +238,20 @@ public:
 
 > **`with_timeout` vs. `callback`.** `with_timeout` models *inactivity* — a deadline that resets on activity and auto-reschedules until the real deadline. `callback`/`scoped_callback` model a *one-shot* deferral at a fixed delay. Reach for `with_timeout` when "reset the clock on every message" is the natural description; reach for a callback when "do X once, T from now" is.
 
-## Coroutines inside actors — `spawn_async`
+## Coroutines inside actors — `spawn` and `spawn_detached`
 
-An actor can drive a C++ coroutine on its core's event loop with `Actor::spawn_async`. The coroutine can `co_await` asynchronous operations (sleeps, I/O, combinators) and suspend without blocking the loop; the core services other actors while it is parked, then resumes it when the awaited operation completes.
+An actor can drive a C++ coroutine on its core's event loop. The coroutine can `co_await` asynchronous operations (sleeps, I/O, combinators) and suspend without blocking the loop; the core services other actors while it is parked, then resumes it when the awaited operation completes. There are two entry points:
 
 ```cpp
 // Declared in qb/include/qb/core/Actor.h
-template <typename Func>
-void spawn_async(Func &&func) const;   // Func returns qb::io::async::task<void>
+template <typename Func> void spawn(Func &&func) const;            // scoped — cancelled on kill (recommended)
+template <typename Func> void spawn_detached(Func &&func) const;   // detached — outlives the actor
 ```
 
-The callable receives a `CoroContext` and returns `qb::io::async::task<void>`. **The safety contract is strict, because a suspended coroutine can outlive its actor:** <!-- src: qb/include/qb/core/Actor.h:982-1036 -->
+- **`spawn(func)` — the recommended default.** The coroutine is *scoped* to the actor: when the actor is `kill()`ed, it is cooperatively cancelled at its next cancellation-aware suspension point. Its callable receives a `qb::ScopedCoroContext` (alias `scoped_coro_context`) — a `CoroContext` extended with cancellation-aware operations (`ctx.sleep(d)`, `ctx.until_cancelled()`, `ctx.cancellation_point()`, `ctx.cancellable(awaitable)`, child tokens). Request/response patterns — `qb::ask`, `qb::ask_all`, `qb::run_saga`, … — are **free functions** in `qb/patterns.h` that build on this context. Use `spawn` for any work bound to the actor's lifetime.
+- **`spawn_detached(func)` — explicit fire-and-forget.** The coroutine is *not* tied to the actor's lifetime: it runs to completion even after the actor is destroyed and is never cancelled on kill. Its callable receives a plain `qb::CoroContext`. Reach for it only when the work must deliberately outlive its actor, or when the coroutine has no cancellation-aware suspension point to cancel at.
+
+Both return immediately and **share the same safety contract**, because a coroutine frame can still be running a step while — or just after — its actor is destroyed: <!-- src: qb/include/qb/core/Actor.h:1043,1080 -->
 
 - **Never access actor members after a `co_await`.** The actor may have been destroyed while the coroutine was suspended; touching `this->_member` afterward is undefined behavior.
 - **Copy everything you need by value before the first `co_await`.** Do not capture `this` or references to actor members into the coroutine.
@@ -262,7 +265,7 @@ void on(RequestEvent &ev) {
     std::string key    = ev.key;
     qb::ActorId sender = ev.sender;
 
-    spawn_async([key, sender](auto ctx) -> qb::io::async::task<void> {
+    spawn([key, sender](auto ctx) -> qb::io::async::task<void> {
         auto reply = co_await fetch(key);              // actor may die here
         // push_to(dest, ...) addresses another actor; push(...) would go to self.
         ctx.template push_to<ResultEvent>(sender, reply);   // safe via context
@@ -271,16 +274,16 @@ void on(RequestEvent &ev) {
 ```
 
 ```cpp
-// DANGEROUS — do not do this.
-spawn_async([this](auto ctx) -> qb::io::async::task<void> {
-    co_await sleep(100ms);     // actor may die while suspended
-    this->_member = value;     // UNDEFINED BEHAVIOR: actor may be gone
+// DANGEROUS — do not do this (the footgun is identical for spawn and spawn_detached).
+spawn([this](auto ctx) -> qb::io::async::task<void> {
+    co_await ctx.sleep(100ms);   // actor may die while suspended
+    this->_member = value;       // UNDEFINED BEHAVIOR: actor may be gone
 });
 ```
 
-`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is shared per `VirtualCore` and established when the core's listener is created, so `spawn_async` requires no setup beyond running inside the engine. <!-- src: qb/include/qb/core/Actor.h:1042,1050; qb/include/qb/core/Actor.tpp:231 -->
+`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is shared per `VirtualCore` and established when the core's listener is created, so both `spawn` and `spawn_detached` require no setup beyond running inside the engine. <!-- src: qb/include/qb/core/Actor.h:1043,1080; qb/include/qb/core/Actor.tpp:256,269 -->
 
-For the awaitables themselves (`sleep`, timeouts, channels, `when_all`/`when_any`/`race`), see [Reference: C++20 coroutines](../3_qb_io/coroutines.md).
+For the scoped-cancellation operations and the native `ask()` request/response pattern, see the [scoped-coroutine and ask recipes](../6_guides/patterns_cookbook.md). For the awaitables themselves (`sleep`, timeouts, channels, `when_all`/`when_any`/`race`), see [Reference: C++20 coroutines](../3_qb_io/coroutines.md).
 
 ## Periodic work: `qb::ICallback`
 

@@ -26,7 +26,7 @@ Légende : ☐ à faire — ☑ appliqué et validé (tests verts) — ⚠ parti
 | 10 | ☑ | `Main::_instances`               | **LOW**  | Dead code       | `_instances` + `_instances_lock` supprimés (header + cpp).                                       |
 | 11 | ☑ | `NoAffinity` constant            | **LOW**  | API             | Gardé (API utilisateur) : doc précisée ; `VirtualCore::__init__` filtre désormais les `CoreId >= MaxCores` → sentinel sûr. |
 | 12 | ☑ | `Main::core()` range             | **LOW**  | Bug latent      | `index >= qb::MaxCores`, message dynamique `to_string(MaxCores - 1)`.                            |
-| 13 | ☑ | `spawn_async` heap alloc         | **LOW**  | Performance     | Compteur `shared_ptr<atomic>` désormais init dans le ctor → hot path sans branche.               |
+| 13 | ☑ | `spawn_detached` heap alloc         | **LOW**  | Performance     | Compteur `shared_ptr<atomic>` désormais init dans le ctor → hot path sans branche.               |
 | 14 | ☑ | `TActorFactory::create_impl`     | **LOW**  | Performance     | Point d'extension `qb::allocate_actor<T>` → support PMR / pool au choix de l'app.                |
 | 15 | ☑ | `std::set<ServiceId>` pour IDs   | **LOW**  | Performance     | Remplacé par `ServiceIdPool` (bitset 8 KiB, `countr_zero`, cursor) — O(1) acquire/release.       |
 | 16 | ☑ | `_sleep_count` reset logic       | **LOW**  | Clarity         | Struct `Metrics` dédiée : `had_activity()`, `carry_over()`, `_spin_credit` (nom explicite).      |
@@ -208,12 +208,12 @@ Références croisées explicites avec `QB_CORE_PLAN.md` (findings) et la doc de
 
 ---
 
-### 2.13 LOW — `spawn_async` : heap alloc inutile ☑ DONE
+### 2.13 LOW — `spawn_detached` : heap alloc inutile ☑ DONE
 
 Le compteur de coroutines (`active_coroutines_`) est désormais **eagerly alloué** via un `std::make_shared<std::atomic<std::size_t>>` dans l'initialiseur de membre de la classe `Actor`. Conséquences :
-- `spawn_async` perd sa branche `if (!active_coroutines_)` : le hot path se résume à 1 atomic `fetch_add` + 1 `spawn()`.
+- `spawn_detached` perd sa branche `if (!active_coroutines_)` : le hot path se résume à 1 atomic `fetch_add` + 1 `spawn()`.
 - Le shared_ptr reste requis pour permettre aux guards RAII de coroutines orphelines de décrémenter en toute sûreté après destruction de l'actor.
-- Coût : 1 alloc (`make_shared` — 1 bloc fusionné) par actor, compensé par la suppression d'une branche sur chaque `spawn_async`.
+- Coût : 1 alloc (`make_shared` — 1 bloc fusionné) par actor, compensé par la suppression d'une branche sur chaque `spawn_detached`.
 
 Un compteur **intrusive** (inline dans `Actor` + deux atomics combinés refcount/active) est envisageable pour 0 alloc, mais non retenu : la complexité supplémentaire ne paye que pour des applications très coroutine‑lourdes.
 
@@ -309,7 +309,7 @@ Ajout du **tag `qb::no_default_events_t`** (+ l'instance inline `qb::no_default_
 - [x] **Flat callback vector** (2.6).
 - [x] **Dispatch par fonction‑pointeur** dans `router::semh<_,void>` (2.7).
 - [x] **Bitset (`ServiceIdPool`) pour `_ids`** (2.14).
-- [x] **`spawn_async` eager counter** (2.12).
+- [x] **`spawn_detached` eager counter** (2.12).
 - [x] **`qb::allocate_actor<T>` point d'extension PMR/pool** (2.13).
 - [ ] Bench avant/après : throughput push/send, latence 99p, CPU idle.
 
@@ -326,7 +326,7 @@ Ajout du **tag `qb::no_default_events_t`** (+ l'instance inline `qb::no_default_
 - [ ] Passer progressivement à `std::flat_map` pour les petites tables stables.
 - [ ] Introduire `std::print` dans les chemins de log.
 - [ ] `std::expected<ActorId, ErrorCode>` dans `addActor` / `initActor`.
-- [ ] Explorer `std::execution` (Senders) comme alternative d'avenir à `ICallback`/`spawn_async`.
+- [ ] Explorer `std::execution` (Senders) comme alternative d'avenir à `ICallback`/`spawn_detached`.
 
 ---
 
@@ -349,7 +349,7 @@ Ajout du **tag `qb::no_default_events_t`** (+ l'instance inline `qb::no_default_
 | `ServiceActor<A/B/C>` init concurrent multi‑TU | Couvre 2.3.                                   |
 | Mailbox saturation deadlock pattern         | Couvre 2.4.                                      |
 | Création/destruction massive d'actors (10⁶) | Couvre 2.14 + perf.                              |
-| `spawn_async` intensif, actor tué pendant suspension | Couvre 2.12 + coroutine safety.         |
+| `spawn_detached` intensif, actor tué pendant suspension | Couvre 2.12 + coroutine safety.         |
 | `addRefActor` + child self‑kill avec parent non averti | Couvre 2.9.                           |
 
 ---

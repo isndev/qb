@@ -163,7 +163,9 @@ not be touched after either call. See [Messaging](../4_qb_core/messaging.md).
 | `is` | `template<class _Type> bool is(RequireEvent const&) const noexcept` (and a `uint32_t` overload) | Tests whether a `RequireEvent` (or type id) pertains to `_Type`. |
 | `registerCallback` | `template<class _Actor> void registerCallback(_Actor& actor) const noexcept` | Enrolls an actor that also inherits `ICallback`. |
 | `unregisterCallback` | `template<class _Actor> void unregisterCallback(_Actor& actor) const noexcept` | |
-| `spawn_async` | `template<class Func> void spawn_async(Func&& func) const` | Launches a detached coroutine that communicates back via [`CoroContext`](#coroutines). |
+| `spawn` | `template<class Func> void spawn(Func&& func) const` | **Recommended.** Launches a *scoped* coroutine cancelled when the actor is killed; communicates back via [`ScopedCoroContext`](#coroutines) (cancellation-aware ops + `ask()`). |
+| `spawn_detached` | `template<class Func> void spawn_detached(Func&& func) const` | Launches a *detached* coroutine that outlives the actor; communicates back via [`CoroContext`](#coroutines). |
+| `resolve_ask` | `template<class E> bool resolve_ask(E& e) const noexcept` | Routes an `AskEvent`-derived reply to the awaiting `spawn` coroutine; call first in the asker's `on(E&)`. |
 | `has_active_coroutines` | `bool has_active_coroutines() const` | |
 
 `reply` and `forward` reuse the received event object, so the event must not be touched afterward. See
@@ -395,8 +397,9 @@ Entry points in `qb::io::async`:
 `CoroutineScheduler::spawn(std::move(task))` runs a coroutine; the scheduler owns the frame. The wider
 surface includes combinators (`when_all`, `when_any`, `race`), channels (`channel<T>`), cooperative sync
 (`async_mutex`, `semaphore`, `barrier`), retry, structured-concurrency scopes, generators, and
-`shared_task<T>`. Within an actor, launch a coroutine through `Actor::spawn_async` and return results via
-`qb::CoroContext` (which holds the actor's `ActorId` by value, not a pointer to the actor). See
+`shared_task<T>`. Within an actor, launch a coroutine through `Actor::spawn` (recommended — scoped, cancelled on kill) or
+`Actor::spawn_detached` (detached) and return results via `qb::CoroContext` (which holds the actor's
+`ActorId` by value, not a pointer to the actor). See
 [Coroutines](../3_qb_io/coroutines.md) and [Async in actors](../5_core_io_integration/async_in_actors.md).
 
 ### Cryptography, JWT, and compression

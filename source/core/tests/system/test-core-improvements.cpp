@@ -18,8 +18,8 @@
  *            for "no pinning".
  *   - 2.12 : `Main::core(idx)` rejects `idx >= qb::MaxCores` with a
  *            `std::range_error`.
- *   - 2.13 : `spawn_async` counter is eagerly allocated; fresh actors expose
- *            a 0-valued counter without any call to `spawn_async`.
+ *   - 2.13 : `spawn_detached` counter is eagerly allocated; fresh actors expose
+ *            a 0-valued counter without any call to `spawn_detached`.
  *   - 2.14 : `qb::allocate_actor<T>` is a customization point routed through
  *            from both the standard factory and `addRefActor`.
  *   - 2.16 : `qb::no_default_events` opts an actor out of the four default
@@ -458,8 +458,8 @@ TEST(AllocateActor, IsRoutedFromAddRefActor) {
 }
 
 // =============================================================================
-// 2.13 — spawn_async counter is eagerly allocated; freshly built actors
-//        expose a 0-valued counter without any spawn_async call.
+// 2.13 — spawn_detached counter is eagerly allocated; freshly built actors
+//        expose a 0-valued counter without any spawn_detached call.
 // =============================================================================
 
 namespace {

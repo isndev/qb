@@ -545,10 +545,11 @@ Behavior and limits:
 ## Coroutines for async I/O
 
 When a handler needs a non-blocking external round trip (an HTTP call, a database query) before it
-can answer, drive it from a coroutine launched with `spawn_async`. The coroutine runs in an isolated
-context: it cannot touch actor members after the first `co_await`, and it communicates results back
-through a `qb::CoroContext`, which captures the actor's `id()` by value and survives the actor's
-destruction.
+can answer, drive it from a coroutine launched with `spawn` (the recommended, *scoped* entry point —
+cancelled when the actor is killed; use `spawn_detached` only when the work must outlive its actor).
+The coroutine runs in an isolated context: it cannot touch actor members after the first `co_await`,
+and it communicates results back through a `qb::CoroContext`, which captures the actor's `id()` by
+value and survives the actor's destruction.
 
 ```cpp
 // see ../3_qb_io/coroutines.md for the full coroutine model
@@ -557,7 +558,7 @@ void on(ApiRequest &req) {
     std::string url    = req.url;
     qb::ActorId sender = req.getSource();
 
-    spawn_async([url, sender](auto ctx) -> qb::io::async::task<void> {
+    spawn([url, sender](auto ctx) -> qb::io::async::task<void> {
         auto response = co_await http_get(url);     // the actor may be destroyed here
         ctx.template push_to<ApiResponse>(sender, response.body);  // safe: ctx is self-contained
     });
@@ -616,5 +617,5 @@ context.
 - [Event messaging](./messaging.md) — defining events, `reply`/`forward`, pipes, correlation.
 - [The engine: Main and VirtualCore](./engine.md) — `addActor`, core configuration, startup and
   shutdown ordering.
-- [Coroutines](../3_qb_io/coroutines.md) — the full `spawn_async` / `CoroContext` model.
+- [Coroutines](../3_qb_io/coroutines.md) — the full `spawn_detached` / `CoroContext` model.
 - [Patterns cookbook](../6_guides/patterns_cookbook.md) — larger, end-to-end worked examples.

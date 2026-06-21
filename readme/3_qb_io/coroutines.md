@@ -552,7 +552,7 @@ The numeric source is `range_stream(start, end)` (there is no `async_stream<T>::
 
 Under `qb-core`, each `VirtualCore` runs one thread, one listener, and one coroutine scheduler. The actor dispatch model assumes a handler runs to completion with exclusive access to its actor's state — but a `co_await` *yields the thread*, letting other handlers run in between. A coroutine that touches actor members across a suspension point is therefore a single-thread data race, and the actor may even be destroyed while the coroutine is parked.
 
-The supported integration point is `Actor::spawn_async`. It launches an *isolated* coroutine that receives a `qb::CoroContext` (an `ActorId`-by-value handle) and may communicate back only through events.
+The supported integration points are `Actor::spawn` and `Actor::spawn_detached`. Both launch an *isolated* coroutine and may communicate back only through events. `spawn` is the recommended default: the coroutine is *scoped* to the actor (cancelled when the actor is killed) and receives a `qb::ScopedCoroContext` with cancellation-aware operations and the native `ask()` helper. `spawn_detached` is the explicit fire-and-forget variant: the coroutine outlives the actor and receives a plain `qb::CoroContext` (an `ActorId`-by-value handle). The example below uses `spawn`.
 
 ```cpp
 // src: derived from examples/coroutine/actor_example.cpp
@@ -577,7 +577,7 @@ public:
         std::string data  = req.data;
         uint64_t    start = time();
 
-        spawn_async([id, data, start](auto ctx) -> qb::io::async::task<void> {
+        spawn([id, data, start](auto ctx) -> qb::io::async::task<void> {
             // Isolated context: NO access to actor members here.
             std::string result = co_await AsyncService::process_data(data);
             uint64_t    ns     = ctx.time() - start;
@@ -592,18 +592,18 @@ public:
 };
 ```
 
-`CoroContext` exposes exactly four members: `push<Event>(args…)` (send an event to the spawning actor — i.e. to `self`), `push_to<Event>(dest, args…)` (send to a specific `ActorId`), `id()`, and `time()`. Events sent to a now-dead actor are ignored, so the context is safe to use after any suspension. `has_active_coroutines()` reports whether the actor still has spawned coroutines in flight.
-<!-- src: qb/include/qb/core/Actor.h:1107-1147 (CoroContext: push/push_to/id/time), :1036 (spawn_async), :1042 (has_active_coroutines); Actor.tpp:256 (debug-asserts a TLS scheduler) -->
+`CoroContext` exposes exactly four members: `push<Event>(args…)` (send an event to the spawning actor — i.e. to `self`), `push_to<Event>(dest, args…)` (send to a specific `ActorId`), `id()`, and `time()`. Events sent to a now-dead actor are ignored, so the context is safe to use after any suspension. A `spawn` coroutine instead receives a `qb::ScopedCoroContext`, which derives from `CoroContext` and adds cancellation-aware operations (`sleep`, `until_cancelled`, `cancellation_point`, `cancellable`) plus the native `ask<Reply>(dest, args…)` helper. `has_active_coroutines()` reports whether the actor still has spawned coroutines in flight.
+<!-- src: qb/include/qb/core/Actor.h:1208 (CoroContext: push/push_to/id/time), :1427 (ScopedCoroContext), :1080 (spawn), :1043 (spawn_detached); Actor.tpp:269,256 (debug-assert a TLS scheduler) -->
 
 | Rule | Reason | Source |
 |---|---|---|
 | Event handlers stay `void on(Event&)` | a `task<void> on(Event&)` handler breaks actor dispatch | `Actor.h:987` |
-| Use `spawn_async()` for coroutine work | isolates the coroutine from live actor state | `Actor.h:1036` |
+| Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1080`, `:1043` |
 | Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:988`; examples/coroutine/actor_example.cpp:75 |
 | Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; dead-actor events are dropped | `Actor.h:1123-1134` |
 | Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:999` |
 
-`spawn_async()` must be called on the actor's own `VirtualCore` thread (it debug-asserts that a thread-local scheduler exists). It is the only supported way to use coroutines inside an actor — never call `run`, `run_for`, or `run_sync` from a handler.
+`spawn()` and `spawn_detached()` must be called on the actor's own `VirtualCore` thread (each debug-asserts that a thread-local scheduler exists). They are the only supported way to use coroutines inside an actor — never call `run`, `run_for`, or `run_sync` from a handler.
 <!-- src: qb/include/qb/core/Actor.tpp:256; qb/include/qb/io/async/listener.h:546 -->
 
 ## Lifetime footguns

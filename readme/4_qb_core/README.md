@@ -48,7 +48,7 @@ Key design points, each documented on the linked page:
 - Actors on the **same** core exchange events through the core's local pipe (a per-destination-core
   buffer); actors on **different** cores exchange them through per-core lock-free MPSC mailboxes —
   see [messaging](./messaging.md).
-- Actors may run C++20 coroutines through `spawn_async`, returning results to themselves through a
+- Actors may run C++20 coroutines through `spawn` (or detached via `spawn_detached`), returning results to themselves through a
   capture-by-value `qb::CoroContext` — see [actor patterns](./patterns.md) and
   [qb-io coroutines](../3_qb_io/coroutines.md).
 

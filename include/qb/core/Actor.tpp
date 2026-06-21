@@ -176,14 +176,33 @@ CoroContext::push_to(ActorId dest, Args &&...args) const {
     VirtualCore::_handler->template push<_Event>(dest, actor_id_, std::forward<Args>(args)...);
 }
 
+template <typename E>
+bool
+Actor::resolve_ask(E &e) const noexcept {
+    return qb::detail::ask_deliver(e.correlation_id, id(), e);
+}
+
 // Coroutine support implementation
 
 namespace detail {
 
 /**
+ * @brief RAII guard that decrements the actor's active-coroutine counter when a
+ *        wrapper frame completes or is destroyed (even after the owning actor is
+ *        gone — the shared_ptr keeps the counter alive). Shared by both spawn
+ *        wrappers so the decrement logic lives in one place.
+ */
+struct coro_count_guard {
+    std::shared_ptr<std::atomic<std::size_t>> c;
+    ~coro_count_guard() {
+        c->fetch_sub(1, std::memory_order_relaxed);
+    }
+};
+
+/**
  * Wrapper coroutine that owns the user's callable and the CoroContext
  * by value inside the coroutine frame. This prevents the "dangling lambda"
- * problem: when spawn_async() receives a temporary lambda, the closure is
+ * problem: when spawn_detached() receives a temporary lambda, the closure is
  * destroyed after the call — but the coroutine frame (which holds `func`
  * and `ctx` as value parameters) keeps them alive across all suspension
  * points.
@@ -192,7 +211,7 @@ namespace detail {
  * completes or is destroyed (even if the owning actor has been deleted).
  *
  * Finding 2.D.6 — decision log:
- *   Two coroutine frames per spawn_async are inherent to the design
+ *   Two coroutine frames per spawn_detached are inherent to the design
  *   (wrapper frame + user body frame). We **intentionally** keep the
  *   wrapper because:
  *     1. Frame allocation cost is already amortised by the thread-local
@@ -208,47 +227,34 @@ namespace detail {
 template <typename Func>
 qb::io::async::task<void>
 actor_coro_wrapper(Func func, CoroContext ctx, std::shared_ptr<std::atomic<std::size_t>> counter) {
-    struct Guard {
-        std::shared_ptr<std::atomic<std::size_t>> c;
-        ~Guard() {
-            c->fetch_sub(1, std::memory_order_relaxed);
-        }
-    } guard{std::move(counter)};
+    coro_count_guard guard{std::move(counter)};
     co_await func(ctx);
+}
+
+/**
+ * Wrapper for `spawn`. Same ownership / counter-RAII semantics as
+ * `actor_coro_wrapper`, but it **swallows `qb::io::async::cancelled_error`** — the
+ * expected signal when the actor's coroutine scope is cancelled on kill/destroy, so a
+ * scoped coroutine being torn down is not surfaced as an error. Templated on the
+ * context type so it accepts a `ScopedCoroContext` by value (kept alive in the frame).
+ */
+template <typename Func, typename Ctx>
+qb::io::async::task<void>
+actor_scoped_coro_wrapper(Func func, Ctx ctx, std::shared_ptr<std::atomic<std::size_t>> counter) {
+    coro_count_guard guard{std::move(counter)};
+    try {
+        co_await func(ctx);
+    } catch (const qb::io::async::cancelled_error &) {
+        // Expected on actor-scope cancellation (kill/destroy) — swallow.
+    }
 }
 
 } // namespace detail
 
 template <typename Func>
 void
-Actor::spawn_async(Func &&func) const {
-    // Finding 2.D.4: revalidate the cached scheduler pointer on every spawn
-    // by comparing it against the current TLS scheduler. Caching alone is
-    // unsafe because the listener-owned scheduler can be torn down and
-    // rebuilt (e.g. tests calling `listener::reset_coro_scheduler()`, or a
-    // core that is destroyed and later re-initialized). Revalidation is
-    // essentially free: `current_ptr()` is a plain `thread_local*` load,
-    // and the comparison fits in one cmp+jne.
-    auto *expected = qb::io::async::CoroutineScheduler::current_ptr();
-    if (likely(expected != nullptr)) {
-        if (unlikely(coro_scheduler_ != expected)) {
-            coro_scheduler_ = expected;
-        }
-    } else if (unlikely(!coro_scheduler_)) {
-        // Extremely rare path: spawn called before any TLS scheduler exists
-        // on this thread. Fall back to the listener to create one.
-        coro_scheduler_ = &qb::io::async::listener::current.coro_scheduler();
-    }
-
-    // Finding 2.D.5: debug-only guard against cross-thread spawn. The actor
-    // system is strictly mono-thread per VirtualCore; calling spawn_async
-    // from another thread would interleave with the owner's scheduler and
-    // is UB. We can't differentiate which VirtualCore owns this actor at
-    // this layer, but we CAN verify a TLS scheduler exists on the caller
-    // thread, which excludes calls from unrelated std::thread contexts.
-    assert(qb::io::async::CoroutineScheduler::current_ptr() != nullptr
-           && "Actor::spawn_async called from a thread without a coroutine "
-              "scheduler — are you calling this from outside the VirtualCore?");
+Actor::spawn_detached(Func &&func) const {
+    __resolve_coro_scheduler__();
 
     active_coroutines_->fetch_add(1, std::memory_order_relaxed);
     CoroContext ctx(this);
@@ -256,6 +262,21 @@ Actor::spawn_async(Func &&func) const {
     // actor_coro_wrapper takes func BY VALUE → stored in the coroutine frame.
     // The scheduler takes ownership of the wrapper task's handle via spawn().
     coro_scheduler_->spawn(detail::actor_coro_wrapper(std::forward<Func>(func), ctx, active_coroutines_));
+}
+
+template <typename Func>
+void
+Actor::spawn(Func &&func) const {
+    __resolve_coro_scheduler__();
+    __ensure_coro_scope__(); // lazily allocate the real cancellation token on first use.
+
+    active_coroutines_->fetch_add(1, std::memory_order_relaxed);
+    // ScopedCoroContext carries the actor id + a copy of the scope token; the wrapper
+    // stores it by value in the coroutine frame, so the token's shared state safely
+    // outlives the actor.
+    ScopedCoroContext ctx(this, _coro_scope);
+
+    coro_scheduler_->spawn(detail::actor_scoped_coro_wrapper(std::forward<Func>(func), std::move(ctx), active_coroutines_));
 }
 
 } // namespace qb

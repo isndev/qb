@@ -22,7 +22,7 @@ This section breaks the integration into two task pages and a set of worked exam
 
 | Page | What it covers |
 |---|---|
-| [Asynchronous operations inside actors](./async_in_actors.md) | Deferred callbacks (`qb::io::async::callback`, `scoped_callback`), inactivity timers (`with_timeout<T>`), coroutines (`Actor::spawn_async`), periodic work (`qb::ICallback`), and patterns for keeping blocking file I/O off the loop. |
+| [Asynchronous operations inside actors](./async_in_actors.md) | Deferred callbacks (`qb::io::async::callback`, `scoped_callback`), inactivity timers (`with_timeout<T>`), coroutines (`Actor::spawn` / `spawn_detached`), periodic work (`qb::ICallback`), and patterns for keeping blocking file I/O off the loop. |
 | [Building network actors](./network_actors.md) | Turning an actor into a non-blocking TCP, UDP, or SSL/TLS endpoint with the `qb::io::use<Self>` mixins — clients, servers, acceptors, session pools, and cross-core socket transfer. |
 | [Case studies: example analyses](./examples/README.md) | Walkthroughs of five complete applications (`chat_tcp`, `distributed_computing`, `file_monitor`, `file_processor`, `message_broker`) that combine `qb-core` and `qb-io` end to end. |
 
@@ -35,6 +35,6 @@ This section breaks the integration into two task pages and a set of worked exam
 ## See also
 
 - [Reference: `qb-io` async system](../3_qb_io/async_system.md) — the listener, timers, and watchers in full.
-- [Reference: C++20 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, and combinators used by `spawn_async`.
+- [Reference: C++20 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, and combinators used by `spawn` / `spawn_detached`.
 - [Reference: `qb::Actor`](../4_qb_core/actor.md) — actor lifecycle, `qb::ICallback` registration, and the messaging API the callbacks reach back through.
 - [Reference: time utilities](../3_qb_io/utilities.md) — `qb::duration`, `qb::mono_time`, and `qb::wall_time`, the canonical span and time-point types every timeout argument uses.
