@@ -125,7 +125,9 @@ void defer_frame_destruction(std::coroutine_handle<>) noexcept;
 //     by-value state, which is discouraged anyway).
 //   * Freed blocks are intrusively linked via their first 8 B, LIFO.
 //   * No destructor / no draining: the OS reclaims the freelist when the
-//     thread exits.
+//     thread exits. The blocks parked here at process exit are reachable,
+//     `live_frames`-balanced (freed) pool memory — not leaks; tests assert the
+//     `live_frames` invariant and run LeakSanitizer with `detect_leaks=0`.
 //
 // The allocator is used by `task<T>::promise_type::operator new/delete`.
 // Both sized and unsized delete are provided; sized delete is used by
@@ -135,8 +137,13 @@ namespace detail {
 
 class CoroutineFrameAllocator {
 public:
-    static constexpr std::size_t kAlign     = 32;
-    static constexpr std::size_t kMaxBucket = 64; // up to 2 KiB
+    // Cache line: a coroutine frame may hold a by-value qb::Event subtype, which
+    // is QB_LOCKFREE_CACHELINE_ALIGNMENT (64 B). The frame inherits that
+    // alignment and the optimiser emits aligned AVX moves for the by-value copy
+    // under -march=native; plain ::operator new only guarantees 16 B on x86-64,
+    // so the pool must return cache-line-aligned blocks or it SIGSEGVs.
+    static constexpr std::size_t kAlign     = 64;
+    static constexpr std::size_t kMaxBucket = 64; // up to 4 KiB
 
     // Per-thread count of coroutine frames allocated through this pool and not
     // yet freed. Cheap diagnostic (thread_local — coroutines are mono-thread per
@@ -149,7 +156,7 @@ public:
         ++live_frames;
         const std::size_t idx = bucket_index(size);
         if (idx == 0 || idx > kMaxBucket) {
-            return ::operator new(size);
+            return ::operator new(size, std::align_val_t{kAlign});
         }
         auto &head = buckets()[idx - 1];
         if (head) {
@@ -157,7 +164,7 @@ public:
             head    = *static_cast<void **>(p);
             return p;
         }
-        return ::operator new(idx * kAlign);
+        return ::operator new(idx * kAlign, std::align_val_t{kAlign});
     }
 
     static void
@@ -167,7 +174,7 @@ public:
         --live_frames;
         const std::size_t idx = bucket_index(size);
         if (idx == 0 || idx > kMaxBucket) {
-            ::operator delete(p);
+            ::operator delete(p, std::align_val_t{kAlign});
             return;
         }
         auto &head               = buckets()[idx - 1];
@@ -210,7 +217,10 @@ private:
         /* We cannot recover the original bucket index, so we surrender the */ \
         /* block to the global allocator — correct but slower. Modern C++20 */ \
         /* compilers default to sized deallocation, so this path is cold.   */ \
-        ::operator delete(p);                                                  \
+        /* Match allocate()'s aligned ::operator new.                       */ \
+        ::operator delete(                                                     \
+            p, std::align_val_t{                                              \
+                   ::qb::io::async::detail::CoroutineFrameAllocator::kAlign}); \
     }
 
 } // namespace detail
@@ -459,6 +469,15 @@ public:
     };
 
     using handle_type = std::coroutine_handle<promise_type>;
+
+    /**
+     * @brief Default-construct an empty task (null handle).
+     * @details Owns nothing; `done()`/`await_ready()` are `true`. Used as a movable,
+     *          assignable holder (e.g. a slot that later receives a real task, or is
+     *          reset to release its frame). Never `co_await` an empty task.
+     */
+    task() noexcept
+        : handle_(nullptr) {}
 
     /**
      * @brief Construct from a coroutine handle
@@ -728,6 +747,10 @@ public:
     };
 
     using handle_type = std::coroutine_handle<promise_type>;
+
+    /** @brief Default-construct an empty task (null handle); owns nothing. */
+    task() noexcept
+        : handle_(nullptr) {}
 
     explicit task(handle_type h) noexcept
         : handle_(h) {}

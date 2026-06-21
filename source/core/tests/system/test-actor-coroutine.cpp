@@ -29,7 +29,7 @@ struct CoroIncrementEvent : public qb::Event {};
  */
 class BasicCoroActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<CoroCompletedEvent>(*this);
 
@@ -39,7 +39,7 @@ public:
             ctx.template push<CoroCompletedEvent>(42);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -57,7 +57,7 @@ class MultiCoroActor : public qb::Actor {
     int                  completed_{0};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<CoroIncrementEvent>(*this);
 
@@ -69,7 +69,7 @@ public:
             });
         }
 
-        return true;
+        co_return true;
     }
 
     void
@@ -89,7 +89,7 @@ class ExceptionCoroActor : public qb::Actor {
     bool caught_exception_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<CoroCompletedEvent>(*this);
 
@@ -103,7 +103,7 @@ public:
             }
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -125,7 +125,7 @@ class NestedCoroActor : public qb::Actor {
     int depth_{0};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<CoroIncrementEvent>(*this);
 
@@ -140,7 +140,7 @@ public:
             });
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -158,7 +158,7 @@ public:
  */
 class SafetyTestActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<CoroCompletedEvent>(*this);
 
@@ -173,7 +173,7 @@ public:
             ctx.template push<CoroCompletedEvent>(99);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -188,7 +188,7 @@ public:
  */
 class QuickKillActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         spawn_detached([](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(std::chrono::seconds(10));
@@ -197,7 +197,7 @@ public:
 
         // Kill immediately after spawning
         kill();
-        return true;
+        co_return true;
     }
 };
 

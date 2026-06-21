@@ -54,10 +54,10 @@ constexpr double        kMessagesPerIter    = 2.0 * static_cast<double>(kPingPon
 
 class PongActor final : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<LightEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -80,12 +80,12 @@ public:
         }
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<qb::RequireEvent>(*this);
         registerEvent<LightEvent>(*this);
         require<PongActor>();
-        return true;
+        co_return true;
     }
 
     void

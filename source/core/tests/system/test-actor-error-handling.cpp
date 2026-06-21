@@ -68,11 +68,11 @@ public:
     ErrorActor(int id, bool should_recover)
         : _should_recover(should_recover) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ErrorInducingEvent>(*this);
         registerEvent<MonitorEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -159,7 +159,7 @@ public:
         : _num_actors_to_monitor(num_actors)
         , _num_actors_checked(0) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<StatusEvent>(*this);
         // KillEvent est déjà enregistré par défaut pour tous les acteurs
@@ -173,7 +173,7 @@ public:
                                                   }},
                                                   500ms); // 500ms timeout (0.5 seconds)
 
-        return true;
+        co_return true;
     }
 
     void
@@ -215,7 +215,7 @@ public:
         , _should_actors_recover(should_recover)
         , _num_actors(num_actors) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<StatusEvent>(*this);
 
@@ -223,12 +223,12 @@ public:
         // Modern C++: using auto for type deduction
         for (auto i = 0; i < _num_actors; ++i) {
             auto actor_id = addRefActor<ErrorActor>(i, _should_actors_recover);
-            _error_actors.push_back(actor_id->id());
+            _error_actors.push_back(actor_id.id());
         }
 
         // Create monitor actor
         auto monitor      = addRefActor<MonitorActor>(_num_actors);
-        _monitor_actor_id = monitor->id();
+        _monitor_actor_id = monitor.id();
 
         // Add actors to monitor
         for (const auto &actor_id : _error_actors) {
@@ -243,7 +243,7 @@ public:
         // Start monitoring (this will cause the test to eventually complete)
         monitor->startMonitoring();
 
-        return true;
+        co_return true;
     }
 
     void

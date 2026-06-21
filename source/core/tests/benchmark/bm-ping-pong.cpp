@@ -77,10 +77,10 @@ struct DynamicEvent : qb::Event {
 template <typename TestEvent>
 class PongActor final : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<TestEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -102,11 +102,11 @@ public:
 
     ~PingActor() final = default;
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<TestEvent>(*this);
         send<TestEvent>(actor_to_send, max_sends);
-        return true;
+        co_return true;
     }
 
     void

@@ -105,7 +105,7 @@ public:
         recordLifecycleEvent(_actor_name, "destructor");
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         recordLifecycleEvent(_actor_name, "onInit");
 
@@ -135,14 +135,14 @@ public:
         // Normal actor just stays alive
 
         // Optionally fail initialization for testing
-        return !_should_fail_init;
+        co_return !_should_fail_init;
     }
 };
 
 // Class that completes the test after delay
 class TestCoordinatorActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         recordLifecycleEvent("coordinator", "onInit");
 
@@ -157,7 +157,7 @@ public:
             },
             1s);
 
-        return true;
+        co_return true;
     }
 };
 

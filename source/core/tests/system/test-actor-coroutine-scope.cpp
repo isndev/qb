@@ -53,7 +53,7 @@ struct ScopeResultEvent : public qb::Event {
 // ---------------------------------------------------------------------------
 class ScopedKillActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         // Parked on a 2s cancellable sleep — must be cut short by kill, not block.
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
@@ -71,7 +71,7 @@ public:
                     kill();
             },
             20ms);
-        return true;
+        co_return true;
     }
 };
 
@@ -93,14 +93,14 @@ class ScopedNormalActor : public qb::Actor {
     bool got_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ScopeResultEvent>(*this);
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             co_await ctx.sleep(10ms);          // completes normally (not cancelled)
             ctx.push<ScopeResultEvent>(123);   // safe push back to self
         });
-        return true;
+        co_return true;
     }
 
     void
@@ -133,7 +133,7 @@ TEST(ActorCoroutineScope, ScopedCoroutineNormalCompletion) {
 // ---------------------------------------------------------------------------
 class ScopedVsAsyncActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         // Scoped: cancelled at kill (its 40ms sleep must NOT finish).
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
@@ -151,13 +151,13 @@ public:
                     kill();
             },
             10ms);
-        return true;
+        co_return true;
     }
 };
 
 class KeeperActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         // Keep the engine alive past the 40ms coroutine deadlines, then stop.
         qb::io::async::callback(
@@ -166,7 +166,7 @@ public:
                     kill();
             },
             150ms);
-        return true;
+        co_return true;
     }
 };
 
@@ -189,7 +189,7 @@ class ManyScopedActor : public qb::Actor {
 public:
     static constexpr int N = 32;
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         for (int i = 0; i < N; ++i) {
             // until_cancelled() parks with NO detached timer/helper, so reclamation on
@@ -206,7 +206,7 @@ public:
                     kill();
             },
             20ms);
-        return true;
+        co_return true;
     }
 };
 
@@ -230,7 +230,7 @@ TEST(ActorCoroutineScope, ManyScopedCoroutinesCancelledNoLeak) {
 // ---------------------------------------------------------------------------
 class CancellationPointActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
@@ -249,7 +249,7 @@ public:
                     kill();
             },
             30ms);
-        return true;
+        co_return true;
     }
 };
 
@@ -280,7 +280,7 @@ scope_slow_task() {
 
 class CancellableActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
@@ -296,7 +296,7 @@ public:
                     kill();
             },
             20ms);
-        return true;
+        co_return true;
     }
 };
 
@@ -321,7 +321,7 @@ std::atomic<bool> g_child_cancelled{false};
 
 class ChildTokenActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             auto child = ctx.child_token(); // linked to the actor scope
@@ -337,7 +337,7 @@ public:
                     kill();
             },
             20ms);
-        return true;
+        co_return true;
     }
 };
 
@@ -361,7 +361,7 @@ std::atomic<int> g_has_scope{-1}; // 1 == lazy semantics held
 
 class ScopeFlagActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         const bool before = has_coro_scope(); // false
         spawn_detached([](auto) -> qb::io::async::task<void> { co_await qb::io::async::sleep(5ms); });
@@ -375,7 +375,7 @@ public:
                     kill();
             },
             20ms);
-        return true;
+        co_return true;
     }
 };
 
@@ -399,7 +399,7 @@ std::atomic<bool> g_seq_cancelled{false};
 
 class MultiStepActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
@@ -419,7 +419,7 @@ public:
                     kill();
             },
             50ms); // fires during the 200ms await
-        return true;
+        co_return true;
     }
 };
 
@@ -444,7 +444,7 @@ std::atomic<int> g_count_at_spawn{-1};
 
 class CountActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         for (int i = 0; i < 4; ++i)
             spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { co_await ctx.until_cancelled(); });
@@ -455,7 +455,7 @@ public:
                     kill();
             },
             20ms);
-        return true;
+        co_return true;
     }
 };
 

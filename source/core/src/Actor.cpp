@@ -24,6 +24,7 @@
 
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <qb/core/Actor.h>
 #include <qb/core/Actor.tpp>
 #include <qb/core/VirtualCore.h>
@@ -41,6 +42,10 @@ namespace detail {
 namespace {
 thread_local std::unordered_map<std::uint64_t, ask_slot *> tls_ask_slots;
 thread_local std::uint64_t                                 tls_ask_counter = 0;
+// Set of event type-ids known to derive from AskEvent (i.e. carry `correlation_id`),
+// populated lazily by `qb::ask<E>`. Lets the activation gate recognise an ask reply
+// without RTTI and read `correlation_id` at the AskEvent base offset safely.
+thread_local std::unordered_set<Event::id_type> tls_ask_types;
 } // namespace
 
 std::uint64_t
@@ -77,6 +82,22 @@ ask_deliver(std::uint64_t const id, ActorId const owner, Event &resp) noexcept {
 ev::loop_ref
 ask_loop() noexcept {
     return qb::io::async::listener::current.loop();
+}
+
+void
+ask_register_type(Event::id_type const type) noexcept {
+    tls_ask_types.insert(type);
+}
+
+bool
+ask_try_deliver_reply(Event &ev, ActorId const dest) noexcept {
+    // Only events whose type was registered by `qb::ask<E>` carry a `correlation_id`.
+    if (tls_ask_types.find(ev.getID()) == tls_ask_types.end())
+        return false;
+    // The type-id match proves `ev` derives from AskEvent (single inheritance, AskEvent is
+    // the first base), so `correlation_id` lives at the AskEvent base subobject offset.
+    auto &ae = static_cast<AskEvent &>(ev);
+    return ask_deliver(ae.correlation_id, dest, ev);
 }
 } // namespace detail
 
@@ -140,6 +161,11 @@ Actor::time() const noexcept {
 bool
 Actor::is_alive() const noexcept {
     return _alive;
+}
+
+bool
+Actor::is_active() const noexcept {
+    return _alive && _activated;
 }
 
 Pipe

@@ -122,10 +122,10 @@ public:
     BaseActorSender(uint32_t const max_events, qb::ActorId const to)
         : BaseSender(max_events, to) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerCallback(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -357,7 +357,7 @@ public:
         EXPECT_EQ(counter, 2u);
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
 
@@ -371,7 +371,7 @@ public:
         push<TestEvent>(_to);
         push<EventForward>(_to);
 
-        return true;
+        co_return true;
     }
 
     void
@@ -402,12 +402,12 @@ public:
             EXPECT_EQ(counter, 2u);
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         registerEvent<TestEvent>(*this);
         registerEvent<EventForward>(*this);
-        return true;
+        co_return true;
     }
 
     void

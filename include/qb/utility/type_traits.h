@@ -850,24 +850,34 @@ QB_DEFINE_TYPE_TRAIT(Protocol);
 
 namespace qb::detail {
 
+// Overload-resolution probe: only viable when its argument binds to
+// `void(Base::*)(Evt&&)` through an *implicit* pointer-to-member conversion.
+// A base->derived PMF conversion is implicit; the reverse (derived->base) is
+// not. Hence `&D::on` binds here iff D's `on(Evt&&)` IS Base's inherited one —
+// i.e. D did not declare its own (which would name-hide Base's overload set).
+// This lets us detect an override WITHOUT comparing PMF *values*: GCC rejects
+// both constexpr PMF `!=` and cast-PMF template arguments, so value comparison
+// is not portable (it only ever compiled under Clang/MSVC).
+template <typename Base, typename Evt>
+void inherited_on_probe(void (Base::*)(Evt &&));
+
 template <typename D, typename Base, typename Evt>
 consteval bool
 compute_has_own_on() {
-    // (1) rvalue-reference signature — compare PMFs cast to D::*.
-    if constexpr (requires {
-                      static_cast<void (D::*)(Evt &&)>(&D::on);
-                      static_cast<void (D::*)(Evt &&)>(&Base::on);
-                  }) {
-        constexpr auto d_pmf = static_cast<void (D::*)(Evt &&)>(&D::on);
-        constexpr auto b_pmf = static_cast<void (D::*)(Evt &&)>(&Base::on);
-        if (d_pmf != b_pmf)
-            return true;
-    }
-    // (2) const lvalue-reference overload — absent from Base by contract,
-    //     so its presence on D is necessarily a user-defined override.
+    // (2) const lvalue-reference overload — absent from Base by contract, so
+    //     its presence on D is necessarily a user-defined handler.
     if constexpr (requires(D &d, const Evt &ev) { d.on(ev); })
         return true;
-    return false;
+    // (1) rvalue-reference signature — D carries its own `on(Evt&&)` iff it
+    //     declares one (so `&D::on` is a valid `void(D::*)(Evt&&)`) AND that
+    //     handler is not merely Base's inherited one (so `&D::on` does NOT
+    //     implicitly bind to `void(Base::*)(Evt&&)`). Portable across
+    //     GCC/Clang/MSVC and correct even when D is `final`.
+    else if constexpr (requires { static_cast<void (D::*)(Evt &&)>(&D::on); } &&
+                       !requires { inherited_on_probe<Base, Evt>(&D::on); })
+        return true;
+    else
+        return false;
 }
 
 } // namespace qb::detail

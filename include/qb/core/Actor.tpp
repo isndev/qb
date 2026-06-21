@@ -63,23 +63,25 @@ Actor::unregisterEvent() const noexcept {
 }
 
 template <typename _Actor, typename... _Args>
-_Actor *
+ActorHandle<_Actor>
 Actor::addRefActor(_Args &&...args) const {
-    return VirtualCore::_handler->template addReferencedActor<_Actor>(std::forward<_Args>(args)...);
+    return ActorHandle<_Actor>(VirtualCore::_handler->template addReferencedActor<_Actor>(std::forward<_Args>(args)...));
 }
 
 template <typename _Actor>
 _Actor *
-RefActorHandle<_Actor>::get() const noexcept {
+ActorHandle<_Actor>::get() const noexcept {
     if (!_id.is_valid())
         return nullptr;
     // Must be resolved from the owning VirtualCore's worker thread.
     auto *handler = VirtualCore::_handler;
     if (!handler)
         return nullptr;
+    // findActor is phase-aware: nullptr while the actor is still Activating, and after it
+    // failed init / died. So `get()` returns a usable pointer only for an *active* actor.
     auto *resolved = handler->template findActor<_Actor>(_id);
     // Keep the cache fresh if it drifted (e.g. handle copied after kill).
-    const_cast<RefActorHandle<_Actor> *>(this)->_cached = resolved;
+    const_cast<ActorHandle<_Actor> *>(this)->_cached = resolved;
     return resolved;
 }
 

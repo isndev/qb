@@ -62,7 +62,7 @@ public:
         _timestamps.resize(num_timers + 1, 0);
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<TimerEvent>(*this);
         registerEvent<CompleteEvent>(*this);
@@ -75,7 +75,7 @@ public:
             to(id()).push<TimerEvent>(i);
         }
 
-        return true;
+        co_return true;
     }
 
     void
@@ -182,7 +182,7 @@ public:
         , _current_count(0)
         , _start_time(0) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::KillEvent>(*this);
         _start_time = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
@@ -190,7 +190,7 @@ public:
         // Schedule first callback immediately (0 sec delay)
         qb::io::async::callback([this]() { handle_callback(); }, qb::duration::zero());
 
-        return true;
+        co_return true;
     }
 
     void

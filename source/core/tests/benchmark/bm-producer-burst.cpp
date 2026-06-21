@@ -46,10 +46,10 @@ public:
     explicit BurstSinkActor(std::uint64_t const expect)
         : _expect(expect) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<BurstMsg>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -72,10 +72,10 @@ public:
         : _dst(dst)
         , _total(total) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerCallback(*this);
-        return true;
+        co_return true;
     }
 
     void

@@ -31,9 +31,9 @@ constexpr uint32_t MAX_ACTOR = 2048;
 class TestActor : public qb::Actor {
 public:
     TestActor() = default;
-    bool
+    qb::io::async::task<bool>
     onInit() final {
-        return true;
+        co_return true;
     }
 };
 

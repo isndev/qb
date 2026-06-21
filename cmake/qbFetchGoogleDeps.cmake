@@ -79,10 +79,12 @@ if(QB_BUILD_TESTS)
         endif()
 
         # Clang -Wcharacter-conversion on char8_t printing in gtest-printers.h (third-party).
-        # Only present when gtest was built from source.
+        # Only present when gtest was built from source. The flag itself only exists on
+        # newer Clang/AppleClang, so pair it with -Wno-unknown-warning-option (scoped to
+        # this third-party target) to stay silent on Clang versions that lack it.
         if(TARGET gtest)
             target_compile_options(gtest PRIVATE
-                $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wno-character-conversion>)
+                $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wno-unknown-warning-option;-Wno-character-conversion>)
         endif()
     endif()
 

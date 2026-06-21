@@ -47,10 +47,10 @@ struct PriceQuery : public qb::AskEvent {
 // Responder that answers.
 class Market : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &q) {
@@ -62,10 +62,10 @@ public:
 // Responder that never answers (drives timeout / cancel paths).
 class SilentMarket : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &) { /* intentionally no reply */ }
@@ -86,7 +86,7 @@ public:
     explicit TraderOk(qb::ActorId m)
         : _market(m) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
         registerEvent<AskDone>(*this);
@@ -97,7 +97,7 @@ public:
             ctx.push<AskDone>(); // shut down via the actor's own handler, cleanly
             g_trader_body_done = true;
         });
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &e) {
@@ -131,7 +131,7 @@ public:
     explicit TraderTimeout(qb::ActorId m)
         : _market(m) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
         auto mkt = _market;
@@ -143,7 +143,7 @@ public:
             }
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &e) {
@@ -187,7 +187,7 @@ public:
     explicit TraderCancel(qb::ActorId m)
         : _market(m) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
         auto mkt = _market;
@@ -206,7 +206,7 @@ public:
                     kill();
             },
             30ms);
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &e) {
@@ -279,7 +279,7 @@ class TraderSeq : public qb::Actor {
 public:
     explicit TraderSeq(qb::ActorId m)
         : _market(m) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
         registerEvent<AskDone>(*this);
@@ -293,7 +293,7 @@ public:
             g_seq_sum = sum; // 2+4+6+8+10 = 30
             ctx.push<AskDone>();
         });
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &e) {
@@ -332,7 +332,7 @@ class TraderMulti : public qb::Actor {
 public:
     explicit TraderMulti(qb::ActorId m)
         : _market(m) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
         auto mkt = _market;
@@ -344,7 +344,7 @@ public:
                     qb::Main::stop();
             });
         }
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &e) {
@@ -376,10 +376,10 @@ std::atomic<bool> g_late_unsolicited{false};
 
 class SlowMarket : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &q) {
@@ -401,7 +401,7 @@ class TraderLate : public qb::Actor {
 public:
     explicit TraderLate(qb::ActorId m)
         : _market(m) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
         auto mkt = _market;
@@ -413,7 +413,7 @@ public:
             }
             // Do NOT stop — wait for the late reply to arrive as unsolicited.
         });
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &e) {
@@ -446,10 +446,10 @@ std::atomic<bool> g_unsolicited_false{false};
 
 class Receiver : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<PriceQuery>(*this);
-        return true;
+        co_return true;
     }
     void
     on(PriceQuery &e) {
@@ -464,10 +464,10 @@ class Sender : public qb::Actor {
 public:
     explicit Sender(qb::ActorId t)
         : _to(t) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         push<PriceQuery>(_to, 1); // plain event, correlation_id stays 0
-        return true;
+        co_return true;
     }
 };
 
@@ -495,10 +495,10 @@ std::atomic<bool> g_echo_ok{false};
 
 class Echoer : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Echo>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Echo &e) {
@@ -513,7 +513,7 @@ class EchoClient : public qb::Actor {
 public:
     explicit EchoClient(qb::ActorId t)
         : _to(t) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Echo>(*this);
         auto to = _to;
@@ -524,7 +524,7 @@ public:
             g_echo_ok = (r.out && *r.out == "reply:hello");
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Echo &e) {

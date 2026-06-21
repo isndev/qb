@@ -37,7 +37,7 @@ public:
     explicit TestActor(bool live, bool except = false)
         : keep_live(live)
         , throw_except(except) {}
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         if (throw_except)
             throw std::runtime_error("Test Exception Error");
@@ -45,7 +45,7 @@ public:
         if (!keep_live)
             kill();
         registerEvent<qb::SignalEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void

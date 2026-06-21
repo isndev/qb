@@ -49,10 +49,10 @@ public:
     explicit AllocPipeSinkActor(std::uint64_t const expect)
         : _expect(expect) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<BigPipeMsg>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -74,7 +74,7 @@ public:
         , _count(count)
         , _extra_alloc(extra_alloc) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         if constexpr (UseAllocatedPush) {
             qb::pipe const p = getPipe(_dst);
@@ -85,7 +85,7 @@ public:
                 push<BigPipeMsg>(_dst, i);
         }
         kill();
-        return true;
+        co_return true;
     }
 };
 

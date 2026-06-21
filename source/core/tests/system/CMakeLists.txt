@@ -61,6 +61,8 @@ set(ACTOR_SYSTEM_TESTS
         test-actor-coroutine-resilience.cpp
         test-actor-routing-pubsub.cpp
         test-actor-supervisor.cpp
+        test-actor-async-init.cpp
+        test-actor-async-init-torture.cpp
         test-core-improvements.cpp
 )
 

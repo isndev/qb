@@ -74,7 +74,10 @@ VirtualCore::findActor(ActorId const id) const noexcept {
     if (it == _actors.end())
         return nullptr;
     Actor *raw = it->second.get();
-    if (!raw->is_alive())
+    // Phase-aware: an actor whose async `onInit()` is still in flight (Activating) is NOT
+    // yet handed out — a handle resolves it only once `is_active()`. For the sync-init
+    // majority `is_active() == is_alive()`, so this is unchanged for them.
+    if (!raw->is_active())
         return nullptr;
     // Fast path: id_type set by ActorProxy::setTypeInfo matches the requested type.
     if (raw->id_type == ActorProxy::getType<_Actor>())
@@ -93,6 +96,10 @@ VirtualCore::getService() const noexcept {
                                           << " : does not exist");
         return nullptr;
     }
+    // NOTE: getService is intentionally NOT phase-gated — a service legitimately looks
+    // itself (or a peer) up from inside its own `onInit()` (a common bootstrap pattern),
+    // where the actor is mid-init by definition. The phase-aware handle path (`ActorHandle`
+    // via `findActor`) is where Activating actors are withheld from external callers.
     return dynamic_cast<_ServiceActor *>(it->second.get());
 }
 

@@ -89,12 +89,12 @@ public:
         _counters.fill(0);
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<IncrementEvent>(*this);
         registerEvent<QueryCountersEvent>(*this);
         registerEvent<TestCompleteEvent>(*this);
-        return true;
+        co_return true;
     }
 
     // Increment a specific counter
@@ -152,13 +152,13 @@ public:
         _rng.seed(static_cast<unsigned>(_worker_id));
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         // Schedule the first increment (others will be chained)
         qb::io::async::callback([this]() { sendNextIncrement(); },
                                 1ms * _worker_id); // Slight stagger in startup to reduce contention
 
-        return true;
+        co_return true;
     }
 
     void
@@ -200,14 +200,14 @@ public:
         : _active_workers(NUM_WORKERS)
         , _test_completed(false) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<CountersResponseEvent>(*this);
         registerEvent<WorkerCompleteEvent>(*this);
 
         // Create counter actor
         auto counter_actor = addRefActor<CounterActor>();
-        _counter_actor_id  = counter_actor->id();
+        _counter_actor_id  = counter_actor.id();
 
         // Create worker actors - chaque worker fait exactement NUM_OPERATIONS /
         // NUM_WORKERS opérations
@@ -227,7 +227,7 @@ public:
             },
             2s); // Réduire à 2 secondes
 
-        return true;
+        co_return true;
     }
 
     // Handle worker completion notifications
@@ -287,13 +287,13 @@ class DummyActor : public qb::Actor {
 public:
     DummyActor() {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         // Add a callback to kill this actor after the test should be complete
         qb::io::async::callback([this]() { kill(); },
                                 10s); // 10 seconds is more than enough for the test
 
-        return true;
+        co_return true;
     }
 };
 

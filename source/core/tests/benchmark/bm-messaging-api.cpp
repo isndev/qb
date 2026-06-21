@@ -43,10 +43,10 @@ public:
     explicit MsgApiSinkActor(std::uint64_t const expect)
         : _expect(expect) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<MsgApiCountMsg>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -66,7 +66,7 @@ public:
         : _dst(dst)
         , _count(count) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         for (std::uint64_t i = 0; i < _count; ++i) {
             if constexpr (Api == MessagingApiKind::Push) {
@@ -80,7 +80,7 @@ public:
             }
         }
         kill();
-        return true;
+        co_return true;
     }
 };
 

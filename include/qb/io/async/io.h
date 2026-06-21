@@ -30,6 +30,7 @@
 #define QB_IO_ASYNC_IO_H
 
 #include <memory>
+#include <new>
 #include <qb/system/time.h>
 #include <qb/utility/type_traits.h>
 #include "../config.h"
@@ -237,7 +238,11 @@ public:
             fl.head = *static_cast<void **>(p);
             return p;
         }
-        return ::operator new(sz);
+        // Honour the type's alignment: `_func` may capture a by-value event
+        // (cache-line aligned). Plain ::operator new only guarantees 16 B,
+        // under-aligning the closure → SIGSEGV on the aligned AVX moves the
+        // optimiser emits for the event copy under -march=native.
+        return ::operator new(sz, std::align_val_t{alignof(Timeout)});
     }
 
     static void
