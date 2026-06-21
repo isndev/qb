@@ -41,14 +41,14 @@ public:
         LOG_CRIT("TestActor id dead");
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         LOG_VERB("TestActor had been initialized at" << qb::unix_nanos(qb::wall_now()));
         registerEvent<TestEvent>(*this);
         push<TestEvent>(id());
         qb::io::cout() << "Test Actor(" << id() << "): Hello master !" << std::endl;
-        return true;
+        co_return true;
     }
 
     void

@@ -40,10 +40,10 @@ struct CdTinyEvent final : qb::Event {
 
 class CdPongActor final : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<CdTinyEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -62,11 +62,11 @@ public:
         : _max(max)
         , _peer(peer) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<CdTinyEvent>(*this);
         send<CdTinyEvent>(_peer, _max);
-        return true;
+        co_return true;
     }
 
     void

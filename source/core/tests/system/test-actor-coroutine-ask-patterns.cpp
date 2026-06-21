@@ -49,10 +49,10 @@ struct PatternsDone : public qb::Event {};
 // Answers via the typed helper: response = id * 2.
 class QuoteMarket : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Quote &q) {
@@ -63,10 +63,10 @@ public:
 // Never replies (drives timeout paths).
 class SilentQuoteMarket : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Quote &) { /* intentionally silent */ }
@@ -76,10 +76,10 @@ public:
 // scoped coroutine for the delay so a kill cancels it cleanly (no dangling `this`).
 class SlowQuoteMarket : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Quote &q) {
@@ -106,7 +106,7 @@ class TypedClient : public qb::Actor {
 public:
     explicit TypedClient(qb::ActorId m)
         : _market(m) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
         registerEvent<PatternsDone>(*this);
@@ -116,7 +116,7 @@ public:
             g_typed_resp = q.response; // filled by qb::answer(*this, ): 21 * 2
             ctx.push<PatternsDone>();
         });
-        return true;
+        co_return true;
     }
     void
     on(Quote &e) {
@@ -154,7 +154,7 @@ class ScatterClient : public qb::Actor {
 public:
     explicit ScatterClient(std::vector<qb::ActorId> m)
         : _markets(std::move(m)) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
         registerEvent<PatternsDone>(*this);
@@ -168,7 +168,7 @@ public:
             g_all_sum   = sum;
             ctx.push<PatternsDone>();
         });
-        return true;
+        co_return true;
     }
     void
     on(Quote &e) {
@@ -226,7 +226,7 @@ class ScatterTimeoutClient : public qb::Actor {
 public:
     explicit ScatterTimeoutClient(std::vector<qb::ActorId> m)
         : _markets(std::move(m)) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
         auto markets = _markets;
@@ -238,7 +238,7 @@ public:
             }
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Quote &e) {
@@ -272,7 +272,7 @@ class RaceClient : public qb::Actor {
 public:
     explicit RaceClient(std::vector<qb::ActorId> m)
         : _markets(std::move(m)) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
         auto markets = _markets;
@@ -281,7 +281,7 @@ public:
             g_any_resp  = winner.response; // fast market: 10 * 2 = 20 (slow would be 30)
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Quote &e) {
@@ -315,7 +315,7 @@ class RaceTimeoutClient : public qb::Actor {
 public:
     explicit RaceTimeoutClient(std::vector<qb::ActorId> m)
         : _markets(std::move(m)) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
         auto markets = _markets;
@@ -327,7 +327,7 @@ public:
             }
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Quote &e) {
@@ -365,7 +365,7 @@ class Relay : public qb::Actor {
 public:
     explicit Relay(qb::ActorId m)
         : _market(m) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
         auto mkt = _market;
@@ -375,7 +375,7 @@ public:
             if (g_guard_done.fetch_add(1) == 1)
                 qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Quote &q) {
@@ -391,7 +391,7 @@ class GuardClient : public qb::Actor {
 public:
     explicit GuardClient(qb::ActorId r)
         : _relay(r) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Quote>(*this);
         auto relay = _relay;
@@ -401,7 +401,7 @@ public:
             if (g_guard_done.fetch_add(1) == 1)
                 qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Quote &e) {
@@ -457,11 +457,11 @@ std::vector<int>  g_comp_order;        // order compensations executed (single w
 // Reserves items and, on compensation, releases them.
 class Inventory : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Reserve>(*this);
         registerEvent<Release>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Reserve &r) {
@@ -478,10 +478,10 @@ public:
 
 class PaymentOk : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Charge>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Charge &c) {
@@ -491,10 +491,10 @@ public:
 
 class PaymentSilent : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Charge>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Charge &) { /* never replies -> the Charge step times out */ }
@@ -510,7 +510,7 @@ public:
     SagaClient(qb::ActorId inv, qb::ActorId pay)
         : _inv(inv)
         , _pay(pay) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Reserve>(*this);
         registerEvent<Charge>(*this);
@@ -534,7 +534,7 @@ public:
             }
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Reserve &e) {
@@ -587,7 +587,7 @@ public:
     SagaReverseClient(qb::ActorId inv, qb::ActorId pay)
         : _inv(inv)
         , _pay(pay) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Reserve>(*this);
         registerEvent<Charge>(*this);
@@ -615,7 +615,7 @@ public:
             }
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Reserve &e) {
@@ -641,4 +641,155 @@ TEST(ActorAskPatterns, SagaCompensationsRunInReverseOrder) {
     ASSERT_EQ(g_comp_order.size(), 2u);
     EXPECT_EQ(g_comp_order[0], 2); // last registered runs first (LIFO)
     EXPECT_EQ(g_comp_order[1], 1);
+}
+
+// ---------------------------------------------------------------------------
+// Saga edge cases: cancel-mid-flow skips rollback; a throwing compensation does
+// not abort the remaining rollbacks (best-effort, saga.h compensate()).
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<bool> g_cancel_ok{false};
+std::atomic<bool> g_comp0_ran{false};
+} // namespace
+
+// Never answers Charge → the step blocks until the actor is killed.
+class SilentCharge : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Charge>(*this);
+        co_return true;
+    }
+    void
+    on(Charge &) {}
+};
+
+class SagaCancelClient : public qb::Actor {
+    qb::ActorId _inv, _pay;
+
+public:
+    SagaCancelClient(qb::ActorId inv, qb::ActorId pay)
+        : _inv(inv)
+        , _pay(pay) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Reserve>(*this);
+        registerEvent<Release>(*this);
+        auto inv = _inv;
+        auto pay = _pay;
+        spawn([inv, pay](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await qb::run_saga(
+                ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                    co_await qb::ask(ctx, inv, Reserve{1}, 500ms);
+                    saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> {
+                        co_await qb::ask(ctx, inv, Release{1}, 500ms); // must NOT run on cancel
+                    });
+                    co_await qb::ask(ctx, pay, Charge{99}, 5s); // long wait — we are killed here
+                });
+            g_cancel_ok = true; // unreachable (cancelled_error propagates, swallowed by the scope)
+        });
+        co_return true;
+    }
+    void
+    on(Reserve &e) {
+        resolve_ask(e);
+    }
+    void
+    on(Release &e) {
+        resolve_ask(e);
+    }
+};
+
+class KillThenStop : public qb::Actor {
+    qb::ActorId _victim;
+
+public:
+    explicit KillThenStop(qb::ActorId v)
+        : _victim(v) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        auto v = _victim;
+        qb::io::async::callback([this, v] { push<qb::KillEvent>(v); }, 40ms); // kill mid-step-2
+        qb::io::async::callback([] { qb::Main::stop(); }, 120ms);
+        co_return true;
+    }
+};
+
+TEST(ActorAskPatterns, SagaCancelledMidFlowSkipsCompensation) {
+    g_released  = false;
+    g_cancel_ok = false;
+    qb::Main main;
+    auto     inv    = main.addActor<Inventory>(0);
+    auto     pay    = main.addActor<SilentCharge>(0);
+    auto     client = main.addActor<SagaCancelClient>(0, inv, pay);
+    main.addActor<KillThenStop>(0, client);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_released.load());  // cancel ⇒ NO rollback (Release never asked)
+    EXPECT_FALSE(g_cancel_ok.load()); // saga did not complete
+}
+
+class SagaCompThrowClient : public qb::Actor {
+    qb::ActorId _inv, _pay;
+
+public:
+    SagaCompThrowClient(qb::ActorId inv, qb::ActorId pay)
+        : _inv(inv)
+        , _pay(pay) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Reserve>(*this);
+        registerEvent<Release>(*this);
+        registerEvent<Charge>(*this);
+        auto inv = _inv;
+        auto pay = _pay;
+        spawn([inv, pay](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            try {
+                co_await qb::run_saga(
+                    ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                        co_await qb::ask(ctx, inv, Reserve{1}, 500ms);
+                        saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> {
+                            co_await qb::ask(ctx, inv, Release{1}, 500ms); // comp[0] — real undo
+                            g_comp0_ran = true;
+                        });
+                        saga.on_compensate([]() -> qb::io::async::task<void> {
+                            if (true)
+                                throw std::runtime_error("compensation 2 boom"); // comp[1] — runs first (LIFO), throws
+                            co_return;
+                        });
+                        co_await qb::ask(ctx, pay, Charge{99}, 40ms); // times out → saga fails → rollback
+                    });
+            } catch (...) {
+            }
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(Reserve &e) {
+        resolve_ask(e);
+    }
+    void
+    on(Release &e) {
+        resolve_ask(e);
+    }
+    void
+    on(Charge &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorAskPatterns, SagaCompensationThrowsContinuesRemaining) {
+    g_released   = false;
+    g_comp0_ran  = false;
+    qb::Main main;
+    auto     inv = main.addActor<Inventory>(0);
+    auto     pay = main.addActor<PaymentSilent>(0); // Charge times out → saga fails
+    main.addActor<SagaCompThrowClient>(0, inv, pay);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_comp0_ran.load()); // comp[0] ran despite comp[1] throwing first (best-effort)
+    EXPECT_TRUE(g_released.load());  // the surviving rollback (Release) went through
 }

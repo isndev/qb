@@ -84,7 +84,7 @@ public:
     StatefulActor()
         : _failed(false) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<StateUpdateEvent>(*this);
         registerEvent<StateQueryEvent>(*this);
@@ -98,7 +98,7 @@ public:
         _state["counter"] = 0;
         _state["version"] = 1;
 
-        return true;
+        co_return true;
     }
 
     // Handle state updates
@@ -181,18 +181,18 @@ private:
 public:
     StateCoordinatorActor() {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<StateResponseEvent>(*this);
 
         // Create stateful actor
         auto actor         = addRefActor<StatefulActor>();
-        _stateful_actor_id = actor->id();
+        _stateful_actor_id = actor.id();
 
         // Schedule the test sequence with delays to simulate real operation
         scheduleTestSequence();
 
-        return true;
+        co_return true;
     }
 
     void

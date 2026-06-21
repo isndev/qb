@@ -44,10 +44,10 @@ class ConsumerActor final : public qb::Actor {
     std::uint64_t _received = 0;
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<PcMsg>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -65,11 +65,11 @@ public:
     explicit ProducerActor(qb::ActorId const to)
         : _to_pipe(getPipe(to)) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         for (std::uint64_t i = 1; i <= kBenchMessages; ++i)
             _to_pipe.push<PcMsg>().seq = i;
-        return true;
+        co_return true;
     }
 };
 

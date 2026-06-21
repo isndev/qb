@@ -63,12 +63,12 @@ public:
         : _dst(dst)
         , _each(each) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         for (std::uint64_t i = 0; i < _each; ++i)
             push<FanInMsg>(_dst);
         kill();
-        return true;
+        co_return true;
     }
 };
 

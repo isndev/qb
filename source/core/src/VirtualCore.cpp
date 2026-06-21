@@ -152,6 +152,30 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
                               "oversized event); aborting batch");
             break;
         }
+        // Activation gate: while the destination actor is still Activating (an
+        // `onInit()` performed a `co_await`), defer its inbound *unicast business*
+        // events into the actor's FIFO stash — replayed in order once it becomes
+        // active. Broadcasts (incl. Kill/Signal) pass straight through so a kill during
+        // init still unwinds the coroutine. The empty() fast-path keeps the common case
+        // (nothing activating) free.
+        if (unlikely(!_activating.empty())) {
+            const ActorId dest = event->getDestination();
+            // A `KillEvent` always passes the gate so an Activating actor stays killable
+            // (its `on(KillEvent)` → `kill()` cancels the scope and unwinds the in-flight
+            // onInit). Everything else unicast to an Activating actor is either delivered
+            // (if it is the reply to an `ask` this actor issued from inside `onInit` — that
+            // must NOT be stashed or its init would deadlock on its own reply) or stashed
+            // and replayed FIFO once the actor becomes active.
+            if (!dest.is_broadcast() && __is_activating__(dest)
+                && event->getID() != qb::Event::type_to_id<qb::KillEvent>()) {
+                if (!qb::detail::ask_try_deliver_reply(*event, dest))
+                    __stash_event__(dest, event);
+                ++_metrics._nb_event_received;
+                _metrics._nb_bucket_received += event->bucket_size;
+                i += event->bucket_size;
+                continue;
+            }
+        }
         event->state.alive = 0;
         _router.route(*event, [this](auto &event) {
             if (!event.getDestination().is_broadcast())
@@ -355,17 +379,173 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
 }
 
 bool
-VirtualCore::__init__actors__() const {
+VirtualCore::__init__actors__() {
+    // Snapshot the actor pointers first: driving an `onInit()` may itself create
+    // referenced actors (`addRefActor`), mutating `_actors` mid-iteration.
     std::vector<Actor *> actors_to_init;
     actors_to_init.reserve(_actors.size());
     for (const auto &actor : _actors | std::views::values)
         actors_to_init.push_back(actor.get());
-    return !std::ranges::any_of(actors_to_init, [](auto *actor) {
-        auto ret = !actor->onInit();
-        if (ret)
-            LOG_CRIT(*actor << " failed to init");
-        return ret;
-    });
+    for (auto *actor : actors_to_init) {
+        qb::io::async::task<bool> init = actor->onInit();
+        switch (__drive_init__(*actor, init)) {
+            case InitOutcome::ReadyTrue:
+                break; // completed synchronously → already active, frame freed
+            case InitOutcome::ReadyFalse:
+                LOG_CRIT(*actor << " failed to init");
+                return false;
+            case InitOutcome::Suspended:
+                // `onInit()` performed a `co_await`; the suspended initial init cannot
+                // complete pre-loop (the scheduler is not running yet). It completes in
+                // `__workflow__` (its awaiters resume on `listener.run()`); the dispatch
+                // gate stashes its inbound unicast until it becomes active.
+                __begin_activation__(*actor, std::move(init));
+                break;
+        }
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// Asynchronous actor initialization — the *Activating* phase (driver + pump).
+// -----------------------------------------------------------------------------
+
+VirtualCore::InitOutcome
+VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexcept {
+    auto h = init.handle();
+    if (unlikely(!h))
+        return InitOutcome::ReadyTrue; // defensive: a null task ⇒ trivially successful
+    // `task`'s initial_suspend is `suspend_always`, so the body has not run yet: resume
+    // once to reach the first `co_await` or the `co_return`. Drive the handle DIRECTLY
+    // (never `scheduler.spawn()` it) so a synchronously-ready init keeps no scheduler
+    // continuation and its frame is freed the instant the owning `task` is destroyed.
+    h.resume();
+    if (h.done()) {
+        auto &p = h.promise();
+        if (unlikely(p.has_exception())) {
+            // Surface an uncaught throw as an init failure (preserves the BadActorInit
+            // outcome) — but never let it escape into this noexcept owning-thread path.
+            try {
+                std::rethrow_exception(p.exception());
+            } catch (const std::exception &e) {
+                LOG_CRIT(actor << " onInit() threw: " << e.what());
+            } catch (...) {
+                LOG_CRIT(actor << " onInit() threw a non-standard exception");
+            }
+            return InitOutcome::ReadyFalse;
+        }
+        return p.value() ? InitOutcome::ReadyTrue : InitOutcome::ReadyFalse;
+    }
+    return InitOutcome::Suspended;
+}
+
+void
+VirtualCore::__begin_activation__(Actor &actor, qb::io::async::task<bool> &&init) noexcept {
+    // A suspended onInit is driven directly (not via scheduler.spawn), so this core may not
+    // have a coroutine scheduler yet. Its awaiters resume via schedule_via_current (e.g.
+    // qb::ask's reply/timeout delivery), which requires the TLS scheduler to exist — force
+    // it now, before any reply/timer can fire on the next iteration.
+    (void) qb::io::async::listener::current.coro_scheduler();
+    // The actor is now Activating: gate its inbound unicast and keep its frame alive.
+    actor._activated = false;
+    const auto now   = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
+    Activation act;
+    act.init        = std::move(init);
+    act.deadline_ns = activation_deadline_ns ? now + activation_deadline_ns : 0; // 0 ⇒ no deadline
+    _activating.emplace(actor.id(), std::move(act));
+    LOG_INFO(actor << " activating (async onInit in flight)");
+}
+
+bool
+VirtualCore::__is_activating__(ActorId const id) const noexcept {
+    return _activating.find(id) != _activating.end();
+}
+
+void
+VirtualCore::__stash_event__(ActorId const dest, Event *event) noexcept {
+    auto it = _activating.find(dest);
+    if (unlikely(it == _activating.end()))
+        return; // not actually activating — caller already filtered, defensive only
+    auto &stash = it->second.stash;
+    if (unlikely(stash.size() >= kActivationStashCap)) {
+        // A wedged-in-init actor must not OOM the core: drop the overflow and fail the
+        // activation on the next pump by forcing its deadline to expire now.
+        LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid()
+                       << "); dropping event[" << event->getID() << "] and failing activation");
+        it->second.deadline_ns = 1; // already in the past ⇒ pump cancels + fails it
+        return;
+    }
+    // Byte-copy the event's buckets out of the transient receive buffer into owned
+    // storage; replayed verbatim (FIFO) once the actor becomes active.
+    auto *buckets = reinterpret_cast<EventBucket *>(event);
+    stash.emplace_back(buckets, buckets + event->bucket_size);
+}
+
+void
+VirtualCore::__pump_activations__() noexcept {
+    if (likely(_activating.empty()))
+        return;
+    const auto now = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
+
+    // Collect ids to finalize/expire first; finalizing mutates `_activating`.
+    thread_local std::vector<ActorId> done_ids;
+    done_ids.clear();
+    for (auto &[id, act] : _activating) {
+        if (act.init.done()) {
+            done_ids.push_back(id);
+        } else if (!act.cancelling && act.deadline_ns && now >= act.deadline_ns) {
+            // Deadline reached: cancel the actor's coro scope so its `onInit()` unwinds
+            // (its cancellation-aware awaiters throw `cancelled_error`); it then reports
+            // `done()` on a later pump and is finalized as a failure below.
+            act.cancelling = true;
+            if (const auto ait = _actors.find(id); ait != _actors.end()) {
+                LOG_WARN(*ait->second << " activation deadline expired — cancelling onInit");
+                ait->second->__cancel_coro_scope__();
+            }
+        }
+    }
+
+    for (auto const id : done_ids) {
+        auto it = _activating.find(id);
+        if (it == _activating.end())
+            continue;
+        Activation act = std::move(it->second);
+        _activating.erase(it);
+
+        const bool dying = _dying_with_frame.erase(id) != 0;
+        // Read the init verdict (frame is done): a clean `co_return false`, a thrown
+        // exception, or a deadline/kill cancellation all resolve to "not successful".
+        bool ok = false;
+        if (auto h = act.init.handle(); h && h.done()) {
+            auto &p = h.promise();
+            ok      = !p.has_exception() && p.value();
+        }
+        // Free the onInit frame now that it has fully unwound (no awaiter references it).
+        act.init = qb::io::async::task<bool>{};
+
+        const auto ait = _actors.find(id);
+        if (dying || !ok || ait == _actors.end()) {
+            // Killed during init, failed init, or already gone → complete teardown now
+            // (the deferred-destroy: the actor outlived its own coroutine frame).
+            if (ait != _actors.end()) {
+                if (!dying && !ok)
+                    LOG_CRIT(*ait->second << " async onInit failed — removing");
+                removeActor(id);
+            }
+            continue;
+        }
+        // Success: flip Active, then replay the stashed inbound unicast FIFO.
+        ait->second->_activated = true;
+        LOG_INFO(*ait->second << " activated");
+        for (auto &buckets : act.stash) {
+            auto *ev      = reinterpret_cast<Event *>(buckets.data());
+            ev->state.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
+            _router.route(*ev, [this](auto &e) {
+                if (!e.getDestination().is_broadcast())
+                    LOG_WARN(*this << " failed to deliver stashed event[" << e.getID() << "]");
+            });
+        }
+    }
 }
 
 void
@@ -398,6 +578,14 @@ VirtualCore::__workflow__() {
             // (avoids redundant checks; metrics match `nb_invoked_event()` contract).
             io::async::listener::current.run(EVRUN_NOWAIT);
             _metrics._nb_event_io = io::async::listener::current.nb_invoked_event();
+        }
+
+        // Complete any async `onInit()` resumed above (replay stashes / enforce
+        // deadlines / finish deferred destroys). empty()-guarded: free when idle.
+        if (unlikely(!_activating.empty())) {
+            __pump_activations__();
+            if (unlikely(_actors.empty()))
+                break; // the last actor was an activating-then-dying one
         }
 
         // send core events
@@ -461,10 +649,21 @@ VirtualCore::__workflow__() {
 // Actor Management
 ActorId
 VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
-    if (doInit && unlikely(!actor.onInit())) {
-        removeActor(actor.id());
-
-        return ActorId::NotFound;
+    if (doInit) {
+        qb::io::async::task<bool> init = actor.onInit();
+        switch (__drive_init__(actor, init)) {
+            case InitOutcome::ReadyTrue:
+                break; // completed synchronously → already active (identical to before)
+            case InitOutcome::ReadyFalse:
+                removeActor(actor.id());
+                return ActorId::NotFound;
+            case InitOutcome::Suspended:
+                // Dynamic (`addRefActor`) async init: the actor exists and is addressable
+                // now, but is not yet active. Its id is returned as VALID; inbound unicast
+                // is stashed until it activates (gate), the deadline bounds the window.
+                __begin_activation__(actor, std::move(init));
+                break;
+        }
     }
 
     return actor.id();
@@ -472,16 +671,17 @@ VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
 
 ActorId
 VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) noexcept {
-    Actor &actor = *actor_ptr;
+    Actor        &actor = *actor_ptr;
+    const ActorId id    = actor.id();
+    // Reject duplicates *before* driving `onInit()`: a suspended (async) init must never
+    // coexist with an append failure, otherwise its still-live frame would be orphaned.
+    if (unlikely(_actors.find(id) != _actors.end())) {
+        LOG_CRIT("Error Cannot add Service Actor multiple times" << actor);
+        return ActorId::NotFound;
+    }
     if (initActor(actor, doInit).is_valid()) {
-        ActorId id = actor.id();
-        if (_actors.find(id) == _actors.end()) {
-            _actors.emplace(id, std::move(actor_ptr));
-            LOG_INFO("New " << actor);
-        } else {
-            LOG_CRIT("Error Cannot add Service Actor multiple times" << actor);
-            return ActorId::NotFound;
-        }
+        _actors.emplace(id, std::move(actor_ptr));
+        LOG_INFO("New " << actor);
         return id;
     }
     return ActorId::NotFound;
@@ -489,6 +689,21 @@ VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) no
 
 void
 VirtualCore::removeActor(ActorId const id) noexcept {
+    // Deferred destroy (the actor must outlive its own coroutine frame): if its
+    // `onInit()` frame is still suspended, cancel the scope so the frame unwinds, mark
+    // the actor dying, and let `__pump_activations__` complete the teardown once the
+    // frame reports `done()`. Re-entry from the pump (after the frame unwound and the
+    // activation was dropped) falls straight through to the normal teardown below.
+    if (const auto ait = _activating.find(id); unlikely(ait != _activating.end())) {
+        if (const auto act = _actors.find(id); act != _actors.end())
+            act->second->__cancel_coro_scope__();
+        if (!ait->second.init.done()) {
+            _dying_with_frame.insert(id);
+            return;
+        }
+        _activating.erase(ait);
+        _dying_with_frame.erase(id);
+    }
     __unregisterCallback(id);
     unregisterEvents(id);
     const auto it = _actors.find(id);
@@ -600,6 +815,7 @@ VirtualCore::time() const noexcept {
 
 std::atomic<ServiceId>    VirtualCore::_nb_service{0};
 thread_local VirtualCore *VirtualCore::_handler = nullptr;
+std::uint64_t             VirtualCore::activation_deadline_ns = 5ull * 1000u * 1000u * 1000u; // 5 s
 } // namespace qb
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &

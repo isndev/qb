@@ -112,14 +112,14 @@ public:
     ResourceActor()
         : _shutdown_pending(false) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<AllocateResourceEvent>(*this);
         registerEvent<ReleaseResourceEvent>(*this);
         registerEvent<ResourceStatusEvent>(*this);
         registerEvent<GracefulShutdownEvent>(*this);
         registerEvent<ForceShutdownEvent>(*this);
-        return true;
+        co_return true;
     }
 
     // Allocate a new resource
@@ -196,7 +196,7 @@ public:
         : _num_allocations(num_allocations)
         , _phase(0) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ResourceReportEvent>(*this);
 
@@ -204,13 +204,13 @@ public:
         // Modern C++: using auto for type deduction
         for (auto i = 0; i < 3; ++i) {
             auto actor = addRefActor<ResourceActor>();
-            _resource_actors.push_back(actor->id());
+            _resource_actors.push_back(actor.id());
         }
 
         // Start test sequence
         schedulePhase1();
 
-        return true;
+        co_return true;
     }
 
     // Phase 1: Allocate resources

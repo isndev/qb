@@ -10,10 +10,10 @@
 struct NeverSubscribedEvent : qb::Event {};
 
 struct ReproReceiver : qb::Actor {
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 };
 
@@ -21,11 +21,11 @@ struct ReproSender : qb::Actor {
     qb::ActorId target;
     explicit ReproSender(qb::ActorId t)
         : target(t) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::KillEvent>(*this);
         push<NeverSubscribedEvent>(target); // nobody handles this type
-        return true;
+        co_return true;
     }
 };
 
@@ -52,11 +52,11 @@ static std::atomic<int> g_victim_ticks{0};
 struct CbVictim
     : qb::Actor
     , qb::ICallback {
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::KillEvent>(*this);
         registerCallback(*this);
-        return true;
+        co_return true;
     }
     void
     onCallback() override {
@@ -72,12 +72,12 @@ struct CbKiller
     : qb::Actor
     , qb::ICallback {
     qb::RefActorHandle<CbVictim> victim;
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::KillEvent>(*this);
         registerCallback(*this);           // killer registers first => earlier in list
         victim = addRefHandle<CbVictim>(); // victim registers its callback after
-        return true;
+        co_return true;
     }
     void
     onCallback() override {

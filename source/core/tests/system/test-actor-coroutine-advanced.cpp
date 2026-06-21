@@ -85,7 +85,7 @@ class CapturedDataSurvivesActor : public qb::Actor {
     bool received_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<StringEvent>(*this);
 
@@ -111,7 +111,7 @@ public:
             ctx.template push<StringEvent>(big_data);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -142,7 +142,7 @@ class VectorCaptureActor : public qb::Actor {
     bool received_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -162,7 +162,7 @@ public:
             ctx.template push<ValueEvent>(sum);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -196,7 +196,7 @@ class CounterAccuracyActor : public qb::Actor {
     static constexpr int NUM_COROS = 3;
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<DoneEvent>(*this);
 
@@ -210,7 +210,7 @@ public:
         }
 
         EXPECT_EQ(active_coroutine_count(), static_cast<std::size_t>(NUM_COROS));
-        return true;
+        co_return true;
     }
 
     void
@@ -268,7 +268,7 @@ class ChainedTaskActor : public qb::Actor {
     bool received_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -279,7 +279,7 @@ public:
             ctx.template push<ValueEvent>(result);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -310,10 +310,10 @@ class ReceiverActor : public qb::Actor {
     bool received_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -335,7 +335,7 @@ public:
     explicit SenderCoroActor(ActorId target)
         : target_(target) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         ActorId dest = target_;
         spawn_detached([dest](auto ctx) -> qb::io::async::task<void> {
@@ -350,7 +350,7 @@ public:
         });
         registerEvent<DoneEvent>(*this);
 
-        return true;
+        co_return true;
     }
 
     void
@@ -382,7 +382,7 @@ class StressSpawnActor : public qb::Actor {
     int                  completed_{0};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<DoneEvent>(*this);
 
@@ -393,7 +393,7 @@ public:
             });
         }
 
-        return true;
+        co_return true;
     }
 
     void
@@ -422,7 +422,7 @@ TEST(ActorCoroutineAdvanced, RapidSpawnStress) {
 
 class EarlyDeathActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         for (int i = 0; i < 5; ++i) {
             spawn_detached([](auto) -> qb::io::async::task<void> {
@@ -435,7 +435,7 @@ public:
         EXPECT_EQ(active_coroutine_count(), 5u);
 
         kill();
-        return true;
+        co_return true;
     }
 };
 
@@ -455,7 +455,7 @@ static std::atomic<int> g_pong_count{0};
 
 class PongActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<CoroPingEvent>(*this);
         registerEvent<DoneEvent>(*this);
@@ -465,7 +465,7 @@ public:
             co_await qb::io::async::sleep(500ms);
             ctx.template push<DoneEvent>();
         });
-        return true;
+        co_return true;
     }
 
     void
@@ -489,7 +489,7 @@ public:
     explicit PingCoroActor(ActorId pong)
         : pong_(pong) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<CoroPongEvent>(*this);
         registerEvent<DoneEvent>(*this);
@@ -502,7 +502,7 @@ public:
             });
         }
 
-        return true;
+        co_return true;
     }
 
     void
@@ -544,7 +544,7 @@ class ExceptionChainActor : public qb::Actor {
     bool caught_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -563,7 +563,7 @@ public:
             }
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -603,7 +603,7 @@ class SpawnPerEventActor : public qb::Actor {
     int received_count_{0};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<TriggerEvent>(*this);
         registerEvent<ValueEvent>(*this);
@@ -614,7 +614,7 @@ public:
         }
         expected_count_ = 4;
 
-        return true;
+        co_return true;
     }
 
     void
@@ -654,7 +654,7 @@ class ZeroDelayActor : public qb::Actor {
     bool received_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -663,7 +663,7 @@ public:
             ctx.template push<ValueEvent>(42);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -694,7 +694,7 @@ static std::atomic<bool> g_id_match{false};
 
 class IdCheckActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<DoneEvent>(*this);
         ActorId self = id();
@@ -707,7 +707,7 @@ public:
             ctx.template push<DoneEvent>();
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -739,7 +739,7 @@ public:
     explicit MultiActorCoroWorker(int id)
         : worker_id_(id) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<DoneEvent>(*this);
         int wid = worker_id_;
@@ -750,7 +750,7 @@ public:
             ctx.template push<DoneEvent>();
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -782,7 +782,7 @@ class LoopCaptureActor : public qb::Actor {
     static constexpr int N = 5;
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -794,7 +794,7 @@ public:
             });
         }
 
-        return true;
+        co_return true;
     }
 
     void
@@ -825,7 +825,7 @@ class NestedSpawnActor : public qb::Actor {
     int stage_{0};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -841,7 +841,7 @@ public:
             ctx.template push<ValueEvent>(1);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -873,7 +873,7 @@ static std::atomic<bool> g_orphan_coro_completed{false};
 
 class OrphanCoroActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         spawn_detached([](auto) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(30ms);
@@ -884,13 +884,13 @@ public:
 
         // Die immediately — coroutine is still suspended on the 30ms timer
         kill();
-        return true;
+        co_return true;
     }
 };
 
 class KeepaliveActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<DoneEvent>(*this);
 
@@ -899,7 +899,7 @@ public:
             ctx.template push<DoneEvent>();
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -932,7 +932,7 @@ public:
     explicit MultiCoreCoroActor(int v)
         : value_(v) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<DoneEvent>(*this);
         int val = value_;
@@ -943,7 +943,7 @@ public:
             ctx.template push<DoneEvent>();
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -972,7 +972,7 @@ class MoveOnlyCaptureActor : public qb::Actor {
     bool received_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -991,7 +991,7 @@ public:
             ctx.template push<ValueEvent>(val);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -1022,7 +1022,7 @@ static std::atomic<bool> g_immediate_coro_ran{false};
 
 class ImmediateCoroActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<DoneEvent>(*this);
 
@@ -1032,7 +1032,7 @@ public:
             co_return;
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -1059,7 +1059,7 @@ static std::atomic<int> g_deep_suspend_count{0};
 
 class DeepSuspensionActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
         static constexpr int DEPTH = 20;
@@ -1074,7 +1074,7 @@ public:
             ctx.template push<ValueEvent>(accumulator);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -1102,7 +1102,7 @@ class WhenAllActor : public qb::Actor {
     bool received_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -1117,7 +1117,7 @@ public:
             ctx.template push<ValueEvent>(a + b + c);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -1148,7 +1148,7 @@ class TimeoutSuccessActor : public qb::Actor {
     bool received_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -1162,7 +1162,7 @@ public:
             ctx.template push<ValueEvent>(result);
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -1193,7 +1193,7 @@ class TimeoutExceededActor : public qb::Actor {
     bool caught_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -1211,7 +1211,7 @@ public:
             }
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -1242,10 +1242,10 @@ static std::atomic<bool> g_cross_core_received{false};
 
 class CrossCoreReceiverActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -1263,7 +1263,7 @@ public:
     explicit CrossCoreSenderActor(ActorId t)
         : target_(t) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<DoneEvent>(*this);
         ActorId dest = target_;
@@ -1279,7 +1279,7 @@ public:
             ctx.template push<DoneEvent>();
         });
 
-        return true;
+        co_return true;
     }
 
     void
@@ -1318,7 +1318,7 @@ class MultiHandlerSpawnActor : public qb::Actor {
     int expected_{0};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<WaveEvent>(*this);
         registerEvent<ValueEvent>(*this);
@@ -1329,7 +1329,7 @@ public:
         }
         expected_ = 3;
 
-        return true;
+        co_return true;
     }
 
     void
@@ -1369,7 +1369,7 @@ class MixedCaptureActor : public qb::Actor {
     bool received_{false};
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<ValueEvent>(*this);
 
@@ -1396,7 +1396,7 @@ public:
             ctx.template push<ValueEvent>(result);
         });
 
-        return true;
+        co_return true;
     }
 
     void

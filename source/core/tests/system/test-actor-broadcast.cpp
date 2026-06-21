@@ -43,13 +43,13 @@ std::atomic<int> g_value_sum{0};
 // Receiver actor that processes broadcast messages
 class ReceiverActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         // Register for broadcast events
         registerEvent<BroadcastTestEvent>(*this);
         registerEvent<EndTestEvent>(*this);
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     // Handler for broadcast events
@@ -82,7 +82,7 @@ public:
     BroadcasterActor(int num_receivers, int num_broadcasts)
         : _num_broadcasts(num_broadcasts) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::KillEvent>(*this);
 
@@ -97,7 +97,7 @@ public:
         // Kill self after broadcasting
         kill();
 
-        return true;
+        co_return true;
     }
 };
 

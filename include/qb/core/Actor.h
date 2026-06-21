@@ -62,8 +62,9 @@ class Service;
 class Event;
 class ICallback;
 class Actor; // Forward declaration for concepts
+class ScopedCoroContext; // Forward for Actor::context() (defined after the Actor body)
 template <typename _Actor>
-class RefActorHandle; // Forward for Actor::addRefHandle
+class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias of this)
 
 /**
  * @brief Tag type used to opt out of registering the four default event handlers
@@ -225,6 +226,19 @@ class Actor : nocopy {
      *         owning core.
      */
     mutable bool  _alive  = true;
+    /**
+     * @brief Activation flag — `false` only while a *suspended* `onInit()` is in flight.
+     *
+     * @details An actor is *active* once its `onInit()` coroutine has completed
+     *          successfully. The common case (no `co_await` in `onInit`) completes
+     *          synchronously, so `_activated` is never observed `false`. It is flipped
+     *          `false` by the owning core only when an `onInit()` actually suspends, and
+     *          back `true` when it resumes to completion. Same single-writer /
+     *          single-reader thread-affinity contract as `_alive`. `is_active()` ==
+     *          `_alive && _activated` is the phase oracle used by `findActor` /
+     *          `getService` and the inbound-event dispatch gate.
+     */
+    mutable bool  _activated = true;
     std::uint32_t id_type = 0u;
 
     /**
@@ -294,39 +308,47 @@ protected:
     virtual ~Actor() noexcept = default;
 
     /**
-     * @brief Initialization callback, called once after construction and ID assignment.
+     * @brief Asynchronous initialization callback, called once after construction and ID assignment.
      *
-     * This method is called when the actor is added to the system, before it starts
-     * processing any events. Override this method to perform initialization tasks such as
-     * registering event handlers and setting up actor state.
+     * Invoked when the actor is added to the system, before it processes any business
+     * events. Override it to register event handlers and set up actor state. Because it
+     * is a coroutine (`qb::io::async::task<bool>`) it **may `co_await`** — sleep, await
+     * I/O, or query a peer — and the owning core keeps serving its other actors while this
+     * one's init is in flight.
      *
-     * @return true if initialization was successful, which allows the actor to start.
-     * @return false if initialization failed, which prevents the actor from
-     *         being added to the engine and leads to its immediate destruction.
-     * @details Crucial for `registerEvent<EventType>(*this)` calls.
+     * While `onInit()` is suspended the actor is *Activating*: inbound **unicast business
+     * events are stashed** and replayed (FIFO) once it becomes active; broadcasts (incl.
+     * `KillEvent`) still pass through, and a `co_await` that never completes is bounded by
+     * the activation deadline. Use `context()` to obtain a cancellation-aware context
+     * (`co_await context().sleep(...)`), so a kill during init unwinds the coroutine cleanly.
+     *
+     * @return `co_return true`  → initialization succeeded; the actor becomes active.
+     * @return `co_return false` → initialization failed; the actor is killed and removed
+     *         from the engine. An uncaught exception is also treated as failure.
+     * @details Crucial for `registerEvent<EventType>(*this)` calls. An init that needs no
+     *          `co_await` simply `co_return`s — it completes synchronously on the first
+     *          resume and never pays the suspended-activation machinery.
      * Example:
      * @code
-     * bool onInit() override {
-     *   // Register events
+     * qb::io::async::task<bool> onInit() override {
      *   registerEvent<CustomEvent>(*this);
-     *   registerEvent<qb::KillEvent>(*this); // Important for graceful shutdown
+     *   registerEvent<qb::KillEvent>(*this);     // graceful shutdown
      *
-     *   // Initialize resources or state
      *   _my_resource = std::make_unique<MyResource>();
      *   if (!_my_resource) {
-     *     LOG_CRIT("Failed to allocate MyResource for Actor " << id());
-     *     return false;  // Initialization failed
+     *     LOG_CRIT(*this << " failed to allocate MyResource");
+     *     co_return false;                       // initialization failed
      *   }
      *
-     *   LOG_INFO("Actor " << id() << " initialized successfully.");
-     *   return true;     // Initialization successful
+     *   co_await context().sleep(std::chrono::milliseconds{1}); // optional async work
+     *   co_return true;                          // initialization successful
      * }
      * @endcode
      */
-    virtual bool
+    virtual qb::io::async::task<bool>
     onInit() {
-        return true;
-    };
+        co_return true;
+    }
 
 public:
     /**
@@ -559,6 +581,17 @@ public:
      *          after `kill()` is called but before it's fully removed.
      */
     [[nodiscard]] bool is_alive() const noexcept;
+
+    /**
+     * @brief Check if the actor is alive **and** fully activated.
+     * @return `true` iff the actor is alive and its `onInit()` has completed successfully.
+     * @details Equivalent to `is_alive() && ` *activated*. Differs from `is_alive()` only
+     *          during the brief window in which an `onInit()` that performed a `co_await`
+     *          is still suspended (the *Activating* phase). External code resolving a
+     *          handle via `qb::ActorHandle` / `findActor` observes the actor only once it
+     *          `is_active()`, so it never sees a half-initialized actor.
+     */
+    [[nodiscard]] bool is_active() const noexcept;
 
     /**
      * @}
@@ -930,56 +963,48 @@ public:
     [[nodiscard]] Pipe getPipe(ActorId dest) const noexcept;
 
     /**
-     * @brief Create and initialize a new referenced actor on the same VirtualCore.
+     * @brief Create a new referenced actor on the same VirtualCore and return a handle to it.
      * @tparam _Actor The concrete derived actor type to create (must inherit from `qb::Actor`).
      * @tparam _Args Types of arguments to forward to the `_Actor`'s constructor.
      * @param args Arguments to forward to the constructor of `_Actor`.
-     * @return A raw pointer to the newly created `_Actor` instance if successful (i.e., its `onInit()` returned `true`),
-     *         otherwise `nullptr`.
+     * @return A phase-aware `qb::ActorHandle<_Actor>`. The handle's `id()` is valid immediately
+     *         (even if the child's async `onInit()` is still in flight); `get()`/`operator->`
+     *         resolve the actor only once it is **active** (`onInit` completed), and are
+     *         `nullptr` while Activating, after a failed init, or after it died. An empty
+     *         handle (`!valid()`) means creation failed.
      * @details
-     * Referenced actors are created on the same `VirtualCore` as the calling (parent) actor.
-     * The parent receives a raw pointer to the child actor. This allows for direct method calls
-     * from the parent to the child, bypassing the event queue for the child.
-     * The child actor still has its own `ActorId` and can receive events normally.
-     * @note The parent actor does **not** own the referenced actor. The referenced actor manages its
-     *       own lifecycle and must call `kill()` to terminate. The parent must be aware that the
-     *       pointer can become dangling if the child terminates independently.
+     * Referenced actors are created on the same `VirtualCore` as the calling (parent) actor and
+     * manage their own lifecycle (the parent does **not** own them). Send to `handle.id()` at
+     * any time — events to a still-Activating child are stashed and replayed FIFO once it
+     * activates. To touch the child directly, gate on readiness:
      * @code
-     * // // Inside ParentActor
-     * // HelperActor* _helper = addRefActor<HelperActor>(initial_config_for_helper);
-     * // if (_helper) {
-     * //   // Helper created successfully. Can send events:
-     * //   push<TaskEvent>(_helper->id(), task_data);
-     * //   // Or, cautiously, call public methods (bypasses event queue):
-     * //   // _helper->doSomethingSynchronously();
-     * // } else {
-     * //   // LOG_CRIT("Failed to create HelperActor for ParentActor " << id());
-     * // }
+     * auto helper = addRefActor<HelperActor>(cfg);   // qb::ActorHandle<HelperActor>
+     * push<TaskEvent>(helper.id(), task_data);        // always safe (stashed if Activating)
+     * if (helper.ready())                             // sync-init child: ready at once
+     *     helper->doSomething();
+     * // async-init child: co_await helper.ready_async(context()); then helper->doSomething();
      * @endcode
-     * @attention Direct method calls on the referenced actor bypass its event queue and mailbox,
-     *            which can break actor model guarantees if not handled with extreme care.
-     *            Prefer sending events to the child's ID (`child_actor->id()`) for most interactions.
+     * @attention Direct method calls bypass the child's event queue; prefer `push(...)` to
+     *            `handle.id()`. Never call `operator->` on a non-`ready()` handle.
+     * @note Not `[[nodiscard]]`: fire-and-forget creation of a self-managing child (one you
+     *       only talk to by events, or that needs no further reference) is a first-class use —
+     *       discard the handle freely. Use `addRefHandle` when you specifically want the handle.
      */
     template <typename _Actor, typename... _Args>
-    _Actor *addRefActor(_Args &&...args) const;
+    ActorHandle<_Actor> addRefActor(_Args &&...args) const;
 
     /**
-     * @brief Create a referenced actor and wrap it in a safe `RefActorHandle<T>` (finding 2.9).
+     * @brief Alias of `addRefActor<T>()` — both return a phase-aware `qb::ActorHandle<T>`.
      * @tparam _Actor Actor type to create.
      * @tparam _Args  Constructor argument types.
      * @param args Constructor arguments.
-     * @return `RefActorHandle<_Actor>` — empty if creation failed.
-     *
-     * @details
-     * Prefer this over the raw `addRefActor<T>()` whenever the parent actor keeps
-     * the handle across event-handler boundaries: the handle performs an O(1)
-     * liveness check on dereference, avoiding dangling-pointer UB if the referenced
-     * actor kills itself.
+     * @return `ActorHandle<_Actor>` — empty if creation failed.
+     * @details Retained for source compatibility; new code can just call `addRefActor`.
      */
     template <typename _Actor, typename... _Args>
-    [[nodiscard]] RefActorHandle<_Actor>
+    [[nodiscard]] ActorHandle<_Actor>
     addRefHandle(_Args &&...args) const {
-        return RefActorHandle<_Actor>(addRefActor<_Actor>(std::forward<_Args>(args)...));
+        return addRefActor<_Actor>(std::forward<_Args>(args)...);
     }
 
     /**
@@ -1084,6 +1109,24 @@ public:
      */
     template <typename Func>
     void spawn(Func &&func) const;
+
+    /**
+     * @brief Obtain a cancellation-aware coroutine context bound to **this** actor.
+     * @return A `ScopedCoroContext` carrying this actor's id and its per-actor
+     *         cancellation scope (the scope is lazily allocated on first use).
+     * @details The context whose `sleep` / `cancellation_point` / `cancellable` helpers
+     *          (and `qb::ask(context(), ...)`) are cancelled when the actor is
+     *          killed/destroyed — exactly the token a `spawn()` body receives, but
+     *          available wherever you hold the actor, most notably **inside `onInit()`**:
+     * @code
+     * qb::io::async::task<bool> onInit() override {
+     *   co_await context().sleep(std::chrono::milliseconds{5});
+     *   co_return true;
+     * }
+     * @endcode
+     * @note The same capture discipline applies: never capture `this` past a `co_await`.
+     */
+    [[nodiscard]] ScopedCoroContext context() const;
 
     /**
      * @brief Check if actor has active coroutines
@@ -1293,6 +1336,24 @@ bool                        ask_deliver(std::uint64_t id, qb::ActorId owner, qb:
 [[nodiscard]] ev::loop_ref  ask_loop() noexcept;
 
 /**
+ * @brief Register an event type as ask-correlated (carries `AskEvent::correlation_id`).
+ * @details Called once per exchange type by `qb::ask<E>`, on the asker's worker thread. The
+ *          activation dispatch gate consults this set so an in-flight ask **reply** can reach
+ *          an actor that is still *Activating* (a `co_await qb::ask(...)` inside `onInit`)
+ *          instead of being stashed — which would deadlock the init on its own reply.
+ */
+void ask_register_type(qb::Event::id_type type) noexcept;
+
+/**
+ * @brief If `ev` is an ask reply resolving a pending ask owned by `dest`, deliver it.
+ * @return `true` if `ev` was an ask-correlated event that resolved one of `dest`'s pending
+ *         asks (consumed); `false` otherwise (the caller stashes / routes normally).
+ * @details The type-id check guarantees `ev` derives from `AskEvent`, so reading
+ *          `correlation_id` at the base subobject offset is safe. Used only by the gate.
+ */
+[[nodiscard]] bool ask_try_deliver_reply(qb::Event &ev, qb::ActorId dest) noexcept;
+
+/**
  * @brief Single awaiter backing `qb::ask` — three wake sources
  *        (response / timeout / actor-scope cancel) guarded by one `done` flag.
  *
@@ -1325,6 +1386,9 @@ struct ask_awaiter {
         slot.owner   = owner;
         slot.self    = this;
         slot.deliver = &ask_awaiter::deliver_thunk;
+        // Make this exchange type recognisable to the activation gate (asker's core), so an
+        // in-onInit ask's reply is delivered here instead of stashed (which would deadlock).
+        ask_register_type(qb::Event::type_to_id<E>());
     }
     ask_awaiter(const ask_awaiter &)            = delete;
     ask_awaiter(ask_awaiter &&)                 = delete;
@@ -1514,6 +1578,18 @@ public:
 };
 
 /**
+ * @brief Definition of `Actor::context()` — deferred until `ScopedCoroContext` is complete.
+ * @details Lazily allocates the per-actor cancellation scope (so a kill during an
+ *          in-flight `onInit()` / `spawn()` unwinds it) and returns a context bound to
+ *          this actor's id + scope. Mirrors what `spawn()` builds for its coroutine body.
+ */
+inline ScopedCoroContext
+Actor::context() const {
+    __ensure_coro_scope__();
+    return ScopedCoroContext(this, _coro_scope);
+}
+
+/**
  * @class Service
  * @brief Internal base class for services.
  * @ingroup Actor
@@ -1573,61 +1649,111 @@ public:
  * is a logic error and is asserted on in debug builds.
  */
 template <typename _Actor>
-class RefActorHandle {
+class ActorHandle {
     ActorId _id;
     _Actor *_cached = nullptr;
 
 public:
-    RefActorHandle() noexcept = default;
+    ActorHandle() noexcept = default;
 
     /**
-     * @brief Wrap a pointer returned by `Actor::addRefActor<_Actor>(...)`.
-     * @param actor Pointer to a live actor on the current VirtualCore (may be nullptr).
+     * @brief Wrap a pointer returned by `VirtualCore::addReferencedActor<_Actor>(...)`.
+     * @param actor Pointer to an actor on the current VirtualCore (may be nullptr, and may
+     *        be one whose async `onInit()` is still in flight — see `ready()`).
      */
-    explicit RefActorHandle(_Actor *actor) noexcept
+    explicit ActorHandle(_Actor *actor) noexcept
         : _id(actor ? actor->id() : ActorId{})
         , _cached(actor) {}
 
-    /** @brief The ActorId of the referenced actor (may be invalid). */
+    /**
+     * @brief The ActorId of the referenced actor (may be invalid).
+     * @details Valid the instant `addRefActor` returns — **even while the actor is still
+     *          Activating** — so it is always safe to `push()` to `id()` (the dispatch gate
+     *          stashes the event until the actor becomes active and replays it FIFO).
+     */
     [[nodiscard]] ActorId
     id() const noexcept {
         return _id;
     }
 
-    /** @brief True iff constructed with a non-null actor. */
+    /** @brief True iff constructed with a non-null actor (allocation/append succeeded). */
     [[nodiscard]] bool
     valid() const noexcept {
         return _id.is_valid();
     }
 
     /**
-     * @brief Safe pointer accessor.
-     * @return Cached pointer if the actor is still alive on the current
-     *         VirtualCore, otherwise `nullptr`.
+     * @brief Phase-aware pointer accessor.
+     * @return The actor pointer iff it is resolved **and** `is_active()` (its `onInit()` has
+     *         completed) on the current VirtualCore; otherwise `nullptr` — i.e. nullptr while
+     *         the actor is still Activating, and after it has Failed / been destroyed.
      */
     [[nodiscard]] _Actor *get() const noexcept;
 
-    /** @brief `get()` but asserted non-null in debug builds. */
+    /** @brief True iff the actor is resolved and active (== `get() != nullptr`). */
+    [[nodiscard]] bool
+    ready() const noexcept {
+        return get() != nullptr;
+    }
+
+    /**
+     * @brief Suspend until the referenced actor becomes active (or the timeout elapses).
+     * @param ctx A cancellation-aware context (e.g. the caller's `context()`), so a kill of
+     *            the waiting actor unwinds this await cleanly.
+     * @param timeout Maximum time to wait. Defaults to 5 s (the activation-deadline scale).
+     * @return `true` once the actor is `ready()`; `false` if it did not become active in time
+     *         (e.g. its async init failed). Safe to call when already active (returns at once).
+     * @details Lets a parent block on an async-init child before using it:
+     * @code
+     * auto child = addRefActor<DbWorker>(dsn);
+     * push(child.id(), Warmup{});           // safe now — stashed until active
+     * if (co_await child.ready_async(context())) child->serve();
+     * @endcode
+     */
+    [[nodiscard]] qb::io::async::task<bool>
+    ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const {
+        // Poll the phase oracle on the owning core; ctx.sleep is cancellation-aware so a kill
+        // of the waiting actor throws out of here instead of spinning.
+        auto remaining = timeout;
+        constexpr auto step = qb::duration{std::chrono::milliseconds{1}};
+        while (!ready() && remaining > qb::duration::zero()) {
+            co_await ctx.sleep(step);
+            remaining -= step;
+        }
+        co_return ready();
+    }
+
+    /** @brief `get()` asserted ready in debug builds (deref-when-ready). */
     [[nodiscard]] _Actor *
     operator->() const noexcept {
         auto *p = get();
-        assert(p && "RefActorHandle dereferenced after referenced actor was destroyed");
+        assert(p && "ActorHandle dereferenced while not active (Activating / Failed / destroyed)");
         return p;
     }
 
-    /** @brief Dereference (undefined if `get() == nullptr`). */
+    /** @brief Dereference (undefined unless `ready()`). */
     [[nodiscard]] _Actor &
     operator*() const noexcept {
         auto *p = get();
-        assert(p && "RefActorHandle dereferenced after referenced actor was destroyed");
+        assert(p && "ActorHandle dereferenced while not active (Activating / Failed / destroyed)");
         return *p;
     }
 
+    /** @brief `== ready()`. */
     explicit
     operator bool() const noexcept {
         return get() != nullptr;
     }
 };
+
+/**
+ * @brief Backward-compatible alias for the pre-async-init name.
+ * @details `qb::ActorHandle<T>` is the canonical name now that the handle is phase-aware
+ *          (its `get()` resolves only an *active* actor). `RefActorHandle` is retained so
+ *          existing code keeps compiling.
+ */
+template <typename _Actor>
+using RefActorHandle = ActorHandle<_Actor>;
 
 /**
  * @interface IActorFactory

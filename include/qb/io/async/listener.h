@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <qb/io.h> /* LOG_INFO and qb logging conventions */
@@ -184,7 +185,11 @@ public:
                 fl.head = *static_cast<void **>(p);
                 return p;
             }
-            return ::operator new(sz);
+            // Honour the type's alignment: a watcher may capture a by-value event
+            // (cache-line aligned) in its callback closure; plain ::operator new
+            // only guarantees 16 B, which under-aligns it and SIGSEGVs on the
+            // aligned AVX moves the optimiser emits under -march=native.
+            return ::operator new(sz, std::align_val_t{alignof(RegisteredKernelEvent)});
         }
 
         static void

@@ -143,7 +143,7 @@ private:
     friend class CoreInitializer;
     friend class Main;
     template <typename>
-    friend class RefActorHandle;
+    friend class ActorHandle; // RefActorHandle is an alias of ActorHandle
     ////////////
     constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
     // Types
@@ -285,6 +285,43 @@ private:
     };
     std::vector<CallbackEntry> _callback_list;
     RemoveActorList            _actor_to_remove;
+
+    // --- Asynchronous actor initialization (the *Activating* phase) ----------
+    //
+    // An `onInit()` that performs a `co_await` suspends; the actor is then
+    // *Activating* until its coroutine resumes to completion. While Activating:
+    //   - its suspended `onInit()` frame is owned here (kept alive across the await,
+    //     so the actor object safely outlives a `co_await` — deferred destroy),
+    //   - inbound unicast *business* events are byte-copied into `stash` and replayed
+    //     FIFO once it becomes active (the dispatch gate in `__receive_events__`),
+    //   - an activation deadline bounds the window (mutual-init deadlock-proof).
+    // The common case — `onInit()` completes synchronously (no `co_await`) — never
+    // enters this map: it is the `empty()`-guarded slow path, mirroring the
+    // `_actor_to_remove` fast-path discipline so non-async actors pay nothing.
+    struct Activation {
+        qb::io::async::task<bool>             init;            ///< owns the suspended onInit frame
+        std::uint64_t                         deadline_ns = 0; ///< wall-clock deadline (0 = none)
+        bool                                  cancelling  = false; ///< deadline fired → scope cancelled, awaiting unwind
+        std::vector<std::vector<EventBucket>> stash;           ///< FIFO of byte-copied inbound unicast events
+    };
+    qb::unordered_map<ActorId, Activation> _activating;
+    RemoveActorList                        _dying_with_frame; ///< killed while their onInit frame was still suspended
+
+    /// Per-actor stash cap: a wedged-in-init actor must not OOM the core.
+    static constexpr std::size_t   kActivationStashCap = 4096u;
+
+public:
+    /**
+     * @brief Activation deadline in nanoseconds — bounds a suspended `onInit()`.
+     * @details An actor whose async `onInit()` does not complete within this window is failed
+     *          and removed (its coroutine scope is cancelled so the frame unwinds). This makes
+     *          mutual-init deadlocks impossible and clamps no-timeout in-init asks. Default 5 s.
+     *          Set it (in ns) **before** `qb::Main::start()` to tune it (e.g. lower in tests).
+     *          A `0` value disables the bound — not recommended, it removes the deadlock guard.
+     */
+    static std::uint64_t activation_deadline_ns;
+
+private:
     // --- loop
 
     /**
@@ -389,7 +426,7 @@ private:
 
     // Workflow
     bool __init__(CoreIdSet const &cores);
-    bool __init__actors__() const;
+    bool __init__actors__();
     void __workflow__();
     //! Workflow
 
@@ -409,6 +446,28 @@ private:
      */
     [[nodiscard]] ActorId appendActor(std::unique_ptr<Actor> actor, bool doInit = false) noexcept;
     void                  removeActor(ActorId id) noexcept;
+
+    // --- Asynchronous initialization driver (the *Activating* phase) ---------
+    /// Outcome of driving an actor's `onInit()` coroutine once.
+    enum class InitOutcome { ReadyTrue, ReadyFalse, Suspended };
+    /**
+     * @brief Drive `actor.onInit()` to its first `co_await` (or to completion).
+     * @details Resumes the freshly created coroutine exactly once (`task`'s
+     *          `initial_suspend` is `suspend_always`). If it completed synchronously
+     *          (the common case) reports `ReadyTrue`/`ReadyFalse` and the caller frees
+     *          the frame; if it suspended on a `co_await` reports `Suspended` and the
+     *          caller hands the still-live frame to `__begin_activation__`. An uncaught
+     *          exception is reported as `ReadyFalse` (init failure).
+     */
+    [[nodiscard]] InitOutcome __drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexcept;
+    /// Move a suspended `onInit()` frame into the Activating set (+arm deadline, flip phase).
+    void               __begin_activation__(Actor &actor, qb::io::async::task<bool> &&init) noexcept;
+    /// True iff `id` is currently Activating (or dying with a still-live onInit frame).
+    [[nodiscard]] bool __is_activating__(ActorId id) const noexcept;
+    /// Byte-copy a gated inbound unicast event into the destination actor's FIFO stash.
+    void               __stash_event__(ActorId dest, Event *event) noexcept;
+    /// Per-iteration pump: complete finished inits, replay stashes, enforce deadlines.
+    void               __pump_activations__() noexcept;
     //! Actor Management
 
 private:

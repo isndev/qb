@@ -62,10 +62,10 @@ struct FwTinyEvent final : qb::Event {
 
 class FwPongActor final : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<FwTinyEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -82,10 +82,10 @@ public:
     explicit FwRelayActor(qb::ActorId const pong)
         : _pong(pong) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<FwTinyEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -107,11 +107,11 @@ public:
         : _max(max)
         , _first_hop(first_hop) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<FwTinyEvent>(*this);
         send<FwTinyEvent>(_first_hop, _max);
-        return true;
+        co_return true;
     }
 
     void

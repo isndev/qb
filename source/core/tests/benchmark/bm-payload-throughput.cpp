@@ -47,10 +47,10 @@ struct SizedPingEvent final : qb::Event {
 template <std::size_t ExtraWords>
 class SizedPongActor final : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<SizedPingEvent<ExtraWords>>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -70,11 +70,11 @@ public:
         : _max(max)
         , _peer(peer) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<SizedPingEvent<ExtraWords>>(*this);
         send<SizedPingEvent<ExtraWords>>(_peer, _max);
-        return true;
+        co_return true;
     }
 
     void

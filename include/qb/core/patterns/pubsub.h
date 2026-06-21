@@ -51,9 +51,9 @@ class PubSub : public qb::ServiceActor<PubSub<Topic>> {
     std::vector<qb::ActorId> _subscribers;
 
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
-        return true;
+        co_return true;
     }
 
     /** @brief Subscribe an actor (idempotent). It must register a `Topic` handler to receive. */

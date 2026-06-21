@@ -120,10 +120,10 @@ struct Ping : public qb::Request<int> {
 // Always answers (response = seq * 2).
 class Echoer : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Ping &p) {
@@ -134,10 +134,10 @@ public:
 // Never answers -> every ask times out.
 class Silent : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Ping &) {}
@@ -151,10 +151,10 @@ class Flaky : public qb::Actor {
 public:
     explicit Flaky(int reply_on)
         : _reply_on(reply_on) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Ping &p) {
@@ -191,7 +191,7 @@ public:
     RetryClient(qb::ActorId t, int attempts)
         : _target(t)
         , _attempts(attempts) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
         auto t        = _target;
@@ -205,7 +205,7 @@ public:
             }
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Ping &e) {
@@ -258,7 +258,7 @@ class RetryCancelClient : public qb::Actor {
 public:
     explicit RetryCancelClient(qb::ActorId t)
         : _target(t) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
         auto t = _target;
@@ -276,7 +276,7 @@ public:
                     kill();
             },
             25ms);
-        return true;
+        co_return true;
     }
     void
     on(Ping &e) {
@@ -315,7 +315,7 @@ public:
         : _breaker(std::move(b))
         , _target(t)
         , _calls(calls) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
         auto b = _breaker;
@@ -335,7 +335,7 @@ public:
             }
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void
     on(Ping &e) {
@@ -380,7 +380,7 @@ public:
     GuardCancelClient(std::shared_ptr<qb::CircuitBreaker> b, qb::ActorId t)
         : _breaker(std::move(b))
         , _target(t) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
         auto b = _breaker;
@@ -399,7 +399,7 @@ public:
                     kill();
             },
             25ms);
-        return true;
+        co_return true;
     }
     void
     on(Ping &e) {

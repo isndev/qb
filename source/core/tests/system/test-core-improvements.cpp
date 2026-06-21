@@ -215,10 +215,10 @@ TEST(ServiceIndex, IsUniqueAcrossTagsAndStableUnderConcurrency) {
 namespace {
 class TerminateImmediatelyActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         kill();
-        return true;
+        co_return true;
     }
 };
 } // namespace
@@ -272,9 +272,9 @@ class HandleChildActor : public qb::Actor {
 public:
     int data           = 42;
     HandleChildActor() = default;
-    bool
+    qb::io::async::task<bool>
     onInit() final {
-        return true;
+        co_return true;
     }
 };
 
@@ -282,7 +282,7 @@ class HandleParentActor : public qb::Actor {
 public:
     HandleParentActor() = default;
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         // 1. Default-constructed handle is invalid.
         qb::RefActorHandle<HandleChildActor> empty;
@@ -298,16 +298,16 @@ public:
         EXPECT_TRUE(static_cast<bool>(handle));
 
         // 3. Once the child kills itself, `is_alive()` is false → `get()` must
-        //    return nullptr even though the actor object still exists in the
+        //    co_return nullptr even though the actor object still exists in the
         //    `_actors` map until the end of this workflow iteration.
         handle->kill();
-        EXPECT_EQ(handle.get(), nullptr) << "RefActorHandle::get() must return nullptr after child kill()";
+        EXPECT_EQ(handle.get(), nullptr) << "RefActorHandle::get() must co_return nullptr after child kill()";
         EXPECT_FALSE(static_cast<bool>(handle));
         // valid() reflects the *id* validity, not liveness — id stays valid.
         EXPECT_TRUE(handle.valid());
 
         kill();
-        return true;
+        co_return true;
     }
 };
 
@@ -334,11 +334,11 @@ public:
     OptOutActor()
         : qb::Actor(qb::no_default_events) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         // Self-kill on a single-cycle delay so the test still terminates.
         kill();
-        return true;
+        co_return true;
     }
 };
 
@@ -349,10 +349,10 @@ public:
     OptOutOptInKillActor()
         : qb::Actor(qb::no_default_events) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 };
 
@@ -363,11 +363,11 @@ public:
     explicit KillSenderToOptOutActor(qb::ActorId target)
         : _target(target) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         push<qb::KillEvent>(_target);
         kill();
-        return true;
+        co_return true;
     }
 };
 
@@ -404,23 +404,23 @@ inline std::atomic<std::size_t> custom_alloc_counter{0};
 class CustomAllocActor : public qb::Actor {
 public:
     CustomAllocActor() = default;
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         kill();
-        return true;
+        co_return true;
     }
 };
 
 class CustomAllocRefParent : public qb::Actor {
 public:
     CustomAllocRefParent() = default;
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         // addRefActor must also route through allocate_actor (finding 2.5).
-        auto *child = addRefActor<CustomAllocActor>();
-        EXPECT_NE(child, nullptr);
+        auto child = addRefActor<CustomAllocActor>();
+        EXPECT_TRUE(child.valid());
         kill();
-        return true;
+        co_return true;
     }
 };
 
@@ -472,12 +472,12 @@ public:
         EXPECT_FALSE(has_active_coroutines());
         EXPECT_EQ(active_coroutine_count(), 0u);
     }
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         EXPECT_FALSE(has_active_coroutines());
         EXPECT_EQ(active_coroutine_count(), 0u);
         kill();
-        return true;
+        co_return true;
     }
 };
 
@@ -510,11 +510,11 @@ inline std::uint32_t              stress_eos_expected{0}; // set on the sink cor
 
 class StressSinkActor : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<StressEvent>(*this);
         registerEvent<StressEosEvent>(*this);
-        return true;
+        co_return true;
     }
     void
     on(StressEvent const &) {
@@ -539,7 +539,7 @@ public:
         : _sink(sink)
         , _budget(budget) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         // QoS-1 events: each `push<>` triggers `allocate_back` on the
         // outbound pipe; the receiver core's mailbox fills up, exercising
@@ -551,7 +551,7 @@ public:
         // events, so the sink only sees this AFTER its `kBurst` predecessors.
         push<StressEosEvent>(_sink);
         kill();
-        return true;
+        co_return true;
     }
 };
 
@@ -600,11 +600,11 @@ namespace {
 class LongLivedActor : public qb::Actor {
 public:
     LongLivedActor() = default;
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<qb::KillEvent>(*this);
         registerEvent<qb::SignalEvent>(*this);
-        return true; // Stays alive — no kill() call in onInit.
+        co_return true; // Stays alive — no kill() call in onInit.
     }
     void
     on(qb::KillEvent const &) {

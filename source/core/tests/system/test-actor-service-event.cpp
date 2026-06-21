@@ -75,8 +75,17 @@ public:
     BaseActorSender()
         : _to(getServiceId<MyTag>((getIndex() + 1) % std::thread::hardware_concurrency())) {
         registerEvent<TestEvent>(*this);
+    }
+
+    // The initial send must run once the object is fully constructed as Derived.
+    // Doing it in the constructor downcasts *this to Derived before the Derived
+    // subobject exists (undefined behaviour, flagged by UBSan's vptr check).
+    // onInit() runs post-construction, when *this really is a Derived.
+    qb::io::async::task<bool>
+    onInit() override {
         if (!getIndex())
             static_cast<Derived &>(*this).doSend();
+        co_return true;
     }
 
     void

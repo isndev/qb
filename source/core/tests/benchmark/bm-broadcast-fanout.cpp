@@ -44,10 +44,10 @@ static std::atomic<std::uint64_t> g_fanout_target{0};
 
 class FanoutSinkActor final : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         registerEvent<FanoutMsg>(*this);
-        return true;
+        co_return true;
     }
 
     void
@@ -72,7 +72,7 @@ public:
         , _ids(std::move(ids))
         , _waves(waves) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         if constexpr (Mode == FanoutMode::Broadcast) {
             for (std::uint64_t w = 0; w < _waves; ++w)
@@ -84,7 +84,7 @@ public:
             }
         }
         kill();
-        return true;
+        co_return true;
     }
 };
 

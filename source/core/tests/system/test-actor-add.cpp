@@ -40,10 +40,10 @@ public:
         kill();
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         EXPECT_EQ(this, getService<TestServiceActor>());
-        return _ret_init;
+        co_return _ret_init;
     }
 };
 
@@ -52,11 +52,11 @@ struct CheckServiceActor : public qb::Actor {
         EXPECT_NE(nullptr, getService<TestServiceActor>());
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         EXPECT_NE(nullptr, getService<TestServiceActor>());
         kill();
-        return true;
+        co_return true;
     }
 };
 
@@ -71,9 +71,9 @@ public:
         kill();
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
-        return _ret_init;
+        co_return _ret_init;
     }
 };
 
@@ -87,12 +87,12 @@ public:
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
     }
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         auto actor = addRefActor<TestActor>(_ret_init);
 
         kill();
-        return actor != nullptr;
+        co_return actor.valid();
     }
 };
 
@@ -177,12 +177,12 @@ class TestKillSenderActor : public qb::Actor {
 public:
     TestKillSenderActor() = default;
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         push<qb::KillEvent>(id());
         push<qb::KillEvent>(qb::BroadcastId(1));
-        return true;
+        co_return true;
     }
 };
 
@@ -190,10 +190,10 @@ class TestKillActor : public qb::Actor {
 public:
     TestKillActor() = default;
 
-    bool
+    qb::io::async::task<bool>
     onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
-        return true;
+        co_return true;
     }
 };
 

@@ -83,10 +83,10 @@ class Worker : public qb::Actor {
 public:
     explicit Worker(int idx)
         : _idx(idx) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Job>(*this);
-        return true;
+        co_return true;
     }
     void
     on(Job &) {
@@ -102,12 +102,12 @@ class Dispatcher : public qb::Actor {
 public:
     explicit Dispatcher(std::vector<qb::ActorId> w)
         : _workers(std::move(w)) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         qb::WorkerPool r{_workers};
         for (int i = 0; i < kJobs; ++i)
             push<Job>(r.next(), i);
-        return true;
+        co_return true;
     }
 };
 
@@ -149,11 +149,11 @@ class Sub : public qb::Actor {
 public:
     explicit Sub(int idx)
         : _idx(idx) {}
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Tick>(*this);
         getService<qb::PubSub<Tick>>()->subscribe(id());
-        return true;
+        co_return true;
     }
     void
     on(Tick &) {
@@ -164,13 +164,13 @@ public:
 // Subscribes then immediately leaves — must never receive a publication.
 class UnsubSub : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<Tick>(*this);
         auto *bus = getService<qb::PubSub<Tick>>();
         bus->subscribe(id());
         bus->unsubscribe(id());
-        return true;
+        co_return true;
     }
     void
     on(Tick &) {
@@ -181,7 +181,7 @@ public:
 // Publishes two ticks shortly after start (once every subscriber has registered).
 class Publisher : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         qb::io::async::callback(
             [this] {
@@ -191,7 +191,7 @@ public:
                 qb::io::async::callback([] { qb::Main::stop(); }, 50ms);
             },
             20ms);
-        return true;
+        co_return true;
     }
 };
 
@@ -228,7 +228,7 @@ TEST(ActorPubSub, UnsubscribeStopsDelivery) {
 // Subscribes twice (idempotent) then unsubscribes, reporting the bus count each time.
 class CountProbe : public qb::Actor {
 public:
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         auto *bus = getService<qb::PubSub<Tick>>();
         bus->subscribe(id());
@@ -237,7 +237,7 @@ public:
         bus->unsubscribe(id());
         g_count_after_unsub = static_cast<int>(bus->subscriber_count());
         qb::io::async::callback([] { qb::Main::stop(); }, 10ms);
-        return true;
+        co_return true;
     }
 };
 
@@ -251,4 +251,85 @@ TEST(ActorPubSub, SubscriberCountTracksSubscribeUnsubscribe) {
     EXPECT_FALSE(main.hasError());
     EXPECT_EQ(g_count_after_sub.load(), 1);   // idempotent subscribe
     EXPECT_EQ(g_count_after_unsub.load(), 0); // removed
+}
+
+// ===========================================================================
+// Distribution patterns x ASYNC init
+// ===========================================================================
+
+// A worker whose async onInit is still Activating when the dispatcher fans jobs out.
+class AsyncWorker2 : public qb::Actor {
+    int _idx;
+
+public:
+    explicit AsyncWorker2(int idx)
+        : _idx(idx) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Job>(*this);
+        co_await context().sleep(25ms); // Activating while the jobs are dispatched
+        co_return true;
+    }
+    void
+    on(Job &) {
+        g_worker_recv[_idx].fetch_add(1);
+        if (g_jobs_done.fetch_add(1) + 1 == kJobs)
+            qb::Main::stop();
+    }
+};
+
+TEST(ActorWorkerPool, DispatchToActivatingWorkersStashesAndReplays) {
+    g_worker_recv[0] = g_worker_recv[1] = g_worker_recv[2] = 0;
+    g_jobs_done                                            = 0;
+    qb::Main                 main;
+    std::vector<qb::ActorId> workers;
+    for (int i = 0; i < 3; ++i)
+        workers.push_back(main.addActor<AsyncWorker2>(0, i)); // Activating workers
+    main.addActor<Dispatcher>(0, workers);                    // dispatches while they Activate
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    const int total = g_worker_recv[0].load() + g_worker_recv[1].load() + g_worker_recv[2].load();
+    EXPECT_EQ(total, kJobs); // every dispatched job stashed at its Activating worker then replayed
+}
+
+std::atomic<int> g_async_sub_recv{0};
+
+// Subscribes to the bus only after an async suspension; a later publish must still reach it.
+class AsyncSub : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Tick>(*this);
+        co_await context().sleep(20ms);
+        getService<qb::PubSub<Tick>>()->subscribe(id());
+        co_return true;
+    }
+    void
+    on(Tick &) {
+        g_async_sub_recv.fetch_add(1);
+    }
+};
+
+class LateAsyncPublisher : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        co_await context().sleep(60ms); // publish after AsyncSub has activated + subscribed
+        getService<qb::PubSub<Tick>>()->publish(7);
+        qb::io::async::callback([] { qb::Main::stop(); }, 20ms);
+        co_return true;
+    }
+};
+
+TEST(ActorPubSub, SubscriberSubscribingInAsyncOnInitReceivesPublish) {
+    g_async_sub_recv = 0;
+    qb::Main main;
+    main.addActor<qb::PubSub<Tick>>(0);
+    main.addActor<AsyncSub>(0);
+    main.addActor<LateAsyncPublisher>(0);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_async_sub_recv.load(), 1); // the publish reached the subscriber that joined in async onInit
 }

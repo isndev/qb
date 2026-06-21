@@ -125,14 +125,14 @@ public:
         , _count(child_count)
         , _max_restarts(max_restarts) {}
 
-    bool
+    qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::ChildDown>(*this);
         _children.assign(_count, qb::ActorId{});
         _gen.assign(_count, 0);
         for (std::size_t i = 0; i < _count; ++i)
             start_slot(i);
-        return true;
+        co_return true;
     }
 
     void
@@ -177,7 +177,7 @@ public:
 protected:
     /**
      * @brief Create the child for `slot` and return its id.
-     * @details Override and call e.g. `return addRefActor<Child>(id(), slot, generation)->id();`
+     * @details Override and call e.g. `return addRefActor<Child>(id(), slot, generation).id();`
      *          where `Child` derives from `SupervisedActor`.
      */
     virtual qb::ActorId spawn_child(std::size_t slot, std::uint64_t generation) = 0;
