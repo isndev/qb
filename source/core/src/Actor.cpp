@@ -23,11 +23,62 @@
  */
 
 #include <map>
+#include <unordered_map>
 #include <qb/core/Actor.h>
 #include <qb/core/Actor.tpp>
 #include <qb/core/VirtualCore.h>
+#include <qb/io/async/listener.h>
 
 namespace qb {
+
+// ---------------------------------------------------------------------------
+// ask() pattern — per-worker-thread correlation registry (Layer 3).
+// Strictly mono-thread per VirtualCore: a plain thread_local map, no locks.
+// Slots are owned by the awaiter living in the asking coroutine's frame; the
+// registry only stores raw pointers keyed by a per-core monotonic id.
+// ---------------------------------------------------------------------------
+namespace detail {
+namespace {
+thread_local std::unordered_map<std::uint64_t, ask_slot *> tls_ask_slots;
+thread_local std::uint64_t                                 tls_ask_counter = 0;
+} // namespace
+
+std::uint64_t
+ask_next_id() noexcept {
+    // 0 is reserved for "not an ask"; skip it on the (astronomically rare) wrap.
+    return ++tls_ask_counter ? tls_ask_counter : ++tls_ask_counter;
+}
+
+void
+ask_register(std::uint64_t const id, ask_slot *slot) noexcept {
+    tls_ask_slots[id] = slot;
+}
+
+void
+ask_unregister(std::uint64_t const id) noexcept {
+    tls_ask_slots.erase(id);
+}
+
+bool
+ask_deliver(std::uint64_t const id, ActorId const owner, Event &resp) noexcept {
+    if (!id)
+        return false;
+    auto it = tls_ask_slots.find(id);
+    if (it == tls_ask_slots.end())
+        return false;
+    ask_slot *slot = it->second;
+    // Only the owning actor may resolve its slot, and only once.
+    if (!slot || slot->done || !slot->deliver || !(slot->owner == owner))
+        return false;
+    slot->deliver(slot->self, resp);
+    return true;
+}
+
+ev::loop_ref
+ask_loop() noexcept {
+    return qb::io::async::listener::current.loop();
+}
+} // namespace detail
 
 Actor::Actor() noexcept
     : _id((assert(VirtualCore::_handler != nullptr
@@ -117,8 +168,49 @@ Actor::unregisterCallback() const noexcept {
 }
 
 void
+Actor::__resolve_coro_scheduler__() const noexcept {
+    // Finding 2.D.4: revalidate the cached scheduler pointer on every spawn by
+    // comparing it against the current TLS scheduler. Caching alone is unsafe because
+    // the listener-owned scheduler can be torn down and rebuilt (tests calling
+    // `listener::reset_coro_scheduler()`, or a core destroyed and re-initialized).
+    // Revalidation is essentially free: `current_ptr()` is a plain `thread_local*`
+    // load and the comparison fits in one cmp+jne.
+    auto *expected = qb::io::async::CoroutineScheduler::current_ptr();
+    if (likely(expected != nullptr)) {
+        if (unlikely(coro_scheduler_ != expected))
+            coro_scheduler_ = expected;
+    } else if (unlikely(!coro_scheduler_)) {
+        // Extremely rare: spawn called before any TLS scheduler exists on this thread.
+        coro_scheduler_ = &qb::io::async::listener::current.coro_scheduler();
+    }
+    // Finding 2.D.5: debug-only guard against cross-thread spawn. The actor system is
+    // strictly mono-thread per VirtualCore; spawning from another thread is UB. We
+    // cannot tell which VirtualCore owns this actor here, but we CAN verify a TLS
+    // scheduler exists on the caller thread, excluding unrelated std::thread contexts.
+    assert(qb::io::async::CoroutineScheduler::current_ptr() != nullptr
+           && "Actor::spawn_detached/spawn called from a thread without a coroutine "
+              "scheduler — are you calling this from outside the VirtualCore?");
+}
+
+void
+Actor::__ensure_coro_scope__() const {
+    if (!_coro_scope)
+        _coro_scope = qb::io::async::cancellation_token{}; // allocate the real token once.
+}
+
+void
+Actor::__cancel_coro_scope__() const noexcept {
+    if (_coro_scope)
+        _coro_scope.cancel();
+}
+
+void
 Actor::kill() const noexcept {
     _alive = false;
+    // Cancel-on-kill: wake any scoped coroutine awaiting a cancellation-aware op so it
+    // unwinds promptly instead of blocking on a long timeout/I/O. Idempotent + no-op if
+    // no scoped coroutine was ever spawned.
+    __cancel_coro_scope__();
     VirtualCore::_handler->killActor(id());
 }
 

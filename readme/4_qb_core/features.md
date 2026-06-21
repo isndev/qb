@@ -105,8 +105,9 @@ Owned by [Common actor patterns and utilities](./patterns.md#coroutines-for-asyn
 
 | Capability | API | One-line summary |
 |---|---|---|
-| Launch a coroutine from a handler | `Actor::spawn_async(func)` | Starts a `qb::io::async::task<void>` that runs concurrently with the actor's event processing; the actor keeps handling events while the coroutine is suspended at a `co_await`. |
-| Lifetime-safe context | `qb::CoroContext` | Captures the actor's `ActorId` by value at spawn time; its `push<E>(...)` and `push_to<E>(dest, ...)` remain valid even if the parent actor is destroyed during a `co_await`. |
+| Launch a coroutine from a handler (recommended) | `Actor::spawn(func)` | Starts a *scoped* `qb::io::async::task<void>` that runs concurrently with the actor and is cancelled when the actor is killed; the actor keeps handling events while the coroutine is suspended at a `co_await`. |
+| Launch a detached coroutine | `Actor::spawn_detached(func)` | Same, but *detached* — the coroutine outlives the actor and is never cancelled on kill. Use only when the work must deliberately outlive its actor. |
+| Lifetime-safe context | `qb::CoroContext` / `qb::ScopedCoroContext` | Captures the actor's `ActorId` by value at spawn time; its `push<E>(...)` and `push_to<E>(dest, ...)` remain valid even if the parent actor is destroyed during a `co_await`. The scoped variant adds cancellation-aware ops and `ask()`. |
 | Coroutine introspection | `has_active_coroutines()`, `active_coroutine_count()` | Inspect pending asynchronous work before destroying an actor. |
 
 The safety contract — never touch actor members after a `co_await`, copy all needed state by value before the first suspension, and use only `CoroContext` afterward — is detailed and illustrated under [qb-io: safe integration with `qb::Actor`](../3_qb_io/coroutines.md#safe-integration-with-qbactor).
@@ -132,7 +133,7 @@ Owned by [Common actor patterns and utilities](./patterns.md).
 - **`onInit()` is the only safe place to call `registerEvent<E>()`.** Returning `false` from it aborts startup and destroys the actor before it processes any message.
 - **`no_default_events` actors do not respond to `KillEvent` or signals** unless you subscribe to those events explicitly in `onInit()`.
 - **`reply()` and `forward()` consume the event.** After either call the received event object must not be used again in the handler; both require a non-const `on(E&)` handler.
-- **`onCallback()` and every handler run on the `VirtualCore` thread.** Blocking or long-running work stalls every actor on that core; offload to a coroutine via `spawn_async()` instead.
+- **`onCallback()` and every handler run on the `VirtualCore` thread.** Blocking or long-running work stalls every actor on that core; offload to a coroutine via `spawn()` instead.
 
 ---
 

@@ -480,6 +480,6 @@ ordering.
 - [The engine: Main and VirtualCore](./engine.md) — `addActor`, core configuration, startup and
   shutdown.
 - [Actor patterns](./patterns.md) — referenced actors (`addRefActor` / `addRefHandle`), discovery
-  (`require<T>()`), coroutines (`spawn_async`), and supervision.
+  (`require<T>()`), coroutines (`spawn` / `spawn_detached`), and supervision.
 - [The actor model](../2_core_concepts/actor_model.md) and [the threading
   model](../2_core_concepts/threading_model.md) — the concepts the API rests on.

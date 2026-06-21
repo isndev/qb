@@ -95,7 +95,11 @@ public:
         , _capacity(0)
         , _factor(1)
         , _data(nullptr) {
-        std::memcpy(allocate_back(rhs.size()), rhs.begin(), rhs.size() * sizeof(T));
+        // Guard against memcpy(dst, nullptr, 0) when copying an empty pipe:
+        // `rhs.begin()` is null when `rhs.size() == 0`, which is UB per the
+        // nonnull-attribute on memcpy (flagged by UBSan) even though harmless.
+        if (const auto n = rhs.size())
+            std::memcpy(allocate_back(n), rhs.begin(), n * sizeof(T));
     }
 
     /**
@@ -127,7 +131,9 @@ public:
     operator=(base_pipe const &rhs) {
         if (this != &rhs) {
             reset();
-            std::memcpy(allocate_back(rhs.size()), rhs.begin(), rhs.size() * sizeof(T));
+            // See the copy ctor: skip the memcpy for an empty source (null begin()).
+            if (const auto n = rhs.size())
+                std::memcpy(allocate_back(n), rhs.begin(), n * sizeof(T));
         }
         return *this;
     };

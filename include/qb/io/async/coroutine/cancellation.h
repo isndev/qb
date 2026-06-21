@@ -58,6 +58,22 @@ public:
 class cancellation_token;
 
 /**
+ * @brief Tag type to construct an empty (state-less) cancellation_token without allocation.
+ * @details
+ * An empty token owns no shared state, never cancels, and allocates nothing. It is the
+ * lazy placeholder used by `qb::Actor`'s coroutine scope until a real token is first
+ * needed (so actors that never spawn a scoped coroutine pay zero cost). Querying
+ * (`is_cancelled`) or `cancel()`-ing an empty token is a safe no-op; never pass an empty
+ * token to an awaiter — it would suspend forever.
+ */
+struct null_token_t {
+    explicit constexpr null_token_t() noexcept = default;
+};
+
+/** @brief Inline constexpr tag value; see `qb::io::async::null_token_t`. */
+inline constexpr null_token_t null_token{};
+
+/**
  * @brief Token for coordinating cancellation across coroutines
  *
  * A cancellation_token can be shared between multiple coroutines.
@@ -91,10 +107,24 @@ public:
     cancellation_token()
         : _state(std::make_shared<state>()) {}
 
+    /**
+     * @brief Construct an empty token: no shared state, no allocation.
+     * @details Use `qb::io::async::null_token`. An empty token never cancels and is the
+     *          lazy placeholder for `Actor`'s coroutine scope. @see null_token_t
+     */
+    explicit cancellation_token(null_token_t) noexcept
+        : _state(nullptr) {}
+
     cancellation_token(const cancellation_token &)            = default;
     cancellation_token(cancellation_token &&)                 = default;
     cancellation_token &operator=(const cancellation_token &) = default;
     cancellation_token &operator=(cancellation_token &&)      = default;
+
+    /** @brief True iff this token owns shared state (i.e. is **not** empty). */
+    [[nodiscard]] explicit
+    operator bool() const noexcept {
+        return _state != nullptr;
+    }
 
     /**
      * @brief Cancel all operations using this token.
@@ -105,7 +135,7 @@ public:
      */
     void
     cancel() {
-        if (!_state->cancelled) {
+        if (_state && !_state->cancelled) {
             _state->cancelled = true;
             auto callbacks    = std::move(_state->callbacks);
             for (auto &cb : callbacks)
@@ -116,7 +146,7 @@ public:
 
     bool
     is_cancelled() const noexcept {
-        return _state->cancelled;
+        return _state && _state->cancelled;
     }
 
     /**
@@ -125,7 +155,9 @@ public:
      * If already cancelled, the callback is invoked immediately (same thread).
      */
     void
-    on_cancel(std::function<void()> callback) {
+    on_cancel(std::function<void()> callback) const {
+        if (!_state) // empty token never cancels — drop the callback.
+            return;
         if (_state->cancelled) {
             callback();
         } else {
@@ -135,7 +167,7 @@ public:
 
     void
     throw_if_cancelled() const {
-        if (_state->cancelled)
+        if (_state && _state->cancelled)
             throw cancelled_error();
     }
 

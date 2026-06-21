@@ -494,9 +494,19 @@ VirtualCore::removeActor(ActorId const id) noexcept {
     const auto it = _actors.find(id);
     if (it != _actors.end()) {
         auto &actor = it->second;
+        // Catch-all cancel-on-destroy: every destruction path funnels through here
+        // (kill, onInit failure, engine shutdown). Cancelling the scope wakes scoped
+        // coroutines so they unwind cleanly; idempotent with kill()'s cancel.
+        actor->__cancel_coro_scope__();
         if (actor->has_active_coroutines()) {
-            LOG_WARN("Actor " << id << " destroyed with " << actor->active_coroutine_count()
-                              << " active coroutines - coroutines must not access actor state!");
+            if (actor->has_coro_scope())
+                // Scoped coroutines were just cancelled — they unwind on the next loop
+                // iteration. A non-zero count here is expected and safe.
+                LOG_INFO(*actor << " destroyed with " << actor->active_coroutine_count()
+                                << " scoped coroutine(s) pending cancellation");
+            else
+                LOG_WARN(*actor << " destroyed with " << actor->active_coroutine_count()
+                                << " active coroutines - coroutines must not access actor state!");
         }
         LOG_INFO("Delete " << *actor);
         _actors.erase(it);

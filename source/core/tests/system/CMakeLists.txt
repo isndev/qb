@@ -55,6 +55,12 @@ set(ACTOR_SYSTEM_TESTS
         test-actor-lifecycle-hooks.cpp
         test-actor-coroutine.cpp
         test-actor-coroutine-advanced.cpp
+        test-actor-coroutine-scope.cpp
+        test-actor-coroutine-ask.cpp
+        test-actor-coroutine-ask-patterns.cpp
+        test-actor-coroutine-resilience.cpp
+        test-actor-routing-pubsub.cpp
+        test-actor-supervisor.cpp
         test-core-improvements.cpp
 )
 

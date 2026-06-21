@@ -1334,7 +1334,7 @@ TEST_F(CoroutineRegression, SemaphoreAcquireFastPathIsSynchronous) {
 }
 
 // =============================================================================
-// Finding 2.D.4: Actor::spawn_async must revalidate its cached scheduler
+// Finding 2.D.4: Actor::spawn_detached must revalidate its cached scheduler
 // pointer against the current TLS scheduler. Directly driving the scheduler
 // here simulates the essence: after resetting the TLS scheduler, the new one
 // must be reachable through current_ptr().

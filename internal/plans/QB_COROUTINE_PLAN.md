@@ -2,7 +2,7 @@
 
 > Scope:
 > - `qb/include/qb/io/async/coroutine/**` (14 headers, ~7500 lines)
-> - Integration with `qb-core`: `Actor::spawn_async`, `CoroContext`,
+> - Integration with `qb-core`: `Actor::spawn_detached`, `CoroContext`,
 >   `active_coroutines_`, `coro_scheduler_` caching
 > - Supporting tests under `qb/source/io/tests/coroutine/` and
 >   `qb/source/core/tests/system/test-actor-coroutine-*.cpp`
@@ -40,7 +40,7 @@ event loop. It provides:
    `select`, `async_mutex` / `async_rw_lock` / `semaphore` / `barrier` /
    `latch`, `with_retry` / `with_retry_until` with pluggable backoff.
 4. **Glue** — `coro_mixin` CRTP helper, `run_sync` / `run_for` / `run_for_ms`
-   utilities, `Actor::spawn_async` + `CoroContext` wrapper in qb-core.
+   utilities, `Actor::spawn_detached` + `CoroContext` wrapper in qb-core.
 
 The runtime is **single-threaded-per-worker by design** (one listener +
 one scheduler per `VirtualCore`), and the actor integration
@@ -64,7 +64,7 @@ The review surfaces **27 actionable findings**, including:
   chaining in `async_stream`, per-combinator `shared_ptr<state>`, per-spawn
   double coroutine frame in `actor_coro_wrapper`.
 - **Safety story gaps** (nothing prevents `[this]` captures in
-  `spawn_async`, and one existing integration test
+  `spawn_detached`, and one existing integration test
   `NestedSpawnFromCoroutineBody` actually demonstrates this "unsafe"
   pattern). Also: cached `coro_scheduler_*` becomes dangling if
   `listener::reset_coro_scheduler()` is called while actors still spawn.
@@ -89,7 +89,7 @@ risks that should be fixed before declaring the coroutine layer
 | Control flow    | `combinators.h`, `cancellation.h`, `scope.h`                       | `when_all`/`when_any`/`race`, `cancellation_token`, structured concurrency |
 | I/O primitives  | `stream.h`, `channel.h`, `sync.h`, `retry.h`                       | Async stream pipelines, MPMC channel + `select`, mutex/sem/barrier, retry policies |
 | Glue            | `mixin.h`, `utils.h`                                               | `coro_mixin` CRTP, `run_sync` / `run_for` / `run_for_ms` |
-| Actor bridge    | `Actor.h` (lines 970–1150) + `Actor.tpp` (`spawn_async`, `actor_coro_wrapper`, `CoroContext::push`) | Actor-safe coroutine spawning, lifetime counter |
+| Actor bridge    | `Actor.h` (lines 970–1150) + `Actor.tpp` (`spawn_detached`, `actor_coro_wrapper`, `CoroContext::push`) | Actor-safe coroutine spawning, lifetime counter |
 
 Cross-reference dependencies:
 - **`timer_awaiter`** (`awaiter.h`) is used by `sleep()` which is used by
@@ -500,7 +500,7 @@ Cross-reference dependencies:
   `&member`. The whole safety story rests on discipline.
 - **Fix**: Add a soft C++20 concept check (`requires !requires { std::declval<Func&>()([](auto*){});}`
   is not practically enforceable), but document prominently. Consider
-  a `spawn_async(state_blob_by_move, [](auto state, auto ctx) -> task<void> { … })`
+  a `spawn_detached(state_blob_by_move, [](auto state, auto ctx) -> task<void> { … })`
   overload that encourages passing state by value.
 
 #### 2.D.3 — Existing actor-coroutine test uses `[this]` after `co_await` **[S2]**
@@ -515,10 +515,10 @@ Cross-reference dependencies:
 
 #### 2.D.4 — Cached `coro_scheduler_` becomes dangling after `reset_coro_scheduler()` **[S1]**
 - **Where**: `Actor.tpp` lines 219–221; `listener.h` lines 486–494
-- **Issue**: First `spawn_async` caches
+- **Issue**: First `spawn_detached` caches
   `&listener::current.coro_scheduler()`. If the listener later replaces
   its scheduler (tests do this), the cached pointer is dangling; a
-  subsequent `spawn_async` on the same actor uses UAF.
+  subsequent `spawn_detached` on the same actor uses UAF.
 - **Fix**: Cheap guard on every spawn — `if (coro_scheduler_ != &listener::current.coro_scheduler()) coro_scheduler_ = …;`
   — or invalidate cached pointers on scheduler reset (harder).
 
@@ -533,7 +533,7 @@ Cross-reference dependencies:
   separate `await_no_active_coroutines()` helper that uses a proper
   synchronization point.
 
-#### 2.D.6 — `spawn_async` allocates two coroutine frames per call **[S3]**
+#### 2.D.6 — `spawn_detached` allocates two coroutine frames per call **[S3]**
 - **Where**: `Actor.tpp` lines 200–230
 - **Issue**: `actor_coro_wrapper` + user `task<void>` = two frames, two
   heap allocations per spawn.
@@ -557,7 +557,7 @@ Cross-reference dependencies:
 - **Fix**: Debug assert that `VirtualCore::_handler` maps to the same
   core as `actor_id_`.
 
-#### 2.D.9 — `coro_mixin` is orthogonal to `Actor::spawn_async` but not cross-linked **[S4]**
+#### 2.D.9 — `coro_mixin` is orthogonal to `Actor::spawn_detached` but not cross-linked **[S4]**
 - **Where**: `mixin.h` lines 67–88
 - **Issue**: Readers may confuse the CRTP I/O-client mixin with actor
   coroutine integration. They serve different purposes.
@@ -637,7 +637,7 @@ Expected: no benchmark regression (all fixes are on cold paths, except
    thread-local freelist (match the pattern used for `Timeout<F>` and
    `RegisteredKernelEvent`).
 3. **2.D.6 / 2.D.7** — Merge the RAII counter into a single task type for
-   `spawn_async`; move `active_coroutines_` to a VC-wide intrusive
+   `spawn_detached`; move `active_coroutines_` to a VC-wide intrusive
    counter (one alloc per worker, not per actor).
 4. **2.B.11** — Small-N stack state for `when_all` / `when_any`.
 5. **2.C.7** — Replace `std::function` in `async_stream` with a
@@ -681,7 +681,7 @@ no-contention.
 
 - 2.A.7 — IWYU pass.
 - 2.B.14 — `static_assert` on `tuple_size` ↔ `get` parity.
-- 2.D.9 — cross-reference `coro_mixin` ↔ `spawn_async` in docs.
+- 2.D.9 — cross-reference `coro_mixin` ↔ `spawn_detached` in docs.
 
 ---
 
@@ -745,7 +745,7 @@ no-contention.
 | 2.A.1 / 2.A.6 | `shared_task.h` | `co_await` on a null state throws `std::logic_error`; waiter vector is pre-reserved for 4 entries so `push_back` is effectively `noexcept`. |
 | 2.A.2 | `scheduler.h` | `schedule_via_current` asserts a TLS scheduler exists in debug builds. |
 | 2.D.1 | `scheduler.h` | `run_ready()` installs a re-entrancy guard; recursive calls assert in debug, no-op in release. |
-| 2.D.4 | `Actor.tpp` | `spawn_async` revalidates the cached `coro_scheduler_` against the current TLS scheduler on every call. |
+| 2.D.4 | `Actor.tpp` | `spawn_detached` revalidates the cached `coro_scheduler_` against the current TLS scheduler on every call. |
 
 ### 2026-04-19 — Phase 2 (performance, S3) — implemented
 
@@ -775,7 +775,7 @@ no-contention.
 | 2.C.8 | `stream.h` | `from_channel(channel<T>&)` doc expanded with explicit lifetime contract + cross-reference to `from_channel_shared()` as the safe default. |
 | 2.C.9 | `channel.h` | `channel_range` doc clarified — it is a **non-blocking** drain, not an async iterator; `operator*` is no longer `const` (accurately reflects the move-out). |
 | 2.C.11/12 | `sync.h` | `async_mutex::unlock()` asserts when called on an unlocked mutex; `barrier::arrive_awaiter` doc-commented for missing-reset misuse. |
-| 2.D.2/3/5/8 | `Actor.tpp` | `spawn_async` asserts a TLS scheduler exists on the caller thread (guards against cross-thread calls); existing safety docs already covered 2.D.2/3/8. |
+| 2.D.2/3/5/8 | `Actor.tpp` | `spawn_detached` asserts a TLS scheduler exists on the caller thread (guards against cross-thread calls); existing safety docs already covered 2.D.2/3/8. |
 | 2.D.10 | `test-coroutine-regression.cpp` | 6 new regression tests (channel send-on-closed, shared_task null state, with_deadline already passed, active_count incl. suspended, from_range temporary, zip short-circuit). 39/39 pass. |
 
 ### 2026-04-19 — Phase 4 (polish, S4) — implemented
@@ -783,7 +783,7 @@ no-contention.
 | Finding | File | Change |
 |---|---|---|
 | 2.A.7 | `channel.h`, `combinators.h`, `retry.h`, `stream.h`, `cancellation.h` | IWYU pass: added missing `<chrono>`, `<deque>`, `<exception>`, `<memory>`, `<optional>`, `<stdexcept>`, `<utility>`, `<cstddef>`, `<type_traits>` where symbols were used transitively. |
-| 2.D.9 | `mixin.h` | `coro_mixin` doc now cross-references `Actor::spawn_async` (how to drive tasks produced by `.coro()` inside an actor; explicit warning against `run_sync()` from an actor handler). |
+| 2.D.9 | `mixin.h` | `coro_mixin` doc now cross-references `Actor::spawn_detached` (how to drive tasks produced by `.coro()` inside an actor; explicit warning against `run_sync()` from an actor handler). |
 
 ### 2026-04-19 — Validation summary
 

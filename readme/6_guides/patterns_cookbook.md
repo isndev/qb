@@ -2,7 +2,7 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
-Task-oriented recipes for the interactions you reach for most often: one-shot and periodic timers, request/reply, broadcast fan-out, multi-stage pipelines, and graceful shutdown — each a complete, compilable snippet.
+Task-oriented recipes for the interactions you reach for most often: one-shot and periodic timers, request/reply, actor-scoped coroutines, coroutine `ask`, typed request/response with scatter-gather and saga, resilient ask (retry & circuit breaker), worker pools and pub/sub, supervision and restart strategies, broadcast fan-out, multi-stage pipelines, and graceful shutdown — each a complete, compilable snippet.
 
 **Prerequisites:** [Writing actors with `qb::Actor`](../4_qb_core/actor.md), [Event messaging](../4_qb_core/messaging.md) — **See also:** [Actor patterns](../4_qb_core/patterns.md), [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md), [Error handling and resilience](./error_handling.md)
 
@@ -310,6 +310,286 @@ void on(Query &event) {
     forward(_worker_id, event);     // worker's reply goes back to event.getSource(), not here
 }
 ```
+
+## Recipe: actor-scoped coroutine (cancelled on kill)
+
+**Task.** Run async work inside an actor so it is **automatically cancelled when the actor is killed**,
+instead of leaving it blocked on a long timeout or I/O.
+
+`spawn` binds the coroutine to a per-actor cancellation scope. The lambda receives a
+`qb::ScopedCoroContext` whose `sleep` / `until_cancelled` / `cancellation_point` / `cancellable`
+helpers are cancellation-aware: when the actor is killed, the coroutine wakes within the next loop
+iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly. Capture **by value** — never
+`this`.
+
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-coroutine-scope.cpp
+#include <qb/actor.h>
+#include <qb/main.h>
+#include <qb/io/async.h>
+#include <qb/io/async/coroutine.h>
+using namespace std::chrono_literals;
+
+struct Result : qb::Event { int value = 0; };
+
+class Worker : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<Result>(*this);
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(2s);          // cancelled instantly if the actor is killed
+            ctx.push<Result>();              // talk back only through ctx, never `this`
+        });
+        return true;
+    }
+    void on(const Result &) { kill(); }
+};
+```
+
+**Pitfalls.**
+
+- `spawn_detached` (the low-level form) is **not** cancelled on kill — its coroutine stays detached and
+  runs to completion. Use it only for fire-and-forget work that must outlive the actor.
+- Cancellation is cooperative: a bare `qb::io::async::sleep` or raw socket await inside a scoped
+  coroutine is *not* interrupted. Await the `ctx.*` helpers (or wrap with `ctx.cancellable(task)`).
+- Use `ctx.until_cancelled()` for a coroutine that only waits to be told to stop (no timer allocated),
+  and `co_await ctx.cancellation_point()` between iterations of a compute loop.
+
+## Recipe: coroutine ask (linear request/response)
+
+**Task.** Send a request and `co_await` the reply on one line — with timeout and cancel-on-kill —
+instead of hand-rolling correlation ids and pending-state bookkeeping (compare the callback-style
+[request/reply recipe](#recipe-requestreply) above).
+
+The exchange uses a **single event type** deriving from `qb::AskEvent`. The responder fills the
+response fields and `reply()`s it back (preserving the correlation id stamped by `ask`); the asker
+routes replies by calling `resolve_ask(e)` at the top of its own `on(E&)`.
+
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-coroutine-ask.cpp
+#include <qb/patterns.h>   // qb::ask, qb::answer, … (pulls in qb/actor.h)
+#include <qb/main.h>
+#include <qb/io/async/coroutine.h>
+using namespace std::chrono_literals;
+
+struct PriceQuery : qb::AskEvent {      // single request/response envelope
+    int query = 0;
+    int price = 0;                        // filled by the responder
+    PriceQuery() = default;
+    explicit PriceQuery(int q) : query(q) {}
+};
+
+class Market : public qb::Actor {        // responder
+public:
+    bool onInit() override { registerEvent<PriceQuery>(*this); return true; }
+    void on(PriceQuery &q) { q.price = q.query * 2; reply(q); }   // reply preserves correlation_id
+};
+
+class Trader : public qb::Actor {        // asker
+    qb::ActorId _market;
+public:
+    explicit Trader(qb::ActorId m) : _market(m) {}
+    bool onInit() override {
+        registerEvent<PriceQuery>(*this);
+        auto mkt = _market;
+        spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            try {
+                auto r = co_await qb::ask(ctx, mkt, PriceQuery{21}, 500ms);
+                qb::io::cout() << "price = " << r.price << '\n';   // 42
+            } catch (const qb::io::async::timeout_error &)   { /* no reply in time */ }
+              catch (const qb::io::async::cancelled_error &) { /* actor was killed   */ }
+            qb::Main::stop();
+        });
+        return true;
+    }
+    void on(PriceQuery &e) { if (resolve_ask(e)) return; /* else: unsolicited request */ }
+};
+```
+
+**Pitfalls.**
+
+- The asker **must** call `resolve_ask(e)` in its `on(E&)` handler; otherwise replies are never
+  delivered and every `ask` times out.
+- `ask` must be awaited from a `spawn` coroutine (it uses the actor's cancellation scope).
+- Pass a positive `timeout`; on expiry `ask` throws `qb::io::async::timeout_error`. A `<= 0` timeout
+  waits indefinitely (until reply or kill).
+
+## Recipe: typed request/response, scatter-gather & saga
+
+**Task.** Build request/response flows with less boilerplate, fan a request out to many actors, and
+orchestrate multi-step transactions that roll back on failure — all on top of `ask`.
+
+These live in the patterns library (`#include <qb/patterns.h>`): `qb::ask`, `qb::answer`,
+`qb::ask_all`, `qb::ask_any`, `qb::run_saga` are **free functions** taking the context/actor — the
+`Actor`/`ScopedCoroContext` kernel only holds the primitives they compose.
+
+**Typed envelope.** Derive your exchange from `qb::Request<Resp>`: the base supplies the `response`
+slot, so the request and its response travel in **one** event type. The responder fills it with the
+`qb::answer(*this, e, fn)` helper (it routes its own replies via `resolve_ask` first, then computes + replies).
+
+```cpp
+struct Quote : qb::Request<double> { std::string symbol; };          // request: symbol — response: double
+
+// responder:
+void on(Quote &q) { qb::answer(*this, q, [](Quote const &r){ return lookup(r.symbol); }); }
+
+// asker (inside a spawn() coroutine):
+auto q = co_await qb::ask(ctx, market, Quote{"BTC"}, 500ms);
+use(q.response);
+```
+
+**Scatter-gather.** `ask_all` sends a copy to every target and waits for all replies; `ask_any`
+resolves with the first (fastest wins). Both throw `timeout_error` if the deadline passes.
+
+```cpp
+spawn([markets](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+    auto quotes = co_await qb::ask_all(ctx, markets, Quote{"BTC"}, 500ms);   // std::vector<Quote>
+    for (auto const &q : quotes) use(q.response);
+    auto fastest = co_await qb::ask_any(ctx, markets, Quote{"BTC"}, 500ms);  // first reply
+});
+```
+
+**Saga.** `run_saga` runs a sequence of steps, each registering a compensation; if a later step
+fails, the registered compensations run in **reverse** order before the error propagates. (A kill —
+`cancelled_error` — aborts hard, without rollback.)
+
+```cpp
+co_await qb::run_saga(ctx, [inventory, payment](qb::ScopedCoroContext ctx, qb::SagaScope &saga)
+                               -> qb::io::async::task<void> {
+    co_await qb::ask(ctx, inventory, Reserve{item}, 1s);
+    saga.on_compensate([ctx, inventory, item]() -> qb::io::async::task<void> {
+        co_await qb::ask(ctx, inventory, Release{item}, 1s);     // undo the reserve
+    });
+    co_await qb::ask(ctx, payment, Charge{amount}, 1s);          // if this throws, Release runs
+});
+```
+
+**Pitfalls.**
+
+- A cross-core `ask_all` keeps N requests in flight at once (bounded by `timeout`); `ask_any`'s losers
+  are not cancelled — they linger until their own `timeout`.
+- A field named `id` in a `Request`/`AskEvent` subtype shadows the `Event` type-id field — name request
+  fields anything else (`symbol`, `key`, …).
+- Compensations are best-effort (a throwing compensation is swallowed so the rest still run) and run on
+  the live actor scope — design them to be idempotent.
+
+## Recipe: resilient ask (retry & circuit breaker)
+
+**Task.** Survive flaky responders: retry transient timeouts with backoff, and stop hammering a
+responder that is consistently failing.
+
+**Retry with backoff.** `ask_retry` re-sends on timeout up to `max_attempts`, waiting
+`backoff * multiplier^(n-1)` (capped at `max_backoff`) between tries. Only timeouts retry; a kill
+aborts the loop at once (the backoff waits are cancellation-aware).
+
+```cpp
+qb::retry_policy policy{ .max_attempts = 5, .backoff = 50ms, .multiplier = 2.0, .max_backoff = 1s };
+auto r = co_await qb::ask_retry(ctx, market, Quote{"BTC"}, 200ms, policy);
+```
+
+**Circuit breaker.** A `qb::CircuitBreaker` trips **open** after N consecutive failures, fails fast for
+a cooldown, then admits a **half-open** trial. Hold it by `shared_ptr` so the coroutine captures it by
+value (it outlives the actor); `ask_guarded` checks it, sends the ask, and records the outcome.
+
+```cpp
+// actor member: std::shared_ptr<qb::CircuitBreaker> breaker_ = std::make_shared<qb::CircuitBreaker>(5, 2s);
+spawn([breaker = breaker_, market](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+    try {
+        auto r = co_await qb::ask_guarded(ctx, breaker, market, Quote{"BTC"}, 200ms);
+        use(r.response);
+    } catch (const qb::circuit_open_error &) {
+        // breaker is open — fall back without touching the failing market
+    } catch (const qb::io::async::timeout_error &) {
+        // counted as a breaker failure
+    }
+});
+```
+
+**Pitfalls.**
+
+- A success **closes** the breaker, a timeout (or other non-cancellation error) is a **failure**; a kill
+  (`cancelled_error`) is *not* counted — it is a controlled shutdown, not a responder fault.
+- Capture the breaker `shared_ptr` **by value** — never a reference to an actor member.
+- Compose the two by retrying *around* a guarded ask (each guarded attempt also feeds the breaker).
+
+## Recipe: worker pool & pub/sub
+
+**Task.** Spread work across a pool of identical workers, or decouple publishers from subscribers by
+topic.
+
+**Worker pool.** `qb::WorkerPool` holds a list of worker `ActorId`s and picks one per send —
+round-robin (`next()`) or sticky-by-key (`for_key(k)`, so the same key always lands on the same
+worker). Broadcast by iterating `workers()`.
+
+```cpp
+qb::WorkerPool pool{ {w0, w1, w2} };
+void on(Job &j)     { push<Task>(pool.next(), j.payload); }            // round-robin
+void on(Session &s) { push<Frame>(pool.for_key(s.user_id), s.frame); } // session-affine
+```
+
+**Pub/sub by topic.** `qb::PubSub<Topic>` is a per-core `ServiceActor`. Add one bus per core that needs
+the topic; same-core actors reach it with `getService<qb::PubSub<Topic>>()`.
+
+```cpp
+core(0).addActor<qb::PubSub<PriceTick>>();          // wire the bus at startup
+
+// subscriber (same core):
+registerEvent<PriceTick>(*this);
+getService<qb::PubSub<PriceTick>>()->subscribe(id());
+void on(PriceTick &t) { /* … */ }
+
+// publisher (same core):
+getService<qb::PubSub<PriceTick>>()->publish(symbol, price);   // builds + fans out PriceTick
+```
+
+**Pitfalls.**
+
+- `WorkerPool` does not track worker liveness — if workers can die, pair it with discovery
+  (`require<T>()`) or a supervisor, and `remove()` dead ids.
+- `PubSub` is **per-core**: a publication reaches subscribers on the bus's own core only. For
+  cross-core topics, add a bus per core and bridge publications between them.
+- A `PubSub` subscriber must also `registerEvent<Topic>(*this)` — `subscribe()` only adds it to the
+  fan-out list.
+
+## Recipe: supervision (restart children on failure)
+
+**Task.** Keep a set of child actors running: when one fails, restart it (and, depending on the
+strategy, its siblings).
+
+Derive a supervisor from `qb::Supervisor`, override `spawn_child` to create each child as a
+`qb::SupervisedActor`, and pick a `restart_strategy`. A child calls `stop()` to terminate; the
+supervisor restarts per the strategy, bumping a per-slot generation so stale notifications are ignored.
+
+```cpp
+class Worker : public qb::SupervisedActor {
+public:
+    Worker(qb::ActorId sup, std::size_t slot, std::uint64_t gen)
+        : qb::SupervisedActor(sup, slot, gen) {}
+    bool onInit() override { registerEvent<Job>(*this); return true; }
+    void on(Job &j) { if (!process(j)) stop(); }   // failure -> notify supervisor + kill
+};
+
+class Pool : public qb::Supervisor {
+public:
+    Pool() : qb::Supervisor(qb::restart_strategy::one_for_one, /*children*/ 4, /*max_restarts*/ 8) {}
+protected:
+    qb::ActorId spawn_child(std::size_t slot, std::uint64_t gen) override {
+        return addRefActor<Worker>(id(), slot, gen)->id();   // same-core referenced child
+    }
+    void on_escalate() override { kill(); }   // give up after too many restarts
+};
+```
+
+Strategies: `one_for_one` (restart just the failed child), `one_for_all` (restart all), `rest_for_one`
+(restart the failed child and those started after it).
+
+**Pitfalls.**
+
+- Supervision is **cooperative and per-core**: a child must call `stop()` (or
+  `notify_supervisor_down()`) to be restarted — a child that dies silently (e.g. a failed `onInit`) is
+  not auto-detected. Children are `addRefActor` referenced actors on the supervisor's core.
+- `max_restarts` bounds the restart intensity; past it, `on_escalate()` runs instead of restarting
+  (escalate by killing the supervisor, alerting, etc.) — otherwise a crash-looping child restarts forever.
 
 ## Recipe: broadcast fan-out
 

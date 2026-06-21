@@ -42,7 +42,7 @@
  * | **Event System** | Type-safe, zero-copy inter-actor messaging (`qb::Event`) |
  * | **Multi-Core Engine** | Lock-free MPSC scheduling across `qb::VirtualCore` threads |
  * | **Async I/O** | Integrated non-blocking I/O (TCP, UDP, SSL, files) via `qb-io` |
- * | **C++20 Coroutines** | `actor.spawn_async()` for co-routine-based async flows |
+ * | **C++20 Coroutines** | `actor.spawn()` (scoped) / `actor.spawn_detached()` for co-routine-based async flows |
  * | **Service Actors** | Singleton actors per core with automatic discovery |
  * | **CPU Affinity** | Fine-grained thread-to-core pinning via `CoreInitializer` |
  * | **Graceful Shutdown** | Stop-token + signal-based clean teardown (`qb::Main::stop()`) |
