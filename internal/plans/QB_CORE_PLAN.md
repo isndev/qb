@@ -142,7 +142,7 @@ Argumentation formelle de la terminaison : le budget de tentatives par événeme
 
 ### 2.6 MED — `CallbackMap` snapshotée à chaque tour (hot‑path) ☑ DONE
 
-Nouveau membre `VirtualCore::_callback_list` (`std::vector<ICallback*>`) tenu à jour par `registerCallback` / `__unregisterCallback` (swap‑pop). Le workflow remplace l'itération `unordered_map` + push_back par une copie flat (`cb_snapshot = _callback_list`) ; le snapshot reste nécessaire car `onCallback()` peut muter la liste (via `addRefActor`). Coût par itération : 1 `memcpy` contigu au lieu de N lookups hashmap.
+Nouveau membre `VirtualCore::_callback_list` (`std::vector<ICallback*>`) tenu à jour par `registerCallback` / `__unregisterCallback` (swap‑pop). Le workflow remplace l'itération `unordered_map` + push_back par une copie flat (`cb_snapshot = _callback_list`) ; le snapshot reste nécessaire car le tick `on(qb::LoopEvent const&)` peut muter la liste (via `addRefActor`). Coût par itération : 1 `memcpy` contigu au lieu de N lookups hashmap.
 
 ---
 

@@ -55,7 +55,7 @@ Read-only sharing is fine: immutable data, or a `std::shared_ptr<const T>`, can 
 
 ## Ordered, one-at-a-time delivery
 
-Within a single `VirtualCore`, actors execute their `on(Event&)` handlers and `onCallback()` ticks **one at a time, to completion**. The core finishes processing one event for one actor before it starts the next event for any actor on that core. This is what eliminates data races on an actor's own state — no handler can ever observe a half-updated member, because no two handlers run at the same time on that thread. (`include/qb/core/VirtualCore.h:172`)
+Within a single `VirtualCore`, actors execute their `on(Event&)` handlers and `on(qb::LoopEvent const&)` ticks **one at a time, to completion**. The core finishes processing one event for one actor before it starts the next event for any actor on that core. This is what eliminates data races on an actor's own state — no handler can ever observe a half-updated member, because no two handlers run at the same time on that thread. (`include/qb/core/VirtualCore.h:172`)
 
 Delivery ordering between two specific actors depends on which send primitive you use:
 
@@ -91,9 +91,9 @@ struct WorkEvent : qb::Event {
 // Runs on whichever core it was placed on; processes its mailbox sequentially.
 class WorkerActor : public qb::Actor {
 public:
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         registerEvent<WorkEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(const WorkEvent &event) {
@@ -111,10 +111,10 @@ public:
     explicit DispatcherActor(std::vector<qb::ActorId> workers)
         : _workers(std::move(workers)) {}
 
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         for (int i = 0; i < 9; ++i)
             push<WorkEvent>(_workers[i % _workers.size()], i); // cross-core, ordered per worker
-        return true;
+        co_return true;
     }
 };
 
@@ -144,7 +144,7 @@ By default `start()` is asynchronous: it returns once all cores report ready, an
 
 qb is single-thread-per-core almost everywhere, with exactly one genuinely multi-threaded surface inside the engine. Knowing which is which tells you where you can write plain code and where the framework is doing the hard part for you.
 
-**Single-thread-per-core (the surface you write against).** Your actors, their state, their event handlers, their `onCallback()` ticks, and the per-core data structures the engine keeps for them all live on one thread. No part of the public actor API requires you to reason about concurrent access to your own state. The framework's own per-core structures — the actor maps, the service-id pool — also perform no synchronization, because they are owned by a single worker thread. (`include/qb/core/VirtualCore.h:172`)
+**Single-thread-per-core (the surface you write against).** Your actors, their state, their event handlers, their `on(qb::LoopEvent const&)` ticks, and the per-core data structures the engine keeps for them all live on one thread. No part of the public actor API requires you to reason about concurrent access to your own state. The framework's own per-core structures — the actor maps, the service-id pool — also perform no synchronization, because they are owned by a single worker thread. (`include/qb/core/VirtualCore.h:172`)
 
 **Lock-free, real multi-threaded (the engine's message bus).** The one place where multiple threads genuinely meet is cross-core event delivery. Each `VirtualCore` has an incoming mailbox built on a multi-producer, single-consumer (MPSC) lock-free ring buffer: every other core can enqueue into it concurrently, while the owning core is the only consumer. (`include/qb/core/Main.h:299`, backed by `qb::lockfree::mpsc::ringbuffer` from `include/qb/system/lockfree/mpsc.h`) The enqueue path takes no lock; a per-mailbox `std::mutex` and `std::condition_variable` are used only to let an idle consumer sleep when its core latency is greater than zero, never to move an event. (`include/qb/core/Main.h:319`) This is the seam that lets ordered, transparent `push()` cross thread boundaries. The lock-free primitives are documented separately in [Lock-free primitives](../7_reference/lockfree_primitives.md); you use them through `push()`/`send()` and rarely touch them directly.
 
@@ -164,7 +164,7 @@ Both calls return the `CoreInitializer` for chaining and must run before `start(
 - **Sharing mutable state between actors.** A `std::shared_ptr` to a mutable object, a global, or a `static` touched from handlers on different cores reintroduces the data races the model prevents. Pass data by event; move ownership when handoff is needed; share only immutable data.
 - **Assuming a global event order.** `push()` orders one source→destination pair, not the whole system. Do not rely on messages from different senders, or to different recipients, arriving in any particular interleaving.
 - **Letting an event constructor throw or allocate heavily.** `push()`/`send()` are `noexcept`; a throw across that boundary calls `std::terminate()`. Keep events small and allocation-light. (`include/qb/core/Pipe.h:126`)
-- **Blocking inside a handler or `onCallback()`.** Both run on the `VirtualCore` event-loop thread. A blocking call (a synchronous syscall, a sleep, a long computation) stalls that core and every actor on it. Use [`qb-io`](./async_io.md)'s non-blocking operations instead. (`include/qb/core/ICallback.h:16`)
+- **Blocking inside a handler or `on(qb::LoopEvent const&)`.** Both run on the `VirtualCore` event-loop thread. A blocking call (a synchronous syscall, a sleep, a long computation) stalls that core and every actor on it. Use [`qb-io`](./async_io.md)'s non-blocking operations instead. (`include/qb/core/ICallback.h:16`)
 - **Using `send()` where order matters.** `send()` gives no ordering guarantee even same-core, same-destination, and rejects non-trivially-destructible events. Default to `push()`. (`include/qb/core/Actor.h:728`)
 - **Touching another core's actor state directly.** Holding a raw pointer to an actor on another core and calling its methods bypasses the model and races. Address it by `ActorId` and `push()`. (`include/qb/core/VirtualCore.h:172`)
 - **Configuring cores after `start()`.** Affinity, latency, and actor placement must be set before the engine runs; `Main::core()` throws once started. (`source/core/src/Main.cpp:323`)

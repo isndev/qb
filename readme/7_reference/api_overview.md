@@ -101,12 +101,13 @@ See [The engine](../4_qb_core/engine.md).
 
 | Member | Signature | Notes |
 |---|---|---|
-| Constructor | `Actor() noexcept` | Subscribes to the four default system events (`KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`). |
+| Constructor | `Actor() noexcept` | Subscribes to the five default system events (`KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, `RequireEvent`). |
 | Tagged constructor | `explicit Actor(no_default_events_t) noexcept` | Skips the default subscriptions; the derived class registers what it needs in `onInit()`. |
-| `onInit` | `virtual bool onInit()` | Called once after construction, before event processing. Register events and acquire resources here. Return `false` to abort the launch. |
+| `onInit` | `virtual qb::io::async::task<bool> onInit()` | Async init **coroutine**, run once after construction before business events. Register events / acquire resources here, and optionally `co_await` (sleep, `qb::ask` a peer, run a pattern). `co_return true` activates the actor; `co_return false` or an uncaught exception fails init and removes it. While a suspended `onInit` is in flight the actor is *Activating* (inbound unicast is stashed and replayed FIFO once active, bounded by an activation deadline). |
 | Destructor | `virtual ~Actor() noexcept` | |
 | `kill` | `void kill() const noexcept` | Marks the actor for termination. |
 | `is_alive` | `bool is_alive() const noexcept` | False once `kill()` has taken effect. |
+| `is_active` | `bool is_active() const noexcept` | `is_alive()` **and** activated — false during the brief *Activating* window of a suspended async `onInit()`. The phase oracle used by `findActor` / `ActorHandle::get()`. |
 
 **Identity and context**
 
@@ -150,8 +151,8 @@ not be touched after either call. See [Messaging](../4_qb_core/messaging.md).
 
 | Member | Signature | Notes |
 |---|---|---|
-| `addRefActor` | `template<class _Actor, class... _Args> _Actor* addRefActor(_Args&&... args) const` | Creates a child actor on the same core; the parent holds a raw, non-owning pointer. |
-| `addRefHandle` | `template<class _Actor, class... _Args> RefActorHandle<_Actor> addRefHandle(_Args&&... args) const` | Liveness-checked wrapper around `addRefActor`. |
+| `addRefActor` | `template<class _Actor, class... _Args> ActorHandle<_Actor> addRefActor(_Args&&... args) const` | Creates a child actor on the same core; returns a phase-aware `qb::ActorHandle<_Actor>` (empty if creation failed). `id()` is valid at once (events to a still-Activating child are stashed); `ready()` / `co_await ready_async(ctx)` / `get()` resolve the live actor only once it is active and never dangle. |
+| `addRefHandle` | `template<class _Actor, class... _Args> ActorHandle<_Actor> addRefHandle(_Args&&... args) const` | Alias of `addRefActor` (both return `ActorHandle`); retained for source compatibility. |
 | `getService` | `template<class _ServiceActor> _ServiceActor* getService() const noexcept` | The `ServiceActor` instance on this core, or `nullptr`. |
 | `getServiceId` | `template<class T> static ActorId getServiceId(CoreId index) noexcept` | The `ActorId` of service `T` on core `index`. |
 
@@ -210,19 +211,20 @@ dynamically sized data. See [The event system](../2_core_concepts/event_system.m
 ### `qb::ICallback`
 
 - **Header:** `qb/core/ICallback.h` (include `qb/icallback.h`)
-- **Role:** a mixin that grants an actor an `onCallback()` tick once per `VirtualCore` loop iteration.
+- **Role:** a mixin that grants an actor an `on(qb::LoopEvent const&)` tick once per `VirtualCore` loop iteration.
+  The `qb::LoopEvent` carries per-loop context (`now`, `iteration`).
   Multiply-inherit it alongside `qb::Actor` and enroll with `registerCallback(*this)`.
 
 ```cpp
 // src: include/qb/core/ICallback.h (HeartbeatActor pattern)
 class PollerActor : public qb::Actor, public qb::ICallback {
 public:
-    bool onInit() final { registerCallback(*this); return true; }
-    void onCallback() final { /* runs every loop iteration; must not block */ }
+    qb::io::async::task<bool> onInit() final { registerCallback(*this); co_return true; }
+    void on(qb::LoopEvent const &) final { /* runs every loop iteration; must not block */ }
 };
 ```
 
-`onCallback()` runs on the event-loop thread, so blocking work inside it stalls the whole core.
+`on(qb::LoopEvent const&)` runs on the event-loop thread, so blocking work inside it stalls the whole core.
 
 ### Identifiers
 

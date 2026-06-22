@@ -821,6 +821,24 @@ public:
     }
 
     /**
+     * @brief Destroy the payload of an event that will NOT be routed.
+     * @param event The event whose (possibly non-trivial) members must be destroyed.
+     * @details Runs the same type-erased disposer `route()` applies after handling, for callers
+     *          that own a raw event and decide to drop it without delivery — e.g.
+     *          `VirtualCore::__pump_activations__` discarding an activation stash when an actor's
+     *          async `onInit()` fails or it is killed during init, or dropping an event that
+     *          overflowed the stash cap. Without it, a `push`'d event carrying a `std::string` /
+     *          `std::vector` would leak its heap storage. No-op for a never-subscribed type (no
+     *          registered disposer) — identical leak semantics to an unhandled event in `route()`.
+     */
+    void
+    dispose(_RawEvent &event) const {
+        std::lock_guard lk(_disposers_mtx);
+        if (const auto dit = _disposers.find(event.getID()); dit != _disposers.cend())
+            dit->second->dispose(&event);
+    }
+
+    /**
      * @brief Subscribe a handler to events of a specific type
      *
      * @tparam _Event The event type to subscribe to

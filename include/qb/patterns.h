@@ -12,6 +12,11 @@
  * @ingroup Patterns
  */
 
+#ifndef QB_PATTERNS_H
+#define QB_PATTERNS_H
+
 #include "core/Actor.h"
-#include "core/Actor.tpp"
+#include "core/Actor.tpp" // Actor.h does not pull the template impl; the umbrella must be self-sufficient.
 #include "core/patterns.h"
+
+#endif // QB_PATTERNS_H

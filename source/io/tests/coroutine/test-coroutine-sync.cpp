@@ -134,6 +134,110 @@ TEST_F(SemaphoreTests, ReleaseCap) {
     EXPECT_EQ(sem.total_permits(), 2u);
 }
 
+/**
+ * @test Cancellable acquire wakes and throws on cancel, retracting its claim.
+ */
+TEST_F(SemaphoreTests, CancelAcquireWakesAndRetracts) {
+    semaphore          sem(1);
+    cancellation_token token;
+    std::atomic<bool>  cancelled{false};
+    std::atomic<bool>  acquired{false};
+
+    EXPECT_TRUE(sem.try_acquire()); // hold the only permit so the waiter must park
+
+    auto waiter = [&sem, &token, &cancelled, &acquired]() -> task<void> {
+        try {
+            co_await sem.acquire(token); // parks (no permit)
+            acquired = true;
+        } catch (const cancelled_error &) {
+            cancelled = true;
+        }
+    };
+    coro_scheduler().spawn(waiter());
+    run_for(20ms);
+    EXPECT_FALSE(acquired);
+    EXPECT_FALSE(cancelled);
+
+    token.cancel(); // retract the parked acquirer
+    run_for(20ms);
+    EXPECT_TRUE(cancelled);
+    EXPECT_FALSE(acquired);
+
+    // The cancelled waiter must NOT have consumed a permit: releasing the holder restores it fully.
+    sem.release();
+    EXPECT_EQ(sem.available_permits(), 1u);
+    EXPECT_TRUE(sem.try_acquire()); // permit is genuinely free
+}
+
+/**
+ * @test A cancelled waiter is skipped so release() serves the next waiter.
+ */
+TEST_F(SemaphoreTests, CancelledWaiterSkippedNextServed) {
+    semaphore          sem(1);
+    cancellation_token tok_a;
+    std::atomic<bool>  a_cancelled{false};
+    std::atomic<bool>  b_acquired{false};
+
+    EXPECT_TRUE(sem.try_acquire()); // hold the permit
+
+    auto a = [&sem, &tok_a, &a_cancelled]() -> task<void> {
+        try {
+            co_await sem.acquire(tok_a);
+        } catch (const cancelled_error &) {
+            a_cancelled = true;
+        }
+    };
+    auto b = [&sem, &b_acquired]() -> task<void> {
+        co_await sem.acquire(); // plain waiter, queued behind A
+        b_acquired = true;
+        sem.release();
+    };
+    coro_scheduler().spawn(a());
+    run_for(5ms);
+    coro_scheduler().spawn(b());
+    run_for(5ms);
+
+    tok_a.cancel(); // A retracts
+    run_for(5ms);
+    sem.release();  // hand the permit to the next live waiter → B (not the retracted A)
+    run_for(20ms);
+
+    EXPECT_TRUE(a_cancelled);
+    EXPECT_TRUE(b_acquired);
+}
+
+/**
+ * @test A granted permit beats a racing cancel (no throw, no leak).
+ */
+TEST_F(SemaphoreTests, GrantedBeatsRacingCancel) {
+    semaphore          sem(1);
+    cancellation_token token;
+    std::atomic<bool>  acquired{false};
+    std::atomic<bool>  cancelled{false};
+
+    EXPECT_TRUE(sem.try_acquire()); // hold the permit
+
+    auto waiter = [&sem, &token, &acquired, &cancelled]() -> task<void> {
+        try {
+            co_await sem.acquire(token);
+            acquired = true;
+            sem.release();
+        } catch (const cancelled_error &) {
+            cancelled = true;
+        }
+    };
+    coro_scheduler().spawn(waiter());
+    run_for(5ms); // waiter is parked
+
+    // Synchronously: hand the permit, THEN cancel — the grant must win (cancel is a no-op).
+    sem.release();
+    token.cancel();
+    run_for(20ms);
+
+    EXPECT_TRUE(acquired);   // honoured the granted permit
+    EXPECT_FALSE(cancelled); // racing cancel did not steal it
+}
+
 // =============================================================================
 // TEST SUITE: Async Mutex
 // =============================================================================

@@ -88,6 +88,10 @@ public:
     }
 };
 
+/** @brief Alias for `PubSub` (snake_case, matching the rest of the patterns library). */
+template <class Topic>
+using pub_sub = PubSub<Topic>;
+
 } // namespace qb
 
 #endif // QB_CORE_PATTERNS_PUBSUB_H

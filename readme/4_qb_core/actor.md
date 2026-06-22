@@ -27,7 +27,7 @@ Three header types anchor this page:
 - `qb::Actor` — the base class. Non-copyable (derives from `qb::nocopy`). Construction must happen
   on a `VirtualCore` worker thread; see [the engine page](./engine.md) for how `addActor` arranges
   that.
-- `qb::ICallback` (`qb/core/ICallback.h`) — a mixin granting one `onCallback()` tick per event-loop
+- `qb::ICallback` (`qb/core/ICallback.h`) — a mixin granting one `on(qb::LoopEvent const&)` tick per event-loop
   iteration.
 - `qb::ServiceActor<Tag>` — a singleton-per-core actor reachable by type through `getService<T>()`.
 
@@ -50,10 +50,10 @@ struct WorkEvent : qb::Event {
 
 class MyWorker : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<WorkEvent>(*this);     // subscribe to WorkEvent
         registerEvent<qb::KillEvent>(*this); // graceful shutdown
-        return true;                         // actor is ready
+        co_return true;                      // actor is ready
     }
 
     void on(WorkEvent const &ev) {
@@ -118,10 +118,10 @@ class ComputeTask : public qb::Actor {
 public:
     ComputeTask() : qb::Actor(qb::no_default_events) {}
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<InputEvent>(*this);
         registerEvent<qb::KillEvent>(*this); // re-subscribe — see warning below
-        return true;
+        co_return true;
     }
 
     void on(InputEvent const &ev) {
@@ -153,7 +153,7 @@ addActor<A>(core, args...)
  returns true
       │
       ▼
- running               on(Event&) handlers / onCallback() ticks
+ running               on(Event&) handlers / on(qb::LoopEvent const&) ticks
       │
  kill() takes effect   _alive = false; stops receiving new events
       │
@@ -167,11 +167,23 @@ addActor<A>(core, args...)
 ### onInit: the initialization checkpoint
 
 `onInit()` runs once, after the actor is constructed and has been assigned its `ActorId`, and before
-it processes any event. It returns `bool`: returning `false` aborts registration and destroys the
-actor immediately (it is never started).
+it processes any business event. It is an **async coroutine** — `qb::io::async::task<bool>` — so it
+may `co_await` (sleep, `qb::ask` a peer for its config, run a pattern) while the owning core keeps
+serving its other actors. `co_return true` activates the actor; `co_return false` (or an uncaught
+exception) aborts registration and destroys the actor immediately (it is never started). The common
+case needs no `co_await` and simply `co_return`s — it completes synchronously and pays none of the
+suspended-init machinery.
+
+While a suspended `onInit()` is in flight the actor is **Activating**: inbound *unicast business*
+events are stashed and replayed FIFO once it becomes active (broadcasts and `KillEvent` still pass
+through, so a kill during init unwinds the coroutine cleanly), and the wait is bounded by a
+configurable activation deadline (`qb::VirtualCore::activation_deadline_ns`, default 5 s) so a mutual
+or stuck init can never deadlock. Use `context()` for a cancellation-aware context
+(`co_await context().sleep(...)`) so a kill during init throws `cancelled_error` and unwinds it.
+`is_active()` (vs `is_alive()`) reports whether activation has completed.
 
 ```cpp
-bool onInit() override {
+qb::io::async::task<bool> onInit() override {
     // Register every event type this actor will handle.
     registerEvent<DataEvent>(*this);
     registerEvent<QueryEvent>(*this);
@@ -180,10 +192,10 @@ bool onInit() override {
     // Acquire resources; fail startup if a precondition is not met.
     auto *logger = getService<LoggerService>();  // nullptr if not on this core
     if (!logger)
-        return false;  // actor is destroyed, not started
+        co_return false;  // actor is destroyed, not started
 
     _logger = logger;
-    return true;
+    co_return true;
 }
 ```
 
@@ -263,7 +275,7 @@ The destructor runs after `kill()` has taken effect and the actor has been remov
 | `is_alive()` | `bool` | True until `kill()` takes effect. |
 
 `time()` returns a `uint64_t` nanosecond value that the `VirtualCore` refreshes once per loop
-iteration. Every call within a single handler or `onCallback()` invocation returns the *same* value.
+iteration. Every call within a single handler or `on(qb::LoopEvent const&)` invocation returns the *same* value.
 For a continuously updating, high-precision timestamp, use `qb::unix_nanos(qb::wall_now())` from
 `<qb/system/timestamp.h>` (see the canonical time vocabulary in [qb-io
 utilities](../3_qb_io/utilities.md)).
@@ -368,10 +380,10 @@ pipe.allocated_push<BlobEvent>(blob->size(), blob);
 ## Periodic work: qb::ICallback
 
 An actor that needs to run code once per event-loop iteration also inherits `qb::ICallback` and
-overrides `onCallback()`. Activate it by calling `registerCallback(*this)` from `onInit()`, and stop
-it with `unregisterCallback()`. The runtime calls `onCallback()` once per loop iteration, after the
+overrides `on(qb::LoopEvent const&)`. Activate it by calling `registerCallback(*this)` from `onInit()`, and stop
+it with `unregisterCallback()`. The runtime calls `on(qb::LoopEvent const&)` once per loop iteration, after the
 core has flushed its outgoing pipes and dispatched that iteration's received events; events a callback
-pushes are flushed on the next iteration.
+pushes are flushed on the next iteration. The `qb::LoopEvent` carries per-loop context (`now`, `iteration`).
 
 ```cpp
 // src: derived from examples/core/example4_lifecycle.cpp
@@ -382,13 +394,13 @@ pushes are flushed on the next iteration.
 class PollingActor : public qb::Actor, public qb::ICallback {
     int _poll_count = 0;
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<qb::KillEvent>(*this);
         registerCallback(*this);   // activate the per-iteration tick
-        return true;
+        co_return true;
     }
 
-    void onCallback() override {
+    void on(qb::LoopEvent const &) override {
         ++_poll_count;
         if (pollExternalSystem())
             push<DataReadyEvent>(id());
@@ -402,7 +414,7 @@ public:
 };
 ```
 
-> **Warning:** `onCallback()` runs on the `VirtualCore` event-loop thread. It must be fast and
+> **Warning:** `on(qb::LoopEvent const&)` runs on the `VirtualCore` event-loop thread. It must be fast and
 > non-blocking — no mutex waits, no synchronous I/O, no `sleep`. Blocking it stalls the whole core
 > and every actor on it. The callback rate depends on the core's load and its
 > `CoreInitializer::setLatency()` setting.
@@ -421,9 +433,9 @@ struct LoggerTag {};  // unique tag for this service type
 
 class LoggerService : public qb::ServiceActor<LoggerTag> {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(qb::KillEvent const &) { kill(); }
@@ -434,12 +446,12 @@ public:
 class Worker : public qb::Actor {
     LoggerService *_logger = nullptr;
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         _logger = getService<LoggerService>();  // same core only
         if (!_logger)
-            return false;                       // service not present on this core
+            co_return false;                    // service not present on this core
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(qb::KillEvent const &) { kill(); }
@@ -470,7 +482,7 @@ ordering.
   use `push` for events carrying `std::string`, `std::vector`, etc.
 - **Treating `time()` as a live clock.** It is cached per loop iteration and is identical across one
   handler invocation. Use `qb::unix_nanos(qb::wall_now())` when you need a fresh reading.
-- **Blocking inside `onCallback()` or any handler.** One actor's handler thread serves every actor on
+- **Blocking inside `on(qb::LoopEvent const&)` or any handler.** One actor's handler thread serves every actor on
   its core. A blocking call there stalls the entire core.
 - **Sending events from a destructor.** The actor is being torn down; do not push from `~Actor()`.
 

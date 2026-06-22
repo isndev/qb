@@ -47,7 +47,7 @@ Latency is set per core through `qb::CoreInitializer::setLatency` or globally th
 
 ## The five send primitives
 
-All send methods are inherited from `qb::Actor` and are callable from inside any handler, `onInit`, or `onCallback`. Every one is `const noexcept`.
+All send methods are inherited from `qb::Actor` and are callable from inside any handler, `onInit`, or `on(qb::LoopEvent const&)`. Every one is `const noexcept`.
 
 > **`noexcept` is load-bearing.** `push`, `send`, `broadcast`, `reply`, and `forward` are all `noexcept`, yet they grow the pipe buffer (which can throw `std::bad_alloc`) and run the event constructor in place (which can throw). A throw cannot cross a `noexcept` boundary, so any such failure calls `std::terminate()` and aborts the process — it is not recoverable. This is by design: events are expected to be small, allocation-light messages on an adequately provisioned system. Keep event constructors cheap, and move large heap data in through an already-allocated `std::shared_ptr` rather than allocating inside the constructor. (`qb/core/Pipe.h`, `qb/core/Actor.h`.)
 

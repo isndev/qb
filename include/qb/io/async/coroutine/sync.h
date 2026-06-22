@@ -25,6 +25,7 @@
 #ifndef QB_IO_ASYNC_COROUTINE_SYNC_H
 #define QB_IO_ASYNC_COROUTINE_SYNC_H
 
+#include "cancellation.h" // cancellation_token / cancelled_error (cancellable acquire)
 #include "task.h"
 #include "utils.h"
 // NOTE: No <mutex> needed — all primitives below are used exclusively within
@@ -35,6 +36,7 @@
 // zero benefit.
 #include <cassert>
 #include <deque>
+#include <memory>
 
 namespace qb::io::async {
 
@@ -70,6 +72,16 @@ public:
         , _available(permits) {}
 
     /**
+     * @brief A queued acquirer. Lives in its awaiter's frame; the deque holds a pointer to it so a
+     *        cancelled waiter can be retracted (erased) and `release()` can mark it `granted`.
+     */
+    struct waiter_node {
+        std::coroutine_handle<> h{};
+        bool                    granted   = false; ///< set by release() when it hands this waiter a permit
+        bool                    cancelled = false; ///< set by the cancel callback when it retracts the node
+    };
+
+    /**
      * @brief Awaiter for acquiring a permit
      *
      * No locking: single-thread cooperative scheduler guarantees only one
@@ -77,8 +89,9 @@ public:
      * no other coroutine can observe or modify _available / _waiters.
      */
     struct acquire_awaiter {
-        semaphore &sem;
-        bool       _completed = false;
+        semaphore  &sem;
+        waiter_node node{}; // default-init so `acquire_awaiter{*this}` stays -Wmissing-field-initializers clean
+        bool        _completed = false;
 
         // Finding 2.C.10: fast-path for the uncontended case. In a
         // mono-thread cooperative scheduler, `_available > 0` at await_ready()
@@ -99,6 +112,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            node.h = h;
             // In the unlikely case where await_ready saw no permit but the
             // scheduler re-interleaved (it won't under the single-thread
             // model, but we keep the check for defensive robustness), grab
@@ -109,7 +123,7 @@ public:
                 _completed = true;
                 schedule_via_current(h);
             } else {
-                sem._waiters.push_back(h);
+                sem._waiters.push_back(&node);
             }
         }
 
@@ -118,11 +132,95 @@ public:
     };
 
     /**
+     * @brief Cancellation-aware acquirer: wakes (and throws `cancelled_error`) if `token` is
+     *        cancelled while parked, **retracting** its queued claim so no permit is leaked.
+     * @details Race-safe via `waiter_node::granted`: if `release()` hands this waiter a permit
+     *          first, a later cancel is a no-op (the permit is honoured); if the cancel fires first,
+     *          the node is erased from the queue so `release()` skips it and serves the next waiter.
+     */
+    struct cancel_acquire_awaiter {
+        semaphore                  &sem;
+        cancellation_token          token;
+        waiter_node                 node;
+        cancellation_token::id_type cancel_id = 0;
+        std::shared_ptr<bool>       alive      = std::make_shared<bool>(true);
+        bool                        _completed = false;
+
+        cancel_acquire_awaiter(semaphore &s, cancellation_token t)
+            : sem(s)
+            , token(std::move(t)) {}
+
+        ~cancel_acquire_awaiter() {
+            if (alive)
+                *alive = false; // neuter a callback still parked in the token after we are gone
+            token.remove_on_cancel(cancel_id);
+        }
+
+        [[nodiscard]] bool
+        await_ready() noexcept {
+            if (token.is_cancelled())
+                return true; // entry-cancelled → resume throws, no permit taken
+            if (sem._available > 0) {
+                --sem._available;
+                ++sem._held;
+                _completed = true;
+                return true;
+            }
+            return false;
+        }
+
+        void
+        await_suspend(std::coroutine_handle<> h) {
+            node.h = h;
+            if (token.is_cancelled()) {
+                schedule_via_current(h);
+                return;
+            }
+            if (sem._available > 0) {
+                --sem._available;
+                ++sem._held;
+                _completed = true;
+                schedule_via_current(h);
+                return;
+            }
+            sem._waiters.push_back(&node);
+            auto a    = alive;
+            cancel_id = token.on_cancel([this, a]() {
+                if (!*a || node.granted || node.cancelled)
+                    return;                 // gone, already granted, or already retracted
+                node.cancelled = true;
+                sem.remove_waiter(&node);   // retract so release() will not hand us a permit
+                schedule_via_current(node.h);
+            });
+        }
+
+        void
+        await_resume() {
+            token.remove_on_cancel(cancel_id);
+            cancel_id = 0;
+            if (_completed || node.granted)
+                return;                     // we hold a permit
+            throw cancelled_error{};        // cancelled / entry-cancelled — never took a permit
+        }
+    };
+
+    /**
      * @brief Acquire a permit (suspends if none available)
      */
     acquire_awaiter
     acquire() {
         return acquire_awaiter{*this};
+    }
+
+    /**
+     * @brief Acquire a permit, cancellable via `token` (throws `cancelled_error` on cancel).
+     * @param token A cancellation token (e.g. an actor scope, `ScopedCoroContext::token()`).
+     * @details Unlike `acquire()`, a kill while parked unwinds cleanly and retracts the queued
+     *          claim — no permit is leaked, and `release()` correctly serves the next waiter.
+     */
+    cancel_acquire_awaiter
+    acquire(cancellation_token token) {
+        return cancel_acquire_awaiter{*this, std::move(token)};
     }
 
     /**
@@ -152,11 +250,14 @@ public:
         if (_held == 0)
             return; // over-release: nothing is actually held
         if (!_waiters.empty()) {
-            auto h = _waiters.front();
+            auto *n = _waiters.front();
             _waiters.pop_front();
             // Direct hand-off: the permit transfers holder-to-holder, _held
             // stays constant (one releases, the woken waiter now holds it).
-            schedule_via_current(h);
+            // `granted` tells a cancel-aware waiter it owns the permit (so a
+            // racing cancel becomes a no-op rather than leaking it).
+            n->granted = true;
+            schedule_via_current(n->h);
         } else {
             --_held;
             if (_available < _permits)
@@ -228,10 +329,21 @@ public:
     }
 
 private:
-    size_t                              _permits;
-    size_t                              _available;
-    size_t                              _held = 0; /**< Permits currently held by acquirers (over-release guard). */
-    std::deque<std::coroutine_handle<>> _waiters;
+    /// Retract a still-queued waiter (cancelled before being granted). O(n) over the (tiny) queue.
+    void
+    remove_waiter(waiter_node *n) noexcept {
+        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
+            if (*it == n) {
+                _waiters.erase(it);
+                return;
+            }
+        }
+    }
+
+    size_t                    _permits;
+    size_t                    _available;
+    size_t                    _held = 0; /**< Permits currently held by acquirers (over-release guard). */
+    std::deque<waiter_node *> _waiters;
 };
 
 // =============================================================================

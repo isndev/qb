@@ -114,10 +114,10 @@ public:
         registerEvent<qb::KillEvent>(*this);
     }
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         qb::io::cout() << "FileManager initialized with ID " << id()
                        << " on core " << id().index() << std::endl;
-        return true;
+        co_return true;
     }
     // handlers below
 };
@@ -201,11 +201,11 @@ public:
         registerEvent<qb::KillEvent>(*this);
     }
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         qb::io::cout() << "FileWorker " << id() << " initialized on core "
                        << id().index() << std::endl;
         notifyAvailable();                        // tell the manager we're idle
-        return true;
+        co_return true;
     }
     // handlers below
 
@@ -283,11 +283,11 @@ But the *callback* in this example does **not** defer the work. `qb::io::async::
 
 ```cpp
 // src: examples/core_io/file_processor/main.cpp
-bool onInit() override {
+qb::io::async::task<bool> onInit() override {
     if (!fs::exists(_test_directory))
         fs::create_directories(_test_directory);
     qb::io::async::callback([this]() { startTests(); }, 0.5);   // stale: 0.5 no longer compiles — see Pitfalls
-    return true;
+    co_return true;
 }
 ```
 

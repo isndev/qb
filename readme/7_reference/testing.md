@@ -180,10 +180,10 @@ struct Ping : qb::Event {};
 
 class Worker : public qb::Actor {
 public:
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         registerEvent<Ping>(*this);
         push<Ping>(id());   // send to self
-        return true;
+        co_return true;
     }
     void on(const Ping &) {
         ++g_seen;

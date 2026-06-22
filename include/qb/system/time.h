@@ -152,6 +152,12 @@ wall_from_unix_millis(std::int64_t ms) noexcept {
     return wall_time{std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::milliseconds{ms})};
 }
 
+/// Build a wall instant from whole nanoseconds since the Unix epoch.
+[[nodiscard]] inline wall_time
+wall_from_unix_nanos(std::int64_t ns) noexcept {
+    return wall_time{std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::nanoseconds{ns})};
+}
+
 // ---------------------------------------------------------------------------
 // Portable UTC calendar conversions (thread-safe, valid for all time_t)
 // ---------------------------------------------------------------------------

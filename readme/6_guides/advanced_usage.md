@@ -222,7 +222,7 @@ engine.core(1).setAffinity(qb::CoreIdSet{2});      // pin core-1 worker to CPU 2
 - **Round-robin dispatch.** A dispatcher actor on one core holds the `ActorId`s of workers on other cores and sends each task to the next worker in rotation — a rotating index plus `push<Event>(workers[index], args...)`. This is the pattern in `example3_multicore.cpp`, where a `qb::ICallback` callback generates work and round-robins it across the worker vector.
 - **Zero-copy re-dispatch.** When a dispatcher receives an event and wants to hand it on without rebuilding it, `forward(dest, event)` reuses the received event object. The handler must take the event by non-const reference, because `forward()` consumes it.
 - **Broadcast.** `broadcast<Event>(args...)` sends an event to every actor on every core; `push<Event>(qb::BroadcastId(core_id), args...)` targets every actor on a single core. Broadcast events cannot be `reply()`-ed to or `forward()`-ed.
-- **Runtime discovery.** Instead of hard-coding worker `ActorId`s, an actor can call `require<WorkerA, WorkerB>()`; live actors of those types answer with a `RequireEvent` carrying their `ActorStatus`. The requester must `registerEvent<qb::RequireEvent>(*this)` and identify responses with `is<WorkerA>(event)`. This decouples placement from wiring and is detailed in [Actor patterns](../4_qb_core/patterns.md).
+- **Runtime discovery.** Instead of hard-coding worker `ActorId`s, an actor can `co_await qb::require<Worker>(ctx, timeout)` to get the live workers' ids directly (works inside `onInit` — discover before activating), or `co_await qb::ping(ctx, target, timeout)` to probe one. The legacy fire-and-forget `require<WorkerA, WorkerB>()` + `on(RequireEvent&)` + `is<WorkerA>(event)` still works. This decouples placement from wiring and is detailed in [Actor patterns](../4_qb_core/patterns.md).
 
 **Pitfalls.**
 
@@ -298,7 +298,7 @@ struct ConfigTag {};   // unique tag identifies the service type
 class ConfigService : public qb::ServiceActor<ConfigTag> {
     qb::unordered_map<std::string, std::string> _settings;
 public:
-    bool onInit() override { return true; }
+    qb::io::async::task<bool> onInit() override { co_return true; }
     std::string get(const std::string &key) const {
         auto it = _settings.find(key);
         return it != _settings.end() ? it->second : std::string{};
@@ -307,11 +307,11 @@ public:
 
 class WorkerActor : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         // Direct, same-core access — no event needed.
         if (auto *cfg = getService<ConfigService>())
             _timeout = cfg->get("timeout");
-        return true;
+        co_return true;
     }
 private:
     std::string _timeout;

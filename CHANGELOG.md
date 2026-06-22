@@ -9,6 +9,114 @@ policy.
 
 Tracks changes on the development branch that are not yet part of a tagged release.
 
+### Added
+
+- **Asynchronous actor initialization.** `Actor::onInit()` is now a coroutine
+  (`qb::io::async::task<bool>`): an actor may `co_await` during init (sleep, `qb::ask` a peer, run a
+  pattern). While a suspended `onInit()` is in flight the actor is **Activating** — inbound unicast
+  business events are stashed and replayed FIFO once it becomes active (broadcasts and `KillEvent`
+  still pass through), bounded by a configurable `qb::VirtualCore::activation_deadline_ns` (default
+  5 s) that makes mutual-init deadlocks impossible. `~Actor()` is deferred while an init frame is in
+  flight, so `this` is safe across a `co_await` in `onInit()`.
+- **Phase-aware `ActorHandle<T>`.** `addRefActor<T>()` now returns `qb::ActorHandle<T>` (alias
+  `RefActorHandle<T>`) with `id()` (valid immediately), `ready()`, `co_await ready_async(ctx)`, and a
+  phase-aware `get()` that resolves the live actor only once active and never dangles. New
+  `Actor::is_active()` (alive **and** activated) complements `is_alive()`.
+- **Native request/response `ask`.** `qb::ask(ctx, target, event, timeout)` with `qb::AskEvent` /
+  `qb::Request<Resp>`, `qb::answer(...)`, and `Actor::resolve_ask(e)`; a custom single-timer awaiter
+  (response / timeout / scope-cancel) with no lingering helper tasks.
+- **Patterns library** (`qb/patterns.h`, header-only free functions over the kernel): request,
+  scatter (`ask_all` / `ask_any`), saga (`run_saga` + reverse-order compensation), resilience
+  (`ask_retry`, `ask_guarded`, `CircuitBreaker`, `retry_policy`, `circuit_open_error`), routing
+  (`WorkerPool`), pub/sub (`PubSub<Topic>`), supervision (`Supervisor`).
+- **Actor-scoped coroutines.** `Actor::spawn()` (cancelled on kill via a per-actor cancellation
+  scope) alongside `spawn_detached()` (renamed from `spawn_async`, runs to completion orphaned);
+  `Actor::context()` exposes a cancellation-aware `ScopedCoroContext`.
+- `qb::io::async::cancellation_token::remove_on_cancel(id)` (and `on_cancel` now returns a
+  registration id) so cancellation-aware awaiters deregister on normal completion — a long-lived
+  (actor-scope) token no longer accumulates callbacks across a `co_await ctx.sleep(...)` loop.
+- `qb::LoopEvent` — per-loop-pass context (`now`, `iteration`) handed to the actor periodic tick,
+  unifying the tick with the `on(Event&)` dispatch shape and keeping it forward-compatible.
+- **Patterns enrichment.**
+  - Quorum scatter: `qb::ask_quorum(ctx, targets, k, req, timeout)` resolves with the first **k** of
+    N replies (the majority middle-ground between `ask_any` and `ask_all`); throws if the quorum
+    becomes unreachable, and is cancel-on-kill.
+  - Bounded scatter: `qb::ask_all(ctx, targets, req, timeout, max_in_flight)` caps in-flight asks
+    via a true cancel-safe **sliding window** — fan out to many targets without overwhelming a
+    downstream.
+  - `qb::bulkhead` (failure isolation): bounds concurrent operations through a resource;
+    `co_await bulkhead.enter(ctx)` returns an RAII slot, waiting cancellation-aware when full.
+  - `qb::io::async::semaphore::acquire(cancellation_token)`: a **cancellation-aware** acquire — a
+    kill while parked unwinds cleanly and retracts the queued claim (no permit leak), so the next
+    waiter is served correctly. (Backs `bulkhead` and bounded `ask_all`.)
+  - `qb::retry_policy::jitter` (in `[0, 1]`, default `0`): randomizes each `ask_retry` backoff over
+    `[backoff*(1-jitter), backoff]` to desynchronize retry storms.
+  - `qb::Supervisor`: killing the supervisor (a `KillEvent`) now tears down its children first (no
+    orphans); and an optional `restart_window` turns `max_restarts` into a sliding-window intensity
+    ("N restarts within T") instead of a lifetime-cumulative cap.
+  - `qb::run_saga` compensation is cancellation-aware: a kill mid-rollback aborts the remaining
+    compensations instead of spinning through them.
+  - `qb::rate_limiter` (alias `qb::token_bucket`): a cancellation-aware token-bucket throttle
+    (`acquire(ctx)` / `try_acquire(now)`) completing the resilience trio with `CircuitBreaker` and
+    `ask_retry`.
+  - Deadline budget: `qb::deadline` + `qb::deadline_in(ctx, dur)` / `qb::remaining(dl, ctx)` /
+    `qb::ask_by(ctx, target, req, deadline)` — thread one absolute deadline through an ask chain to
+    bound its *total* latency end-to-end (fails fast once the budget is spent).
+  - **Coroutine discovery & liveness.** `co_await qb::ping(ctx, target, timeout)` → `bool` (targeted
+    liveness) and `co_await qb::require<T>(ctx, timeout)` → `std::vector<ActorId>` (typed discovery
+    within a window), with `qb::resolve_require(e)` for the asker's `on(RequireEvent&)`. An awaitable
+    replacement for the legacy `Actor::require<...>()` + `on(RequireEvent&)` + `is<T>()` dance (which
+    still works). `qb::PingEvent`/`qb::RequireEvent` now carry an echoed `correlation_id` (0 = legacy
+    path), and `PingEvent` type `0` is a wildcard liveness probe.
+  - `qb::CoroContext::broadcast<E>(args)` — broadcast from inside a spawned coroutine (mirrors
+    `Actor::broadcast`; backs `qb::require`).
+- **`onInit()` is a first-class coroutine context for the WHOLE pattern library.** A unified
+  *continuation registry* + a generalized activation gate now deliver **every** correlated coroutine
+  reply (`ask`, `ask_stream`, `ping`, `require`) to an actor that is still *Activating* — not just
+  `ask`. So `co_await qb::ask_stream(...)` and `co_await qb::require<T>(...)` work **inside
+  `onInit()`** (e.g. *discover-before-activate*: block activation until peers/streams resolve),
+  bounded by `activation_deadline_ns`. New `qb::CorrelatedEvent` base (carries `correlation_id`)
+  unifies the routing; `AskEvent`/`RequireEvent` derive it.
+- `qb::Actor::now()` — the typed `qb::wall_time` view of `time()` (cached per loop iteration); plus
+  `qb::wall_from_unix_nanos(ns)`.
+  - Idempotency: `qb::answer_idempotent(self, e, cache, fn)` + `qb::dedup_map` (bounded LRU) +
+    `qb::idempotent_event` — a responder runs the effect **once per stable `idempotency_key`** and
+    replays the cached response for retries/duplicates.
+  - Aggregation: `qb::batcher<T>` coalesces items and flushes on a **count** or **time** window
+    (whichever first); the window timer is scope-bound (a kill cancels it, no `on_flush` on a dead
+    actor).
+  - Streaming: `qb::ask_stream` returns a `qb::stream<E>` of many replies for one request
+    (`qb::StreamRequest<Chunk>`, responder helpers `qb::yield_answer` / `qb::end_stream`; the asker
+    routes chunks with `resolve_ask` — they are `AskEvent`s); per-chunk timeout, cancel-on-kill, and
+    a loud `stream_overflow_error` rather than silently dropping chunks.
+
+### Changed
+
+- `Actor::onInit()` signature: `bool onInit()` → `qb::io::async::task<bool> onInit()` (`co_return
+  true/false`). A synchronous init simply `co_return`s and pays none of the suspended-init
+  machinery. **Source-incompatible** — see the migration guide.
+- `qb::ICallback` periodic hook: `void onCallback()` → `void on(qb::LoopEvent const&)`. The tick is
+  now an `on(...)` handler like every other notification (carrying `qb::LoopEvent`); register/
+  unregister via `registerCallback`/`unregisterCallback` as before. **Source-incompatible.**
+- `addRefActor<T>()` / `addRefHandle<T>()` return `ActorHandle<T>` instead of a raw `T*`.
+- Discovery: `qb::RequireEvent` is auto-registered with a default handler (like `KillEvent`/
+  `PingEvent`) that routes coroutine `ping`/`require` replies — **no `on(RequireEvent&)` boilerplate**.
+  Removed `qb::RequireEvent::status` and the `qb::ActorStatus` enum (a reply *is* the liveness signal;
+  `Dead` was never sent). The free `qb::resolve_stream` / `qb::resolve_require` are gone: stream
+  chunks are routed by `Actor::resolve_ask` (they are `AskEvent`s) and discovery replies by the
+  default `Actor::on(RequireEvent&)` / `Actor::resolve_require`. **Source-incompatible** for code that
+  read `RequireEvent::status` or called the removed free functions.
+
+### Fixed
+
+- `qb::io::inet::endpoint::to_string()` for IPv6 wrote the closing `]` one byte early, **truncating
+  the last character of every IPv6 address** (e.g. `::1` rendered as `[::]`, `2001:db8::abcd` as
+  `[2001:db8::abc…]`). The bracket offset now accounts for the leading `[`.
+- Coroutine frame pool aligns to the canonical cache line (`QB_LOCKFREE_CACHELINE_BYTES`) so a
+  by-value `qb::Event` in a frame no longer faults under `-O3 -march=native`.
+- Activation-stash events with non-trivial payloads are destroyed (not leaked) when an async
+  `onInit()` fails, the actor is killed during init, the deadline expires, or the stash cap overflows.
+
 ## [2.0.0]
 
 The 2.0 series modernizes the framework's vocabulary and hardens the runtime. Highlights below; the change

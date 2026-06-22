@@ -62,6 +62,26 @@ TEST(WorkerPoolUnit, AddRemoveResizesPool) {
     EXPECT_EQ(r.next(), b); // single worker -> always itself
 }
 
+TEST(WorkerPoolUnit, RemoveWrapsCursorAndHandlesEmptyEdges) {
+    qb::ActorId a(1), b(2), c(3);
+    qb::WorkerPool r{{a, b, c}};
+    (void) r.next();              // cursor -> 1
+    (void) r.next();              // cursor -> 2
+    r.remove(c);                  // size now 2, cursor (2) must wrap into range
+    EXPECT_EQ(r.size(), 2u);
+    const auto n = r.next();      // must be a valid remaining worker (no OOB), not c
+    EXPECT_TRUE(n == a || n == b);
+    EXPECT_NE(n, c);
+    r.remove(a);
+    r.remove(b);                  // drain to empty
+    EXPECT_TRUE(r.empty());
+    EXPECT_EQ(r.size(), 0u);
+    r.remove(a);                  // removing from an empty pool is a safe no-op
+    EXPECT_TRUE(r.empty());
+    r.add(c);                     // usable again after refill
+    EXPECT_EQ(r.next(), c);
+}
+
 // ===========================================================================
 // Router — round-robin dispatch integration (even distribution).
 // ===========================================================================

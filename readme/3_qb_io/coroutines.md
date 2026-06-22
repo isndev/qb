@@ -565,10 +565,10 @@ struct ProcessingComplete : qb::Event { int id; std::string result; uint64_t ns;
 class CoroWorker : public qb::Actor {
     int processed_ = 0;
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<StartProcessing>(*this);
         registerEvent<ProcessingComplete>(*this);
-        return true;
+        co_return true;
     }
 
     // Synchronous handler — runs with exclusive access to actor state.

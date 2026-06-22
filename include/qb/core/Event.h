@@ -307,6 +307,22 @@ struct KillEvent : public Event {};
 struct UnregisterCallbackEvent : public Event {};
 
 /*!
+ * @struct CorrelatedEvent
+ * @ingroup EventCore
+ * @brief Base for any event that carries a `correlation_id` resolving a pending coroutine
+ *        continuation (an `ask` reply, a stream chunk, a discovery reply, …).
+ * @details The per-core continuation registry routes a reply to the awaiting coroutine by its
+ *          `correlation_id`. Because every correlated reply derives from `CorrelatedEvent` as its
+ *          first base, the activation gate can read `correlation_id` at a single fixed offset (no
+ *          RTTI) and deliver the reply to an actor that is still *Activating* — so the **whole**
+ *          coroutine pattern library (`ask`/`ask_stream`/`ping`/`require`/…) works inside `onInit()`.
+ *          `0` means "not correlated" (legacy / fire-and-forget).
+ */
+struct CorrelatedEvent : public Event {
+    std::uint64_t correlation_id{0};
+};
+
+/*!
  * @struct SignalEvent
  * @ingroup EventCore
  * @brief Event used to handle system signals
@@ -315,47 +331,44 @@ struct SignalEvent : public Event {
     int signum;
 };
 
-/**
- * @enum ActorStatus
- * @brief Represents the current status of an actor in the system
- * @details
- * This enumeration is used to indicate whether an actor is currently active (Alive)
- * or has been terminated/removed from the system (Dead). It is typically used in
- * status queries and responses between actors and the core system.
- *
- * @ingroup EventCore
- */
-enum class ActorStatus : uint32_t {
-    /** @brief The actor is active and operational */
-    Alive,
-    /** @brief The actor has been terminated or removed from the system */
-    Dead
-};
-
 /*!
  * @struct PingEvent
  * @ingroup EventCore
- * @brief Event used for actor health checks
+ * @brief Event used for actor health checks / discovery.
+ * @details `type` is the discovery target type id; the special value `0` is a **wildcard**
+ *          (any live actor replies — used by the targeted liveness `qb::ping`). The inherited
+ *          `correlation_id` (0 = none) is echoed back in the `RequireEvent` reply so the coroutine
+ *          `qb::ping` / `qb::require` helpers can match it; the legacy broadcast `require<...>()`
+ *          leaves it 0. Deriving `CorrelatedEvent` keeps the id at the uniform base offset.
  */
-struct PingEvent : public Event {
+struct PingEvent : public CorrelatedEvent {
     const uint32_t type;
 
     explicit PingEvent(uint32_t const actor_type) noexcept
         : type(actor_type) {}
+    PingEvent(uint32_t const actor_type, uint64_t const corr) noexcept
+        : type(actor_type) {
+        correlation_id = corr; // inherited from CorrelatedEvent
+    }
 };
 
 /*!
  * @struct RequireEvent
  * @ingroup EventCore
- * @brief Event used to query actor status
+ * @brief Discovery reply to a `PingEvent` — a live actor of `type` announces itself to the asker.
+ * @details Presence IS the status (a dead actor never replies), so there is no `status` field; the
+ *          `correlation_id` (from `CorrelatedEvent`) matches it to a pending `co_await qb::require` /
+ *          `qb::ping`.
  */
-struct RequireEvent : public Event {
-    const uint32_t    type;
-    const ActorStatus status;
+struct RequireEvent : public CorrelatedEvent {
+    const uint32_t type;
 
-    explicit RequireEvent(uint32_t const actor_type, ActorStatus const actor_status) noexcept
-        : type(actor_type)
-        , status(actor_status) {}
+    explicit RequireEvent(uint32_t const actor_type) noexcept
+        : type(actor_type) {}
+    RequireEvent(uint32_t const actor_type, uint64_t const corr) noexcept
+        : type(actor_type) {
+        correlation_id = corr; // inherited from CorrelatedEvent
+    }
 };
 
 /*!

@@ -24,6 +24,8 @@
 #include <gtest/gtest.h>
 #include <qb/actor.h>
 #include <qb/main.h>
+#include <atomic>
+#include <cstdint>
 
 class TestActor final
     : public qb::Actor
@@ -49,7 +51,7 @@ public:
     }
 
     void
-    onCallback() final {
+    on(qb::LoopEvent const &) final {
         if (_max_loop == 10000)
             unregisterCallback();
         if (++_count_loop >= _max_loop)
@@ -82,4 +84,63 @@ TEST(CallbackActor, ShouldNotCallOnCallbackAnymoreIfUnregistred) {
 
     main.start(false);
     EXPECT_FALSE(main.hasError());
+}
+
+// ---------------------------------------------------------------------------
+// LoopEvent payload: `now` equals Actor::time() for the pass (and is non-zero),
+// and `iteration` is strictly monotonic across ticks.
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<bool> g_now_matches_time{true};
+std::atomic<bool> g_now_nonzero{true};
+std::atomic<bool> g_iteration_monotonic{true};
+std::atomic<int>  g_loop_ticks{0};
+} // namespace
+
+class LoopEventActor final
+    : public qb::Actor
+    , public qb::ICallback {
+    std::uint64_t _prev_iter = 0;
+    bool          _first     = true;
+
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerCallback(*this);
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &loop) final {
+        if (loop.now != time())          // same cached timestamp as Actor::time()
+            g_now_matches_time.store(false);
+        if (loop.now == 0)
+            g_now_nonzero.store(false);
+        if (!_first && loop.iteration <= _prev_iter)
+            g_iteration_monotonic.store(false);
+        _first     = false;
+        _prev_iter = loop.iteration;
+        if (g_loop_ticks.fetch_add(1) + 1 >= 25) {
+            unregisterCallback();
+            kill();
+        }
+    }
+};
+
+TEST(CallbackActor, LoopEventCarriesLoopContext) {
+    g_now_matches_time.store(true);
+    g_now_nonzero.store(true);
+    g_iteration_monotonic.store(true);
+    g_loop_ticks.store(0);
+
+    qb::Main main;
+    main.addActor<LoopEventActor>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_GE(g_loop_ticks.load(), 25);
+    EXPECT_TRUE(g_now_matches_time.load());     // LoopEvent.now == time()
+    EXPECT_TRUE(g_now_nonzero.load());          // a real wall-clock timestamp
+    EXPECT_TRUE(g_iteration_monotonic.load());  // iteration strictly increases per pass
 }

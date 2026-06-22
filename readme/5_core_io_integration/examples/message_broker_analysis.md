@@ -264,17 +264,17 @@ The member initialization order matters: `message_data` is constructed before `t
 
 ```cpp
 // src: examples/core_io/message_broker/server/AcceptActor.cpp
-bool AcceptActor::onInit() {
+qb::io::async::task<bool> AcceptActor::onInit() {
     if (_server_pool.empty()) {
         qb::io::cerr() << "Cannot init AcceptActor with empty server pool" << std::endl;
-        return false;
+        co_return false;
     }
     if (transport().listen(_listen_at)) {        // non-zero return == failure
         qb::io::cerr() << "Cannot listen on " << _listen_at.source() << std::endl;
-        return false;
+        co_return false;
     }
     start();
-    return true;
+    co_return true;
 }
 
 void AcceptActor::on(accepted_socket_type &&new_io) {
@@ -296,10 +296,10 @@ void AcceptActor::on(qb::io::async::event::disconnected const &) {
 
 ```cpp
 // src: examples/core_io/message_broker/server/ServerActor.cpp
-bool ServerActor::onInit() {
+qb::io::async::task<bool> ServerActor::onInit() {
     registerEvent<NewSessionEvent>(*this);
     registerEvent<SendMessageEvent>(*this);
-    return true;
+    co_return true;
 }
 
 void ServerActor::on(NewSessionEvent &evt) {

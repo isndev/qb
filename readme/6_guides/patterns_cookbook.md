@@ -66,14 +66,14 @@ struct Tick : qb::Event {};
 
 class OneShotActor : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Tick>(*this);
         // Fire Tick on ourselves 200 ms from now.
         qb::io::async::callback([this]() {
             if (is_alive())                 // the actor may already be gone
                 push<Tick>(id());
         }, 200ms);
-        return true;
+        co_return true;
     }
 
     void on(const Tick &) {
@@ -122,14 +122,14 @@ class DeadlineActor : public qb::Actor {
     std::unique_ptr<qb::io::async::ScopedTimeout<std::function<void()>>> _deadline;
 
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Deadline>(*this);
         registerEvent<Response>(*this);
         _deadline = qb::io::async::scoped_callback(std::function<void()>([this]() {
             if (is_alive())
                 push<Deadline>(id());
         }), 500ms);
-        return true;
+        co_return true;
     }
 
     void on(const Response &) {
@@ -148,8 +148,9 @@ public:
 
 **Task.** Run an action on every loop iteration (a heartbeat, a poll, a drain step).
 
-Inherit from `qb::ICallback` and register it. `onCallback()` is invoked once per `VirtualCore` loop
-iteration — after the mailbox is drained and before outgoing pipes are flushed. It runs on the
+Inherit from `qb::ICallback` and register it. `on(qb::LoopEvent const&)` is invoked once per `VirtualCore` loop
+iteration — after the mailbox is drained and before outgoing pipes are flushed. The `qb::LoopEvent`
+carries per-loop context (`now`, `iteration`). It runs on the
 event-loop thread, so it must be fast and non-blocking.
 
 ```cpp
@@ -162,12 +163,12 @@ event-loop thread, so it must be fast and non-blocking.
 class HeartbeatActor : public qb::Actor, public qb::ICallback {
     uint64_t _ticks = 0;
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerCallback(*this);            // start the per-iteration tick
-        return true;
+        co_return true;
     }
 
-    void onCallback() override {
+    void on(qb::LoopEvent const &) override {
         if (++_ticks >= 1000) {
             unregisterCallback();           // stop ticking
             kill();
@@ -184,7 +185,7 @@ int main() {
 }
 ```
 
-**Periodic at a fixed interval.** `onCallback()` fires as fast as the loop turns, which is not a fixed
+**Periodic at a fixed interval.** `on(qb::LoopEvent const&)` fires as fast as the loop turns, which is not a fixed
 period. For a steady wall-clock interval, chain self-scheduled `callback`s instead — each handler
 re-arms the next tick:
 
@@ -200,10 +201,10 @@ struct PollNow : qb::Event {};
 
 class PollingActor : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<PollNow>(*this);
         push<PollNow>(id());                // kick off the first cycle
-        return true;
+        co_return true;
     }
 
     void on(const PollNow &) {
@@ -218,7 +219,7 @@ public:
 
 **Pitfalls.**
 
-- `onCallback()` blocks the whole core while it runs. Never sleep, wait on a mutex, or do synchronous
+- `on(qb::LoopEvent const&)` blocks the whole core while it runs. Never sleep, wait on a mutex, or do synchronous
   I/O inside it.
 - Callback frequency depends on loop rate and the configured idle latency
   (`CoreInitializer::setLatency`), not a clock. Use the self-scheduled-`callback` variant when the
@@ -247,9 +248,9 @@ struct Query : qb::Event {
 
 class Responder : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Query>(*this);
-        return true;
+        co_return true;
     }
 
     void on(Query &event) {         // non-const: reply() mutates and consumes it
@@ -263,10 +264,10 @@ class Requester : public qb::Actor {
 public:
     explicit Requester(qb::ActorId responder) : _responder(responder) {}
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Query>(*this);
         push<Query>(_responder, 7); // request
-        return true;
+        co_return true;
     }
 
     void on(Query &event) {         // the reply arrives as the same event type
@@ -334,13 +335,13 @@ struct Result : qb::Event { int value = 0; };
 
 class Worker : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Result>(*this);
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             co_await ctx.sleep(2s);          // cancelled instantly if the actor is killed
             ctx.push<Result>();              // talk back only through ctx, never `this`
         });
-        return true;
+        co_return true;
     }
     void on(const Result &) { kill(); }
 };
@@ -381,7 +382,7 @@ struct PriceQuery : qb::AskEvent {      // single request/response envelope
 
 class Market : public qb::Actor {        // responder
 public:
-    bool onInit() override { registerEvent<PriceQuery>(*this); return true; }
+    qb::io::async::task<bool> onInit() override { registerEvent<PriceQuery>(*this); co_return true; }
     void on(PriceQuery &q) { q.price = q.query * 2; reply(q); }   // reply preserves correlation_id
 };
 
@@ -389,7 +390,7 @@ class Trader : public qb::Actor {        // asker
     qb::ActorId _market;
 public:
     explicit Trader(qb::ActorId m) : _market(m) {}
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<PriceQuery>(*this);
         auto mkt = _market;
         spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
@@ -400,7 +401,7 @@ public:
               catch (const qb::io::async::cancelled_error &) { /* actor was killed   */ }
             qb::Main::stop();
         });
-        return true;
+        co_return true;
     }
     void on(PriceQuery &e) { if (resolve_ask(e)) return; /* else: unsolicited request */ }
 };
@@ -439,19 +440,27 @@ use(q.response);
 ```
 
 **Scatter-gather.** `ask_all` sends a copy to every target and waits for all replies; `ask_any`
-resolves with the first (fastest wins). Both throw `timeout_error` if the deadline passes.
+resolves with the first (fastest wins); `ask_quorum` resolves with the first **k** replies (the
+majority middle-ground). All throw `timeout_error` if the deadline / quorum can't be met.
 
 ```cpp
 spawn([markets](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-    auto quotes = co_await qb::ask_all(ctx, markets, Quote{"BTC"}, 500ms);   // std::vector<Quote>
+    auto quotes = co_await qb::ask_all(ctx, markets, Quote{"BTC"}, 500ms);   // all N — std::vector<Quote>
     for (auto const &q : quotes) use(q.response);
-    auto fastest = co_await qb::ask_any(ctx, markets, Quote{"BTC"}, 500ms);  // first reply
+    auto fastest = co_await qb::ask_any(ctx, markets, Quote{"BTC"}, 500ms);  // first reply (k = 1)
+
+    // Quorum: the first k of N (e.g. a majority of replicas); throws if k can't be reached.
+    auto majority = co_await qb::ask_quorum(ctx, replicas, replicas.size()/2 + 1, Read{key}, 200ms);
+
+    // Bounded scatter: cap concurrency for a large fan-out (cancel-safe sliding window).
+    auto all = co_await qb::ask_all(ctx, many_targets, Probe{}, 200ms, /*max_in_flight*/ 8);
 });
 ```
 
 **Saga.** `run_saga` runs a sequence of steps, each registering a compensation; if a later step
-fails, the registered compensations run in **reverse** order before the error propagates. (A kill —
-`cancelled_error` — aborts hard, without rollback.)
+fails, the registered compensations run in **reverse** order before the error propagates. (A kill
+before a step fails — `cancelled_error` — aborts hard, without rollback; a kill **during** rollback
+stops the remaining compensations cleanly rather than spinning through them.)
 
 ```cpp
 co_await qb::run_saga(ctx, [inventory, payment](qb::ScopedCoroContext ctx, qb::SagaScope &saga)
@@ -466,8 +475,10 @@ co_await qb::run_saga(ctx, [inventory, payment](qb::ScopedCoroContext ctx, qb::S
 
 **Pitfalls.**
 
-- A cross-core `ask_all` keeps N requests in flight at once (bounded by `timeout`); `ask_any`'s losers
-  are not cancelled — they linger until their own `timeout`.
+- A cross-core `ask_all` keeps N requests in flight at once (bounded by `timeout`) — pass a
+  `max_in_flight` cap (`ask_all(ctx, targets, req, timeout, cap)`) to bound it; `ask_any`'s and
+  `ask_quorum`'s surplus replies (beyond the winner / beyond `k`) are not cancelled — they linger
+  until their own `timeout`.
 - A field named `id` in a `Request`/`AskEvent` subtype shadows the `Event` type-id field — name request
   fields anything else (`symbol`, `key`, …).
 - Compensations are best-effort (a throwing compensation is swallowed so the rest still run) and run on
@@ -483,7 +494,9 @@ responder that is consistently failing.
 aborts the loop at once (the backoff waits are cancellation-aware).
 
 ```cpp
-qb::retry_policy policy{ .max_attempts = 5, .backoff = 50ms, .multiplier = 2.0, .max_backoff = 1s };
+// jitter (0..1) randomizes each backoff over [backoff*(1-jitter), backoff] to avoid retry storms.
+qb::retry_policy policy{ .max_attempts = 5, .backoff = 50ms, .multiplier = 2.0,
+                         .max_backoff = 1s, .jitter = 0.2 };
 auto r = co_await qb::ask_retry(ctx, market, Quote{"BTC"}, 200ms, policy);
 ```
 
@@ -505,12 +518,111 @@ spawn([breaker = breaker_, market](qb::ScopedCoroContext ctx) -> qb::io::async::
 });
 ```
 
+**Rate limiter.** A `qb::rate_limiter` (token bucket) throttles a call site to a steady rate with a
+burst allowance. `acquire(ctx)` waits (cancellation-aware) for a token; share it by `shared_ptr`.
+
+```cpp
+// ≤ ~100 calls/s, bursts up to 10:
+auto limiter = std::make_shared<qb::rate_limiter>(10.0, 10ms);
+spawn([limiter, svc](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+    co_await limiter->acquire(ctx);                 // throttle before the call
+    auto r = co_await qb::ask(ctx, svc, Req{}, 1s);
+});
+```
+
+**Bulkhead.** A `qb::bulkhead` caps the number of *concurrent* calls through a resource so a slow
+dependency can't exhaust the core. `enter(ctx)` waits (cancellation-aware) for a slot and returns
+an RAII handle freed on scope exit.
+
+```cpp
+auto bh = std::make_shared<qb::bulkhead>(8); // at most 8 concurrent calls to `svc`
+spawn([bh, svc](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+    auto slot = co_await bh->enter(ctx);            // waits if 8 are already in flight
+    auto r    = co_await qb::ask(ctx, svc, Req{}, 1s);
+});                                                  // slot frees on scope exit
+```
+
+**Deadline budget.** Thread one absolute `qb::deadline` through a chain of `ask_by` so the *whole*
+chain is bounded (a per-`ask` `timeout` resets at each hop; a deadline does not).
+
+```cpp
+auto dl = qb::deadline_in(ctx, 1s);                       // the whole chain must finish in 1 s
+auto a  = co_await qb::ask_by(ctx, svc1, R1{}, dl);
+auto b  = co_await qb::ask_by(ctx, svc2, R2{a.response}, dl); // gets only the time svc1 left over
+```
+
 **Pitfalls.**
 
 - A success **closes** the breaker, a timeout (or other non-cancellation error) is a **failure**; a kill
   (`cancelled_error`) is *not* counted — it is a controlled shutdown, not a responder fault.
-- Capture the breaker `shared_ptr` **by value** — never a reference to an actor member.
-- Compose the two by retrying *around* a guarded ask (each guarded attempt also feeds the breaker).
+- Capture the breaker / limiter `shared_ptr` **by value** — never a reference to an actor member.
+- A `CircuitBreaker` / `rate_limiter` is **core-local**: do not share one across `VirtualCore`s
+  (their state is single-thread, unsynchronized by design).
+- Compose them by retrying *around* a guarded ask (each guarded attempt also feeds the breaker), and
+  `acquire`-ing a limiter token before the ask.
+
+## Recipe: idempotency, batching & streaming
+
+**Idempotency (exactly-once effects).** A retried `ask` re-sends with a fresh `correlation_id`, so a
+reply lost to a timeout would run the responder's effect twice. Carry a **stable** `idempotency_key`
+on the request (preserved across retries — each attempt copies the request) and de-duplicate on the
+responder with `qb::answer_idempotent` + a bounded-LRU `qb::dedup_map`.
+
+```cpp
+struct Charge : qb::Request<Receipt> { std::uint64_t idempotency_key{}; double amount{}; };
+
+class Bank : public qb::Actor {
+    qb::dedup_map<std::uint64_t, Receipt> _seen{4096};        // bounded LRU of key → response
+public:
+    qb::io::async::task<bool> onInit() override { registerEvent<Charge>(*this); co_return true; }
+    void on(Charge &c) {
+        qb::answer_idempotent(*this, c, _seen, [&](Charge const &r){ return do_charge(r); });
+    } // first request runs do_charge; a repeat with the same key replays the cached Receipt
+};
+```
+
+**Batching (aggregate by size or time).** Coalesce many small events into one amortized action with
+`qb::batcher<T>` — it flushes when `max` items accumulate *or* a time `window` elapses, whichever
+first. The window timer is scope-bound (a kill cancels it).
+
+```cpp
+class Writer : public qb::Actor {
+    qb::batcher<Row> _batch{128, 50ms, [this](std::vector<Row> &&rows){ db_write(std::move(rows)); }};
+public:
+    void on(Row &e) { _batch.add(context(), e.row); } // one db_write per 128 rows or per 50 ms
+};
+```
+
+**Streaming (many replies for one request).** `qb::ask_stream` returns a `qb::stream<E>` you drain
+with `co_await s.next()` until end-of-stream. The responder emits chunks with `qb::yield_answer` and
+finishes with `qb::end_stream`; the asker routes chunks with `resolve_ask` (they are `AskEvent`s).
+
+```cpp
+struct Tail : qb::StreamRequest<LogLine> { std::string file; };
+
+// responder:
+void on(Tail &t) {
+    for (auto const &line : read(t.file)) qb::yield_answer(*this, t, line);
+    qb::end_stream(*this, t);
+}
+// asker (in a spawn() body or directly in onInit):
+auto s = qb::ask_stream(ctx, tailer, Tail{.file = "app.log"}, 1s);
+while (auto line = co_await s.next()) print(line->chunk); // nullopt at end-of-stream
+// asker's on(Tail&): if (resolve_ask(e)) return;
+```
+
+**Pitfalls.**
+
+- A default-valued `idempotency_key` (`{}`) is **never** de-duplicated (always runs the effect) —
+  set a stable key to opt in. `dedup_map` is core-local; size it to your retry/dup window.
+- `batcher::on_flush` runs on the loop; on an abrupt kill the buffered items are **dropped** — call
+  `flush()` from a shutdown handler if you need a final drain.
+- A `stream` is **single-consumer**: do not call `next()` concurrently. If the responder outpaces the
+  buffer (`capacity`), `next()` throws `qb::stream_overflow_error` rather than dropping silently —
+  raise `capacity` or slow the producer. The asker's `on(E&)` must call `resolve_ask(e)`.
+- The whole pattern library — `ask`, `ask_all/any/quorum`, `ask_by`, **`ask_stream`**, **`ping`**,
+  **`require`** — is usable directly inside `onInit()` (replies reach the *Activating* actor via the
+  continuation registry), bounded by `activation_deadline_ns`.
 
 ## Recipe: worker pool & pub/sub
 
@@ -565,7 +677,7 @@ class Worker : public qb::SupervisedActor {
 public:
     Worker(qb::ActorId sup, std::size_t slot, std::uint64_t gen)
         : qb::SupervisedActor(sup, slot, gen) {}
-    bool onInit() override { registerEvent<Job>(*this); return true; }
+    qb::io::async::task<bool> onInit() override { registerEvent<Job>(*this); co_return true; }
     void on(Job &j) { if (!process(j)) stop(); }   // failure -> notify supervisor + kill
 };
 
@@ -574,7 +686,7 @@ public:
     Pool() : qb::Supervisor(qb::restart_strategy::one_for_one, /*children*/ 4, /*max_restarts*/ 8) {}
 protected:
     qb::ActorId spawn_child(std::size_t slot, std::uint64_t gen) override {
-        return addRefActor<Worker>(id(), slot, gen)->id();   // same-core referenced child
+        return addRefActor<Worker>(id(), slot, gen).id();   // same-core referenced child (handle.id())
     }
     void on_escalate() override { kill(); }   // give up after too many restarts
 };
@@ -590,6 +702,10 @@ Strategies: `one_for_one` (restart just the failed child), `one_for_all` (restar
   not auto-detected. Children are `addRefActor` referenced actors on the supervisor's core.
 - `max_restarts` bounds the restart intensity; past it, `on_escalate()` runs instead of restarting
   (escalate by killing the supervisor, alerting, etc.) — otherwise a crash-looping child restarts forever.
+  By default the cap is **cumulative** over the supervisor's life; pass a `restart_window`
+  (`Supervisor(strategy, count, max_restarts, window)`) to count it as a sliding window ("N within T").
+- Killing the supervisor (a `KillEvent`) tears down its children first — they are never orphaned.
+  `Main::stop()` / `SIGINT` already broadcasts to every actor, so children stop there too.
 
 ## Recipe: broadcast fan-out
 
@@ -611,11 +727,11 @@ struct Announce : qb::Event {
 
 class Listener : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Announce>(*this);
         // qb::KillEvent is already registered by the default constructor; its
         // inherited handler calls kill(), so broadcast<KillEvent>() stops this actor.
-        return true;
+        co_return true;
     }
     void on(const Announce &e) {
         qb::io::cout() << "listener " << id() << ": " << e.text << '\n';
@@ -624,11 +740,11 @@ public:
 
 class Publisher : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         broadcast<Announce>("system online");  // every actor on every core
         broadcast<qb::KillEvent>();            // then shut the system down
         kill();
-        return true;
+        co_return true;
     }
 };
 
@@ -672,9 +788,9 @@ struct DoneItem   : qb::Event { int value; explicit DoneItem(int v) : value(v) {
 
 class StageSink : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<DoneItem>(*this);
-        return true;
+        co_return true;
     }
     void on(const DoneItem &e) {
         qb::io::cout() << "result: " << e.value << '\n';
@@ -686,9 +802,9 @@ class StageTransform : public qb::Actor {
     qb::ActorId _sink;
 public:
     explicit StageTransform(qb::ActorId sink) : _sink(sink) {}
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<ParsedItem>(*this);
-        return true;
+        co_return true;
     }
     void on(const ParsedItem &e) {
         push<DoneItem>(_sink, e.value * 10);  // hand off to the next stage
@@ -699,10 +815,10 @@ class StageParse : public qb::Actor {
     qb::ActorId _transform;
 public:
     explicit StageParse(qb::ActorId transform) : _transform(transform) {}
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<RawItem>(*this);
         push<RawItem>(id(), 42);              // feed the pipeline
-        return true;
+        co_return true;
     }
     void on(const RawItem &e) {
         push<ParsedItem>(_transform, e.value + 1);
@@ -749,9 +865,9 @@ every actor; `engine.join()` returns once they have all terminated.
 
 class Worker : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<qb::KillEvent>(*this);   // route KillEvent to the custom handler below
-        return true;
+        co_return true;
     }
 
     void on(const qb::KillEvent &) {           // overrides the default kill()-only handler
@@ -763,9 +879,9 @@ public:
 
 class Supervisor : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(const qb::KillEvent &) {

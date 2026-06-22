@@ -43,9 +43,9 @@
  * ```cpp
  * class MyActor : public qb::Actor {
  * public:
- *     bool onInit() override {
+ *     qb::io::async::task<bool> onInit() override {
  *         registerEvent<MyEvent>(*this);
- *         return true;
+ *         co_return true;
  *     }
  *     void on(MyEvent const& e) { /* handle */ }
 *
@@ -118,8 +118,8 @@
       * @brief Support for periodic callbacks within actors.
       *
       * Includes the `qb::ICallback` interface. Actors that inherit from it can register
-      * themselves with `registerCallback(*this)` to have `onCallback()` invoked on every
-      * iteration of their `VirtualCore`'s event loop. The callback must be fast and
+      * themselves with `registerCallback(*this)` to have `on(qb::LoopEvent const&)` invoked on
+      * every iteration of their `VirtualCore`'s event loop. The callback must be fast and
       * non-blocking.
       */
 

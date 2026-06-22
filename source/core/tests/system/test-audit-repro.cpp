@@ -46,7 +46,7 @@ TEST(AuditRepro, UnregisteredEventTypeMustNotKillCore) {
 }
 
 // Finding #C: an actor killed during the callback dispatch pass (by another
-// actor's onCallback) must NOT receive another onCallback in that same pass.
+// actor's tick) must NOT receive another on(LoopEvent) tick in that same pass.
 static std::atomic<int> g_victim_ticks{0};
 
 struct CbVictim
@@ -59,7 +59,7 @@ struct CbVictim
         co_return true;
     }
     void
-    onCallback() override {
+    on(qb::LoopEvent const &) override {
         g_victim_ticks.fetch_add(1, std::memory_order_relaxed);
     }
     void
@@ -80,7 +80,7 @@ struct CbKiller
         co_return true;
     }
     void
-    onCallback() override {
+    on(qb::LoopEvent const &) override {
         // First tick: synchronously kill the victim (which is later in the
         // callback snapshot). get() returns nullptr once it is dead, so this
         // fires exactly once.
@@ -103,7 +103,7 @@ TEST(AuditRepro, KilledActorGetsNoFurtherCallbackInSamePass) {
     });
     engine.start(false);
     stopper.join();
-    // BUG: victim's onCallback ran once after it was killed (it was still in the
+    // BUG: victim's tick ran once after it was killed (it was still in the
     // already-copied snapshot). Fixed: a killed actor is skipped in the loop.
     EXPECT_EQ(g_victim_ticks.load(), 0) << "victim ticked after being killed in the same callback pass";
 }

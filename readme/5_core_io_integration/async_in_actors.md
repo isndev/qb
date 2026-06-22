@@ -89,11 +89,11 @@ class WatchdogActor : public qb::Actor {
     int                 _next_id = 1;
 
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<TaskComplete>(*this);
         registerEvent<qb::KillEvent>(*this);
         startOperation(5s);
-        return true;
+        co_return true;
     }
 
     void startOperation(qb::duration timeout) {
@@ -210,11 +210,11 @@ class SessionActor
 public:
     SessionActor() : with_timeout(30s) {}
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<ClientPing>(*this);
         registerEvent<qb::KillEvent>(*this);
         updateTimeout();          // start the countdown
-        return true;
+        co_return true;
     }
 
     void on(const ClientPing &) {
@@ -287,17 +287,17 @@ For the scoped-cancellation operations and the native `ask()` request/response p
 
 ## Periodic work: `qb::ICallback`
 
-For logic that must run on *every* loop iteration (polling, draining a queue, heartbeats), inherit `qb::ICallback` alongside `qb::Actor` and register with `registerCallback(*this)`. The core calls `onCallback()` once per iteration until you call `unregisterCallback()`.
+For logic that must run on *every* loop iteration (polling, draining a queue, heartbeats), inherit `qb::ICallback` alongside `qb::Actor` and register with `registerCallback(*this)`. The core calls `on(qb::LoopEvent const&)` once per iteration until you call `unregisterCallback()`. The `qb::LoopEvent` carries per-loop context (`now`, `iteration`).
 
 ```cpp
 // Declared in qb/include/qb/core/ICallback.h
 class ICallback {
 public:
-    virtual void onCallback() = 0;   // called every loop iteration while registered
+    virtual void on(qb::LoopEvent const &) = 0;   // called every loop iteration while registered
 };
 ```
 
-`onCallback()` is bound by the same no-blocking rule as everything else on the core: it must return quickly and must never block, sleep, or do synchronous I/O. <!-- src: qb/include/qb/core/ICallback.h:116 --> For a one-shot or backoff schedule rather than every-iteration work, prefer `async::callback`. For the registration API and a worked heartbeat example, see [Reference: `qb::Actor` (`ICallback`)](../4_qb_core/actor.md).
+`on(qb::LoopEvent const&)` is bound by the same no-blocking rule as everything else on the core: it must return quickly and must never block, sleep, or do synchronous I/O. <!-- src: qb/include/qb/core/ICallback.h:116 --> For a one-shot or backoff schedule rather than every-iteration work, prefer `async::callback`. For the registration API and a worked heartbeat example, see [Reference: `qb::Actor` (`ICallback`)](../4_qb_core/actor.md).
 
 ## Blocking file I/O from an actor
 
@@ -328,7 +328,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
 - **Touching `this` after the actor died.** A delayed callback can outlive its actor — guard with `is_alive()`, or prefer `push`-back-to-self over direct mutation.
 - **Accessing actor state after `co_await`.** Inside a coroutine, the actor may be destroyed across any suspension point. Copy state by value before the first `co_await` and use only the `CoroContext` afterward.
 - **Sharing I/O objects across cores.** An async object is bound to one core's loop. Never hand it to another thread; communicate with events instead. <!-- src: qb/include/qb/io/async/listener.h:63 -->
-- **Blocking the loop.** A synchronous `read`, a `sleep`, a mutex wait, or an unbounded computation in a handler, callback, or `onCallback()` freezes the entire core. Defer it, chunk it, or offload it to a worker actor.
+- **Blocking the loop.** A synchronous `read`, a `sleep`, a mutex wait, or an unbounded computation in a handler, callback, or `on(qb::LoopEvent const&)` freezes the entire core. Defer it, chunk it, or offload it to a worker actor.
 
 ## See also
 
