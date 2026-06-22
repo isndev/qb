@@ -46,6 +46,7 @@ set(CORE_TESTS
         test-session-json.cpp
         test-io-plan.cpp
         test-quic.cpp
+        test-inet-endpoint.cpp
 )
 
 # These tests drive raw POSIX socket/fd syscalls directly (socketpair,

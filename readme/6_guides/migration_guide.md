@@ -41,7 +41,7 @@ For the full model see [The actor model](../2_core_concepts/actor_model.md); for
 | `std::atomic<bool> running` flag, then `notify` to stop | `push<qb::KillEvent>(id)` / `kill()` | The default `KillEvent` handler terminates the actor gracefully after the current handler. |
 | `std::future` / `std::promise` for a result | A reply event back to the requester | The handler answers with `push<ResultEvent>(requester, …)` or `reply(event)`. |
 | `std::thread::hardware_concurrency()` fan-out | Actors placed across `CoreId`s | Distribute by passing different `CoreId` values to `addActor`. |
-| Polling loop / `sleep_for` between iterations | `qb::ICallback::onCallback()` or `qb::io::async::callback` | A per-loop tick or a one-shot non-blocking timer on the same core. |
+| Polling loop / `sleep_for` between iterations | `qb::ICallback::on(qb::LoopEvent const&)` or `qb::io::async::callback` | A per-loop tick or a one-shot non-blocking timer on the same core. |
 | Manual `errno` / return-code propagation across threads | An error event, or an unhandled exception caught by the core | See [Error handling](./error_handling.md). |
 
 `push` and `send` differ: `push<_Event>(dest, …)` returns a reference to the queued event and guarantees ordered delivery from one source to one destination; `send<_Event>(dest, …)` is unordered, fire-and-forget, and restricted to trivially-destructible events. Prefer `push`. _(`qb/include/qb/core/Actor.h:729,752`.)_
@@ -126,9 +126,9 @@ class WorkerActor : public qb::Actor {
     long _total = 0;   // no lock: only this actor's handlers touch it
 
 public:
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         registerEvent<JobEvent>(*this);   // subscribe; KillEvent is automatic
-        return true;
+        co_return true;
     }
 
     void on(const JobEvent &job) {
@@ -144,12 +144,12 @@ class ProducerActor : public qb::Actor {
 public:
     explicit ProducerActor(qb::ActorId worker) : _worker(worker) {}
 
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         for (int i = 0; i < 3; ++i)
             push<JobEvent>(_worker, i, (i + 1) * 10);   // enqueue, ordered
         push<qb::KillEvent>(_worker);                   // graceful stop
         kill();                                         // stop self
-        return true;
+        co_return true;
     }
 };
 
@@ -192,7 +192,7 @@ Cross-core `push` is delivered over a lock-free queue; the code above is unchang
 - **Do not share an actor's state with other threads.** The no-lock guarantee holds only because one core touches the state. Reintroducing a raw pointer, a `std::shared_ptr` to mutable data, or a global shared with non-actor code reintroduces the data race. Communicate by sending events.
 - **`addActor` can fail — and *how* depends on the path.** The pre-start `Main::addActor<T>(coreId, …)` overload does **not** run `onInit()`; it returns `qb::ActorId::NotFound` (the default-constructed, invalid ID) only when the per-core ID pool is exhausted or a duplicate service `Tag` is registered. An `onInit()` that returns `false` for a pre-start actor is detected at startup: the engine flags that core `VirtualCore::Error::BadActorInit`, the core fails to start, and you observe it via `hasError()` after the run — not through the returned ID. The runtime `addRefActor` / `addActor(…)` path is the one that *does* run `onInit()` at add time and returns an invalid ID when it returns `false`. Guard every returned ID with `is_valid()`, and gate startup with `hasError()`. _(`qb/include/qb/core/Main.tpp:37-65`; `qb/source/core/src/VirtualCore.cpp:466-475`; `qb/source/core/src/Main.cpp:204-215`; `qb/include/qb/core/ActorId.h:403,444`; [Error handling](./error_handling.md).)_
 - **Add every actor before `start()`.** Actors are constructed on their worker thread when the engine starts; `addActor` must be called beforehand.
-- **A periodic task is not a `sleep` loop.** Replace a polling thread with `qb::ICallback` (`onCallback()` runs once per loop iteration) or a one-shot `qb::io::async::callback`, both non-blocking. _(`qb/include/qb/core/ICallback.h:16,122`.)_
+- **A periodic task is not a `sleep` loop.** Replace a polling thread with `qb::ICallback` (`on(qb::LoopEvent const&)` runs once per loop iteration) or a one-shot `qb::io::async::callback`, both non-blocking. _(`qb/include/qb/core/ICallback.h:16,122`.)_
 
 ## Part 2 — From the pre-2.0 time types to the chrono model
 
@@ -293,7 +293,75 @@ The migration matters because the framework's own surfaces take these types. A f
 - **Do not mix the two instant clocks.** You cannot subtract a `qb::wall_time` from a `qb::mono_time`; the compiler rejects it. Measure and schedule with `mono_time`; record dates and expiry with `wall_time`. Converting between them means going through a Unix-epoch scalar (`unix_seconds` / `wall_from_unix_seconds`) and accepting that the wall clock can step. _(`qb/include/qb/system/timestamp.h:18-20`.)_
 - **`tsc_ticks()` is not a clock.** It is monotonic per core but uncalibrated and not comparable across cores or to either clock. Use it only for single-thread micro-benchmark deltas. _(`qb/include/qb/system/timestamp.h:214-216`.)_
 - **`format_utc`/`parse_utc` are UTC-only.** There is no time-zone database on this toolchain; formatting uses `strftime` and parsing uses `std::get_time` + `timegm`, both in UTC. `format_utc` returns an empty string on failure; `parse_utc` and `from_iso8601` return `std::nullopt`. _(`qb/include/qb/system/timestamp.h:27-30,181-208`.)_
-- **`Actor::time()` returns a raw `uint64_t`, not a chrono type.** It is the core's cached epoch-nanosecond count (sourced from `qb::wall_now()`), constant within one handler or `onCallback()` invocation; it is not a `qb::mono_time` or `qb::wall_time`. For a fresh high-precision wall instant use `qb::unix_nanos(qb::wall_now())`. _(`qb/include/qb/core/Actor.h:513-528`.)_
+- **`Actor::time()` returns a raw `uint64_t`, not a chrono type.** It is the core's cached epoch-nanosecond count (sourced from `qb::wall_now()`), constant within one handler or `on(qb::LoopEvent const&)` invocation; it is not a `qb::mono_time` or `qb::wall_time`. For a fresh high-precision wall instant use `qb::unix_nanos(qb::wall_now())`. _(`qb/include/qb/core/Actor.h:513-528`.)_
+
+## Part 3 — From the synchronous `onInit()` to the async-init APIs
+
+The development branch makes two **source-incompatible** changes to the actor API. Both are
+mechanical to adopt.
+
+### `onInit()` is now a coroutine
+
+`Actor::onInit()` changed from `bool onInit()` to `qb::io::async::task<bool> onInit()`. Replace the
+return type and turn each `return` into `co_return`:
+
+```cpp
+// Before (qb 2.0)
+bool onInit() override {
+    registerEvent<MyEvent>(*this);
+    if (!acquire()) return false;
+    return true;
+}
+
+// After
+qb::io::async::task<bool> onInit() override {
+    registerEvent<MyEvent>(*this);
+    if (!acquire()) co_return false;
+    co_return true;
+}
+```
+
+A purely synchronous init needs nothing more than the signature + `co_return` swap — it still
+completes in one step and pays none of the suspended-init machinery. The new power is that `onInit()`
+**may now `co_await`** — sleep, `qb::ask` a peer for its configuration, or run a pattern — without
+blocking the core:
+
+```cpp
+qb::io::async::task<bool> onInit() override {
+    registerEvent<Reply>(*this);
+    auto cfg = co_await qb::ask(context(), config_service, ConfigReq{}, 2s);
+    _setting = cfg.response;
+    co_return true;
+}
+```
+
+While a suspended `onInit()` is in flight the actor is **Activating**: inbound unicast business
+events are stashed and replayed FIFO once it activates (broadcasts and `KillEvent` still pass
+through), bounded by `qb::VirtualCore::activation_deadline_ns` (default 5 s). Use `context()` so a
+kill during init unwinds the coroutine cleanly. `co_return false` or an uncaught exception still
+fails init and removes the actor. Query `is_active()` (alive **and** activated) where you previously
+relied only on `is_alive()`.
+
+### `addRefActor<T>()` returns `ActorHandle<T>`, not `T*`
+
+`addRefActor<T>()` (and the alias `addRefHandle<T>()`) now return a phase-aware
+`qb::ActorHandle<T>` (alias `RefActorHandle<T>`) instead of a raw `T*`:
+
+```cpp
+// Before
+ChildHelper *child = addRefActor<ChildHelper>(args);   // raw, could dangle after kill()
+child->doWork();
+
+// After
+auto child = addRefActor<ChildHelper>(args);           // qb::ActorHandle<ChildHelper>
+push<Task>(child.id(), ...);                            // always safe (stashed if Activating)
+if (child.ready()) child->doWork();                    // direct call only when active
+// async-init child: if (co_await child.ready_async(context())) child->doWork();
+```
+
+The handle never dangles: `get()` / `operator->` resolve the live actor on demand and return
+`nullptr` while it is Activating, after a failed init, or once it died. Code that already used
+`addRefHandle<T>()` + `RefActorHandle<T>` keeps compiling unchanged.
 
 ## See also
 

@@ -22,7 +22,7 @@ The single most consequential rule: **an uncaught exception does not crash one a
 
 ### The exception policy
 
-qb has no per-event or per-actor `try`/`catch`. The worker loop (`VirtualCore::__workflow__`, `source/core/src/VirtualCore.cpp`) dispatches events and `onCallback()` ticks directly, with no exception barrier around each call. The only `catch` is one level up, in `Main::start_thread` (`source/core/src/Main.cpp`), which wraps the *entire* lifetime of the loop:
+qb has no per-event or per-actor `try`/`catch`. The worker loop (`VirtualCore::__workflow__`, `source/core/src/VirtualCore.cpp`) dispatches events and `on(qb::LoopEvent const&)` ticks directly, with no exception barrier around each call. The only `catch` is one level up, in `Main::start_thread` (`source/core/src/Main.cpp`), which wraps the *entire* lifetime of the loop:
 
 ```cpp
 // src: qb/source/core/src/Main.cpp (Main::start_thread, abridged)
@@ -36,7 +36,7 @@ try {
 }
 ```
 
-The consequence: when an `on(Event&)` handler or an `onCallback()` throws and the actor does not catch it, the stack unwinds out of `__workflow__`, the worker thread of that `VirtualCore` exits, and **every actor pinned to that core stops** — no further events, no further `onCallback()` ticks. The engine flags the core with `VirtualCore::Error::ExceptionThrown`.
+The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` throws and the actor does not catch it, the stack unwinds out of `__workflow__`, the worker thread of that `VirtualCore` exits, and **every actor pinned to that core stops** — no further events, no further `on(qb::LoopEvent const&)` ticks. The engine flags the core with `VirtualCore::Error::ExceptionThrown`.
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
@@ -61,7 +61,7 @@ Two practical rules follow. First, sending an event never throws, so you cannot 
 
 | Failure | How it surfaces | Default behavior | Who observes it |
 |---|---|---|---|
-| Exception escapes a handler / `onCallback()` | Stack unwind to `start_thread` | Worker thread exits; all actors on that core stop; core flagged `ExceptionThrown` | `Main::hasError()` after the run |
+| Exception escapes a handler / `on(qb::LoopEvent const&)` | Stack unwind to `start_thread` | Worker thread exits; all actors on that core stop; core flagged `ExceptionThrown` | `Main::hasError()` after the run |
 | Exception in `noexcept` context (e.g. `push` OOM, throwing `on(KillEvent)`) | `std::terminate` | Process aborts | OS / crash handler |
 | `onInit()` returns `false` at runtime (`addRefActor`) | Actor not added | Actor destroyed immediately; never processes events | The code calling `addRefActor` (returns an invalid handle/id) |
 | `onInit()` returns `false` at startup (pre-start `addActor`) | Core flagged `BadActorInit` | Core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
@@ -98,9 +98,9 @@ struct CommandStatus : qb::Event {
 
 class CommandHandler : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<ProcessCommand>(*this);
-        return true;
+        co_return true;
     }
 
     void on(const ProcessCommand &event) {
@@ -168,7 +168,7 @@ if (main.hasError()) {
 | `BadInit` | `1u << 9` | The `VirtualCore` itself failed to initialize. |
 | `NoActor` | `1u << 10` | The core started with zero actors. |
 | `BadActorInit` | `1u << 11` | An actor's `onInit()` returned `false` during startup (the *false-return* path only; a startup `onInit()` that throws sets `ExceptionThrown` instead). |
-| `ExceptionThrown` | `1u << 12` | An unhandled exception escaped — either a startup `onInit()` throw or, during execution, an actor handler or `onCallback()`. |
+| `ExceptionThrown` | `1u << 12` | An unhandled exception escaped — either a startup `onInit()` throw or, during execution, an actor handler or `on(qb::LoopEvent const&)`. |
 
 `hasError()` collapses all of these to a single boolean; it does not tell you *which* core failed or which sentinel fired. Use it as a post-run health gate (CI, supervised relaunch) and rely on the critical log lines (`LOG_CRIT`) for the specific cause. For finer-grained detection at runtime, build it yourself with the supervision patterns below.
 
@@ -210,11 +210,11 @@ class WorkerSupervisor : public qb::Actor {
     static constexpr auto                kPingTimeout = std::chrono::seconds(5);
 
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<PongWorker>(*this);
         registerEvent<TimeoutCheck>(*this);
         registerEvent<WorkerError>(*this);
-        return true;
+        co_return true;
     }
 
     void pingAndArm(qb::ActorId worker) {
@@ -384,14 +384,14 @@ class MonitorActor : public qb::Actor {
     std::unique_ptr<qb::io::async::ScopedTimeout<std::function<void()>>> _timeout;
 
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         _timeout = qb::io::async::scoped_callback(
             std::function<void()>{[this]() {
                 broadcast<qb::KillEvent>();
                 kill();
             }},
             std::chrono::milliseconds(500));
-        return true;
+        co_return true;
     }
 };
 ```

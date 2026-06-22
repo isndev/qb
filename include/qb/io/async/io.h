@@ -857,18 +857,18 @@ public:
      * @code
      * class MyClient : public qb::Actor, public qb::io::use<MyClient>::tcp::client<> {
      * public:
-     *   bool onInit() override {
+     *   qb::io::async::task<bool> onInit() override {
      *     // Set up protocol before starting
      *     this->template switch_protocol<MyProtocol>(*this);
      *
      *     // Connect to server
      *     if (this->transport().connect_v4("127.0.0.1", 8080) < 0) {
-     *       return false; // Connection failed
+     *       co_return false; // Connection failed
      *     }
      *
      *     // Start reading data
      *     this->start();
-     *     return true;
+     *     co_return true;
      *   }
      *
      *   void on(MyProtocol::message &&msg) {
@@ -1502,10 +1502,10 @@ public:
      * @code
      * class MyClient : public qb::Actor, public qb::io::use<MyClient>::tcp::client<> {
      * public:
-     *   bool onInit() override {
+     *   qb::io::async::task<bool> onInit() override {
      *     // Connect to server
      *     if (this->transport().connect_v4("127.0.0.1", 8080) < 0) {
-     *       return false;
+     *       co_return false;
      *     }
      *
      *     // Start writing data
@@ -1513,7 +1513,7 @@ public:
      *
      *     // Send initial message
      *     *this << "Hello, server!" << Protocol::end;
-     *     return true;
+     *     co_return true;
      *   }
      * };
      * @endcode
@@ -2044,13 +2044,13 @@ public:
      * @code
      * class MyClient : public qb::Actor, public qb::io::use<MyClient>::tcp::client<> {
      * public:
-     *   bool onInit() override {
+     *   qb::io::async::task<bool> onInit() override {
      *     // Set up protocol before starting
      *     this->template switch_protocol<MyProtocol>(*this);
      *
      *     // Connect to server
      *     if (this->transport().connect_v4("127.0.0.1", 8080) < 0) {
-     *       return false;
+     *       co_return false;
      *     }
      *
      *     // Start bidirectional I/O
@@ -2058,7 +2058,7 @@ public:
      *
      *     // Send initial message
      *     *this << "Hello!" << Protocol::end;
-     *     return true;
+     *     co_return true;
      *   }
      *
      *   void on(MyProtocol::message &&msg) {

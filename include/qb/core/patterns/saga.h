@@ -66,6 +66,10 @@ public:
      * @brief Run all registered compensations in reverse order, then clear them.
      * @details Best-effort: an exception from one compensation is swallowed so the remaining
      *          rollbacks still run. Invoked automatically by `run_saga` on failure.
+     * @note Cancellation-aware: if a compensation throws `cancelled_error` (the actor is being
+     *       killed), the rollback **stops** rather than spinning through the remaining
+     *       compensations — every subsequent one would immediately re-throw `cancelled_error`
+     *       anyway (the scope is already cancelled), wasting resumes.
      */
     qb::io::async::task<void>
     compensate() {
@@ -74,6 +78,8 @@ public:
             _compensations.pop_back();
             try {
                 co_await comp();
+            } catch (const qb::io::async::cancelled_error &) {
+                break; // actor killed mid-rollback — abort the remaining compensations.
             } catch (...) {
                 // best-effort rollback: keep unwinding the remaining compensations.
             }

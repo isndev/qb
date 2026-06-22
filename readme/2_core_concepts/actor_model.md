@@ -55,11 +55,11 @@ class CounterActor : public qb::Actor {
 public:
     // onInit() runs once after construction and ID assignment, before any
     // event is processed. It is the place to subscribe to event types.
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<CountEvent>(*this);   // subscribe: route CountEvent to on(const CountEvent&)
         qb::io::cout() << "CounterActor [" << id() << "] on core "
                        << getIndex() << " ready\n";
-        return true;   // returning false aborts startup and destroys the actor
+        co_return true;   // returning false aborts startup and destroys the actor
     }
 
     // Event handler. Registered handlers are public methods named on(),
@@ -97,7 +97,7 @@ Every actor has a unique `qb::ActorId` (`qb/core/ActorId.h`). The id is the addr
 
 - **Composition.** An `ActorId` packs two 16-bit fields into a 32-bit value: a `ServiceId` (the actor's slot within its core) and a `CoreId` (which `VirtualCore` hosts it). Both `CoreId` and `ServiceId` are `uint16_t`. The value is bit-castable to and from `uint32_t` (`ActorId` defines `operator uint32_t()` and a `uint32_t` constructor, both implemented with `std::bit_cast`).
 - **Accessors.** `sid()` returns the `ServiceId`; `index()` returns the `CoreId`; `is_valid()` reports whether the id is assigned (not the default `NotFound == 0`); `is_broadcast()` reports whether it is a per-core broadcast id.
-- **Obtaining it.** Inside an actor, call `id()`. At creation time, `engine.addActor<MyActor>(core_id, ...)` returns the new actor's id, and `addRefActor<Child>()` returns a pointer whose `->id()` gives the child's id.
+- **Obtaining it.** Inside an actor, call `id()`. At creation time, `engine.addActor<MyActor>(core_id, ...)` returns the new actor's id, and `addRefActor<Child>()` returns a phase-aware `qb::ActorHandle<Child>` whose `.id()` gives the child's id (valid immediately, even while the child is still Activating).
 
 Two special values:
 
@@ -123,11 +123,15 @@ An actor moves through a fixed sequence of stages. The hooks you control are `on
 ```text
  construction      ── on the hosting VirtualCore's thread; ActorId assigned
       │
-   onInit()        ── register events, acquire resources; return true to start
+   onInit()        ── coroutine: register events, acquire resources, optionally co_await;
+      │             co_return true to activate
       │
-      ├── returns false ──► destructor runs; actor never starts
+      ├── co_await suspends ──► Activating: inbound unicast stashed + replayed FIFO once
+      │                          active; bounded by the activation deadline
       │
-   running         ── mailbox processed one event at a time
+      ├── co_return false / throw ──► destructor runs; actor never starts
+      │
+   running         ── mailbox processed one event at a time (is_active() == true)
       │
    kill()          ── flags the actor (_alive = false); stops NEW events
       │             (queued events may still drain)
@@ -138,7 +142,7 @@ An actor moves through a fixed sequence of stages. The hooks you control are `on
 Key invariants, each grounded in the source:
 
 - **Construction is thread-affine.** An actor must be constructed from within a `VirtualCore` worker thread, never from the main thread or an arbitrary user thread. The constructors assert this (`VirtualCore::_handler != nullptr`). In practice you never call the constructor directly — you use `engine.core(idx).addActor<T>(...)`, `engine.addActor<T>(idx, ...)`, or `addRefActor<T>(...)`, all of which run the construction on the correct thread.
-- **`onInit()` runs exactly once**, after construction and id assignment, before any event is processed. Returning `false` aborts registration and immediately destroys the actor.
+- **`onInit()` runs exactly once**, after construction and id assignment, before any business event is processed. It is an async coroutine (`qb::io::async::task<bool>`): `co_return true` activates the actor, `co_return false` or an uncaught exception aborts registration and immediately destroys it. While a suspended `onInit()` is in flight the actor is **Activating** — unicast business events are stashed and replayed FIFO once active, bounded by `qb::VirtualCore::activation_deadline_ns`. `is_active()` reports whether activation completed (vs `is_alive()`).
 - **`kill()` only flags.** It sets the internal `_alive` flag to `false` and asks the `VirtualCore` to schedule removal. The actor stops receiving *new* events but may still drain events already queued; `~Actor()` runs later, under `VirtualCore` control, not at the point of the `kill()` call. `kill()` is `const noexcept` — handlers can call it even through a const `this`.
 - **The destructor is the RAII boundary.** It runs after the actor has terminated and the engine removes it. Member objects with their own destructors are cleaned up here; this is the natural place to release anything not covered by RAII members.
 
@@ -155,10 +159,10 @@ class LeanWorker : public qb::Actor {
 public:
     LeanWorker() : qb::Actor(qb::no_default_events) {}  // no default subscriptions
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<qb::KillEvent>(*this);  // re-add graceful shutdown by hand
         registerEvent<WorkEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(WorkEvent &ev) { /* ... */ }
@@ -173,10 +177,10 @@ That guarantee covers an actor's *own* state only. It does not extend to memory 
 
 ## Pitfalls
 
-- **Do not block in a handler.** Event handlers and `qb::ICallback::onCallback()` implementations run on the `VirtualCore` thread and must never block. A long computation, a synchronous file read, or a wait on an external lock freezes the entire core, stalling *every* actor assigned to it. Offload long work with `qb::io::async::callback`, a spawned coroutine (`spawn`), or a dedicated worker actor. See [Asynchronous I/O](./async_io.md).
+- **Do not block in a handler.** Event handlers and `qb::ICallback::on(qb::LoopEvent const&)` implementations run on the `VirtualCore` thread and must never block. A long computation, a synchronous file read, or a wait on an external lock freezes the entire core, stalling *every* actor assigned to it. Offload long work with `qb::io::async::callback`, a spawned coroutine (`spawn`), or a dedicated worker actor. See [Asynchronous I/O](./async_io.md).
 - **`kill()` is not immediate.** It flags the actor; queued events may still be processed and the destructor runs later. Do not assume the actor is gone the instant `kill()` returns.
 - **Sharing external state is your responsibility.** The lock-free guarantee applies only to an actor's private members. If an actor must touch a global, a static, or a non-thread-safe third-party library, you must serialize that access yourself — typically by funneling all access through one dedicated "manager" actor so the actor model serializes it for you.
-- **Direct calls on referenced actors bypass the mailbox.** `addRefActor<T>()` returns a raw pointer and lets the parent call the child's methods directly. Those calls skip the child's event queue and its one-event-at-a-time guarantee; prefer sending events to `child->id()`, and prefer `addRefHandle<T>()` (a liveness-checked `RefActorHandle<T>`) when the handle outlives a single handler. See [qb-core: the Actor API](../4_qb_core/actor.md).
+- **Direct calls on referenced actors bypass the mailbox.** `addRefActor<T>()` returns a phase-aware `qb::ActorHandle<T>`; calling `handle->method()` skips the child's event queue and its one-event-at-a-time guarantee. Only call through the handle when `handle.ready()` (the child is active) — `get()`/`operator->` return `nullptr` (debug `assert`) while it is Activating or after it died, never a dangling pointer. Prefer sending events to `handle.id()` (always safe; stashed while Activating). See [qb-core: the Actor API](../4_qb_core/actor.md).
 - **`send()` requires a trivially destructible event.** The unordered `send<Event>()` path requires the event type to be trivially destructible and does not guarantee delivery order; prefer the ordered `push<Event>()` for almost all cases. Ordering and delivery semantics are detailed in [The event system](./event_system.md).
 
 ## See also

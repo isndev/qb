@@ -448,6 +448,7 @@ struct Release : public qb::Request<bool> {
 };
 
 namespace {
+std::atomic<bool> g_reserved{false};   // Inventory answered a Reserve (saga step 1 completed)
 std::atomic<bool> g_released{false};   // Inventory answered a Release (compensation ran)
 std::atomic<bool> g_saga_failed{false};
 std::atomic<bool> g_saga_ok{false};
@@ -465,7 +466,10 @@ public:
     }
     void
     on(Reserve &r) {
-        qb::answer(*this, r, [](Reserve const &) { return true; });
+        qb::answer(*this, r, [](Reserve const &) {
+            g_reserved = true;
+            return true;
+        });
     }
     void
     on(Release &r) {
@@ -649,6 +653,7 @@ TEST(ActorAskPatterns, SagaCompensationsRunInReverseOrder) {
 // ---------------------------------------------------------------------------
 namespace {
 std::atomic<bool> g_cancel_ok{false};
+std::atomic<bool> g_saga_cancelled{false}; // run_saga re-threw cancelled_error (killed mid-flow)
 std::atomic<bool> g_comp0_ran{false};
 } // namespace
 
@@ -678,15 +683,19 @@ public:
         auto inv = _inv;
         auto pay = _pay;
         spawn([inv, pay](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            co_await qb::run_saga(
-                ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
-                    co_await qb::ask(ctx, inv, Reserve{1}, 500ms);
-                    saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> {
-                        co_await qb::ask(ctx, inv, Release{1}, 500ms); // must NOT run on cancel
+            try {
+                co_await qb::run_saga(
+                    ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                        co_await qb::ask(ctx, inv, Reserve{1}, 500ms); // step 1 succeeds (sets g_reserved)
+                        saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> {
+                            co_await qb::ask(ctx, inv, Release{1}, 500ms); // must NOT run on cancel
+                        });
+                        co_await qb::ask(ctx, pay, Charge{99}, 5s); // long wait — we are killed here
                     });
-                    co_await qb::ask(ctx, pay, Charge{99}, 5s); // long wait — we are killed here
-                });
-            g_cancel_ok = true; // unreachable (cancelled_error propagates, swallowed by the scope)
+                g_cancel_ok = true; // unreachable: run_saga re-throws the cancellation
+            } catch (const qb::io::async::cancelled_error &) {
+                g_saga_cancelled = true; // proof: killed mid-flow (past step 1, inside step 2)
+            }
         });
         co_return true;
     }
@@ -716,8 +725,10 @@ public:
 };
 
 TEST(ActorAskPatterns, SagaCancelledMidFlowSkipsCompensation) {
-    g_released  = false;
-    g_cancel_ok = false;
+    g_reserved       = false;
+    g_released       = false;
+    g_cancel_ok      = false;
+    g_saga_cancelled = false;
     qb::Main main;
     auto     inv    = main.addActor<Inventory>(0);
     auto     pay    = main.addActor<SilentCharge>(0);
@@ -726,8 +737,10 @@ TEST(ActorAskPatterns, SagaCancelledMidFlowSkipsCompensation) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_FALSE(g_released.load());  // cancel ⇒ NO rollback (Release never asked)
-    EXPECT_FALSE(g_cancel_ok.load()); // saga did not complete
+    EXPECT_TRUE(g_reserved.load());       // teeth: step 1 ran → the saga DID enter (compensation registered)
+    EXPECT_TRUE(g_saga_cancelled.load()); // teeth: it was killed mid-step-2 (not crashed early)
+    EXPECT_FALSE(g_released.load());       // cancel ⇒ NO rollback (Release never asked)
+    EXPECT_FALSE(g_cancel_ok.load());      // saga did not complete
 }
 
 class SagaCompThrowClient : public qb::Actor {

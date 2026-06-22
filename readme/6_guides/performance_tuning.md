@@ -216,7 +216,7 @@ Both flags apply to the Release configuration. A Debug build is not a meaningful
 
 ## Pitfalls
 
-- **Blocking inside a handler stalls the whole core.** A long computation, a synchronous I/O call, or a wait on a mutex or condition variable inside `on(Event&)` or `onCallback()` freezes every actor on that `VirtualCore`. Offload to `qb::io::async::callback` for short non-CPU-bound waits, or to a dedicated worker actor (on another core) that does the blocking work and sends a result event back.
+- **Blocking inside a handler stalls the whole core.** A long computation, a synchronous I/O call, or a wait on a mutex or condition variable inside `on(Event&)` or `on(qb::LoopEvent const&)` freezes every actor on that `VirtualCore`. Offload to `qb::io::async::callback` for short non-CPU-bound waits, or to a dedicated worker actor (on another core) that does the blocking work and sends a result event back.
 - **Configuring after `start()`.** Affinity, latency, and placement are pre-start only. `Main::core(id)` throws once the engine is running.
 - **Touching a core you do not populate.** `Main::core(n)` registers core `n`; if no actor lands there, that worker fails to start, logging `... Started with 0 Actor` and reporting `VirtualCore::Error::NoActor`. Configure latency and affinity inside the same loop that places actors.
 - **Reaching for `send` before `push`.** The ordering guarantee `push` gives is cheap; the bugs `send` introduces are not. Use `send` only when the event is `qb::trivial_event` and order is provably irrelevant.

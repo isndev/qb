@@ -57,7 +57,7 @@ Options:
   --google-test   Install system GoogleTest/GoogleMock packages.
   --google-benchmark
                   Install system Google Benchmark package.
-  --quic          Install libngtcp2 and the available crypto helper.
+  --quic          Install libngtcp2 and its OpenSSL crypto helper (needs OpenSSL >= 3.5).
 EOF
 }
 
@@ -145,26 +145,26 @@ install_llvm_repo() {
 }
 
 install_ngtcp2() {
-  local crypto_backend=""
+  # qb's QUIC transport is built solely on the ngtcp2 *OpenSSL* crypto helper
+  # (ngtcp2_crypto_ossl), which requires OpenSSL >= 3.5 (the native QUIC-TLS API).
+  # qb has no GnuTLS/BoringSSL/wolfSSL backend, so only the OpenSSL helper is usable;
+  # when it is unavailable, QUIC simply stays auto-disabled (QB_WITH_QUIC=AUTO).
+  local crypto_backend="none"
 
-  if apt_has_package libngtcp2-dev; then
-    "${SUDO[@]}" apt-get install -y libngtcp2-dev
-  else
-    notice "libngtcp2-dev is not available on this runner image; QUIC will stay auto-disabled."
+  if ! apt_has_package libngtcp2-dev; then
+    notice "libngtcp2-dev not available on this image; QUIC stays auto-disabled."
     export_env QB_CI_NGTCP2_CRYPTO_BACKEND none
     return 0
   fi
+  "${SUDO[@]}" apt-get install -y libngtcp2-dev
 
   if apt_has_package libngtcp2-crypto-ossl-dev; then
     "${SUDO[@]}" apt-get install -y libngtcp2-crypto-ossl-dev
     crypto_backend="ossl"
-  elif apt_has_package libngtcp2-crypto-gnutls-dev; then
-    "${SUDO[@]}" apt-get install -y libngtcp2-crypto-gnutls-dev
-    crypto_backend="gnutls"
-    notice "Installed libngtcp2 GnuTLS helper. qb's current native QUIC backend uses ngtcp2 OpenSSL APIs, so QUIC may remain auto-disabled until a GnuTLS backend is implemented."
   else
-    notice "No libngtcp2 crypto helper package is available on this runner image; QUIC will stay auto-disabled."
-    crypto_backend="none"
+    # Do NOT install the GnuTLS helper: qb cannot use it, so it would only add a
+    # useless package and a misleading "fallback".
+    notice "libngtcp2-crypto-ossl-dev not available (needs OpenSSL >= 3.5); QUIC stays auto-disabled."
   fi
 
   export_env QB_CI_NGTCP2_CRYPTO_BACKEND "${crypto_backend}"

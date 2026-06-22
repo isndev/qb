@@ -91,13 +91,14 @@ ask_register_type(Event::id_type const type) noexcept {
 
 bool
 ask_try_deliver_reply(Event &ev, ActorId const dest) noexcept {
-    // Only events whose type was registered by `qb::ask<E>` carry a `correlation_id`.
+    // Only correlated-reply types (registered by ask / ask_stream / require) carry a
+    // `correlation_id`.
     if (tls_ask_types.find(ev.getID()) == tls_ask_types.end())
         return false;
-    // The type-id match proves `ev` derives from AskEvent (single inheritance, AskEvent is
-    // the first base), so `correlation_id` lives at the AskEvent base subobject offset.
-    auto &ae = static_cast<AskEvent &>(ev);
-    return ask_deliver(ae.correlation_id, dest, ev);
+    // The type-id match proves `ev` derives from CorrelatedEvent (it is the first base), so
+    // `correlation_id` lives at the CorrelatedEvent base subobject offset.
+    auto &ce = static_cast<CorrelatedEvent &>(ev);
+    return ask_deliver(ce.correlation_id, dest, ev);
 }
 } // namespace detail
 
@@ -111,6 +112,7 @@ Actor::Actor() noexcept
     registerEvent<SignalEvent>(*this);
     registerEvent<UnregisterCallbackEvent>(*this);
     registerEvent<PingEvent>(*this);
+    registerEvent<RequireEvent>(*this); // default: route coroutine discovery/liveness replies
 }
 
 Actor::Actor(ActorId const id) noexcept
@@ -122,6 +124,7 @@ Actor::Actor(ActorId const id) noexcept
     registerEvent<SignalEvent>(*this);
     registerEvent<UnregisterCallbackEvent>(*this);
     registerEvent<PingEvent>(*this);
+    registerEvent<RequireEvent>(*this); // default: route coroutine discovery/liveness replies
 }
 
 Actor::Actor(no_default_events_t) noexcept
@@ -133,8 +136,24 @@ Actor::Actor(no_default_events_t) noexcept
 
 void
 Actor::on(PingEvent const &event) noexcept {
-    if (event.type == id_type)
-        send<RequireEvent>(event.source, event.type, ActorStatus::Alive);
+    // type 0 is the wildcard liveness probe (any live actor replies — qb::ping); otherwise the
+    // ping is a typed discovery (qb::require / legacy require<>()). Echo the correlation id so the
+    // coroutine helpers can match the reply.
+    if (event.type == 0 || event.type == id_type)
+        send<RequireEvent>(event.source, event.type, event.correlation_id);
+}
+
+void
+Actor::on(RequireEvent &event) noexcept {
+    // Default: deliver the reply to a pending co_await qb::ping / qb::require. A correlation_id of 0
+    // (legacy fire-and-forget require<>()) resolves nothing here — override on(RequireEvent&) to use
+    // the legacy is<T>() dance.
+    (void) resolve_require(event);
+}
+
+bool
+Actor::resolve_require(RequireEvent &e) const noexcept {
+    return qb::detail::ask_deliver(e.correlation_id, id(), e);
 }
 
 void
@@ -156,6 +175,11 @@ Actor::on(UnregisterCallbackEvent const &) noexcept {
 uint64_t
 Actor::time() const noexcept {
     return VirtualCore::_handler->time();
+}
+
+qb::wall_time
+Actor::now() const noexcept {
+    return qb::wall_from_unix_nanos(static_cast<std::int64_t>(time()));
 }
 
 bool

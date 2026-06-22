@@ -35,6 +35,7 @@
 // to the actor on Thread A, which then calls token.cancel() on its own thread.
 #include <qb/system/time.h> // qb::duration
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -93,11 +94,20 @@ inline constexpr null_token_t null_token{};
  */
 class cancellation_token {
 public:
+    /// Opaque registration id returned by `on_cancel`, accepted by `remove_on_cancel`.
+    /// `0` means "not registered" (empty token, or fired inline because already cancelled).
+    using id_type = std::uint64_t;
+
     // Plain bool and no mutex: single-thread cooperative scheduler.
     // cancel() and on_cancel() are always called on the same VirtualCore thread.
     struct state {
-        bool                               cancelled{false};
-        std::vector<std::function<void()>> callbacks;
+        bool                                                   cancelled{false};
+        id_type                                                next_id{0};
+        // Keyed callbacks so a completing awaiter can DEREGISTER itself (remove_on_cancel)
+        // instead of leaving a dead entry behind. Without this a long-lived (actor-scope)
+        // token accumulated one std::function per sleep/ask/cancellable for the actor's
+        // whole life — unbounded growth in any `co_await ctx.sleep(...)` loop.
+        std::vector<std::pair<id_type, std::function<void()>>> callbacks;
     };
 
 private:
@@ -139,8 +149,8 @@ public:
             _state->cancelled = true;
             auto callbacks    = std::move(_state->callbacks);
             for (auto &cb : callbacks)
-                if (cb)
-                    cb();
+                if (cb.second)
+                    cb.second();
         }
     }
 
@@ -153,15 +163,45 @@ public:
      * @brief Register a callback invoked when cancel() is called.
      *
      * If already cancelled, the callback is invoked immediately (same thread).
+     *
+     * @return A registration id for `remove_on_cancel`, or `0` if the token is empty or was
+     *         already cancelled (callback ran inline / was dropped — nothing to deregister).
+     * @note Awaiters that complete **normally** (without cancellation) should deregister via
+     *       `remove_on_cancel(id)` in their teardown, otherwise a long-lived token accumulates
+     *       dead callbacks without bound (e.g. a `co_await ctx.sleep(...)` loop on the actor scope).
+     *       Fire-and-forget cleanup callbacks (that genuinely live for the token's lifetime) may
+     *       ignore the returned id.
      */
-    void
+    id_type
     on_cancel(std::function<void()> callback) const {
         if (!_state) // empty token never cancels — drop the callback.
-            return;
+            return 0;
         if (_state->cancelled) {
             callback();
-        } else {
-            _state->callbacks.push_back(std::move(callback));
+            return 0;
+        }
+        const id_type id = ++_state->next_id; // 0 reserved for "not registered".
+        _state->callbacks.emplace_back(id, std::move(callback));
+        return id;
+    }
+
+    /**
+     * @brief Deregister a callback previously registered with `on_cancel`.
+     * @param id The id returned by `on_cancel` (a `0` id is ignored).
+     * @details Idempotent and O(n) over the (normally tiny) live-callback set; safe to call
+     *          after cancellation fired (the entry is already gone → no-op). Same-thread only.
+     */
+    void
+    remove_on_cancel(id_type id) const noexcept {
+        if (!_state || !id)
+            return;
+        auto &cbs = _state->callbacks;
+        for (auto it = cbs.begin(); it != cbs.end(); ++it) {
+            if (it->first == id) {
+                *it = std::move(cbs.back()); // swap-with-back: order is irrelevant on cancel.
+                cbs.pop_back();
+                return;
+            }
         }
     }
 
@@ -193,7 +233,8 @@ struct cancellation_awaiter {
     // while still suspended here (e.g. a when_any loser or scope cancellation),
     // a later cancel() would otherwise call schedule_via_current() on a freed
     // handle. The destructor clears the flag so the stale callback no-ops.
-    std::shared_ptr<bool> _alive = std::make_shared<bool>(true);
+    std::shared_ptr<bool>       _alive = std::make_shared<bool>(true);
+    cancellation_token::id_type _cancel_id = 0; ///< on_cancel registration, deregistered on teardown.
 
     // Explicit constructor: the user-declared destructor below makes this type a
     // non-aggregate, so the brace-init in check_cancelled() needs a constructor.
@@ -210,7 +251,7 @@ struct cancellation_awaiter {
     await_suspend(std::coroutine_handle<> h) {
         _handle    = h;
         auto alive = _alive;
-        token.on_cancel([h, alive]() {
+        _cancel_id = token.on_cancel([h, alive]() {
             if (*alive)
                 schedule_via_current(h);
         });
@@ -224,6 +265,8 @@ struct cancellation_awaiter {
     ~cancellation_awaiter() {
         if (_alive)
             *_alive = false;
+        // Deregister so a normally-completed wait leaves no dead callback on a long-lived token.
+        token.remove_on_cancel(_cancel_id);
     }
 };
 
@@ -312,6 +355,20 @@ public:
         std::shared_ptr<shared_state> state;
         cancellation_token            token;
         bool                          throw_on_cancel;
+        cancellation_token::id_type   _cancel_id = 0;
+
+        // User-declared dtor below makes this a non-aggregate → provide the ctor the
+        // brace-init in operator co_await() relies on.
+        awaiter(std::shared_ptr<shared_state> s, cancellation_token t, bool toc)
+            : state(std::move(s))
+            , token(std::move(t))
+            , throw_on_cancel(toc) {}
+
+        ~awaiter() {
+            // Deregister the cancel hook on normal completion so a long-lived token does
+            // not retain a dead callback per cancellable() wrap.
+            token.remove_on_cancel(_cancel_id);
+        }
 
         [[nodiscard]] bool
         await_ready() const {
@@ -327,8 +384,8 @@ public:
                 // it cannot double-resume (or resume a destroyed frame) after the
                 // task_runner path already completed. Capture the shared_state
                 // (outlives the awaiter), never a bare handle.
-                auto s = state;
-                token.on_cancel([s]() {
+                auto s     = state;
+                _cancel_id = token.on_cancel([s]() {
                     if (!s->task_done) {
                         s->task_done = true;
                         if (s->continuation)
@@ -410,6 +467,16 @@ public:
         std::shared_ptr<shared_state> state;
         cancellation_token            token;
         bool                          throw_on_cancel;
+        cancellation_token::id_type   _cancel_id = 0;
+
+        awaiter(std::shared_ptr<shared_state> s, cancellation_token t, bool toc)
+            : state(std::move(s))
+            , token(std::move(t))
+            , throw_on_cancel(toc) {}
+
+        ~awaiter() {
+            token.remove_on_cancel(_cancel_id);
+        }
 
         [[nodiscard]] bool
         await_ready() const {
@@ -423,8 +490,8 @@ public:
             if (throw_on_cancel) {
                 // See the non-void specialization: guard the cancel wake-up with
                 // the shared task_done flag to avoid double-resume / use-after-free.
-                auto s = state;
-                token.on_cancel([s]() {
+                auto s     = state;
+                _cancel_id = token.on_cancel([s]() {
                     if (!s->task_done) {
                         s->task_done = true;
                         if (s->continuation)
@@ -501,8 +568,20 @@ struct cancellable_sleep_awaiter {
         std::coroutine_handle<> handle;
     };
 
-    qb::duration       duration;
-    cancellation_token token;
+    qb::duration                duration;
+    cancellation_token          token;
+    cancellation_token::id_type _cancel_id = 0;
+
+    // User-declared dtor below → non-aggregate; provide the ctor cancellable_sleep() uses.
+    cancellable_sleep_awaiter(qb::duration d, cancellation_token t)
+        : duration(d)
+        , token(std::move(t)) {}
+
+    ~cancellable_sleep_awaiter() {
+        // Without this, a `co_await ctx.sleep(...)` loop on the long-lived actor scope token
+        // accumulated one dead callback per iteration (the original unbounded-growth bug).
+        token.remove_on_cancel(_cancel_id);
+    }
 
     [[nodiscard]] bool
     await_ready() const {
@@ -513,7 +592,7 @@ struct cancellable_sleep_awaiter {
     await_suspend(std::coroutine_handle<> h) {
         auto state    = std::make_shared<sleep_state>();
         state->handle = h;
-        token.on_cancel([state]() {
+        _cancel_id    = token.on_cancel([state]() {
             if (!state->resumed) {
                 state->resumed = true;
                 schedule_via_current(state->handle);
@@ -564,6 +643,17 @@ struct with_deadline_timeout_awaiter {
     std::shared_ptr<with_deadline_timeout_state> state;
     std::chrono::steady_clock::time_point        deadline;
     cancellation_token                           token;
+    cancellation_token::id_type                  _cancel_id = 0;
+
+    with_deadline_timeout_awaiter(std::shared_ptr<with_deadline_timeout_state> s,
+                                  std::chrono::steady_clock::time_point dl, cancellation_token t)
+        : state(std::move(s))
+        , deadline(dl)
+        , token(std::move(t)) {}
+
+    ~with_deadline_timeout_awaiter() {
+        token.remove_on_cancel(_cancel_id);
+    }
 
     [[nodiscard]] bool
     await_ready() const {
@@ -578,7 +668,7 @@ struct with_deadline_timeout_awaiter {
     void
     await_suspend(std::coroutine_handle<> h) {
         state->handle = h;
-        token.on_cancel([s = state]() {
+        _cancel_id    = token.on_cancel([s = state]() {
             if (!s->completed) {
                 s->completed = true;
                 s->result    = 1;

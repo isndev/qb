@@ -190,18 +190,18 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 
 ```cpp
 // src: examples/core_io/chat_tcp/server/AcceptActor.cpp
-bool AcceptActor::onInit() {
+qb::io::async::task<bool> AcceptActor::onInit() {
     if (_server_pool.empty()) {
         qb::io::cerr() << "Cannot init AcceptActor with empty server pool" << std::endl;
-        return false;
+        co_return false;
     }
     if (transport().listen(_listen_at)) {            // listener::listen returns int; non-zero == failure
         qb::io::cerr() << "Cannot listen on " << _listen_at.source() << std::endl;
-        return false;
+        co_return false;
     }
     qb::io::cout() << "AcceptActor listening on " << _listen_at.source() << std::endl;
     start();                                         // arm the accept watcher on this core's event loop
-    return true;
+    co_return true;
 }
 ```
 
@@ -394,11 +394,11 @@ void ChatRoomActor::broadcastMessage(const std::string& content) {
 
 ### `InputActor` — console input off the I/O path
 
-`InputActor` mixes `qb::Actor` with `qb::ICallback`. `onInit()` calls `registerCallback(*this)`; thereafter the engine invokes `onCallback()` once per loop iteration on the actor's core.
+`InputActor` mixes `qb::Actor` with `qb::ICallback`. `onInit()` calls `registerCallback(*this)`; thereafter the engine invokes `on(qb::LoopEvent const&)` once per loop iteration on the actor's core.
 
 ```cpp
 // src: examples/core_io/chat_tcp/client/InputActor.cpp
-void InputActor::onCallback() {
+void InputActor::on(qb::LoopEvent const &) {
     std::string line;
     std::getline(std::cin, line);                    // see the blocking note below
 

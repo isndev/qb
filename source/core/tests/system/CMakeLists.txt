@@ -63,6 +63,8 @@ set(ACTOR_SYSTEM_TESTS
         test-actor-supervisor.cpp
         test-actor-async-init.cpp
         test-actor-async-init-torture.cpp
+        test-actor-init-robustness.cpp
+        test-actor-patterns-enrich.cpp
         test-core-improvements.cpp
 )
 

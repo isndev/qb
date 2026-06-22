@@ -235,7 +235,7 @@ You never write against `VirtualCore`, but knowing its loop explains the engine'
 3. **Process I/O events** — drive the thread-local `qb::io::async::listener` (timers, sockets, files, coroutine resumptions).
 4. **Flush outgoing pipes** (`__flush_all__`) — transfer locally buffered events to their destination cores' mailboxes.
 5. **Receive events** (`__receive__`) — drain this core's same-core self-pipe, then its inter-core MPSC mailbox, dispatching each event to the destination actor's `on(E&)`.
-6. **Run registered callbacks** — invoke `ICallback::onCallback()` once per registered actor (after flush and receive). Callbacks must be fast and non-blocking; blocking one stalls the whole core (`qb/include/qb/core/ICallback.h`).
+6. **Run registered callbacks** — invoke `ICallback::on(qb::LoopEvent const&)` once per registered actor (after flush and receive). Callbacks must be fast and non-blocking; blocking one stalls the whole core (`qb/include/qb/core/ICallback.h`).
 7. **Remove killed actors** — destroy actors flagged for removal during this iteration; if none remain, the loop exits.
 8. **Idle** — if `latency > 0` and the spin credit is exhausted, park on a condition variable up to the configured latency.
 
@@ -245,7 +245,7 @@ The worker keeps an integer `_spin_credit` seeded from the total work observed i
 
 ### Per-core cached time
 
-`VirtualCore::time()` (which backs `Actor::time()`) returns a nanosecond timestamp refreshed once per loop iteration from `qb::unix_nanos(qb::wall_now())`. Every actor on the core observes the same value within a single iteration, which is constant inside one handler or `onCallback()` invocation. For a continuously updating, high-precision clock, read `qb::wall_now()` directly (`qb/include/qb/core/VirtualCore.h`). The canonical time types are covered in [API overview: time vocabulary](../7_reference/api_overview.md).
+`VirtualCore::time()` (which backs `Actor::time()`) returns a nanosecond timestamp refreshed once per loop iteration from `qb::unix_nanos(qb::wall_now())`. Every actor on the core observes the same value within a single iteration, which is constant inside one handler or `on(qb::LoopEvent const&)` invocation. For a continuously updating, high-precision clock, read `qb::wall_now()` directly (`qb/include/qb/core/VirtualCore.h`). The canonical time types are covered in [API overview: time vocabulary](../7_reference/api_overview.md).
 
 ---
 
@@ -284,7 +284,7 @@ Backpressure handling depends on delivery class: best-effort (QoS-0) events are 
 - **Out-of-range core index.** `core(index)` with `index >= qb::MaxCores` throws `std::range_error`. `qb::NoAffinity` is not a valid core index — it is only meaningful inside a `CoreIdSet` passed to `setAffinity` (`qb/source/core/src/Main.cpp`).
 - **Assuming affinity is guaranteed.** `setAffinity` is best-effort; a failed pin only warns and never aborts the core. Do not depend on a thread being on a specific physical CPU for correctness (`qb/source/core/src/VirtualCore.cpp`).
 - **Treating logical cores as physical CPUs.** Core indices are logical. Use `setAffinity` to influence physical placement, and remember that `qb::MaxCores` (256) bounds the logical index space, not your machine's CPU count.
-- **Blocking a handler or `onCallback()`.** A `VirtualCore` runs handlers sequentially on one thread; a blocking call freezes every actor on that core. Offload blocking work via `qb::io::async::callback` or events (see [The qb-io asynchronous system](../3_qb_io/async_system.md)).
+- **Blocking a handler or `on(qb::LoopEvent const&)`.** A `VirtualCore` runs handlers sequentially on one thread; a blocking call freezes every actor on that core. Offload blocking work via `qb::io::async::callback` or events (see [The qb-io asynchronous system](../3_qb_io/async_system.md)).
 - **Ignoring `hasError()`.** A core can terminate early (bad actor init, thrown handler). `join()` returning does not imply success — always check `hasError()` (`qb/include/qb/core/VirtualCore.h`).
 
 ---

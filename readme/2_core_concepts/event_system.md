@@ -218,11 +218,11 @@ For each registered type, provide a public `on()` method. The runtime selects th
 
 class DataHandler : public qb::Actor {
 public:
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         registerEvent<UpdateValue>(*this);
         registerEvent<UserCommand>(*this);
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(const UpdateValue &event) { // read-only

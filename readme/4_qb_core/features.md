@@ -24,11 +24,11 @@ Owned by [Mastering `qb::Actor`](./actor.md).
 |---|---|---|
 | Actor base class | `qb::Actor` | Base class for every user actor; encapsulates state behind sequential, single-threaded event handling. |
 | System-unique identity | `qb::ActorId` | Compound `CoreId` + `ServiceId` identifier used to address every event; obtained via `id()`. |
-| Initialization checkpoint | `virtual bool onInit()` | Runs after construction and ID assignment; register events and acquire resources here. Returning `false` aborts startup and destroys the actor. |
+| Initialization checkpoint | `virtual qb::io::async::task<bool> onInit()` | Async init **coroutine** run after construction and ID assignment; register events / acquire resources, and optionally `co_await` (sleep, `qb::ask` a peer, run a pattern). `co_return true` activates; `co_return false` or an uncaught exception aborts and destroys the actor. While suspended the actor is *Activating* (inbound unicast stashed + replayed FIFO once active, bounded by an activation deadline). |
 | Graceful termination | `kill()` | Marks the actor for removal; the owning `VirtualCore` finishes the in-flight handler before destruction. |
-| Liveness query | `is_alive()` | Returns `true` until `kill()` takes effect. |
+| Liveness query | `is_alive()` / `is_active()` | `is_alive()` is `true` until `kill()` takes effect; `is_active()` also requires a completed `onInit()` (false during the Activating window). |
 | RAII destruction | `virtual ~Actor()` | Runs only after the actor is fully removed from its core; member RAII cleanup is safe here. |
-| Lightweight actors | `qb::no_default_events` | Constructor tag that skips the four default system-event subscriptions (`KillEvent`, `SignalEvent`, `PingEvent`, `UnregisterCallbackEvent`). |
+| Lightweight actors | `qb::no_default_events` | Constructor tag that skips the five default system-event subscriptions (`KillEvent`, `SignalEvent`, `PingEvent`, `UnregisterCallbackEvent`, `RequireEvent`). |
 | Identity and timing accessors | `id()`, `getIndex()`, `getName()`, `getCoreSet()`, `time()` | Read-only accessors; `time()` returns a `uint64_t` nanosecond count cached once per loop iteration. |
 
 Actor creation entry points:
@@ -37,8 +37,8 @@ Actor creation entry points:
 |---|---|---|
 | `qb::Main::addActor<A>(core_id, args...)` | [Engine](./engine.md) | Add one actor to a specific core before `start()`; returns its `qb::ActorId`. |
 | `main.core(id).builder().addActor<A>(args...)` | [Engine](./engine.md) | Fluent `ActorBuilder` for adding several actors to one core and collecting their IDs. |
-| `Actor::addRefActor<A>(args...)` | [Actor](./actor.md) | Create a child actor on the **same core**; returns a raw, non-owning `A*` (or `nullptr` if `onInit()` failed). |
-| `Actor::addRefHandle<A>(args...)` | [Actor](./actor.md) | Create a same-core child wrapped in a liveness-checked `qb::RefActorHandle<A>`. |
+| `Actor::addRefActor<A>(args...)` | [Actor](./actor.md) | Create a child actor on the **same core**; returns a phase-aware `qb::ActorHandle<A>` (empty handle if creation failed). |
+| `Actor::addRefHandle<A>(args...)` | [Actor](./actor.md) | Alias of `addRefActor` — both return `qb::ActorHandle<A>` (`RefActorHandle<A>` is an alias of `ActorHandle<A>`). |
 
 ---
 
@@ -120,10 +120,10 @@ Owned by [Common actor patterns and utilities](./patterns.md).
 
 | Capability | API | One-line summary |
 |---|---|---|
-| Periodic callbacks | `qb::ICallback` + `registerCallback(*this)` | Mixin granting an `onCallback()` tick once per `VirtualCore` loop iteration, after the core has received and dispatched that iteration's events; the body must be fast and non-blocking. |
+| Periodic callbacks | `qb::ICallback` + `registerCallback(*this)` | Mixin granting an `on(qb::LoopEvent const&)` tick once per `VirtualCore` loop iteration, after the core has received and dispatched that iteration's events; the body must be fast and non-blocking. |
 | Service actors | `qb::ServiceActor<Tag>` | One instance per `VirtualCore`, identified by a unique `Tag`; reached on the same core via `getService<MyService>()`. |
 | Dependency discovery | `require<TargetActor>()` | Broadcasts a `PingEvent`; live actors of the target type reply with `qb::RequireEvent`, handled with `is<TargetActor>(event)`. |
-| Safe child references | `qb::RefActorHandle<T>` | Wraps the raw pointer from `addRefActor<T>()` with an O(1) liveness check on every dereference, preventing dangling-pointer use after the child terminates. |
+| Safe child references | `qb::ActorHandle<T>` (alias `RefActorHandle<T>`) | The return type of `addRefActor<T>()`. Phase-aware: `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while it is Activating, after a failed init, or once it died — never a dangling pointer. `id()` is usable immediately; `ready()` / `co_await ready_async(ctx)` wait for an async-init child. |
 
 ---
 
@@ -133,7 +133,7 @@ Owned by [Common actor patterns and utilities](./patterns.md).
 - **`onInit()` is the only safe place to call `registerEvent<E>()`.** Returning `false` from it aborts startup and destroys the actor before it processes any message.
 - **`no_default_events` actors do not respond to `KillEvent` or signals** unless you subscribe to those events explicitly in `onInit()`.
 - **`reply()` and `forward()` consume the event.** After either call the received event object must not be used again in the handler; both require a non-const `on(E&)` handler.
-- **`onCallback()` and every handler run on the `VirtualCore` thread.** Blocking or long-running work stalls every actor on that core; offload to a coroutine via `spawn()` instead.
+- **`on(qb::LoopEvent const&)` and every handler run on the `VirtualCore` thread.** Blocking or long-running work stalls every actor on that core; offload to a coroutine via `spawn()` instead.
 
 ---
 

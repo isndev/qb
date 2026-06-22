@@ -107,6 +107,52 @@ TEST(CircuitBreakerUnit, HalfOpenFailureReopens) {
     EXPECT_TRUE(cb.allow(200 * MS));  // 100ms after reopen -> trial again
 }
 
+// --- New behaviour: single half-open trial, abandon-release, cooldown clamp -------------
+
+TEST(CircuitBreakerUnit, HalfOpenAdmitsExactlyOneTrial) {
+    qb::CircuitBreaker cb(2, 100ms);
+    cb.on_failure(0);
+    cb.on_failure(0);                  // open at t=0
+    EXPECT_TRUE(cb.allow(100 * MS));   // first call after cooldown -> the one trial
+    EXPECT_EQ(cb.state(), State::half_open);
+    EXPECT_FALSE(cb.allow(101 * MS));  // a concurrent caller must fail fast (no thundering herd)
+    EXPECT_FALSE(cb.allow(199 * MS));  // still exactly one trial in flight
+    EXPECT_EQ(cb.state(), State::half_open);
+}
+
+TEST(CircuitBreakerUnit, AbandonedHalfOpenTrialReArmsCooldownAndDoesNotWedge) {
+    qb::CircuitBreaker cb(2, 100ms);
+    cb.on_failure(0);
+    cb.on_failure(0);                  // open at t=0
+    EXPECT_TRUE(cb.allow(100 * MS));   // -> half_open (trial admitted)
+    cb.on_abandoned(120 * MS);         // trial's caller was killed: release, re-arm cooldown
+    EXPECT_EQ(cb.state(), State::open);
+    EXPECT_FALSE(cb.allow(150 * MS));  // 30ms into the re-armed cooldown -> fail fast
+    EXPECT_TRUE(cb.allow(220 * MS));   // 100ms after abandon -> a fresh trial (not wedged)
+    EXPECT_EQ(cb.state(), State::half_open);
+}
+
+TEST(CircuitBreakerUnit, OnAbandonedIsNoOpWhenNotHalfOpen) {
+    qb::CircuitBreaker cb(2, 100ms);
+    cb.on_abandoned(0);                // closed -> no effect
+    EXPECT_EQ(cb.state(), State::closed);
+    EXPECT_TRUE(cb.allow(0));
+    cb.on_failure(0);
+    cb.on_failure(0);                  // open
+    cb.on_abandoned(50 * MS);          // open -> no effect (still cooling down from t=0)
+    EXPECT_EQ(cb.state(), State::open);
+    EXPECT_FALSE(cb.allow(50 * MS));
+}
+
+TEST(CircuitBreakerUnit, NegativeCooldownClampedSoBreakerRecovers) {
+    // A negative cooldown must clamp to zero, not wrap to ~1.8e19 ns (which would never recover).
+    qb::CircuitBreaker cb(1, qb::duration{-100});
+    cb.on_failure(0);                  // open at t=0 (threshold 1)
+    EXPECT_EQ(cb.state(), State::open);
+    EXPECT_TRUE(cb.allow(0));          // cooldown == 0 -> immediately admits a trial
+    EXPECT_EQ(cb.state(), State::half_open);
+}
+
 // ===========================================================================
 // Shared event + responders for the integration tests.
 // ===========================================================================

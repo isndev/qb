@@ -31,16 +31,20 @@
 #include <utility>
 #include <qb/core/Actor.h>
 #include <qb/io/async/coroutine.h>
+#include <qb/system/time.h> // qb::duration
 
 namespace qb {
 
 /**
  * @concept ask_event_type
  * @ingroup Patterns
- * @brief An event usable with `qb::ask` — derives from `qb::AskEvent` (carries `correlation_id`).
+ * @brief An event usable with `qb::ask` — derives from `qb::AskEvent` (carries `correlation_id`)
+ *        and is copyable (the request is copied per attempt by `ask_retry` and per target by
+ *        `ask_all`/`ask_any`), so a move-only exchange type is rejected as a clear concept error
+ *        rather than a deep template failure.
  */
 template <class E>
-concept ask_event_type = std::derived_from<E, qb::AskEvent>;
+concept ask_event_type = std::derived_from<E, qb::AskEvent> && std::copyable<E>;
 
 /**
  * @struct Request
@@ -98,6 +102,62 @@ ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) 
     req.correlation_id      = aid;
     ctx.template push_to<E>(target, std::move(req)); // send to target, source = asker
     co_return co_await qb::detail::ask_awaiter<E>{aid, ctx.id(), timeout, ctx.token()};
+}
+
+/**
+ * @struct deadline
+ * @ingroup Patterns
+ * @brief An **absolute** completion time (UNIX-epoch nanoseconds) shared across an ask chain.
+ * @details Propagating one `deadline` down a sequence of `ask_by` calls bounds the *total* time of
+ *          the whole chain — unlike a per-`ask` relative `timeout`, which resets at each hop. Build
+ *          it with `qb::deadline_in(ctx, dur)`; query the time left with `qb::remaining(dl, ctx)`.
+ */
+struct deadline {
+    std::uint64_t at_ns{0}; ///< absolute deadline, in nanoseconds since the epoch (cf. `Actor::time()`).
+};
+
+/** @brief A `deadline` `dur` from now (using the context's cached `VirtualCore` clock). */
+[[nodiscard]] inline deadline
+deadline_in(qb::ScopedCoroContext ctx, qb::duration dur) noexcept {
+    const auto add = dur.count() > 0 ? static_cast<std::uint64_t>(dur.count()) : std::uint64_t{0};
+    return deadline{ctx.time() + add};
+}
+
+/** @brief Time left until `dl` (clamped to zero — never negative). */
+[[nodiscard]] inline qb::duration
+remaining(deadline dl, qb::ScopedCoroContext ctx) noexcept {
+    const auto now = ctx.time();
+    return dl.at_ns > now ? qb::duration{static_cast<qb::duration::rep>(dl.at_ns - now)} : qb::duration::zero();
+}
+
+/**
+ * @brief `ask` bounded by an absolute `deadline` (shared budget) instead of a relative timeout.
+ * @ingroup Patterns
+ * @tparam E The exchange event type (an `ask_event_type`).
+ * @param ctx The coroutine context.
+ * @param target The actor to ask.
+ * @param req The request.
+ * @param dl The shared deadline; the underlying `ask` uses `remaining(dl, ctx)` as its timeout.
+ * @return `task<E>` resolving to the response.
+ * @throws qb::io::async::timeout_error immediately if the budget is already spent, or if the reply
+ *         does not arrive before `dl`.
+ * @throws qb::io::async::cancelled_error if the actor is killed while waiting.
+ * @details Thread the **same** `deadline` through every hop of a request chain to bound its total
+ *          latency end-to-end:
+ * @code
+ * auto dl = qb::deadline_in(ctx, 1s);              // whole chain must finish within 1 s
+ * auto a  = co_await qb::ask_by(ctx, svc1, R1{}, dl);
+ * auto b  = co_await qb::ask_by(ctx, svc2, R2{a.response}, dl); // gets only the time svc1 left
+ * @endcode
+ * @see qb::ask, qb::deadline, qb::remaining
+ */
+template <ask_event_type E>
+[[nodiscard]] qb::io::async::task<E>
+ask_by(qb::ScopedCoroContext ctx, qb::ActorId target, E req, deadline dl) {
+    const qb::duration left = remaining(dl, ctx);
+    if (left <= qb::duration::zero())
+        throw qb::io::async::timeout_error{}; // budget already spent — fail fast, send nothing
+    co_return co_await qb::ask<E>(ctx, target, std::move(req), left);
 }
 
 /**

@@ -168,8 +168,13 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
             // and replayed FIFO once the actor becomes active.
             if (!dest.is_broadcast() && __is_activating__(dest)
                 && event->getID() != qb::Event::type_to_id<qb::KillEvent>()) {
-                if (!qb::detail::ask_try_deliver_reply(*event, dest))
-                    __stash_event__(dest, event);
+                if (!qb::detail::ask_try_deliver_reply(*event, dest)) {
+                    // Stash for FIFO replay on activation. If the cap overflowed the event is
+                    // dropped here, so dispose its payload (the byte-copy never happened) to
+                    // avoid leaking a non-trivial std::string/std::vector member.
+                    if (!__stash_event__(dest, event))
+                        _router.dispose(*event);
+                }
                 ++_metrics._nb_event_received;
                 _metrics._nb_bucket_received += event->bucket_size;
                 i += event->bucket_size;
@@ -461,24 +466,28 @@ VirtualCore::__is_activating__(ActorId const id) const noexcept {
     return _activating.find(id) != _activating.end();
 }
 
-void
+bool
 VirtualCore::__stash_event__(ActorId const dest, Event *event) noexcept {
     auto it = _activating.find(dest);
     if (unlikely(it == _activating.end()))
-        return; // not actually activating — caller already filtered, defensive only
+        return false; // not actually activating — caller already filtered, defensive only
     auto &stash = it->second.stash;
     if (unlikely(stash.size() >= kActivationStashCap)) {
         // A wedged-in-init actor must not OOM the core: drop the overflow and fail the
-        // activation on the next pump by forcing its deadline to expire now.
+        // activation on the next pump by forcing its deadline to expire now. Report `false`
+        // so the caller disposes the dropped event's payload (it is not taken into the stash).
         LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid()
                        << "); dropping event[" << event->getID() << "] and failing activation");
         it->second.deadline_ns = 1; // already in the past ⇒ pump cancels + fails it
-        return;
+        return false;
     }
     // Byte-copy the event's buckets out of the transient receive buffer into owned
-    // storage; replayed verbatim (FIFO) once the actor becomes active.
+    // storage; replayed verbatim (FIFO) once the actor becomes active. Ownership of any
+    // non-trivial payload moves to the stash copy (the original is not disposed by the
+    // caller); the copy is disposed either on replay (route) or on drop (__pump_activations__).
     auto *buckets = reinterpret_cast<EventBucket *>(event);
     stash.emplace_back(buckets, buckets + event->bucket_size);
+    return true;
 }
 
 void
@@ -527,6 +536,14 @@ VirtualCore::__pump_activations__() noexcept {
         if (dying || !ok || ait == _actors.end()) {
             // Killed during init, failed init, or already gone → complete teardown now
             // (the deferred-destroy: the actor outlived its own coroutine frame).
+            // Dispose the never-replayed stash so any non-trivial event payload (std::string /
+            // std::vector in a `push`'d event) is destroyed instead of leaked: the stash holds
+            // byte-copied events whose destructors only ever run via route() (success path) or
+            // here (drop path) — the raw `vector<EventBucket>` teardown would free bytes only.
+            for (auto &buckets : act.stash) {
+                auto *ev = reinterpret_cast<Event *>(buckets.data());
+                _router.dispose(*ev);
+            }
             if (ait != _actors.end()) {
                 if (!dying && !ok)
                     LOG_CRIT(*ait->second << " async onInit failed — removing");
@@ -553,6 +570,7 @@ VirtualCore::__workflow__() {
     LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
     while (likely(true)) {
         _metrics._nanotimer = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
+        ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent
 
         // Poll for pending signal (signal-handler-safe lock-free atomic read)
         // OR for a C++20 cooperative cancellation request coming from the
@@ -599,21 +617,24 @@ VirtualCore::__workflow__() {
         // master list `_callback_list` is kept in sync with the hashmap on
         // register / unregister, so building the per-iteration snapshot is now a
         // single contiguous copy instead of an `unordered_map` walk. A local
-        // snapshot is still required because `onCallback()` may register or
-        // unregister actors during dispatch (e.g. via `addRefActor`).
+        // snapshot is still required because the tick handler `on(LoopEvent&)` may
+        // register or unregister actors during dispatch (e.g. via `addRefActor`).
         {
+            // One LoopEvent for the whole pass — same `now`/`iteration` for every callback,
+            // consistent with `Actor::time()`. Delivered by a direct virtual call (not routed).
+            const qb::LoopEvent loop_ev{_metrics._nanotimer, _loop_count};
             thread_local std::vector<CallbackEntry> cb_snapshot;
             cb_snapshot = _callback_list;
             for (auto const &entry : cb_snapshot) {
                 // Skip the callback of an actor killed earlier in this same
-                // dispatch pass (e.g. by an earlier actor's onCallback). The
+                // dispatch pass (e.g. by an earlier actor's tick). The
                 // object is still alive — destruction is deferred to the
                 // removeActors phase below — so this is purely a semantics fix:
                 // a killed actor must not get another tick, matching the
                 // event-kill path which skips the whole callback phase. The
                 // empty() fast-path keeps the common (nothing killed) case free.
                 if (likely(_actor_to_remove.empty()) || !_actor_to_remove.count(entry.id))
-                    entry.cb->onCallback();
+                    entry.cb->on(loop_ev);
             }
         }
         // check if callbacks killed actors

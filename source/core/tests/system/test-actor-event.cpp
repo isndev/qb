@@ -129,7 +129,7 @@ public:
     }
 
     void
-    onCallback() final {
+    on(qb::LoopEvent const &) final {
         static_cast<Derived &>(*this).doSend();
         if (++_count >= _max_events)
             kill();

@@ -49,12 +49,12 @@ namespace qb::io::async::event {
  * @code
  * class MyClientActor : public qb::Actor, public qb::io::use<MyClientActor>::tcp::client<MyProtocol> {
  * public:
- *   bool onInit() override {
+ *   qb::io::async::task<bool> onInit() override {
  *     registerEvent<qb::io::async::event::disconnected>(*this);
  *     registerEvent<qb::io::async::event::dispose>(*this);
  *     registerEvent<qb::KillEvent>(*this);
  *     // ... start connection ...
- *     return true;
+ *     co_return true;
  *   }
  *
  *   void on(qb::io::async::event::disconnected const& event) {

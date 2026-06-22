@@ -55,10 +55,10 @@ struct GreetingEvent : qb::Event {
 
 class GreeterActor : public qb::Actor {
 public:
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         registerEvent<GreetingEvent>(*this);   // subscribe
         push<GreetingEvent>(id(), "Hello");     // send to self
-        return true;                            // actor is ready
+        co_return true;                         // actor is ready
     }
 
     void on(const GreetingEvent &event) {

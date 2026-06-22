@@ -596,6 +596,7 @@ public:
                 break;
             case AF_INET6:
                 n = strlen(compat::inet_ntop(AF_INET6, &in6_.sin6_addr, &addr.front() + 1, static_cast<socklen_t>(addr.length() - 1)));
+                ++n; // account for the leading '[' — else the closing ']' overwrites the last address char
                 n += snprintf(&addr.front() + n, QB_MAX_CHAR_USHORT + 2, "]:%u", this->port());
                 break;
 #if defined(QB_ENABLE_UDS) && QB__HAS_UDS

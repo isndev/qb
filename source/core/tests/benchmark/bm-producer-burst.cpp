@@ -3,10 +3,10 @@
  * @brief One-way throughput: \c ICallback producer sends in bursts vs one message per tick
  *
  * Same total \c messages and same \c push API; only the number of \c push calls per
- * \c onCallback() invocation changes. Isolates scheduler / callback interaction from raw
+ * \c on(qb::LoopEvent) tick changes. Isolates scheduler / callback interaction from raw
  * pipe throughput.
  *
- * \c registerCallback / \c onCallback scheduling is entirely runtime-defined; this bench
+ * \c registerCallback / tick scheduling is entirely runtime-defined; this bench
  * measures end-to-end throughput under that policy, not an abstract “callback cost” in
  * isolation.
  *
@@ -79,7 +79,7 @@ public:
     }
 
     void
-    onCallback() final {
+    on(qb::LoopEvent const &) final {
         constexpr std::uint32_t kBurst = BurstPerCallbackV;
         const std::uint64_t     chunk  = std::min<std::uint64_t>(kBurst, _total - _sent);
         for (std::uint64_t i = 0; i < chunk; ++i)

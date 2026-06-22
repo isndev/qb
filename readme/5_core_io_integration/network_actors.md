@@ -80,9 +80,9 @@ public:
     explicit ClientActor(qb::io::uri server_uri)
         : _server_uri(std::move(server_uri)) {}
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         connect();
-        return true;
+        co_return true;
     }
 
     // Parsed message from the server.
@@ -152,15 +152,15 @@ class MyServer : public qb::Actor,
 public:
     explicit MyServer(qb::io::uri listen_at) : _listen_at(std::move(listen_at)) {}
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         // transport().listen(uri) returns 0 on success (non-zero is an error).
         if (this->transport().listen(_listen_at) != 0) {
             qb::io::cerr() << "listen failed on " << _listen_at.source() << "\n";
-            return false;
+            co_return false;
         }
         this->start();   // begin accepting connections
         qb::io::cout() << "listening on " << _listen_at.source() << "\n";
-        return true;
+        co_return true;
     }
 
     // Optional: called by the base right after a session is registered and started.
@@ -218,7 +218,7 @@ class AcceptActor : public qb::Actor,
 public:
     AcceptActor(qb::io::uri listen_at, qb::ActorIdList pool);
 
-    bool onInit() override;
+    qb::io::async::task<bool> onInit() override;
     void on(accepted_socket_type &&new_io);                // a new TCP connection
     void on(qb::io::async::event::disconnected const &);   // listener failure
 
@@ -231,18 +231,18 @@ private:
 
 ```cpp
 // src: examples/core_io/chat_tcp/server/AcceptActor.cpp
-bool AcceptActor::onInit() {
+qb::io::async::task<bool> AcceptActor::onInit() {
     if (_server_pool.empty()) {
         qb::io::cerr() << "empty server pool\n";
-        return false;
+        co_return false;
     }
     if (this->transport().listen(_listen_at)) {  // non-zero == failure
         qb::io::cerr() << "cannot listen on " << _listen_at.source() << "\n";
-        return false;
+        co_return false;
     }
     qb::io::cout() << "AcceptActor listening on " << _listen_at.source() << "\n";
     this->start();
-    return true;
+    co_return true;
 }
 
 void AcceptActor::on(accepted_socket_type &&new_io) {
@@ -272,7 +272,7 @@ class ServerActor : public qb::Actor,
                     public qb::io::use<ServerActor>::tcp::io_handler<ChatSession> {
 public:
     explicit ServerActor(qb::ActorId chatroom_id);
-    bool onInit() override;
+    qb::io::async::task<bool> onInit() override;
     void on(NewSessionEvent &evt);
     void on(SendMessageEvent &evt);
     // ... delegated handlers called by ChatSession ...
@@ -281,10 +281,10 @@ public:
 
 ```cpp
 // src: examples/core_io/chat_tcp/server/ServerActor.cpp (re-grounded return type)
-bool ServerActor::onInit() {
+qb::io::async::task<bool> ServerActor::onInit() {
     registerEvent<NewSessionEvent>(*this);
     registerEvent<SendMessageEvent>(*this);
-    return true;
+    co_return true;
 }
 
 void ServerActor::on(NewSessionEvent &evt) {

@@ -91,10 +91,10 @@ struct GreetingEvent : qb::Event {
 
 class GreeterActor : public qb::Actor {
 public:
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         registerEvent<GreetingEvent>(*this);     // subscribe to GreetingEvent
         push<GreetingEvent>(id(), "Hello");      // send one to self
-        return true;                             // returning false aborts creation
+        co_return true;                          // returning false aborts creation
     }
 
     void on(const GreetingEvent &event) {
@@ -115,7 +115,7 @@ int main() {
 What each call does:
 
 - **`engine.addActor<GreeterActor>(0)`** registers the actor for `VirtualCore` 0, reserves its `qb::ActorId`, and returns that ID immediately. The actor itself is constructed on the worker thread when `start()` runs. All actors must be added before `start()`.
-- **`onInit()`** runs once, after construction and ID assignment, before any event is processed. Subscribe to your event types here with `registerEvent<T>(*this)`. Returning `false` aborts creation and immediately destroys the actor.
+- **`onInit()`** runs once, after construction and ID assignment, before any event is processed. Subscribe to your event types here with `registerEvent<T>(*this)`. It is an async coroutine — it may `co_await` (e.g. `co_await context().sleep(...)` / `co_await qb::ask(...)`); `co_return true` activates, `co_return false` or an uncaught exception fails init and immediately destroys the actor.
 - **`push<GreetingEvent>(id(), "Hello")`** enqueues an event for the destination `ActorId` (here, `id()` — this actor itself). `push` guarantees ordered delivery from the same source to the same destination.
 - **`on(const GreetingEvent &)`** is the handler the engine invokes when the subscribed event arrives.
 - **`kill()`** marks the actor for termination after the current handler returns.
@@ -162,10 +162,10 @@ struct PongEvent : qb::Event {
 // --- Ponger: replies to each Ping with a Pong ---
 class PongerActor : public qb::Actor {
 public:
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         registerEvent<PingEvent>(*this);
         // qb::KillEvent is auto-subscribed by default; no need to register it.
-        return true;
+        co_return true;
     }
 
     void on(const PingEvent &event) {
@@ -183,10 +183,10 @@ class PingerActor : public qb::Actor {
 public:
     explicit PingerActor(qb::ActorId ponger) : _ponger(ponger) {}
 
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         registerEvent<PongEvent>(*this);
         send_ping();
-        return true;
+        co_return true;
     }
 
     void on(const PongEvent &event) {
@@ -231,7 +231,7 @@ int main() {
 Notes on the new pieces:
 
 - **`addActor` returns `ActorId::NotFound` on failure** (for example, if a core is full). `ActorId::is_valid()` checks for that sentinel, so guard the returned IDs before using them.
-- **`qb::KillEvent` is auto-subscribed.** Every actor subscribes to `qb::KillEvent`, `qb::SignalEvent`, `qb::UnregisterCallbackEvent`, and `qb::PingEvent` at construction, so neither actor registers `KillEvent` explicitly. The default `on(const KillEvent &)` handler calls `kill()`. (`qb::PingEvent` is the framework's `require<>` health-check event, distinct from this example's own `PingEvent`, which is *not* auto-subscribed — that is why `PongerActor` still registers it. To opt out of the four default subscriptions, construct with `qb::no_default_events` and register `KillEvent` yourself.)
+- **`qb::KillEvent` is auto-subscribed.** Every actor subscribes to `qb::KillEvent`, `qb::SignalEvent`, `qb::UnregisterCallbackEvent`, `qb::PingEvent`, and `qb::RequireEvent` at construction, so neither actor registers `KillEvent` explicitly. The default `on(const KillEvent &)` handler calls `kill()`. (`qb::PingEvent` is the framework's `require<>` health-check event, distinct from this example's own `PingEvent`, which is *not* auto-subscribed — that is why `PongerActor` still registers it. To opt out of the five default subscriptions, construct with `qb::no_default_events` and register `KillEvent` yourself.)
 - **`push<qb::KillEvent>(_ponger)`** sends a kill request to another actor; the receiver's default handler terminates it gracefully.
 
 Both actors run on core 0 here. To distribute them across cores, pass a different `CoreId` to `addActor`; messages cross cores over lock-free queues with no code change. See [the threading model](../2_core_concepts/threading_model.md).
@@ -257,9 +257,9 @@ class HeartbeatActor : public qb::Actor {
     int _ticks = 0;
 
 public:
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         schedule_tick();
-        return true;
+        co_return true;
     }
 
 private:
@@ -322,7 +322,7 @@ A non-zero exit code means `engine.hasError()` reported a core that terminated o
 - **A core with zero actors fails startup.** Startup reports `Error::NoActor` if any used core has no actors; surface it with `hasError()` after the engine stops.
 - **`push`/`send`/`broadcast` are `noexcept`.** An allocation failure while enqueuing cannot be reported and calls `std::terminate()`. Keep events small and allocation-light.
 - **Do not block in a handler or callback.** `on(...)` handlers and `qb::io::async::callback` bodies run on the core's event-loop thread; a blocking call stalls every actor on that core. Use the async surface in [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) instead.
-- **Subscribe with `registerEvent<T>` in `onInit()`, not your constructor.** `onInit()` is the documented initialization hook: it runs once the actor is fully appended to its core, and returning `false` from it aborts creation cleanly. A constructor cannot signal initialization failure that way.
+- **Subscribe with `registerEvent<T>` in `onInit()`, not your constructor.** `onInit()` is the documented initialization hook: it runs once the actor is fully appended to its core, and `co_return false` from it aborts creation cleanly. A constructor cannot signal initialization failure that way.
 
 <!-- src: qb/source/core/src/Main.cpp:200,341, qb/source/core/src/Actor.cpp:32, qb/include/qb/core/Actor.h:723 -->
 

@@ -370,7 +370,9 @@ private:
             _nanotimer          = ts;
         }
     } _metrics;
-    bool _signal_consumed = false;
+    bool          _signal_consumed = false;
+    /// Monotonic count of event-loop passes; surfaced to callbacks via `qb::LoopEvent::iteration`.
+    std::uint64_t _loop_count = 0;
     /**
      * @brief Optional C++20 cancellation token wired from `qb::Main::_stop_source`.
      * @details
@@ -465,7 +467,10 @@ private:
     /// True iff `id` is currently Activating (or dying with a still-live onInit frame).
     [[nodiscard]] bool __is_activating__(ActorId id) const noexcept;
     /// Byte-copy a gated inbound unicast event into the destination actor's FIFO stash.
-    void               __stash_event__(ActorId dest, Event *event) noexcept;
+    /// @return true if the event was taken into the stash (ownership transferred — the caller must
+    ///         NOT dispose the original); false if it was dropped (cap overflow) and the caller
+    ///         must `_router.dispose()` the original to free a non-trivial payload.
+    [[nodiscard]] bool __stash_event__(ActorId dest, Event *event) noexcept;
     /// Per-iteration pump: complete finished inits, replay stashes, enforce deadlines.
     void               __pump_activations__() noexcept;
     //! Actor Management

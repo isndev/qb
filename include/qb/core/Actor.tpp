@@ -178,6 +178,12 @@ CoroContext::push_to(ActorId dest, Args &&...args) const {
     VirtualCore::_handler->template push<_Event>(dest, actor_id_, std::forward<Args>(args)...);
 }
 
+template <typename _Event, typename... Args>
+void
+CoroContext::broadcast(Args &&...args) const {
+    VirtualCore::_handler->template broadcast<_Event>(actor_id_, std::forward<Args>(args)...);
+}
+
 template <typename E>
 bool
 Actor::resolve_ask(E &e) const noexcept {

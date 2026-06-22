@@ -47,7 +47,7 @@ qb adds owners for the resources it introduces. The key invariant for every one 
 For an actor, RAII works because the runtime gives you a precise destruction contract. Three points define it:
 
 - **Construction is thread-affine.** An actor is constructed on the `VirtualCore` worker thread that will host it, never on the main thread. Use `Main::core(idx).addActor<T>(...)` or `addRefActor<T>(...)`; constructing an actor from an arbitrary thread asserts (the constructor checks `VirtualCore::_handler != nullptr`). (`source/core/src/Actor.cpp:33`)
-- **`onInit()` runs once, before any event.** It runs after construction and ID assignment. Returning `false` aborts registration and **immediately destroys the actor** — so any resource you acquired in the constructor is released right away. What you observe depends on the creation path: a runtime `addRefActor<T>()`/`addRefHandle<T>()` hands you back an invalid id / empty handle (`id.is_valid()` is false), whereas a pre-start `addActor<T>()` whose `onInit()` fails at startup instead flags the core `BadActorInit` and the core fails to start (`Main::hasError()` is true) — it does not hand you an invalid id. See [Error handling](./error_handling.md) for the full failure table. (`include/qb/core/Actor.h:317`, `source/core/src/VirtualCore.cpp:469`, `source/core/src/Main.cpp:210`)
+- **`onInit()` runs once, before any business event.** It runs after construction and ID assignment and is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; while suspended the actor is *Activating* (inbound unicast stashed + replayed FIFO once active, bounded by the activation deadline). `co_return false` (or an uncaught exception) aborts registration and **immediately destroys the actor** — so any resource you acquired in the constructor is released right away. What you observe depends on the creation path: a runtime `addRefActor<T>()`/`addRefHandle<T>()` hands you back an **empty handle** (`!valid()`), whereas a pre-start `addActor<T>()` whose `onInit()` fails *synchronously* at startup flags the core `BadActorInit` and the core fails to start (`Main::hasError()` is true). See [Error handling](./error_handling.md) for the full failure table. (`include/qb/core/Actor.h:317`, `source/core/src/VirtualCore.cpp:469`, `source/core/src/Main.cpp:210`)
 - **`kill()` flags, it does not destroy.** `kill()` sets `_alive = false` and asks the `VirtualCore` to retire the actor. The actor stops receiving *new* events but may still drain events already queued; **`~Actor()` runs later, under `VirtualCore` control**, on the same worker thread. (`source/core/src/Actor.cpp:121`)
 
 Because destruction is single-threaded and deterministic, member subobjects are destroyed in reverse declaration order after your `~MyActor()` body returns. Declare your RAII members and let the compiler-generated cleanup do the rest.
@@ -70,13 +70,13 @@ public:
         : _scratch(std::make_unique<int[]>(256))
         , _out(std::move(path), std::ios::out) {}
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         if (!_out.is_open()) {
             qb::io::cout() << "ReportWriter[" << id() << "]: cannot open output\n";
-            return false; // actor is destroyed here; _scratch + _out already released
+            co_return false; // actor is destroyed here; _scratch + _out already released
         }
         _rows.reserve(64);
-        return true;
+        co_return true;
     }
 
     // No explicit destructor needed: _rows, _out, _scratch are released
@@ -106,7 +106,7 @@ class Subscriber : public qb::Actor {
 public:
     explicit Subscriber(qb::ActorId manager) : _manager(manager) {}
 
-    bool onInit() override { return true; }
+    qb::io::async::task<bool> onInit() override { co_return true; }
 
     void on(const qb::KillEvent &) {
         // Side effect that must reach the manager while it is still alive:
@@ -125,12 +125,12 @@ Two rules follow from the lifecycle:
 
 ### Referenced actors are not owned
 
-`addRefActor<T>(...)` creates a child actor on the **same** `VirtualCore` and returns a raw `T*`. The parent does **not** own the child: the parent's destructor will not delete it, and the child manages its own lifecycle through its own `kill()`. The raw pointer **dangles the moment the child calls `kill()`** — dereferencing it afterward is undefined behavior. (`include/qb/core/Actor.h:936`)
+`addRefActor<T>(...)` creates a child actor on the **same** `VirtualCore` and returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`). The parent does **not** own the child: the parent's destructor will not delete it, and the child manages its own lifecycle through its own `kill()`. The handle **never dangles** — it resolves the live pointer on demand, so `get()` / `operator->` return `nullptr` once the child calls `kill()` (and while it is still Activating, or after a failed init). Send to `handle.id()` at any time; gate direct calls on `handle.ready()`. (`include/qb/core/Actor.h`)
 
 Two safe patterns:
 
 - **Send events, not pointer calls.** Capture the child's `id()` and `push<Event>(child_id)`. Events to a dead actor are dropped by the router, so this never dereferences freed memory. (`include/qb/core/Actor.h:1199`)
-- **Hold a liveness-checked handle.** When you must keep a reference across event-handler boundaries, use `addRefHandle<T>()`, which returns a `RefActorHandle<T>`. Its `get()` re-queries the owning `VirtualCore` (via `findActor`) and returns `nullptr` if the child has died, instead of handing back a dangling pointer; `operator->()` and `operator*()` call `get()` and assert non-null in debug builds. (`include/qb/core/Actor.h:1235`, `include/qb/core/Actor.tpp:74`)
+- **Hold the phase-aware handle.** `addRefActor<T>()` (and its alias `addRefHandle<T>()`) returns a `qb::ActorHandle<T>` you can keep across event-handler boundaries. Its `get()` re-queries the owning `VirtualCore` (via `findActor`) and returns `nullptr` if the child is still Activating, failed init, or has died — never a dangling pointer; `operator->()` / `operator*()` call `get()` and assert non-null in debug builds. (`include/qb/core/Actor.tpp:74`)
 
 ```cpp
 // src: include/qb/core/Actor.h (addRefHandle / RefActorHandle)
@@ -138,16 +138,16 @@ Two safe patterns:
 
 class Worker : public qb::Actor {
 public:
-    bool onInit() override { return true; }
+    qb::io::async::task<bool> onInit() override { co_return true; }
     void do_step() { /* ... */ }
 };
 
 class Coordinator : public qb::Actor {
     qb::RefActorHandle<Worker> _worker;
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         _worker = addRefHandle<Worker>(); // empty if creation failed
-        return _worker.valid();
+        co_return _worker.valid();
     }
 
     void tick() {
@@ -229,7 +229,7 @@ void with_external_handle() {
 
 - **Overriding `on(KillEvent&)` without calling `kill()`.** The actor never terminates and its destructor never runs. Always end the handler with `kill()`.
 - **Sending events from a destructor.** Teardown order does not guarantee the destination is still operational. Move inter-actor side effects into the `KillEvent` handler.
-- **Dereferencing an `addRefActor<T>()` raw pointer after the child may have died.** It is undefined behavior. Use `addRefHandle<T>()`/`RefActorHandle<T>` and check `get()` for `nullptr`, or interact via `push<Event>(child_id)`.
+- **Calling `handle->method()` on a child that may not be active.** `addRefActor<T>()` returns a `qb::ActorHandle<T>` whose `get()` is `nullptr` while the child is Activating, after a failed init, or once it died. Gate direct calls on `handle.ready()` (check `get()` for `nullptr`), or interact via `push<Event>(handle.id())`.
 - **Calling `SSL_CTX_free()` on a context you already passed to `ssl::listener::init()`.** The listener owns it now; this is a double-free. Free only contexts you never handed off.
 - **Forgetting `set_insecure()` is a downgrade, not a tweak.** It disables peer verification and MITM protection. It exists for test and trusted-network scenarios; do not reach for it to silence a certificate error in production.
 - **Copying a move-only qb resource.** Sockets and `sys::file` delete copy precisely so a stray copy cannot cause a double-close. Use `std::move`, or `std::shared_ptr<file>` when shared ownership is genuinely required.

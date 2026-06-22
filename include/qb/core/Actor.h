@@ -67,8 +67,8 @@ template <typename _Actor>
 class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias of this)
 
 /**
- * @brief Tag type used to opt out of registering the four default event handlers
- *        (KillEvent, SignalEvent, UnregisterCallbackEvent, PingEvent) on construction.
+ * @brief Tag type used to opt out of registering the five default event handlers
+ *        (KillEvent, SignalEvent, UnregisterCallbackEvent, PingEvent, RequireEvent) on construction.
  * @ingroup Actor
  * @details
  * Pass `qb::no_default_events` to the protected `Actor` constructor to create a
@@ -171,12 +171,12 @@ concept service_event_type = std::is_base_of_v<ServiceEvent, T>;
  *         IncrementEvent(int amt) : amount(amt) {}
  *     };
  *
- *     bool onInit() override {
- *         // Register event handlers
+ *     qb::io::async::task<bool> onInit() override {
+ *         // Register event handlers (an async onInit may also co_await — see onInit() docs)
  *         registerEvent<IncrementEvent>(*this);
  *         registerEvent<qb::KillEvent>(*this);
  *         LOG_INFO("MyActor initialized with ID: " << id());
- *         return true;
+ *         co_return true;
  *     }
  *
  *     void on(const IncrementEvent& event) {
@@ -289,13 +289,13 @@ protected:
      * @param tag `qb::no_default_events` — selects this overload.
      * @details
      * Unlike the default constructor, this overload does **not** register handlers for
-     * `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, or `PingEvent`.
+     * `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, or `RequireEvent`.
      * The derived class is fully responsible for registering in `onInit()` any
      * system events it expects to receive (it is strongly recommended to at least
      * register `KillEvent` to enable graceful shutdown via `Main::stop()`).
      *
      * Intended for high-throughput scenarios where actors are short-lived and the
-     * four default subscriptions per actor become measurable overhead.
+     * five default subscriptions per actor become measurable overhead.
      */
     explicit Actor(no_default_events_t tag) noexcept;
 
@@ -453,6 +453,23 @@ public:
     void on(PingEvent const &event) noexcept;
 
     /**
+     * @brief Default handler for `RequireEvent` (auto-registered, like `KillEvent`/`PingEvent`).
+     * @details Routes a discovery/liveness reply to its pending `co_await qb::ping` / `qb::require`
+     *          via `resolve_require` — so those work with **no boilerplate**. Override only for the
+     *          legacy fire-and-forget `require<...>()` + `is<T>()` dance; if you do and also use the
+     *          coroutine form, call `resolve_require(e)` first (mirrors `resolve_ask`).
+     */
+    void on(RequireEvent &event) noexcept;
+
+    /**
+     * @brief Route a `RequireEvent` reply to its pending coroutine discovery.
+     * @param e The received reply.
+     * @return `true` if it resolved a pending `ping`/`require` of this actor; `false` otherwise
+     *         (legacy `correlation_id == 0`, or not ours).
+     */
+    [[nodiscard]] bool resolve_require(RequireEvent &e) const noexcept;
+
+    /**
      * @}
      */
 
@@ -546,7 +563,8 @@ public:
      * @details
      * This value is optimized and cached/updated by the `VirtualCore` at the beginning of each
      * of its processing loops. Thus, multiple calls to `time()` within the same event handler
-     * or `onCallback()` invocation will return the *same* timestamp.
+     * or `on(qb::LoopEvent const&)` invocation will return the *same* timestamp (equal to
+     * `qb::LoopEvent::now`).
      * @code
      * // ...
      * auto t1 = time();
@@ -557,6 +575,14 @@ public:
      * @note This time is primarily for relative measurements or logging within an actor's turn.
      */
     [[nodiscard]] uint64_t time() const noexcept;
+
+    /**
+     * @brief Typed wall-clock instant for the current turn — the `std::chrono` view of `time()`.
+     * @return `qb::wall_time` (a `system_clock` time point) equal to `time()` nanoseconds since epoch.
+     * @details Cached per loop iteration just like `time()` (stable within one handler). Prefer this
+     *          over the raw `uint64_t` when working with the `std::chrono` time vocabulary.
+     */
+    [[nodiscard]] qb::wall_time now() const noexcept;
 
     /**
      * @private
@@ -609,24 +635,25 @@ public:
      * @tparam _Actor The derived actor type, which must inherit from `qb::ICallback`.
      * @param actor A reference to the derived actor instance (usually `*this`).
      * @details
-     * The registered `onCallback()` method (from `qb::ICallback`) will be called
+     * The registered `on(qb::LoopEvent const&)` method (from `qb::ICallback`) will be called
      * by the `VirtualCore` during each of its processing loop iterations, after event processing.
-     * This allows the actor to perform periodic tasks or background operations.
+     * This allows the actor to perform periodic tasks or background operations; the `LoopEvent`
+     * carries per-pass context (`now`, `iteration`).
      * The callback remains active until explicitly unregistered or the actor is terminated.
-     * @note Ensure the `onCallback()` implementation is fast and non-blocking.
-     * @see qb::ICallback
+     * @note Ensure the tick handler is fast and non-blocking.
+     * @see qb::ICallback, qb::LoopEvent
      * @code
      * class MyPollingActor
      *   : public qb::Actor
      *   , public qb::ICallback // Must inherit from ICallback
      * {
      * public:
-     *   bool onInit() override {
+     *   qb::io::async::task<bool> onInit() override {
      *     registerCallback(*this); // Register self for periodic callbacks
-     *     return true;
+     *     co_return true;
      *   }
      *
-     *   void onCallback() override {
+     *   void on(qb::LoopEvent const &loop) override {
      *     // This code will be executed periodically by the VirtualCore
      *     // pollExternalSystem();
      *     // if (checkCondition()) {
@@ -645,9 +672,9 @@ public:
      * @tparam _Actor The derived actor type.
      * @param actor A reference to the derived actor instance (usually `*this`).
      * @details
-     * Stops the periodic invocation of the actor's `onCallback()` method.
+     * Stops the periodic invocation of the actor's `on(qb::LoopEvent const&)` tick handler.
      * It is safe to call this even if no callback is currently registered.
-     * @note Can be called from within `onCallback()` to self-terminate the callback cycle,
+     * @note Can be called from within the tick handler to self-terminate the callback cycle,
      *       or from any event handler.
      * @code
      * // void on(MyStopEvent& event) {
@@ -677,10 +704,10 @@ public:
      * This is typically called within the actor's `onInit()` method.
      * @note The actor must have a public member function `void on(const _Event& event)` or `void on(_Event& event)`.
      * @code
-     * // bool onInit() override {
+     * // qb::io::async::task<bool> onInit() override {
      * //   registerEvent<MyCustomEvent>(*this);
      * //   registerEvent<AnotherEvent>(*this);
-     * //   return true;
+     * //   co_return true;
      * // }
      * //
      * // void on(const MyCustomEvent& event) {  handle MyCustomEvent... }
@@ -843,30 +870,27 @@ public:
     }
 
     /**
-     * @brief Request discovery of other actors of specified types.
+     * @brief Legacy fire-and-forget discovery of other actors of specified types.
      * @tparam _Actors Variadic template pack of actor types to discover.
      * @return `true` if the discovery ping was successfully broadcasted for all types.
      * @details
-     * For each type in `_Actors`, this method broadcasts a `PingEvent`.
-     * Live actors of the specified types will respond with a `RequireEvent`,
-     * which this actor must be registered to handle (via `registerEvent<RequireEvent>(*this)`).
-     * The `on(RequireEvent&)` handler can then use `is<_ActorType>(event)` to identify responses.
+     * For each type in `_Actors`, broadcasts a `PingEvent`; live actors of that type reply with a
+     * `RequireEvent`. Override `on(RequireEvent&)` and use `is<_ActorType>(event)` to identify
+     * responses (a reply means alive — presence is the status).
+     *
+     * @note Prefer the coroutine form **`co_await qb::require<T>(ctx, timeout)`** (returns the
+     *       discovered `ActorId`s directly, works inside `onInit`, no `on(RequireEvent)` boilerplate).
      * @code
-     * // bool onInit() override {
+     * // qb::io::async::task<bool> onInit() override {
      * //   registerEvent<qb::RequireEvent>(*this);
-     * //   require<ServiceA, ServiceB>(); // Discover ServiceA and ServiceB instances
-     * //   return true;
+     * //   require<ServiceA, ServiceB>(); // discover; replies arrive after activation
+     * //   co_return true;
      * // }
-     * //
-     * // void on(const qb::RequireEvent& event) {
-     * //   if (is<ServiceA>(event) && event.status == qb::ActorStatus::Alive) {
-     * //     // _service_a_id = event.getSource();
-     * //   } else if (is<ServiceB>(event) && event.status == qb::ActorStatus::Alive) {
-     * //     // _service_b_id = event.getSource();
-     * //   }
+     * // void on(qb::RequireEvent& event) {                 // override for the legacy path
+     * //   if (qb::is<ServiceA>(event)) _service_a_id = event.getSource();
      * // }
      * @endcode
-     * @see qb::PingEvent, qb::RequireEvent
+     * @see qb::require, qb::ping, qb::PingEvent, qb::RequireEvent
      */
     template <typename... _Actors>
     bool require() const noexcept;
@@ -1285,6 +1309,15 @@ public:
     void push_to(ActorId dest, Args &&...args) const;
 
     /**
+     * @brief Broadcast an event to every actor on all cores (source = the spawning actor).
+     * @tparam _Event The event type
+     * @tparam Args Event constructor arguments
+     * @details Mirrors `Actor::broadcast`; used e.g. by `qb::require` to fan out a discovery ping.
+     */
+    template <typename _Event, typename... Args>
+    void broadcast(Args &&...args) const;
+
+    /**
      * @brief Get the spawning actor's ID (captured at construction)
      * @return ActorId
      */
@@ -1311,8 +1344,9 @@ public:
  * the asker's `on(E&)` handler routes it via `resolve_ask(e)` to resume the awaiting
  * coroutine. Derive your exchange event from `qb::AskEvent` (alias `qb::ask_event`).
  */
-struct AskEvent : qb::Event {
-    std::uint64_t correlation_id{0}; ///< Stamped by `ask()`, preserved by `reply()`; do not set manually.
+struct AskEvent : qb::CorrelatedEvent {
+    // `correlation_id` is inherited from CorrelatedEvent (stamped by `ask()`, preserved by
+    // `reply()`; do not set manually). AskEvent stays a distinct type for the request/response API.
 };
 
 namespace detail {
@@ -1334,6 +1368,31 @@ void                        ask_register(std::uint64_t id, ask_slot *slot) noexc
 void                        ask_unregister(std::uint64_t id) noexcept;
 bool                        ask_deliver(std::uint64_t id, qb::ActorId owner, qb::Event &resp) noexcept;
 [[nodiscard]] ev::loop_ref  ask_loop() noexcept;
+
+/**
+ * @brief RAII rollback for a freshly-registered slot.
+ * @details Helpers that `ask_register` a slot and *then* send the request (`ask_stream`, `ping`,
+ *          `require`) have a window where the send (`push_to`/`broadcast`, not `noexcept`) could
+ *          throw before the slot's RAII owner (the `stream`/awaiter) exists — which would strand a
+ *          dangling slot in the registry. Arm this guard right after `ask_register`; `release()` it
+ *          once the owner has taken over. If the send throws, the guard deregisters on unwind.
+ */
+struct ask_slot_guard {
+    std::uint64_t id;
+    bool          armed = true;
+    explicit ask_slot_guard(std::uint64_t i) noexcept
+        : id(i) {}
+    ask_slot_guard(const ask_slot_guard &)            = delete;
+    ask_slot_guard &operator=(const ask_slot_guard &) = delete;
+    void
+    release() noexcept {
+        armed = false;
+    }
+    ~ask_slot_guard() {
+        if (armed)
+            ask_unregister(id);
+    }
+};
 
 /**
  * @brief Register an event type as ask-correlated (carries `AskEvent::correlation_id`).
@@ -1378,6 +1437,7 @@ struct ask_awaiter {
     bool                              timer_started = false;
     enum class kind { pending, ok, timed_out, cancelled } outcome = kind::pending;
     std::shared_ptr<bool>             alive = std::make_shared<bool>(true);
+    qb::io::async::cancellation_token::id_type cancel_id = 0; ///< scope on_cancel reg; removed in finish().
 
     ask_awaiter(std::uint64_t aid, qb::ActorId owner, qb::duration t, qb::io::async::cancellation_token tok)
         : id(aid)
@@ -1415,8 +1475,8 @@ struct ask_awaiter {
             ev_timer_start(loop, &timer);
             timer_started = true;
         }
-        auto a = alive;
-        token.on_cancel([this, a]() {
+        auto a    = alive;
+        cancel_id = token.on_cancel([this, a]() {
             if (*a && !slot.done) {
                 slot.done = true;
                 outcome   = kind::cancelled;
@@ -1448,6 +1508,10 @@ private:
     void
     finish() noexcept {
         ask_unregister(id);
+        // Deregister the scope cancel hook so a long-lived actor scope token does not retain
+        // one dead callback per `qb::ask` for the actor's whole life (idempotent).
+        token.remove_on_cancel(cancel_id);
+        cancel_id = 0;
         if (timer_started) {
             if (ev_is_active(&timer))
                 ev_timer_stop(ask_loop(), &timer);
@@ -1623,26 +1687,26 @@ public:
 };
 
 /**
- * @class RefActorHandle
+ * @class ActorHandle
  * @ingroup Actor
- * @brief Type-safe weak reference to a referenced actor hosted on the **same** VirtualCore.
+ * @brief Type-safe, phase-aware handle to a referenced actor hosted on the **same** VirtualCore.
  *
  * @tparam _Actor Concrete actor type this handle resolves to.
  *
  * @details
- * `addRefActor<T>()` returns a raw `T*` whose lifetime is tied to the enclosing
- * `VirtualCore`. That pointer becomes dangling as soon as the referenced actor
- * calls `kill()` — any subsequent dereference is Undefined Behaviour (finding 2.9).
+ * `addRefActor<T>()` returns an `ActorHandle<T>` (the alias `RefActorHandle<T>` is retained for
+ * source compatibility). The handle captures the `ActorId` at creation and resolves the live
+ * pointer **on demand** through `VirtualCore::findActor<T>()`, so it never hands back a dangling
+ * pointer: `get()` is *phase-aware* and returns `nullptr` while the actor is still **Activating**
+ * (its async `onInit()` is in flight), after a failed init, or once it has been destroyed.
  *
- * `RefActorHandle<T>` captures both the `ActorId` **and** the cached raw pointer at
- * creation time, so callers can:
- *
- * - Cheaply send events to the referenced actor via `id()` without resolving the
- *   pointer (events are safe to dispatch to ids whose actors have died — they are
- *   simply dropped by the router).
+ * Callers can:
+ * - Cheaply send events to the referenced actor via `id()` — valid the instant `addRefActor`
+ *   returns, even while the actor is still Activating (events to it are stashed and replayed
+ *   FIFO once active; events to ids whose actors have died are dropped by the router).
  * - Safely dereference via `get()` / `operator->()` / `operator*()`, which re-query
- *   `VirtualCore::_handler` to confirm the actor is still registered and alive on
- *   the current core before returning the cached pointer.
+ *   `VirtualCore::_handler` and return the pointer only for an **active** actor (`is_active()`).
+ * - Wait for an async-init child with `ready()` (sync) or `co_await ready_async(ctx)` (async).
  *
  * Thread-model: must only be dereferenced from the owning VirtualCore's worker
  * thread (the same thread that created the referenced actor). Cross-thread use

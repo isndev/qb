@@ -605,6 +605,104 @@ TEST_F(CancellationAdvancedTests, WithDeadlineAlreadyCancelledToken) {
 }
 
 // =============================================================================
+// TEST SUITE: on_cancel deregistration / non-growth (regression for the
+// unbounded callback-accumulation bug on long-lived scope tokens)
+// =============================================================================
+
+/**
+ * @test remove_on_cancel deregisters a single callback by id.
+ */
+TEST_F(CancellationTokenTests, RemoveOnCancelDeregisters) {
+    cancellation_token token;
+    std::atomic<int>   a{0}, b{0}, c{0};
+
+    auto id_a = token.on_cancel([&a]() { ++a; });
+    auto id_b = token.on_cancel([&b]() { ++b; });
+    auto id_c = token.on_cancel([&c]() { ++c; });
+    EXPECT_NE(id_a, 0u);
+    EXPECT_NE(id_b, 0u);
+    EXPECT_NE(id_c, 0u);
+    EXPECT_EQ(token.get_state()->callbacks.size(), 3u);
+
+    token.remove_on_cancel(id_b);              // drop the middle one
+    EXPECT_EQ(token.get_state()->callbacks.size(), 2u);
+
+    token.cancel();
+    EXPECT_EQ(a.load(), 1);
+    EXPECT_EQ(b.load(), 0);                     // removed → must not fire
+    EXPECT_EQ(c.load(), 1);
+}
+
+/**
+ * @test on_cancel on an already-cancelled token runs inline and returns id 0.
+ */
+TEST_F(CancellationTokenTests, OnCancelAfterCancelRunsInlineReturnsZero) {
+    cancellation_token token;
+    token.cancel();
+    std::atomic<bool> fired{false};
+    const auto        id = token.on_cancel([&fired]() { fired = true; });
+    EXPECT_TRUE(fired.load());
+    EXPECT_EQ(id, 0u);
+    EXPECT_TRUE(token.get_state()->callbacks.empty());
+}
+
+/**
+ * @test remove_on_cancel after cancellation is a safe no-op; empty/0 ids ignored.
+ */
+TEST_F(CancellationTokenTests, RemoveOnCancelIsSafeAfterCancelAndForZeroId) {
+    cancellation_token token;
+    const auto         id = token.on_cancel([]() {});
+    token.cancel();
+    token.remove_on_cancel(id); // entry already consumed by cancel() → no-op
+    token.remove_on_cancel(0);  // id 0 → ignored
+    SUCCEED();                  // no crash / UB under ASan
+}
+
+/**
+ * @test A register/deregister loop does NOT grow the callback set — the core of the
+ *       unbounded-growth fix. Before the fix, on_cancel-only had no removal path, so a
+ *       long-lived (actor-scope) token accumulated one std::function per iteration forever.
+ */
+TEST_F(CancellationTokenTests, CallbacksDoNotAccumulateAcrossRegisterRemoveLoop) {
+    cancellation_token token;
+    for (int i = 0; i < 10000; ++i) {
+        const auto id = token.on_cancel([]() {});
+        EXPECT_EQ(token.get_state()->callbacks.size(), 1u);
+        token.remove_on_cancel(id);
+        EXPECT_TRUE(token.get_state()->callbacks.empty());
+    }
+    std::atomic<int> fired{0};
+    (void) token.on_cancel([&fired]() { ++fired; });
+    token.cancel();
+    EXPECT_EQ(fired.load(), 1); // only the one live callback fires
+}
+
+/**
+ * @test A `cancellable_sleep` loop on ONE shared token leaves no residual callbacks: each
+ *       awaiter deregisters on normal completion. This is the awaiter-level proof that the
+ *       `ScopedCoroContext::sleep` loop (and `ready_async` poll) no longer leaks callbacks.
+ */
+TEST_F(CancellationCoroutineTests, CancellableSleepLoopDeregistersOnEachIteration) {
+    cancellation_token token;
+    std::atomic<int>   iterations{0};
+
+    auto worker = [&token, &iterations]() -> task<void> {
+        for (int i = 0; i < 50; ++i) {
+            co_await cancellable_sleep(1ms, token);
+            ++iterations;
+        }
+    };
+    coro_scheduler().spawn(worker());
+    run_for(300ms);
+
+    EXPECT_EQ(iterations.load(), 50);
+    // The token outlives the coroutine; every per-sleep on_cancel must have been removed.
+    EXPECT_TRUE(token.get_state()->callbacks.empty())
+        << "cancellable_sleep left " << token.get_state()->callbacks.size()
+        << " dead callbacks — the unbounded-growth bug is back";
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

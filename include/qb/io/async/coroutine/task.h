@@ -86,6 +86,7 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <qb/utility/prefix.h> // QB_LOCKFREE_CACHELINE_BYTES (canonical cache-line size)
 
 // Debug trace macro (defined early for use in promise_type)
 #ifdef QB_DEBUG_COROUTINES
@@ -117,12 +118,14 @@ void defer_frame_destruction(std::coroutine_handle<>) noexcept;
 // without going through the global allocator.
 //
 // Design:
-//   * Bucket size = ceil(frame_size / kAlign). kAlign = 32 B matches the
-//     typical cache-line sub-block and most libc malloc min-alignment.
-//   * kMaxBucket buckets → frames up to kAlign * kMaxBucket (= 2 KiB by
-//     default) are pooled; larger frames fall through to ::operator new
-//     (these are rare — they'd correspond to coroutines that hold a large
-//     by-value state, which is discouraged anyway).
+//   * Bucket size = ceil(frame_size / kAlign). kAlign = QB_LOCKFREE_CACHELINE_BYTES
+//     (64 B on all current targets) so a pooled block is always cache-line aligned —
+//     a coroutine frame may embed a cache-line-aligned qb::Event by value, and the
+//     optimiser emits aligned AVX moves for that copy under -march=native.
+//   * kMaxBucket buckets → frames up to kAlign * kMaxBucket (= 4 KiB with a 64 B
+//     line) are pooled; larger frames fall through to ::operator new (these are rare
+//     — they'd correspond to coroutines that hold a large by-value state, which is
+//     discouraged anyway).
 //   * Freed blocks are intrusively linked via their first 8 B, LIFO.
 //   * No destructor / no draining: the OS reclaims the freelist when the
 //     thread exits. The blocks parked here at process exit are reachable,
@@ -138,12 +141,16 @@ namespace detail {
 class CoroutineFrameAllocator {
 public:
     // Cache line: a coroutine frame may hold a by-value qb::Event subtype, which
-    // is QB_LOCKFREE_CACHELINE_ALIGNMENT (64 B). The frame inherits that
-    // alignment and the optimiser emits aligned AVX moves for the by-value copy
-    // under -march=native; plain ::operator new only guarantees 16 B on x86-64,
-    // so the pool must return cache-line-aligned blocks or it SIGSEGVs.
-    static constexpr std::size_t kAlign     = 64;
-    static constexpr std::size_t kMaxBucket = 64; // up to 4 KiB
+    // is QB_LOCKFREE_CACHELINE_ALIGNMENT. The frame inherits that alignment and the
+    // optimiser emits aligned AVX moves for the by-value copy under -march=native;
+    // plain ::operator new only guarantees 16 B on x86-64, so the pool must return
+    // cache-line-aligned blocks or it SIGSEGVs. Use the canonical cache-line constant
+    // (overridable via KNOWN_L1_CACHE_LINE_SIZE) rather than a magic 64 so the pool
+    // always tracks the platform's true line size / the alignment Events are built with.
+    static constexpr std::size_t kAlign     = QB_LOCKFREE_CACHELINE_BYTES;
+    static constexpr std::size_t kMaxBucket = 64; // frames up to kAlign * kMaxBucket are pooled
+    static_assert(kAlign >= alignof(std::max_align_t),
+                  "coroutine frame pool alignment must cover the platform's max scalar alignment");
 
     // Per-thread count of coroutine frames allocated through this pool and not
     // yet freed. Cheap diagnostic (thread_local — coroutines are mono-thread per

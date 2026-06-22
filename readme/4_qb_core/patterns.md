@@ -35,6 +35,32 @@ The patterns also use two timing tools from `qb-io`:
 - `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
   For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/timestamp.h`).
 
+## The patterns library (`<qb/core/patterns.h>`)
+
+Many of the designs below now ship **ready-made** as header-only free functions over the same
+primitives — prefer them over hand-rolling, and reach for the mechanics on this page only to build
+variants the library does not cover. They are all **core-local** (single-thread, no locking), and the
+coroutine-side helpers are **cancel-on-kill**. Full signatures live in the API reference; runnable
+recipes in the [patterns cookbook](../6_guides/patterns_cookbook.md).
+
+| Need | Library API |
+|------|-------------|
+| Request / response (await a reply) | `co_await qb::ask(ctx, target, req, timeout)` with `qb::Request<Resp>` / `qb::answer` / `Actor::resolve_ask` |
+| Bound a whole request chain | `qb::deadline` + `qb::deadline_in` / `qb::remaining` / `qb::ask_by` |
+| Discover actors / liveness | `co_await qb::require<T>(ctx, timeout)` / `co_await qb::ping(ctx, target, timeout)` (zero boilerplate; works in `onInit`) |
+| Idempotent (retry-safe) effects | `qb::answer_idempotent` + `qb::dedup_map` + a stable `idempotency_key` |
+| Coalesce many events into batches | `qb::batcher<T>` (flush on count or time window) |
+| Many replies for one request | `qb::ask_stream` → `qb::stream<E>` (+ `qb::StreamRequest`, `qb::yield_answer`, `qb::end_stream`; route chunks with `resolve_ask`) |
+| Fan out & gather | `qb::ask_all` (incl. bounded sliding-window), `qb::ask_any`, `qb::ask_quorum` (k-of-N) |
+| Retry with backoff | `qb::ask_retry` + `qb::retry_policy` (with `.jitter`) |
+| Fail fast on a flaky dependency | `qb::ask_guarded` + `qb::CircuitBreaker` |
+| Throttle a rate | `qb::rate_limiter` (alias `qb::token_bucket`) |
+| Cap concurrency / isolate failures | `qb::bulkhead` |
+| Compensating (saga) transaction | `qb::run_saga` + `qb::SagaScope` |
+| Round-robin work distribution | `qb::WorkerPool` |
+| Topic publish/subscribe (per core) | `qb::PubSub<Topic>` |
+| Restart children on failure | `qb::Supervisor` + `qb::SupervisedActor` + `qb::restart_strategy` |
+
 ## Finite state machines
 
 An actor is already a state machine: its members are the state, and its event handlers are the
@@ -59,12 +85,12 @@ class OrderActor : public qb::Actor {
     qb::string<128> _details;
 
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<PlaceOrder>(*this);
         registerEvent<PaymentTaken>(*this);
         registerEvent<ShipOrder>(*this);
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(PlaceOrder const &ev) {
@@ -126,10 +152,10 @@ struct LogLine : qb::Event {
 
 class CoreLogger : public qb::ServiceActor<LoggerTag> {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<LogLine>(*this);
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(LogLine const &ev) {
@@ -193,12 +219,12 @@ class Broker : public qb::Actor {
     std::map<Topic, std::set<qb::ActorId>> _subscribers;
 
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Subscribe>(*this);
         registerEvent<Unsubscribe>(*this);
         registerEvent<Publish>(*this);
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(Subscribe const &ev)   { _subscribers[ev.topic].insert(ev.who); }
@@ -224,11 +250,11 @@ class Subscriber : public qb::Actor {
 public:
     explicit Subscriber(qb::ActorId broker) : _broker(broker) {}
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Delivery>(*this);
         registerEvent<qb::KillEvent>(*this);
         push<Subscribe>(_broker, Subscribe{ .topic = Topic::Weather, .who = id() });
-        return true;
+        co_return true;
     }
 
     void on(Delivery const &ev) { /* consume ev.body */ }
@@ -254,6 +280,12 @@ The full demo — broker, multiple subscribers, a publisher, and a driver — is
 
 ## Request/response with a timeout
 
+> **Prefer the library:** `co_await qb::ask(ctx, target, req, timeout)` (with `qb::Request<Resp>` /
+> `qb::answer` / `Actor::resolve_ask`) does the correlation, timeout, and cancel-on-kill for you —
+> see [the patterns library](#the-patterns-library-qbcorepatternsh) and the cookbook. The hand-rolled
+> version below shows the underlying mechanics (and is the model for replies you must correlate
+> outside a coroutine).
+
 Actor messaging is one-way; a request/response exchange is two events plus a correlation id so the
 requester can match a reply to the request it sent. Because a peer may never answer, a robust
 requester also arms a timeout and treats whichever arrives first — the reply or the deadline — as
@@ -278,11 +310,11 @@ class Requester : public qb::Actor {
 public:
     explicit Requester(qb::ActorId service) : _service(service) {}
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Answer>(*this);
         registerEvent<QueryTimeout>(*this);
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void ask(const char *key) {
@@ -319,10 +351,10 @@ differ. See [reply and forward](./actor.md#reply-and-forward-reuse-a-received-ev
 ```cpp
 class Service : public qb::Actor {
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Query>(*this);
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(Query const &q) {
@@ -348,20 +380,25 @@ of a peer actor — see [Coroutines](#coroutines-for-async-io) below.
 
 ## Referenced (child) actors
 
-`addRefActor<T>(args...)` creates a child actor on the **same** `VirtualCore` and returns a raw `T*`
-(`qb/core/Actor.h`). The parent does not own the child — the child manages its own lifecycle and
-must `kill()` itself — and the raw pointer dangles the moment the child terminates. The child still
-has its own `ActorId` and receives events normally.
+`addRefActor<T>(args...)` creates a child actor on the **same** `VirtualCore` and returns a
+phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`, `qb/core/Actor.h`). The parent does not
+own the child — the child manages its own lifecycle and must `kill()` itself. The handle never
+dangles: it caches the `ActorId` and resolves the live pointer on demand, so `get()` / `operator->`
+return `nullptr` while the child is still *Activating* (async `onInit` in flight), after a failed
+init, or once it died. The child has its own `ActorId` and receives events normally.
 
 ```cpp
 // src: derived from qb/source/core/tests/system/test-actor-add.cpp
-ChildHelper *raw = addRefActor<ChildHelper>(id());   // raw can dangle once the child dies
+auto helper = addRefActor<ChildHelper>(id());   // qb::ActorHandle<ChildHelper>
+push<Task>(helper.id(), 2, 3);                    // always safe — stashed if still Activating
+if (helper.ready())                              // sync-init child: ready at once
+    helper->doSomethingDirect();                 // direct call only when active
+// async-init child: if (co_await helper.ready_async(context())) helper->serve();
 ```
 
-For any handle the parent keeps across event boundaries, wrap the pointer in a `RefActorHandle<T>`
-via `addRefHandle<T>(args...)`. The handle caches both the `ActorId` and the pointer, and re-checks
-liveness on every dereference, so a stale dereference yields `nullptr` instead of undefined
-behavior.
+`helper.id()` is valid the instant `addRefActor` returns, so you can `push()` to it even before the
+child finishes an async `onInit()` (the event is stashed and replayed FIFO once it activates). Gate
+any **direct** method call on `helper.ready()`; never `operator->` a non-ready handle.
 
 ```cpp
 // src: derived from qb/source/core/tests/system/test-actor-add.cpp
@@ -376,10 +413,10 @@ class ChildHelper : public qb::Actor {
 public:
     explicit ChildHelper(qb::ActorId parent) : _parent(parent) {}
 
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<Task>(*this);
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void on(Task const &ev)        { push<Result>(_parent, Result{ .value = ev.a + ev.b }); }
@@ -389,18 +426,17 @@ public:
 class Parent : public qb::Actor {
     qb::RefActorHandle<ChildHelper> _helper;
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         _helper = addRefHandle<ChildHelper>(id());
         if (!_helper)                               // onInit() failed inside the child
-            return false;
+            co_return false;
         registerEvent<Result>(*this);
         registerEvent<qb::KillEvent>(*this);
-        return true;
+        co_return true;
     }
 
     void dispatch(int a, int b) {
-        if (_helper)                                // O(1) liveness check before use
-            push<Task>(_helper->id(), Task{ .a = a, .b = b });
+        push<Task>(_helper.id(), Task{ .a = a, .b = b });  // id() is always safe (stashed if Activating)
     }
 
     void on(Result const &ev) {
@@ -408,23 +444,25 @@ public:
     }
 
     void on(qb::KillEvent const &) {
-        if (_helper)
-            push<qb::KillEvent>(_helper->id());     // ask the child to stop first
+        if (_helper.valid())
+            push<qb::KillEvent>(_helper.id());      // ask the child to stop first
         kill();
     }
 };
 ```
 
-`RefActorHandle<T>` surface (`qb/core/Actor.h`):
+`ActorHandle<T>` surface (alias `RefActorHandle<T>`, `qb/core/Actor.h`):
 
 | Member | Returns | Behavior |
 |---|---|---|
-| `valid()` | `bool` | True if the handle holds a valid `ActorId` (constructed from a non-null actor). |
-| `id()` | `qb::ActorId` | The referenced actor's id (may be invalid). |
-| `get()` | `T *` | Cached pointer if the actor is still alive on the current core, else `nullptr`. |
+| `valid()` | `bool` | True if the handle holds a valid `ActorId` (creation succeeded). |
+| `id()` | `qb::ActorId` | The referenced actor's id — valid immediately, even while the child is still Activating (always safe to `push()` to). |
+| `get()` | `T *` | Phase-aware: the live pointer **only if the actor is active** on the current core, else `nullptr` (while Activating, after a failed init, or once it died). |
+| `ready()` | `bool` | `get() != nullptr` — the child is active and safe to call directly. |
+| `ready_async(ctx, timeout)` | `task<bool>` | `co_await` until the (async-init) child becomes active or the timeout elapses. |
 | `operator->()` | `T *` | `get()` with a debug-build assertion that it is non-null. |
-| `operator*()` | `T &` | Dereference; undefined if `get() == nullptr`. |
-| `operator bool()` | `bool` | True iff `get() != nullptr` (live). |
+| `operator*()` | `T &` | Dereference; undefined unless `ready()`. |
+| `operator bool()` | `bool` | `== ready()`. |
 
 > **Pitfall:** a `RefActorHandle` may be dereferenced only on the owning `VirtualCore` thread — the
 > thread that created the child. It is a same-core construct: cross-core access is a logic error and
@@ -448,12 +486,12 @@ class Supervisor : public qb::Actor {
     std::size_t                             _target = 4;
 
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<WorkerDown>(*this);
         registerEvent<qb::KillEvent>(*this);
         for (std::size_t i = 0; i < _target; ++i)
             spawnWorker();
-        return true;
+        co_return true;
     }
 
     void spawnWorker() {
@@ -491,11 +529,18 @@ Supervision techniques:
 
 ## Dependency resolution with require
 
+> **Prefer the coroutine form:** `auto peers = co_await qb::require<Peer>(ctx, timeout)` returns the
+> discovered `ActorId`s directly (and `co_await qb::ping(ctx, target, timeout)` probes one actor's
+> liveness) — no `on(RequireEvent&)` handler needed — Actor routes replies by default. See the
+> [patterns library](#the-patterns-library-qbcorepatternsh). The broadcast form below shows the
+> underlying mechanics.
+
 When an actor must find peers whose `ActorId`s are not known at construction time — services started
 elsewhere, or instances spread across cores — `require<T...>()` performs runtime discovery.
 `require<A, B>()` broadcasts a `PingEvent` for each listed type; every **live** actor of a listed
-type replies with a `qb::RequireEvent` carrying its type tag and `qb::ActorStatus::Alive`. The
-requester must subscribe to `RequireEvent` and use `is<T>(event)` to identify which type answered.
+type replies with a `qb::RequireEvent` carrying its type tag (a reply *is* the liveness signal — there
+is no status field). The requester overrides `on(RequireEvent&)` and uses `is<T>(event)` to identify
+which type answered.
 
 ```cpp
 // src: derived from qb/source/core/tests/system/test-actor-dependency.cpp
@@ -506,15 +551,15 @@ class Client : public qb::Actor {
     bool        _resolved = false;
 
 public:
-    bool onInit() override {
+    qb::io::async::task<bool> onInit() override {
         registerEvent<qb::RequireEvent>(*this);
         registerEvent<qb::KillEvent>(*this);
         require<CoreLogger>();                  // broadcast a discovery ping for CoreLogger
-        return true;
+        co_return true;
     }
 
     void on(qb::RequireEvent const &ev) {
-        if (is<CoreLogger>(ev) && ev.status == qb::ActorStatus::Alive) {
+        if (is<CoreLogger>(ev)) {               // a reply means the actor is alive
             _logger   = ev.getSource();         // the responding actor's id
             _resolved = true;
             push<LogLine>(_logger, "client resolved its logger");
@@ -533,8 +578,8 @@ Behavior and limits:
 - **`require` is one-shot discovery, not a subscription.** It is a point-in-time broadcast: actors
   that start *after* the ping do not retroactively respond. Re-issue `require<T>()` if you need to
   rediscover later.
-- **The built-in path reports only `Alive`.** The default `on(PingEvent const &)` replies with
-  `ActorStatus::Alive`; there is no automatic `Dead` notification when a peer later terminates.
+- **Discovery reports presence only.** A live actor replies; there is no automatic notification when
+  a peer later terminates.
   Detect a peer's death through your own protocol (such as the `WorkerDown` report in the
   supervision pattern), not by waiting for a `Dead` `RequireEvent`.
 - **Static wiring is simpler when ids are known up front.** If you create the dependencies yourself,
@@ -600,9 +645,11 @@ context.
 - **Passing a bare number as a delay.** `qb::io::async::callback(func, delay)` requires a
   `std::chrono::duration` (`std::chrono::seconds(2)`, `100ms` with `using namespace
   std::chrono_literals`), not a raw `double`.
-- **Dereferencing a raw `addRefActor` pointer after the child dies.** The pointer dangles silently.
-  Use `addRefHandle<T>()` and check the handle before each use.
-- **Cross-core `RefActorHandle` use.** Handles are same-core only. Reach actors on other cores by
+- **Calling `handle->method()` on a non-active child.** `addRefActor<T>()` returns a phase-aware
+  `qb::ActorHandle<T>` whose `get()`/`operator->` yield `nullptr` (debug `assert`) while the child is
+  Activating, after a failed init, or once it died. Gate direct calls on `handle.ready()` (or
+  `co_await handle.ready_async(context())`); prefer sending to `handle.id()`, which is always safe.
+- **Cross-core `ActorHandle` use.** Handles are same-core only. Reach actors on other cores by
   `id()`.
 - **Treating `require<T>()` as a live registry.** It is a one-shot ping answered only by actors
   alive at that instant, and only with `Alive`. Re-issue it to rediscover, and detect deaths through

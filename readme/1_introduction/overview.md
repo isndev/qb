@@ -54,7 +54,7 @@ The actor model removes most low-level synchronization from your code, but a wor
 
 ### Actor engine (`qb-core`)
 
-- **`qb::Actor`** — the base class for message-driven components. Lifecycle hooks are `bool onInit()` (called once when the actor is registered; return `false` to abort startup) and `kill()` to terminate.
+- **`qb::Actor`** — the base class for message-driven components. Lifecycle hooks are `qb::io::async::task<bool> onInit()` (an async coroutine — it may `co_await` (e.g. `co_await context().sleep(...)` or `co_await qb::ask(...)`); `co_return true` activates the actor, `co_return false` (or an uncaught exception) fails init and removes it) and `kill()` to terminate.
 - **Type-safe events.** Define an event by deriving from `qb::Event`; deliver it with `push<Event>(...)` (the ordered default) or `broadcast<Event>(...)`. Subscribe with `registerEvent<Event>(*this)` and handle it with a matching `on(const Event&)` overload.
 - **The `Main` engine.** `qb::Main` (aliased `qb::engine`) configures cores, spawns one `VirtualCore` worker thread per core, and manages `start()`, `stop()`, and `join()`. Actors are placed on a specific core via `addActor<T>(core, args...)`.
 - **Multicore distribution.** Each `VirtualCore` owns its actors and runs its own event loop. Cross-core events travel over a per-core lock-free MPSC (multiple-producer, single-consumer) mailbox; an actor is thread-affine and never migrates between cores.
@@ -92,10 +92,10 @@ struct GreetingEvent : qb::Event {
 
 class GreeterActor : public qb::Actor {
 public:
-    bool onInit() final {
+    qb::io::async::task<bool> onInit() final {
         registerEvent<GreetingEvent>(*this);   // subscribe
         push<GreetingEvent>(id(), "Hello");     // send to self
-        return true;                            // actor is ready
+        co_return true;                         // actor is ready
     }
 
     void on(const GreetingEvent &event) {
