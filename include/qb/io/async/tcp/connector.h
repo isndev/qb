@@ -69,6 +69,46 @@
 namespace qb::io::async::tcp {
 
 /**
+ * @brief Outcome of one step of a STARTTLS / opportunistic-TLS negotiation.
+ *
+ * A negotiator drives a plaintext exchange on the freshly-connected socket and,
+ * on each readiness event, returns what it needs next. The connector reuses its
+ * existing event-loop machinery (watcher, deadline, lifetime) to honor it:
+ *   - want_write   : arm EV_WRITE and call the negotiator again when writable.
+ *   - want_read    : arm EV_READ and call the negotiator again when readable.
+ *   - upgrade      : negotiation agreed on TLS — set up client SSL on the (already
+ *                    connected) fd and drive the TLS handshake to completion.
+ *   - keep_plaintext: the peer declined TLS; deliver the socket as-is (the caller
+ *                    is responsible for continuing in cleartext).
+ *   - fail         : abort the connection.
+ */
+enum class starttls_action { want_write, want_read, upgrade, keep_plaintext, fail };
+
+/**
+ * @brief Default "no negotiation" policy — the connector performs a plain or
+ *        direct-TLS connect exactly as before. `enabled == false` makes every
+ *        STARTTLS branch `if constexpr`-discarded, so the classic path is unchanged.
+ */
+struct no_negotiation {
+    static constexpr bool enabled = false;
+};
+
+/**
+ * @brief Concept for a STARTTLS negotiator usable with the connector.
+ *
+ * A negotiator is a small, default-constructible state machine. After the TCP
+ * connect completes, the connector calls `advance(plaintext_socket, revents)` on
+ * each I/O readiness event; the negotiator performs its own non-blocking plaintext
+ * I/O (it owns the wire format — PostgreSQL SSLRequest, SMTP/IMAP STARTTLS lines,
+ * …) and returns a @ref starttls_action. `enabled` must be `true`.
+ */
+template <typename N>
+concept StarttlsNegotiator = requires(N n, qb::io::tcp::socket &s, int revents) {
+    { N::enabled } -> std::convertible_to<bool>;
+    { n.advance(s, revents) } -> std::same_as<starttls_action>;
+};
+
+/**
  * @class connector
  * @brief Handles asynchronous TCP connection establishment
  *
@@ -86,8 +126,8 @@ namespace qb::io::async::tcp {
  * @tparam Socket_ The socket class type to use for the connection
  * @tparam Func_ The callback function type that will be called on connection completion
  */
-template <typename Socket_, typename Func_>
-class connector : public std::enable_shared_from_this<connector<Socket_, Func_>> {
+template <typename Socket_, typename Func_, typename Negotiator_ = no_negotiation>
+class connector : public std::enable_shared_from_this<connector<Socket_, Func_, Negotiator_>> {
     Func_   func_;   /**< Callback function to call when connection completes */
     Socket_ socket_; /**< Socket for the connection */
     uri     remote_; /**< URI of the remote endpoint */
@@ -100,6 +140,11 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
     bool                       deadline_armed_{false};
     IRegisteredKernelEvent    *io_iface_{nullptr};
     std::shared_ptr<connector> self_hold_;
+
+    // STARTTLS / opportunistic-TLS state (only used when Negotiator_::enabled).
+    enum class sphase { connecting, negotiating, handshaking };
+    sphase      sphase_{sphase::connecting};
+    Negotiator_ neg_{};
 
     /**
      * @brief Marks this connect attempt as finished for callback purposes.
@@ -243,6 +288,10 @@ public:
      */
     void
     run() {
+        if constexpr (Negotiator_::enabled) {
+            run_starttls();
+            return;
+        }
         LOG_DEBUG("Started async connect to " << remote_.source());
         // Apply the TLS verification policy before the (non-blocking) connect so
         // it is in effect when the handshake starts. No-op for plain sockets.
@@ -287,6 +336,10 @@ public:
      */
     void
     on(event::io const &event) {
+        if constexpr (Negotiator_::enabled) {
+            on_starttls(event);
+            return;
+        }
         int err = 0;
         if (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
             socket_.disconnect();
@@ -339,6 +392,113 @@ public:
         LOG_DEBUG("Async connect deadline for " << remote_.source());
         deliver(Socket_{});
     }
+
+    // =========================================================================
+    // STARTTLS / opportunistic-TLS state machine
+    //
+    // Only instantiated when Negotiator_::enabled. Reuses the connector's existing
+    // watcher (arm_io), deadline (arm_deadline/on_deadline), self-hold lifetime,
+    // and TLS handshake pump (finalize_transport_connect). The flow is:
+    //   tcp connect (cleartext) -> negotiate (negotiator owns the wire format)
+    //     -> on "upgrade": init_client() + drive the handshake to completion
+    //     -> on "keep_plaintext": deliver the cleartext socket
+    //     -> on "fail": abort.
+    // =========================================================================
+
+    /// SNI / verification hostname for the TLS upgrade (the remote URI host).
+    std::string
+    starttls_host() const {
+        return std::string(remote_.host());
+    }
+
+    /// Unregister the watcher and deliver exactly once (success -> the socket,
+    /// failure -> an empty/closed socket). Mirrors the classic on()/on_deadline().
+    void
+    finish_starttls(event::io const &event, bool ok) {
+        listener::current.unregisterEvent(event._interface);
+        io_iface_ = nullptr;
+        if (!ok)
+            socket_.disconnect();
+        if (!mark_completed_once())
+            return;
+        deliver(ok ? std::move(socket_) : Socket_{});
+    }
+
+    void
+    run_starttls() {
+        LOG_DEBUG("Started async STARTTLS connect to " << remote_.source());
+        if (!verify_peer_)
+            socket_.set_insecure();
+        // Connect the underlying TCP layer ONLY. ssl::socket::n_connect() would set
+        // up the SSL client state immediately; that must wait until after the
+        // cleartext negotiation agrees to upgrade, so go through the tcp base.
+        auto &raw = static_cast<qb::io::tcp::socket &>(socket_);
+        auto  ret = raw.n_connect(remote_);
+        if (ret && !socket_no_error(qb::io::socket::get_last_errno())) {
+            deliver_failure_deferred();
+            return;
+        }
+        sphase_ = ret ? sphase::connecting : sphase::negotiating;
+        if (arm_io(EV_WRITE))
+            arm_deadline();
+        else
+            deliver_failure_deferred();
+    }
+
+    void
+    on_starttls(event::io const &event) {
+        auto &mutable_event = const_cast<event::io &>(event);
+        int   err           = 0;
+        if (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
+            finish_starttls(event, false);
+            return;
+        }
+        if (err && err != EISCONN) {
+            finish_starttls(event, false);
+            return;
+        }
+
+        if (sphase_ == sphase::connecting)
+            sphase_ = sphase::negotiating; // TCP connect just completed
+
+        if (sphase_ == sphase::negotiating) {
+            switch (neg_.advance(static_cast<qb::io::tcp::socket &>(socket_), event._revents)) {
+                case starttls_action::want_write:
+                    mutable_event.set(EV_WRITE);
+                    return;
+                case starttls_action::want_read:
+                    mutable_event.set(EV_READ);
+                    return;
+                case starttls_action::keep_plaintext:
+                    finish_starttls(event, true); // deliver the cleartext socket as-is
+                    return;
+                case starttls_action::fail:
+                    finish_starttls(event, false);
+                    return;
+                case starttls_action::upgrade:
+                    if (socket_.init_client(starttls_host()) != 0) {
+                        finish_starttls(event, false);
+                        return;
+                    }
+                    sphase_ = sphase::handshaking;
+                    break; // fall through and pump the handshake immediately
+            }
+        }
+
+        if (sphase_ == sphase::handshaking) {
+            switch (finalize_transport_connect()) {
+                case finalize_result::done:
+                    finish_starttls(event, true);
+                    return;
+                case finalize_result::pending:
+                    mutable_event.set(EV_READ | EV_WRITE);
+                    return;
+                case finalize_result::failed:
+                    finish_starttls(event, false);
+                    return;
+            }
+        }
+    }
 };
 
 /**
@@ -383,6 +543,30 @@ connect(Socket_ &&existing_socket, uri const &remote, Func_ &&func, qb::duration
     auto op = std::make_shared<connector<Socket_, Func_>>(std::forward<Func_>(func), std::move(existing_socket), remote,
                                                           qb::detail::to_ev_seconds(timeout), verify_peer);
     LOG_DEBUG("Connector: Initializing with existing socket for " << remote.source());
+    op->run();
+}
+
+/**
+ * @brief Initiate an asynchronous opportunistic-TLS (STARTTLS) connection.
+ *
+ * Connects the TCP layer in cleartext, runs @p Negotiator_ 's plaintext negotiation
+ * (it owns the wire format — PostgreSQL SSLRequest, SMTP/IMAP `STARTTLS`, …), and,
+ * if the peer agrees, completes a TLS client handshake — all asynchronously on the
+ * event loop, reusing the same watcher/deadline/lifetime machinery as `connect()`.
+ * The callback receives a ready @p Socket_ (secure when the upgrade happened) or an
+ * empty/closed socket on failure, exactly like `connect()`.
+ *
+ * @tparam Socket_ The (secure) socket type to deliver, e.g. `qb::io::tcp::ssl::socket`.
+ * @tparam Negotiator_ A @ref StarttlsNegotiator policy.
+ * @tparam Func_ Callback type, invoked once with `Socket_&&`.
+ */
+template <typename Socket_, typename Negotiator_, typename Func_>
+    requires StarttlsNegotiator<Negotiator_> && std::invocable<std::remove_reference_t<Func_> &, Socket_ &&>
+void
+starttls_connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
+    auto op = std::make_shared<connector<Socket_, Func_, Negotiator_>>(std::forward<Func_>(func), remote,
+                                                                       qb::detail::to_ev_seconds(timeout), verify_peer);
+    LOG_DEBUG("Connector: Initializing STARTTLS for " << remote.source());
     op->run();
 }
 
@@ -582,6 +766,93 @@ template <typename Transport = qb::io::transport::tcp>
 connect_with_socket(typename Transport::transport_io_type &&existing_socket, uri remote, qb::duration timeout = qb::duration::zero()) {
     using socket_type = typename Transport::transport_io_type;
     return connect_with_socket_awaiter<socket_type>{std::move(existing_socket), std::move(remote), timeout};
+}
+
+/**
+ * @brief Coroutine awaiter for an opportunistic-TLS (STARTTLS) connection.
+ * @ingroup CoroutineTCP
+ *
+ * The `co_await` counterpart of `starttls_connect()`: suspends until the cleartext
+ * connect + negotiation + (optional) TLS handshake complete, then resumes with
+ * `std::optional<Socket_>` (empty on failure). Same machinery as @ref connect_awaiter.
+ */
+template <typename Socket_, typename Negotiator_>
+class starttls_connect_awaiter {
+    struct state_t {
+        std::optional<Socket_>               result;
+        std::coroutine_handle<>              handle{};
+        ::qb::io::async::CoroutineScheduler *scheduler{nullptr};
+        bool                                 ready{false};
+        bool                                 active{true};
+    };
+
+    uri                      _remote;
+    qb::duration             _timeout;
+    bool                     _verify_peer{true};
+    std::shared_ptr<state_t> _state{std::make_shared<state_t>()};
+
+public:
+    explicit starttls_connect_awaiter(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)
+        : _remote(std::move(remote))
+        , _timeout(timeout)
+        , _verify_peer(verify_peer) {}
+
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return _state->ready;
+    }
+
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        _state->handle    = h;
+        _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
+        if (!_state->scheduler)
+            _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
+
+        auto state = _state;
+        ::qb::io::async::tcp::starttls_connect<Socket_, Negotiator_>(
+            _remote,
+            [state](Socket_ &&socket) {
+                if (!state->active)
+                    return;
+                if (socket.is_open())
+                    state->result = std::move(socket);
+                state->ready = true;
+                if (state->scheduler && state->handle)
+                    state->scheduler->schedule_resume(state->handle);
+            },
+            _timeout, _verify_peer);
+    }
+
+    [[nodiscard]] std::optional<Socket_>
+    await_resume() {
+        _state->active = false;
+        _state->handle = {};
+        return std::move(_state->result);
+    }
+
+    ~starttls_connect_awaiter() {
+        _state->active = false;
+        _state->handle = {};
+    }
+};
+
+/**
+ * @brief Factory for the STARTTLS connection awaiter (parity with `connect()`).
+ * @ingroup CoroutineTCP
+ * @tparam Transport The secure transport, e.g. `qb::io::transport::stcp`.
+ * @tparam Negotiator_ A @ref StarttlsNegotiator policy.
+ *
+ * Pass all three arguments explicitly (`uri, timeout, verify_peer`) — both template
+ * parameters are required, so a 2-argument call would be ambiguous with the callback
+ * overload.
+ */
+template <typename Transport, typename Negotiator_>
+    requires StarttlsNegotiator<Negotiator_>
+[[nodiscard]] auto
+starttls_connect(uri remote, qb::duration timeout, bool verify_peer = true) {
+    using socket_type = typename Transport::transport_io_type;
+    return starttls_connect_awaiter<socket_type, Negotiator_>{std::move(remote), timeout, verify_peer};
 }
 
 #endif // __cpp_impl_coroutine

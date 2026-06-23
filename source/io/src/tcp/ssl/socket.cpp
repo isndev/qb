@@ -808,10 +808,7 @@ socket::n_connect_in(int af, std::string const &host, uint16_t port) noexcept {
 }
 
 int
-socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
-    auto ret = tcp::socket::n_connect(ep);
-    if (ret != 0 && !socket_no_error(qb::io::socket::get_last_errno()))
-        return ret;
+socket::setup_client_ssl(std::string const &hostname) noexcept {
     if (!_ssl_handle) {
         const auto ctx = SSL_CTX_new(TLS_client_method());
         // Secure-by-default: load the system trust store so the auto-created
@@ -839,7 +836,24 @@ socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
     // the auto-created context (no-op once set_insecure() cleared _verify_peer).
     apply_client_peer_verification(h_ssl, _pending_sni_hostname, !_verify_peer);
     SSL_set_connect_state(h_ssl);
+    return 0;
+}
 
+int
+socket::init_client(std::string const &hostname) noexcept {
+    // STARTTLS / opportunistic upgrade: the fd is already connected (and may have
+    // carried a plaintext negotiation). Just set up the client SSL state; the
+    // handshake itself is driven later via handshake_status() from the event loop.
+    return setup_client_ssl(hostname);
+}
+
+int
+socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
+    auto ret = tcp::socket::n_connect(ep);
+    if (ret != 0 && !socket_no_error(qb::io::socket::get_last_errno()))
+        return ret;
+    if (setup_client_ssl(hostname) != 0)
+        return SocketStatus::Error;
     return ret;
 }
 
@@ -975,6 +989,30 @@ socket::get_peer_certificate_details() const noexcept {
         return {};
     }
     return qb::io::ssl::get_certificate(_ssl_handle.get());
+}
+
+std::vector<unsigned char>
+socket::tls_server_end_point() const noexcept {
+    if (!_ssl_handle)
+        return {};
+    X509 *cert = SSL_get_peer_certificate(ssl_handle());
+    if (!cert)
+        return {};
+    std::vector<unsigned char> out;
+    // RFC 5929 §4.1: hash the DER certificate with the digest from its signature
+    // algorithm; MD5 and SHA-1 (and anything unrecognized) are upgraded to SHA-256.
+    int md_nid  = NID_undef;
+    int sig_nid = X509_get_signature_nid(cert);
+    if (OBJ_find_sigid_algs(sig_nid, &md_nid, nullptr) != 1 || md_nid == NID_undef || md_nid == NID_md5 || md_nid == NID_sha1)
+        md_nid = NID_sha256;
+    if (const EVP_MD *md = EVP_get_digestbynid(md_nid)) {
+        unsigned char buf[EVP_MAX_MD_SIZE];
+        unsigned int  len = 0;
+        if (X509_digest(cert, md, buf, &len) == 1)
+            out.assign(buf, buf + len);
+    }
+    X509_free(cert);
+    return out;
 }
 
 std::string

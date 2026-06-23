@@ -319,6 +319,306 @@ from_iso8601(std::string_view iso8601) noexcept {
 }
 
 // ---------------------------------------------------------------------------
+// Calendar-date / time-of-day component helpers (no instant, no time zone)
+// ---------------------------------------------------------------------------
+//
+// These operate on the raw components used by date/time wire formats: a count of
+// whole days since the Unix epoch (a calendar date), microseconds since midnight
+// (a time of day), and a UTC offset in seconds. They use the same exact-integer
+// civil algorithms as safe_gmtime, so they are valid for every date including
+// pre-1970. Wire codecs (e.g. PostgreSQL DATE/TIME/TIMETZ) should build on these
+// rather than re-deriving the arithmetic.
+
+/// Format a proleptic-Gregorian calendar date ("YYYY-MM-DD") from a count of
+/// whole days since the Unix epoch (1970-01-01). Negative = before the epoch.
+[[nodiscard]] inline std::string
+format_date(std::int64_t days_since_epoch) {
+    const detail::civil_date c = detail::civil_from_days(days_since_epoch);
+    char                     buf[24]; // room for negative / large years
+    std::snprintf(buf, sizeof(buf), "%04lld-%02u-%02u", static_cast<long long>(c.year), c.month, c.day);
+    return std::string(buf);
+}
+
+/// Parse a calendar date ("YYYY-MM-DD") to whole days since the Unix epoch.
+/// Returns std::nullopt if the three integer fields cannot be read.
+[[nodiscard]] inline std::optional<std::int64_t>
+parse_date(std::string_view date) noexcept {
+    int               y = 0, m = 0, d = 0;
+    const std::string s(date);
+    if (std::sscanf(s.c_str(), "%d-%d-%d", &y, &m, &d) != 3)
+        return std::nullopt;
+    return detail::days_from_civil(y, static_cast<unsigned>(m), static_cast<unsigned>(d));
+}
+
+/// Format a time of day ("HH:MM:SS" or "HH:MM:SS.ffffff") from microseconds since
+/// midnight. The fractional part is emitted only when non-zero.
+[[nodiscard]] inline std::string
+format_time_of_day(std::int64_t micros_since_midnight) {
+    const std::int64_t total_seconds = micros_since_midnight / 1000000;
+    const int          hour          = static_cast<int>(total_seconds / 3600);
+    const int          minute        = static_cast<int>((total_seconds % 3600) / 60);
+    const int          second        = static_cast<int>(total_seconds % 60);
+    const int          micros        = static_cast<int>(micros_since_midnight % 1000000);
+    char               buf[32];
+    if (micros > 0)
+        std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%06d", hour, minute, second, micros);
+    else
+        std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d", hour, minute, second);
+    return std::string(buf);
+}
+
+/// Parse a time of day ("HH:MM:SS" or "HH:MM:SS.ffffff") to microseconds since
+/// midnight. Returns std::nullopt if at least HH:MM:SS cannot be read. The
+/// fractional field is taken verbatim as microseconds (so a literal 6-digit
+/// fraction round-trips with format_time_of_day).
+[[nodiscard]] inline std::optional<std::int64_t>
+parse_time_of_day(std::string_view tod) noexcept {
+    int               hour = 0, minute = 0, second = 0, micros = 0;
+    const std::string s(tod);
+    if (std::sscanf(s.c_str(), "%d:%d:%d.%d", &hour, &minute, &second, &micros) < 3)
+        return std::nullopt;
+    return ((static_cast<std::int64_t>(hour) * 3600) + (static_cast<std::int64_t>(minute) * 60) + second) * 1000000LL + micros;
+}
+
+/// Format a UTC offset ("+HH:MM" / "-HH:MM") from a signed seconds-east value
+/// (e.g. +7200 -> "+02:00", -18000 -> "-05:00").
+[[nodiscard]] inline std::string
+format_utc_offset(std::int32_t seconds_east) {
+    const int  abs_secs = seconds_east < 0 ? -seconds_east : seconds_east;
+    const char sign     = seconds_east < 0 ? '-' : '+';
+    char       buf[8];
+    std::snprintf(buf, sizeof(buf), "%c%02d:%02d", sign, abs_secs / 3600, (abs_secs % 3600) / 60);
+    return std::string(buf);
+}
+
+/// Parse a UTC offset to signed seconds east of UTC. Accepts the forms
+/// PostgreSQL emits for timetz/timestamptz — "+HH", "±HH:MM", "±HH:MM:SS" — and
+/// "Z"/"z" (zero). Inverse of format_utc_offset. Returns std::nullopt if the
+/// leading sign and hour cannot be read.
+[[nodiscard]] inline std::optional<std::int32_t>
+parse_utc_offset(std::string_view off) noexcept {
+    if (off.size() == 1 && (off[0] == 'Z' || off[0] == 'z'))
+        return 0;
+    if (off.empty() || (off[0] != '+' && off[0] != '-'))
+        return std::nullopt;
+    const int         sign = (off[0] == '-') ? -1 : 1;
+    int               hour = 0, minute = 0, second = 0;
+    const std::string s(off.substr(1));
+    if (std::sscanf(s.c_str(), "%d:%d:%d", &hour, &minute, &second) < 1)
+        return std::nullopt;
+    return sign * (hour * 3600 + minute * 60 + second);
+}
+
+// ---------------------------------------------------------------------------
+// Civil calendar / time-of-day value types
+// ---------------------------------------------------------------------------
+//
+// These complete the vocabulary alongside the instant types: a `wall_time` is a
+// point on the UTC timeline, whereas a `date` / `time_of_day` is a *civil* label
+// with no inherent instant (a DATE has no time or zone; a TIME has no date). They
+// are built on std::chrono's C++20 calendar (`sys_days`, `year_month_day`,
+// `hh_mm_ss`) and the exact-integer helpers above, so they are valid for every
+// date including pre-1970 and carry no time-zone-database dependency. Wire codecs
+// (e.g. PostgreSQL DATE/TIME/TIMETZ/INTERVAL) map onto these instead of inventing
+// their own calendar arithmetic.
+
+/// A calendar date (proleptic Gregorian; no time, no time zone). Stored as whole
+/// days since the Unix epoch via `std::chrono::sys_days`. Distinct from
+/// `qb::wall_time`: a date is a civil label, not an instant.
+class date {
+    std::chrono::sys_days days_{};
+
+public:
+    constexpr date() noexcept = default;
+    constexpr explicit date(std::chrono::sys_days d) noexcept
+        : days_(d) {}
+
+    /// From whole days since the Unix epoch (1970-01-01). Negative = before.
+    [[nodiscard]] static constexpr date
+    from_days_since_epoch(std::int64_t d) noexcept {
+        return date{std::chrono::sys_days{std::chrono::days{d}}};
+    }
+    /// From a civil year/month/day (proleptic Gregorian; `y` may be <= 0).
+    [[nodiscard]] static constexpr date
+    from_ymd(std::int64_t y, unsigned m, unsigned d) noexcept {
+        return from_days_since_epoch(detail::days_from_civil(y, m, d));
+    }
+    /// The UTC calendar date containing a wall instant (floored).
+    [[nodiscard]] static date
+    from_wall_time(wall_time tp) noexcept {
+        const std::int64_t s = unix_seconds(tp);
+        std::int64_t       d = s / 86400;
+        if (s % 86400 < 0) // floor toward negative infinity
+            --d;
+        return from_days_since_epoch(d);
+    }
+    [[nodiscard]] static date
+    today() noexcept {
+        return from_wall_time(wall_now());
+    }
+
+    [[nodiscard]] constexpr std::chrono::sys_days
+    to_sys_days() const noexcept {
+        return days_;
+    }
+    [[nodiscard]] constexpr std::int64_t
+    days_since_epoch() const noexcept {
+        return days_.time_since_epoch().count();
+    }
+    [[nodiscard]] std::chrono::year_month_day
+    year_month_day() const noexcept {
+        return std::chrono::year_month_day{days_};
+    }
+    /// Midnight UTC of this date as a wall instant.
+    [[nodiscard]] wall_time
+    to_wall_time() const noexcept {
+        return wall_from_unix_seconds(days_since_epoch() * 86400);
+    }
+
+    /// "YYYY-MM-DD" (UTC).
+    [[nodiscard]] std::string
+    to_string() const {
+        return format_date(days_since_epoch());
+    }
+    /// Parse "YYYY-MM-DD"; std::nullopt on malformed input.
+    [[nodiscard]] static std::optional<date>
+    parse(std::string_view s) noexcept {
+        if (auto d = parse_date(s))
+            return from_days_since_epoch(*d);
+        return std::nullopt;
+    }
+
+    constexpr date &
+    operator+=(std::chrono::days n) noexcept {
+        days_ += n;
+        return *this;
+    }
+    constexpr date &
+    operator-=(std::chrono::days n) noexcept {
+        days_ -= n;
+        return *this;
+    }
+    [[nodiscard]] friend constexpr date
+    operator+(date a, std::chrono::days n) noexcept {
+        return a += n;
+    }
+    [[nodiscard]] friend constexpr std::chrono::days
+    operator-(date a, date b) noexcept {
+        return a.days_ - b.days_;
+    }
+    [[nodiscard]] constexpr auto operator<=>(const date &) const noexcept = default;
+};
+
+/// A wall time within a day (no date, no time zone): microseconds since midnight,
+/// normally in [0, 24h). Distinct from `qb::duration` (a span) and `qb::wall_time`.
+class time_of_day {
+    std::chrono::microseconds us_{};
+
+public:
+    constexpr time_of_day() noexcept = default;
+    constexpr explicit time_of_day(std::chrono::microseconds us) noexcept
+        : us_(us) {}
+
+    [[nodiscard]] static constexpr time_of_day
+    from_micros(std::int64_t us) noexcept {
+        return time_of_day{std::chrono::microseconds{us}};
+    }
+    [[nodiscard]] static constexpr time_of_day
+    from_hms(int h, int m, int s, int us = 0) noexcept {
+        return from_micros(((static_cast<std::int64_t>(h) * 3600) + (static_cast<std::int64_t>(m) * 60) + s) * 1000000 + us);
+    }
+
+    [[nodiscard]] constexpr std::chrono::microseconds
+    since_midnight() const noexcept {
+        return us_;
+    }
+    [[nodiscard]] std::chrono::hh_mm_ss<std::chrono::microseconds>
+    hms() const noexcept {
+        return std::chrono::hh_mm_ss<std::chrono::microseconds>{us_};
+    }
+
+    /// "HH:MM:SS" or "HH:MM:SS.ffffff".
+    [[nodiscard]] std::string
+    to_string() const {
+        return format_time_of_day(us_.count());
+    }
+    [[nodiscard]] static std::optional<time_of_day>
+    parse(std::string_view s) noexcept {
+        if (auto m = parse_time_of_day(s))
+            return from_micros(*m);
+        return std::nullopt;
+    }
+    [[nodiscard]] constexpr auto operator<=>(const time_of_day &) const noexcept = default;
+};
+
+/// A wall time within a day plus a fixed UTC offset, east-positive (+02:00 =
+/// +7200s, matching `format_utc_offset`).
+struct time_of_day_tz {
+    time_of_day          tod{};
+    std::chrono::seconds offset{}; ///< seconds EAST of UTC
+
+    constexpr time_of_day_tz() noexcept = default;
+    constexpr time_of_day_tz(time_of_day t, std::chrono::seconds off) noexcept
+        : tod(t)
+        , offset(off) {}
+    [[nodiscard]] static constexpr time_of_day_tz
+    from_hms_offset(int h, int m, int s, int us, int offset_secs_east) noexcept {
+        return {time_of_day::from_hms(h, m, s, us), std::chrono::seconds{offset_secs_east}};
+    }
+
+    /// "HH:MM:SS[.ffffff]±HH:MM".
+    [[nodiscard]] std::string
+    to_string() const {
+        return tod.to_string() + format_utc_offset(static_cast<std::int32_t>(offset.count()));
+    }
+    [[nodiscard]] constexpr auto operator<=>(const time_of_day_tz &) const noexcept = default;
+};
+
+/// A PostgreSQL-style calendar interval: months + days + sub-day microseconds kept
+/// SEPARATE (a month is not a fixed number of days, a day not a fixed number of
+/// hours under DST). Lossless, unlike folding into a single `qb::duration`.
+struct calendar_interval {
+    std::int32_t              months{};
+    std::int32_t              days{};
+    std::chrono::microseconds micros{};
+
+    constexpr calendar_interval() noexcept = default;
+    constexpr calendar_interval(std::int32_t mo, std::int32_t d, std::chrono::microseconds us) noexcept
+        : months(mo)
+        , days(d)
+        , micros(us) {}
+
+    /// Total span under the conventional fold used by PostgreSQL EXTRACT(EPOCH):
+    /// a day = 24h, a whole year (12 months) = 365.25 days, a residual month = 30
+    /// days. Lossy by nature (calendar units collapsed to a fixed span).
+    [[nodiscard]] constexpr std::chrono::microseconds
+    to_micros() const noexcept {
+        constexpr std::int64_t USECS_PER_DAY  = 86400LL * 1000000;
+        constexpr std::int64_t USECS_PER_YEAR = 31557600LL * 1000000; // 365.25 days
+        return micros + std::chrono::microseconds{static_cast<std::int64_t>(days) * USECS_PER_DAY
+                                                  + static_cast<std::int64_t>(months / 12) * USECS_PER_YEAR
+                                                  + static_cast<std::int64_t>(months % 12) * 30 * USECS_PER_DAY};
+    }
+
+    /// A readable "[N mons] [N days] HH:MM:SS[.ffffff]" form (not bit-identical to
+    /// PostgreSQL's interval_out, but unambiguous).
+    [[nodiscard]] std::string
+    to_string() const {
+        std::string out;
+        if (months)
+            out += std::to_string(months) + (months == 1 || months == -1 ? " mon " : " mons ");
+        if (days)
+            out += std::to_string(days) + (days == 1 || days == -1 ? " day " : " days ");
+        const std::int64_t us = micros.count();
+        if (us < 0)
+            out += '-';
+        out += format_time_of_day(us < 0 ? -us : us);
+        return out;
+    }
+    [[nodiscard]] constexpr auto operator<=>(const calendar_interval &) const noexcept = default;
+};
+
+// ---------------------------------------------------------------------------
 // Raw CPU timestamp counter (performance instrumentation only — NOT a clock)
 // ---------------------------------------------------------------------------
 

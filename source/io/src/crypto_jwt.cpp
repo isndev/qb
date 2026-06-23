@@ -512,9 +512,24 @@ jwt::verify(const std::string &token, const VerifyOptions &options) {
             }
         }
 
-        // Verify audience
+        // Verify audience. RFC 7519: `aud` may be a single string OR an array of strings
+        // (match if any element equals the expected audience).
         if (options.verify_audience && options.audience.has_value()) {
-            if (!payload_json.contains("aud") || payload_json["aud"].get<std::string>() != options.audience.value()) {
+            bool aud_ok = false;
+            if (payload_json.contains("aud")) {
+                const auto &aud = payload_json["aud"];
+                if (aud.is_string()) {
+                    aud_ok = (aud.get<std::string>() == options.audience.value());
+                } else if (aud.is_array()) {
+                    for (const auto &entry : aud) {
+                        if (entry.is_string() && entry.get<std::string>() == options.audience.value()) {
+                            aud_ok = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!aud_ok) {
                 return ValidationResult(ValidationError::INVALID_AUDIENCE);
             }
         }

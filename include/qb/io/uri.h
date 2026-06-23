@@ -520,22 +520,44 @@ public:
     }
 
     /**
-     * @brief Returns the value of a specific query parameter
+     * @brief Returns the value of a specific query parameter (zero-copy).
      *
      * @tparam T Parameter name type
      * @param name Name of the parameter to retrieve
      * @param index Index of the value to retrieve (for multi-value parameters)
-     * @param not_found Value to return if the parameter is not found
-     * @return The parameter value or not_found if not found
+     * @return A constant reference to the parameter's value if present, otherwise to a static empty
+     *         string. The reference is always safe to keep (never a reference to a temporary). For a
+     *         custom fallback, use `query_or()`.
      */
     template <typename T>
     [[nodiscard]] std::string const &
-    query(T &&name, std::size_t const index = 0, std::string const &not_found = "") const {
+    query(T &&name, std::size_t const index = 0) const {
+        static const std::string empty;
         const auto &it = this->_queries.find(std::forward<T>(name));
         if (it != this->_queries.cend() && index < it->second.size())
             return it->second[index];
 
-        return not_found;
+        return empty;
+    }
+
+    /**
+     * @brief Returns a query parameter value, or `fallback` if absent / `index` is out of bounds.
+     *
+     * Returns BY VALUE, so the fallback (literal, temporary, or lvalue) is always safe.
+     *
+     * @tparam T Parameter name type
+     * @param name Name of the parameter to retrieve
+     * @param fallback Value returned when the parameter is absent (taken by value, moved out on a miss)
+     * @param index Index of the value to retrieve (for multi-value parameters)
+     */
+    template <typename T>
+    [[nodiscard]] std::string
+    query_or(T &&name, std::string fallback, std::size_t const index = 0) const {
+        const auto &it = this->_queries.find(std::forward<T>(name));
+        if (it != this->_queries.cend() && index < it->second.size())
+            return it->second[index];
+
+        return fallback;
     }
 
     /**

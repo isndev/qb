@@ -30,6 +30,8 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <qb/io/async.h>
+#include <qb/io/async/coroutine.h>
+#include <qb/io/async/coroutine/utils.h>
 #include <qb/io/async/tcp/connector.h>
 #include <qb/io/protocol/text.h>
 #include <qb/io/system/file.h>
@@ -776,6 +778,125 @@ TEST_F(AsyncIOTest, SSLPeerVerificationSecureByDefault) {
         insecure_ret = c.connect_v4("127.0.0.1", kPort);
     }
     EXPECT_EQ(insecure_ret, 0) << "set_insecure() failed to opt out of verification";
+
+    stop = true;
+    acceptor.join();
+}
+
+// A minimal STARTTLS negotiator for the generic connector primitive: send the
+// 4-byte tag "STLS", read a 1-byte verdict, upgrade on 'S'. Mirrors the shape of
+// PostgreSQL's SSLRequest negotiator but with a trivial wire format.
+struct test_starttls_negotiator {
+    static constexpr bool enabled = true;
+    std::size_t           wrote_{0};
+    char                  verdict_{0};
+    bool                  got_{false};
+
+    qb::io::async::tcp::starttls_action
+    advance(qb::io::tcp::socket &s, int) noexcept {
+        using A                       = qb::io::async::tcp::starttls_action;
+        static constexpr char REQ[4]  = {'S', 'T', 'L', 'S'};
+        while (wrote_ < sizeof(REQ)) {
+            const int n = s.write(REQ + wrote_, sizeof(REQ) - wrote_);
+            if (n > 0) {
+                wrote_ += static_cast<std::size_t>(n);
+                continue;
+            }
+            if (n < 0 && qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
+                return A::want_write;
+            return A::fail;
+        }
+        if (!got_) {
+            const int n = s.read(&verdict_, 1);
+            if (n == 1)
+                got_ = true;
+            else if (n < 0 && qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+                return A::want_read;
+            else
+                return A::fail;
+        }
+        return verdict_ == 'S' ? A::upgrade : A::fail;
+    }
+};
+
+// Validates the GENERIC opportunistic-TLS / STARTTLS connector primitive
+// (qb::io::async::tcp::starttls_connect) independently of any protocol: a mock
+// server performs a cleartext negotiation ("STLS" -> 'S') on the bare fd, then a
+// server-side TLS handshake. The client drives the whole connect → negotiate →
+// upgrade asynchronously and ends up on a completed TLS handshake. Both the
+// callback and the co_await forms are exercised.
+TEST_F(AsyncIOTest, StarttlsOpportunisticUpgrade) {
+    const auto    cert_file = ssl_resource_path("cert.pem");
+    const auto    key_file  = ssl_resource_path("key.pem");
+    std::ifstream cc(cert_file), kc(key_file);
+    if (!cc.good() || !kc.good())
+        GTEST_SKIP() << "SSL certificate/key not found, skipping";
+
+    async::init();
+    constexpr unsigned short kPort = 64390;
+
+    qb::io::tcp::ssl::listener srv;
+    srv.init(ssl::create_server_context(TLS_server_method(), cert_file.string(), key_file.string()));
+    ASSERT_EQ(srv.listen_v4(kPort), 0);
+
+    std::atomic<bool> stop{false};
+    std::thread       acceptor([&] {
+        const auto to = std::chrono::milliseconds(2000);
+        for (int i = 0; i < 200 && !stop.load(); ++i) {
+            qb::io::tcp::ssl::socket s;
+            if (srv.accept(s) == 0) {
+                // 1) cleartext negotiation on the bare fd (before any TLS bytes).
+                char req[4] = {};
+                if (qb::io::socket::recv_n(s.native_handle(), req, 4, to) != 4)
+                    continue;
+                const char verdict = (std::memcmp(req, "STLS", 4) == 0) ? 'S' : 'N';
+                qb::io::socket::send_n(s.native_handle(), &verdict, 1, to);
+                // 2) server-side TLS handshake.
+                for (int j = 0; j < 400 && !stop.load(); ++j) {
+                    if (s.do_handshake() != 0)
+                        break;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+
+    const qb::io::uri remote{"tcp://127.0.0.1:" + std::to_string(kPort)};
+
+    // ---- callback form ----
+    bool        cb_done = false, cb_secure = false;
+    std::size_t cb_tlsbind = 0;
+    qb::io::async::tcp::starttls_connect<qb::io::tcp::ssl::socket, test_starttls_negotiator>(
+        remote,
+        [&](qb::io::tcp::ssl::socket &&sock) {
+            cb_done   = true;
+            cb_secure = sock.is_open() && sock.handshake_complete();
+            // RFC 5929 tls-server-end-point: the server cert hash must be available
+            // once the handshake is complete (a digest, so a non-empty fixed length).
+            cb_tlsbind = sock.tls_server_end_point().size();
+        },
+        std::chrono::seconds(5), /*verify_peer=*/false);
+    for (int i = 0; i < 600 && !cb_done; ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_TRUE(cb_done);
+    EXPECT_TRUE(cb_secure) << "callback STARTTLS did not reach a completed TLS handshake";
+    EXPECT_GT(cb_tlsbind, 0u) << "tls_server_end_point() returned no channel-binding hash";
+
+    // ---- coroutine (co_await) form ----
+    bool coro_done = false, coro_secure = false;
+    qb::io::async::run_sync([&]() -> qb::io::async::task<void> {
+        auto sock = co_await qb::io::async::tcp::starttls_connect<qb::io::transport::stcp, test_starttls_negotiator>(
+            remote, std::chrono::seconds(5), false);
+        coro_done   = true;
+        coro_secure = sock.has_value() && sock->is_open() && sock->handshake_complete();
+        co_return;
+    }());
+    EXPECT_TRUE(coro_done);
+    EXPECT_TRUE(coro_secure) << "co_await STARTTLS did not reach a completed TLS handshake";
 
     stop = true;
     acceptor.join();
