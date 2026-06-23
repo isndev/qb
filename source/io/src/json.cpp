@@ -72,18 +72,15 @@ pipe<char>::put<qb::json>(const qb::json &val) {
             return *this;
         }
 
-        case qb::json::value_t::number_integer: {
-            *this << val.get<int>();
-            return *this;
-        }
-
-        case qb::json::value_t::number_unsigned: {
-            *this << val.get<unsigned int>();
-            return *this;
-        }
-
+        case qb::json::value_t::number_integer:
+        case qb::json::value_t::number_unsigned:
         case qb::json::value_t::number_float: {
-            *this << val.get<float>();
+            // Serialize numbers via nlohmann's own writer: it preserves the full
+            // 64-bit integer range and emits shortest round-trip floats. The
+            // previous get<int>/get<unsigned int>/get<float> truncated every value
+            // to 32 bits (a 64-bit timestamp came out negative) and lost double
+            // precision.
+            *this << val.dump();
             return *this;
         }
 

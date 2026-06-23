@@ -333,4 +333,82 @@ TEST(EvSeam, RoundTrip) {
     EXPECT_EQ(d2.count(), 1'500'000'000);
 }
 
+// ---------------------------------------------------------------------------
+// Civil calendar / time-of-day value types
+// ---------------------------------------------------------------------------
+
+TEST(Date, ConstructionAndRoundTrip) {
+    auto d = qb::date::from_ymd(2024, 3, 15);
+    EXPECT_EQ(d.to_string(), "2024-03-15");
+    EXPECT_EQ(d.days_since_epoch(), 19797);
+    EXPECT_EQ(qb::date::parse("2024-03-15").value(), d);
+    const auto ymd = d.year_month_day();
+    EXPECT_EQ(int(ymd.year()), 2024);
+    EXPECT_EQ(unsigned(ymd.month()), 3u);
+    EXPECT_EQ(unsigned(ymd.day()), 15u);
+    EXPECT_FALSE(qb::date::parse("not-a-date").has_value());
+}
+
+TEST(Date, PreEpochAndArithmetic) {
+    auto d1900 = qb::date::from_ymd(1900, 1, 1);
+    EXPECT_EQ(d1900.to_string(), "1900-01-01");
+    EXPECT_EQ(d1900.days_since_epoch(), -25567);
+    auto d = qb::date::from_ymd(2024, 3, 15);
+    EXPECT_EQ((d + std::chrono::days{1}).to_string(), "2024-03-16");
+    EXPECT_EQ((qb::date::from_ymd(2024, 3, 16) - d), std::chrono::days{1});
+    EXPECT_LT(d1900, d);
+    // Midnight UTC wall instant of the date.
+    EXPECT_EQ(qb::unix_seconds(d.to_wall_time()), 19797LL * 86400);
+    // from_wall_time floors (a pre-epoch sub-day instant stays on its calendar day).
+    EXPECT_EQ(qb::date::from_wall_time(qb::wall_from_unix_seconds(-1)).to_string(), "1969-12-31");
+}
+
+TEST(TimeOfDay, ConstructionRoundTripAndHms) {
+    auto t = qb::time_of_day::from_hms(14, 30, 45, 123456);
+    EXPECT_EQ(t.to_string(), "14:30:45.123456");
+    EXPECT_EQ(t.since_midnight().count(), 52245123456LL);
+    EXPECT_EQ(qb::time_of_day::parse("14:30:45.123456").value(), t);
+    const auto h = t.hms();
+    EXPECT_EQ(h.hours().count(), 14);
+    EXPECT_EQ(h.minutes().count(), 30);
+    EXPECT_EQ(h.seconds().count(), 45);
+    EXPECT_EQ(qb::time_of_day::from_hms(0, 0, 0).to_string(), "00:00:00");
+    EXPECT_LT(qb::time_of_day::from_hms(8, 0, 0), t);
+}
+
+TEST(TimeOfDayTz, EastPositiveOffsetRendering) {
+    EXPECT_EQ(qb::time_of_day_tz::from_hms_offset(14, 30, 45, 0, 7200).to_string(), "14:30:45+02:00");
+    EXPECT_EQ(qb::time_of_day_tz::from_hms_offset(8, 0, 0, 0, -18000).to_string(), "08:00:00-05:00");
+    EXPECT_EQ(qb::time_of_day_tz::from_hms_offset(0, 0, 0, 0, 0).to_string(), "00:00:00+00:00");
+}
+
+TEST(UtcOffset, ParseRoundTripAndForms) {
+    // Inverse of format_utc_offset across the forms PostgreSQL emits.
+    EXPECT_EQ(qb::parse_utc_offset("+02:00").value(), 7200);
+    EXPECT_EQ(qb::parse_utc_offset("-05:00").value(), -18000);
+    EXPECT_EQ(qb::parse_utc_offset("+05:30").value(), 19800); // half-hour zone
+    EXPECT_EQ(qb::parse_utc_offset("-05").value(), -18000);   // hour-only form
+    EXPECT_EQ(qb::parse_utc_offset("+00:00:30").value(), 30); // seconds form
+    EXPECT_EQ(qb::parse_utc_offset("Z").value(), 0);
+    // Round-trips with format_utc_offset for the canonical ±HH:MM form.
+    for (std::int32_t s : {0, 7200, -18000, 19800, -34200})
+        EXPECT_EQ(qb::parse_utc_offset(qb::format_utc_offset(s)).value(), s);
+    // Malformed input -> nullopt, not a silent zero.
+    EXPECT_FALSE(qb::parse_utc_offset("").has_value());
+    EXPECT_FALSE(qb::parse_utc_offset("02:00").has_value());
+}
+
+TEST(CalendarInterval, LosslessAndExtractEpochFold) {
+    using us = std::chrono::microseconds;
+    // 1 mon 2 days 03:04:05 -> matches PG EXTRACT(EPOCH) = 2775845 s.
+    EXPECT_EQ(qb::calendar_interval(1, 2, us{11045000000LL}).to_micros().count(), 2775845000000LL);
+    EXPECT_EQ(qb::calendar_interval(12, 0, us{0}).to_micros().count(), 31557600000000LL); // 1 year, 365.25 d
+    EXPECT_EQ(qb::calendar_interval(1, 0, us{0}).to_micros().count(), 2592000000000LL);   // 1 month, 30 d
+    EXPECT_EQ(qb::calendar_interval(0, 1, us{0}).to_micros().count(), 86400000000LL);     // 1 day, 24 h
+    // Components are kept separate (lossless): 1 month != 30 days as a value.
+    EXPECT_NE(qb::calendar_interval(1, 0, us{0}), qb::calendar_interval(0, 30, us{0}));
+    EXPECT_EQ(qb::calendar_interval(0, 0, us{-86400000000LL}).to_string(), "-24:00:00");
+    EXPECT_EQ(qb::calendar_interval(1, 2, us{11045000000LL}).to_string(), "1 mon 2 days 03:04:05");
+}
+
 } // namespace

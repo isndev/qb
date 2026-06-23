@@ -62,7 +62,7 @@ TEST(URI, ParsesAuthorityIpv6DefaultPortQueriesAndFragment) {
     EXPECT_EQ(uri.query("empty"), "");
     EXPECT_EQ(uri.query("encoded"), "{ok}");
     EXPECT_EQ(uri.query("flag"), "");
-    EXPECT_EQ(uri.query("missing", 0, "fallback"), "fallback");
+    EXPECT_EQ(uri.query_or("missing", "fallback"), "fallback");
     EXPECT_EQ(uri.fragment(), "section-2");
     EXPECT_EQ(uri.af(), AF_INET6);
 }

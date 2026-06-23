@@ -380,6 +380,19 @@ class QB_API socket : public tcp::socket {
      */
     bool apply_pending_client_settings() noexcept;
 
+    /**
+     * @brief Set up the client-side TLS state on this socket without connecting TCP.
+     * @param hostname Optional SNI hostname.
+     * @return 0 on success, a non-zero error code on failure (the TCP socket is closed on failure).
+     * @details Creates the client `SSL_CTX`/`SSL` (unless one was supplied via init()),
+     *          applies SNI/ALPN + peer-verification policy, and calls `SSL_set_connect_state`.
+     *          Shared by `n_connect()` (after its TCP connect) and `init_client()` (which runs it
+     *          on an already-connected fd for STARTTLS-style opportunistic upgrades). Does NOT touch
+     *          the fd until the first `handshake_status()`/`connected()` attaches it to the SSL object.
+     * @private
+     */
+    int setup_client_ssl(std::string const &hostname) noexcept;
+
 public:
     /** @brief Indicates that this socket implementation is secure */
     constexpr static bool
@@ -507,6 +520,19 @@ public:
     int connected() noexcept;
 
     /**
+     * @brief Prepare a client TLS handshake on an ALREADY-CONNECTED socket (no TCP connect).
+     * @param hostname Optional SNI hostname (also used for hostname verification when verifying).
+     * @return 0 on success, non-zero on failure.
+     * @details This is the entry point for opportunistic / STARTTLS-style TLS upgrades: take a
+     *          plaintext `tcp::socket` that has already been connected (and used for a plaintext
+     *          negotiation, e.g. PostgreSQL's SSLRequest, SMTP/IMAP `STARTTLS`), move it into an
+     *          `ssl::socket`, call `init_client()`, then drive `handshake_status()` from the event
+     *          loop until it returns 1. Pair with `qb::io::async::tcp::starttls_connect()`. Honors the
+     *          secure-by-default verification policy unless `set_insecure()` was called first.
+     */
+    int init_client(std::string const &hostname = "") noexcept;
+
+    /**
      * @brief Progress the TLS handshake and report its precise state.
      * @return 1 when the TLS handshake is complete, 0 when OpenSSL needs more
      *         socket readiness (WANT_READ/WANT_WRITE), -1 on fatal error.
@@ -583,6 +609,18 @@ public:
      * @note Allows direct access to the OpenSSL API for advanced configuration or inspection if needed.
      */
     [[nodiscard]] SSL *ssl_handle() const noexcept;
+
+    /**
+     * @brief Compute the RFC 5929 `tls-server-end-point` channel-binding value.
+     * @return The hash of the peer's (server's) certificate, or an empty vector if there
+     *         is no peer certificate / no SSL handle.
+     * @details The hash algorithm is the one in the certificate's signature algorithm,
+     *          except MD5 and SHA-1 (and any unknown) are upgraded to SHA-256, per
+     *          RFC 5929 §4.1. This is the channel-binding data a client feeds into a
+     *          SCRAM-SHA-256-PLUS exchange (`p=tls-server-end-point`) to bind the
+     *          authentication to this specific TLS channel.
+     */
+    std::vector<unsigned char> tls_server_end_point() const noexcept;
 
     /**
      * @brief Get details of the peer's certificate, if available.
