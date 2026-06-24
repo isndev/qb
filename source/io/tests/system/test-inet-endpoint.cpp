@@ -17,11 +17,12 @@
  * limitations under the License.
  */
 
-#include <arpa/inet.h>
 #include <gtest/gtest.h>
-#include <netinet/in.h>
 #include <string>
-#include <sys/socket.h>
+// Pulls in qb/io/config.h, which provides the socket vocabulary (AF_UNSPEC,
+// AF_INET, INADDR_LOOPBACK, ...) portably — WinSock2 on Windows, <arpa/inet.h>
+// & friends on POSIX. This is a pure parse/format test (no live I/O or raw
+// syscalls), so it stays cross-platform without the POSIX-only headers.
 #include <qb/io/tcp/socket.h>
 
 using qb::io::endpoint;
