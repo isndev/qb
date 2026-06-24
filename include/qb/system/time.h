@@ -334,7 +334,9 @@ from_iso8601(std::string_view iso8601) noexcept {
 [[nodiscard]] inline std::string
 format_date(std::int64_t days_since_epoch) {
     const detail::civil_date c = detail::civil_from_days(days_since_epoch);
-    char                     buf[24]; // room for negative / large years
+    // Sized for the worst case the formatter can produce: a full 64-bit year
+    // (up to 20 chars incl. sign) + two unsigned month/day fields + separators + NUL.
+    char buf[48];
     std::snprintf(buf, sizeof(buf), "%04lld-%02u-%02u", static_cast<long long>(c.year), c.month, c.day);
     return std::string(buf);
 }
@@ -386,7 +388,8 @@ parse_time_of_day(std::string_view tod) noexcept {
 format_utc_offset(std::int32_t seconds_east) {
     const int  abs_secs = seconds_east < 0 ? -seconds_east : seconds_east;
     const char sign     = seconds_east < 0 ? '-' : '+';
-    char       buf[8];
+    // Sized for any int32 offset: sign + up to 6-digit hours + ':' + 2-digit min + NUL.
+    char       buf[16];
     std::snprintf(buf, sizeof(buf), "%c%02d:%02d", sign, abs_secs / 3600, (abs_secs % 3600) / 60);
     return std::string(buf);
 }
