@@ -32,8 +32,8 @@
 #include <memory>
 #include <utility>
 #include <vector>
-#include <qb/core/Actor.h>            // qb::ScopedCoroContext
-#include <qb/io/async/coroutine.h>   // coro_scheduler / task / cancelled_error
+#include <qb/core/Actor.h>         // qb::ScopedCoroContext
+#include <qb/io/async/coroutine.h> // coro_scheduler / task / cancelled_error
 
 namespace qb {
 
@@ -65,12 +65,12 @@ namespace qb {
 template <class T>
 class batcher {
     struct state {
-        std::size_t                           max;
-        qb::duration                          window;
+        std::size_t                            max;
+        qb::duration                           window;
         std::function<void(std::vector<T> &&)> on_flush;
-        std::vector<T>                        buf;
-        std::uint64_t                         gen         = 0;     ///< bumps on each flush — stale timers see a mismatch
-        bool                                  timer_armed = false; ///< at most one window timer per batch
+        std::vector<T>                         buf;
+        std::uint64_t                          gen         = 0;     ///< bumps on each flush — stale timers see a mismatch
+        bool                                   timer_armed = false; ///< at most one window timer per batch
 
         void
         do_flush() {
@@ -129,8 +129,8 @@ public:
 private:
     void
     arm_timer(qb::ScopedCoroContext ctx) {
-        _s->timer_armed = true;
-        auto              s = _s;       // keep state alive while the timer is pending
+        _s->timer_armed       = true;
+        auto                s = _s;      // keep state alive while the timer is pending
         const std::uint64_t g = _s->gen; // the batch this timer guards
         // lambda-safe spawn (closure owned, no trailing `()`); ctx.sleep is cancel-on-kill.
         qb::io::async::coro_scheduler().spawn([s, g, ctx]() -> qb::io::async::task<void> {

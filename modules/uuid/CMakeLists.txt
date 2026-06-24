@@ -33,7 +33,7 @@ endif ()
 # Using time-based generator
 if (UUID_TIME_GENERATOR)
     target_compile_definitions(${PROJECT_NAME} INTERFACE UUID_TIME_GENERATOR)
-endif()
+endif ()
 
 # Using span from std
 if (NOT UUID_USING_CXX20_SPAN)

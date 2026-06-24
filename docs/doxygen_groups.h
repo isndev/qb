@@ -51,7 +51,7 @@
 *
 }
 ;
- * ```
+ * ` ` `
  */
 
 /**
@@ -110,7 +110,7 @@
  * engine.addActor<MyActor>(0 /* core id */);
  *engine.start(); // async by default
  *engine.join();
- * ``` * /
+ * ` ` ` * /
 
      /**
       * @defgroup Callback Callback System

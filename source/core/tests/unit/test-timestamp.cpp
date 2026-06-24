@@ -172,10 +172,10 @@ TEST(Parse, Iso8601UtcRoundTrip) {
 
 TEST(Calendar, DaysFromCivilKnownAnchors) {
     using qb::detail::days_from_civil;
-    EXPECT_EQ(days_from_civil(1970, 1, 1), 0);       // Unix epoch
-    EXPECT_EQ(days_from_civil(1969, 12, 31), -1);    // day before the epoch
-    EXPECT_EQ(days_from_civil(2000, 1, 1), 10957);   // PostgreSQL epoch offset
-    EXPECT_EQ(days_from_civil(1900, 1, 1), -25567);  // 70y before, with the 1900 non-leap
+    EXPECT_EQ(days_from_civil(1970, 1, 1), 0);      // Unix epoch
+    EXPECT_EQ(days_from_civil(1969, 12, 31), -1);   // day before the epoch
+    EXPECT_EQ(days_from_civil(2000, 1, 1), 10957);  // PostgreSQL epoch offset
+    EXPECT_EQ(days_from_civil(1900, 1, 1), -25567); // 70y before, with the 1900 non-leap
 }
 
 TEST(Calendar, CivilFromDaysRoundTrip) {
@@ -232,13 +232,15 @@ TEST(Calendar, SafeGmtimeTimegmRoundTrip) {
     // The whole point: exact round-trip across negative (pre-1970), zero, modern
     // and far-future instants — identical on every platform.
     const std::int64_t samples[] = {
-        -62135596800LL,  // 0001-01-01T00:00:00Z
-        -2208988800LL,   // 1900-01-01T00:00:00Z
-        -14182940LL,     // 1969-07-20T20:17:40Z (Apollo 11)
-        -1LL,            // 1969-12-31T23:59:59Z
-        0LL,             // 1970-01-01T00:00:00Z
-        1LL, 1'673'785'845LL, 4'102'444'800LL, // 2100-01-01T00:00:00Z
-        253'402'300'799LL,                     // 9999-12-31T23:59:59Z
+        -62135596800LL, // 0001-01-01T00:00:00Z
+        -2208988800LL,  // 1900-01-01T00:00:00Z
+        -14182940LL,    // 1969-07-20T20:17:40Z (Apollo 11)
+        -1LL,           // 1969-12-31T23:59:59Z
+        0LL,            // 1970-01-01T00:00:00Z
+        1LL,
+        1'673'785'845LL,
+        4'102'444'800LL,   // 2100-01-01T00:00:00Z
+        253'402'300'799LL, // 9999-12-31T23:59:59Z
     };
     for (std::int64_t s : samples) {
         std::tm tm{};
@@ -253,7 +255,14 @@ TEST(Calendar, LeapYearBoundaries) {
     EXPECT_EQ(qb::detail::days_from_civil(1900, 2, 28) + 1, qb::detail::days_from_civil(1900, 3, 1));
     EXPECT_EQ(qb::detail::days_from_civil(2024, 2, 29) + 1, qb::detail::days_from_civil(2024, 3, 1));
     std::tm tm{};
-    ASSERT_TRUE(qb::safe_gmtime(qb::safe_timegm([] { std::tm t{}; t.tm_year = 100; t.tm_mon = 1; t.tm_mday = 29; return t; }()), tm));
+    ASSERT_TRUE(qb::safe_gmtime(qb::safe_timegm([] {
+                                    std::tm t{};
+                                    t.tm_year = 100;
+                                    t.tm_mon  = 1;
+                                    t.tm_mday = 29;
+                                    return t;
+                                }()),
+                                tm));
     EXPECT_EQ(tm.tm_mon, 1); // still February
     EXPECT_EQ(tm.tm_mday, 29);
 }

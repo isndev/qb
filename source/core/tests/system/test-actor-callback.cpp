@@ -112,7 +112,7 @@ public:
 
     void
     on(qb::LoopEvent const &loop) final {
-        if (loop.now != time())          // same cached timestamp as Actor::time()
+        if (loop.now != time()) // same cached timestamp as Actor::time()
             g_now_matches_time.store(false);
         if (loop.now == 0)
             g_now_nonzero.store(false);
@@ -140,7 +140,7 @@ TEST(CallbackActor, LoopEventCarriesLoopContext) {
 
     EXPECT_FALSE(main.hasError());
     EXPECT_GE(g_loop_ticks.load(), 25);
-    EXPECT_TRUE(g_now_matches_time.load());     // LoopEvent.now == time()
-    EXPECT_TRUE(g_now_nonzero.load());          // a real wall-clock timestamp
-    EXPECT_TRUE(g_iteration_monotonic.load());  // iteration strictly increases per pass
+    EXPECT_TRUE(g_now_matches_time.load());    // LoopEvent.now == time()
+    EXPECT_TRUE(g_now_nonzero.load());         // a real wall-clock timestamp
+    EXPECT_TRUE(g_iteration_monotonic.load()); // iteration strictly increases per pass
 }

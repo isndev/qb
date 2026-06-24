@@ -35,12 +35,12 @@ TEST(SpinLock, StartsUnlocked) {
 
 TEST(SpinLock, TrylockTakesAndBlocks) {
     SpinLock sl;
-    EXPECT_TRUE(sl.trylock());  // acquired
+    EXPECT_TRUE(sl.trylock()); // acquired
     EXPECT_TRUE(sl.locked());
     EXPECT_FALSE(sl.trylock()); // already held
     sl.unlock();
     EXPECT_FALSE(sl.locked());
-    EXPECT_TRUE(sl.trylock());  // free again
+    EXPECT_TRUE(sl.trylock()); // free again
     sl.unlock();
 }
 
@@ -57,7 +57,7 @@ TEST(SpinLock, TrylockWithSpinCount) {
     EXPECT_TRUE(sl.trylock(100)); // free → acquires on first attempt
     EXPECT_FALSE(sl.trylock(50)); // held → exhausts spins, fails
     sl.unlock();
-    EXPECT_TRUE(sl.trylock(50));  // free again
+    EXPECT_TRUE(sl.trylock(50)); // free again
     sl.unlock();
 }
 
@@ -66,7 +66,7 @@ TEST(SpinLock, TrylockForTimesOutThenSucceeds) {
     sl.lock();
     EXPECT_FALSE(sl.trylock_for(5ms)); // held → times out
     sl.unlock();
-    EXPECT_TRUE(sl.trylock_for(5ms));  // free → acquires
+    EXPECT_TRUE(sl.trylock_for(5ms)); // free → acquires
     sl.unlock();
 }
 
@@ -80,10 +80,10 @@ TEST(SpinLock, TrylockUntil) {
 }
 
 TEST(SpinLock, MutualExclusionUnderContention) {
-    SpinLock         sl;
-    std::uint64_t    counter = 0; // guarded by sl — no atomic, exclusivity must hold
-    constexpr int    kThreads = 8;
-    constexpr int    kIters   = 5000;
+    SpinLock                 sl;
+    std::uint64_t            counter  = 0; // guarded by sl — no atomic, exclusivity must hold
+    constexpr int            kThreads = 8;
+    constexpr int            kIters   = 5000;
     std::vector<std::thread> threads;
     threads.reserve(kThreads);
     for (int t = 0; t < kThreads; ++t) {

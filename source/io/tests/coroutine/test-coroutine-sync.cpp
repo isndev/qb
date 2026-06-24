@@ -199,7 +199,7 @@ TEST_F(SemaphoreTests, CancelledWaiterSkippedNextServed) {
 
     tok_a.cancel(); // A retracts
     run_for(5ms);
-    sem.release();  // hand the permit to the next live waiter → B (not the retracted A)
+    sem.release(); // hand the permit to the next live waiter → B (not the retracted A)
     run_for(20ms);
 
     EXPECT_TRUE(a_cancelled);

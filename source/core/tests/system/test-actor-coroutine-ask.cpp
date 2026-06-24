@@ -29,9 +29,9 @@ std::atomic<bool> g_trader_body_done{false};
 
 void
 reset_flags() {
-    g_ask_price      = -1;
-    g_ask_timed_out  = false;
-    g_ask_cancelled  = false;
+    g_ask_price     = -1;
+    g_ask_timed_out = false;
+    g_ask_cancelled = false;
 }
 } // namespace
 
@@ -250,12 +250,12 @@ TEST(ActorCoroutineAsk, AskCancelledOnKillCrossCore) {
 TEST(ActorCoroutineAsk, AskAcrossCores) {
     reset_flags();
     qb::Main main;
-    auto     mkt = main.addActor<Market>(1);   // responder on core 1
-    main.addActor<TraderOk>(0, mkt);           // asker on core 0
+    auto     mkt = main.addActor<Market>(1); // responder on core 1
+    main.addActor<TraderOk>(0, mkt);         // asker on core 0
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_ask_price.load(), 42); // round-tripped across cores
+    EXPECT_EQ(g_ask_price.load(), 42);      // round-tripped across cores
     EXPECT_TRUE(g_trader_body_done.load()); // body coroutine ran to completion
 }
 
@@ -338,8 +338,8 @@ public:
         auto mkt = _market;
         for (int i = 0; i < 3; ++i) {
             spawn([mkt, i](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-                auto r      = co_await qb::ask(ctx, mkt, PriceQuery{(i + 1) * 10}, 500ms);
-                g_multi[i]  = r.price;
+                auto r     = co_await qb::ask(ctx, mkt, PriceQuery{(i + 1) * 10}, 500ms);
+                g_multi[i] = r.price;
                 if (g_multi_done.fetch_add(1) == 2)
                     qb::Main::stop();
             });
@@ -354,7 +354,7 @@ public:
 
 TEST(ActorCoroutineAsk, ConcurrentAsksResolveDistinctly) {
     g_multi[0] = g_multi[1] = g_multi[2] = 0;
-    g_multi_done = 0;
+    g_multi_done                         = 0;
     qb::Main main;
     auto     mkt = main.addActor<Market>(0);
     main.addActor<TraderMulti>(0, mkt);
@@ -519,8 +519,8 @@ public:
         auto to = _to;
         spawn([to](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             Echo req;
-            req.in = std::make_shared<std::string>("hello");
-            auto r = co_await qb::ask(ctx, to, std::move(req), 500ms);
+            req.in    = std::make_shared<std::string>("hello");
+            auto r    = co_await qb::ask(ctx, to, std::move(req), 500ms);
             g_echo_ok = (r.out && *r.out == "reply:hello");
             qb::Main::stop();
         });

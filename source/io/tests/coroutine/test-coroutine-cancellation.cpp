@@ -624,12 +624,12 @@ TEST_F(CancellationTokenTests, RemoveOnCancelDeregisters) {
     EXPECT_NE(id_c, 0u);
     EXPECT_EQ(token.get_state()->callbacks.size(), 3u);
 
-    token.remove_on_cancel(id_b);              // drop the middle one
+    token.remove_on_cancel(id_b); // drop the middle one
     EXPECT_EQ(token.get_state()->callbacks.size(), 2u);
 
     token.cancel();
     EXPECT_EQ(a.load(), 1);
-    EXPECT_EQ(b.load(), 0);                     // removed → must not fire
+    EXPECT_EQ(b.load(), 0); // removed → must not fire
     EXPECT_EQ(c.load(), 1);
 }
 
@@ -698,8 +698,7 @@ TEST_F(CancellationCoroutineTests, CancellableSleepLoopDeregistersOnEachIteratio
     EXPECT_EQ(iterations.load(), 50);
     // The token outlives the coroutine; every per-sleep on_cancel must have been removed.
     EXPECT_TRUE(token.get_state()->callbacks.empty())
-        << "cancellable_sleep left " << token.get_state()->callbacks.size()
-        << " dead callbacks — the unbounded-growth bug is back";
+        << "cancellable_sleep left " << token.get_state()->callbacks.size() << " dead callbacks — the unbounded-growth bug is back";
 }
 
 // =============================================================================

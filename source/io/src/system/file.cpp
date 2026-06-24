@@ -82,18 +82,27 @@ file::open(std::string const &fname, int const flags, int const mode) noexcept {
     // so read()/write()/lseek()/close() below keep working unchanged.
     DWORD access;
     switch (flags & (_O_RDONLY | _O_WRONLY | _O_RDWR)) {
-        case _O_WRONLY: access = GENERIC_WRITE; break;
-        case _O_RDWR:   access = GENERIC_READ | GENERIC_WRITE; break;
-        default:        access = GENERIC_READ; break; // _O_RDONLY == 0
+        case _O_WRONLY:
+            access = GENERIC_WRITE;
+            break;
+        case _O_RDWR:
+            access = GENERIC_READ | GENERIC_WRITE;
+            break;
+        default:
+            access = GENERIC_READ;
+            break; // _O_RDONLY == 0
     }
     if (flags & _O_APPEND)
         access |= FILE_APPEND_DATA;
 
     DWORD disposition;
     if (flags & _O_CREAT) {
-        if (flags & _O_EXCL)        disposition = CREATE_NEW;
-        else if (flags & _O_TRUNC)  disposition = CREATE_ALWAYS;
-        else                        disposition = OPEN_ALWAYS;
+        if (flags & _O_EXCL)
+            disposition = CREATE_NEW;
+        else if (flags & _O_TRUNC)
+            disposition = CREATE_ALWAYS;
+        else
+            disposition = OPEN_ALWAYS;
     } else {
         disposition = (flags & _O_TRUNC) ? TRUNCATE_EXISTING : OPEN_EXISTING;
     }

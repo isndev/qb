@@ -61,7 +61,7 @@ class ActorProxy;
 class Service;
 class Event;
 class ICallback;
-class Actor; // Forward declaration for concepts
+class Actor;             // Forward declaration for concepts
 class ScopedCoroContext; // Forward for Actor::context() (defined after the Actor body)
 template <typename _Actor>
 class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias of this)
@@ -225,7 +225,7 @@ class Actor : nocopy {
      *         liveness through `VirtualCore::findActor<T>()` on the
      *         owning core.
      */
-    mutable bool  _alive  = true;
+    mutable bool _alive = true;
     /**
      * @brief Activation flag — `false` only while a *suspended* `onInit()` is in flight.
      *
@@ -239,7 +239,7 @@ class Actor : nocopy {
      *          `getService` and the inbound-event dispatch gate.
      */
     mutable bool  _activated = true;
-    std::uint32_t id_type = 0u;
+    std::uint32_t id_type    = 0u;
 
     /**
      * @brief Check if this actor is of a specific type
@@ -1358,8 +1358,8 @@ namespace detail {
  */
 struct ask_slot {
     qb::ActorId owner;
-    bool        done    = false;
-    void       *self    = nullptr;
+    bool        done                                      = false;
+    void       *self                                      = nullptr;
     void (*deliver)(void *self, qb::Event &resp) noexcept = nullptr;
 };
 
@@ -1434,10 +1434,10 @@ struct ask_awaiter {
     std::optional<E>                  result;
     std::coroutine_handle<>           cont;
     ev_timer                          timer{};
-    bool                              timer_started = false;
+    bool                              timer_started               = false;
     enum class kind { pending, ok, timed_out, cancelled } outcome = kind::pending;
-    std::shared_ptr<bool>             alive = std::make_shared<bool>(true);
-    qb::io::async::cancellation_token::id_type cancel_id = 0; ///< scope on_cancel reg; removed in finish().
+    std::shared_ptr<bool>                      alive              = std::make_shared<bool>(true);
+    qb::io::async::cancellation_token::id_type cancel_id          = 0; ///< scope on_cancel reg; removed in finish().
 
     ask_awaiter(std::uint64_t aid, qb::ActorId owner, qb::duration t, qb::io::async::cancellation_token tok)
         : id(aid)
@@ -1638,7 +1638,6 @@ public:
     cancellable(qb::io::async::task<T> &&t) const {
         return qb::io::async::make_cancellable(std::move(t), _scope);
     }
-
 };
 
 /**
@@ -1778,8 +1777,8 @@ public:
     ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const {
         // Poll the phase oracle on the owning core; ctx.sleep is cancellation-aware so a kill
         // of the waiting actor throws out of here instead of spinning.
-        auto remaining = timeout;
-        constexpr auto step = qb::duration{std::chrono::milliseconds{1}};
+        auto           remaining = timeout;
+        constexpr auto step      = qb::duration{std::chrono::milliseconds{1}};
         while (!ready() && remaining > qb::duration::zero()) {
             co_await ctx.sleep(step);
             remaining -= step;
@@ -2106,7 +2105,6 @@ using scoped_coro_context = ScopedCoroContext;
  * @ingroup Actor
  */
 using ask_event = AskEvent;
-
 
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor);

@@ -87,7 +87,7 @@ public:
         resp.response = q.key * 3;
         auto src      = q.getSource();
         spawn([resp, src](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            co_await ctx.sleep(80ms); // cancelled if this market is killed first
+            co_await ctx.sleep(80ms);               // cancelled if this market is killed first
             ctx.template push_to<Quote>(src, resp); // safe via context (dropped if asker is gone)
         });
     }
@@ -448,11 +448,11 @@ struct Release : public qb::Request<bool> {
 };
 
 namespace {
-std::atomic<bool> g_reserved{false};   // Inventory answered a Reserve (saga step 1 completed)
-std::atomic<bool> g_released{false};   // Inventory answered a Release (compensation ran)
+std::atomic<bool> g_reserved{false}; // Inventory answered a Reserve (saga step 1 completed)
+std::atomic<bool> g_released{false}; // Inventory answered a Release (compensation ran)
 std::atomic<bool> g_saga_failed{false};
 std::atomic<bool> g_saga_ok{false};
-std::vector<int>  g_comp_order;        // order compensations executed (single worker thread)
+std::vector<int>  g_comp_order; // order compensations executed (single worker thread)
 } // namespace
 
 // Reserves items and, on compensation, releases them.
@@ -523,15 +523,11 @@ public:
         auto pay = _pay;
         spawn([inv, pay](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
-                co_await qb::run_saga(
-                    ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga)
-                             -> qb::io::async::task<void> {
-                        co_await qb::ask(ctx, inv, Reserve{1}, 500ms);
-                        saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> {
-                            co_await qb::ask(ctx, inv, Release{1}, 500ms);
-                        });
-                        co_await qb::ask(ctx, pay, Charge{99}, 40ms);
-                    });
+                co_await qb::run_saga(ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                    co_await qb::ask(ctx, inv, Reserve{1}, 500ms);
+                    saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> { co_await qb::ask(ctx, inv, Release{1}, 500ms); });
+                    co_await qb::ask(ctx, pay, Charge{99}, 40ms);
+                });
                 g_saga_ok = true; // reached only if every step succeeded
             } catch (const qb::io::async::timeout_error &) {
                 g_saga_failed = true;
@@ -577,8 +573,8 @@ TEST(ActorAskPatterns, SagaHappyPathRunsNoCompensation) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_saga_ok.load());      // all steps succeeded
-    EXPECT_FALSE(g_released.load());    // no rollback
+    EXPECT_TRUE(g_saga_ok.load());   // all steps succeeded
+    EXPECT_FALSE(g_released.load()); // no rollback
     EXPECT_FALSE(g_saga_failed.load());
 }
 
@@ -599,21 +595,19 @@ public:
         auto pay = _pay;
         spawn([inv, pay](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
-                co_await qb::run_saga(
-                    ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga)
-                             -> qb::io::async::task<void> {
-                        co_await qb::ask(ctx, inv, Reserve{1}, 500ms);
-                        saga.on_compensate([]() -> qb::io::async::task<void> {
-                            g_comp_order.push_back(1);
-                            co_return;
-                        });
-                        co_await qb::ask(ctx, inv, Reserve{2}, 500ms);
-                        saga.on_compensate([]() -> qb::io::async::task<void> {
-                            g_comp_order.push_back(2);
-                            co_return;
-                        });
-                        co_await qb::ask(ctx, pay, Charge{99}, 40ms); // silent -> timeout
+                co_await qb::run_saga(ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                    co_await qb::ask(ctx, inv, Reserve{1}, 500ms);
+                    saga.on_compensate([]() -> qb::io::async::task<void> {
+                        g_comp_order.push_back(1);
+                        co_return;
                     });
+                    co_await qb::ask(ctx, inv, Reserve{2}, 500ms);
+                    saga.on_compensate([]() -> qb::io::async::task<void> {
+                        g_comp_order.push_back(2);
+                        co_return;
+                    });
+                    co_await qb::ask(ctx, pay, Charge{99}, 40ms); // silent -> timeout
+                });
             } catch (const qb::io::async::timeout_error &) {
                 g_saga_failed = true;
             }
@@ -684,14 +678,13 @@ public:
         auto pay = _pay;
         spawn([inv, pay](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
-                co_await qb::run_saga(
-                    ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
-                        co_await qb::ask(ctx, inv, Reserve{1}, 500ms); // step 1 succeeds (sets g_reserved)
-                        saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> {
-                            co_await qb::ask(ctx, inv, Release{1}, 500ms); // must NOT run on cancel
-                        });
-                        co_await qb::ask(ctx, pay, Charge{99}, 5s); // long wait — we are killed here
+                co_await qb::run_saga(ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                    co_await qb::ask(ctx, inv, Reserve{1}, 500ms); // step 1 succeeds (sets g_reserved)
+                    saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> {
+                        co_await qb::ask(ctx, inv, Release{1}, 500ms); // must NOT run on cancel
                     });
+                    co_await qb::ask(ctx, pay, Charge{99}, 5s); // long wait — we are killed here
+                });
                 g_cancel_ok = true; // unreachable: run_saga re-throws the cancellation
             } catch (const qb::io::async::cancelled_error &) {
                 g_saga_cancelled = true; // proof: killed mid-flow (past step 1, inside step 2)
@@ -739,8 +732,8 @@ TEST(ActorAskPatterns, SagaCancelledMidFlowSkipsCompensation) {
     EXPECT_FALSE(main.hasError());
     EXPECT_TRUE(g_reserved.load());       // teeth: step 1 ran → the saga DID enter (compensation registered)
     EXPECT_TRUE(g_saga_cancelled.load()); // teeth: it was killed mid-step-2 (not crashed early)
-    EXPECT_FALSE(g_released.load());       // cancel ⇒ NO rollback (Release never asked)
-    EXPECT_FALSE(g_cancel_ok.load());      // saga did not complete
+    EXPECT_FALSE(g_released.load());      // cancel ⇒ NO rollback (Release never asked)
+    EXPECT_FALSE(g_cancel_ok.load());     // saga did not complete
 }
 
 class SagaCompThrowClient : public qb::Actor {
@@ -759,20 +752,19 @@ public:
         auto pay = _pay;
         spawn([inv, pay](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
-                co_await qb::run_saga(
-                    ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
-                        co_await qb::ask(ctx, inv, Reserve{1}, 500ms);
-                        saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> {
-                            co_await qb::ask(ctx, inv, Release{1}, 500ms); // comp[0] — real undo
-                            g_comp0_ran = true;
-                        });
-                        saga.on_compensate([]() -> qb::io::async::task<void> {
-                            if (true)
-                                throw std::runtime_error("compensation 2 boom"); // comp[1] — runs first (LIFO), throws
-                            co_return;
-                        });
-                        co_await qb::ask(ctx, pay, Charge{99}, 40ms); // times out → saga fails → rollback
+                co_await qb::run_saga(ctx, [inv, pay](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                    co_await qb::ask(ctx, inv, Reserve{1}, 500ms);
+                    saga.on_compensate([ctx, inv]() -> qb::io::async::task<void> {
+                        co_await qb::ask(ctx, inv, Release{1}, 500ms); // comp[0] — real undo
+                        g_comp0_ran = true;
                     });
+                    saga.on_compensate([]() -> qb::io::async::task<void> {
+                        if (true)
+                            throw std::runtime_error("compensation 2 boom"); // comp[1] — runs first (LIFO), throws
+                        co_return;
+                    });
+                    co_await qb::ask(ctx, pay, Charge{99}, 40ms); // times out → saga fails → rollback
+                });
             } catch (...) {
             }
             qb::Main::stop();
@@ -794,8 +786,8 @@ public:
 };
 
 TEST(ActorAskPatterns, SagaCompensationThrowsContinuesRemaining) {
-    g_released   = false;
-    g_comp0_ran  = false;
+    g_released  = false;
+    g_comp0_ran = false;
     qb::Main main;
     auto     inv = main.addActor<Inventory>(0);
     auto     pay = main.addActor<PaymentSilent>(0); // Charge times out → saga fails

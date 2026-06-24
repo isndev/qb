@@ -53,7 +53,7 @@ set(CORE_TESTS
 # ::read/::write/::close, fcntl) which MSVC/winsock does not provide. The qb-io
 # library itself is fully cross-platform; only these low-level test harnesses are
 # POSIX-only, so skip them on Windows (covered on Linux/macOS).
-if(WIN32)
+if (WIN32)
     list(REMOVE_ITEM CORE_TESTS
             test-io.cpp
             test-event-combined.cpp
@@ -62,7 +62,7 @@ if(WIN32)
             test-tcp-socket.cpp
             test-session-text.cpp
     )
-endif()
+endif ()
 
 # Create core test targets
 foreach (TEST_SOURCE ${CORE_TESTS})
@@ -71,9 +71,9 @@ foreach (TEST_SOURCE ${CORE_TESTS})
 
     # Create test target with a descriptive name
     qb_add_test(
-        NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
-        SOURCES ${TEST_SOURCE}
-        DEPENDS ${PROJECT_NAME}
+            NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
+            SOURCES ${TEST_SOURCE}
+            DEPENDS ${PROJECT_NAME}
     )
 
     # Set properties for the test target (optional)
@@ -87,7 +87,7 @@ endforeach ()
 # -----------------------------------------------------------------------------
 
 # Optional crypto tests (requires OpenSSL)
-if(QB_HAS_SSL)
+if (QB_HAS_SSL)
     # List of crypto tests
     set(CRYPTO_TESTS
             test-crypto.cpp
@@ -98,9 +98,9 @@ if(QB_HAS_SSL)
     )
 
     # test-ssl-socket drives raw POSIX socket syscalls; POSIX-only on Windows.
-    if(WIN32)
+    if (WIN32)
         list(REMOVE_ITEM CRYPTO_TESTS test-ssl-socket.cpp)
-    endif()
+    endif ()
 
     # Generate targets for each crypto test
     foreach (TEST_SOURCE ${CRYPTO_TESTS})
@@ -108,9 +108,9 @@ if(QB_HAS_SSL)
         get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
         qb_add_test(
-            NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
-            SOURCES ${TEST_SOURCE}
-            DEPENDS ${PROJECT_NAME}
+                NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
+                SOURCES ${TEST_SOURCE}
+                DEPENDS ${PROJECT_NAME}
         )
 
         set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
@@ -190,8 +190,8 @@ if(QB_HAS_SSL)
         # Make ssl-dependent tests depend on certificate generation. Some of these
         # are POSIX-only and excluded on Windows, so only wire targets that exist.
         foreach (_ssl_dep ${PROJECT_NAME}-gtest-test-async-io
-                          ${PROJECT_NAME}-gtest-test-ssl-socket
-                          ${PROJECT_NAME}-gtest-test-session-text)
+                ${PROJECT_NAME}-gtest-test-ssl-socket
+                ${PROJECT_NAME}-gtest-test-session-text)
             if (TARGET ${_ssl_dep})
                 add_dependencies(${_ssl_dep} generate_ssl_certs)
             endif ()
@@ -207,7 +207,7 @@ if(QB_HAS_SSL)
 endif ()
 
 # Optional compression tests (requires ZLIB)
-if(QB_HAS_COMPRESSION)
+if (QB_HAS_COMPRESSION)
     # Liste des tests de compression
     set(COMPRESSION_TESTS
             test-compression.cpp
@@ -219,9 +219,9 @@ if(QB_HAS_COMPRESSION)
         get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
         qb_add_test(
-            NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
-            SOURCES ${TEST_SOURCE}
-            DEPENDS ${PROJECT_NAME}
+                NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
+                SOURCES ${TEST_SOURCE}
+                DEPENDS ${PROJECT_NAME}
         )
 
         set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
@@ -264,7 +264,7 @@ endif ()
 #   iouring  - Linux 5.13+   (native host, or docker --security-opt seccomp=unconfined)
 #   linuxaio - Linux
 # (No need to list the default backend — it is already covered by the normal run.)
-if(QB_IO_EV_TEST_BACKENDS)
+if (QB_IO_EV_TEST_BACKENDS)
     # SSL-cert-free, loop-heavy tests (avoid cert working-dir coupling in the matrix).
     set(QB_IO_BACKEND_SENSITIVE_TESTS
             test-io
@@ -295,4 +295,4 @@ if(QB_IO_EV_TEST_BACKENDS)
     endforeach ()
 
     qb_status_message("Per-backend ev test matrix ENABLED: [${QB_IO_EV_TEST_BACKENDS}]")
-endif()
+endif ()

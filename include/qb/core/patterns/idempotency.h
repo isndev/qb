@@ -127,9 +127,9 @@ public:
     }
 
 private:
-    std::size_t                                            _cap;
-    list_t                                                 _order;
-    std::unordered_map<Key, typename list_t::iterator>     _index;
+    std::size_t                                        _cap;
+    list_t                                             _order;
+    std::unordered_map<Key, typename list_t::iterator> _index;
 };
 
 /**
@@ -163,18 +163,18 @@ answer_idempotent(qb::Actor &self, E &e, Cache &cache, Fn &&fn) {
 
     using key_t      = std::decay_t<decltype(e.idempotency_key)>;
     const key_t &key = e.idempotency_key;
-    if (key != key_t{}) {                       // a real (non-default) key → eligible for dedup
+    if (key != key_t{}) { // a real (non-default) key → eligible for dedup
         if (const auto *cached = cache.find(key)) {
-            e.response = *cached;               // replay — do NOT re-run the side effect
+            e.response = *cached; // replay — do NOT re-run the side effect
             self.reply(e);
             return;
         }
-        e.response = std::forward<Fn>(fn)(e);   // first time for this key
+        e.response = std::forward<Fn>(fn)(e); // first time for this key
         cache.put(key, e.response);
         self.reply(e);
         return;
     }
-    e.response = std::forward<Fn>(fn)(e);        // no key → behave like plain answer()
+    e.response = std::forward<Fn>(fn)(e); // no key → behave like plain answer()
     self.reply(e);
 }
 

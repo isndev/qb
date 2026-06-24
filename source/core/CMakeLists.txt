@@ -33,7 +33,7 @@ project(qb-core
 # Library Configuration
 # -----------------------------------------------------------------------------
 set(CORE_SOURCES
-    core.cpp
+        core.cpp
 )
 
 # Core depends on the IO library for networking and communication
@@ -45,24 +45,24 @@ set(CORE_DEFINITIONS)
 # -----------------------------------------------------------------------------
 # Feature-based definitions
 # -----------------------------------------------------------------------------
-if(QB_DEBUG_ACTOR)
+if (QB_DEBUG_ACTOR)
     list(APPEND CORE_DEFINITIONS QB_DEBUG_ACTOR=1)
     qb_debug_message("Building with actor debugging")
-endif()
+endif ()
 
-if(QB_DEBUG_MEMORY)
+if (QB_DEBUG_MEMORY)
     list(APPEND CORE_DEFINITIONS QB_DEBUG_MEMORY=1)
     qb_debug_message("Building with memory debugging")
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Create the Core library
 # -----------------------------------------------------------------------------
 qb_add_library(
-    NAME ${PROJECT_NAME}
-    SOURCES ${CORE_SOURCES}
-    DEPENDS ${CORE_DEPENDENCIES}
-    DEFINES ${CORE_DEFINITIONS}
+        NAME ${PROJECT_NAME}
+        SOURCES ${CORE_SOURCES}
+        DEPENDS ${CORE_DEPENDENCIES}
+        DEFINES ${CORE_DEFINITIONS}
 )
 
 # Set the export name to core (instead of qb-core)
@@ -71,7 +71,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME core)
 # -----------------------------------------------------------------------------
 # Tests configuration
 # -----------------------------------------------------------------------------
-if(QB_BUILD_TESTS)
+if (QB_BUILD_TESTS)
     qb_status_message("Building qb-core tests")
     add_subdirectory(tests)
-endif()
+endif ()

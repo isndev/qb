@@ -178,9 +178,9 @@ namespace detail {
 days_from_civil(std::int64_t y, unsigned m, unsigned d) noexcept {
     y -= m <= 2;
     const std::int64_t era = (y >= 0 ? y : y - 399) / 400;
-    const unsigned     yoe = static_cast<unsigned>(y - era * 400);            // [0, 399]
+    const unsigned     yoe = static_cast<unsigned>(y - era * 400);             // [0, 399]
     const unsigned     doy = (153u * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1; // [0, 365]
-    const unsigned     doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;           // [0, 146096]
+    const unsigned     doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;            // [0, 146096]
     return era * 146097 + static_cast<std::int64_t>(doe) - 719468;
 }
 
@@ -200,10 +200,10 @@ civil_from_days(std::int64_t z) noexcept {
     const unsigned     doe = static_cast<unsigned>(z - era * 146097);               // [0, 146096]
     const unsigned     yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
     const std::int64_t y   = static_cast<std::int64_t>(yoe) + era * 400;
-    const unsigned     doy = doe - (365 * yoe + yoe / 4 - yoe / 100);               // [0, 365]
-    const unsigned     mp  = (5 * doy + 2) / 153;                                   // [0, 11]
-    const unsigned     d   = doy - (153 * mp + 2) / 5 + 1;                          // [1, 31]
-    const unsigned     m   = mp < 10 ? mp + 3 : mp - 9;                             // [1, 12]
+    const unsigned     doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    const unsigned     mp  = (5 * doy + 2) / 153;                     // [0, 11]
+    const unsigned     d   = doy - (153 * mp + 2) / 5 + 1;            // [1, 31]
+    const unsigned     m   = mp < 10 ? mp + 3 : mp - 9;               // [1, 12]
     return civil_date{y + (m <= 2), m, d};
 }
 
@@ -251,10 +251,10 @@ safe_gmtime(std::time_t t, std::tm &out) noexcept {
 /// _mkgmtime). Inverse of safe_gmtime; exact for all dates including pre-1970.
 [[nodiscard]] inline std::time_t
 safe_timegm(const std::tm &in) noexcept {
-    const std::int64_t days = detail::days_from_civil(static_cast<std::int64_t>(in.tm_year) + 1900,
-                                                      static_cast<unsigned>(in.tm_mon + 1), static_cast<unsigned>(in.tm_mday));
-    return static_cast<std::time_t>(days * 86400 + static_cast<std::int64_t>(in.tm_hour) * 3600 +
-                                    static_cast<std::int64_t>(in.tm_min) * 60 + static_cast<std::int64_t>(in.tm_sec));
+    const std::int64_t days = detail::days_from_civil(static_cast<std::int64_t>(in.tm_year) + 1900, static_cast<unsigned>(in.tm_mon + 1),
+                                                      static_cast<unsigned>(in.tm_mday));
+    return static_cast<std::time_t>(days * 86400 + static_cast<std::int64_t>(in.tm_hour) * 3600 + static_cast<std::int64_t>(in.tm_min) * 60
+                                    + static_cast<std::int64_t>(in.tm_sec));
 }
 
 /// Thread-safe LOCAL-time breakdown (keeps the platform time-zone database).
@@ -389,7 +389,7 @@ format_utc_offset(std::int32_t seconds_east) {
     const int  abs_secs = seconds_east < 0 ? -seconds_east : seconds_east;
     const char sign     = seconds_east < 0 ? '-' : '+';
     // Sized for any int32 offset: sign + up to 6-digit hours + ':' + 2-digit min + NUL.
-    char       buf[16];
+    char buf[16];
     std::snprintf(buf, sizeof(buf), "%c%02d:%02d", sign, abs_secs / 3600, (abs_secs % 3600) / 60);
     return std::string(buf);
 }
@@ -598,9 +598,11 @@ struct calendar_interval {
     to_micros() const noexcept {
         constexpr std::int64_t USECS_PER_DAY  = 86400LL * 1000000;
         constexpr std::int64_t USECS_PER_YEAR = 31557600LL * 1000000; // 365.25 days
-        return micros + std::chrono::microseconds{static_cast<std::int64_t>(days) * USECS_PER_DAY
-                                                  + static_cast<std::int64_t>(months / 12) * USECS_PER_YEAR
-                                                  + static_cast<std::int64_t>(months % 12) * 30 * USECS_PER_DAY};
+        return micros
+               + std::chrono::microseconds{
+                   static_cast<std::int64_t>(days) * USECS_PER_DAY + static_cast<std::int64_t>(months / 12) * USECS_PER_YEAR
+                   + static_cast<std::int64_t>(months % 12) * 30 * USECS_PER_DAY
+               };
     }
 
     /// A readable "[N mons] [N days] HH:MM:SS[.ffffff]" form (not bit-identical to

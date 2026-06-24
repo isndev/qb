@@ -44,10 +44,10 @@ namespace qb {
  *          `max_attempts` tries.
  */
 struct retry_policy {
-    int          max_attempts = 3;                            ///< Total tries (>= 1).
+    int          max_attempts = 3;                             ///< Total tries (>= 1).
     qb::duration backoff      = std::chrono::milliseconds(50); ///< Wait before the first retry.
-    double       multiplier   = 2.0;                          ///< Exponential growth factor (>= 1).
-    qb::duration max_backoff  = std::chrono::seconds(1);      ///< Upper bound on a single backoff.
+    double       multiplier   = 2.0;                           ///< Exponential growth factor (>= 1).
+    qb::duration max_backoff  = std::chrono::seconds(1);       ///< Upper bound on a single backoff.
     /**
      * @brief Randomization fraction in `[0, 1]` applied to each backoff (default `0` = none).
      * @details The actual wait is drawn uniformly from `[backoff * (1 - jitter), backoff]`, so
@@ -56,7 +56,7 @@ struct retry_policy {
      *          non-`ask` case `qb::io::async::with_retry` / `retry_policy` (retry.h) offers the same
      *          via `backoff_strategy::exponential_jitter`.
      */
-    double       jitter       = 0.0;
+    double jitter = 0.0;
 };
 
 namespace detail {
@@ -66,11 +66,11 @@ namespace detail {
 apply_retry_jitter(qb::duration d, double jitter) noexcept {
     if (jitter <= 0.0)
         return d;
-    jitter = (std::min)(jitter, 1.0);
-    static thread_local std::mt19937_64           rng{std::random_device{}()};
-    std::uniform_real_distribution<double>        u(0.0, 1.0);
-    const double factor = 1.0 - jitter * u(rng); // in [1 - jitter, 1]
-    const auto   out    = static_cast<qb::duration::rep>(static_cast<double>(d.count()) * factor);
+    jitter = (std::min) (jitter, 1.0);
+    static thread_local std::mt19937_64    rng{std::random_device{}()};
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    const double                           factor = 1.0 - jitter * u(rng); // in [1 - jitter, 1]
+    const auto                             out    = static_cast<qb::duration::rep>(static_cast<double>(d.count()) * factor);
     return qb::duration{out < 0 ? qb::duration::rep{0} : out};
 }
 } // namespace detail
@@ -275,7 +275,7 @@ private:
         }
         if (now_ns <= _last_ns)
             return;
-        _tokens  = (std::min)(_capacity, _tokens + static_cast<double>(now_ns - _last_ns) / _per_token_ns);
+        _tokens  = (std::min) (_capacity, _tokens + static_cast<double>(now_ns - _last_ns) / _per_token_ns);
         _last_ns = now_ns;
     }
 
@@ -405,8 +405,7 @@ private:
  */
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<E>
-ask_retry(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout,
-          qb::retry_policy policy = {}) {
+ask_retry(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout, qb::retry_policy policy = {}) {
     const int    max_attempts = policy.max_attempts > 0 ? policy.max_attempts : 1; // doc: >= 1
     qb::duration backoff      = policy.backoff;
     for (int attempt = 1;; ++attempt) {
@@ -420,9 +419,8 @@ ask_retry(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration tim
         // Jitter is applied to the *waited* value only; the geometric series itself stays
         // deterministic so growth is predictable.
         co_await ctx.sleep(qb::detail::apply_retry_jitter(backoff, policy.jitter));
-        const auto grown =
-            static_cast<qb::duration::rep>(static_cast<double>(backoff.count()) * policy.multiplier);
-        backoff = (std::min)(qb::duration{grown}, policy.max_backoff);
+        const auto grown = static_cast<qb::duration::rep>(static_cast<double>(backoff.count()) * policy.multiplier);
+        backoff          = (std::min) (qb::duration{grown}, policy.max_backoff);
     }
 }
 
@@ -445,8 +443,7 @@ ask_retry(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration tim
  */
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<E>
-ask_guarded(qb::ScopedCoroContext ctx, std::shared_ptr<qb::CircuitBreaker> breaker,
-            qb::ActorId target, E req, qb::duration timeout) {
+ask_guarded(qb::ScopedCoroContext ctx, std::shared_ptr<qb::CircuitBreaker> breaker, qb::ActorId target, E req, qb::duration timeout) {
     assert(breaker && "qb::ask_guarded requires a non-null CircuitBreaker");
     if (!breaker->allow(ctx.time()))
         throw qb::circuit_open_error{}; // fail fast — the request is never sent

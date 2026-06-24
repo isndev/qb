@@ -27,14 +27,14 @@ using namespace std::chrono_literals;
 // Shared observation flags (reset at the start of each TEST).
 // ---------------------------------------------------------------------------
 namespace {
-std::atomic<bool> g_scoped_completed_full{false}; // set if a long ctx.sleep ran to the end
+std::atomic<bool> g_scoped_completed_full{false};  // set if a long ctx.sleep ran to the end
 std::atomic<bool> g_scoped_cancel_observed{false}; // set in the coroutine's catch on cancel
 std::atomic<bool> g_raw_completed{false};          // set if a raw spawn_detached coroutine finished
 std::atomic<int>  g_loop_iterations{0};            // cancellation_point loop progress
 
 void
 reset_flags() {
-    g_scoped_completed_full = false;
+    g_scoped_completed_full  = false;
     g_scoped_cancel_observed = false;
     g_raw_completed          = false;
     g_loop_iterations        = 0;
@@ -97,8 +97,8 @@ public:
     onInit() override {
         registerEvent<ScopeResultEvent>(*this);
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            co_await ctx.sleep(10ms);          // completes normally (not cancelled)
-            ctx.push<ScopeResultEvent>(123);   // safe push back to self
+            co_await ctx.sleep(10ms);        // completes normally (not cancelled)
+            ctx.push<ScopeResultEvent>(123); // safe push back to self
         });
         co_return true;
     }
@@ -424,7 +424,7 @@ public:
 };
 
 TEST(ActorCoroutineScope, MultiStepCancelledMidSequence) {
-    g_steps        = 0;
+    g_steps         = 0;
     g_seq_cancelled = false;
     qb::Main main;
     main.addActor<MultiStepActor>(0);

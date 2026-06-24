@@ -127,8 +127,8 @@ public:
      * @param restart_window If non-zero, `max_restarts` is counted only over the trailing
      *        `restart_window` (sliding-window intensity); if zero (default), it is cumulative.
      */
-    Supervisor(qb::restart_strategy strategy, std::size_t child_count,
-               unsigned max_restarts = 0, qb::duration restart_window = qb::duration::zero()) noexcept
+    Supervisor(qb::restart_strategy strategy, std::size_t child_count, unsigned max_restarts = 0,
+               qb::duration restart_window = qb::duration::zero()) noexcept
         : _strategy(strategy)
         , _count(child_count)
         , _max_restarts(max_restarts)
@@ -255,14 +255,14 @@ private:
             _children[j] = spawn_child(j, _gen[j]);
     }
 
-    qb::restart_strategy        _strategy;
-    std::size_t                 _count;
-    unsigned                    _max_restarts;
-    qb::duration                _window;       ///< 0 = cumulative cap; >0 = sliding-window intensity.
-    unsigned                    _restarts = 0;
-    std::vector<qb::ActorId>    _children;
-    std::vector<std::uint64_t>  _gen;
-    std::deque<std::uint64_t>   _restart_times; ///< restart timestamps (ns) for the sliding window.
+    qb::restart_strategy       _strategy;
+    std::size_t                _count;
+    unsigned                   _max_restarts;
+    qb::duration               _window; ///< 0 = cumulative cap; >0 = sliding-window intensity.
+    unsigned                   _restarts = 0;
+    std::vector<qb::ActorId>   _children;
+    std::vector<std::uint64_t> _gen;
+    std::deque<std::uint64_t>  _restart_times; ///< restart timestamps (ns) for the sliding window.
 };
 
 /** @brief Alias for `Supervisor`. */

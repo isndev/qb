@@ -78,9 +78,9 @@ function(create_core_test TEST_SOURCE TEST_CATEGORY)
     set(TARGET_NAME ${PROJECT_NAME}-gtest-system-${TEST_NAME})
 
     qb_add_test(
-        NAME ${TARGET_NAME}
-        SOURCES ${TEST_SOURCE}
-        DEPENDS ${PROJECT_NAME}
+            NAME ${TARGET_NAME}
+            SOURCES ${TEST_SOURCE}
+            DEPENDS ${PROJECT_NAME}
     )
 
     set_target_properties(${TARGET_NAME} PROPERTIES

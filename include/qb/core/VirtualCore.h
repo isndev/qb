@@ -299,16 +299,16 @@ private:
     // enters this map: it is the `empty()`-guarded slow path, mirroring the
     // `_actor_to_remove` fast-path discipline so non-async actors pay nothing.
     struct Activation {
-        qb::io::async::task<bool>             init;            ///< owns the suspended onInit frame
-        std::uint64_t                         deadline_ns = 0; ///< wall-clock deadline (0 = none)
+        qb::io::async::task<bool>             init;                ///< owns the suspended onInit frame
+        std::uint64_t                         deadline_ns = 0;     ///< wall-clock deadline (0 = none)
         bool                                  cancelling  = false; ///< deadline fired → scope cancelled, awaiting unwind
-        std::vector<std::vector<EventBucket>> stash;           ///< FIFO of byte-copied inbound unicast events
+        std::vector<std::vector<EventBucket>> stash;               ///< FIFO of byte-copied inbound unicast events
     };
     qb::unordered_map<ActorId, Activation> _activating;
     RemoveActorList                        _dying_with_frame; ///< killed while their onInit frame was still suspended
 
     /// Per-actor stash cap: a wedged-in-init actor must not OOM the core.
-    static constexpr std::size_t   kActivationStashCap = 4096u;
+    static constexpr std::size_t kActivationStashCap = 4096u;
 
 public:
     /**
@@ -370,7 +370,7 @@ private:
             _nanotimer          = ts;
         }
     } _metrics;
-    bool          _signal_consumed = false;
+    bool _signal_consumed = false;
     /// Monotonic count of event-loop passes; surfaced to callbacks via `qb::LoopEvent::iteration`.
     std::uint64_t _loop_count = 0;
     /**
@@ -463,7 +463,7 @@ private:
      */
     [[nodiscard]] InitOutcome __drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexcept;
     /// Move a suspended `onInit()` frame into the Activating set (+arm deadline, flip phase).
-    void               __begin_activation__(Actor &actor, qb::io::async::task<bool> &&init) noexcept;
+    void __begin_activation__(Actor &actor, qb::io::async::task<bool> &&init) noexcept;
     /// True iff `id` is currently Activating (or dying with a still-live onInit frame).
     [[nodiscard]] bool __is_activating__(ActorId id) const noexcept;
     /// Byte-copy a gated inbound unicast event into the destination actor's FIFO stash.
@@ -472,7 +472,7 @@ private:
     ///         must `_router.dispose()` the original to free a non-trivial payload.
     [[nodiscard]] bool __stash_event__(ActorId dest, Event *event) noexcept;
     /// Per-iteration pump: complete finished inits, replay stashes, enforce deadlines.
-    void               __pump_activations__() noexcept;
+    void __pump_activations__() noexcept;
     //! Actor Management
 
 private:

@@ -134,8 +134,8 @@ TEST(ActorInitRobustness, FailedAsyncInitDisposesStashedPayloads) {
         main.start(false);
         main.join();
     }
-    EXPECT_EQ(g_fail_handler_calls.load(), 0);      // failed actor never handled a stashed event
-    EXPECT_EQ(PayloadEvent::live.load(), 0L)        // every stashed payload was destroyed
+    EXPECT_EQ(g_fail_handler_calls.load(), 0); // failed actor never handled a stashed event
+    EXPECT_EQ(PayloadEvent::live.load(), 0L)   // every stashed payload was destroyed
         << "stashed events leaked when async init failed";
 }
 
@@ -185,8 +185,7 @@ TEST(ActorInitRobustness, KillDuringInitPassesGateAndDisposesStash) {
         main.join();
     }
     EXPECT_EQ(g_killed_handler_calls.load(), 0); // killed-during-init: stash never replayed
-    EXPECT_EQ(PayloadEvent::live.load(), 0L)
-        << "stashed payloads leaked when the actor was killed during init";
+    EXPECT_EQ(PayloadEvent::live.load(), 0L) << "stashed payloads leaked when the actor was killed during init";
 }
 
 // --- 1c. Activation deadline expires: stash dropped + disposed. ----------------------------
@@ -212,8 +211,7 @@ TEST(ActorInitRobustness, ActivationDeadlineDisposesStash) {
         main.start(false);
         main.join();
     }
-    EXPECT_EQ(PayloadEvent::live.load(), 0L)
-        << "stashed payloads leaked when the activation deadline expired";
+    EXPECT_EQ(PayloadEvent::live.load(), 0L) << "stashed payloads leaked when the activation deadline expired";
 }
 
 // --- 1d. Stash overflow cap: the dropped overflow events are disposed too. ------------------
@@ -229,8 +227,7 @@ TEST(ActorInitRobustness, StashOverflowDisposesAllDroppedPayloads) {
         main.start(false);
         main.join();
     }
-    EXPECT_EQ(PayloadEvent::live.load(), 0L)
-        << "overflowed/stashed payloads leaked when the stash cap was exceeded";
+    EXPECT_EQ(PayloadEvent::live.load(), 0L) << "overflowed/stashed payloads leaked when the stash cap was exceeded";
 }
 
 // --- 1e. Success path: stash replayed in FIFO order, each payload delivered then disposed. ---
@@ -371,7 +368,7 @@ public:
         pol.max_attempts = 5;
         pol.backoff      = 10ms;
         pol.max_backoff  = 40ms;
-        auto r = co_await qb::ask_retry(context(), _peer, Q{4}, 25ms, pol); // retries during init
+        auto r           = co_await qb::ask_retry(context(), _peer, Q{4}, 25ms, pol); // retries during init
         g_retry_in_init_value.store(r.response);
         qb::Main::stop();
         co_return true;
@@ -424,8 +421,8 @@ public:
     onInit() override {
         registerEvent<Q>(*this);
         std::vector<qb::ActorId> peers{_a, _b};
-        auto replies = co_await qb::ask_all(context(), peers, Q{3}, 500ms);
-        int  sum     = 0;
+        auto                     replies = co_await qb::ask_all(context(), peers, Q{3}, 500ms);
+        int                      sum     = 0;
         for (auto const &r : replies)
             sum += r.response;
         g_askall_sum.store(sum);
@@ -441,7 +438,7 @@ public:
 TEST(ActorInitRobustness, AskAllInsideOnInitGathers) {
     g_askall_sum.store(-1);
     qb::Main   main;
-    const auto a = main.addActor<ConfigPeer>(0, 10); // 3*10 = 30
+    const auto a = main.addActor<ConfigPeer>(0, 10);  // 3*10 = 30
     const auto b = main.addActor<ConfigPeer>(0, 100); // 3*100 = 300
     main.addActor<AskAllInInit>(0, a, b);
     main.start(false);
@@ -481,17 +478,15 @@ public:
         auto reserver = _reserver;
         auto silent   = _silent;
         try {
-            co_await qb::run_saga(
-                context(), [reserver, silent](qb::ScopedCoroContext ctx,
-                                              qb::SagaScope &saga) -> qb::io::async::task<void> {
-                    (void) co_await qb::ask(ctx, reserver, Q{1}, 500ms); // step 1 succeeds
-                    saga.on_compensate([ctx, reserver]() -> qb::io::async::task<void> {
-                        (void) co_await qb::ask(ctx, reserver, Q{2}, 500ms); // undo (in-init ask)
-                        g_saga_compensate_calls.fetch_add(1);
-                        g_saga_compensated.store(true);
-                    });
-                    (void) co_await qb::ask(ctx, silent, Q{3}, 30ms); // step 2 TIMES OUT → rollback
+            co_await qb::run_saga(context(), [reserver, silent](qb::ScopedCoroContext ctx, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                (void) co_await qb::ask(ctx, reserver, Q{1}, 500ms); // step 1 succeeds
+                saga.on_compensate([ctx, reserver]() -> qb::io::async::task<void> {
+                    (void) co_await qb::ask(ctx, reserver, Q{2}, 500ms); // undo (in-init ask)
+                    g_saga_compensate_calls.fetch_add(1);
+                    g_saga_compensated.store(true);
                 });
+                (void) co_await qb::ask(ctx, silent, Q{3}, 30ms); // step 2 TIMES OUT → rollback
+            });
         } catch (const qb::io::async::timeout_error &) {
             g_saga_init_failed.store(true);
             qb::Main::stop();
@@ -516,9 +511,9 @@ TEST(ActorInitRobustness, SagaInsideOnInitCompensatesThenFailsInit) {
     main.addActor<SagaInInit>(0, reserver, silent);
     main.start(false);
     main.join();
-    EXPECT_TRUE(g_saga_init_failed.load());          // step 2 timeout failed the saga + the init
-    EXPECT_TRUE(g_saga_compensated.load());          // compensation (an in-init ask) ran
-    EXPECT_EQ(g_saga_compensate_calls.load(), 1);    // exactly once (no double compensation)
+    EXPECT_TRUE(g_saga_init_failed.load());       // step 2 timeout failed the saga + the init
+    EXPECT_TRUE(g_saga_compensated.load());       // compensation (an in-init ask) ran
+    EXPECT_EQ(g_saga_compensate_calls.load(), 1); // exactly once (no double compensation)
 }
 
 // ===========================================================================

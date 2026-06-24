@@ -17,7 +17,8 @@ qb::io::async::listener  (one per thread, owns the libev loop)
             └── run_ready()                  — called by listener after ev loop tick
 ```
 
-Because all coroutines on a thread share one scheduler and one event loop, **they are never concurrent**. The only interleaving point is `co_await`. This means:
+Because all coroutines on a thread share one scheduler and one event loop, **they are never concurrent**. The only
+interleaving point is `co_await`. This means:
 
 - No `std::mutex` needed inside coroutine primitives
 - No `std::atomic` needed for shared coroutine state
@@ -27,22 +28,22 @@ Because all coroutines on a thread share one scheduler and one event loop, **the
 
 ## File Map
 
-| Header | Exports |
-|--------|---------|
-| `task.h` | `task<T>` — primary coroutine return type |
-| `scheduler.h` | `CoroutineScheduler`, `schedule_via_current()` |
-| `awaiter.h` | `timer_awaiter`, `socket_awaiter`, `async_awaiter<T>` |
-| `utils.h` | `sleep()`, `wait_readable()`, `wait_writable()`, `coro_scheduler()`, `run_for()` |
-| `combinators.h` | `when_all()`, `when_any()`, `race()`, `coro_with_timeout()` |
-| `cancellation.h` | `cancellation_token`, `cancellable_operation`, `cancellable_sleep`, `with_deadline` |
-| `sync.h` | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch` |
-| `channel.h` | `channel<T>`, `select()`, `recv_for()`, `send_for()`, `transform()`, `filter()` |
-| `scope.h` | `coroutine_scope`, `with_scope()`, `parallel_map()`, `repeat_while()` |
-| `generator.h` | `generator<T>`, `async_generator<T>`, `ag_for_each()`, `ag_collect()`, `ag_map()`, `ag_filter()`, `ag_reduce()` |
-| `stream.h` | `async_stream<T>` — functional stream pipeline |
-| `retry.h` | `retry_policy`, `with_retry()`, `with_retry_until()`, `make_retryable()` |
-| `mixin.h` | `coro_mixin<Derived>` — CRTP helper for actors |
-| `coroutine.h` | Umbrella include for all of the above |
+| Header           | Exports                                                                                                         |
+|------------------|-----------------------------------------------------------------------------------------------------------------|
+| `task.h`         | `task<T>` — primary coroutine return type                                                                       |
+| `scheduler.h`    | `CoroutineScheduler`, `schedule_via_current()`                                                                  |
+| `awaiter.h`      | `timer_awaiter`, `socket_awaiter`, `async_awaiter<T>`                                                           |
+| `utils.h`        | `sleep()`, `wait_readable()`, `wait_writable()`, `coro_scheduler()`, `run_for()`                                |
+| `combinators.h`  | `when_all()`, `when_any()`, `race()`, `coro_with_timeout()`                                                     |
+| `cancellation.h` | `cancellation_token`, `cancellable_operation`, `cancellable_sleep`, `with_deadline`                             |
+| `sync.h`         | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`                            |
+| `channel.h`      | `channel<T>`, `select()`, `recv_for()`, `send_for()`, `transform()`, `filter()`                                 |
+| `scope.h`        | `coroutine_scope`, `with_scope()`, `parallel_map()`, `repeat_while()`                                           |
+| `generator.h`    | `generator<T>`, `async_generator<T>`, `ag_for_each()`, `ag_collect()`, `ag_map()`, `ag_filter()`, `ag_reduce()` |
+| `stream.h`       | `async_stream<T>` — functional stream pipeline                                                                  |
+| `retry.h`        | `retry_policy`, `with_retry()`, `with_retry_until()`, `make_retryable()`                                        |
+| `mixin.h`        | `coro_mixin<Derived>` — CRTP helper for actors                                                                  |
+| `coroutine.h`    | Umbrella include for all of the above                                                                           |
 
 ---
 
@@ -50,9 +51,11 @@ Because all coroutines on a thread share one scheduler and one event loop, **the
 
 ### Rule 1 — Lambda / Callable Spawning (THE most common error)
 
-**Root cause**: when you write `spawn(f())`, the closure of `f` is destroyed at the end of the expression, leaving the coroutine frame with a dangling `this` pointer to the closure.
+**Root cause**: when you write `spawn(f())`, the closure of `f` is destroyed at the end of the expression, leaving the
+coroutine frame with a dangling `this` pointer to the closure.
 
 #### Old workaround (still valid, but verbose)
+
 ```cpp
 // Store the lambda so it outlives the coroutine invocation:
 auto fn = [captured]() -> task<void> { co_await ...; };
@@ -60,7 +63,9 @@ coro_scheduler().spawn(fn());   // fn is alive, no dangle
 ```
 
 #### New preferred pattern — `spawn(Callable)` overload
-Both `CoroutineScheduler` and `coroutine_scope` expose a callable overload that wraps the lambda in an owning `invoke_owned_` / `owned_invoke_` coroutine (value parameter ⟹ always alive):
+
+Both `CoroutineScheduler` and `coroutine_scope` expose a callable overload that wraps the lambda in an owning
+`invoke_owned_` / `owned_invoke_` coroutine (value parameter ⟹ always alive):
 
 ```cpp
 // ✅ BEST — pass the lambda WITHOUT trailing ()
@@ -76,7 +81,9 @@ scope.spawn([captured, i]() -> task<void> {
 > **Constraint**: the callable must take no arguments and return `task<void>`.
 
 #### Terminal methods on `async_stream<T>` — same pattern applied internally
-All terminal consumers (`for_each`, `collect`, `first`, `reduce`, `count`, `any`, `all`, `find`, `drain_to`) are non-coroutine shims that move `*this` into a private static helper:
+
+All terminal consumers (`for_each`, `collect`, `first`, `reduce`, `count`, `any`, `all`, `find`, `drain_to`) are
+non-coroutine shims that move `*this` into a private static helper:
 
 ```cpp
 // The stream is moved into the coroutine frame — no dangling this
@@ -152,9 +159,11 @@ task<void> caller() {
 ```
 
 Key points:
+
 - `initial_suspend = suspend_always` — task is lazy (doesn't run until spawned/awaited)
 - `final_suspend` performs symmetric transfer to `continuation_`
-- `promise_type::result_` variant is **explicitly initialised** to `std::monostate` (index 0) to prevent premature ready state
+- `promise_type::result_` variant is **explicitly initialised** to `std::monostate` (index 0) to prevent premature ready
+  state
 
 ---
 
@@ -455,29 +464,29 @@ auto p = idempotent_policy();
 
 ## Debug Macros
 
-| Macro | Effect |
-|-------|--------|
-| `QB_DEBUG_COROUTINES` | Trace `initial_suspend`, `final_suspend`, `promise_destroyed` in `task<T>` |
-| `QB_DEBUG_SCOPE=1` | Trace `coroutine_scope` spawn, join, task completion |
-| `QB_DEBUG_CORO_LIFECYCLE=1` | Trace `CoroutineScheduler` spawn, resume, destroy |
-| `QB_DEBUG_AGEN=1` | Trace `async_generator` yield/next/suspend flow |
+| Macro                       | Effect                                                                     |
+|-----------------------------|----------------------------------------------------------------------------|
+| `QB_DEBUG_COROUTINES`       | Trace `initial_suspend`, `final_suspend`, `promise_destroyed` in `task<T>` |
+| `QB_DEBUG_SCOPE=1`          | Trace `coroutine_scope` spawn, join, task completion                       |
+| `QB_DEBUG_CORO_LIFECYCLE=1` | Trace `CoroutineScheduler` spawn, resume, destroy                          |
+| `QB_DEBUG_AGEN=1`           | Trace `async_generator` yield/next/suspend flow                            |
 
 ---
 
 ## Test Suite Summary
 
-| Suite | Tests | File |
-|-------|-------|------|
-| coroutine-stream | 23 | `test-coroutine-stream.cpp` |
-| coroutine-retry | 9 | `test-coroutine-retry.cpp` |
-| coroutine-generator | 23 | `test-coroutine-generator.cpp` |
-| coroutine-scope | 20 | `test-coroutine-scope.cpp` |
-| coroutine-channel | 21 | `test-coroutine-channel.cpp` |
-| coroutine-shared-task | 10 | `test-coroutine-shared-task.cpp` |
-| coroutine-sync | 21 | `test-coroutine-sync.cpp` |
-| coroutine-combinators | 20 | `test-coroutine-combinators.cpp` |
-| coroutine-cancellation | 17 | `test-coroutine-cancellation.cpp` |
-| **Total** | **164** | |
+| Suite                  | Tests   | File                              |
+|------------------------|---------|-----------------------------------|
+| coroutine-stream       | 23      | `test-coroutine-stream.cpp`       |
+| coroutine-retry        | 9       | `test-coroutine-retry.cpp`        |
+| coroutine-generator    | 23      | `test-coroutine-generator.cpp`    |
+| coroutine-scope        | 20      | `test-coroutine-scope.cpp`        |
+| coroutine-channel      | 21      | `test-coroutine-channel.cpp`      |
+| coroutine-shared-task  | 10      | `test-coroutine-shared-task.cpp`  |
+| coroutine-sync         | 21      | `test-coroutine-sync.cpp`         |
+| coroutine-combinators  | 20      | `test-coroutine-combinators.cpp`  |
+| coroutine-cancellation | 17      | `test-coroutine-cancellation.cpp` |
+| **Total**              | **164** |                                   |
 
 ---
 
