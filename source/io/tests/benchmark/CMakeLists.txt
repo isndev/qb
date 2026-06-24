@@ -60,18 +60,18 @@ set(PROTOCOL_BENCHMARKS
 )
 
 # Optional compression providers and pipe adapters
-if(QB_HAS_COMPRESSION)
+if (QB_HAS_COMPRESSION)
     set(COMPRESSION_BENCHMARKS
             bm-compression.cpp
     )
-endif()
+endif ()
 
 # Optional OpenSSL-backed crypto helpers
-if(QB_HAS_SSL)
+if (QB_HAS_SSL)
     set(CRYPTO_BENCHMARKS
             bm-crypto.cpp
     )
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Configure benchmark targets

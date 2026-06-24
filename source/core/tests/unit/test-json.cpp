@@ -31,12 +31,12 @@ TEST(Jsonb, ConstructorsAndConversions) {
     jsonb def; // default → null
     EXPECT_TRUE(def.is_null());
 
-    json src = {{"k", 1}, {"v", "x"}};
-    jsonb fromCopy(src);              // copy ctor from json
+    json  src = {{"k", 1}, {"v", "x"}};
+    jsonb fromCopy(src); // copy ctor from json
     EXPECT_TRUE(fromCopy.is_object());
-    jsonb fromMove(json{{"a", 2}});   // move ctor from json
+    jsonb fromMove(json{{"a", 2}}); // move ctor from json
     EXPECT_TRUE(fromMove.contains("a"));
-    jsonb fromInit({1, 2, 3});        // initializer-list ctor → array
+    jsonb fromInit({1, 2, 3}); // initializer-list ctor → array
     EXPECT_TRUE(fromInit.is_array());
     EXPECT_EQ(fromInit.size(), 3u);
 
@@ -50,15 +50,15 @@ TEST(Jsonb, AssignmentAndIndexing) {
     jsonb j;
     j = json{{"n", 10}}; // copy assign from json
     EXPECT_EQ(j["n"], 10);
-    j["m"] = 20;         // mutable operator[](string)
+    j["m"] = 20;                          // mutable operator[](string)
     EXPECT_EQ(std::as_const(j)["m"], 20); // const operator[](string) → at
 
     jsonb arr;
     arr = json::array();
     arr.push_back(json(7));
     arr.push_back(json(8));
-    EXPECT_EQ(arr[0], 7);                   // mutable operator[](size_t)
-    EXPECT_EQ(std::as_const(arr)[1], 8);    // const operator[](size_t) → at
+    EXPECT_EQ(arr[0], 7);                // mutable operator[](size_t)
+    EXPECT_EQ(std::as_const(arr)[1], 8); // const operator[](size_t) → at
 
     jsonb mv;
     mv = json{{"z", 1}}; // move assign path
@@ -67,15 +67,15 @@ TEST(Jsonb, AssignmentAndIndexing) {
 
 TEST(Jsonb, ArrowAndIterators) {
     jsonb j = json{{"a", 1}, {"b", 2}};
-    EXPECT_EQ(j->size(), 2u);                  // mutable operator->
+    EXPECT_EQ(j->size(), 2u);                     // mutable operator->
     EXPECT_TRUE(std::as_const(j)->contains("a")); // const operator->
 
     int count = 0;
     for (auto it = j.begin(); it != j.end(); ++it)
         ++count;
     EXPECT_EQ(count, 2);
-    int ccount = 0;
-    const jsonb &cj = j;
+    int          ccount = 0;
+    const jsonb &cj     = j;
     for (auto it = cj.begin(); it != cj.end(); ++it)
         ++ccount;
     EXPECT_EQ(ccount, 2);
@@ -109,8 +109,8 @@ TEST(Jsonb, Comparisons) {
     EXPECT_TRUE(a == b);
     EXPECT_TRUE(a != c);
     json raw = {{"x", 1}};
-    EXPECT_TRUE(a == raw);  // jsonb == json
-    EXPECT_TRUE(raw == b);  // json == jsonb
+    EXPECT_TRUE(a == raw); // jsonb == json
+    EXPECT_TRUE(raw == b); // json == jsonb
 }
 
 TEST(Jsonb, UnwrapStreamAndHash) {
@@ -129,9 +129,9 @@ TEST(Jsonb, UnwrapStreamAndHash) {
 }
 
 TEST(Json, UuidRoundTrip) {
-    qb::uuid id{};        // nil uuid
+    qb::uuid id{}; // nil uuid
     qb::json obj;
-    uuids::to_json(obj, id);     // serialize
+    uuids::to_json(obj, id); // serialize
     qb::uuid back{};
     uuids::from_json(obj, back); // deserialize
     EXPECT_EQ(id, back);

@@ -13,14 +13,14 @@ addons:
 before_install:
   - sudo apt-cache search libuuid
 
-install: 
+install:
   - sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-8 90
-  
+
 before_script:
   - cd ${TRAVIS_BUILD_DIR}
   - cmake -H. -BBuild -DCMAKE_BUILD_TYPE=Release -Wdev
   - cd Build
-  
+
 script:
   - make -j 2
   - ctest -V -j 2 -C Release

@@ -794,8 +794,8 @@ struct test_starttls_negotiator {
 
     qb::io::async::tcp::starttls_action
     advance(qb::io::tcp::socket &s, int) noexcept {
-        using A                       = qb::io::async::tcp::starttls_action;
-        static constexpr char REQ[4]  = {'S', 'T', 'L', 'S'};
+        using A                      = qb::io::async::tcp::starttls_action;
+        static constexpr char REQ[4] = {'S', 'T', 'L', 'S'};
         while (wrote_ < sizeof(REQ)) {
             const int n = s.write(REQ + wrote_, sizeof(REQ) - wrote_);
             if (n > 0) {

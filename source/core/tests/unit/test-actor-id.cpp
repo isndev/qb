@@ -38,9 +38,9 @@ TEST(ActorId, DefaultIsNotFoundAndInvalid) {
 }
 
 TEST(ActorId, Uint32RoundTripPreservesSidAndIndex) {
-    BroadcastId  b(7);                         // sid = BroadcastSid, index = 7
+    BroadcastId   b(7); // sid = BroadcastSid, index = 7
     std::uint32_t packed = static_cast<std::uint32_t>(b);
-    ActorId      round(packed);                // unpack
+    ActorId       round(packed); // unpack
     EXPECT_EQ(static_cast<std::uint32_t>(round), packed);
     EXPECT_EQ(round.sid(), b.sid());
     EXPECT_EQ(round.index(), b.index());
@@ -122,7 +122,7 @@ TEST(CoreIdBitSet, ConvertersAndRawBits) {
 }
 
 TEST(CoreIdBitSet, Iteration) {
-    CoreIdBitSet      s{0, 3, 200};
+    CoreIdBitSet        s{0, 3, 200};
     std::vector<CoreId> seen;
     for (CoreId c : s)
         seen.push_back(c);

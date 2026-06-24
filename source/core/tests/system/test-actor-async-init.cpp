@@ -117,7 +117,7 @@ TEST(ActorAsyncInit, StashedEventsReplayedInOrderAfterActivation) {
     g_order_ok.store(true);
     g_all_after_init.store(true);
 
-    qb::Main main;
+    qb::Main   main;
     const auto slow = main.addActor<SlowConsumer>(0);
     main.addActor<BurstSender>(0, slow);
     main.start(false);
@@ -172,7 +172,7 @@ TEST(ActorAsyncInit, KillDuringInitCancelsAndDestroysCleanly) {
     g_t3_completed.store(false);
     g_t3_destroyed.store(false);
 
-    qb::Main main;
+    qb::Main   main;
     const auto target = main.addActor<LongInitActor>(0);
     main.addActor<KillerActor>(0, target);
     main.start(false);
@@ -367,7 +367,7 @@ TEST(ActorAsyncInit, SyncOnInitThrowsWithoutCoAwait) {
     main.addActor<SyncThrowInit>(0);
     main.start(false);
     main.join();
-    EXPECT_TRUE(main.hasError());               // uncaught sync throw ⇒ BadActorInit
+    EXPECT_TRUE(main.hasError()); // uncaught sync throw ⇒ BadActorInit
     EXPECT_TRUE(g_syncthrow_destroyed.load());
 }
 

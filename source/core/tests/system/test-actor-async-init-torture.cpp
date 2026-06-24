@@ -90,7 +90,7 @@ public:
 
 TEST(AsyncInitTorture, AskAllInsideOnInit) {
     g_askall_sum.store(-1);
-    qb::Main main;
+    qb::Main   main;
     const auto a = main.addActor<CfgService>(0);
     const auto b = main.addActor<CfgService>(0);
     main.addActor<AsksAllInInit>(0, std::vector<qb::ActorId>{a, b});
@@ -119,7 +119,7 @@ public:
 
 TEST(AsyncInitTorture, AskRetryInsideOnInit) {
     g_retry_val.store(-1);
-    qb::Main main;
+    qb::Main   main;
     const auto svc = main.addActor<CfgService>(0);
     main.addActor<AsksRetryInInit>(0, svc);
     main.start(false);
@@ -438,7 +438,7 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         co_await context().until_cancelled(); // parks forever — only the deadline frees it
-        g_stuck_completed.store(true);         // must NOT happen
+        g_stuck_completed.store(true);        // must NOT happen
         co_return true;
     }
     ~StuckInit() override {
@@ -755,7 +755,7 @@ public:
     onInit() override {
         g_shut_started.store(true);
         co_await context().sleep(500ms); // cancelled by the broadcast shutdown
-        g_shut_completed.store(true);     // must NOT happen
+        g_shut_completed.store(true);    // must NOT happen
         co_return true;
     }
     ~ShutdownVictim() override {
@@ -805,8 +805,8 @@ class WaitsThenTimesOut : public qb::Actor {
 public:
     qb::io::async::task<bool>
     onInit() override {
-        auto child   = addRefActor<NeverReadyChild>();
-        const bool ok = co_await child.ready_async(context(), 80ms); // child never activates
+        auto       child = addRefActor<NeverReadyChild>();
+        const bool ok    = co_await child.ready_async(context(), 80ms); // child never activates
         g_ra_timedout.store(!ok);
         broadcast<qb::KillEvent>(); // tear down the stuck child + self
         kill();
@@ -866,7 +866,7 @@ TEST(AsyncInitTorture, ParentKilledWhileAwaitingReadyAsyncUnwinds) {
 // J. gate edges: multi-sender stash, custom (non-Kill) broadcast passes
 // ===========================================================================
 
-std::atomic<int> g_ms_count{0};
+std::atomic<int>  g_ms_count{0};
 std::atomic<bool> g_ms_after{true};
 
 class MultiStashVictim : public qb::Actor {

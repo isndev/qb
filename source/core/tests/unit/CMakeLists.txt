@@ -24,42 +24,42 @@
 
 # Create unit test for the event router component
 qb_add_test(
-    NAME ${PROJECT_NAME}-gtest-unit-event-router
-    SOURCES test-event-router.cpp
-    DEPENDS ${PROJECT_NAME}
+        NAME ${PROJECT_NAME}-gtest-unit-event-router
+        SOURCES test-event-router.cpp
+        DEPENDS ${PROJECT_NAME}
 )
 
 # Create unit test for the timestamp component
 qb_add_test(
-    NAME ${PROJECT_NAME}-gtest-unit-timestamp
-    SOURCES test-timestamp.cpp
-    DEPENDS ${PROJECT_NAME}
+        NAME ${PROJECT_NAME}-gtest-unit-timestamp
+        SOURCES test-timestamp.cpp
+        DEPENDS ${PROJECT_NAME}
 )
 
 # Create unit test for the string component
 qb_add_test(
-    NAME ${PROJECT_NAME}-gtest-unit-string
-    SOURCES test-string.cpp
-    DEPENDS ${PROJECT_NAME}
+        NAME ${PROJECT_NAME}-gtest-unit-string
+        SOURCES test-string.cpp
+        DEPENDS ${PROJECT_NAME}
 )
 
 # Create unit test for the SpinLock lock-free primitive
 qb_add_test(
-    NAME ${PROJECT_NAME}-gtest-unit-spinlock
-    SOURCES test-spinlock.cpp
-    DEPENDS ${PROJECT_NAME}
+        NAME ${PROJECT_NAME}-gtest-unit-spinlock
+        SOURCES test-spinlock.cpp
+        DEPENDS ${PROJECT_NAME}
 )
 
 # Create unit test for ActorId / BroadcastId / CoreIdBitSet
 qb_add_test(
-    NAME ${PROJECT_NAME}-gtest-unit-actor-id
-    SOURCES test-actor-id.cpp
-    DEPENDS ${PROJECT_NAME}
+        NAME ${PROJECT_NAME}-gtest-unit-actor-id
+        SOURCES test-actor-id.cpp
+        DEPENDS ${PROJECT_NAME}
 )
 
 # Create unit test for qb/json.h (qb::jsonb wrapper + adapters)
 qb_add_test(
-    NAME ${PROJECT_NAME}-gtest-unit-json
-    SOURCES test-json.cpp
-    DEPENDS ${PROJECT_NAME}
+        NAME ${PROJECT_NAME}-gtest-unit-json
+        SOURCES test-json.cpp
+        DEPENDS ${PROJECT_NAME}
 )

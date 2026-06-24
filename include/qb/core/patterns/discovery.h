@@ -52,12 +52,12 @@ namespace detail {
  *          discovery deregisters.
  */
 struct discovery_state {
-    std::vector<std::pair<std::uint32_t, qb::ActorId>> found;   ///< (type, responder) replies
+    std::vector<std::pair<std::uint32_t, qb::ActorId>> found;          ///< (type, responder) replies
     bool                                               single = false; ///< ping stops at the first reply
     bool                                               done   = false;
-    qb::io::async::cancellation_token                  token;          ///< actor scope (cancel-on-kill)
+    qb::io::async::cancellation_token                  token; ///< actor scope (cancel-on-kill)
     std::coroutine_handle<>                            waiter{};
-    qb::detail::ask_slot                               slot{};         ///< entry in the continuation registry
+    qb::detail::ask_slot                               slot{}; ///< entry in the continuation registry
 
     void
     wake() noexcept {
@@ -89,8 +89,8 @@ struct discovery_awaiter {
     std::uint64_t                              id;
     ev_timer                                   timer{};
     bool                                       timer_started = false;
-    std::shared_ptr<bool>                      alive     = std::make_shared<bool>(true);
-    qb::io::async::cancellation_token::id_type cancel_id = 0;
+    std::shared_ptr<bool>                      alive         = std::make_shared<bool>(true);
+    qb::io::async::cancellation_token::id_type cancel_id     = 0;
 
     discovery_awaiter(std::shared_ptr<discovery_state> s, qb::duration t, std::uint64_t i)
         : st(std::move(s))
@@ -183,14 +183,14 @@ register_discovery(std::uint64_t id, discovery_state &st, qb::ActorId owner) noe
  */
 [[nodiscard]] inline qb::io::async::task<bool>
 ping(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout = std::chrono::seconds{1}) {
-    auto st    = std::make_shared<detail::discovery_state>();
-    st->single = true;
-    st->token  = ctx.token();
+    auto st       = std::make_shared<detail::discovery_state>();
+    st->single    = true;
+    st->token     = ctx.token();
     const auto id = qb::detail::ask_next_id();
     detail::register_discovery(id, *st, ctx.id());
-    qb::detail::ask_slot_guard guard{id}; // deregister if the send throws before the awaiter takes over
+    qb::detail::ask_slot_guard guard{id};                              // deregister if the send throws before the awaiter takes over
     ctx.template push_to<qb::PingEvent>(target, std::uint32_t{0}, id); // type 0 = wildcard liveness
-    guard.release(); // the awaiter (its dtor unregisters) owns the slot from here
+    guard.release();                                                   // the awaiter (its dtor unregisters) owns the slot from here
     co_await detail::discovery_awaiter{st, timeout, id};
     co_return !st->found.empty();
 }
@@ -216,9 +216,9 @@ ping(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout = std::
 template <typename _Actor>
 [[nodiscard]] qb::io::async::task<std::vector<qb::ActorId>>
 require(qb::ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseconds{200}) {
-    auto st    = std::make_shared<detail::discovery_state>();
-    st->single = false;
-    st->token  = ctx.token();
+    auto st       = std::make_shared<detail::discovery_state>();
+    st->single    = false;
+    st->token     = ctx.token();
     const auto id = qb::detail::ask_next_id();
     detail::register_discovery(id, *st, ctx.id());
     qb::detail::ask_slot_guard guard{id}; // deregister if the broadcast throws before the awaiter takes over

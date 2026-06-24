@@ -70,8 +70,7 @@ namespace detail {
 // (a true sliding window: a new ask starts the instant one finishes, no wave barrier).
 template <typename E>
 qb::io::async::task<E>
-gated_ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout,
-          std::shared_ptr<qb::io::async::semaphore> sem) {
+gated_ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout, std::shared_ptr<qb::io::async::semaphore> sem) {
     co_await sem->acquire(ctx.token()); // cancel-aware: a kill while parked retracts the claim
     struct release_guard {              // free the slot on completion OR on a thrown ask
         std::shared_ptr<qb::io::async::semaphore> s;
@@ -109,11 +108,10 @@ gated_ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration tim
  */
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<std::vector<E>>
-ask_all(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, E req, qb::duration timeout,
-        std::size_t max_in_flight) {
+ask_all(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, E req, qb::duration timeout, std::size_t max_in_flight) {
     if (max_in_flight == 0 || max_in_flight >= targets.size())
         co_return co_await ask_all(ctx, std::move(targets), std::move(req), timeout); // unbounded
-    auto sem = std::make_shared<qb::io::async::semaphore>(max_in_flight);
+    auto                                sem = std::make_shared<qb::io::async::semaphore>(max_in_flight);
     std::vector<qb::io::async::task<E>> calls;
     calls.reserve(targets.size());
     for (auto const target : targets)
@@ -154,14 +152,14 @@ namespace detail {
 // shared_ptr in every collector frame AND the awaiter, so it outlives all of them.
 template <typename E>
 struct quorum_state {
-    std::vector<E>          results;            ///< the first `need` successful replies (completion order)
-    std::size_t             need = 0;           ///< K
-    std::size_t             total = 0;          ///< N
-    std::size_t             ok = 0;             ///< successes so far
-    std::size_t             fail = 0;           ///< failures so far
-    bool                    done = false;       ///< quorum reached OR provably unreachable
-    std::coroutine_handle<> cont{};             ///< the parked ask_quorum coroutine (null until suspended)
-    std::exception_ptr      error;              ///< first non-cancel failure (propagated if unreachable)
+    std::vector<E>          results;       ///< the first `need` successful replies (completion order)
+    std::size_t             need  = 0;     ///< K
+    std::size_t             total = 0;     ///< N
+    std::size_t             ok    = 0;     ///< successes so far
+    std::size_t             fail  = 0;     ///< failures so far
+    bool                    done  = false; ///< quorum reached OR provably unreachable
+    std::coroutine_handle<> cont{};        ///< the parked ask_quorum coroutine (null until suspended)
+    std::exception_ptr      error;         ///< first non-cancel failure (propagated if unreachable)
 };
 
 // Wake the parked ask_quorum coroutine, exactly once. Schedules (never resumes inline) to avoid
@@ -193,8 +191,8 @@ struct quorum_awaiter {
             throw qb::io::async::cancelled_error{}; // killed — propagate as cancellation
         if (st->ok < st->need) {                    // quorum proved unreachable
             if (st->error)
-                std::rethrow_exception(st->error);  // surface the first underlying failure
-            throw qb::io::async::timeout_error{};   // unreachable with no captured error
+                std::rethrow_exception(st->error); // surface the first underlying failure
+            throw qb::io::async::timeout_error{};  // unreachable with no captured error
         }
         return std::move(st->results);
     }
@@ -227,8 +225,7 @@ struct quorum_awaiter {
  */
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<std::vector<E>>
-ask_quorum(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, std::size_t k, E req,
-           qb::duration timeout) {
+ask_quorum(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, std::size_t k, E req, qb::duration timeout) {
     const std::size_t n = targets.size();
     if (k == 0 || n == 0)
         co_return std::vector<E>{};

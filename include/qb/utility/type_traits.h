@@ -712,30 +712,40 @@ struct expand {
 // friend-computed value and add no access requirement of their own.
 //   Ret=void → existence only; Ret≠void → exact return (same_as<Ret>).
 //   Befriend with `friend struct has_method_##name<Self, void, Evt>;` for private name().
-#define QB_DEFINE_METHOD_TRAIT(name)                                                             \
-    template <typename C, typename Ret, typename... Args>                                        \
-    struct has_method_##name {                                                                   \
-        static constexpr bool                                                                    \
-        _qb_detect() noexcept {                                                                  \
-            if constexpr (std::is_void_v<Ret>)                                                   \
-                return requires(C &c) { { c.name(std::declval<Args>()...) }; };                  \
-            else                                                                                 \
-                return requires(C &c) { { c.name(std::declval<Args>()...) } -> std::same_as<Ret>; }; \
-        }                                                                                        \
-        static constexpr bool value = _qb_detect();                                              \
-        using value_type            = bool;                                                      \
-        using type                  = std::bool_constant<value>;                                 \
-        constexpr                   operator bool() const noexcept { return value; }             \
-        constexpr bool              operator()() const noexcept { return value; }                \
-    };                                                                                           \
-    namespace qb {                                                                               \
-    /** Concept: C& has .name(Args...) callable, any return type. */                             \
-    template <typename C, typename... Args>                                                      \
-    concept has_##name = ::has_method_##name<C, void, Args...>::value;                           \
-    /** Concept: C& has .name(Args...) returning exactly Ret. */                                 \
-    template <typename C, typename Ret, typename... Args>                                        \
-    concept has_##name##_r = ::has_method_##name<C, Ret, Args...>::value;                         \
-    } /* namespace qb */                                                                         \
+#define QB_DEFINE_METHOD_TRAIT(name)                                          \
+    template <typename C, typename Ret, typename... Args>                     \
+    struct has_method_##name {                                                \
+        static constexpr bool                                                 \
+        _qb_detect() noexcept {                                               \
+            if constexpr (std::is_void_v<Ret>)                                \
+                return requires(C &c) {                                       \
+                    { c.name(std::declval<Args>()...) };                      \
+                };                                                            \
+            else                                                              \
+                return requires(C &c) {                                       \
+                    { c.name(std::declval<Args>()...) } -> std::same_as<Ret>; \
+                };                                                            \
+        }                                                                     \
+        static constexpr bool value = _qb_detect();                           \
+        using value_type            = bool;                                   \
+        using type                  = std::bool_constant<value>;              \
+        constexpr                                                             \
+        operator bool() const noexcept {                                      \
+            return value;                                                     \
+        }                                                                     \
+        constexpr bool                                                        \
+        operator()() const noexcept {                                         \
+            return value;                                                     \
+        }                                                                     \
+    };                                                                        \
+    namespace qb {                                                            \
+    /** Concept: C& has .name(Args...) callable, any return type. */          \
+    template <typename C, typename... Args>                                   \
+    concept has_##name = ::has_method_##name<C, void, Args...>::value;        \
+    /** Concept: C& has .name(Args...) returning exactly Ret. */              \
+    template <typename C, typename Ret, typename... Args>                     \
+    concept has_##name##_r = ::has_method_##name<C, Ret, Args...>::value;     \
+    } /* namespace qb */                                                      \
     static_assert(true, "require trailing semicolon")
 
 // ----------------------------------------------------------------------------
@@ -873,8 +883,7 @@ compute_has_own_on() {
     //     handler is not merely Base's inherited one (so `&D::on` does NOT
     //     implicitly bind to `void(Base::*)(Evt&&)`). Portable across
     //     GCC/Clang/MSVC and correct even when D is `final`.
-    else if constexpr (requires { static_cast<void (D::*)(Evt &&)>(&D::on); } &&
-                       !requires { inherited_on_probe<Base, Evt>(&D::on); })
+    else if constexpr (requires { static_cast<void (D::*)(Evt &&)>(&D::on); } && !requires { inherited_on_probe<Base, Evt>(&D::on); })
         return true;
     else
         return false;

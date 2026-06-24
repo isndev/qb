@@ -101,8 +101,8 @@ public:
     // Plain bool and no mutex: single-thread cooperative scheduler.
     // cancel() and on_cancel() are always called on the same VirtualCore thread.
     struct state {
-        bool                                                   cancelled{false};
-        id_type                                                next_id{0};
+        bool    cancelled{false};
+        id_type next_id{0};
         // Keyed callbacks so a completing awaiter can DEREGISTER itself (remove_on_cancel)
         // instead of leaving a dead entry behind. Without this a long-lived (actor-scope)
         // token accumulated one std::function per sleep/ask/cancellable for the actor's
@@ -233,7 +233,7 @@ struct cancellation_awaiter {
     // while still suspended here (e.g. a when_any loser or scope cancellation),
     // a later cancel() would otherwise call schedule_via_current() on a freed
     // handle. The destructor clears the flag so the stale callback no-ops.
-    std::shared_ptr<bool>       _alive = std::make_shared<bool>(true);
+    std::shared_ptr<bool>       _alive     = std::make_shared<bool>(true);
     cancellation_token::id_type _cancel_id = 0; ///< on_cancel registration, deregistered on teardown.
 
     // Explicit constructor: the user-declared destructor below makes this type a
@@ -645,8 +645,8 @@ struct with_deadline_timeout_awaiter {
     cancellation_token                           token;
     cancellation_token::id_type                  _cancel_id = 0;
 
-    with_deadline_timeout_awaiter(std::shared_ptr<with_deadline_timeout_state> s,
-                                  std::chrono::steady_clock::time_point dl, cancellation_token t)
+    with_deadline_timeout_awaiter(std::shared_ptr<with_deadline_timeout_state> s, std::chrono::steady_clock::time_point dl,
+                                  cancellation_token t)
         : state(std::move(s))
         , deadline(dl)
         , token(std::move(t)) {}

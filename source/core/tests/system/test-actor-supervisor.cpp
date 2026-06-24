@@ -27,7 +27,7 @@ using namespace qb;
 using namespace std::chrono_literals;
 
 namespace {
-std::atomic<int>  g_spawns{0};     // total TestWorker onInit() calls (initial + restarts)
+std::atomic<int>  g_spawns{0}; // total TestWorker onInit() calls (initial + restarts)
 std::atomic<bool> g_escalated{false};
 } // namespace
 
@@ -104,8 +104,8 @@ public:
 };
 
 TEST(ActorSupervisor, OneForOneRestartsOnlyDeadChild) {
-    g_spawns     = 0;
-    g_escalated  = false;
+    g_spawns    = 0;
+    g_escalated = false;
     qb::Main main;
     auto     sup = main.addActor<TestSupervisor>(0, qb::restart_strategy::one_for_one, 3);
     main.addActor<CrashDriver>(0, sup, 1);
@@ -149,8 +149,7 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         auto sup = _sup;
-        qb::io::async::callback([this, sup] { push<qb::ChildDown>(sup, std::size_t{0}, std::uint64_t{999}); },
-                                20ms);
+        qb::io::async::callback([this, sup] { push<qb::ChildDown>(sup, std::size_t{0}, std::uint64_t{999}); }, 20ms);
         qb::io::async::callback([] { qb::Main::stop(); }, 80ms);
         co_return true;
     }
@@ -195,8 +194,8 @@ TEST(ActorSupervisor, MaxRestartsEscalates) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_escalated.load());   // the third failure escalated
-    EXPECT_EQ(g_spawns.load(), 3);     // 1 initial + 2 restarts (third did not restart)
+    EXPECT_TRUE(g_escalated.load()); // the third failure escalated
+    EXPECT_EQ(g_spawns.load(), 3);   // 1 initial + 2 restarts (third did not restart)
 }
 
 // ===========================================================================

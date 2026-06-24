@@ -73,6 +73,7 @@ html {
         overflow: hidden;
         background: var(--side-nav-background);
     }
+
     #main-nav {
         float: left;
         padding-right: 0;

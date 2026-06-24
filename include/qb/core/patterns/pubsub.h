@@ -67,8 +67,7 @@ public:
     /** @brief Unsubscribe an actor (no-op if not subscribed). */
     void
     unsubscribe(qb::ActorId who) {
-        _subscribers.erase(std::remove(_subscribers.begin(), _subscribers.end(), who),
-                           _subscribers.end());
+        _subscribers.erase(std::remove(_subscribers.begin(), _subscribers.end(), who), _subscribers.end());
     }
     /** @brief Current subscriber count. */
     [[nodiscard]] std::size_t

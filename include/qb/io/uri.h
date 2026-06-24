@@ -533,7 +533,7 @@ public:
     [[nodiscard]] std::string const &
     query(T &&name, std::size_t const index = 0) const {
         static const std::string empty;
-        const auto &it = this->_queries.find(std::forward<T>(name));
+        const auto              &it = this->_queries.find(std::forward<T>(name));
         if (it != this->_queries.cend() && index < it->second.size())
             return it->second[index];
 

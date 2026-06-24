@@ -59,9 +59,9 @@ set(COROUTINE_TESTS
 
 # test-coroutine-tcp-connector drives raw POSIX socket syscalls (sys/socket.h,
 # fcntl, ::close); POSIX-only, so skip it on Windows (qb-io itself is portable).
-if(WIN32)
+if (WIN32)
     list(REMOVE_ITEM COROUTINE_TESTS test-coroutine-tcp-connector.cpp)
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Create test targets
@@ -70,39 +70,39 @@ endif()
 function(create_io_coroutine_test TEST_SOURCE)
     get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
-    if(NOT TEST_NAME MATCHES "^test-coroutine-.+")
+    if (NOT TEST_NAME MATCHES "^test-coroutine-.+")
         message(FATAL_ERROR
                 "Coroutine test sources must be named test-coroutine-*.cpp: ${TEST_SOURCE}")
-    endif()
+    endif ()
 
     string(REGEX REPLACE "^test-" "" TEST_TARGET_SUFFIX "${TEST_NAME}")
     set(TARGET_NAME ${PROJECT_NAME}-gtest-${TEST_TARGET_SUFFIX})
 
-    if(TARGET ${TARGET_NAME})
+    if (TARGET ${TARGET_NAME})
         message(FATAL_ERROR "Duplicate coroutine test target: ${TARGET_NAME}")
-    endif()
+    endif ()
 
     qb_add_test(
-        NAME ${TARGET_NAME}
-        SOURCES ${TEST_SOURCE}
-        DEPENDS ${PROJECT_NAME}
+            NAME ${TARGET_NAME}
+            SOURCES ${TEST_SOURCE}
+            DEPENDS ${PROJECT_NAME}
     )
 
     set_target_properties(${TARGET_NAME} PROPERTIES
             FOLDER "Tests/IO/Coroutine"
     )
 
-    if(QB_DEBUG_CORO_LIFECYCLE AND
-       (TEST_TARGET_SUFFIX STREQUAL "coroutine-combinators" OR
-        TEST_TARGET_SUFFIX STREQUAL "coroutine-cancellation"))
+    if (QB_DEBUG_CORO_LIFECYCLE AND
+    (TEST_TARGET_SUFFIX STREQUAL "coroutine-combinators" OR
+            TEST_TARGET_SUFFIX STREQUAL "coroutine-cancellation"))
         target_compile_definitions(${TARGET_NAME} PRIVATE QB_DEBUG_CORO_LIFECYCLE=1)
-    endif()
+    endif ()
 
-    if(QB_DEBUG_SCOPE AND TEST_TARGET_SUFFIX STREQUAL "coroutine-scope")
+    if (QB_DEBUG_SCOPE AND TEST_TARGET_SUFFIX STREQUAL "coroutine-scope")
         target_compile_definitions(${TARGET_NAME} PRIVATE QB_DEBUG_SCOPE=1)
-    endif()
+    endif ()
 endfunction()
 
-foreach(TEST_SOURCE ${COROUTINE_TESTS})
+foreach (TEST_SOURCE ${COROUTINE_TESTS})
     create_io_coroutine_test(${TEST_SOURCE})
-endforeach()
+endforeach ()

@@ -142,7 +142,7 @@ public:
         semaphore                  &sem;
         cancellation_token          token;
         waiter_node                 node;
-        cancellation_token::id_type cancel_id = 0;
+        cancellation_token::id_type cancel_id  = 0;
         std::shared_ptr<bool>       alive      = std::make_shared<bool>(true);
         bool                        _completed = false;
 
@@ -187,9 +187,9 @@ public:
             auto a    = alive;
             cancel_id = token.on_cancel([this, a]() {
                 if (!*a || node.granted || node.cancelled)
-                    return;                 // gone, already granted, or already retracted
+                    return; // gone, already granted, or already retracted
                 node.cancelled = true;
-                sem.remove_waiter(&node);   // retract so release() will not hand us a permit
+                sem.remove_waiter(&node); // retract so release() will not hand us a permit
                 schedule_via_current(node.h);
             });
         }
@@ -199,8 +199,8 @@ public:
             token.remove_on_cancel(cancel_id);
             cancel_id = 0;
             if (_completed || node.granted)
-                return;                     // we hold a permit
-            throw cancelled_error{};        // cancelled / entry-cancelled — never took a permit
+                return;              // we hold a permit
+            throw cancelled_error{}; // cancelled / entry-cancelled — never took a permit
         }
     };
 

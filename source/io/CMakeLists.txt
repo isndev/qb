@@ -34,9 +34,9 @@ project(qb-io
 # -----------------------------------------------------------------------------
 # Define the library using the new qb framework functions
 set(IO_SOURCES
-    src/cpu.cpp
-    src/io.cpp
-    src/quic.cpp
+        src/cpu.cpp
+        src/io.cpp
+        src/quic.cpp
 )
 
 # Collect dependencies
@@ -48,63 +48,63 @@ set(IO_DEFINITIONS)
 # -----------------------------------------------------------------------------
 # Logging configuration
 # -----------------------------------------------------------------------------
-if(QB_WITH_LOGGING)
+if (QB_WITH_LOGGING)
     list(APPEND IO_DEFINITIONS QB_WITH_LOGGING=1)
     qb_debug_message("Building with logger support")
-else()
+else ()
     qb_debug_message("Building without logger support")
-    if(QB_STDOUT_LOGGING)
+    if (QB_STDOUT_LOGGING)
         list(APPEND IO_DEFINITIONS QB_STDOUT_LOGGING=1)
         qb_debug_message("Enabling stdout logging")
-    endif()
-endif()
+    endif ()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Platform-specific dependencies
 # -----------------------------------------------------------------------------
-if(QB_PLATFORM_WINDOWS)
+if (QB_PLATFORM_WINDOWS)
     list(APPEND IO_DEPENDENCIES ws2_32)
     qb_debug_message("Adding Windows-specific dependency: ws2_32")
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Optional features based on detected dependencies
 # -----------------------------------------------------------------------------
-if(QB_HAS_COMPRESSION)
+if (QB_HAS_COMPRESSION)
     list(APPEND IO_DEPENDENCIES ZLIB::ZLIB)
     list(APPEND IO_DEFINITIONS QB_HAS_COMPRESSION=1)
     qb_debug_message("Building with ZLIB compression support")
-endif()
+endif ()
 
-if(QB_HAS_SSL)
+if (QB_HAS_SSL)
     list(APPEND IO_DEPENDENCIES OpenSSL::SSL OpenSSL::Crypto)
     list(APPEND IO_DEFINITIONS QB_HAS_SSL=1)
     qb_debug_message("Building with OpenSSL SSL/TLS support")
-    
-    if(QB_HAS_ARGON2)
+
+    if (QB_HAS_ARGON2)
         list(APPEND IO_DEPENDENCIES Argon2::Argon2)
         list(APPEND IO_DEFINITIONS QB_HAS_ARGON2=1)
         qb_debug_message("Building with Argon2 advanced crypto support")
-    endif()
-endif()
+    endif ()
+endif ()
 
-if(QB_HAS_QUIC)
+if (QB_HAS_QUIC)
     list(APPEND IO_DEPENDENCIES
-        Ngtcp2::ngtcp2
-        Ngtcp2::crypto_ossl
+            Ngtcp2::ngtcp2
+            Ngtcp2::crypto_ossl
     )
     list(APPEND IO_DEFINITIONS QB_HAS_QUIC=1)
     qb_debug_message("Building with libngtcp2 QUIC transport support")
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Create the IO library
 # -----------------------------------------------------------------------------
 qb_add_library(
-    NAME ${PROJECT_NAME}
-    SOURCES ${IO_SOURCES}
-    DEPENDS ${IO_DEPENDENCIES}
-    DEFINES ${IO_DEFINITIONS}
+        NAME ${PROJECT_NAME}
+        SOURCES ${IO_SOURCES}
+        DEPENDS ${IO_DEPENDENCIES}
+        DEFINES ${IO_DEFINITIONS}
 )
 
 # Set the export name to io (instead of qb-io)
@@ -113,7 +113,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME io)
 # -----------------------------------------------------------------------------
 # Tests configuration
 # -----------------------------------------------------------------------------
-if(QB_BUILD_TESTS)
+if (QB_BUILD_TESTS)
     qb_status_message("Building qb-io tests")
     add_subdirectory(tests)
-endif()
+endif ()

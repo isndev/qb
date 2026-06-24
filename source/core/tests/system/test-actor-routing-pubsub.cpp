@@ -28,8 +28,8 @@ using namespace std::chrono_literals;
 // Router — pure unit tests (no engine; placeholder ActorIds).
 // ===========================================================================
 TEST(WorkerPoolUnit, RoundRobinCycles) {
-    qb::ActorId a(1), b(2), c(3);
-    qb::WorkerPool  r{{a, b, c}};
+    qb::ActorId    a(1), b(2), c(3);
+    qb::WorkerPool r{{a, b, c}};
     EXPECT_EQ(r.size(), 3u);
     EXPECT_FALSE(r.empty());
     EXPECT_EQ(r.next(), a);
@@ -40,13 +40,13 @@ TEST(WorkerPoolUnit, RoundRobinCycles) {
 }
 
 TEST(WorkerPoolUnit, ForKeyIsStickyAndDistributes) {
-    qb::ActorId w0(10), w1(20), w2(30);
-    qb::WorkerPool  r{{w0, w1, w2}};
+    qb::ActorId    w0(10), w1(20), w2(30);
+    qb::WorkerPool r{{w0, w1, w2}};
     EXPECT_EQ(r.for_key(0), w0);
     EXPECT_EQ(r.for_key(1), w1);
     EXPECT_EQ(r.for_key(2), w2);
-    EXPECT_EQ(r.for_key(3), w0);              // 3 % 3 == 0
-    EXPECT_EQ(r.for_key(99), r.for_key(99));  // deterministic for the same key
+    EXPECT_EQ(r.for_key(3), w0);             // 3 % 3 == 0
+    EXPECT_EQ(r.for_key(99), r.for_key(99)); // deterministic for the same key
 }
 
 TEST(WorkerPoolUnit, AddRemoveResizesPool) {
@@ -63,22 +63,22 @@ TEST(WorkerPoolUnit, AddRemoveResizesPool) {
 }
 
 TEST(WorkerPoolUnit, RemoveWrapsCursorAndHandlesEmptyEdges) {
-    qb::ActorId a(1), b(2), c(3);
+    qb::ActorId    a(1), b(2), c(3);
     qb::WorkerPool r{{a, b, c}};
-    (void) r.next();              // cursor -> 1
-    (void) r.next();              // cursor -> 2
-    r.remove(c);                  // size now 2, cursor (2) must wrap into range
+    (void) r.next(); // cursor -> 1
+    (void) r.next(); // cursor -> 2
+    r.remove(c);     // size now 2, cursor (2) must wrap into range
     EXPECT_EQ(r.size(), 2u);
-    const auto n = r.next();      // must be a valid remaining worker (no OOB), not c
+    const auto n = r.next(); // must be a valid remaining worker (no OOB), not c
     EXPECT_TRUE(n == a || n == b);
     EXPECT_NE(n, c);
     r.remove(a);
-    r.remove(b);                  // drain to empty
+    r.remove(b); // drain to empty
     EXPECT_TRUE(r.empty());
     EXPECT_EQ(r.size(), 0u);
-    r.remove(a);                  // removing from an empty pool is a safe no-op
+    r.remove(a); // removing from an empty pool is a safe no-op
     EXPECT_TRUE(r.empty());
-    r.add(c);                     // usable again after refill
+    r.add(c); // usable again after refill
     EXPECT_EQ(r.next(), c);
 }
 
@@ -235,14 +235,14 @@ TEST(ActorPubSub, UnsubscribeStopsDelivery) {
     g_unsub_received = false;
     qb::Main main;
     main.addActor<qb::PubSub<Tick>>(0);
-    main.addActor<Sub>(0, 0);     // stays subscribed
-    main.addActor<UnsubSub>(0);   // leaves immediately
+    main.addActor<Sub>(0, 0);   // stays subscribed
+    main.addActor<UnsubSub>(0); // leaves immediately
     main.addActor<Publisher>(0);
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_sub_recv[0].load(), 2);       // the staying subscriber still gets both
-    EXPECT_FALSE(g_unsub_received.load());    // the one that left gets nothing
+    EXPECT_EQ(g_sub_recv[0].load(), 2);    // the staying subscriber still gets both
+    EXPECT_FALSE(g_unsub_received.load()); // the one that left gets nothing
 }
 
 // Subscribes twice (idempotent) then unsubscribes, reporting the bus count each time.

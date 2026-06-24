@@ -1,67 +1,78 @@
 # stduuid
-A C++17 cross-platform single-header library implementation **for universally unique identifiers**, simply know as either UUID or GUID (mostly on Windows). A UUID is a 128-bit number used to uniquely identify information in computer systems, such as database table keys, COM interfaces, classes and type libraries, and many others.
+
+A C++17 cross-platform single-header library implementation **for universally unique identifiers**, simply know as
+either UUID or GUID (mostly on Windows). A UUID is a 128-bit number used to uniquely identify information in computer
+systems, such as database table keys, COM interfaces, classes and type libraries, and many others.
 
 [![Build Status](https://travis-ci.org/mariusbancila/stduuid.svg?branch=master)](https://travis-ci.org/mariusbancila/stduuid)
 [![Tests status](https://ci.appveyor.com/api/projects/status/0kw1n2s2xqxu5m62?svg=true&pendingText=tests%20-%20pending&failingText=tests%20-%20FAILED&passingText=tests%20-%20OK)](https://ci.appveyor.com/project/mariusbancila/stduuid)
 
 For information about UUID/GUIDs see:
+
 * [Universally unique identifier](https://en.wikipedia.org/wiki/Universally_unique_identifier)
 * [A Universally Unique IDentifier (UUID) URN Namespace](https://www.ietf.org/rfc/rfc4122.txt)
 
 ## Library overview
-Although the specification puts the uuid library in the `std` namespace, this implementation uses the namespace `uuids` for this purpose, in order to make the library usable without violating the restrictions imposed on the `std` namespace. The following types and utilities are available:
+
+Although the specification puts the uuid library in the `std` namespace, this implementation uses the namespace `uuids`
+for this purpose, in order to make the library usable without violating the restrictions imposed on the `std` namespace.
+The following types and utilities are available:
 
 Basic types:
 
-| Name | Description |
-| ---- | ----------- |
-| `uuid` | a class representing a UUID; this can be default constructed (a nil UUID), constructed from a range (defined by a pair of iterators), or from a `span`. |
-| `uuid_variant` | a strongly type enum representing the type of a UUID |
-| `uuid_version` | a strongly type enum representing the version of a UUID |
+| Name           | Description                                                                                                                                             |
+|----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `uuid`         | a class representing a UUID; this can be default constructed (a nil UUID), constructed from a range (defined by a pair of iterators), or from a `span`. |
+| `uuid_variant` | a strongly type enum representing the type of a UUID                                                                                                    |
+| `uuid_version` | a strongly type enum representing the version of a UUID                                                                                                 |
 
 Generators:
 
-| Name | Description |
-| ---- | ----------- |
-| `basic_uuid_random_generator` | a function object that generates version 4 UUIDs using a pseudo-random number generator engine. |
-| `uuid_random_generator` | a `basic_uuid_random_generator` using the Mersenne Twister engine (`basic_uuid_random_generator<std::mt19937>`) |
-| `uuid_name_generator` | a function object that generates version 5, name-based UUIDs using SHA1 hashing. |
-| `uuid_system_generator` | a function object that generates new UUIDs using operating system resources (`CoCreateGuid` on Windows, `uuid_generate` on Linux, `CFUUIDCreate` on Mac) <br><br> **Note**: This is not part of the standard proposal. It is available only if the `UUID_SYSTEM_GENERATOR` macro is defined. |
+| Name                          | Description                                                                                                                                                                                                                                                                                  |
+|-------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `basic_uuid_random_generator` | a function object that generates version 4 UUIDs using a pseudo-random number generator engine.                                                                                                                                                                                              |
+| `uuid_random_generator`       | a `basic_uuid_random_generator` using the Mersenne Twister engine (`basic_uuid_random_generator<std::mt19937>`)                                                                                                                                                                              |
+| `uuid_name_generator`         | a function object that generates version 5, name-based UUIDs using SHA1 hashing.                                                                                                                                                                                                             |
+| `uuid_system_generator`       | a function object that generates new UUIDs using operating system resources (`CoCreateGuid` on Windows, `uuid_generate` on Linux, `CFUUIDCreate` on Mac) <br><br> **Note**: This is not part of the standard proposal. It is available only if the `UUID_SYSTEM_GENERATOR` macro is defined. |
 
 Utilities:
 
-| Name | Description |
-| ---- | ----------- |
-| `std::swap<>` | specialization of `swap` for `uuid` |
+| Name          | Description                                                                                                                         |
+|---------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| `std::swap<>` | specialization of `swap` for `uuid`                                                                                                 |
 | `std::hash<>` | specialization of `hash` for `uuid` (necessary for storing UUIDs in unordered associative containers, such as `std::unordered_set`) |
 
-Constants: 
+Constants:
 
-| Name | Description |
-| ---- | ----------- |
-| `uuid_namespace_dns` | Namespace ID for name-based uuids when name string is a fully-qualified domain name. |
-| `uuid_namespace_url` | Namespace ID for name-based uuids when name string is a URL. |
-| `uuid_namespace_oid` | Namespace ID for name-based uuids when mame string is an ISO OID (See https://oidref.com/, https://en.wikipedia.org/wiki/Object_identifier). |
+| Name                  | Description                                                                                                                                                                                              |
+|-----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `uuid_namespace_dns`  | Namespace ID for name-based uuids when name string is a fully-qualified domain name.                                                                                                                     |
+| `uuid_namespace_url`  | Namespace ID for name-based uuids when name string is a URL.                                                                                                                                             |
+| `uuid_namespace_oid`  | Namespace ID for name-based uuids when mame string is an ISO OID (See https://oidref.com/, https://en.wikipedia.org/wiki/Object_identifier).                                                             |
 | `uuid_namespace_x500` | Namespace ID for name-based uuids when name string is an X.500 DN, in DER or a text output format (See https://en.wikipedia.org/wiki/X.500, https://en.wikipedia.org/wiki/Abstract_Syntax_Notation_One). |
 
 Other:
 
-| Name | Description |
-| ---- | ----------- |
-| `operator==` and `operator!=` | for UUIDs comparison for equality/inequality |
-| `operator<` | for comparing whether one UUIDs is less than another. Although this operation does not make much logical sense, it is necessary in order to store UUIDs in a std::set. |
-| `operator<<` | to write a UUID to an output stream using the canonical textual representation. |
-| `to_string()` | creates a string with the canonical textual representation of a UUID. |
+| Name                          | Description                                                                                                                                                            |
+|-------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `operator==` and `operator!=` | for UUIDs comparison for equality/inequality                                                                                                                           |
+| `operator<`                   | for comparing whether one UUIDs is less than another. Although this operation does not make much logical sense, it is necessary in order to store UUIDs in a std::set. |
+| `operator<<`                  | to write a UUID to an output stream using the canonical textual representation.                                                                                        |
+| `to_string()`                 | creates a string with the canonical textual representation of a UUID.                                                                                                  |
 
 ## Library history
+
 This library is an implementation of the proposal [P0959](P0959.md).
 
-**As the proposal evolves based on the standard committee and the C++ community feedback, this library implementation will reflect those changes.** 
+**As the proposal evolves based on the standard committee and the C++ community feedback, this library implementation
+will reflect those changes.**
 
 See the revision history of the proposal for history of changes.
 
 ## Using the library
+
 The following is a list of examples for using the library:
+
 * Creating a nil UUID
 
   ```cpp
@@ -173,7 +184,7 @@ The following is a list of examples for using the library:
 
   assert(uuids::to_string(id) == "47183823-2574-4bfd-b411-99ed177d3e43");
   ```
-  
+
 * Comparing UUIDs
 
   ```cpp
@@ -203,7 +214,7 @@ The following is a list of examples for using the library:
   assert(empty.is_nil());
   assert(!id.is_nil());
   ```
-  
+
 * Converting to string
 
   ```cpp
@@ -257,13 +268,19 @@ The following is a list of examples for using the library:
   ```
 
 ## Support
+
 The library is supported on all major operating systems: Windows, Linux and Mac OS.
 
 ## Dependencies
-Because no major compiler supports `std::span` yet the [Microsoft Guidelines Support Library](https://github.com/Microsoft/GSL) (aka GSL) is used for its span implementation (from which the standard version was defined). 
+
+Because no major compiler supports `std::span` yet
+the [Microsoft Guidelines Support Library](https://github.com/Microsoft/GSL) (aka GSL) is used for its span
+implementation (from which the standard version was defined).
 
 ## Testing
+
 A testing project is available in the sources. To build and execute the tests do the following:
+
 * Clone or download this repository
 * Create a `build` directory in the root directory of the sources
 * Run the command `cmake ..` from the `build` directory; if you do not have CMake you must install it first.
@@ -271,4 +288,5 @@ A testing project is available in the sources. To build and execute the tests do
 * Run the executable.
 
 ## Credits
+
 The SHA1 implementation is based on the [TinySHA1](https://github.com/mohaps/TinySHA1) library.

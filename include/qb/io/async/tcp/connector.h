@@ -561,11 +561,11 @@ connect(Socket_ &&existing_socket, uri const &remote, Func_ &&func, qb::duration
  * @tparam Func_ Callback type, invoked once with `Socket_&&`.
  */
 template <typename Socket_, typename Negotiator_, typename Func_>
-    requires StarttlsNegotiator<Negotiator_> && std::invocable<std::remove_reference_t<Func_> &, Socket_ &&>
+requires StarttlsNegotiator<Negotiator_> && std::invocable<std::remove_reference_t<Func_> &, Socket_ &&>
 void
 starttls_connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
-    auto op = std::make_shared<connector<Socket_, Func_, Negotiator_>>(std::forward<Func_>(func), remote,
-                                                                       qb::detail::to_ev_seconds(timeout), verify_peer);
+    auto op = std::make_shared<connector<Socket_, Func_, Negotiator_>>(std::forward<Func_>(func), remote, qb::detail::to_ev_seconds(timeout),
+                                                                       verify_peer);
     LOG_DEBUG("Connector: Initializing STARTTLS for " << remote.source());
     op->run();
 }
@@ -848,7 +848,7 @@ public:
  * overload.
  */
 template <typename Transport, typename Negotiator_>
-    requires StarttlsNegotiator<Negotiator_>
+requires StarttlsNegotiator<Negotiator_>
 [[nodiscard]] auto
 starttls_connect(uri remote, qb::duration timeout, bool verify_peer = true) {
     using socket_type = typename Transport::transport_io_type;

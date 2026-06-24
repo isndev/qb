@@ -166,8 +166,7 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
             // (if it is the reply to an `ask` this actor issued from inside `onInit` — that
             // must NOT be stashed or its init would deadlock on its own reply) or stashed
             // and replayed FIFO once the actor becomes active.
-            if (!dest.is_broadcast() && __is_activating__(dest)
-                && event->getID() != qb::Event::type_to_id<qb::KillEvent>()) {
+            if (!dest.is_broadcast() && __is_activating__(dest) && event->getID() != qb::Event::type_to_id<qb::KillEvent>()) {
                 if (!qb::detail::ask_try_deliver_reply(*event, dest)) {
                     // Stash for FIFO replay on activation. If the cap overflowed the event is
                     // dropped here, so dispose its payload (the byte-copy never happened) to
@@ -476,8 +475,8 @@ VirtualCore::__stash_event__(ActorId const dest, Event *event) noexcept {
         // A wedged-in-init actor must not OOM the core: drop the overflow and fail the
         // activation on the next pump by forcing its deadline to expire now. Report `false`
         // so the caller disposes the dropped event's payload (it is not taken into the stash).
-        LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid()
-                       << "); dropping event[" << event->getID() << "] and failing activation");
+        LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid() << "); dropping event[" << event->getID()
+                       << "] and failing activation");
         it->second.deadline_ns = 1; // already in the past ⇒ pump cancels + fails it
         return false;
     }
@@ -555,7 +554,7 @@ VirtualCore::__pump_activations__() noexcept {
         ait->second->_activated = true;
         LOG_INFO(*ait->second << " activated");
         for (auto &buckets : act.stash) {
-            auto *ev      = reinterpret_cast<Event *>(buckets.data());
+            auto *ev        = reinterpret_cast<Event *>(buckets.data());
             ev->state.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
             _router.route(*ev, [this](auto &e) {
                 if (!e.getDestination().is_broadcast())
@@ -622,7 +621,7 @@ VirtualCore::__workflow__() {
         {
             // One LoopEvent for the whole pass — same `now`/`iteration` for every callback,
             // consistent with `Actor::time()`. Delivered by a direct virtual call (not routed).
-            const qb::LoopEvent loop_ev{_metrics._nanotimer, _loop_count};
+            const qb::LoopEvent                     loop_ev{_metrics._nanotimer, _loop_count};
             thread_local std::vector<CallbackEntry> cb_snapshot;
             cb_snapshot = _callback_list;
             for (auto const &entry : cb_snapshot) {
@@ -738,8 +737,7 @@ VirtualCore::removeActor(ActorId const id) noexcept {
             if (actor->has_coro_scope())
                 // Scoped coroutines were just cancelled — they unwind on the next loop
                 // iteration. A non-zero count here is expected and safe.
-                LOG_INFO(*actor << " destroyed with " << actor->active_coroutine_count()
-                                << " scoped coroutine(s) pending cancellation");
+                LOG_INFO(*actor << " destroyed with " << actor->active_coroutine_count() << " scoped coroutine(s) pending cancellation");
             else
                 LOG_WARN(*actor << " destroyed with " << actor->active_coroutine_count()
                                 << " active coroutines - coroutines must not access actor state!");
@@ -835,7 +833,7 @@ VirtualCore::time() const noexcept {
 }
 
 std::atomic<ServiceId>    VirtualCore::_nb_service{0};
-thread_local VirtualCore *VirtualCore::_handler = nullptr;
+thread_local VirtualCore *VirtualCore::_handler               = nullptr;
 std::uint64_t             VirtualCore::activation_deadline_ns = 5ull * 1000u * 1000u * 1000u; // 5 s
 } // namespace qb
 #ifdef QB_WITH_LOGGING

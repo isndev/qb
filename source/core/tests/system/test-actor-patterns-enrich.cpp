@@ -34,12 +34,12 @@ TEST(RetryJitterUnit, ZeroJitterIsExact) {
 }
 
 TEST(RetryJitterUnit, HalfJitterStaysInLowerHalfBand) {
-    const qb::duration d = 100ms;
+    const qb::duration d              = 100ms;
     bool               saw_below_full = false;
     for (int i = 0; i < 5000; ++i) {
         const auto r = qb::detail::apply_retry_jitter(d, 0.5);
-        EXPECT_GE(r.count(), (d.count() / 2));     // >= d*(1-0.5)
-        EXPECT_LE(r.count(), d.count());           // <= d
+        EXPECT_GE(r.count(), (d.count() / 2)); // >= d*(1-0.5)
+        EXPECT_LE(r.count(), d.count());       // <= d
         if (r.count() < d.count())
             saw_below_full = true;
     }
@@ -65,15 +65,16 @@ TEST(RetryJitterUnit, FullJitterSpansZeroToD_AndClampsAboveOne) {
 // 2. Bounded ask_all — concurrency cap vs unbounded.
 // ===========================================================================
 namespace {
-std::atomic<int> g_inflight{0};   // asks received but not yet answered
+std::atomic<int> g_inflight{0}; // asks received but not yet answered
 std::atomic<int> g_max_inflight{0};
 std::atomic<int> g_sum{0};
 
 void
 bump_max() {
-    int cur = g_inflight.load();
+    int cur  = g_inflight.load();
     int prev = g_max_inflight.load();
-    while (cur > prev && !g_max_inflight.compare_exchange_weak(prev, cur)) { /* retry */ }
+    while (cur > prev && !g_max_inflight.compare_exchange_weak(prev, cur)) { /* retry */
+    }
 }
 } // namespace
 
@@ -154,9 +155,9 @@ reset_scatter() {
 
 TEST(BoundedScatter, CapLimitsConcurrencyAndKeepsResults) {
     reset_scatter();
-    constexpr int N   = 6;
-    constexpr int CAP = 2;
-    qb::Main      main;
+    constexpr int            N   = 6;
+    constexpr int            CAP = 2;
+    qb::Main                 main;
     std::vector<qb::ActorId> targets;
     for (int i = 0; i < N; ++i)
         targets.push_back(main.addActor<SlowResponder>(0));
@@ -171,8 +172,8 @@ TEST(BoundedScatter, CapLimitsConcurrencyAndKeepsResults) {
 
 TEST(BoundedScatter, UnboundedRunsAllAtOnce) {
     reset_scatter();
-    constexpr int N = 6;
-    qb::Main      main;
+    constexpr int            N = 6;
+    qb::Main                 main;
     std::vector<qb::ActorId> targets;
     for (int i = 0; i < N; ++i)
         targets.push_back(main.addActor<SlowResponder>(0));
@@ -188,7 +189,7 @@ TEST(BoundedScatter, UnboundedRunsAllAtOnce) {
 // 3. Supervisor kill-propagation — killing the supervisor tears down children.
 // ===========================================================================
 namespace {
-std::atomic<int> g_kp_alive{0};      // live KpWorker instances (onInit ++, dtor --)
+std::atomic<int> g_kp_alive{0};       // live KpWorker instances (onInit ++, dtor --)
 std::atomic<int> g_kp_alive_check{0}; // snapshot taken after the supervisor is killed
 } // namespace
 
@@ -230,7 +231,7 @@ public:
     onInit() override {
         // Kill ONLY the supervisor (a targeted KillEvent), then snapshot child liveness, then
         // stop the engine. With kill-propagation the children are already gone at the snapshot.
-        push<qb::KillEvent>(_sup);                                            // kill supervisor now
+        push<qb::KillEvent>(_sup); // kill supervisor now
         qb::io::async::callback([] { g_kp_alive_check.store(g_kp_alive.load()); }, 50ms);
         qb::io::async::callback([] { qb::Main::stop(); }, 120ms);
         co_return true;
@@ -328,17 +329,17 @@ TEST(SupervisorRestartWindow, EscalatesWithinWindow) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_win_escalated.load());      // 4th restart within the window escalated
-    EXPECT_EQ(g_win_spawns.load(), 1 + 3);    // 1 initial + 3 restarts (4th escalated, no respawn)
+    EXPECT_TRUE(g_win_escalated.load());   // 4th restart within the window escalated
+    EXPECT_EQ(g_win_spawns.load(), 1 + 3); // 1 initial + 3 restarts (4th escalated, no respawn)
 }
 
 // ===========================================================================
 // 5. Saga compensation aborts cleanly when killed mid-rollback.
 // ===========================================================================
 namespace {
-std::atomic<bool> g_compA_entered{false};  // compA's body — must NOT even be entered (break skips it)
-std::atomic<bool> g_compA_ran{false};      // compA completed — must be false on kill
-std::atomic<bool> g_compB_started{false};  // runs FIRST in rollback — reached, then cancelled
+std::atomic<bool> g_compA_entered{false}; // compA's body — must NOT even be entered (break skips it)
+std::atomic<bool> g_compA_ran{false};     // compA completed — must be false on kill
+std::atomic<bool> g_compB_started{false}; // runs FIRST in rollback — reached, then cancelled
 std::atomic<bool> g_saga_failed{false};
 } // namespace
 
@@ -388,21 +389,20 @@ public:
         auto silent = _silent;
         spawn([ok, silent](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
-                co_await qb::run_saga(
-                    ctx, [ok, silent](qb::ScopedCoroContext c, qb::SagaScope &saga) -> qb::io::async::task<void> {
-                        (void) co_await qb::ask(c, ok, SagaQ{1}, 500ms); // step 1 ok
-                        saga.on_compensate([c, ok]() -> qb::io::async::task<void> {
-                            g_compA_entered.store(true);                     // compA body entered?
-                            (void) co_await qb::ask(c, ok, SagaQ{2}, 500ms); // compA — runs LAST
-                            g_compA_ran.store(true);
-                        });
-                        (void) co_await qb::ask(c, ok, SagaQ{3}, 500ms); // step 2 ok
-                        saga.on_compensate([c, silent]() -> qb::io::async::task<void> {
-                            g_compB_started.store(true);                 // compB — runs FIRST
-                            (void) co_await qb::ask(c, silent, SagaQ{4}, 500ms); // parks (silent peer)
-                        });
-                        (void) co_await qb::ask(c, silent, SagaQ{5}, 30ms); // step 3 TIMES OUT → rollback
+                co_await qb::run_saga(ctx, [ok, silent](qb::ScopedCoroContext c, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                    (void) co_await qb::ask(c, ok, SagaQ{1}, 500ms); // step 1 ok
+                    saga.on_compensate([c, ok]() -> qb::io::async::task<void> {
+                        g_compA_entered.store(true);                     // compA body entered?
+                        (void) co_await qb::ask(c, ok, SagaQ{2}, 500ms); // compA — runs LAST
+                        g_compA_ran.store(true);
                     });
+                    (void) co_await qb::ask(c, ok, SagaQ{3}, 500ms); // step 2 ok
+                    saga.on_compensate([c, silent]() -> qb::io::async::task<void> {
+                        g_compB_started.store(true);                         // compB — runs FIRST
+                        (void) co_await qb::ask(c, silent, SagaQ{4}, 500ms); // parks (silent peer)
+                    });
+                    (void) co_await qb::ask(c, silent, SagaQ{5}, 30ms); // step 3 TIMES OUT → rollback
+                });
             } catch (const qb::io::async::timeout_error &) {
                 g_saga_failed.store(true); // the saga failed (and rolled back as far as it could)
             } catch (const qb::io::async::cancelled_error &) {
@@ -447,9 +447,9 @@ TEST(SagaCancel, CompensationAbortsOnKillMidRollback) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_compB_started.load());   // rollback reached the first compensation
-    EXPECT_FALSE(g_compA_entered.load());  // …and aborted there: compA's body was never entered
-    EXPECT_FALSE(g_compA_ran.load());      // (so compA certainly did not complete either)
+    EXPECT_TRUE(g_compB_started.load());  // rollback reached the first compensation
+    EXPECT_FALSE(g_compA_entered.load()); // …and aborted there: compA's body was never entered
+    EXPECT_FALSE(g_compA_ran.load());     // (so compA certainly did not complete either)
 }
 
 // ===========================================================================
@@ -557,7 +557,7 @@ TEST(AskQuorum, UnreachableThrowsTimeout) {
     reset_quorum();
     qb::Main                 main;
     std::vector<qb::ActorId> targets;
-    targets.push_back(main.addActor<FastResponder>(0));  // 2 can answer …
+    targets.push_back(main.addActor<FastResponder>(0)); // 2 can answer …
     targets.push_back(main.addActor<FastResponder>(0));
     targets.push_back(main.addActor<SilentResponder>(0)); // … 3 never do → quorum of 3 impossible
     targets.push_back(main.addActor<SilentResponder>(0));
@@ -625,12 +625,12 @@ TEST(RateLimiterUnit, RefillsOverTimeAndCaps) {
     constexpr std::uint64_t MS = 1'000'000ull;
     qb::rate_limiter        rl(2.0, 10ms); // capacity 2, one token / 10ms
 
-    EXPECT_TRUE(rl.try_acquire(0));         // starts full (2)
-    EXPECT_TRUE(rl.try_acquire(0));         // …2nd token
-    EXPECT_FALSE(rl.try_acquire(0));        // empty
-    EXPECT_FALSE(rl.try_acquire(5 * MS));   // only 0.5 token regenerated
-    EXPECT_TRUE(rl.try_acquire(10 * MS));   // 1 full token at 10ms
-    EXPECT_FALSE(rl.try_acquire(10 * MS));  // …consumed
+    EXPECT_TRUE(rl.try_acquire(0));        // starts full (2)
+    EXPECT_TRUE(rl.try_acquire(0));        // …2nd token
+    EXPECT_FALSE(rl.try_acquire(0));       // empty
+    EXPECT_FALSE(rl.try_acquire(5 * MS));  // only 0.5 token regenerated
+    EXPECT_TRUE(rl.try_acquire(10 * MS));  // 1 full token at 10ms
+    EXPECT_FALSE(rl.try_acquire(10 * MS)); // …consumed
 
     // After a long idle the bucket caps at `capacity` (2), not unbounded accumulation.
     EXPECT_TRUE(rl.try_acquire(1000 * MS));
@@ -741,7 +741,8 @@ std::atomic<bool> g_bh_cancelled{false};
 void
 bh_bump_max() {
     int cur = g_bh_inflight.load(), prev = g_bh_max.load();
-    while (cur > prev && !g_bh_max.compare_exchange_weak(prev, cur)) { /* retry */ }
+    while (cur > prev && !g_bh_max.compare_exchange_weak(prev, cur)) { /* retry */
+    }
 }
 } // namespace
 
@@ -776,8 +777,8 @@ TEST(Bulkhead, CapsConcurrency) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_bh_done.load(), 5);   // all five ran
-    EXPECT_LE(g_bh_max.load(), 2);    // …but never more than 2 at once — the bulkhead holds
+    EXPECT_EQ(g_bh_done.load(), 5); // all five ran
+    EXPECT_LE(g_bh_max.load(), 2);  // …but never more than 2 at once — the bulkhead holds
     EXPECT_GE(g_bh_max.load(), 1);
 }
 
@@ -841,7 +842,7 @@ TEST(Idempotency, DedupMapIsLRU) {
     EXPECT_EQ(m.size(), 2u);
     ASSERT_NE(m.find(1), nullptr); // touch 1 → 1 becomes MRU, 2 is now LRU
     EXPECT_EQ(*m.find(1), 10);
-    m.put(3, 30);                  // over capacity → evict LRU (2)
+    m.put(3, 30); // over capacity → evict LRU (2)
     EXPECT_EQ(m.size(), 2u);
     EXPECT_EQ(m.find(2), nullptr); // 2 evicted
     ASSERT_NE(m.find(1), nullptr); // 1 survived (was touched)
@@ -931,7 +932,7 @@ run_idem(std::uint64_t k1, int a1, std::uint64_t k2, int a2) {
 }
 
 TEST(Idempotency, SameKeyProcessedOnce) {
-    run_idem(42, 5, 42, 5);                // same key twice (a retry / duplicate)
+    run_idem(42, 5, 42, 5); // same key twice (a retry / duplicate)
     EXPECT_EQ(g_idem_r1.load(), 50);
     EXPECT_EQ(g_idem_r2.load(), 50);       // second reply is the cached response
     EXPECT_EQ(g_idem_processed.load(), 1); // …but the effect ran exactly once
@@ -1035,7 +1036,12 @@ public:
         g_batch_pending.store(static_cast<int>(_batch.pending())); // proof: 2 items really buffered
         // Self-kill before the window: the actor dies → engine empties → stops. No lingering
         // stop-callback (one that outlived an early-stopping engine would fire into the next test).
-        qb::io::async::callback([this] { if (is_alive()) kill(); }, 40ms);
+        qb::io::async::callback(
+            [this] {
+                if (is_alive())
+                    kill();
+            },
+            40ms);
         co_return true;
     }
 };
@@ -1155,8 +1161,8 @@ TEST(AskStream, TimeoutBetweenChunks) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_stream_n.load(), 1);       // got the one chunk
-    EXPECT_TRUE(g_stream_timeout.load());  // …then next() timed out (no end marker)
+    EXPECT_EQ(g_stream_n.load(), 1);      // got the one chunk
+    EXPECT_TRUE(g_stream_timeout.load()); // …then next() timed out (no end marker)
 }
 
 class StreamKiller : public qb::Actor {
@@ -1190,9 +1196,9 @@ TEST(AskStream, CancelledOnKill) {
 // 13. discovery — coroutine qb::ping (liveness) + qb::require (typed discovery).
 // ===========================================================================
 namespace {
-std::atomic<int>  g_disc_alive{-1};   // ping known target
-std::atomic<int>  g_disc_dead{-1};    // ping invalid target
-std::atomic<int>  g_disc_count{-1};   // require<DiscWorker> count
+std::atomic<int>  g_disc_alive{-1}; // ping known target
+std::atomic<int>  g_disc_dead{-1};  // ping invalid target
+std::atomic<int>  g_disc_count{-1}; // require<DiscWorker> count
 std::atomic<bool> g_disc_cancelled{false};
 } // namespace
 
@@ -1216,9 +1222,9 @@ public:
         // No registerEvent<RequireEvent> / on(RequireEvent) — Actor routes discovery replies by default.
         auto target = _target;
         spawn([target](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
-            g_disc_alive.store(co_await qb::ping(c, target, 150ms) ? 1 : 0);          // alive
-            g_disc_dead.store(co_await qb::ping(c, qb::ActorId{}, 100ms) ? 1 : 0);    // invalid → timeout
-            auto found = co_await qb::require<DiscWorker>(c, 120ms);                   // discover all
+            g_disc_alive.store(co_await qb::ping(c, target, 150ms) ? 1 : 0);       // alive
+            g_disc_dead.store(co_await qb::ping(c, qb::ActorId{}, 100ms) ? 1 : 0); // invalid → timeout
+            auto found = co_await qb::require<DiscWorker>(c, 120ms);               // discover all
             g_disc_count.store(static_cast<int>(found.size()));
             qb::Main::stop();
         });
@@ -1239,9 +1245,9 @@ TEST(Discovery, PingAndRequire) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_disc_alive.load(), 1);  // known worker replied
-    EXPECT_EQ(g_disc_dead.load(), 0);   // invalid id → timed out
-    EXPECT_EQ(g_disc_count.load(), 3);  // all three DiscWorkers discovered
+    EXPECT_EQ(g_disc_alive.load(), 1); // known worker replied
+    EXPECT_EQ(g_disc_dead.load(), 0);  // invalid id → timed out
+    EXPECT_EQ(g_disc_count.load(), 3); // all three DiscWorkers discovered
 }
 
 class DiscProbeCancel : public qb::Actor {
@@ -1292,8 +1298,8 @@ TEST(Discovery, PingCancelledOnKill) {
 
 // --- bulkhead: the non-blocking try_enter() + available() accounting (pure, no engine). ---
 TEST(BulkheadUnit, TryEnterAndAvailable) {
-    qb::bulkhead          bh(2);
-    qb::bulkhead::slot    s1, s2, s3;
+    qb::bulkhead       bh(2);
+    qb::bulkhead::slot s1, s2, s3;
     EXPECT_EQ(bh.available(), 2u);
     EXPECT_TRUE(bh.try_enter(s1));
     EXPECT_EQ(bh.available(), 1u);
@@ -1302,7 +1308,7 @@ TEST(BulkheadUnit, TryEnterAndAvailable) {
     EXPECT_FALSE(bh.try_enter(s3)); // full → refused, no slot handed out
     s1.release();                   // free one permit early
     EXPECT_EQ(bh.available(), 1u);
-    EXPECT_TRUE(bh.try_enter(s3));   // now admits
+    EXPECT_TRUE(bh.try_enter(s3)); // now admits
     EXPECT_EQ(bh.available(), 0u);
 }
 
@@ -1323,7 +1329,7 @@ TEST(Idempotency, DedupMapPutUpdateContainsClear) {
     qb::dedup_map<int, int> z(0); // capacity clamps to >= 1
     EXPECT_EQ(z.capacity(), 1u);
     z.put(1, 1);
-    z.put(2, 2);                  // evicts 1 (cap 1)
+    z.put(2, 2); // evicts 1 (cap 1)
     EXPECT_EQ(z.size(), 1u);
     EXPECT_FALSE(z.contains(1));
     EXPECT_TRUE(z.contains(2));
@@ -1339,8 +1345,8 @@ TEST(AskQuorum, ZeroKReturnsEmpty) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_q_size.load(), 0);     // k == 0 → resolves immediately with nothing
-    EXPECT_FALSE(g_q_timeout.load());  // …and does NOT wait out the window
+    EXPECT_EQ(g_q_size.load(), 0);    // k == 0 → resolves immediately with nothing
+    EXPECT_FALSE(g_q_timeout.load()); // …and does NOT wait out the window
 }
 
 TEST(AskQuorum, KClampedToN) {
@@ -1352,7 +1358,7 @@ TEST(AskQuorum, KClampedToN) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_q_size.load(), 2);     // k > n clamped to n → both replies, no hang
+    EXPECT_EQ(g_q_size.load(), 2); // k > n clamped to n → both replies, no hang
     EXPECT_FALSE(g_q_timeout.load());
 }
 
@@ -1374,9 +1380,9 @@ public:
         auto prod = _prod;
         spawn([prod](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
             Feed f;
-            f.count = 20;                                          // flood
+            f.count = 20;                                             // flood
             auto s  = qb::ask_stream(c, prod, f, 1s, /*capacity=*/2); // tiny buffer
-            co_await c.sleep(60ms); // do NOT drain yet — let the producer overrun the buffer
+            co_await c.sleep(60ms);                                   // do NOT drain yet — let the producer overrun the buffer
             int n = 0;
             try {
                 while (auto chunk = co_await s.next())
@@ -1404,8 +1410,8 @@ TEST(AskStream, OverflowThrows) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_stream_overflow.load());      // overflow surfaced as an exception
-    EXPECT_LE(g_stream_overflow_n.load(), 2);   // at most the buffered chunks drained before it threw
+    EXPECT_TRUE(g_stream_overflow.load());    // overflow surfaced as an exception
+    EXPECT_LE(g_stream_overflow_n.load(), 2); // at most the buffered chunks drained before it threw
 }
 
 // --- rate_limiter::acquire() parked on an empty bucket is cancel-on-kill (the one untested wait). ---
@@ -1498,9 +1504,14 @@ public:
         _batch.add(context(), 1); // below the count threshold, long window → no auto-flush
         _batch.add(context(), 2);
         _batch.add(context(), 3);
-        _batch.flush();           // manual drain — flushes the 3 buffered items now
-        _batch.flush();           // no-op on an empty buffer (must not double-flush)
-        qb::io::async::callback([this] { if (is_alive()) kill(); }, 10ms);
+        _batch.flush(); // manual drain — flushes the 3 buffered items now
+        _batch.flush(); // no-op on an empty buffer (must not double-flush)
+        qb::io::async::callback(
+            [this] {
+                if (is_alive())
+                    kill();
+            },
+            10ms);
         co_return true;
     }
 };

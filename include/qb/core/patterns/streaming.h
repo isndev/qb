@@ -58,9 +58,9 @@ namespace qb {
  */
 template <class Chunk>
 struct StreamRequest : qb::AskEvent {
-    using chunk_type = Chunk;       ///< per-reply payload type
-    Chunk chunk{};                  ///< filled per reply by the responder (`yield_answer`)
-    bool  stream_done = false;      ///< set by `end_stream` to mark end-of-stream (no payload)
+    using chunk_type = Chunk;  ///< per-reply payload type
+    Chunk chunk{};             ///< filled per reply by the responder (`yield_answer`)
+    bool  stream_done = false; ///< set by `end_stream` to mark end-of-stream (no payload)
 };
 
 /** @brief Alias template for `StreamRequest`. */
@@ -104,13 +104,13 @@ namespace detail {
  */
 template <class E>
 struct stream_state {
-    std::deque<E>                     queue;             ///< chunks awaiting consumption (bounded by `cap`)
-    std::size_t                       cap;               ///< max buffered chunks before overflow
-    bool                              done    = false;   ///< end_stream received (or terminal overflow)
-    bool                              dropped = false;   ///< a chunk overflowed the buffer
-    qb::io::async::cancellation_token token;             ///< actor scope (a kill wakes the consumer)
-    std::coroutine_handle<>           waiter{};          ///< the single parked `next()` awaiter (or null)
-    qb::detail::ask_slot              slot{};            ///< entry in the continuation registry
+    std::deque<E>                     queue;           ///< chunks awaiting consumption (bounded by `cap`)
+    std::size_t                       cap;             ///< max buffered chunks before overflow
+    bool                              done    = false; ///< end_stream received (or terminal overflow)
+    bool                              dropped = false; ///< a chunk overflowed the buffer
+    qb::io::async::cancellation_token token;           ///< actor scope (a kill wakes the consumer)
+    std::coroutine_handle<>           waiter{};        ///< the single parked `next()` awaiter (or null)
+    qb::detail::ask_slot              slot{};          ///< entry in the continuation registry
 
     explicit stream_state(std::size_t capacity)
         : cap(capacity) {}
@@ -161,8 +161,8 @@ struct stream_next_awaiter {
     ev_timer                                   timer{};
     bool                                       timer_started = false;
     bool                                       timed_out     = false;
-    std::shared_ptr<bool>                      alive     = std::make_shared<bool>(true);
-    qb::io::async::cancellation_token::id_type cancel_id = 0;
+    std::shared_ptr<bool>                      alive         = std::make_shared<bool>(true);
+    qb::io::async::cancellation_token::id_type cancel_id     = 0;
 
     stream_next_awaiter(std::shared_ptr<stream_state<E>> s, qb::duration t)
         : st(std::move(s))
@@ -268,7 +268,7 @@ public:
     stream &operator=(stream &&) = delete;
 
     ~stream() {
-        if (_st) // not moved-from
+        if (_st)                             // not moved-from
             qb::detail::ask_unregister(_id); // leave the continuation registry
     }
 
@@ -311,8 +311,7 @@ private:
  */
 template <stream_event_type E>
 [[nodiscard]] stream<E>
-ask_stream(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout = std::chrono::seconds{5},
-           std::size_t capacity = 256) {
+ask_stream(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout = std::chrono::seconds{5}, std::size_t capacity = 256) {
     const std::uint64_t id = qb::detail::ask_next_id();
     auto                st = std::make_shared<detail::stream_state<E>>(capacity ? capacity : std::size_t{1});
     st->token              = ctx.token();
