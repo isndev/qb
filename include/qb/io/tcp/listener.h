@@ -24,6 +24,7 @@
 
 #ifndef QB_IO_TCP_LISTENER_H_
 #define QB_IO_TCP_LISTENER_H_
+#include <filesystem>
 #include "socket.h"
 
 namespace qb::io::tcp {
@@ -103,7 +104,7 @@ public:
      *       The socket file will be created if it doesn't exist, and may need to be unlinked manually
      *       before reuse if the program terminates abnormally.
      */
-    int listen_un(std::string const &path) noexcept;
+    int listen_un(std::filesystem::path const &path) noexcept;
 
     /**
      * @brief Accept a new incoming TCP connection and return it as a new `tcp::socket`.

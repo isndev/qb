@@ -317,6 +317,67 @@ std::string dec = qb::io::uri::decode(enc);        // "a b/c"
 
 ---
 
+## Executable location and resource resolution (`qb::io::sys`)
+
+Three free functions in `qb::io::sys` (`qb/io/system/file.h`) let a binary locate itself and the resources shipped alongside it, so it runs correctly from any working directory. _(`qb/include/qb/io/system/file.h:359-388`.)_
+
+```cpp
+#include <qb/io/system/file.h>
+
+namespace qb::io::sys {
+
+// Absolute path of the running executable, queried from the OS
+// (GetModuleFileNameW / /proc/self/exe / _NSGetExecutablePath) — independent
+// of argv[0] and the cwd. Empty path if the platform query fails.
+std::filesystem::path self_path();
+
+// self_path().parent_path(); empty if self_path() failed.
+std::filesystem::path self_dir();
+
+// Resolve a resource path so it is found regardless of the cwd.
+std::filesystem::path resolve_resource(const std::filesystem::path &path);
+
+} // namespace qb::io::sys
+```
+<!-- src: qb/include/qb/io/system/file.h:359-388 -->
+
+`resolve_resource` returns an **absolute** path unchanged. A **relative** path is looked up first against the current working directory (preserving the historical behaviour), then against the executable's own directory (`self_dir()`). The first candidate that exists wins; if neither exists the original path is returned unchanged so diagnostics report exactly what was requested. This is the self-locating-binary pattern: place an asset next to the executable and `resolve_resource("assets/config.json")` finds it whether the process is launched from its own directory or anywhere else. _(`qb/source/io/src/system/file.cpp:418-438`.)_
+
+The framework routes file paths it loads through `resolve_resource` so the same convenience applies transparently — SSL certificate/key/CA/DH paths (`qb::io::ssl` context helpers), the qbm-http `StaticFilesMiddleware` `root_directory`, and similar resource paths all resolve relative-to-cwd-then-relative-to-binary.
+
+> Filesystem paths in qb-io are `std::filesystem::path`, so Unicode paths are first-class. URL/URI and remote/wire paths deliberately stay `std::string`.
+
+---
+
+## Synchronous file wrappers (`qb::io::sys::file`)
+
+`qb::io::sys::file` (`qb/io/system/file.h`) is a move-only RAII wrapper over a native file descriptor; `file_to_pipe` and `pipe_to_file` bulk-transfer between a file and a `qb::allocator::pipe<char>`. All three take a `std::filesystem::path`. _(`qb/include/qb/io/system/file.h:56-357`.)_
+
+```cpp
+#include <qb/io/system/file.h>
+#include <qb/system/allocator/pipe.h>
+
+// Direct descriptor access (open/read/write/close). Unicode paths supported.
+qb::io::sys::file f(std::filesystem::path{"data.bin"}, O_RDONLY);
+if (f.is_open()) { /* f.read(buf, n); */ }
+
+// File -> pipe (the whole file, in chunks).
+qb::allocator::pipe<char> buffer;
+qb::io::sys::file_to_pipe loader(buffer);
+if (loader.open("payload.dat"))
+    while (loader.read() > 0 && !loader.eof()) {}
+
+// Pipe -> file (truncating overwrite, O_WRONLY|O_CREAT|O_TRUNC).
+qb::io::sys::pipe_to_file writer(buffer);
+if (writer.open("out.dat"))
+    while (writer.write() > 0 && !writer.eos()) {}
+```
+<!-- src: qb/include/qb/io/system/file.h -->
+
+`file::open(std::filesystem::path const&, int flags = O_RDWR, int mode = 0644)`, the `file(std::filesystem::path const&, int flags = O_RDWR)` constructor, and `file_to_pipe::open` / `pipe_to_file::open` all take a `std::filesystem::path`. On Windows the path's native (wide) representation is opened with `CreateFileW`, so non-ANSI paths are no longer truncated; the descriptor is also opened with `FILE_SHARE_DELETE` so a file can be unlinked or renamed while held, matching POSIX. `file` is move-only — copy is deleted to prevent a double-close. _(`qb/source/io/src/system/file.cpp:46-140`.)_
+
+---
+
 ## Fixed-capacity string (`qb::string<N>`)
 
 `qb::string<N>` is an inline, `std::array`-backed string with a compile-time maximum capacity `N` (default `30`). It avoids heap allocation, which is faster than `std::string` for small, bounded strings. It is layout-trivial enough to embed directly in events and messages. _(`qb/include/qb/string.h:85-105`.)_

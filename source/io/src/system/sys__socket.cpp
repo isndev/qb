@@ -210,7 +210,24 @@ socket::pserve(const endpoint &ep) {
     if (!this->reopen(ep.af()))
         return -1;
 
+    // SO_REUSEADDR means different things on POSIX and Windows, so guard it.
+    //
+    // POSIX: a listener needs SO_REUSEADDR to rebind its port immediately while
+    // old connections still linger in TIME_WAIT; without it bind() fails with
+    // EADDRINUSE after a restart.
+    //
+    // Windows: SO_REUSEADDR there has *hijack* semantics — it forcibly binds even
+    // when another socket is already actively bound to the port. The bind then
+    // succeeds but is silently shadowed by the existing socket, so this listener
+    // never accepts (instead of failing fast with WSAEADDRINUSE). Windows already
+    // permits rebinding TIME_WAIT ports with no option set, so rather than
+    // SO_REUSEADDR we set SO_EXCLUSIVEADDRUSE: an in-use bind fails fast with
+    // WSAEADDRINUSE and no other process can hijack the port.
+#if defined(_WIN32)
+    set_optval(SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1);
+#else
     set_optval(SOL_SOCKET, SO_REUSEADDR, 1);
+#endif
 
     // Make IPv6 listeners dual-stack (accept IPv4-mapped clients too). Linux defaults
     // IPV6_V6ONLY to 0, but Windows and the BSDs/macOS default it to 1, so an IPv6

@@ -562,12 +562,12 @@ private:
 
 class FileWriter {
 public:
-    FileWriter(std::string const &log_file_path, uint32_t log_file_roll_size_mb)
+    FileWriter(std::filesystem::path log_file_path, uint32_t log_file_roll_size_mb)
         // 64-bit multiply + storage: log_file_roll_size_mb * 1024 * 1024 would
         // overflow uint32_t for roll sizes >= 4096 MB, wrapping to a tiny (or
         // zero) byte budget that rolls the file on almost every write.
         : m_log_file_roll_size_bytes(static_cast<uint64_t>(log_file_roll_size_mb) * 1024 * 1024)
-        , m_name(log_file_path) {
+        , m_name(std::move(log_file_path)) {
         roll_file();
     }
 
@@ -595,10 +595,10 @@ private:
         m_bytes_written = 0;
         m_os.reset(new std::ofstream());
         // TODO Optimize this part. Does it even matter ?
-        std::string log_file_name = m_name;
-        log_file_name.append(".");
-        log_file_name.append(std::to_string(++m_file_number));
-        log_file_name.append(".log");
+        std::filesystem::path log_file_name = m_name;
+        log_file_name += ".";
+        log_file_name += std::to_string(++m_file_number);
+        log_file_name += ".log";
         m_os->open(log_file_name, std::ofstream::out | std::ofstream::trunc);
     }
 
@@ -606,13 +606,13 @@ private:
     uint32_t                       m_file_number   = 0;
     std::streamoff                 m_bytes_written = 0;
     uint64_t const                 m_log_file_roll_size_bytes;
-    std::string const              m_name;
+    std::filesystem::path const    m_name;
     std::unique_ptr<std::ofstream> m_os;
 };
 
 class NanoLogger {
 public:
-    NanoLogger(NonGuaranteedLogger ngl, std::string const &log_file_path, uint32_t log_file_roll_size_mb)
+    NanoLogger(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb)
         : m_state(State::INIT)
         , m_buffer_base(new RingBuffer(std::max(1u, ngl.ring_buffer_size_mb) * 1024 * 4))
         , m_file_writer(log_file_path, std::max(1u, log_file_roll_size_mb))
@@ -620,7 +620,7 @@ public:
         m_state.store(State::READY, std::memory_order_release);
     }
 
-    NanoLogger(GuaranteedLogger, std::string const &log_file_path, uint32_t log_file_roll_size_mb)
+    NanoLogger(GuaranteedLogger, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb)
         : m_state(State::INIT)
         , m_buffer_base(new QueueBuffer())
         , m_file_writer(log_file_path, std::max(1u, log_file_roll_size_mb))
@@ -679,13 +679,13 @@ NanoLog::operator==(NanoLogLine &logline) {
 }
 
 void
-initialize(NonGuaranteedLogger ngl, std::string const &log_file_path, uint32_t log_file_roll_size_mb) {
+initialize(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb) {
     nanologger.reset(new NanoLogger(ngl, log_file_path, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
 }
 
 void
-initialize(GuaranteedLogger gl, std::string const &log_file_path, uint32_t log_file_roll_size_mb) {
+initialize(GuaranteedLogger gl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb) {
     nanologger.reset(new NanoLogger(gl, log_file_path, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
 }

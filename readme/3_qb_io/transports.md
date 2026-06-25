@@ -61,9 +61,9 @@ Lifecycle and addressing:
 | `connect(endpoint const&)` | `int` | Blocking connect to a remote endpoint. |
 | `connect(endpoint const&, qb::duration wtimeout)` | `int` | Connect with a wall-clock bound on the TCP handshake. |
 | `connect(uri const&)` / `connect(uri const&, qb::duration)` | `int` | Connect (optionally timed) to a URI. |
-| `connect_v4(host, port)` / `connect_v6(host, port)` / `connect_un(path)` | `int` | Blocking connect to a v4/v6/Unix target. |
+| `connect_v4(host, port)` / `connect_v6(host, port)` / `connect_un(std::filesystem::path const&)` | `int` | Blocking connect to a v4/v6/Unix target. |
 | `n_connect(endpoint const&)` / `n_connect(uri const&)` | `int` | Begin a non-blocking connect. |
-| `n_connect_v4` / `n_connect_v6` / `n_connect_un` | `int` | Non-blocking connect to a v4/v6/Unix target. |
+| `n_connect_v4` / `n_connect_v6` / `n_connect_un(std::filesystem::path const&)` | `int` | Non-blocking connect to a v4/v6/Unix target. |
 | `connected()` | `void` | No-op finalizer for a non-blocking connect; overridden by `ssl::socket` to drive the handshake. |
 | `disconnect()` | `int` | Shut down both directions and close the handle. |
 
@@ -75,6 +75,8 @@ Data transfer:
 | `write(const void* data, std::size_t size)` | `int` | Bytes written; may be less than `size` if the send buffer is full; negative means error. |
 
 A return of `0` from `connect`-family calls is success; `qb::io::SocketStatus::Done` is the enumerator with value `0`, so comparing `connect_v4(...) == qb::io::SocketStatus::Done` is equivalent to comparing against `0`.
+
+The Unix-domain-socket entry points (`connect_un`, `n_connect_un`, and `tcp::listener::listen_un` / `udp::socket::bind_un`, and the `ssl::socket` mirrors) take a `std::filesystem::path`, so a `std::filesystem::path`, a `std::string`, or a string literal all bind without an explicit conversion.
 
 The timed `connect(endpoint, qb::duration)` overload performs a non-blocking connect and waits up to `wtimeout` for completion. Non-positive durations are clamped to zero, meaning a single poll. On expiry the call fails and the underlying error is observable through the socket's last-error accessor (`get_last_errno()`).
 
@@ -89,12 +91,14 @@ The timed `connect(endpoint, qb::duration)` overload performs a non-blocking con
 | `listen(endpoint const&)` / `listen(uri const&)` | `int` | Open, bind, and listen on an endpoint or URI; backlog is `SOMAXCONN`. |
 | `listen_v4(port, host = "0.0.0.0")` | `int` | Listen on an IPv4 address. |
 | `listen_v6(port, host = "::")` | `int` | Listen on an IPv6 address. |
-| `listen_un(path)` | `int` | Listen on a Unix domain socket (requires `QB_ENABLE_UDS`). |
+| `listen_un(std::filesystem::path const&)` | `int` | Listen on a Unix domain socket (requires `QB_ENABLE_UDS`). |
 | `accept()` | `tcp::socket` | Accept one connection and return it as a new socket; the result is not open on error. |
 | `accept(tcp::socket& sock)` | `int` | Accept into an existing socket object; `0` on success. |
 | `disconnect()` | `int` | Stop accepting and close the listener. |
 
 A blocking listener blocks in `accept()`; a non-blocking listener (`set_nonblocking(true)`) returns an error such as `EWOULDBLOCK` when no connection is queued, and is typically driven by the event loop.
+
+The server-side bind sets a platform-correct address-reuse option. On POSIX it sets `SO_REUSEADDR`, so a restarted listener can rebind its port immediately while old connections linger in `TIME_WAIT`. On Windows it instead sets `SO_EXCLUSIVEADDRUSE`: binding a port already in active use fails fast with `WSAEADDRINUSE`, and no other process can hijack (silently shadow) the port — Windows already allows rebinding `TIME_WAIT` ports with no option set, and its `SO_REUSEADDR` has hijack semantics that would let a second bind succeed yet never accept.
 
 <!-- src: qb/include/qb/io/tcp/listener.h -->
 
@@ -113,7 +117,7 @@ Binding and lifecycle:
 |---|---|---|
 | `init(int af = AF_INET)` | `bool` | Open the socket with `SOCK_DGRAM`. |
 | `bind(endpoint const&)` / `bind(uri const&)` | `int` | Bind to a local endpoint or URI. |
-| `bind_v4(port, host = "0.0.0.0")` / `bind_v6(port, host = "::")` / `bind_un(path)` | `int` | Bind to a v4/v6/Unix local address. |
+| `bind_v4(port, host = "0.0.0.0")` / `bind_v6(port, host = "::")` / `bind_un(std::filesystem::path const&)` | `int` | Bind to a v4/v6/Unix local address. |
 | `address_family()` | `int` | Report the socket's address family. |
 | `is_bound()` | `bool` | Whether the socket is bound to a local address. |
 | `disconnect()` | `int` | Clear any default destination and close the socket. |

@@ -41,7 +41,7 @@ time classes were removed in favor of these `std::chrono` aliases — the curren
 | `qb::io::tcp::ssl`, `qb::io::ssl` | qb-io | TLS sockets, listeners, and context helpers (requires `QB_WITH_SSL`) |
 | `qb::io::transport` | qb-io | concrete stream specializations (`tcp`, `udp`, `stcp`, `file`, …) |
 | `qb::io::protocol`, `qb::protocol::*` | qb-io | message-framing protocols |
-| `qb::io::sys` | qb-io | synchronous native-file wrappers |
+| `qb::io::sys` | qb-io | synchronous native-file wrappers; executable-location / resource-resolution helpers |
 | `qb::crypto`, `qb::jwt`, `qb::compression` | qb-io | cryptography, JWTs, compression |
 | `qb::lockfree`, `qb::allocator`, `qb::endian` | both | lock-free primitives, buffers, byte-order helpers |
 
@@ -418,7 +418,15 @@ See [Utilities](../3_qb_io/utilities.md).
 
 - `qb::io::sys::file` (`qb/io/system/file.h`): synchronous native file descriptor wrapper (`open`, `read`,
   `write`, `close`), plus `sys::file_to_pipe` and `sys::pipe_to_file` for bulk transfer to and from a
-  `qb::allocator::pipe`.
+  `qb::allocator::pipe`. The path-taking entry points (`file::open`, the `file` constructor,
+  `file_to_pipe::open`, `pipe_to_file::open`) take a `std::filesystem::path`, so Unicode paths are
+  first-class (Windows opens via `CreateFileW`). `file` is move-only.
+- `qb::io::sys::self_path()` / `self_dir()` / `resolve_resource(const std::filesystem::path&)`
+  (`qb/io/system/file.h`): the running executable's absolute path (via `GetModuleFileNameW` /
+  `/proc/self/exe` / `_NSGetExecutablePath`), its directory, and resource resolution that returns an
+  absolute path unchanged but resolves a relative path against the cwd first then the executable's own
+  directory — so a binary shipped next to its assets finds them from any working directory. The framework
+  routes loaded file paths (SSL cert/key/CA/DH, http static-file roots) through `resolve_resource`.
 - `qb::io::async::file_watcher` / `directory_watcher` (`qb/io/async/io.h`): CRTP bases that monitor file or
   directory changes and deliver `on(event::file&)`.
 

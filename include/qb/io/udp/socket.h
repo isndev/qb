@@ -28,6 +28,7 @@
 #include "../uri.h"
 #include <qb/system/time.h>
 #include <chrono>
+#include <filesystem>
 #include <string>
 
 namespace qb::io::udp {
@@ -157,7 +158,7 @@ public:
      * @return 0 on success, or a non-zero error code on failure.
      * @note This is only effective if `QB_ENABLE_UDS` is active and the system supports AF_UNIX with SOCK_DGRAM.
      */
-    int bind_un(std::string const &path) noexcept;
+    int bind_un(const std::filesystem::path &path) noexcept;
 
     /**
      * @brief Read a datagram from the socket and get the sender's endpoint.

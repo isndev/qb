@@ -196,14 +196,14 @@ public:
 ```cpp
 #include <qb/io/async.h>
 #include <chrono>
+#include <filesystem>
 #include <iostream>
-#include <string>
 
 using namespace std::chrono_literals;
 
 class LogTail : public qb::io::async::directory_watcher<LogTail> {
 public:
-    explicit LogTail(std::string path) {
+    explicit LogTail(std::filesystem::path path) {
         // Poll every 500 ms for attribute changes.
         start(path, 500ms);
     }
@@ -220,7 +220,7 @@ public:
 };
 ```
 
-- **`start(std::string const& path, qb::duration interval = std::chrono::milliseconds(100))`** begins watching. `interval` is libev's polling cadence: shorter is more responsive but costs more CPU.
+- **`start(std::filesystem::path const& path, qb::duration interval = std::chrono::milliseconds(100))`** begins watching. `interval` is libev's polling cadence: shorter is more responsive but costs more CPU. The watcher copies the path into a string it owns for the watcher's lifetime: libev's `ev::stat` stores the path *pointer* without copying it, so the watcher keeps the backing storage alive until `disconnect()` or destruction. You may safely pass a temporary `std::filesystem::path`.
 - **`disconnect()`** stops the watcher.
 - The `event::file` payload carries `attr` (current `ev_statdata`) and `prev` (previous snapshot). `attr.st_nlink == 0` indicates deletion.
 

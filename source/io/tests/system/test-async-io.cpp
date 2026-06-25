@@ -1734,12 +1734,19 @@ TEST_F(AsyncIOTest, DisconnectZeroTriggersDisposal) {
     g_dz_session_destroyed = false;
 
     DisconnectZeroServer server;
-    server.transport().listen_v4(64380);
+    // Bind an OS-assigned ephemeral port (0) and read it back instead of hardcoding
+    // one: a fixed port in the dynamic range (49152-65535) may already be held by an
+    // unrelated outbound connection, and on Windows SO_REUSEADDR then lets the bind
+    // silently succeed-but-shadowed rather than failing — so the listener never
+    // accepts and the test hangs. (Mirrors ConnectorSucceedsWithFreshAndExistingSocket.)
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    ASSERT_NE(port, 0);
     server.start();
 
-    std::thread t([]() {
+    std::thread t([port]() {
         qb::io::tcp::socket sock;
-        ASSERT_EQ(sock.connect_v4("127.0.0.1", 64380), SocketStatus::Done);
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", port), SocketStatus::Done);
         sock.write("hello\n", 6);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         sock.disconnect();
@@ -1791,14 +1798,19 @@ TEST_F(AsyncIOTest, CloseAfterDeliverSendsDataThenDisconnects) {
     g_cad_session_destroyed = false;
 
     CloseAfterDeliverServer server;
-    server.transport().listen_v4(64381);
+    // OS-assigned ephemeral port (0) + read-back — see DisconnectZeroTriggersDisposal:
+    // a hardcoded dynamic-range port can collide with an unrelated outbound connection
+    // and hang on Windows (SO_REUSEADDR shadows the bind instead of failing).
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    ASSERT_NE(port, 0);
     server.start();
 
     std::atomic<bool> got_goodbye{false};
     std::atomic<bool> client_done{false};
-    std::thread       t([&got_goodbye, &client_done]() {
+    std::thread       t([&got_goodbye, &client_done, port]() {
         qb::io::tcp::socket sock;
-        ASSERT_EQ(sock.connect_v4("127.0.0.1", 64381), SocketStatus::Done);
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", port), SocketStatus::Done);
         sock.write("ping\n", 5);
 
         char        buffer[512]{};
@@ -1907,16 +1919,21 @@ BroadcastSession::on(Protocol::message &&msg) {
 
 TEST_F(AsyncIOTest, BroadcastToMultipleSessions) {
     BroadcastServer server;
-    server.transport().listen_v4(64382);
+    // OS-assigned ephemeral port (0) + read-back — see DisconnectZeroTriggersDisposal:
+    // a hardcoded dynamic-range port can collide with an unrelated outbound connection
+    // and hang on Windows (SO_REUSEADDR shadows the bind instead of failing).
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    ASSERT_NE(port, 0);
     server.start();
 
     constexpr int            num_clients = 3;
     std::vector<std::thread> clients;
 
     for (int c = 0; c < num_clients; ++c) {
-        clients.emplace_back([c]() {
+        clients.emplace_back([c, port]() {
             qb::io::tcp::socket sock;
-            ASSERT_EQ(sock.connect_v4("127.0.0.1", 64382), SocketStatus::Done);
+            ASSERT_EQ(sock.connect_v4("127.0.0.1", port), SocketStatus::Done);
             if (c == 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 sock.write("broadcast_trigger\n", 18);

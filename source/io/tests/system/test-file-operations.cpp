@@ -834,6 +834,71 @@ TEST_F(FileSystemTest, VeryLargeFileTransfer) {
     EXPECT_TRUE(end_str.find(pattern) != std::string::npos);
 }
 
+// ---------------------------------------------------------------------------
+// Executable location & working-directory-independent resource resolution
+// ---------------------------------------------------------------------------
+
+TEST(SelfLocate, SelfPathPointsAtThisExecutable) {
+    const std::filesystem::path exe = qb::io::sys::self_path();
+    ASSERT_FALSE(exe.empty()) << "self_path() returned empty";
+    EXPECT_TRUE(exe.is_absolute());
+    std::error_code ec;
+    EXPECT_TRUE(std::filesystem::exists(exe, ec)) << exe.string();
+    EXPECT_TRUE(std::filesystem::is_regular_file(exe, ec));
+    // The filename should be this test binary (allow an optional .exe suffix on Windows).
+    const std::string stem = exe.stem().string();
+    EXPECT_NE(stem.find("test-file-operations"), std::string::npos) << exe.string();
+}
+
+TEST(SelfLocate, SelfDirIsTheParentOfSelfPath) {
+    const std::filesystem::path dir = qb::io::sys::self_dir();
+    ASSERT_FALSE(dir.empty());
+    EXPECT_EQ(dir, qb::io::sys::self_path().parent_path());
+    std::error_code ec;
+    EXPECT_TRUE(std::filesystem::is_directory(dir, ec));
+}
+
+TEST(SelfLocate, ResolveResourceLeavesAbsolutePathsUntouched) {
+    const std::filesystem::path abs = qb::io::sys::self_path(); // a known absolute path
+    EXPECT_EQ(qb::io::sys::resolve_resource(abs), abs);
+}
+
+TEST(SelfLocate, ResolveResourcePrefersTheWorkingDirectory) {
+    // A file that exists relative to the CWD must resolve to that CWD copy (historical
+    // behaviour preserved), not to the executable directory.
+    const std::filesystem::path rel = "qb_selflocate_cwd_probe.tmp";
+    std::ofstream(rel) << "x";
+    EXPECT_EQ(qb::io::sys::resolve_resource(rel), rel);
+    std::filesystem::remove(rel);
+}
+
+TEST(SelfLocate, ResolveResourceFallsBackToExecutableDirectory) {
+    // A file present next to the executable but NOT in the CWD must resolve to the
+    // executable-directory copy — this is what makes a binary self-contained.
+    const std::filesystem::path name = "qb_selflocate_exedir_probe.tmp";
+    const std::filesystem::path staged = qb::io::sys::self_dir() / name;
+    std::ofstream(staged) << "x";
+
+    // Run from a directory that does NOT contain the probe so the cwd lookup misses.
+    const std::filesystem::path prev = std::filesystem::current_path();
+    const std::filesystem::path tmp  = std::filesystem::temp_directory_path();
+    std::error_code ec;
+    std::filesystem::current_path(tmp, ec);
+
+    const std::filesystem::path resolved = qb::io::sys::resolve_resource(name);
+
+    std::filesystem::current_path(prev, ec); // restore before asserting
+    std::filesystem::remove(staged);
+
+    EXPECT_TRUE(resolved.is_absolute()) << resolved.string();
+    EXPECT_EQ(resolved, (qb::io::sys::self_dir() / name).lexically_normal());
+}
+
+TEST(SelfLocate, ResolveResourceReturnsInputWhenNothingExists) {
+    const std::filesystem::path missing = "qb_selflocate_does_not_exist_anywhere.tmp";
+    EXPECT_EQ(qb::io::sys::resolve_resource(missing), missing);
+}
+
 // Run all the tests
 int
 main(int argc, char **argv) {

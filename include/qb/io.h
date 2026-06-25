@@ -73,7 +73,6 @@ void setLevel(Level lvl);
  *      VERBOSE,
  *      INFO,
  *      WARN,
- *      ERROR,
  *      CRIT };
  * @endcode
  */

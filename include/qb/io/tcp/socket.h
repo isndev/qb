@@ -26,6 +26,7 @@
 #define QB_IO_TCP_SOCKET_H_
 #include "../system/sys__socket.h"
 #include "../uri.h"
+#include <filesystem>
 #include <qb/system/time.h>
 
 namespace qb::io::tcp {
@@ -190,7 +191,7 @@ public:
      * @return 0 on success, or a non-zero error code on failure.
      * @note This is only effective if `QB_ENABLE_UDS` is active and the system supports AF_UNIX.
      */
-    int connect_un(std::string const &path) noexcept;
+    int connect_un(std::filesystem::path const &path) noexcept;
 
     /**
      * @brief Initiate a non-blocking connect to a remote TCP endpoint.
@@ -239,7 +240,7 @@ public:
      * @param path The file system path of the Unix domain socket.
      * @return 0 if connection is in progress or succeeded immediately, non-zero error code on immediate failure.
      */
-    int n_connect_un(std::string const &path) noexcept;
+    int n_connect_un(std::filesystem::path const &path) noexcept;
 
     /**
      * @brief Read data from the connected TCP socket.
