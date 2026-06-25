@@ -350,7 +350,22 @@ if(QB_BUILD_COVERAGE)
         qb_warning_message("QB_BUILD_COVERAGE is not supported on Windows")
     elseif(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         qb_warning_message("QB_BUILD_COVERAGE is intended for Debug builds")
-    elseif(QB_COMPILER_GCC OR QB_COMPILER_CLANG)
+    elseif(QB_COMPILER_CLANG)
+        # clang: LLVM source-based coverage (precise region/line mapping, native
+        # `llvm-cov` reporting). Report via llvm-profdata + llvm-cov (see the root
+        # CMakeLists coverage section). This is the right path on macOS, where gcc's
+        # gcov cannot read clang .gcno.
+        list(APPEND QB_COVERAGE_COMPILE_OPTS
+            "-g"
+            "-O0"
+            "-fprofile-instr-generate"
+            "-fcoverage-mapping"
+        )
+        list(APPEND QB_COVERAGE_LINK_OPTS "-fprofile-instr-generate")
+        set(QB_COVERAGE_KIND "llvm" CACHE INTERNAL "coverage instrumentation kind")
+        qb_status_message("Coverage instrumentation enabled (LLVM source-based)")
+    elseif(QB_COMPILER_GCC)
+        # gcc: gcov-style instrumentation (the reference toolchain; matches CI).
         list(APPEND QB_COVERAGE_COMPILE_OPTS
             "-g"
             "-O0"
@@ -358,7 +373,8 @@ if(QB_BUILD_COVERAGE)
             "-ftest-coverage"
         )
         list(APPEND QB_COVERAGE_LINK_OPTS "--coverage")
-        qb_status_message("Coverage instrumentation enabled")
+        set(QB_COVERAGE_KIND "gcov" CACHE INTERNAL "coverage instrumentation kind")
+        qb_status_message("Coverage instrumentation enabled (gcov)")
     endif()
 endif()
 
