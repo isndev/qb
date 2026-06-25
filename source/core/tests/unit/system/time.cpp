@@ -1,30 +1,57 @@
-/**
- * @file test-timestamp.cpp
- * @brief Unit tests for the qb canonical time vocabulary (std::chrono based).
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * Exercises qb::duration / qb::mono_time / qb::wall_time, the unix-epoch
- * helpers, UTC formatting/parsing, the scoped timers, the TSC counter and the
- * libev boundary seam.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * See the License for the specific terms.
  */
+
+/**
+ * @file unit/system/time.cpp
+ * @brief The qb canonical time vocabulary (`qb/system/time.h`) — pure value/calendar logic.
+ *
+ * Owns `qb::duration` / `qb::mono_time` / `qb::wall_time`, the unix-epoch helpers, UTC
+ * format/parse, the portable integer calendar core (`days_from_civil` / `safe_gmtime` /
+ * `safe_timegm`), the scoped timers, the TSC counter, the libev seam, and the civil value
+ * types (`qb::date` / `time_of_day` / `time_of_day_tz` / `calendar_interval`). NO engine,
+ * NO daemon: every assertion is against a ground-truth anchor (PG epoch 10957, Apollo-11
+ * instant, 9999-12-31) or an exact inverse round-trip, never a self-echo.
+ *
+ * Timing-floor hardening: the three cases that observe wall-clock progress after a sleep
+ * (`MonoTime`, `ScopedTimer`, `LogTimer`) keep their *deterministic* teeth unconditionally —
+ * the monotonic clock strictly advances, the scope callback fires, elapsed() is positive — and
+ * gate only the tight "≥ slept-minus-slack ms" lower bound behind QB_UNIT_UNDER_SANITIZER,
+ * because a sanitized / heavily-loaded run can make `sleep_for` return measurably short or
+ * stretch scheduling latency. The deadline-bounded assertions never hang: they assert a value
+ * and return, with the ctest TIMEOUT as the only backstop.
+ *
+ * Added over the original: the `from_iso8601` fractional-seconds contract (the instant parser
+ * rejects sub-second precision — that lives on the time-of-day path), the `:60` second
+ * normalization vs the `:61` / minute-`:60` rejection boundary, and a `format/parse_time_of_day`
+ * fractional round-trip.
+ */
+
+#include <chrono>
+#include <thread>
 
 #include <gtest/gtest.h>
 #include <qb/system/time.h>
-#include <chrono>
-#include <thread>
+
+// True on an ASan/TSan/MSan build (clang __has_feature; GCC __SANITIZE_* fallbacks). Used to
+// relax the wall-clock LOWER bounds — sanitizer instrumentation perturbs sleep/scheduling — while
+// keeping the deterministic ordering/firing invariants live on every build.
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || __has_feature(memory_sanitizer)
+#define QB_UNIT_UNDER_SANITIZER 1
+#endif
+#endif
+#if !defined(QB_UNIT_UNDER_SANITIZER) && (defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__))
+#define QB_UNIT_UNDER_SANITIZER 1
+#endif
+#if !defined(QB_UNIT_UNDER_SANITIZER)
+#define QB_UNIT_UNDER_SANITIZER 0
+#endif
 
 using namespace std::chrono_literals;
 
@@ -97,10 +124,23 @@ TEST(Duration, ChronoInterop) {
 
 TEST(MonoTime, NowAdvancesMonotonically) {
     auto t0 = qb::mono_now();
+    // Deterministic teeth: the monotonic clock must STRICTLY advance between two reads with a
+    // sleep between them, on every build. (Two back-to-back reads could in theory be equal at
+    // coarse resolution; the sleep makes strict advance guaranteed.)
     std::this_thread::sleep_for(10ms);
     auto t1 = qb::mono_now();
-    EXPECT_GT(t1, t0);
-    EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count(), 9);
+    EXPECT_GT(t1, t0) << "mono_now() must advance across a 10ms sleep";
+    // It must never run backwards.
+    EXPECT_GE(t1, t0);
+    // The "≥ slept-minus-slack" floor is the only wall-clock-sensitive part; a sanitized run can
+    // make sleep_for return short, so gate just this lower bound.
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+#if !QB_UNIT_UNDER_SANITIZER
+    EXPECT_GE(elapsed_ms, 9) << "10ms sleep should advance the mono clock by ~10ms";
+#endif
+    // Generous upper sanity bound (an absurd value would signal a units/overflow bug, not a
+    // scheduling hiccup) — wide enough never to flake under load.
+    EXPECT_LT(elapsed_ms, 60'000) << "a 10ms sleep must not register as minutes";
 }
 
 TEST(WallTime, NowAndUnixHelpers) {
@@ -162,6 +202,43 @@ TEST(Parse, Iso8601UtcRoundTrip) {
     auto tp = qb::from_iso8601("2023-01-15T12:30:45Z");
     ASSERT_TRUE(tp.has_value());
     EXPECT_EQ(qb::to_iso8601(*tp), "2023-01-15T12:30:45Z");
+}
+
+TEST(Parse, Iso8601RejectsFractionalSeconds) {
+    // Contract: the *instant* parser uses the exact "%Y-%m-%dT%H:%M:%SZ" format. `%S` reads only
+    // whole seconds, so a sub-second suffix leaves the literal 'Z' unmatched -> nullopt. Sub-second
+    // precision is a property of the time-of-day path (parse_time_of_day), not the instant path;
+    // this pins the boundary so a future "be lenient" change is a conscious decision, not a
+    // silent truncation.
+    EXPECT_FALSE(qb::from_iso8601("2023-01-15T12:30:45.123Z").has_value());
+    // The whole-second form remains accepted.
+    EXPECT_TRUE(qb::from_iso8601("2023-01-15T12:30:45Z").has_value());
+}
+
+TEST(Parse, Iso8601SecondSixtyNormalizesButSixtyOneRejects) {
+    // ":60" seconds is accepted by get_time's %S (it spans 0..60, the leap-second slot) and
+    // safe_timegm normalizes the carry: 12:30:60 -> 12:31:00. This is the documented behaviour,
+    // not a bug — assert the exact normalized instant.
+    auto sixty = qb::from_iso8601("2023-01-15T12:30:60Z");
+    ASSERT_TRUE(sixty.has_value());
+    EXPECT_EQ(qb::to_iso8601(*sixty), "2023-01-15T12:31:00Z");
+    // ":61" is out of %S's range -> hard reject (no silent wrap).
+    EXPECT_FALSE(qb::from_iso8601("2023-01-15T12:30:61Z").has_value());
+    // A minute of ":60" is out of %M's 0..59 range -> reject (only seconds get the leap slot).
+    EXPECT_FALSE(qb::from_iso8601("2023-01-15T12:60:30Z").has_value());
+}
+
+TEST(Parse, TimeOfDayFractionalRoundTrip) {
+    // The time-of-day path DOES carry sub-second precision: a 6-digit fractional field is taken
+    // verbatim as microseconds, and format_time_of_day re-emits it (only when non-zero).
+    auto us = qb::parse_time_of_day("14:30:45.123456");
+    ASSERT_TRUE(us.has_value());
+    EXPECT_EQ(*us, ((14 * 3600 + 30 * 60 + 45) * 1'000'000LL) + 123456);
+    EXPECT_EQ(qb::format_time_of_day(*us), "14:30:45.123456");
+    // No fractional part round-trips to the bare HH:MM:SS form (fraction emitted only when > 0).
+    auto whole = qb::parse_time_of_day("08:09:10");
+    ASSERT_TRUE(whole.has_value());
+    EXPECT_EQ(qb::format_time_of_day(*whole), "08:09:10");
 }
 
 // ---------------------------------------------------------------------------
@@ -306,22 +383,37 @@ TEST(Parse, PreUnixEpochRoundTrip) {
 TEST(ScopedTimer, MeasuresAndCallsBack) {
     bool         invoked = false;
     qb::duration measured{};
+    qb::duration in_scope{};
     {
         qb::ScopedTimer timer([&](qb::duration d) {
             invoked  = true;
             measured = d;
         });
         std::this_thread::sleep_for(50ms);
-        EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(timer.elapsed()).count(), 45);
+        in_scope = timer.elapsed();
+        // Deterministic: elapsed() must be strictly positive after any sleep.
+        EXPECT_GT(in_scope.count(), 0);
     } // scope end triggers the callback
-    EXPECT_TRUE(invoked);
+    // Deterministic teeth: the callback fired exactly at scope exit and reported a positive,
+    // monotonically-not-smaller span than what we read just before.
+    EXPECT_TRUE(invoked) << "ScopedTimer must invoke its callback at scope exit";
+    EXPECT_GT(measured.count(), 0);
+    EXPECT_GE(measured, in_scope) << "the final measured span cannot be less than the in-scope read";
+#if !QB_UNIT_UNDER_SANITIZER
+    // Wall-clock-sensitive lower bound (50ms slept, 5ms slack) — gated off sanitizer builds.
     EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(measured).count(), 45);
+#endif
 }
 
 TEST(LogTimer, Elapsed) {
     qb::LogTimer timer("unit-test");
     std::this_thread::sleep_for(10ms);
-    EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(timer.elapsed()).count(), 9);
+    const auto e = timer.elapsed();
+    // Deterministic: a sleep guarantees a strictly positive elapsed span.
+    EXPECT_GT(e.count(), 0) << "LogTimer.elapsed() must be positive after a sleep";
+#if !QB_UNIT_UNDER_SANITIZER
+    EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(e).count(), 9);
+#endif
 }
 
 // ---------------------------------------------------------------------------

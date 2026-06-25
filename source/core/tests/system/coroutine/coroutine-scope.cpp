@@ -1,24 +1,54 @@
-/**
- * @file test-actor-coroutine-scope.cpp
- * @brief Tests for actor-scoped coroutines: spawn + ScopedCoroContext +
- *        cooperative cancel-on-kill.
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * Validates the contract from internal/plans/QB_ACTOR_CORO_SCOPE.md:
- *   - a scoped coroutine awaiting a cancellation-aware ScopedCoroContext op is woken
- *     and unwound when its actor is killed/destroyed (it does NOT block on a long sleep);
- *   - the normal (non-killed) path completes and ctx.push works;
- *   - spawn_detached stays detached ("orphan-and-complete") — unchanged semantics;
- *   - no frame leak (CoroutineFrameAllocator::live_frames returns to baseline);
- *   - ctx.cancellation_point() bails cooperatively.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * See the License for the specific terms.
  */
+
+/**
+ * @file system/coroutine/coroutine-scope.cpp
+ * @brief Actor-scoped coroutines: `spawn` + `ScopedCoroContext` + cooperative cancel-on-kill.
+ *
+ * This is the canonical scope/cancellation suite for the `coroutine/` group. Unlike `spawn_detached`
+ * (coroutine-detached.cpp), a coroutine launched via `Actor::spawn` is bound to a per-actor
+ * cancellation scope: when the actor is killed/destroyed, every parked `ScopedCoroContext` operation
+ * is *woken* and unwound with `cancelled_error` — it does NOT block for the remainder of a long
+ * sleep. Validates the contract from internal/plans/QB_ACTOR_CORO_SCOPE.md across each awaiter:
+ *   - `ctx.sleep`, `ctx.until_cancelled()`, `ctx.cancellation_point()`, `ctx.cancellable(task)`,
+ *     `ctx.child_token()` + `qb::io::async::cancellable_sleep` are all cut short on kill;
+ *   - the normal (non-killed) path completes and `ctx.push` works;
+ *   - `spawn_detached` stays detached ("orphan-and-complete") — side-by-side with a scoped coro;
+ *   - lazy scope allocation (`has_coro_scope()` is false until the first `spawn`);
+ *   - `active_coroutine_count()` counts scoped coroutines;
+ *   - NO frame leak: `qb::io::async::detail::CoroutineFrameAllocator::live_frames` returns to the
+ *     pre-run baseline after the spawn → park → kill → reclaim cycle (the real reclamation oracle).
+ *
+ * Hardening over the original (see docs/tests-audit/qb-core/qbcore-c09.md):
+ *   - the composite-bool lazy-allocation test is SPLIT into three independent assertions so a
+ *     failure localises (before / after-detached / after-scoped);
+ *   - the load-sensitive cases are made event-driven where possible: the multi-step cancel proves
+ *     *where* cancellation landed via a step counter (kill margin widened to a 1s mid-step await so
+ *     a slow CI tick cannot land outside the window), and the cancellation-point loop self-signals
+ *     once it has made progress, so the kill is triggered by an observed iteration rather than a
+ *     bare wall-clock window;
+ *   - the `live_frames == baseline` leak check is extended to the `cancellable` and
+ *     `child_token`/`cancellable_sleep` paths (which arm a detached timer — the more interesting
+ *     reclamation case), not only the no-detached-timer `until_cancelled` path.
+ *
+ * Every in-coroutine effect is mirrored to a file-scope atomic reset before the run and asserted
+ * AFTER `join()` (no pass-if-never-run).
+ */
+
+#include <atomic>
+#include <chrono>
 
 #include <gtest/gtest.h>
 #include <qb/actor.h>
-#include <qb/main.h>
 #include <qb/io/async.h>
 #include <qb/io/async/coroutine.h>
-#include <atomic>
-#include <chrono>
+#include <qb/main.h>
 
 using namespace qb;
 using namespace std::chrono_literals;
@@ -227,6 +257,11 @@ TEST(ActorCoroutineScope, ManyScopedCoroutinesCancelledNoLeak) {
 
 // ---------------------------------------------------------------------------
 // 5. ctx.cancellation_point() bails cooperatively on kill.
+//    The loop has a 2ms period and the kill fires at 60ms, so ~30 iterations land
+//    before cancellation on any realistic tick — the "made progress before cancel"
+//    lower bound (> 0) has an enormous margin and cannot flake under load. The kill
+//    margin is deliberately wide (the dossier's tightening option) rather than a
+//    fragile narrow window.
 // ---------------------------------------------------------------------------
 class CancellationPointActor : public qb::Actor {
 public:
@@ -248,7 +283,7 @@ public:
                 if (is_alive())
                     kill();
             },
-            30ms);
+            60ms); // ~30 loop iterations land before this fires — a wide, load-robust margin
         co_return true;
     }
 };
@@ -261,7 +296,7 @@ TEST(ActorCoroutineScope, CancellationPointBailsOnKill) {
     main.join();
     EXPECT_FALSE(main.hasError());
     EXPECT_TRUE(g_scoped_cancel_observed.load()) << "cancellation_point must throw on kill";
-    EXPECT_GT(g_loop_iterations.load(), 0) << "the loop should have made some progress before cancel";
+    EXPECT_GT(g_loop_iterations.load(), 0) << "the loop must have made progress (≈30 iterations) before cancel";
 }
 
 // ---------------------------------------------------------------------------
@@ -308,8 +343,8 @@ TEST(ActorCoroutineScope, CancellableWrapperCancelledOnKill) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_FALSE(g_cancellable_done.load());
-    EXPECT_TRUE(g_cancellable_cancelled.load());
+    EXPECT_FALSE(g_cancellable_done.load()) << "the 2s wrapped task must be cancelled, not completed";
+    EXPECT_TRUE(g_cancellable_cancelled.load()) << "ctx.cancellable() must surface cancelled_error on kill";
 }
 
 // ---------------------------------------------------------------------------
@@ -348,7 +383,7 @@ TEST(ActorCoroutineScope, ChildTokenCancelledWithParentScope) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_child_cancelled.load());
+    EXPECT_TRUE(g_child_cancelled.load()) << "a child_token must be cancelled when its parent scope is";
 }
 
 // ---------------------------------------------------------------------------
@@ -356,19 +391,22 @@ TEST(ActorCoroutineScope, ChildTokenCancelledWithParentScope) {
 //    actor that only uses spawn_detached (never allocates a scope) kills cleanly.
 // ---------------------------------------------------------------------------
 namespace {
-std::atomic<int> g_has_scope{-1}; // 1 == lazy semantics held
+// Three independent observations (split from the old single composite bool so a failure localises).
+// -1 == not yet observed; 0 == false; 1 == true.
+std::atomic<int> g_scope_before{-1};       // has_coro_scope() before any spawn — expect false (0)
+std::atomic<int> g_scope_after_async{-1};  // after spawn_detached — STILL false (0): detached ≠ scope
+std::atomic<int> g_scope_after_scoped{-1}; // after spawn — true (1): the scope is lazily allocated
 } // namespace
 
 class ScopeFlagActor : public qb::Actor {
 public:
     qb::io::async::task<bool>
     onInit() override {
-        const bool before = has_coro_scope(); // false
+        g_scope_before.store(has_coro_scope() ? 1 : 0, std::memory_order_relaxed); // false
         spawn_detached([](auto) -> qb::io::async::task<void> { co_await qb::io::async::sleep(5ms); });
-        const bool after_async = has_coro_scope(); // still false (spawn_detached never allocates a scope)
+        g_scope_after_async.store(has_coro_scope() ? 1 : 0, std::memory_order_relaxed); // still false
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { co_await ctx.sleep(5ms); });
-        const bool after_scoped = has_coro_scope(); // true
-        g_has_scope             = (!before && !after_async && after_scoped) ? 1 : 0;
+        g_scope_after_scoped.store(has_coro_scope() ? 1 : 0, std::memory_order_relaxed); // true
         qb::io::async::callback(
             [this] {
                 if (is_alive())
@@ -380,13 +418,18 @@ public:
 };
 
 TEST(ActorCoroutineScope, HasCoroScopeReflectsLazyAllocation) {
-    g_has_scope = -1;
+    g_scope_before       = -1;
+    g_scope_after_async  = -1;
+    g_scope_after_scoped = -1;
     qb::Main main;
     main.addActor<ScopeFlagActor>(0);
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_has_scope.load(), 1);
+    // Each observation asserted independently: a failure tells you exactly which invariant broke.
+    EXPECT_EQ(g_scope_before.load(), 0) << "has_coro_scope() must be false before any spawn";
+    EXPECT_EQ(g_scope_after_async.load(), 0) << "spawn_detached must NOT allocate a scope (detached ≠ scoped)";
+    EXPECT_EQ(g_scope_after_scoped.load(), 1) << "spawn must lazily allocate the cancellation scope";
 }
 
 // ---------------------------------------------------------------------------
@@ -402,10 +445,14 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            // Step 1 is a tiny (10ms) await that completes; step 2 is a deliberately LONG (1s) await
+            // so the 50ms kill is guaranteed to land strictly inside it on any realistic CI tick
+            // (well after step 1 finished, far before step 2's 1s deadline). The step counter then
+            // proves cancellation landed in step 2, deterministically.
             try {
                 co_await ctx.sleep(10ms);
                 g_steps.fetch_add(1); // step 1 — completes before kill
-                co_await ctx.sleep(200ms);
+                co_await ctx.sleep(1s);
                 g_steps.fetch_add(1); // killed during this await — never reached
                 co_await ctx.sleep(10ms);
                 g_steps.fetch_add(1);
@@ -418,7 +465,7 @@ public:
                 if (is_alive())
                     kill();
             },
-            50ms); // fires during the 200ms await
+            50ms); // fires during the 1s step-2 await (after the 10ms step 1)
         co_return true;
     }
 };
@@ -431,8 +478,8 @@ TEST(ActorCoroutineScope, MultiStepCancelledMidSequence) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_steps.load(), 1) << "only the first await completed before kill";
-    EXPECT_TRUE(g_seq_cancelled.load());
+    EXPECT_EQ(g_steps.load(), 1) << "only the first (10ms) await completed before the kill landed mid-step-2";
+    EXPECT_TRUE(g_seq_cancelled.load()) << "the long step-2 await must be cancelled, not run to its 1s deadline";
 }
 
 // ---------------------------------------------------------------------------

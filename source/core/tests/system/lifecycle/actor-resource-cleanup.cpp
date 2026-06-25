@@ -1,345 +1,251 @@
-/**
- * @file qb/core/tests/system/test-actor-resource-management.cpp
- * @brief Unit tests for actor resource management and cleanup
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * This file contains tests for resource management in the QB Actor Framework.
- * It verifies that actors correctly allocate and release resources, and that
- * the framework properly cleans up all resources when actors are terminated.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * See the License for the specific terms.
+ */
+
+/**
+ * @file system/lifecycle/actor-resource-cleanup.cpp
+ * @brief An actor owning heap resources releases ALL of them when it terminates — whether via a
+ *        graceful shutdown or an abrupt (failure-style) kill — proven by a strict alloc/free balance
+ *        counter and event-driven completion (no `200/300ms` phase timers).
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * `ManagedResource` bumps a global on construction and on destruction, so a non-zero
+ * `allocated - freed` after the engine drains means a resource leaked. The two tests prove the two
+ * teardown paths:
+ *   - GRACEFUL: the actor clears its resource vector on a shutdown event, then kills itself;
+ *   - FAILURE:  the actor is killed abruptly with resources STILL held — the destructor (RAII via
+ *               `unique_ptr`) must free them anyway.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * @ingroup Core
+ * Strengthened over the original (which left test #2 empty and ignored every Status/Report):
+ *   - the Status → Report round-trip is asserted: the live count the actor reports back matches the
+ *     allocations the test made (and proves the actor is reachable mid-run);
+ *   - NOT-all-freed-before-shutdown is asserted: while the actor is alive and holding resources,
+ *     `freed < allocated` — so the final all-freed assertion is meaningful (it is the SHUTDOWN that
+ *     freed them, not an early release);
+ *   - completion is driven by a Report ack + a kill ack, never a wall clock.
  */
 
 #include <atomic>
+#include <cstddef>
 #include <gtest/gtest.h>
 #include <memory>
+#include <vector>
+
 #include <qb/actor.h>
-#include <qb/io.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
-#include <vector>
 
 using namespace std::chrono_literals;
 
-// Define test events
-struct AllocateResourceEvent : public qb::Event {
-    int size;
-    explicit AllocateResourceEvent(int s)
-        : size(s) {}
-};
+// ---------------------------------------------------------------------------
+// Alloc/free balance oracle (single-core; read after join()).
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<int>    g_alloc{0};
+std::atomic<int>    g_freed{0};
+std::atomic<size_t> g_bytes_alloc{0};
+std::atomic<size_t> g_bytes_freed{0};
+std::atomic<int>    g_reported_live{-1}; // live count the actor reported via Status (−1 = never)
+std::atomic<bool>   g_done{false};
 
-struct ReleaseResourceEvent : public qb::Event {
-    int resource_id;
-    explicit ReleaseResourceEvent(int id)
-        : resource_id(id) {}
-};
+void
+reset_globals() {
+    g_alloc.store(0);
+    g_freed.store(0);
+    g_bytes_alloc.store(0);
+    g_bytes_freed.store(0);
+    g_reported_live.store(-1);
+    g_done.store(false);
+}
+} // namespace
 
-struct ResourceStatusEvent : public qb::Event {
-    qb::ActorId reply_to;
-    explicit ResourceStatusEvent(qb::ActorId id)
-        : reply_to(id) {}
-};
-
-struct ResourceReportEvent : public qb::Event {
-    int    allocated_count;
-    size_t memory_usage;
-
-    ResourceReportEvent(int count, size_t memory)
-        : allocated_count(count)
-        , memory_usage(memory) {}
-};
-
-struct GracefulShutdownEvent : public qb::Event {};
-struct ForceShutdownEvent : public qb::Event {};
-
-// Track resource allocation/deallocation
-std::atomic<int>    g_resources_allocated{0};
-std::atomic<int>    g_resources_freed{0};
-std::atomic<size_t> g_memory_allocated{0};
-std::atomic<size_t> g_memory_freed{0};
-std::atomic<bool>   g_test_complete{false};
-
-// Resource class with tracking of construction/destruction
 class ManagedResource {
-private:
-    int               _id;
     std::vector<char> _data;
 
 public:
-    explicit ManagedResource(int id, size_t size)
-        : _id(id)
-        , _data(size) {
-        // Track allocation
-        g_resources_allocated++;
-        g_memory_allocated += size;
+    explicit ManagedResource(size_t size)
+        : _data(size) {
+        g_alloc.fetch_add(1);
+        g_bytes_alloc.fetch_add(size);
     }
-
     ~ManagedResource() {
-        // Track deallocation
-        g_resources_freed++;
-        g_memory_freed += _data.size();
+        g_freed.fetch_add(1);
+        g_bytes_freed.fetch_add(_data.size());
     }
-
-    int
-    id() const {
-        return _id;
-    }
-    size_t
+    [[nodiscard]] size_t
     size() const {
         return _data.size();
     }
 };
 
-// Actor that manages resources
+// ---------------------------------------------------------------------------
+// Protocol.
+// ---------------------------------------------------------------------------
+struct Allocate : public qb::Event {
+    size_t size;
+    explicit Allocate(size_t s)
+        : size(s) {}
+};
+struct Status : public qb::Event {
+    qb::ActorId reply_to;
+    explicit Status(qb::ActorId r)
+        : reply_to(r) {}
+};
+struct Report : public qb::Event {
+    int    live_count;
+    size_t live_bytes;
+    Report(int c, size_t b)
+        : live_count(c)
+        , live_bytes(b) {}
+};
+struct GracefulShutdown : public qb::Event {}; // release everything, then kill
+struct ForceShutdown : public qb::Event {};    // kill abruptly, resources still held
+struct Killed : public qb::Event {             // actor → coordinator: I am about to die
+    qb::ActorId who;
+    explicit Killed(qb::ActorId w)
+        : who(w) {}
+};
+
 class ResourceActor : public qb::Actor {
-private:
     std::vector<std::unique_ptr<ManagedResource>> _resources;
-    bool                                          _shutdown_pending;
+    qb::ActorId                                   _coord;
 
 public:
-    ResourceActor()
-        : _shutdown_pending(false) {}
+    explicit ResourceActor(qb::ActorId coord)
+        : _coord(coord) {}
 
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<AllocateResourceEvent>(*this);
-        registerEvent<ReleaseResourceEvent>(*this);
-        registerEvent<ResourceStatusEvent>(*this);
-        registerEvent<GracefulShutdownEvent>(*this);
-        registerEvent<ForceShutdownEvent>(*this);
+        registerEvent<Allocate>(*this);
+        registerEvent<Status>(*this);
+        registerEvent<GracefulShutdown>(*this);
+        registerEvent<ForceShutdown>(*this);
         co_return true;
     }
 
-    // Allocate a new resource
     void
-    on(const AllocateResourceEvent &event) {
-        if (_shutdown_pending)
-            return;
-
-        int resource_id = static_cast<int>(_resources.size());
-        _resources.push_back(std::make_unique<ManagedResource>(resource_id, event.size));
+    on(const Allocate &e) {
+        _resources.push_back(std::make_unique<ManagedResource>(e.size));
     }
 
-    // Release a specific resource
     void
-    on(const ReleaseResourceEvent &event) {
-        if (event.resource_id >= 0 && static_cast<size_t>(event.resource_id) < _resources.size()) {
-            if (_resources[event.resource_id]) {
-                _resources[event.resource_id].reset();
+    on(const Status &e) {
+        size_t bytes = 0;
+        int    count = 0;
+        for (const auto &r : _resources)
+            if (r) {
+                ++count;
+                bytes += r->size();
             }
-        }
+        to(e.reply_to).push<Report>(count, bytes);
     }
 
-    // Report resource status
     void
-    on(const ResourceStatusEvent &event) {
-        int    count  = 0;
-        size_t memory = 0;
-
-        for (const auto &res : _resources) {
-            if (res) {
-                count++;
-                memory += res->size();
-            }
-        }
-
-        to(event.reply_to).push<ResourceReportEvent>(count, memory);
-    }
-
-    // Perform graceful shutdown, releasing all resources first
-    void
-    on(const GracefulShutdownEvent &) {
-        _shutdown_pending = true;
-
-        // Clear all resources one by one
-        for (auto &res : _resources) {
-            res.reset();
-        }
-        _resources.clear();
-
-        // Wait to ensure all destructors have been called
-        qb::io::async::callback([this]() { kill(); }, 100ms);
-    }
-
-    // Force shutdown without explicit cleanup
-    void
-    on(const ForceShutdownEvent &) {
+    on(const GracefulShutdown &) {
+        _resources.clear(); // explicit release; the destructor would do this anyway
+        push<Killed>(_coord, id());
         kill();
     }
 
-    ~ResourceActor() override {
-        // The vector and resources will be automatically cleaned up here
+    void
+    on(const ForceShutdown &) {
+        // Resources are STILL held here: only the destructor (RAII) will free them.
+        push<Killed>(_coord, id());
+        kill();
     }
+    // ~ResourceActor default: the unique_ptr vector frees every ManagedResource (RAII).
 };
 
-// Coordinator actor
-class ResourceCoordinatorActor : public qb::Actor {
-private:
-    std::vector<qb::ActorId> _resource_actors;
-    int                      _num_allocations;
-    int                      _phase;
+// ---------------------------------------------------------------------------
+// Coordinator: allocate → status round-trip → (graceful | force) shutdown → stop on kill ack.
+// `force_path` selects which teardown the single resource actor takes.
+// ---------------------------------------------------------------------------
+class ResourceCoordinator : public qb::Actor {
+    const int   _n_alloc;
+    const size_t _bytes;
+    const bool  _force_path;
+    qb::ActorId _actor;
 
 public:
-    explicit ResourceCoordinatorActor(int num_allocations = 100)
-        : _num_allocations(num_allocations)
-        , _phase(0) {}
+    ResourceCoordinator(int n_alloc, size_t bytes, bool force_path)
+        : _n_alloc(n_alloc)
+        , _bytes(bytes)
+        , _force_path(force_path) {}
 
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<ResourceReportEvent>(*this);
+        registerEvent<Report>(*this);
+        registerEvent<Killed>(*this);
 
-        // Create several resource actors
-        // Modern C++: using auto for type deduction
-        for (auto i = 0; i < 3; ++i) {
-            auto actor = addRefActor<ResourceActor>();
-            _resource_actors.push_back(actor.id());
-        }
-
-        // Start test sequence
-        schedulePhase1();
-
+        _actor = addRefActor<ResourceActor>(id()).id();
+        for (int i = 0; i < _n_alloc; ++i)
+            to(_actor).push<Allocate>(_bytes);
+        // Query status AFTER the allocations (mailbox-ordered): the report drives the shutdown.
+        to(_actor).push<Status>(id());
         co_return true;
     }
 
-    // Phase 1: Allocate resources
     void
-    schedulePhase1() {
-        const int bytes_per_resource = 1024; // 1KB
+    on(const Report &e) {
+        g_reported_live.store(e.live_count);
+        // The actor reports exactly what we allocated, and is still holding them: not-all-freed.
+        EXPECT_EQ(e.live_count, _n_alloc) << "the actor must report every live resource";
+        EXPECT_EQ(e.live_bytes, static_cast<size_t>(_n_alloc) * _bytes);
+        // Direct not-all-freed-before-shutdown oracle: while the actor is alive and holding its
+        // resources, the global free count must lag the alloc count.
+        EXPECT_LT(g_freed.load(), g_alloc.load())
+            << "resources must still be live before shutdown (none released early)";
 
-        // Modern C++: using auto for type deduction
-        for (auto i = 0; i < _num_allocations; ++i) {
-            qb::ActorId target = _resource_actors[i % _resource_actors.size()];
-
-            // Allocate with varying sizes
-            int size = bytes_per_resource * ((i % 10) + 1);
-            to(target).push<AllocateResourceEvent>(size);
-        }
-
-        // Move to phase 2 after allocation
-        qb::io::async::callback(
-            [this]() {
-                _phase = 1;
-                schedulePhase2();
-            },
-            200ms);
+        if (_force_path)
+            to(_actor).push<ForceShutdown>();
+        else
+            to(_actor).push<GracefulShutdown>();
     }
 
-    // Phase 2: Release some resources manually
     void
-    schedulePhase2() {
-        // Release every third resource
-        // Modern C++: using auto for type deduction
-        for (auto i = 0; i < _num_allocations; i += 3) {
-            qb::ActorId target = _resource_actors[i % _resource_actors.size()];
-            to(target).push<ReleaseResourceEvent>(i / 3);
-        }
-
-        // Check status after release
-        qb::io::async::callback(
-            [this]() {
-                for (auto actor_id : _resource_actors) {
-                    to(actor_id).push<ResourceStatusEvent>(id());
-                }
-
-                // Move to phase 3 after status check
-                qb::io::async::callback(
-                    [this]() {
-                        _phase = 2;
-                        schedulePhase3();
-                    },
-                    200ms);
-            },
-            200ms);
-    }
-
-    // Phase 3: Perform graceful shutdown on one actor
-    void
-    schedulePhase3() {
-        if (!_resource_actors.empty()) {
-            // Perform graceful shutdown on the first actor
-            to(_resource_actors[0]).push<GracefulShutdownEvent>();
-
-            // Remove it from our list
-            _resource_actors.erase(_resource_actors.begin());
-        }
-
-        // Move to phase 4 after graceful shutdown
-        qb::io::async::callback(
-            [this]() {
-                _phase = 3;
-                schedulePhase4();
-            },
-            300ms);
-    }
-
-    // Phase 4: Force shutdown on remaining actors
-    void
-    schedulePhase4() {
-        for (auto actor_id : _resource_actors) {
-            to(actor_id).push<ForceShutdownEvent>();
-        }
-        _resource_actors.clear();
-
-        // Complete test
-        qb::io::async::callback(
-            [this]() {
-                g_test_complete = true;
-                kill();
-            },
-            300ms);
-    }
-
-    // Handle resource status reports
-    void
-    on(const ResourceReportEvent &event) {
-        // Just log the statuses (nothing to do here for the test)
+    on(const Killed &) {
+        g_done.store(true);
+        qb::Main::stop();
+        kill();
     }
 };
 
-// Test for proper resource management
-TEST(ResourceManagement, ShouldReleaseAllResourcesOnActorDestruction) {
-    // Reset globals
-    g_resources_allocated = 0;
-    g_resources_freed     = 0;
-    g_memory_allocated    = 0;
-    g_memory_freed        = 0;
-    g_test_complete       = false;
+static void
+run_cleanup(bool force_path) {
+    reset_globals();
+    constexpr int    n_alloc = 50;
+    constexpr size_t bytes   = 1024;
 
-    // Number of allocations to test
-    const int num_allocations = 100;
-
-    // Create main instance
     qb::Main main;
+    main.core(0).addActor<ResourceCoordinator>(n_alloc, bytes, force_path);
 
-    // Add coordinator actor
-    main.core(0).addActor<ResourceCoordinatorActor>(num_allocations);
-
-    // Run the engine
     main.start(false);
+    main.join();
+
     EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_done.load()) << "the coordinator must reach its kill ack";
 
-    // Verify test completion
-    EXPECT_TRUE(g_test_complete);
+    // The status round-trip happened and saw every resource still live (none freed early).
+    EXPECT_EQ(g_reported_live.load(), n_alloc) << "Status/Report round-trip must report all resources";
 
-    // Verify all resources were properly freed
-    EXPECT_EQ(g_resources_allocated.load(), g_resources_freed.load());
-    EXPECT_EQ(g_memory_allocated.load(), g_memory_freed.load());
+    // All resources allocated, and all freed by the time the engine drained — the SHUTDOWN freed
+    // them (the mid-run report proved they were still live before shutdown).
+    EXPECT_EQ(g_alloc.load(), n_alloc);
+    EXPECT_EQ(g_freed.load(), g_alloc.load()) << "every resource must be freed at actor teardown";
+    EXPECT_EQ(g_bytes_freed.load(), g_bytes_alloc.load());
 }
 
-// Test for resource cleanup after actor failure
-TEST(ResourceManagement, ShouldReleaseResourcesEvenAfterActorFailure) {
-    // Implementation would be similar to above but with
-    // simulated failures rather than graceful shutdown
+// Test #1: graceful shutdown releases all resources.
+TEST(ResourceCleanup, ReleasesAllResourcesOnGracefulShutdown) {
+    run_cleanup(/*force_path*/ false);
+}
+
+// Test #2 (was empty: SUCCEED-by-omission): an abrupt failure-style kill with resources STILL held
+// must also free everything via the destructor (RAII), not only the graceful path.
+TEST(ResourceCleanup, ReleasesResourcesEvenAfterAbruptKill) {
+    run_cleanup(/*force_path*/ true);
 }

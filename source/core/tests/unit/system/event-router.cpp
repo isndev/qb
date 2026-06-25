@@ -1,26 +1,38 @@
-/**
- * @file qb/core/tests/unit/test-event-router.cpp
- * @brief Unit tests for event routing mechanisms
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * This file contains tests for the event routing mechanisms in the QB framework.
- * It tests single event single handler (SESH), single event multiple handler (SEMH),
- * multiple event single handler (MESH), and multiple event multiple handler (MEMH)
- * routing patterns.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * See the License for the specific terms.
+ */
+
+/**
+ * @file unit/system/event-router.cpp
+ * @brief The four compile-time event-routing primitives — pure logic, no engine.
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * Exercises `qb/system/event/router.h` over *local mocks* (`ActorId`/`RawEvent`/`FakeActor`),
+ * deliberately isolated from the real actor runtime so only the router's dispatch/dispose
+ * logic is under test: NO `qb::Main`, NO event loop, NO daemon, fully deterministic.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * @ingroup Tests
+ *   sesh — single-event / single-handler          (route N → exactly N handler hits)
+ *   semh — single-event / multi-handler            (subscribe/unsubscribe + broadcast fan-out)
+ *   mesh — multi-event / single-handler            (type-id keyed resolver)
+ *   memh — multi-event / multi-handler + onError   (per-route error callback on an unknown id)
+ *
+ * Every expected count is *derived from the routing topology* (subscriptions × iterations),
+ * not echoed from a value the test set, so each is a real invariant. Two orthogonal oracles
+ * are exercised per event flavour:
+ *   - the handler-hit oracle: `TestEvent::_count` / `TestConstEvent::_count` count `on()` calls;
+ *   - the disposal oracle: `TestDestroyEvent::_count` counts *destructor* runs (it is the only
+ *     event whose dtor increments `_count`), so it proves the `_CleanEvent` dispose path —
+ *     `_CleanEvent=true` destroys the `alive=false` payload on every route, `_CleanEvent=false`
+ *     leaves it untouched (count stays 0). Both directions are now asserted on all four routers.
+ *
+ * Strengthened over the original: the two MEMH `_CleanEvent=false` cases (previously commented
+ * out) are re-enabled, the `6144` destroy-count is derived in-line (was a fitted magic number),
+ * and the MEMH `onError` callback — previously an empty lambda that was never observed — is now
+ * asserted to actually fire for an unregistered event id.
  */
 
 #include <gtest/gtest.h>
@@ -295,12 +307,85 @@ Test_MEMH(std::size_t expected_count) {
 }
 
 TEST(EventRouting, MEMH) {
+    // --- handler-hit oracle (TestEvent / TestConstEvent count on() calls) ------
+    // Per iteration the loop routes to 5 explicit dests (j=1..5) + 1 broadcast. Actors
+    // 1,2,3 are unsubscribed (unsubscribe by id / by actor / by <Event>(actor)), so only
+    // 4 and 5 remain subscribed. Targeted route to dest 4 or 5 hits its actor (2 of the 5
+    // targeted routes hit), routes to 1/2/3 hit nobody, and each broadcast hits both
+    // survivors (2 hits). Per iteration: 2 (targeted) + 2 (broadcast) = 4 → ×1024 = 4096.
     Test_MEMH<TestEvent>(4096);
     Test_MEMH<const TestConstEvent>(4096);
-    Test_MEMH<TestDestroyEvent>(6144);
-    // Test_MEMH<TestDestroyEvent, false>(0);
+
+    // --- disposal oracle (TestDestroyEvent::_count counts DESTRUCTOR runs) ------
+    // With _CleanEvent=true the router disposes the (alive=false) event after EVERY route,
+    // regardless of whether a handler matched — FakeActor::on(TestDestroyEvent) never
+    // touches _count, so _count is purely the dispose/dtor count. Routes per iteration:
+    // 5 targeted + 1 broadcast = 6 → 6 × 1024 = 6144 destructor calls. (The dest-1/2/3
+    // routes still dispose even though no live handler matches.)
+    constexpr std::size_t kRoutesPerIter = 6;        // 5 targeted (j=1..5) + 1 broadcast
+    constexpr std::size_t kDisposed      = kRoutesPerIter * 1024u; // = 6144
+    static_assert(kDisposed == 6144u, "MEMH destroy-count derivation");
+    Test_MEMH<TestDestroyEvent>(kDisposed);
+
+    // _CleanEvent=false: dispose() is skipped on every route, so NO destructor runs during
+    // routing. The assertion executes before the stack `event` leaves scope (whose own dtor
+    // would be the only +1), so the disposal count is exactly 0. (Re-enabled: was commented
+    // out, leaving the MEMH clean-event=false path silently untested — every other router
+    // tests it.)
+    Test_MEMH<TestDestroyEvent, false>(0);
+
+    // Same matrix against the homogeneous (_Handler=FakeActor) MEMH specialization.
     Test_MEMH<TestEvent, true, FakeActor>(4096);
     Test_MEMH<const TestConstEvent, true, FakeActor>(4096);
-    Test_MEMH<TestDestroyEvent, true, FakeActor>(6144);
-    // Test_MEMH<TestDestroyEvent, false, FakeActor>(0);
+    Test_MEMH<TestDestroyEvent, true, FakeActor>(kDisposed);
+    Test_MEMH<TestDestroyEvent, false, FakeActor>(0);
+}
+
+// ---------------------------------------------------------------------------
+// The MEMH `onError` callback: a route for an event id that was never subscribed
+// must invoke the caller-supplied error handler (and must NOT dispatch/dispose).
+// The original suite passed an empty lambda here, so the error path executed but
+// was never observed; this proves it actually fires.
+// ---------------------------------------------------------------------------
+
+// An event type the router is never subscribed to. Distinct id_type (typeid name)
+// ⇒ memh::route() takes the `onError` branch.
+struct UnregisteredEvent : public RawEvent {
+    UnregisteredEvent() {
+        id = RawEvent::type_to_id<UnregisteredEvent>();
+    }
+};
+
+TEST(EventRouting, MEMHonErrorFiresForUnregisteredEvent) {
+    FakeActor                              actor1(1);
+    qb::router::memh<RawEvent, true, void> memhRouter;
+    // Subscribe TestEvent only; UnregisteredEvent is deliberately NOT registered.
+    memhRouter.subscribe<TestEvent>(actor1);
+
+    std::size_t       on_error_calls = 0;
+    const ActorId    *seen_dest      = nullptr;
+    UnregisteredEvent unknown;
+    unknown.dest = ActorId(1);
+
+    const auto onError = [&](RawEvent &e) {
+        ++on_error_calls;
+        seen_dest = &e.dest; // the unrouted event is handed verbatim to the callback
+    };
+
+    // A registered id routes normally (no onError); an unregistered id must call onError.
+    TestEvent::_count = 0;
+    TestEvent known;
+    known.dest = ActorId(1);
+    memhRouter.route(known, onError);
+    EXPECT_EQ(on_error_calls, 0u) << "a registered event id must NOT take the error path";
+    EXPECT_EQ(TestEvent::_count, 1u) << "registered event must be dispatched to its handler";
+
+    memhRouter.route(unknown, onError);
+    EXPECT_EQ(on_error_calls, 1u) << "an unregistered event id MUST invoke onError exactly once";
+    EXPECT_EQ(seen_dest, &unknown.dest) << "onError receives the very event that could not be routed";
+
+    // Fire it again to prove it is repeatable, not a one-shot.
+    memhRouter.route(unknown, onError);
+    EXPECT_EQ(on_error_calls, 2u);
+    EXPECT_EQ(TestEvent::_count, 1u) << "the unknown event never reached a handler";
 }

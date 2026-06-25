@@ -1,26 +1,37 @@
-/**
- * @file source/core/tests/unit/test-json.cpp
- * @brief Unit tests for qb/json.h — the qb::jsonb wrapper, uuid adapters, hash & stream support.
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * See the License for the specific terms.
  */
 
-#include <gtest/gtest.h>
+/**
+ * @file unit/json/jsonb-wrapper.cpp
+ * @brief `qb::jsonb` wrapper + uuid↔json adapters (`qb/json.h`, `qb/uuid.h`) — pure serialization.
+ *
+ * No engine, loop, or daemon: exercises the wrapper surface (ctors/conversions, assignment/
+ * indexing, `operator->`/iterators, type predicates + `dump()`, size/empty/clear/erase/contains,
+ * cross `jsonb`↔`json` comparisons, `unwrap()`, `operator<<`, and `std::hash<jsonb>` via set
+ * dedup) plus the uuid round-trip through `to_json`/`from_json`. Assertions pin serialized output
+ * (`dump()=="42"`, `operator<<`==`dump()`) and prove hash+equality cooperate, not self-echoes.
+ *
+ * Added over the original: a NON-nil uuid round-trip (the original only round-tripped the nil
+ * uuid, so a codec that mishandled non-zero bytes would pass); int64 and double `dump()` precision
+ * cases that guard the known number-truncation bug class (the qb `pipe::put<json>` serializer once
+ * truncated every number through get<int>/get<float>, turning int64 timestamps negative and losing
+ * double precision — these assert full 64-bit and full double precision survive `dump()`); and a
+ * `json::parse` malformed-input error case plus a parse-then-wrap success path.
+ */
+
+#include <cstdint>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <unordered_set>
+
+#include <gtest/gtest.h>
 #include <qb/json.h>
 #include <qb/uuid.h>
 
@@ -128,6 +139,49 @@ TEST(Jsonb, UnwrapStreamAndHash) {
     EXPECT_EQ(set.size(), 2u);
 }
 
+TEST(Jsonb, DumpPreservesInt64AndDoublePrecision) {
+    // Guards the number-truncation bug class: the qb pipe `put<json>` serializer once read every
+    // number through get<int>/get<unsigned>/get<float>, so an int64 timestamp went negative and a
+    // high-precision double lost its tail. dump() must preserve full 64-bit integer and full double
+    // precision. (We test the dump() path here; the pipe path is covered elsewhere, but the
+    // representable-value contract is the same.)
+    constexpr std::int64_t big = 1'673'785'845'123'456'789LL; // ~ns-since-epoch, > 2^31
+    static_assert(big > static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::max()),
+                  "value must exceed 32-bit range to catch truncation");
+    json  big_j(big);
+    jsonb ji(big_j);
+    EXPECT_EQ(ji.dump(), "1673785845123456789") << "int64 must survive dump() without 32-bit truncation";
+    EXPECT_EQ(ji.unwrap().get<std::int64_t>(), big);
+
+    // A large unsigned past INT32_MAX must not wrap negative.
+    constexpr std::uint64_t ubig = 4'294'967'296ULL; // 2^32
+    json                    ubig_j(ubig);
+    jsonb                   ju(ubig_j);
+    EXPECT_EQ(ju.dump(), "4294967296");
+    EXPECT_EQ(ju.unwrap().get<std::uint64_t>(), ubig);
+
+    // A double with a non-trivial mantissa must keep its precision through dump()/parse round-trip
+    // (nlohmann emits the shortest round-trippable form, so parse(dump(x)) == x exactly).
+    const double d = 3.141592653589793;
+    json         d_j(d);
+    jsonb        jd(d_j);
+    EXPECT_DOUBLE_EQ(json::parse(jd.dump()).get<double>(), d)
+        << "double must round-trip through dump() without float truncation";
+}
+
+TEST(Jsonb, ParseErrorAndParsedConstruction) {
+    // Malformed JSON must throw a parse_error (nlohmann's exception type), not silently yield null.
+    EXPECT_THROW((void) json::parse("{ this is : not json"), json::parse_error);
+    EXPECT_THROW((void) json::parse(""), json::parse_error);
+
+    // A wrapper built from a successfully parsed string exposes the parsed structure.
+    jsonb parsed(json::parse(R"({"k": 5, "arr": [1, 2, 3]})"));
+    EXPECT_TRUE(parsed.is_object());
+    EXPECT_EQ(parsed["k"], 5);
+    EXPECT_TRUE(parsed.contains("arr"));
+    EXPECT_EQ(parsed["arr"].size(), 3u);
+}
+
 TEST(Json, UuidRoundTrip) {
     qb::uuid id{}; // nil uuid
     qb::json obj;
@@ -135,4 +189,25 @@ TEST(Json, UuidRoundTrip) {
     qb::uuid back{};
     uuids::from_json(obj, back); // deserialize
     EXPECT_EQ(id, back);
+    EXPECT_TRUE(id.is_nil());
+}
+
+TEST(Json, NonNilUuidRoundTrip) {
+    // The original only round-tripped the nil (all-zero) uuid, so a codec that mishandled non-zero
+    // bytes would pass. Round-trip a specific non-nil uuid parsed from its canonical string form and
+    // assert both the value survives AND the serialized JSON carries the canonical text.
+    const auto parsed = uuids::uuid::from_string("12345678-90ab-cdef-1234-567890abcdef");
+    ASSERT_TRUE(parsed.has_value());
+    const qb::uuid id = *parsed;
+    ASSERT_FALSE(id.is_nil());
+
+    qb::json obj;
+    uuids::to_json(obj, id);
+    EXPECT_EQ(obj.get<std::string>(), "12345678-90ab-cdef-1234-567890abcdef")
+        << "to_json must emit the canonical uuid text, not the nil/zeroed form";
+
+    qb::uuid back{};
+    uuids::from_json(obj, back);
+    EXPECT_EQ(id, back);
+    EXPECT_EQ(uuids::to_string(back), "12345678-90ab-cdef-1234-567890abcdef");
 }

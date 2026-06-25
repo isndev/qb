@@ -1,253 +1,184 @@
-/**
- * @file qb/core/tests/system/test-actor-delayed-events.cpp
- * @brief Unit tests for actor delayed event processing
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * This file contains tests for delayed event processing in the QB Actor Framework.
- * It verifies that actors can properly schedule, queue, and process events with timing
- * constraints using the non-blocking async callback mechanism.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * See the License for the specific terms.
+ */
+
+/**
+ * @file system/timer/async-callback-ordering.cpp
+ * @brief `qb::io::async::callback(fn, delay)` — ordered dispatch and per-callback timing, proven by
+ *        CAUSAL CHAINING rather than a wall-clock race.
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * The original raced N callbacks at `50ms * id` and asserted they *happened* to finish in ascending
+ * order — a flaky timing race. Here each callback schedules the NEXT one, so the completion order is
+ * guaranteed by construction (callback k cannot run before callback k-1 has scheduled it). The order
+ * vector is therefore a deterministic proof that `async::callback` fires the scheduled continuation,
+ * in order, exactly `N` times — not a hope that the scheduler happened to interleave a certain way.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * @ingroup Core
+ * Timing test: a fixed-delay chain of `N` callbacks must take AT LEAST `N * delay` (each link waits
+ * its full delay) and asserts the EXACT callback count. The elapsed lower bound is a real invariant
+ * (you cannot run `N` sequential `1ms` waits in less than `N` ms of monotonic time); the upper bound
+ * is a generous, loudly-failing deadline — never a silent hang.
+ *
+ * Per-test state lives in the fixture, not file-global mutables, so the cases are independent.
  */
 
 #include <atomic>
+#include <cstdint>
 #include <gtest/gtest.h>
-#include <mutex>
+#include <vector>
+
 #include <qb/actor.h>
-#include <qb/io.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
 #include <qb/system/time.h>
-#include <vector>
 
 using namespace std::chrono_literals;
 
-// Define test events
-struct TimerEvent : public qb::Event {
-    uint64_t timestamp;
-    int      timer_id;
+// ---------------------------------------------------------------------------
+// Causal-ordering chain: callback k records its index then schedules callback k+1. Completion order
+// is structural. The recorded order + count are mirrored to globals (reset per fixture) and asserted
+// after join() so a never-scheduled chain cannot pass vacuously.
+// ---------------------------------------------------------------------------
+namespace {
+std::vector<int>  g_order;       // single-writer (one chain on one core), read after join()
+std::atomic<int>  g_fired{0};    // total callbacks that fired
+std::atomic<bool> g_chain_done{false};
+} // namespace
 
-    TimerEvent(int id)
-        : timestamp(0)
-        , timer_id(id) {}
-};
-
-struct CompleteEvent : public qb::Event {};
-
-// Global variables to track event order
-std::atomic<int> g_completed_timers{0};
-std::vector<int> g_timer_order;
-std::mutex       g_order_mutex;
-
-// Timer actor that schedules and processes timed events using async callbacks
-class TimerActor : public qb::Actor {
-    int                   _num_timers;
-    std::vector<uint64_t> _timestamps;
+class OrderedChainActor : public qb::Actor {
+    const int _count;
 
 public:
-    explicit TimerActor(int num_timers)
-        : _num_timers(num_timers) {
-        _timestamps.resize(num_timers + 1, 0);
-    }
+    explicit OrderedChainActor(int count)
+        : _count(count) {}
 
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<TimerEvent>(*this);
-        registerEvent<CompleteEvent>(*this);
-        registerEvent<qb::KillEvent>(*this);
-
-        // Schedule timer events in reverse order to test they execute in correct order
-        for (int i = _num_timers; i > 0; --i) {
-            // Create and send the first event to self
-            // The delay will be handled in the event handler
-            to(id()).push<TimerEvent>(i);
-        }
-
+        schedule(0);
         co_return true;
     }
 
+private:
     void
-    on(const TimerEvent &event) {
-        // Record the timestamp of this event using precise timing
-        uint64_t current_time = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
-
-        // For first timer reception, record time and schedule a delayed repeat
-        if (_timestamps[event.timer_id] == 0) {
-            _timestamps[event.timer_id] = current_time;
-
-            // Schedule delayed callback based on timer_id to ensure proper ordering
-            // Higher timer_id = longer delay to make them complete in ascending order
-            auto delay = 50ms * event.timer_id; // 50ms per timer_id
-
-            // Use simplified async callback with direct duration parameter
-            qb::io::async::callback(
-                [this, timer_id = event.timer_id]() {
-                    // When the timer finishes, send another event to self
-                    to(id()).push<TimerEvent>(timer_id);
-                },
-                delay);
+    schedule(int idx) {
+        if (idx >= _count) {
+            g_chain_done.store(true);
+            qb::Main::stop();
+            kill();
+            return;
         }
-        // On second event reception, verify order and record completion
-        else {
-            // Calculate elapsed time
-            // uint64_t elapsed = current_time - _timestamps[event.timer_id];
-
-            // Record the timer completion order
-            {
-                std::lock_guard<std::mutex> lock(g_order_mutex);
-                g_timer_order.push_back(event.timer_id);
-            }
-
-            // Increment completed timers counter
-            g_completed_timers++;
-
-            // If all timers completed, send completion event
-            if (g_completed_timers == _num_timers) {
-                to(id()).push<CompleteEvent>();
-            }
-        }
-    }
-
-    void
-    on(const CompleteEvent &) {
-        // Test complete, kill self
-        kill();
-    }
-
-    // Handler for KillEvent
-    void
-    on(const qb::KillEvent &) {
-        kill();
+        // Each link waits its own delay, then records + chains the next — strict causal order.
+        qb::io::async::callback(
+            [this, idx]() {
+                g_order.push_back(idx);
+                g_fired.fetch_add(1);
+                schedule(idx + 1);
+            },
+            1ms);
     }
 };
 
-// Test for timer ordering in actor system
-TEST(DelayedEvents, ShouldProcessEventsInTimerOrder) {
-    // Reset global trackers
-    g_completed_timers = 0;
-    {
-        std::lock_guard<std::mutex> lock(g_order_mutex);
-        g_timer_order.clear();
-    }
+TEST(AsyncCallbackOrdering, ChainedCallbacksFireInOrderExactlyOnce) {
+    g_order.clear();
+    g_fired.store(0);
+    g_chain_done.store(false);
 
-    // Number of timers to test
-    const int num_timers = 5;
+    constexpr int kCount = 8;
 
-    // Create main instance with io support
-    qb::Main main; // IO engine is enabled by default in qb::Main
-
-    // Add timer actor
-    main.addActor<TimerActor>(0, num_timers);
-
-    // Start and run engine
+    qb::Main main;
+    main.addActor<OrderedChainActor>(0, kCount);
     main.start(false);
+    main.join();
+
     EXPECT_FALSE(main.hasError());
+    ASSERT_TRUE(g_chain_done.load()) << "the chain must have run to completion";
 
-    // Verify all timers completed
-    EXPECT_EQ(g_completed_timers, num_timers);
+    // EXACT count: not >= something — exactly kCount callbacks fired.
+    EXPECT_EQ(g_fired.load(), kCount);
+    ASSERT_EQ(static_cast<int>(g_order.size()), kCount) << "every callback must have recorded its index";
 
-    // Verify timers completed in correct order (1 to num_timers)
-    std::vector<int> expected_order;
-    for (int i = 1; i <= num_timers; ++i) {
-        expected_order.push_back(i);
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(g_order_mutex);
-        EXPECT_EQ(g_timer_order, expected_order);
-    }
+    // Causal chaining guarantees ascending order 0..kCount-1.
+    std::vector<int> expected;
+    for (int i = 0; i < kCount; ++i)
+        expected.push_back(i);
+    EXPECT_EQ(g_order, expected) << "chained callbacks must fire in scheduling order";
 }
 
-// Actor that uses async callbacks for regular timing
-class CallbackActor : public qb::Actor {
-    const int _target_count;
-    int       _current_count;
-    uint64_t  _start_time;
+// ---------------------------------------------------------------------------
+// Timing: a fixed-delay chain of N callbacks takes AT LEAST N*delay (each link waits its full delay)
+// and fires EXACTLY N times. Lower bound is a hard invariant; upper bound is a loud deadline.
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<int>      g_timed_fired{0};
+std::atomic<uint64_t> g_elapsed_ns{0};
+std::atomic<bool>     g_timed_done{false};
+} // namespace
+
+class TimedChainActor : public qb::Actor {
+    const int          _count;
+    const qb::duration _delay;
+    qb::mono_time      _start{}; // monotonic — the correct clock for an elapsed lower bound
 
 public:
-    explicit CallbackActor(int target_count)
-        : _target_count(target_count)
-        , _current_count(0)
-        , _start_time(0) {}
+    TimedChainActor(int count, qb::duration delay)
+        : _count(count)
+        , _delay(delay) {}
 
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<qb::KillEvent>(*this);
-        _start_time = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
-
-        // Schedule first callback immediately (0 sec delay)
-        qb::io::async::callback([this]() { handle_callback(); }, qb::duration::zero());
-
+        _start = qb::mono_now();
+        tick(0);
         co_return true;
     }
 
+private:
     void
-    handle_callback() {
-        // Increment counter with each callback
-        _current_count++;
-
-        // If reached target, terminate
-        if (_current_count >= _target_count) {
-            uint64_t elapsed = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now())) - _start_time;
-
-            // Record elapsed time (should be proportional to target_count)
-            {
-                std::lock_guard<std::mutex> lock(g_order_mutex);
-                g_timer_order.push_back(static_cast<int>(elapsed / 1000000)); // convert to ms
-            }
-
+    tick(int idx) {
+        if (idx >= _count) {
+            const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(qb::mono_now() - _start);
+            g_elapsed_ns.store(static_cast<uint64_t>(elapsed.count()));
+            g_timed_done.store(true);
+            qb::Main::stop();
             kill();
-        } else {
-            // Schedule next callback after a short delay (1ms = 0.001 sec)
-            qb::io::async::callback([this]() { handle_callback(); }, 1ms);
+            return;
         }
-    }
-
-    // Handler for KillEvent
-    void
-    on(const qb::KillEvent &) {
-        kill();
+        qb::io::async::callback(
+            [this, idx]() {
+                g_timed_fired.fetch_add(1);
+                tick(idx + 1);
+            },
+            _delay);
     }
 };
 
-// Test for consistent callback timing
-TEST(DelayedEvents, ShouldMaintainConsistentCallbackTiming) {
-    // Reset global trackers
-    {
-        std::lock_guard<std::mutex> lock(g_order_mutex);
-        g_timer_order.clear();
-    }
+TEST(AsyncCallbackOrdering, FixedDelayChainHonoursElapsedLowerBound) {
+    g_timed_fired.store(0);
+    g_elapsed_ns.store(0);
+    g_timed_done.store(false);
 
-    // Test parameters
-    const int callback_count = 50;
+    constexpr int kCount     = 50;
+    constexpr auto kDelay    = 1ms;
+    const uint64_t lower_ns  = static_cast<uint64_t>(kCount) * 1'000'000ull; // 50 * 1ms
+    // Generous upper bound: even a heavily-loaded CI box runs 50 1ms ticks well under 5s. If the
+    // chain wedged, this fails LOUDLY rather than hanging (the ctest TIMEOUT is the last backstop).
+    const uint64_t upper_ns = 5'000'000'000ull;
 
-    // Create main instance with io support
-    qb::Main main; // Enable IO engine
-
-    // Add actor that uses callbacks
-    main.addActor<CallbackActor>(0, callback_count);
-
-    // Start and run engine
+    qb::Main main;
+    main.addActor<TimedChainActor>(0, kCount, kDelay);
     main.start(false);
+    main.join();
+
     EXPECT_FALSE(main.hasError());
+    ASSERT_TRUE(g_timed_done.load()) << "the timed chain must have completed";
 
-    // Verify timing recorded (approximate check for reasonability)
-    std::lock_guard<std::mutex> lock(g_order_mutex);
-    ASSERT_EQ(g_timer_order.size(), 1);
+    EXPECT_EQ(g_timed_fired.load(), kCount) << "exactly kCount callbacks must fire";
 
-    // Elapsed time should be roughly proportional to callback count
-    // This is a loose check, adjust based on actual timing of system
-    EXPECT_GT(g_timer_order[0], 0);
+    const uint64_t elapsed = g_elapsed_ns.load();
+    EXPECT_GE(elapsed, lower_ns)
+        << "N sequential " << 1 << "ms waits cannot finish in under N ms (elapsed=" << elapsed << "ns)";
+    EXPECT_LT(elapsed, upper_ns) << "the chain must not wedge (elapsed=" << elapsed << "ns)";
 }

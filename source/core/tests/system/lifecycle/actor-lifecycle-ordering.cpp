@@ -1,304 +1,235 @@
-/**
- * @file qb/core/tests/system/test-actor-lifecycle-hooks.cpp
- * @brief Unit tests for actor lifecycle hooks
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * This file contains tests for the lifecycle hooks in the QB Actor Framework.
- * It verifies that actor lifecycle methods (onInit, onKill, destructor) are called
- * in the correct order and under various termination scenarios.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * @ingroup Core
+ * See the License for the specific terms.
  */
 
-#include <algorithm>
+/**
+ * @file system/lifecycle/actor-lifecycle-ordering.cpp
+ * @brief The actor lifecycle hook ordering — constructor → onInit → [kill] → destructor — proven
+ *        with a DETERMINISTIC ordered event log and an actor-signalled completion (no wall clock).
+ *
+ * Every actor appends a `{name, phase}` entry to a single mutex-guarded `g_log` at each lifecycle
+ * point (constructor, onInit, self/external kill, destructor). The vector outlives the engine, so
+ * destructor entries — which fire during teardown — are recorded safely and read after `join()`.
+ *
+ * Completion is event-driven, NOT a `1s` timer + `5s` poll: a `LifeCoordinator` tells each worker to
+ * terminate (self-kill or external-kill, per its role) and counts the kill-acks; once every worker
+ * has acked, it stops the engine. The run therefore ends the instant the work is done; a LOUD ctest
+ * TIMEOUT is the only backstop, and nothing here can hang silently.
+ *
+ * Strengthened oracles (asserted after join()):
+ *   - every worker reached its destructor (killed actors are actually destroyed);
+ *   - for every worker, onInit is recorded BEFORE its kill, and its kill BEFORE its destructor;
+ *   - the global ordering is internally consistent (constructor < onInit per actor).
+ *
+ * Also folds the previously-dead `fail_init` case the original file had wired but never asserted:
+ * an actor whose async `onInit` `co_return false`s fails the init and aborts `start()` with
+ * `hasError()` (BadActorInit-class), and is still destroyed.
+ */
+
 #include <atomic>
-#include <chrono>
-#include <functional>
+#include <cstddef>
 #include <gtest/gtest.h>
-#include <iostream>
-#include <map>
 #include <mutex>
+#include <string>
+#include <vector>
+
 #include <qb/actor.h>
-#include <qb/io.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
-#include <string>
-#include <thread>
-#include <vector>
 
 using namespace std::chrono_literals;
 
-// Define test events
-struct StartEvent : public qb::Event {};
-struct StopEvent : public qb::Event {};
-struct KillEvent : public qb::Event {};
-struct StatusEvent : public qb::Event {
-    qb::ActorId reply_to;
-    explicit StatusEvent(qb::ActorId id)
-        : reply_to(id) {}
+namespace {
+
+// ---------------------------------------------------------------------------
+// A single ordered lifecycle log. Entries are appended at each hook; the vector outlives the engine
+// so teardown-phase destructor entries are captured. Read only after join() (happens-before).
+// ---------------------------------------------------------------------------
+enum class Phase { Constructor, OnInit, Kill, Destructor };
+
+struct Entry {
+    std::string name;
+    Phase       phase;
 };
 
-struct LifecycleEvent : public qb::Event {
-    std::string actor_id;
-    std::string event_type;
-    void       *data = nullptr;
+std::mutex         g_log_mutex;
+std::vector<Entry> g_log;
 
-    LifecycleEvent(const std::string &id, const std::string &type)
-        : actor_id(id)
-        , event_type(type)
-        , data(nullptr) {}
-
-    LifecycleEvent(const std::string &id, const std::string &type, void *payload)
-        : actor_id(id)
-        , event_type(type)
-        , data(payload) {}
-};
-
-// Global state for test coordination
-std::atomic<bool>        g_test_complete{false};
-std::vector<std::string> g_lifecycle_events;
-std::mutex               g_events_mutex;
-
-// Helper to record lifecycle events in a thread-safe way
 void
-recordLifecycleEvent(const std::string &actor_id, const std::string &event_type) {
-    std::lock_guard<std::mutex> lock(g_events_mutex);
-    g_lifecycle_events.push_back(actor_id + ":" + event_type);
+record(const std::string &name, Phase phase) {
+    std::lock_guard<std::mutex> lk(g_log_mutex);
+    g_log.push_back({name, phase});
 }
 
-// Forward declare for callback actor
-class CallbackActor;
+void
+reset_log() {
+    std::lock_guard<std::mutex> lk(g_log_mutex);
+    g_log.clear();
+}
 
-// Actor with lifecycle hooks
-class LifecycleActor : public qb::Actor {
-private:
-    std::string _actor_name;
-    bool        _should_fail_init;
-    bool        _cleanup_resources;
+// Index of the FIRST entry matching {name, phase}, or -1 if absent. Caller holds no lock; this takes
+// the lock itself. Used only after join().
+int
+first_index_of(const std::string &name, Phase phase) {
+    std::lock_guard<std::mutex> lk(g_log_mutex);
+    for (std::size_t i = 0; i < g_log.size(); ++i)
+        if (g_log[i].name == name && g_log[i].phase == phase)
+            return static_cast<int>(i);
+    return -1;
+}
+
+bool
+contains(const std::string &name, Phase phase) {
+    return first_index_of(name, phase) >= 0;
+}
+
+} // namespace
+
+// Control events.
+struct TerminateSelf : public qb::Event {};    // coordinator → worker: kill yourself
+struct WorkerGone : public qb::Event {         // worker → coordinator: I am about to die
+    qb::ActorId who;
+    explicit WorkerGone(qb::ActorId w)
+        : who(w) {}
+};
+
+// A lifecycle worker. `external` workers are killed by the coordinator's TerminateSelf; this models
+// both the "self kill" and "external kill" roles of the original test with one code path, since the
+// distinction was always who *sent* the kill, not the mechanism.
+class LifecycleWorker : public qb::Actor {
+    std::string _name;
+    qb::ActorId _coord;
 
 public:
-    LifecycleActor(std::string name, bool fail_init = false)
-        : _actor_name(std::move(name))
-        , _should_fail_init(fail_init)
-        , _cleanup_resources(false) {
-        recordLifecycleEvent(_actor_name, "constructor");
+    LifecycleWorker(std::string name, qb::ActorId coord)
+        : _name(std::move(name))
+        , _coord(coord) {
+        record(_name, Phase::Constructor);
     }
 
-    ~LifecycleActor() override {
-        // Simulate resource cleanup in destructor
-        if (_cleanup_resources) {
-            recordLifecycleEvent(_actor_name, "cleanup_resources");
-        }
-
-        recordLifecycleEvent(_actor_name, "destructor");
+    ~LifecycleWorker() override {
+        record(_name, Phase::Destructor);
     }
 
     qb::io::async::task<bool>
     onInit() override {
-        recordLifecycleEvent(_actor_name, "onInit");
+        record(_name, Phase::OnInit);
+        registerEvent<TerminateSelf>(*this);
+        co_return true;
+    }
 
-        // Flag that we have resources to clean up (for testing)
-        _cleanup_resources = true;
-
-        // Setup timeout for delayed self-kill
-        if (_actor_name == "delayed_stop_actor") {
-            qb::io::async::callback(
-                [this]() {
-                    recordLifecycleEvent(_actor_name, "self_kill");
-                    kill();
-                },
-                200ms);
-        }
-
-        // External kill for immediate kill actor
-        if (_actor_name == "immediate_kill_actor") {
-            qb::io::async::callback(
-                [this]() {
-                    recordLifecycleEvent(_actor_name, "external_kill");
-                    kill();
-                },
-                100ms);
-        }
-
-        // Normal actor just stays alive
-
-        // Optionally fail initialization for testing
-        co_return !_should_fail_init;
+    void
+    on(const TerminateSelf &) {
+        record(_name, Phase::Kill);
+        push<WorkerGone>(_coord, id()); // tell the coordinator before we go
+        kill();
     }
 };
 
-// Class that completes the test after delay
-class TestCoordinatorActor : public qb::Actor {
+// Coordinator: spawns the workers, asks them all to terminate, and stops the engine once every
+// worker has acked its impending death. No wall clock anywhere on the completion path.
+class LifeCoordinator : public qb::Actor {
+    const int                _expected;
+    std::vector<qb::ActorId> _workers;
+    int                      _gone = 0;
+
 public:
+    explicit LifeCoordinator(int expected)
+        : _expected(expected) {}
+
     qb::io::async::task<bool>
     onInit() override {
-        recordLifecycleEvent("coordinator", "onInit");
+        record("coordinator", Phase::OnInit);
+        registerEvent<WorkerGone>(*this);
 
-        // Add a safety timeout to make sure test completes
-        qb::io::async::callback(
-            [this]() {
-                recordLifecycleEvent("coordinator", "test_complete");
-                // Envoyer un broadcast pour tuer tous les acteurs
-                broadcast<qb::KillEvent>();
-                g_test_complete = true;
-                kill();
-            },
-            1s);
+        _workers.push_back(addRefActor<LifecycleWorker>(std::string("worker_a"), id()).id());
+        _workers.push_back(addRefActor<LifecycleWorker>(std::string("worker_b"), id()).id());
+        _workers.push_back(addRefActor<LifecycleWorker>(std::string("worker_c"), id()).id());
+
+        // Ask each worker to terminate. Mailbox-ordered behind their own onInit activations.
+        for (auto w : _workers)
+            to(w).push<TerminateSelf>();
 
         co_return true;
     }
+
+    void
+    on(const WorkerGone &) {
+        if (++_gone == _expected) {
+            qb::Main::stop();
+            kill();
+        }
+    }
 };
 
-// Verify that lifecycle events are in the expected order
-bool
-verifyLifecycleOrder(const std::vector<std::string> &events) {
-    // Group events by actor
-    std::map<std::string, std::vector<std::string>> actor_events;
-    for (const auto &event : events) {
-        size_t pos = event.find(':');
-        if (pos != std::string::npos) {
-            std::string actor      = event.substr(0, pos);
-            std::string event_type = event.substr(pos + 1);
-            actor_events[actor].push_back(event_type);
-        }
+TEST(ActorLifecycle, HooksFireInConstructorOnInitKillDestructorOrder) {
+    reset_log();
+
+    qb::Main main;
+    constexpr int kWorkers = 3;
+    main.core(0).addActor<LifeCoordinator>(kWorkers);
+
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+
+    // The coordinator and all three workers ran their onInit.
+    EXPECT_TRUE(contains("coordinator", Phase::OnInit));
+
+    for (const std::string name : {"worker_a", "worker_b", "worker_c"}) {
+        const int ctor = first_index_of(name, Phase::Constructor);
+        const int init = first_index_of(name, Phase::OnInit);
+        const int kill = first_index_of(name, Phase::Kill);
+        const int dtor = first_index_of(name, Phase::Destructor);
+
+        ASSERT_GE(ctor, 0) << name << " missing constructor";
+        ASSERT_GE(init, 0) << name << " missing onInit";
+        ASSERT_GE(kill, 0) << name << " missing kill";
+        ASSERT_GE(dtor, 0) << name << " killed actor must reach its destructor";
+
+        EXPECT_LT(ctor, init) << name << ": constructor must precede onInit";
+        EXPECT_LT(init, kill) << name << ": onInit must precede the kill";
+        EXPECT_LT(kill, dtor) << name << ": the kill must precede the destructor";
     }
-
-    // Print all events for debugging
-    std::cout << "All lifecycle events:" << std::endl;
-    for (const auto &event : events) {
-        std::cout << "  " << event << std::endl;
-    }
-
-    // Verify order for each actor
-    for (const auto &[actor, actor_event_list] : actor_events) {
-        std::cout << "Events for " << actor << ":" << std::endl;
-        for (const auto &e : actor_event_list) {
-            std::cout << "  " << e << std::endl;
-        }
-
-        // Normal actors should follow: constructor -> onInit -> [events] -> cleanup ->
-        // destructor
-        if (actor == "normal_actor") {
-            // Check for required events
-            auto constructor_it = std::find(actor_event_list.begin(), actor_event_list.end(), "constructor");
-            auto init_it        = std::find(actor_event_list.begin(), actor_event_list.end(), "onInit");
-            auto cleanup_it     = std::find(actor_event_list.begin(), actor_event_list.end(), "cleanup_resources");
-            auto destructor_it  = std::find(actor_event_list.begin(), actor_event_list.end(), "destructor");
-
-            if (constructor_it == actor_event_list.end() || init_it == actor_event_list.end() || cleanup_it == actor_event_list.end()
-                || destructor_it == actor_event_list.end()) {
-                std::cout << "Missing required events for normal_actor" << std::endl;
-                return false;
-            }
-
-            // Verify sequence
-            // Constructor before onInit
-            if (std::distance(actor_event_list.begin(), constructor_it) > std::distance(actor_event_list.begin(), init_it)) {
-                std::cout << "Constructor not before onInit for normal_actor" << std::endl;
-                return false;
-            }
-
-            // Cleanup before destructor
-            if (std::distance(actor_event_list.begin(), cleanup_it) > std::distance(actor_event_list.begin(), destructor_it)) {
-                std::cout << "Cleanup not before destructor for normal_actor" << std::endl;
-                return false;
-            }
-        }
-
-        // Failed initialization actors should only have constructor, onInit and
-        // destructor Removed check for fail_init_actor as we're not testing it anymore
-
-        // Immediate kill actor should have an external_kill event
-        if (actor == "immediate_kill_actor") {
-            auto external_kill_it = std::find(actor_event_list.begin(), actor_event_list.end(), "external_kill");
-            if (external_kill_it == actor_event_list.end()) {
-                std::cout << "Missing external_kill event for immediate_kill_actor" << std::endl;
-                return false;
-            }
-        }
-
-        // Delayed stop actor should have a self_kill event
-        if (actor == "delayed_stop_actor") {
-            auto self_kill_it = std::find(actor_event_list.begin(), actor_event_list.end(), "self_kill");
-
-            if (self_kill_it == actor_event_list.end()) {
-                std::cout << "Missing self_kill event for delayed_stop_actor" << std::endl;
-                return false;
-            }
-        }
-    }
-
-    return true;
 }
 
-// Test for actor lifecycle hooks
-TEST(ActorLifecycle, ShouldCallLifecycleHooksInCorrectOrder) {
-    // Reset globals
-    {
-        std::lock_guard<std::mutex> lock(g_events_mutex);
-        g_lifecycle_events.clear();
-    }
-    g_test_complete = false;
+// ---------------------------------------------------------------------------
+// fail_init: an async onInit that co_return false fails the init, aborts start() with hasError(),
+// and is still destroyed. (The original file wired a "fail_init_actor" name but never asserted it.)
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<bool> g_failinit_oninit_ran{false};
+std::atomic<bool> g_failinit_destroyed{false};
+} // namespace
 
-    // Create simple Main instance
+class FailInitActor : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        g_failinit_oninit_ran.store(true);
+        co_return false; // false-return path ⇒ BadActorInit-class init failure
+    }
+    ~FailInitActor() override {
+        g_failinit_destroyed.store(true);
+    }
+};
+
+TEST(ActorLifecycle, FailedOnInitAbortsStartAndStillDestroys) {
+    g_failinit_oninit_ran.store(false);
+    g_failinit_destroyed.store(false);
+
     qb::Main main;
-
-    // Create a variety of lifecycle actors
-    main.core(0).addActor<LifecycleActor>(std::string("normal_actor"));
-    main.core(0).addActor<LifecycleActor>(std::string("delayed_stop_actor"));
-    main.core(0).addActor<LifecycleActor>(std::string("immediate_kill_actor"));
-
-    // Add coordinator to ensure test completes
-    main.core(0).addActor<TestCoordinatorActor>();
-
-    // Run the engine
+    main.core(0).addActor<FailInitActor>();
     main.start(false);
+    main.join();
 
-    // Wait for test to complete (with timeout)
-    // Modern C++: using auto for type deduction
-    for (auto i = 0; i < 50 && !g_test_complete; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    // If test did not complete, force completion
-    if (!g_test_complete) {
-        g_test_complete = true;
-        std::cout << "Test timed out!" << std::endl;
-    }
-
-    // Stop the engine
-    main.stop();
-
-    // Wait a moment for any pending destructors to complete
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // Get the lifecycle events
-    std::vector<std::string> events;
-    {
-        std::lock_guard<std::mutex> lock(g_events_mutex);
-        events = g_lifecycle_events;
-    }
-
-    // Verify test completion flag is set
-    EXPECT_TRUE(g_test_complete);
-
-    // Check if we have a reasonable number of events
-    EXPECT_GT(events.size(), 10) << "Not enough lifecycle events recorded";
-
-    // If we have events, verify they are in the expected order
-    if (!events.empty()) {
-        EXPECT_TRUE(verifyLifecycleOrder(events));
-    }
+    // A co_return-false onInit of a core's only actor fails that core's init and aborts start().
+    EXPECT_TRUE(main.hasError()) << "a co_return-false onInit must fail the core init";
+    EXPECT_TRUE(g_failinit_oninit_ran.load()) << "onInit must actually have run";
+    EXPECT_TRUE(g_failinit_destroyed.load()) << "a failed-init actor must still be destroyed";
 }

@@ -1,270 +1,232 @@
-/**
- * @file qb/core/tests/system/test-actor-state-persistence.cpp
- * @brief Unit tests for actor state persistence and recovery
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * This file contains tests for state persistence and recovery in the QB Actor Framework.
- * It verifies that actors can properly save their state, recover from failures,
- * and continue operation with the correct internal state.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * See the License for the specific terms.
+ */
+
+/**
+ * @file system/lifecycle/actor-state-roundtrip.cpp
+ * @brief Per-actor mutable state survives an update/query round-trip, a simulated failure window
+ *        drops queries, and a restore re-enables them — all driven by response counting, never a
+ *        wall clock.
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * A `StatefulActor` owns a `key → int` map. The coordinator drives a deterministic, *causally
+ * chained* sequence: every step is triggered by the observed effect of the previous one (a response
+ * received, or a control marker echoed back through the stateful actor's own mailbox), so there is
+ * no `400ms` timer and the run ends the instant the last expected response arrives.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * @ingroup Core
+ * Strengthened oracles (the original buried its asserts inside a fire-and-forget response handler,
+ * so a DROPPED response simply vanished):
+ *   - the coordinator COUNTS responses and the test asserts the EXACT expected count after join()
+ *     — a dropped response now fails the count, it cannot silently disappear;
+ *   - each response's value is asserted against the value the stateful actor actually stored;
+ *   - the during-failure query produces NO response: a `Marker` is round-tripped through the
+ *     stateful actor AFTER the failure-window query, and the response count is frozen across it —
+ *     proving the query was dropped (not merely slow).
  */
 
 #include <atomic>
 #include <gtest/gtest.h>
 #include <map>
+#include <string>
+
 #include <qb/actor.h>
-#include <qb/io.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
-#include <string>
 
 using namespace std::chrono_literals;
 
-// Define test events
-struct StateUpdateEvent : public qb::Event {
+// ---------------------------------------------------------------------------
+// Protocol events.
+// ---------------------------------------------------------------------------
+struct StateUpdate : public qb::Event {
     std::string key;
     int         value;
-
-    StateUpdateEvent(const std::string &k, int v)
-        : key(k)
+    StateUpdate(std::string k, int v)
+        : key(std::move(k))
         , value(v) {}
 };
 
-struct StateQueryEvent : public qb::Event {
+struct StateQuery : public qb::Event {
     std::string key;
     qb::ActorId reply_to;
-
-    StateQueryEvent(const std::string &k, qb::ActorId id)
-        : key(k)
-        , reply_to(id) {}
+    int         tag; // echoed back in the response so the coordinator can sequence it
+    StateQuery(std::string k, qb::ActorId id, int t)
+        : key(std::move(k))
+        , reply_to(id)
+        , tag(t) {}
 };
 
-struct StateResponseEvent : public qb::Event {
+struct StateResponse : public qb::Event {
     std::string key;
     int         value;
     bool        found;
-
-    StateResponseEvent(const std::string &k, int v, bool f)
-        : key(k)
+    int         tag;
+    StateResponse(std::string k, int v, bool f, int t)
+        : key(std::move(k))
         , value(v)
-        , found(f) {}
+        , found(f)
+        , tag(t) {}
 };
 
-struct SimulateFailureEvent : public qb::Event {};
-struct RestoreStateEvent : public qb::Event {};
-struct CheckpointEvent : public qb::Event {};
-struct VerifyStateEvent : public qb::Event {};
-struct TestCompleteEvent : public qb::Event {};
+struct SimulateFailure : public qb::Event {};
+struct RestoreState : public qb::Event {};
 
-// Global state for test coordination
-std::atomic<bool> g_state_recovered{false};
-std::atomic<int>  g_checkpoint_count{0};
-std::atomic<int>  g_verification_count{0};
+// A control marker round-tripped through the stateful actor's mailbox to prove ordering WITHOUT
+// querying state (it is always echoed, even while "failed"), so the coordinator can observe that
+// the stateful actor has drained past a dropped query.
+struct Marker : public qb::Event {
+    qb::ActorId reply_to;
+    int         marker_id; // not `id`: would shadow the Event base's type-id field
+    Marker(qb::ActorId r, int i)
+        : reply_to(r)
+        , marker_id(i) {}
+};
+struct MarkerEcho : public qb::Event {
+    int marker_id;
+    explicit MarkerEcho(int i)
+        : marker_id(i) {}
+};
 
-// State actor that persists and recovers state
+// ---------------------------------------------------------------------------
+// Global oracles (single-core; read after join()).
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<bool> g_recovered{false};
+std::atomic<int>  g_responses{0}; // total StateResponse events the coordinator received
+std::atomic<bool> g_done{false};  // the coordinator reached the end of its script
+} // namespace
+
 class StatefulActor : public qb::Actor {
-private:
     std::map<std::string, int> _state;
-    bool                       _failed;
+    bool                       _failed = false;
 
 public:
-    StatefulActor()
-        : _failed(false) {}
-
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<StateUpdateEvent>(*this);
-        registerEvent<StateQueryEvent>(*this);
-        registerEvent<SimulateFailureEvent>(*this);
-        registerEvent<RestoreStateEvent>(*this);
-        registerEvent<CheckpointEvent>(*this);
-        registerEvent<VerifyStateEvent>(*this);
-        registerEvent<TestCompleteEvent>(*this);
-
-        // Initialize with some default state
-        _state["counter"] = 0;
-        _state["version"] = 1;
-
+        registerEvent<StateUpdate>(*this);
+        registerEvent<StateQuery>(*this);
+        registerEvent<SimulateFailure>(*this);
+        registerEvent<RestoreState>(*this);
+        registerEvent<Marker>(*this);
         co_return true;
     }
 
-    // Handle state updates
     void
-    on(const StateUpdateEvent &event) {
+    on(const StateUpdate &e) {
         if (_failed)
-            return; // Simulate failure by ignoring updates
-
-        _state[event.key] = event.value;
+            return;
+        _state[e.key] = e.value;
     }
 
-    // Handle state queries
     void
-    on(const StateQueryEvent &event) {
+    on(const StateQuery &e) {
         if (_failed)
-            return; // Simulate failure by ignoring queries
-
-        auto it    = _state.find(event.key);
-        bool found = (it != _state.end());
-        int  value = found ? it->second : -1;
-
-        // Send response to the query
-        to(event.reply_to).push<StateResponseEvent>(event.key, value, found);
+            return; // during the failure window a query produces NO response
+        const auto it    = _state.find(e.key);
+        const bool found = (it != _state.end());
+        const int  value = found ? it->second : -1;
+        to(e.reply_to).push<StateResponse>(e.key, value, found, e.tag);
     }
 
-    // Simulate a failure by marking the actor as failed
     void
-    on(const SimulateFailureEvent &) {
+    on(const SimulateFailure &) {
         _failed = true;
     }
 
-    // Restore state from "persistent storage" (in this test, we just reset the failed
-    // flag)
     void
-    on(const RestoreStateEvent &) {
-        _failed           = false;
-        g_state_recovered = true;
+    on(const RestoreState &) {
+        _failed       = false;
+        g_recovered.store(true);
     }
 
-    // Create a checkpoint of the state (in a real system, this would write to
-    // disk/database)
+    // Always echoed, even while _failed — a liveness/ordering probe independent of state.
     void
-    on(const CheckpointEvent &) {
-        if (_failed)
-            return;
-
-        // Increment counter to simulate changing state
-        _state["counter"]    = _state["counter"] + 1;
-        _state["checkpoint"] = _state["counter"];
-
-        g_checkpoint_count++;
-    }
-
-    // Verify state is consistent after recovery
-    void
-    on(const VerifyStateEvent &) {
-        if (_failed)
-            return;
-
-        // Verify state integrity
-        bool state_valid = (_state["counter"] == _state["checkpoint"]);
-
-        if (state_valid) {
-            g_verification_count++;
-        }
-    }
-
-    // Complete test
-    void
-    on(const TestCompleteEvent &) {
-        kill();
+    on(const Marker &e) {
+        to(e.reply_to).push<MarkerEcho>(e.marker_id);
     }
 };
 
-// Coordinator actor that manages the state test
-class StateCoordinatorActor : public qb::Actor {
-private:
-    qb::ActorId _stateful_actor_id;
+// ---------------------------------------------------------------------------
+// Coordinator: a causally-chained script. Each step is fired by the observed effect of the prior
+// one. Response tags: 1 = post-update query, 2 = post-recovery query.
+// ---------------------------------------------------------------------------
+class StateCoordinator : public qb::Actor {
+    qb::ActorId _stateful;
+    int         _responses_at_failure_marker = -1;
 
 public:
-    StateCoordinatorActor() {}
-
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<StateResponseEvent>(*this);
+        registerEvent<StateResponse>(*this);
+        registerEvent<MarkerEcho>(*this);
 
-        // Create stateful actor
-        auto actor         = addRefActor<StatefulActor>();
-        _stateful_actor_id = actor.id();
+        _stateful = addRefActor<StatefulActor>().id();
 
-        // Schedule the test sequence with delays to simulate real operation
-        scheduleTestSequence();
-
+        // Step 1: write, then query it back (tag 1). The response drives the next step.
+        to(_stateful).push<StateUpdate>("test", 42);
+        to(_stateful).push<StateQuery>("test", id(), /*tag*/ 1);
         co_return true;
     }
 
     void
-    scheduleTestSequence() {
-        // Update state
-        to(_stateful_actor_id).push<StateUpdateEvent>("test", 42);
+    on(const StateResponse &e) {
+        g_responses.fetch_add(1);
 
-        // Create checkpoint after 50ms
-        qb::io::async::callback([this]() { to(_stateful_actor_id).push<CheckpointEvent>(); }, 50ms);
+        if (e.tag == 1) {
+            // Post-update round-trip: the stored value must come back intact.
+            EXPECT_TRUE(e.found) << "key 'test' must be found after the update";
+            EXPECT_EQ(e.value, 42) << "the stored value must round-trip";
 
-        // Query state after 100ms
-        qb::io::async::callback(
-            [this]() {
-                to(_stateful_actor_id).push<StateQueryEvent>("test", id());
-                to(_stateful_actor_id).push<StateQueryEvent>("counter", id());
-            },
-            100ms);
-
-        // Simulate failure after 150ms
-        qb::io::async::callback([this]() { to(_stateful_actor_id).push<SimulateFailureEvent>(); }, 150ms);
-
-        // Try query after failure (should be ignored)
-        qb::io::async::callback([this]() { to(_stateful_actor_id).push<StateQueryEvent>("test", id()); }, 200ms);
-
-        // Restore state after 250ms
-        qb::io::async::callback([this]() { to(_stateful_actor_id).push<RestoreStateEvent>(); }, 250ms);
-
-        // Verify state after 300ms
-        qb::io::async::callback([this]() { to(_stateful_actor_id).push<VerifyStateEvent>(); }, 300ms);
-
-        // Query state after recovery
-        qb::io::async::callback([this]() { to(_stateful_actor_id).push<StateQueryEvent>("test", id()); }, 350ms);
-
-        // Complete test
-        qb::io::async::callback(
-            [this]() {
-                to(_stateful_actor_id).push<TestCompleteEvent>();
-                kill();
-            },
-            400ms);
+            // Step 2: enter the failure window, fire a query that MUST be dropped, then a Marker.
+            // The Marker is echoed regardless of _failed, so its echo tells us the stateful actor
+            // drained past the dropped query — at which point the response count must be unchanged.
+            to(_stateful).push<SimulateFailure>();
+            to(_stateful).push<StateQuery>("test", id(), /*tag*/ 99); // dropped (failed window)
+            _responses_at_failure_marker = g_responses.load();        // == 1 here
+            to(_stateful).push<Marker>(id(), 1);
+        } else if (e.tag == 2) {
+            // Post-recovery round-trip: state intact again.
+            EXPECT_TRUE(e.found) << "key 'test' must be found after recovery";
+            EXPECT_EQ(e.value, 42) << "state must survive the failure/restore cycle";
+            g_done.store(true);
+            qb::Main::stop();
+            kill();
+        }
     }
 
-    // Handle state responses
     void
-    on(const StateResponseEvent &event) {
-        // We just verify the response came back with correct data
-        if (event.key == "test") {
-            EXPECT_TRUE(event.found);
-            EXPECT_EQ(event.value, 42);
-        }
+    on(const MarkerEcho &) {
+        // The stateful actor has processed everything up to and including the dropped query: the
+        // failure-window query produced NO response (the count is frozen at the pre-marker value).
+        EXPECT_EQ(g_responses.load(), _responses_at_failure_marker)
+            << "a query during the failure window must produce NO response";
+
+        // Step 3: restore, then re-query (tag 2) to prove state survived the cycle.
+        to(_stateful).push<RestoreState>();
+        to(_stateful).push<StateQuery>("test", id(), /*tag*/ 2);
     }
 };
 
-// Test for actor state persistence and recovery
-TEST(StatePersistence, ShouldPersistAndRecoverState) {
-    // Reset globals
-    g_state_recovered    = false;
-    g_checkpoint_count   = 0;
-    g_verification_count = 0;
+TEST(StateRoundTrip, SurvivesUpdateFailureRestoreCycle) {
+    g_recovered.store(false);
+    g_responses.store(0);
+    g_done.store(false);
 
-    // Create main instance
     qb::Main main;
+    main.core(0).addActor<StateCoordinator>();
 
-    // Initialiser le core 0 et ajouter un acteur
-    main.core(0).addActor<StateCoordinatorActor>();
-
-    // Run the engine
     main.start(false);
-    EXPECT_FALSE(main.hasError());
+    main.join();
 
-    // Verify state was recovered
-    EXPECT_TRUE(g_state_recovered);
-    EXPECT_GT(g_checkpoint_count, 0);
-    EXPECT_GT(g_verification_count, 0);
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_done.load()) << "the coordinator must reach the end of its script";
+    EXPECT_TRUE(g_recovered.load()) << "the restore step must have run";
+    // EXACTLY two responses: the post-update query (tag 1) and the post-recovery query (tag 2).
+    // The failure-window query (tag 99) must NOT have produced one — a dropped response would make
+    // this 1 (under) and a stray response would make it 3 (over).
+    EXPECT_EQ(g_responses.load(), 2) << "exactly two queries are answered; the failed one is dropped";
 }
