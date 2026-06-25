@@ -28,6 +28,35 @@ endif()
 set(QB_FUNCTIONS_INCLUDED TRUE)
 
 # -----------------------------------------------------------------------------
+# Test strictness toggle
+# -----------------------------------------------------------------------------
+# Promote warnings to errors on test/benchmark targets. Default ON in CI, OFF for
+# casual local builds, so the per-phase "0-warning" exit criterion is enforced in CI
+# without making every local rebuild fail on a stray warning.
+if(NOT DEFINED QB_CI)
+    if(DEFINED ENV{CI})
+        set(QB_CI ON)
+    else()
+        set(QB_CI OFF)
+    endif()
+endif()
+option(QB_TESTS_WERROR "Treat warnings as errors in test/benchmark targets" ${QB_CI})
+
+# Apply -Werror / /WX to a test or benchmark target, only when QB_TESTS_WERROR is ON.
+# The repo strict-warning *set* is applied separately by qb_apply_compiler_flags(); this
+# only flips the promote-to-error switch.
+function(qb_apply_test_werror target)
+    if(NOT QB_TESTS_WERROR)
+        return()
+    endif()
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /WX)
+    else()
+        target_compile_options(${target} PRIVATE -Werror)
+    endif()
+endfunction()
+
+# -----------------------------------------------------------------------------
 # Internal Helper Functions
 # -----------------------------------------------------------------------------
 
@@ -91,11 +120,17 @@ function(_qb_apply_target_properties target)
 endfunction()
 
 # Internal function to parse common arguments
+#
+# TIER/MODULE/LABELS/REQUIRES/TIMEOUT/RESOURCE_LOCK/WINDOWS_EXCLUDE are the test-suite
+# convention args (see docs/tests-audit/_CONVENTIONS.md §4). They are parsed here for all
+# target kinds but only consumed by qb_add_test / qb_register_module_test / qb_add_benchmark;
+# qb_add_library / qb_add_executable ignore them harmlessly.
 function(_qb_parse_common_args prefix)
-    set(options PRIVATE_LINKAGE)
-    set(oneValueArgs NAME VERSION DESCRIPTION OUTPUT_NAME)
-    set(multiValueArgs SOURCES DEPENDS INCLUDES DEFINES COMPILE_OPTIONS LINK_OPTIONS)
-    
+    set(options PRIVATE_LINKAGE WINDOWS_EXCLUDE)
+    set(oneValueArgs NAME VERSION DESCRIPTION OUTPUT_NAME TIER MODULE TIMEOUT)
+    set(multiValueArgs SOURCES DEPENDS INCLUDES DEFINES COMPILE_OPTIONS LINK_OPTIONS
+        LABELS REQUIRES RESOURCE_LOCK)
+
     cmake_parse_arguments(${prefix} "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
     
     # Set parsed arguments in parent scope
@@ -261,6 +296,101 @@ endfunction()
 # Test Functions
 # -----------------------------------------------------------------------------
 
+# Internal: translate the convention args (TIER/MODULE/LABELS/REQUIRES) into the concrete
+# CTest properties (labels, timeout, resource locks, skip-regex) and a skip-registration
+# decision. Implements docs/tests-audit/_CONVENTIONS.md §4.3/§4.5.
+#
+#   out_prefix  - results are returned as ${out_prefix}_LABELS / _TIMEOUT / _LOCKS /
+#                 _SKIP_REGEX / _SKIP_REGISTER (TRUE if a compile-gated feature is absent).
+# Reads (one/multi-value): TIER MODULE LABELS REQUIRES TIMEOUT RESOURCE_LOCK.
+function(_qb_test_conventions out_prefix)
+    set(oneValueArgs TIER MODULE TIMEOUT)
+    set(multiValueArgs LABELS REQUIRES RESOURCE_LOCK)
+    cmake_parse_arguments(C "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    set(_labels "")
+    set(_locks "${C_RESOURCE_LOCK}")
+    set(_skip_register FALSE)
+    set(_skip_regex "")
+
+    # Per-tier default timeout (overridable via TIMEOUT).
+    set(_timeout "")
+    if(C_TIER)
+        list(APPEND _labels "tier:${C_TIER}")
+        if(C_TIER STREQUAL "unit")
+            set(_timeout 60)
+        elseif(C_TIER STREQUAL "system")
+            set(_timeout 120)
+        elseif(C_TIER STREQUAL "integration")
+            set(_timeout 300)
+        endif()
+    endif()
+    if(C_MODULE)
+        list(APPEND _labels "module:${C_MODULE}")
+    endif()
+    if(C_LABELS)
+        list(APPEND _labels ${C_LABELS})
+    endif()
+
+    # REQUIRES tokens: each adds its label; ssl/quic/compression compile-gate on the
+    # matching QB_HAS_* feature (absent → skip registration, never a build failure);
+    # live wires the skip-not-fail contract (label + integration lock + skip-regex).
+    foreach(_req IN LISTS C_REQUIRES)
+        if(_req STREQUAL "ssl")
+            list(APPEND _labels "ssl")
+            if(NOT QB_HAS_SSL)
+                set(_skip_register TRUE)
+            endif()
+        elseif(_req STREQUAL "quic")
+            list(APPEND _labels "quic")
+            if(NOT QB_HAS_QUIC)
+                set(_skip_register TRUE)
+            endif()
+        elseif(_req STREQUAL "compression")
+            list(APPEND _labels "compression")
+            if(NOT QB_HAS_COMPRESSION)
+                set(_skip_register TRUE)
+            endif()
+        elseif(_req STREQUAL "network")
+            list(APPEND _labels "network")
+        elseif(_req STREQUAL "live")
+            list(APPEND _labels "live")
+            if(C_MODULE)
+                list(APPEND _locks "${C_MODULE}-integration")
+            endif()
+            # A REQUIRES-live binary skips every case when its daemon is unreachable. gtest
+            # still exits 0, so make CTest report *Skipped* (not Passed/Failed) when the shared
+            # integration fixture prints this exact sentinel. It is intentionally specific (NOT
+            # the generic "[ SKIPPED ]") so a per-case capability skip does not mark the whole
+            # binary Skipped — only a daemon-down full-skip does.
+            set(_skip_regex "QBM_INTEGRATION_SKIP_DAEMON_UNREACHABLE")
+        else()
+            # Unknown REQUIRES token: treat as a plain capability label.
+            list(APPEND _labels "${_req}")
+        endif()
+    endforeach()
+
+    # Backward-compat: a call that passes none of the convention args keeps the legacy
+    # flat label so the pre-migration tree stays green.
+    if(NOT _labels)
+        set(_labels "qb-tests")
+    endif()
+
+    if(C_TIMEOUT)
+        set(_timeout ${C_TIMEOUT})
+    endif()
+    if(NOT _timeout)
+        set(_timeout 300)  # safe default for un-tiered/legacy calls
+    endif()
+
+    list(REMOVE_DUPLICATES _labels)
+    set(${out_prefix}_LABELS "${_labels}" PARENT_SCOPE)
+    set(${out_prefix}_TIMEOUT "${_timeout}" PARENT_SCOPE)
+    set(${out_prefix}_LOCKS "${_locks}" PARENT_SCOPE)
+    set(${out_prefix}_SKIP_REGEX "${_skip_regex}" PARENT_SCOPE)
+    set(${out_prefix}_SKIP_REGISTER "${_skip_register}" PARENT_SCOPE)
+endfunction()
+
 # qb_add_test - Create a test with qb framework integration
 function(qb_add_test)
     _qb_parse_common_args(TEST ${ARGN})
@@ -277,7 +407,25 @@ function(qb_add_test)
     if(NOT QB_BUILD_TESTS)
         return()
     endif()
-    
+
+    # Resolve convention args (labels / timeout / locks / skip-regex / feature gating).
+    _qb_test_conventions(_TC
+        TIER "${TEST_TIER}" MODULE "${TEST_MODULE}"
+        LABELS ${TEST_LABELS} REQUIRES ${TEST_REQUIRES}
+        TIMEOUT "${TEST_TIMEOUT}" RESOURCE_LOCK ${TEST_RESOURCE_LOCK})
+
+    # Portability / feature gating: a POSIX-only test on Windows, or a test whose
+    # REQUIRES feature (ssl/quic/compression) is absent, is silently NOT registered
+    # (no build failure) — exactly mirroring the old list(REMOVE_ITEM ...) exclusions.
+    if(TEST_WINDOWS_EXCLUDE AND WIN32)
+        qb_debug_message("qb_add_test: ${TEST_NAME} excluded on Windows")
+        return()
+    endif()
+    if(_TC_SKIP_REGISTER)
+        qb_debug_message("qb_add_test: ${TEST_NAME} skipped (REQUIRES feature unavailable)")
+        return()
+    endif()
+
     # Create test executable
     add_executable(${TEST_NAME} ${TEST_SOURCES})
     
@@ -359,14 +507,29 @@ function(qb_add_test)
              WORKING_DIRECTORY "${TEST_BINARY_DIR}")
 
     set_property(GLOBAL APPEND PROPERTY QB_TEST_TARGETS ${TEST_NAME})
-    
-    # Set test properties for better CTest integration
+
+    # CTest integration: labels (tier:/module:/feature), per-tier timeout, resource locks,
+    # and — for REQUIRES live — the skip-regex that makes a daemon-down run report Skipped.
     set_tests_properties(${TEST_NAME} PROPERTIES
-        TIMEOUT 300
-        LABELS "qb-tests"
+        TIMEOUT "${_TC_TIMEOUT}"
+        LABELS "${_TC_LABELS}"
     )
-    
-    qb_debug_message("Created test: ${TEST_NAME} (working directory: ${TEST_BINARY_DIR})")
+    if(_TC_LOCKS)
+        set_tests_properties(${TEST_NAME} PROPERTIES RESOURCE_LOCK "${_TC_LOCKS}")
+    endif()
+    if(_TC_SKIP_REGEX)
+        set_tests_properties(${TEST_NAME} PROPERTIES SKIP_REGULAR_EXPRESSION "${_TC_SKIP_REGEX}")
+    endif()
+
+    # IDE folder grouping mirrors the on-disk tier tree when MODULE/TIER are supplied.
+    if(TEST_MODULE AND TEST_TIER)
+        set_target_properties(${TEST_NAME} PROPERTIES FOLDER "Tests/${TEST_MODULE}/${TEST_TIER}")
+    endif()
+
+    # Strict warnings → errors only when QB_TESTS_WERROR is ON (default = CI).
+    qb_apply_test_werror(${TEST_NAME})
+
+    qb_debug_message("Created test: ${TEST_NAME} (labels: ${_TC_LABELS})")
 endfunction()
 
 # -----------------------------------------------------------------------------
@@ -389,7 +552,20 @@ function(qb_add_benchmark)
     if(NOT QB_BUILD_BENCHMARKS)
         return()
     endif()
-    
+
+    # Feature / portability gating (benchmarks are daemon-free by convention; REQUIRES
+    # ssl/quic/compression compile-gate, WINDOWS_EXCLUDE skips POSIX-only benches).
+    _qb_test_conventions(_BC
+        TIER benchmark MODULE "${BENCH_MODULE}"
+        LABELS ${BENCH_LABELS} REQUIRES ${BENCH_REQUIRES})
+    if(BENCH_WINDOWS_EXCLUDE AND WIN32)
+        return()
+    endif()
+    if(_BC_SKIP_REGISTER)
+        qb_debug_message("qb_add_benchmark: ${BENCH_NAME} skipped (REQUIRES feature unavailable)")
+        return()
+    endif()
+
     # Create benchmark executable
     add_executable(${BENCH_NAME} ${BENCH_SOURCES})
     
@@ -450,6 +626,11 @@ function(qb_add_benchmark)
             COMMAND_EXPAND_LISTS
         )
     endif()
+
+    if(BENCH_MODULE)
+        set_target_properties(${BENCH_NAME} PROPERTIES FOLDER "Tests/${BENCH_MODULE}/benchmark")
+    endif()
+    qb_apply_test_werror(${BENCH_NAME})
 
     qb_debug_message("Created benchmark: ${BENCH_NAME}")
 endfunction()
@@ -596,42 +777,103 @@ endfunction()
 
 # qb_register_module_test - Register a test for a module
 function(qb_register_module_test)
-    set(options)
-    set(oneValueArgs MODULE_NAME TEST_NAME)
-    set(multiValueArgs SOURCES DEPENDS INCLUDES DEFINES)
-    
+    set(options WINDOWS_EXCLUDE)
+    set(oneValueArgs MODULE_NAME TEST_NAME TIER TIMEOUT)
+    set(multiValueArgs SOURCES DEPENDS INCLUDES DEFINES LABELS REQUIRES RESOURCE_LOCK)
+
     cmake_parse_arguments(MTEST "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-    
+
     if(NOT MTEST_MODULE_NAME)
         qb_error_message("qb_register_module_test: MODULE_NAME is required")
     endif()
-    
+
     if(NOT MTEST_TEST_NAME)
         qb_error_message("qb_register_module_test: TEST_NAME is required")
     endif()
-    
+
     if(NOT MTEST_SOURCES)
         qb_error_message("qb_register_module_test: SOURCES is required")
     endif()
-    
+
     # Only create tests if testing is enabled
     if(NOT QB_BUILD_TESTS)
         return()
     endif()
-    
-    # Create test name
-    set(test_target "qbm-${MTEST_MODULE_NAME}-test-${MTEST_TEST_NAME}")
-    
-    # Create test
+
+    # Target name: <module>-test-<tier>-<name> when a TIER is given (the new convention),
+    # else the legacy <module>-test-<name> so un-migrated call sites keep their names.
+    if(MTEST_TIER)
+        set(test_target "qbm-${MTEST_MODULE_NAME}-test-${MTEST_TIER}-${MTEST_TEST_NAME}")
+    else()
+        set(test_target "qbm-${MTEST_MODULE_NAME}-test-${MTEST_TEST_NAME}")
+    endif()
+
+    set(_we "")
+    if(MTEST_WINDOWS_EXCLUDE)
+        set(_we WINDOWS_EXCLUDE)
+    endif()
+
+    # Create test, forwarding the convention args (MODULE → module:qbm-<name> label).
     qb_add_test(
         NAME ${test_target}
         SOURCES ${MTEST_SOURCES}
         DEPENDS qbm-${MTEST_MODULE_NAME} ${MTEST_DEPENDS}
         INCLUDES ${MTEST_INCLUDES}
         DEFINES ${MTEST_DEFINES}
+        MODULE "qbm-${MTEST_MODULE_NAME}"
+        TIER "${MTEST_TIER}"
+        LABELS ${MTEST_LABELS}
+        REQUIRES ${MTEST_REQUIRES}
+        TIMEOUT "${MTEST_TIMEOUT}"
+        RESOURCE_LOCK ${MTEST_RESOURCE_LOCK}
+        ${_we}
     )
-    
+
     qb_debug_message("Created module test: ${test_target}")
+endfunction()
+
+# qb_register_module_benchmark - Register a google-benchmark target for a module
+# Target name: qbm-<module>-bench-<name>. Daemon-free by convention (REQUIRES is for
+# ssl/quic compile-gating only).
+function(qb_register_module_benchmark)
+    set(options WINDOWS_EXCLUDE)
+    set(oneValueArgs MODULE_NAME BENCH_NAME)
+    set(multiValueArgs SOURCES DEPENDS INCLUDES DEFINES LABELS REQUIRES)
+
+    cmake_parse_arguments(MBENCH "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    if(NOT MBENCH_MODULE_NAME)
+        qb_error_message("qb_register_module_benchmark: MODULE_NAME is required")
+    endif()
+    if(NOT MBENCH_BENCH_NAME)
+        qb_error_message("qb_register_module_benchmark: BENCH_NAME is required")
+    endif()
+    if(NOT MBENCH_SOURCES)
+        qb_error_message("qb_register_module_benchmark: SOURCES is required")
+    endif()
+    if(NOT QB_BUILD_BENCHMARKS)
+        return()
+    endif()
+
+    set(bench_target "qbm-${MBENCH_MODULE_NAME}-bench-${MBENCH_BENCH_NAME}")
+    set(_we "")
+    if(MBENCH_WINDOWS_EXCLUDE)
+        set(_we WINDOWS_EXCLUDE)
+    endif()
+
+    qb_add_benchmark(
+        NAME ${bench_target}
+        SOURCES ${MBENCH_SOURCES}
+        DEPENDS qbm-${MBENCH_MODULE_NAME} ${MBENCH_DEPENDS}
+        INCLUDES ${MBENCH_INCLUDES}
+        DEFINES ${MBENCH_DEFINES}
+        MODULE "qbm-${MBENCH_MODULE_NAME}"
+        LABELS ${MBENCH_LABELS}
+        REQUIRES ${MBENCH_REQUIRES}
+        ${_we}
+    )
+
+    qb_debug_message("Created module benchmark: ${bench_target}")
 endfunction()
 
 # -----------------------------------------------------------------------------
