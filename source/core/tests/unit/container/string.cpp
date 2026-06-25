@@ -1,29 +1,35 @@
-/**
- * @file test-string.cpp
- * @brief Unit tests for qb::string fixed-size string implementation
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * This file contains comprehensive unit tests for the qb::string class,
- * testing all constructors, operators, methods, and edge cases.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * See the License for the specific terms.
  */
+
+/**
+ * @file unit/container/string.cpp
+ * @brief `qb::string<N>` — the fixed-capacity, stack-allocated string (`qb/string.h`).
+ *
+ * Pure value-type logic, fully deterministic: NO engine, loop, daemon, or network. Drives the
+ * whole surface — every ctor / assignment / accessor / iterator flavour, capacity & resize,
+ * mutators, substr/compare, find/rfind (char & substring), the C++20 starts/ends/contains trio,
+ * all comparison and concatenation operators, std::string / string_view conversions, stream I/O,
+ * and constexpr construction. Assertions check computed/derived truth (hand-verified search
+ * positions against an annotated corpus, OOB throws, capacity-truncation semantics), not echoes.
+ *
+ * Added over the original: an explicit assertion on the *moved-from* state (this is a fixed
+ * buffer with `= default` move — no ownership transfer, so the source stays valid and unchanged);
+ * an interior-NUL `assign(ptr, len)` case proving `size()` honours the explicit length rather than
+ * `strlen` (the bytes, including the embedded NUL, survive); and find/rfind start-position edge
+ * cases (pos past the end, pos 0, and a substring present only before pos).
+ */
+
+#include <sstream>
+#include <string>
 
 #include <gtest/gtest.h>
 #include <qb/string.h>
-#include <string>
-#include <sstream>
 
 namespace {
 
@@ -129,6 +135,12 @@ TEST_F(StringTest, MoveConstruction) {
     qb::string<30> moved(std::move(original));
     EXPECT_EQ(moved.size(), 8);
     EXPECT_STREQ(moved.c_str(), "Original");
+    // qb::string is a fixed inline buffer with a defaulted (trivial-copy) move ctor: there is no
+    // heap ownership to steal, so the moved-FROM object is left valid AND unchanged (equal to the
+    // value moved out). This is a stronger guarantee than std::string's "valid but unspecified".
+    EXPECT_EQ(original.size(), 8u);
+    EXPECT_STREQ(original.c_str(), "Original");
+    EXPECT_EQ(original, moved);
 }
 
 TEST_F(StringTest, TruncationOnOverflow) {
@@ -154,6 +166,10 @@ TEST_F(StringTest, MoveAssignment) {
     str1 = std::move(str2);
     EXPECT_EQ(str1.size(), 6);
     EXPECT_STREQ(str1.c_str(), "Second");
+    // As with move-construction: defaulted move-assign over a fixed buffer leaves the moved-FROM
+    // string valid and unchanged (still "Second").
+    EXPECT_EQ(str2.size(), 6u);
+    EXPECT_STREQ(str2.c_str(), "Second");
 }
 
 TEST_F(StringTest, CStringLiteralAssignment) {
@@ -403,6 +419,35 @@ TEST_F(StringAlgorithmTest, RFind) {
     EXPECT_EQ(substr_test.rfind("test"), 8);
 }
 
+TEST_F(StringAlgorithmTest, FindRFindStartPositionEdges) {
+    // Corpus: "Hello, World! This is a test string." (size 36)
+    const auto sz = test_str_.size();
+    ASSERT_EQ(sz, 36u);
+
+    // find(char, pos): pos >= size() short-circuits to npos (contract at string.h: `if (pos >=
+    // _size) return npos`), so a start past the end finds nothing even for a present character.
+    EXPECT_EQ(test_str_.find('H', sz), qb::string<50>::npos) << "pos == size() -> npos";
+    EXPECT_EQ(test_str_.find('H', sz + 100), qb::string<50>::npos) << "pos past end -> npos";
+    // pos == 0 searches the whole string (the leading 'H' is at index 0).
+    EXPECT_EQ(test_str_.find('H', 0), 0u);
+    // find substring with pos past end -> npos.
+    EXPECT_EQ(test_str_.find("World", sz), qb::string<50>::npos);
+
+    // Substring present only BEFORE pos -> not found (search starts at data()+pos): "Hello" is at
+    // index 0, so searching from pos 1 onward must miss it.
+    EXPECT_EQ(test_str_.find("Hello"), 0u);
+    EXPECT_EQ(test_str_.find("Hello", 1), qb::string<50>::npos)
+        << "a match wholly before pos must not be reported";
+
+    // rfind(char) clamps pos to size()-1 rather than short-circuiting, so a past-end pos still
+    // searches the whole string and finds the LAST occurrence (here 'l' at index 10 in "World").
+    EXPECT_EQ(test_str_.rfind('l', sz + 100), test_str_.rfind('l'));
+    // rfind with pos 0 only considers index 0 ('H'); a char absent there -> npos.
+    EXPECT_EQ(test_str_.rfind('H', 0), 0u);
+    EXPECT_EQ(test_str_.rfind('e', 0), qb::string<50>::npos)
+        << "rfind(ch, 0) inspects only index 0";
+}
+
 // Modifiers tests
 
 TEST_F(StringTest, Append) {
@@ -636,6 +681,31 @@ TEST_F(StringTest, AssignMethods) {
     // Assign with fill
     str.assign(5, 'A');
     EXPECT_STREQ(str.c_str(), "AAAAA");
+}
+
+TEST_F(StringTest, AssignWithInteriorNul) {
+    // assign(ptr, len) memcpy's exactly `len` bytes and records `_size = len`, so an embedded
+    // '\0' is preserved as data — size() honours the explicit length, NOT strlen(). This is the
+    // contract the binary-payload callers rely on; a strlen-based assign would truncate at the NUL.
+    const char     raw[] = {'a', 'b', '\0', 'c', 'd'}; // 5 bytes, NUL in the middle
+    qb::string<30> str;
+    str.assign(raw, sizeof(raw));
+    EXPECT_EQ(str.size(), 5u) << "size() must equal the explicit length, not strlen() (=2)";
+    EXPECT_EQ(str[0], 'a');
+    EXPECT_EQ(str[1], 'b');
+    EXPECT_EQ(str[2], '\0');
+    EXPECT_EQ(str[3], 'c');
+    EXPECT_EQ(str[4], 'd');
+    // A string_view over the buffer also spans all 5 bytes (length-driven, NUL-tolerant)...
+    std::string_view sv = str;
+    EXPECT_EQ(sv.size(), 5u);
+    EXPECT_EQ(sv, std::string_view(raw, sizeof(raw)));
+    // ...while c_str()/strlen would stop at the interior NUL (documents the divergence).
+    EXPECT_EQ(std::char_traits<char>::length(str.c_str()), 2u);
+    // The ctor form (ptr, len) honours the length identically.
+    qb::string<30> ctor(raw, sizeof(raw));
+    EXPECT_EQ(ctor.size(), 5u);
+    EXPECT_EQ(ctor, str);
 }
 
 // Edge cases and error handling

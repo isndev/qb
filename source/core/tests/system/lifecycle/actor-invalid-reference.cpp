@@ -1,350 +1,203 @@
-/**
- * @file qb/core/tests/system/test-actor-error-handling.cpp
- * @brief Unit tests for actor error handling and resilience
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * This file contains tests for error handling in the QB Actor Framework.
- * It verifies that actors can properly detect, handle, and recover from
- * various error conditions while maintaining system stability.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * See the License for the specific terms.
+ */
+
+/**
+ * @file system/lifecycle/actor-invalid-reference.cpp
+ * @brief Sending to an invalid / dead actor id is dropped gracefully — the sender survives — and a
+ *        throwing `onInit` fails the core's init (it never silently swallows the throw).
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * The original test-actor-error-handling.cpp had two tautological cases (ShouldRecoverFromErrors /
+ * ShouldTerminateOnUnrecoverableErrors) that asserted ONLY on globals the actor itself flipped
+ * straight from the test's input flag — they could never fail. They are deleted. What remains is the
+ * one real, framework-observable contract plus a real failure path:
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * @ingroup Core
+ *   - SendToNeverExistedActorSenderSurvives — a push to an id that was never registered is dropped,
+ *     and the sender keeps processing its mailbox (a follow-up self-tick still fires).
+ *   - SendToDeadActorSenderSurvives — same, but to an id that WAS live and has since been killed.
+ *   - ThrowingOnInitFailsCoreInit — a `onInit` that throws fails the init and aborts `start()` with
+ *     `hasError()`. (Per the engine: an `onInit` throw is caught by `__drive_init__` and surfaced as
+ *     a false-return init failure, i.e. the BadActorInit-class outcome — `hasError()` is the only
+ *     per-engine observable; there is no public per-core error-code getter.)
+ *
+ * Every in-actor side-effect is mirrored to a post-join() atomic so a never-scheduled actor cannot
+ * pass vacuously.
  */
 
 #include <atomic>
 #include <gtest/gtest.h>
+#include <stdexcept>
+
 #include <qb/actor.h>
-#include <qb/io.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
-#include <functional>
-#include <memory>
-#include <stdexcept>
 
 using namespace std::chrono_literals;
 
-// Define test events
-struct ErrorInducingEvent : public qb::Event {
-    enum class ErrorType { None, ThrowException, InvalidOperation, SendToInvalidActor };
+// A payload that nobody on the dead/never-existed target could ever handle.
+struct Poke : public qb::Event {};
+// Sender self-tick proving its mailbox keeps advancing after a bad push.
+struct SelfTick : public qb::Event {};
 
-    ErrorType error_type;
-    explicit ErrorInducingEvent(ErrorType type)
-        : error_type(type) {}
-};
+namespace {
+std::atomic<bool> g_sender_survived{false}; // the sender processed a tick AFTER the bad push
+std::atomic<bool> g_sender_oninit_ran{false};
+} // namespace
 
-struct MonitorEvent : public qb::Event {
-    qb::ActorId target_id;
-    explicit MonitorEvent(qb::ActorId id)
-        : target_id(id) {}
-};
-
-struct StatusEvent : public qb::Event {
-    bool is_alive;
-    explicit StatusEvent(bool alive)
-        : is_alive(alive) {}
-};
-
-// Coordinator to track overall test status
-std::atomic<bool> g_error_detected{false};
-std::atomic<bool> g_recovery_successful{false};
-std::atomic<int>  g_error_actors_terminated{0};
-
-// Error-inducing actor that will deliberately cause errors
-class ErrorActor : public qb::Actor {
-    bool _should_recover;
+// Pushes a Poke to `_target` (an invalid or dead id), then schedules a self-tick. If the bad push
+// had torn down the sender or its core, the self-tick would never fire.
+class Sender : public qb::Actor {
+    qb::ActorId _target;
 
 public:
-    ErrorActor(int id, bool should_recover)
-        : _should_recover(should_recover) {}
+    explicit Sender(qb::ActorId target)
+        : _target(target) {}
 
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<ErrorInducingEvent>(*this);
-        registerEvent<MonitorEvent>(*this);
+        registerEvent<SelfTick>(*this);
+        g_sender_oninit_ran.store(true);
+        push<Poke>(_target);  // dropped: the target is invalid / dead
+        push<SelfTick>(id()); // mailbox-ordered after the bad push
         co_return true;
     }
 
     void
-    on(const ErrorInducingEvent &event) {
-        // Handle different types of errors
-        switch (event.error_type) {
-            case ErrorInducingEvent::ErrorType::ThrowException:
-                // Simulating an exception
-                // In real code this would cause the actor to crash
-                g_error_detected = true;
-
-                // Simulate recovery if needed
-                if (_should_recover) {
-                    g_recovery_successful = true;
-                } else {
-                    g_error_actors_terminated++;
-                    kill();
-                }
-                break;
-
-            case ErrorInducingEvent::ErrorType::InvalidOperation:
-                // Simulate an invalid operation
-                g_error_detected = true;
-
-                // Simulate recovery if needed
-                if (_should_recover) {
-                    g_recovery_successful = true;
-                } else {
-                    g_error_actors_terminated++;
-                    kill();
-                }
-                break;
-
-            case ErrorInducingEvent::ErrorType::SendToInvalidActor:
-                // Try to send to an invalid actor ID
-                // Note: This should fail gracefully in the QB framework
-                to(qb::ActorId(999999)).push<StatusEvent>(true);
-                g_error_detected = true;
-
-                // Actor should stay alive even after sending to invalid ID
-                if (_should_recover) {
-                    g_recovery_successful = true;
-                } else {
-                    g_error_actors_terminated++;
-                    kill();
-                }
-                break;
-
-            case ErrorInducingEvent::ErrorType::None:
-            default:
-                // No error, just respond with status
-                break;
-        }
-    }
-
-    void
-    on(const MonitorEvent &event) {
-        // Check if the target actor is alive and respond
-        bool is_actor_alive = false;
-
-        // This creates direct communication between actors
-        try {
-            // Try to send a message to the target
-            to(event.target_id).push<StatusEvent>(true);
-            is_actor_alive = true;
-        } catch (...) {
-            is_actor_alive = false;
-        }
-
-        // Send back status response
-        to(event.getSource()).push<StatusEvent>(is_actor_alive);
+    on(const SelfTick &) {
+        g_sender_survived.store(true); // we are alive and draining our mailbox after the bad push
+        qb::Main::stop();
+        kill();
     }
 };
 
-// Monitor actor to check the status of other actors
-class MonitorActor : public qb::Actor {
-    std::vector<qb::ActorId>                                             _monitored_actors;
-    int                                                                  _num_actors_to_monitor;
-    int                                                                  _num_actors_checked;
-    std::unique_ptr<qb::io::async::ScopedTimeout<std::function<void()>>> _timeout;
+TEST(InvalidReference, SendToNeverExistedActorSenderSurvives) {
+    g_sender_survived.store(false);
+    g_sender_oninit_ran.store(false);
 
-public:
-    explicit MonitorActor(int num_actors)
-        : _num_actors_to_monitor(num_actors)
-        , _num_actors_checked(0) {}
-
-    qb::io::async::task<bool>
-    onInit() override {
-        registerEvent<StatusEvent>(*this);
-        // KillEvent est déjà enregistré par défaut pour tous les acteurs
-
-        // Keep the timeout owned by the actor so it is cancelled automatically
-        // when the actor dies. A fire-and-forget callback capturing `this`
-        // can outlive the actor and dereference freed memory on Windows.
-        _timeout = qb::io::async::scoped_callback(std::function<void()>{[this]() {
-                                                      broadcast<qb::KillEvent>();
-                                                      kill();
-                                                  }},
-                                                  500ms); // 500ms timeout (0.5 seconds)
-
-        co_return true;
-    }
-
-    void
-    addActorToMonitor(qb::ActorId actor_id) {
-        _monitored_actors.push_back(actor_id);
-    }
-
-    void
-    startMonitoring() {
-        for (const auto &actor_id : _monitored_actors) {
-            to(actor_id).push<MonitorEvent>(id());
-        }
-    }
-
-    void
-    on(const StatusEvent &event) {
-        // Track actor status responses
-        _num_actors_checked++;
-
-        // If we've checked all actors, terminate
-        if (_num_actors_checked >= _num_actors_to_monitor) {
-            broadcast<qb::KillEvent>();
-            kill();
-        }
-    }
-};
-
-// Coordinator actor that manages the error test
-class CoordinatorActor : public qb::Actor {
-    std::vector<qb::ActorId>      _error_actors;
-    qb::ActorId                   _monitor_actor_id;
-    ErrorInducingEvent::ErrorType _error_type;
-    bool                          _should_actors_recover;
-    int                           _num_actors;
-
-public:
-    CoordinatorActor(int num_actors, ErrorInducingEvent::ErrorType error_type, bool should_recover)
-        : _error_type(error_type)
-        , _should_actors_recover(should_recover)
-        , _num_actors(num_actors) {}
-
-    qb::io::async::task<bool>
-    onInit() override {
-        registerEvent<StatusEvent>(*this);
-
-        // Create error actors
-        // Modern C++: using auto for type deduction
-        for (auto i = 0; i < _num_actors; ++i) {
-            auto actor_id = addRefActor<ErrorActor>(i, _should_actors_recover);
-            _error_actors.push_back(actor_id.id());
-        }
-
-        // Create monitor actor
-        auto monitor      = addRefActor<MonitorActor>(_num_actors);
-        _monitor_actor_id = monitor.id();
-
-        // Add actors to monitor
-        for (const auto &actor_id : _error_actors) {
-            monitor->addActorToMonitor(actor_id);
-        }
-
-        // Trigger errors in all error actors
-        for (const auto &actor_id : _error_actors) {
-            to(actor_id).push<ErrorInducingEvent>(_error_type);
-        }
-
-        // Start monitoring (this will cause the test to eventually complete)
-        monitor->startMonitoring();
-
-        co_return true;
-    }
-
-    void
-    on(const StatusEvent &) {
-        // This is just a handler to receive potential messages from actors
-        // No explicit action needed
-    }
-};
-
-// Test actor recovery from exceptions
-TEST(ErrorHandling, ShouldRecoverFromErrors) {
-    // Reset global flags
-    g_error_detected          = false;
-    g_recovery_successful     = false;
-    g_error_actors_terminated = 0;
-
-    // Create main instance
     qb::Main main;
-
-    // Number of actors to test
-    const int num_actors = 3;
-
-    // Add coordinator actor (with recovery enabled)
-    main.addActor<CoordinatorActor>(0, num_actors, ErrorInducingEvent::ErrorType::ThrowException,
-                                    true // actors should recover
-    );
-
-    // Run the engine
+    // An id that was never registered on core 0: the uint32 layout is {sid:low16, core:high16},
+    // so 4242 == {sid 4242, core 0} — a high sid the low-first allocator never hands out.
+    main.addActor<Sender>(0, qb::ActorId(static_cast<uint32_t>(4242)));
     main.start(false);
-    EXPECT_FALSE(main.hasError());
+    main.join();
 
-    // Check that errors were detected
-    EXPECT_TRUE(g_error_detected);
-
-    // Check that recovery happened
-    EXPECT_TRUE(g_recovery_successful);
-
-    // No actors should have terminated
-    EXPECT_EQ(g_error_actors_terminated, 0);
+    EXPECT_FALSE(main.hasError()) << "a push to a never-existed id must not kill the core";
+    EXPECT_TRUE(g_sender_oninit_ran.load());
+    EXPECT_TRUE(g_sender_survived.load()) << "the sender must keep processing its mailbox";
 }
 
-// Test actor termination when recovery is disabled
-TEST(ErrorHandling, ShouldTerminateOnUnrecoverableErrors) {
-    // Reset global flags
-    g_error_detected          = false;
-    g_recovery_successful     = false;
-    g_error_actors_terminated = 0;
+// ---------------------------------------------------------------------------
+// Push to an id that WAS live and has since been killed.
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<bool> g_victim_died{false};
+std::atomic<bool> g_dead_sender_survived{false};
+} // namespace
 
-    // Create main instance
+struct Die : public qb::Event {};
+struct VictimGone : public qb::Event {
+    qb::ActorId who;
+    explicit VictimGone(qb::ActorId w)
+        : who(w) {}
+};
+
+class Victim : public qb::Actor {
+    qb::ActorId _notify;
+
+public:
+    explicit Victim(qb::ActorId notify)
+        : _notify(notify) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Die>(*this);
+        co_return true;
+    }
+    void
+    on(const Die &) {
+        g_victim_died.store(true);
+        push<VictimGone>(_notify, id());
+        kill();
+    }
+};
+
+// Kills a victim, then — once notified it is gone — pushes to the now-dead id and self-ticks.
+class DeadIdSender : public qb::Actor {
+    qb::ActorId _victim;
+
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<VictimGone>(*this);
+        registerEvent<SelfTick>(*this);
+        _victim = addRefActor<Victim>(id()).id();
+        to(_victim).push<Die>();
+        co_return true;
+    }
+    void
+    on(const VictimGone &e) {
+        push<Poke>(e.who);    // push to the now-dead id — must be dropped, not crash
+        push<SelfTick>(id()); // mailbox-ordered after the bad push
+    }
+    void
+    on(const SelfTick &) {
+        g_dead_sender_survived.store(true);
+        qb::Main::stop();
+        kill();
+    }
+};
+
+TEST(InvalidReference, SendToDeadActorSenderSurvives) {
+    g_victim_died.store(false);
+    g_dead_sender_survived.store(false);
+
     qb::Main main;
-
-    // Number of actors to test
-    const int num_actors = 3;
-
-    // Add coordinator actor (without recovery)
-    main.addActor<CoordinatorActor>(0, num_actors, ErrorInducingEvent::ErrorType::InvalidOperation,
-                                    false // actors should not recover
-    );
-
-    // Run the engine
+    main.addActor<DeadIdSender>(0);
     main.start(false);
-    EXPECT_FALSE(main.hasError());
+    main.join();
 
-    // Check that errors were detected
-    EXPECT_TRUE(g_error_detected);
-
-    // Check that recovery did not happen
-    EXPECT_FALSE(g_recovery_successful);
-
-    // All actors should have terminated
-    EXPECT_EQ(g_error_actors_terminated, num_actors);
+    EXPECT_FALSE(main.hasError()) << "a push to a dead id must not kill the core";
+    EXPECT_TRUE(g_victim_died.load()) << "the victim must actually have been killed first";
+    EXPECT_TRUE(g_dead_sender_survived.load()) << "the sender must survive pushing to a dead id";
 }
 
-// Test resilience when sending to invalid actors
-TEST(ErrorHandling, ShouldHandleInvalidActorReferences) {
-    // Reset global flags
-    g_error_detected          = false;
-    g_recovery_successful     = false;
-    g_error_actors_terminated = 0;
+// ---------------------------------------------------------------------------
+// A throwing onInit fails the core init (the throw is never silently swallowed).
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<bool> g_throwinit_ran{false};
+std::atomic<bool> g_throwinit_destroyed{false};
+} // namespace
 
-    // Create main instance
+class ThrowingInitActor : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        g_throwinit_ran.store(true);
+        if (id().is_valid()) // always true; defeats unreachable-code analysis on the co_return
+            throw std::runtime_error("onInit blew up");
+        co_return true;
+    }
+    ~ThrowingInitActor() override {
+        g_throwinit_destroyed.store(true);
+    }
+};
+
+TEST(InvalidReference, ThrowingOnInitFailsCoreInit) {
+    g_throwinit_ran.store(false);
+    g_throwinit_destroyed.store(false);
+
     qb::Main main;
-
-    // Number of actors to test
-    const int num_actors = 3;
-
-    // Add coordinator actor (with recovery enabled)
-    main.addActor<CoordinatorActor>(0, num_actors, ErrorInducingEvent::ErrorType::SendToInvalidActor,
-                                    true // actors should recover
-    );
-
-    // Run the engine
+    main.addActor<ThrowingInitActor>(0);
     main.start(false);
-    EXPECT_FALSE(main.hasError());
+    main.join();
 
-    // Check that errors were detected
-    EXPECT_TRUE(g_error_detected);
-
-    // Check that recovery happened
-    EXPECT_TRUE(g_recovery_successful);
-
-    // No actors should have terminated
-    EXPECT_EQ(g_error_actors_terminated, 0);
+    // The throw is surfaced as an init failure (BadActorInit-class) and aborts start().
+    EXPECT_TRUE(main.hasError()) << "a throwing onInit must fail the core init, not be swallowed";
+    EXPECT_TRUE(g_throwinit_ran.load()) << "onInit must actually have run";
+    EXPECT_TRUE(g_throwinit_destroyed.load()) << "a failed-init actor must still be destroyed";
 }

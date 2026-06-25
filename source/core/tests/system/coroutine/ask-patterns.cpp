@@ -1,31 +1,54 @@
-/**
- * @file test-actor-coroutine-ask-patterns.cpp
- * @brief Tests for the request/response composition layer built on `ask`:
- *        the typed `Request<Resp>` envelope + `qb::answer(*this, )` helper, and the
- *        `ScopedCoroContext::ask_all` / `ask_any` scatter-gather combinators.
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * Validates:
- *   - `Request<Resp>` + `qb::answer(*this, e, fn)` round-trips a typed response (one event type);
- *   - `ask_all` gathers every reply (same-core and cross-core), and fails with
- *     `timeout_error` if any target stays silent;
- *   - `ask_any` resolves with the first reply (fastest wins) and `timeout_error` if all
- *     stay silent;
- *   - `qb::answer(*this, )`'s `resolve_ask` guard lets one actor both ask and answer the *same*
- *     event type without confusing its own replies with inbound requests.
- *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites
- * (cross-core asks leave a fixed, benign teardown residual — see test-actor-coroutine-ask).
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * See the License for the specific terms.
  */
+
+/**
+ * @file system/coroutine/ask-patterns.cpp
+ * @brief The request/response COMPOSITION layer built on `ask`: typed `Request<Resp>` + `qb::answer`,
+ *        the `ask_all` / `ask_any` scatter-gather combinators, and `run_saga` orchestration.
+ *
+ * Validates, with framework-computed oracles (every gathered value is `key * k` produced by the
+ * responder, never a value the asker handed in):
+ *   - `Request<Resp>` + `qb::answer(*this, e, fn)` round-trips a typed response over one event type;
+ *   - `ask_all` gathers EVERY reply (same-core and cross-core), and fails with `timeout_error` if any
+ *     target stays silent, and unwinds with `cancelled_error` if the asker is killed mid-gather;
+ *   - `ask_any` resolves with the FIRST reply (fastest wins, same-core AND cross-core) and
+ *     `timeout_error` if all stay silent;
+ *   - `qb::answer`'s `resolve_ask` guard lets one actor both ask and answer the *same* event type
+ *     without confusing its own replies with inbound requests;
+ *   - `run_saga` / `SagaScope`: compensations run in reverse (LIFO) on a step failure, the happy
+ *     path runs none, a mid-flow cancel SKIPS rollback, and a throwing compensation does not abort
+ *     the remaining (best-effort) rollbacks.
+ *
+ * Hardening over the original (see docs/tests-audit/qb-core/qbcore-c10.md):
+ *   - every bare `EXPECT_TRUE(g_*)` boolean assert carries a `<<` message naming the invariant;
+ *   - the case-5 ask_any race is made DETERMINISTIC: the slow market is LATCHED — it does not emit
+ *     its reply until it receives an explicit "you may reply" signal that the asker sends only AFTER
+ *     it has already observed the fast reply, so "fastest wins" no longer depends on an 80ms sleep;
+ *   - NEW `ask_all` partial-then-cancel case (kill the asker mid-gather → `cancelled_error`);
+ *   - NEW cross-core `ask_any` case (winner and loser on different cores) to pair with the same-core
+ *     race (requires-multicore).
+ *
+ * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites (cross-core asks
+ * leave a fixed, benign teardown residual — see ask-roundtrip.cpp).
+ */
+
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/actor.h>
 #include <qb/core/patterns.h>
-#include <qb/main.h>
 #include <qb/io/async.h>
 #include <qb/io/async/coroutine.h>
-#include <atomic>
-#include <chrono>
-#include <vector>
+#include <qb/main.h>
 
 using namespace qb;
 using namespace std::chrono_literals;
@@ -93,6 +116,41 @@ public:
     }
 };
 
+// Explicit "you may now emit your reply" signal — used to make the ask_any race deterministic.
+struct ReleaseSlow : public qb::Event {};
+
+// LATCHED slow market: stashes its (distinguishable, key*3) reply and emits it only on ReleaseSlow.
+// This removes the wall-clock race from the ask_any "fastest wins" case — the slow reply provably
+// arrives AFTER the fast reply, because the asker sends ReleaseSlow only once it has the fast winner.
+class LatchedQuoteMarket : public qb::Actor {
+    qb::ActorId _asker{};
+    Quote       _pending{};
+    bool        _have_pending{false};
+
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Quote>(*this);
+        registerEvent<ReleaseSlow>(*this);
+        co_return true;
+    }
+    void
+    on(Quote &q) {
+        _pending          = q; // copy preserves correlation_id
+        _pending.response = q.key * 3;
+        _asker            = q.getSource();
+        _have_pending     = true;
+        // Do NOT reply yet — wait for the explicit release.
+    }
+    void
+    on(const ReleaseSlow &) {
+        if (_have_pending) {
+            push<Quote>(_asker, _pending); // arrives strictly after the fast reply
+            _have_pending = false;
+        }
+    }
+};
+
 // ---------------------------------------------------------------------------
 // 1. Typed Request<Resp> + qb::answer(*this, ) round-trip
 // ---------------------------------------------------------------------------
@@ -137,7 +195,7 @@ TEST(ActorAskPatterns, TypedRequestRoundTrips) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_typed_resp.load(), 42); // 21 * 2, via Request<int>::response + qb::answer(*this, )
+    EXPECT_EQ(g_typed_resp.load(), 42) << "21 * 2, via Request<int>::response filled by qb::answer";
 }
 
 // ---------------------------------------------------------------------------
@@ -192,14 +250,17 @@ TEST(ActorAskPatterns, AskAllGathersAllReplies) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_all_count.load(), 3);
-    EXPECT_EQ(g_all_sum.load(), 60); // 3 * (10 * 2)
+    EXPECT_EQ(g_all_count.load(), 3) << "ask_all must gather a reply from every one of the 3 markets";
+    EXPECT_EQ(g_all_sum.load(), 60) << "3 * (10 * 2)";
 }
 
 // ---------------------------------------------------------------------------
 // 3. ask_all across cores (markets on core 1, asker on core 0)
 // ---------------------------------------------------------------------------
 TEST(ActorAskPatterns, AskAllCrossCore) {
+    if (std::thread::hardware_concurrency() < 2) {
+        GTEST_SKIP() << "requires-multicore: needs >= 2 cores to place asker and responders on distinct cores";
+    }
     g_all_sum = g_all_count = -1;
     qb::Main                 main;
     std::vector<qb::ActorId> markets;
@@ -209,8 +270,8 @@ TEST(ActorAskPatterns, AskAllCrossCore) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_all_count.load(), 3);
-    EXPECT_EQ(g_all_sum.load(), 60);
+    EXPECT_EQ(g_all_count.load(), 3) << "ask_all must gather all 3 replies across cores";
+    EXPECT_EQ(g_all_sum.load(), 60) << "3 * (10 * 2), round-tripped across cores";
 }
 
 // ---------------------------------------------------------------------------
@@ -256,11 +317,15 @@ TEST(ActorAskPatterns, AskAllTimesOutIfAnySilent) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_all_timed_out.load());
+    EXPECT_TRUE(g_all_timed_out.load()) << "ask_all must fail with timeout_error when any target stays silent";
 }
 
 // ---------------------------------------------------------------------------
-// 5. ask_any resolves with the FIRST reply (fastest wins)
+// 5. ask_any resolves with the FIRST reply (fastest wins).
+//    DETERMINISTIC: the slow market is LATCHED — it holds its reply until the asker
+//    sends ReleaseSlow, which the asker does only AFTER ask_any has already resolved
+//    on the fast reply. So "fastest wins" is proven by construction, not by an 80ms
+//    sleep landing after a 0ms reply.
 // ---------------------------------------------------------------------------
 namespace {
 std::atomic<int> g_any_resp{-1};
@@ -277,8 +342,10 @@ public:
         registerEvent<Quote>(*this);
         auto markets = _markets;
         spawn([markets](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            // The latched slow market never emits its reply (no ReleaseSlow is ever sent), so ask_any
+            // can only resolve on the fast market — "fastest wins" holds by construction, not timing.
             auto winner = co_await qb::ask_any(ctx, markets, Quote{10}, 500ms);
-            g_any_resp  = winner.response; // fast market: 10 * 2 = 20 (slow would be 30)
+            g_any_resp  = winner.response; // fast market: 10 * 2 = 20 (latched slow would be 30)
             qb::Main::stop();
         });
         co_return true;
@@ -293,13 +360,13 @@ TEST(ActorAskPatterns, AskAnyFirstReplyWins) {
     g_any_resp = -1;
     qb::Main                 main;
     std::vector<qb::ActorId> markets;
-    markets.push_back(main.addActor<SlowQuoteMarket>(0)); // replies after 80ms (id*3)
-    markets.push_back(main.addActor<QuoteMarket>(0));     // replies immediately (id*2)
+    markets.push_back(main.addActor<LatchedQuoteMarket>(0)); // never emits (latched) → cannot win
+    markets.push_back(main.addActor<QuoteMarket>(0));        // replies immediately (key*2) → wins
     main.addActor<RaceClient>(0, markets);
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_any_resp.load(), 20); // the fast (immediate) market won
+    EXPECT_EQ(g_any_resp.load(), 20) << "ask_any must resolve on the immediate market (key*2); the latched slow market cannot race ahead";
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +412,100 @@ TEST(ActorAskPatterns, AskAnyTimesOutWhenAllSilent) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_any_timed_out.load());
+    EXPECT_TRUE(g_any_timed_out.load()) << "ask_any must fail with timeout_error when ALL targets stay silent";
+}
+
+// ---------------------------------------------------------------------------
+// 6b. ask_all partial-then-cancel: the asker is killed mid-gather (one market has
+//     already replied, another is still silent) → the whole ask_all unwinds with
+//     cancelled_error, not timeout_error, and no value is observed.
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<bool> g_all_cancelled{false};
+std::atomic<bool> g_all_completed{false};
+} // namespace
+
+// Kills a victim after a short delay, then stops the engine slightly later (so the victim's
+// cancelled coroutine unwinds before teardown). Mirrors the shared KillThenStopHelper idiom.
+class KillThenStopAll : public qb::Actor {
+    qb::ActorId _victim;
+
+public:
+    explicit KillThenStopAll(qb::ActorId v)
+        : _victim(v) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        auto v = _victim;
+        qb::io::async::callback([this, v] { push<qb::KillEvent>(v); }, 40ms); // kill mid-gather
+        qb::io::async::callback([] { qb::Main::stop(); }, 120ms);
+        co_return true;
+    }
+};
+
+class ScatterCancelClient : public qb::Actor {
+    std::vector<qb::ActorId> _markets;
+
+public:
+    explicit ScatterCancelClient(std::vector<qb::ActorId> m)
+        : _markets(std::move(m)) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Quote>(*this);
+        auto markets = _markets;
+        spawn([markets](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            try {
+                co_await qb::ask_all(ctx, markets, Quote{1}, 5s); // long timeout — we are killed first
+                g_all_completed = true;                           // MUST NOT run (cancelled mid-gather)
+            } catch (const qb::io::async::cancelled_error &) {
+                g_all_cancelled = true; // proof: killed mid-gather, not timed out
+            }
+        });
+        co_return true;
+    }
+    void
+    on(Quote &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorAskPatterns, AskAllCancelledMidGather) {
+    g_all_cancelled = false;
+    g_all_completed = false;
+    qb::Main                 main;
+    std::vector<qb::ActorId> markets;
+    markets.push_back(main.addActor<QuoteMarket>(0));       // replies immediately (partial progress)
+    markets.push_back(main.addActor<SilentQuoteMarket>(0)); // never replies → ask_all stays pending
+    auto client = main.addActor<ScatterCancelClient>(0, markets);
+    main.addActor<KillThenStopAll>(0, client);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_all_cancelled.load())
+        << "killing the asker mid-ask_all must unwind with cancelled_error, not timeout_error";
+    EXPECT_FALSE(g_all_completed.load()) << "ask_all must NOT complete once the asker is cancelled";
+}
+
+// ---------------------------------------------------------------------------
+// 6c. ask_any across cores: the winner and loser live on DIFFERENT cores. The
+//     latched slow market (core 1) never emits, so the immediate market (core 1
+//     too — distinct from the asker's core 0) must win. Pairs with the same-core
+//     race (case 5).
+// ---------------------------------------------------------------------------
+TEST(ActorAskPatterns, AskAnyCrossCore) {
+    if (std::thread::hardware_concurrency() < 2) {
+        GTEST_SKIP() << "requires-multicore: needs >= 2 cores to put winner/loser off the asker's core";
+    }
+    g_any_resp = -1;
+    qb::Main                 main;
+    std::vector<qb::ActorId> markets;
+    markets.push_back(main.addActor<LatchedQuoteMarket>(1)); // never emits (latched) on core 1
+    markets.push_back(main.addActor<QuoteMarket>(1));        // replies immediately on core 1 → wins
+    main.addActor<RaceClient>(0, markets);                   // asker on core 0
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_any_resp.load(), 20)
+        << "ask_any must resolve on the immediate cross-core market (key*2); the latched one cannot win";
 }
 
 // ---------------------------------------------------------------------------
@@ -419,8 +579,8 @@ TEST(ActorAskPatterns, AnswerGuardSeparatesOwnReplyFromRequests) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_relay_upstream.load(), 10); // relay's coroutine got the market's reply
-    EXPECT_EQ(g_client_resp.load(), 300);   // relay answered the client's request
+    EXPECT_EQ(g_relay_upstream.load(), 10) << "the relay's own coroutine got the market's reply (5*2), not the client's request";
+    EXPECT_EQ(g_client_resp.load(), 300) << "the relay answered the client's request (3*100) via the resolve_ask guard";
 }
 
 // ===========================================================================
@@ -452,7 +612,10 @@ std::atomic<bool> g_reserved{false}; // Inventory answered a Reserve (saga step 
 std::atomic<bool> g_released{false}; // Inventory answered a Release (compensation ran)
 std::atomic<bool> g_saga_failed{false};
 std::atomic<bool> g_saga_ok{false};
-std::vector<int>  g_comp_order; // order compensations executed (single worker thread)
+// Order in which compensations executed. SINGLE-WRITER / READ-AFTER-JOIN: written only from the saga
+// client's own VirtualCore (single-thread per core) and read by the test thread ONLY after
+// main.join() — join() establishes the happens-before, so the plain std::vector needs no extra sync.
+std::vector<int>  g_comp_order;
 } // namespace
 
 // Reserves items and, on compensation, releases them.
@@ -559,9 +722,9 @@ TEST(ActorAskPatterns, SagaCompensatesOnStepFailure) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_saga_failed.load()); // the Charge step timed out
-    EXPECT_TRUE(g_released.load());    // the Reserve was rolled back via Release
-    EXPECT_FALSE(g_saga_ok.load());
+    EXPECT_TRUE(g_saga_failed.load()) << "the Charge step must time out and fail the saga";
+    EXPECT_TRUE(g_released.load()) << "the Reserve step must be rolled back via Release (compensation ran)";
+    EXPECT_FALSE(g_saga_ok.load()) << "a failed saga must NOT report success";
 }
 
 TEST(ActorAskPatterns, SagaHappyPathRunsNoCompensation) {
@@ -573,9 +736,9 @@ TEST(ActorAskPatterns, SagaHappyPathRunsNoCompensation) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_saga_ok.load());   // all steps succeeded
-    EXPECT_FALSE(g_released.load()); // no rollback
-    EXPECT_FALSE(g_saga_failed.load());
+    EXPECT_TRUE(g_saga_ok.load()) << "every saga step succeeded → the saga completes";
+    EXPECT_FALSE(g_released.load()) << "the happy path must run NO compensation";
+    EXPECT_FALSE(g_saga_failed.load()) << "the happy path must not report failure";
 }
 
 // Two steps register compensations; a third fails -> compensations run in reverse.
@@ -635,10 +798,10 @@ TEST(ActorAskPatterns, SagaCompensationsRunInReverseOrder) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_saga_failed.load());
-    ASSERT_EQ(g_comp_order.size(), 2u);
-    EXPECT_EQ(g_comp_order[0], 2); // last registered runs first (LIFO)
-    EXPECT_EQ(g_comp_order[1], 1);
+    EXPECT_TRUE(g_saga_failed.load()) << "the Charge step must time out and fail the saga";
+    ASSERT_EQ(g_comp_order.size(), 2u) << "both registered compensations must run";
+    EXPECT_EQ(g_comp_order[0], 2) << "the last-registered compensation runs first (LIFO)";
+    EXPECT_EQ(g_comp_order[1], 1) << "the first-registered compensation runs last (LIFO)";
 }
 
 // ---------------------------------------------------------------------------
@@ -730,10 +893,10 @@ TEST(ActorAskPatterns, SagaCancelledMidFlowSkipsCompensation) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_reserved.load());       // teeth: step 1 ran → the saga DID enter (compensation registered)
-    EXPECT_TRUE(g_saga_cancelled.load()); // teeth: it was killed mid-step-2 (not crashed early)
-    EXPECT_FALSE(g_released.load());      // cancel ⇒ NO rollback (Release never asked)
-    EXPECT_FALSE(g_cancel_ok.load());     // saga did not complete
+    EXPECT_TRUE(g_reserved.load()) << "teeth: step 1 (Reserve) ran → the saga DID enter and register its compensation";
+    EXPECT_TRUE(g_saga_cancelled.load()) << "teeth: the asker was killed mid-step-2 (cancelled_error), not crashed early";
+    EXPECT_FALSE(g_released.load()) << "a mid-flow cancel must SKIP rollback — Release must never be asked";
+    EXPECT_FALSE(g_cancel_ok.load()) << "the saga must NOT report completion when cancelled mid-flow";
 }
 
 class SagaCompThrowClient : public qb::Actor {
@@ -795,6 +958,6 @@ TEST(ActorAskPatterns, SagaCompensationThrowsContinuesRemaining) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_comp0_ran.load()); // comp[0] ran despite comp[1] throwing first (best-effort)
-    EXPECT_TRUE(g_released.load());  // the surviving rollback (Release) went through
+    EXPECT_TRUE(g_comp0_ran.load()) << "comp[0] must run despite comp[1] throwing first (best-effort rollback)";
+    EXPECT_TRUE(g_released.load()) << "the surviving rollback (Release) must go through after the throw";
 }

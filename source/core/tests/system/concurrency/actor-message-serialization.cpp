@@ -1,325 +1,184 @@
-/**
- * @file qb/core/tests/system/test-actor-concurrency-safety.cpp
- * @brief Unit tests for actor concurrency safety
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * This file contains tests for concurrency safety in the QB Actor Framework.
- * It verifies that actors can safely interact concurrently without race conditions
- * or deadlocks, even under high load and with multiple cores.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * See the License for the specific terms.
+ */
+
+/**
+ * @file system/concurrency/actor-message-serialization.cpp
+ * @brief Concurrent senders feed a single counter actor; the engine SERIALIZES every increment so
+ *        not one is lost — proven by an EXACT total (no `>= 0.9 * N` slack that would hide a 10% drop).
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * `NUM_WORKERS` workers each emit exactly `OPS_PER_WORKER` unit increments at a single `CounterActor`.
+ * Per-VirtualCore single-thread semantics mean the counter's handler runs serially even though the
+ * senders run "concurrently", so the arithmetic is deterministic:
+ *   - the counter's running `_total` must equal `NUM_WORKERS * OPS_PER_WORKER`;
+ *   - the SUM of the per-bucket counters must equal that same emitted total (no increment lost or
+ *     double-applied);
+ *   - the count is read via a Query mailbox-ordered AFTER every increment, so completion is
+ *     event-driven — no `2s` safety timeout, no `500us` inter-op callback chain, no slack.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * @ingroup Core
+ * The original asserted only `ops >= NUM_OPERATIONS * 0.9` (a 10% loss passed) and carried a dead
+ * `DummyActor` that did nothing but hold a core open. Both are gone.
  */
 
 #include <array>
 #include <atomic>
 #include <gtest/gtest.h>
-#include <mutex>
+#include <vector>
+
 #include <qb/actor.h>
-#include <qb/io.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
-#include <random>
-#include <vector>
 
 using namespace std::chrono_literals;
 
-// Define test events
-struct IncrementEvent : public qb::Event {
-    int counter_id;
-    int increment_by;
+namespace {
+constexpr int NUM_BUCKETS    = 10;
+constexpr int NUM_WORKERS    = 5;
+constexpr int OPS_PER_WORKER = 200;
+constexpr int TOTAL_OPS      = NUM_WORKERS * OPS_PER_WORKER; // 1000
 
-    IncrementEvent(int id, int inc)
-        : counter_id(id)
-        , increment_by(inc) {}
+// Read after join() (happens-before via Main::join()).
+std::atomic<int> g_emitted{0};       // increments actually emitted by the workers
+std::atomic<int> g_counter_total{0}; // the counter's own running total at query time
+std::atomic<int> g_bucket_sum{0};    // sum of the per-bucket counters at query time
+std::atomic<bool> g_done{false};
+} // namespace
+
+// Protocol.
+struct Increment : public qb::Event {
+    int bucket;
+    explicit Increment(int b)
+        : bucket(b) {}
 };
-
-struct QueryCountersEvent : public qb::Event {
+struct WorkerDone : public qb::Event {};
+struct QueryTotal : public qb::Event {
     qb::ActorId reply_to;
-
-    explicit QueryCountersEvent(qb::ActorId id)
-        : reply_to(id) {}
+    explicit QueryTotal(qb::ActorId r)
+        : reply_to(r) {}
+};
+struct TotalReport : public qb::Event {
+    int total;
+    int bucket_sum;
+    TotalReport(int t, int s)
+        : total(t)
+        , bucket_sum(s) {}
 };
 
-struct CountersResponseEvent : public qb::Event {
-    std::vector<int> counter_values;
-
-    explicit CountersResponseEvent(std::vector<int> values)
-        : counter_values(std::move(values)) {}
-};
-
-struct WorkerCompleteEvent : public qb::Event {
-    int worker_id;
-
-    explicit WorkerCompleteEvent(int id)
-        : worker_id(id) {}
-};
-
-struct TestCompleteEvent : public qb::Event {};
-
-// Global state for test coordination
-constexpr int     NUM_COUNTERS   = 10;
-constexpr int     NUM_WORKERS    = 5;
-constexpr int     NUM_OPERATIONS = 1000;
-std::atomic<int>  g_total_operations{0};
-std::atomic<bool> g_test_complete{false};
-std::atomic<bool> g_killed_counter{false};
-
-// A simple actor that maintains multiple counters that can be incremented concurrently
+// The single serialization point: every Increment lands here and is applied one at a time.
 class CounterActor : public qb::Actor {
-private:
-    std::array<int, NUM_COUNTERS> _counters;
-    int                           _total_count;
+    std::array<int, NUM_BUCKETS> _buckets{};
+    int                          _total = 0;
 
 public:
-    CounterActor()
-        : _total_count(0) {
-        // Initialize all counters to zero
-        _counters.fill(0);
-    }
-
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<IncrementEvent>(*this);
-        registerEvent<QueryCountersEvent>(*this);
-        registerEvent<TestCompleteEvent>(*this);
+        registerEvent<Increment>(*this);
+        registerEvent<QueryTotal>(*this);
         co_return true;
     }
 
-    // Increment a specific counter
     void
-    on(const IncrementEvent &event) {
-        // Check for valid counter ID and only count up to NUM_OPERATIONS
-        if (event.counter_id >= 0 && event.counter_id < NUM_COUNTERS && _total_count < NUM_OPERATIONS) {
-            _counters[event.counter_id] += event.increment_by;
-            _total_count++;
-
-            // Track total operations
-            g_total_operations.store(_total_count);
-        }
+    on(const Increment &e) {
+        ++_buckets[e.bucket]; // deterministic: a fixed bucket per worker, applied serially
+        ++_total;
     }
 
-    // Query all counter values
     void
-    on(const QueryCountersEvent &event) {
-        // Copy all counter values to a vector
-        std::vector<int> values(NUM_COUNTERS);
-        // Modern C++: using auto for type deduction
-        for (auto i = 0; i < NUM_COUNTERS; ++i) {
-            values[i] = _counters[i];
-        }
+    on(const QueryTotal &e) {
+        int sum = 0;
+        for (int v : _buckets)
+            sum += v;
+        to(e.reply_to).push<TotalReport>(_total, sum);
+    }
+};
 
-        // Send response with counter values
-        to(event.reply_to).push<CountersResponseEvent>(std::move(values));
+// Emits exactly OPS_PER_WORKER unit increments at a fixed bucket, then notifies the coordinator.
+// All pushes go out in onInit (mailbox-ordered, no timers); the coordinator's later QueryTotal is
+// ordered behind every increment on the counter's mailbox, so it observes the final total.
+class Worker : public qb::Actor {
+    qb::ActorId _counter;
+    qb::ActorId _coord;
+    int         _bucket;
+
+public:
+    Worker(qb::ActorId counter, qb::ActorId coord, int bucket)
+        : _counter(counter)
+        , _coord(coord)
+        , _bucket(bucket) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        for (int i = 0; i < OPS_PER_WORKER; ++i) {
+            to(_counter).push<Increment>(_bucket);
+            g_emitted.fetch_add(1);
+        }
+        to(_coord).push<WorkerDone>();
+        kill();
+        co_return true;
+    }
+};
+
+// Spawns the counter + workers; once every worker has reported done, queries the exact total. The
+// query is pushed to the counter (same core) AFTER all WorkerDone are seen, hence after every
+// Increment in the counter's mailbox — so the reported total is final.
+class SerializationCoordinator : public qb::Actor {
+    qb::ActorId _counter;
+    int         _done = 0;
+
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<WorkerDone>(*this);
+        registerEvent<TotalReport>(*this);
+
+        _counter = addRefActor<CounterActor>().id();
+        for (int w = 0; w < NUM_WORKERS; ++w)
+            addRefActor<Worker>(_counter, id(), /*bucket*/ w % NUM_BUCKETS);
+        co_return true;
     }
 
-    // Complete test
     void
-    on(const TestCompleteEvent &) {
-        g_test_complete  = true;
-        g_killed_counter = true;
+    on(const WorkerDone &) {
+        if (++_done == NUM_WORKERS)
+            to(_counter).push<QueryTotal>(id());
+    }
+
+    void
+    on(const TotalReport &e) {
+        g_counter_total.store(e.total);
+        g_bucket_sum.store(e.bucket_sum);
+        g_done.store(true);
+        qb::Main::stop();
         kill();
     }
 };
 
-// Worker actor that sends increment operations to the counter actor
-class WorkerActor : public qb::Actor {
-private:
-    qb::ActorId  _counter_actor_id;
-    qb::ActorId  _coordinator_id;
-    int          _worker_id;
-    int          _operations_remaining;
-    std::mt19937 _rng;
+TEST(MessageSerialization, EveryConcurrentIncrementIsAppliedExactlyOnce) {
+    g_emitted.store(0);
+    g_counter_total.store(0);
+    g_bucket_sum.store(0);
+    g_done.store(false);
 
-public:
-    WorkerActor(qb::ActorId counter_id, qb::ActorId coordinator_id, int worker_id, int operations)
-        : _counter_actor_id(counter_id)
-        , _coordinator_id(coordinator_id)
-        , _worker_id(worker_id)
-        , _operations_remaining(operations) {
-        // Initialize random number generator with a unique seed per worker
-        _rng.seed(static_cast<unsigned>(_worker_id));
-    }
-
-    qb::io::async::task<bool>
-    onInit() override {
-        // Schedule the first increment (others will be chained)
-        qb::io::async::callback([this]() { sendNextIncrement(); },
-                                1ms * _worker_id); // Slight stagger in startup to reduce contention
-
-        co_return true;
-    }
-
-    void
-    sendNextIncrement() {
-        if (_operations_remaining <= 0) {
-            // No more operations to send, notify coordinator and terminate
-            to(_coordinator_id).push<WorkerCompleteEvent>(_worker_id);
-            kill();
-            return;
-        }
-
-        // Create a uniform distribution for counter IDs and increment values
-        std::uniform_int_distribution<int> counter_dist(0, NUM_COUNTERS - 1);
-        std::uniform_int_distribution<int> increment_dist(1, 1);
-
-        int counter_id   = counter_dist(_rng);
-        int increment_by = increment_dist(_rng);
-
-        // Send the increment event
-        to(_counter_actor_id).push<IncrementEvent>(counter_id, increment_by);
-
-        // Decrement remaining operations
-        _operations_remaining--;
-
-        // Schedule the next increment with a small delay
-        qb::io::async::callback([this]() { sendNextIncrement(); }, 500us);
-    }
-};
-
-// Coordinator actor that manages the concurrency test
-class ConcurrencyCoordinatorActor : public qb::Actor {
-private:
-    qb::ActorId _counter_actor_id;
-    int         _active_workers;
-    bool        _test_completed;
-
-public:
-    ConcurrencyCoordinatorActor()
-        : _active_workers(NUM_WORKERS)
-        , _test_completed(false) {}
-
-    qb::io::async::task<bool>
-    onInit() override {
-        registerEvent<CountersResponseEvent>(*this);
-        registerEvent<WorkerCompleteEvent>(*this);
-
-        // Create counter actor
-        auto counter_actor = addRefActor<CounterActor>();
-        _counter_actor_id  = counter_actor.id();
-
-        // Create worker actors - chaque worker fait exactement NUM_OPERATIONS /
-        // NUM_WORKERS opérations
-        const int ops_per_worker = NUM_OPERATIONS / NUM_WORKERS;
-        // Modern C++: using auto for type deduction
-        for (auto i = 0; i < NUM_WORKERS; ++i) {
-            // Pass coordinator ID to workers so they can notify when done
-            addRefActor<WorkerActor>(_counter_actor_id, id(), i, ops_per_worker);
-        }
-
-        // Schedule final check as safety timeout
-        qb::io::async::callback(
-            [this]() {
-                if (!_test_completed) {
-                    finalizeTest();
-                }
-            },
-            2s); // Réduire à 2 secondes
-
-        co_return true;
-    }
-
-    // Handle worker completion notifications
-    void
-    on(const WorkerCompleteEvent &event) {
-        _active_workers--;
-
-        // If all workers have completed, finalize the test
-        if (_active_workers <= 0 && !_test_completed) {
-            finalizeTest();
-        }
-    }
-
-    // Complete the test and verify results
-    void
-    finalizeTest() {
-        if (_test_completed)
-            return; // Prevent double completion
-        _test_completed = true;
-
-        // Query final counter values
-        to(_counter_actor_id).push<QueryCountersEvent>(id());
-
-        // Complete test after a short delay to allow query to be processed
-        qb::io::async::callback(
-            [this]() {
-                if (!g_killed_counter) {
-                    to(_counter_actor_id).push<TestCompleteEvent>();
-                }
-
-                // Give counter actor time to process the complete event before
-                // terminating
-                qb::io::async::callback([this]() { kill(); }, 100ms);
-            },
-            200ms);
-    }
-
-    // Handle counter query responses
-    void
-    on(const CountersResponseEvent &event) {
-        // Verify that total operations match expected count
-        int total_operations = 0;
-        for (int value : event.counter_values) {
-            total_operations += value;
-        }
-
-        // Verify operation counts (only on final check)
-        if (_test_completed) {
-            g_total_operations.store(total_operations);
-            g_test_complete = true;
-        }
-    }
-};
-
-// Simple dummy actor that just keeps a core active
-class DummyActor : public qb::Actor {
-public:
-    DummyActor() {}
-
-    qb::io::async::task<bool>
-    onInit() override {
-        // Add a callback to kill this actor after the test should be complete
-        qb::io::async::callback([this]() { kill(); },
-                                10s); // 10 seconds is more than enough for the test
-
-        co_return true;
-    }
-};
-
-// Test for actor concurrency safety
-TEST(ConcurrencySafety, ShouldHandleConcurrentOperationsSafely) {
-    // Reset globals
-    g_total_operations = 0;
-    g_test_complete    = false;
-    g_killed_counter   = false;
-
-    // Create main instance
     qb::Main main;
+    main.core(0).addActor<SerializationCoordinator>();
 
-    // Add the coordinator to the first core
-    main.core(0).addActor<ConcurrencyCoordinatorActor>();
-
-    // Run the engine - attendez plus longtemps pour s'assurer que tout est terminé
     main.start(false);
+    main.join();
+
     EXPECT_FALSE(main.hasError());
+    ASSERT_TRUE(g_done.load()) << "the coordinator must have received the final report";
 
-    // Verify test completion flag is set
-    EXPECT_TRUE(g_test_complete);
-
-    // Le nombre exact d'opérations peut varier, mais devrait être proche de
-    // NUM_OPERATIONS
-    const int ops = g_total_operations.load();
-    EXPECT_LE(ops, NUM_OPERATIONS);
-    EXPECT_GE(ops, NUM_OPERATIONS * 0.9); // Permettre une légère marge inférieure (90%)
+    // Every emitted increment was applied — EXACTLY, no slack: under-delivery (loss) and
+    // over-delivery (double-apply) both fail here.
+    EXPECT_EQ(g_emitted.load(), TOTAL_OPS) << "every worker emitted its full quota";
+    EXPECT_EQ(g_counter_total.load(), TOTAL_OPS) << "the counter applied every increment exactly once";
+    // The per-bucket sum must reconcile with the running total — no increment routed to a phantom
+    // bucket or dropped.
+    EXPECT_EQ(g_bucket_sum.load(), g_counter_total.load()) << "bucket sum must equal the running total";
+    EXPECT_EQ(g_bucket_sum.load(), TOTAL_OPS);
 }
