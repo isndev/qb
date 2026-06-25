@@ -354,6 +354,15 @@ with I/O lifetime are:
   returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
   returns `0` (`include/qb/io/tcp/ssl/socket.h:456`,
   `source/io/src/udp/socket.cpp:88`).
+- The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
+  the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
+  libev's `ev_stat` stores the narrow `const char *` it is given **without
+  copying** (`modules/ev/ev++.h:696`). `start()` therefore stashes
+  `fpath.string()` in the watcher's own `_watched_path` member and passes
+  `_watched_path.c_str()` to the watcher (`include/qb/io/async/io.h:532`, `:700`).
+  Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and
+  do not reassign or shrink `_watched_path` while the watcher is armed — the
+  pointer libev holds would dangle and the next stat poll would read freed memory.
 
 ---
 

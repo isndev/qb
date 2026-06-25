@@ -24,6 +24,7 @@
 
 #ifndef QB_IO_TCP_SSL_LISTENER_H_
 #define QB_IO_TCP_SSL_LISTENER_H_
+#include <filesystem>
 #include "../listener.h"
 #include "socket.h"
 
@@ -124,14 +125,14 @@ public:
      * @param ca_file_path Path to the PEM-encoded CA certificate file.
      * @return true on success, false on failure or if context is not initialized.
      */
-    bool load_ca_certificates_for_client_auth(const std::string &ca_file_path);
+    bool load_ca_certificates_for_client_auth(const std::filesystem::path &ca_file_path);
 
     /**
      * @brief Load CA certificates from a directory for client peer verification (mTLS).
      * @param ca_dir_path Path to the directory containing PEM-encoded CA certificates.
      * @return true on success, false on failure or if context is not initialized.
      */
-    bool load_ca_directory_for_client_auth(const std::string &ca_dir_path);
+    bool load_ca_directory_for_client_auth(const std::filesystem::path &ca_dir_path);
 
     /**
      * @brief Set the preferred cipher suites for TLS 1.2 and earlier for this listener's context.
@@ -161,7 +162,7 @@ public:
      * @param verification_mode Verification mode (e.g., SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT).
      * @return true on success, false on failure or if context is not initialized.
      */
-    bool configure_mtls(const std::string &client_ca_file_path, int verification_mode = SSL_VERIFY_PEER);
+    bool configure_mtls(const std::filesystem::path &client_ca_file_path, int verification_mode = SSL_VERIFY_PEER);
 
     /**
      * @brief Set the ALPN selection callback for this listener's context.
@@ -214,7 +215,7 @@ public:
      * @param dh_param_file_path Path to a PEM-encoded DH parameters file.
      * @return true on success, false on failure or if context is not initialized.
      */
-    bool configure_dh_parameters(const std::string &dh_param_file_path);
+    bool configure_dh_parameters(const std::filesystem::path &dh_param_file_path);
 
     /**
      * @brief Configure preferred ECDH curves for this listener's context.

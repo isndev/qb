@@ -104,16 +104,27 @@ Server-side TLS is built explicitly. `qb::io::ssl::create_server_context(method,
 
 <!-- src: qb/include/qb/io/tcp/ssl/socket.h:83-94, 144-154 -->
 
+These functions take `std::filesystem::path` arguments (certificate, key, CA file, CA directory, DH parameters, client certificate). Each filesystem path is resolved through `qb::io::sys::resolve_resource()`: an absolute path is used unchanged, while a relative path is looked up first against the current working directory and then against the running executable's own directory. A binary shipped with its certificates next to it therefore finds them from any working directory, while an absolute deploy path is honoured verbatim. (URL/URI and wire paths are unaffected — those remain `std::string`.)
+
+<!-- src: qb/include/qb/io/system/file.h:368-388 (self_path / self_dir / resolve_resource) -->
+
 After a handshake completes you can introspect the live connection — `get_negotiated_tls_version()`, `get_negotiated_cipher_suite()`, `get_alpn_selected_protocol()`, `get_peer_certificate_chain()` — to log or assert the negotiated parameters.
 
 <!-- src: qb/include/qb/io/tcp/ssl/socket.h:593 (cipher suite), 599 (tls version), 605 (alpn), 640 (peer cert chain) -->
+
+### Windows server bind: exclusive, not reusable
+
+When a server binds its listening port (`socket::pserve`), the address-reuse option differs by platform. POSIX sets `SO_REUSEADDR` so a restarted listener can rebind a port whose previous connections still linger in `TIME_WAIT`. **Windows does not** — there `SO_REUSEADDR` has hijack semantics (a bind to an in-use port *succeeds* but is silently shadowed by the existing socket, so the new listener never accepts). qb instead sets `SO_EXCLUSIVEADDRUSE` on Windows: an in-use bind fails fast with `WSAEADDRINUSE`, and no other process can hijack the port. Windows already permits rebinding `TIME_WAIT` ports with no option set, so this loses nothing. The behaviour is fully internal and guarded by `#ifdef _WIN32`; no application change is required, but be aware that on Windows a second instance bound to the same port fails at bind rather than starting silently broken.
+
+<!-- src: qb/source/io/src/system/sys__socket.cpp:208-245 (pserve SO_EXCLUSIVEADDRUSE on _WIN32) -->
 
 **Checklist**
 
 - [ ] Confirm `QB_WITH_SSL=1` is in the production build (OpenSSL was found at configure time).
 - [ ] No stray `set_insecure()` calls in shipped code paths.
-- [ ] Certificate and key paths resolve at deploy time; certificate rotation is operationalized.
+- [ ] Certificate and key paths resolve at deploy time (relative paths resolve against the cwd then the executable's directory via `resolve_resource`; absolute paths are used verbatim); certificate rotation is operationalized.
 - [ ] If you accept client certificates, mTLS is configured with `SSL_VERIFY_PEER` (or stricter).
+- [ ] On Windows, expect a second instance bound to an in-use port to fail at bind (`SO_EXCLUSIVEADDRUSE`), not start shadowed.
 
 ## 4. Resource limits
 
@@ -204,7 +215,7 @@ int main() {
 }
 ```
 
-`setLevel` sets the minimum severity recorded; messages below it are dropped. The level enum, lowest to highest, is `DEBUG, VERBOSE, INFO, WARN, ERROR, CRIT`.
+`setLevel` sets the minimum severity recorded; messages below it are dropped. The level enum, lowest to highest, is `DEBUG, VERBOSE, INFO, WARN, CRIT`.
 
 <!-- src: qb/include/qb/io.h:48-81 -->
 

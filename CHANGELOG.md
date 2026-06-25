@@ -89,6 +89,13 @@ Tracks changes on the development branch that are not yet part of a tagged relea
     (`qb::StreamRequest<Chunk>`, responder helpers `qb::yield_answer` / `qb::end_stream`; the asker
     routes chunks with `resolve_ask` — they are `AskEvent`s); per-chunk timeout, cancel-on-kill, and
     a loud `stream_overflow_error` rather than silently dropping chunks.
+- **Self-locating resources** (`qb/io/system/file.h`, namespace `qb::io::sys`):
+  `self_path()` (absolute path of the running executable, via `GetModuleFileNameW` /
+  `/proc/self/exe` / `_NSGetExecutablePath` — independent of `argv[0]` and the cwd), `self_dir()`
+  (its parent directory), and `resolve_resource(std::filesystem::path)` — resolves a relative
+  resource path against the cwd first (historical behaviour), then the executable's own directory,
+  so a binary shipped next to its assets finds them from **any** working directory. Absolute paths
+  pass through unchanged.
 
 ### Changed
 
@@ -106,6 +113,19 @@ Tracks changes on the development branch that are not yet part of a tagged relea
   chunks are routed by `Actor::resolve_ask` (they are `AskEvent`s) and discovery replies by the
   default `Actor::on(RequireEvent&)` / `Actor::resolve_require`. **Source-incompatible** for code that
   read `RequireEvent::status` or called the removed free functions.
+- **Filesystem-path APIs now take `std::filesystem::path`** (were `std::string` / `const char*`), so
+  Unicode paths are handled natively (Windows opens via `CreateFileW`): `sys::file::open` + the
+  `file` ctor + `file_to_pipe` / `pipe_to_file::open`; the SSL helpers `create_server_context`,
+  `load_ca_certificates` / `load_ca_directory`, `configure_mtls_server_context`,
+  `configure_client_certificate`, `configure_dh_parameters_server` (and the `ssl::listener` mirrors);
+  the UNIX-domain-socket `connect_un` / `n_connect_un` / `listen_un` / `bind_un` (tcp + udp + ssl);
+  `async::file_watcher` / `directory_watcher::start`; and `nanolog::initialize`. URL/URI/route paths
+  and remote/wire paths stay `std::string`. **Source-compatible** for callers — `std::string`,
+  `const char*`, and string literals implicitly convert to `std::filesystem::path` — but an **ABI
+  break** (the mangled symbols change), so rebuild dependents.
+- SSL cert/key/CA/DH file paths are resolved through `qb::io::sys::resolve_resource` consistently
+  across `create_server_context` and the CA/DH/client-certificate helpers, so a relative path works
+  from any working directory (absolute paths unchanged).
 
 ### Fixed
 
@@ -116,6 +136,14 @@ Tracks changes on the development branch that are not yet part of a tagged relea
   by-value `qb::Event` in a frame no longer faults under `-O3 -march=native`.
 - Activation-stash events with non-trivial payloads are destroyed (not leaked) when an async
   `onInit()` fails, the actor is killed during init, the deadline expires, or the stash cap overflows.
+- Windows server bind correctness/security: `socket::pserve` now sets `SO_EXCLUSIVEADDRUSE` on
+  Windows instead of `SO_REUSEADDR`. The old `SO_REUSEADDR` had *hijack/shadow* semantics there — a
+  bind to an in-use port succeeded but was silently shadowed by the existing socket, so the listener
+  never accepted. An in-use bind now fails fast with `WSAEADDRINUSE` and no other process can hijack
+  the port. POSIX keeps `SO_REUSEADDR` for fast `TIME_WAIT` rebind (guarded by `#ifdef _WIN32`).
+- File/directory watcher path lifetime: libev `ev_stat` stores the path *pointer* without copying,
+  so `async::file_watcher` / `directory_watcher` now own the path string for the watcher's lifetime
+  (no dangling watch path).
 
 ## [2.0.0]
 

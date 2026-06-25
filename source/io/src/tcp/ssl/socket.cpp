@@ -24,6 +24,7 @@
  */
 
 #include <limits>
+#include <qb/io/system/file.h> // qb::io::sys::resolve_resource (working-dir-independent paths)
 #include <qb/io/tcp/ssl/socket.h>
 #include <qb/system/time.h> // qb::safe_timegm (portable UTC tm->time_t)
 #include <openssl/err.h>    // For error handling
@@ -184,6 +185,10 @@ create_client_context(const SSL_METHOD *method) {
 SSL_CTX *
 create_server_context(const SSL_METHOD *method, std::filesystem::path cert_path, std::filesystem::path key_path) {
     SSL_CTX *ctx = nullptr;
+    // Resolve relative cert/key paths against the working directory, then the executable's
+    // own directory, so a server shipped next to its certificates loads them from any cwd.
+    cert_path = qb::io::sys::resolve_resource(cert_path);
+    key_path  = qb::io::sys::resolve_resource(key_path);
     if (!method)
         goto error;
     ctx = SSL_CTX_new(method);
@@ -199,10 +204,12 @@ error:
 }
 
 bool
-load_ca_certificates(SSL_CTX *ctx, const std::string &ca_file_path) {
+load_ca_certificates(SSL_CTX *ctx, const std::filesystem::path &ca_file_path) {
     if (!ctx || ca_file_path.empty())
         return false;
-    if (SSL_CTX_load_verify_locations(ctx, ca_file_path.c_str(), nullptr) != 1) {
+    // .string() yields a narrow path for OpenSSL's char* API (path::c_str() is wchar_t* on
+    // Windows); resolve_resource keeps relative paths working from any cwd (cf. create_server_context).
+    if (SSL_CTX_load_verify_locations(ctx, qb::io::sys::resolve_resource(ca_file_path).string().c_str(), nullptr) != 1) {
         // Consider logging ERR_get_error() here
         return false;
     }
@@ -210,10 +217,10 @@ load_ca_certificates(SSL_CTX *ctx, const std::string &ca_file_path) {
 }
 
 bool
-load_ca_directory(SSL_CTX *ctx, const std::string &ca_dir_path) {
+load_ca_directory(SSL_CTX *ctx, const std::filesystem::path &ca_dir_path) {
     if (!ctx || ca_dir_path.empty())
         return false;
-    if (SSL_CTX_load_verify_locations(ctx, nullptr, ca_dir_path.c_str()) != 1) {
+    if (SSL_CTX_load_verify_locations(ctx, nullptr, qb::io::sys::resolve_resource(ca_dir_path).string().c_str()) != 1) {
         // Consider logging ERR_get_error() here
         return false;
     }
@@ -263,14 +270,14 @@ set_tls_protocol_versions(SSL_CTX *ctx, int min_version, int max_version) {
 }
 
 bool
-configure_mtls_server_context(SSL_CTX *ctx, const std::string &client_ca_file_path, int verification_mode) {
+configure_mtls_server_context(SSL_CTX *ctx, const std::filesystem::path &client_ca_file_path, int verification_mode) {
     if (!ctx)
         return false;
 
     SSL_CTX_set_verify(ctx, verification_mode, nullptr); // Using OpenSSL's default verify callback
 
     if (!client_ca_file_path.empty()) {
-        if (SSL_CTX_load_verify_locations(ctx, client_ca_file_path.c_str(), nullptr) != 1) {
+        if (SSL_CTX_load_verify_locations(ctx, qb::io::sys::resolve_resource(client_ca_file_path).string().c_str(), nullptr) != 1) {
             // Consider logging ERR_get_error() here
             return false;
         }
@@ -281,15 +288,15 @@ configure_mtls_server_context(SSL_CTX *ctx, const std::string &client_ca_file_pa
 }
 
 bool
-configure_client_certificate(SSL_CTX *ctx, const std::string &client_cert_path, const std::string &client_key_path) {
+configure_client_certificate(SSL_CTX *ctx, const std::filesystem::path &client_cert_path, const std::filesystem::path &client_key_path) {
     if (!ctx || client_cert_path.empty() || client_key_path.empty())
         return false;
 
-    if (SSL_CTX_use_certificate_file(ctx, client_cert_path.c_str(), SSL_FILETYPE_PEM) <= 0) {
+    if (SSL_CTX_use_certificate_file(ctx, qb::io::sys::resolve_resource(client_cert_path).string().c_str(), SSL_FILETYPE_PEM) <= 0) {
         // Consider logging ERR_get_error() here
         return false;
     }
-    if (SSL_CTX_use_PrivateKey_file(ctx, client_key_path.c_str(), SSL_FILETYPE_PEM) <= 0) {
+    if (SSL_CTX_use_PrivateKey_file(ctx, qb::io::sys::resolve_resource(client_key_path).string().c_str(), SSL_FILETYPE_PEM) <= 0) {
         // Consider logging ERR_get_error() here
         return false;
     }
@@ -404,13 +411,15 @@ set_keylog_callback(SSL_CTX *ctx, SSL_CTX_keylog_cb_func callback) {
 }
 
 bool
-configure_dh_parameters_server(SSL_CTX *ctx, const std::string &dh_param_file_path) {
+configure_dh_parameters_server(SSL_CTX *ctx, const std::filesystem::path &dh_param_file_path) {
     if (!ctx || dh_param_file_path.empty())
         return false;
+    // Narrow, cwd-independent path for OpenSSL's BIO_new_file (char* API).
+    const std::string native = qb::io::sys::resolve_resource(dh_param_file_path).string();
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L // OpenSSL 3.0+
     // Use modern EVP_PKEY approach for OpenSSL 3.0+
-    BIO *bio = BIO_new_file(dh_param_file_path.c_str(), "r");
+    BIO *bio = BIO_new_file(native.c_str(), "r");
     if (!bio) {
         // Consider logging ERR_get_error()
         return false;
@@ -433,7 +442,7 @@ configure_dh_parameters_server(SSL_CTX *ctx, const std::string &dh_param_file_pa
 
 #else
     // Legacy approach for older OpenSSL versions
-    BIO *bio = BIO_new_file(dh_param_file_path.c_str(), "r");
+    BIO *bio = BIO_new_file(native.c_str(), "r");
     if (!bio) {
         // Consider logging ERR_get_error()
         return false;
@@ -786,8 +795,8 @@ socket::connect_v6(std::string const &host, uint16_t port) noexcept {
 }
 
 int
-socket::connect_un(std::string const &path) noexcept {
-    return connect(endpoint().as_un(path.c_str()));
+socket::connect_un(std::filesystem::path const &path) noexcept {
+    return connect(endpoint().as_un(path.string().c_str()));
 }
 
 // NON BLOCKING
@@ -908,8 +917,8 @@ socket::n_connect_v6(std::string const &host, uint16_t port) noexcept {
 }
 
 int
-socket::n_connect_un(std::string const &path) noexcept {
-    return n_connect(endpoint().as_un(path.c_str()));
+socket::n_connect_un(std::filesystem::path const &path) noexcept {
+    return n_connect(endpoint().as_un(path.string().c_str()));
 }
 
 int

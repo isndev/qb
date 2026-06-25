@@ -26,6 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #ifndef NANO_LOG_HEADER_GUARD
 #define NANO_LOG_HEADER_GUARD
 #include <cstdint>
+#include <filesystem>
 #include <iosfwd>
 #include <memory>
 #include <sstream>
@@ -151,8 +152,8 @@ struct GuaranteedLogger {};
  * etc.
  * log_file_roll_size_mb - mega bytes after which we roll to next log file.
  */
-void initialize(GuaranteedLogger gl, std::string const &log_file_path, uint32_t log_file_roll_size_mb);
-void initialize(NonGuaranteedLogger ngl, std::string const &log_file_path, uint32_t log_file_roll_size_mb);
+void initialize(GuaranteedLogger gl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb);
+void initialize(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb);
 
 } // namespace nanolog
 

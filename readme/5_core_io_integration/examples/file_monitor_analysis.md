@@ -18,7 +18,7 @@ The example builds three actors that cooperate over typed events:
 
 The load-bearing integration point is that `qb::io::async::directory_watcher<_Derived>` is a CRTP base whose `on(qb::io::async::event::file const&)` callback runs on the same `VirtualCore` event loop that dispatches actor messages. The watcher needs no extra thread, lock, or queue: its notifications and the actor's `on(Event&)` handlers are serialized by the same loop.
 
-> **Note on the checked-in sources.** The `examples/core_io/file_monitor` tree predates the canonical `std::chrono` time-model migration. It calls `start(path, 0.5)` and `qb::io::async::callback(fn, 0.5)` with bare `double` arguments. The current signatures take a `std::chrono` duration (`start(std::string const&, qb::duration)`, `callback(_Func&&, std::chrono::duration<Rep, Period>)`), which does not accept a bare `double`. Every code block below shows the **current** API. Where it differs from the on-disk file, the difference is called out. Treat the signatures here, not the example text, as authoritative.
+> **Note on the checked-in sources.** The `examples/core_io/file_monitor` tree predates the canonical `std::chrono` time-model migration. It calls `start(path, 0.5)` and `qb::io::async::callback(fn, 0.5)` with bare `double` arguments. The current signatures take a `std::chrono` duration (`start(std::filesystem::path const&, qb::duration)`, `callback(_Func&&, std::chrono::duration<Rep, Period>)`), which does not accept a bare `double`. Every code block below shows the **current** API. Where it differs from the on-disk file, the difference is called out. Treat the signatures here, not the example text, as authoritative.
 
 ## Architecture
 
@@ -85,13 +85,13 @@ public:
 
 | Member | Signature | Effect |
 | --- | --- | --- |
-| `start` | `void start(std::string const &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept` | Arms an `ev::stat` watcher on `fpath`, polling at `interval`. |
+| `start` | `void start(std::filesystem::path const &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept` | Arms an `ev::stat` watcher on `fpath`, polling at `interval`. The watcher stores the path string internally and passes its address to libev, which keeps the pointer without copying — so the watcher owns the path for as long as it is armed. |
 | `disconnect` | `void disconnect() noexcept` | Stops the watcher; no further events fire. |
 | `on` (yours) | `void on(qb::io::async::event::file const &event)` | Called by the loop when the watched path's attributes change. Implemented by `_Derived`. |
 
 `directory_watcher` sets `constexpr static bool do_read = false`, so — unlike `file_watcher` — it never reads the watched path's contents; it only forwards the attribute-change event to your `on` handler. The base `on(event::file const&)` invokes `_Derived::on(event)` only when `_Derived` defines that handler (detected at compile time via `qb::has_on`).
 
-> **Interval is a `qb::duration`, not a `double`.** The checked-in `startWatching` declares `double interval = 0.5` and calls `start(path, 0.5)`. Against the current `start(std::string const&, qb::duration)` that does not compile — `qb::duration` is `std::chrono::nanoseconds`, which has no implicit conversion from `double`. Pass a `std::chrono` duration: `start(path, std::chrono::milliseconds(500))`. The example's intent ("check every 500 ms") is preserved by `std::chrono::milliseconds(500)`.
+> **Interval is a `qb::duration`, not a `double`.** The checked-in `startWatching` declares `double interval = 0.5` and calls `start(path, 0.5)`. Against the current `start(std::filesystem::path const&, qb::duration)` that does not compile — `qb::duration` is `std::chrono::nanoseconds`, which has no implicit conversion from `double`. Pass a `std::chrono` duration: `start(path, std::chrono::milliseconds(500))`. The example's intent ("check every 500 ms") is preserved by `std::chrono::milliseconds(500)`. (The path parameter is now a `std::filesystem::path`; the example's `std::string` path argument converts implicitly.)
 
 ### How change detection works
 

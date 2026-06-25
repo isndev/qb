@@ -24,6 +24,7 @@
  */
 
 #include <fcntl.h>
+#include <filesystem>
 #include <qb/system/allocator/pipe.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -111,7 +112,7 @@ public:
      *              These are standard POSIX flags; Windows equivalents are used internally.
      * @details Calls `open(fname, flags)` internally. If opening fails, `_handle` will be `-1`.
      */
-    explicit file(std::string const &fname, int flags = O_RDWR) noexcept;
+    explicit file(std::filesystem::path const &fname, int flags = O_RDWR) noexcept;
 
     /**
      * @brief Returns the native file descriptor handle.
@@ -135,7 +136,7 @@ public:
      * @return The native file descriptor if successful, or `-1` on error (errno is set).
      * @details If the file object already holds an open descriptor, it is closed first.
      */
-    int open(std::string const &fname, int flags = O_RDWR, int mode = 0644) noexcept;
+    int open(std::filesystem::path const &fname, int flags = O_RDWR, int mode = 0644) noexcept;
 
     /**
      * @brief Associates this file object with an existing native file descriptor.
@@ -222,7 +223,7 @@ public:
      * @details This method also retrieves the file size using `fstat` (or equivalent) to set `_expected_size`
      *          and resets internal read progress counters.
      */
-    bool open(std::string const &path) noexcept;
+    bool open(std::filesystem::path const &path) noexcept;
 
     /**
      * @brief Reads a chunk of data from the file into the associated pipe.
@@ -311,7 +312,7 @@ public:
      * @details Opens the file with `O_WRONLY | O_CREAT | O_TRUNC` by default (platform equivalents).
      *          Resets internal write progress counters.
      */
-    bool open(std::string const &path, int mode = 0644) noexcept;
+    bool open(std::filesystem::path const &path, int mode = 0644) noexcept;
 
     /**
      * @brief Writes a chunk of data from the associated pipe to the file.
@@ -354,6 +355,36 @@ public:
      */
     void close() noexcept;
 };
+
+/**
+ * @brief Absolute filesystem path of the currently running executable.
+ *
+ * Queried directly from the operating system — `GetModuleFileNameW` on Windows,
+ * `/proc/self/exe` on Linux, `_NSGetExecutablePath` on macOS — so it is independent of
+ * `argv[0]` and of the current working directory. Returns an empty path if the platform
+ * query fails or is unsupported.
+ * @ingroup FileSystem
+ */
+[[nodiscard]] std::filesystem::path self_path();
+
+/**
+ * @brief Directory containing the currently running executable.
+ * @details Convenience for `self_path().parent_path()`; empty if `self_path()` failed.
+ * @ingroup FileSystem
+ */
+[[nodiscard]] std::filesystem::path self_dir();
+
+/**
+ * @brief Resolve a resource path so it is found regardless of the working directory.
+ *
+ * An absolute @p path is returned unchanged. A relative @p path is looked up first
+ * relative to the current working directory (preserving historical behaviour), then
+ * relative to the executable's own directory — so a binary shipped next to its assets is
+ * self-contained and runs from any working directory. If neither candidate exists, @p
+ * path is returned unchanged so diagnostics still report exactly what was requested.
+ * @ingroup FileSystem
+ */
+[[nodiscard]] std::filesystem::path resolve_resource(const std::filesystem::path &path);
 
 } // namespace qb::io::sys
 

@@ -100,7 +100,7 @@ SSL_CTX *create_server_context(const SSL_METHOD *method, std::filesystem::path c
  * @param ca_file_path Path to the PEM-encoded CA certificate file.
  * @return true on success, false on failure.
  */
-bool load_ca_certificates(SSL_CTX *ctx, const std::string &ca_file_path);
+bool load_ca_certificates(SSL_CTX *ctx, const std::filesystem::path &ca_file_path);
 
 /**
  * @brief Load CA certificates from a directory for peer verification.
@@ -110,7 +110,7 @@ bool load_ca_certificates(SSL_CTX *ctx, const std::string &ca_file_path);
  *                   The directory must be prepared with `c_rehash` or equivalent.
  * @return true on success, false on failure.
  */
-bool load_ca_directory(SSL_CTX *ctx, const std::string &ca_dir_path);
+bool load_ca_directory(SSL_CTX *ctx, const std::filesystem::path &ca_dir_path);
 
 /**
  * @brief Set the preferred cipher suites for TLS 1.2 and earlier.
@@ -150,7 +150,7 @@ bool set_tls_protocol_versions(SSL_CTX *ctx, int min_version, int max_version);
  *                          Defaults to SSL_VERIFY_PEER.
  * @return true on success, false on failure.
  */
-bool configure_mtls_server_context(SSL_CTX *ctx, const std::string &client_ca_file_path, int verification_mode = SSL_VERIFY_PEER);
+bool configure_mtls_server_context(SSL_CTX *ctx, const std::filesystem::path &client_ca_file_path, int verification_mode = SSL_VERIFY_PEER);
 
 /**
  * @brief Configure a client SSL_CTX to use a specific client certificate and private key.
@@ -160,7 +160,7 @@ bool configure_mtls_server_context(SSL_CTX *ctx, const std::string &client_ca_fi
  * @param client_key_path Path to the PEM-encoded client private key file.
  * @return true on success, false on failure.
  */
-bool configure_client_certificate(SSL_CTX *ctx, const std::string &client_cert_path, const std::string &client_key_path);
+bool configure_client_certificate(SSL_CTX *ctx, const std::filesystem::path &client_cert_path, const std::filesystem::path &client_key_path);
 
 /**
  * @brief Set the ALPN protocols for a client SSL_CTX to offer during handshake.
@@ -270,7 +270,7 @@ bool set_keylog_callback(SSL_CTX *ctx, SSL_CTX_keylog_cb_func callback);
  * @return true on success, false on failure (e.g., file not found, invalid format).
  * @note Important for PFS with DHE cipher suites (TLS 1.2 and earlier).
  */
-bool configure_dh_parameters_server(SSL_CTX *ctx, const std::string &dh_param_file_path);
+bool configure_dh_parameters_server(SSL_CTX *ctx, const std::filesystem::path &dh_param_file_path);
 
 /**
  * @brief Configure preferred ECDH curves for a server SSL_CTX.
@@ -495,7 +495,7 @@ public:
      * @return 0 on success, non-zero error code on failure.
      * @note SSL over Unix domain sockets is uncommon but technically possible if the peer expects it.
      */
-    int connect_un(std::string const &path) noexcept;
+    int connect_un(std::filesystem::path const &path) noexcept;
 
     /**
      * @brief Initiate a non-blocking SSL/TLS connection to a remote endpoint.
@@ -572,7 +572,7 @@ public:
      * @param path Path to the Unix domain socket.
      * @return 0 on TCP connection progress/success, non-zero error on immediate failure.
      */
-    int n_connect_un(std::string const &path) noexcept;
+    int n_connect_un(std::filesystem::path const &path) noexcept;
 
     /**
      * @brief Gracefully shut down the SSL/TLS connection and close the underlying socket.

@@ -160,8 +160,8 @@ socket::connect_v6(std::string const &host, uint16_t port) noexcept {
 }
 
 int
-socket::connect_un(std::string const &path) noexcept {
-    return connect(qb::io::endpoint().as_un(path.c_str()));
+socket::connect_un(std::filesystem::path const &path) noexcept {
+    return connect(qb::io::endpoint().as_un(path.string().c_str()));
 }
 
 // non blocking version
@@ -224,8 +224,8 @@ socket::n_connect_v6(std::string const &host, uint16_t port) noexcept {
 }
 
 int
-socket::n_connect_un(std::string const &path) noexcept {
-    return n_connect(qb::io::endpoint().as_un(path.c_str()));
+socket::n_connect_un(std::filesystem::path const &path) noexcept {
+    return n_connect(qb::io::endpoint().as_un(path.string().c_str()));
 }
 
 int

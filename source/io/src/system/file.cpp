@@ -30,6 +30,8 @@
 #include <fcntl.h>
 #include <io.h>
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h> // _NSGetExecutablePath
 #endif
 
 namespace qb::io::sys {
@@ -41,7 +43,7 @@ file::file() noexcept
 file::file(int const fd) noexcept
     : _handle(fd) {}
 
-file::file(std::string const &fname, int const flags) noexcept
+file::file(std::filesystem::path const &fname, int const flags) noexcept
     : _handle(FD_INVALID) {
     open(fname, flags);
 }
@@ -71,7 +73,7 @@ file::native_handle() const noexcept {
 }
 
 int
-file::open(std::string const &fname, int const flags, int const mode) noexcept {
+file::open(std::filesystem::path const &fname, int const flags, int const mode) noexcept {
     close();
 #ifdef _WIN32
     // Translate the POSIX open() flags to CreateFile parameters so we can request
@@ -107,7 +109,9 @@ file::open(std::string const &fname, int const flags, int const mode) noexcept {
         disposition = (flags & _O_TRUNC) ? TRUNCATE_EXISTING : OPEN_EXISTING;
     }
 
-    const HANDLE h = ::CreateFileA(fname.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, disposition,
+    // fname.c_str() is a wide (wchar_t) native path on Windows — use CreateFileW for
+    // proper Unicode path support (the previous CreateFileA truncated non-ANSI paths).
+    const HANDLE h = ::CreateFileW(fname.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, disposition,
                                    FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         _handle = FD_INVALID;
@@ -215,7 +219,7 @@ file_to_pipe::~file_to_pipe() noexcept {
 }
 
 bool
-file_to_pipe::open(std::string const &path) noexcept {
+file_to_pipe::open(std::filesystem::path const &path) noexcept {
     _handle.close();
 
     // Open the file first with O_NOFOLLOW to prevent TOCTOU race condition via symlinks
@@ -311,11 +315,11 @@ pipe_to_file::pipe_to_file(qb::allocator::pipe<char> const &in) noexcept
     : _pipe(in) {}
 
 bool
-pipe_to_file::open(std::string const &path, int const mode) noexcept {
+pipe_to_file::open(std::filesystem::path const &path, int const mode) noexcept {
     close();
     // O_TRUNC matches the documented contract and prevents stale trailing bytes
     // when overwriting an existing, larger file with a shorter payload.
-    _handle.open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, mode);
+    _handle.open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
     if (is_open()) {
         _written_bytes = 0;
         return true;
@@ -365,6 +369,72 @@ pipe_to_file::eos() const noexcept {
 void
 pipe_to_file::close() noexcept {
     _handle.close();
+}
+
+// ---------------------------------------------------------------------------
+// Executable location & resource resolution
+// ---------------------------------------------------------------------------
+
+std::filesystem::path
+self_path() {
+#if defined(_WIN32)
+    // GetModuleFileNameW(nullptr) returns the path of the current process image.
+    std::wstring buffer(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD len = ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (len == 0)
+            return {}; // query failed
+        if (len < buffer.size()) {
+            buffer.resize(len);
+            return std::filesystem::path(buffer);
+        }
+        buffer.resize(buffer.size() * 2); // path longer than buffer: grow and retry
+    }
+#elif defined(__APPLE__)
+    // Two-call idiom: first query the required size, then fill the buffer.
+    std::uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (size == 0 || _NSGetExecutablePath(buffer.data(), &size) != 0)
+        return {};
+    buffer.resize(std::char_traits<char>::length(buffer.c_str()));
+    std::error_code      ec;
+    std::filesystem::path canonical = std::filesystem::weakly_canonical(std::filesystem::path(buffer), ec);
+    return ec ? std::filesystem::path(buffer) : canonical; // resolve the /./ and symlinks dyld may return
+#else
+    // Linux and other procfs systems expose the executable as a symlink.
+    std::error_code      ec;
+    std::filesystem::path link = std::filesystem::read_symlink("/proc/self/exe", ec);
+    return ec ? std::filesystem::path{} : link;
+#endif
+}
+
+std::filesystem::path
+self_dir() {
+    const std::filesystem::path exe = self_path();
+    return exe.empty() ? std::filesystem::path{} : exe.parent_path();
+}
+
+std::filesystem::path
+resolve_resource(const std::filesystem::path &path) {
+    if (path.is_absolute())
+        return path;
+
+    std::error_code ec;
+    // 1. As given, relative to the current working directory (historical behaviour).
+    if (std::filesystem::exists(path, ec))
+        return path;
+
+    // 2. Relative to the executable's own directory, so a binary shipped next to its
+    //    assets resolves them from any working directory.
+    if (const std::filesystem::path dir = self_dir(); !dir.empty()) {
+        std::filesystem::path candidate = dir / path;
+        if (std::filesystem::exists(candidate, ec))
+            return candidate.lexically_normal(); // collapse the "/./" the join may introduce
+    }
+
+    // 3. Nothing matched: return the original so callers report what was requested.
+    return path;
 }
 
 } // namespace qb::io::sys

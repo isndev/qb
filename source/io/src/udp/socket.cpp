@@ -360,7 +360,7 @@ socket::bind(io::uri const &u) noexcept {
             return bind(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
         case AF_UNIX:
             const auto path = std::string(u.path()) + std::string(u.host());
-            return bind_un(path.c_str());
+            return bind_un(path);
     }
     return -1;
 }
@@ -376,8 +376,8 @@ socket::bind_v6(uint16_t port, std::string const &host) noexcept {
 }
 
 int
-socket::bind_un(std::string const &path) noexcept {
-    return bind(qb::io::endpoint().as_un(path.c_str()));
+socket::bind_un(const std::filesystem::path &path) noexcept {
+    return bind(qb::io::endpoint().as_un(path.string().c_str()));
 }
 
 int

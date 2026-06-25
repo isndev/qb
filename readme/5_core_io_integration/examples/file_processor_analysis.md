@@ -265,7 +265,7 @@ void on(ReadFileRequest &request) {
 Key facts, grounded in the headers:
 
 - The type is **`qb::io::sys::file`** (namespace `qb::io::sys`), included from `<qb/io/system/file.h>`. There is no `qb::io::system::file` alias — some of the example's own doc comments use that spelling, and they are wrong. <!-- src: qb/include/qb/io/system/file.h:43 -->
-- `file::open(std::string const&, int flags = O_RDWR, int mode = 0644)` returns the native descriptor or `-1`; `read`/`write` return an **`int`** (bytes transferred, `0` for EOF, negative on error), not `ssize_t`. <!-- src: qb/include/qb/io/system/file.h:138,156,165 -->
+- `file::open(std::filesystem::path const&, int flags = O_RDWR, int mode = 0644)` returns the native descriptor or `-1`; `read`/`write` return an **`int`** (bytes transferred, `0` for EOF, negative on error), not `ssize_t`. The path parameter is a `std::filesystem::path`, so the example's `request.filepath.c_str()` (a `qb::string<256>`) still binds via the implicit `path` construction. <!-- src: qb/include/qb/io/system/file.h:139,157,166 -->
 - `sys::file` is a move-only RAII owner of its descriptor: copy is deleted and the destructor closes the handle. The explicit `file.close()` is therefore redundant (the destructor would close on scope exit) but harmless. <!-- src: qb/include/qb/io/system/file.h:77,98 -->
 - The reply is addressed to **`request.requestor`** — the client's id — so the response skips the manager entirely. After replying, the worker calls `notifyAvailable()`, which `push`es `WorkerAvailable` to the manager.
 

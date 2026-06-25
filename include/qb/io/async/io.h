@@ -29,6 +29,7 @@
 #ifndef QB_IO_ASYNC_IO_H
 #define QB_IO_ASYNC_IO_H
 
+#include <filesystem>
 #include <memory>
 #include <new>
 #include <qb/system/time.h>
@@ -524,8 +525,12 @@ public:
      *          The `on(event::file&)` handler will be called when changes are detected.
      */
     void
-    start(std::string const &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
-        this->_async_event.start(fpath.c_str(), qb::detail::to_ev_seconds(interval));
+    start(const std::filesystem::path &fpath,
+          qb::duration interval = std::chrono::milliseconds(100)) noexcept {
+        // ev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
+        // must own the narrow path string for as long as it is active.
+        _watched_path = fpath.string();
+        this->_async_event.start(_watched_path.c_str(), qb::detail::to_ev_seconds(interval));
     }
 
     /**
@@ -611,6 +616,8 @@ public:
 private:
     friend class listener::RegisteredKernelEvent<event::file, file_watcher>;
 
+    std::string _watched_path; /**< Owns the narrow path string for ev_stat's lifetime (ev_stat does not copy it). */
+
     /**
      * @brief Internal file event handler, called by the listener when `event::file` (for the watched file) triggers.
      * @param event The `event::file` containing current (`event.attr`) and previous (`event.prev`) `stat` data.
@@ -686,8 +693,12 @@ public:
      *          The `on(event::file&)` handler will be called when changes to the directory's attributes are detected.
      */
     void
-    start(std::string const &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
-        this->_async_event.start(fpath.c_str(), qb::detail::to_ev_seconds(interval));
+    start(const std::filesystem::path &fpath,
+          qb::duration interval = std::chrono::milliseconds(100)) noexcept {
+        // ev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
+        // must own the narrow path string for as long as it is active.
+        _watched_path = fpath.string();
+        this->_async_event.start(_watched_path.c_str(), qb::detail::to_ev_seconds(interval));
     }
 
     /**
@@ -701,6 +712,8 @@ public:
 
 private:
     friend class listener::RegisteredKernelEvent<event::file, directory_watcher>;
+
+    std::string _watched_path; /**< Owns the narrow path string for ev_stat's lifetime (ev_stat does not copy it). */
 
     /**
      * @brief Internal directory event handler, called by the listener when `event::file` (for the directory) triggers.

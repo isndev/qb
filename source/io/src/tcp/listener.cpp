@@ -58,8 +58,8 @@ listener::listen_v6(uint16_t port, std::string const &host) noexcept {
 }
 
 int
-listener::listen_un(std::string const &path) noexcept {
-    return listen(io::endpoint().as_un(path.c_str()));
+listener::listen_un(std::filesystem::path const &path) noexcept {
+    return listen(io::endpoint().as_un(path.string().c_str()));
 }
 
 socket

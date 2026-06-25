@@ -98,7 +98,7 @@ Key behaviors verified in the header:
 - **Return convention.** `connect*` and `n_connect*` return `int`: `0` on success (the
   value of `qb::io::SocketStatus::Done`), non-zero on failure. A failed peer-verification
   surfaces as `qb::io::SocketStatus::CertificateError` (value `1`).
-  <!-- src: qb/include/qb/io/system/sys__socket.h:1563-1567 -->
+  <!-- src: qb/include/qb/io/system/sys__socket.h:1525-1529 -->
 - **Handshake progress.** `handshake_status()` returns `1` when the TLS handshake is
   complete, `0` when OpenSSL needs more socket readiness (`WANT_READ`/`WANT_WRITE`), and
   `-1` on a fatal error. `handshake_complete()` reports whether it finished successfully.
@@ -232,12 +232,18 @@ SSL_CTX *create_server_context(const SSL_METHOD *method,
                                std::filesystem::path key_path);
 
 // Context configuration (each returns bool):
-bool load_ca_certificates(SSL_CTX *ctx, const std::string &ca_file_path);
+bool load_ca_certificates(SSL_CTX *ctx, const std::filesystem::path &ca_file_path);
+bool load_ca_directory(SSL_CTX *ctx, const std::filesystem::path &ca_dir_path);
 bool set_tls_protocol_versions(SSL_CTX *ctx, int min_version, int max_version);
-bool configure_mtls_server_context(SSL_CTX *ctx, const std::string &client_ca_file_path,
+bool configure_mtls_server_context(SSL_CTX *ctx,
+                                   const std::filesystem::path &client_ca_file_path,
                                    int verification_mode = SSL_VERIFY_PEER);
+bool configure_client_certificate(SSL_CTX *ctx,
+                                  const std::filesystem::path &client_cert_path,
+                                  const std::filesystem::path &client_key_path);
+bool configure_dh_parameters_server(SSL_CTX *ctx, const std::filesystem::path &dh_param_file_path);
 bool set_alpn_protos_client(SSL_CTX *ctx, const std::vector<std::string> &protocols);
-// ... cipher lists, OCSP, DH/ECDH, keylog, session caching, PHA, and more.
+// ... cipher lists, OCSP, ECDH, keylog, session caching, PHA, and more.
 
 } // namespace qb::io::ssl
 ```
@@ -248,8 +254,18 @@ example when the certificate or key file cannot be loaded). **The caller owns th
 `SSL_CTX` and must release it with `SSL_CTX_free()`** — except when it is handed to a
 `listener` via `init()`, which then owns and frees it.
 
-`create_server_context` takes `std::filesystem::path` arguments for the PEM-encoded
-certificate and private key, not raw `const char*` paths.
+Every file-path argument across these helpers — the certificate and key for
+`create_server_context`, the CA file/directory for `load_ca_certificates` /
+`load_ca_directory` / `configure_mtls_server_context`, the client certificate and key for
+`configure_client_certificate`, and the DH parameters for
+`configure_dh_parameters_server` — is a `std::filesystem::path`, not a raw `const char*`.
+Each path is resolved through `qb::io::sys::resolve_resource()` before OpenSSL opens it: an
+absolute path is used unchanged, while a relative path is looked up against the current
+working directory first and then against the running executable's own directory. A server
+shipped next to its `cert.pem` / `key.pem` therefore loads them regardless of the cwd it is
+launched from.
+
+<!-- src: qb/source/io/src/tcp/ssl/socket.cpp:186-204, 206-300, 414-418 -->
 
 ## Building an SSL server
 
@@ -295,7 +311,8 @@ public:
     void on(IOSession &) { /* a new secure session was established */ }
 };
 
-void run_server(const std::string &cert_path, const std::string &key_path) {
+void run_server(const std::filesystem::path &cert_path,
+                const std::filesystem::path &key_path) {
     async::init();
 
     SecureServer server;

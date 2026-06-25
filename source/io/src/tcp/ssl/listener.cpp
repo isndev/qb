@@ -87,14 +87,14 @@ listener::ssl_handle() const noexcept {
 }
 
 bool
-listener::load_ca_certificates_for_client_auth(const std::string &ca_file_path) {
+listener::load_ca_certificates_for_client_auth(const std::filesystem::path &ca_file_path) {
     if (!_ctx)
         return false;
     return qb::io::ssl::load_ca_certificates(_ctx.get(), ca_file_path);
 }
 
 bool
-listener::load_ca_directory_for_client_auth(const std::string &ca_dir_path) {
+listener::load_ca_directory_for_client_auth(const std::filesystem::path &ca_dir_path) {
     if (!_ctx)
         return false;
     return qb::io::ssl::load_ca_directory(_ctx.get(), ca_dir_path);
@@ -122,7 +122,7 @@ listener::set_tls_protocol_versions(int min_version, int max_version) {
 }
 
 bool
-listener::configure_mtls(const std::string &client_ca_file_path, int verification_mode) {
+listener::configure_mtls(const std::filesystem::path &client_ca_file_path, int verification_mode) {
     if (!_ctx)
         return false;
     return qb::io::ssl::configure_mtls_server_context(_ctx.get(), client_ca_file_path, verification_mode);
@@ -171,7 +171,7 @@ listener::set_keylog_callback(SSL_CTX_keylog_cb_func callback) {
 }
 
 bool
-listener::configure_dh_parameters(const std::string &dh_param_file_path) {
+listener::configure_dh_parameters(const std::filesystem::path &dh_param_file_path) {
     if (!_ctx)
         return false;
     return qb::io::ssl::configure_dh_parameters_server(_ctx.get(), dh_param_file_path);
