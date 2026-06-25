@@ -51,6 +51,7 @@ qb_add_test(MODULE qb-core TIER system NAME coroutine-detached SOURCES coroutine
 qb_add_test(MODULE qb-core TIER system NAME coroutine-scope    SOURCES coroutine/coroutine-scope.cpp    DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-core TIER system NAME ask-roundtrip      SOURCES coroutine/ask-roundtrip.cpp      DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-core TIER system NAME ask-patterns       SOURCES coroutine/ask-patterns.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-core TIER system NAME coroutine-resilience SOURCES coroutine/coroutine-resilience.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine patterns)
 
 # --- lifecycle --------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME actor-lifecycle-ordering SOURCES lifecycle/actor-lifecycle-ordering.cpp DEPENDS ${PROJECT_NAME} LABELS slow)
@@ -70,15 +71,31 @@ qb_add_test(MODULE qb-core TIER system NAME qos1-backpressure           SOURCES 
 # --- regression -------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME router-callback-regressions SOURCES regression/router-callback-regressions.cpp DEPENDS ${PROJECT_NAME})
 
-# --- patterns ---------------------------------------------------------------
-qb_add_test(MODULE qb-core TIER system NAME supervisor-strategies SOURCES patterns/supervisor-strategies.cpp DEPENDS ${PROJECT_NAME} LABELS patterns slow)
+# --- patterns (resilience / aggregate / saga / routing / pubsub / discovery) -
+qb_add_test(MODULE qb-core TIER system NAME supervisor-strategies   SOURCES patterns/supervisor-strategies.cpp   DEPENDS ${PROJECT_NAME} LABELS patterns slow)
+qb_add_test(MODULE qb-core TIER system NAME resilience-rate-limiter SOURCES patterns/resilience-rate-limiter.cpp DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME resilience-bulkhead     SOURCES patterns/resilience-bulkhead.cpp     DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME aggregate-scatter       SOURCES patterns/aggregate-scatter.cpp       DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME aggregate-quorum        SOURCES patterns/aggregate-quorum.cpp        DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME aggregate-batcher       SOURCES patterns/aggregate-batcher.cpp       DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME request-deadline        SOURCES patterns/request-deadline.cpp        DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME streaming-ask-stream    SOURCES patterns/streaming-ask-stream.cpp    DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME idempotency-answer      SOURCES patterns/idempotency-answer.cpp      DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME saga-cancel             SOURCES patterns/saga-cancel.cpp             DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME discovery-ping-require  SOURCES patterns/discovery-ping-require.cpp  DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+qb_add_test(MODULE qb-core TIER system NAME routing-dispatch        SOURCES patterns/routing-dispatch.cpp        DEPENDS ${PROJECT_NAME} LABELS patterns)
+qb_add_test(MODULE qb-core TIER system NAME pubsub-fanout           SOURCES patterns/pubsub-fanout.cpp           DEPENDS ${PROJECT_NAME} LABELS patterns)
 
-# --- SPLIT_PENDING (monoliths, registered flat until decomposed per spec §2) -
-qb_add_test(MODULE qb-core TIER system NAME patterns-enrich     SOURCES test-actor-patterns-enrich.cpp     DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
-qb_add_test(MODULE qb-core TIER system NAME coroutine-resilience SOURCES test-actor-coroutine-resilience.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine patterns)
-qb_add_test(MODULE qb-core TIER system NAME async-init          SOURCES test-actor-async-init.cpp          DEPENDS ${PROJECT_NAME} LABELS init coroutine)
-qb_add_test(MODULE qb-core TIER system NAME async-init-torture  SOURCES test-actor-async-init-torture.cpp  DEPENDS ${PROJECT_NAME} LABELS init coroutine slow requires-multicore)
-qb_add_test(MODULE qb-core TIER system NAME init-robustness     SOURCES test-actor-init-robustness.cpp     DEPENDS ${PROJECT_NAME} LABELS init coroutine)
-qb_add_test(MODULE qb-core TIER system NAME routing-pubsub      SOURCES test-actor-routing-pubsub.cpp      DEPENDS ${PROJECT_NAME} LABELS patterns)
+# --- init (async onInit: state machine / stash / deadline / activation) ------
+qb_add_test(MODULE qb-core TIER system NAME init-lifecycle     SOURCES init/init-lifecycle.cpp     DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-ask-gate      SOURCES init/init-ask-gate.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-service-actor SOURCES init/init-service-actor.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-stash-lifetime SOURCES init/init-stash-lifetime.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-patterns      SOURCES init/init-patterns.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-multicore     SOURCES init/init-multicore.cpp     DEPENDS ${PROJECT_NAME} LABELS init coroutine requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME init-deadline      SOURCES init/init-deadline.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine slow)
+qb_add_test(MODULE qb-core TIER system NAME init-stress        SOURCES init/init-stress.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine slow)
+qb_add_test(MODULE qb-core TIER system NAME init-handle        SOURCES init/init-handle.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-gate-edges    SOURCES init/init-gate-edges.cpp    DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 
 qb_debug_message("Configured ${CMAKE_CURRENT_SOURCE_DIR} with the tiered test helper")
