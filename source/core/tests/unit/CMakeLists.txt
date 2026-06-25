@@ -16,50 +16,18 @@
 #
 
 # -----------------------------------------------------------------------------
-# qb Core Unit Tests - CMake Configuration
-#
-# This file configures the unit tests for the qb Core component.
-# It defines test targets for specific components using Google Test framework.
+# qb-core UNIT tests — pure logic, no qb::Main engine, daemon-free, parallel-safe.
+# Registered through the shared tiered helper (qb_add_test MODULE/TIER/...), which
+# applies the tier:unit + module:qb-core labels, the unit TIMEOUT, and the IDE folder.
+# Run just this lane: ctest -L 'tier:unit' --parallel "$(nproc)"
 # -----------------------------------------------------------------------------
 
-# Create unit test for the event router component
-qb_add_test(
-        NAME ${PROJECT_NAME}-gtest-unit-event-router
-        SOURCES test-event-router.cpp
-        DEPENDS ${PROJECT_NAME}
-)
-
-# Create unit test for the timestamp component
-qb_add_test(
-        NAME ${PROJECT_NAME}-gtest-unit-timestamp
-        SOURCES test-timestamp.cpp
-        DEPENDS ${PROJECT_NAME}
-)
-
-# Create unit test for the string component
-qb_add_test(
-        NAME ${PROJECT_NAME}-gtest-unit-string
-        SOURCES test-string.cpp
-        DEPENDS ${PROJECT_NAME}
-)
-
-# Create unit test for the SpinLock lock-free primitive
-qb_add_test(
-        NAME ${PROJECT_NAME}-gtest-unit-spinlock
-        SOURCES test-spinlock.cpp
-        DEPENDS ${PROJECT_NAME}
-)
-
-# Create unit test for ActorId / BroadcastId / CoreIdBitSet
-qb_add_test(
-        NAME ${PROJECT_NAME}-gtest-unit-actor-id
-        SOURCES test-actor-id.cpp
-        DEPENDS ${PROJECT_NAME}
-)
-
-# Create unit test for qb/json.h (qb::jsonb wrapper + adapters)
-qb_add_test(
-        NAME ${PROJECT_NAME}-gtest-unit-json
-        SOURCES test-json.cpp
-        DEPENDS ${PROJECT_NAME}
-)
+qb_add_test(MODULE qb-core TIER unit NAME string         SOURCES container/string.cpp        DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME jsonb-wrapper  SOURCES json/jsonb-wrapper.cpp      DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME actor-id                SOURCES core/actor-id.cpp                 DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME type-id-identity        SOURCES core/type-id-identity.cpp         DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME service-index-uniqueness SOURCES core/service-index-uniqueness.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME event-traits   SOURCES type/event-traits.cpp       DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME spinlock-basic SOURCES lockfree/spinlock-basic.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)
+qb_add_test(MODULE qb-core TIER unit NAME time           SOURCES system/time.cpp             DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME event-router   SOURCES system/event-router.cpp     DEPENDS ${PROJECT_NAME})

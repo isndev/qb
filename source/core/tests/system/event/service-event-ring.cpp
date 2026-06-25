@@ -28,41 +28,10 @@
 #include <qb/main.h>
 #include <random>
 
-struct TestEvent : public qb::Event {
-    uint8_t  _data[32];
-    uint32_t _sum;
-    bool     has_extra_data = false;
-
-    TestEvent()
-        : _sum(0) {
-        std::random_device rand_dev;
-        std::mt19937       generator(rand_dev());
-
-        std::uniform_int_distribution<int> random_number(0, 255);
-        std::generate(std::begin(_data), std::end(_data), [&]() {
-            auto number = static_cast<uint8_t>(random_number(generator));
-            _sum += number;
-            return number;
-        });
-    }
-
-    [[nodiscard]] bool
-    checkSum() const {
-        auto ret = true;
-        if (has_extra_data) {
-            ret = !memcmp(_data, reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent), sizeof(_data));
-        }
-
-        return std::accumulate(std::begin(_data), std::end(_data), 0u) == _sum && ret;
-    }
-};
-
-static void
-copyAllocatedPayload(TestEvent &event) {
-    auto *payload = reinterpret_cast<uint8_t *>(&event) + sizeof(TestEvent);
-    for (std::size_t i = 0; i < sizeof(event._data); ++i)
-        payload[i] = event._data[i];
-}
+// Self-validating payload event, shared with the messaging delivery tests.
+#include "../../shared/ChecksumEvent.h"
+using qb::test::copyAllocatedPayload;
+using qb::test::TestEvent;
 
 struct MyTag {};
 
