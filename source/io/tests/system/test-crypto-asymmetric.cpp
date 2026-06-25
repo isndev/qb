@@ -437,6 +437,180 @@ TEST_F(CryptoAsymmetricTest, LargePayloadEciesRoundTrip) {
     EXPECT_EQ(decrypted, large_data);
 }
 
+// 1. ECIES round-trip with the ChaCha20-Poly1305 AEAD mode (small + empty payload).
+TEST_F(CryptoAsymmetricTest, EciesChaCha20RoundTrip) {
+    auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+
+    const std::vector<unsigned char> small = {'h', 'e', 'l', 'l', 'o'};
+    auto [eph_small, ct_small]             = qb::crypto::ecies_encrypt(small, public_key, {}, qb::crypto::ECIESMode::CHACHA20);
+    EXPECT_FALSE(eph_small.empty());
+    EXPECT_FALSE(ct_small.empty());
+    auto dec_small = qb::crypto::ecies_decrypt(ct_small, eph_small, private_key, {}, qb::crypto::ECIESMode::CHACHA20);
+    EXPECT_EQ(dec_small, small);
+
+    const std::vector<unsigned char> empty;
+    auto [eph_empty, ct_empty] = qb::crypto::ecies_encrypt(empty, public_key, {}, qb::crypto::ECIESMode::CHACHA20);
+    EXPECT_FALSE(eph_empty.empty());
+    auto dec_empty = qb::crypto::ecies_decrypt(ct_empty, eph_empty, private_key, {}, qb::crypto::ECIESMode::CHACHA20);
+    EXPECT_TRUE(dec_empty.empty());
+}
+
+// 2. ECIES round-trip with the STANDARD mode (maps internally to AES-256-CBC).
+//    NOTE: there is no ECIESMode::AES_256_CBC enumerator; STANDARD is the CBC path
+//    (see crypto_asymmetric.cpp switch: ECIESMode::STANDARD -> AES_256_CBC).
+TEST_F(CryptoAsymmetricTest, EciesStandardCbcRoundTrip) {
+    auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+
+    auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(test_data, public_key, {}, qb::crypto::ECIESMode::STANDARD);
+    EXPECT_FALSE(ephemeral_public.empty());
+    EXPECT_FALSE(encrypted.empty());
+
+    auto decrypted = qb::crypto::ecies_decrypt(encrypted, ephemeral_public, private_key, {}, qb::crypto::ECIESMode::STANDARD);
+    EXPECT_EQ(decrypted, test_data);
+}
+
+// 3. 0-byte plaintext across all available ECIES modes: ephemeral public is always
+//    populated and the decrypt yields an empty buffer.
+TEST_F(CryptoAsymmetricTest, EciesEmptyPlaintext) {
+    auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+
+    const std::vector<unsigned char> empty;
+    const std::vector<qb::crypto::ECIESMode> modes = {
+        qb::crypto::ECIESMode::STANDARD, qb::crypto::ECIESMode::AES_GCM, qb::crypto::ECIESMode::CHACHA20
+    };
+
+    for (auto mode : modes) {
+        auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(empty, public_key, {}, mode);
+        EXPECT_FALSE(ephemeral_public.empty());
+        auto decrypted = qb::crypto::ecies_decrypt(encrypted, ephemeral_public, private_key, {}, mode);
+        EXPECT_TRUE(decrypted.empty());
+    }
+}
+
+// 4. The ECIES ephemeral public key is a raw X25519 public key (32 bytes).
+TEST_F(CryptoAsymmetricTest, EciesEphemeralKeyX25519Sized) {
+    auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+
+    auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(test_data, public_key, {}, qb::crypto::ECIESMode::AES_GCM);
+    EXPECT_EQ(ephemeral_public.size(), 32u);
+}
+
+// 5. RSA-3072 keygen + sign/verify round-trip.
+TEST_F(CryptoAsymmetricTest, RsaKeygen3072SignVerify) {
+    auto [private_key, public_key] = qb::crypto::generate_rsa_keypair(3072);
+    EXPECT_NE(private_key.find("PRIVATE KEY"), std::string::npos);
+    EXPECT_NE(public_key.find("PUBLIC KEY"), std::string::npos);
+
+    const auto signature = qb::crypto::rsa_sign(test_data, private_key, qb::crypto::DigestAlgorithm::SHA256);
+    ASSERT_FALSE(signature.empty());
+    EXPECT_TRUE(qb::crypto::rsa_verify(test_data, signature, public_key, qb::crypto::DigestAlgorithm::SHA256));
+}
+
+// 6. RSA sign/verify round-trip across the common digest algorithms.
+TEST_F(CryptoAsymmetricTest, RsaSignAllDigests) {
+    auto [private_key, public_key] = qb::crypto::generate_rsa_keypair(2048);
+
+    const std::vector<qb::crypto::DigestAlgorithm> digests = {
+        qb::crypto::DigestAlgorithm::SHA1, qb::crypto::DigestAlgorithm::SHA256, qb::crypto::DigestAlgorithm::SHA384,
+        qb::crypto::DigestAlgorithm::SHA512
+    };
+
+    for (auto digest : digests) {
+        const auto signature = qb::crypto::rsa_sign(test_data, private_key, digest);
+        ASSERT_FALSE(signature.empty());
+        EXPECT_TRUE(qb::crypto::rsa_verify(test_data, signature, public_key, digest));
+    }
+}
+
+// 7. EC sign/verify round-trip on the P-384 and P-521 curves.
+TEST_F(CryptoAsymmetricTest, EcKeygenSecp384AndSecp521) {
+    for (const auto *curve : {"secp384r1", "secp521r1"}) {
+        auto [private_key, public_key] = qb::crypto::generate_ec_keypair(curve);
+        EXPECT_NE(private_key.find("PRIVATE KEY"), std::string::npos);
+        EXPECT_NE(public_key.find("PUBLIC KEY"), std::string::npos);
+
+        const auto signature = qb::crypto::ec_sign(test_data, private_key, qb::crypto::DigestAlgorithm::SHA256);
+        ASSERT_FALSE(signature.empty());
+        EXPECT_TRUE(qb::crypto::ec_verify(test_data, signature, public_key, qb::crypto::DigestAlgorithm::SHA256));
+    }
+}
+
+// 8. Exercise both ed25519_sign / ed25519_verify overloads (PEM and raw-bytes).
+//    NOTE: the requested "same keypair, PEM<->raw cross-verify" is not expressible
+//    through the public API -- generate_ed25519_keypair() and
+//    generate_ed25519_keypair_bytes() produce INDEPENDENT keypairs and there is no
+//    public PEM<->raw converter (pem_to_key/get_raw_key_bytes are file-static). So
+//    this verifies each overload pair on its own material plus a negative control
+//    that a raw-key signature does NOT validate under an unrelated PEM public key.
+TEST_F(CryptoAsymmetricTest, Ed25519PemRawCrossVerify) {
+    auto [pem_private, pem_public] = qb::crypto::generate_ed25519_keypair();
+    auto [raw_private, raw_public] = qb::crypto::generate_ed25519_keypair_bytes();
+
+    const auto sig_from_raw = qb::crypto::ed25519_sign(test_data, raw_private);
+    EXPECT_TRUE(qb::crypto::ed25519_verify(test_data, sig_from_raw, raw_public));
+
+    const auto sig_from_pem = qb::crypto::ed25519_sign(test_data, pem_private);
+    EXPECT_TRUE(qb::crypto::ed25519_verify(test_data, sig_from_pem, pem_public));
+
+    // Negative control across overloads: unrelated PEM key rejects the raw signature.
+    EXPECT_FALSE(qb::crypto::ed25519_verify(test_data, sig_from_raw, pem_public));
+}
+
+// 9. Exercise both x25519_key_exchange overloads (PEM strings and raw bytes), each
+//    yielding a symmetric (direction-independent) shared secret.
+//    NOTE: a literal "same key material via PEM vs raw" equality is not expressible
+//    through the public API (no public PEM<->raw converter), so each overload is
+//    checked for the ECDH symmetry property on its own keypairs.
+TEST_F(CryptoAsymmetricTest, X25519PemBytesEquivalence) {
+    auto [alice_pem_priv, alice_pem_pub] = qb::crypto::generate_x25519_keypair();
+    auto [bob_pem_priv, bob_pem_pub]     = qb::crypto::generate_x25519_keypair();
+
+    const auto secret_pem     = qb::crypto::x25519_key_exchange(alice_pem_priv, bob_pem_pub);
+    const auto secret_pem_rev = qb::crypto::x25519_key_exchange(bob_pem_priv, alice_pem_pub);
+    EXPECT_FALSE(secret_pem.empty());
+    EXPECT_EQ(secret_pem, secret_pem_rev);
+
+    auto [alice_raw_priv, alice_raw_pub] = qb::crypto::generate_x25519_keypair_bytes();
+    auto [bob_raw_priv, bob_raw_pub]     = qb::crypto::generate_x25519_keypair_bytes();
+    const auto secret_raw                = qb::crypto::x25519_key_exchange(alice_raw_priv, bob_raw_pub);
+    const auto secret_raw_rev            = qb::crypto::x25519_key_exchange(bob_raw_priv, alice_raw_pub);
+    EXPECT_FALSE(secret_raw.empty());
+    EXPECT_EQ(secret_raw, secret_raw_rev);
+}
+
+// 10. ed25519_verify with a wrong-length (10-byte) signature returns false rather
+//     than throwing (verify returns bool; only key parsing throws).
+TEST_F(CryptoAsymmetricTest, Ed25519VerifyWrongLengthSignature) {
+    auto [private_key, public_key] = qb::crypto::generate_ed25519_keypair();
+
+    const std::vector<unsigned char> short_sig(10, 0x42);
+    bool valid = false;
+    EXPECT_NO_THROW(valid = qb::crypto::ed25519_verify(test_data, short_sig, public_key));
+    EXPECT_FALSE(valid);
+}
+
+// 11. ec_verify with a single flipped signature byte returns false.
+TEST_F(CryptoAsymmetricTest, EcVerifyTampered) {
+    auto [private_key, public_key] = qb::crypto::generate_ec_keypair("prime256v1");
+
+    auto signature = qb::crypto::ec_sign(test_data, private_key, qb::crypto::DigestAlgorithm::SHA256);
+    ASSERT_FALSE(signature.empty());
+    EXPECT_TRUE(qb::crypto::ec_verify(test_data, signature, public_key, qb::crypto::DigestAlgorithm::SHA256));
+
+    signature[0] ^= 0x01;
+    EXPECT_FALSE(qb::crypto::ec_verify(test_data, signature, public_key, qb::crypto::DigestAlgorithm::SHA256));
+}
+
+// 12. rsa_verify with an empty signature returns false (not throw).
+TEST_F(CryptoAsymmetricTest, RsaVerifyEmptySignature) {
+    auto [private_key, public_key] = qb::crypto::generate_rsa_keypair(2048);
+
+    const std::vector<unsigned char> empty_sig;
+    bool valid = true;
+    EXPECT_NO_THROW(valid = qb::crypto::rsa_verify(test_data, empty_sig, public_key, qb::crypto::DigestAlgorithm::SHA256));
+    EXPECT_FALSE(valid);
+}
+
 } // namespace
 
 // Run all the tests that were declared with TEST()
