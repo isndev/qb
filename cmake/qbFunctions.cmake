@@ -402,7 +402,16 @@ function(qb_add_test)
     if(NOT TEST_SOURCES)
         qb_error_message("qb_add_test: SOURCES is required")
     endif()
-    
+
+    # Build the conventional target name <module>-test-<tier>-<name> when MODULE (+TIER) are
+    # supplied with a short NAME; fall back to <module>-test-<name> (legacy qbm, no tier) or to
+    # NAME verbatim (legacy direct callers that already pass a full target name).
+    if(TEST_MODULE AND TEST_TIER)
+        set(TEST_NAME "${TEST_MODULE}-test-${TEST_TIER}-${TEST_NAME}")
+    elseif(TEST_MODULE)
+        set(TEST_NAME "${TEST_MODULE}-test-${TEST_NAME}")
+    endif()
+
     # Only create tests if testing is enabled
     if(NOT QB_BUILD_TESTS)
         return()
@@ -814,8 +823,9 @@ function(qb_register_module_test)
     endif()
 
     # Create test, forwarding the convention args (MODULE → module:qbm-<name> label).
+    # NAME is the SHORT subject; qb_add_test rebuilds the same <module>-test-<tier>-<name>.
     qb_add_test(
-        NAME ${test_target}
+        NAME ${MTEST_TEST_NAME}
         SOURCES ${MTEST_SOURCES}
         DEPENDS qbm-${MTEST_MODULE_NAME} ${MTEST_DEPENDS}
         INCLUDES ${MTEST_INCLUDES}
