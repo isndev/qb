@@ -31,3 +31,11 @@ qb_add_test(MODULE qb-core TIER unit NAME event-traits   SOURCES type/event-trai
 qb_add_test(MODULE qb-core TIER unit NAME spinlock-basic SOURCES lockfree/spinlock-basic.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)
 qb_add_test(MODULE qb-core TIER unit NAME time           SOURCES system/time.cpp             DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME event-router   SOURCES system/event-router.cpp     DEPENDS ${PROJECT_NAME})
+
+# --- patterns (pure-logic helpers: resilience math, dedup map, worker-pool) --
+qb_add_test(MODULE qb-core TIER unit NAME circuit-breaker        SOURCES patterns/circuit-breaker.cpp        DEPENDS ${PROJECT_NAME} LABELS patterns)
+qb_add_test(MODULE qb-core TIER unit NAME resilience-jitter      SOURCES patterns/resilience-jitter.cpp      DEPENDS ${PROJECT_NAME} LABELS patterns)
+qb_add_test(MODULE qb-core TIER unit NAME resilience-rate-limiter SOURCES patterns/resilience-rate-limiter.cpp DEPENDS ${PROJECT_NAME} LABELS patterns)
+qb_add_test(MODULE qb-core TIER unit NAME resilience-bulkhead    SOURCES patterns/resilience-bulkhead.cpp    DEPENDS ${PROJECT_NAME} LABELS patterns)
+qb_add_test(MODULE qb-core TIER unit NAME idempotency-dedup-map  SOURCES patterns/idempotency-dedup-map.cpp  DEPENDS ${PROJECT_NAME} LABELS patterns)
+qb_add_test(MODULE qb-core TIER unit NAME routing-worker-pool    SOURCES patterns/routing-worker-pool.cpp    DEPENDS ${PROJECT_NAME} LABELS patterns)
