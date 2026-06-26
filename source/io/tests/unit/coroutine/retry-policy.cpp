@@ -138,6 +138,52 @@ TEST(RetryBackoffMath, JitterStaysWithinExponentialToOnePointFiveBand) {
     }
 }
 
+/**
+ * @regression exponential overflow GUARD (not the max_delay clamp): when base_delay is so large
+ * that base_ms * 2^shift would overflow int64 milliseconds, the guard `factor > max_rep/base_ms`
+ * trips and the delay saturates to max_delay BEFORE the multiply. base_delay ≈ 1e10 ms makes
+ * base_ms * 2^30 overflow (≈ 1e19 > int64 max), exercising the overflow branch — distinct from the
+ * ordinary "product fits but exceeds max_delay" clamp the other tests hit.
+ */
+TEST(RetryBackoffMath, ExponentialOverflowGuardSaturatesToMaxDelay) {
+    using namespace std::chrono;
+    retry_policy policy{.base_delay = milliseconds(10'000'000'000LL), // 1e10 ms
+                        .max_delay  = hours(24),
+                        .strategy   = backoff_strategy::exponential};
+    // retry_number 31+ -> shift clamps to 30 -> factor 2^30; base_ms*factor overflows -> max_delay.
+    auto delay = detail::calculate_delay(40, policy);
+    EXPECT_EQ(delay, hours(24)) << "an overflowing exponential step must saturate to max_delay, not wrap";
+}
+
+/**
+ * @regression exponential_jitter shares the same pre-multiply overflow guard as exponential: a
+ * huge base_delay must saturate to max_delay (the post-clamp jitter then stays within [max, max]
+ * since the pre-jitter delay is already at max).
+ */
+TEST(RetryBackoffMath, ExponentialJitterOverflowGuardSaturatesToMaxDelay) {
+    using namespace std::chrono;
+    retry_policy policy{.base_delay = milliseconds(10'000'000'000LL),
+                        .max_delay  = hours(24),
+                        .strategy   = backoff_strategy::exponential_jitter};
+    for (int i = 0; i < 32; ++i) {
+        auto delay = detail::calculate_delay(40, policy);
+        // Pre-jitter delay is clamped to max_delay; jitter on a value already == max cannot grow it.
+        EXPECT_EQ(delay, hours(24)) << "an overflowing jitter step must saturate to max_delay";
+    }
+}
+
+/**
+ * @regression final negative clamp (`if (delay_ms < 0) delay_ms = 0;`): a negative max_delay makes
+ * max_ms < 0, so the positive base delay is first clamped DOWN to the negative max, then floored to
+ * 0 — calculate_delay must never return a negative duration regardless of policy fields.
+ */
+TEST(RetryBackoffMath, NegativeMaxDelayFloorsToZero) {
+    using namespace std::chrono;
+    retry_policy policy{.base_delay = 10ms, .max_delay = milliseconds(-500), .strategy = backoff_strategy::fixed};
+    EXPECT_EQ(detail::calculate_delay(1, policy), 0ms) << "a negative max_delay must floor the result at 0, never negative";
+    EXPECT_GE(detail::calculate_delay(3, policy), 0ms);
+}
+
 // ===========================================================================
 // Predefined policies — exact fields + is_retryable decisions
 // ===========================================================================

@@ -226,6 +226,31 @@ TEST_F(CryptoPrimitivesTest, ModernDigestAndHmacAlgorithms) {
     EXPECT_THROW(qb::crypto::hmac(test_data, hmac_key, invalid_digest), std::runtime_error);
 }
 
+TEST_F(CryptoPrimitivesTest, VectorSha256OverloadMatchesStringDigest) {
+    // The std::vector<unsigned char> -> std::vector<unsigned char> SHA256 overload is a
+    // distinct entry point from the string/stream `sha256` family: it returns the raw
+    // 32-byte digest directly (no hex encoding, no iteration). Pin it against the same
+    // known-answer vector the string overload is checked against in
+    // DigestKnownAnswerVectors so a divergence in the two code paths is caught.
+    const auto raw = qb::crypto::sha256(test_data);
+    ASSERT_EQ(raw.size(), static_cast<std::size_t>(32));
+    EXPECT_EQ(qb::crypto::to_hex_string(std::string(raw.begin(), raw.end()), qb::crypto::range_hex_lower),
+              "9a15e201db8dbc4fe4ad851cc66e28c650400393ee05932d22132cfae71c803b");
+
+    // Empty input yields the canonical empty-string SHA256.
+    const auto empty_raw = qb::crypto::sha256(std::vector<unsigned char>{});
+    ASSERT_EQ(empty_raw.size(), static_cast<std::size_t>(32));
+    EXPECT_EQ(qb::crypto::to_hex_string(std::string(empty_raw.begin(), empty_raw.end()), qb::crypto::range_hex_lower),
+              "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+    // The raw-vector digest must equal the string overload for the same input. Note the
+    // string `sha256` returns the RAW 32-byte digest (it resizes to SHA256_DIGEST_LENGTH
+    // and writes the digest directly — no hex encoding), so the two overloads agree
+    // byte-for-byte with no decoding step.
+    const std::string string_form = qb::crypto::sha256(test_string);
+    EXPECT_EQ(std::string(raw.begin(), raw.end()), string_form);
+}
+
 TEST_F(CryptoPrimitivesTest, HmacSha256MatchesKnownVector) {
     const std::vector<unsigned char> key  = {'k', 'e', 'y'};
     const std::string                data = "The quick brown fox jumps over the lazy dog";
@@ -381,6 +406,43 @@ TEST_F(CryptoPrimitivesTest, AesGcmDecryptRejectsWrongAlgorithm) {
     EXPECT_NE(decrypted, test_data);
 }
 
+TEST_F(CryptoPrimitivesTest, CbcDecryptThrowsOnFinalizationFailure) {
+    // The non-AEAD (CBC) decrypt path has a distinct failure mode from the AEAD modes:
+    // an authentication/padding failure on a CBC cipher does NOT return empty (that is
+    // the AEAD contract), it THROWS std::runtime_error from the EVP_DecryptFinal_ex
+    // branch. A ciphertext whose length is not a multiple of the AES block size (16)
+    // deterministically fails finalization with a "wrong final block length" error,
+    // exercising that throw without relying on probabilistic padding corruption.
+    const auto key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_CBC);
+    const auto iv  = qb::crypto::generate_iv(qb::crypto::SymmetricAlgorithm::AES_256_CBC);
+
+    // 17 bytes: passes validate_symmetric_parameters (key/iv sizes are correct) but is
+    // not block-aligned, so DecryptFinal rejects it.
+    const std::vector<unsigned char> not_block_aligned(17, 0x5A);
+    EXPECT_THROW(qb::crypto::decrypt(not_block_aligned, key, iv, qb::crypto::SymmetricAlgorithm::AES_256_CBC), std::runtime_error);
+
+    // A genuinely block-aligned but cryptographically meaningless block also fails
+    // finalization for CBC (invalid PKCS7 padding) and must throw, never return data.
+    auto valid = qb::crypto::encrypt(test_data, key, iv, qb::crypto::SymmetricAlgorithm::AES_256_CBC);
+    ASSERT_FALSE(valid.empty());
+    ASSERT_EQ(valid.size() % 16u, 0u);
+    // Flip every byte of the final block so the recovered padding is overwhelmingly
+    // invalid; on the rare chance it decodes to valid padding the plaintext still
+    // cannot equal the original, which the EXPECT_NE below would catch — but the
+    // dominant, asserted outcome here is the throw.
+    for (std::size_t i = valid.size() - 16u; i < valid.size(); ++i) {
+        valid[i] ^= 0xFF;
+    }
+    std::vector<unsigned char> recovered;
+    bool                       threw = false;
+    try {
+        recovered = qb::crypto::decrypt(valid, key, iv, qb::crypto::SymmetricAlgorithm::AES_256_CBC);
+    } catch (const std::runtime_error &) {
+        threw = true;
+    }
+    EXPECT_TRUE(threw || recovered != test_data);
+}
+
 // =============================================================================
 // XOR (folded from the legacy SKIP-MASKED `XOROperations`, tautology dropped)
 // =============================================================================
@@ -425,6 +487,47 @@ TEST_F(CryptoPrimitivesTest, SecureRandomStringValidatesRangeAndLength) {
 
     // Two independent draws must differ (catches a stuck CSPRNG).
     EXPECT_NE(qb::crypto::generate_secure_random_string(64), qb::crypto::generate_secure_random_string(64));
+}
+
+TEST_F(CryptoPrimitivesTest, RandomGeneratorFactoryIsSeededAndUsable) {
+    // crypto::random_generator<T>() builds a std::seed_seq from std::random_device and
+    // returns a freshly-seeded engine of the requested type. Exercise the default
+    // (mt19937) and an explicit 64-bit instantiation, proving each produces a working,
+    // non-stuck generator and that two independent factory calls do not return the
+    // same seeded state (the seed-from-random_device path actually ran).
+    auto gen32_a = qb::crypto::random_generator<>();
+    auto gen32_b = qb::crypto::random_generator<>();
+
+    std::vector<std::mt19937::result_type> seq_a;
+    std::vector<std::mt19937::result_type> seq_b;
+    seq_a.reserve(8);
+    seq_b.reserve(8);
+    bool varies = false;
+    auto first  = gen32_a();
+    for (int i = 0; i < 8; ++i) {
+        const auto v = gen32_a();
+        seq_a.push_back(v);
+        seq_b.push_back(gen32_b());
+        if (v != first) {
+            varies = true;
+        }
+    }
+    // A working PRNG must not emit a constant stream...
+    EXPECT_TRUE(varies);
+    // ...and two independently seeded engines must diverge (catches an unseeded /
+    // constant-seed factory).
+    EXPECT_NE(seq_a, seq_b);
+
+    // Explicit 64-bit engine instantiation compiles and produces a varying stream too.
+    auto       gen64    = qb::crypto::random_generator<std::mt19937_64>();
+    const auto v0       = gen64();
+    bool       varies64 = false;
+    for (int i = 0; i < 8; ++i) {
+        if (gen64() != v0) {
+            varies64 = true;
+        }
+    }
+    EXPECT_TRUE(varies64);
 }
 
 TEST_F(CryptoPrimitivesTest, ConstantTimeCompareContracts) {

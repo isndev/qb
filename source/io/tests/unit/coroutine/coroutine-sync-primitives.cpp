@@ -263,6 +263,57 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreGrantedBeatsRacingCancel) {
     EXPECT_FALSE(cancelled.load()) << "a racing cancel must not steal an already-granted permit";
 }
 
+TEST_F(CoroutineSyncPrimitives, SemaphoreEntryCancelledAcquireThrowsWithoutTakingPermit) {
+    // cancel_acquire_awaiter::await_ready entry-cancelled branch: the token is ALREADY
+    // cancelled when co_await sem.acquire(token) runs, so await_ready returns true and
+    // await_resume throws cancelled_error WITHOUT consuming a permit (no parking).
+    semaphore          sem(1);
+    cancellation_token token;
+    std::atomic<bool>  cancelled{false};
+    std::atomic<bool>  acquired{false};
+    std::atomic<bool>  done{false};
+
+    token.cancel(); // pre-cancelled before the acquire ever runs
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await sem.acquire(token); // await_ready true -> resume throws
+            acquired.store(true);
+        } catch (const cancelled_error &) {
+            cancelled.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "pre-cancelled acquire never resumed";
+    EXPECT_TRUE(cancelled.load()) << "an entry-cancelled acquire(token) must throw cancelled_error";
+    EXPECT_FALSE(acquired.load());
+    // The permit was never taken: it is still fully available.
+    EXPECT_EQ(sem.available_permits(), 1u) << "entry-cancelled acquire must not consume a permit";
+    EXPECT_TRUE(sem.try_acquire());
+}
+
+TEST_F(CoroutineSyncPrimitives, SemaphoreScopedGuardExplicitReleaseRestoresEarly) {
+    // semaphore::guard::release() — the explicit early-release path (distinct from the dtor
+    // path). After release() the permit is back AND a second release() (via dtor) is a no-op.
+    semaphore         sem(1);
+    std::atomic<bool> permit_back_after_release{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto guard = co_await sem.scoped_acquire();
+        EXPECT_EQ(sem.available_permits(), 0u); // guard holds the permit
+        guard.release();                        // explicit early release
+        permit_back_after_release.store(sem.available_permits() == 1u);
+        done.store(true);
+        // guard dtor here must NOT double-release (release() set _released)
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "scoped_acquire coroutine never ran";
+    EXPECT_TRUE(permit_back_after_release.load()) << "explicit guard.release() must restore the permit immediately";
+    EXPECT_EQ(sem.available_permits(), 1u) << "the guard dtor must not over-release after an explicit release()";
+}
+
 // =============================================================================
 // Async Mutex
 // =============================================================================
@@ -342,6 +393,28 @@ TEST_F(CoroutineSyncPrimitives, MutexWithHelperReturnsResultAndUnlocks) {
     });
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "with_lock never ran";
+}
+
+TEST_F(CoroutineSyncPrimitives, MutexScopedGuardExplicitUnlockReleasesEarly) {
+    // async_mutex::guard::unlock() — the explicit early-unlock path. After unlock() the mutex is
+    // free AND the guard dtor must NOT double-unlock (which would corrupt the held flag).
+    async_mutex       mtx;
+    std::atomic<bool> unlocked_after_explicit{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto guard = co_await mtx.scoped_lock();
+        EXPECT_TRUE(mtx.is_locked());
+        guard.unlock(); // explicit early unlock
+        unlocked_after_explicit.store(!mtx.is_locked());
+        done.store(true);
+        // guard dtor must be a no-op now (_released set)
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "scoped_lock coroutine never ran";
+    EXPECT_TRUE(unlocked_after_explicit.load()) << "explicit guard.unlock() must release the mutex immediately";
+    EXPECT_FALSE(mtx.is_locked()) << "the mutex must stay unlocked after the guard dtor";
+    EXPECT_TRUE(mtx.try_lock()) << "the mutex must be re-lockable after an explicit unlock + dtor";
 }
 
 // =============================================================================
@@ -437,6 +510,77 @@ TEST_F(CoroutineSyncPrimitives, RWLockScopedGuardsProveWriterExclusion) {
     EXPECT_TRUE(pump_until([&] { return done.load() && second_writer_acquired.load(); }))
         << "the second writer was never admitted after the guard released";
     EXPECT_TRUE(first_writer_holding.load());
+}
+
+TEST_F(CoroutineSyncPrimitives, RWLockLastReaderReleaseWakesQueuedWriter) {
+    // unlock_read()'s "last reader leaves -> hand the lock to a queued writer" branch: a reader
+    // holds the lock, a writer queues behind it (must park), and only when the reader releases
+    // does the writer acquire. Drives the _readers==0 && !_write_waiters.empty() path.
+    async_rw_lock     rw;
+    std::atomic<bool> reader_holding{false};
+    std::atomic<bool> writer_parked{false};
+    std::atomic<bool> writer_acquired{false};
+    std::atomic<bool> reader_released{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await rw.lock_read();
+        reader_holding.store(true);
+        // Wait until the writer has had a chance to queue behind us.
+        while (!writer_parked.load())
+            co_await sleep(2ms);
+        EXPECT_FALSE(writer_acquired.load()) << "a writer must not acquire while a reader holds the lock";
+        reader_released.store(true);
+        rw.unlock_read(); // last reader leaves -> must hand the lock to the queued writer
+        done.store(true);
+    });
+    EXPECT_TRUE(pump_until([&] { return reader_holding.load(); }));
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        writer_parked.store(true);
+        co_await rw.lock_write(); // parks behind the active reader
+        writer_acquired.store(true);
+        rw.unlock_write();
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load() && writer_acquired.load(); }))
+        << "the queued writer was never woken when the last reader released";
+    EXPECT_TRUE(reader_released.load());
+}
+
+TEST_F(CoroutineSyncPrimitives, RWLockGuardsExplicitUnlockReleaseEarly) {
+    // read_guard::unlock() and write_guard::unlock() — the explicit early-release paths on both
+    // scoped guards, with the dtor proven to be a no-op afterwards (a second writer can only be
+    // admitted because the explicit unlock truly released, and the dtor did not double-unlock).
+    async_rw_lock     rw;
+    std::atomic<bool> read_unlocked{false};
+    std::atomic<bool> second_writer_acquired{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        {
+            auto rg = co_await rw.scoped_read_lock();
+            rg.unlock(); // explicit read unlock; dtor must then be a no-op
+            read_unlocked.store(true);
+        }
+        {
+            auto wg = co_await rw.scoped_write_lock();
+            // A second writer must wait while the write guard is held.
+            coro_scheduler().spawn([&]() -> task<void> {
+                co_await rw.lock_write();
+                second_writer_acquired.store(true);
+                rw.unlock_write();
+            });
+            co_await sleep(20ms);
+            EXPECT_FALSE(second_writer_acquired.load()) << "a second writer must wait while the write guard is held";
+            wg.unlock(); // explicit write unlock admits the parked second writer; dtor no-op after
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load() && second_writer_acquired.load(); }))
+        << "explicit guard unlock() never released the rw-lock for the next writer";
+    EXPECT_TRUE(read_unlocked.load());
 }
 
 // =============================================================================
@@ -710,6 +854,26 @@ TEST_F(CoroutineSyncPrimitives, LatchCountDownByN) {
 
     latch.count_down(10);
     EXPECT_TRUE(pump_until([&] { return woken.load(); })) << "count_down(N) to zero never released the waiter";
+}
+
+TEST_F(CoroutineSyncPrimitives, LatchIsReadyAndCurrentCountTrackState) {
+    // Pure observers async_latch::is_ready() / current_count() — no loop needed.
+    async_latch latch(3);
+    EXPECT_FALSE(latch.is_ready());
+    EXPECT_EQ(latch.current_count(), 3u);
+
+    latch.count_down();
+    EXPECT_FALSE(latch.is_ready());
+    EXPECT_EQ(latch.current_count(), 2u);
+
+    latch.count_down(2); // reaches zero
+    EXPECT_TRUE(latch.is_ready());
+    EXPECT_EQ(latch.current_count(), 0u);
+
+    // Already-zero latch reports ready from construction.
+    async_latch zero(0);
+    EXPECT_TRUE(zero.is_ready());
+    EXPECT_EQ(zero.current_count(), 0u);
 }
 
 TEST_F(CoroutineSyncPrimitives, LatchExtraCountDownPastZeroIsSafe) {
