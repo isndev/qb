@@ -1,10 +1,10 @@
 /**
- * @file qb/io/tests/system/test-compression.cpp
- * @brief Unit tests for compression functionality
+ * @file unit/compression/compression-codec.cpp
+ * @brief qb::compression gzip/deflate codecs - single-shot + streaming. Link-gated on QB_HAS_COMPRESSION.
  *
- * This file contains tests for the compression and decompression functionality
- * in the QB framework, including both gzip and deflate algorithms. It tests
- * single-operation compression/decompression as well as streaming operations.
+ * Tests the compression/decompression API (qb/io/compression.h): gzip + deflate, single-operation
+ * round-trips and streaming providers. Pure codec logic, no engine/IO - a strict unit test.
+ * Renamed from system/test-compression.cpp and registered (was orphaned: present but unwired).
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
