@@ -95,12 +95,32 @@ struct FakeActor {
     }
 };
 
+// FakeActor is NOT an async::base, so it does not auto-unregister its kernel events the way a real
+// actor's ~base does. listener::clear() only DETACHES non-owned wrappers (it relies on the owner to
+// free them), so a raw registerEvent here leaks its RegisteredKernelEvent wrapper. This guard
+// restores the owner-frees contract for the harness: it captures the wrapper (event._interface, set
+// by registerEvent) and unregisters + frees it when the registration leaves scope.
+struct ScopedEvent {
+    qb::io::async::listener               &loop;
+    qb::io::async::IRegisteredKernelEvent *wrapper;
+    ScopedEvent(qb::io::async::listener &l, qb::io::async::IRegisteredKernelEvent *w) noexcept
+        : loop(l)
+        , wrapper(w) {}
+    ScopedEvent(const ScopedEvent &)            = delete;
+    ScopedEvent &operator=(const ScopedEvent &) = delete;
+    ~ScopedEvent() {
+        loop.unregisterEvent(wrapper);
+    }
+};
+
 TEST(KernelEvents, Signal) {
     qb::io::async::init();
     qb::io::async::listener handler;
     FakeActor               actor;
 
-    handler.registerEvent<qb::io::async::event::signal<SIGINT>>(actor).start();
+    auto       &ev = handler.registerEvent<qb::io::async::event::signal<SIGINT>>(actor);
+    ScopedEvent guard{handler, ev._interface};
+    ev.start();
 
 #ifdef _WIN32
     // On Windows, CRT signal() is per-thread: std::raise() from a background thread
@@ -122,7 +142,9 @@ TEST(KernelEvents, Timer) {
     qb::io::async::listener handler;
     FakeActor               actor;
 
-    handler.registerEvent<qb::io::async::event::timer>(actor, 1, 1).start();
+    auto       &ev = handler.registerEvent<qb::io::async::event::timer>(actor, 1, 1);
+    ScopedEvent guard{handler, ev._interface};
+    ev.start();
 
     for (auto i = 0; i < 10 && actor.nb_events < 2; ++i)
         handler.run(EVRUN_ONCE);
@@ -153,7 +175,9 @@ TEST(KernelEvents, File) {
     constexpr int kFileEventInterval = 0;
 #endif
 
-    handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", kFileEventInterval).start();
+    auto       &ev = handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", kFileEventInterval);
+    ScopedEvent guard{handler, ev._interface};
+    ev.start();
 
     std::thread t([]() {
 #ifndef _WIN32
@@ -202,7 +226,9 @@ TEST(KernelEvents, BasicIO) {
 
     actor.fd_test = f.native_handle();
 
-    handler.registerEvent<qb::io::async::event::io>(actor, f.native_handle(), EV_READ).start();
+    auto       &ev = handler.registerEvent<qb::io::async::event::io>(actor, f.native_handle(), EV_READ);
+    ScopedEvent guard{handler, ev._interface};
+    ev.start();
 
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);
