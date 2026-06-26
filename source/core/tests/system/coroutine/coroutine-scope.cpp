@@ -608,3 +608,73 @@ TEST(ActorCoroutineScope, CancellableSleepDetachedTimerReclaimedNoLeak) {
     // cancellable_sleep awaiter, which now tears the timer_task down on cancel.
     EXPECT_EQ(live_frames_now(), baseline) << "cancellable_sleep must reclaim its detached timer_task frame on cancel";
 }
+
+// ---------------------------------------------------------------------------
+// 13. Same-tick race: the inner op's OWN watcher fires in the same libev
+//     iteration as the kill. When the inner timer has fired (its frame is
+//     already queued for resume) and the scope is THEN cancelled in that same
+//     iteration, the cancel path destroys the inner frame — it must first
+//     scrub it from the scheduler ready/in-flight sets (`forget()`), otherwise
+//     run_ready() would later pop a freed handle (use-after-free).
+//
+//     The inner sleep equals the kill delay so both timers tend to land in one
+//     iteration. The winner (completed vs cancelled) is genuinely racy, so we
+//     assert ONLY the invariants that must hold either way: no leak and no
+//     crash (this case is the primary value of running the suite under ASan).
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<int> g_sametick_done{0};      // inner op completed (won the race)
+std::atomic<int> g_sametick_cancelled{0}; // scope cancel won the race
+
+qb::io::async::task<int>
+sametick_task() {
+    co_await qb::io::async::sleep(15ms);
+    co_return 1;
+}
+} // namespace
+
+class SameTickRaceActor : public qb::Actor {
+public:
+    static constexpr int N = 16;
+
+    qb::io::async::task<bool>
+    onInit() override {
+        for (int i = 0; i < N; ++i) {
+            spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+                try {
+                    co_await ctx.cancellable(sametick_task());
+                    g_sametick_done.fetch_add(1, std::memory_order_relaxed);
+                } catch (const qb::io::async::cancelled_error &) {
+                    g_sametick_cancelled.fetch_add(1, std::memory_order_relaxed);
+                }
+            });
+        }
+        // Same deadline as the inner sleep ⇒ inner watcher + kill tend to fire in
+        // the same libev iteration, exercising the watcher-fired-then-cancelled window.
+        qb::io::async::callback(
+            [this] {
+                if (is_alive())
+                    kill();
+            },
+            15ms);
+        co_return true;
+    }
+};
+
+TEST(ActorCoroutineScope, CancellableSameTickWatcherFiredThenCancelledNoLeakNoUAF) {
+    g_sametick_done      = 0;
+    g_sametick_cancelled = 0;
+    const long baseline  = live_frames_now();
+    {
+        qb::Main main;
+        main.addActor<SameTickRaceActor>(0);
+        main.start(false);
+        main.join();
+        EXPECT_FALSE(main.hasError());
+    }
+    // Each of the N coroutines resolved exactly once (completed XOR cancelled) and
+    // every frame — winner or loser — was reclaimed. (UAF, if any, is caught by ASan.)
+    EXPECT_EQ(g_sametick_done.load() + g_sametick_cancelled.load(), SameTickRaceActor::N)
+        << "every cancellable op must resolve exactly once (completed or cancelled)";
+    EXPECT_EQ(live_frames_now(), baseline) << "no frame may leak regardless of which side of the race wins";
+}

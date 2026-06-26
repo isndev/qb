@@ -336,6 +336,10 @@ class cancellable_operation {
         std::exception_ptr      error;            ///< inner task exception, propagated on resume
         bool                    task_done{false}; // single-thread: no atomic needed
         std::coroutine_handle<> continuation;
+        // The detached task_runner driving inner_task. On early cancel we tear it
+        // down through this handle (then drop inner_task) so both frames + the
+        // inner op's watcher are reclaimed immediately instead of lingering.
+        std::coroutine_handle<> runner_handle{};
 
         explicit shared_state(task<T> &&t)
             : inner_task(std::move(t)) {}
@@ -377,8 +381,8 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
-            state->continuation = h;
-            coro_scheduler().spawn(task_runner(state));
+            state->continuation  = h;
+            state->runner_handle = coro_scheduler().spawn_tracked(task_runner(state));
             if (throw_on_cancel) {
                 // Route the cancel wake-up through the shared task_done guard so
                 // it cannot double-resume (or resume a destroyed frame) after the
@@ -388,6 +392,21 @@ public:
                 _cancel_id = token.on_cancel([s]() {
                     if (!s->task_done) {
                         s->task_done = true;
+                        // Neither the runner nor the inner task will ever deliver now.
+                        // Tear them down so both frames + the inner op's watcher are
+                        // reclaimed immediately instead of lingering for the inner
+                        // op's full duration. Order matters: destroy the runner FIRST
+                        // (so inner_task's continuation_ — which points at the runner
+                        // frame — can never be used), THEN drop the inner task frame.
+                        if (s->runner_handle)
+                            coro_scheduler().cancel_spawned(std::exchange(s->runner_handle, {}));
+                        // Scrub the inner frame from the scheduler queues before its
+                        // task<T> owner frees it: if the inner op's own watcher fired in
+                        // this same tick it is already queued, and destroying it via the
+                        // dtor would leave a dangling handle for run_ready() to pop (UAF).
+                        if (auto ih = s->inner_task.handle())
+                            coro_scheduler().forget(ih);
+                        s->inner_task = task<T>{};
                         if (s->continuation)
                             schedule_via_current(s->continuation);
                     }
@@ -448,6 +467,9 @@ class cancellable_operation<void> {
         std::exception_ptr      error;            ///< inner task exception, propagated on resume
         bool                    task_done{false}; // single-thread
         std::coroutine_handle<> continuation;
+        // See the non-void specialization: the detached task_runner driving
+        // inner_task, torn down (with inner_task) on early cancel.
+        std::coroutine_handle<> runner_handle{};
 
         explicit shared_state(task<void> &&t)
             : inner_task(std::move(t)) {}
@@ -485,15 +507,25 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
-            state->continuation = h;
-            coro_scheduler().spawn(task_runner(state));
+            state->continuation  = h;
+            state->runner_handle = coro_scheduler().spawn_tracked(task_runner(state));
             if (throw_on_cancel) {
                 // See the non-void specialization: guard the cancel wake-up with
-                // the shared task_done flag to avoid double-resume / use-after-free.
+                // the shared task_done flag to avoid double-resume / use-after-free,
+                // and tear down the detached runner + inner task on cancel so neither
+                // frame lingers past cancellation.
                 auto s     = state;
                 _cancel_id = token.on_cancel([s]() {
                     if (!s->task_done) {
                         s->task_done = true;
+                        if (s->runner_handle)
+                            coro_scheduler().cancel_spawned(std::exchange(s->runner_handle, {}));
+                        // Scrub the inner frame from the scheduler queues before its
+                        // task<void> owner frees it (same-tick watcher-fired UAF guard;
+                        // see the non-void specialization).
+                        if (auto ih = s->inner_task.handle())
+                            coro_scheduler().forget(ih);
+                        s->inner_task = task<void>{};
                         if (s->continuation)
                             schedule_via_current(s->continuation);
                     }
@@ -540,6 +572,15 @@ public:
  * @param throw_on_cancel Whether to throw on cancellation
  * @return Cancellable operation wrapper
  * @ingroup Coroutine
+ *
+ * @warning The wrapped @p task must NOT cancel its OWN controlling @p token synchronously from
+ *          within its own body (directly, or via a linked/child token, or by killing the actor
+ *          whose scope owns this token). Cancellation is delivered as an `on_cancel` hook that
+ *          eagerly tears the inner frame down; if that hook fires while the inner task is the
+ *          frame currently executing on the stack, it would destroy a running coroutine.
+ *          Cancellation is meant to be driven from OUTSIDE the operation (a coordinator, an actor
+ *          lifecycle kill, a sibling branch) — which is how every framework path uses it. A proper
+ *          fix for self-cancellation needs scheduler running-frame tracking; see [[qb-io-async-callback-noexcept-footguns]].
  */
 template <typename T>
 auto
@@ -566,6 +607,10 @@ struct cancellable_sleep_awaiter {
     struct sleep_state {
         bool                    resumed{false};
         std::coroutine_handle<> handle;
+        // The detached timer_task driving the sleep. On early cancel we tear it
+        // down through this handle so its frame + ev_timer are reclaimed now
+        // instead of lingering parked on the full original duration.
+        std::coroutine_handle<> timer_handle{};
     };
 
     qb::duration                duration;
@@ -595,10 +640,18 @@ struct cancellable_sleep_awaiter {
         _cancel_id    = token.on_cancel([state]() {
             if (!state->resumed) {
                 state->resumed = true;
+                // Reclaim the detached timer_task NOW rather than letting it stay
+                // parked on the (e.g. multi-second) original sleep — otherwise its
+                // frame leaks until the timer fires, or for the rest of the thread's
+                // life on a core whose listener is never torn down (Main::start(false)).
+                if (state->timer_handle)
+                    coro_scheduler().cancel_spawned(std::exchange(state->timer_handle, {}));
                 schedule_via_current(state->handle);
             }
         });
-        coro_scheduler().spawn(timer_task(duration, std::move(state)));
+        // Keep our own shared_ptr ref (don't move) so we can record the spawned
+        // helper's handle on the shared state for the cancel path above.
+        state->timer_handle = coro_scheduler().spawn_tracked(timer_task(duration, state));
     }
 
     void
@@ -637,6 +690,13 @@ struct with_deadline_timeout_state {
     bool                    completed{false}; // single-thread
     int                     result{0};
     std::coroutine_handle<> handle;
+    // The detached deadline_timer_task driving the timeout sleep. Torn down the
+    // instant this branch is resolved by another path — a cancel, or (the common
+    // case) the operation winning the `when_any` race, which destroys this awaiter's
+    // frame and runs the dtor below. Without this the timer stays parked on the full
+    // remaining-until-deadline sleep, leaking its frame + ev_timer (and on a core whose
+    // listener is never torn down, for the rest of the thread's life).
+    std::coroutine_handle<> timer_handle{};
 };
 
 struct with_deadline_timeout_awaiter {
@@ -653,6 +713,13 @@ struct with_deadline_timeout_awaiter {
 
     ~with_deadline_timeout_awaiter() {
         token.remove_on_cancel(_cancel_id);
+        // Reclaim the detached deadline timer if it is still parked. This fires when the
+        // operation branch wins the when_any race: `when_any` destroys this (losing) branch
+        // frame, which runs this dtor while the timer is still sleeping. cancel_spawned is a
+        // no-op once the timer has fired (its frame is no longer owned and timer_handle was
+        // cleared in deadline_timer_task), so the normal timeout/cancel paths are unaffected.
+        if (state && state->timer_handle)
+            coro_scheduler().cancel_spawned(std::exchange(state->timer_handle, {}));
     }
 
     [[nodiscard]] bool
@@ -672,6 +739,10 @@ struct with_deadline_timeout_awaiter {
             if (!s->completed) {
                 s->completed = true;
                 s->result    = 1;
+                // Cancel resolved the wait: tear the detached timer down now rather than
+                // leaving it parked on the full remaining-until-deadline sleep.
+                if (s->timer_handle)
+                    coro_scheduler().cancel_spawned(std::exchange(s->timer_handle, {}));
                 schedule_via_current(s->handle);
             }
         });
@@ -687,7 +758,9 @@ struct with_deadline_timeout_awaiter {
             return;
         }
 
-        coro_scheduler().spawn(deadline_timer_task(state, remaining));
+        // spawn_tracked (not spawn) so the dtor / cancel hook can reclaim the detached
+        // timer the instant another path resolves this branch.
+        state->timer_handle = coro_scheduler().spawn_tracked(deadline_timer_task(state, remaining));
     }
 
     int
@@ -699,6 +772,10 @@ private:
     static task<void>
     deadline_timer_task(std::shared_ptr<with_deadline_timeout_state> s, qb::duration remaining) {
         co_await sleep(remaining);
+        // The timer has fired: its frame self-reclaims at final_suspend, so clear the
+        // tracked handle. A stale handle here would let a later dtor/cancel cancel_spawned()
+        // an unrelated frame that reused the address.
+        s->timer_handle = {};
         if (!s->completed) {
             s->completed = true;
             s->result    = 0;

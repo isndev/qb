@@ -130,8 +130,9 @@ ask_all(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, E req, qb::
  * @return `task<E>` — the first responder's filled envelope.
  * @throws qb::io::async::timeout_error if no target replies in time.
  * @throws qb::io::async::cancelled_error if the actor is killed while waiting.
- * @details Built on `when_any`. The losing asks are **not** cancelled — they linger until their
- *          own `timeout` (bounded, harmless). Use it for "fastest replica wins" / hedged requests.
+ * @details Built on `when_any`. The losing asks are **reclaimed** the instant a winner replies —
+ *          `when_any` tears each loser's coroutine down (stopping its ask timer) rather than letting
+ *          it linger until its own `timeout`. Use it for "fastest replica wins" / hedged requests.
  * @see qb::ask, qb::ask_all
  */
 template <ask_event_type E>

@@ -1418,12 +1418,13 @@ void ask_register_type(qb::Event::id_type type) noexcept;
  *
  * @details
  * Deliberately a custom awaiter rather than a composition of `with_deadline` /
- * `when_any` + `cancellable_sleep`: those spawn **detached** timeout/branch tasks
- * that linger until they complete (up to the timeout). On a hot request/response
- * path that would leave one zombie timer per in-flight ask. This awaiter instead
- * arms a single `ev_timer` and **stops it immediately** on response — no detached
- * helper, nothing lingering. It lives in the ask() coroutine frame (address-stable)
- * and is non-movable (the registry holds it by address).
+ * `when_any` + `cancellable_sleep`. Those now reclaim their detached timeout/branch
+ * tasks the instant a winner is decided (so they no longer leave a zombie timer per
+ * in-flight ask), but each still spawns and tears down several helper coroutine frames
+ * per call. On a hot request/response path this awaiter is leaner: it arms a single
+ * `ev_timer` and **stops it immediately** on response — no spawned helper at all. It
+ * lives in the ask() coroutine frame (address-stable) and is non-movable (the registry
+ * holds it by address).
  */
 template <typename E>
 struct ask_awaiter {
