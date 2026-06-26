@@ -1,10 +1,23 @@
 /**
- * @file qb/io/tests/system/test-event.cpp
- * @brief Unit tests for asynchronous event handling
+ * @file system/async/kernel-events.cpp
+ * @brief Kernel-event dispatch through the qb-io libev listener — high-level and raw watchers.
  *
- * This file contains tests for the asynchronous event handling capabilities of the
- * QB framework, including signal events, timer events, file events, and I/O events.
- * It verifies that events are properly registered, triggered, and handled.
+ * These are SYSTEM tests for the lowest layer of the async stack: how `qb::io::async::listener`
+ * surfaces kernel events to a handler. Two registration styles are exercised against a real (but
+ * socket-free) event loop:
+ *
+ *   - the high-level `listener::registerEvent<event::{signal,timer,file,io}>` path, dispatched onto a
+ *     plain `FakeActor::on(...)` overload set (signal delivery, repeating timer, `ev_stat` file-size
+ *     notification, and a readable-fd `ev_io` wakeup);
+ *   - the RAW libev watcher path used directly by framework internals — a self-managed `ev::timer`
+ *     repeating watcher and a self-managed `ev::stat` file watcher attached straight to
+ *     `listener::current.loop()` (absorbed from the dissolved system/test-async-io.cpp PeriodicTimer
+ *     and FileWatcherFunctionality cases, which belong with the other kernel-watcher tests rather than
+ *     in the timer/callback wrapper suites).
+ *
+ * The raw-watcher cases are de-flaked: their open-ended `for(i){run(EVRUN_ONCE)}` polls become bounded
+ * deadline pumps so a dead watcher fails loudly instead of passing on a smoke `GE` count; the periodic
+ * timer asserts it fired several times AND that it stops firing once stopped.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -22,17 +35,21 @@
  * @ingroup Tests
  */
 
+#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <qb/io/async.h>
 #include <qb/io/async/event/all.h>
 #include <qb/io/async/listener.h>
 #include <qb/io/system/file.h>
 #include <qb/utility/build_macros.h>
 #include <thread>
+
+#include "../../shared/coroutine_test_support.h"
 
 struct FakeActor {
     int           nb_events          = 0;
@@ -192,4 +209,133 @@ TEST(KernelEvents, BasicIO) {
     EXPECT_EQ(actor.nb_events, 1);
 }
 
+#endif
+
+// ===========================================================================
+// Raw libev watchers (absorbed from the dissolved test-async-io.cpp).
+//
+// These attach a self-managed ev::* watcher directly to the thread-local
+// listener loop — the path framework internals use — rather than going through
+// listener::registerEvent. They run on listener::current, so they init() it.
+// ===========================================================================
+
+namespace {
+
+// A self-managed repeating ev::timer that counts every fire.
+class RawPeriodicTimer {
+public:
+    std::atomic<int> count{0};
+
+    explicit RawPeriodicTimer(double interval) {
+        _watcher = new ev::timer(qb::io::async::listener::current.loop());
+        _watcher->set<RawPeriodicTimer, &RawPeriodicTimer::on_timer>(this);
+        _watcher->start(0.0, interval); // immediate first fire, then `interval` repeat
+    }
+
+    ~RawPeriodicTimer() {
+        if (_watcher) {
+            _watcher->stop();
+            delete _watcher;
+        }
+    }
+
+    void
+    stop() noexcept {
+        if (_watcher)
+            _watcher->stop();
+    }
+
+    void
+    on_timer(ev::timer &, int) {
+        count.fetch_add(1);
+    }
+
+private:
+    ev::timer *_watcher = nullptr;
+};
+
+// A self-managed ev::stat watcher that flips a flag when the watched file changes.
+class RawFileWatcher {
+public:
+    std::atomic<bool> changed{false};
+
+    explicit RawFileWatcher(std::string path)
+        : _path(std::move(path)) {
+        _watcher = new ev::stat(qb::io::async::listener::current.loop());
+        _watcher->set<RawFileWatcher, &RawFileWatcher::on_change>(this);
+        _watcher->set(_path.c_str());
+        _watcher->start();
+    }
+
+    ~RawFileWatcher() {
+        if (_watcher) {
+            _watcher->stop();
+            delete _watcher;
+        }
+    }
+
+    void
+    on_change(ev::stat &, int) {
+        changed.store(true);
+    }
+
+private:
+    std::string _path;
+    ev::stat   *_watcher = nullptr;
+};
+
+} // namespace
+
+// A raw repeating ev::timer fires multiple times, then stops firing once stopped.
+TEST(KernelEvents, RawPeriodicTimerFiresThenStops) {
+    qb::io::async::init();
+
+    RawPeriodicTimer timer(0.02); // 20ms period
+
+    // It must fire several times within a bounded budget.
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return timer.count.load() >= 3; }))
+        << "raw ev::timer did not fire repeatedly";
+
+    timer.stop();
+    const int frozen = timer.count.load();
+
+    // Once stopped, the count must not advance further.
+    EXPECT_FALSE(qb::io::test::pump_until([&] { return timer.count.load() > frozen; }, std::chrono::milliseconds(200)))
+        << "raw ev::timer kept firing after stop()";
+
+    qb::io::async::listener::current.clear();
+}
+
+#ifndef _WIN32
+// A raw ev::stat watcher detects an mtime/size change on its watched file.
+TEST(KernelEvents, RawFileWatcherDetectsChange) {
+    qb::io::async::init();
+
+    const std::string path = "./raw_file_watcher.tmp";
+    {
+        std::ofstream ofs(path, std::ios::binary);
+        ofs << "initial";
+    }
+
+    RawFileWatcher watcher(path);
+
+    // Settle the watcher; it must not have fired on its own yet.
+    qb::io::async::run_for(std::chrono::milliseconds(20));
+    EXPECT_FALSE(watcher.changed.load());
+
+    // ev_stat polls mtime, whose granularity is coarse — wait past one tick, then
+    // rewrite atomically (write temp + rename) so the watcher sees a single change.
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    {
+        std::ofstream ofs(path + ".tmp", std::ios::binary);
+        ofs << "modified content";
+    }
+    ASSERT_EQ(std::rename((path + ".tmp").c_str(), path.c_str()), 0);
+
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return watcher.changed.load(); }, std::chrono::seconds(5)))
+        << "raw ev::stat watcher never detected the file change";
+
+    qb::io::async::listener::current.clear();
+    std::remove(path.c_str());
+}
 #endif
