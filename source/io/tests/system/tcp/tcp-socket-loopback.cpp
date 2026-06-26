@@ -1,10 +1,42 @@
-/**
- * @file qb/source/io/tests/system/test-tcp-socket.cpp
- * @brief System tests for qb TCP sockets and the low-level socket wrapper.
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * These tests exercise deterministic loopback behaviour for the blocking,
- * non-blocking and timeout-oriented socket APIs that back the higher-level TCP
- * transports. They intentionally use dynamic ports to avoid CI collisions.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * See the License for the specific terms.
+ */
+
+/**
+ * @file system/tcp/tcp-socket-loopback.cpp
+ * @brief The canonical TCP loopback system test — every connect flavour over a real socket pair.
+ *
+ * This file drives the whole TCP socket surface against in-process loopback peers: the portable
+ * low-level `qb::io::socket` wrapper (`pserve`/`pconnect*`/`xpconnect*`/`accept_n`/`recv_n`/`send_n`/
+ * `resolve*`/`set_keepalive`/`tcp_rtt`/error classifiers), the typed `qb::io::tcp::socket`
+ * (`init`/`bind`/`connect*`/`n_connect*`/`read`/`write`/move-from-base), and `qb::io::tcp::listener`
+ * (`listen_v4`/`listen_v6`/`listen(uri)`/`accept`). IPv4, IPv6 and AF_UNIX endpoints are all
+ * exercised, across blocking / timeout / non-blocking connect variants and URI-driven binds.
+ *
+ * It is the renamed, hardened successor of test-tcp-socket.cpp, and it ALSO absorbs the loopback
+ * round-trips that were duplicated (worse) in test-io.cpp's `INET_TCP.*` / `UNIX_TCP.*` /
+ * `SocketUtils.EndpointOnValidConnection` suites — those fixed-port, `sleep_for(3s)`, assert-the-
+ * empty-non-result clones are folded here as proper ephemeral-port, deterministic round-trips
+ * (`BlockingLoopbackTransfersExactPayload`, `EndpointAccessorsReflectLiveConnection`, and the unix
+ * leg of `UnixUriBindListenAndConnectVariantsReachLocalSocket`).
+ *
+ * The loopback scaffolding (`with_tcp_pair`, `accept_tcp_connections`, `accept_low_level_connections`,
+ * `reserve_free_tcp_port`) is the shared `tests/shared/loopback_fixture.h` — all ephemeral ports, no
+ * fixed port anywhere, collision-free under `ctest -j`.
+ *
+ * Hardening over the original (per the restructure spec §2/§7):
+ *   - the IPv6 cases self-gate on a real `::1` bind probe (`ipv6_loopback_available()`) so a host
+ *     without IPv6 loopback SKIPS cleanly instead of failing on bind;
+ *   - `NonBlockingConnectForcesGenuineEinprogress` drives the actual `EINPROGRESS` path against a
+ *     full backlog and then completes it via `handle_write_ready` — the non-blocking machinery is now
+ *     *positively* exercised, not merely smoke-accepted as "0 || EINPROGRESS || would-block";
+ *   - `set_keepalive` is verified to have taken effect via a follow-up `get_optval(SO_KEEPALIVE)`
+ *     readback rather than only a `<= 0` smoke check.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -19,97 +51,63 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  * @ingroup Tests
  */
-
-#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <qb/io/tcp/listener.h>
-#include <qb/io/tcp/socket.h>
 #include <string>
 #include <thread>
 #include <vector>
+
 #ifndef _WIN32
 #include <unistd.h>
 #endif
 
+#include <gtest/gtest.h>
+
+#include <qb/io/tcp/listener.h>
+#include <qb/io/tcp/socket.h>
+
+#include "../../shared/loopback_fixture.h"
+
 using namespace std::chrono_literals;
+
+using qb::io::test::accept_low_level_connections;
+using qb::io::test::accept_tcp_connections;
+using qb::io::test::reserve_free_tcp_port;
+using qb::io::test::with_tcp_pair;
 
 namespace {
 
-template <typename Server, typename Client>
-void
-with_tcp_pair(Server &&server, Client &&client) {
-    qb::io::tcp::listener listener;
-    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
-    ASSERT_TRUE(listener.is_open());
-
-    const auto port = listener.local_endpoint().port();
-    ASSERT_NE(port, 0);
-
-    std::thread server_thread([&] {
-        qb::io::tcp::socket accepted;
-        ASSERT_EQ(listener.accept(accepted), qb::io::SocketStatus::Done);
-        server(std::move(accepted));
-    });
-
-    client(port);
-    server_thread.join();
-}
-
-void
-accept_low_level_connections(qb::io::socket &listener, int expected_count) {
-    listener.set_nonblocking(true);
-    int        accepted_count = 0;
-    const auto deadline       = std::chrono::steady_clock::now() + 3s;
-
-    while (accepted_count < expected_count && std::chrono::steady_clock::now() < deadline) {
-        ::socket_type accepted_handle = qb::io::inet::invalid_socket;
-        const int     ret             = listener.accept_n(accepted_handle);
-        if (ret == 0) {
-            qb::io::socket accepted(accepted_handle);
-            ++accepted_count;
-            continue;
-        }
-        std::this_thread::sleep_for(5ms);
-    }
-
-    EXPECT_EQ(accepted_count, expected_count);
-}
-
-void
-accept_tcp_connections(qb::io::tcp::listener &listener, int expected_count) {
-    for (int i = 0; i < expected_count; ++i) {
-        qb::io::tcp::socket accepted;
-        ASSERT_EQ(listener.accept(accepted), qb::io::SocketStatus::Done);
-        EXPECT_TRUE(accepted.is_open());
-        accepted.disconnect();
-    }
-}
-
-unsigned short
-reserve_free_tcp_port() {
-    qb::io::socket probe;
-    EXPECT_EQ(probe.pserve("127.0.0.1", 0), 0);
-    const auto port = probe.local_endpoint().port();
-    probe.close();
-    return port;
+// ---------------------------------------------------------------------------
+// IPv6-loopback availability probe: actually bind `::1` once. Hosts/CI images
+// without an IPv6 loopback should SKIP the v6 legs cleanly rather than fail on
+// bind. A bind is the only honest signal — `getipsv()` reports general support,
+// not whether `::1` is routable in this container.
+// ---------------------------------------------------------------------------
+bool
+ipv6_loopback_available() {
+    qb::io::tcp::listener probe;
+    return probe.listen_v6(0, "::1") == qb::io::SocketStatus::Done;
 }
 
 } // namespace
+
+// ===========================================================================
+// Typed tcp::socket — init / bind / URI contracts
+// ===========================================================================
 
 TEST(TCPSocket, InitBindAndUriContracts) {
     qb::io::tcp::socket socket;
     EXPECT_EQ(socket.init(), 0);
     EXPECT_TRUE(socket.is_open());
-    EXPECT_EQ(socket.init(), 0);
+    EXPECT_EQ(socket.init(), 0) << "init() must be idempotent on an already-open socket";
 
+    // A default (v4) socket must reject binding a v6 endpoint family.
     const auto ipv6_loopback = qb::io::endpoint().as_in("::1", 0);
     EXPECT_EQ(socket.bind(ipv6_loopback), -1);
 
@@ -126,6 +124,10 @@ TEST(TCPSocket, InitBindAndUriContracts) {
     qb::io::tcp::socket invalid_uri_bound;
     EXPECT_EQ(invalid_uri_bound.bind(qb::io::uri("file:/tmp/qb.sock")), -1);
 }
+
+// ===========================================================================
+// Blocking / timeout connect variants over loopback
+// ===========================================================================
 
 TEST(TCPSocket, UriAndTimeoutConnectVariantsReachLoopbackServer) {
     with_tcp_pair(
@@ -152,6 +154,51 @@ TEST(TCPSocket, UriAndTimeoutConnectVariantsReachLoopbackServer) {
         });
 }
 
+// Absorbed from test-io.cpp INET_TCP.Blocking: a full payload transfer over a
+// blocking loopback pair, now on an ephemeral port (was fixed-port + sleep).
+TEST(TCPSocket, BlockingLoopbackTransfersExactPayload) {
+    constexpr char message[] = "Hello Test !";
+    with_tcp_pair(
+        [&](qb::io::tcp::socket accepted) {
+            accepted.set_nonblocking(false);
+            char buffer[512] = {};
+            const int got = accepted.read(buffer, sizeof(buffer));
+            ASSERT_EQ(got, static_cast<int>(sizeof(message)));
+            EXPECT_STREQ(buffer, message);
+        },
+        [&](unsigned short port) {
+            qb::io::tcp::socket sock;
+            ASSERT_EQ(sock.connect_v4("127.0.0.1", port), qb::io::SocketStatus::Done);
+            EXPECT_TRUE(sock.is_open());
+            EXPECT_EQ(sock.peer_endpoint().port(), port);
+            EXPECT_EQ(sock.write(message, sizeof(message)), static_cast<int>(sizeof(message)));
+            sock.disconnect();
+        });
+}
+
+// Absorbed from test-io.cpp SocketUtils.EndpointOnValidConnection (was fixed
+// port 64329): a live connection exposes a real local and peer endpoint.
+TEST(TCPSocket, EndpointAccessorsReflectLiveConnection) {
+    with_tcp_pair(
+        [](qb::io::tcp::socket accepted) {
+            EXPECT_TRUE(accepted.local_endpoint());
+            EXPECT_TRUE(accepted.peer_endpoint());
+        },
+        [](unsigned short port) {
+            qb::io::tcp::socket sock;
+            ASSERT_EQ(sock.connect_v4("127.0.0.1", port), qb::io::SocketStatus::Done);
+
+            const auto local = sock.local_endpoint();
+            EXPECT_TRUE(local);
+            EXPECT_NE(local.port(), 0);
+
+            const auto peer = sock.peer_endpoint();
+            EXPECT_TRUE(peer);
+            EXPECT_EQ(peer.port(), port);
+            sock.disconnect();
+        });
+}
+
 TEST(TCPSocket, BlockingConnectVariantsReachLoopbackServer) {
     constexpr int expected_connections = 3;
 
@@ -160,14 +207,7 @@ TEST(TCPSocket, BlockingConnectVariantsReachLoopbackServer) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] {
-        for (int i = 0; i < expected_connections; ++i) {
-            qb::io::tcp::socket accepted;
-            ASSERT_EQ(listener.accept(accepted), qb::io::SocketStatus::Done);
-            EXPECT_TRUE(accepted.is_open());
-            accepted.disconnect();
-        }
-    });
+    std::thread server_thread([&] { accept_tcp_connections(listener, expected_connections); });
 
     qb::io::tcp::socket endpoint_client;
     EXPECT_EQ(endpoint_client.connect(qb::io::endpoint().as_in("127.0.0.1", port)), 0);
@@ -183,6 +223,10 @@ TEST(TCPSocket, BlockingConnectVariantsReachLoopbackServer) {
 
     server_thread.join();
 }
+
+// ===========================================================================
+// Non-blocking connect — smoke band AND a genuine EINPROGRESS completion
+// ===========================================================================
 
 TEST(TCPSocket, NonBlockingUriConnectReportsProgressOrImmediateSuccess) {
     qb::io::tcp::listener listener;
@@ -219,7 +263,64 @@ TEST(TCPSocket, NonBlockingEndpointAndV4ConnectReportProgressOrImmediateSuccess)
     v4_client.close();
 }
 
+// Positively drive the non-blocking machinery to the genuine EINPROGRESS state
+// and then complete it. We connect to a listener whose backlog we deliberately
+// saturate so the SYN cannot complete synchronously; the connect must report
+// in-progress, and `handle_write_ready` must then resolve it to a writable
+// (connected) socket. This is the only test that *forces* the deferred path
+// rather than smoke-accepting an immediate loopback success.
+TEST(TCPSocket, NonBlockingConnectForcesGenuineEinprogressThenCompletes) {
+    qb::io::socket listener;
+    ASSERT_EQ(listener.pserve("127.0.0.1", 0), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    // Saturate the accept backlog with non-blocking pending connects so the next
+    // SYN cannot be accepted synchronously and the kernel reports EINPROGRESS.
+    std::vector<qb::io::socket> backlog;
+    backlog.reserve(64);
+    bool saw_einprogress = false;
+    for (int i = 0; i < 64 && !saw_einprogress; ++i) {
+        qb::io::socket filler;
+        ASSERT_TRUE(filler.open(AF_INET, SOCK_STREAM, 0));
+        filler.set_nonblocking(true);
+        const int ret = filler.connect_n(qb::io::endpoint("127.0.0.1", port));
+        if (ret != 0 && qb::io::socket::get_last_errno() == EINPROGRESS) {
+            saw_einprogress = true;
+        }
+        backlog.push_back(std::move(filler));
+    }
+
+    if (!saw_einprogress) {
+        // Loopback completed every SYN synchronously (small/zero RTT). The
+        // deferred path is not reachable here; the smoke-band tests above still
+        // cover the immediate-success leg, so this is an honest skip, not a fail.
+        GTEST_SKIP() << "loopback never produced EINPROGRESS even with a saturated backlog";
+    }
+
+    // The in-progress socket must finish connecting once it becomes writable.
+    // handle_write_ready() returns select()'s value: > 0 (ready fd count) once the
+    // socket is writable, 0 on timeout, -1 on error — it is NOT a 0-on-success call.
+    // The definitive proof that the connect completed is the SO_ERROR readback below.
+    qb::io::socket &pending = backlog.back();
+    const int       ready   = pending.handle_write_ready(2s);
+    EXPECT_GT(ready, 0) << "handle_write_ready did not report the in-progress connect writable; errno="
+                        << qb::io::socket::get_last_errno();
+
+    int so_error = -1;
+    ASSERT_EQ(pending.get_optval(SOL_SOCKET, SO_ERROR, so_error), 0);
+    EXPECT_EQ(so_error, 0) << "completed non-blocking connect left a pending SO_ERROR";
+}
+
+// ===========================================================================
+// IPv6 connect variants (self-gated on a real ::1 bind)
+// ===========================================================================
+
 TEST(TCPSocket, IPv6ConnectVariantsReachLoopbackServer) {
+    if (!ipv6_loopback_available()) {
+        GTEST_SKIP() << "IPv6 loopback (::1) is not available on this host";
+    }
+
     constexpr int expected_connections = 3;
 
     qb::io::tcp::listener listener;
@@ -268,6 +369,10 @@ TEST(TCPSocket, AlreadyOpenSocketRejectsMismatchedEndpointFamilies) {
     EXPECT_EQ(nonblocking_client.n_connect(ipv6_loopback), -1);
 }
 
+// ===========================================================================
+// Unix-domain endpoints (POSIX only)
+// ===========================================================================
+
 #ifndef _WIN32
 
 TEST(TCPSocket, UnixUriBindListenAndConnectVariantsReachLocalSocket) {
@@ -315,6 +420,10 @@ TEST(TCPSocket, UnixUriBindListenAndConnectVariantsReachLocalSocket) {
 
 #endif
 
+// ===========================================================================
+// Ownership transfer + EOF/errno contracts
+// ===========================================================================
+
 TEST(TCPSocket, BaseSocketMoveConstructionAndAssignmentTransferOwnership) {
     qb::io::socket base_constructed(AF_INET, SOCK_STREAM, 0);
     ASSERT_TRUE(base_constructed.is_open());
@@ -345,10 +454,15 @@ TEST(TCPSocket, ReadReportsPeerCloseWithoutStaleErrno) {
 
                       char buffer[8] = {};
                       EXPECT_EQ(client.read(buffer, sizeof(buffer)), -1);
-                      EXPECT_EQ(qb::io::socket::get_last_errno(), 0);
+                      EXPECT_EQ(qb::io::socket::get_last_errno(), 0)
+                          << "EOF/peer-close must clear errno, not leak a stale value";
                       client.close();
                   });
 }
+
+// ===========================================================================
+// Low-level portable qb::io::socket wrapper
+// ===========================================================================
 
 TEST(TCPSocket, LowLevelPortableConnectAndTransferHelpers) {
     qb::io::socket listener;
@@ -483,12 +597,14 @@ TEST(TCPSocket, LowLevelResolutionAndInterfaceDiscovery) {
     std::vector<qb::io::endpoint> v4_endpoints;
     EXPECT_EQ(qb::io::socket::resolve_v4(v4_endpoints, "127.0.0.1", 4242), 0);
     ASSERT_FALSE(v4_endpoints.empty());
-    EXPECT_TRUE(std::all_of(v4_endpoints.begin(), v4_endpoints.end(), [](const auto &ep) { return ep.af() == AF_INET && ep.port() == 4242; }));
+    EXPECT_TRUE(std::all_of(v4_endpoints.begin(), v4_endpoints.end(),
+                            [](const auto &ep) { return ep.af() == AF_INET && ep.port() == 4242; }));
 
     std::vector<qb::io::endpoint> v6_endpoints;
     EXPECT_EQ(qb::io::socket::resolve_v6(v6_endpoints, "::1", 4242), 0);
     ASSERT_FALSE(v6_endpoints.empty());
-    EXPECT_TRUE(std::all_of(v6_endpoints.begin(), v6_endpoints.end(), [](const auto &ep) { return ep.af() == AF_INET6 && ep.port() == 4242; }));
+    EXPECT_TRUE(std::all_of(v6_endpoints.begin(), v6_endpoints.end(),
+                            [](const auto &ep) { return ep.af() == AF_INET6 && ep.port() == 4242; }));
 
     std::vector<qb::io::endpoint> mapped_endpoints;
     EXPECT_EQ(qb::io::socket::resolve_v4to6(mapped_endpoints, "127.0.0.1", 4242), 0);
@@ -549,9 +665,14 @@ TEST(TCPSocket, LowLevelSocketOptionsReadinessAndBindingHelpers) {
     EXPECT_EQ(listener.release_handle(), raw_socket.native_handle());
     raw_socket.close();
 
+    // set_keepalive must actually take effect — read SO_KEEPALIVE back rather
+    // than only smoke-checking the call's return value.
     qb::io::socket keepalive_socket;
     ASSERT_TRUE(keepalive_socket.open(AF_INET, SOCK_STREAM, 0));
     EXPECT_LE(keepalive_socket.set_keepalive(1, 1, 1, 1), 0);
+    int keepalive_flag = 0;
+    ASSERT_EQ(keepalive_socket.get_optval(SOL_SOCKET, SO_KEEPALIVE, keepalive_flag), 0);
+    EXPECT_NE(keepalive_flag, 0) << "set_keepalive(1, ...) did not enable SO_KEEPALIVE";
     EXPECT_GE(qb::io::socket::tcp_rtt(keepalive_socket.native_handle()), 0u);
     qb::io::socket::init_ws32_lib();
 }

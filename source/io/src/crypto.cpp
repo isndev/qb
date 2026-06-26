@@ -305,6 +305,12 @@ crypto::pbkdf2(const std::string &password, const std::string &salt, int iterati
 // base64 encode (without new line)
 std::string
 crypto::base64_encode(const unsigned char *data, size_t len) {
+    // Empty input is a valid input that encodes to an empty string. OpenSSL's
+    // BIO_write returns 0 for a zero-length write, which the <= 0 check below
+    // would otherwise misread as an error — short-circuit it here so empty
+    // round-trips cleanly (matching the noexcept base64::encode class API).
+    if (len == 0)
+        return std::string{};
     BIO *bio = BIO_new(BIO_s_mem());
     BIO *b64 = BIO_new(BIO_f_base64());
     if (!bio || !b64) {
@@ -330,6 +336,11 @@ crypto::base64_encode(const unsigned char *data, size_t len) {
 // base64 decode
 std::vector<unsigned char>
 crypto::base64_decode(const std::string &input) {
+    // Empty input decodes to empty output. BIO_read on a zero-length mem buf
+    // can report 0/-1, which the failure check below would otherwise treat as
+    // an error — short-circuit so the empty round-trip is symmetric with encode.
+    if (input.empty())
+        return std::vector<unsigned char>{};
     BIO *bio = BIO_new_mem_buf(input.data(), static_cast<int>(input.size()));
     BIO *b64 = BIO_new(BIO_f_base64());
     if (!bio || !b64) {
