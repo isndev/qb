@@ -37,7 +37,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -76,6 +80,24 @@ public:
     void
     on(async::event::timer const &) {
         triggered.store(true);
+    }
+};
+
+// A with_timeout subject whose real expiry handler counts how many times it has
+// actually fired. We push its deadline out once (via updateTimeout) after the
+// timer has already been armed, forcing the internal `on(event::timer&)` to take
+// its RESCHEDULE arm (io.h: after > 0 -> re-arm, don't dispatch) before the real
+// fire eventually lands.
+class ReschedulableTimer : public async::with_timeout<ReschedulableTimer> {
+public:
+    std::atomic<int> fires{0};
+
+    explicit ReschedulableTimer(qb::duration timeout)
+        : with_timeout(timeout) {}
+
+    void
+    on(async::event::timer const &) {
+        fires.fetch_add(1);
     }
 };
 
@@ -333,4 +355,176 @@ TEST_F(EventLoopLifecycleTest, RegisterUnregisterChurnIsStableAndSafe) {
 
     // The loop is still healthy after the churn.
     EXPECT_NO_THROW(async::run(EVRUN_NOWAIT));
+}
+
+// =============================================================================
+// with_timeout::on reschedule arm: a mid-flight updateTimeout() defers the fire
+// =============================================================================
+
+// When the libev timer expires but `_last_activity` was refreshed more recently
+// than `_timeout` ago, with_timeout::on must NOT dispatch the derived handler;
+// it re-arms the watcher for the remaining slice (io.h `after > 0` branch). We
+// drive that by bumping the deadline once after the first arm, then proving the
+// real handler still fires exactly once after the extended deadline.
+TEST_F(EventLoopLifecycleTest, WithTimeoutReschedulesWhenActivityIsRecent) {
+    ReschedulableTimer timer(40ms);
+
+    // Let ~half the original window elapse, then record fresh activity. The next
+    // libev expiry (at the original 40ms mark) now sees `_last_activity` only
+    // ~20ms old against a 40ms timeout => after ~= 20ms > 0 => RESCHEDULE.
+    // A never-true predicate pumps the loop for the full budget; the false return
+    // is expected and must be consumed (the helper is [[nodiscard]]).
+    const bool half_elapsed = pump_until([&] { return false; }, 20ms, 5ms);
+    EXPECT_FALSE(half_elapsed) << "spacer pump unexpectedly satisfied";
+    timer.updateTimeout();
+
+    // The derived handler must still be pending right after we pushed it out.
+    EXPECT_EQ(timer.fires.load(), 0) << "handler dispatched before the extended deadline";
+
+    // It must eventually fire exactly once, after the re-armed slice elapses.
+    EXPECT_TRUE(pump_until([&] { return timer.fires.load() >= 1; }))
+        << "rescheduled with_timeout handler never fired";
+    EXPECT_EQ(timer.fires.load(), 1) << "rescheduled handler fired more than once";
+}
+
+// =============================================================================
+// Timeout<F> immediate-fire ctor branch (timeout <= 0): runs func now, self-deletes
+// =============================================================================
+
+// `async::callback(f, 0)` short-circuits in the free function before ever building
+// a Timeout, so the Timeout ctor's `timeout <= 0` arm (run func inline, set
+// _delete_only, start(0.)) is only reachable by constructing Timeout directly.
+// The object is loop-owned and self-deletes on its next (immediate) expiry, with
+// _delete_only suppressing a second func() call.
+TEST_F(EventLoopLifecycleTest, TimeoutZeroDurationFiresInlineThenSelfDeletes) {
+    const auto baseline = async::listener::current.size();
+
+    std::atomic<int> calls{0};
+    auto f = [&calls]() { calls.fetch_add(1); };
+
+    // Direct construction with a zero duration: func() runs once right here, then
+    // a 0s one-shot is armed so the object reclaims itself on the next loop pass.
+    new async::Timeout<decltype(f)>(std::move(f), qb::duration::zero());
+    EXPECT_EQ(calls.load(), 1) << "zero-duration Timeout must invoke func inline at construction";
+    EXPECT_EQ(async::listener::current.size(), baseline + 1)
+        << "the pending self-delete watcher should be registered until it fires";
+
+    // Pump once: the armed 0s timer expires, on() sees _delete_only and deletes
+    // this WITHOUT re-invoking func.
+    EXPECT_TRUE(pump_until([&] { return async::listener::current.size() == baseline; }))
+        << "zero-duration Timeout never reclaimed itself";
+    EXPECT_EQ(calls.load(), 1) << "_delete_only must suppress a second func() call on the self-delete pass";
+}
+
+// =============================================================================
+// Timeout<F>::on swallows an exception thrown by the user callback
+// =============================================================================
+
+// A normal (positive-duration) Timeout whose func throws when the timer fires
+// must not propagate: Timeout::on wraps func() in try/catch and still deletes
+// itself, leaving the loop usable. Exercises the catch arm + the self-delete.
+TEST_F(EventLoopLifecycleTest, TimeoutOnSwallowsThrowingCallback) {
+    const auto baseline = async::listener::current.size();
+
+    std::atomic<bool> entered{false};
+    async::callback(
+        [&entered]() {
+            entered.store(true);
+            throw std::runtime_error("callback boom");
+        },
+        1ms);
+    EXPECT_EQ(async::listener::current.size(), baseline + 1);
+
+    // Pumping must not let the exception escape the loop, and the Timeout must
+    // still self-delete (registry returns to baseline).
+    EXPECT_NO_THROW({
+        EXPECT_TRUE(pump_until([&] { return entered.load() && async::listener::current.size() == baseline; }))
+            << "throwing callback never fired or never reclaimed its watcher";
+    });
+    EXPECT_TRUE(entered.load());
+    EXPECT_EQ(async::listener::current.size(), baseline);
+
+    // The loop is still healthy after swallowing the throw.
+    EXPECT_NO_THROW(async::run(EVRUN_NOWAIT));
+}
+
+// =============================================================================
+// listener::_resolve_backend_flags(): QB_EV_BACKEND env-var resolution
+// =============================================================================
+
+namespace {
+
+// Save/restore QB_EV_BACKEND around a construction so we never perturb sibling
+// tests or parallel ctest workers (the var is read once per listener ctor).
+struct ScopedEnv {
+    std::string name;
+    bool        had_old;
+    std::string old_value;
+
+    explicit ScopedEnv(const char *n, const char *value)
+        : name(n) {
+        const char *cur = std::getenv(n);
+        had_old         = cur != nullptr;
+        if (had_old)
+            old_value = cur;
+        if (value)
+            ::setenv(n, value, 1);
+        else
+            ::unsetenv(n);
+    }
+    ~ScopedEnv() {
+        if (had_old)
+            ::setenv(name.c_str(), old_value.c_str(), 1);
+        else
+            ::unsetenv(name.c_str());
+    }
+};
+
+} // namespace
+
+// A known, built-in, runtime-available backend ("select" is always present in
+// libev) must drive _resolve_backend_flags through: table match -> not AUTO ->
+// supported -> probe loop_new succeeds -> return the requested flag. We build a
+// throwaway listener on a fresh thread (so listener::current is untouched) and
+// assert it actually selected the pinned backend.
+TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsHonoursKnownSupportedBackend) {
+    std::atomic<unsigned int> chosen{0};
+    std::thread t([&chosen] {
+        ScopedEnv env("QB_EV_BACKEND", "select");
+        async::listener probe; // ctor calls _resolve_backend_flags("select")
+        chosen.store(probe.backend());
+    });
+    t.join();
+
+    EXPECT_EQ(chosen.load(), static_cast<unsigned int>(EVBACKEND_SELECT))
+        << "QB_EV_BACKEND=select must pin the libev select backend";
+}
+
+// An unrecognised name must degrade to EVFLAG_AUTO (the `!known` arm) without
+// throwing, yielding a real, non-"unknown" auto-selected backend.
+TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsUnknownNameFallsBackToAuto) {
+    std::atomic<unsigned int> chosen{0};
+    std::thread t([&chosen] {
+        ScopedEnv env("QB_EV_BACKEND", "no_such_backend_xyz");
+        async::listener probe;
+        chosen.store(probe.backend());
+    });
+    t.join();
+
+    EXPECT_STRNE(async::listener::backend_name(chosen.load()), "unknown")
+        << "an unknown QB_EV_BACKEND must still resolve to a valid auto backend";
+}
+
+// The explicit "auto" token must take the early `req == EVFLAG_AUTO` return arm.
+TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsAutoTokenSelectsAuto) {
+    std::atomic<unsigned int> chosen{0};
+    std::thread t([&chosen] {
+        ScopedEnv env("QB_EV_BACKEND", "auto");
+        async::listener probe;
+        chosen.store(probe.backend());
+    });
+    t.join();
+
+    EXPECT_STRNE(async::listener::backend_name(chosen.load()), "unknown")
+        << "QB_EV_BACKEND=auto must resolve to a valid auto backend";
 }

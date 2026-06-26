@@ -431,3 +431,24 @@ TEST(Compression, ErrorAndDetectionContracts) {
                                           qb::compression::is_last, processed, done),
                  std::runtime_error);
 }
+
+// WAVE-3: the pipe<char> SPECIALIZATIONS of compression::compress/uncompress
+// (compression.cpp ~481/538) have their own deflateInit2/inflateInit2 failure
+// throws (src 506-508 / 565-567). The existing ErrorAndDetectionContracts cases
+// drive the std::string Output TEMPLATE (header-inline) path, so the .cpp
+// pipe-specialization init-failure throws stay uncovered. An out-of-range
+// windowBits (7 is below zlib's 8..15 floor for both deflate and inflate) forces
+// Z_STREAM_ERROR from the init call, exercising those specialization throws.
+TEST(Compression, PipeSpecializationInitFailureThrows) {
+    const std::string         payload = "qb pipe-specialization init-failure path";
+    qb::allocator::pipe<char> compress_out;
+    // deflateInit2 with windowBits=7 -> Z_STREAM_ERROR -> "deflate init failed".
+    EXPECT_THROW(qb::compression::compress(compress_out, payload.data(), payload.size(), Z_DEFAULT_COMPRESSION, /*window_bits*/ 7),
+                 std::runtime_error);
+
+    qb::allocator::pipe<char> uncompress_out;
+    // inflateInit2 with windowBits=7 -> Z_STREAM_ERROR -> "inflate init failed".
+    // size must be non-zero so the early `size == 0` return does not pre-empt init.
+    EXPECT_THROW(qb::compression::uncompress(uncompress_out, payload.data(), payload.size(), /*max*/ 0u, /*window_bits*/ 7),
+                 std::runtime_error);
+}

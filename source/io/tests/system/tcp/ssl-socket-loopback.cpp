@@ -1316,3 +1316,140 @@ TEST(SSLSocketLoopback, LiteralIpVerificationBranchRejectsCertWithoutIpSan) {
         insecure_client.disconnect();
     }
 }
+
+// ===========================================================================
+// SSL read() must map a clean close_notify (SSL_read() == 0 /
+// SSL_ERROR_ZERO_RETURN) to -1, NOT to 0. After a completed handshake the server
+// performs a graceful TLS shutdown; the client's next read must report
+// termination (-1) so the io layer can dispose the connection rather than spin on
+// EV_READ forever. (Drives the SSL_read()==0 -> return -1 branch.)
+// ===========================================================================
+
+TEST(SSLSocketLoopback, ReadReportsCleanCloseNotifyAsTermination) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(make_server_context());
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> server_ready{false};
+    std::thread       server_thread([&] {
+        qb::io::tcp::ssl::socket server_socket;
+        server_ready = true;
+        ASSERT_EQ(listener.accept(server_socket), 0);
+        drive_server_handshake(server_socket);
+        // Send a single byte the client first consumes, then perform a clean TLS
+        // shutdown so the client observes close_notify on its following read.
+        record_thread_failure(write_exactly(server_socket, "z", 1));
+        server_socket.disconnect();
+    });
+    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+
+    while (!server_ready.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    qb::io::tcp::ssl::socket client;
+    client.set_insecure();
+    ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
+    ASSERT_TRUE(client.handshake_complete());
+
+    char first = 0;
+    ASSERT_TRUE(read_exactly(client, &first, 1));
+    EXPECT_EQ(first, 'z');
+
+    // After the server's graceful close, the client's read must converge to -1
+    // (clean close_notify -> termination), never lingering at 0.
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    int        ret      = 0;
+    char       buffer[16];
+    while (std::chrono::steady_clock::now() < deadline) {
+        ret = client.read(buffer, sizeof(buffer));
+        if (ret < 0) {
+            break; // termination signalled
+        }
+        EXPECT_EQ(ret, 0) << "read returned " << ret << " bytes after the peer closed cleanly";
+        std::this_thread::sleep_for(1ms);
+    }
+    EXPECT_EQ(ret, -1) << "clean close_notify must be reported as -1, not " << ret;
+    client.disconnect();
+}
+
+// ===========================================================================
+// TLS 1.2 negotiation: capping BOTH peers at TLS 1.2 drives the version branch of
+// request_client_post_handshake_auth() (PHA is a TLS 1.3-only feature, so the
+// server-side request must return false when 1.2 is negotiated — distinct from
+// the TLS 1.3 success leg proven elsewhere). The server context is additionally
+// configured via set_tls_protocol_versions() and configure_ecdh_curves_server(),
+// exercising the socket-driven CTX configuration on a real handshake.
+// ===========================================================================
+
+TEST(SSLSocketLoopback, Tls12NegotiationRejectsServerPostHandshakeAuth) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    SSL_CTX *server_ctx = make_server_context();
+    ASSERT_NE(server_ctx, nullptr);
+    // Cap the server at TLS 1.2 on both ends of the version window.
+    ASSERT_TRUE(qb::io::ssl::set_tls_protocol_versions(server_ctx, TLS1_2_VERSION, TLS1_2_VERSION));
+    // Configure the server's ECDH curve list (socket-driven CTX configuration).
+    EXPECT_TRUE(qb::io::ssl::configure_ecdh_curves_server(server_ctx, "P-256:X25519"));
+    // PHA capability + peer-cert request, mirroring the TLS 1.3 success test — but
+    // 1.2 makes the post-handshake request impossible regardless.
+    ASSERT_TRUE(qb::io::ssl::enable_post_handshake_auth_server(server_ctx));
+    SSL_CTX_set_verify(server_ctx, SSL_VERIFY_PEER, nullptr);
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(server_ctx);
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> server_ready{false};
+    std::atomic<bool> server_done{false};
+    std::atomic<int>  server_version_is_12{-1};
+    std::atomic<int>  server_pha_result{-1};
+    std::thread       server_thread([&] {
+        qb::io::tcp::ssl::socket server_socket;
+        server_ready = true;
+        ASSERT_EQ(listener.accept(server_socket), 0);
+        drive_server_handshake(server_socket);
+        server_version_is_12 = (server_socket.get_negotiated_tls_version() == "TLSv1.2") ? 1 : 0;
+        // Server-side PHA over a TLS 1.2 connection must fail at the version guard.
+        server_pha_result = server_socket.request_client_post_handshake_auth() ? 1 : 0;
+        server_done       = true;
+        server_socket.disconnect();
+    });
+    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+
+    while (!server_ready.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    // Client also capped at TLS 1.2 so the negotiation lands on 1.2.
+    qb::io::tcp::ssl::socket client;
+    auto                    *client_ctx = qb::io::ssl::create_client_context(TLS_client_method());
+    ASSERT_NE(client_ctx, nullptr);
+    ASSERT_TRUE(qb::io::ssl::set_tls_protocol_versions(client_ctx, TLS1_2_VERSION, TLS1_2_VERSION));
+    client.init(SSL_new(client_ctx));
+    ASSERT_NE(client.ssl_handle(), nullptr);
+    client.set_insecure();
+    ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
+    ASSERT_TRUE(client.handshake_complete());
+    EXPECT_EQ(client.get_negotiated_tls_version(), "TLSv1.2");
+
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (!server_done.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    client.disconnect();
+    server_thread.join();
+
+    ASSERT_TRUE(server_done.load()) << "server never recorded a PHA result within the deadline";
+    ASSERT_EQ(server_version_is_12.load(), 1) << "negotiation did not land on TLS 1.2";
+    EXPECT_EQ(server_pha_result.load(), 0)
+        << "server-side PHA must fail over a TLS 1.2 connection (PHA is TLS 1.3-only)";
+}

@@ -79,6 +79,38 @@ join_all_waiter(coroutine_scope *scope, int *counter) {
     ++(*counter);
 }
 
+// Throws cancelled_error from a token UNRELATED to the scope (never the scope's own token).
+// run_wrapped must surface this as a genuine task failure (scope.cancel_token() stays clean),
+// exercising the "external cancelled_error" branch in run_wrapped().
+task<void>
+foreign_cancel_worker(cancellation_token foreign) {
+    foreign.cancel();
+    foreign.throw_if_cancelled(); // throws cancelled_error from a token the scope does not own
+    co_return;                    // unreached
+}
+
+// Free-function inner ops for make_cancellable<void> tests. Parameters (the flag pointer) live
+// BY VALUE in the coroutine frame — never a captured reference in an immediately-invoked lambda,
+// which would dangle across the suspension point (task.h note #2).
+task<void>
+long_sleep_then_set(std::chrono::milliseconds ms, std::atomic<bool> *completed) {
+    co_await sleep(ms);
+    completed->store(true);
+}
+
+task<void>
+short_sleep_then_throw(std::chrono::milliseconds ms) {
+    co_await sleep(ms);
+    throw std::runtime_error("inner void boom");
+}
+
+// Cancels `token` after `delay` — drives a make_cancellable<void> op into mid-flight cancellation.
+task<void>
+delayed_cancel(std::chrono::milliseconds delay, cancellation_token token) {
+    co_await sleep(delay);
+    token.cancel();
+}
+
 } // namespace
 
 // =============================================================================
@@ -665,4 +697,238 @@ TEST_F(ScopeStructuredConcurrency, TotalCountVsActiveCount) {
     });
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "total-vs-active coordinator never finished";
+}
+
+// =============================================================================
+// run_wrapped: external (unrelated-token) cancelled_error is a real failure
+// =============================================================================
+
+// A worker that throws cancelled_error from a token the scope does NOT own must be recorded
+// as a genuine failure: the scope's own token stays uncancelled, so run_wrapped() takes its
+// `else` branch (records first_error) and join_all() rethrows. This is the complement of
+// CancelAllJoinAllAbsorbsUncaughtWorkerCancellation (which proves the SELF-cancel absorb path).
+TEST_F(ScopeStructuredConcurrency, ForeignCancelledErrorIsSurfacedAsFailure) {
+    std::atomic<bool> done{false};
+    std::atomic<bool> join_rethrew{false};
+    std::atomic<bool> scope_token_clean{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        coroutine_scope    scope; // default cancel_all; its own token is never cancelled here
+        cancellation_token foreign;
+        scope.spawn(foreign_cancel_worker(foreign));
+        try {
+            co_await scope.join_all();
+        } catch (const cancelled_error &) {
+            join_rethrew.store(true);
+        }
+        // The scope's own token must NOT have been touched by the foreign cancellation.
+        scope_token_clean.store(!scope.cancel_token().is_cancelled());
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "foreign-cancel coordinator never finished";
+    EXPECT_TRUE(join_rethrew.load()) << "an unrelated-token cancelled_error must surface as a join_all failure";
+    EXPECT_TRUE(scope_token_clean.load()) << "the foreign cancellation must not have cancelled the scope's own token";
+}
+
+// =============================================================================
+// make_cancellable<void>: cancel mid-flight + inner-exception propagation
+// =============================================================================
+
+// make_cancellable<void>(throw_on_cancel=true): cancel the controlling token while the inner
+// op is parked in a sleep. The void awaiter's on_cancel hook must fire — tearing down the
+// detached runner + inner task — and resume the waiter, whose await_resume() then throws
+// cancelled_error. Drives the uncovered void-specialization cancel path (await_suspend hook
+// body) and the await_resume cancelled-throw branch.
+TEST_F(ScopeStructuredConcurrency, MakeCancellableVoidThrowsOnMidFlightCancel) {
+    std::atomic<bool> done{false};
+    std::atomic<bool> threw_cancelled{false};
+    std::atomic<bool> inner_completed{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        cancellation_token token;
+
+        // Cancel the token shortly after the inner op parks on its long sleep (free-function
+        // driver — token is copied by value into its frame, no dangling closure).
+        coro_scheduler().spawn(delayed_cancel(20ms, token));
+
+        try {
+            // Inner op is a free function whose flag pointer lives by value in its frame.
+            co_await make_cancellable(long_sleep_then_set(500ms, &inner_completed), token,
+                                      /*throw_on_cancel=*/true);
+        } catch (const cancelled_error &) {
+            threw_cancelled.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "make_cancellable<void> cancel coordinator never finished";
+    EXPECT_TRUE(threw_cancelled.load()) << "make_cancellable<void> must throw cancelled_error on mid-flight cancel";
+    EXPECT_FALSE(inner_completed.load()) << "the cancelled inner op must not reach completion";
+}
+
+// make_cancellable<void> with throw_on_cancel=false and NO cancellation: the inner op throws
+// its own exception. task_runner must capture it into shared_state::error and await_resume must
+// rethrow it (void overload). Drives task_runner's catch (552-553) and await_resume rethrow
+// (542-543) for the void specialization.
+TEST_F(ScopeStructuredConcurrency, MakeCancellableVoidPropagatesInnerException) {
+    std::atomic<bool> done{false};
+    std::atomic<bool> got_inner_error{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        cancellation_token token; // never cancelled
+        try {
+            co_await make_cancellable(short_sleep_then_throw(5ms), token,
+                                      /*throw_on_cancel=*/false);
+        } catch (const std::runtime_error &e) {
+            EXPECT_STREQ(e.what(), "inner void boom");
+            got_inner_error.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "make_cancellable<void> inner-exception coordinator never finished";
+    EXPECT_TRUE(got_inner_error.load()) << "make_cancellable<void> must rethrow the inner task's exception";
+}
+
+// make_cancellable<void> normal completion (no cancel, no throw): the inner op completes, the
+// awaiter resumes via task_runner's done path, and await_resume returns without error. Exercises
+// the void task_runner success path and the await_resume clean exit.
+TEST_F(ScopeStructuredConcurrency, MakeCancellableVoidCompletesNormally) {
+    std::atomic<bool> done{false};
+    std::atomic<bool> inner_ran{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        cancellation_token token;
+        co_await make_cancellable(long_sleep_then_set(5ms, &inner_ran), token,
+                                  /*throw_on_cancel=*/true);
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "make_cancellable<void> normal coordinator never finished";
+    EXPECT_TRUE(inner_ran.load()) << "the inner op must run to completion when never cancelled";
+}
+
+// =============================================================================
+// Scope move-assignment + join_all policy destruction warning
+// =============================================================================
+
+// Move-assignment must transfer impl/token/policy so the moved-into scope drives the workers
+// and the moved-from scope is inert. Drives coroutine_scope::operator=(coroutine_scope&&).
+TEST_F(ScopeStructuredConcurrency, MoveAssignedScopeOwnsTheTasks) {
+    std::atomic<int>  counter{0};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        coroutine_scope src;
+        src.spawn([&counter]() -> task<void> {
+            co_await sleep(10ms);
+            counter.fetch_add(1);
+        });
+        EXPECT_EQ(src.active_count(), 1u);
+
+        coroutine_scope dst;          // its own (different) impl
+        dst = std::move(src);         // move-assign: dst now owns src's task + token + policy
+        EXPECT_EQ(dst.active_count(), 1u) << "the moved-into scope must own the spawned task";
+
+        co_await dst.join_all();      // the moved-into scope drains the worker
+        EXPECT_EQ(dst.active_count(), 0u);
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "move-assign coordinator never finished";
+    EXPECT_EQ(counter.load(), 1) << "the worker carried by move-assign must still run";
+}
+
+// A join_all-policy scope (joining_scope) destroyed while tasks are still active hits the
+// best-effort destructor branch (and, in debug builds, emits the active-tasks warning to
+// stderr). The tasks keep running via the shared scope_impl; we join them through the scope's
+// own token afterwards to drain the loop cleanly. Drives ~coroutine_scope's join_all case.
+TEST_F(ScopeStructuredConcurrency, JoiningScopeDestroyedWithActiveTasksIsBestEffort) {
+    std::atomic<int>  counter{0};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        {
+            joining_scope scope; // cleanup_policy::join_all
+            scope.spawn([&counter]() -> task<void> {
+                co_await sleep(15ms);
+                counter.fetch_add(1);
+            });
+            EXPECT_EQ(scope.active_count(), 1u);
+            // Intentionally do NOT co_await join_all() before the scope dies: exercise the
+            // best-effort join_all destructor branch with an active task still in flight.
+        }
+        // The task keeps running via the shared scope_impl; let it finish.
+        co_await sleep(60ms);
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load() && counter.load() == 1; }))
+        << "best-effort joining_scope task never completed after early scope destruction";
+    EXPECT_EQ(counter.load(), 1) << "the spawned task must still run after the join_all-policy scope is destroyed";
+}
+
+// =============================================================================
+// join_any / join_all_for fast-path (already-resolved) branches
+// =============================================================================
+
+// join_any on a scope whose work has ALREADY completed before the await must take the
+// await_ready()==true fast path (a completed task is found) and return that index without
+// suspending. Drives join_any's await_ready true branch + await_resume index lookup.
+TEST_F(ScopeStructuredConcurrency, JoinAnyFastPathWhenTaskAlreadyDone) {
+    std::atomic<bool>   done{false};
+    std::atomic<size_t> idx{99};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn([]() -> task<void> { co_return; }()); // completes on first drain, index 0
+        co_await sleep(20ms);                              // ensure it is marked completed
+        EXPECT_EQ(scope.active_count(), 0u);
+        idx.store(co_await scope.join_any());              // await_ready() is already true
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "join_any fast-path coordinator never finished";
+    EXPECT_EQ(idx.load(), 0u) << "join_any must return the already-completed task's index";
+}
+
+// join_all_for on a scope with NO active tasks must return true immediately (active_count==0
+// short-circuit at entry) without arming a timer. Drives the join_all_for(active_count==0)
+// co_return true path.
+TEST_F(ScopeStructuredConcurrency, JoinAllForEmptyScopeReturnsTrueImmediately) {
+    std::atomic<bool> done{false};
+    std::atomic<bool> completed{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        coroutine_scope scope; // nothing spawned
+        EXPECT_TRUE(scope.empty());
+        completed.store(co_await scope.join_all_for(50ms)); // active_count==0 → immediate true
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "join_all_for empty-scope coordinator never finished";
+    EXPECT_TRUE(completed.load()) << "join_all_for on an empty scope must return true immediately";
+}
+
+// join_all_for after a spawned task has already drained: active_count is 0 by the time
+// join_all_for runs, so the entry-level `co_return true` short-circuit fires (the timer is never
+// armed). Complements the empty-scope test by reaching the same path through a task that ran and
+// completed, rather than a scope that never had work. (The awaiter's own active_count==0
+// await_ready guard is dead given this entry short-circuit — not targeted.)
+TEST_F(ScopeStructuredConcurrency, JoinAllForFastPathWhenAllAlreadyDone) {
+    std::atomic<bool> done{false};
+    std::atomic<bool> completed{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn([]() -> task<void> { co_await sleep(5ms); }());
+        co_await sleep(25ms); // let the worker finish first
+        EXPECT_EQ(scope.active_count(), 0u);
+        completed.store(co_await scope.join_all_for(50ms)); // awaiter await_ready true
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "join_all_for already-done coordinator never finished";
+    EXPECT_TRUE(completed.load()) << "join_all_for must return true when all tasks already completed";
 }

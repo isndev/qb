@@ -494,3 +494,217 @@ TEST(CryptoJWT, NumericDateClaimsRejectMalformedValues) {
     verify_options.verify_not_before = true;
     EXPECT_EQ(jwt::verify(bad_nbf, verify_options).error, jwt::ValidationError::INVALID_FORMAT);
 }
+
+// =============================================================================
+// WAVE-3 ADDITIONS — uncovered reachable branches in crypto_jwt.cpp
+//
+// These cases target gaps the existing suite leaves open:
+//   - create_token's `nbf` branch (not_before > 0)                       [src 298-300]
+//   - decode()'s payload-base64 catch (invalid segment[1])               [src 355-357]
+//   - verify()'s INVALID_FORMAT on bad payload base64 / non-JSON payload [src 421-431]
+//   - verify()'s INVALID_FORMAT on an undecodable signature segment      [src 440-442]
+//   - read_numeric_date's NUMBER variants (integer / unsigned / float)   [src 464-475]
+//   - read_numeric_date rejecting a non-numeric, non-string exp          [src 486]
+//   - the `aud` JSON-array audience match (RFC 7519)                     [src 523-530]
+//
+// To exercise the numeric-typed and array-typed claim branches we hand-build a
+// token whose payload JSON carries the real type (jwt::create stringifies every
+// value, which only ever hits the is_string branch). The token is signed with a
+// genuine HS256 MAC so verification reaches the claim-validation stage rather
+// than bailing at INVALID_SIGNATURE.
+// =============================================================================
+
+namespace {
+
+/**
+ * @brief Build a correctly-HS256-signed JWT from raw header/payload JSON text.
+ *
+ * Mirrors jwt::create's wire format (base64url header.payload.signature) but
+ * lets the caller control the exact JSON so a claim can be a JSON number, bool,
+ * array, etc. — types jwt::create cannot emit.
+ */
+std::string
+make_hs256_token(const std::string &payload_json, const std::string &secret, const std::string &header_json = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}") {
+    const std::string header_b64  = to_base64url(header_json);
+    const std::string payload_b64 = to_base64url(payload_json);
+    const std::string signing_in  = header_b64 + "." + payload_b64;
+
+    const std::vector<unsigned char> data(signing_in.begin(), signing_in.end());
+    const std::vector<unsigned char> key(secret.begin(), secret.end());
+    const auto                       mac = crypto::hmac(data, key, crypto::DigestAlgorithm::SHA256);
+
+    // The JWT signature segment is base64url(raw_mac_bytes). to_base64url already
+    // base64-encodes its input, so feed it the raw MAC bytes directly. Pre-running
+    // crypto::base64::encode here would add a SECOND base64 layer, and the verifier
+    // (crypto_jwt.cpp: base64url_to_base64 + base64::decode, once) would then recover
+    // the inner base64 *text* instead of the 32 raw HMAC bytes -> INVALID_SIGNATURE.
+    const std::string sig_b64 = to_base64url(std::string(mac.begin(), mac.end()));
+    return signing_in + "." + sig_b64;
+}
+
+} // namespace
+
+TEST(CryptoJWT, CreateTokenStampsNotBeforeWhenPositive) {
+    // not_before > 0 takes the `nbf` branch in create_token (src 298-300); the
+    // produced nbf must sit `not_before` seconds in the future and the token must
+    // therefore be rejected as TOKEN_NOT_ACTIVE by a not-before-checking verifier.
+    const std::map<std::string, std::string> payload = {{"user_id", "42"}};
+
+    jwt::CreateOptions create_options;
+    create_options.algorithm = jwt::Algorithm::HS256;
+    create_options.key       = "secret";
+
+    const int64_t     before = unix_now_seconds();
+    const std::string token  = jwt::create_token(payload, /*issuer*/ "", /*subject*/ "", /*audience*/ "", /*expires_in*/ std::chrono::seconds(0),
+                                                /*not_before*/ std::chrono::hours(1), /*jti*/ "", create_options);
+
+    const auto decoded = jwt::decode(token);
+    // nbf is present and ~1h ahead of the stamp instant.
+    const auto nbf_pos = decoded.payload.find("\"nbf\":\"");
+    ASSERT_NE(nbf_pos, std::string::npos);
+    const int64_t nbf = std::stoll(decoded.payload.substr(nbf_pos + 7));
+    EXPECT_GE(nbf, before + 3600);
+    EXPECT_LE(nbf, before + 3600 + 5);
+
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm         = jwt::Algorithm::HS256;
+    verify_options.key               = "secret";
+    verify_options.verify_not_before = true;
+    EXPECT_EQ(jwt::verify(token, verify_options).error, jwt::ValidationError::TOKEN_NOT_ACTIVE);
+}
+
+TEST(CryptoJWT, DecodeRejectsUndecodablePayloadSegment) {
+    // A header that decodes fine, a payload segment that is NOT valid base64url:
+    // a single stray char makes length % 4 == 1, which base64url_to_base64 throws
+    // on — decode() maps that to "Invalid JWT payload encoding" (src 355-357).
+    const std::string good_header = to_base64url("{\"alg\":\"HS256\"}");
+    EXPECT_THROW(jwt::decode(good_header + ".x.signature"), std::runtime_error);
+}
+
+TEST(CryptoJWT, VerifyRejectsUndecodableAndNonJsonPayload) {
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::HS256;
+    verify_options.key       = "secret";
+
+    const std::string good_header = to_base64url("{\"alg\":\"HS256\"}");
+
+    // Payload segment that fails base64url decoding (length % 4 == 1) -> the
+    // base64url_to_base64 throw is caught and mapped to INVALID_FORMAT (src 421-423).
+    EXPECT_EQ(jwt::verify(good_header + ".x.signature", verify_options).error, jwt::ValidationError::INVALID_FORMAT);
+
+    // Payload that decodes from base64 but is not valid JSON -> json::parse throws,
+    // mapped to INVALID_FORMAT (src 426-431).
+    const std::string not_json_payload = to_base64url("this is not json {");
+    EXPECT_EQ(jwt::verify(good_header + "." + not_json_payload + ".signature", verify_options).error, jwt::ValidationError::INVALID_FORMAT);
+}
+
+TEST(CryptoJWT, VerifyRejectsUndecodableSignatureSegment) {
+    // Header (HS256) and payload both decode and parse cleanly, but the signature
+    // segment is not valid base64url (length % 4 == 1): the base64url_to_base64
+    // throw on the signature is caught and mapped to INVALID_FORMAT (src 440-442),
+    // a distinct path from the INVALID_SIGNATURE returned for a well-formed-but-wrong MAC.
+    const std::string header  = to_base64url("{\"alg\":\"HS256\"}");
+    const std::string payload = to_base64url("{\"user_id\":\"1\"}");
+
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::HS256;
+    verify_options.key       = "secret";
+
+    EXPECT_EQ(jwt::verify(header + "." + payload + ".x", verify_options).error, jwt::ValidationError::INVALID_FORMAT);
+}
+
+TEST(CryptoJWT, NumericTypedExpClaimIsAcceptedAndEnforced) {
+    // RFC 7519 defines exp as a NumericDate (a JSON number). A standards-compliant
+    // external token carries exp as a raw number, not a string. read_numeric_date's
+    // integer branch (src 464-466) must accept it; the float branch (src 472-475)
+    // and unsigned branch (src 468-471) are exercised by the other claims below.
+    const std::string secret = "secret";
+
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm         = jwt::Algorithm::HS256;
+    verify_options.key               = secret;
+    verify_options.verify_expiration = true;
+
+    // exp as a plain (signed) integer in the past -> integer branch, then expired.
+    const std::string expired = make_hs256_token("{\"exp\":" + std::to_string(unix_now_seconds() - 100) + "}", secret);
+    EXPECT_EQ(jwt::verify(expired, verify_options).error, jwt::ValidationError::TOKEN_EXPIRED);
+
+    // exp as a plain integer well in the future -> integer branch, valid.
+    const std::string live = make_hs256_token("{\"exp\":" + std::to_string(unix_now_seconds() + 3600) + "}", secret);
+    EXPECT_TRUE(jwt::verify(live, verify_options).is_valid());
+
+    // exp as a JSON float (fractional NumericDate) in the future -> float branch (src 472-475).
+    const std::string live_float = make_hs256_token("{\"exp\":" + std::to_string(unix_now_seconds() + 3600) + ".5}", secret);
+    EXPECT_TRUE(jwt::verify(live_float, verify_options).is_valid());
+
+    // exp as a JSON float in the past -> float branch, expired.
+    const std::string expired_float = make_hs256_token("{\"exp\":" + std::to_string(unix_now_seconds() - 100) + ".25}", secret);
+    EXPECT_EQ(jwt::verify(expired_float, verify_options).error, jwt::ValidationError::TOKEN_EXPIRED);
+}
+
+TEST(CryptoJWT, NumericTypedNbfIntegerAndFloatBranches) {
+    const std::string secret = "secret";
+
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm         = jwt::Algorithm::HS256;
+    verify_options.key               = secret;
+    verify_options.verify_not_before = true;
+
+    // nbf as a raw JSON integer in the future -> read_numeric_date's integer
+    // branch (src 464-466; nlohmann's is_number_integer() is true for unsigned
+    // too and is checked first, so the is_number_unsigned-only branch at src
+    // 468-471 is unreachable through any JSON literal). The token is not yet active.
+    const std::string future_int = make_hs256_token("{\"nbf\":" + std::to_string(unix_now_seconds() + 3600) + "}", secret);
+    EXPECT_EQ(jwt::verify(future_int, verify_options).error, jwt::ValidationError::TOKEN_NOT_ACTIVE);
+
+    // nbf as a JSON float in the past -> float branch (src 472-475), active now.
+    const std::string past_float = make_hs256_token("{\"nbf\":" + std::to_string(unix_now_seconds() - 100) + ".0}", secret);
+    EXPECT_TRUE(jwt::verify(past_float, verify_options).is_valid());
+}
+
+TEST(CryptoJWT, NonNumericExpClaimIsRejectedAsInvalidFormat) {
+    // exp present but neither a number nor a numeric string -> read_numeric_date
+    // falls through every branch and returns false (src 486), and verify() maps
+    // that to INVALID_FORMAT (fail-closed on a malformed NumericDate).
+    const std::string secret = "secret";
+
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm         = jwt::Algorithm::HS256;
+    verify_options.key               = secret;
+    verify_options.verify_expiration = true;
+
+    // exp as a JSON boolean.
+    const std::string bool_exp = make_hs256_token("{\"exp\":true}", secret);
+    EXPECT_EQ(jwt::verify(bool_exp, verify_options).error, jwt::ValidationError::INVALID_FORMAT);
+
+    // exp as a JSON array (also non-numeric/non-string).
+    const std::string array_exp = make_hs256_token("{\"exp\":[1,2,3]}", secret);
+    EXPECT_EQ(jwt::verify(array_exp, verify_options).error, jwt::ValidationError::INVALID_FORMAT);
+}
+
+TEST(CryptoJWT, AudienceMatchesAgainstJsonArrayClaim) {
+    // RFC 7519: `aud` may be an array of strings; verify() must match if ANY
+    // element equals the expected audience (src 523-530). jwt::create can only
+    // emit a string aud, so we hand-build the array form.
+    const std::string secret = "secret";
+
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm       = jwt::Algorithm::HS256;
+    verify_options.key             = secret;
+    verify_options.verify_audience = true;
+
+    const std::string token = make_hs256_token("{\"aud\":[\"svc-a\",\"svc-b\",\"svc-c\"]}", secret);
+
+    // An audience present in the array passes.
+    verify_options.audience = "svc-b";
+    EXPECT_TRUE(jwt::verify(token, verify_options).is_valid());
+
+    // The last element is matched too (loop must scan to the end).
+    verify_options.audience = "svc-c";
+    EXPECT_TRUE(jwt::verify(token, verify_options).is_valid());
+
+    // An audience absent from the array fails INVALID_AUDIENCE (loop completes
+    // without a hit -> aud_ok stays false).
+    verify_options.audience = "svc-z";
+    EXPECT_EQ(jwt::verify(token, verify_options).error, jwt::ValidationError::INVALID_AUDIENCE);
+}
