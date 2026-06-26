@@ -1,5 +1,5 @@
 /**
- * @file qb/io/tests/benchmark/bm-file-stream.cpp
+ * @file qb/io/tests/benchmark/io/file-stream.cpp
  * @brief Benchmarks for qb file helpers and file-backed streams.
  *
  * These scenarios keep file throughput measurements out of GTest while still
@@ -80,13 +80,17 @@ BM_FileToPipe_ReadAll(benchmark::State &state) {
     write_payload(input, payload);
 
     for (auto _ : state) {
+        // Per-iteration setup (pipe alloc + file open) is NOT the hot path under
+        // test here — the read loop is. Pause around it so the throughput number
+        // reflects file_to_pipe::read(), not open()/close() syscall latency.
+        state.PauseTiming();
         qb::allocator::pipe<char> pipe;
         qb::io::sys::file_to_pipe reader(pipe);
-
         if (!reader.open(input.string())) {
             state.SkipWithError("file_to_pipe could not open input file");
             break;
         }
+        state.ResumeTiming();
 
         while (!reader.eof()) {
             const int bytes = reader.read();
@@ -146,6 +150,9 @@ BM_FileIStream_ReadAll(benchmark::State &state) {
     write_payload(input, payload);
 
     for (auto _ : state) {
+        // Pause around the per-iteration open() + transport handoff so the timed
+        // region is the read/flush loop, not the open()/close() syscalls.
+        state.PauseTiming();
         qb::io::sys::file file;
         if (file.open(input.string(), O_RDONLY) < 0) {
             state.SkipWithError("stream input file open failed");
@@ -154,6 +161,7 @@ BM_FileIStream_ReadAll(benchmark::State &state) {
 
         qb::io::istream<qb::io::sys::file> stream;
         stream.transport() = std::move(file);
+        state.ResumeTiming();
 
         std::size_t total = 0;
         while (total < size) {
@@ -214,9 +222,9 @@ BM_FileOStream_WriteAll(benchmark::State &state) {
 
 } // namespace
 
-BENCHMARK(BM_FileToPipe_ReadAll)->Args({4 * 1024})->Args({1024 * 1024})->ArgName("bytes")->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_PipeToFile_WriteAll)->Args({4 * 1024})->Args({1024 * 1024})->ArgName("bytes")->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_FileIStream_ReadAll)->Args({4 * 1024})->Args({1024 * 1024})->ArgName("bytes")->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_FileOStream_WriteAll)->Args({4 * 1024})->Args({1024 * 1024})->ArgName("bytes")->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_FileToPipe_ReadAll)->Args({4 * 1024})->Args({64 * 1024})->Args({1024 * 1024})->ArgName("bytes")->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_PipeToFile_WriteAll)->Args({4 * 1024})->Args({64 * 1024})->Args({1024 * 1024})->ArgName("bytes")->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_FileIStream_ReadAll)->Args({4 * 1024})->Args({64 * 1024})->Args({1024 * 1024})->ArgName("bytes")->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_FileOStream_WriteAll)->Args({4 * 1024})->Args({64 * 1024})->Args({1024 * 1024})->ArgName("bytes")->Unit(benchmark::kMicrosecond);
 
 BENCHMARK_MAIN();

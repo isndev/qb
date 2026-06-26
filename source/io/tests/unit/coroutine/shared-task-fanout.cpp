@@ -70,6 +70,17 @@ compute_after(int value, std::chrono::milliseconds delay) {
     co_return value;
 }
 
+// A free coroutine taking its dependency by reference — NOT an immediately-invoked capturing
+// lambda. An `[&](){...}()` closure is a temporary that dies at the end of the full expression,
+// so a frame that suspends and resumes later would read the captured `&flag` out of the dead
+// closure (stack-use-after-scope). A by-reference parameter instead binds to the caller's live
+// object for the whole frame lifetime, which is the safe way to feed state into a detached frame.
+task<void>
+set_flag_after(std::atomic<bool> &flag, std::chrono::milliseconds delay) {
+    co_await sleep(delay);
+    flag.store(true);
+}
+
 task<int>
 shared_task_thrower() {
     co_await sleep(5ms);
@@ -237,10 +248,7 @@ TEST_F(SharedTaskFanout, AllHandleCopiesDroppedBeforeCompletionStillRunsCleanly)
     std::atomic<bool> ran{false};
 
     {
-        auto sh = make_shared_task([&ran]() -> task<void> {
-            co_await sleep(10ms);
-            ran.store(true);
-        }());
+        auto sh = make_shared_task(set_flag_after(ran, 10ms));
         // sh goes out of scope here — the only remaining owner is the spawned runner.
     }
 

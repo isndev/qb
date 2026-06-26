@@ -1,5 +1,5 @@
 /**
- * @file qb/io/tests/benchmark/bm-json-pipe.cpp
+ * @file qb/io/tests/benchmark/serialization/json-pipe-serialize.cpp
  * @brief Benchmarks for qb JSON pipe serialization workloads.
  *
  * qb-io extends pipe<char> with JSON serialization. These benchmarks exercise
@@ -53,6 +53,18 @@ make_array(std::size_t items) {
     for (std::size_t i = 0; i < items; ++i)
         value.push_back({{"id", i}, {"payload", "item-" + std::to_string(i)}});
     return value;
+}
+
+// Deeply-nested object: each level wraps the previous one under a "child" key,
+// with a couple of scalar siblings. Stresses the recursive descent of both the
+// serializer (pipe.put<json>) and the parser (json::parse) — a different cost
+// profile from the wide flat objects in make_object().
+qb::json
+make_nested(std::size_t depth) {
+    qb::json node = {{"leaf", true}, {"value", 0}};
+    for (std::size_t i = 0; i < depth; ++i)
+        node = {{"level", i}, {"label", "node-" + std::to_string(i)}, {"child", std::move(node)}};
+    return node;
 }
 
 void
@@ -119,11 +131,52 @@ BM_JsonPipe_ParseAndSerialize(benchmark::State &state) {
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(serialized.size()));
 }
 
+// Deserialize-only: isolates the parse half (json::parse) from the serialize half
+// that BM_JsonPipe_ParseAndSerialize bundles together. Useful for attributing a
+// round-trip cost to parsing vs. emitting.
+void
+BM_JsonPipe_Deserialize(benchmark::State &state) {
+    const auto value      = make_object(static_cast<std::size_t>(state.range(0)));
+    const auto serialized = value.dump();
+
+    qb::json parsed;
+    for (auto _ : state) {
+        parsed = qb::json::parse(serialized);
+        benchmark::DoNotOptimize(parsed);
+    }
+
+    // Out-of-loop correctness assert: a parse that silently produced a wrong tree
+    // (or discard_t) would otherwise report bogus throughput.
+    if (parsed != value)
+        state.SkipWithError("json::parse did not reproduce the source document");
+
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(serialized.size()));
+}
+
+// Deeply-nested object serialize: recursive descent cost, distinct from the wide
+// flat objects in BM_JsonPipe_Object.
+void
+BM_JsonPipe_Nested(benchmark::State &state) {
+    const auto                value = make_nested(static_cast<std::size_t>(state.range(0)));
+    qb::allocator::pipe<char> pipe;
+
+    for (auto _ : state) {
+        pipe.reset();
+        pipe.put<qb::json>(value);
+        benchmark::DoNotOptimize(pipe.begin());
+        benchmark::DoNotOptimize(pipe.size());
+    }
+
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(value.dump().size()));
+}
+
 } // namespace
 
 BENCHMARK(BM_JsonPipe_Primitive)->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_JsonPipe_Object)->Args({4})->Args({32})->Args({128})->ArgName("fields")->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_JsonPipe_Array)->Args({16})->Args({256})->Args({1024})->ArgName("items")->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_JsonPipe_ParseAndSerialize)->Args({4})->Args({32})->Args({128})->ArgName("fields")->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_JsonPipe_Deserialize)->Args({4})->Args({32})->Args({128})->ArgName("fields")->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_JsonPipe_Nested)->Args({8})->Args({64})->Args({256})->ArgName("depth")->Unit(benchmark::kMicrosecond);
 
 BENCHMARK_MAIN();
