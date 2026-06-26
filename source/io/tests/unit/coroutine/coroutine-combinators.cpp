@@ -368,6 +368,77 @@ TEST_F(CoroutineCombinators, RaceIsWhenAnyAlias) {
 }
 
 // =============================================================================
+// Regression (audit BUG-1/BUG-3): multi-frame loser reclamation must not UAF
+// =============================================================================
+
+namespace {
+// A MULTI-FRAME inner coroutine: deep -> mid -> leaf, where only the leaf parks on a real timer.
+// The frame the scheduler actually queues when the timer fires is the deepest (leaf) frame, NOT
+// the task<T> root that when_any/cancellable hold. Reclaiming such a loser destroys the whole
+// chain; before the awaiter-destructor unschedule() fix, the queued leaf was freed but left in
+// ready_queue_/in_flight_, so the next run_ready() drain resumed freed memory (ASan BUS/UAF at
+// the scheduler resume site). Named free coroutines — no captured closures.
+task<int>
+mf_leaf(std::chrono::milliseconds d, int tag) {
+    co_await sleep(d);
+    co_return tag;
+}
+task<int>
+mf_mid(std::chrono::milliseconds d, int tag) {
+    co_return co_await mf_leaf(d, tag);
+}
+task<int>
+mf_deep(std::chrono::milliseconds d, int tag) {
+    co_return co_await mf_mid(d, tag);
+}
+} // namespace
+
+// All branches share an identical short delay so the LOSERS' leaf timers fire in the SAME
+// run_ready() drain the winner is decided in — the exact shape that triggered the reclamation UAF.
+TEST_F(CoroutineCombinators, WhenAnyReclaimsMultiFrameLosersWithoutUAF) {
+    std::atomic<bool> done{false};
+    std::atomic<int>  win{-1};
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto r = co_await when_any(mf_deep(5ms, 10), mf_deep(5ms, 20), mf_deep(5ms, 30));
+        win.store(r.get<int>());
+        done.store(true);
+    });
+    ASSERT_TRUE(pump_until([&] { return done.load(); })) << "multi-frame when_any never completed (UAF or hang)";
+    EXPECT_TRUE(win.load() == 10 || win.load() == 20 || win.load() == 30) << "winner value must be one branch tag";
+    coro_scheduler().run_ready(); // drain any deferred destroy — must never touch a freed loser leaf
+}
+
+TEST_F(CoroutineCombinators, RaceReclaimsMultiFrameLosersWithoutUAF) {
+    std::atomic<bool> done{false};
+    std::atomic<int>  win{-1};
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto r = co_await race(mf_deep(5ms, 1), mf_deep(5ms, 2), mf_deep(5ms, 3));
+        win.store(r.get<int>());
+        done.store(true);
+    });
+    ASSERT_TRUE(pump_until([&] { return done.load(); })) << "multi-frame race never completed (UAF or hang)";
+    EXPECT_TRUE(win.load() >= 1 && win.load() <= 3);
+    coro_scheduler().run_ready();
+}
+
+TEST_F(CoroutineCombinators, WhenAnyVectorReclaimsMultiFrameLosersWithoutUAF) {
+    std::atomic<bool> done{false};
+    std::atomic<int>  win{-1};
+    coro_scheduler().spawn([&]() -> task<void> {
+        std::vector<task<int>> tasks;
+        tasks.push_back(mf_deep(5ms, 7));
+        tasks.push_back(mf_deep(5ms, 8));
+        tasks.push_back(mf_deep(5ms, 9));
+        auto r = co_await when_any(std::move(tasks)); // vector form returns std::pair<size_t, std::any>
+        win.store(std::any_cast<int>(r.second));
+        done.store(true);
+    });
+    ASSERT_TRUE(pump_until([&] { return done.load(); })) << "multi-frame when_any(vector) never completed (UAF or hang)";
+    EXPECT_TRUE(win.load() >= 7 && win.load() <= 9);
+    coro_scheduler().run_ready();
+}
+
+// =============================================================================
 // when_any_result API
 // =============================================================================
 

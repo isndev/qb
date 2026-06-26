@@ -213,6 +213,25 @@ struct awaiter_base {
     }
 
     /**
+     * @brief Fully unschedule this coroutine on frame teardown (stronger than unregister).
+     *
+     * Once on_event_ready() has fired, the frame has moved OUT of the suspended set and INTO
+     * the ready queue + in-flight set — it is queued for resume. If the frame is then destroyed
+     * before run_ready() pops it (e.g. a losing `when_any` branch reclaimed in the same drain,
+     * or a cancelled `cancellable_operation`), `unregister_suspended()` alone leaves a DANGLING
+     * handle in those queues for the next drain to resume — a use-after-free. `forget()` scrubs
+     * all three sets (suspended + in-flight + ready queue), so destroying a frame is always safe
+     * regardless of whether its watcher had already fired this tick. Destructors must call this
+     * (not just unregister_suspended) so the queued-leaf-then-destroyed window cannot UAF.
+     */
+    void
+    unschedule() noexcept {
+        if (scheduler_ && handle_) {
+            scheduler_->forget(handle_);
+        }
+    }
+
+    /**
      * @brief Virtual destructor
      */
     virtual ~awaiter_base() = default;
@@ -340,7 +359,7 @@ struct timer_awaiter : awaiter_base {
      * use-after-free.
      */
     ~timer_awaiter() override {
-        unregister_suspended();
+        unschedule(); // full scrub: a fired-but-not-yet-resumed frame must leave ready_queue_/in_flight_ too
         if (yield_only_) {
             return;
         }
@@ -479,7 +498,7 @@ struct socket_awaiter : awaiter_base {
      * use-after-free.
      */
     ~socket_awaiter() override {
-        unregister_suspended();
+        unschedule(); // full scrub: a fired-but-not-yet-resumed frame must leave ready_queue_/in_flight_ too
         if (started_ && ev_is_active(&watcher_)) {
             ev_io_stop(loop_, &watcher_);
             started_ = false;
@@ -598,7 +617,7 @@ struct async_awaiter : awaiter_base {
     }
 
     ~async_awaiter() override {
-        unregister_suspended();
+        unschedule(); // full scrub: a fired-but-not-yet-resumed frame must leave ready_queue_/in_flight_ too
         if (valid_) {
             *valid_ = false;
         }
