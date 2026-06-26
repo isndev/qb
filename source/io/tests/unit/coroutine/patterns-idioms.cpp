@@ -192,13 +192,19 @@ TEST_F(CoroutineSyncPatterns, PipelineWithBackpressure) {
  * @brief Producer never overruns a 3-slot buffer; consumer drains all items. Exactly num_items flow.
  */
 TEST_F(CoroutineSyncPatterns, ProducerConsumerBounded) {
-    constexpr int    num_items   = 10;
-    constexpr int    buffer_size = 3;
-    std::vector<int> buffer;
-    std::atomic<int> produced{0};
-    std::atomic<int> consumed{0};
+    constexpr int     num_items   = 10;
+    constexpr int     buffer_size = 3;
+    std::vector<int>  buffer;
+    std::atomic<int>  produced{0};
+    std::atomic<int>  consumed{0};
+    // Gate on actual coroutine COMPLETION, not an intermediate counter: when `consumed` first hits
+    // num_items the consumer is still parked on its trailing `sleep()` and has NOT yet co_returned.
+    // Returning on the counter alone ends the test with that coroutine still live, so TearDown's
+    // run_for() would resume it and read these now-destroyed stack atomics (ASan: stack-use-after-scope).
+    std::atomic<bool> producer_done{false};
+    std::atomic<bool> consumer_done{false};
 
-    auto producer = [&buffer, &produced]() -> task<void> {
+    auto producer = [&buffer, &produced, &producer_done]() -> task<void> {
         for (int i = 0; i < num_items; ++i) {
             while (static_cast<int>(buffer.size()) >= buffer_size) {
                 co_await sleep(2ms); // backpressure: wait for the consumer to drain
@@ -207,10 +213,11 @@ TEST_F(CoroutineSyncPatterns, ProducerConsumerBounded) {
             produced.fetch_add(1);
             co_await sleep(5ms);
         }
+        producer_done.store(true);
         co_return;
     };
 
-    auto consumer = [&buffer, &consumed]() -> task<void> {
+    auto consumer = [&buffer, &consumed, &consumer_done]() -> task<void> {
         while (consumed.load() < num_items) {
             if (!buffer.empty()) {
                 buffer.erase(buffer.begin());
@@ -218,13 +225,15 @@ TEST_F(CoroutineSyncPatterns, ProducerConsumerBounded) {
             }
             co_await sleep(7ms);
         }
+        consumer_done.store(true);
         co_return;
     };
 
     coro_scheduler().spawn(producer());
     coro_scheduler().spawn(consumer());
 
-    EXPECT_TRUE(pump_until([&] { return consumed.load() == num_items; })) << "producer/consumer never drained";
+    EXPECT_TRUE(pump_until([&] { return producer_done.load() && consumer_done.load(); }))
+        << "producer/consumer never drained";
     EXPECT_EQ(produced.load(), num_items);
     EXPECT_EQ(consumed.load(), num_items);
 }
