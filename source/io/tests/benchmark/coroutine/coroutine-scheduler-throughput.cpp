@@ -1,5 +1,5 @@
 /**
- * @file qb/io/tests/benchmark/bm-coroutine.cpp
+ * @file qb/io/tests/benchmark/coroutine/coroutine-scheduler-throughput.cpp
  * @brief Benchmarks for qb coroutine scheduler and timer workloads.
  *
  * These scenarios replace the former benchmark-style GTest cases. They keep
@@ -224,7 +224,16 @@ BM_Coroutine_NestedAwait(benchmark::State &state) {
 
 } // namespace
 
-BENCHMARK(BM_Coroutine_SpawnImmediate)->Args({100})->Args({1000})->Args({5000})->ArgName("coroutines")->Unit(benchmark::kMicrosecond);
+// UseRealTime(): even though complete_immediately() arms no timer, drain_until()
+// pumps qb::io::async::run_for(1ms), which blocks on wall-clock in libev — so the
+// measured region includes real time the CPU-time clock would under-count.
+BENCHMARK(BM_Coroutine_SpawnImmediate)
+    ->Args({100})
+    ->Args({1000})
+    ->Args({5000})
+    ->ArgName("coroutines")
+    ->Unit(benchmark::kMicrosecond)
+    ->UseRealTime();
 BENCHMARK(BM_Coroutine_LargeFrame)->Args({64})->Args({256})->ArgName("coroutines")->Unit(benchmark::kMicrosecond)->UseRealTime();
 BENCHMARK(BM_Coroutine_ConcurrentTimers)
     ->Args({20, 1})

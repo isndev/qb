@@ -86,16 +86,6 @@ ipv6_loopback_available() {
     return probe.listen_v6(0, "::1") == 0;
 }
 
-int
-select_first_alpn(SSL *, const unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *) {
-    if (!in || inlen == 0) {
-        return SSL_TLSEXT_ERR_NOACK;
-    }
-    *out    = in + 1;
-    *outlen = in[0];
-    return SSL_TLSEXT_ERR_OK;
-}
-
 // Drive the server-side TLS handshake to completion under a wall-clock deadline.
 // De-flaked: a timeout is a LOUD failure naming the stall, never a silent give-up
 // (the original 200×1ms loop simply stopped trying and left the client hanging).

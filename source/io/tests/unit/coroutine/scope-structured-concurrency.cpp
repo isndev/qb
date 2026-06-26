@@ -112,6 +112,39 @@ TEST_F(ScopeStructuredConcurrency, SpawnAndJoinAll) {
     EXPECT_EQ(counter.load(), 3);
 }
 
+// Regression: a worker that throws an UNCAUGHT exception must (1) not wedge join_all (every
+// sibling still drains, active_count reaches 0), and (2) surface the failure to the awaiting
+// join_all() as a rethrow — never a silent swallow nor a hang. Pins the coroutine_scope
+// failure-propagation contract under structured concurrency.
+TEST_F(ScopeStructuredConcurrency, JoinAllRethrowsWorkerExceptionWithoutHanging) {
+    std::atomic<bool> done{false};
+    std::atomic<bool> rethrew{false};
+    std::atomic<int>  sibling_ran{0};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn([]() -> task<void> {
+            co_await sleep(5ms);
+            throw std::runtime_error("worker boom");
+        });
+        scope.spawn([&sibling_ran]() -> task<void> {
+            co_await sleep(10ms);
+            sibling_ran.fetch_add(1); // must still complete despite the sibling throwing
+        });
+        try {
+            co_await scope.join_all();
+        } catch (const std::runtime_error &) {
+            rethrew.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); }))
+        << "join_all hung on a throwing worker (coroutine_scope failure-propagation deadlock)";
+    EXPECT_EQ(sibling_ran.load(), 1) << "a sibling worker must still drain when another throws";
+    EXPECT_TRUE(rethrew.load()) << "join_all must rethrow the worker's uncaught exception";
+}
+
 TEST_F(ScopeStructuredConcurrency, JoinAnyReturnsFirstCompletedIndex) {
     std::atomic<bool>   done{false};
     std::atomic<size_t> index{99};

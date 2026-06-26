@@ -1,5 +1,5 @@
 /**
- * @file qb/io/tests/benchmark/bm-crypto.cpp
+ * @file qb/io/tests/benchmark/crypto/crypto-primitives.cpp
  * @brief Benchmarks for qb crypto helpers backed by OpenSSL.
  *
  * Crypto is optional and only built when QB_HAS_SSL is enabled. The scenarios
@@ -93,9 +93,15 @@ void
 BM_Crypto_Sha512Stream(benchmark::State &state) {
     const auto data = as_string(make_bytes(static_cast<std::size_t>(state.range(0))));
 
+    // Hoist the istringstream construction (which copies `data` into the stream
+    // buffer) OUT of the timed loop. Each iteration only rewinds it (O(1)) so
+    // the measurement isolates the digest itself, not stream-buffer allocation.
+    std::istringstream stream(data);
+
     for (auto _ : state) {
-        std::istringstream stream(data);
-        auto               digest = qb::crypto::sha512(stream);
+        stream.clear();
+        stream.seekg(0);
+        auto digest = qb::crypto::sha512(stream);
         benchmark::DoNotOptimize(digest.data());
         benchmark::DoNotOptimize(digest.size());
     }
@@ -139,11 +145,17 @@ BM_Crypto_AesGcmDecrypt(benchmark::State &state) {
     const auto iv        = qb::crypto::generate_iv(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
     const auto encrypted = qb::crypto::encrypt(data, key, iv, qb::crypto::SymmetricAlgorithm::AES_256_GCM);
 
+    std::vector<unsigned char> last;
     for (auto _ : state) {
-        auto decrypted = qb::crypto::decrypt(encrypted, key, iv, qb::crypto::SymmetricAlgorithm::AES_256_GCM);
-        benchmark::DoNotOptimize(decrypted.data());
-        benchmark::DoNotOptimize(decrypted.size());
+        last = qb::crypto::decrypt(encrypted, key, iv, qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+        benchmark::DoNotOptimize(last.data());
+        benchmark::DoNotOptimize(last.size());
     }
+
+    // Out-of-loop correctness assert: a benchmark that silently decrypts to the
+    // wrong (or empty) plaintext would otherwise post bogus throughput numbers.
+    if (last != data)
+        state.SkipWithError("AES-GCM decrypt did not round-trip the plaintext");
 
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(data.size()));
 }
@@ -207,11 +219,16 @@ BM_Crypto_EciesDecrypt(benchmark::State &state) {
     const auto keys      = qb::crypto::generate_x25519_keypair_bytes();
     const auto encrypted = qb::crypto::ecies_encrypt(data, keys.second, {}, qb::crypto::ECIESMode::AES_GCM);
 
+    std::vector<unsigned char> last;
     for (auto _ : state) {
-        auto decrypted = qb::crypto::ecies_decrypt(encrypted.second, encrypted.first, keys.first, {}, qb::crypto::ECIESMode::AES_GCM);
-        benchmark::DoNotOptimize(decrypted.data());
-        benchmark::DoNotOptimize(decrypted.size());
+        last = qb::crypto::ecies_decrypt(encrypted.second, encrypted.first, keys.first, {}, qb::crypto::ECIESMode::AES_GCM);
+        benchmark::DoNotOptimize(last.data());
+        benchmark::DoNotOptimize(last.size());
     }
+
+    // Out-of-loop correctness assert: ECIES decrypt must reproduce the plaintext.
+    if (last != data)
+        state.SkipWithError("ECIES decrypt did not round-trip the plaintext");
 
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(data.size()));
 }

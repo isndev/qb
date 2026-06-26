@@ -1,5 +1,5 @@
 /**
- * @file qb/io/tests/benchmark/bm-pipe-buffer.cpp
+ * @file qb/io/tests/benchmark/io/pipe-buffer-throughput.cpp
  * @brief Benchmarks for qb::allocator::pipe<char> IO buffer workloads.
  *
  * The IO layer uses pipe<char> as the hot buffer for transport reads, writes,
@@ -114,11 +114,43 @@ BM_Pipe_GrowLargeFrame(benchmark::State &state) {
     state.SetItemsProcessed(state.iterations());
 }
 
+// Fragmentation pattern: drain the front in a SMALLER stride than we append at
+// the back, so the live window slides forward across the buffer and forces the
+// allocator's reorder()/compaction path — the realistic shape of a transport
+// that consumes partial frames while more bytes keep arriving.
+void
+BM_Pipe_FragmentedSlidingWindow(benchmark::State &state) {
+    const auto chunk_size = static_cast<std::size_t>(state.range(0));
+    const auto drain_size = std::max<std::size_t>(chunk_size / 4u, 1u); // drain < append
+    const auto payload    = make_payload(chunk_size);
+
+    qb::allocator::pipe<char> pipe;
+    std::memcpy(pipe.allocate_back(chunk_size), payload.data(), chunk_size);
+
+    for (auto _ : state) {
+        pipe.free_front(std::min<std::size_t>(drain_size, pipe.size()));
+        std::memcpy(pipe.allocate_back(chunk_size), payload.data(), chunk_size);
+        benchmark::DoNotOptimize(pipe.begin());
+        benchmark::DoNotOptimize(pipe.size());
+
+        // Cap unbounded growth: once the live window is large, fully drain it so
+        // the next round starts the slide again (mirrors a flushed connection).
+        if (pipe.size() > chunk_size * 16u) {
+            pipe.free_front(pipe.size());
+            std::memcpy(pipe.allocate_back(chunk_size), payload.data(), chunk_size);
+        }
+    }
+
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(chunk_size));
+    state.SetItemsProcessed(state.iterations());
+}
+
 } // namespace
 
 BENCHMARK(BM_Pipe_AppendReset)->Args({64})->Args({1024})->Args({16 * 1024})->ArgNames({"bytes"})->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Pipe_PublishStylePut)->Args({64})->Args({1024})->Args({16 * 1024})->ArgNames({"bytes"})->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Pipe_ConsumeAndReuseWindow)->Args({64})->Args({1024})->Args({16 * 1024})->ArgNames({"chunk_bytes"})->Unit(benchmark::kNanosecond);
+BENCHMARK(BM_Pipe_FragmentedSlidingWindow)->Args({64})->Args({1024})->Args({16 * 1024})->ArgNames({"chunk_bytes"})->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Pipe_GrowLargeFrame)
     ->Args({4 * 1024})
     ->Args({64 * 1024})

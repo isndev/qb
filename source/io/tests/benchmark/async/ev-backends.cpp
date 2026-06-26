@@ -1,5 +1,5 @@
 /**
- * @file qb/io/tests/benchmark/bm-ev-backends.cpp
+ * @file qb/io/tests/benchmark/async/ev-backends.cpp
  * @brief Cross-backend libev stress benchmark — finds the best backend on THIS machine.
  *
  * Unlike the per-backend ctest matrix (which forces one backend per process via
@@ -292,6 +292,12 @@ main(int argc, char **argv) {
         ::setrlimit(RLIMIT_NOFILE, &rl);
     }
     std::printf("libev supported backends = 0x%x\n", ev_supported_backends());
+    /* Winner-summary hint: name the backend libev auto-selected for the default
+     * loop on THIS machine — at the largest ActiveFew/N it is also the row with
+     * the highest items_per_second and the flattest scaling vs N. */
+    if (struct ev_loop *def = ev_default_loop(0)) {
+        std::printf("libev default (recommended) backend = %s\n", backend_name(ev_backend(def)));
+    }
     register_all();
 #endif
     benchmark::Initialize(&argc, argv);

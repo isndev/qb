@@ -1,11 +1,11 @@
 /**
- * @file qb/io/tests/benchmark/bm-io-plan.cpp
- * @brief Benchmarks for async IO hot paths tracked by QB_IO_PLAN.
+ * @file qb/io/tests/benchmark/async/async-hotpaths.cpp
+ * @brief Benchmarks for the qb-io async event-loop hot paths.
  *
- * These benchmarks keep the former IO micro-benchmarks under the same Google
- * Benchmark and CMake conventions as qb-core benchmarks. They focus on
- * allocation-heavy async paths: listener event registration, immediate
- * callbacks, scoped callbacks, and broadcast scratch reuse.
+ * These benchmarks isolate the allocation-heavy async paths that gate every
+ * higher-level transport: listener event registration/unregistration (single
+ * and batched), immediate (zero-delay) callbacks, delayed (non-zero-delay)
+ * callbacks driven to completion through the loop, and scoped (RAII) callbacks.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -27,7 +27,6 @@
 #include <benchmark/benchmark.h>
 #include <chrono>
 #include <cstddef>
-#include <memory>
 #include <vector>
 
 #include <qb/io/async.h>
@@ -46,20 +45,6 @@ struct NopActor {
     on(qb::io::async::event::timer const &) noexcept {}
 };
 
-class DummySession {
-public:
-    explicit DummySession(int id = 0) noexcept
-        : _id(id) {}
-
-    [[nodiscard]] int
-    id() const noexcept {
-        return _id;
-    }
-
-private:
-    int _id;
-};
-
 void
 BM_Listener_RegisterUnregister(benchmark::State &state) {
     qb::io::async::init();
@@ -74,6 +59,36 @@ BM_Listener_RegisterUnregister(benchmark::State &state) {
 
     listener.clear();
     state.SetItemsProcessed(state.iterations());
+}
+
+// Batched registration: register N watchers, then unregister all N. Exercises
+// the listener's per-event slot allocator under churn (the pattern a server
+// hits when a burst of connections registers their io/timer watchers in one
+// loop tick), rather than the steady-state single register/unregister above.
+void
+BM_Listener_RegisterUnregister_Batch(benchmark::State &state) {
+    qb::io::async::init();
+    NopActor   actor;
+    auto      &listener = qb::io::async::listener::current;
+    const auto count    = static_cast<std::size_t>(state.range(0));
+
+    std::vector<qb::io::async::IRegisteredKernelEvent *> handles;
+    handles.reserve(count);
+
+    for (auto _ : state) {
+        for (std::size_t i = 0; i < count; ++i) {
+            auto &ev =
+                listener.registerEvent<qb::io::async::event::io>(actor, -1, EV_NONE);
+            handles.push_back(ev._interface);
+        }
+        benchmark::DoNotOptimize(handles.data());
+        for (auto *h : handles)
+            listener.unregisterEvent(h);
+        handles.clear();
+    }
+
+    listener.clear();
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(count));
 }
 
 void
@@ -105,50 +120,58 @@ BM_ScopedCallback_ConstructCancel(benchmark::State &state) {
     state.SetItemsProcessed(state.iterations());
 }
 
+// Non-zero-delay callback driven to completion through the event loop. Unlike
+// BM_AsyncCallback_ImmediateFire (which takes the inline d<=0 fast path and never
+// arms a libev timer), this schedules a real `Timeout<>` watcher and pumps the
+// loop until it fires — exercising the timer arm + ev_now_update + dispatch path.
+// This is wall-clock bound by `delay_us`, so it must run with UseRealTime().
 void
-BM_BroadcastScratch_Reuse(benchmark::State &state) {
-    const auto sessions = static_cast<std::size_t>(state.range(0));
+BM_AsyncCallback_DelayedFire(benchmark::State &state) {
+    qb::io::async::init();
+    const auto delay = std::chrono::microseconds(state.range(0));
+    auto      &listener = qb::io::async::listener::current;
 
-    std::vector<std::unique_ptr<DummySession>> owned;
-    owned.reserve(sessions);
-    for (std::size_t i = 0; i < sessions; ++i)
-        owned.push_back(std::make_unique<DummySession>(static_cast<int>(i)));
-
-    std::vector<DummySession *> pool;
-    pool.reserve(sessions);
-    for (auto &session : owned)
-        pool.push_back(session.get());
-
-    std::vector<DummySession *> scratch;
-    scratch.reserve(sessions);
-
-    std::size_t touched = 0;
+    std::atomic<std::size_t> counter{0};
+    std::size_t              expected = 0;
     for (auto _ : state) {
-        scratch.clear();
-        for (auto *session : pool)
-            scratch.push_back(session);
-
-        for (auto *session : scratch)
-            touched += static_cast<std::size_t>(session->id() & 1);
-
-        benchmark::DoNotOptimize(touched);
-        benchmark::ClobberMemory();
+        const auto before = counter.load(std::memory_order_relaxed);
+        qb::io::async::callback([&counter] { counter.fetch_add(1, std::memory_order_relaxed); },
+                                delay);
+        // Pump the loop until the timer fires (guarded so a broken timer can't
+        // hang the harness forever).
+        long guard = 0;
+        while (counter.load(std::memory_order_relaxed) == before && ++guard < 4000000L)
+            listener.run(EVRUN_NOWAIT);
+        ++expected;
     }
 
-    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(sessions));
+    // Out-of-loop correctness assert: every scheduled callback must have fired,
+    // otherwise the benchmark is measuring a no-op.
+    if (counter.load(std::memory_order_relaxed) != expected)
+        state.SkipWithError("delayed callback did not fire for every iteration");
+
+    benchmark::DoNotOptimize(counter);
+    listener.clear();
+    state.SetItemsProcessed(state.iterations());
 }
 
 } // namespace
 
 BENCHMARK(BM_Listener_RegisterUnregister)->Unit(benchmark::kNanosecond)->UseRealTime();
-BENCHMARK(BM_AsyncCallback_ImmediateFire)->Unit(benchmark::kNanosecond)->UseRealTime();
-BENCHMARK(BM_ScopedCallback_ConstructCancel)->Unit(benchmark::kNanosecond)->UseRealTime();
-BENCHMARK(BM_BroadcastScratch_Reuse)
-    ->Args({16})
-    ->Args({256})
-    ->Args({4096})
-    ->ArgNames({"sessions"})
+BENCHMARK(BM_Listener_RegisterUnregister_Batch)
+    ->Arg(16)
+    ->Arg(256)
+    ->Arg(4096)
+    ->ArgName("watchers")
     ->Unit(benchmark::kNanosecond)
     ->UseRealTime();
+BENCHMARK(BM_AsyncCallback_ImmediateFire)->Unit(benchmark::kNanosecond)->UseRealTime();
+BENCHMARK(BM_AsyncCallback_DelayedFire)
+    ->Arg(100)
+    ->Arg(1000)
+    ->ArgName("delay_us")
+    ->Unit(benchmark::kMicrosecond)
+    ->UseRealTime();
+BENCHMARK(BM_ScopedCallback_ConstructCancel)->Unit(benchmark::kNanosecond)->UseRealTime();
 
 BENCHMARK_MAIN();
