@@ -368,6 +368,9 @@ crypto::decrypt(const std::vector<unsigned char> &ciphertext, const std::vector<
         if (ret != 1) {
             // Authentication failed or padding error
             if (is_aead) {
+                EVP_CIPHER_CTX_free(ctx); // AEAD auth failure returns empty rather than throwing —
+                                          // free the context here so this path does not leak it
+                                          // (the throw path below is freed by the catch).
                 return std::vector<unsigned char>(); // Return empty vector on auth
                                                      // failure
             } else {
