@@ -48,11 +48,13 @@
 #include <qb/io/tcp/socket.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/loopback_fixture.h"
 
 using namespace qb::io;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
 using qb::io::test::reset_async_context;
+using qb::io::test::reserve_free_tcp_port;
 
 namespace {
 
@@ -160,4 +162,47 @@ TEST_F(ConnectorAsyncTest, MovedInSocketConnectsAndEchoesByte) {
     EXPECT_TRUE(echoed) << "connected moved-in socket did not round-trip the echo byte";
 
     server.join();
+}
+
+// =============================================================================
+// Failure path: a connect to a port with no listener completes through the
+// connector's failure machinery and hands the caller a CLOSED socket.
+//
+// The success cases above only walk `finalize_transport_connect()==done` and
+// `deliver(std::move(socket_))`. This case drives the other tail of the
+// connector: an unconnectable loopback target makes the non-blocking connect
+// fail (synchronously as ECONNREFUSED, or asynchronously via the writable
+// event with SO_ERROR set), which routes through `deliver_failure_deferred()`
+// / the `on()` error branch and `deliver(Socket_{})`. The callback must still
+// be delivered exactly once, from the loop, with a NON-open socket. No server
+// thread is needed — the whole point is that nothing is listening.
+//
+// The target port is reserved via the shared loopback helper (bind :0, read
+// the kernel assignment, close) so it is almost certainly unbound for the
+// brief connect window — and on loopback a connect to an unbound port refuses
+// immediately rather than hanging, keeping this deterministic under a bounded
+// pump. A generous 2s timeout is supplied purely as a backstop; the refusal,
+// not the deadline, is what completes the connect.
+// =============================================================================
+
+TEST_F(ConnectorAsyncTest, ConnectToUnlistenedPortDeliversClosedSocket) {
+    const auto port = reserve_free_tcp_port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> done{false};
+    bool              callback_socket_open = true; // must be flipped to false
+    int               callbacks            = 0;
+
+    async::tcp::connect<qb::io::tcp::socket>(
+        uri{"tcp://127.0.0.1:" + std::to_string(port)},
+        [&](qb::io::tcp::socket &&sock) {
+            ++callbacks;
+            callback_socket_open = sock.is_open();
+            done                 = true;
+        },
+        2s);
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "failed-connect callback never delivered";
+    EXPECT_EQ(callbacks, 1) << "connector must deliver its completion callback exactly once";
+    EXPECT_FALSE(callback_socket_open) << "a refused connect must hand back a closed socket";
 }

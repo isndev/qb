@@ -1177,3 +1177,106 @@ TEST(QuicAdapterEndpoint, SendStreamDataSpanOverloadTargetsConnectionZero) {
     EXPECT_EQ(raw->sent_stream_bytes, 3u);
     EXPECT_TRUE(raw->sent_stream_fin);
 }
+
+// =============================================================================
+// UDP FLUSH EDGE CASES — addressless packet skip + hard write failure
+// =============================================================================
+
+/**
+ * @test flush_udp_packets silently drops a queued packet that has no remote address
+ * @brief A backend can legitimately enqueue a packet whose `remote` endpoint is unset (default
+ *        AF_UNSPEC) — there is nowhere to send it, so flush_udp_packets must pop and skip it without
+ *        touching the socket, without erroring, and without closing the endpoint. A second, properly
+ *        addressed packet that follows it is still flushed, proving the skip is a `continue`, not a
+ *        `break`. Covers the `!pkt.remote` early-skip branch of flush_udp_packets that every other
+ *        adapter test (which only ever queues addressed packets) leaves uncovered.
+ */
+TEST(QuicAdapterEndpoint, FlushUdpPacketsSkipsPacketWithoutRemoteAddress) {
+    FakeQuicBackend              *raw = nullptr;
+    qb::io::async::quic::endpoint endpoint{make_fake(raw)};
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    ASSERT_TRUE(endpoint.is_open());
+
+    // First packet: no remote endpoint set -> must be skipped (popped, not sent).
+    qb::io::quic::packet addressless;
+    EXPECT_FALSE(static_cast<bool>(addressless.remote)) << "a default packet has an unset (AF_UNSPEC) remote";
+    addressless.payload.assign(4, std::byte{'x'});
+
+    // Second packet: properly addressed to the connect() remote -> must still be flushed after the skip.
+    qb::io::quic::packet addressed;
+    addressed.remote = raw->last_remote;
+    addressed.local  = raw->last_local;
+    addressed.payload.assign(3, std::byte{'y'});
+
+    raw->queued_packets.push_back(std::move(addressless));
+    raw->queued_packets.push_back(std::move(addressed));
+
+    endpoint.poll();
+
+    // The skip is a continue, not a break: both packets left the pending queue and the endpoint is
+    // untouched (still open, still connecting — the addressless packet caused no failure path).
+    EXPECT_TRUE(endpoint.is_open());
+    EXPECT_EQ(endpoint.current_state(), State::connecting);
+}
+
+/**
+ * @test A non-transient UDP write error trips fail_transport and closes the endpoint
+ * @brief flush_udp_packets routes a *hard* (non-would-block) socket write error through
+ *        fail_transport: a queued packet whose payload exceeds the maximum UDP datagram size makes the
+ *        real bound socket's sendto fail with EMSGSIZE, which is NOT a would-block error
+ *        (not_send_error == false). fail_transport must then clear the pending queue, close the socket,
+ *        flip the endpoint to closed/!open, and dispatch a connection_closed carrying the transport_error
+ *        reason and the "QUIC UDP write failed" phrase. This is the only deterministic driver for the
+ *        fail_transport / hard-write-error branch (every other test queues sendable payloads).
+ */
+TEST(QuicAdapterEndpoint, OversizedUdpPacketTripsTransportFailureAndClosesEndpoint) {
+    FakeQuicBackend   *raw = nullptr;
+    CallbackQuicClient client{make_fake(raw)};
+
+    ASSERT_TRUE(client.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    ASSERT_TRUE(client.is_open());
+    EXPECT_EQ(client.current_state(), State::connecting);
+
+    // Payload larger than the UDP datagram ceiling -> sendto() fails with EMSGSIZE (a fatal, not a
+    // would-block, error) on the real bound socket the facade opened during connect().
+    qb::io::quic::packet oversized;
+    oversized.remote = raw->last_remote;
+    oversized.local  = raw->last_local;
+    oversized.payload.assign(qb::io::udp::socket::MaxDatagramSize + 8192, std::byte{'z'});
+    raw->queued_packets.push_back(std::move(oversized));
+
+    client.poll();
+
+    // fail_transport ran: endpoint closed, queue cleared, and the close was reported with the
+    // transport_error reason + the documented phrase (connection_id 0).
+    EXPECT_FALSE(client.is_open());
+    EXPECT_EQ(client.current_state(), State::closed);
+    EXPECT_EQ(client.closed, 1);
+    EXPECT_EQ(client.last_close_reason, qb::io::quic::disconnect_reason::transport_error);
+    EXPECT_EQ(client.last_reason_phrase, "QUIC UDP write failed");
+}
+
+// =============================================================================
+// BUILD-CONFIG AVAILABILITY PROBES (qb::io::quic::types.h)
+// =============================================================================
+
+/**
+ * @test available() and unavailable_reason() agree on the build's QUIC capability
+ * @brief The two free probes in quic/types.h are each other's complement: when QUIC is compiled in
+ *        (QB_HAS_QUIC), available() is true and unavailable_reason() is the empty string; otherwise
+ *        available() is false and unavailable_reason() carries a non-empty diagnostic. This is the only
+ *        case that calls unavailable_reason() directly — ensure_backend() only reaches it on the
+ *        !available() path, which is dead on a QUIC-enabled build. The assertion is written against the
+ *        invariant (complementary), so it holds under either configuration.
+ */
+TEST(QuicAdapterEndpoint, QuicAvailabilityProbesAreComplementary) {
+    const bool        available = qb::io::quic::available();
+    const std::string reason    = qb::io::quic::unavailable_reason();
+
+    if (available) {
+        EXPECT_TRUE(reason.empty()) << "an available QUIC build has no unavailability reason";
+    } else {
+        EXPECT_FALSE(reason.empty()) << "an unavailable QUIC build must explain why";
+    }
+}
