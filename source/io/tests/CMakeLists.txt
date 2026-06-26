@@ -23,11 +23,12 @@
 # tests for the IO library features.
 # -----------------------------------------------------------------------------
 
-# Add system tests for the IO library
+# Tiered test tree (docs/tests-audit/_spec-qb-io.md): unit/ (pure logic, daemon-free) +
+# system/ (event loop on kernel objects / loopback). The legacy flat coroutine/ dir is kept
+# transitionally for the monoliths still being decomposed by the split wave.
+add_subdirectory(unit)
 add_subdirectory(system)
-
-# Add coroutine tests
-add_subdirectory(coroutine)
+add_subdirectory(coroutine)   # TRANSITIONAL — split-pending coroutine monoliths
 
 # Add performance benchmarks if benchmarking is enabled
 if (QB_BUILD_BENCHMARKS)

@@ -845,9 +845,11 @@ TEST(SelfLocate, SelfPathPointsAtThisExecutable) {
     std::error_code ec;
     EXPECT_TRUE(std::filesystem::exists(exe, ec)) << exe.string();
     EXPECT_TRUE(std::filesystem::is_regular_file(exe, ec));
-    // The filename should be this test binary (allow an optional .exe suffix on Windows).
+    // The filename must be a (this) test binary — assert the stable "test" marker rather than a
+    // specific name, so the assertion survives target renames (the binary is qb-io-test-<tier>-<name>).
     const std::string stem = exe.stem().string();
-    EXPECT_NE(stem.find("test-file-operations"), std::string::npos) << exe.string();
+    EXPECT_FALSE(stem.empty()) << exe.string();
+    EXPECT_NE(stem.find("test"), std::string::npos) << "self_path() must point at this test binary: " << exe.string();
 }
 
 TEST(SelfLocate, SelfDirIsTheParentOfSelfPath) {

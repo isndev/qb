@@ -523,9 +523,11 @@ protected:
 };
 
 /**
- * @test when_any first task completes instantly
- * @brief The winner finishes immediately; the other slow tasks must still clean
- *        up safely without crashing even after the awaiter is destroyed.
+ * @test when_any first task completes instantly; the losing branches are reclaimed
+ * @brief The instant winner finishes before the slow branches even start their sleep;
+ *        when_any tears the losers down (frame + timer) instead of letting them run to
+ *        completion, so only the winner's body runs. Validates the detached-frame
+ *        reclamation fix (losers no longer run detached — finding 2.B.3, superseded).
  */
 TEST_F(CoroutineLifetime, WhenAnyFirstTaskImmediateOthersLong) {
     std::atomic<bool> done{false};
@@ -551,13 +553,16 @@ TEST_F(CoroutineLifetime, WhenAnyFirstTaskImmediateOthersLong) {
     coro_scheduler().spawn(coro_fn());
     run_for(200ms);
     EXPECT_TRUE(done);
-    // All three tasks (winner + 2 losers) must have run to completion.
-    EXPECT_EQ(completed_count.load(), 3);
+    // Only the winner ran: the two slow losers were torn down before their sleep
+    // could resume (pre-fix this was 3 — winner + 2 losers run to completion).
+    EXPECT_EQ(completed_count.load(), 1);
 }
 
 /**
  * @test when_any all tasks complete at the same "tick"
- * @brief No delay: tests the atomic compare_exchange_strong first-winner logic.
+ * @brief No delay: tests the first-winner logic. The branches are spawned (queued) but
+ *        not yet run when the first-popped branch wins instantly, so the winner reclaims
+ *        the other two before they ever execute — only one branch body runs.
  */
 TEST_F(CoroutineLifetime, WhenAnyAllImmediate) {
     std::atomic<bool> done{false};
@@ -578,7 +583,8 @@ TEST_F(CoroutineLifetime, WhenAnyAllImmediate) {
     coro_scheduler().spawn(coro_fn());
     run_for(50ms);
     EXPECT_TRUE(done);
-    EXPECT_EQ(run_count.load(), 3);
+    // The winner reclaims the still-queued losers before they run (pre-fix this was 3).
+    EXPECT_EQ(run_count.load(), 1);
 }
 
 /**
@@ -697,7 +703,186 @@ TEST_F(CoroutineLifetime, WhenAnyVectorFirstWins) {
     coro_scheduler().spawn(coro_fn());
     run_for(200ms);
     EXPECT_TRUE(done);
-    EXPECT_EQ(count.load(), 3);
+    // Vector when_any reclaims the losing branches on win, same as the variadic version:
+    // only the instant winner ran (pre-fix this was 3 — losers ran to completion).
+    EXPECT_EQ(count.load(), 1);
+}
+
+// =============================================================================
+// Detached-frame reclamation: when_any tears down the losing branches the instant
+// a winner is decided. The oracle is `live_frames` returning to baseline AFTER the
+// winner resolves but LONG BEFORE the losers' (multi-second) sleeps could complete:
+// pre-fix each loser left its run_one frame + inner task frame + armed ev_timer
+// parked here; post-fix every loser frame/timer is reclaimed on win.
+// =============================================================================
+
+/**
+ * @test when_any reclaims losing branch frames + timers on win (variadic)
+ */
+TEST_F(CoroutineLifetime, WhenAnyLosersReclaimedNoLeak) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> done{false};
+
+    auto fast = []() -> task<int> {
+        co_await sleep(5ms);
+        co_return 1;
+    };
+    auto slow = []() -> task<int> {
+        co_await sleep(5000ms); // far longer than the run window — would leak if not torn down
+        co_return 2;
+    };
+
+    auto coro_fn = [&]() -> task<void> {
+        auto res = co_await when_any(fast(), slow(), slow());
+        EXPECT_EQ(res.index, 0u);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(300ms);
+    coro_scheduler().run_ready(); // drain the winner's final-suspend defer-destroy
+    EXPECT_TRUE(done);
+    const long after = detail::CoroutineFrameAllocator::live_frames;
+    EXPECT_EQ(after, baseline) << "when_any leaked " << (after - baseline) << " losing-branch frame(s) — losers must be reclaimed on win";
+}
+
+/**
+ * @test when_any (vector overload) reclaims losing branch frames + timers on win
+ */
+TEST_F(CoroutineLifetime, WhenAnyVectorLosersReclaimedNoLeak) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> done{false};
+
+    auto make = [](int ms) -> task<int> {
+        co_await sleep(std::chrono::milliseconds(ms));
+        co_return ms;
+    };
+
+    auto coro_fn = [&]() -> task<void> {
+        std::vector<task<int>> tasks;
+        tasks.push_back(make(5));    // winner
+        tasks.push_back(make(5000)); // loser — must not linger
+        tasks.push_back(make(5000)); // loser — must not linger
+        auto res = co_await when_any(std::move(tasks));
+        EXPECT_EQ(res.first, 0u);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(300ms);
+    coro_scheduler().run_ready();
+    EXPECT_TRUE(done);
+    const long after = detail::CoroutineFrameAllocator::live_frames;
+    EXPECT_EQ(after, baseline) << "when_any(vector) leaked " << (after - baseline) << " losing-branch frame(s)";
+}
+
+/**
+ * @test coro_with_timeout leaves no zombie timeout watcher when the operation wins
+ * @brief The inner task completes (~10ms) far before a far-off timeout (10s). With the old
+ *        design the timeout was a spawned `co_await sleep(timeout)` coroutine that stayed
+ *        parked on its sleep for the FULL 10s after the task won — leaking its frame + the
+ *        ev_timer it was parked on for the rest of the timeout window. The raw self-stopping
+ *        ev_timer is instead stopped in finish() the instant the awaiter resumes. Oracle:
+ *        live_frames returns to baseline long before the timeout would have elapsed.
+ *        (Mirror of WithDeadlineTests.WithDeadlineOperationWonTimerReclaimedNoLeak.)
+ */
+TEST_F(CoroutineLifetime, WithTimeoutOperationWonNoZombieTimer) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> done{false};
+
+    auto coro_fn = [&]() -> task<void> {
+        auto result = co_await coro_with_timeout(
+            []() -> task<int> {
+                co_await sleep(10ms);
+                co_return 7;
+            }(),
+            10000ms); // far off — pre-fix the timeout coroutine lingers here for 10s
+        EXPECT_EQ(result, 7);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(150ms);
+    coro_scheduler().run_ready(); // drain the winner's final-suspend defer-destroy
+    EXPECT_TRUE(done);
+    const long after = detail::CoroutineFrameAllocator::live_frames;
+    EXPECT_EQ(after, baseline) << "coro_with_timeout leaked " << (after - baseline)
+                               << " frame(s) — the timeout watcher must be stopped when the operation wins, "
+                                  "not left parked for the rest of the timeout window";
+}
+
+/**
+ * @test coro_with_timeout (void overload) leaves no zombie timeout watcher when the op wins
+ * @brief Same oracle as the non-void case, exercising timeout_awaiter<void>.
+ */
+TEST_F(CoroutineLifetime, WithTimeoutVoidOperationWonNoZombieTimer) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> done{false};
+
+    auto coro_fn = [&]() -> task<void> {
+        co_await coro_with_timeout(
+            []() -> task<void> {
+                co_await sleep(10ms);
+            }(),
+            10000ms);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(150ms);
+    coro_scheduler().run_ready();
+    EXPECT_TRUE(done);
+    const long after = detail::CoroutineFrameAllocator::live_frames;
+    EXPECT_EQ(after, baseline) << "coro_with_timeout<void> leaked " << (after - baseline) << " frame(s)";
+}
+
+// Free-function coroutines (not lambdas) for the nested-race test: a lambda
+// coroutine's closure would have to outlive the frame, which is fiddly here.
+namespace {
+task<int>
+nested_slow_5s() {
+    co_await sleep(5000ms);
+    co_return 9;
+}
+task<int>
+nested_inner_race() {
+    // Parks on an inner when_any that never wins in the test window; when the OUTER
+    // when_any reclaims this branch, destroying this frame runs the inner
+    // when_any_awaiter destructor → reclaim_all() tears down the two slow branches.
+    auto r = co_await when_any(nested_slow_5s(), nested_slow_5s());
+    co_return r.get<int>();
+}
+task<int>
+nested_fast_5ms() {
+    co_await sleep(5ms);
+    co_return 1;
+}
+} // namespace
+
+/**
+ * @test when_any reclaims a losing branch that is itself parked on a nested when_any
+ * @brief Exercises the awaiter-destructor (reclaim_all) path: the outer race's loser is
+ *        an inner when_any over two long sleeps. On the outer winner, reclaiming that
+ *        branch destroys the inner when_any_awaiter, which must tear down its own still
+ *        -parked branches. Oracle: live_frames returns to baseline (whole nest reclaimed).
+ */
+TEST_F(CoroutineLifetime, WhenAnyNestedLoserDtorReclaimsNoLeak) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> done{false};
+
+    auto coro_fn = [&]() -> task<void> {
+        auto res = co_await when_any(nested_fast_5ms(), nested_inner_race());
+        EXPECT_EQ(res.index, 0u);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(300ms);
+    coro_scheduler().run_ready();
+    EXPECT_TRUE(done);
+    const long after = detail::CoroutineFrameAllocator::live_frames;
+    EXPECT_EQ(after, baseline) << "nested when_any leaked " << (after - baseline)
+                               << " frame(s) — the inner race's branches must be reclaimed via the awaiter dtor";
 }
 
 // =============================================================================
