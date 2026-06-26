@@ -160,14 +160,41 @@ public:
         // class carries two intrusive-list pointers, so the storage is
         // available). No per-block header, no extra allocation.
         //
-        // The pool deliberately does *not* release its blocks on thread
-        // termination: the operating system reclaims the entire thread
-        // allocation at exit, and the class's operator delete may outlive
-        // the listener TLS slot, so chaining to a destroyed TLS would risk
-        // use-after-free. The cost of keeping the pool linked is O(N)
-        // pointers — negligible.
+        // Thread-exit draining (mirrors detail::CoroutineFrameAllocator): the
+        // pool is a thread_local RAII holder whose destructor returns every
+        // parked block to the global allocator at thread termination. The main
+        // thread keeps its pool reachable until process exit, but a *joined
+        // worker* thread abandons its TLS — without draining, any block parked
+        // here at exit (e.g. a watcher freed during `listener::clear()`) is lost
+        // and reported as a leak. A separate `_pool_alive()` guard (a trivially
+        // destructible bool that outlives the holder in TLS-teardown order) lets
+        // an `operator delete` that runs *after* the holder was destroyed —
+        // exactly the case when `~listener` frees a still-registered watcher,
+        // its own freelist TLS having been torn down first — bypass the dead
+        // free-list and go straight to the global allocator instead of pushing
+        // onto destroyed storage. This is what makes the teardown delete free to
+        // the OS rather than re-leak the block.
+        static bool &
+        _pool_alive() noexcept {
+            thread_local bool alive = false;
+            return alive;
+        }
+
         struct FreeList {
             void *head = nullptr;
+            FreeList() noexcept {
+                _pool_alive() = true;
+            }
+            ~FreeList() noexcept {
+                _pool_alive() = false;
+                void *p       = head;
+                while (p) {
+                    void *next = *static_cast<void **>(p);
+                    ::operator delete(p, sizeof(RegisteredKernelEvent), std::align_val_t{alignof(RegisteredKernelEvent)});
+                    p = next;
+                }
+                head = nullptr;
+            }
         };
 
         static FreeList &
@@ -179,6 +206,10 @@ public:
     public:
         static void *
         operator new(std::size_t sz) {
+            // `operator new` is only ever reached from a running listener (a live
+            // `registerEvent`), never during teardown, so the pool is always in
+            // its alive window here — touching `_freelist()` also (re)constructs
+            // the holder and arms `_pool_alive()`.
             auto &fl = _freelist();
             if (fl.head) {
                 void *p = fl.head;
@@ -196,6 +227,13 @@ public:
         operator delete(void *p) noexcept {
             if (!p)
                 return;
+            // A delete that runs after this thread's pool was torn down (e.g.
+            // `~listener` freeing a still-registered watcher, the freelist TLS
+            // having destructed first) must not chain onto the dead free-list.
+            if (!_pool_alive()) {
+                ::operator delete(p, std::align_val_t{alignof(RegisteredKernelEvent)});
+                return;
+            }
             auto &fl                 = _freelist();
             *static_cast<void **>(p) = fl.head;
             fl.head                  = p;
@@ -400,7 +438,20 @@ public:
                 cur->_list_prev         = nullptr;
                 cur->_list_next         = nullptr;
                 cur->_detached_by_clear = true;
-                cur                     = next;
+                if (cur->_destroy_owner) {
+                    // Loop-owned, self-deleting handler (e.g. an `async::callback`
+                    // Timeout) whose one-shot timer never fired: nothing else will
+                    // reclaim it. Destroy the owner now — its `~base` re-enters
+                    // `unregisterEvent(cur)` and frees this wrapper via the
+                    // `_detached_by_clear` branch (cur is already unlinked). Clear the
+                    // hook first so the re-entry can never recurse back into here.
+                    void *const owner   = cur->_owner;
+                    auto *const destroy = cur->_destroy_owner;
+                    cur->_owner         = nullptr;
+                    cur->_destroy_owner = nullptr;
+                    destroy(owner); // frees `cur`; do not touch it afterwards
+                }
+                cur = next;
             }
             for (int i = 0; i < 4; ++i)
                 run(EVRUN_NOWAIT);

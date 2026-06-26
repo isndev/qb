@@ -57,7 +57,33 @@ class IRegisteredKernelEvent {
     IRegisteredKernelEvent *_list_next         = nullptr;
     bool                    _detached_by_clear = false;
 
+    // Loop-owned, self-deleting handlers (async::callback's `Timeout<F>`) have no
+    // external owner: they `delete this` only when their one-shot timer fires. If
+    // the listener is torn down while such a timer is still pending, the timer never
+    // fires and nothing reclaims the object — `listener::clear()` must destroy it.
+    // These fields carry a type-erased deleter for that owner and stay null for every
+    // externally-owned watcher (TCP sessions, `ScopedTimeout`, …) whose own destructor
+    // already reclaims this wrapper, so their teardown path is unchanged.
+    void *_owner                            = nullptr;
+    void (*_destroy_owner)(void *) noexcept = nullptr;
+
 public:
+    /**
+     * @brief Mark this watcher's handler as a loop-owned, self-deleting object.
+     * @param owner   Pointer to the owning object (e.g. the `Timeout<F>` itself).
+     * @param destroy Type-erased deleter invoked by `listener::clear()` if the watcher
+     *                is still registered at teardown. Destroying the owner cascades
+     *                (through its `async::base` destructor) to unregister and free this
+     *                wrapper, so no separate wrapper delete is needed.
+     * @details Called once at construction by self-owned async helpers. Externally
+     *          owned watchers never call this and keep the default (null) behaviour.
+     */
+    void
+    set_owner(void *owner, void (*destroy)(void *) noexcept) noexcept {
+        _owner         = owner;
+        _destroy_owner = destroy;
+    }
+
     /**
      * @brief Virtual destructor.
      */

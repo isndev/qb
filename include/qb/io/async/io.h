@@ -216,12 +216,40 @@ class Timeout : public with_timeout<Timeout<_Func>> {
     // safely intercept `operator new` / `operator delete` on a per-
     // instantiation basis. The listener is thread-local and all
     // `async::callback` traffic flows through it, so this pool sees zero
-    // contention. The pool is deliberately not drained at thread exit — the
-    // OS reclaims the thread's memory, and releasing the chain from a TLS
-    // destructor would race with late `delete this` calls from already-fired
-    // timers whose loop iteration outlives the listener.
+    // contention.
+    //
+    // Thread-exit draining (mirrors detail::CoroutineFrameAllocator): the pool
+    // is a thread_local RAII holder whose destructor frees every parked block at
+    // thread termination. The main thread keeps its pool reachable until process
+    // exit, but a *joined worker* thread abandons its TLS — without draining, a
+    // Timeout freed there at exit (notably one the listener reclaims from
+    // `~listener` when its one-shot never fired) is lost and reported as a leak.
+    // A separate `_pool_alive()` guard (a trivially destructible bool that
+    // outlives the holder in TLS-teardown order) lets a `delete` that runs after
+    // the holder was destroyed — exactly the `~listener` reclamation case, the
+    // freelist TLS having torn down first — bypass the dead free-list and return
+    // straight to the global allocator instead of re-leaking the block.
+    static bool &
+    _pool_alive() noexcept {
+        thread_local bool alive = false;
+        return alive;
+    }
+
     struct FreeList {
         void *head = nullptr;
+        FreeList() noexcept {
+            _pool_alive() = true;
+        }
+        ~FreeList() noexcept {
+            _pool_alive() = false;
+            void *p       = head;
+            while (p) {
+                void *next = *static_cast<void **>(p);
+                ::operator delete(p, sizeof(Timeout), std::align_val_t{alignof(Timeout)});
+                p = next;
+            }
+            head = nullptr;
+        }
     };
 
     static FreeList &
@@ -233,6 +261,10 @@ class Timeout : public with_timeout<Timeout<_Func>> {
 public:
     static void *
     operator new(std::size_t sz) {
+        // `operator new` is only reached from a running event loop (an
+        // `async::callback`), never during teardown, so the pool is always in
+        // its alive window here — touching `_freelist()` also (re)constructs the
+        // holder and arms `_pool_alive()`.
         auto &fl = _freelist();
         if (fl.head) {
             void *p = fl.head;
@@ -250,6 +282,14 @@ public:
     operator delete(void *p) noexcept {
         if (!p)
             return;
+        // A delete that runs after this thread's pool was torn down (the
+        // listener reclaiming a still-pending Timeout from `~listener`, the
+        // freelist TLS having destructed first) must not chain onto the dead
+        // free-list — return the block to the global allocator instead.
+        if (!_pool_alive()) {
+            ::operator delete(p, std::align_val_t{alignof(Timeout)});
+            return;
+        }
         auto &fl                 = _freelist();
         *static_cast<void **>(p) = fl.head;
         fl.head                  = p;
@@ -271,6 +311,11 @@ public:
     Timeout(_Func &&func, qb::duration timeout)
         : with_timeout<Timeout<_Func>>(timeout > qb::duration::zero() ? timeout : qb::duration::zero())
         , _func(std::forward<_Func>(func)) {
+        // Register as a loop-owned object: this Timeout self-`delete`s only when its
+        // one-shot timer fires, so a listener teardown (`clear()`) before that fire
+        // would otherwise orphan it. The deleter lets `clear()` reclaim it instead.
+        this->_async_event._interface->set_owner(
+            this, [](void *p) noexcept { delete static_cast<Timeout *>(p); });
         if (timeout <= qb::duration::zero()) {
             try {
                 _func();
