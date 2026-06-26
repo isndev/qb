@@ -206,6 +206,66 @@ TEST(Compression, TruncatedStreamRejected) {
     EXPECT_THROW(qb::gzip::uncompress(out, truncated.c_str(), truncated.size()), std::runtime_error);
 }
 
+// The generic `compression::uncompress<Output>` template (resize()/operator[] container path) is a
+// DISTINCT codepath from the `qb::allocator::pipe<char>` specialization exercised above. These three
+// cases drive that template with a std::string output through gzip::uncompress(std::string&, ...),
+// hitting the two decompression-bomb guards and the truncated-stream guard inside the template.
+
+// Generic-template guard #1: the up-front `max && size > max/2` budget check (before the inflate
+// loop). A `max` smaller than 2x the compressed input must be rejected immediately.
+TEST(Compression, GenericTemplateUpfrontBudgetGuardRejects) {
+    std::string original(2 * 1024 * 1024, '\0'); // compresses to a small S
+    std::string compressed = qb::gzip::compress(original.c_str(), original.size());
+    ASSERT_GT(compressed.size(), 2u);
+
+    // max = 1: 1 && compressed.size() > 0 -> throws "size may use more memory than intended".
+    std::string out;
+    EXPECT_THROW(qb::gzip::uncompress(out, compressed.c_str(), compressed.size(), static_cast<std::size_t>(1)),
+                 std::runtime_error);
+    EXPECT_TRUE(out.empty() || out.size() <= 1u);
+}
+
+// Generic-template guard #2: the in-loop decompression-bomb guard. `max` is chosen to PASS the
+// up-front check (max >= 2*compressed) yet be exceeded once the inflate loop expands the 2 MiB of
+// zeros past it — exercising the throw inside the do/while, not the up-front guard.
+TEST(Compression, GenericTemplateInLoopBombGuardRejects) {
+    std::string original(2 * 1024 * 1024, '\0');
+    std::string compressed = qb::gzip::compress(original.c_str(), original.size());
+    ASSERT_GT(compressed.size(), 2u);
+    ASSERT_LT(compressed.size(), original.size());
+
+    // max = 3*S: passes (S <= max/2) but the decompressed 2 MiB blows past 3*S in the loop.
+    const std::size_t max = 3u * compressed.size();
+    std::string       out;
+    EXPECT_THROW(qb::gzip::uncompress(out, compressed.c_str(), compressed.size(), max), std::runtime_error);
+
+    // A generous budget through the SAME generic template round-trips the full payload.
+    std::string out_ok;
+    EXPECT_NO_THROW(qb::gzip::uncompress(out_ok, compressed.c_str(), compressed.size(),
+                                         static_cast<std::size_t>(8 * 1024 * 1024)));
+    EXPECT_EQ(out_ok.size(), original.size());
+    EXPECT_EQ(out_ok, original);
+}
+
+// Generic-template guard #3: a truncated stream (unbounded max, so both bomb guards are skipped)
+// must be rejected by the "incomplete or truncated compressed stream" check after the loop, never
+// returning silent partial output.
+TEST(Compression, GenericTemplateTruncatedStreamRejected) {
+    std::string original   = qb::crypto::generate_random_string(80000, qb::crypto::range_alpha_numeric_special);
+    std::string compressed = qb::gzip::compress(original.c_str(), original.size());
+    ASSERT_GT(compressed.size(), 16u);
+
+    std::string truncated = compressed.substr(0, compressed.size() - 8);
+    std::string out;
+    EXPECT_THROW(qb::gzip::uncompress(out, truncated.c_str(), truncated.size()), std::runtime_error);
+
+    // Deflate's generic template wrapper shares the same template; the intact stream round-trips.
+    std::string zlib = qb::deflate::compress(original.c_str(), original.size());
+    std::string out_ok;
+    EXPECT_NO_THROW(qb::deflate::uncompress(out_ok, zlib.c_str(), zlib.size()));
+    EXPECT_EQ(out_ok, original);
+}
+
 TEST(Compression, BuiltinFactoriesAndAlgorithms) {
     namespace builtin = qb::compression::builtin;
 

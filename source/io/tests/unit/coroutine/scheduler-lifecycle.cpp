@@ -1028,3 +1028,313 @@ TEST_F(CoroutineSchedulerTests, CurrentLazilyCreatesSchedulerOnBareThread) {
     EXPECT_EQ(from_current.load(), from_ptr.load())
         << "current_ptr() must report the scheduler current() just created";
 }
+
+// =============================================================================
+// STANDALONE-SCHEDULER TEARDOWN PATHS (~CoroutineScheduler drains)
+//
+// The fixture's TLS scheduler is owned by `listener::current` and is not destroyed
+// mid-test, so the scheduler *destructor* drains (scheduler.h:153-198) are never hit
+// by the cases above. These tests build a throwaway `CoroutineScheduler` we own
+// outright, populate it deterministically through its public API, then let it die at
+// end of scope so the destructor body runs while we can still assert no frame leaked.
+//
+// Routing contract: a spawned coroutine that reaches final_suspend with no
+// continuation calls `defer_frame_destruction(h)`, which routes to
+// `CoroutineScheduler::current_ptr()` — NOT to the frame's promise `scheduler_`. So to
+// make a frame defer into our standalone scheduler we must install it as the TLS
+// `current` for the duration we resume frames, then restore the fixture's scheduler.
+// A tiny RAII guard does exactly that so even an assertion failure restores TLS.
+// =============================================================================
+
+namespace {
+
+/// Install `s` as the thread's current scheduler for a scope; restore the previous
+/// pointer on destruction so the fixture TearDown still sees a valid TLS scheduler.
+struct ScopedCurrentScheduler {
+    CoroutineScheduler *previous_;
+    explicit ScopedCurrentScheduler(CoroutineScheduler &s) noexcept
+        : previous_(CoroutineScheduler::current_ptr()) {
+        CoroutineScheduler::set_current(&s);
+    }
+    ~ScopedCurrentScheduler() {
+        CoroutineScheduler::set_current(previous_);
+    }
+};
+
+// `spawn_tracked(task<void>&&)` takes a real task rvalue, NOT a Callable (only `spawn` has the
+// Callable overload). We must therefore hand it a materialized task. Building that task from an
+// immediately-invoked *capturing* lambda would dangle: a lambda-coroutine's frame holds only a
+// pointer to the closure object, so the closure dying at the end of the full expression leaves the
+// frame's captures dangling (the classic spawn(lambda()) footgun). The frames below are spawned
+// detached and may outlive the call site, so we use plain coroutine FUNCTIONS that take their deps
+// as by-value parameters — C++ copies parameters into the coroutine frame, so nothing dangles.
+
+// Trivial completion: reaches final_suspend on the first resume, no side effect.
+static task<void>
+trivial_completion_coro() {
+    co_return;
+}
+
+// Records that its body ran by storing true into the supplied flag (taken BY VALUE — copied into
+// the frame). Used to prove a frame destroyed at initial_suspend never executes its body.
+static task<void>
+flag_setting_coro(std::atomic<bool> *flag) {
+    flag->store(true);
+    co_return;
+}
+
+} // namespace
+
+/**
+ * @test ~CoroutineScheduler destroys an owned, never-resumed ready handle
+ * @brief Destructor ready-queue drain owned-frame branch (scheduler.h:164-168).
+ *
+ * spawn_tracked() puts a frame in BOTH the ready queue and owned_frames_ but leaves it
+ * parked at initial_suspend (we never run_ready()). When the scheduler dies the ready
+ * drain finds a handle that is `!done()` and owned, so it destroys it (line 167). The
+ * frame never ran its body, so no user side effect fires and the live-frame counter
+ * returns to baseline — proving the owned ready handle was freed exactly once.
+ */
+TEST_F(CoroutineSchedulerTests, DestructorDestroysOwnedReadyHandle) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> body_ran{false};
+    auto              body_ptr = &body_ran;
+
+    {
+        CoroutineScheduler      standalone{qb::io::async::listener::current.loop()};
+        ScopedCurrentScheduler  guard{standalone};
+
+        // by-value-parameter coroutine: body_ptr is copied into the frame, no dangling closure.
+        auto h = standalone.spawn_tracked(flag_setting_coro(body_ptr));
+        ASSERT_TRUE(h);
+        // Parked at initial_suspend, queued + owned, never resumed.
+        EXPECT_EQ(standalone.pending_count(), 1u);
+        EXPECT_FALSE(h.done());
+        // standalone dies here: the ready-drain destroys the owned, not-done handle.
+    }
+
+    EXPECT_FALSE(body_ran.load()) << "the destroyed ready frame must not have run its body";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
+        << "destructor leaked the owned ready frame";
+
+    // Restore a valid TLS scheduler for the fixture TearDown.
+    CoroutineScheduler::set_current(&qb::io::async::listener::current.coro_scheduler());
+}
+
+/**
+ * @test ~CoroutineScheduler drains frames_to_destroy_ at teardown
+ * @brief Destructor deferred-destroy drain (scheduler.h:175-181) — the branch that frees
+ *        a completed spawned frame that no final run_ready() reclaimed.
+ *
+ * We spawn_tracked a trivial `co_return` frame and resume it ONCE *outside* run_ready().
+ * It reaches final_suspend and, because our standalone scheduler is the TLS current, hands
+ * itself to `defer_frame_destruction` → it lands in frames_to_destroy_ AND stays in
+ * owned_frames_ (no run_ready() runs to drain it). Destroying the scheduler then exercises
+ * the teardown loop at 175-181, which erases it from owned_frames_ and frees the frame.
+ */
+TEST_F(CoroutineSchedulerTests, DestructorDrainsDeferredDestroyFrames) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+
+    {
+        CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+        ScopedCurrentScheduler guard{standalone};
+
+        auto h = standalone.spawn_tracked(trivial_completion_coro());
+        ASSERT_TRUE(h);
+
+        // Drive the body to final_suspend WITHOUT run_ready() so the deferred frame is
+        // never drained by run_ready — it must persist into the destructor.
+        h.resume();
+        ASSERT_TRUE(h.done()) << "frame should be parked at final_suspend after one resume";
+        EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline)
+            << "the completed-but-undrained frame must still be alive before teardown";
+        // standalone dies here: the frames_to_destroy_ teardown loop frees it.
+    }
+
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
+        << "destructor failed to drain the deferred-destroy frame";
+
+    CoroutineScheduler::set_current(&qb::io::async::listener::current.coro_scheduler());
+}
+
+/**
+ * @test cancel_spawned() scrubs a handle out of frames_to_destroy_ before freeing it
+ * @brief The defensive deferred-destroy scrub branch (scheduler.h:294-299, esp. the erase
+ *        at :296) — a frame that already reached final_suspend (so it is owned AND queued
+ *        for deferred destruction) must be removed from frames_to_destroy_ when
+ *        cancel_spawned frees it, so no later drain double-frees it.
+ *
+ * Construction: spawn_tracked + one manual resume parks the frame at final_suspend with the
+ * standalone scheduler as TLS current, so it is simultaneously in owned_frames_ and
+ * frames_to_destroy_. cancel_spawned() then passes the ownership gate, finds it in
+ * frames_to_destroy_ (the :296 erase), and destroys it exactly once.
+ */
+TEST_F(CoroutineSchedulerTests, CancelSpawnedScrubsDeferredDestroyEntry) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+
+    CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+    ScopedCurrentScheduler guard{standalone};
+
+    auto h = standalone.spawn_tracked(trivial_completion_coro());
+    ASSERT_TRUE(h);
+    h.resume(); // -> final_suspend -> defer_frame_destruction routes into standalone
+    ASSERT_TRUE(h.done());
+    EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline)
+        << "frame should be alive and queued for deferred destruction";
+
+    // The owned + deferred frame: cancel_spawned passes the ownership gate, scrubs it from
+    // frames_to_destroy_ (line 296), and frees it once.
+    standalone.cancel_spawned(h);
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
+        << "cancel_spawned failed to free the deferred frame";
+
+    // A second cancel of the now-freed handle hits the ownership gate and is a safe no-op:
+    // owned_frames_ no longer contains it, so it returns before any destroy.
+    standalone.cancel_spawned(h);
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+    EXPECT_EQ(standalone.active_count(), 0u);
+}
+
+/**
+ * @test destroy_all_suspended() scrubs an owned root out of frames_to_destroy_
+ * @brief The owned-root cascade's deferred-destroy scrub (scheduler.h:676-681) — an owned
+ *        root that already reached final_suspend is BOTH in owned_frames_ and
+ *        frames_to_destroy_. The cascade must erase it from frames_to_destroy_ (so the
+ *        later deferred drain can never re-free it). At final_suspend the handle is `done()`,
+ *        so the cascade's `!handle.done()` guard (line 683) correctly declines to destroy it
+ *        — the frame is now orphaned of all scheduler bookkeeping and we reclaim it ourselves
+ *        (a scheduler-owned spawn_tracked frame, no task<T> owner — the single legitimate
+ *        manual destroy site).
+ *
+ * NOTE on active_count(): we resume the frame manually (h.resume()) instead of via run_ready()
+ * to land it in frames_to_destroy_ WITHOUT draining it (run_ready() would free it on the same
+ * tick). That manual path deliberately bypasses the ready-queue pop, so the frame is still
+ * sitting in the scheduler's ready queue (done(), harmless) when destroy_all_suspended() runs.
+ * destroy_all_suspended() scrubs owned_frames_ + frames_to_destroy_ + suspended_coroutines_ but
+ * (by contract) NOT the ready queue — in real flows run_ready() already emptied it. So
+ * active_count() reflects that one stale ready entry (1, not 0); a later run_ready() would pop it,
+ * see done(), and neither resume nor re-destroy it. We assert the REAL contract: the scrub left
+ * frames_to_destroy_ empty so our manual destroy below is the sole, safe destroyer (no double-free).
+ */
+TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsOwnedRootFromDeferredDestroy) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+
+    CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+    ScopedCurrentScheduler guard{standalone};
+
+    auto h = standalone.spawn_tracked(trivial_completion_coro());
+    ASSERT_TRUE(h);
+    h.resume(); // -> final_suspend: owned AND in frames_to_destroy_ (NOT drained — manual resume)
+    ASSERT_TRUE(h.done());
+
+    // The cascade snapshots owned_frames_, scrubs this addr out of frames_to_destroy_
+    // (lines 676-681), then declines to destroy it because it is already done().
+    standalone.destroy_all_suspended();
+    // The owned-root cascade does not touch the ready queue, so the stale (done) ready entry left
+    // by the manual resume survives — active_count() counts it. suspended_coroutines_ is empty.
+    EXPECT_EQ(standalone.active_count(), 1u)
+        << "manual resume left a done() entry in the ready queue; destroy_all_suspended() "
+           "does not scrub it (only owned/suspended/deferred bookkeeping)";
+
+    // Drain the stale ready entry BEFORE freeing the frame (the frame is still alive here). The
+    // deferred-destroy scrub emptied frames_to_destroy_, so run_ready() must NOT free this frame:
+    // it pops the entry, sees done(), and runs nothing — proving the scrub prevented a double-free.
+    // (Draining first also avoids a later run_ready() calling done() on freed memory.)
+    EXPECT_EQ(standalone.run_ready(), 0u) << "stale done() ready entry must not be resumed";
+    EXPECT_EQ(standalone.active_count(), 0u) << "ready queue drained after run_ready()";
+
+    // The frame is now removed from EVERY scheduler container but NOT freed (done-guard + the
+    // run_ready() drain above declined to free it). It is a scheduler-owned (spawn_tracked) frame
+    // with no task<T> owner, so we destroy it exactly once here — nothing else will (no double-free).
+    EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline);
+    h.destroy();
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
+        << "owned-root scrub path leaked the frame";
+}
+
+/**
+ * @test destroy_all_suspended() sweeps a non-owned suspended frame
+ * @brief The trailing non-owned suspended sweep (scheduler.h:693-702) — a frame that is
+ *        registered as suspended on a watcher but is NOT owned by the scheduler (never
+ *        spawned) is destroyed by the second pass, stopping its watcher via the awaiter
+ *        destructor.
+ *
+ * Construction: build a plain `task<void>` that awaits a long `sleep` and resume it once so
+ * its timer_awaiter parks it (calling register_suspended on the fixture's TLS scheduler).
+ * The frame is therefore in suspended_coroutines_ but NOT owned_frames_ (it was never
+ * spawned). We `detach()` the task so the task<T> object relinquishes ownership; then
+ * destroy_all_suspended()'s owned-root pass is a no-op (owned_frames_ empty) and the trailing
+ * sweep destroys the lone suspended frame — exactly once, with the timer stopped so it can
+ * never fire afterwards.
+ */
+TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedSweepsNonOwnedSuspendedFrame) {
+    auto      &sched    = coro_scheduler();
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+
+    std::atomic<bool> fired{false};
+    auto              fired_ptr = &fired;
+
+    // A non-spawned task parked on a long timer: register_suspended runs, but the frame is
+    // never inserted into owned_frames_ (no spawn).
+    auto parked = [fired_ptr]() -> task<void> {
+        co_await sleep(5000ms);
+        fired_ptr->store(true); // must NEVER fire — frame destroyed while parked
+    }();
+
+    auto h = parked.handle();
+    ASSERT_TRUE(h);
+    h.resume(); // run body to the sleep awaiter -> register_suspended (NOT owned)
+    ASSERT_FALSE(h.done());
+    EXPECT_EQ(sched.active_count(), 1u) << "the non-owned frame should be tracked as suspended";
+
+    // Relinquish task<T> ownership so destroy_all_suspended is the single destroyer.
+    auto raw = parked.detach();
+    ASSERT_EQ(raw, h);
+
+    // owned_frames_ is empty here (frame was never spawned), so only the trailing
+    // non-owned suspended sweep (lines 693-702) destroys it.
+    sched.destroy_all_suspended();
+    EXPECT_EQ(sched.active_count(), 0u) << "non-owned suspended frame not swept";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
+        << "destroy_all_suspended leaked the non-owned suspended frame";
+
+    // The awaiter destructor stopped the timer; pumping the loop must not fire the body.
+    qb::io::async::run_for(10ms);
+    EXPECT_FALSE(fired.load()) << "the destroyed frame's timer wrongly fired";
+}
+
+// =============================================================================
+// FREE-FUNCTION ACCESSOR
+// =============================================================================
+
+/**
+ * @test current_scheduler_ptr() mirrors CoroutineScheduler::current_ptr()
+ * @brief The free helper used by awaiters to fetch the TLS scheduler (scheduler.h:783-786).
+ *        It must return the exact same pointer as the static accessor — non-null while a
+ *        listener scheduler is installed, and null after a reset.
+ */
+TEST_F(CoroutineSchedulerTests, CurrentSchedulerPtrFreeFunctionMatchesStatic) {
+    // The fixture SetUp only calls async::init(), which is a no-op: the listener's
+    // CoroutineScheduler is created lazily and installed as the TLS current pointer ONLY on the
+    // first coro_scheduler() access (listener.h:636-640). So we must touch it here to install it
+    // before asserting the accessors are non-null — otherwise current_scheduler_ptr() is
+    // legitimately null (no scheduler exists yet).
+    auto *installed = &qb::io::async::listener::current.coro_scheduler();
+
+    // With the listener scheduler now installed, the free function and the static accessor agree
+    // and are non-null, both pointing at the listener's scheduler.
+    auto *via_static = CoroutineScheduler::current_ptr();
+    auto *via_free   = current_scheduler_ptr();
+    ASSERT_NE(via_free, nullptr);
+    EXPECT_EQ(via_free, via_static);
+    EXPECT_EQ(via_free, installed);
+
+    // After a reset the free function reports null in lock-step with the static one.
+    qb::io::async::listener::current.reset_coro_scheduler();
+    EXPECT_EQ(current_scheduler_ptr(), nullptr);
+    EXPECT_EQ(current_scheduler_ptr(), CoroutineScheduler::current_ptr());
+
+    // Re-establish the scheduler so the fixture TearDown finds a consistent state.
+    (void) qb::io::async::listener::current.coro_scheduler();
+    EXPECT_EQ(current_scheduler_ptr(), &qb::io::async::listener::current.coro_scheduler());
+}
