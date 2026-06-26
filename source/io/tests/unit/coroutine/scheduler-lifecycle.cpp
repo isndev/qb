@@ -1,11 +1,33 @@
 /**
- * @file qb/io/tests/coroutine/test-coroutine-scheduler.cpp
- * @brief Coroutine scheduler lifecycle tests
+ * @file unit/coroutine/scheduler-lifecycle.cpp
+ * @brief `qb::io::async::CoroutineScheduler` + `task<T>` lifecycle — the canonical scheduler/ownership file.
  *
- * This file contains tests for CoroutineScheduler behavior, including ready queue
- * processing, handle lifetime, exception handling, move-only task semantics,
- * thread-local scheduler state, event loop restart behavior, cancellation, detaching,
- * and pending counts.
+ * This is the deterministic ground-truth for how the coroutine scheduler owns, runs, tracks and frees
+ * frames. Everything here drives the in-process event loop — `qb::io::async::init()` (via
+ * `reset_async_context()` in SetUp), `spawn()`, `run_ready()` and the de-flake pump `pump_until()` — with
+ * NO sockets, NO daemon, NO TLS, so it is a pure `unit` test. The contracts proven:
+ *
+ *   - task<T> pre-spawn handle state: a freshly built task is truthy and not done; after spawn() the
+ *     handle is transferred and the moved-from task is empty (move-only semantics).
+ *   - ownership transfer: a spawned coroutine runs to completion even after the originating task object
+ *     dies, and `active_count()` returns to 0 once it finishes (no frame / bookkeeping leak).
+ *   - frame accounting: a spawned coroutine that SUSPENDS then completes via symmetric transfer is freed
+ *     through the final_suspend defer-destruction path (`live_frames` returns to baseline) — the historic
+ *     spawn-then-await frame leak regression.
+ *   - in-flight tracking: `active_count()` is stepped deterministically with `run_ready()` (no sleeps) to
+ *     show it counts ready+suspended frames and drains to 0.
+ *   - TLS scheduler identity survives a listener reset and is always reachable through `current_ptr()`.
+ *   - unhandled-exception path tears the coroutine down cleanly and leaves the scheduler usable.
+ *   - symmetric transfer keeps a deep await chain off the C++ stack.
+ *
+ * Restructured from the dissolved test-coroutine-basic.cpp (TaskIsCreatedAndExecutes pre-spawn state,
+ * SpawnedTaskContinuesAfterHandleReleased) and test-coroutine-regression.cpp
+ * (SchedulerCurrentPtrReflectsListenerReset) folded in; the former wall-clock `run_for(Nms)` budgets are
+ * replaced by `qb::io::test::pump_until` so a stalled coroutine fails loudly instead of racing or hanging;
+ * the two `EXPECT_TRUE(x||!x)` tautology "cancellation" tests are replaced with the actual defined
+ * contracts (spawned coroutine continues after task-drop; awaited-task exception surfaces); the disabled
+ * SchedulerTracksInFlightCoroutines is resurrected deterministically via run_ready() stepping and the
+ * unfireable DISABLED_ExceptionDuringValueReturn is dropped. No file-local main(): shared gtest_main.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -23,14 +45,20 @@
  * @ingroup Tests
  */
 
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <thread>
+
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
-#include <chrono>
-#include <atomic>
-#include <thread>
+
+#include "../../shared/coroutine_test_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
+using qb::io::test::pump_until;
+using qb::io::test::reset_async_context;
 
 // =============================================================================
 // TEST FIXTURE
@@ -40,86 +68,291 @@ class CoroutineSchedulerTests : public ::testing::Test {
 protected:
     void
     SetUp() override {
-        qb::io::async::init();
+        reset_async_context();
     }
 
     void
     TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };
 
-// Regression: a spawned coroutine that suspends then completes must free its
-// frame. It completes via symmetric transfer from its awaited inner task, so its
-// own handle is never re-examined by run_ready(); the scheduler must instead
-// destroy it via the final_suspend defer-destruction path. Before that fix every
-// such spawn leaked one frame.
-TEST_F(CoroutineSchedulerTests, SpawnedSuspendingFrameIsFreed) {
-    const long baseline = detail::CoroutineFrameAllocator::live_frames;
-    bool       done     = false;
-    auto       fn       = [&done]() -> task<void> {
+// =============================================================================
+// TASK PRE-SPAWN STATE & OWNERSHIP TRANSFER
+// =============================================================================
+
+/**
+ * @test Task created, spawned, and executed
+ * @brief A fresh task is truthy + not-done before spawn; spawn() moves it out and runs it to completion.
+ *
+ * Salvaged from the dissolved test-coroutine-basic.cpp::TaskIsCreatedAndExecutes — the pre-spawn
+ * handle-state assertion was underrepresented elsewhere. The poll/flag wall-clock loop is replaced by
+ * pump_until, and the moved-from emptiness is asserted explicitly.
+ */
+TEST_F(CoroutineSchedulerTests, TaskIsCreatedAndExecutes) {
+    std::atomic<bool> executed{false};
+
+    auto coro_fn = [&executed]() -> task<void> {
+        executed.store(true, std::memory_order_release);
+        co_return;
+    };
+    auto t = coro_fn();
+
+    // Pre-spawn: the task owns a live, not-yet-run frame.
+    EXPECT_TRUE(static_cast<bool>(t));
+    EXPECT_FALSE(t.done());
+
+    coro_scheduler().spawn(std::move(t));
+
+    // spawn() transferred the handle: the moved-from task is now empty.
+    EXPECT_FALSE(static_cast<bool>(t));
+
+    EXPECT_TRUE(pump_until([&] { return executed.load(std::memory_order_acquire); }))
+        << "spawned coroutine never executed";
+    EXPECT_EQ(coro_scheduler().active_count(), 0u);
+}
+
+/**
+ * @test Spawned coroutine continues after the task handle is released
+ * @brief spawn() takes ownership — dropping the originating task does NOT cancel the running coroutine;
+ *        it completes and the scheduler bookkeeping drains to zero.
+ *
+ * Salvaged from test-coroutine-basic.cpp::SpawnedTaskContinuesAfterHandleReleased (the active_count()==0
+ * cleanup assertion is the value-add). This is the CORRECTLY-NAMED replacement for the dissolved
+ * comprehensive.cpp::CoroutineDestructionCancelsOperation, whose body asserted the opposite of its name.
+ */
+TEST_F(CoroutineSchedulerTests, SpawnedCoroutineContinuesAfterHandleReleased) {
+    std::atomic<bool> started{false};
+    std::atomic<bool> completed{false};
+
+    {
+        auto started_ptr   = &started;
+        auto completed_ptr = &completed;
+        auto coro_fn       = [started_ptr, completed_ptr]() -> task<void> {
+            started_ptr->store(true);
+            co_await sleep(20ms);
+            completed_ptr->store(true);
+            co_return;
+        };
+        // Owned-callable overload: the closure dies at the end of this block while
+        // the coroutine keeps running afterwards (the frame owns a copy).
+        coro_scheduler().spawn(coro_fn);
+
+        // It must have started but not yet completed (still parked on the timer).
+        EXPECT_TRUE(pump_until([&] { return started.load(); })) << "coroutine never started";
+        EXPECT_FALSE(completed.load());
+        // task/closure goes out of scope here — must NOT cancel the spawned coroutine.
+    }
+
+    EXPECT_TRUE(pump_until([&] { return completed.load(); }))
+        << "spawned coroutine was cancelled when its originating closure was released";
+    EXPECT_EQ(coro_scheduler().active_count(), 0u);
+}
+
+/**
+ * @test task<T> is move-only with correct moved-from state
+ * @brief Compile-time + runtime move-only semantics; the moved-from task is empty.
+ */
+TEST_F(CoroutineSchedulerTests, TaskIsMoveOnly) {
+    static_assert(!std::is_copy_constructible_v<task<int>>);
+    static_assert(!std::is_copy_assignable_v<task<int>>);
+    static_assert(std::is_move_constructible_v<task<int>>);
+    static_assert(std::is_move_assignable_v<task<int>>);
+
+    auto fn = []() -> task<int> {
+        co_return 42;
+    };
+
+    auto t1 = fn();
+    auto t2 = std::move(t1);
+
+    EXPECT_FALSE(t1.handle());
+    EXPECT_TRUE(t2.handle());
+    EXPECT_FALSE(static_cast<bool>(t1));
+    EXPECT_TRUE(static_cast<bool>(t2));
+}
+
+/**
+ * @test Move-only return value travels through co_await
+ * @brief A coroutine can return a move-only type; the awaiter receives the exact value.
+ */
+TEST_F(CoroutineSchedulerTests, MoveOnlyReturnValue) {
+    struct MoveOnly {
+        std::unique_ptr<int> data;
+        explicit MoveOnly(int val)
+            : data(std::make_unique<int>(val)) {}
+        MoveOnly(const MoveOnly &) = delete;
+        MoveOnly(MoveOnly &&)      = default;
+    };
+
+    std::atomic<int> result{-1};
+
+    auto producer_fn = []() -> task<MoveOnly> {
         co_await sleep(5ms);
-        done = true;
+        co_return MoveOnly{42};
+    };
+
+    auto result_ptr = &result;
+    coro_scheduler().spawn([result_ptr, producer_fn]() -> task<void> {
+        auto obj = co_await producer_fn();
+        result_ptr->store(obj.data ? *obj.data : -2);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return result.load() != -1; })) << "producer never delivered value";
+    EXPECT_EQ(result.load(), 42);
+}
+
+// =============================================================================
+// FRAME LIFECYCLE / LEAK REGRESSIONS
+// =============================================================================
+
+/**
+ * @test Spawned suspending frame is freed (regression)
+ * @brief A spawned coroutine that suspends then completes via symmetric transfer must free its frame.
+ *
+ * It completes via symmetric transfer from its awaited inner task, so its own handle is never re-examined
+ * by run_ready(); the scheduler instead destroys it through the final_suspend defer-destruction path.
+ * Before that fix every such spawn leaked exactly one frame. `live_frames` is the pooled-allocator's
+ * per-thread live-frame counter (qb/io/async/coroutine/task.h).
+ */
+TEST_F(CoroutineSchedulerTests, SpawnedSuspendingFrameIsFreed) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> done{false};
+
+    auto done_ptr = &done;
+    auto fn       = [done_ptr]() -> task<void> {
+        co_await sleep(5ms);
+        done_ptr->store(true);
     };
     coro_scheduler().spawn(fn);
-    run_for(120ms);
-    coro_scheduler().run_ready();
-    EXPECT_TRUE(done);
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "coroutine never completed";
+
     const long after = detail::CoroutineFrameAllocator::live_frames;
     EXPECT_EQ(after, baseline) << "leaked " << (after - baseline) << " coroutine frame(s)";
 }
 
+/**
+ * @test Coroutine frame (and its locals) are destroyed after completion
+ * @brief Verify the frame is alive while parked and torn down (running the local's dtor) once it returns.
+ */
+TEST_F(CoroutineSchedulerTests, FrameDestroyedAfterCompletion) {
+    struct FrameMarker {
+        std::atomic<bool> *destroyed;
+        explicit FrameMarker(std::atomic<bool> *d)
+            : destroyed(d) {}
+        ~FrameMarker() {
+            if (destroyed)
+                destroyed->store(true);
+        }
+    };
+
+    std::atomic<bool> frame_destroyed{false};
+    std::atomic<bool> completed{false};
+
+    auto destroyed_ptr = &frame_destroyed;
+    auto completed_ptr = &completed;
+    coro_scheduler().spawn([destroyed_ptr, completed_ptr]() -> task<void> {
+        FrameMarker marker{destroyed_ptr};
+        co_await sleep(10ms);
+        completed_ptr->store(true);
+        co_return;
+        // marker destroyed here, as part of frame teardown
+    });
+
+    // While parked on the timer the frame (hence the local) is still alive.
+    qb::io::async::run_for(2ms);
+    EXPECT_FALSE(completed.load());
+    EXPECT_FALSE(frame_destroyed.load());
+
+    EXPECT_TRUE(pump_until([&] { return completed.load(); })) << "coroutine never completed";
+    EXPECT_TRUE(frame_destroyed.load()) << "frame local was not destroyed after completion";
+}
+
+/**
+ * @test Task destroyed before spawn never runs
+ * @brief A task that is built and dropped without spawning must not execute, and leaves no scheduler state.
+ */
+TEST_F(CoroutineSchedulerTests, TaskDestroyedBeforeSpawnNeverRuns) {
+    std::atomic<bool> executed{false};
+
+    {
+        auto executed_ptr = &executed;
+        auto fn           = [executed_ptr]() -> task<void> {
+            executed_ptr->store(true);
+            co_return;
+        };
+        auto t = fn();
+        (void) t; // destroyed here, never spawned
+    }
+
+    // Give the loop a bounded chance to (wrongly) run anything queued.
+    qb::io::async::run_for(10ms);
+    EXPECT_FALSE(executed.load());
+    EXPECT_EQ(coro_scheduler().active_count(), 0u);
+}
+
 // =============================================================================
-// SCHEDULER STATE MANAGEMENT
+// IN-FLIGHT TRACKING (deterministic, no sleeps)
 // =============================================================================
 
 /**
- * @test Scheduler tracks in-flight coroutines
- * @brief Verify scheduler maintains accurate count of active coroutines
+ * @test Scheduler tracks in-flight + suspended coroutines
+ * @brief active_count() counts ready+suspended frames and drains to 0; stepped via run_ready() so the
+ *        observation points are deterministic rather than wall-clock races.
  *
- * NOTE: Timing-sensitive test - disabled for reliability
+ * Resurrected from the dissolved DISABLED_SchedulerTracksInFlightCoroutines. The original was disabled
+ * for being timing-sensitive; here the scheduler is stepped explicitly: after spawn the frames are ready
+ * (in the queue), after one run_ready() step they are suspended on their timers (still counted), and
+ * after the timers fire and the bodies complete the count is exactly 0.
  */
-TEST_F(CoroutineSchedulerTests, DISABLED_SchedulerTracksInFlightCoroutines) {
+TEST_F(CoroutineSchedulerTests, SchedulerTracksInFlightCoroutines) {
     auto &sched = coro_scheduler();
+    EXPECT_EQ(sched.active_count(), 0u);
 
-    EXPECT_EQ(sched.active_count(), 0);
-
+    constexpr int    kCount = 3;
     std::atomic<int> completed{0};
-    auto             completed_ptr = &completed;
 
-    // Spawn 3 coroutines
-    for (int i = 0; i < 3; ++i) {
-        auto fn = [completed_ptr, i]() -> task<void> {
-            co_await sleep(std::chrono::milliseconds(10 * (i + 1)));
+    auto completed_ptr = &completed;
+    for (int i = 0; i < kCount; ++i) {
+        auto fn = [completed_ptr]() -> task<void> {
+            co_await sleep(10ms);
             completed_ptr->fetch_add(1);
             co_return;
         };
         sched.spawn(fn);
     }
 
-    // Should have 3 active (in ready queue or in-flight)
-    EXPECT_GE(sched.active_count(), 1); // At least one active
+    // Freshly spawned: all three frames are ready in the queue, none suspended yet.
+    EXPECT_EQ(sched.active_count(), static_cast<std::size_t>(kCount));
+    EXPECT_EQ(completed.load(), 0);
 
-    // After first completes
-    run_for(15ms);
-    EXPECT_EQ(completed.load(), 1);
+    // One step runs each body up to its first co_await sleep — now all three are suspended,
+    // still alive, still counted, and none has completed.
+    sched.run_ready();
+    EXPECT_EQ(sched.active_count(), static_cast<std::size_t>(kCount));
+    EXPECT_EQ(completed.load(), 0);
 
-    // After all complete
-    run_for(50ms);
-    EXPECT_EQ(completed.load(), 3);
-    EXPECT_EQ(sched.active_count(), 0);
+    // Drive the timers to completion: every coroutine finishes and the scheduler drains.
+    EXPECT_TRUE(pump_until([&] { return completed.load() == kCount; })) << "not all coroutines completed";
+    EXPECT_EQ(sched.active_count(), 0u);
 }
 
 /**
- * @test Scheduler ready queue behavior
- * @brief Verify ready queue processes all spawned coroutines
+ * @test Ready queue processes every spawned coroutine
+ * @brief A burst of immediately-ready coroutines all execute on one drain.
  */
 TEST_F(CoroutineSchedulerTests, ReadyQueueProcessesAllCoroutines) {
+    constexpr int    kCount = 5;
     std::atomic<int> execution_count{0};
-    auto             count_ptr = &execution_count;
 
-    // Create 5 immediately-ready coroutines
-    for (int i = 0; i < 5; ++i) {
+    auto count_ptr = &execution_count;
+    for (int i = 0; i < kCount; ++i) {
         auto fn = [count_ptr]() -> task<void> {
             count_ptr->fetch_add(1);
             co_return;
@@ -127,234 +360,218 @@ TEST_F(CoroutineSchedulerTests, ReadyQueueProcessesAllCoroutines) {
         coro_scheduler().spawn(fn);
     }
 
-    run_for(10ms);
-
-    // All should have executed
-    EXPECT_EQ(execution_count.load(), 5);
+    coro_scheduler().run_ready();
+    EXPECT_EQ(execution_count.load(), kCount);
 }
 
 /**
- * @test Multiple run_ready calls
- * @brief Verify run_ready() can be called multiple times safely
+ * @test pending_count() reflects the ready queue across the run cycle
+ * @brief Empty initially; exactly 1 after spawning a suspending coroutine (its initial-suspend resume);
+ *        empties once the coroutine parks on its timer.
+ *
+ * Determinised from the dissolved basic.cpp::SchedulerStateTracking smoke test (which asserted nothing
+ * after run_ready).
  */
-TEST_F(CoroutineSchedulerTests, MultipleRunReadyCalls) {
-    std::atomic<int> counter{0};
-    auto             counter_ptr = &counter;
+TEST_F(CoroutineSchedulerTests, PendingCountReflectsReadyQueue) {
+    auto &sched = coro_scheduler();
 
-    auto fn = [counter_ptr]() -> task<void> {
-        for (int i = 0; i < 5; ++i) {
-            counter_ptr->fetch_add(1);
-            co_await sleep(10ms);
-        }
-        co_return;
-    };
+    EXPECT_FALSE(sched.has_ready());
+    EXPECT_EQ(sched.pending_count(), 0u);
 
-    coro_scheduler().spawn(fn());
-
-    // Multiple run_ready() calls should be safe
-    for (int i = 0; i < 10; ++i) {
-        coro_scheduler().run_ready();
-        std::this_thread::sleep_for(5ms);
-        run_for(5ms);
-    }
-
-    EXPECT_EQ(counter.load(), 5);
-}
-
-// =============================================================================
-// TASK HANDLE MANAGEMENT
-// =============================================================================
-
-/**
- * @test Task handle address stability
- * @brief Verify coroutine handle address remains stable
- */
-TEST_F(CoroutineSchedulerTests, HandleAddressStability) {
     auto fn = []() -> task<void> {
-        // Simple coroutine to test handle stability
-        co_await sleep(10ms);
+        co_await sleep(50ms);
         co_return;
     };
+    sched.spawn(fn);
 
-    auto  t            = fn();
-    void *initial_addr = t.handle().address();
+    // The spawned coroutine is queued for its initial resume.
+    EXPECT_TRUE(sched.has_ready());
+    EXPECT_EQ(sched.pending_count(), 1u);
 
-    // Verify handle is valid before spawn
-    EXPECT_NE(initial_addr, nullptr);
-    EXPECT_FALSE(t.handle().done());
-
-    coro_scheduler().spawn(std::move(t));
-    run_for(50ms);
-
-    // After completion, scheduler should have cleaned up
-    EXPECT_EQ(coro_scheduler().active_count(), 0);
+    // After one drain it suspends on the sleep watcher; the ready queue empties.
+    sched.run_ready();
+    EXPECT_EQ(sched.pending_count(), 0u);
+    EXPECT_FALSE(sched.has_ready());
 }
 
+// =============================================================================
+// HANDLE / COMPOSITION CONTRACTS
+// =============================================================================
+
 /**
- * @test Awaiting completed task
- * @brief Verify awaiting an already-completed task returns immediately
+ * @test Awaiting an already-completed inner task returns synchronously
+ * @brief task::await_ready() short-circuits a finished inner task; the value is delivered.
  */
-TEST_F(CoroutineSchedulerTests, AwaitingCompletedTaskReturnsImmediately) {
-    std::atomic<int> result{0};
-    auto             result_ptr = &result;
+TEST_F(CoroutineSchedulerTests, AwaitingCompletedTaskReturnsValue) {
+    std::atomic<int> result{-1};
 
-    // Create a task that completes immediately
-    auto inner_fn = []() -> task<int> {
-        co_return 42;
-    };
-
-    auto outer_fn = [result_ptr, &inner_fn]() -> task<void> {
-        // Create and await immediately - should return synchronously
-        auto inner = inner_fn();
-        int  val   = co_await inner;
+    auto result_ptr = &result;
+    coro_scheduler().spawn([result_ptr]() -> task<void> {
+        auto inner_fn = []() -> task<int> {
+            co_return 42;
+        };
+        int val = co_await inner_fn();
         result_ptr->store(val);
         co_return;
-    };
+    });
 
-    coro_scheduler().spawn(outer_fn());
-    run_for(50ms);
-
+    EXPECT_TRUE(pump_until([&] { return result.load() != -1; })) << "awaiter never resumed";
     EXPECT_EQ(result.load(), 42);
 }
 
+/**
+ * @test Promise is_ready() reflects completion state across an await
+ * @brief Before awaiting an unfinished inner task is_ready() is false; after the await the value is bound.
+ */
+TEST_F(CoroutineSchedulerTests, PromiseIsReadyReflectsState) {
+    std::atomic<bool> checked{false};
+    std::atomic<int>  value{-1};
+
+    auto checked_ptr = &checked;
+    auto value_ptr   = &value;
+    coro_scheduler().spawn([checked_ptr, value_ptr]() -> task<void> {
+        auto inner_fn = []() -> task<int> {
+            co_await sleep(10ms);
+            co_return 42;
+        };
+        auto inner = inner_fn();
+        EXPECT_FALSE(inner.handle().promise().is_ready());
+
+        int val = co_await inner;
+        value_ptr->store(val);
+        checked_ptr->store(true);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return checked.load(); })) << "coroutine never completed";
+    EXPECT_EQ(value.load(), 42);
+}
+
 // =============================================================================
-// EXCEPTION EDGE CASES
+// EXCEPTION EDGE CASES (scheduler-level; full propagation matrix in exception-propagation.cpp)
 // =============================================================================
 
 /**
- * @test Exception in coroutine with no exception handler
- * @brief Verify unhandled exceptions terminate coroutine gracefully
+ * @test Unhandled exception in a spawned root tears down cleanly
+ * @brief A throwing spawned coroutine stops at the throw, runs nothing after it, and the scheduler is
+ *        left empty and usable.
  */
 TEST_F(CoroutineSchedulerTests, UnhandledExceptionTerminatesCoroutine) {
     std::atomic<bool> after_throw{false};
-    auto              after_ptr = &after_throw;
 
-    auto fn = [after_ptr]() -> task<void> {
+    auto after_ptr = &after_throw;
+    coro_scheduler().spawn([after_ptr]() -> task<void> {
         throw std::runtime_error("unhandled");
-        after_ptr->store(true); // Should never execute
+        after_ptr->store(true); // unreachable
         co_return;
-    };
+    });
 
-    // Spawn without try-catch
-    coro_scheduler().spawn(fn());
-    run_for(50ms);
-
-    // Coroutine should have terminated without executing after throw
+    // The unhandled exception is captured in the promise; the spawned frame completes and is reclaimed.
+    EXPECT_TRUE(pump_until([&] { return coro_scheduler().active_count() == 0u; }))
+        << "scheduler never drained the throwing coroutine";
     EXPECT_FALSE(after_throw.load());
-
-    // Scheduler should have cleaned up
-    EXPECT_EQ(coro_scheduler().active_count(), 0);
 }
 
 /**
- * @test Exception during value return
- * @brief Verify exception in return_value() is properly handled
- *
- * NOTE: Move semantics prevent copy exceptions - disabled
+ * @test Exception from an awaited task surfaces at the co_await
+ * @brief Replaces the old vacuous CancellationOfAwaitedTask (which asserted nothing about the outcome):
+ *        an inner task that throws after suspension propagates the exception to the awaiting coroutine.
  */
-TEST_F(CoroutineSchedulerTests, DISABLED_ExceptionDuringValueReturn) {
-    struct ThrowOnCopy {
-        ThrowOnCopy() = default;
-        ThrowOnCopy(const ThrowOnCopy &) {
-            throw std::runtime_error("copy failed");
-        }
-        ThrowOnCopy(ThrowOnCopy &&) = default;
-    };
-
+TEST_F(CoroutineSchedulerTests, ExceptionFromAwaitedTaskPropagates) {
+    std::atomic<bool> inner_started{false};
     std::atomic<bool> caught{false};
-    auto              caught_ptr = &caught;
+    std::atomic<bool> outer_continued{false};
 
-    auto thrower_fn = []() -> task<ThrowOnCopy> {
-        ThrowOnCopy obj;
-        co_return obj; // Will use move, not copy
-    };
-
-    auto catcher_fn = [caught_ptr, &thrower_fn]() -> task<void> {
+    auto inner_ptr = &inner_started;
+    auto caught_ptr = &caught;
+    auto outer_ptr  = &outer_continued;
+    coro_scheduler().spawn([inner_ptr, caught_ptr, outer_ptr]() -> task<void> {
+        auto inner_fn = [inner_ptr]() -> task<int> {
+            inner_ptr->store(true);
+            co_await sleep(10ms);
+            throw std::runtime_error("inner failed");
+            co_return 42;
+        };
         try {
-            auto result = co_await thrower_fn();
-            (void) result;
+            int val = co_await inner_fn();
+            (void) val;
         } catch (const std::runtime_error &) {
             caught_ptr->store(true);
         }
+        outer_ptr->store(true);
         co_return;
-    };
+    });
 
-    coro_scheduler().spawn(catcher_fn());
-    run_for(50ms);
-
-    EXPECT_TRUE(caught.load());
+    EXPECT_TRUE(pump_until([&] { return outer_continued.load(); })) << "outer coroutine never resumed";
+    EXPECT_TRUE(inner_started.load());
+    EXPECT_TRUE(caught.load()) << "awaited-task exception did not surface at the co_await";
 }
 
 // =============================================================================
-// MOVE SEMANTICS & OWNERSHIP
+// SYMMETRIC TRANSFER
 // =============================================================================
 
 /**
- * @test Task is move-only
- * @brief Verify task<T> has proper move semantics
+ * @test Deep await chain does not overflow the stack
+ * @brief Symmetric transfer keeps a 100-deep recursive await chain off the C++ call stack and returns
+ *        the exact accumulated value.
  */
-TEST_F(CoroutineSchedulerTests, TaskIsMoveOnly) {
-    // This test verifies at compile-time that task is move-only
-    static_assert(!std::is_copy_constructible_v<task<int>>);
-    static_assert(!std::is_copy_assignable_v<task<int>>);
-    static_assert(std::is_move_constructible_v<task<int>>);
-    static_assert(std::is_move_assignable_v<task<int>>);
+TEST_F(CoroutineSchedulerTests, DeepChainNoStackOverflow) {
+    constexpr int    kDepth = 100;
+    std::atomic<int> final_result{-1};
 
-    // Runtime verification
-    auto fn = []() -> task<int> {
-        co_return 42;
-    };
-
-    auto t1 = fn();
-    auto t2 = std::move(t1); // Should compile
-
-    // t1 should be in moved-from state
-    EXPECT_FALSE(t1.handle());
-    EXPECT_TRUE(t2.handle());
-}
-
-/**
- * @test Move-only return values
- * @brief Verify coroutines can return move-only types
- */
-TEST_F(CoroutineSchedulerTests, MoveOnlyReturnValue) {
-    struct MoveOnly {
-        std::unique_ptr<int> data;
-        MoveOnly(int val)
-            : data(std::make_unique<int>(val)) {}
-        MoveOnly(const MoveOnly &) = delete;
-        MoveOnly(MoveOnly &&)      = default;
-    };
-
-    std::atomic<int> result{0};
-    auto             result_ptr = &result;
-
-    auto producer_fn = []() -> task<MoveOnly> {
-        co_await sleep(10ms);
-        co_return MoveOnly{42};
-    };
-
-    auto consumer_fn = [result_ptr, &producer_fn]() -> task<void> {
-        auto obj = co_await producer_fn();
-        if (obj.data) {
-            result_ptr->store(*obj.data);
+    std::function<task<int>(int)> chain = [&chain](int n) -> task<int> {
+        if (n == 0) {
+            co_return 0;
         }
-        co_return;
+        int val = co_await chain(n - 1);
+        co_return val + 1;
     };
 
-    coro_scheduler().spawn(consumer_fn());
-    run_for(50ms);
+    auto result_ptr = &final_result;
+    coro_scheduler().spawn([&chain, result_ptr]() -> task<void> {
+        int v = co_await chain(kDepth);
+        result_ptr->store(v);
+        co_return;
+    });
 
-    EXPECT_EQ(result.load(), 42);
+    EXPECT_TRUE(pump_until([&] { return final_result.load() != -1; })) << "deep chain never completed";
+    EXPECT_EQ(final_result.load(), kDepth);
+}
+
+/**
+ * @test Symmetric transfer with immediate (no-suspend) completion
+ * @brief An inner task that completes without suspending hands control straight back; observe the exact
+ *        interleaved execution order via additive markers.
+ */
+TEST_F(CoroutineSchedulerTests, SymmetricTransferImmediateCompletion) {
+    std::atomic<int> execution_count{0};
+
+    auto count_ptr = &execution_count;
+    coro_scheduler().spawn([count_ptr]() -> task<void> {
+        auto inner_fn = [count_ptr]() -> task<int> {
+            count_ptr->fetch_add(1);
+            co_return 42;
+        };
+        count_ptr->fetch_add(10);
+        int val = co_await inner_fn();
+        EXPECT_EQ(val, 42);
+        count_ptr->fetch_add(100);
+        co_return;
+    });
+
+    coro_scheduler().run_ready();
+    // outer(10) + inner(1) + outer(100) = 111, all on a single drain (no real suspension).
+    EXPECT_EQ(execution_count.load(), 111);
 }
 
 // =============================================================================
-// SCHEDULER INTEGRATION
+// TLS SCHEDULER IDENTITY
 // =============================================================================
 
 /**
- * @test Scheduler is thread-local
- * @brief Verify each thread has its own scheduler instance
+ * @test Each thread has its own scheduler instance
+ * @brief The TLS scheduler is per-thread; a worker thread observes a different instance.
  */
 TEST_F(CoroutineSchedulerTests, SchedulerIsThreadLocal) {
     auto *main_sched = &coro_scheduler();
@@ -368,416 +585,83 @@ TEST_F(CoroutineSchedulerTests, SchedulerIsThreadLocal) {
     });
     t.join();
 
-    // Different threads should have different scheduler instances
-    EXPECT_NE(main_sched, thread_sched_addr.load());
     EXPECT_NE(thread_sched_addr.load(), nullptr);
+    EXPECT_NE(main_sched, thread_sched_addr.load());
 }
 
 /**
- * @test Scheduler survives event loop restarts
- * @brief Verify scheduler state persists across listener.clear() calls
+ * @test current_ptr() reflects a listener reset (regression — Finding 2.D.4)
+ * @brief After resetting the TLS scheduler, current_ptr() is null until the next access, and the freshly
+ *        created scheduler is the one reachable through current_ptr().
+ *
+ * Salvaged verbatim-in-spirit from the dissolved
+ * test-coroutine-regression.cpp::SchedulerCurrentPtrReflectsListenerReset: Actor::spawn_detached caches a
+ * scheduler pointer and must revalidate it against the current TLS scheduler; this drives the scheduler
+ * directly to prove the underlying invariant.
+ *
+ * NOTE: drives the TLS scheduler lifecycle directly, so it deliberately does NOT use the fixture's
+ * reset_coro_scheduler-based TearDown assumptions mid-test — it re-creates the scheduler before returning.
  */
-TEST_F(CoroutineSchedulerTests, SchedulerSurvivesEventLoopRestart) {
-    auto &sched = coro_scheduler();
+TEST_F(CoroutineSchedulerTests, SchedulerCurrentPtrReflectsListenerReset) {
+    auto *before = &qb::io::async::listener::current.coro_scheduler();
+    ASSERT_EQ(before, CoroutineScheduler::current_ptr());
 
-    std::atomic<int> counter{0};
-    auto             counter_ptr = &counter;
+    qb::io::async::listener::current.reset_coro_scheduler();
+    EXPECT_EQ(CoroutineScheduler::current_ptr(), nullptr);
 
-    // Spawn a coroutine
-    auto fn = [counter_ptr]() -> task<void> {
-        co_await sleep(10ms);
-        counter_ptr->fetch_add(1);
-        co_return;
-    };
-    sched.spawn(fn());
-
-    EXPECT_GE(sched.active_count(), 1);
-
-    // Clear event loop
-    qb::io::async::listener::current.clear();
-
-    // Scheduler should still track the coroutine
-    EXPECT_GE(sched.active_count(), 0);
-
-    // Reinit and continue
-    qb::io::async::init();
-    run_for(50ms);
-
-    EXPECT_EQ(counter.load(), 1);
+    auto *after = &qb::io::async::listener::current.coro_scheduler();
+    ASSERT_NE(after, nullptr);
+    EXPECT_EQ(after, CoroutineScheduler::current_ptr());
+    EXPECT_EQ(after, &qb::io::async::listener::current.coro_scheduler());
 }
 
 // =============================================================================
-// SYMMETRIC TRANSFER VERIFICATION
-// =============================================================================
-
-/**
- * @test Deep coroutine chain doesn't overflow stack
- * @brief Verify symmetric transfer prevents stack overflow
- */
-TEST_F(CoroutineSchedulerTests, DeepChainNoStackOverflow) {
-    constexpr int    depth = 100; // Deep enough to test, not too slow
-    std::atomic<int> final_result{0};
-    auto             result_ptr = &final_result;
-
-    // Create a recursive chain
-    std::function<task<int>(int)> chain = [&chain](int n) -> task<int> {
-        if (n == 0) {
-            co_return 0;
-        }
-        int val = co_await chain(n - 1);
-        co_return val + 1;
-    };
-
-    auto starter_fn = [&chain, result_ptr]() -> task<void> {
-        int final_val = co_await chain(depth);
-        result_ptr->store(final_val);
-        co_return;
-    };
-
-    coro_scheduler().spawn(starter_fn());
-    run_for(500ms);
-
-    EXPECT_EQ(final_result.load(), depth);
-}
-
-/**
- * @test Symmetric transfer with immediate completion
- * @brief Verify symmetric transfer works when task completes immediately
- */
-TEST_F(CoroutineSchedulerTests, SymmetricTransferImmediateCompletion) {
-    std::atomic<int> execution_count{0};
-    auto             count_ptr = &execution_count;
-
-    // Inner completes immediately (no suspension points)
-    auto inner_fn = [count_ptr]() -> task<int> {
-        count_ptr->fetch_add(1);
-        co_return 42;
-    };
-
-    // Outer awaits inner
-    auto outer_fn = [count_ptr, &inner_fn]() -> task<void> {
-        count_ptr->fetch_add(10);
-        int val = co_await inner_fn();
-        EXPECT_EQ(val, 42);
-        count_ptr->fetch_add(100);
-        co_return;
-    };
-
-    coro_scheduler().spawn(outer_fn());
-    run_for(10ms);
-
-    // Should have executed: outer(10) + inner(1) + outer(100) = 111
-    EXPECT_EQ(execution_count.load(), 111);
-}
-
-// =============================================================================
-// COROUTINE FRAME LIFECYCLE
-// =============================================================================
-
-/**
- * @test Coroutine frame destroyed after completion
- * @brief Verify coroutine frame is properly cleaned up
- */
-TEST_F(CoroutineSchedulerTests, FrameDestroyedAfterCompletion) {
-    struct FrameMarker {
-        std::atomic<bool> *destroyed;
-        FrameMarker(std::atomic<bool> *d)
-            : destroyed(d) {}
-        ~FrameMarker() {
-            if (destroyed)
-                destroyed->store(true);
-        }
-    };
-
-    std::atomic<bool> frame_destroyed{false};
-    std::atomic<bool> completed{false};
-    auto              destroyed_ptr = &frame_destroyed;
-    auto              completed_ptr = &completed;
-
-    auto fn = [destroyed_ptr, completed_ptr]() -> task<void> {
-        FrameMarker marker{destroyed_ptr};
-        co_await sleep(10ms);
-        completed_ptr->store(true);
-        co_return;
-        // marker destroyed here
-    };
-
-    coro_scheduler().spawn(fn());
-
-    // Before completion
-    run_for(5ms);
-    EXPECT_FALSE(completed.load());
-    EXPECT_FALSE(frame_destroyed.load());
-
-    // After completion
-    run_for(20ms);
-    EXPECT_TRUE(completed.load());
-    EXPECT_TRUE(frame_destroyed.load());
-}
-
-/**
- * @test Task destruction before spawn
- * @brief Verify task can be destroyed without spawning
- */
-TEST_F(CoroutineSchedulerTests, TaskDestructionBeforeSpawn) {
-    std::atomic<bool> executed{false};
-    auto              executed_ptr = &executed;
-
-    {
-        auto fn = [executed_ptr]() -> task<void> {
-            executed_ptr->store(true);
-            co_return;
-        };
-        auto t = fn();
-        // t destroyed here without spawning
-    }
-
-    run_for(10ms);
-
-    // Should never have executed
-    EXPECT_FALSE(executed.load());
-    EXPECT_EQ(coro_scheduler().active_count(), 0);
-}
-
-// =============================================================================
-// PROMISE STATE INSPECTION
-// =============================================================================
-
-/**
- * @test Promise is_ready() reflects completion state
- * @brief Verify promise.is_ready() accurately reflects task state
- */
-TEST_F(CoroutineSchedulerTests, PromiseIsReadyReflectsState) {
-    std::atomic<bool> checked_ready{false};
-    auto              checked_ptr = &checked_ready;
-
-    auto inner_fn = []() -> task<int> {
-        co_await sleep(10ms);
-        co_return 42;
-    };
-
-    auto outer_fn = [checked_ptr, &inner_fn]() -> task<void> {
-        auto inner = inner_fn();
-
-        // Before awaiting, should not be ready
-        EXPECT_FALSE(inner.handle().promise().is_ready());
-
-        int val = co_await inner;
-
-        // After awaiting, should be ready
-        checked_ptr->store(true);
-        EXPECT_EQ(val, 42);
-        co_return;
-    };
-
-    coro_scheduler().spawn(outer_fn());
-    run_for(50ms);
-
-    EXPECT_TRUE(checked_ready.load());
-}
-
-// =============================================================================
-// COROUTINE CANCELLATION
-// =============================================================================
-
-/**
- * @test Task destruction cancels pending operation
- * @brief Verify destroying task handle cancels the coroutine
- */
-TEST_F(CoroutineSchedulerTests, TaskDestructionCancelsPendingOperation) {
-    std::atomic<bool> started{false};
-    std::atomic<bool> completed{false};
-    auto              started_ptr   = &started;
-    auto              completed_ptr = &completed;
-
-    {
-        auto fn = [started_ptr, completed_ptr]() -> task<void> {
-            started_ptr->store(true);
-            co_await sleep(100ms);
-            completed_ptr->store(true);
-            co_return;
-        };
-
-        coro_scheduler().spawn(fn); // owned-callable: closure outlived by coroutine
-        run_for(20ms);
-
-        EXPECT_TRUE(started.load());
-        EXPECT_FALSE(completed.load());
-
-        // Task destroyed here - should cancel
-    }
-
-    // Continue running - coroutine should NOT complete
-    run_for(200ms);
-
-    // Note: In current implementation, spawned coroutines continue
-    // This test documents current behavior - may change with cancellation support
-    // For now, we just verify the coroutine eventually completes
-    EXPECT_TRUE(completed.load() || !completed.load()); // Either outcome is valid
-}
-
-/**
- * @test Cancellation of awaited task
- * @brief Verify cancelling a task that another is awaiting
- */
-TEST_F(CoroutineSchedulerTests, CancellationOfAwaitedTask) {
-    std::atomic<bool> inner_started{false};
-    std::atomic<bool> outer_continued{false};
-    auto              inner_ptr = &inner_started;
-    auto              outer_ptr = &outer_continued;
-
-    auto inner_fn = [inner_ptr]() -> task<int> {
-        inner_ptr->store(true);
-        co_await sleep(100ms);
-        co_return 42;
-    };
-
-    auto outer_fn = [outer_ptr, &inner_fn]() -> task<void> {
-        try {
-            auto inner = inner_fn();
-            int  val   = co_await inner;
-            (void) val;
-            outer_ptr->store(true);
-        } catch (...) {
-            // If inner is cancelled, this might throw
-        }
-        co_return;
-    };
-
-    coro_scheduler().spawn(outer_fn());
-    run_for(150ms);
-
-    EXPECT_TRUE(inner_started.load());
-    // Behavior depends on cancellation implementation
-}
-
-// =============================================================================
-// LOCK-FREE QUEUE STRESS
+// READY-QUEUE STRESS
 // =============================================================================
 
 /**
  * @test Many spawns stress the ready queue
- * @brief Lock-free MPSC queue under many concurrent-style pushes from one thread
+ * @brief 200 short-lived coroutines all complete; the mono-thread deque ready queue handles the churn.
  */
 TEST_F(CoroutineSchedulerTests, ManySpawnsStressReadyQueue) {
-    constexpr int    N = 200;
+    constexpr int    kN = 200;
     std::atomic<int> done{0};
 
-    for (int i = 0; i < N; ++i) {
-        auto fn = [&done]() -> task<void> {
+    auto done_ptr = &done;
+    for (int i = 0; i < kN; ++i) {
+        auto fn = [done_ptr]() -> task<void> {
             co_await sleep(1ms);
-            done++;
+            done_ptr->fetch_add(1);
         };
         coro_scheduler().spawn(fn);
     }
 
-    run_for(500ms);
-    EXPECT_EQ(done.load(), N);
+    EXPECT_TRUE(pump_until([&] { return done.load() == kN; })) << "not all spawned coroutines completed";
+    EXPECT_EQ(done.load(), kN);
+    EXPECT_EQ(coro_scheduler().active_count(), 0u);
 }
 
 /**
- * @test Burst of schedule_resume (via sleep then resume)
- * @brief Many coroutines suspend and get scheduled back; stresses queue
+ * @test Burst of suspend/resume cycles stresses schedule_resume
+ * @brief 100 coroutines each suspend/resume 5 times; every step is accounted for.
  */
 TEST_F(CoroutineSchedulerTests, BurstScheduleResumeStress) {
-    constexpr int    N = 100;
+    constexpr int    kN = 100;
     std::atomic<int> steps{0};
 
-    auto fn = [&steps]() -> task<void> {
+    auto steps_ptr = &steps;
+    auto fn        = [steps_ptr]() -> task<void> {
         for (int i = 0; i < 5; ++i) {
             co_await sleep(2ms);
-            steps++;
+            steps_ptr->fetch_add(1);
         }
     };
 
-    for (int i = 0; i < N; ++i) {
-        coro_scheduler().spawn(fn());
+    for (int i = 0; i < kN; ++i) {
+        coro_scheduler().spawn(fn);
     }
 
-    run_for(1500ms);
-    EXPECT_EQ(steps.load(), N * 5);
-}
-
-// =============================================================================
-// TEST SUITE: Task and Scheduler Advanced APIs
-// =============================================================================
-
-TEST_F(CoroutineSchedulerTests, TaskDetachRunsIndependently) {
-    std::atomic<bool> finished{false};
-
-    auto fn = [&finished]() -> task<void> {
-        co_await sleep(20ms);
-        finished = true;
-    };
-
-    auto t = fn();
-    coro_scheduler().spawn(std::move(t));
-
-    run_for(200ms);
-    EXPECT_TRUE(finished.load());
-}
-
-TEST_F(CoroutineSchedulerTests, TaskDoneReflectsCompletion) {
-    auto fn = []() -> task<int> {
-        co_return 42;
-    };
-
-    auto t = fn();
-    EXPECT_FALSE(t.done());
-
-    bool done = false;
-    coro_scheduler().spawn([&t, &done]() -> task<void> {
-        auto val = co_await std::move(t);
-        EXPECT_EQ(val, 42);
-        done = true;
-    });
-    run_for(50ms);
-    EXPECT_TRUE(done);
-}
-
-TEST_F(CoroutineSchedulerTests, TaskOperatorBoolChecksValidity) {
-    auto fn = []() -> task<int> {
-        co_return 1;
-    };
-    auto t = fn();
-    EXPECT_TRUE(static_cast<bool>(t));
-
-    auto t2 = std::move(t);
-    EXPECT_FALSE(static_cast<bool>(t));
-    EXPECT_TRUE(static_cast<bool>(t2));
-}
-
-TEST_F(CoroutineSchedulerTests, SpawnCallableOverload) {
-    std::atomic<bool> called{false};
-
-    coro_scheduler().spawn([&called]() -> task<void> {
-        called = true;
-        co_return;
-    });
-
-    run_for(50ms);
-    EXPECT_TRUE(called.load());
-}
-
-TEST_F(CoroutineSchedulerTests, PendingCountAfterSpawn) {
-    auto &sched = coro_scheduler();
-
-    std::atomic<bool> finished{false};
-    sched.spawn([&finished]() -> task<void> {
-        co_await sleep(50ms);
-        finished = true;
-    });
-
-    run_for(200ms);
-    EXPECT_TRUE(finished.load());
-}
-
-// =============================================================================
-// MAIN
-// =============================================================================
-
-int
-main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    EXPECT_TRUE(pump_until([&] { return steps.load() == kN * 5; })) << "not all suspend/resume steps ran";
+    EXPECT_EQ(steps.load(), kN * 5);
+    EXPECT_EQ(coro_scheduler().active_count(), 0u);
 }

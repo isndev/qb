@@ -28,7 +28,6 @@
 # transitionally for the monoliths still being decomposed by the split wave.
 add_subdirectory(unit)
 add_subdirectory(system)
-add_subdirectory(coroutine)   # TRANSITIONAL — split-pending coroutine monoliths
 
 # Add performance benchmarks if benchmarking is enabled
 if (QB_BUILD_BENCHMARKS)

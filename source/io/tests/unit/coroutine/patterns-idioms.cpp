@@ -1,10 +1,27 @@
 /**
- * @file qb/io/tests/coroutine/test-coroutine-patterns.cpp
- * @brief Coroutine concurrency pattern tests
+ * @file unit/coroutine/patterns-idioms.cpp
+ * @brief Real-world async idioms built on the qb-io coroutine primitives.
  *
- * This file contains tests for common asynchronous coordination patterns built with
- * coroutines, including producer-consumer flows, pipelines with backpressure, barriers,
- * scatter-gather style composition, circuit breaker behavior, and fallback paths.
+ * Where the other coroutine files pin individual API contracts, this file proves the framework composes
+ * into the recipes applications actually write: fan-out-and-collect (when_all by hand), a barrier, a
+ * staged pipeline, bounded producer/consumer, sequential dependent async steps (DB-query shape), retry
+ * with backoff, a poll-with-timeout, a circuit breaker, and primary/fallback. Each idiom is built only
+ * from `task<T>` + `sleep()` + the scheduler, runs in-process on the event loop (`init()` via
+ * `reset_async_context()`, `spawn`, the de-flake pump `pump_until`) — NO sockets, NO daemon, NO TLS — so
+ * this is a `unit` test (labelled `idiom`). qb-io ships real coroutine latch/semaphore/channel primitives
+ * (covered in coroutine-sync-primitives.cpp / the channel tests); the hand-rolled barrier/producer-consumer
+ * here intentionally exercise the bare scheduling fabric.
+ *
+ * Hardened over the original test-coroutine-patterns.cpp and enriched from the dissolved
+ * test-coroutine-comprehensive.cpp:
+ *   - the two stale "NOTE: Disabled" header comments are removed (the tests were never actually disabled);
+ *   - every indexed access into a result vector is now guarded by ASSERT_EQ on its size first, so a
+ *     partial run fails loudly instead of reading out of bounds (UB);
+ *   - every fixed `run_for(Nms)` budget is replaced by a completion-flag + `pump_until`, and a TearDown
+ *     drain is added so a timed-out test cannot leak in-flight frames into the next;
+ *   - salvaged real-world idioms folded in: SequentialAsyncOperations, RetryWithBackoff,
+ *     ProducerConsumerPattern, plus the composition idioms ChainOfThreeCoroutines and NoSuspensionPoints.
+ * No file-local main(): shared gtest_main.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -22,76 +39,81 @@
  * @ingroup Tests
  */
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <string>
+#include <vector>
+
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
-#include <chrono>
-#include <atomic>
-#include <vector>
-#include <mutex>
+
+#include "../../shared/coroutine_test_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
+using qb::io::test::pump_until;
+using qb::io::test::reset_async_context;
 
-// =============================================================================
-// SYNCHRONIZATION PATTERNS
-// =============================================================================
+namespace {
 
-class CoroutineSyncPatterns : public ::testing::Test {
+// Shared fixture base: fresh per-test loop, drain + reset on teardown so a timed-out idiom cannot leak
+// in-flight frames into the next test.
+class CoroutineIdiomFixture : public ::testing::Test {
 protected:
     void
     SetUp() override {
-        qb::io::async::init();
+        reset_async_context();
     }
     void
     TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };
 
+} // namespace
+
+// =============================================================================
+// FAN-OUT / SYNCHRONIZATION IDIOMS
+// =============================================================================
+
+class CoroutineSyncPatterns : public CoroutineIdiomFixture {};
+
 /**
- * @test WhenAll with proper synchronization
- * @brief Collect all results before continuing
- *
- * NOTE: Disabled - complex issue with task vector awaiting
+ * @test Fan-out then collect every result (hand-rolled when_all)
+ * @brief Spawn N worker tasks, await each, collect results; assert the full multiset of expected values.
  */
 TEST_F(CoroutineSyncPatterns, WhenAllWithResults) {
-    constexpr int    count = 5;
-    std::vector<int> results;
-    std::mutex       mutex;
-
-    // Define worker outside coroutine
-    auto worker = [](int id) -> task<int> {
-        co_await sleep(std::chrono::milliseconds(10 + id * 5));
-        co_return id * 10;
-    };
+    constexpr int     count = 5;
+    std::vector<int>  results;
+    std::atomic<bool> done{false};
 
     auto results_ptr = &results;
-    auto mutex_ptr   = &mutex;
-    auto coro_fn     = [results_ptr, mutex_ptr, &worker]() -> task<void> {
-        std::vector<task<int>> tasks;
+    auto done_ptr    = &done;
+    coro_scheduler().spawn([results_ptr, done_ptr]() -> task<void> {
+        auto worker = [](int id) -> task<int> {
+            co_await sleep(std::chrono::milliseconds(10 + id * 5));
+            co_return id * 10;
+        };
 
-        // Create all tasks
+        std::vector<task<int>> tasks;
         for (int i = 0; i < count; ++i) {
             tasks.push_back(worker(i));
         }
-
-        // Wait for all and collect results
         for (size_t i = 0; i < tasks.size(); ++i) {
-            int                         result = co_await tasks[i];
-            std::lock_guard<std::mutex> lock(*mutex_ptr);
-            results_ptr->push_back(result);
+            results_ptr->push_back(co_await tasks[i]);
         }
-
+        done_ptr->store(true);
         co_return;
-    };
-    auto coordinator = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(coordinator));
-    run_for(200ms);
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "fan-out coordinator never completed";
 
-    EXPECT_EQ(results.size(), count);
-
-    // Sort and verify
+    ASSERT_EQ(results.size(), static_cast<size_t>(count)); // OOB guard before indexed access
     std::sort(results.begin(), results.end());
     for (int i = 0; i < count; ++i) {
         EXPECT_EQ(results[i], i * 10);
@@ -99,8 +121,9 @@ TEST_F(CoroutineSyncPatterns, WhenAllWithResults) {
 }
 
 /**
- * @test Barrier pattern
- * @brief Wait for all tasks to reach a barrier
+ * @test Barrier: all workers must reach the rendezvous before any continues
+ * @brief Three workers do staggered work, increment a shared counter, then spin-wait until all have
+ *        arrived before completing. All three complete exactly once.
  */
 TEST_F(CoroutineSyncPatterns, BarrierPattern) {
     constexpr int    count = 3;
@@ -108,125 +131,92 @@ TEST_F(CoroutineSyncPatterns, BarrierPattern) {
     std::atomic<int> completed{0};
 
     auto worker = [&at_barrier, &completed](int id) -> task<void> {
-        // Phase 1: Do work
         co_await sleep(std::chrono::milliseconds(10 + id * 10));
         at_barrier.fetch_add(1);
-
-        // Phase 2: Wait at barrier
-        while (at_barrier < count) {
+        while (at_barrier.load() < count) {
             co_await sleep(5ms);
         }
-
-        // Phase 3: Continue
         completed.fetch_add(1);
         co_return;
     };
-    auto coro_fn = [&worker]() -> task<void> {
-        for (int i = 0; i < count; ++i) {
-            coro_scheduler().spawn(worker(i));
-        }
-        co_return;
-    };
-    auto coordinator = coro_fn();
 
-    coro_scheduler().spawn(std::move(coordinator));
-    run_for(200ms);
+    for (int i = 0; i < count; ++i) {
+        coro_scheduler().spawn(worker(i));
+    }
 
-    EXPECT_EQ(completed, count);
+    EXPECT_TRUE(pump_until([&] { return completed.load() == count; })) << "not all workers passed the barrier";
+    EXPECT_EQ(completed.load(), count);
 }
 
 /**
- * @test Pipeline with backpressure
- * @brief Control flow through pipeline stages
- *
- * NOTE: Disabled - stage lambdas not returning correct values
+ * @test Two-stage pipeline with per-item ordering
+ * @brief Each input flows through stage1 (x*2) then stage2 (+10); the produced vector is exact and ordered.
  */
 TEST_F(CoroutineSyncPatterns, PipelineWithBackpressure) {
-    std::vector<int> results;
-    std::mutex       mutex;
-    constexpr int    count = 5;
-
-    // Define stages OUTSIDE coroutine
-    auto stage1 = [](int x) -> task<int> {
-        co_await sleep(10ms);
-        co_return x * 2;
-    };
-
-    auto stage2 = [](int x) -> task<int> {
-        co_await sleep(10ms);
-        co_return x + 10;
-    };
+    constexpr int     count = 5;
+    std::vector<int>  results;
+    std::atomic<bool> done{false};
 
     auto results_ptr = &results;
-    auto mutex_ptr   = &mutex;
-
-    auto coro_fn = [results_ptr, mutex_ptr, &stage1, &stage2]() -> task<void> {
+    auto done_ptr    = &done;
+    coro_scheduler().spawn([results_ptr, done_ptr]() -> task<void> {
+        auto stage1 = [](int x) -> task<int> {
+            co_await sleep(5ms);
+            co_return x * 2;
+        };
+        auto stage2 = [](int x) -> task<int> {
+            co_await sleep(5ms);
+            co_return x + 10;
+        };
         for (int i = 1; i <= count; ++i) {
             int r1 = co_await stage1(i);
             int r2 = co_await stage2(r1);
-
-            std::lock_guard<std::mutex> lock(*mutex_ptr);
             results_ptr->push_back(r2);
         }
+        done_ptr->store(true);
         co_return;
-    };
-    auto pipeline = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(pipeline));
-    run_for(500ms);
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "pipeline never completed";
 
-    EXPECT_EQ(results.size(), count);
-
-    // Verify: ((x * 2) + 10)
+    ASSERT_EQ(results.size(), static_cast<size_t>(count)); // OOB guard before indexed access
     for (size_t i = 0; i < results.size(); ++i) {
-        int input    = i + 1;
-        int expected = (input * 2) + 10;
+        const int input    = static_cast<int>(i) + 1;
+        const int expected = (input * 2) + 10;
         EXPECT_EQ(results[i], expected);
     }
 }
 
 /**
- * @test Producer-consumer with bounded buffer
- * @brief Classic producer-consumer pattern
+ * @test Bounded producer/consumer
+ * @brief Producer never overruns a 3-slot buffer; consumer drains all items. Exactly num_items flow.
  */
 TEST_F(CoroutineSyncPatterns, ProducerConsumerBounded) {
     constexpr int    num_items   = 10;
     constexpr int    buffer_size = 3;
     std::vector<int> buffer;
-    std::mutex       mutex;
     std::atomic<int> produced{0};
     std::atomic<int> consumed{0};
 
-    auto producer = [&buffer, &mutex, &produced]() -> task<void> {
+    auto producer = [&buffer, &produced]() -> task<void> {
         for (int i = 0; i < num_items; ++i) {
-            // Wait if buffer is full
-            while (true) {
-                {
-                    std::lock_guard<std::mutex> lock(mutex);
-                    if (buffer.size() < buffer_size) {
-                        buffer.push_back(i);
-                        produced.fetch_add(1);
-                        break;
-                    }
-                }
-                co_await sleep(5ms);
+            while (static_cast<int>(buffer.size()) >= buffer_size) {
+                co_await sleep(2ms); // backpressure: wait for the consumer to drain
             }
-            co_await sleep(10ms); // Production time
+            buffer.push_back(i);
+            produced.fetch_add(1);
+            co_await sleep(5ms);
         }
         co_return;
     };
 
-    auto consumer = [&buffer, &mutex, &consumed]() -> task<void> {
-        while (consumed < num_items) {
-            // Check if buffer has items
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                if (!buffer.empty()) {
-                    buffer.erase(buffer.begin());
-                    consumed.fetch_add(1);
-                }
+    auto consumer = [&buffer, &consumed]() -> task<void> {
+        while (consumed.load() < num_items) {
+            if (!buffer.empty()) {
+                buffer.erase(buffer.begin());
+                consumed.fetch_add(1);
             }
-            co_await sleep(15ms); // Consumption time
+            co_await sleep(7ms);
         }
         co_return;
     };
@@ -234,219 +224,323 @@ TEST_F(CoroutineSyncPatterns, ProducerConsumerBounded) {
     coro_scheduler().spawn(producer());
     coro_scheduler().spawn(consumer());
 
-    run_for(500ms);
-
-    EXPECT_EQ(produced, num_items);
-    EXPECT_EQ(consumed, num_items);
+    EXPECT_TRUE(pump_until([&] { return consumed.load() == num_items; })) << "producer/consumer never drained";
+    EXPECT_EQ(produced.load(), num_items);
+    EXPECT_EQ(consumed.load(), num_items);
 }
 
 // =============================================================================
-// TIMING AND ORDERING TESTS
+// COMPOSITION IDIOMS (salvaged from the dissolved comprehensive suite)
 // =============================================================================
 
-class CoroutineTimingPatterns : public ::testing::Test {
-protected:
-    void
-    SetUp() override {
-        qb::io::async::init();
-    }
-    void
-    TearDown() override {
-        qb::io::async::listener::current.clear();
-    }
-};
+class CoroutineCompositionPatterns : public CoroutineIdiomFixture {};
 
 /**
- * @test Sequential timers
- * @brief Chain of timers with specific delays
+ * @test Three-level coroutine chain interleaves as expected
+ * @brief level1 → level2 → level3 with sleeps between; additive markers prove the exact interleave and
+ *        the innermost return value bubbles up.
+ *
+ * Salvaged from test-coroutine-comprehensive.cpp::ChainOfThreeCoroutines.
+ */
+TEST_F(CoroutineCompositionPatterns, ChainOfThreeCoroutines) {
+    std::atomic<int>  counter{0};
+    std::atomic<int>  bottom_value{-1};
+    std::atomic<bool> done{false};
+
+    auto counter_ptr = &counter;
+    auto bottom_ptr  = &bottom_value;
+    auto done_ptr    = &done;
+    coro_scheduler().spawn([counter_ptr, bottom_ptr, done_ptr]() -> task<void> {
+        auto level3 = [counter_ptr]() -> task<int> {
+            counter_ptr->fetch_add(1);
+            co_return 100;
+        };
+        auto level2 = [counter_ptr, level3]() -> task<int> {
+            co_await sleep(5ms);
+            counter_ptr->fetch_add(10);
+            int val = co_await level3();
+            co_return val;
+        };
+        co_await sleep(5ms);
+        counter_ptr->fetch_add(100);
+        int val = co_await level2();
+        bottom_ptr->store(val);
+        done_ptr->store(true);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "coroutine chain never completed";
+    EXPECT_EQ(counter.load(), 111); // 100 (level1) + 10 (level2) + 1 (level3)
+    EXPECT_EQ(bottom_value.load(), 100);
+}
+
+/**
+ * @test A coroutine with no suspension points runs to completion in one drain
+ * @brief A pure-compute coroutine body (no co_await) completes synchronously when first resumed.
+ *
+ * Salvaged from test-coroutine-comprehensive.cpp::NoSuspensionPoints.
+ */
+TEST_F(CoroutineCompositionPatterns, NoSuspensionPoints) {
+    std::atomic<int> result{-1};
+
+    auto result_ptr = &result;
+    coro_scheduler().spawn([result_ptr]() -> task<void> {
+        int sum = 0;
+        for (int i = 0; i < 1000; ++i) {
+            sum += i;
+        }
+        result_ptr->store(sum);
+        co_return;
+    });
+
+    coro_scheduler().run_ready();
+    EXPECT_EQ(result.load(), 499500); // sum 0..999
+}
+
+// =============================================================================
+// TIMING / ORDERING IDIOMS
+// =============================================================================
+
+class CoroutineTimingPatterns : public CoroutineIdiomFixture {};
+
+/**
+ * @test Sequential timers fire in order with at-least-the-requested gaps
+ * @brief A chain of sleeps records timestamps; each interval is at least its (tolerance-reduced) target.
  */
 TEST_F(CoroutineTimingPatterns, SequentialTimers) {
     std::vector<std::chrono::steady_clock::time_point> timestamps;
-    auto                                               start = std::chrono::steady_clock::now();
+    const auto                                         start = std::chrono::steady_clock::now();
+    std::atomic<bool>                                  done{false};
 
     auto timestamps_ptr = &timestamps;
-    auto coro_fn        = [timestamps_ptr]() -> task<void> {
+    auto done_ptr       = &done;
+    coro_scheduler().spawn([timestamps_ptr, done_ptr]() -> task<void> {
         co_await sleep(20ms);
         timestamps_ptr->push_back(std::chrono::steady_clock::now());
-
         co_await sleep(30ms);
         timestamps_ptr->push_back(std::chrono::steady_clock::now());
-
         co_await sleep(20ms);
         timestamps_ptr->push_back(std::chrono::steady_clock::now());
-
+        done_ptr->store(true);
         co_return;
-    };
-    auto chain = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(chain));
-    run_for(100ms);
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "sequential timers never completed";
 
-    EXPECT_EQ(timestamps.size(), 3);
-
-    // Check intervals
-    auto first  = timestamps[0] - start;
-    auto second = timestamps[1] - timestamps[0];
-    auto third  = timestamps[2] - timestamps[1];
-
+    ASSERT_EQ(timestamps.size(), 3u); // OOB guard before indexed access
+    const auto first  = timestamps[0] - start;
+    const auto second = timestamps[1] - timestamps[0];
+    const auto third  = timestamps[2] - timestamps[1];
     EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(first).count(), 15);
     EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(second).count(), 25);
     EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(third).count(), 15);
 }
 
 /**
- * @test Timeout pattern
- * @brief Implement timeout for an operation
+ * @test Poll-with-timeout: a slow operation that overruns the deadline is reported as timed-out
+ * @brief The watcher polls the operation's readiness for 50ms; the operation needs 100ms, so the timeout
+ *        path is taken and the (still-running) operation is observed as not-yet-complete.
  */
 TEST_F(CoroutineTimingPatterns, TimeoutPattern) {
     std::atomic<bool> timeout_occurred{false};
     std::atomic<bool> operation_completed{false};
+    std::atomic<bool> done{false};
 
-    auto slow_operation = [&operation_completed]() -> task<void> {
-        co_await sleep(100ms);
-        operation_completed = true;
-        co_return;
-    };
-
-    auto timeout_occurred_ptr = &timeout_occurred;
-    auto coro_fn              = [timeout_occurred_ptr, &slow_operation]() -> task<void> {
+    auto op_ptr      = &operation_completed;
+    auto timeout_ptr = &timeout_occurred;
+    auto done_ptr    = &done;
+    coro_scheduler().spawn([op_ptr, timeout_ptr, done_ptr]() -> task<void> {
+        auto slow_operation = [op_ptr]() -> task<void> {
+            co_await sleep(100ms);
+            op_ptr->store(true);
+            co_return;
+        };
         auto operation = slow_operation();
-        auto start     = std::chrono::steady_clock::now();
-
-        // Poll with timeout
+        const auto start = std::chrono::steady_clock::now();
         while (std::chrono::steady_clock::now() - start < 50ms) {
             if (operation.handle().promise().is_ready()) {
                 co_await operation;
+                done_ptr->store(true);
                 co_return;
             }
             co_await sleep(5ms);
         }
-
-        // Timeout occurred
-        (*timeout_occurred_ptr) = true;
+        timeout_ptr->store(true);
+        done_ptr->store(true);
         co_return;
-    };
-    auto with_timeout = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(with_timeout));
-    run_for(150ms);
-
-    EXPECT_TRUE(timeout_occurred);
-    EXPECT_FALSE(operation_completed);
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "timeout watcher never completed";
+    EXPECT_TRUE(timeout_occurred.load());
+    EXPECT_FALSE(operation_completed.load());
 }
 
 // =============================================================================
-// ERROR HANDLING PATTERNS
+// SEQUENTIAL DEPENDENT STEPS (DB-query shape) — salvaged
 // =============================================================================
 
-class CoroutineErrorPatterns : public ::testing::Test {
-protected:
-    void
-    SetUp() override {
-        qb::io::async::init();
-    }
-    void
-    TearDown() override {
-        qb::io::async::listener::current.clear();
-    }
-};
+class CoroutineWorkflowPatterns : public CoroutineIdiomFixture {};
 
 /**
- * @test Circuit breaker pattern
- * @brief Stop after too many failures
+ * @test Sequential dependent async operations thread their results
+ * @brief query1 → query2(result1) → final(result2); the ordered trace is exact.
+ *
+ * Salvaged from test-coroutine-comprehensive.cpp::SequentialAsyncOperations.
+ */
+TEST_F(CoroutineWorkflowPatterns, SequentialAsyncOperations) {
+    std::vector<std::string> operations;
+    std::atomic<bool>        done{false};
+
+    auto ops_ptr  = &operations;
+    auto done_ptr = &done;
+    coro_scheduler().spawn([ops_ptr, done_ptr]() -> task<void> {
+        auto query1 = [ops_ptr]() -> task<std::string> {
+            co_await sleep(10ms);
+            ops_ptr->push_back("query1");
+            co_return "result1";
+        };
+        auto query2 = [ops_ptr](std::string prev) -> task<std::string> {
+            co_await sleep(10ms);
+            ops_ptr->push_back("query2:" + prev);
+            co_return "result2";
+        };
+        auto r1 = co_await query1();
+        auto r2 = co_await query2(r1);
+        ops_ptr->push_back("final:" + r2);
+        done_ptr->store(true);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "sequential operations never completed";
+
+    ASSERT_EQ(operations.size(), 3u); // OOB guard before indexed access
+    EXPECT_EQ(operations[0], "query1");
+    EXPECT_EQ(operations[1], "query2:result1");
+    EXPECT_EQ(operations[2], "final:result2");
+}
+
+/**
+ * @test Retry with backoff stops at the first success
+ * @brief A flaky operation succeeds on its 3rd attempt; the loop retries with growing backoff and stops.
+ *
+ * Salvaged from test-coroutine-comprehensive.cpp::RetryWithBackoff.
+ */
+TEST_F(CoroutineWorkflowPatterns, RetryWithBackoff) {
+    constexpr int     max_retries = 5;
+    std::atomic<int>  attempts{0};
+    std::atomic<bool> succeeded{false};
+    std::atomic<bool> done{false};
+
+    auto attempts_ptr = &attempts;
+    auto succeeded_ptr = &succeeded;
+    auto done_ptr      = &done;
+    coro_scheduler().spawn([attempts_ptr, succeeded_ptr, done_ptr]() -> task<void> {
+        auto flaky = [attempts_ptr]() -> task<bool> {
+            const int n = attempts_ptr->fetch_add(1) + 1;
+            co_await sleep(5ms);
+            co_return n >= 3; // succeed on the 3rd attempt
+        };
+        for (int i = 0; i < max_retries; ++i) {
+            if (co_await flaky()) {
+                succeeded_ptr->store(true);
+                break;
+            }
+            co_await sleep(std::chrono::milliseconds(5 * (i + 1))); // backoff
+        }
+        done_ptr->store(true);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "retry loop never completed";
+    EXPECT_TRUE(succeeded.load());
+    EXPECT_EQ(attempts.load(), 3);
+}
+
+// =============================================================================
+// ERROR-HANDLING IDIOMS
+// =============================================================================
+
+class CoroutineErrorPatterns : public CoroutineIdiomFixture {};
+
+/**
+ * @test Circuit breaker opens after the failure threshold
+ * @brief Repeated failures trip the breaker open and stop further attempts at exactly the threshold.
  */
 TEST_F(CoroutineErrorPatterns, CircuitBreaker) {
     constexpr int     failure_threshold = 3;
     std::atomic<int>  failures{0};
     std::atomic<int>  attempts{0};
     std::atomic<bool> circuit_open{false};
+    std::atomic<bool> done{false};
 
-    auto flaky_operation = [&attempts]() -> task<bool> {
-        attempts.fetch_add(1);
-        co_await sleep(10ms);
-
-        if (attempts < failure_threshold + 1) {
-            throw std::runtime_error("failure");
-        }
-
-        co_return true;
-    };
-    auto failures_ptr     = &failures;
-    auto circuit_open_ptr = &circuit_open;
-    auto coro_fn          = [&flaky_operation, failures_ptr, circuit_open_ptr]() -> task<void> {
+    auto failures_ptr = &failures;
+    auto attempts_ptr = &attempts;
+    auto open_ptr     = &circuit_open;
+    auto done_ptr     = &done;
+    coro_scheduler().spawn([failures_ptr, attempts_ptr, open_ptr, done_ptr]() -> task<void> {
+        auto flaky_operation = [attempts_ptr]() -> task<bool> {
+            attempts_ptr->fetch_add(1);
+            co_await sleep(5ms);
+            throw std::runtime_error("failure"); // always fails in this scenario
+            co_return true;
+        };
         for (int i = 0; i < 5; ++i) {
             if (failures_ptr->load() >= failure_threshold) {
-                circuit_open_ptr->store(true);
+                open_ptr->store(true);
                 break;
             }
-
             try {
                 co_await flaky_operation();
             } catch (...) {
                 failures_ptr->fetch_add(1);
             }
         }
+        done_ptr->store(true);
         co_return;
-    };
-    auto caller = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(caller));
-    run_for(200ms);
-
-    EXPECT_TRUE(circuit_open);
-    EXPECT_EQ(failures, failure_threshold);
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "circuit-breaker loop never completed";
+    EXPECT_TRUE(circuit_open.load());
+    EXPECT_EQ(failures.load(), failure_threshold);
 }
 
 /**
- * @test Fallback pattern
- * @brief Use fallback when primary fails
+ * @test Primary/fallback: the fallback supplies the value when the primary throws
+ * @brief The primary fails after a delay; the fallback runs and its value is the final result.
  */
 TEST_F(CoroutineErrorPatterns, FallbackPattern) {
     std::atomic<bool> used_fallback{false};
     std::atomic<int>  result{0};
+    std::atomic<bool> done{false};
 
-    auto primary = []() -> task<int> {
-        co_await sleep(10ms);
-        throw std::runtime_error("primary failed");
-        co_return 1;
-    };
-
-    auto fallback = [&used_fallback]() -> task<int> {
-        co_await sleep(5ms);
-        used_fallback = true;
-        co_return 42;
-    };
-
+    auto used_ptr   = &used_fallback;
     auto result_ptr = &result;
-    auto coro_fn    = [result_ptr, &primary, &fallback]() -> task<void> {
+    auto done_ptr   = &done;
+    coro_scheduler().spawn([used_ptr, result_ptr, done_ptr]() -> task<void> {
+        auto primary = []() -> task<int> {
+            co_await sleep(10ms);
+            throw std::runtime_error("primary failed");
+            co_return 1;
+        };
+        auto fallback = [used_ptr]() -> task<int> {
+            co_await sleep(5ms);
+            used_ptr->store(true);
+            co_return 42;
+        };
         bool use_fallback = false;
         try {
             result_ptr->store(co_await primary());
         } catch (...) {
             use_fallback = true;
         }
-
         if (use_fallback) {
             result_ptr->store(co_await fallback());
         }
+        done_ptr->store(true);
         co_return;
-    };
-    auto caller = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(caller));
-    run_for(50ms);
-
-    EXPECT_TRUE(used_fallback);
-    EXPECT_EQ(result, 42);
-}
-
-// =============================================================================
-// MAIN
-// =============================================================================
-
-int
-main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    qb::io::async::init();
-    return RUN_ALL_TESTS();
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "primary/fallback never completed";
+    EXPECT_TRUE(used_fallback.load());
+    EXPECT_EQ(result.load(), 42);
 }

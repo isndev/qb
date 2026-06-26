@@ -1,282 +1,250 @@
-/**
- * @file qb/io/tests/coroutine/test-coroutine-timers.cpp
- * @brief Coroutine timer and sleep awaiter tests
+/*
+ * qb - C++ Actor Framework
+ * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  *
- * This file contains tests for timer-based coroutine suspension, including sleep
- * awaiters, timer ordering, timer destruction, long-duration timers, mixed
- * durations, and looped timers.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * @ingroup Tests
+ * See the License for the specific terms.
  */
+
+/**
+ * @file system/coroutine/coro-timer-sleep.cpp
+ * @brief `sleep()` timer-awaiter behaviours under the qb-io event loop.
+ *
+ * `sleep(duration)` (qb/io/async/coroutine/utils.h) suspends a coroutine on a libev timer and
+ * resumes it when the timer fires. These tests exercise the timer awaiter directly: completion,
+ * relative ordering of differently-sized timers, destruction-cancels-the-timer, long timers, looped
+ * timers, the zero-duration fast path, and cancellation of a coroutine parked on a sleep. SYSTEM tier
+ * (real event loop + timers). Every wait uses the shared bounded pump `qb::io::test::pump_until`
+ * (loud bounded timeout) — never a fixed `run_for(Nms)` budget.
+ *
+ * Renamed/strengthened from coroutine/test-coroutine-timers.cpp:
+ *   - the two `DISABLED_` timing-accuracy tests are replaced by ONE deterministic relative-ordering
+ *     test that records a monotonic sequence number per completion and asserts shortest-timer-first
+ *     by *membership + relative position*, not by wall-clock instants (robust under load);
+ *   - smoke counters are kept as exact-count value paths;
+ *   - NEW: `sleep(0ms)` completes promptly (zero/negative-duration fast path); a coroutine parked on
+ *     a long sleep can be torn down by `cancellable_sleep` cancellation; the loop counter is exact.
+ */
+
+#include <atomic>
+#include <chrono>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
-#include <chrono>
-#include <atomic>
-#include <mutex>
-#include <vector>
+
+#include "../../shared/coroutine_test_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 
-// =============================================================================
-// TIMER ACCURACY TESTS
-// =============================================================================
+namespace {
 
-class CoroutineTimerAccuracy : public ::testing::Test {
+class CoroutineTimerSleep : public ::testing::Test {
 protected:
     void
     SetUp() override {
-        qb::io::async::init();
+        qb::io::test::reset_async_context();
     }
     void
     TearDown() override {
+        qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
 };
 
-/**
- * @test Timer accuracy with tolerance
- * @brief Verify timers fire within expected time window
- *
- * NOTE: Disabled - timing sensitive test
- */
-TEST_F(CoroutineTimerAccuracy, DISABLED_TimerWithTolerance) {
-    constexpr int duration_ms  = 50;
-    constexpr int tolerance_ms = 20;
+} // namespace
 
+// ---------------------------------------------------------------------------
+// Completion + relative ordering (deterministic — sequence counter, not clock)
+// ---------------------------------------------------------------------------
+
+TEST_F(CoroutineTimerSleep, SleepCompletesAndResumes) {
     std::atomic<bool> fired{false};
-    auto              start = std::chrono::steady_clock::now();
 
-    auto fired_ptr = &fired;
-    auto coro_fn   = [fired_ptr, duration_ms]() -> task<void> {
-        co_await sleep(std::chrono::milliseconds(duration_ms));
-        (*fired_ptr) = true;
-        co_return;
-    };
-    auto t = coro_fn();
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await sleep(10ms);
+        fired = true;
+    });
 
-    coro_scheduler().spawn(std::move(t));
-    run_for(std::chrono::milliseconds(duration_ms + tolerance_ms + 50));
-
-    auto end     = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-
-    EXPECT_TRUE(fired);
-    // Should fire between duration and duration + tolerance
-    EXPECT_GE(elapsed, duration_ms - tolerance_ms / 2);
-    EXPECT_LE(elapsed, duration_ms + tolerance_ms);
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return fired.load(); })) << "sleep never resumed the coroutine";
 }
 
-/**
- * @test Multiple timers ordering
- * @brief Verify multiple timers complete in order
- *
- * NOTE: Disabled - timing sensitive test
- */
-TEST_F(CoroutineTimerAccuracy, DISABLED_MultipleTimersOrdering) {
-    std::vector<int> completion_order;
-    std::mutex       mutex;
-
-    // Create timers with different durations
-    auto completion_order_ptr = &completion_order;
-    auto mutex_ptr            = &mutex;
-    for (int i = 0; i < 5; ++i) {
-        auto coro_fn = [i, completion_order_ptr, mutex_ptr]() -> task<void> {
-            // Duration: 50, 40, 30, 20, 10 ms (reversed order)
-            int duration = (5 - i) * 10;
-            co_await sleep(std::chrono::milliseconds(duration));
-
-            std::lock_guard<std::mutex> lock(*mutex_ptr);
-            completion_order_ptr->push_back(i);
-            co_return;
-        };
-        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
-    }
-
-    run_for(200ms);
-
-    EXPECT_EQ(completion_order.size(), 5);
-
-    // Shortest timers (highest i) should complete first
-    // Since we have 0:50ms, 1:40ms, 2:30ms, 3:20ms, 4:10ms
-    // Order should be roughly: 4, 3, 2, 1, 0
-    EXPECT_EQ(completion_order[0], 4);
-    EXPECT_EQ(completion_order[4], 0);
-}
-
-/**
- * @test Timer cancellation via destruction
- * @brief Verify timer stops when coroutine is destroyed
- */
-TEST_F(CoroutineTimerAccuracy, TimerDestruction) {
-    std::atomic<bool> completed{false};
-    std::atomic<bool> cancelled_completed{false};
-
-    // Create two timers
-    {
-        auto completed_ptr = &completed;
-        auto coro_fn_1     = [completed_ptr]() -> task<void> {
-            co_await sleep(200ms);
-            completed_ptr->store(true);
-            co_return;
-        };
-        auto t1 = coro_fn_1();
-
-        auto cancelled_completed_ptr = &cancelled_completed;
-        auto coro_fn_2               = [cancelled_completed_ptr]() -> task<void> {
-            co_await sleep(10ms);
-            cancelled_completed_ptr->store(true);
-            co_return;
-        };
-        auto t2 = coro_fn_2();
-
-        coro_scheduler().spawn(coro_fn_2); // owned-callable: closure dies at block end
-        (void) t2;
-        // t1 goes out of scope here - should be cancelled
-    }
-
-    run_for(50ms);
-
-    // t2 should complete, t1 should not
-    EXPECT_TRUE(cancelled_completed);
-    EXPECT_FALSE(completed);
-}
-
-/**
- * @test Long duration timer
- * @brief Timer that doesn't fire within test window
- */
-TEST_F(CoroutineTimerAccuracy, LongDurationTimer) {
-    std::atomic<bool> completed{false};
-
-    auto completed_ptr = &completed;
-    auto coro_fn       = [completed_ptr]() -> task<void> {
-        co_await sleep(500ms);
-        (*completed_ptr) = true;
-        co_return;
-    };
-    auto t = coro_fn();
-
-    coro_scheduler().spawn(std::move(t));
-
-    // Don't wait long enough
-    run_for(50ms);
-
-    EXPECT_FALSE(completed);
-
-    // Now wait longer
-    run_for(500ms);
-
-    EXPECT_TRUE(completed);
-}
-
-// =============================================================================
-// TIMER EDGE CASES
-// =============================================================================
-
-class CoroutineTimerEdgeCases : public ::testing::Test {
-protected:
-    void
-    SetUp() override {
-        qb::io::async::init();
-    }
-    void
-    TearDown() override {
-        qb::io::async::listener::current.clear();
-    }
-};
-
-/**
- * @test Very short timers
- * @brief Timers with 1ms duration
- */
-TEST_F(CoroutineTimerEdgeCases, VeryShortTimers) {
-    constexpr int    count = 10;
+TEST_F(CoroutineTimerSleep, ShorterTimersResumeBeforeLongerOnesRelativeOrder) {
+    // Record the order in which timers fire using a shared monotonic sequence counter instead of
+    // wall-clock timestamps. Timers are spawned with durations that are well separated (10ms apart)
+    // so the relative order is robust under scheduling jitter; we assert membership + that the
+    // shortest fired first and the longest fired last.
+    constexpr int    count = 5;
+    std::atomic<int> next_seq{0};
+    std::vector<int> seq_of_index(count, -1); // seq_of_index[i] = completion order of timer i
     std::atomic<int> completed{0};
 
+    // Timer i sleeps (count - i) * 10ms → timer (count-1) is shortest, timer 0 is longest.
     for (int i = 0; i < count; ++i) {
-        auto completed_ptr = &completed;
-        auto coro_fn       = [completed_ptr]() -> task<void> {
-            co_await sleep(1ms);
-            completed_ptr->fetch_add(1);
-            co_return;
-        };
-        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
+        coro_scheduler().spawn([i, &next_seq, &seq_of_index, &completed]() -> task<void> {
+            co_await sleep(std::chrono::milliseconds((count - i) * 10));
+            seq_of_index[i] = next_seq.fetch_add(1);
+            completed.fetch_add(1);
+        });
     }
 
-    run_for(100ms);
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return completed.load() == count; })) << "not all timers fired";
 
-    EXPECT_EQ(completed, count);
+    // Every timer fired exactly once → sequence numbers are a permutation of 0..count-1.
+    std::vector<int> seen(count, 0);
+    for (int i = 0; i < count; ++i) {
+        ASSERT_GE(seq_of_index[i], 0) << "timer " << i << " never recorded a sequence";
+        ASSERT_LT(seq_of_index[i], count);
+        ++seen[seq_of_index[i]];
+    }
+    for (int s = 0; s < count; ++s)
+        EXPECT_EQ(seen[s], 1) << "sequence " << s << " was assigned " << seen[s] << " times (must be exactly once)";
+
+    // Shortest timer (index count-1) fired first; longest timer (index 0) fired last.
+    EXPECT_EQ(seq_of_index[count - 1], 0) << "the shortest timer must resume first";
+    EXPECT_EQ(seq_of_index[0], count - 1) << "the longest timer must resume last";
 }
 
-/**
- * @test Mixed duration timers
- * @brief Timers with various durations
- */
-TEST_F(CoroutineTimerEdgeCases, MixedDurationTimers) {
-    std::vector<int> durations{5, 10, 15, 20, 25};
-    std::atomic<int> completed{0};
+// ---------------------------------------------------------------------------
+// Destruction cancels the timer
+// ---------------------------------------------------------------------------
+
+TEST_F(CoroutineTimerSleep, DestroyedTaskTimerNeverFires) {
+    std::atomic<bool> long_completed{false};
+    std::atomic<bool> short_completed{false};
+
+    {
+        // This task is created but NOT spawned — its frame is destroyed at block exit, so its timer
+        // must never fire.
+        auto long_task = [&]() -> task<void> {
+            co_await sleep(200ms);
+            long_completed = true;
+        };
+        auto dropped = long_task();
+        (void) dropped; // destroyed here
+
+        coro_scheduler().spawn([&]() -> task<void> {
+            co_await sleep(10ms);
+            short_completed = true;
+        });
+    }
+
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return short_completed.load(); })) << "short timer never fired";
+    // Give the dropped task's (would-be) 200ms timer ample time to (not) fire.
+    // Never-true predicate → the pump runs the full 60ms and returns false (consume it).
+    EXPECT_FALSE(qb::io::test::pump_until([] { return false; }, 60ms));
+    EXPECT_FALSE(long_completed.load()) << "a destroyed task's timer must not fire";
+}
+
+// ---------------------------------------------------------------------------
+// Long duration + looped timers
+// ---------------------------------------------------------------------------
+
+TEST_F(CoroutineTimerSleep, LongDurationTimerDoesNotFireEarly) {
+    std::atomic<bool> completed{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await sleep(300ms);
+        completed = true;
+    });
+
+    // Not long enough — must still be parked. The pump must NOT see completion in 40ms.
+    EXPECT_FALSE(qb::io::test::pump_until([&] { return completed.load(); }, 40ms))
+        << "a 300ms timer fired within 40ms";
+    EXPECT_FALSE(completed.load()) << "a 300ms timer fired within 40ms";
+
+    // Now wait it out.
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return completed.load(); })) << "300ms timer never fired";
+}
+
+TEST_F(CoroutineTimerSleep, MixedDurationTimersAllComplete) {
+    const std::vector<int> durations{5, 10, 15, 20, 25};
+    std::atomic<int>       completed{0};
 
     for (int duration : durations) {
-        auto completed_ptr = &completed;
-        auto coro_fn       = [completed_ptr, duration]() -> task<void> {
+        coro_scheduler().spawn([&completed, duration]() -> task<void> {
             co_await sleep(std::chrono::milliseconds(duration));
-            completed_ptr->fetch_add(1);
-            co_return;
-        };
-        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
+            completed.fetch_add(1);
+        });
     }
 
-    run_for(100ms);
-
-    EXPECT_EQ(completed, durations.size());
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return completed.load() == static_cast<int>(durations.size()); }))
+        << "not all mixed-duration timers completed";
+    EXPECT_EQ(completed.load(), static_cast<int>(durations.size()));
 }
 
-/**
- * @test Timer in loop
- * @brief Repeated timer in a loop
- */
-TEST_F(CoroutineTimerEdgeCases, TimerInLoop) {
+TEST_F(CoroutineTimerSleep, TimerInLoopRunsExactlyNTimes) {
     constexpr int    iterations = 5;
     std::atomic<int> counter{0};
 
-    auto counter_ptr = &counter;
-    auto coro_fn     = [counter_ptr]() -> task<void> {
+    coro_scheduler().spawn([&]() -> task<void> {
         for (int i = 0; i < iterations; ++i) {
             co_await sleep(10ms);
-            counter_ptr->fetch_add(1);
+            counter.fetch_add(1);
         }
-        co_return;
-    };
-    auto t = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(t));
-    run_for(100ms);
-
-    EXPECT_EQ(counter, iterations);
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return counter.load() == iterations; })) << "looped timer stalled";
+    EXPECT_EQ(counter.load(), iterations);
 }
 
-// =============================================================================
-// MAIN
-// =============================================================================
+// ---------------------------------------------------------------------------
+// Zero / negative duration fast path
+// ---------------------------------------------------------------------------
 
-int
-main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    qb::io::async::init();
-    return RUN_ALL_TESTS();
+TEST_F(CoroutineTimerSleep, ZeroDurationSleepCompletesPromptly) {
+    std::atomic<int>  order{0};
+    std::atomic<int>  resume_order{-1};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        order.fetch_add(1); // 1: runs before suspending
+        co_await sleep(0ms);
+        resume_order = order.fetch_add(1); // resumes after the suspension point
+        done         = true;
+    });
+
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(); })) << "sleep(0ms) never resumed";
+    EXPECT_GE(resume_order.load(), 1) << "sleep(0ms) must still resume after a yield, not before running";
+}
+
+TEST_F(CoroutineTimerSleep, NegativeDurationSleepCompletesPromptly) {
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await sleep(std::chrono::milliseconds(-50)); // a deadline already in the past
+        done = true;
+    });
+
+    // A negative/past duration must resume promptly, never hang.
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(); }, 500ms)) << "sleep(negative) never resumed";
+}
+
+// ---------------------------------------------------------------------------
+// Cancel a coroutine parked on a sleep
+// ---------------------------------------------------------------------------
+
+TEST_F(CoroutineTimerSleep, CancelWhileParkedOnSleepUnwindsPromptly) {
+    cancellation_token token;
+    std::atomic<bool>  caught{false};
+    std::atomic<bool>  done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await cancellable_sleep(5000ms, token); // park on a long sleep
+        } catch (const cancelled_error &) {
+            caught = true;
+        }
+        done = true;
+    });
+
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return token.get_state()->callbacks.size() == 1u; }))
+        << "coroutine never parked on the sleep";
+    EXPECT_FALSE(done.load());
+
+    token.cancel();
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(); })) << "parked coroutine never woke on cancel";
+    EXPECT_TRUE(caught.load());
 }
