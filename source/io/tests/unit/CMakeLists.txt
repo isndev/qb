@@ -56,6 +56,9 @@ qb_add_test(MODULE qb-io TIER unit NAME kdf-and-tokens    SOURCES crypto/kdf-and
 qb_add_test(MODULE qb-io TIER unit NAME asymmetric-keys   SOURCES crypto/asymmetric-keys.cpp   DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME crypto-jwt        SOURCES crypto/crypto-jwt.cpp        DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 
+# --- compression (zlib gzip/deflate, link-gated on QB_HAS_COMPRESSION) ---
+qb_add_test(MODULE qb-io TIER unit NAME compression-codec SOURCES compression/compression-codec.cpp DEPENDS ${PROJECT_NAME} REQUIRES compression)
+
 # --- ssl (SSL_CTX config, no socket) / async (transport traits) / quic (FakeBackend adapter) ---
 qb_add_test(MODULE qb-io TIER unit NAME ssl-context-config     SOURCES ssl/ssl-context-config.cpp     DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME async-transport-traits SOURCES async/async-transport-traits.cpp DEPENDS ${PROJECT_NAME})
