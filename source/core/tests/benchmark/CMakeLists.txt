@@ -16,85 +16,61 @@
 #
 
 # -----------------------------------------------------------------------------
-# qb Core Benchmarks - CMake Configuration
-#
-# This file configures the performance benchmarks for the qb Core component.
-# It defines benchmark targets for various actor system patterns and performance
-# characteristics using Google Benchmark framework.
+# qb-core BENCHMARKS — google-benchmark perf harnesses, grouped by what they measure:
+#   micro/     primitive throughput, no qb::Main (lock-free queue/router, spinlock, json)
+#   system/    engine bring-up / push allocator / scheduler / coroutine spawn
+#   messaging/ actor-to-actor delivery topologies + ask round-trips
+#   topology/  chain / fan-out / diamond latency
+# Targets: qb-core-bench-<name>. Built only when QB_BUILD_BENCHMARKS is ON.
+# Shared harness headers live in ../shared (BenchmarkCores / BenchmarkActors /
+# MpscFanInHarness / LatencyFlush / TestEvent / BenchmarkActorArgs).
 # -----------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# Benchmark source files by category
-# -----------------------------------------------------------------------------
+set(_QBC_BENCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# Messaging pattern benchmarks
-set(MESSAGING_BENCHMARKS
-        bm-ping-pong.cpp
-        bm-ping-pong-latency.cpp
-)
-
-# Throughput pattern benchmarks
-set(THROUGHPUT_BENCHMARKS
-        bm-allocated-push.cpp
-        bm-broadcast-fanout.cpp
-        bm-core-distance.cpp
-        bm-disruptor-latency.cpp
-        bm-fan-in.cpp
-        bm-forward-reply.cpp
-        bm-messaging-api.cpp
-        bm-multicast-latency.cpp
-        bm-mpsc-mailbox-sweep.cpp
-        bm-mpsc-router-mailbox.cpp
-        bm-payload-throughput.cpp
-        bm-pipeline-latency.cpp
-        bm-producer-burst.cpp
-        bm-producer-consumer.cpp
-)
-
-# Example benchmark is commented out
-# set(EXAMPLE_BENCHMARKS
-#     benchmark_example.cpp
-# )
-
-# -----------------------------------------------------------------------------
-# Configure benchmark targets
-# -----------------------------------------------------------------------------
-
-# Helper function to create benchmark targets with consistent naming and properties
-function(create_benchmark BENCHMARK_SOURCE CATEGORY)
-    # Extract benchmark name from filename (removing extension)
-    get_filename_component(BENCHMARK_NAME ${BENCHMARK_SOURCE} NAME_WE)
-    string(REPLACE "bm-" "" BENCHMARK_TARGET_NAME ${BENCHMARK_NAME})
-
-    # Create benchmark target
+# qbc_bench(<subgroup> <name>) → qb-core-bench-<name> from <subgroup>/<name>.cpp
+function(qbc_bench SUBGROUP NAME)
     qb_add_benchmark(
-            NAME ${PROJECT_NAME}-benchmark-${BENCHMARK_TARGET_NAME}
-            SOURCES ${BENCHMARK_SOURCE}
-            DEPENDS ${PROJECT_NAME}
+        NAME    qb-core-bench-${NAME}
+        SOURCES ${SUBGROUP}/${NAME}.cpp
+        DEPENDS ${PROJECT_NAME}
+        MODULE  qb-core
     )
-
-    # Set properties for organization in IDEs
-    set_target_properties(${PROJECT_NAME}-benchmark-${BENCHMARK_TARGET_NAME} PROPERTIES
-            FOLDER "Benchmarks/Core/${CATEGORY}"
-    )
-
-    # Report benchmark setup
-    qb_debug_message("Added ${CATEGORY} benchmark: ${BENCHMARK_TARGET_NAME}")
+    if(TARGET qb-core-bench-${NAME})
+        set_target_properties(qb-core-bench-${NAME} PROPERTIES
+            FOLDER "Benchmarks/Core/${SUBGROUP}")
+    endif()
 endfunction()
 
-# Create messaging benchmark targets
-foreach (BENCHMARK_SOURCE ${MESSAGING_BENCHMARKS})
-    create_benchmark(${BENCHMARK_SOURCE} "Messaging")
-endforeach ()
+# --- micro/ ---
+qbc_bench(micro mpsc-mailbox-fanin)
+qbc_bench(micro mpsc-router-dispatch)
+qbc_bench(micro spinlock-contention)
+qbc_bench(micro jsonb-dump)
 
-# Create throughput benchmark targets
-foreach (BENCHMARK_SOURCE ${THROUGHPUT_BENCHMARKS})
-    create_benchmark(${BENCHMARK_SOURCE} "Throughput")
-endforeach ()
+# --- system/ ---
+qbc_bench(system push-allocated-bigmsg)
+qbc_bench(system callback-burst-throughput)
+qbc_bench(system engine-lifecycle)
+qbc_bench(system actor-spawn-throughput)
+qbc_bench(system coroutine-spawn-latency)
 
-# Create example benchmark targets (currently disabled)
-# foreach(BENCHMARK_SOURCE ${EXAMPLE_BENCHMARKS})
-#     create_benchmark(${BENCHMARK_SOURCE} "Examples")
-# endforeach()
+# --- messaging/ ---
+qbc_bench(messaging fan-in-contention)
+qbc_bench(messaging producer-consumer-throughput)
+qbc_bench(messaging broadcast-vs-explicit-fanout)
+qbc_bench(messaging payload-size-throughput)
+qbc_bench(messaging messaging-api-oneway)
+qbc_bench(messaging core-distance-pingpong)
+qbc_bench(messaging ping-pong-throughput)
+qbc_bench(messaging ping-pong-latency)
+qbc_bench(messaging forward-vs-direct)
+qbc_bench(messaging ask-roundtrip)
+qbc_bench(messaging ask-all-fanout)
 
-qb_status_message("Configured benchmarks in ${CMAKE_CURRENT_SOURCE_DIR}")
+# --- topology/ ---
+qbc_bench(topology pipeline-chain-latency)
+qbc_bench(topology multicast-latency)
+qbc_bench(topology topology-zoo)
+
+qb_status_message("Configured qb-core benchmarks (tiered: micro/system/messaging/topology)")

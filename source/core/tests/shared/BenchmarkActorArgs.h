@@ -1,5 +1,5 @@
 /**
- * @file qb/core/tests/benchmark/BenchmarkActorArgs.h
+ * @file qb/source/core/tests/shared/BenchmarkActorArgs.h
  * @brief Shared Google Benchmark argument generators for actor throughput benches
  *
  * @author qb - C++ Actor Framework
@@ -26,7 +26,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "../shared/BenchmarkIterationSink.h"
+#include "BenchmarkCores.h"
 
 namespace qb::bench {
 

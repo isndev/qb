@@ -515,3 +515,96 @@ TEST(ActorCoroutineScope, ActiveCountCountsScopedCoroutines) {
     EXPECT_FALSE(main.hasError());
     EXPECT_EQ(g_count_at_spawn.load(), 4);
 }
+
+// ---------------------------------------------------------------------------
+// 11. Detached-timer reclamation (the real reclamation oracle for the paths
+//     that arm a detached helper). Unlike `until_cancelled()` (no helper),
+//     `ctx.cancellable(task)` and `ctx.child_token()` + `cancellable_sleep`
+//     spawn a DETACHED helper coroutine that parks on the full original
+//     duration. When the scope is cancelled mid-flight, that helper frame must
+//     be reclaimed too — not left parked until its (e.g. 2s) timer fires (or,
+//     since core 0 runs on the test thread via start(false), leaked past the
+//     run entirely because `listener::current` is never torn down here).
+//
+//     The measurement is valid because start(false) runs core 0 on THIS thread,
+//     so the test thread's `thread_local live_frames` IS the worker's counter.
+//     Baseline is captured immediately before each run so the assertion is
+//     self-relative (independent of any residue from earlier tests).
+// ---------------------------------------------------------------------------
+namespace {
+long
+live_frames_now() {
+    return qb::io::async::detail::CoroutineFrameAllocator::live_frames;
+}
+} // namespace
+
+class CancellableLeakActor : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            try {
+                co_await ctx.cancellable(scope_slow_task()); // arms a detached runner + inner 2s task
+            } catch (const qb::io::async::cancelled_error &) {
+            }
+        });
+        qb::io::async::callback(
+            [this] {
+                if (is_alive())
+                    kill();
+            },
+            20ms);
+        co_return true;
+    }
+};
+
+TEST(ActorCoroutineScope, CancellableDetachedTimerReclaimedNoLeak) {
+    const long baseline = live_frames_now();
+    {
+        qb::Main main;
+        main.addActor<CancellableLeakActor>(0);
+        main.start(false);
+        main.join();
+        EXPECT_FALSE(main.hasError());
+    }
+    // Pre-fix this ended at baseline+2 (the detached runner frame + the inner 2s
+    // task frame, both parked until the inner timer fired — i.e. leaked here,
+    // since core 0's listener is never torn down on this thread).
+    EXPECT_EQ(live_frames_now(), baseline) << "ctx.cancellable() must reclaim its detached runner + inner task frames on cancel";
+}
+
+class ChildSleepLeakActor : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            auto child = ctx.child_token();
+            try {
+                co_await qb::io::async::cancellable_sleep(2s, child); // arms a detached timer_task
+            } catch (const qb::io::async::cancelled_error &) {
+            }
+        });
+        qb::io::async::callback(
+            [this] {
+                if (is_alive())
+                    kill();
+            },
+            20ms);
+        co_return true;
+    }
+};
+
+TEST(ActorCoroutineScope, CancellableSleepDetachedTimerReclaimedNoLeak) {
+    const long baseline = live_frames_now();
+    {
+        qb::Main main;
+        main.addActor<ChildSleepLeakActor>(0);
+        main.start(false);
+        main.join();
+        EXPECT_FALSE(main.hasError());
+    }
+    // Pre-fix this ended at baseline+1 (the detached timer_task frame, parked on
+    // the full 2s sleep). child_token() routes the actor-scope cancel into the
+    // cancellable_sleep awaiter, which now tears the timer_task down on cancel.
+    EXPECT_EQ(live_frames_now(), baseline) << "cancellable_sleep must reclaim its detached timer_task frame on cancel";
+}
