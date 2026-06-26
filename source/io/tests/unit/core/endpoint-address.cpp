@@ -29,6 +29,8 @@
  */
 
 #include <cstdint>
+#include <functional>
+#include <set>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -216,4 +218,320 @@ TEST(EndpointAddress, StaticFactoriesOnInvalidFdReturnInvalid) {
 
     const auto peer = qb::io::socket::peer_endpoint(qb::io::inet::invalid_socket);
     EXPECT_FALSE(static_cast<bool>(peer));
+}
+
+// =============================================================================
+// CONSTRUCTION FROM RAW sockaddr / family+addr (the non-string ctors)
+// =============================================================================
+
+/**
+ * @test `endpoint(const sockaddr*)` copies an AF_INET sockaddr into the union and is fully usable.
+ * @brief Drives the `endpoint(const sockaddr*)` ctor and the `as_is(const sockaddr*)` AF_INET arm
+ *        (memcpy of sockaddr_in + len()). We build the sockaddr_in by hand so there is no live I/O.
+ */
+TEST(EndpointAddress, ConstructFromSockaddrInet) {
+    sockaddr_in sin{};
+    sin.sin_family = AF_INET;
+    sin.sin_port   = htons(static_cast<unsigned short>(1234));
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "8.8.4.4", &sin.sin_addr), 1);
+
+    endpoint e(reinterpret_cast<const sockaddr *>(&sin));
+    ASSERT_TRUE(static_cast<bool>(e));
+    EXPECT_EQ(e.af(), AF_INET);
+    EXPECT_EQ(e.port(), 1234);
+    EXPECT_EQ(e.ip(), "8.8.4.4");
+    EXPECT_EQ(e.to_string(), "8.8.4.4:1234");
+}
+
+/**
+ * @test `endpoint(const sockaddr*)` copies an AF_INET6 sockaddr into the union (the AF_INET6 arm).
+ */
+TEST(EndpointAddress, ConstructFromSockaddrInet6) {
+    sockaddr_in6 sin6{};
+    sin6.sin6_family = AF_INET6;
+    sin6.sin6_port   = htons(static_cast<unsigned short>(5555));
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET6, "2001:db8::1", &sin6.sin6_addr), 1);
+
+    endpoint e(reinterpret_cast<const sockaddr *>(&sin6));
+    ASSERT_TRUE(static_cast<bool>(e));
+    EXPECT_EQ(e.af(), AF_INET6);
+    EXPECT_EQ(e.port(), 5555);
+    EXPECT_EQ(e.ip(), "2001:db8::1");
+    EXPECT_EQ(e.to_string(), "[2001:db8::1]:5555");
+}
+
+/**
+ * @test `endpoint(int family, const void* addr, port)` builds an AF_INET endpoint from a raw in_addr.
+ * @brief Drives the family+addr ctor and the `as_in(family, addr, port)` AF_INET arm (memcpy of the
+ *        raw network-order in_addr). The port is supplied separately and round-trips.
+ */
+TEST(EndpointAddress, ConstructFromFamilyAndRawInet) {
+    in_addr a4{};
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "203.0.113.9", &a4), 1);
+
+    endpoint e(AF_INET, &a4, static_cast<unsigned short>(80));
+    ASSERT_TRUE(static_cast<bool>(e));
+    EXPECT_EQ(e.af(), AF_INET);
+    EXPECT_EQ(e.port(), 80);
+    EXPECT_EQ(e.ip(), "203.0.113.9");
+}
+
+/**
+ * @test The family+addr ctor's AF_INET6 arm copies a raw in6_addr.
+ */
+TEST(EndpointAddress, ConstructFromFamilyAndRawInet6) {
+    in6_addr a6{};
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET6, "fe80::dead:beef", &a6), 1);
+
+    endpoint e(AF_INET6, &a6, static_cast<unsigned short>(9000));
+    ASSERT_TRUE(static_cast<bool>(e));
+    EXPECT_EQ(e.af(), AF_INET6);
+    EXPECT_EQ(e.port(), 9000);
+    EXPECT_EQ(e.ip(), "fe80::dead:beef");
+}
+
+// =============================================================================
+// addr_v4() GETTER + format_v4()
+// =============================================================================
+
+/**
+ * @test `addr_v4()` returns the host-order IPv4 address (the inverse of the uint32_t ctor's htonl).
+ * @brief Drives the `addr_v4() const` getter (the network->host ntohl read). We set the address via
+ *        the host-order uint32_t ctor and read it straight back.
+ */
+TEST(EndpointAddress, AddrV4GetterReturnsHostOrder) {
+    const uint32_t host_addr = 0x7f000001u; // 127.0.0.1
+    endpoint       e(host_addr, static_cast<unsigned short>(0));
+    EXPECT_EQ(e.addr_v4(), host_addr) << "addr_v4() must round-trip the host-order address";
+    EXPECT_EQ(e.ip(), "127.0.0.1");
+}
+
+/**
+ * @test `format_v4()` substitutes the address/port byte tokens (%N %H %L %M low/high port byte).
+ * @brief Drives the `format_v4()` template-free formatter. Address 1.2.3.4 maps the four octets to
+ *        %N..%M, and the port's low/high bytes to %l/%h. 0x0102 (host 258) => high 0x01, low 0x02
+ *        in network order, so %h=1, %l=2.
+ */
+TEST(EndpointAddress, FormatV4SubstitutesAddressAndPortBytes) {
+    // Port 0x0102 in network byte order is the wire pair {0x01, 0x02}. format_v4 maps the two
+    // port bytes positionally: token "%l" -> first port byte (0x01 = 1), "%h" -> second (0x02 = 2).
+    endpoint e("1.2.3.4", static_cast<unsigned short>(0x0102));
+    EXPECT_EQ(e.format_v4("%N.%H.%L.%M"), "1.2.3.4") << "the four octets fill %N %H %L %M in order";
+    EXPECT_EQ(e.format_v4("a=%l b=%h"), "a=1 b=2") << "%l/%h are the network-order port bytes";
+    // A format with no tokens is returned verbatim.
+    EXPECT_EQ(e.format_v4("literal"), "literal");
+}
+
+// =============================================================================
+// ip() FALLTHROUGH + inaddr_to_csv_nl (global vs loopback/linklocal)
+// =============================================================================
+
+/**
+ * @test `ip()` on an AF_UNSPEC endpoint hits the inaddr_to_string nullptr return and yields "".
+ * @brief Drives the default (no-family) arm of `inaddr_to_string` (neither AF_INET nor AF_INET6),
+ *        which returns nullptr, so `ip()` resizes the buffer to 0.
+ */
+TEST(EndpointAddress, IpOnUnspecEndpointIsEmpty) {
+    endpoint e; // AF_UNSPEC
+    EXPECT_EQ(e.ip(), "") << "no family => inaddr_to_string returns nullptr => empty ip";
+}
+
+/**
+ * @test `inaddr_to_csv_nl` appends a globally-routable address but skips loopback / link-local.
+ * @brief Drives the member `inaddr_to_csv_nl` plus the `is_global_in4_addr` predicate: a global v4
+ *        address is appended as "addr,"; loopback (127.x) and link-local (169.254.x) are filtered
+ *        out, leaving the csv untouched.
+ */
+TEST(EndpointAddress, InaddrToCsvNlFiltersNonGlobalV4) {
+    {
+        endpoint    glob("203.0.113.50", 0);
+        std::string csv;
+        glob.inaddr_to_csv_nl(csv);
+        EXPECT_EQ(csv, "203.0.113.50,") << "a global address is appended with a trailing comma";
+    }
+    {
+        endpoint    loop("127.0.0.1", 0);
+        std::string csv = "seed,";
+        loop.inaddr_to_csv_nl(csv);
+        EXPECT_EQ(csv, "seed,") << "loopback must be filtered out";
+    }
+    {
+        endpoint    link("169.254.1.1", 0);
+        std::string csv;
+        link.inaddr_to_csv_nl(csv);
+        EXPECT_EQ(csv, "") << "link-local must be filtered out";
+    }
+}
+
+/**
+ * @test `inaddr_to_csv_nl` also filters non-global IPv6 (loopback ::1) and keeps a global v6 addr.
+ * @brief Drives the AF_INET6 arm of `inaddr_to_string` under the `is_global_in6_addr` predicate.
+ */
+TEST(EndpointAddress, InaddrToCsvNlFiltersNonGlobalV6) {
+    {
+        endpoint    glob("2001:db8::99", 0);
+        std::string csv;
+        glob.inaddr_to_csv_nl(csv);
+        EXPECT_EQ(csv, "2001:db8::99,");
+    }
+    {
+        endpoint    loop("::1", 0);
+        std::string csv;
+        loop.inaddr_to_csv_nl(csv);
+        EXPECT_EQ(csv, "") << "IPv6 loopback is not global";
+    }
+}
+
+/**
+ * @test The static `inaddr_to_csv_nl(const sockaddr*, csv)` overload constructs+filters in one shot.
+ * @brief Drives the static sockaddr overload (line 714) which builds a temporary endpoint.
+ */
+TEST(EndpointAddress, StaticInaddrToCsvNlFromSockaddr) {
+    sockaddr_in sin{};
+    sin.sin_family = AF_INET;
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "198.51.100.7", &sin.sin_addr), 1);
+
+    std::string csv;
+    endpoint::inaddr_to_csv_nl(reinterpret_cast<const sockaddr *>(&sin), csv);
+    EXPECT_EQ(csv, "198.51.100.7,");
+
+    // loopback sockaddr is filtered.
+    sockaddr_in lo{};
+    lo.sin_family = AF_INET;
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "127.0.0.5", &lo.sin_addr), 1);
+    std::string csv2 = "x,";
+    endpoint::inaddr_to_csv_nl(reinterpret_cast<const sockaddr *>(&lo), csv2);
+    EXPECT_EQ(csv2, "x,");
+}
+
+/**
+ * @test The static `inaddr_to_csv_nl(int family, const void*, csv)` overload (raw in_addr).
+ * @brief Drives the static family+rawaddr overload (line 722).
+ */
+TEST(EndpointAddress, StaticInaddrToCsvNlFromFamilyAndRaw) {
+    in_addr a4{};
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "192.0.2.123", &a4), 1);
+
+    std::string csv;
+    endpoint::inaddr_to_csv_nl(AF_INET, &a4, csv);
+    EXPECT_EQ(csv, "192.0.2.123,");
+}
+
+/**
+ * @test The free `is_global_in4_addr` / `is_global_in6_addr` predicates classify the address.
+ * @brief Drives the standalone predicate functions directly (they back inaddr_to_csv_nl).
+ */
+TEST(EndpointAddress, GlobalAddressPredicates) {
+    in_addr glob4{}, loop4{};
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "203.0.113.1", &glob4), 1);
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "127.0.0.1", &loop4), 1);
+    EXPECT_TRUE(qb::io::inet::ip::is_global_in4_addr(&glob4));
+    EXPECT_FALSE(qb::io::inet::ip::is_global_in4_addr(&loop4)) << "loopback is not global";
+
+    in6_addr glob6{}, loop6{};
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET6, "2001:db8::1", &glob6), 1);
+    ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET6, "::1", &loop6), 1);
+    EXPECT_TRUE(qb::io::inet::ip::is_global_in6_addr(&glob6));
+    EXPECT_FALSE(qb::io::inet::ip::is_global_in6_addr(&loop6)) << "IPv6 loopback is not global";
+}
+
+// =============================================================================
+// UNIX DOMAIN SOCKET path (as_un + to_string) — pure value logic, no bind
+// =============================================================================
+
+#if defined(QB_ENABLE_UDS) && QB__HAS_UDS
+/**
+ * @test `as_un(path)` stores a filesystem path as an AF_UNIX endpoint that stringifies to the path.
+ * @brief Drives the UDS `as_un` success arm (sun_path fill + len) and the AF_UNIX `to_string` arm.
+ *        No bind / connect — this is purely the value-type packing of the path.
+ */
+TEST(EndpointAddress, UnixDomainPathRoundTrips) {
+    endpoint e;
+    e.as_un("/tmp/qb-endpoint-address.sock");
+    EXPECT_EQ(e.af(), AF_UNIX);
+    EXPECT_TRUE(static_cast<bool>(e)) << "an AF_UNIX endpoint is valid";
+    EXPECT_EQ(e.to_string(), "/tmp/qb-endpoint-address.sock")
+        << "the AF_UNIX to_string() arm returns the raw sun_path";
+}
+#endif
+
+// =============================================================================
+// std-NAMESPACE ORDERING / EQUALITY OPERATORS (key ordered containers)
+// =============================================================================
+
+/**
+ * @test `std::operator<` orders by family first, then by IPv4 address, then by IPv4 port.
+ * @brief Drives every arm of the IPv4 strict-weak-ordering path: the family-differs branch
+ *        (AF_INET < AF_INET6), the address-differs branch, and the same-address/port-differs
+ *        branch. The header doc warns the old `addr+port` sum collided — these assertions pin the
+ *        fix (distinct endpoints are strictly ordered).
+ */
+// The endpoint comparators are defined in `namespace std` (a portability workaround so ordered
+// containers can key on endpoint). They are NOT reachable by ADL from here, and `std::less<endpoint>`
+// cannot find them either (two-phase lookup can't see operators added to std after <functional>).
+// A `using std::operator<;` / `using std::operator==;` declaration pulls them into scope so the
+// natural `a < b` / `a == b` resolves and exercises the operator bodies in sys__socket.h.
+TEST(EndpointAddress, StdLessOrdersInetByFamilyAddrPort) {
+    using std::operator<;
+    const endpoint v4("10.0.0.1", 8080);
+    const endpoint v6("::1", 8080);
+    EXPECT_NE(v4.af(), v6.af());
+    EXPECT_EQ(v4 < v6, v4.af() < v6.af()) << "different families order by af()";
+
+    // same family, address differs => the address decides, regardless of port (strict antisymmetry).
+    const endpoint a1("10.0.0.1", 9999);
+    const endpoint a2("10.0.0.2", 1);
+    EXPECT_NE(a1 < a2, a2 < a1) << "two distinct addresses are strictly ordered exactly one way";
+
+    // same address, port differs (the addr+port-sum collision the SWO fix addresses).
+    const endpoint p_lo("10.0.0.1", 1000);
+    const endpoint p_hi("10.0.0.1", 2000);
+    EXPECT_NE(p_lo < p_hi, p_hi < p_lo) << "same address, different port => strictly ordered, never equal";
+}
+
+/**
+ * @test `std::operator<` falls back to a length-bounded memcmp for the non-INET (IPv6) path.
+ */
+TEST(EndpointAddress, StdLessOrdersInet6ByBytes) {
+    using std::operator<;
+    const endpoint a("2001:db8::1", 443);
+    const endpoint b("2001:db8::2", 443);
+    EXPECT_NE(a < b, b < a) << "distinct IPv6 addresses are strictly ordered";
+
+    const endpoint a2("2001:db8::1", 443);
+    EXPECT_FALSE(a < a2);
+    EXPECT_FALSE(a2 < a) << "identical IPv6 endpoints are unordered";
+}
+
+/**
+ * @test `std::operator==` is `!(a<b) && !(b<a)` — equal iff family+address+port all match.
+ */
+TEST(EndpointAddress, StdEqualityComparesFamilyAddrPort) {
+    using std::operator==;
+    const endpoint a("10.0.0.1", 8080);
+    const endpoint same("10.0.0.1", 8080);
+    const endpoint diff_port("10.0.0.1", 8081);
+    const endpoint diff_addr("10.0.0.2", 8080);
+    const endpoint v6("::1", 8080);
+    const endpoint v6_same("::1", 8080);
+
+    EXPECT_TRUE(a == same);
+    EXPECT_FALSE(a == diff_port) << "the addr+port-sum collision is fixed: these are not equal";
+    EXPECT_FALSE(a == diff_addr);
+    EXPECT_FALSE(a == v6) << "different families are never equal";
+    EXPECT_TRUE(v6 == v6_same);
+}
+
+// =============================================================================
+// tcp::socket VALUE TRAITS (no fd, no connect)
+// =============================================================================
+
+/**
+ * @test `tcp::socket::is_secure()` is a constexpr false (the plaintext TCP transport trait).
+ * @brief Drives the trivial constexpr accessor on qb::io::tcp::socket without opening a socket.
+ */
+TEST(EndpointAddress, TcpSocketIsNotSecure) {
+    static_assert(!qb::io::tcp::socket::is_secure(),
+                  "plaintext tcp::socket must report is_secure() == false");
+    EXPECT_FALSE(qb::io::tcp::socket::is_secure());
 }

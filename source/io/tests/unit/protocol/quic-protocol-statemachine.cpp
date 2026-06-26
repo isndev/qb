@@ -485,3 +485,43 @@ TEST(QuicProtocolStateMachine, FlowCreditIsReturnedOnlyAfterProtocolConsumesByte
     EXPECT_EQ(session->last_message, "hello world");
     EXPECT_EQ(credited, 12u);
 }
+
+// =============================================================================
+// SESSION BUFFER EDGE CASES — empty append + publish on a closed stream
+// =============================================================================
+
+/**
+ * @test An empty append is an accepted no-op that buffers nothing
+ * @brief append("") returns true (the documented empty-input short-circuit) without growing the read
+ *        buffer or tripping the buffer-overflow guard, even when a tight read cap is set. Covers the
+ *        `data.empty()` early-return branch of session::append that the framing tests never hit.
+ */
+TEST(QuicProtocolStateMachine, EmptyAppendIsAnAcceptedNoOp) {
+    TextQuicSession session{0};
+    session.set_max_read_buffer_size(1);
+
+    EXPECT_TRUE(session.append(std::string_view{}));
+    EXPECT_EQ(session.pendingRead(), 0u);
+    EXPECT_EQ(session.disconnection_reason(), 0) << "an empty append must not trip buffer_overflow";
+
+    // A non-empty append still buffers normally afterwards.
+    EXPECT_TRUE(session.append("x"));
+    EXPECT_EQ(session.pendingRead(), 1u);
+}
+
+/**
+ * @test publish on a closed stream session is rejected with a null pointer
+ * @brief After close() flips the stream to not-open, publish() short-circuits on the `!_open` guard and
+ *        returns nullptr without queuing any bytes — the closed-stream rejection branch that the
+ *        open-stream publish/flush tests never reach.
+ */
+TEST(QuicProtocolStateMachine, PublishOnClosedStreamSessionReturnsNull) {
+    TextQuicSession session{0};
+    ASSERT_TRUE(session.is_open());
+
+    session.close();
+    EXPECT_FALSE(session.is_open());
+
+    EXPECT_EQ(session.publish("late", std::size_t{4}), nullptr) << "a closed stream must reject publish";
+    EXPECT_EQ(session.pendingWrite(), 0u);
+}

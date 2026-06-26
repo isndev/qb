@@ -1113,3 +1113,67 @@ TEST(QuicAdapterEndpoint, ListenerClearDoesNotDangleEndpointWatchers) {
 
     EXPECT_EQ(qb::io::async::listener::current.size(), 0u);
 }
+
+// =============================================================================
+// SETTINGS-ONLY CONSTRUCTOR + ACCESSORS + set_backend
+// =============================================================================
+
+/**
+ * @test The settings-only constructor seeds settings() without a backend, and set_backend
+ *        attaches one afterwards
+ * @brief The `endpoint(settings)` overload (no backend) leaves backend()==nullptr / state==idle but
+ *        stores the settings; set_backend() then attaches the mock so a subsequent connect() configures
+ *        it with those very settings. Covers the settings-only ctor, the const settings()/backend()
+ *        accessors, and set_backend() — none of which the backend-injecting ctor path exercises.
+ */
+TEST(QuicAdapterEndpoint, SettingsOnlyConstructorThenSetBackendConfiguresWithStoredSettings) {
+    qb::io::quic::settings settings;
+    settings.idle_timeout    = std::chrono::milliseconds(4321);
+    settings.max_streams_uni = 17;
+
+    qb::io::async::quic::endpoint endpoint{settings};
+
+    // settings-only ctor: backend absent, idle state, but the settings round-trip through settings().
+    EXPECT_EQ(endpoint.backend(), nullptr);
+    EXPECT_EQ(endpoint.current_state(), State::idle);
+    EXPECT_EQ(endpoint.settings().idle_timeout, std::chrono::milliseconds(4321));
+    EXPECT_EQ(endpoint.settings().max_streams_uni, 17u);
+
+    // const-qualified backend() accessor on a still-backendless endpoint.
+    const auto &const_endpoint = endpoint;
+    EXPECT_EQ(const_endpoint.backend(), nullptr);
+    EXPECT_EQ(const_endpoint.settings().idle_timeout, std::chrono::milliseconds(4321));
+
+    // set_backend attaches the mock; the const accessor now sees it.
+    FakeQuicBackend *raw = nullptr;
+    endpoint.set_backend(make_fake(raw));
+    EXPECT_EQ(const_endpoint.backend(), raw);
+
+    // The settings stored by the settings-only ctor are forwarded to the late-attached backend.
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    EXPECT_EQ(raw->configure_calls, 1);
+    EXPECT_EQ(raw->last_settings.idle_timeout, std::chrono::milliseconds(4321));
+    EXPECT_EQ(raw->last_settings.max_streams_uni, 17u);
+}
+
+/**
+ * @test send_stream_data(stream_id, span, fin) — the connection-less span overload — targets connection 0
+ * @brief The three-argument byte-span overload (no explicit connection id) routes to the backend with
+ *        connection_id 0, the given stream id, the exact byte count and the FIN flag. Distinct from the
+ *        string_view overloads already covered: this is the raw `std::span<const std::byte>` entry point.
+ */
+TEST(QuicAdapterEndpoint, SendStreamDataSpanOverloadTargetsConnectionZero) {
+    FakeQuicBackend              *raw = nullptr;
+    qb::io::async::quic::endpoint endpoint{make_fake(raw)};
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+
+    std::array<std::byte, 3> body{std::byte{'r'}, std::byte{'a'}, std::byte{'w'}};
+    endpoint.send_stream_data(6, std::span<const std::byte>{body}, true);
+
+    EXPECT_EQ(raw->send_stream_data_calls, 1);
+    EXPECT_EQ(raw->sent_connection_id, 0u) << "the connection-less span overload targets connection 0";
+    EXPECT_EQ(raw->sent_stream_id, 6u);
+    EXPECT_EQ(raw->sent_stream_bytes, 3u);
+    EXPECT_TRUE(raw->sent_stream_fin);
+}

@@ -513,6 +513,182 @@ INSTANTIATE_TEST_SUITE_P(
         NormalizeCase{"C:\\Users\\.\\qb\\..\\io", "C:/Users/io"}));
 
 // =============================================================================
+// RFC 3986 CHARACTER CLASSIFIERS — the free `qb::io::is_*` predicates
+//
+// uri.h exposes a family of inline classifier predicates (is_gen_delim, is_sub_delim,
+// is_reserved, is_user_info_character, is_query_character, is_fragment_character). The
+// parse / encode paths only graze them, so each grammar branch is driven directly here
+// with the exact characters from the relevant RFC 3986 production.
+// =============================================================================
+
+/**
+ * @test `is_gen_delim` accepts exactly the RFC 3986 gen-delims and rejects everything else.
+ * @brief gen-delims = `: / ? # [ ] @`. Drives uri.h is_gen_delim for both the true and the
+ *        default-false arm.
+ */
+TEST(UriClassifiers, GenDelimMatchesRfc3986Set) {
+    for (char c : std::string(":/?#[]@"))
+        EXPECT_TRUE(qb::io::is_gen_delim(c)) << "gen-delim: " << c;
+
+    // A representative spread of NON gen-delims (alnum, unreserved, sub-delims, controls).
+    for (char c : std::string("aZ0-._~!$&'()*+,;= "))
+        EXPECT_FALSE(qb::io::is_gen_delim(c)) << "not a gen-delim: " << c;
+    EXPECT_FALSE(qb::io::is_gen_delim('\0'));
+    EXPECT_FALSE(qb::io::is_gen_delim('\x01'));
+}
+
+/**
+ * @test `is_sub_delim` accepts exactly the RFC 3986 sub-delims, one switch arm per character.
+ * @brief sub-delims = `! $ & ' ( ) * + , ; =`. Every `case` label in the predicate's switch is
+ *        hit, plus the default-false branch.
+ */
+TEST(UriClassifiers, SubDelimMatchesEverySwitchArm) {
+    const std::string sub_delims = "!$&'()*+,;=";
+    for (char c : sub_delims)
+        EXPECT_TRUE(qb::io::is_sub_delim(c)) << "sub-delim: " << c;
+    EXPECT_EQ(sub_delims.size(), 11u) << "RFC 3986 defines exactly 11 sub-delims";
+
+    // gen-delims and unreserved are NOT sub-delims (default arm).
+    for (char c : std::string(":/?#[]@aZ0-._~"))
+        EXPECT_FALSE(qb::io::is_sub_delim(c)) << "not a sub-delim: " << c;
+    EXPECT_FALSE(qb::io::is_sub_delim(' '));
+    EXPECT_FALSE(qb::io::is_sub_delim('%'));
+}
+
+/**
+ * @test `is_reserved` is the union of gen-delims and sub-delims, and excludes unreserved.
+ * @brief Pins both legs of the `is_gen_delim(c) || is_sub_delim(c)` disjunction: a pure gen-delim,
+ *        a pure sub-delim, and an unreserved char that satisfies neither.
+ */
+TEST(UriClassifiers, ReservedIsUnionOfGenAndSubDelims) {
+    EXPECT_TRUE(qb::io::is_reserved('/'))  << "gen-delim leg";
+    EXPECT_TRUE(qb::io::is_reserved('@'));
+    EXPECT_TRUE(qb::io::is_reserved('!'))  << "sub-delim leg";
+    EXPECT_TRUE(qb::io::is_reserved(';'));
+
+    // unreserved characters are never reserved.
+    for (char c : std::string("aZ0-._~"))
+        EXPECT_FALSE(qb::io::is_reserved(c)) << "unreserved is not reserved: " << c;
+    EXPECT_FALSE(qb::io::is_reserved(' '));
+}
+
+/**
+ * @test `is_user_info_character` admits unreserved + sub-delims + `%` + `:`, and rejects others.
+ * @brief userinfo = *( unreserved / pct-encoded / sub-delims / ":" ). Drives the `%`/`:` extras
+ *        and a gen-delim rejection that distinguishes userinfo from authority.
+ */
+TEST(UriClassifiers, UserInfoCharacterSet) {
+    EXPECT_TRUE(qb::io::is_user_info_character('a'));   // unreserved
+    EXPECT_TRUE(qb::io::is_user_info_character('~'));
+    EXPECT_TRUE(qb::io::is_user_info_character('!'));   // sub-delim
+    EXPECT_TRUE(qb::io::is_user_info_character('%'));   // pct-encoded marker
+    EXPECT_TRUE(qb::io::is_user_info_character(':'));   // user:pass separator
+
+    EXPECT_FALSE(qb::io::is_user_info_character('@')) << "'@' terminates userinfo";
+    EXPECT_FALSE(qb::io::is_user_info_character('/'));
+    EXPECT_FALSE(qb::io::is_user_info_character('['));
+    EXPECT_FALSE(qb::io::is_user_info_character(' '));
+}
+
+/**
+ * @test `is_query_character` extends path characters with `?`, and `is_fragment_character` mirrors it.
+ * @brief query = *( pchar / "/" / "?" ); fragment shares the exact same legal set. The two
+ *        predicates must agree character-for-character, and both must admit the extra `?`.
+ */
+TEST(UriClassifiers, QueryAndFragmentShareTheSameSetPlusQuestionMark) {
+    EXPECT_TRUE(qb::io::is_query_character('?'))    << "'?' is legal inside a query";
+    EXPECT_TRUE(qb::io::is_query_character('/'));
+    EXPECT_TRUE(qb::io::is_query_character('a'));
+    EXPECT_TRUE(qb::io::is_query_character('@'));
+    EXPECT_TRUE(qb::io::is_query_character(':'));
+    EXPECT_FALSE(qb::io::is_query_character('#')) << "'#' starts the fragment, ends the query";
+    EXPECT_FALSE(qb::io::is_query_character(' '));
+
+    // fragment is defined as identical to query — assert byte-for-byte agreement.
+    for (int c = 0; c < 256; ++c)
+        EXPECT_EQ(qb::io::is_fragment_character(c), qb::io::is_query_character(c))
+            << "fragment vs query divergence at byte " << c;
+    EXPECT_TRUE(qb::io::is_fragment_character('?'));
+    EXPECT_FALSE(qb::io::is_fragment_character('#'));
+}
+
+// =============================================================================
+// QUERY MAP ACCESSORS — const queries(), query() miss, query_or() hit
+// =============================================================================
+
+/**
+ * @test The const `queries()` accessor exposes the fully-decoded multi-value map.
+ * @brief Distinct from `encoded_queries()` (raw string): this returns the parsed
+ *        icase_unordered_map<vector<string>>, so duplicate keys collapse into a value vector and
+ *        percent-escapes are already decoded. Pins the const overload (uri.h queries() const).
+ */
+TEST(UriParse, ConstQueriesMapExposesDecodedMultiValues) {
+    const uri u("http://host/p?dup=1&dup=2&dup=3&solo=%7Bx%7D");
+    const auto &qmap = u.queries();
+
+    ASSERT_TRUE(qmap.has("dup"));
+    ASSERT_TRUE(qmap.has("solo"));
+    EXPECT_EQ(qmap.size(), 2u) << "duplicate keys collapse into one entry";
+
+    const auto dup_it = qmap.find("dup");
+    ASSERT_NE(dup_it, qmap.cend());
+    const auto &dup_values = dup_it->second;
+    ASSERT_EQ(dup_values.size(), 3u);
+    EXPECT_EQ(dup_values[0], "1");
+    EXPECT_EQ(dup_values[1], "2");
+    EXPECT_EQ(dup_values[2], "3");
+
+    const auto solo_it = qmap.find("solo");
+    ASSERT_NE(solo_it, qmap.cend());
+    EXPECT_EQ(solo_it->second.front(), "{x}") << "values are percent-decoded in the map";
+}
+
+/**
+ * @test `query()` returns the shared empty string on every miss kind; `query_or()` returns its hit.
+ * @brief Covers the two fall-through paths the happy-path tests skip:
+ *        - query() with an absent key, a present key but out-of-range index → the static empty ref;
+ *        - query_or() with a present key + in-range index → the stored value (not the fallback).
+ */
+TEST(UriParse, QueryMissReturnsEmptyAndQueryOrHitReturnsStoredValue) {
+    const uri u("http://host/p?present=A&multi=x&multi=y");
+
+    // query() misses → empty string reference (uri.h query() fall-through).
+    EXPECT_EQ(u.query("absent"), "")            << "absent key → empty";
+    EXPECT_EQ(u.query("present", 1), "")        << "present key, index past end → empty";
+    EXPECT_EQ(u.query("multi", 5), "")          << "index well beyond size → empty";
+
+    // The empty results are a real, stable reference (never a dangling temporary).
+    const std::string &miss = u.query("absent");
+    EXPECT_TRUE(miss.empty());
+
+    // query_or() HIT path: present key, in-range index → stored value, fallback ignored.
+    EXPECT_EQ(u.query_or("present", "fb"), "A");
+    EXPECT_EQ(u.query_or("multi", "fb", 0), "x");
+    EXPECT_EQ(u.query_or("multi", "fb", 1), "y") << "in-range index returns the stored value";
+
+    // query_or() MISS paths return the fallback by value.
+    EXPECT_EQ(u.query_or("absent", "fb"), "fb");
+    EXPECT_EQ(u.query_or("present", "fb", 9), "fb") << "out-of-range index → fallback";
+}
+
+/**
+ * @test The non-const `queries()` accessor returns a mutable map an caller can edit in place.
+ * @brief Pins the mutable overload (uri.h queries() non-const): editing the returned reference is
+ *        observed by a subsequent `query()` lookup against the same object.
+ */
+TEST(UriParse, MutableQueriesAccessorAllowsInPlaceEdit) {
+    uri u("http://host/p?k=orig");
+    EXPECT_EQ(u.query("k"), "orig");
+
+    u.queries()["k"] = {"edited"};
+    u.queries()["injected"] = {"new1", "new2"};
+
+    EXPECT_EQ(u.query("k"), "edited");
+    EXPECT_EQ(u.query("injected", 0), "new1");
+    EXPECT_EQ(u.query("injected", 1), "new2");
+}
+
+// =============================================================================
 // IDN / PUNYCODE host (spec D4 addition)
 // =============================================================================
 
