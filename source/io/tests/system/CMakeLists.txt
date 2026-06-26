@@ -16,272 +16,104 @@
 #
 
 # -----------------------------------------------------------------------------
-# qb IO System Tests - CMake Configuration
+# qb-io SYSTEM tests — in-process event loop bound to kernel objects (fds, signals,
+# loopback socket pair, local TLS/QUIC). NO external daemon.
+# REQUIRES ssl|compression compile-gate on QB_HAS_*; REQUIRES network labels loopback
+# tests; WINDOWS_EXCLUDE skips POSIX-only raw-syscall harnesses on Windows.
 #
-# This file configures the system tests for the qb IO component.
-# It defines test targets for core IO functionality and optional components
-# that depend on available libraries (ZLIB, OpenSSL).
+# NOTE: files registered flat at the bottom (SPLIT_PENDING) are large monoliths being
+# decomposed per docs/tests-audit/_spec-qb-io.md §2; registered as-is (temp tier) so the
+# suite stays green until the split wave replaces them. Their target names are
+# qb-io-test-<tier>-<name> already, so the cert/ev-matrix wiring below survives the split.
 # -----------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# Test targets definition
-# -----------------------------------------------------------------------------
+# --- renamed (already in their final tiered home) ---------------------------
+qb_add_test(MODULE qb-io TIER system NAME async-bases-framing SOURCES async-bases/async-bases-framing.cpp DEPENDS ${PROJECT_NAME} WINDOWS_EXCLUDE)
+qb_add_test(MODULE qb-io TIER system NAME tcp-socket-loopback SOURCES tcp/tcp-socket-loopback.cpp         DEPENDS ${PROJECT_NAME} REQUIRES network WINDOWS_EXCLUDE)
+qb_add_test(MODULE qb-io TIER system NAME kernel-events       SOURCES async/kernel-events.cpp             DEPENDS ${PROJECT_NAME} LABELS signal)
+qb_add_test(MODULE qb-io TIER system NAME event-combined      SOURCES async/event-combined.cpp            DEPENDS ${PROJECT_NAME} LABELS signal slow WINDOWS_EXCLUDE)
+qb_add_test(MODULE qb-io TIER system NAME coro-timer-sleep    SOURCES coroutine/coro-timer-sleep.cpp      DEPENDS ${PROJECT_NAME} LABELS coroutine)
 
-# Core IO functionality tests
-set(CORE_TESTS
-        test-event.cpp
-        test-io.cpp
-        test-event-combined.cpp
-        test-connection-timeout.cpp
-        test-buffered-io.cpp
-        test-file-operations.cpp
-        test-stream-operations.cpp
-        test-async-io.cpp
-        test-async-io-bases.cpp
-        test-cpu.cpp
-        test-tcp-socket.cpp
-        test-udp-socket.cpp
-        test-uri-json.cpp
-        test-session-text.cpp
-        test-session-json.cpp
-        test-io-plan.cpp
-        test-quic.cpp
-        test-inet-endpoint.cpp
-)
+# --- SPLIT_PENDING: pure-logic monoliths (true tier=unit; decomposed by the split wave) ---
+qb_add_test(MODULE qb-io TIER unit NAME uri-json          SOURCES test-uri-json.cpp          DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME cpu               SOURCES test-cpu.cpp               DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME buffered-io       SOURCES test-buffered-io.cpp       DEPENDS ${PROJECT_NAME} WINDOWS_EXCLUDE)
+qb_add_test(MODULE qb-io TIER unit NAME file-operations   SOURCES test-file-operations.cpp   DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME stream-operations SOURCES test-stream-operations.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME crypto            SOURCES test-crypto.cpp            DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 
-# These tests drive raw POSIX socket/fd syscalls directly (socketpair,
-# ::read/::write/::close, fcntl) which MSVC/winsock does not provide. The qb-io
-# library itself is fully cross-platform; only these low-level test harnesses are
-# POSIX-only, so skip them on Windows (covered on Linux/macOS).
-if (WIN32)
-    list(REMOVE_ITEM CORE_TESTS
-            test-io.cpp
-            test-event-combined.cpp
-            test-buffered-io.cpp
-            test-async-io-bases.cpp
-            test-tcp-socket.cpp
-            test-session-text.cpp
-    )
-endif ()
-
-# Create core test targets
-foreach (TEST_SOURCE ${CORE_TESTS})
-    # Extract test name from filename (removing extension)
-    get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
-
-    # Create test target with a descriptive name
-    qb_add_test(
-            NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
-            SOURCES ${TEST_SOURCE}
-            DEPENDS ${PROJECT_NAME}
-    )
-
-    # Set properties for the test target (optional)
-    set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
-            FOLDER "Tests/IO/System"
-    )
-endforeach ()
+# --- SPLIT_PENDING: system monoliths (loopback / event loop) ---------------
+qb_add_test(MODULE qb-io TIER system NAME io                 SOURCES test-io.cpp                 DEPENDS ${PROJECT_NAME} REQUIRES network WINDOWS_EXCLUDE)
+qb_add_test(MODULE qb-io TIER system NAME io-plan            SOURCES test-io-plan.cpp            DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME quic               SOURCES test-quic.cpp               DEPENDS ${PROJECT_NAME} LABELS quic)
+qb_add_test(MODULE qb-io TIER system NAME connection-timeout SOURCES test-connection-timeout.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME async-io           SOURCES test-async-io.cpp           DEPENDS ${PROJECT_NAME} REQUIRES network LABELS signal)
+qb_add_test(MODULE qb-io TIER system NAME udp-socket         SOURCES test-udp-socket.cpp         DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME session-text       SOURCES test-session-text.cpp       DEPENDS ${PROJECT_NAME} REQUIRES network WINDOWS_EXCLUDE)
+qb_add_test(MODULE qb-io TIER system NAME session-json       SOURCES test-session-json.cpp       DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME ssl-socket         SOURCES test-ssl-socket.cpp         DEPENDS ${PROJECT_NAME} REQUIRES ssl network WINDOWS_EXCLUDE)
 
 # -----------------------------------------------------------------------------
-# Optional feature tests
+# Generate self-signed SSL certificates for the loopback-TLS tests (unchanged logic,
+# re-pointed to the new target names). Tests load cert.pem/key.pem from their bin dir.
 # -----------------------------------------------------------------------------
-
-# Optional crypto tests (requires OpenSSL)
 if (QB_HAS_SSL)
-    # List of crypto tests
-    set(CRYPTO_TESTS
-            test-crypto.cpp
-            test-crypto-advanced.cpp
-            test-crypto-asymmetric.cpp
-            test-crypto-jwt.cpp
-            test-ssl-socket.cpp
-    )
-
-    # test-ssl-socket drives raw POSIX socket syscalls; POSIX-only on Windows.
-    if (WIN32)
-        list(REMOVE_ITEM CRYPTO_TESTS test-ssl-socket.cpp)
-    endif ()
-
-    # Generate targets for each crypto test
-    foreach (TEST_SOURCE ${CRYPTO_TESTS})
-        # Extract test name from filename
-        get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
-
-        qb_add_test(
-                NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
-                SOURCES ${TEST_SOURCE}
-                DEPENDS ${PROJECT_NAME}
-        )
-
-        set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
-                FOLDER "Tests/IO/System"
-        )
-    endforeach ()
-
-    # -----------------------------------------------------------------------------
-    # Generate SSL certificates for tests
-    # -----------------------------------------------------------------------------
-    # Define output paths for certificates
     set(SSL_CERT_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/cert.pem")
     set(SSL_KEY_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/key.pem")
-
-    # Function to check if OpenSSL is available
     find_program(OPENSSL_EXECUTABLE openssl)
-
     if (OPENSSL_EXECUTABLE)
-        # Check OpenSSL version to determine command options
-        execute_process(
-                COMMAND ${OPENSSL_EXECUTABLE} version -v
-                OUTPUT_VARIABLE OPENSSL_VERSION_OUTPUT
-                ERROR_VARIABLE OPENSSL_VERSION_ERROR
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-
-        string(REGEX MATCH "([0-9]+)\\.([0-9]+)\\.([0-9]+)" OPENSSL_VERSION_MATCH "${OPENSSL_VERSION_OUTPUT}")
-        set(OPENSSL_VERSION_MAJOR ${CMAKE_MATCH_1})
-        set(OPENSSL_VERSION_MINOR ${CMAKE_MATCH_2})
-        set(OPENSSL_VERSION_PATCH ${CMAKE_MATCH_3})
-
-        # For OpenSSL >= 1.1.1, use -addext option
-        if ((OPENSSL_VERSION_MAJOR GREATER 1) OR
-        (OPENSSL_VERSION_MAJOR EQUAL 1 AND OPENSSL_VERSION_MINOR GREATER 1) OR
-        (OPENSSL_VERSION_MAJOR EQUAL 1 AND OPENSSL_VERSION_MINOR EQUAL 1 AND OPENSSL_VERSION_PATCH GREATER_EQUAL 1))
-            set(OPENSSL_CERT_COMMAND
-                    ${OPENSSL_EXECUTABLE} req -x509 -newkey rsa:2048 -keyout ${SSL_KEY_OUTPUT}
-                    -out ${SSL_CERT_OUTPUT} -days 365 -nodes
-                    -subj "/CN=localhost/O=QB Tests/C=US"
-                    -addext "subjectAltName = DNS:localhost"
-            )
+        execute_process(COMMAND ${OPENSSL_EXECUTABLE} version -v
+                OUTPUT_VARIABLE OPENSSL_VERSION_OUTPUT ERROR_VARIABLE OPENSSL_VERSION_ERROR
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+        string(REGEX MATCH "([0-9]+)\\.([0-9]+)\\.([0-9]+)" _ "${OPENSSL_VERSION_OUTPUT}")
+        if ((CMAKE_MATCH_1 GREATER 1) OR (CMAKE_MATCH_1 EQUAL 1 AND CMAKE_MATCH_2 GREATER 1) OR
+            (CMAKE_MATCH_1 EQUAL 1 AND CMAKE_MATCH_2 EQUAL 1 AND CMAKE_MATCH_3 GREATER_EQUAL 1))
+            set(OPENSSL_CERT_COMMAND ${OPENSSL_EXECUTABLE} req -x509 -newkey rsa:2048
+                    -keyout ${SSL_KEY_OUTPUT} -out ${SSL_CERT_OUTPUT} -days 365 -nodes
+                    -subj "/CN=localhost/O=QB Tests/C=US" -addext "subjectAltName = DNS:localhost")
         else ()
-            # Older OpenSSL versions don't support -addext
-            set(OPENSSL_CERT_COMMAND
-                    ${OPENSSL_EXECUTABLE} req -x509 -newkey rsa:2048 -keyout ${SSL_KEY_OUTPUT}
-                    -out ${SSL_CERT_OUTPUT} -days 365 -nodes
-                    -subj "/CN=localhost/O=QB Tests/C=US"
-            )
+            set(OPENSSL_CERT_COMMAND ${OPENSSL_EXECUTABLE} req -x509 -newkey rsa:2048
+                    -keyout ${SSL_KEY_OUTPUT} -out ${SSL_CERT_OUTPUT} -days 365 -nodes
+                    -subj "/CN=localhost/O=QB Tests/C=US")
         endif ()
-
-        # Define command to generate SSL certificates
-        add_custom_command(
-                OUTPUT ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT}
+        add_custom_command(OUTPUT ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT}
                 COMMAND ${OPENSSL_CERT_COMMAND}
-                COMMENT "Generating self-signed SSL certificate for tests"
-                VERBATIM
-        )
-
-        # Define custom target for certificate generation
+                COMMENT "Generating self-signed SSL certificate for tests" VERBATIM)
         add_custom_target(generate_ssl_certs DEPENDS ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT})
-
-        # Create a directory structure for the certificates
-        # Note: Test binaries are in ${CMAKE_BINARY_DIR}/bin/tests (set by qb_add_test)
         set(TEST_CERT_DIR "${CMAKE_BINARY_DIR}/bin/tests")
         file(MAKE_DIRECTORY ${TEST_CERT_DIR})
-
-        # Copy SSL certificates to where test binaries are located
-        add_custom_command(
-                TARGET generate_ssl_certs
-                POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy
-                ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT}
-                ${TEST_CERT_DIR}/
-                COMMENT "Copying SSL certificates to test binary directory"
-        )
-
-        # Make ssl-dependent tests depend on certificate generation. Some of these
-        # are POSIX-only and excluded on Windows, so only wire targets that exist.
-        foreach (_ssl_dep ${PROJECT_NAME}-gtest-test-async-io
-                ${PROJECT_NAME}-gtest-test-ssl-socket
-                ${PROJECT_NAME}-gtest-test-session-text)
+        add_custom_command(TARGET generate_ssl_certs POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT} ${TEST_CERT_DIR}/
+                COMMENT "Copying SSL certificates to test binary directory")
+        # Re-pointed to the migrated target names (only wire targets that exist on this platform).
+        foreach (_ssl_dep qb-io-test-system-async-io
+                qb-io-test-system-ssl-socket
+                qb-io-test-system-session-text
+                qb-io-test-system-session-json)
             if (TARGET ${_ssl_dep})
                 add_dependencies(${_ssl_dep} generate_ssl_certs)
             endif ()
         endforeach ()
-
-        # Tests using SSL will look for certificates in their runtime directory
         qb_status_message("SSL certificate generation enabled (OpenSSL ${OPENSSL_VERSION_OUTPUT})")
     else ()
         qb_status_message("OpenSSL executable not found, skipping certificate generation")
     endif ()
-
-    qb_status_message("Building OpenSSL crypto tests")
-endif ()
-
-# Optional compression tests (requires ZLIB)
-if (QB_HAS_COMPRESSION)
-    # Liste des tests de compression
-    set(COMPRESSION_TESTS
-            test-compression.cpp
-    )
-
-    # Générer les cibles pour chaque test de compression
-    foreach (TEST_SOURCE ${COMPRESSION_TESTS})
-        # Extract test name from filename
-        get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
-
-        qb_add_test(
-                NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
-                SOURCES ${TEST_SOURCE}
-                DEPENDS ${PROJECT_NAME}
-        )
-
-        set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
-                FOLDER "Tests/IO/System"
-        )
-    endforeach ()
-
-    qb_status_message("Building ZLIB compression tests")
 endif ()
 
 # -----------------------------------------------------------------------------
-# Test resources setup
+# Per-backend libev event-loop test matrix (OPT-IN: QB_IO_EV_TEST_BACKENDS). Re-runs the
+# I/O-heavy, backend-sensitive tests under additional libev backends. Re-pointed to the
+# migrated target names. See the original block for the rationale and valid backend values.
 # -----------------------------------------------------------------------------
-
-# SSL resources are automatically copied by qb_setup_test_resources()
-# which is called in qb/CMakeLists.txt. Tests will find them in their working directory.
-# Note: Generated SSL certificates (generate_ssl_certs target) are handled separately above.
-
-# -----------------------------------------------------------------------------
-# Per-backend libev event-loop test matrix  (OPT-IN — disabled by default)
-# -----------------------------------------------------------------------------
-# Re-runs the I/O-heavy, backend-sensitive tests under additional libev backends by
-# forcing QB_EV_BACKEND (resolved by qb::io::async::listener). This is OFF by
-# default on purpose: the normal suite above already runs every test once on the
-# auto-selected backend (the one that actually ships: kqueue on macOS, epoll on
-# Linux, wepoll on Windows), and the cross-backend PERFORMANCE comparison lives in
-# the `qb-io-benchmark-ev-backends` benchmark. So the dev pipeline shouldn't pay to
-# re-run the suite on extra backends every build — but the capability is here when
-# you need it (CI backend matrix, or debugging a backend-specific bug).
-#
-# Enable by setting QB_IO_EV_TEST_BACKENDS to a ';'-separated list, e.g.:
-#   cmake -DQB_IO_EV_TEST_BACKENDS="select;poll"                       # macOS/Linux alternatives
-#   cmake -DQB_IO_EV_TEST_BACKENDS="select;poll;iouring;linuxaio"      # native Linux host
-#
-# Valid values (pick the ones available on your host):
-#   select   - everywhere    (capped at FD_SETSIZE, ~1024)
-#   poll     - Linux, macOS  (not Windows)
-#   epoll    - Linux (default there); Windows = wepoll
-#   kqueue   - macOS / BSD   (default on macOS)
-#   iouring  - Linux 5.13+   (native host, or docker --security-opt seccomp=unconfined)
-#   linuxaio - Linux
-# (No need to list the default backend — it is already covered by the normal run.)
 if (QB_IO_EV_TEST_BACKENDS)
-    # SSL-cert-free, loop-heavy tests (avoid cert working-dir coupling in the matrix).
     set(QB_IO_BACKEND_SENSITIVE_TESTS
-            test-io
-            test-async-io-bases
-            test-connection-timeout
-            test-session-json
-    )
-
-    foreach (_qb_t ${QB_IO_BACKEND_SENSITIVE_TESTS})
-        set(_qb_tgt ${PROJECT_NAME}-gtest-${_qb_t})
+            qb-io-test-system-io
+            qb-io-test-system-async-bases-framing
+            qb-io-test-system-connection-timeout
+            qb-io-test-system-session-json)
+    foreach (_qb_tgt ${QB_IO_BACKEND_SENSITIVE_TESTS})
         if (TARGET ${_qb_tgt})
-            # Localhost network tests: the base (auto) run and every backend variant
-            # exercise the SAME binary, often on the same ports. A shared RESOURCE_LOCK
-            # stops ctest from scheduling two variants of one test concurrently under
-            # `--parallel` (which caused port/accept flakes). Distinct tests still run
-            # in parallel.
-            set(_qb_lock "evmx_${_qb_t}")
+            set(_qb_lock "evmx_${_qb_tgt}")
             set_tests_properties(${_qb_tgt} PROPERTIES RESOURCE_LOCK "${_qb_lock}")
             foreach (_qb_be ${QB_IO_EV_TEST_BACKENDS})
                 add_test(NAME ${_qb_tgt}-ev-${_qb_be} COMMAND ${_qb_tgt})
@@ -289,10 +121,9 @@ if (QB_IO_EV_TEST_BACKENDS)
                         ENVIRONMENT "QB_EV_BACKEND=${_qb_be}"
                         WORKING_DIRECTORY "$<TARGET_FILE_DIR:${_qb_tgt}>"
                         RESOURCE_LOCK "${_qb_lock}"
-                        LABELS "qb-tests;ev-backend;ev-backend-${_qb_be}")
+                        LABELS "module:qb-io;ev-backend;ev-backend-${_qb_be}")
             endforeach ()
         endif ()
     endforeach ()
-
     qb_status_message("Per-backend ev test matrix ENABLED: [${QB_IO_EV_TEST_BACKENDS}]")
 endif ()

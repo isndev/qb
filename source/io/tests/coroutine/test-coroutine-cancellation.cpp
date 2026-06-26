@@ -461,6 +461,120 @@ TEST_F(WithDeadlineTests, WithDeadlineRepeated) {
 }
 
 /**
+ * @test with_deadline reclaims the detached deadline timer when the operation wins
+ * @brief The operation completes well before a far-off deadline. `when_any` tears down
+ *        the timeout branch (with_deadline_run_timeout) on win, whose destruction runs
+ *        the with_deadline_timeout_awaiter dtor and reclaims the detached deadline_timer_task
+ *        — instead of leaving it parked on the full (multi-second) remaining-until-deadline
+ *        sleep. Oracle: live_frames returns to baseline long before the deadline.
+ */
+TEST_F(WithDeadlineTests, WithDeadlineOperationWonTimerReclaimedNoLeak) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> done{false};
+    auto              deadline = std::chrono::steady_clock::now() + 5000ms; // far off
+
+    auto coro_fn = [deadline, &done]() -> task<void> {
+        int result = co_await with_deadline(
+            []() -> task<int> {
+                co_await sleep(10ms);
+                co_return 7;
+            }(),
+            deadline);
+        EXPECT_EQ(result, 7);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(300ms);
+    coro_scheduler().run_ready();
+    EXPECT_TRUE(done);
+    const long after = detail::CoroutineFrameAllocator::live_frames;
+    EXPECT_EQ(after, baseline) << "with_deadline leaked " << (after - baseline)
+                               << " frame(s) — the detached deadline timer must be reclaimed when the operation wins";
+}
+
+/**
+ * @test with_deadline reclaims the still-running operation when the deadline fires first
+ * @brief Symmetric to the above: when the timeout branch wins, `when_any` tears down the
+ *        operation branch (a long sleep) instead of leaving it running detached. Oracle:
+ *        live_frames returns to baseline long before the operation's own sleep would end.
+ */
+TEST_F(WithDeadlineTests, WithDeadlineTimeoutReclaimsOperationNoLeak) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> caught{false};
+    auto              deadline = std::chrono::steady_clock::now() + 20ms;
+
+    auto coro_fn = [deadline, &caught]() -> task<void> {
+        try {
+            (void) co_await with_deadline(
+                []() -> task<int> {
+                    co_await sleep(5000ms); // far longer than the deadline — must be torn down
+                    co_return 1;
+                }(),
+                deadline);
+            ADD_FAILURE() << "Expected timeout_error";
+        } catch (const timeout_error &) {
+            caught = true;
+        }
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(300ms);
+    coro_scheduler().run_ready();
+    EXPECT_TRUE(caught);
+    const long after = detail::CoroutineFrameAllocator::live_frames;
+    EXPECT_EQ(after, baseline) << "with_deadline leaked " << (after - baseline)
+                               << " frame(s) — the losing operation must be reclaimed when the deadline fires";
+}
+
+// Free-function canceller coroutine: sleeps, then cancels a shared token. A free
+// function (not a lambda) keeps the captured token alive across the suspend point.
+namespace {
+task<void>
+cancel_token_after(cancellation_token tok, qb::duration d) {
+    co_await sleep(d);
+    tok.cancel();
+}
+} // namespace
+
+/**
+ * @test with_deadline reclaims the detached deadline timer when the TOKEN is cancelled
+ * @brief Exercises the with_deadline_timeout_awaiter on_cancel hook: a token cancel mid-wait
+ *        resolves the timeout branch with cancelled_error and tears down the detached
+ *        deadline_timer_task (rather than leaving it parked on the far-off deadline). Both
+ *        the timer and the still-running operation must be reclaimed. Oracle: live_frames.
+ */
+TEST_F(WithDeadlineTests, WithDeadlineTokenCancelledReclaimsTimerNoLeak) {
+    const long         baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool>  cancelled{false};
+    cancellation_token token;
+    auto               deadline = std::chrono::steady_clock::now() + 5000ms; // far off
+
+    auto coro_fn = [deadline, token, &cancelled]() -> task<void> {
+        try {
+            (void) co_await with_deadline(
+                []() -> task<int> {
+                    co_await sleep(5000ms);
+                    co_return 1;
+                }(),
+                deadline, token);
+            ADD_FAILURE() << "Expected cancelled_error";
+        } catch (const cancelled_error &) {
+            cancelled = true;
+        }
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    coro_scheduler().spawn(cancel_token_after(token, 20ms));
+    run_for(300ms);
+    coro_scheduler().run_ready();
+    EXPECT_TRUE(cancelled);
+    const long after = detail::CoroutineFrameAllocator::live_frames;
+    EXPECT_EQ(after, baseline) << "with_deadline leaked " << (after - baseline)
+                               << " frame(s) — token cancel must reclaim the deadline timer + operation";
+}
+
+/**
  * @test cancellable_sleep cancelled before starting
  * @brief Token already cancelled → await_ready() returns true, await_resume()
  *        calls throw_if_cancelled() → cancelled_error is thrown immediately,
