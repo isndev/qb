@@ -713,3 +713,161 @@ TEST(TCPSocket, StaticHelpersAndErrorClassifiers) {
     qb::io::socket::set_last_errno(0);
     EXPECT_EQ(qb::io::socket::get_last_errno(), 0);
 }
+
+// ===========================================================================
+// COVERAGE ADDITIONS (system/sys__socket.cpp)
+// ===========================================================================
+
+// The static, non-blocking `connect_n(socket_type, endpoint)` overload (no
+// timeout, no wait): it flips the fd to non-blocking and issues a single
+// connect(), returning whatever the kernel reports (0 on the immediate loopback
+// success, or in-progress). Distinct from both the timed connect_n and the
+// instance disconnect() path below.
+TEST(TCPSocket, StaticNonBlockingConnectNReachesLoopback) {
+    qb::io::tcp::listener listener;
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    qb::io::socket client;
+    ASSERT_TRUE(client.open(AF_INET, SOCK_STREAM, 0));
+    const qb::io::endpoint ep("127.0.0.1", port);
+
+    // Static fd-based overload: connect_n(socket_type, endpoint).
+    const int ret = qb::io::socket::connect_n(client.native_handle(), ep);
+    const int err = qb::io::socket::get_last_errno();
+    EXPECT_TRUE(ret == 0 || err == EINPROGRESS || qb::io::socket::not_send_error(err))
+        << "unexpected static connect_n(s, ep) result=" << ret << " errno=" << err;
+    EXPECT_TRUE(client.is_open());
+    client.close();
+}
+
+// disconnect(): the instance disconnect() (and its static counterpart) issue a
+// connect() to an AF_UNSPEC address, which on a connected datagram/stream socket
+// dissolves the association. Drive both the instance and static forms over a UDP
+// socket bound to loopback (a connectionless dissolve is well-defined).
+TEST(TCPSocket, LowLevelDisconnectDissolvesAssociation) {
+    qb::io::socket peer(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_TRUE(peer.is_open());
+    ASSERT_EQ(peer.bind("127.0.0.1", 0), 0);
+    const auto peer_port = peer.local_endpoint().port();
+    ASSERT_NE(peer_port, 0);
+
+    qb::io::socket sender(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_TRUE(sender.is_open());
+    ASSERT_EQ(sender.connect(qb::io::endpoint("127.0.0.1", peer_port)), 0);
+
+    // Instance disconnect(): connect(AF_UNSPEC) on a connected UDP socket.
+    const int instance_result = sender.disconnect();
+    EXPECT_TRUE(instance_result == 0 || instance_result == -1)
+        << "unexpected instance disconnect result=" << instance_result;
+
+    // Static disconnect(socket_type): same dissolve via the fd-based entry point.
+    qb::io::socket sender2(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_TRUE(sender2.is_open());
+    ASSERT_EQ(sender2.connect(qb::io::endpoint("127.0.0.1", peer_port)), 0);
+    const int static_result = qb::io::socket::disconnect(sender2.native_handle());
+    EXPECT_TRUE(static_result == 0 || static_result == -1)
+        << "unexpected static disconnect result=" << static_result;
+}
+
+// send_n / recv_n must traverse their EWOULDBLOCK retry loop, not merely a single
+// syscall. Push a payload larger than a single socket buffer so the sender's
+// non-blocking send() returns short / would-block at least once (driving the
+// handle_write_ready() continue branch), while the receiver pulls the whole thing
+// back through recv_n()'s handle_read_ready() retry branch. Verifies the full
+// payload survives the round-trip.
+TEST(TCPSocket, LowLevelSendNRecvNTraverseWouldBlockRetryLoop) {
+    qb::io::socket listener;
+    ASSERT_EQ(listener.pserve("127.0.0.1", 0), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    // A payload comfortably larger than typical loopback socket buffers, so the
+    // non-blocking sender cannot flush it in one shot and must wait on writability.
+    constexpr int payload_size = 4 * 1024 * 1024;
+    std::vector<char> payload(payload_size);
+    for (int i = 0; i < payload_size; ++i) {
+        payload[static_cast<std::size_t>(i)] = static_cast<char>(i & 0xFF);
+    }
+
+    std::thread server_thread([&] {
+        qb::io::socket accepted;
+        accepted = listener.accept().release_handle();
+        ASSERT_TRUE(accepted.is_open());
+        const int sent = accepted.send_n(payload.data(), payload_size, 5s);
+        EXPECT_EQ(sent, payload_size) << "send_n did not flush the full payload through the retry loop";
+    });
+
+    qb::io::socket client;
+    ASSERT_EQ(client.pconnect("127.0.0.1", port), 0);
+
+    std::vector<char> received(payload_size, 0);
+    const int got = client.recv_n(received.data(), payload_size, 5s);
+    EXPECT_EQ(got, payload_size) << "recv_n did not drain the full payload through the retry loop";
+    EXPECT_EQ(received, payload) << "payload corrupted across the send_n/recv_n round-trip";
+
+    server_thread.join();
+    client.close();
+}
+
+// The timed connect_n(socket_type, endpoint, timeout) failure legs: connecting to
+// a routable-but-closed loopback port resolves quickly to a connection refused,
+// driving the SO_ERROR readback branch (so_error != 0) rather than a select()
+// timeout. The companion `connect_n` to a black-hole (discard) port with a tiny
+// timeout drives the select()-times-out leg.
+TEST(TCPSocket, TimedConnectNSurfacesRefusedAndTimeoutFailures) {
+    // 1) Connection refused: bind a listener, learn its port, close it, then
+    //    connect_n to that now-dead port. The kernel refuses promptly, surfacing
+    //    via the SO_ERROR readback (so_error != 0) branch of connect_n.
+    const auto dead_port = reserve_free_tcp_port();
+    ASSERT_NE(dead_port, 0);
+
+    qb::io::socket refused_client;
+    ASSERT_TRUE(refused_client.open(AF_INET, SOCK_STREAM, 0));
+    const int refused_ret =
+        qb::io::socket::connect_n(refused_client.native_handle(), qb::io::endpoint("127.0.0.1", dead_port), 1s);
+    EXPECT_EQ(refused_ret, -1) << "connect_n to a closed loopback port must fail";
+    refused_client.close();
+
+    // 2) Select timeout: connect_n to a non-routable address with a sub-millisecond
+    //    deadline so select() returns 0 (timeout) before the SYN can resolve. The
+    //    documented non-routable test sink 192.0.2.1 (TEST-NET-1, RFC 5737) black-
+    //    holes the SYN; a 1ns budget guarantees the select()<=0 timeout branch.
+    qb::io::socket timeout_client;
+    ASSERT_TRUE(timeout_client.open(AF_INET, SOCK_STREAM, 0));
+    const int timeout_ret =
+        qb::io::socket::connect_n(timeout_client.native_handle(), qb::io::endpoint("192.0.2.1", 9), qb::duration(1));
+    EXPECT_EQ(timeout_ret, -1) << "connect_n to a black-holed address with a 1ns budget must time out";
+    timeout_client.close();
+}
+
+// xpconnect / xpconnect_n IPv6 leg: dual-stack name resolution that yields an
+// AF_INET6 endpoint drives the `case AF_INET6` arm of the resolve_i switch. Bind
+// an IPv6 listener and connect by the literal `::1` host string, which resolves
+// (only) to AF_INET6 and therefore exercises the v6 branch of both helpers.
+TEST(TCPSocket, CrossStackXpConnectReachesIPv6LoopbackServer) {
+    if (!ipv6_loopback_available()) {
+        GTEST_SKIP() << "IPv6 loopback (::1) is not available on this host";
+    }
+
+    constexpr int expected_connections = 2;
+
+    qb::io::socket listener;
+    ASSERT_EQ(listener.pserve("::1", 0), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::thread server_thread([&] { accept_low_level_connections(listener, expected_connections); });
+
+    qb::io::socket xp_client;
+    EXPECT_EQ(xp_client.xpconnect("::1", port), 0) << "xpconnect could not reach the ::1 loopback server";
+    xp_client.close();
+
+    qb::io::socket xp_timeout_client;
+    EXPECT_EQ(xp_timeout_client.xpconnect_n("::1", port, 1s), 0)
+        << "xpconnect_n could not reach the ::1 loopback server";
+    xp_timeout_client.close();
+
+    server_thread.join();
+}

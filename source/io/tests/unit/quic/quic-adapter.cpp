@@ -66,6 +66,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
@@ -1260,6 +1261,61 @@ TEST(QuicAdapterEndpoint, OversizedUdpPacketTripsTransportFailureAndClosesEndpoi
 // =============================================================================
 // BUILD-CONFIG AVAILABILITY PROBES (qb::io::quic::types.h)
 // =============================================================================
+
+/**
+ * @test connect(uri, alpn) — the two-argument no-TLS overload — backfills server_name from the URI host
+ * @brief The convenience `connect(remote_uri, alpn_protocols)` overload (endpoint.h:323-327) constructs a
+ *        default tls_config, assigns server_name from the URI host, and forwards to the three-argument
+ *        connect with the caller's ALPN. Every existing adapter test reaches connect() through either the
+ *        single-arg `connect(uri)` default-argument form or the explicit `connect(uri, tls, alpn)` form;
+ *        none calls the two-arg overload with an explicit ALPN vector, so the host->server_name backfill
+ *        line stayed uncovered. Here the host is supplied with no TLS, and the backend must observe the
+ *        host echoed into tls.server_name plus the verbatim ALPN.
+ */
+TEST(QuicAdapterEndpoint, ConnectWithAlpnOnlyOverloadBackfillsServerNameFromHost) {
+    FakeQuicBackend              *raw = nullptr;
+    qb::io::async::quic::endpoint endpoint{make_fake(raw)};
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}, std::vector<std::string>{"hq-interop", "h3"}));
+    EXPECT_EQ(endpoint.current_state(), State::connecting);
+    EXPECT_EQ(raw->start_client_calls, 1);
+    EXPECT_EQ(raw->last_tls.server_name, "127.0.0.1") << "the two-arg overload backfills server_name from the URI host";
+    ASSERT_EQ(raw->last_alpn.size(), 2u);
+    EXPECT_EQ(raw->last_alpn.front(), "hq-interop");
+    EXPECT_EQ(raw->last_alpn.back(), "h3");
+}
+
+/**
+ * @test The endpoint poll() drains backend timer state via on_timeout when wired to no callbacks
+ * @brief A mock-backed endpoint that has connected drains queued events on poll(); feeding a
+ *        connection_closed with the transport_error reason but a NON-zero connection_id (not the parent
+ *        sentinel 0) still drives the base endpoint to closed and routes the typed reason verbatim. This
+ *        exercises the base-endpoint connection_closed arm with a real connection id rather than the
+ *        sentinel-0 forms the other dispatch tests use.
+ */
+TEST(QuicAdapterEndpoint, ConnectionClosedWithNonZeroIdDrivesBaseEndpointToClosed) {
+    FakeQuicBackend              *raw = nullptr;
+    qb::io::async::quic::endpoint endpoint{make_fake(raw)};
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    EXPECT_EQ(endpoint.current_state(), State::connecting);
+
+    raw->queued_events.push_back({qb::io::quic::backend_event::kind::connected, 88, 0, 0, "h3", {}});
+    endpoint.poll();
+    EXPECT_EQ(endpoint.current_state(), State::connected);
+
+    qb::io::quic::backend_event closed;
+    closed.type              = qb::io::quic::backend_event::kind::connection_closed;
+    closed.connection_id     = 88;
+    closed.error_code        = 0x55;
+    closed.text              = "peer reset";
+    closed.connection_reason = qb::io::quic::disconnect_reason::transport_error;
+    raw->queued_events.push_back(std::move(closed));
+    endpoint.poll();
+
+    EXPECT_FALSE(endpoint.is_open());
+    EXPECT_EQ(endpoint.current_state(), State::closed);
+}
 
 /**
  * @test available() and unavailable_reason() agree on the build's QUIC capability

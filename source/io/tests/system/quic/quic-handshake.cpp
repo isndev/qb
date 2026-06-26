@@ -1048,4 +1048,227 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
     EXPECT_EQ(server_stream_id, stream);
 }
 
+/**
+ * @test A server at its connection cap silently drops a second client's initial without a server DoS
+ * @brief The parent server is configured with max_connections == 1. A first client completes the
+ *        two-backend handshake (one admitted connection). A SECOND client, with a distinct local
+ *        endpoint and connection id, then drives its own initial datagrams at the parent; every one hits
+ *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:640-652) which DROPS the
+ *        datagram — it must NOT queue_close_event on the parent (that would shut the whole listener down
+ *        via the sentinel connection_id 0). So: the second client never reaches `connected`, the server
+ *        keeps exactly one active connection, the server emits no parent connection_closed event, and the
+ *        first connection stays usable (a clean close still surfaces the typed application_close).
+ */
+TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSelfClosing) {
+    ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
+
+    qb::io::quic::settings server_settings;
+    server_settings.max_connections = 1;
+
+    auto server = qb::io::quic::make_native_backend();
+    server->configure(server_settings);
+
+    const qb::io::endpoint server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint first_endpoint{"127.0.0.1", 54321};
+    const qb::io::endpoint second_endpoint{"127.0.0.1", 54322};
+
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+
+    auto first = qb::io::quic::make_native_backend();
+    first->start_client(first_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    bool first_connected      = false;
+    auto first_connection_id  = direct_handshake(*first, *server, first_connected);
+    ASSERT_TRUE(first_connected) << "the first client must connect to fill the single connection slot";
+    ASSERT_NE(first_connection_id, 0u);
+    EXPECT_EQ(server->current_stats().active_connections, 1u);
+
+    // A second, distinct client now contends for a slot the cap forbids. Pump bounded; the parent must
+    // keep dropping its initials and never admit it.
+    auto second = qb::io::quic::make_native_backend();
+    second->start_client(second_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    bool       second_connected     = false;
+    bool       server_self_closed   = false;
+    const auto deadline             = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!second_connected && std::chrono::steady_clock::now() < deadline) {
+        deliver_quic_packets(*second, *server);
+        deliver_quic_packets(*server, *second);
+        // Keep the admitted first connection serviced so it does not idle out under the pump.
+        deliver_quic_packets(*first, *server);
+        deliver_quic_packets(*server, *first);
+        for (auto const &event : second->drain_events())
+            if (event.type == qb::io::quic::backend_event::kind::connected)
+                second_connected = true;
+        for (auto const &event : server->drain_events())
+            if (event.type == qb::io::quic::backend_event::kind::connection_closed && event.connection_id == 0)
+                server_self_closed = true;
+        (void) first->drain_events();
+    }
+
+    EXPECT_FALSE(second_connected) << "a server at its connection cap must not admit a second client";
+    EXPECT_FALSE(server_self_closed) << "the cap-drop must NOT close the whole listener (sentinel connection_id 0)";
+    EXPECT_EQ(server->current_stats().active_connections, 1u) << "the cap holds the server at exactly one connection";
+
+    // The first (admitted) connection is still routable: a clean parent close emits the typed event.
+    server->close(13, "cap test done");
+    auto events = server->drain_events();
+    auto closed = std::find_if(events.begin(), events.end(),
+                               [](auto const &event) { return event.type == qb::io::quic::backend_event::kind::connection_closed; });
+    ASSERT_NE(closed, events.end());
+    EXPECT_EQ(closed->connection_reason, qb::io::quic::disconnect_reason::application_close);
+    EXPECT_EQ(closed->error_code, 13u);
+}
+
+/**
+ * @test A clean stream close synthesises a trailing FIN on the LOCAL endpoint's un-FIN'd read half
+ * @brief The server opens a bidirectional stream, writes a payload, then FINs its write half with a
+ *        zero-length final frame. The client receives that FIN through recv_stream_data_cb (so the
+ *        CLIENT records `_stream_fin_seen` and is barred from synthesising) and replies with a bare
+ *        zero-length FIN of its own. ngtcp2 delivers the client's zero-length FIN to the SERVER without
+ *        any recv_stream_data_cb call, so the server's `_stream_fin_seen[id]` stays false; when ngtcp2
+ *        fully closes the stream and fires stream_close_cb(app_error_code == 0), the server takes the
+ *        SYNTHESIS arm (quic.cpp:1206-1213) and emits a trailing stream_data carrying error_code == 1
+ *        (the FIN marker, empty payload), runs erase_queued_stream_data / _next_stream_offsets cleanup
+ *        (quic.cpp:1214-1216), then queues stream_closed(finished).
+ *
+ * SEMANTICS — like STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL teardown artefact:
+ * it fires on the endpoint that sent a FIN and never received an inbound data+FIN (here the SERVER),
+ * NOT on the peer. The original form of this test wrongly expected the CLIENT to synthesise after a
+ * graceful CONNECTION close — doubly wrong, because (a) a connection close transitions ngtcp2 to
+ * draining and never fires per-stream stream_close_cb (only a connection_closed event is produced on
+ * each side), and (b) the client learned the FIN through recv_stream_data_cb and therefore suppresses
+ * synthesis. This corrected form observes the synthesis on the SERVER and asserts the client does NOT
+ * synthesise.
+ *
+ * Determinism: bounded two-backend pumps that FAIL LOUD on a deadline; no event loop, no sleeps.
+ */
+TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedReadHalf) {
+    ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
+
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+
+    const qb::io::endpoint server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint client_endpoint{"127.0.0.1", 54321};
+
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    bool client_connected     = false;
+    auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    ASSERT_TRUE(client_connected);
+    ASSERT_NE(server_connection_id, 0u);
+
+    // Server opens a bidi stream and writes a payload, then FINs its write half with a zero-length
+    // final frame. The server's read half is never fed an inbound data+FIN (the client only replies
+    // with a bare zero-length FIN), so the server's _stream_fin_seen[id] stays false and its
+    // stream_close_cb takes the SYNTHESIS arm when the stream is fully torn down.
+    const std::string message = "fin-payload";
+    const auto        stream  = server->open_stream(server_connection_id, qb::io::quic::stream_direction::bidirectional);
+    server->send_stream_data(server_connection_id, stream,
+                             std::span<const std::byte>{reinterpret_cast<const std::byte *>(message.data()), message.size()}, false);
+
+    // Let the payload land on the peer first (so the stream exists there).
+    bool       client_got_payload = false;
+    const auto open_deadline      = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (!client_got_payload && std::chrono::steady_clock::now() < open_deadline) {
+        deliver_quic_packets(*client, *server);
+        deliver_quic_packets(*server, *client);
+        for (auto const &event : client->drain_events())
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && !event.payload.empty()
+                && event.error_code == 0) // a non-FIN data frame
+                client_got_payload = true;
+        (void) server->drain_events();
+    }
+    ASSERT_TRUE(client_got_payload) << "client never received the server's stream payload";
+
+    // Clean bidirectional close. The server FINs its write half (zero-length final frame); the client
+    // receives that FIN through recv_stream_data_cb (so the CLIENT records _stream_fin_seen and will
+    // NOT synthesise), then FINs its own half with a bare zero-length frame. ngtcp2 delivers the
+    // client's zero-length FIN to the server WITHOUT a recv_stream_data_cb call, so the server's
+    // _stream_fin_seen stays false: when ngtcp2 fully closes the stream and fires stream_close_cb with
+    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1206-1216) and emits a trailing
+    // FIN-marked stream_data (error_code == 1, empty payload) followed by stream_closed(finished).
+    //
+    // SEMANTICS — like stop_sending/STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL
+    // teardown artefact: it fires on the endpoint that sent a FIN and never received an inbound data+FIN
+    // (here the SERVER), NOT on the peer. A peer that learned the FIN via recv_stream_data_cb (the
+    // CLIENT) suppresses synthesis and only observes stream_closed(finished). A graceful CONNECTION
+    // close does NOT reach this arm at all: ngtcp2 transitions the connection to draining and never
+    // fires per-stream stream_close_cb, so only a connection_closed event is produced on each side.
+    server->send_stream_data(server_connection_id, stream, std::span<const std::byte>{}, true);
+
+    // Let the server's FIN reach the client (so the client's read half completes via recv_stream_data_cb,
+    // recording _stream_fin_seen on the client) before the client closes its own write half.
+    const auto server_fin_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    bool       client_received_fin = false;
+    while (!client_received_fin && std::chrono::steady_clock::now() < server_fin_deadline) {
+        deliver_quic_packets(*server, *client);
+        deliver_quic_packets(*client, *server);
+        for (auto const &event : client->drain_events()) {
+            // The client learns the FIN as real stream data (error_code == 1 via recv_stream_data_cb).
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && event.error_code == 1)
+                client_received_fin = true;
+        }
+        (void) server->drain_events();
+    }
+    ASSERT_TRUE(client_received_fin) << "client never received the server's FIN as stream data";
+
+    // Client FINs its own half (bare zero-length frame). Both halves are now closing, so the stream
+    // fully closes on both endpoints and ngtcp2 fires stream_close_cb on each side.
+    client->send_stream_data(server_connection_id, stream, std::span<const std::byte>{}, true);
+
+    bool       server_saw_synthetic_fin    = false;
+    bool       server_saw_finished         = false;
+    bool       synthetic_fin_payload_empty = true;
+    bool       client_saw_finished         = false;
+    bool       client_synthesised          = false;
+    const auto close_deadline              = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while ((!server_saw_synthetic_fin || !server_saw_finished || !client_saw_finished)
+           && std::chrono::steady_clock::now() < close_deadline) {
+        deliver_quic_packets(*client, *server);
+        deliver_quic_packets(*server, *client);
+        for (auto const &event : server->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && event.error_code == 1) {
+                server_saw_synthetic_fin    = true;
+                synthetic_fin_payload_empty = event.payload.empty();
+            }
+            if (event.type == qb::io::quic::backend_event::kind::stream_closed
+                && event.stream_reason == qb::io::quic::stream_close_reason::finished)
+                server_saw_finished = true;
+        }
+        for (auto const &event : client->drain_events()) {
+            // The client already recorded the inbound FIN, so its stream_close_cb must NOT synthesise.
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && event.error_code == 1)
+                client_synthesised = true;
+            if (event.type == qb::io::quic::backend_event::kind::stream_closed
+                && event.stream_reason == qb::io::quic::stream_close_reason::finished)
+                client_saw_finished = true;
+        }
+    }
+
+    EXPECT_TRUE(server_saw_synthetic_fin)
+        << "the local FIN-and-clean-close of an un-FIN'd read half must synthesise a trailing FIN-marked stream_data (error_code == 1)";
+    EXPECT_TRUE(synthetic_fin_payload_empty) << "the synthesised FIN event must carry an empty payload";
+    EXPECT_TRUE(server_saw_finished) << "the gracefully torn-down stream must also produce stream_closed(finished)";
+    EXPECT_TRUE(client_saw_finished)
+        << "the peer (which learned the FIN through recv_stream_data_cb) must observe stream_closed(finished)";
+    EXPECT_FALSE(client_synthesised) << "the peer must NOT synthesise a FIN: it already received one via recv_stream_data_cb";
+}
+
 #endif // QB_HAS_QUIC

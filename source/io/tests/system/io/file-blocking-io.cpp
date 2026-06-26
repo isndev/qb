@@ -182,3 +182,69 @@ TEST(FileBlockingIo, OpenMissingPathFails) {
     EXPECT_EQ(file.open(missing, O_RDONLY), -1) << "opening a non-existent file must fail";
     EXPECT_FALSE(file.is_open());
 }
+
+// =============================================================================
+// open(int fd): adopting a raw descriptor (closes any prior handle, then owns fd)
+// =============================================================================
+
+// `sys::file::open(int fd)` takes ownership of an already-open OS descriptor:
+// it first closes whatever handle the object held, then stores `fd` as its own.
+// We open a file the conventional way, then adopt a freshly opened descriptor
+// to the SAME path and prove (a) the prior handle was closed and (b) reads flow
+// through the adopted fd.
+TEST(FileBlockingIo, AdoptRawDescriptorClosesPriorAndReads) {
+    ScratchFile       scratch("adopt");
+    const std::string content = "adopted descriptor content";
+    scratch.write_text(content);
+
+    sys::file file;
+    // First, give the object a real handle so open(fd) has a prior handle to close.
+    ASSERT_GE(file.open(scratch.path(), O_RDONLY), 0);
+    ASSERT_TRUE(file.is_open());
+
+    // Open a second, independent OS descriptor and adopt it. open(int) must close
+    // the first handle and return the adopted fd unchanged.
+    const int raw = ::open(scratch.path().c_str(), O_RDONLY);
+    ASSERT_GE(raw, 0) << "could not open a raw descriptor for adoption";
+    EXPECT_EQ(file.open(raw), raw) << "open(fd) must store and return the adopted descriptor";
+    EXPECT_TRUE(file.is_open());
+    EXPECT_EQ(file.native_handle(), raw);
+
+    // Reads must flow through the adopted descriptor.
+    char      buffer[128] = {0};
+    const int n           = file.read(buffer, sizeof(buffer) - 1);
+    ASSERT_EQ(static_cast<std::size_t>(n), content.size());
+    EXPECT_EQ(std::string(buffer, static_cast<std::size_t>(n)), content);
+
+    file.close();
+    EXPECT_FALSE(file.is_open());
+}
+
+// =============================================================================
+// close() on a descriptor that is no longer valid hits the failure branch
+// =============================================================================
+
+#ifndef _WIN32
+// `file::close()` pre-invalidates `_handle`, then calls `::close(fd)`; if the OS
+// close fails (EBADF), it logs to stderr (the negative arm). We force that by
+// adopting a real fd, closing it out-of-band, then asking the file to close the
+// now-stale descriptor. This must not crash and must leave the object closed.
+TEST(FileBlockingIo, CloseOfStaleDescriptorIsHandled) {
+    ScratchFile scratch("staleclose");
+    scratch.write_text("x");
+
+    const int raw = ::open(scratch.path().c_str(), O_RDONLY);
+    ASSERT_GE(raw, 0);
+
+    sys::file file;
+    ASSERT_EQ(file.open(raw), raw);
+    ASSERT_TRUE(file.is_open());
+
+    // Close the descriptor behind the file's back so the next ::close(raw) fails.
+    ASSERT_EQ(::close(raw), 0);
+
+    // file.close() now calls ::close(raw) again -> EBADF -> stderr notice, no throw.
+    EXPECT_NO_THROW(file.close());
+    EXPECT_FALSE(file.is_open()) << "close() must invalidate the handle even on OS failure";
+}
+#endif
