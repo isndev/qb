@@ -44,5 +44,12 @@ qb_add_test(MODULE qb-io TIER unit NAME coroutine-combinators       SOURCES coro
 qb_add_test(MODULE qb-io TIER unit NAME scope-structured-concurrency SOURCES coroutine/scope-structured-concurrency.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME shared-task-fanout          SOURCES coroutine/shared-task-fanout.cpp          DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME patterns-idioms             SOURCES coroutine/patterns-idioms.cpp             DEPENDS ${PROJECT_NAME} LABELS coroutine idiom)
+# split outputs (channel/stream/generator/cancellation/retry)
+qb_add_test(MODULE qb-io TIER unit NAME channel-sync-ops            SOURCES coroutine/channel-sync-ops.cpp            DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME stream-transforms           SOURCES coroutine/stream-transforms.cpp           DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME generator-sync              SOURCES coroutine/generator-sync.cpp              DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME generator-async             SOURCES coroutine/generator-async.cpp             DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME cancellation-token          SOURCES coroutine/cancellation-token.cpp          DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME retry-policy                SOURCES coroutine/retry-policy.cpp                DEPENDS ${PROJECT_NAME} LABELS coroutine)
 
 qb_debug_message("Configured qb-io unit tests")

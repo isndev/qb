@@ -1,10 +1,26 @@
 /**
- * @file qb/io/tests/coroutine/test-coroutine-exceptions.cpp
- * @brief Coroutine exception handling tests
+ * @file unit/coroutine/exception-propagation.cpp
+ * @brief The canonical exception-propagation file for the qb-io coroutine runtime.
  *
- * This file contains tests for exception propagation through coroutine stacks,
- * including exceptions before and after suspension, different exception types, layered
- * rethrow behavior, scheduler stability, and parallel failures.
+ * Exceptions in qb-io coroutines travel through the symmetric-transfer chain: a throw inside a coroutine
+ * body is captured in its promise (`unhandled_exception()`), then re-thrown out of the awaiting
+ * coroutine's `co_await` (`task<T>::await_resume`). This file is the single source of truth for that
+ * behavior across every place a coroutine can suspend and resume: across an awaited `task<T>` (before and
+ * after suspension), through deep call stacks, with catch-and-rethrow, out of a value-returning
+ * `task<T>`, out of an `async_generator` pipeline (`co_await gen.next()` rethrows the generator's stored
+ * exception), and out of a `channel` operation (`co_await ch.send()` on a closed channel throws
+ * `channel_closed`). It also proves the scheduler stays usable after a throw and that parallel coroutines
+ * fail independently. Everything runs in-process on the event loop (`init()` via `reset_async_context()`,
+ * `spawn`, the de-flake pump `pump_until`) — NO sockets, NO daemon, NO TLS — a pure `unit` test.
+ *
+ * Consolidated here from the dissolved siblings so the duplicate copies can be retired:
+ *   - test-coroutine-comprehensive.cpp::CoroutineExceptions::{ExceptionAfterMultipleSuspensions,
+ *     ExceptionInSpawnedCoroutineHandled} fold in;
+ *   - test-coroutine-basic.cpp::ExceptionHandling::{ExceptionPropagatesToAwaiter, ExceptionAfterSuspension}
+ *     were exact duplicates of cases already here.
+ * Added the genuinely-missing corners the duplicates only almost covered: exception out of an
+ * async_generator, and exception during a co_await on a channel. Every fixed `run_for(Nms)` is replaced
+ * by `pump_until`. No file-local main(): shared gtest_main.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -22,13 +38,19 @@
  * @ingroup Tests
  */
 
-#include <gtest/gtest.h>
-#include <qb/io/async/coroutine.h>
 #include <atomic>
 #include <stdexcept>
+#include <string>
+
+#include <gtest/gtest.h>
+#include <qb/io/async/coroutine.h>
+
+#include "../../shared/coroutine_test_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
+using qb::io::test::pump_until;
+using qb::io::test::reset_async_context;
 
 // =============================================================================
 // TEST FIXTURE
@@ -38,16 +60,21 @@ class CoroutineExceptionTests : public ::testing::Test {
 protected:
     void
     SetUp() override {
-        qb::io::async::init();
+        reset_async_context();
     }
 
     void
     TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };
 
-task<void>
+// Free-function coroutine used by the parallel-failure test (each instance owns its own frame).
+static task<void>
 parallel_throwing_task(std::atomic<int> *total_caught) {
     try {
         co_await sleep(5ms);
@@ -59,12 +86,12 @@ parallel_throwing_task(std::atomic<int> *total_caught) {
 }
 
 // =============================================================================
-// BASIC EXCEPTION PROPAGATION
+// BASIC PROPAGATION ACROSS AN AWAITED task<T>
 // =============================================================================
 
 /**
- * @test Exception propagates from inner to outer coroutine
- * @brief Verify exceptions thrown in awaited coroutine are caught by awaiter
+ * @test Exception propagates from inner to outer coroutine, execution continues after catch
+ * @brief A throw in an awaited inner task surfaces at the outer co_await; the outer keeps running.
  */
 TEST_F(CoroutineExceptionTests, ExceptionPropagatesFromInnerCoroutine) {
     std::atomic<bool> caught{false};
@@ -72,90 +99,121 @@ TEST_F(CoroutineExceptionTests, ExceptionPropagatesFromInnerCoroutine) {
 
     auto caught_ptr = &caught;
     auto after_ptr  = &after_catch;
-
-    auto coro_fn = [caught_ptr, after_ptr]() -> task<void> {
+    coro_scheduler().spawn([caught_ptr, after_ptr]() -> task<void> {
         try {
             auto inner_fn = []() -> task<void> {
                 co_await sleep(1ms);
                 throw std::runtime_error("test exception");
                 co_return;
             };
-            auto inner = inner_fn();
-            co_await inner;
+            co_await inner_fn();
         } catch (const std::runtime_error &e) {
-            if (std::string(e.what()) == "test exception") {
+            if (std::string(e.what()) == "test exception")
                 caught_ptr->store(true);
-            }
         }
         after_ptr->store(true);
         co_return;
-    };
-    auto t = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(t));
-    run_for(50ms);
-
+    EXPECT_TRUE(pump_until([&] { return after_catch.load(); })) << "outer coroutine never completed";
     EXPECT_TRUE(caught.load());
-    EXPECT_TRUE(after_catch.load()); // Execution continues after catch
+    EXPECT_TRUE(after_catch.load());
 }
 
 /**
- * @test Exception before suspension point
- * @brief Verify exceptions thrown before co_await are caught
+ * @test Exception thrown before the inner suspension point
+ * @brief A throw before the inner task's first co_await still propagates to the awaiter.
  */
 TEST_F(CoroutineExceptionTests, ExceptionBeforeSuspension) {
     std::atomic<bool> caught{false};
-    auto              caught_ptr = &caught;
+    std::atomic<bool> done{false};
 
-    auto coro_fn = [caught_ptr]() -> task<void> {
+    auto caught_ptr = &caught;
+    auto done_ptr   = &done;
+    coro_scheduler().spawn([caught_ptr, done_ptr]() -> task<void> {
         try {
             auto inner_fn = []() -> task<void> {
                 throw std::logic_error("immediate throw");
-                co_await sleep(1ms); // Never reached
+                co_await sleep(1ms); // never reached
                 co_return;
             };
-            auto inner = inner_fn();
-            co_await inner;
+            co_await inner_fn();
         } catch (const std::logic_error &) {
             caught_ptr->store(true);
         }
+        done_ptr->store(true);
         co_return;
-    };
-    auto t = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(t));
-    run_for(50ms);
-
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "coroutine never completed";
     EXPECT_TRUE(caught.load());
 }
 
 /**
- * @test Exception after suspension point
- * @brief Verify exceptions thrown after co_await are caught
+ * @test Exception thrown after the inner suspension point
+ * @brief A throw after the inner task resumes from its sleep propagates to the awaiter.
  */
 TEST_F(CoroutineExceptionTests, ExceptionAfterSuspension) {
     std::atomic<bool> caught{false};
-    auto              caught_ptr = &caught;
+    std::atomic<bool> done{false};
 
-    auto coro_fn = [caught_ptr]() -> task<void> {
+    auto caught_ptr = &caught;
+    auto done_ptr   = &done;
+    coro_scheduler().spawn([caught_ptr, done_ptr]() -> task<void> {
         try {
             auto inner_fn = []() -> task<void> {
                 co_await sleep(10ms);
                 throw std::invalid_argument("after suspension");
                 co_return;
             };
-            auto inner = inner_fn();
-            co_await inner;
+            co_await inner_fn();
         } catch (const std::invalid_argument &) {
             caught_ptr->store(true);
         }
+        done_ptr->store(true);
         co_return;
-    };
-    auto t = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(t));
-    run_for(50ms);
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "coroutine never completed";
+    EXPECT_TRUE(caught.load());
+}
 
+/**
+ * @test Exception after MULTIPLE suspensions still propagates with all prior work observed
+ * @brief Three sleeps run (steps == 3) before the throw; the awaiter catches it.
+ *
+ * Folded in from the dissolved test-coroutine-comprehensive.cpp::ExceptionAfterMultipleSuspensions.
+ */
+TEST_F(CoroutineExceptionTests, ExceptionAfterMultipleSuspensions) {
+    std::atomic<int>  steps{0};
+    std::atomic<bool> caught{false};
+    std::atomic<bool> done{false};
+
+    auto steps_ptr  = &steps;
+    auto caught_ptr = &caught;
+    auto done_ptr   = &done;
+    coro_scheduler().spawn([steps_ptr, caught_ptr, done_ptr]() -> task<void> {
+        auto unreliable = [steps_ptr]() -> task<int> {
+            co_await sleep(10ms);
+            steps_ptr->fetch_add(1);
+            co_await sleep(10ms);
+            steps_ptr->fetch_add(1);
+            co_await sleep(10ms);
+            steps_ptr->fetch_add(1);
+            throw std::runtime_error("step 3 error");
+            co_return 42;
+        };
+        try {
+            (void) co_await unreliable();
+        } catch (const std::runtime_error &) {
+            caught_ptr->store(true);
+        }
+        done_ptr->store(true);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "coroutine never completed";
+    EXPECT_EQ(steps.load(), 3);
     EXPECT_TRUE(caught.load());
 }
 
@@ -164,15 +222,16 @@ TEST_F(CoroutineExceptionTests, ExceptionAfterSuspension) {
 // =============================================================================
 
 /**
- * @test Different exception types propagate correctly
- * @brief Verify various exception types are handled properly
+ * @test Distinct exception types each propagate with the correct dynamic type
+ * @brief runtime_error, logic_error, and a custom exception are each caught by their own handler.
  */
 TEST_F(CoroutineExceptionTests, DifferentExceptionTypes) {
-    std::atomic<int> caught_types{0};
-    auto             types_ptr = &caught_types;
+    std::atomic<int>  caught_types{0};
+    std::atomic<bool> done{false};
 
-    auto coro_fn = [types_ptr]() -> task<void> {
-        // Test std::runtime_error
+    auto types_ptr = &caught_types;
+    auto done_ptr  = &done;
+    coro_scheduler().spawn([types_ptr, done_ptr]() -> task<void> {
         try {
             auto fn1 = []() -> task<void> {
                 throw std::runtime_error("runtime");
@@ -183,7 +242,6 @@ TEST_F(CoroutineExceptionTests, DifferentExceptionTypes) {
             types_ptr->fetch_add(1);
         }
 
-        // Test std::logic_error
         try {
             auto fn2 = []() -> task<void> {
                 throw std::logic_error("logic");
@@ -194,7 +252,6 @@ TEST_F(CoroutineExceptionTests, DifferentExceptionTypes) {
             types_ptr->fetch_add(10);
         }
 
-        // Test custom exception
         struct CustomException : std::exception {};
         try {
             auto fn3 = []() -> task<void> {
@@ -206,206 +263,286 @@ TEST_F(CoroutineExceptionTests, DifferentExceptionTypes) {
             types_ptr->fetch_add(100);
         }
 
+        done_ptr->store(true);
         co_return;
-    };
-    auto t = coro_fn();
+    });
 
-    coro_scheduler().spawn(std::move(t));
-    run_for(50ms);
-
-    // All three exception types should be caught: 1 + 10 + 100 = 111
-    EXPECT_EQ(caught_types.load(), 111);
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "coroutine never completed";
+    EXPECT_EQ(caught_types.load(), 111); // 1 + 10 + 100
 }
 
 // =============================================================================
-// EXCEPTION CHAINING
+// CHAINING / RETHROW
 // =============================================================================
 
 /**
- * @test Exception through multiple coroutine layers
- * @brief Verify exceptions propagate through deep call stacks
+ * @test Exception propagates through multiple coroutine layers
+ * @brief level3 throws; level2 transparently forwards; level1 catches with the original message intact.
  */
 TEST_F(CoroutineExceptionTests, ExceptionThroughMultipleLayers) {
-    std::atomic<int> depth_caught{0};
-    auto             depth_ptr = &depth_caught;
+    std::atomic<int>  depth_caught{0};
+    std::atomic<bool> done{false};
 
-    auto level3_fn = []() -> task<void> {
-        co_await sleep(1ms);
-        throw std::runtime_error("from level 3");
-        co_return;
-    };
-
-    auto level2_fn = [&level3_fn]() -> task<void> {
-        co_await level3_fn(); // Exception propagates through
-        co_return;
-    };
-
-    auto level1_fn = [&level2_fn, depth_ptr]() -> task<void> {
+    auto depth_ptr = &depth_caught;
+    auto done_ptr  = &done;
+    coro_scheduler().spawn([depth_ptr, done_ptr]() -> task<void> {
+        auto level3_fn = []() -> task<void> {
+            co_await sleep(1ms);
+            throw std::runtime_error("from level 3");
+            co_return;
+        };
+        auto level2_fn = [level3_fn]() -> task<void> {
+            co_await level3_fn(); // propagates through, no catch
+            co_return;
+        };
         try {
             co_await level2_fn();
         } catch (const std::runtime_error &e) {
-            if (std::string(e.what()) == "from level 3") {
+            if (std::string(e.what()) == "from level 3")
                 depth_ptr->store(3);
-            }
         }
+        done_ptr->store(true);
         co_return;
-    };
+    });
 
-    coro_scheduler().spawn(level1_fn());
-    run_for(50ms);
-
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "coroutine never completed";
     EXPECT_EQ(depth_caught.load(), 3);
 }
 
 /**
- * @test Rethrow in coroutine
- * @brief Verify catch-and-rethrow works correctly
+ * @test Catch-and-rethrow across coroutine boundaries
+ * @brief An intermediate coroutine catches, counts, and re-throws; the outer coroutine catches the rethrow.
  */
 TEST_F(CoroutineExceptionTests, RethrowInCoroutine) {
-    std::atomic<int> catch_count{0};
-    auto             count_ptr = &catch_count;
+    std::atomic<int>  catch_count{0};
+    std::atomic<bool> done{false};
 
-    auto thrower_fn = []() -> task<void> {
-        throw std::runtime_error("original");
-        co_return;
-    };
-
-    auto rethrow_fn = [&thrower_fn, count_ptr]() -> task<void> {
-        try {
-            co_await thrower_fn();
-        } catch (...) {
-            count_ptr->fetch_add(1);
-            throw; // Rethrow
-        }
-        co_return;
-    };
-
-    auto catcher_fn = [&rethrow_fn, count_ptr]() -> task<void> {
+    auto count_ptr = &catch_count;
+    auto done_ptr  = &done;
+    coro_scheduler().spawn([count_ptr, done_ptr]() -> task<void> {
+        auto thrower_fn = []() -> task<void> {
+            throw std::runtime_error("original");
+            co_return;
+        };
+        auto rethrow_fn = [thrower_fn, count_ptr]() -> task<void> {
+            try {
+                co_await thrower_fn();
+            } catch (...) {
+                count_ptr->fetch_add(1);
+                throw; // rethrow
+            }
+            co_return;
+        };
         try {
             co_await rethrow_fn();
         } catch (const std::runtime_error &) {
             count_ptr->fetch_add(10);
         }
+        done_ptr->store(true);
         co_return;
-    };
+    });
 
-    coro_scheduler().spawn(catcher_fn());
-    run_for(50ms);
-
-    // Should catch twice: inner(1) + outer(10) = 11
-    EXPECT_EQ(catch_count.load(), 11);
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "coroutine never completed";
+    EXPECT_EQ(catch_count.load(), 11); // inner(1) + outer(10)
 }
 
 // =============================================================================
-// EXCEPTION WITH VALUES
+// VALUE-RETURNING COROUTINES
 // =============================================================================
 
 /**
- * @test Exception from value-returning coroutine
- * @brief Verify exceptions work with task<T> (not just task<void>)
+ * @test Exception out of a value-returning task<T> leaves no garbage value
+ * @brief A throwing task<int> never delivers a value; the awaiter substitutes a fallback after catching.
  */
 TEST_F(CoroutineExceptionTests, ExceptionFromValueReturningCoroutine) {
     std::atomic<bool> caught{false};
-    std::atomic<int>  fallback_value{0};
-    auto              caught_ptr   = &caught;
-    auto              fallback_ptr = &fallback_value;
+    std::atomic<int>  result{0};
+    std::atomic<bool> done{false};
 
-    auto thrower_fn = []() -> task<int> {
-        co_await sleep(1ms);
-        throw std::runtime_error("no value");
-        co_return 42; // Never reached
-    };
-
-    auto handler_fn = [&thrower_fn, caught_ptr, fallback_ptr]() -> task<void> {
-        int result = 0;
+    auto caught_ptr = &caught;
+    auto result_ptr = &result;
+    auto done_ptr   = &done;
+    coro_scheduler().spawn([caught_ptr, result_ptr, done_ptr]() -> task<void> {
+        auto thrower_fn = []() -> task<int> {
+            co_await sleep(1ms);
+            throw std::runtime_error("no value");
+            co_return 42; // never reached
+        };
+        int value = 0;
         try {
-            result = co_await thrower_fn();
+            value = co_await thrower_fn();
         } catch (const std::runtime_error &) {
             caught_ptr->store(true);
-            result = -1; // Fallback value
+            value = -1; // fallback
         }
-        fallback_ptr->store(result);
+        result_ptr->store(value);
+        done_ptr->store(true);
         co_return;
-    };
+    });
 
-    coro_scheduler().spawn(handler_fn());
-    run_for(50ms);
-
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "coroutine never completed";
     EXPECT_TRUE(caught.load());
-    EXPECT_EQ(fallback_value.load(), -1);
+    EXPECT_EQ(result.load(), -1);
 }
 
 // =============================================================================
-// EXCEPTION SAFETY
+// EXCEPTIONS THROUGH async_generator AND channel
 // =============================================================================
 
 /**
- * @test Scheduler remains stable after exception
- * @brief Verify scheduler continues working after coroutine throws
+ * @test Exception thrown inside an async_generator surfaces at co_await gen.next()
+ * @brief The generator yields a few values, then throws; the consumer receives the prior values and then
+ *        catches the exception out of `co_await gen.next()` (next_awaiter::await_resume rethrows the
+ *        promise's stored exception).
+ */
+TEST_F(CoroutineExceptionTests, ExceptionFromAsyncGeneratorPropagates) {
+    std::atomic<int>  values_seen{0};
+    std::atomic<bool> caught{false};
+    std::atomic<bool> done{false};
+
+    auto values_ptr = &values_seen;
+    auto caught_ptr = &caught;
+    auto done_ptr   = &done;
+    coro_scheduler().spawn([values_ptr, caught_ptr, done_ptr]() -> task<void> {
+        auto make_gen = []() -> async_generator<int> {
+            co_yield 1;
+            co_yield 2;
+            throw std::runtime_error("generator failed");
+            co_yield 3; // never reached
+        };
+        auto gen = make_gen();
+        try {
+            while (auto v = co_await gen.next()) {
+                (void) *v;
+                values_ptr->fetch_add(1);
+            }
+        } catch (const std::runtime_error &e) {
+            if (std::string(e.what()) == "generator failed")
+                caught_ptr->store(true);
+        }
+        done_ptr->store(true);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "generator consumer never completed";
+    EXPECT_EQ(values_seen.load(), 2) << "consumer should have received the two values before the throw";
+    EXPECT_TRUE(caught.load()) << "async_generator exception did not surface at co_await gen.next()";
+}
+
+/**
+ * @test Sending on a closed channel throws channel_closed at the co_await
+ * @brief A closed channel rejects every subsequent send: `co_await ch.send(...)` throws `channel_closed`
+ *        (a std::runtime_error) synchronously from await_resume. recv() on a closed channel, by contrast,
+ *        returns nullopt — asserted here to pin both halves of the contract.
+ */
+TEST_F(CoroutineExceptionTests, ExceptionFromClosedChannelSend) {
+    std::atomic<bool> send_threw{false};
+    std::atomic<bool> recv_empty{false};
+    std::atomic<bool> done{false};
+
+    auto send_ptr = &send_threw;
+    auto recv_ptr = &recv_empty;
+    auto done_ptr = &done;
+    coro_scheduler().spawn([send_ptr, recv_ptr, done_ptr]() -> task<void> {
+        channel<int> ch(4);
+        ch.close();
+
+        // recv on a closed (empty) channel yields nullopt, not an exception.
+        auto v = co_await ch.recv();
+        if (!v.has_value())
+            recv_ptr->store(true);
+
+        // send on a closed channel throws channel_closed.
+        try {
+            co_await ch.send(99);
+        } catch (const channel_closed &) {
+            send_ptr->store(true);
+        }
+        done_ptr->store(true);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "channel coroutine never completed";
+    EXPECT_TRUE(recv_empty.load()) << "recv on a closed channel should yield nullopt";
+    EXPECT_TRUE(send_threw.load()) << "send on a closed channel should throw channel_closed";
+}
+
+// =============================================================================
+// SCHEDULER STABILITY / INDEPENDENCE
+// =============================================================================
+
+/**
+ * @test An unhandled exception in one spawned coroutine does not stop another
+ * @brief A throwing spawned root and a normal spawned coroutine: the normal one still completes.
+ *
+ * Folded in from the dissolved test-coroutine-comprehensive.cpp::ExceptionInSpawnedCoroutineHandled.
+ */
+TEST_F(CoroutineExceptionTests, UnhandledExceptionDoesNotStopOtherCoroutines) {
+    std::atomic<bool> other_completed{false};
+
+    auto throwing = []() -> task<void> {
+        co_await sleep(10ms);
+        throw std::runtime_error("spawned error");
+        co_return;
+    };
+    auto other_ptr = &other_completed;
+    auto normal    = [other_ptr]() -> task<void> {
+        co_await sleep(20ms);
+        other_ptr->store(true);
+    };
+
+    coro_scheduler().spawn(throwing());
+    coro_scheduler().spawn(normal());
+
+    EXPECT_TRUE(pump_until([&] { return other_completed.load(); }))
+        << "a sibling throwing coroutine prevented the normal one from completing";
+    EXPECT_TRUE(other_completed.load());
+}
+
+/**
+ * @test Scheduler remains usable and drains to zero after a coroutine throws
+ * @brief A catcher coroutine (catches an inner throw) and a normal coroutine both complete; the scheduler
+ *        bookkeeping returns to empty.
  */
 TEST_F(CoroutineExceptionTests, SchedulerStableAfterException) {
     std::atomic<int> completed_count{0};
-    auto             count_ptr = &completed_count;
 
-    // First coroutine throws
-    auto thrower_fn = []() -> task<void> {
-        throw std::runtime_error("error");
-        co_return;
-    };
-
-    auto catcher_fn = [&thrower_fn, count_ptr]() -> task<void> {
+    auto count_ptr = &completed_count;
+    coro_scheduler().spawn([count_ptr]() -> task<void> {
+        auto thrower_fn = []() -> task<void> {
+            throw std::runtime_error("error");
+            co_return;
+        };
         try {
             co_await thrower_fn();
         } catch (...) {
             count_ptr->fetch_add(1);
         }
         co_return;
-    };
-
-    // Second coroutine succeeds
-    auto normal_fn = [count_ptr]() -> task<void> {
+    });
+    coro_scheduler().spawn([count_ptr]() -> task<void> {
         co_await sleep(10ms);
         count_ptr->fetch_add(10);
         co_return;
-    };
+    });
 
-    coro_scheduler().spawn(catcher_fn());
-    coro_scheduler().spawn(normal_fn());
-    run_for(50ms);
-
-    // Both should complete: 1 + 10 = 11
-    EXPECT_EQ(completed_count.load(), 11);
-
-    // Scheduler should be clean
-    EXPECT_EQ(coro_scheduler().active_count(), 0);
+    EXPECT_TRUE(pump_until([&] { return completed_count.load() == 11; })) << "both coroutines never completed";
+    EXPECT_EQ(completed_count.load(), 11); // catcher(1) + normal(10)
+    EXPECT_EQ(coro_scheduler().active_count(), 0u);
 }
 
 /**
- * @test Multiple exceptions in parallel coroutines
- * @brief Verify multiple coroutines can throw independently
+ * @test Multiple coroutines throw and catch independently in parallel
+ * @brief Five spawned coroutines each throw-and-catch their own exception; all five count.
  */
 TEST_F(CoroutineExceptionTests, MultipleExceptionsInParallel) {
     std::atomic<int> total_caught{0};
-    auto             total_ptr = &total_caught;
 
-    // Spawn 5 coroutines that all throw
+    auto total_ptr = &total_caught;
     for (int i = 0; i < 5; ++i) {
         coro_scheduler().spawn(parallel_throwing_task(total_ptr));
     }
 
-    run_for(50ms);
-
-    // All 5 should have caught their exceptions
+    EXPECT_TRUE(pump_until([&] { return total_caught.load() == 5; })) << "not all parallel throws were caught";
     EXPECT_EQ(total_caught.load(), 5);
-}
-
-// =============================================================================
-// MAIN
-// =============================================================================
-
-int
-main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    qb::io::async::init();
-    return RUN_ALL_TESTS();
 }

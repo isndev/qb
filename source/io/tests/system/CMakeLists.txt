@@ -34,6 +34,20 @@ qb_add_test(MODULE qb-io TIER system NAME kernel-events       SOURCES async/kern
 qb_add_test(MODULE qb-io TIER system NAME event-combined      SOURCES async/event-combined.cpp            DEPENDS ${PROJECT_NAME} LABELS signal slow WINDOWS_EXCLUDE)
 qb_add_test(MODULE qb-io TIER system NAME coro-timer-sleep    SOURCES coroutine/coro-timer-sleep.cpp      DEPENDS ${PROJECT_NAME} LABELS coroutine)
 
+# --- coroutine runtime split outputs (channel/stream async + scheduler/retry/cancellation runners) ---
+qb_add_test(MODULE qb-io TIER system NAME channel-async           SOURCES coroutine/channel-async.cpp           DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER system NAME channel-lifetime        SOURCES coroutine/channel-lifetime.cpp        DEPENDS ${PROJECT_NAME} LABELS coroutine asan)
+qb_add_test(MODULE qb-io TIER system NAME stream-async-sources    SOURCES coroutine/stream-async-sources.cpp    DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER system NAME tcp-connector-loopback  SOURCES coroutine/tcp-connector-loopback.cpp  DEPENDS ${PROJECT_NAME} REQUIRES network LABELS coroutine)
+qb_add_test(MODULE qb-io TIER system NAME cancellation-awaiters   SOURCES async/cancellation-awaiters.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER system NAME deadline-combinator     SOURCES async/deadline-combinator.cpp         DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER system NAME retry-runner            SOURCES async/retry-runner.cpp                DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER system NAME scheduler-runtime       SOURCES async/scheduler-runtime.cpp           DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER system NAME scheduler-stress        SOURCES async/scheduler-stress.cpp            DEPENDS ${PROJECT_NAME} LABELS coroutine slow)
+qb_add_test(MODULE qb-io TIER system NAME coroutine-capture-safety SOURCES async/coroutine-capture-safety.cpp   DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER system NAME coroutine-memory-pressure SOURCES async/coroutine-memory-pressure.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine slow)
+qb_add_test(MODULE qb-io TIER system NAME tcp-connector-state-machine SOURCES tcp/tcp-connector-state-machine.cpp DEPENDS ${PROJECT_NAME} REQUIRES network LABELS coroutine)
+
 # --- SPLIT_PENDING: pure-logic monoliths (true tier=unit; decomposed by the split wave) ---
 qb_add_test(MODULE qb-io TIER unit NAME uri-json          SOURCES test-uri-json.cpp          DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME cpu               SOURCES test-cpu.cpp               DEPENDS ${PROJECT_NAME})
