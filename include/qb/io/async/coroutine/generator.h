@@ -249,7 +249,9 @@ public:
         // threw is also done(), and the previous order returned nullopt forever
         // without ever surfacing the stored exception.
         if (_handle.promise().exception) {
-            std::rethrow_exception(_handle.promise().exception);
+            // Clear as we rethrow (mirrors async_generator::next): a throw ends the stream, so a
+            // consumer that catches and calls next() again must get nullopt, not the same throw.
+            std::rethrow_exception(std::exchange(_handle.promise().exception, nullptr));
         }
         if (_handle.done()) {
             return std::nullopt;
@@ -259,7 +261,7 @@ public:
         if (!_handle.promise().current_value.has_value()) {
             _handle.resume();
             if (_handle.promise().exception)
-                std::rethrow_exception(_handle.promise().exception);
+                std::rethrow_exception(std::exchange(_handle.promise().exception, nullptr));
             if (_handle.done())
                 return std::nullopt;
         }
