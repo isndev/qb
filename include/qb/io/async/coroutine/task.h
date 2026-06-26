@@ -127,10 +127,15 @@ void defer_frame_destruction(std::coroutine_handle<>) noexcept;
 //     — they'd correspond to coroutines that hold a large by-value state, which is
 //     discouraged anyway).
 //   * Freed blocks are intrusively linked via their first 8 B, LIFO.
-//   * No destructor / no draining: the OS reclaims the freelist when the
-//     thread exits. The blocks parked here at process exit are reachable,
-//     `live_frames`-balanced (freed) pool memory — not leaks; tests assert the
-//     `live_frames` invariant and run LeakSanitizer with `detect_leaks=0`.
+//   * Thread-exit draining: the free-list lives in a thread_local RAII holder
+//     (BucketPool) whose destructor walks every bucket and ::operator delete's
+//     each parked block. Without it, a spawned VirtualCore worker thread would
+//     leak its entire frame pool on exit — the thread_local head pointers are
+//     destroyed at thread teardown, orphaning the heap blocks they referenced
+//     (visible as ROOT LEAKs under `leaks --atExit` from a worker thread; on the
+//     main thread the pool is reachable until process exit and was never flagged).
+//     At thread exit `live_frames` is 0 (all frames already deallocated back into
+//     the pool), so the holder only ever frees idle, balanced pool memory.
 //
 // The allocator is used by `task<T>::promise_type::operator new/delete`.
 // Both sized and unsized delete are provided; sized delete is used by
@@ -164,6 +169,10 @@ public:
         if (idx == 0 || idx > kMaxBucket) {
             return ::operator new(size, std::align_val_t{kAlign});
         }
+        // buckets() lazily constructs the thread_local BucketPool on first use,
+        // which sets pool_alive(). allocate() is only ever called from a running
+        // coroutine (never from a destructor during thread teardown), so the pool
+        // is always in its alive window here.
         auto &head = buckets()[idx - 1];
         if (head) {
             void *p = head;
@@ -179,7 +188,12 @@ public:
             return;
         --live_frames;
         const std::size_t idx = bucket_index(size);
-        if (idx == 0 || idx > kMaxBucket) {
+        // Oversized frames, and the rare frame freed after this thread's pool was
+        // already torn down (thread_local destruction order), go straight back to
+        // the global allocator. Pushing onto a destroyed free-list would corrupt
+        // freed memory / re-leak the block. allocate() mirrors this for `idx`, so
+        // the size matches the aligned ::operator new used on the fallback path.
+        if (idx == 0 || idx > kMaxBucket || !pool_alive()) {
             ::operator delete(p, std::align_val_t{kAlign});
             return;
         }
@@ -200,10 +214,52 @@ private:
 
     // kMaxBucket slots — each slot is a LIFO head pointer for its size class.
     using BucketArray = std::array<void *, kMaxBucket>;
+
+    // True while this thread's BucketPool is constructed and not yet destroyed.
+    // allocate()/deallocate() consult it so a frame freed during thread_local
+    // teardown (after ~BucketPool already ran) bypasses the dead free-list and
+    // is returned straight to the global allocator instead of corrupting it.
+    //
+    // MUST stay a SEPARATE function-local thread_local (not a BucketPool member):
+    // its trivially-destructible bool is constructed first (BucketPool's ctor sets
+    // it) and so outlives ~BucketPool, which is exactly what lets a post-teardown
+    // deallocate() read a valid `false`. Folding it into BucketPool would reintroduce
+    // the use-after-teardown this guards against.
+    static bool &
+    pool_alive() noexcept {
+        thread_local bool alive = false;
+        return alive;
+    }
+
+    // Thread_local RAII holder for the bucket free-lists. Its destructor runs at
+    // thread exit and returns every parked block to the global allocator, so a
+    // spawned worker thread does not leak its frame pool when it terminates.
+    // Blocks were allocated bucket-sized (idx * kAlign) and cache-line aligned,
+    // so they must be freed with the matching sized+aligned ::operator delete.
+    struct BucketPool {
+        BucketArray heads{};
+        BucketPool() noexcept {
+            pool_alive() = true;
+        }
+        ~BucketPool() noexcept {
+            pool_alive() = false;
+            for (std::size_t i = 0; i < kMaxBucket; ++i) {
+                void             *p          = heads[i];
+                const std::size_t block_size = (i + 1) * kAlign;
+                while (p) {
+                    void *next = *static_cast<void **>(p);
+                    ::operator delete(p, block_size, std::align_val_t{kAlign});
+                    p = next;
+                }
+                heads[i] = nullptr;
+            }
+        }
+    };
+
     static BucketArray &
     buckets() noexcept {
-        thread_local BucketArray b{};
-        return b;
+        thread_local BucketPool pool;
+        return pool.heads;
     }
 };
 

@@ -222,6 +222,131 @@ public:
     void spawn(task<void> &&t);
 
     /**
+     * @brief Spawn a coroutine and return its (owned) handle.
+     *
+     * Identical to `spawn(task<void>&&)` but hands the spawned handle back so the
+     * caller can later reclaim the frame early via `cancel_spawned()` — used by
+     * the cancellation combinators (`cancellable_sleep`, `cancellable_operation`)
+     * to tear down their detached timeout/runner helper the instant the awaiting
+     * operation is cancelled, instead of letting it linger (parked + watcher
+     * armed) until its full original duration elapses.
+     *
+     * @param t The coroutine task to spawn (moved from)
+     * @return The spawned coroutine handle, or `{}` if `t` was empty.
+     */
+    std::coroutine_handle<> spawn_tracked(task<void> &&t);
+
+    /**
+     * @brief Destroy a spawned (owned) coroutine frame early.
+     *
+     * Reclaims a detached helper whose result is no longer needed — e.g. the
+     * timeout/branch coroutine armed by `cancellable_sleep` / `cancellable_operation`
+     * once the awaiting operation has been cancelled (or resolved by another path).
+     * Without this the helper stays parked on its (often long) timer until that
+     * timer fires; on a thread whose `listener` is never torn down (e.g. core 0
+     * running on the caller's thread via `Main::start(false)`) the frame then leaks
+     * for the rest of the thread's life.
+     *
+     * Behaviour & safety:
+     *  - **Same-thread only**, like every other entry point.
+     *  - No-op unless `h` is a frame this scheduler currently OWNS (handed out by
+     *    `spawn`/`spawn_tracked` and not yet reclaimed). A handle that already
+     *    completed — hence was freed — is not owned, so a stale handle is safe:
+     *    callers additionally gate on a shared "done" flag so a completed helper
+     *    is never passed here.
+     *  - Removes the handle from every bookkeeping container (owned / suspended /
+     *    in-flight / ready queue / deferred-destroy) BEFORE freeing the frame, so a
+     *    later `run_ready()` drain can never resume or re-destroy it.
+     *  - Destroying the frame runs the awaiter destructor it is parked on, which
+     *    stops the libev watcher (timer/io) and unregisters it — no watcher leak.
+     *  - Precondition: `h` must NOT be the coroutine currently executing. Call only
+     *    when the helper is parked (an `on_cancel` hook fired from the kill path, an
+     *    awaiter teardown) — never from inside the helper's own body. `cancel()` is
+     *    driven by the actor lifecycle (kill/destroy), which runs outside the
+     *    coroutine `run_ready()` drain, so this holds for the scope-cancel paths.
+     *
+     * @param h Handle previously returned by `spawn_tracked()`.
+     */
+    void
+    cancel_spawned(std::coroutine_handle<> h) noexcept {
+        if (!h)
+            return;
+        void *addr = h.address();
+        // Only frames we own may be freed here. If it is not owned it has either
+        // already completed (frame freed — destroying again is UB) or was never
+        // ours: do nothing.
+        if (owned_frames_.erase(addr) == 0)
+            return;
+        suspended_coroutines_.erase(addr);
+        // If the helper was already woken (its timer fired in this same tick) it can
+        // be sitting in the ready queue + in-flight set. Scrub both before freeing
+        // the frame so the next run_ready() does not pop a destroyed handle.
+        if (in_flight_.erase(addr) != 0) {
+            for (auto it = ready_queue_.begin(); it != ready_queue_.end();) {
+                if (it->handle && it->handle.address() == addr)
+                    it = ready_queue_.erase(it);
+                else
+                    ++it;
+            }
+        }
+        // Defensive: a frame queued for deferred destruction has already completed
+        // (so callers' done-flag guard would skip it), but never let it be freed twice.
+        for (auto it = frames_to_destroy_.begin(); it != frames_to_destroy_.end();) {
+            if (*it && it->address() == addr)
+                it = frames_to_destroy_.erase(it);
+            else
+                ++it;
+        }
+        h.destroy();
+    }
+
+    /**
+     * @brief Scrub a handle from the scheduler's pending bookkeeping WITHOUT destroying it.
+     *
+     * Counterpart to `cancel_spawned()` for a frame the scheduler does **not** own — an
+     * awaited inner `task<T>` frame whose owning `task<T>` object is about to destroy it.
+     * `when_any` uses it to reclaim a losing branch: the branch's spawned `run_one` frame
+     * is freed via `cancel_spawned()`, but the inner `task<T>` it awaited is owned by the
+     * combinator's `state->tasks` and is destroyed by the `task<T>` destructor (which stops
+     * any libev watcher via the inner awaiter's dtor). If that inner frame's own watcher
+     * fired in the *same* `run_ready()` drain that decided the winner, it is already sitting
+     * in the ready queue / in-flight set; destroying it via the `task<T>` dtor would then
+     * leave a dangling handle for a later drain to pop and resume — a use-after-free. Calling
+     * `forget()` first removes it from the ready queue / in-flight / suspended sets so the
+     * drain can never touch the soon-to-be-freed frame.
+     *
+     * Behaviour & safety:
+     *  - **Same-thread only**, like every other entry point.
+     *  - Never frees memory — the caller still owns the frame (via its `task<T>`) and must
+     *    destroy it right after. The caller therefore always passes a currently-live handle,
+     *    so there is no stale-address hazard (unlike `cancel_spawned`, which gates on
+     *    ownership precisely because it is handed possibly-completed handles).
+     *  - Only touches the non-owning containers (suspended / in-flight / ready queue). An
+     *    awaited inner task is never in `owned_frames_` / `frames_to_destroy_` (those are for
+     *    spawned frames), so they are intentionally left alone.
+     *
+     * @param h A live handle owned by a `task<T>` the caller is about to destroy.
+     */
+    void
+    forget(std::coroutine_handle<> h) noexcept {
+        if (!h)
+            return;
+        void *addr = h.address();
+        suspended_coroutines_.erase(addr);
+        // Ready-queue scan is O(n); only pay it when the frame is actually in-flight
+        // (its watcher fired and scheduled it this tick). A merely-parked frame is in
+        // `suspended_coroutines_` only — the erase above is enough.
+        if (in_flight_.erase(addr) != 0) {
+            for (auto it = ready_queue_.begin(); it != ready_queue_.end();) {
+                if (it->handle && it->handle.address() == addr)
+                    it = ready_queue_.erase(it);
+                else
+                    ++it;
+            }
+        }
+    }
+
+    /**
      * @brief Spawn a callable (lambda/functor) as a coroutine — closure is owned.
      *
      * This overload solves the "dangling lambda" problem that arises when
@@ -526,13 +651,52 @@ public:
      */
     void
     destroy_all_suspended() {
+        // Destroy spawned (owned) coroutine ROOTS first. A spawned coroutine that
+        // awaits an inner task is parked as that inner frame's `continuation_`; it is
+        // tracked only in `owned_frames_`, NOT in `suspended_coroutines_` (only the
+        // innermost I/O/timer awaiter registers there). Destroying a root cascades
+        // through `task<T>::~task` down its whole chain to the suspended leaf, whose
+        // awaiter destructor stops the watcher AND calls unregister_suspended() — so
+        // the leaf removes itself from `suspended_coroutines_` as the tree unwinds.
+        // Without this pass the owned root frame is orphaned: the loop below would
+        // free only its suspended leaf, leaking every intermediate spawned frame
+        // (the symptom: an abandoned coroutine_scope whose worker is parked on a
+        // non-cancellable sleep when the scope is torn down — `cancel_all` cannot
+        // wake a plain sleep(), so the worker tree is still parked at reset).
+        std::vector<void *> owned_roots(owned_frames_.begin(), owned_frames_.end());
+        // SAFETY INVARIANT: clear owned_frames_ BEFORE the cascade. Destroying a root runs awaiter
+        // destructors that may call cancel_spawned() on sibling frames; with owned_frames_ already
+        // empty those calls hit the `owned_frames_.erase(addr)==0` gate and no-op, so the snapshot
+        // loop below stays the single destroyer of each owned frame (no double-free). Do not move
+        // this clear() after the loop.
+        owned_frames_.clear();
+        for (void *addr : owned_roots) {
+            // A root at final_suspend may also sit in frames_to_destroy_; scrub it
+            // there first so the deferred-destroy drain never frees it a second time.
+            for (auto it = frames_to_destroy_.begin(); it != frames_to_destroy_.end();) {
+                if (*it && it->address() == addr)
+                    it = frames_to_destroy_.erase(it);
+                else
+                    ++it;
+            }
+            auto handle = std::coroutine_handle<>::from_address(addr);
+            if (handle && !handle.done()) {
+                QB_SCHED_TRACE("destroy_all_suspended destroying owned root handle=%p", (void *) addr);
+                handle.destroy();
+            }
+        }
+
+        // Any frames still registered as suspended after the cascade above are
+        // non-owned continuation chains (e.g. a leaf whose root is a live task<T>
+        // elsewhere). Destroy them as before so no watcher survives into the next
+        // test/listener lifetime.
         std::vector<void *> to_destroy(suspended_coroutines_.begin(), suspended_coroutines_.end());
         suspended_coroutines_.clear();
         for (void *addr : to_destroy) {
-            owned_frames_.erase(addr); // destroyed here — drop the ownership record
+            owned_frames_.erase(addr); // defensive — should already be gone
             auto handle = std::coroutine_handle<>::from_address(addr);
             if (handle && !handle.done()) {
-                QB_SCHED_TRACE("destroy_all_suspended destroying handle=%p", (void *) addr);
+                QB_SCHED_TRACE("destroy_all_suspended destroying suspended handle=%p", (void *) addr);
                 handle.destroy();
             }
         }
@@ -688,11 +852,11 @@ defer_frame_destruction(std::coroutine_handle<> handle) noexcept {
  * on the next run_ready() call. The task's handle is transferred
  * to the scheduler.
  */
-inline void
-CoroutineScheduler::spawn(task<void> &&t) {
+inline std::coroutine_handle<>
+CoroutineScheduler::spawn_tracked(task<void> &&t) {
     auto handle = t.detach();
     if (!handle)
-        return;
+        return {};
 
     // Set this scheduler as the coroutine's scheduler
     handle.promise().scheduler_ = this;
@@ -701,6 +865,12 @@ CoroutineScheduler::spawn(task<void> &&t) {
     in_flight_.insert(handle.address());
     ready_queue_.push_back({handle, true});
     QB_SCHED_TRACE("spawn handle=%p in_flight=%zu", (void *) handle.address(), in_flight_.size());
+    return handle;
+}
+
+inline void
+CoroutineScheduler::spawn(task<void> &&t) {
+    spawn_tracked(std::move(t));
 }
 
 } // namespace qb::io::async

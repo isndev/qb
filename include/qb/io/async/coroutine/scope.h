@@ -105,6 +105,11 @@ private:
         std::vector<handle_slot>                 join_all_waiter_slots; ///< one per concurrent join_all
         std::vector<handle_slot>                 join_any_waiter_slots; ///< one per concurrent join_any
         std::exception_ptr                       first_error;
+        // Shares state with the owning scope's _cancel_token (set in the scope ctor;
+        // null_token until then so an un-wired impl allocates nothing). run_wrapped
+        // consults it to tell a cooperative stop (cancel_all() asked the worker to
+        // unwind) apart from a genuine task failure — see run_wrapped().
+        cancellation_token cancel_token{null_token};
 
         static void
         wake_slots(std::vector<handle_slot> &slots) {
@@ -146,7 +151,11 @@ private:
 public:
     explicit coroutine_scope(cleanup_policy policy = cleanup_policy::cancel_all)
         : _impl(std::make_shared<scope_impl>())
-        , _policy(policy) {}
+        , _policy(policy) {
+        // Share the scope's cancellation state into the impl so run_wrapped can
+        // recognise a worker that unwound because of THIS scope's cancel_all().
+        _impl->cancel_token = _cancel_token;
+    }
 
     /**
      * @brief Destructor - applies cleanup policy
@@ -266,6 +275,25 @@ private:
         std::exception_ptr err;
         try {
             co_await inner;
+        } catch (const cancelled_error &) {
+            // A worker that unwinds via cancelled_error BECAUSE this scope was
+            // cancelled is honouring a cooperative stop the caller themselves
+            // requested (cancel_all() / the cancel_all dtor policy) — it is not a
+            // task failure. Recording it as first_error would make the matching
+            // join_all() rethrow the very cancellation the caller triggered,
+            // forcing every cancel_all()+join_all() site to wrap join_all in a
+            // try/catch just to swallow its own signal (and silently skip any
+            // post-join work, which reads from the outside as a hung join_all).
+            // Leave err null so the scope drains cleanly. A cancelled_error from
+            // an UNRELATED token (scope not cancelled) is still surfaced — e.g.
+            // parallel(), whose scope is never cancelled, must propagate it
+            // rather than hand back empty result optionals.
+            if (impl->cancel_token.is_cancelled()) {
+                QB_SCOPE_TRACE("run_wrapped absorbed self-cancellation");
+            } else {
+                err = std::current_exception();
+                QB_SCOPE_TRACE("run_wrapped caught external cancelled_error");
+            }
         } catch (...) {
             err = std::current_exception();
             QB_SCOPE_TRACE("run_wrapped caught exception");
@@ -325,7 +353,13 @@ public:
      * @brief Wait for all tasks to complete (event-driven, zero polling)
      *
      * Suspends the caller directly; the last completing task wakes it.
-     * Rethrows the first error encountered, if any.
+     * Rethrows the first error encountered, if any. A worker that unwound via
+     * `cancelled_error` because of THIS scope's own `cancel_all()` (or its
+     * `cancel_all` destructor policy) is a cooperative stop, not an error: it is
+     * absorbed here so `cancel_all()` + `join_all()` drains cleanly without the
+     * caller having to wrap `join_all()` in a try/catch to swallow the very
+     * cancellation it requested (see run_wrapped()). A `cancelled_error` from an
+     * unrelated token is still rethrown.
      */
     task<void>
     join_all() {

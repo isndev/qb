@@ -419,11 +419,20 @@ public:
         std::optional<T>
         await_resume() {
             QB_AGEN_TRACE("next await_resume gen=%p done=%d", (void *) handle.address(), handle.done() ? 1 : 0);
+            // Surface a generator-body exception BEFORE the done() short-circuit. A throw inside the
+            // generator runs unhandled_exception() and then drives the frame to final_suspend, so the
+            // frame is `done()` at the same time the exception is stored. Checking done() first would
+            // silently swallow that exception (next() would return nullopt as if the stream ended
+            // cleanly) — and every ag_* helper consumes via `while (co_await gen.next())`, so the throw
+            // would never reach the caller. Rethrow first; only a clean end-of-stream returns nullopt.
+            if (handle.promise().exception) {
+                // Clear the stored exception as we rethrow it: a throw ends the stream, so a
+                // consumer that catches and (incorrectly) calls next() again must get a clean
+                // nullopt rather than the same exception re-thrown forever.
+                std::rethrow_exception(std::exchange(handle.promise().exception, nullptr));
+            }
             if (handle.done()) {
                 return std::nullopt;
-            }
-            if (handle.promise().exception) {
-                std::rethrow_exception(handle.promise().exception);
             }
             return std::move(handle.promise().current_value);
         }
