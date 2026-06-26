@@ -54,9 +54,9 @@ qb_add_test(MODULE qb-core TIER system NAME ask-patterns       SOURCES coroutine
 qb_add_test(MODULE qb-core TIER system NAME coroutine-resilience SOURCES coroutine/coroutine-resilience.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine patterns)
 
 # --- lifecycle --------------------------------------------------------------
-qb_add_test(MODULE qb-core TIER system NAME actor-lifecycle-ordering SOURCES lifecycle/actor-lifecycle-ordering.cpp DEPENDS ${PROJECT_NAME} LABELS slow)
-qb_add_test(MODULE qb-core TIER system NAME actor-state-roundtrip    SOURCES lifecycle/actor-state-roundtrip.cpp    DEPENDS ${PROJECT_NAME} LABELS slow)
-qb_add_test(MODULE qb-core TIER system NAME actor-resource-cleanup   SOURCES lifecycle/actor-resource-cleanup.cpp   DEPENDS ${PROJECT_NAME} LABELS slow)
+qb_add_test(MODULE qb-core TIER system NAME actor-lifecycle-ordering SOURCES lifecycle/actor-lifecycle-ordering.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER system NAME actor-state-roundtrip    SOURCES lifecycle/actor-state-roundtrip.cpp    DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER system NAME actor-resource-cleanup   SOURCES lifecycle/actor-resource-cleanup.cpp   DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER system NAME actor-invalid-reference  SOURCES lifecycle/actor-invalid-reference.cpp  DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER system NAME main-shutdown            SOURCES lifecycle/main-shutdown.cpp            DEPENDS ${PROJECT_NAME} LABELS slow)
 
@@ -65,14 +65,14 @@ qb_add_test(MODULE qb-core TIER system NAME main-core-range            SOURCES c
 qb_add_test(MODULE qb-core TIER system NAME actor-customization-points SOURCES core/actor-customization-points.cpp DEPENDS ${PROJECT_NAME})
 
 # --- concurrency ------------------------------------------------------------
-qb_add_test(MODULE qb-core TIER system NAME actor-message-serialization SOURCES concurrency/actor-message-serialization.cpp DEPENDS ${PROJECT_NAME} LABELS slow)
+qb_add_test(MODULE qb-core TIER system NAME actor-message-serialization SOURCES concurrency/actor-message-serialization.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER system NAME qos1-backpressure           SOURCES concurrency/qos1-backpressure.cpp           DEPENDS ${PROJECT_NAME} LABELS slow requires-multicore)
 
 # --- regression -------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME router-callback-regressions SOURCES regression/router-callback-regressions.cpp DEPENDS ${PROJECT_NAME})
 
 # --- patterns (resilience / aggregate / saga / routing / pubsub / discovery) -
-qb_add_test(MODULE qb-core TIER system NAME supervisor-strategies   SOURCES patterns/supervisor-strategies.cpp   DEPENDS ${PROJECT_NAME} LABELS patterns slow)
+qb_add_test(MODULE qb-core TIER system NAME supervisor-strategies   SOURCES patterns/supervisor-strategies.cpp   DEPENDS ${PROJECT_NAME} LABELS patterns)
 qb_add_test(MODULE qb-core TIER system NAME resilience-rate-limiter SOURCES patterns/resilience-rate-limiter.cpp DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
 qb_add_test(MODULE qb-core TIER system NAME resilience-bulkhead     SOURCES patterns/resilience-bulkhead.cpp     DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
 qb_add_test(MODULE qb-core TIER system NAME aggregate-scatter       SOURCES patterns/aggregate-scatter.cpp       DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)

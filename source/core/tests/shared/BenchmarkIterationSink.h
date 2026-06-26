@@ -7,6 +7,10 @@
  * would store writes on the worker and reads on the benchmark thread in different TLS
  * slots, so stats must live in shared storage protected by a mutex.
  *
+ * The core-count helpers (\c cappedBenchmarkCores / \c effectiveHardwareCores) moved to
+ * BenchmarkCores.h so pure throughput benches can size their core spread without dragging
+ * in this latency-sink mutex/global; this header re-exports them for back-compat.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,25 +30,12 @@
 #ifndef QB_BENCHMARK_ITERATION_SINK_H
 #define QB_BENCHMARK_ITERATION_SINK_H
 
-#include <algorithm>
 #include <cstdint>
 #include <mutex>
-#include <thread>
+
+#include "BenchmarkCores.h"
 
 namespace qb::bench {
-
-constexpr std::uint32_t kMaxBenchmarkCores = 8u;
-
-[[nodiscard]] inline std::uint32_t
-effectiveHardwareCores() {
-    const unsigned hw = std::thread::hardware_concurrency();
-    return hw == 0u ? 1u : static_cast<std::uint32_t>(hw);
-}
-
-[[nodiscard]] inline std::uint32_t
-cappedBenchmarkCores() {
-    return std::min(effectiveHardwareCores(), kMaxBenchmarkCores);
-}
 
 struct LastLatencyStats {
     double        mean_round_trip_ns = 0.;
