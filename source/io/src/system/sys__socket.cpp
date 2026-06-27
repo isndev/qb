@@ -110,7 +110,15 @@ socket::xpconnect(const char *hostname, u_short port, u_short local_port) {
                     }
                     break;
                 case AF_INET6:
-                    if (flags & ipsv_ipv6)
+                    // Attempt IPv6 if the host advertises globally-routable IPv6, OR the
+                    // target is a local-scope address (loopback / ULA / link-local).
+                    // Reaching a local-scope v6 target needs only the IPv6 stack to be up,
+                    // not global v6 routing — but getipsv() counts only globally-routable
+                    // addresses, so a host whose only IPv6 is ::1 / ULA (containers, VMs,
+                    // IPv4-only networks) reports no IPv6 and we would wrongly refuse even a
+                    // ::1 connect. A failed attempt falls through to the next resolved
+                    // address.
+                    if ((flags & ipsv_ipv6) || !is_global_in6_addr(&ep.in6_.sin6_addr))
                         error = pconnect(ep, local_port);
                     break;
             }
@@ -138,7 +146,11 @@ socket::xpconnect_n(const char *hostname, u_short port, const qb::duration &wtim
                     }
                     break;
                 case AF_INET6:
-                    if (flags & ipsv_ipv6)
+                    // See xpconnect(): a local-scope v6 target (loopback / ULA / link-local)
+                    // only needs the IPv6 stack up, not the globally-routable address that
+                    // getipsv() probes for — otherwise ::1 is refused on hosts with no global
+                    // IPv6 (containers, VMs).
+                    if ((flags & ipsv_ipv6) || !is_global_in6_addr(&ep.in6_.sin6_addr))
                         error = pconnect_n(ep, wtimeout, local_port);
                     break;
             }
