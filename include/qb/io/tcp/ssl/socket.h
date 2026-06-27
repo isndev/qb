@@ -433,10 +433,17 @@ public:
     socket(socket &&rhs) = default;
 
     /**
-     * @brief Default move assignment operator.
+     * @brief Move assignment operator.
      * @return Reference to this socket.
+     * @details NOT defaulted: a defaulted memberwise move would `SSL_free` this
+     *          socket's old `SSL` (via the unique_ptr) but leak the `SSL_CTX` it was
+     *          created from (the client context is freed only here / in the destructor,
+     *          never by the unique_ptr). Move-assigning over a socket that already owns
+     *          a TLS session — e.g. an in-place reconnect — would therefore orphan the
+     *          old context and its trust store. This releases the existing SSL+context
+     *          first, then takes over @p rhs.
      */
-    socket &operator=(socket &&rhs) = default;
+    socket &operator=(socket &&rhs) noexcept;
 
     /**
      * @brief Initialize the SSL socket with an OpenSSL `SSL` handle.
@@ -787,6 +794,14 @@ public:
 
 private:
     //    friend class ssl::listener; // If listener needs to call private methods for accept
+
+    /**
+     * @brief Free the owned `SSL` and (for a client socket) its `SSL_CTX`.
+     * @details Shared teardown for the destructor and the move-assignment operator: a
+     *          client context is created per-socket and owned here, so it must be freed;
+     *          a server context is shared (owned by the listener) and is left alone.
+     */
+    void release_ssl_() noexcept;
 };
 
 } // namespace qb::io::tcp::ssl
