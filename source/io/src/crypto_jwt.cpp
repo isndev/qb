@@ -21,6 +21,7 @@
 
 #include <qb/io/crypto_jwt.h>
 #include <qb/json.h>
+#include <qb/system/parse.h>
 #include <sstream>
 #include <stdexcept>
 
@@ -474,14 +475,13 @@ jwt::verify(const std::string &token, const VerifyOptions &options) {
                 return true;
             }
             if (v.is_string()) {
-                try {
-                    const std::string s   = v.get<std::string>();
-                    std::size_t       pos = 0;
-                    out                   = std::stoll(s, &pos);
-                    return pos == s.size();
-                } catch (...) {
+                const std::string s        = v.get<std::string>();
+                std::size_t       consumed = 0;
+                const auto        parsed   = qb::to_number_prefix<int64_t>(s, &consumed);
+                if (!parsed)
                     return false;
-                }
+                out = *parsed;
+                return consumed == s.size();
             }
             return false;
         };
