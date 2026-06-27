@@ -582,16 +582,38 @@ socket::socket(SSL *ctx, tcp::socket &sock) noexcept
     , _ssl_handle(ctx, SSL_free)
     , _connected(false) {}
 
-socket::~socket() noexcept {
+void
+socket::release_ssl_() noexcept {
     if (_ssl_handle) {
         const auto handle    = ssl_handle();
         const auto ctx       = SSL_get_SSL_CTX(handle);
         const auto is_client = !SSL_is_server(handle);
-        _ssl_handle.reset(nullptr);
+        _ssl_handle.reset(nullptr); // SSL_free
         if (is_client && ctx)
             SSL_CTX_free(ctx);
         _connected = false;
     }
+}
+
+socket::~socket() noexcept {
+    release_ssl_();
+}
+
+socket &
+socket::operator=(socket &&rhs) noexcept {
+    if (this == &rhs)
+        return *this;
+    // Free our own SSL + (client) context BEFORE taking over rhs — a defaulted
+    // memberwise move would SSL_free our old SSL but leak its SSL_CTX (see header note).
+    release_ssl_();
+    tcp::socket::operator=(std::move(rhs));
+    _ssl_handle             = std::move(rhs._ssl_handle);
+    _connected              = rhs._connected;
+    _pending_sni_hostname   = std::move(rhs._pending_sni_hostname);
+    _pending_alpn_protocols = std::move(rhs._pending_alpn_protocols);
+    _verify_peer            = rhs._verify_peer;
+    rhs._connected          = false;
+    return *this;
 }
 
 void
