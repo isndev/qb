@@ -342,7 +342,10 @@ struct timer_awaiter : awaiter_base {
             awaiter_base::await_resume();
             return;
         }
-        if (started_ && ev_is_active(&watcher_)) {
+        // Always stop when armed — see the destructor's note on the one-shot
+        // auto-stop / still-pending window. `ev_timer_stop` clears any pending
+        // event for this watcher first, then no-ops if already inactive.
+        if (started_) {
             ev_timer_stop(loop_, &watcher_);
             started_ = false;
         }
@@ -363,7 +366,23 @@ struct timer_awaiter : awaiter_base {
         if (yield_only_) {
             return;
         }
-        if (started_ && ev_is_active(&watcher_)) {
+        // CRITICAL — do NOT gate this on `ev_is_active`. A one-shot ev_timer
+        // (repeat == 0, which `sleep()` always uses) is auto-stopped by libev's
+        // `timers_reify()` the instant it expires — BEFORE its callback is
+        // invoked (ev.c: `else ev_timer_stop(w); /* nonrepeating */`). So in the
+        // window between expiry and `ev_invoke_pending()` the watcher is
+        // INACTIVE but still PENDING: it sits in libev's `pendings[]` array with
+        // `w->data` pointing at THIS awaiter. If the coroutine frame holding this
+        // awaiter is destroyed in that window (e.g. a same-tick cancellation tears
+        // down the inner task before the scheduler drains the ready queue), an
+        // `ev_is_active`-gated stop would be skipped, leaving the freed watcher in
+        // `pendings[]`. `ev_invoke_pending()` would then call `timer_callback()`
+        // on freed memory and `schedule_resume()` a destroyed handle — a
+        // use-after-free that surfaces as a wild `handle.resume()` in run_ready().
+        // `ev_timer_stop()` calls `clear_pending()` FIRST, unconditionally (it
+        // evicts the watcher from `pendings[]`), then no-ops if already inactive —
+        // so calling it whenever the timer was armed is both necessary and safe.
+        if (started_) {
             ev_timer_stop(loop_, &watcher_);
             started_ = false;
         }
@@ -481,7 +500,11 @@ struct socket_awaiter : awaiter_base {
      */
     void
     await_resume() override {
-        if (started_ && ev_is_active(&watcher_)) {
+        // Gate only on `started_`, never on `ev_is_active`: `ev_io_stop` clears
+        // any pending event for this watcher first (so a fired-but-not-yet-drained
+        // watcher cannot be invoked on a freed frame later), then no-ops if the
+        // watcher is already inactive. Mirrors the timer_awaiter teardown note.
+        if (started_) {
             ev_io_stop(loop_, &watcher_);
             started_ = false;
         }
@@ -499,7 +522,12 @@ struct socket_awaiter : awaiter_base {
      */
     ~socket_awaiter() override {
         unschedule(); // full scrub: a fired-but-not-yet-resumed frame must leave ready_queue_/in_flight_ too
-        if (started_ && ev_is_active(&watcher_)) {
+        // Gate only on `started_` (not `ev_is_active`): `ev_io_stop` clears any
+        // pending event for this watcher first, then no-ops if already inactive —
+        // so a watcher that fired this tick but whose frame is being destroyed
+        // before run_ready() drains it can never be invoked on freed memory.
+        // See the timer_awaiter destructor for the full one-shot rationale.
+        if (started_) {
             ev_io_stop(loop_, &watcher_);
             started_ = false;
         }

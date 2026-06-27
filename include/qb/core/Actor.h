@@ -1514,8 +1514,16 @@ private:
         token.remove_on_cancel(cancel_id);
         cancel_id = 0;
         if (timer_started) {
-            if (ev_is_active(&timer))
-                ev_timer_stop(ask_loop(), &timer);
+            // The deadline is a one-shot ev_timer embedded directly in this
+            // awaiter (which lives in the ask() coroutine frame). libev auto-stops
+            // a one-shot the instant it expires, BEFORE invoking deliver/on_timeout
+            // — leaving it inactive but still pending in `pendings[]` with
+            // `timer.data` → this (about-to-be-freed) frame. Gating the stop on
+            // `ev_is_active` would skip `clear_pending` in that window, so a later
+            // ev_invoke_pending() would dispatch into freed memory. `ev_timer_stop`
+            // always clears pending first, then no-ops if inactive — so gate on
+            // `timer_started` only. See qb/io/async/coroutine/awaiter.h for details.
+            ev_timer_stop(ask_loop(), &timer);
             timer_started = false;
         }
     }

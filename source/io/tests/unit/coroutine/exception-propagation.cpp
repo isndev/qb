@@ -389,6 +389,45 @@ TEST_F(CoroutineExceptionTests, ExceptionFromValueReturningCoroutine) {
 // EXCEPTIONS THROUGH async_generator AND channel
 // =============================================================================
 
+namespace {
+// MSVC's optimizer back-end raises a C1001 internal compiler error when a coroutine consumes an
+// async_generator via `co_await gen.next()` inside a try/catch. Disable optimization for just
+// these two helper coroutines on MSVC to dodge the compiler bug — behaviour is identical and
+// these are unit-test helpers, so the lost optimization is irrelevant. Extracted to named
+// coroutines (not nested lambdas) so the pragma can scope them cleanly.
+#if defined(_MSC_VER)
+#pragma optimize("", off)
+#endif
+async_generator<int>
+make_failing_gen() {
+    co_yield 1;
+    co_yield 2;
+    throw std::runtime_error("generator failed");
+    co_yield 3; // never reached
+}
+task<void>
+consume_failing_gen(std::atomic<int> *values, std::atomic<bool> *caught, std::atomic<bool> *done) {
+    auto gen = make_failing_gen();
+    try {
+        for (;;) {
+            auto v = co_await gen.next();
+            if (!v)
+                break;
+            (void) *v;
+            values->fetch_add(1);
+        }
+    } catch (const std::runtime_error &e) {
+        if (std::string(e.what()) == "generator failed")
+            caught->store(true);
+    }
+    done->store(true);
+    co_return;
+}
+#if defined(_MSC_VER)
+#pragma optimize("", on)
+#endif
+} // namespace
+
 /**
  * @test Exception thrown inside an async_generator surfaces at co_await gen.next()
  * @brief The generator yields a few values, then throws; the consumer receives the prior values and then
@@ -404,24 +443,7 @@ TEST_F(CoroutineExceptionTests, ExceptionFromAsyncGeneratorPropagates) {
     auto caught_ptr = &caught;
     auto done_ptr   = &done;
     coro_scheduler().spawn([values_ptr, caught_ptr, done_ptr]() -> task<void> {
-        auto make_gen = []() -> async_generator<int> {
-            co_yield 1;
-            co_yield 2;
-            throw std::runtime_error("generator failed");
-            co_yield 3; // never reached
-        };
-        auto gen = make_gen();
-        try {
-            while (auto v = co_await gen.next()) {
-                (void) *v;
-                values_ptr->fetch_add(1);
-            }
-        } catch (const std::runtime_error &e) {
-            if (std::string(e.what()) == "generator failed")
-                caught_ptr->store(true);
-        }
-        done_ptr->store(true);
-        co_return;
+        co_await consume_failing_gen(values_ptr, caught_ptr, done_ptr);
     });
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "generator consumer never completed";

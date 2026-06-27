@@ -62,10 +62,16 @@ using qb::io::test::reset_async_context;
 
 namespace {
 
-// RFC 5737 TEST-NET-1: a reserved, non-routable address. A connect to it neither
-// completes nor is refused — it hangs until the timeout, which is exactly what we
-// want to exercise the connector's deadline path deterministically.
-constexpr const char *kUnroutableHost = "192.0.2.1";
+// 240.0.0.0/4 (RFC 1112 §4, "reserved for future use" / Class E): no OS routes it
+// and the local IP stack rejects it as unreachable BEFORE handing the SYN to the
+// default gateway. This is deterministic on Windows, Linux and macOS — unlike RFC
+// 5737 TEST-NET-1 (192.0.2.0/24), which IS routable: the SYN is forwarded to the
+// default gateway, so on a corporate network a transparent proxy / SD-WAN middlebox
+// can complete the handshake (peer_endpoint() then reports a peer and the
+// "not connected" assertion fails). A Class E target instead fails fast locally
+// (ENETUNREACH / WSAENETUNREACH), which still yields an empty/closed socket within
+// the connect budget for every test below.
+constexpr const char *kUnroutableHost = "240.0.0.1";
 constexpr unsigned short kUnroutablePort = 12345;
 
 class AsyncConnectTimeoutTest : public ::testing::Test {

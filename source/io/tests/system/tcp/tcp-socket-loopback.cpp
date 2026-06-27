@@ -284,8 +284,12 @@ TEST(TCPSocket, NonBlockingConnectForcesGenuineEinprogressThenCompletes) {
         qb::io::socket filler;
         ASSERT_TRUE(filler.open(AF_INET, SOCK_STREAM, 0));
         filler.set_nonblocking(true);
-        const int ret = filler.connect_n(qb::io::endpoint("127.0.0.1", port));
-        if (ret != 0 && qb::io::socket::get_last_errno() == EINPROGRESS) {
+        const int ret  = filler.connect_n(qb::io::endpoint("127.0.0.1", port));
+        const int cerr = qb::io::socket::get_last_errno();
+        // A deferred (in-progress) non-blocking connect is EINPROGRESS on POSIX but
+        // WSAEWOULDBLOCK on Windows (where every non-blocking connect defers) — accept
+        // both so the deferred-completion path is exercised on every platform.
+        if (ret != 0 && (cerr == EINPROGRESS || cerr == EWOULDBLOCK)) {
             saw_einprogress = true;
         }
         backlog.push_back(std::move(filler));
@@ -568,6 +572,15 @@ TEST(TCPSocket, LowLevelPortableConnectVariantsCanBindExplicitLocalPorts) {
     nonblocking_client.close();
 }
 
+// POSIX-only: this asserts that binding a client to an already-occupied local port
+// fails. `pconnect*` bind the local port to INADDR_ANY (0.0.0.0:local_port — see
+// socket::pconnect), while the `occupied` listener holds 127.0.0.1:port. On POSIX,
+// 0.0.0.0:P overlaps 127.0.0.1:P → EADDRINUSE → the bind (hence pconnect) fails. On
+// Windows those two address scopes do NOT conflict for a plain bind (even with the
+// listener's SO_EXCLUSIVEADDRUSE), so the client bind legitimately succeeds — that is
+// a correct Windows behavioural difference, not a qb defect, so the assertion is
+// guarded to POSIX where the bind-conflict semantics it pins actually hold.
+#ifndef _WIN32
 TEST(TCPSocket, LowLevelPortableConnectVariantsFailWhenLocalPortIsOccupied) {
     qb::io::socket listener;
     ASSERT_EQ(listener.pserve("127.0.0.1", 0), 0);
@@ -588,6 +601,7 @@ TEST(TCPSocket, LowLevelPortableConnectVariantsFailWhenLocalPortIsOccupied) {
     qb::io::socket nonblocking_client;
     EXPECT_EQ(nonblocking_client.pconnect_n(qb::io::endpoint("127.0.0.1", remote_port), occupied_port), -1);
 }
+#endif // !_WIN32
 
 TEST(TCPSocket, LowLevelResolutionAndInterfaceDiscovery) {
     std::vector<qb::io::endpoint> endpoints;
@@ -680,7 +694,7 @@ TEST(TCPSocket, LowLevelSocketOptionsReadinessAndBindingHelpers) {
 TEST(TCPSocket, LowLevelNonBlockingAndTimeoutFailuresAreRestored) {
     qb::io::socket closed;
     EXPECT_EQ(qb::io::socket::set_nonblocking(closed.native_handle(), true), -1);
-    EXPECT_EQ(closed.shutdown(SHUT_RDWR), -1);
+    EXPECT_EQ(closed.shutdown(SD_BOTH), -1); // SD_BOTH is qb's portable alias (==SHUT_RDWR on POSIX)
 
     qb::io::socket client;
     ASSERT_TRUE(client.open(AF_INET, SOCK_STREAM, 0));

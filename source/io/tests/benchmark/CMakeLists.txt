@@ -50,4 +50,16 @@ qbio_bench(crypto       crypto-extras              ssl)
 qbio_bench(session      session-json               ssl)
 qbio_bench(transport    async-bases-framing)
 
+# These two benchmarks reuse the gtest-based shared fixtures (shared/loopback_fixture.h,
+# shared/scripted_stream_transport.h), so they need GoogleTest's headers on the include path.
+foreach (_b qb-io-bench-session-json qb-io-bench-async-bases-framing)
+    if (TARGET ${_b})
+        if (TARGET GTest::gtest)
+            target_link_libraries(${_b} PRIVATE GTest::gtest)
+        elseif (TARGET gtest)
+            target_link_libraries(${_b} PRIVATE gtest)
+        endif ()
+    endif ()
+endforeach ()
+
 qb_status_message("Configured qb-io benchmarks (tiered: async/coroutine/crypto/compression/protocol/serialization/session/transport/uri/io)")

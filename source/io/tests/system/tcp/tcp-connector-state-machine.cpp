@@ -124,6 +124,49 @@ refused_uri(unsigned short port) {
     return "tcp://127.0.0.1:" + std::to_string(port);
 }
 
+#ifdef _WIN32
+// Windows has no socketpair(). Emulate a CONNECTED loopback TCP pair so the fake
+// socket has a real, writable, wepoll-registerable handle: arm_io() accepts it
+// (is_open()/native_handle() valid) AND the EV_WRITE readiness turn actually fires
+// (a connected loopback socket is immediately writable), so the connector's
+// post-EV_WRITE SO_ERROR / handshake state machine is exercised on Windows exactly
+// as the POSIX socketpair drives it. The connector never reads/writes these fds (it
+// consults the scripted handshake_status()/get_optval()), so the peer end is inert.
+// qb stores socket handles as int on Windows too (it casts SOCKET->int for
+// libev/wepoll), so matching the fake's int fd here is consistent with the framework.
+inline bool
+make_loopback_pair(int &a, int &b) {
+    a = b = -1;
+    SOCKET lst = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (lst == INVALID_SOCKET)
+        return false;
+    sockaddr_in addr{};
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port        = 0;
+    int  len             = static_cast<int>(sizeof(addr));
+    bool ok              = false;
+    if (::bind(lst, reinterpret_cast<sockaddr *>(&addr), len) == 0 && ::listen(lst, 1) == 0 &&
+        ::getsockname(lst, reinterpret_cast<sockaddr *>(&addr), &len) == 0) {
+        SOCKET cli = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (cli != INVALID_SOCKET) {
+            if (::connect(cli, reinterpret_cast<sockaddr *>(&addr), len) == 0) {
+                SOCKET srv = ::accept(lst, nullptr, nullptr);
+                if (srv != INVALID_SOCKET) {
+                    a  = static_cast<int>(cli);
+                    b  = static_cast<int>(srv);
+                    ok = true;
+                }
+            }
+            if (!ok)
+                ::closesocket(cli);
+        }
+    }
+    ::closesocket(lst);
+    return ok;
+}
+#endif
+
 // ---------------------------------------------------------------------------
 // FakeConnectorSocket — a programmable stand-in for the connector's Socket_.
 //
@@ -163,7 +206,9 @@ private:
     ensure_fd() {
         if (_state->fd >= 0)
             return;
-#ifndef _WIN32
+#ifdef _WIN32
+        make_loopback_pair(_state->fd, _state->peer_fd);
+#else
         int fds[2] = {-1, -1};
         if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0) {
             _state->fd      = fds[0];
@@ -245,7 +290,16 @@ public:
     void
     disconnect() {
         ++_state->disconnect_calls;
-#ifndef _WIN32
+#ifdef _WIN32
+        if (_state->fd >= 0) {
+            ::closesocket(static_cast<SOCKET>(_state->fd));
+            _state->fd = -1;
+        }
+        if (_state->peer_fd >= 0) {
+            ::closesocket(static_cast<SOCKET>(_state->peer_fd));
+            _state->peer_fd = -1;
+        }
+#else
         if (_state->fd >= 0) {
             ::close(_state->fd);
             _state->fd = -1;
@@ -267,20 +321,28 @@ struct FakeConnectorTransport {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// An unparseable URI resolves to a disengaged optional (no crash, no hang).
+// A URI that cannot be connected resolves to a disengaged optional (no crash,
+// no hang). Use a DOTTED RFC-6761 ".invalid" host (guaranteed NXDOMAIN): the qb
+// uri parser is lenient and treats the old single-label "uri" as a hostname, and
+// the connector resolves it synchronously via getaddrinfo. On Windows a single-
+// label name triggers LLMNR + NetBIOS fallback (~2.7s with retries), which raced
+// past pump_until's 2s budget. A dotted ".invalid" name skips single-label
+// resolution and gets a fast NXDOMAIN on every platform. The connect deadline
+// (100ms) never even arms because resolution fails first.
 // ---------------------------------------------------------------------------
 TEST_F(TcpConnectorStateMachineTest, InvalidUriResumesEmpty) {
     std::atomic<bool> done{false};
     bool              connected = true;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{"invalid://uri"}, 100ms);
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{"tcp://no-such-host.invalid:80"}, 100ms);
         connected   = socket.has_value();
         done.store(true);
         co_return;
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "invalid-uri coroutine never completed";
+    // Generous budget: resolution is fast (NXDOMAIN), but give slow-DNS environments headroom.
+    EXPECT_TRUE(pump_until([&] { return done.load(); }, 6s)) << "invalid-uri coroutine never completed";
 
     ASSERT_TRUE(done.load());
     EXPECT_FALSE(connected);
@@ -407,6 +469,19 @@ TEST_F(TcpConnectorStateMachineTest, DeadlineCompletesPendingHandshakeOnce) {
 // socket. ≥2 get_optval probes (one per readiness turn), and NO disconnect.
 // ---------------------------------------------------------------------------
 TEST_F(TcpConnectorStateMachineTest, IoEventCompletesPendingHandshake) {
+#ifdef _WIN32
+    // This scripted handshake {0,1} needs TWO EV_WRITE turns. On POSIX the mock's
+    // connected socketpair is level-triggered (EPOLLOUT re-fires every loop turn
+    // while writable), so the second turn arrives for free. On Windows, wepoll
+    // signals write-readiness only ONCE for a statically-writable socket (IOCP is
+    // edge-ish for EPOLLOUT) — a mock with no data flow never produces the second
+    // turn, so the handshake can't be driven this way. Real multi-turn handshakes
+    // work on Windows because actual TLS data flow re-triggers readiness; that path
+    // is covered end-to-end by system/coroutine/tcp-connector-loopback.cpp.
+    GTEST_SKIP() << "wepoll signals EV_WRITE once for a static socket; the scripted "
+                    "two-turn handshake needs POSIX level-triggered write-readiness. "
+                    "Real multi-turn handshakes are covered by tcp-connector-loopback.cpp.";
+#endif
     auto shared               = std::make_shared<FakeConnectorSocket::state>();
     shared->result            = FakeConnectorSocket::connect_result::pending;
     shared->handshake_results = {0, 1};

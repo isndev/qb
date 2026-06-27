@@ -109,6 +109,50 @@ struct RawAcceptorServer : qb::io::async::tcp::acceptor<RawAcceptorServer, qb::i
 } // namespace
 
 // =============================================================================
+// Connect deadline bounds a slow OS connect-failure (Windows TCP refused-latency)
+//
+// ROOT CAUSE (proven via a raw-Winsock probe, zero qb code): a non-blocking
+// connect to a REFUSED loopback port on Windows takes ~2.0s for the OS itself to
+// surface WSAECONNREFUSED — it's the Windows TCP SYN-retransmit / connect-retry
+// policy, below qb/libev/wepoll entirely (Linux/macOS report the RST in <10ms).
+// The framework cannot make the OS refuse faster, but its connect DEADLINE must
+// bound the wait so a caller is never stuck for the OS's full refused-latency.
+//
+// This test pins exactly that guarantee: a short (300ms) deadline must deliver an
+// empty socket WELL before the OS's ~2s refusal. On Linux the RST arrives first
+// (deadline never needed); on Windows the deadline preempts the slow refusal. The
+// assertion (< 1.5s) holds on every platform and proves the deadline — not the OS
+// connect-retry — is what bounds the wait.
+// =============================================================================
+TEST_F(ConnectorAsyncTest, ConnectDeadlineBoundsSlowRefusedConnect) {
+    const auto port = reserve_free_tcp_port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> done{false};
+    bool              socket_open = true;
+    int               callbacks   = 0;
+
+    const auto start = std::chrono::steady_clock::now();
+    async::tcp::connect<qb::io::tcp::socket>(
+        uri{"tcp://127.0.0.1:" + std::to_string(port)},
+        [&](qb::io::tcp::socket &&sock) {
+            ++callbacks;
+            socket_open = sock.is_open();
+            done        = true;
+        },
+        300ms); // short deadline — must win against the OS's ~2s refused-latency
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); }, 5s)) << "connect never completed";
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    EXPECT_EQ(callbacks, 1) << "exactly one completion callback";
+    EXPECT_FALSE(socket_open) << "a refused/deadlined connect must hand back a closed socket";
+    EXPECT_LT(elapsed, 1500ms)
+        << "the connect deadline must bound the wait below the OS connect-failure latency "
+           "(took " << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() << "ms)";
+}
+
+// =============================================================================
 // Fresh-socket connect: open + usable end-to-end
 // =============================================================================
 
@@ -223,7 +267,15 @@ TEST_F(ConnectorAsyncTest, ConnectToUnlistenedPortDeliversClosedSocket) {
         },
         2s);
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "failed-connect callback never delivered";
+    // The pump budget MUST exceed the connect deadline (2s). A refused connect is
+    // normally detected promptly via RST, but on Windows the wepoll readiness for a
+    // failed connect can occasionally be delayed, so the connector falls back to its
+    // own 2s deadline to deliver the closed socket. With an equal 2s pump budget this
+    // was a photo finish — pump_until could time out at ~2002ms in the same tick the
+    // deadline callback fires (intermittent failure). Giving the pump headroom makes
+    // the test observe the (guaranteed) delivery deterministically; the asserted
+    // contract (one callback, closed socket) is unchanged.
+    EXPECT_TRUE(pump_until([&] { return done.load(); }, 5s)) << "failed-connect callback never delivered";
     EXPECT_EQ(callbacks, 1) << "connector must deliver its completion callback exactly once";
     EXPECT_FALSE(callback_socket_open) << "a refused connect must hand back a closed socket";
 }

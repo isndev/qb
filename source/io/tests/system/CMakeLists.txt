@@ -51,10 +51,10 @@ qb_add_test(MODULE qb-io TIER system NAME stream-async-sources   SOURCES corouti
 qb_add_test(MODULE qb-io TIER system NAME tcp-connector-loopback SOURCES coroutine/tcp-connector-loopback.cpp DEPENDS ${PROJECT_NAME} REQUIRES network LABELS coroutine)
 
 # --- tcp (loopback socket surface / connector state machine / async connector / TLS loopback) ---
-qb_add_test(MODULE qb-io TIER system NAME tcp-socket-loopback        SOURCES tcp/tcp-socket-loopback.cpp        DEPENDS ${PROJECT_NAME} REQUIRES network WINDOWS_EXCLUDE)
+qb_add_test(MODULE qb-io TIER system NAME tcp-socket-loopback        SOURCES tcp/tcp-socket-loopback.cpp        DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME tcp-connector-state-machine SOURCES tcp/tcp-connector-state-machine.cpp DEPENDS ${PROJECT_NAME} REQUIRES network LABELS coroutine)
 qb_add_test(MODULE qb-io TIER system NAME connector-async            SOURCES tcp/connector-async.cpp            DEPENDS ${PROJECT_NAME} REQUIRES network)
-qb_add_test(MODULE qb-io TIER system NAME ssl-socket-loopback        SOURCES tcp/ssl-socket-loopback.cpp        DEPENDS ${PROJECT_NAME} REQUIRES ssl network WINDOWS_EXCLUDE)
+qb_add_test(MODULE qb-io TIER system NAME ssl-socket-loopback        SOURCES tcp/ssl-socket-loopback.cpp        DEPENDS ${PROJECT_NAME} REQUIRES ssl network WINDOWS_EXCLUDE) # POSIX-only harness: both sides BUSY-POLL the non-blocking TLS handshake; on Windows the client completes + disconnect()s before the server's poll-loop observes completion → server recv hits WSAECONNRESET/ABORTED. Production async-event-loop SSL works on Windows (qbm-http). See follow-up.
 
 # --- udp (socket options / transport datagram / datagram loopback) ---
 qb_add_test(MODULE qb-io TIER system NAME socket-options    SOURCES udp/socket-options.cpp    DEPENDS ${PROJECT_NAME} REQUIRES network)
