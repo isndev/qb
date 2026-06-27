@@ -386,11 +386,16 @@ parse_time_of_day(std::string_view tod) noexcept {
 /// (e.g. +7200 -> "+02:00", -18000 -> "-05:00").
 [[nodiscard]] inline std::string
 format_utc_offset(std::int32_t seconds_east) {
-    const int  abs_secs = seconds_east < 0 ? -seconds_east : seconds_east;
-    const char sign     = seconds_east < 0 ? '-' : '+';
+    const int abs_secs = seconds_east < 0 ? -seconds_east : seconds_east;
+    const int hh       = abs_secs / 3600;
+    const int mm       = (abs_secs % 3600) / 60;
+    // Sign tracks the printed magnitude, not the raw value: a western offset smaller than
+    // one minute rounds to 00:00, and "-00:00" is NOT a canonical UTC offset — in ISO 8601
+    // / RFC 3339 it specifically means "offset unknown", semantically distinct from +00:00.
+    const char sign = (seconds_east < 0 && (hh != 0 || mm != 0)) ? '-' : '+';
     // Sized for any int32 offset: sign + up to 6-digit hours + ':' + 2-digit min + NUL.
     char buf[16];
-    std::snprintf(buf, sizeof(buf), "%c%02d:%02d", sign, abs_secs / 3600, (abs_secs % 3600) / 60);
+    std::snprintf(buf, sizeof(buf), "%c%02d:%02d", sign, hh, mm);
     return std::string(buf);
 }
 
