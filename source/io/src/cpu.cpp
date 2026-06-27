@@ -1,5 +1,6 @@
 
 #include <qb/system/cpu.h>
+#include <qb/system/parse.h>
 
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
@@ -231,7 +232,8 @@ CPU::ClockSpeed() {
     while (std::getline(stream, line)) {
         std::smatch matches;
         if (std::regex_match(line, matches, pattern)) {
-            return static_cast<std::int64_t>(std::atof(matches[2].str().c_str()) * 1000000.0);
+            const std::string mhz = matches[2].str();
+            return static_cast<std::int64_t>(qb::to_number_prefix<double>(mhz).value_or(0.0) * 1000000.0);
         }
     }
 
