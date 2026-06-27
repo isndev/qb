@@ -62,12 +62,8 @@ namespace {
  */
 std::vector<unsigned char>
 hex_to_bytes(const std::string &hex) {
-    std::vector<unsigned char> bytes;
-    bytes.reserve(hex.size() / 2);
-    for (std::size_t i = 0; i + 1 < hex.size(); i += 2) {
-        bytes.push_back(static_cast<unsigned char>(std::stoi(hex.substr(i, 2), nullptr, 16)));
-    }
-    return bytes;
+    const std::string raw = qb::crypto::hex_to_string(hex);
+    return std::vector<unsigned char>(raw.begin(), raw.end());
 }
 
 /**

@@ -53,6 +53,7 @@
 #include <gtest/gtest.h>
 #include <qb/io/crypto.h>
 #include <qb/io/crypto_jwt.h>
+#include <qb/system/parse.h>
 
 using namespace qb;
 
@@ -562,7 +563,7 @@ TEST(CryptoJWT, CreateTokenStampsNotBeforeWhenPositive) {
     // nbf is present and ~1h ahead of the stamp instant.
     const auto nbf_pos = decoded.payload.find("\"nbf\":\"");
     ASSERT_NE(nbf_pos, std::string::npos);
-    const int64_t nbf = std::stoll(decoded.payload.substr(nbf_pos + 7));
+    const int64_t nbf = qb::to_number_prefix<int64_t>(std::string_view{decoded.payload}.substr(nbf_pos + 7)).value();
     EXPECT_GE(nbf, before + 3600);
     EXPECT_LE(nbf, before + 3600 + 5);
 

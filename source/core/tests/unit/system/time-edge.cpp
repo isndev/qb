@@ -518,7 +518,7 @@ TEST(DateEdge, ArithmeticAcrossLeapDayAndYearBoundary) {
 
 TEST(DateEdge, ParseMalformedAndDefaultCtor) {
     EXPECT_FALSE(qb::date::parse("").has_value());
-    EXPECT_FALSE(qb::date::parse("2024/03/15").has_value()); // wrong separator: sscanf reads only year
+    EXPECT_FALSE(qb::date::parse("2024/03/15").has_value()); // wrong separator: parser reads year then stops
     EXPECT_FALSE(qb::date::parse("hello").has_value());
     // Default-constructed date is the epoch (sys_days{}).
     EXPECT_EQ(qb::date{}.days_since_epoch(), 0);

@@ -67,6 +67,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <qb/system/parse.h> // qb::to_number_prefix (locale-free, non-throwing int scan)
 
 #if defined(__APPLE__)
 #include <mach/mach_time.h>
@@ -207,6 +208,34 @@ civil_from_days(std::int64_t z) noexcept {
     return civil_date{y + (m <= 2), m, d};
 }
 
+/// std::sscanf("%d")-style field scan: parse a signed decimal integer prefix at
+/// @p sv[@p pos] (skipping leading whitespace, accepting a leading sign, like %d)
+/// and advance @p pos past it. Returns false with @p pos unchanged when no integer
+/// is present. Locale-independent and non-throwing (unlike sscanf, also overflow-safe).
+[[nodiscard]] inline bool
+scan_int_field(std::string_view sv, std::size_t &pos, int &out) noexcept {
+    if (pos >= sv.size())
+        return false;
+    std::size_t used = 0;
+    const auto  v    = qb::to_number_prefix<int>(sv.substr(pos), &used);
+    if (!v)
+        return false;
+    out = *v;
+    pos += used;
+    return true;
+}
+
+/// Match a single literal character at @p sv[@p pos] (a literal in an sscanf format
+/// string — NO whitespace skipping) and advance @p pos. False, @p pos unchanged, on
+/// mismatch or end of input.
+[[nodiscard]] inline bool
+scan_literal(std::string_view sv, std::size_t &pos, char c) noexcept {
+    if (pos >= sv.size() || sv[pos] != c)
+        return false;
+    ++pos;
+    return true;
+}
+
 } // namespace detail
 
 /// Thread-safe, portable UTC breakdown of a `time_t` (replacement for gmtime_r /
@@ -345,9 +374,14 @@ format_date(std::int64_t days_since_epoch) {
 /// Returns std::nullopt if the three integer fields cannot be read.
 [[nodiscard]] inline std::optional<std::int64_t>
 parse_date(std::string_view date) noexcept {
-    int               y = 0, m = 0, d = 0;
-    const std::string s(date);
-    if (std::sscanf(s.c_str(), "%d-%d-%d", &y, &m, &d) != 3)
+    // Faithful replacement for sscanf("%d-%d-%d") != 3: all three integer fields and
+    // both literal '-' separators must be present (a wrong separator stops the scan
+    // and fails); trailing characters after the day are ignored, as with sscanf.
+    std::size_t pos = 0;
+    int         y = 0, m = 0, d = 0;
+    if (!detail::scan_int_field(date, pos, y) || !detail::scan_literal(date, pos, '-') ||
+        !detail::scan_int_field(date, pos, m) || !detail::scan_literal(date, pos, '-') ||
+        !detail::scan_int_field(date, pos, d))
         return std::nullopt;
     return detail::days_from_civil(y, static_cast<unsigned>(m), static_cast<unsigned>(d));
 }
@@ -375,10 +409,17 @@ format_time_of_day(std::int64_t micros_since_midnight) {
 /// fraction round-trips with format_time_of_day).
 [[nodiscard]] inline std::optional<std::int64_t>
 parse_time_of_day(std::string_view tod) noexcept {
-    int               hour = 0, minute = 0, second = 0, micros = 0;
-    const std::string s(tod);
-    if (std::sscanf(s.c_str(), "%d:%d:%d.%d", &hour, &minute, &second, &micros) < 3)
+    // Faithful replacement for sscanf("%d:%d:%d.%d") < 3: HH:MM:SS are required
+    // (a missing field or wrong separator fails); the ".ffffff" fraction is optional
+    // and taken verbatim as microseconds. Trailing characters are ignored.
+    std::size_t pos    = 0;
+    int         hour = 0, minute = 0, second = 0, micros = 0;
+    if (!detail::scan_int_field(tod, pos, hour) || !detail::scan_literal(tod, pos, ':') ||
+        !detail::scan_int_field(tod, pos, minute) || !detail::scan_literal(tod, pos, ':') ||
+        !detail::scan_int_field(tod, pos, second))
         return std::nullopt;
+    if (detail::scan_literal(tod, pos, '.'))
+        (void) detail::scan_int_field(tod, pos, micros); // optional fraction; absent -> 0
     return ((static_cast<std::int64_t>(hour) * 3600) + (static_cast<std::int64_t>(minute) * 60) + second) * 1000000LL + micros;
 }
 
@@ -409,11 +450,18 @@ parse_utc_offset(std::string_view off) noexcept {
         return 0;
     if (off.empty() || (off[0] != '+' && off[0] != '-'))
         return std::nullopt;
-    const int         sign = (off[0] == '-') ? -1 : 1;
-    int               hour = 0, minute = 0, second = 0;
-    const std::string s(off.substr(1));
-    if (std::sscanf(s.c_str(), "%d:%d:%d", &hour, &minute, &second) < 1)
+    const int              sign = (off[0] == '-') ? -1 : 1;
+    const std::string_view s    = off.substr(1);
+    // Faithful replacement for sscanf("%d:%d:%d") < 1: the hour is required; minute
+    // and second are optional and the scan stops at the first absent field (so "07"
+    // and "07:30" are valid, "07::15" yields just the hour like sscanf).
+    std::size_t pos    = 0;
+    int         hour = 0, minute = 0, second = 0;
+    if (!detail::scan_int_field(s, pos, hour))
         return std::nullopt;
+    if (detail::scan_literal(s, pos, ':') && detail::scan_int_field(s, pos, minute) &&
+        detail::scan_literal(s, pos, ':'))
+        (void) detail::scan_int_field(s, pos, second);
     return sign * (hour * 3600 + minute * 60 + second);
 }
 
