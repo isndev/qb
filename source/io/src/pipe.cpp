@@ -74,13 +74,17 @@ pipe<char>::put<pipe<char>>(pipe<char> const &rhs) {
 
 pipe<char> &
 pipe<char>::put(char const *data, std::size_t size) noexcept {
-    memcpy(allocate_back(size), data, size);
+    // Guard size==0: a 0-length memcpy with a null `data` is UB (memcpy's source is
+    // declared nonnull) — matches the put<string_view>/put<pipe> overloads above.
+    if (size)
+        memcpy(allocate_back(size), data, size);
     return *this;
 }
 
 pipe<char> &
 pipe<char>::write(const char *data, std::size_t size) noexcept {
-    memcpy(allocate_back(size), data, size);
+    if (size)
+        memcpy(allocate_back(size), data, size);
     return *this;
 }
 
