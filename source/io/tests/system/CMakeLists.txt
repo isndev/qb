@@ -58,6 +58,8 @@ qb_add_test(MODULE qb-io TIER system NAME secure-transport-loopback  SOURCES tcp
 qb_add_test(MODULE qb-io TIER system NAME tcp-connector-state-machine SOURCES tcp/tcp-connector-state-machine.cpp DEPENDS ${PROJECT_NAME} REQUIRES network LABELS coroutine)
 qb_add_test(MODULE qb-io TIER system NAME connector-async            SOURCES tcp/connector-async.cpp            DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME ssl-socket-loopback        SOURCES tcp/ssl-socket-loopback.cpp        DEPENDS ${PROJECT_NAME} REQUIRES ssl network WINDOWS_EXCLUDE) # POSIX-only harness: both sides BUSY-POLL the non-blocking TLS handshake; on Windows the client completes + disconnect()s before the server's poll-loop observes completion → server recv hits WSAECONNRESET/ABORTED. Production async-event-loop SSL works on Windows (qbm-http). See follow-up.
+qb_add_test(MODULE qb-io TIER system NAME accept-transient-errors        SOURCES tcp/accept-transient-errors.cpp        DEPENDS ${PROJECT_NAME} REQUIRES network WINDOWS_EXCLUDE) # POSIX-only: setrlimit(RLIMIT_NOFILE)/dup to force EMFILE remap
+qb_add_test(MODULE qb-io TIER system NAME io-handler-broadcast-reentrancy SOURCES tcp/io-handler-broadcast-reentrancy.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 
 # --- udp (socket options / transport datagram / datagram loopback) ---
 qb_add_test(MODULE qb-io TIER system NAME socket-options    SOURCES udp/socket-options.cpp    DEPENDS ${PROJECT_NAME} REQUIRES network)
