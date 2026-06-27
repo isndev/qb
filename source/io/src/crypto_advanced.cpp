@@ -30,6 +30,7 @@
 #include <iomanip>
 #include <qb/io/crypto.h>
 #include <qb/json.h>
+#include <qb/system/parse.h>
 #include <random>
 #include <sstream>
 
@@ -496,7 +497,16 @@ crypto::verify_password(const std::string &password, const std::string &hash) {
     std::string iter_str = hash.substr(iter_start, iter_end - iter_start);
     if (iter_str.substr(0, 2) != "i=")
         return false;
-    int iterations = std::stoi(iter_str.substr(2));
+    // The iteration field is the whole numeric token between "i=" and the next
+    // '$' delimiter; the surrounding '$' is already stripped. Parse it strictly
+    // and treat a non-numeric / out-of-range count as an invalid hash, matching
+    // every other malformed-hash path in this function (return false). The old
+    // std::stoi threw std::invalid_argument / std::out_of_range straight out of
+    // this bool-returning verifier on a hostile hash string.
+    auto iterations_opt = qb::to_number<int>(iter_str.substr(2));
+    if (!iterations_opt)
+        return false;
+    int iterations = *iterations_opt;
 
     // Extract salt and stored hash
     std::string salt_base64        = hash.substr(salt_start, salt_end - salt_start);
