@@ -71,4 +71,5 @@ generate_random_uuid() {
 #include <qb/io/async/coroutine/scheduler.h>
 namespace qb::io::async {
 thread_local CoroutineScheduler *CoroutineScheduler::current_ = nullptr;
+thread_local std::unique_ptr<CoroutineScheduler> CoroutineScheduler::owned_current_;
 } // namespace qb::io::async

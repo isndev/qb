@@ -494,9 +494,17 @@ crypto::generate_x25519_keypair_bytes() {
 // Implementation of X25519 key exchange with PEM keys
 std::vector<unsigned char>
 crypto::x25519_key_exchange(const std::string &private_key_pem, const std::string &peer_public_key_pem) {
-    // Parse the keys
+    // Parse the keys. priv_key is allocated first; if parsing the peer key throws
+    // (e.g. an incompatible / malformed PEM), free priv_key before propagating so it
+    // does not leak.
     EVP_PKEY *priv_key = pem_to_key(private_key_pem, true);
-    EVP_PKEY *pub_key  = pem_to_key(peer_public_key_pem, false);
+    EVP_PKEY *pub_key  = nullptr;
+    try {
+        pub_key = pem_to_key(peer_public_key_pem, false);
+    } catch (...) {
+        EVP_PKEY_free(priv_key);
+        throw;
+    }
 
     // Create key exchange context
     EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(priv_key, NULL);
