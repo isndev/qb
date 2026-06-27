@@ -27,6 +27,7 @@
 #include <cassert>
 #include <coroutine>
 #include <deque>
+#include <memory>
 #include <unordered_set>
 #include <vector>
 #include <ev/ev++.h>
@@ -561,13 +562,16 @@ public:
      * @return Reference to the thread-local scheduler
      *
      * Creates the scheduler on first access if it doesn't exist. Used as fallback
-     * when no listener has set one. NOTE: Fallback uses new and is never deleted
-     * (leak until thread exit). Prefer listener::coro_scheduler() so the listener owns it.
+     * when no listener has set one. The fallback is owned by a thread_local
+     * unique_ptr (`owned_current_`) so it is reclaimed at thread exit instead of
+     * leaking; when a listener is present it owns its scheduler via set_current()
+     * and this fallback stays empty. Prefer listener::coro_scheduler().
      */
     static CoroutineScheduler &
     current() {
         if (!current_) {
-            current_ = new CoroutineScheduler();
+            owned_current_ = std::make_unique<CoroutineScheduler>();
+            current_       = owned_current_.get();
         }
         return *current_;
     }
@@ -777,6 +781,12 @@ private:
 
     // Thread-local current scheduler (defined in qb-io, e.g. io.cpp — one TU only)
     static thread_local CoroutineScheduler *current_;
+
+    // Owns the fallback scheduler lazily created by current() on a thread that has
+    // no listener, so it is freed at thread exit rather than leaked. A listener owns
+    // its own scheduler (set via set_current()), so this stays empty in that case.
+    // Defined in the same single TU as current_ (io.cpp).
+    static thread_local std::unique_ptr<CoroutineScheduler> owned_current_;
 };
 
 // Global function for awaiters to get current scheduler

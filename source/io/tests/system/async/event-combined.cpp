@@ -183,8 +183,10 @@ TEST(KernelEventsCombined, FileEvent) {
     // Cleanup
     EXPECT_EQ(system("rm -f test-file.txt"), 0);
 
-    // Make sure to stop all events
+    // Make sure to stop all events, then release the registration (raw registerEvent
+    // must be paired with unregisterEvent — the owner contract, cf. async::io::~base).
     event.stop();
+    handler.unregisterEvent(event._interface);
 }
 #endif
 
@@ -233,9 +235,11 @@ TEST(KernelEventsCombined, BasicTimerAndSignal) {
     EXPECT_GE(actor.timer_events, 2) << "Should have received multiple timer events";
     EXPECT_GE(actor.signal_events, 1) << "Should have received at least one signal";
 
-    // Stop all events to clean up properly
+    // Stop all events to clean up properly, then release both registrations.
     sig_event.stop();
     timer_event.stop();
+    handler.unregisterEvent(sig_event._interface);
+    handler.unregisterEvent(timer_event._interface);
 }
 
 // Simple Timer-only test to avoid assertion failures
@@ -273,8 +277,9 @@ TEST(KernelEventsCombined, TimerOnly) {
 
     std::cout << "TimerOnly test complete: " << actor.timer_events << " timer events" << std::endl;
 
-    // Stop the event to clean up
+    // Stop the event to clean up, then release the registration.
     event.stop();
+    handler.unregisterEvent(event._interface);
 }
 
 // Test IO events — POSIX only (matches KernelEvents::BasicIO in test-event.cpp).
@@ -329,6 +334,8 @@ TEST(KernelEventsCombined, IOEvents) {
         std::cerr << "Warning: Cleanup command failed with return code " << cleanup_ret << std::endl;
     }
 
-    // Already stopped by the handler
+    // Stop and release the registration before the listener goes out of scope.
+    event.stop();
+    handler.unregisterEvent(event._interface);
 }
 #endif // !_WIN32
