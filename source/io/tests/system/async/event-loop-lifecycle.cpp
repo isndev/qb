@@ -194,9 +194,17 @@ TEST_F(EventLoopLifecycleTest, RunOnceDispatchesAnArmedTimer) {
     std::atomic<bool> fired{false};
     async::callback([&fired]() { fired.store(true); }, 1ms);
 
-    // run_once() waits for at least one event block; the one-shot timer is the
-    // only armed watcher, so it must fire and be reported as invoked.
-    const std::size_t invoked = async::run_once();
+    // run_once() (EVRUN_ONCE) blocks for one event block and the one-shot timer is
+    // the only armed watcher, so a single call normally dispatches it. But
+    // EVRUN_ONCE can return on a spurious backend wakeup before the system-timer-
+    // quantised 1ms timer actually expires — far more likely under heavy CPU load
+    // (e.g. a full parallel test sweep). Pump until the timer is genuinely
+    // dispatched so the test asserts the real contract ("an armed timer IS
+    // dispatched and counted") instead of racing OS timer granularity. The bound
+    // keeps a true never-dispatch failure loud (fired stays false → the assert fires).
+    std::size_t invoked = 0;
+    for (int i = 0; i < 1000 && !fired.load(); ++i)
+        invoked += async::run_once();
     EXPECT_TRUE(fired.load()) << "run_once() did not dispatch the armed timer";
     EXPECT_GE(invoked, 1u) << "run_once() reported zero invoked events";
 }
@@ -454,6 +462,24 @@ TEST_F(EventLoopLifecycleTest, TimeoutOnSwallowsThrowingCallback) {
 
 namespace {
 
+// Portable setenv/unsetenv — the POSIX names are not declared by MSVC's <stdlib.h>.
+inline void
+set_env(const char *name, const char *value) {
+#if defined(_WIN32)
+    ::_putenv_s(name, value);
+#else
+    ::setenv(name, value, 1);
+#endif
+}
+inline void
+unset_env(const char *name) {
+#if defined(_WIN32)
+    ::_putenv_s(name, "");
+#else
+    ::unsetenv(name);
+#endif
+}
+
 // Save/restore QB_EV_BACKEND around a construction so we never perturb sibling
 // tests or parallel ctest workers (the var is read once per listener ctor).
 struct ScopedEnv {
@@ -468,26 +494,33 @@ struct ScopedEnv {
         if (had_old)
             old_value = cur;
         if (value)
-            ::setenv(n, value, 1);
+            set_env(n, value);
         else
-            ::unsetenv(n);
+            unset_env(n);
     }
     ~ScopedEnv() {
         if (had_old)
-            ::setenv(name.c_str(), old_value.c_str(), 1);
+            set_env(name.c_str(), old_value.c_str());
         else
-            ::unsetenv(name.c_str());
+            unset_env(name.c_str());
     }
 };
 
 } // namespace
 
-// A known, built-in, runtime-available backend ("select" is always present in
-// libev) must drive _resolve_backend_flags through: table match -> not AUTO ->
-// supported -> probe loop_new succeeds -> return the requested flag. We build a
-// throwaway listener on a fresh thread (so listener::current is untouched) and
-// assert it actually selected the pinned backend.
+// A known, built-in, runtime-available backend must drive _resolve_backend_flags
+// through: table match -> not AUTO -> supported -> probe loop_new succeeds -> return
+// the requested flag. "select" is built into libev on POSIX, but the qb ev fork
+// compiles it OUT on Windows (no <sys/select.h> → EV_USE_SELECT 0), where wepoll/epoll
+// drives the loop. The contract is the same on both: a KNOWN+SUPPORTED backend is
+// honoured; a KNOWN-but-unavailable one degrades to a valid auto backend (never
+// "unknown", never a throw). Assert against what the platform actually supports
+// (ev_supported_backends) so this verifies the contract rather than assuming select
+// is universal. We build a throwaway listener on a fresh thread (so listener::current
+// is untouched) and assert the resolved backend.
 TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsHonoursKnownSupportedBackend) {
+    const bool select_supported = (ev_supported_backends() & EVBACKEND_SELECT) != 0;
+
     std::atomic<unsigned int> chosen{0};
     std::thread t([&chosen] {
         ScopedEnv env("QB_EV_BACKEND", "select");
@@ -496,8 +529,15 @@ TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsHonoursKnownSupportedBackend) 
     });
     t.join();
 
-    EXPECT_EQ(chosen.load(), static_cast<unsigned int>(EVBACKEND_SELECT))
-        << "QB_EV_BACKEND=select must pin the libev select backend";
+    if (select_supported) {
+        EXPECT_EQ(chosen.load(), static_cast<unsigned int>(EVBACKEND_SELECT))
+            << "QB_EV_BACKEND=select must pin the libev select backend where it is built in";
+    } else {
+        // select compiled out (Windows): the contract degrades to a valid auto backend.
+        EXPECT_NE(chosen.load(), 0u);
+        EXPECT_STRNE(async::listener::backend_name(chosen.load()), "unknown")
+            << "QB_EV_BACKEND=select with select unavailable must resolve to a valid auto backend";
+    }
 }
 
 // An unrecognised name must degrade to EVFLAG_AUTO (the `!known` arm) without

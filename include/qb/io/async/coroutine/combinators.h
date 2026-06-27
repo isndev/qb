@@ -664,13 +664,21 @@ class timeout_awaiter {
 
     // Stop the timeout watcher (idempotent). Called from await_resume (task or timeout
     // resolved the wait → stop now, not at the end of the timeout window) and from the
-    // destructor (awaiter unwound mid-race). The ev_is_active guard covers the one-shot
-    // already-fired case; the _state guard covers a moved-from awaiter.
+    // destructor (awaiter unwound mid-race). The `_state` guard covers a moved-from awaiter.
+    //
+    // Do NOT gate the stop on `ev_is_active`: the timeout is a one-shot ev_timer
+    // (repeat==0), so libev auto-stops it the instant it expires — BEFORE invoking
+    // on_timeout — leaving it inactive but still queued in `pendings[]` with
+    // `timer.data` → `_state`. If the awaiter unwinds in that window, an
+    // ev_is_active-gated stop would skip `clear_pending`, leaving a stale pending
+    // entry; ev_invoke_pending() would then call on_timeout() on a possibly-freed
+    // state. `ev_timer_stop` always calls clear_pending() first (then no-ops if
+    // already inactive), so gating only on `timer_started` is both safe and correct.
+    // See qb/io/async/coroutine/awaiter.h (timer_awaiter dtor) for the full rationale.
     void
     finish() noexcept {
         if (_state && _state->timer_started) {
-            if (ev_is_active(&_state->timer))
-                ev_timer_stop(static_cast<struct ev_loop *>(listener::current.loop()), &_state->timer);
+            ev_timer_stop(static_cast<struct ev_loop *>(listener::current.loop()), &_state->timer);
             _state->timer_started = false;
         }
     }
@@ -806,9 +814,12 @@ class timeout_awaiter<void> {
 
     void
     finish() noexcept {
+        // Gate on `timer_started` only, never on `ev_is_active`: a one-shot timer
+        // that already expired is inactive but still pending; `ev_timer_stop`
+        // clears that pending entry first. See the timeout_awaiter<T> finish() and
+        // qb/io/async/coroutine/awaiter.h (timer_awaiter dtor) for the full rationale.
         if (_state && _state->timer_started) {
-            if (ev_is_active(&_state->timer))
-                ev_timer_stop(static_cast<struct ev_loop *>(listener::current.loop()), &_state->timer);
+            ev_timer_stop(static_cast<struct ev_loop *>(listener::current.loop()), &_state->timer);
             _state->timer_started = false;
         }
     }
