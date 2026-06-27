@@ -52,6 +52,9 @@ qb_add_test(MODULE qb-io TIER system NAME tcp-connector-loopback SOURCES corouti
 
 # --- tcp (loopback socket surface / connector state machine / async connector / TLS loopback) ---
 qb_add_test(MODULE qb-io TIER system NAME tcp-socket-loopback        SOURCES tcp/tcp-socket-loopback.cpp        DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME socket-error-paths         SOURCES tcp/socket-error-paths.cpp         DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME transport-accept-loopback  SOURCES tcp/transport-accept-loopback.cpp  DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME secure-transport-loopback  SOURCES tcp/secure-transport-loopback.cpp  DEPENDS ${PROJECT_NAME} REQUIRES ssl network WINDOWS_EXCLUDE) # POSIX-only TLS busy-poll handshake harness, mirrors ssl-socket-loopback
 qb_add_test(MODULE qb-io TIER system NAME tcp-connector-state-machine SOURCES tcp/tcp-connector-state-machine.cpp DEPENDS ${PROJECT_NAME} REQUIRES network LABELS coroutine)
 qb_add_test(MODULE qb-io TIER system NAME connector-async            SOURCES tcp/connector-async.cpp            DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME ssl-socket-loopback        SOURCES tcp/ssl-socket-loopback.cpp        DEPENDS ${PROJECT_NAME} REQUIRES ssl network WINDOWS_EXCLUDE) # POSIX-only harness: both sides BUSY-POLL the non-blocking TLS handshake; on Windows the client completes + disconnect()s before the server's poll-loop observes completion → server recv hits WSAECONNRESET/ABORTED. Production async-event-loop SSL works on Windows (qbm-http). See follow-up.
@@ -108,6 +111,7 @@ if (QB_HAS_SSL)
                 COMMAND ${CMAKE_COMMAND} -E copy ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT} ${TEST_CERT_DIR}/
                 COMMENT "Copying SSL certificates to test binary directory")
         foreach (_ssl_dep qb-io-test-system-ssl-socket-loopback
+                qb-io-test-system-secure-transport-loopback
                 qb-io-test-system-tls-text-roundtrip
                 qb-io-test-system-tls-peer-verification
                 qb-io-test-system-tls-starttls-upgrade

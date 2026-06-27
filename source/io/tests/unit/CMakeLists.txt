@@ -47,6 +47,7 @@ qb_add_test(MODULE qb-io TIER unit NAME stream-limits    SOURCES stream/stream-l
 
 # --- file (sys::file / pipe transfer / self-locate) ---
 qb_add_test(MODULE qb-io TIER unit NAME file-sys           SOURCES file/file-sys.cpp           DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME file-error-paths   SOURCES file/file-error-paths.cpp   DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME file-pipe-transfer SOURCES file/file-pipe-transfer.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME self-locate        SOURCES file/self-locate.cpp        DEPENDS ${PROJECT_NAME})
 
@@ -55,6 +56,7 @@ qb_add_test(MODULE qb-io TIER unit NAME crypto-primitives SOURCES crypto/crypto-
 qb_add_test(MODULE qb-io TIER unit NAME kdf-and-tokens    SOURCES crypto/kdf-and-tokens.cpp    DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME asymmetric-keys   SOURCES crypto/asymmetric-keys.cpp   DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME crypto-jwt        SOURCES crypto/crypto-jwt.cpp        DEPENDS ${PROJECT_NAME} REQUIRES ssl)
+qb_add_test(MODULE qb-io TIER unit NAME crypto-reachable-edges SOURCES crypto/crypto-reachable-edges.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 
 # --- compression (zlib gzip/deflate, link-gated on QB_HAS_COMPRESSION) ---
 qb_add_test(MODULE qb-io TIER unit NAME compression-codec SOURCES compression/compression-codec.cpp DEPENDS ${PROJECT_NAME} REQUIRES compression)
