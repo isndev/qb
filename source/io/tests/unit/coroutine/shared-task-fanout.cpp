@@ -364,6 +364,72 @@ TEST_F(SharedTaskFanout, VoidExceptionPropagated) {
     EXPECT_TRUE(caught.load());
 }
 
+TEST_F(SharedTaskFanout, VoidValidAndReadyStateTransitions) {
+    // Mirror ValidAndReadyStateTransitions for the void specialisation: a default-constructed
+    // shared_task<void> is invalid/not-ready; a live one and its copies share the same readiness,
+    // which flips to ready once the underlying void task completes. Drives the void valid()/is_ready().
+    std::atomic<bool> flag{false};
+    shared_task<void> empty;
+    EXPECT_FALSE(empty.valid());
+    EXPECT_FALSE(empty.is_ready());
+
+    auto sh   = make_shared_task(wait_and_signal(flag, 5ms));
+    auto copy = sh;
+    EXPECT_TRUE(sh.valid());
+    EXPECT_TRUE(copy.valid());
+    EXPECT_FALSE(sh.is_ready());
+
+    std::atomic<bool> done{false};
+    coro_scheduler().spawn([sh, &done]() mutable -> task<void> {
+        co_await sh;
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "void valid/ready consumer never resumed";
+    EXPECT_TRUE(sh.is_ready());
+    EXPECT_TRUE(copy.is_ready()) << "the copy shares the same readiness state";
+}
+
+TEST_F(SharedTaskFanout, CoAwaitDefaultConstructedThrowsLogicError) {
+    // A default-constructed (null-state) shared_task<T> co_await'ed must fail loudly: await_suspend
+    // throws std::logic_error rather than dereferencing the null shared state. Drives the
+    // null-state guard in shared_task<T>::awaiter::await_suspend.
+    std::atomic<bool> threw{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        shared_task<int> empty; // null state
+        try {
+            co_await empty;
+        } catch (const std::logic_error &) {
+            threw.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "default-ctor co_await coordinator never finished";
+    EXPECT_TRUE(threw.load()) << "co_await on a default-constructed shared_task<T> must throw std::logic_error";
+}
+
+TEST_F(SharedTaskFanout, VoidCoAwaitDefaultConstructedThrowsLogicError) {
+    // Same null-state guard for the void specialisation.
+    std::atomic<bool> threw{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        shared_task<void> empty; // null state
+        try {
+            co_await empty;
+        } catch (const std::logic_error &) {
+            threw.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "void default-ctor co_await coordinator never finished";
+    EXPECT_TRUE(threw.load()) << "co_await on a default-constructed shared_task<void> must throw std::logic_error";
+}
+
 // =============================================================================
 // scope-based fan-out
 // =============================================================================
@@ -423,5 +489,26 @@ TEST_F(SharedTaskFanout, AwaiterReclaimedWhileParked) {
         auto r = co_await when_any(park(shared), reclaim_fast_winner());
         EXPECT_EQ(r.index, 1u);
         co_await shared; // the shared computation finishes (flush) — must NOT resume the reclaimed parker
+    });
+}
+
+TEST_F(SharedTaskFanout, VoidAwaiterReclaimedWhileParked) {
+    // Void specialisation of AwaiterReclaimedWhileParked: a void awaiter parked on an in-flight
+    // shared computation, reclaimed as a when_any loser, must retract from the shared state's waiter
+    // list in its dtor so the later flush() does not resume the freed frame. Drives the void
+    // awaiter's retract loop.
+    run_reclaim_driver([]() -> task<void> {
+        auto shared = make_shared_task([]() -> task<void> { co_await sleep(40ms); }());
+        auto park   = [](shared_task<void> st) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await st;
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto r = co_await when_any(park(shared), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await shared; // flush must NOT resume the reclaimed void parker
     });
 }

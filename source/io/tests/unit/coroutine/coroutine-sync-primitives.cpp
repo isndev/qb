@@ -1179,6 +1179,63 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreReclaimedWhileParked) {
     });
 }
 
+// cancel-aware acquire(token) variant of SemaphoreReclaimedWhileParked: a cancel_acquire_awaiter
+// parked (token never cancelled) and reclaimed as a when_any loser must retract its node in the
+// dtor so a later release() does not write `granted` through the freed node. Drives the
+// cancel_acquire_awaiter dtor's still-parked (remove_waiter) branch — the plain acquire variant
+// above exercises acquire_awaiter; this one exercises the token-aware awaiter.
+TEST_F(CoroutineSyncPrimitives, SemaphoreCancelAcquireReclaimedWhileParkedRetracts) {
+    run_reclaim_driver([]() -> task<void> {
+        auto s = std::make_shared<semaphore>(1);
+        co_await s->acquire(); // drain the only permit so the parker must suspend
+        auto park = [](std::shared_ptr<semaphore> ss) -> task<int> {
+            cancellation_token tok; // never cancelled — only the reclaim retract path is exercised
+            volatile char      big[8192];
+            big[0] = 7;
+            co_await ss->acquire(tok); // cancel-aware acquire parks (no permit)
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto r = co_await when_any(park(s), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        s->release(); // must not write `granted` through the freed node (dtor retracted it)
+    });
+}
+
+// Granted-then-reclaimed cancel-aware acquirer: release() hands the parked acquire(token) waiter the
+// permit (node.granted=true) and the frame is then reclaimed before resume. The cancel_acquire_awaiter
+// dtor must return the granted-but-unconsumed permit via release() so capacity is not eroded. Drives
+// the dtor's granted branch (the acquire(token) counterpart of SemaphorePermitRestoredAfterGrantedWaiterReclaimed).
+TEST_F(CoroutineSyncPrimitives, SemaphoreCancelAcquireGrantedThenReclaimedReturnsPermit) {
+    bool permit_back = false;
+    run_reclaim_driver([&permit_back]() -> task<void> {
+        auto s = std::make_shared<semaphore>(1);
+        co_await s->acquire(); // drain to 0
+        auto inner = [](std::shared_ptr<semaphore> ss) -> task<int> {
+            cancellation_token tok;
+            volatile char      big[8192];
+            big[0] = 7;
+            co_await ss->acquire(tok); // granted by the winner's release(), then reclaimed before resume
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto outer  = [inner](std::shared_ptr<semaphore> ss) -> task<int> { co_return co_await inner(ss); };
+        auto winner = [](std::shared_ptr<semaphore> ss) -> task<int> {
+            co_await sleep(5ms);
+            ss->release(); // grants the parked cancel-acquirer (node.granted = true)
+            co_return 99;  // wins when_any → the granted acquirer is reclaimed before it resumes
+        };
+        auto r = co_await when_any(outer(s), winner(s));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        EXPECT_EQ(s->available_permits(), 1u) << "granted-then-reclaimed cancel-acquirer leaked the permit";
+        permit_back = s->try_acquire(); // a fresh acquirer must succeed (permit returned, not lost)
+    });
+    EXPECT_TRUE(permit_back) << "cancel-acquire permit lost after a granted-then-reclaimed acquirer (wake token lost)";
+}
+
 TEST_F(CoroutineSyncPrimitives, RwLockReadReclaimedWhileParked) {
     run_reclaim_driver([]() -> task<void> {
         async_rw_lock rw;

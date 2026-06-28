@@ -900,3 +900,120 @@ TEST_F(CoroutineCombinators, TimeoutReclaimedWhileParked) {
         co_await sleep(60ms); // the detached runner completes late — must NOT resume the freed frame
     });
 }
+
+// =============================================================================
+// Inner-exception propagation (the inner op FAILS before the deadline) +
+// when_any(vector) throwing winner + void-timeout reclamation
+// =============================================================================
+
+// coro_with_timeout<T> where the inner op THROWS before the timeout fires: the failure must
+// propagate as the inner exception, never be reclassified as timeout_error. Drives run_task's
+// catch (captures the exception) and await_resume's rethrow for the non-void specialisation —
+// distinct from TimeoutThrowsWhenOperationTooSlow, where the TIMER wins.
+TEST_F(CoroutineCombinators, TimeoutInnerThrowsBeforeDeadlinePropagates) {
+    std::atomic<bool> caught{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await coro_with_timeout(
+                []() -> task<int> {
+                    co_await sleep(10ms);
+                    throw std::runtime_error("inner boom");
+                    co_return 0;
+                }(),
+                500ms); // generous timeout → the inner failure wins the race, not the timer
+            ADD_FAILURE() << "expected the inner exception";
+        } catch (const timeout_error &) {
+            ADD_FAILURE() << "an inner failure before the deadline must NOT be reclassified as a timeout";
+        } catch (const std::runtime_error &e) {
+            EXPECT_STREQ(e.what(), "inner boom");
+            caught.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "timeout inner-throw coordinator never finished";
+    EXPECT_TRUE(caught.load()) << "coro_with_timeout must propagate the inner task's exception";
+}
+
+// Void specialisation of the above: coro_with_timeout<void> with an inner op that throws before
+// the deadline. Drives the void run_task catch + await_resume rethrow.
+TEST_F(CoroutineCombinators, TimeoutVoidInnerThrowsBeforeDeadlinePropagates) {
+    std::atomic<bool> caught{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await coro_with_timeout(
+                []() -> task<void> {
+                    co_await sleep(10ms);
+                    throw std::runtime_error("inner void boom");
+                }(),
+                500ms);
+            ADD_FAILURE() << "expected the inner exception";
+        } catch (const timeout_error &) {
+            ADD_FAILURE() << "an inner failure before the deadline must NOT be reclassified as a timeout";
+        } catch (const std::runtime_error &e) {
+            EXPECT_STREQ(e.what(), "inner void boom");
+            caught.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "timeout void inner-throw coordinator never finished";
+    EXPECT_TRUE(caught.load()) << "coro_with_timeout<void> must propagate the inner task's exception";
+}
+
+// when_any(vector) whose WINNING branch throws: the exception must surface from await_resume,
+// not a silent empty result. Drives when_any_vector_awaiter's run_one catch branch + the
+// await_resume exception rethrow (the vector when_any throwing path; the variadic when_any
+// carries the exception inside when_any_result instead).
+TEST_F(CoroutineCombinators, WhenAnyVectorThrowingWinnerPropagates) {
+    std::atomic<bool> caught{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        std::vector<task<int>> tasks;
+        tasks.push_back([]() -> task<int> {
+            co_await sleep(5ms);
+            throw std::runtime_error("vector winner boom");
+            co_return 0;
+        }());
+        tasks.push_back([]() -> task<int> {
+            co_await sleep(100ms);
+            co_return 2;
+        }());
+
+        try {
+            (void) co_await when_any(std::move(tasks));
+            ADD_FAILURE() << "expected the winning branch's exception";
+        } catch (const std::runtime_error &e) {
+            EXPECT_STREQ(e.what(), "vector winner boom");
+            caught.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "when_any vector throwing-winner coordinator never finished";
+    EXPECT_TRUE(caught.load()) << "when_any(vector) must rethrow the winning task's exception";
+}
+
+// Void specialisation of TimeoutReclaimedWhileParked: a coro_with_timeout<void> awaiter reclaimed
+// as a when_any loser must tear down its detached run_task + inner task and stop its timer (the
+// void timeout_awaiter dtor), so the late-completing detached runner cannot resume the freed frame.
+TEST_F(CoroutineCombinators, TimeoutVoidReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        auto park = []() -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await coro_with_timeout([]() -> task<void> { co_await sleep(40ms); }(), 1000ms);
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto r = co_await when_any(park(), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(60ms); // the detached void runner completes late — must NOT resume the freed frame
+    });
+}

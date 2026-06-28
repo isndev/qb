@@ -501,3 +501,101 @@ TEST_F(RetryRunner, OnRetryDoesNotFireOnBudgetExhaustingAttempt) {
     EXPECT_EQ(attempts.load(), 3) << "should attempt max_attempts times";
     EXPECT_EQ(notifications.load(), 2) << "on_retry must fire max_attempts-1 times, not on the final failure";
 }
+
+// ---------------------------------------------------------------------------
+// void overload: non-retryable error + non-std throwable; with_retry_until on_retry callback
+// ---------------------------------------------------------------------------
+
+// with_retry(void) where is_retryable returns false must rethrow the ORIGINAL exception (not
+// retry_exhausted) and abort after the first attempt. Drives the void overload's is_retryable
+// rethrow branch (the non-void sibling is NonRetryableErrorAbortsImmediatelyRethrowingOriginal).
+TEST_F(RetryRunner, VoidOverloadNonRetryableErrorRethrowsOriginal) {
+    std::atomic<int>  attempts{0};
+    std::atomic<bool> caught_original{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await with_retry(
+                [&attempts]() -> task<void> {
+                    ++attempts;
+                    throw std::runtime_error("fatal");
+                    co_return;
+                },
+                retry_policy{.max_attempts = 5,
+                             .base_delay   = 1ms,
+                             .is_retryable = [](const std::exception &) { return false; }});
+            ADD_FAILURE() << "expected the original exception";
+        } catch (const retry_exhausted &) {
+            ADD_FAILURE() << "a non-retryable error must rethrow the original, not retry_exhausted";
+        } catch (const std::runtime_error &e) {
+            EXPECT_STREQ(e.what(), "fatal");
+            caught_original.store(true);
+        }
+        done = true;
+    });
+
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(); })) << "with_retry(void) non-retryable never finished";
+    EXPECT_EQ(attempts.load(), 1) << "a non-retryable error must abort after the first attempt";
+    EXPECT_TRUE(caught_original.load());
+}
+
+// with_retry(void) where the op throws a NON-std::exception throwable must capture it and retry
+// like any other failure, ending in retry_exhausted. Drives the void overload's catch(...) branch
+// (the non-void sibling is CatchesNonStdExceptionThrowable).
+TEST_F(RetryRunner, VoidOverloadCatchesNonStdExceptionThrowable) {
+    std::atomic<int>  attempts{0};
+    std::atomic<bool> caught_exhausted{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto flaky = [&attempts]() -> task<void> {
+            ++attempts;
+            throw 7; // int — not a std::exception
+            co_return;
+        };
+        try {
+            co_await with_retry(flaky,
+                                retry_policy{.max_attempts = 3, .base_delay = 1ms, .max_delay = 5ms, .strategy = backoff_strategy::fixed});
+        } catch (const retry_exhausted &) {
+            caught_exhausted = true;
+        }
+        done = true;
+    });
+
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(); })) << "with_retry(void) non-std never finished";
+    EXPECT_EQ(attempts.load(), 3) << "non-std throwables must be treated as retryable in the void overload";
+    EXPECT_TRUE(caught_exhausted.load());
+}
+
+// with_retry_until with an on_retry callback and a predicate that never holds: on_retry must fire
+// on each non-final unsuccessful result (max_attempts-1 times), then throw retry_exhausted. Drives
+// the with_retry_until on_retry branch (its dummy_exception synthesis), uncovered by
+// WithRetryUntilExhaustsAttempts (which sets no on_retry).
+TEST_F(RetryRunner, WithRetryUntilFiresOnRetryCallback) {
+    std::atomic<int>  calls{0};
+    std::atomic<int>  notifications{0};
+    std::atomic<bool> caught{false};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await with_retry_until(
+                [&calls]() -> task<int> { co_return ++calls; },
+                [](int) { return false; }, // never successful → exhausts the budget
+                retry_policy{.max_attempts = 4,
+                             .base_delay   = 1ms,
+                             .strategy     = backoff_strategy::fixed,
+                             .on_retry     = [&](size_t, const std::exception &) { ++notifications; }});
+            ADD_FAILURE() << "with_retry_until must exhaust when the predicate never holds";
+        } catch (const retry_exhausted &) {
+            caught = true;
+        }
+        done = true;
+    });
+
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(); })) << "with_retry_until on_retry never finished";
+    EXPECT_TRUE(caught.load());
+    EXPECT_EQ(calls.load(), 4) << "the factory runs once per attempt";
+    EXPECT_EQ(notifications.load(), 3) << "on_retry fires on each non-final unsuccessful result (max_attempts-1)";
+}

@@ -48,6 +48,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -174,6 +175,46 @@ TEST_F(CoroutineSchedulerTests, TaskIsMoveOnly) {
     EXPECT_TRUE(t2.handle());
     EXPECT_FALSE(static_cast<bool>(t1));
     EXPECT_TRUE(static_cast<bool>(t2));
+}
+
+/**
+ * @test co_await on a moved-from (empty) task fails loudly
+ * @brief A task whose handle was moved out is empty; `co_await`ing it must throw std::logic_error
+ *        from await_resume rather than dereference a null coroutine frame (the null-handle guard in
+ *        task<T>::await_resume / task<void>::await_resume). Covers both specialisations.
+ */
+TEST_F(CoroutineSchedulerTests, CoAwaitMovedFromTaskThrowsLogicError) {
+    std::atomic<bool> threw_int{false};
+    std::atomic<bool> threw_void{false};
+    std::atomic<bool> done{false};
+
+    auto ti = &threw_int;
+    auto tv = &threw_void;
+    auto d  = &done;
+    coro_scheduler().spawn([ti, tv, d]() -> task<void> {
+        // task<int>: move the handle out, then co_await the empty husk → await_resume throws.
+        auto t    = []() -> task<int> { co_return 5; }();
+        auto sink = std::move(t); // `sink` owns the never-run frame; `t` is now empty
+        try {
+            (void) co_await t;
+        } catch (const std::logic_error &) {
+            ti->store(true);
+        }
+        // task<void>: same contract.
+        auto tvoid = []() -> task<void> { co_return; }();
+        auto sinkv = std::move(tvoid);
+        try {
+            co_await tvoid;
+        } catch (const std::logic_error &) {
+            tv->store(true);
+        }
+        d->store(true);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "co_await empty-task coordinator never finished";
+    EXPECT_TRUE(threw_int.load()) << "co_await on a moved-from task<int> must throw std::logic_error";
+    EXPECT_TRUE(threw_void.load()) << "co_await on a moved-from task<void> must throw std::logic_error";
 }
 
 /**
