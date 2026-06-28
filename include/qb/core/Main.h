@@ -352,12 +352,51 @@ class SharedCoreCommunication : nocopy {
 
     const CoreSet                         _core_set;
     std::vector<std::unique_ptr<Mailbox>> _mail_boxes;
+    // Per-core "has left __workflow__" flag, indexed by RESOLVED core index (parallel to
+    // _mail_boxes). Set (release) by a VirtualCore as the last thing before its worker
+    // thread returns — after its final mailbox drain — so it will no longer accept cross-core
+    // events. Read (acquire) by peers in their shutdown residual drain to tell a transiently
+    // backpressured LIVE core (keep retrying — its __receive__ frees space) from one that has
+    // GONE (dispose the residue that can never be delivered).
+    std::vector<std::atomic<bool>> _core_stopped;
 
 public:
     SharedCoreCommunication() = delete;
     explicit SharedCoreCommunication(CoreInitializerMap const &core_initializers) noexcept;
 
     ~SharedCoreCommunication() noexcept;
+
+    /**
+     * @brief Mark a core as having left its workflow (shutdown bookkeeping).
+     * @param resolved_index The RESOLVED core index (as used for _mail_boxes / outbound pipes).
+     * @details Single writer per index (the core itself), published with release ordering.
+     */
+    void
+    mark_core_stopped(CoreId const resolved_index) noexcept {
+        _core_stopped[resolved_index].store(true, std::memory_order_release);
+    }
+
+    /**
+     * @brief Whether a core has left its workflow and no longer drains its mailbox.
+     * @param resolved_index The RESOLVED core index.
+     * @return true once the target core has finished __workflow__.
+     */
+    [[nodiscard]] bool
+    is_core_stopped(CoreId const resolved_index) const noexcept {
+        return _core_stopped[resolved_index].load(std::memory_order_acquire);
+    }
+
+    /**
+     * @brief Dispose any events still sitting in the core mailboxes at teardown.
+     * @details Closes the narrow shutdown window in which a peer's last cross-core flush lands
+     *          in a core's mailbox AFTER that core's final __receive__ but before it publishes
+     *          its stopped flag: the core never drains it, so its non-trivial QoS-2 payload
+     *          would leak. Frees them via the global disposer registry (no-op for trivially
+     *          destructible events).
+     * @warning MUST be called only after every worker thread has joined — it is single-threaded
+     *          and performs no synchronization against live producers/consumers.
+     */
+    void dispose_residual_mailbox_events() noexcept;
 
     /**
      * @brief Send an event to the mailbox of its destination VirtualCore.

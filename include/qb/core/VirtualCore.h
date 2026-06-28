@@ -424,6 +424,13 @@ private:
     void __receive_events__(std::span<EventBucket> events);
     void __receive__();
     bool __flush_all__() noexcept;
+    //! Shutdown residual drain helper: dispose the events queued in this core's outbound
+    //! pipes whose destination core has already left __workflow__ (published its "stopped"
+    //! flag) and will never drain its mailbox again — those events can never be delivered, so
+    //! free their non-trivial QoS-2 payloads via the global disposer registry. Pipes to
+    //! still-live (backpressured) peers are left untouched for retry. Returns true if any
+    //! non-empty pipe still targets a live core. Shutdown path only.
+    [[nodiscard]] bool __dispose_residual_to_stopped_cores__() noexcept;
     //! Event Management
 
     // Workflow

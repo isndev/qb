@@ -67,6 +67,7 @@ qb_add_test(MODULE qb-core TIER system NAME actor-customization-points SOURCES c
 # --- concurrency ------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME actor-message-serialization SOURCES concurrency/actor-message-serialization.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER system NAME qos1-backpressure           SOURCES concurrency/qos1-backpressure.cpp           DEPENDS ${PROJECT_NAME} LABELS slow requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME shutdown-saturation         SOURCES concurrency/shutdown-saturation.cpp         DEPENDS ${PROJECT_NAME} LABELS slow requires-multicore)
 
 # --- regression -------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME router-callback-regressions SOURCES regression/router-callback-regressions.cpp DEPENDS ${PROJECT_NAME})

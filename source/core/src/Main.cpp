@@ -118,7 +118,10 @@ set_from_core_initializers(CoreInitializerMap const &core_initializers) {
 // SharedCoreCommunication
 SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_initializers) noexcept
     : _core_set(set_from_core_initializers(core_initializers))
-    , _mail_boxes(_core_set.getSize()) {
+    , _mail_boxes(_core_set.getSize())
+    , _core_stopped(_core_set.getSize()) {
+    for (auto &flag : _core_stopped)
+        flag.store(false, std::memory_order_relaxed); // no core has stopped yet
     for (const auto &[index, initializer] : core_initializers) {
         const auto nb_producers               = _core_set.getNbCore();
         _mail_boxes[_core_set.resolve(index)] = std::make_unique<Mailbox>(nb_producers, initializer.getLatency());
@@ -143,6 +146,31 @@ SharedCoreCommunication::send(Event const &event) const noexcept {
 SharedCoreCommunication::Mailbox &
 SharedCoreCommunication::getMailBox(CoreId const id) const noexcept {
     return *_mail_boxes[_core_set.resolve(id)].get();
+}
+
+void
+SharedCoreCommunication::dispose_residual_mailbox_events() noexcept {
+    // Type-erased disposal through the global static registry shared by every router::memh
+    // instance; a default-constructed router suffices (it carries no per-core state for the
+    // dispose path). Each surviving mailbox event is a byte-copy whose producer abandoned its
+    // pipe copy without freeing the payload, so the mailbox copy is the sole owner — dispose
+    // it exactly once. consume_all walks the ring storage in place (no scratch buffer).
+    router::memh<Event> disposer;
+    for (auto &mb : _mail_boxes) {
+        if (!mb)
+            continue;
+        mb->consume_all([&disposer](EventBucket *buffer, std::size_t const nb_buckets) {
+            std::size_t i = 0;
+            while (i < nb_buckets) {
+                auto      &event = *reinterpret_cast<Event *>(buffer + i);
+                const auto bsz   = event.bucket_size;
+                if (bsz == 0)
+                    break; // defensive: malformed event, avoid a zero-stride infinite loop
+                disposer.dispose(event);
+                i += bsz;
+            }
+        });
+    }
 }
 
 CoreId
@@ -315,6 +343,12 @@ Main::join() {
         if (core.joinable())
             core.join();
     }
+    // Every worker has now terminated: it is safe (single-threaded) to free any event left in
+    // a mailbox by a peer's final flush that landed after the destination core stopped
+    // draining. Idempotent — a second join() (e.g. from ~Main after an explicit join) sweeps
+    // already-empty mailboxes.
+    if (_shared_com)
+        _shared_com->dispose_residual_mailbox_events();
 }
 
 CoreInitializer &
