@@ -168,6 +168,26 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
         func_(std::move(s));
     }
 
+    /**
+     * @brief Listener-teardown reclaim hook for the in-flight connect's io watcher.
+     * @details Registered as the watcher's `_destroy_owner` (see arm_io). When the event loop
+     *          is torn down (`listener::clear()` / `~listener`) while a connect is still in
+     *          flight, clear() invokes this to break the self-hold that would otherwise orphan
+     *          the connector, its captured completion callback, and the half-open socket fd.
+     *          The watcher is already detached by clear(); unregisterEvent frees its wrapper via
+     *          the `_detached_by_clear` path, and dropping the self-ref reclaims the connector.
+     * @private
+     */
+    static void
+    on_listener_teardown(void *p) noexcept {
+        auto *self = static_cast<connector *>(p);
+        if (self->io_iface_ != nullptr) {
+            listener::current.unregisterEvent(self->io_iface_);
+            self->io_iface_ = nullptr; // null before the connector is destroyed below
+        }
+        self->self_hold_.reset(); // last strong ref -> reclaim the connector + its callback
+    }
+
     void
     deliver_failure() {
         socket_.disconnect();
@@ -215,6 +235,10 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
 
         auto &io_ev = listener::current.registerEvent<event::io>(*this, socket_.native_handle(), events);
         io_iface_   = io_ev._interface;
+        // Make the watcher loop-owned: if the loop is torn down before this connect completes,
+        // clear() reclaims the connector through on_listener_teardown instead of leaking the
+        // self-held connector + callback + half-open fd.
+        io_iface_->set_owner(this, &connector::on_listener_teardown);
         io_ev.start();
         return true;
     }

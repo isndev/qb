@@ -117,6 +117,26 @@ TEST_F(EventLoopLifecycleTest, FreshLoopRunsAndReInitIsSafe) {
 }
 
 // =============================================================================
+// A fire-and-forget async::callback may tear down its own loop from inside its
+// body. clear() must not destroy the Timeout that is currently mid-invoke — the
+// Timeout reclaims itself via `delete this` when its on() returns; destroying it
+// in clear() too is a double-free (regression: ASan SEGV in invoke()).
+// =============================================================================
+TEST_F(EventLoopLifecycleTest, ClearFromInsideFiringCallbackIsSafe) {
+    std::atomic<bool> fired{false};
+    async::callback(
+        [&fired] {
+            fired.store(true);
+            async::listener::current.clear(); // destroys the firing Timeout — must not double-free
+        },
+        1ms);
+    // pump_until drives the loop the production way (run_for) until the timer actually fires —
+    // a raw EVRUN_NOWAIT spin would not wait for the 1 ms delay and could finish first. The
+    // double-free regression would crash here (ASan SEGV in invoke()) rather than fail an assert.
+    EXPECT_TRUE(pump_until([&] { return fired.load(); })) << "callback never fired";
+}
+
+// =============================================================================
 // The loop stays usable across a re-init: a timer armed afterwards fires
 // =============================================================================
 
