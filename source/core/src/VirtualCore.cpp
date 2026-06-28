@@ -657,12 +657,76 @@ VirtualCore::__workflow__() {
                 _mail_box.wait();
         }
     }
-    // receive and flush residual events
-    do {
+    // Receive and flush residual events, guaranteed to terminate without dropping anything
+    // a live peer can still accept.
+    //
+    // The hot-loop invariant — __flush_all__ partial-bails on backpressure, then the peer's
+    // __receive__ frees mailbox space so the next pass makes progress — does NOT hold at
+    // shutdown: cores leave __workflow__ independently (there is no shutdown barrier), so a
+    // peer can exit and stop draining its mailbox while this core still has QoS-guaranteed
+    // events queued for it; the original unbounded `while (__flush_all__())` then spins
+    // forever (try_send can never succeed against a full, no-longer-drained mailbox).
+    //
+    // We keep draining: every pass __receive__ frees OUR mailbox so live peers can deliver to
+    // us, and __flush_all__ pushes our outbound. We only give up on a pipe once its
+    // destination core has published its "stopped" flag — it has left its own workflow and
+    // will never drain its mailbox again, so that residue can never be delivered; we dispose
+    // it (the events were never sent, so neither this core nor any peer would otherwise free
+    // a non-trivial QoS-2 payload) and drop it. A pipe to a still-live, merely backpressured
+    // peer is retried, never dropped — that peer's __receive__ keeps making room, so the loop
+    // makes progress and ends when our outbound is empty or every remaining target has gone.
+    for (;;) {
         __receive__();
-    } while (__flush_all__());
+        if (!__flush_all__())
+            break; // every outbound pipe drained — clean finish
+        if (!__dispose_residual_to_stopped_cores__())
+            break; // nothing left targets a still-live core — done
+    }
+    // Publish AFTER the final __receive__/__flush_all__ above: from here this core no longer
+    // drains its mailbox, so peers must stop sending to it and dispose anything left for it.
+    _engine.mark_core_stopped(_resolved_index);
 
     LOG_INFO(*this << " Stopped normally");
+}
+
+bool
+VirtualCore::__dispose_residual_to_stopped_cores__() noexcept {
+    bool        any_live_pending = false;
+    std::size_t pipe_idx         = 0;
+    for (auto &pipe : _pipes) {
+        // The self-core pipe is delivered locally (never via the mailbox) and is already
+        // drained by __receive__; an empty pipe has nothing pending.
+        if (pipe_idx == _resolved_index || !pipe.size()) {
+            ++pipe_idx;
+            continue;
+        }
+        if (!_engine.is_core_stopped(static_cast<CoreId>(pipe_idx))) {
+            // Destination still alive (its __receive__ keeps freeing mailbox room): keep its
+            // events and retry next pass — never drop to a live peer.
+            any_live_pending = true;
+            ++pipe_idx;
+            continue;
+        }
+        // Destination has left its workflow and will never drain its mailbox again: its queued
+        // events can never be delivered. Free their non-trivial QoS-2 payloads via the global
+        // disposer registry (no-op for trivially-destructible events) and drop them — this
+        // mirrors the stash-drop dispose in __receive_events__.
+        auto       *cur = pipe.begin();
+        auto *const end = pipe.end();
+        while (cur < end) {
+            auto      &event = *reinterpret_cast<Event *>(cur);
+            const auto bsz   = event.bucket_size;
+            // Defensive: a zero bucket_size (only reachable via a malformed event) would spin
+            // forever — stop draining this pipe instead (mirrors __receive_events__).
+            if (unlikely(bsz == 0))
+                break;
+            _router.dispose(event);
+            cur += bsz;
+        }
+        pipe.reset();
+        ++pipe_idx;
+    }
+    return any_live_pending;
 }
 
 //! Workflow
