@@ -617,3 +617,47 @@ TEST_F(TcpConnectorStateMachineTest, ParallelAwaitersAllCompleteOnRefused) {
     EXPECT_EQ(completions.load(), kConnectors);
     EXPECT_EQ(successes.load(), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Leak regression (connector.h deliver_failure_deferred): a SYNCHRONOUS connect failure schedules a
+// 1 ns deferred-failure Timeout on a path that arms NO io watcher — so it installs NO
+// on_listener_teardown reclaim hook (that hook lives only in arm_io). If the listener is torn down
+// BEFORE the deferred callback fires (engine/VirtualCore shutdown, or teardown in the same tick as
+// the sync failure), clear() destroys that Timeout. The deferred callback must own the connector via
+// a STRONG capture so destroying the Timeout reclaims the connector + its captured user callback
+// (and, for the coroutine path, the awaiter state co-owned by it). A self_hold_ self-cycle + a
+// weak_ptr capture would NOT be reclaimed and would leak.
+//
+// We trigger the synchronous-failure path (FakeConnectorSocket result=fail → n_connect returns
+// ECONNREFUSED inline → run() reaches deliver_failure_deferred), then tear the loop down WITHOUT
+// pumping (so the 1 ns Timeout never fires), and assert via a weak_ptr to a sentinel OWNED by the
+// user callback that the whole graph is freed. Pre-fix this test fails (sentinel still alive after
+// teardown) and LSan additionally reports the connector leak under the sanitize build.
+// ---------------------------------------------------------------------------
+TEST_F(TcpConnectorStateMachineTest, SyncFailureDeferredCallbackReclaimedOnListenerTeardown) {
+    auto shared    = std::make_shared<FakeConnectorSocket::state>();
+    shared->result = FakeConnectorSocket::connect_result::fail; // n_connect → ECONNREFUSED, synchronously
+
+    auto               sentinel      = std::make_shared<int>(7); // owned by the user callback below
+    std::weak_ptr<int> weak_sentinel = sentinel;
+
+    qb::io::async::tcp::connect<FakeConnectorSocket>(
+        FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:1"},
+        [s = sentinel](FakeConnectorSocket &&) { (void) s; }, // the connector's func_ owns the sentinel
+        0ms);
+    sentinel.reset(); // the ONLY remaining ref to *sentinel is now inside the connector's captured callback
+
+    // Deliberately do NOT pump: the 1 ns deferred Timeout has not fired. Its lambda strong-holds the
+    // connector (the local op shared_ptr created inside connect() is already gone). The connector
+    // (and the sentinel it transitively owns) must therefore still be alive here.
+    EXPECT_FALSE(weak_sentinel.expired()) << "connector should still be alive (held by the pending deferred Timeout)";
+
+    // Tear the loop down WITHOUT pumping. clear() destroys the pending deferred Timeout; with the
+    // strong-capture fix that releases the connector → user callback → sentinel.
+    qb::io::async::listener::current.clear();
+
+    EXPECT_TRUE(weak_sentinel.expired())
+        << "LEAK: the deferred-failure Timeout was destroyed by listener teardown but never released "
+           "the connector (self-hold cycle) — connector + user callback leaked";
+    EXPECT_EQ(shared->n_connect_calls, 1) << "the synchronous-failure path must have been taken";
+}

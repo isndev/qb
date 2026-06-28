@@ -88,3 +88,50 @@ TEST(RetryJitter, NegativeAndZeroDurationAreWellBehaved) {
         EXPECT_EQ(qb::detail::apply_retry_jitter(qb::duration::zero(), 1.0).count(), 0);
     }
 }
+
+// ---------------------------------------------------------------------------
+// grow_backoff: one geometric step, clamped to max_backoff, overflow-safe.
+// ---------------------------------------------------------------------------
+
+TEST(RetryBackoff, GrowsGeometricallyThenClampsToMax) {
+    using qb::detail::grow_backoff;
+    EXPECT_EQ(grow_backoff(50ms, 2.0, 1s), 100ms);  // 50*2
+    EXPECT_EQ(grow_backoff(100ms, 2.0, 1s), 200ms); // 100*2
+    EXPECT_EQ(grow_backoff(800ms, 2.0, 1s), 1s);    // 1600ms clamped to the 1s cap
+    EXPECT_EQ(grow_backoff(1s, 2.0, 1s), 1s);       // already at the cap
+}
+
+TEST(RetryBackoff, MultiplierOneIsConstant) {
+    using qb::detail::grow_backoff;
+    EXPECT_EQ(grow_backoff(50ms, 1.0, 1s), 50ms); // no growth, no shrink
+}
+
+TEST(RetryBackoff, DegenerateMultiplierFloorsToZeroNoUB) {
+    using qb::detail::grow_backoff;
+    // multiplier 0 / negative would, before the fix, cast a 0 / huge-negative double — now floored.
+    EXPECT_EQ(grow_backoff(50ms, 0.0, 1s).count(), 0);
+    EXPECT_EQ(grow_backoff(50ms, -5.0, 1s).count(), 0);
+}
+
+TEST(RetryBackoff, CapBelowCurrentReturnsCap) {
+    using qb::detail::grow_backoff;
+    EXPECT_EQ(grow_backoff(2s, 2.0, 1s), 1s); // current already past a small cap → the cap
+}
+
+// The defect this guards: `static_cast<rep>(current.count() * multiplier)` is UB when the product
+// exceeds the int64 range. With a pathological multiplier / max_backoff the product overflows; the
+// fix clamps in double space and returns the EXACT max_backoff rep, never casting the huge double.
+// Built under the `sanitize` preset (ASan+UBSan), this test fails loudly if the cast UB returns.
+TEST(RetryBackoff, HugeProductDoesNotOverflowTheCast) {
+    using qb::detail::grow_backoff;
+    const qb::duration cap = qb::duration::max(); // ~292 years in ns (INT64_MAX)
+
+    // current * multiplier ≈ 1e29 ns ≫ INT64_MAX → must saturate to the cap, no UBSan trip.
+    EXPECT_EQ(grow_backoff(std::chrono::seconds(100), 1e18, cap), cap);
+    // half the range, ×4 → 2× the range → also saturates to the cap.
+    EXPECT_EQ(grow_backoff(qb::duration{qb::duration::max().count() / 2}, 4.0, cap), cap);
+    // a realistic-but-large config (1h backoff, ×100, 365-day cap) stays exact (no overflow,
+    // 100h < the 8760h cap so it is NOT clamped).
+    EXPECT_EQ(grow_backoff(std::chrono::hours(1), 100.0, std::chrono::hours(24 * 365)),
+              std::chrono::hours(100));
+}

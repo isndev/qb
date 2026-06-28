@@ -38,10 +38,13 @@
 #include <qb/io/async/coroutine.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/coroutine_reclaim_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
+using qb::io::test::reclaim_fast_winner;
+using qb::io::test::run_reclaim_driver;
 
 namespace {
 
@@ -931,4 +934,49 @@ TEST_F(ScopeStructuredConcurrency, JoinAllForFastPathWhenAllAlreadyDone) {
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "join_all_for already-done coordinator never finished";
     EXPECT_TRUE(completed.load()) << "join_all_for must return true when all tasks already completed";
+}
+
+// =============================================================================
+// Destroy-while-parked reclamation (see shared/coroutine_reclaim_support.h)
+//
+// A consumer parked in scope.join_all() / join_all_for() stores its handle in a shared slot; when its
+// frame is reclaimed (when_any loser) the awaiter dtor must null the slot so a later on_task_done() /
+// wake_slots does not dereference the freed handle. join_all_for additionally spawns a tracked
+// timeout timer that the dtor must cancel.
+// =============================================================================
+
+TEST_F(ScopeStructuredConcurrency, JoinAllReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        auto scope = std::make_shared<coroutine_scope>(coroutine_scope::cleanup_policy::detach);
+        scope->spawn([]() -> task<void> { co_await sleep(40ms); }());
+        auto park = [](std::shared_ptr<coroutine_scope> s) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await s->join_all();
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto r = co_await when_any(park(scope), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(60ms); // the worker completes → on_task_done wakes the (reclaimed) slot
+    });
+}
+
+TEST_F(ScopeStructuredConcurrency, JoinAllForReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        auto scope = std::make_shared<coroutine_scope>(coroutine_scope::cleanup_policy::detach);
+        scope->spawn([]() -> task<void> { co_await sleep(40ms); }());
+        auto park = [](std::shared_ptr<coroutine_scope> s) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await s->join_all_for(5000ms);
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto r = co_await when_any(park(scope), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(60ms); // slot must be nulled AND the timeout timer cancelled on reclaim
+    });
 }

@@ -163,6 +163,7 @@ struct stream_next_awaiter {
     bool                                       timed_out     = false;
     std::shared_ptr<bool>                      alive         = std::make_shared<bool>(true);
     qb::io::async::cancellation_token::id_type cancel_id     = 0;
+    std::coroutine_handle<>                    parked{}; ///< handle we stored in st->waiter (cleared on teardown)
 
     stream_next_awaiter(std::shared_ptr<stream_state<E>> s, qb::duration t)
         : st(std::move(s))
@@ -178,6 +179,7 @@ struct stream_next_awaiter {
     void
     await_suspend(std::coroutine_handle<> h) {
         st->waiter = h;
+        parked     = h;
         if (timeout.count() > 0) {
             ev_timer_init(&timer, &stream_next_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
             timer.data = this;
@@ -220,6 +222,14 @@ struct stream_next_awaiter {
             *alive = false;
         stop_timer();
         st->token.remove_on_cancel(cancel_id);
+        // Destroyed while still parked (await_resume never ran — e.g. a when_any/race loser reclaim
+        // where the `stream` is owned in an outer frame that keeps the registry slot alive): clear
+        // our handle from the shared state so a later chunk's deliver_thunk → st->wake() does not
+        // schedule_via_current() our freed frame. The held `st` keeps the state valid here. Guard on
+        // `parked` so a normal-completion teardown (await_resume already nulled st->waiter, or a wake
+        // std::exchange'd it) is a no-op.
+        if (parked && st->waiter == parked)
+            st->waiter = {};
     }
 
 private:

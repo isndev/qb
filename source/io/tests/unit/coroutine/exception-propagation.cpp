@@ -568,3 +568,29 @@ TEST_F(CoroutineExceptionTests, MultipleExceptionsInParallel) {
     EXPECT_TRUE(pump_until([&] { return total_caught.load() == 5; })) << "not all parallel throws were caught";
     EXPECT_EQ(total_caught.load(), 5);
 }
+
+// =============================================================================
+// EMPTY / MOVED-FROM TASK
+// =============================================================================
+
+/**
+ * @test co_await on an empty (default-constructed / moved-from) task<T> throws std::logic_error
+ * @brief await_resume() must fail loudly, not dereference the null coroutine frame (handle_.promise()
+ *        on a null handle is UB → SEGV in the result-variant access).
+ */
+TEST_F(CoroutineExceptionTests, EmptyTaskAwaitThrowsLogicError) {
+    std::atomic<bool> threw{false};
+    auto              threw_ptr = &threw;
+    coro_scheduler().spawn([](std::atomic<bool> *t) -> task<void> {
+        task<int> empty; // default-constructed: null handle
+        try {
+            (void) co_await std::move(empty);
+        } catch (const std::logic_error &) {
+            t->store(true);
+        }
+        co_return;
+    }(threw_ptr));
+
+    EXPECT_TRUE(pump_until([&] { return threw.load(); })) << "empty-task await coroutine never ran";
+    EXPECT_TRUE(threw.load()) << "co_await on an empty task must throw std::logic_error, not deref null";
+}

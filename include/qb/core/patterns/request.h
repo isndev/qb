@@ -175,6 +175,13 @@ ask_by(qb::ScopedCoroContext ctx, qb::ActorId target, E req, deadline dl) {
  * @code
  * void on(Quote &q) { qb::answer(*this, q, [](Quote const &r){ return lookup(r.symbol); }); }
  * @endcode
+ * @warning `fn` runs synchronously inside the responder's message handler and **must not throw**.
+ *          If it throws, `answer` (which is `noexcept` iff `fn` is) propagates the exception out of
+ *          `on(E&)` into the event dispatch, which — like any throwing actor handler — terminates
+ *          the worker core (there is no per-event exception containment on the steady-state dispatch
+ *          path). `reply()` is also skipped, so the asker would only ever observe its `ask` timeout.
+ *          Compute the response with a non-throwing `fn` (validate/look up before `answer`, or carry
+ *          a failure indicator in the response payload and reply it explicitly).
  */
 template <class E, class Fn>
 void

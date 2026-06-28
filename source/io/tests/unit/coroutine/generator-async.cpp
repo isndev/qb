@@ -39,10 +39,13 @@
 #include <qb/io/async/coroutine.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/coroutine_reclaim_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
+using qb::io::test::reclaim_fast_winner;
+using qb::io::test::run_reclaim_driver;
 
 namespace {
 
@@ -247,4 +250,103 @@ TEST_F(GeneratorAsync, AgCollectSymmetricTransferRegression) {
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_collect symmetric-transfer never finished";
     EXPECT_EQ(result, (std::vector<int>{0, 10, 20, 30, 40}));
+}
+
+// =============================================================================
+// Destroy-while-parked reclamation (see shared/coroutine_reclaim_support.h)
+//
+// A consumer parked in async_generator::next() stores its handle in the generator's `continuation`;
+// when its frame is reclaimed (when_any loser) the next_awaiter dtor must clear it so a later
+// co_yield does not symmetric-transfer into the freed frame.
+// =============================================================================
+
+TEST_F(GeneratorAsync, NextReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        auto gen = std::make_shared<async_generator<int>>([]() -> async_generator<int> {
+            co_await sleep(40ms);
+            co_yield 1;
+            co_yield 2;
+        }());
+        auto park = [](std::shared_ptr<async_generator<int>> g) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            auto v = co_await g->next();
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v ? *v : -1;
+        };
+        auto r = co_await when_any(park(gen), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(60ms); // the generator wakes and yields into the (reclaimed) continuation
+    });
+}
+
+// =============================================================================
+// The GENERATOR's OWN frame is destroyed while QUEUED. The generator internally awaits a wait-list
+// primitive (mutex); next() parks the GENERATOR frame on it. A winner unlocks (the generator frame
+// is woken → queued in the scheduler) then completes in one resume, so the when_any reclaim destroys
+// the parker — whose only ref to the async_generator drops → ~async_generator destroys the queued
+// generator frame. Without async_generator's forget_frame_if_current scrub that handle would dangle
+// in ready_queue_ → heap-UAF in run_ready(). The generator frame carries a >4 KiB local so it
+// escapes the coroutine frame pool and ASan sees the free.
+// =============================================================================
+
+TEST_F(GeneratorAsync, GeneratorOwnFrameWokenThenDestroyedNoUAF) {
+    run_reclaim_driver([]() -> task<void> {
+        auto m = std::make_shared<async_mutex>();
+        m->try_lock(); // pre-hold so the generator's internal lock() must park the generator frame
+        auto park = [](std::shared_ptr<async_mutex> mm) -> task<int> {
+            // gen is owned ONLY here: reclaiming this parker drops the last ref → ~async_generator.
+            auto gen = std::make_shared<async_generator<int>>([](std::shared_ptr<async_mutex> m2) -> async_generator<int> {
+                volatile char big[8192];
+                big[0] = 7;
+                co_await m2->lock(); // parks the GENERATOR frame on the mutex
+                big[1] = big[0];
+                co_yield (int) big[1];
+            }(mm));
+            auto v = co_await gen->next(); // drives the generator until it parks on the mutex
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v ? *v : -1;
+        };
+        auto winner = [](std::shared_ptr<async_mutex> mm) -> task<int> {
+            co_await sleep(5ms); // let the generator park on the mutex first
+            mm->unlock();        // wakes the generator frame -> queued in ready_queue_
+            co_return 99;        // -> when_any reclaim destroys the parker -> ~async_generator (queued frame)
+        };
+        auto r = co_await when_any(park(m), winner(m));
+        EXPECT_EQ(r.index, 1u) << "the unlocking winner must win the race";
+        co_await sleep(20ms);
+    });
+}
+
+// =============================================================================
+// Over-pull / moved-from async_generator::next() must return nullopt, never UB. await_ready returns
+// false unconditionally would symmetric-transfer into a done() handle (resuming a coroutine at its
+// final-suspend point = UB) or a null handle (moved-from) on the extra pull. Guards mirror the sync
+// generator<T>::next(). This is a deterministic, sanitizer-checked test (no reclaim machinery).
+// =============================================================================
+
+TEST_F(GeneratorAsync, NextOverPullAndMovedFromReturnNullopt) {
+    std::atomic<bool> done{false};
+    std::atomic<int>  v1{-1};
+    std::atomic<bool> b_empty{false}, c_empty{false}, d_empty{false};
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto gen = []() -> async_generator<int> { co_yield 7; }();
+        auto a   = co_await gen.next(); // 7
+        auto b   = co_await gen.next(); // clean end -> nullopt
+        auto c   = co_await gen.next(); // OVER-PULL on a done generator -> nullopt (was UB)
+        async_generator<int> moved = std::move(gen);
+        auto d = co_await gen.next(); // MOVED-FROM (null handle) -> nullopt (was UB)
+        v1.store(a.value_or(-1));
+        b_empty.store(!b.has_value());
+        c_empty.store(!c.has_value());
+        d_empty.store(!d.has_value());
+        done.store(true);
+        co_return;
+    });
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "over-pull generator coroutine never ran";
+    EXPECT_EQ(v1.load(), 7);
+    EXPECT_TRUE(b_empty.load()) << "clean end must be nullopt";
+    EXPECT_TRUE(c_empty.load()) << "over-pull on a done generator must be nullopt, not UB";
+    EXPECT_TRUE(d_empty.load()) << "next() on a moved-from generator must be nullopt, not UB";
 }

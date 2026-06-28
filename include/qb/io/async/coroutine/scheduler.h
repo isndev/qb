@@ -856,6 +856,21 @@ defer_frame_destruction(std::coroutine_handle<> handle) noexcept {
 }
 
 /**
+ * @brief Scrub a coroutine handle from the current scheduler's bookkeeping before its frame is
+ *        freed. Declared in task.h, called from task<T>::~task / move-assignment when destroying a
+ *        still-in-flight frame. `forget()` removes it from the ready queue / in-flight / suspended
+ *        sets so a waker that already queued it (schedule_via_current) cannot leave a dangling
+ *        handle for the next run_ready() drain to resume — a use-after-free. No-op if no scheduler
+ *        is current (e.g. a task destroyed off a listener thread) — such a frame was never queued.
+ */
+inline void
+forget_frame_if_current(std::coroutine_handle<> handle) noexcept {
+    if (auto *sched = CoroutineScheduler::current_ptr()) {
+        sched->forget(handle);
+    }
+}
+
+/**
  * @brief Implementation of CoroutineScheduler::spawn
  *
  * The coroutine is added to the ready queue and will be resumed

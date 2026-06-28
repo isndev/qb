@@ -239,3 +239,88 @@ TEST(AskStream, OverflowThrows) {
     EXPECT_TRUE(g_stream_overflow.load()) << "overflow must surface as a stream_overflow_error";
     EXPECT_LE(g_stream_overflow_n.load(), 2) << "at most the buffered chunks drained before it threw";
 }
+
+// ===========================================================================
+// Destroy-while-parked: a stream::next() awaiter is reclaimed (loses a when_any race) while the
+// owning `stream` lives on in an outer frame keeping the registry slot alive. A later chunk must NOT
+// resume the freed next() frame. Pre-fix this was a heap-use-after-free in stream_state::wake()
+// (st->waiter still held the dead handle); the awaiter dtor now clears st->waiter. The vulnerable
+// frame is the small wrapper frame (pooled → ASan masked in this build); the definitive ASan proof
+// is the pool-disabled standalone repro. This test pins the path + that nothing hangs or misbehaves.
+// ===========================================================================
+namespace {
+std::atomic<bool> g_reclaim_ran{false};
+} // namespace
+
+struct TriggerYield : qb::Event {};
+
+class DeferredProducer : public qb::Actor {
+    std::optional<Feed> _pending;
+
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Feed>(*this);
+        registerEvent<TriggerYield>(*this);
+        co_return true;
+    }
+    void
+    on(Feed &e) {
+        _pending = e; // store; do NOT answer yet (so the consumer parks, then loses the race)
+    }
+    void
+    on(TriggerYield &) {
+        if (_pending) {
+            qb::yield_answer(*this, *_pending, 42);
+            qb::end_stream(*this, *_pending);
+        }
+    }
+};
+
+class ReclaimConsumer : public qb::Actor {
+    qb::ActorId _prod;
+
+public:
+    explicit ReclaimConsumer(qb::ActorId prod)
+        : _prod(prod) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Feed>(*this);
+        auto prod = _prod;
+        spawn([prod](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
+            Feed f;
+            f.count = 1;
+            auto s  = qb::ask_stream(c, prod, f, 5s); // s OWNED here; the registry slot lives with it
+            // Await s.next() in a SEPARATE (wrapper) frame, raced against a faster timer: the wrapper
+            // loses, is reclaimed while parked (st->waiter would dangle without the dtor fix).
+            auto one = [](qb::stream<Feed> &st) -> qb::io::async::task<int> {
+                auto chunk = co_await st.next();
+                co_return chunk ? chunk->chunk : -1;
+            };
+            (void) co_await qb::io::async::when_any(one(s), [c]() -> qb::io::async::task<int> {
+                co_await c.sleep(5ms);
+                co_return 99;
+            }());
+            c.template push_to<TriggerYield>(prod); // now make a chunk arrive (would wake the freed frame)
+            co_await c.sleep(80ms);                 // give the chunk time to land
+            g_reclaim_ran.store(true);
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(Feed &e) {
+        (void) resolve_ask(e);
+    }
+};
+
+TEST(AskStream, ReclaimedWhileParkedNoUAF) {
+    g_reclaim_ran.store(false);
+    qb::Main   main;
+    const auto prod = main.addActor<DeferredProducer>(0);
+    main.addActor<ReclaimConsumer>(0, prod);
+    main.start(false);
+    main.join(); // must not hang or crash — the reclaimed next() frame is never resumed by the chunk
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_reclaim_ran.load()) << "the consumer coroutine must have run to completion";
+}

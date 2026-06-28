@@ -41,10 +41,13 @@
 #include <qb/io/async/coroutine.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/coroutine_reclaim_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
+using qb::io::test::reclaim_fast_winner;
+using qb::io::test::run_reclaim_driver;
 
 namespace {
 
@@ -393,4 +396,32 @@ TEST_F(SharedTaskFanout, ScopeFanOutMultipleWorkersAwaitSameData) {
     for (int v : outputs)
         sum += v;
     EXPECT_EQ(sum, 510) << "(100+0)+(100+1)+(100+2)+(100+3)+(100+4)";
+}
+
+// =============================================================================
+// Destroy-while-parked reclamation (see shared/coroutine_reclaim_support.h)
+//
+// A parked awaiter on an in-flight shared computation: when its frame is reclaimed (when_any loser)
+// the awaiter dtor must retract from the shared state's waiter list so the later flush() does not
+// resume the freed frame.
+// =============================================================================
+
+TEST_F(SharedTaskFanout, AwaiterReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        auto shared = make_shared_task([]() -> task<int> {
+            co_await sleep(40ms);
+            co_return 5;
+        }());
+        auto park = [](shared_task<int> st) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            int v  = co_await st;
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v + (int) big[1];
+        };
+        auto r = co_await when_any(park(shared), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await shared; // the shared computation finishes (flush) — must NOT resume the reclaimed parker
+    });
 }

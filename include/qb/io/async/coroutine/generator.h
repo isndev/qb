@@ -358,25 +358,50 @@ public:
 
 private:
     handle_type _handle;
+    // Liveness shared with a parked `next_awaiter`: a consumer suspended in `next()` stores its
+    // handle in the generator-frame's `continuation`. If that consumer's frame is later destroyed
+    // (e.g. a when_any/race loser reclaim) the awaiter's destructor must clear `continuation` so a
+    // subsequent `co_yield` does not symmetric-transfer into a freed frame. When the generator
+    // itself is destroyed first, this flag (which outlives the frame) lets the awaiter destructor
+    // skip the now-freed promise instead of dereferencing it.
+    std::shared_ptr<bool> _alive{std::make_shared<bool>(true)};
 
 public:
     explicit async_generator(handle_type h)
         : _handle(h) {}
 
     ~async_generator() {
-        if (_handle)
+        if (_alive)
+            *_alive = false; // mark dead before the frame goes — a parked awaiter must not touch it
+        if (_handle) {
+            // The generator's OWN frame may be sitting in the scheduler's ready queue — an internal
+            // `co_await` on a wait-list primitive (mutex/semaphore/channel/...) was woken but not yet
+            // resumed. Destroying it here without scrubbing leaves a dangling handle that run_ready()
+            // would pop → use-after-free (the same class the task<T> dtor guards, but this frame is
+            // owned directly, not via task<T>). Gated on !done(): a completed generator is never
+            // queued, so the common path pays only a done() check. Mirrors task<T>::~task.
+            if (!_handle.done())
+                forget_frame_if_current(_handle);
             _handle.destroy();
+        }
     }
 
     async_generator(async_generator &&other) noexcept
-        : _handle(std::exchange(other._handle, {})) {}
+        : _handle(std::exchange(other._handle, {}))
+        , _alive(std::move(other._alive)) {}
 
     async_generator &
     operator=(async_generator &&other) noexcept {
         if (this != &other) {
-            if (_handle)
+            if (_alive)
+                *_alive = false;
+            if (_handle) {
+                if (!_handle.done()) // see ~async_generator: scrub a queued frame before destroy
+                    forget_frame_if_current(_handle);
                 _handle.destroy();
+            }
             _handle = std::exchange(other._handle, {});
+            _alive  = std::move(other._alive);
         }
         return *this;
     }
@@ -385,11 +410,34 @@ public:
     async_generator &operator=(const async_generator &) = delete;
 
     struct next_awaiter {
-        handle_type handle;
+        handle_type             handle;
+        std::shared_ptr<bool>   _gen_alive;  ///< generator liveness; skip promise access when false
+        std::coroutine_handle<> _parked{};   ///< consumer handle parked in the generator's continuation
+
+        // User-declared dtor below makes this a non-aggregate → provide the ctor `next()` uses.
+        next_awaiter(handle_type h, std::shared_ptr<bool> alive)
+            : handle(h)
+            , _gen_alive(std::move(alive)) {}
+
+        // Consumer frame destroyed while still parked (when_any/race loser reclaim): retract our
+        // handle from the generator's `continuation` so a later co_yield/final_suspend symmetric-
+        // transfers into noop_coroutine() rather than our freed frame. No-op once the generator
+        // already resumed us (continuation cleared/moved on) or if the generator itself is gone.
+        ~next_awaiter() {
+            if (_parked && _gen_alive && *_gen_alive && handle &&
+                handle.promise().continuation == _parked)
+                handle.promise().continuation = {};
+        }
 
         bool
         await_ready() const {
-            return false;
+            // A done generator (over-pull: next() called again after it returned nullopt) or a
+            // moved-from generator (null handle) must NOT be symmetric-transferred into by
+            // await_suspend — resuming a coroutine at its final-suspend point, or a null handle, is
+            // undefined behaviour. Short-circuit to await_resume (which returns nullopt). Mirrors the
+            // synchronous generator<T>::next() guards. The normal path (initial-suspend or a live
+            // yield point) is NOT done(), so this only catches misuse — zero hot-path cost.
+            return !handle || handle.done();
         }
 
         /**
@@ -414,12 +462,17 @@ public:
         std::coroutine_handle<>
         await_suspend(std::coroutine_handle<> h) noexcept {
             QB_AGEN_TRACE("next await_suspend consumer=%p gen=%p", (void *) h.address(), (void *) handle.address());
+            _parked                       = h;
             handle.promise().continuation = h;
             return handle; // symmetric transfer — do NOT access handle after this
         }
 
         std::optional<T>
         await_resume() {
+            // Moved-from generator (null handle): nothing to read. Guard before any promise() deref
+            // (await_ready short-circuited here for !handle || done()). Mirrors generator<T>::next().
+            if (!handle)
+                return std::nullopt;
             QB_AGEN_TRACE("next await_resume gen=%p done=%d", (void *) handle.address(), handle.done() ? 1 : 0);
             // Surface a generator-body exception BEFORE the done() short-circuit. A throw inside the
             // generator runs unhandled_exception() and then drives the frame to final_suspend, so the
@@ -442,7 +495,7 @@ public:
 
     next_awaiter
     next() {
-        return next_awaiter{_handle};
+        return next_awaiter{_handle, _alive};
     }
 };
 

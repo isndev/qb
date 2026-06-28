@@ -182,8 +182,14 @@ public:
      * @note **Recovery:** Once `not_ok()` is called, the protocol cannot be recovered.
      *       The I/O component will initiate disconnection. If recovery is needed,
      *       a new protocol instance should be created via `switch_protocol()`.
+     *
+     * @note **Virtual (Null-Object):** `virtual` so the shared `NoProtocol` sentinel can override it
+     *       as a no-op — a null protocol has nothing to invalidate, and the process-wide sentinel must
+     *       stay immutable / thread-safe. `not_ok()` is only ever called on error/teardown paths (never
+     *       the steady-state framing loop), so the dispatch is off the hot path. A real protocol uses
+     *       this base implementation unchanged.
      */
-    void
+    virtual void
     not_ok() noexcept {
         _status = false;
     }
@@ -206,6 +212,73 @@ public:
         return _should_flush;
     }
 };
+
+/**
+ * @class NoProtocol
+ * @ingroup Protocol
+ * @brief Null-Object protocol: the sentinel an I/O component points `_protocol` at when it has no
+ *        real protocol (freshly constructed, or after `clear_protocols()`).
+ *
+ * @details Keeping `_protocol` **never null** removes every per-message null check from the hot
+ *          read/processing path:
+ *          - `getMessageSize()` always reports `kNoMessage`, so the framing loop
+ *            `while (_protocol->getMessageSize() > 0)` exits immediately — no frame is ever
+ *            dispatched to the Null protocol;
+ *          - `ok()` is permanently `false` (the ctor calls `not_ok()`), so the existing
+ *            `!_protocol->ok()` guards treat "no protocol" exactly like a not-ok protocol
+ *            (stop / disconnect) — identical behaviour to the old `_protocol == nullptr`, with no
+ *            extra branch.
+ *
+ *          `protocol()` accessors return the (never-null) active protocol — the sentinel itself when
+ *          none is set. The rare spot that must distinguish "no real protocol" (the raw-passthrough
+ *          branch) compares `protocol == no_protocol()` (a plain pointer test, no vtable, no null);
+ *          everything else just uses the protocol polymorphically.
+ *
+ *          A single, process-wide, **immutable** instance is shared (see `no_protocol()`),
+ *          constructed once as not-ok + no-flush and never mutated afterwards. This is enforced by the
+ *          Null-Object overrides rather than by callers special-casing the sentinel: `getMessageSize()`
+ *          returns `kNoMessage` (the framing loop never enters), and `not_ok()` is a **no-op** (a null
+ *          protocol has nothing to invalidate). So every write site — the in-loop framing error path
+ *          and `close_after_deliver()` — can call `_protocol->not_ok()` unconditionally; on the
+ *          sentinel it does nothing, leaving the shared instance untouched and safe across VirtualCore
+ *          threads, with no `== no_protocol()` guard on the call. (The ctor sets the not-ok state via
+ *          `IProtocol::not_ok()` explicitly, since the virtual `not_ok()` would otherwise dispatch to
+ *          this no-op override during construction.)
+ */
+class NoProtocol final : public IProtocol {
+public:
+    NoProtocol() noexcept {
+        // Call the BASE not_ok() explicitly: the virtual not_ok() below is a no-op, and during
+        // construction a plain `not_ok()` would dispatch to it (dynamic type is NoProtocol here),
+        // leaving _status == true and breaking the "sentinel is permanently not-ok" invariant.
+        IProtocol::not_ok();     // ok() == false → "no usable protocol"
+        set_should_flush(false); // nothing to flush
+    }
+    std::size_t
+    getMessageSize() noexcept override {
+        return kNoMessage; // no message is ever available → the framing loop never enters
+    }
+    void
+    onMessage(std::size_t) noexcept override {}
+    void
+    reset() noexcept override {}
+    // Null-Object: a null protocol has nothing to invalidate. Overriding not_ok() as a no-op keeps the
+    // shared, process-wide sentinel immutable (and thus thread-safe) without any caller-side guard, so
+    // `_protocol->not_ok()` is safe to call unconditionally on every protocol, real or sentinel.
+    void
+    not_ok() noexcept override {}
+};
+
+/**
+ * @brief The shared, immutable Null-Object protocol sentinel.
+ * @return A pointer to the single process-wide `NoProtocol`. Never null; never mutated after
+ *         construction, so safe to share across threads.
+ */
+[[nodiscard]] inline IProtocol *
+no_protocol() noexcept {
+    static NoProtocol instance;
+    return &instance;
+}
 
 /**
  * @class AProtocol
