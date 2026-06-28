@@ -2797,6 +2797,16 @@ protected:
      *       2. `on(event::dispose&)` is called if implemented, providing a final cleanup hook before destruction.
      *       3. The base class destructor unregisters the event watcher from the listener.
      *       Actors should implement `on(event::disconnected&)` to handle connection loss gracefully.
+     *
+     * @warning **Self-destruction must happen ONLY in `on(event::dispose&)`, never in
+     *          `on(event::disconnected&)`.** For a self-managed standalone client, `dispose()`
+     *          still touches `this` after `on(event::disconnected&)` returns (it stops the
+     *          watcher and then fires `on(event::dispose&)`), so freeing the object from
+     *          `on(event::disconnected&)` (e.g. `delete this`) leaves the rest of `dispose()`
+     *          operating on freed memory (use-after-free). `on(event::dispose&)` is the last
+     *          hook and nothing in the framework touches `this` after it returns — that is the
+     *          one safe place to delete a self-owned object. (Actors are unaffected: `kill()`
+     *          defers destruction, so calling it from `on(event::disconnected&)` is safe.)
      */
     void
     dispose() {

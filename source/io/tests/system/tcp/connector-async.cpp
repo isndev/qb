@@ -109,6 +109,38 @@ struct RawAcceptorServer : qb::io::async::tcp::acceptor<RawAcceptorServer, qb::i
 } // namespace
 
 // =============================================================================
+// Tearing down the event loop while a connect is still in flight must reclaim the
+// connector (its self-held shared_ptr, the captured completion callback, and the
+// half-open socket fd) instead of leaking it. Regression: the connector's io watcher
+// had no teardown hook, so listener::clear() detached it without breaking the
+// self-hold cycle. Verified by ASan/LSan in CI and a live-capture counter here.
+// =============================================================================
+TEST_F(ConnectorAsyncTest, ClearWhileConnectInFlightReclaimsConnector) {
+    static std::atomic<long> live;
+    live.store(0);
+    struct Tracer {
+        Tracer() { live.fetch_add(1); }
+        Tracer(const Tracer &) { live.fetch_add(1); }
+        Tracer(Tracer &&) noexcept { live.fetch_add(1); }
+        ~Tracer() { live.fetch_sub(1); }
+    };
+    {
+        Tracer probe;
+        async::tcp::connect<qb::io::tcp::socket>(
+            uri("tcp://240.0.0.1:9"),                                  // non-routable: stays in flight
+            [probe](qb::io::tcp::socket &&) { (void) probe; }, 60s);   // long deadline: never completes here
+    }
+    for (int i = 0; i < 8; ++i)
+        async::run(EVRUN_NOWAIT); // arm the io watcher + deadline
+
+    if (live.load() == 0) {
+        GTEST_SKIP() << "connect to 240.0.0.1 did not stay in flight on this host";
+    }
+    async::listener::current.clear(); // tear down mid-connect
+    EXPECT_EQ(live.load(), 0) << "in-flight connector leaked at loop teardown";
+}
+
+// =============================================================================
 // Connect deadline bounds a slow OS connect-failure (Windows TCP refused-latency)
 //
 // ROOT CAUSE (proven via a raw-Winsock probe, zero qb code): a non-blocking

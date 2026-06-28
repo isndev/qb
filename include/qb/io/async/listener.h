@@ -262,6 +262,30 @@ private:
     IRegisteredKernelEvent *_registered_head  = nullptr;
     std::size_t             _registered_count = 0;
 
+    // ---- Re-entrant-dispatch guard (double-free safety for clear()) ----------
+    // A loop-owned, self-deleting handler (e.g. an `async::callback` Timeout) frees itself with
+    // `delete this` at the end of its own `invoke()`. If that handler's body calls `clear()`,
+    // clear() would otherwise also destroy it via `_destroy_owner` — freeing it once, then the
+    // in-flight `delete this` frees it again (double-free / use-after-free in `invoke()`).
+    // `on()` threads the handlers whose `invoke()` is currently on the call stack through these
+    // stack-local nodes (innermost first); `clear()` consults the chain and never destroys a
+    // mid-dispatch handler — that handler reclaims itself when `invoke()` returns. The node is a
+    // plain stack object, so the cost per dispatch is two pointer writes (no heap, no growth),
+    // and nested dispatch is handled naturally.
+    struct DispatchNode {
+        IRegisteredKernelEvent *iface;
+        DispatchNode           *prev;
+    };
+    DispatchNode *_dispatch_top = nullptr;
+
+    [[nodiscard]] bool
+    _is_dispatching(IRegisteredKernelEvent const *e) const noexcept {
+        for (auto const *n = _dispatch_top; n != nullptr; n = n->prev)
+            if (n->iface == e)
+                return true;
+        return false;
+    }
+
     std::size_t _nb_invoked_events      = 0; /**< Counter for the number of invoked events */
     std::size_t _total_events_processed = 0; /**< Total number of events processed since listener creation */
 
@@ -438,13 +462,19 @@ public:
                 cur->_list_prev         = nullptr;
                 cur->_list_next         = nullptr;
                 cur->_detached_by_clear = true;
-                if (cur->_destroy_owner) {
+                if (cur->_destroy_owner && !_is_dispatching(cur)) {
                     // Loop-owned, self-deleting handler (e.g. an `async::callback`
                     // Timeout) whose one-shot timer never fired: nothing else will
                     // reclaim it. Destroy the owner now — its `~base` re-enters
                     // `unregisterEvent(cur)` and frees this wrapper via the
                     // `_detached_by_clear` branch (cur is already unlinked). Clear the
                     // hook first so the re-entry can never recurse back into here.
+                    //
+                    // The `!_is_dispatching` guard is essential: when clear() runs from
+                    // INSIDE this handler's own invoke() (a callback whose body tears down
+                    // the loop), the handler will free itself via `delete this` the moment
+                    // invoke() returns — destroying it here too would double-free it. It is
+                    // already detached (above), so that in-flight delete reclaims it cleanly.
                     void *const owner   = cur->_owner;
                     auto *const destroy = cur->_destroy_owner;
                     cur->_owner         = nullptr;
@@ -490,7 +520,13 @@ public:
         // with EV_EVENT (libev watcher). Required for the C++ wrapper pattern around libev.
         auto &w    = *reinterpret_cast<event::base<EV_EVENT> *>(&event);
         w._revents = revents;
+        // Record this handler as mid-dispatch so a re-entrant clear() (from inside invoke())
+        // does not destroy it out from under the in-flight call. invoke() may `delete this`
+        // (the wrapper), so nothing below dereferences w._interface afterwards.
+        DispatchNode node{w._interface, _dispatch_top};
+        _dispatch_top = &node;
         w._interface->invoke();
+        _dispatch_top = node.prev;
         ++_nb_invoked_events;
         ++_total_events_processed;
     }
