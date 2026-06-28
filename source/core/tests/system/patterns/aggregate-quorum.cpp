@@ -207,6 +207,81 @@ TEST(AskQuorum, KClampedToN) {
     EXPECT_FALSE(g_q_timeout.load());
 }
 
+// ===========================================================================
+// Destroy-while-parked: the ask_quorum awaiter is reclaimed (loses a when_any race) while its
+// DETACHED per-target collectors live on. A collector that later decides the quorum must NOT
+// quorum_wake() the freed ask_quorum frame. Pre-fix this was a heap-use-after-free in
+// schedule_via_current (st->cont held the dead handle); the awaiter dtor now clears st->cont. The
+// reclaimed frame is small (pooled → ASan masked in this build); the definitive proof is the
+// pool-disabled standalone repro. This pins the path + that nothing hangs.
+// ===========================================================================
+namespace {
+std::atomic<bool> g_q_reclaim_ran{false};
+struct TriggerReply : qb::Event {};
+} // namespace
+
+class DeferredQuorumResponder : public qb::Actor {
+    std::optional<qb::test::Probe> _pending;
+
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::test::Probe>(*this);
+        registerEvent<TriggerReply>(*this);
+        co_return true;
+    }
+    void
+    on(qb::test::Probe &p) {
+        _pending = p; // store; answer only on TriggerReply (so the asker parks then loses the race)
+    }
+    void
+    on(TriggerReply &) {
+        if (_pending)
+            qb::answer(*this, *_pending, [](qb::test::Probe const &r) { return r.seq + 1; });
+    }
+};
+
+class ReclaimQuorumAsker : public qb::Actor {
+    qb::ActorId _target;
+
+public:
+    explicit ReclaimQuorumAsker(qb::ActorId t)
+        : _target(t) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::test::Probe>(*this);
+        auto target = _target;
+        spawn([target](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
+            std::vector<qb::ActorId> targets{target};
+            // ask_quorum spawns a detached collector + parks; race it against a faster timer so the
+            // quorum frame is reclaimed while parked (st->cont would dangle without the dtor fix).
+            (void) co_await qb::io::async::when_any(
+                qb::ask_quorum<qb::test::Probe>(c, targets, 1, qb::test::Probe{1}, 5s),
+                [c]() -> qb::io::async::task<int> { co_await c.sleep(5ms); co_return 99; }());
+            c.template push_to<TriggerReply>(target); // now make the collector's ask resolve → quorum_wake
+            co_await c.sleep(80ms);
+            g_q_reclaim_ran.store(true);
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(qb::test::Probe &e) {
+        (void) resolve_ask(e);
+    }
+};
+
+TEST(AskQuorum, ReclaimedWhileParkedNoUAF) {
+    g_q_reclaim_ran.store(false);
+    qb::Main   main;
+    const auto target = main.addActor<DeferredQuorumResponder>(0);
+    main.addActor<ReclaimQuorumAsker>(0, target);
+    main.start(false);
+    main.join(); // must not hang or crash — the reclaimed quorum frame is never resumed by the collector
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_q_reclaim_ran.load()) << "the asker coroutine must have run to completion";
+}
+
 TEST(AskQuorum, ReclaimsAllCoroutineFrames) {
     reset_quorum();
     // Single core → this thread is the worker; live_frames is ours to measure across the run.

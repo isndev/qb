@@ -73,6 +73,25 @@ apply_retry_jitter(qb::duration d, double jitter) noexcept {
     const auto                             out    = static_cast<qb::duration::rep>(static_cast<double>(d.count()) * factor);
     return qb::duration{out < 0 ? qb::duration::rep{0} : out};
 }
+
+/// One geometric backoff step `current * multiplier`, clamped to `max_backoff`, computed
+/// overflow-safely. `current.count() * multiplier` can leave the `qb::duration::rep` (int64 ns)
+/// range, and casting an out-of-range double to an integer is undefined behaviour — so we compare in
+/// double space BEFORE the narrowing cast:
+///   - at/over the cap → return the EXACT `max_backoff` rep (never cast the huge double);
+///   - non-positive product (degenerate `multiplier <= 0`) → zero (immediate; also dodges
+///     negative-overflow UB);
+///   - otherwise `0 < next < cap_d <= double(max)` so the cast is guaranteed in range.
+[[nodiscard]] inline qb::duration
+grow_backoff(qb::duration current, double multiplier, qb::duration max_backoff) noexcept {
+    const double next_d = static_cast<double>(current.count()) * multiplier;
+    const double cap_d  = static_cast<double>(max_backoff.count());
+    if (next_d >= cap_d)
+        return max_backoff;
+    if (next_d <= 0.0)
+        return qb::duration::zero();
+    return qb::duration{static_cast<qb::duration::rep>(next_d)};
+}
 } // namespace detail
 
 /**
@@ -419,8 +438,8 @@ ask_retry(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration tim
         // Jitter is applied to the *waited* value only; the geometric series itself stays
         // deterministic so growth is predictable.
         co_await ctx.sleep(qb::detail::apply_retry_jitter(backoff, policy.jitter));
-        const auto grown = static_cast<qb::duration::rep>(static_cast<double>(backoff.count()) * policy.multiplier);
-        backoff          = (std::min) (qb::duration{grown}, policy.max_backoff);
+        // Grow the geometric series, clamped to max_backoff — overflow-safe (see grow_backoff).
+        backoff = qb::detail::grow_backoff(backoff, policy.multiplier, policy.max_backoff);
     }
 }
 

@@ -32,7 +32,7 @@ namespace qb::io::async {
  */
 template <typename _Derived>
 class buffered_io {
-    IProtocol                              *_protocol = nullptr;
+    IProtocol                              *_protocol = no_protocol(); // never null: NoProtocol sentinel until switch_protocol()
     std::vector<std::unique_ptr<IProtocol>> _protocol_list;
     bool                                    _on_message         = false;
     bool                                    _is_disposed        = false;
@@ -78,17 +78,17 @@ public:
     clear_protocols() {
         _protocol_list.clear();
         _protocol_list.shrink_to_fit();
-        _protocol = nullptr;
+        _protocol = no_protocol(); // never null → "no protocol" handled via ok()/the sentinel
     }
 
     [[nodiscard]] IProtocol *
     protocol() noexcept {
-        return _protocol;
+        return _protocol; // never null; "no protocol set" is the NoProtocol sentinel → compare against no_protocol()
     }
 
     [[nodiscard]] IProtocol const *
     protocol() const noexcept {
-        return _protocol;
+        return _protocol; // never null (NoProtocol sentinel when none set)
     }
 
     [[nodiscard]] bool
@@ -98,7 +98,7 @@ public:
 
     [[nodiscard]] bool
     has_pending_read() const noexcept {
-        return _protocol && _protocol->ok() && derived().pendingRead() > 0;
+        return _protocol->ok() && derived().pendingRead() > 0; // sentinel ok()==false ⇒ no framed read
     }
 
     [[nodiscard]] bool
@@ -143,8 +143,10 @@ public:
 
     void
     close_after_deliver() noexcept {
-        if (_protocol)
-            _protocol->not_ok();
+        // Mark the protocol not-ok so the write path disposes after flushing pending output.
+        // Unconditional: NoProtocol::not_ok() is a no-op, so on the shared sentinel this does nothing
+        // (it stays immutable / thread-safe) — no `== no_protocol()` guard needed.
+        _protocol->not_ok();
     }
 
     template <typename... _Args>
@@ -209,7 +211,7 @@ public:
     process_input() noexcept {
         if (unlikely(_is_disposed || _reason))
             return false;
-        if (!_protocol) {
+        if (_protocol == no_protocol()) { // no real protocol (NoProtocol sentinel): raw passthrough
             if constexpr (qb::has_on<_Derived, event::pending_read>) {
                 const auto pending = derived().pendingRead();
                 if (pending) {
@@ -270,7 +272,9 @@ public:
                 return derived().pendingWrite() > 0;
             }
 
-            if (unlikely(!_protocol || !_protocol->ok())) {
+            // !ok() — or onMessage() dropped the protocol entirely (clear_protocols() → the
+            // NoProtocol sentinel, ok()==false). Caught by ok() alone; no per-message null check.
+            if (unlikely(!_protocol->ok())) {
                 if (likely(old_should_flush))
                     derived().flush(ret);
                 if (derived().pendingWrite() > 0) {
@@ -302,7 +306,7 @@ public:
                 }
             }
         }
-        return _protocol && _protocol->ok();
+        return _protocol->ok(); // sentinel ok()==false (loop above only runs for a real protocol)
     }
 
     void

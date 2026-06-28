@@ -504,3 +504,23 @@ TEST_F(StreamTransforms, ZipShortCircuitsWhenFirstStreamEndsFirst) {
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "zip (shorter first) never ran";
     EXPECT_EQ(result, (std::vector<std::pair<int, int>>{{1, 10}, {2, 11}, {3, 12}}));
 }
+
+// ---------------------------------------------------------------------------
+// Degenerate transform arguments fail loudly at the call site (pure sync, no scheduler).
+// ---------------------------------------------------------------------------
+
+TEST_F(StreamTransforms, BufferZeroThrows) {
+    // batch_size 0 → the fill loop `while (size < 0)` never pulls the source → silent total data loss.
+    auto src = async_stream<int>([]() -> task<std::optional<int>> { co_return std::nullopt; });
+    EXPECT_THROW((void) src.buffer(0), std::invalid_argument);
+    EXPECT_NO_THROW((void) src.buffer(1));
+}
+
+TEST_F(StreamTransforms, BackpressureZeroThrows) {
+    // max_buffer 0 with no caller semaphore → a 0-permit semaphore → permanent deadlock.
+    auto src = async_stream<int>([]() -> task<std::optional<int>> { co_return std::nullopt; });
+    EXPECT_THROW((void) src.backpressure(0), std::invalid_argument);
+    // A caller-supplied semaphore drives backpressure itself → a 0 buffer (pure rendezvous) is legal.
+    EXPECT_NO_THROW((void) src.backpressure(0, std::make_shared<semaphore>(1)));
+    EXPECT_NO_THROW((void) src.backpressure(4));
+}

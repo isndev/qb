@@ -285,7 +285,13 @@ struct timer_awaiter : awaiter_base {
     /**
      * @brief Construct with duration
      * @param duration The time to wait
-     * @param loop The event loop (defaults to current)
+     * @param loop The event loop the timer is armed on.
+     * @warning The default is libev's **default loop**, which is NOT necessarily the loop the
+     *          resuming scheduler pumps. `await_suspend` resumes through `CoroutineScheduler::current`
+     *          (the listener's scheduler, bound to the listener's loop); if that loop differs from
+     *          @p loop the watcher fires on a loop nobody pumps and the coroutine parks forever.
+     *          Always construct via the public `sleep()` (qb/io/async/coroutine/utils.h), which injects
+     *          `listener::current.loop()`; only pass an explicit @p loop here if it is that same loop.
      */
     timer_awaiter(qb::duration duration, ev::loop_ref loop = ev::get_default_loop())
         : loop_(loop)

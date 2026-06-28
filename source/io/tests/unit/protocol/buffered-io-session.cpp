@@ -387,15 +387,15 @@ TEST(BufferedIoSession, RejectsInvalidProtocolAndClearsStoredProtocol) {
     const auto   &const_session = session;
 
     EXPECT_EQ(session.switch_protocol<RejectingProtocol>(session), nullptr) << "a not_ok protocol is rejected";
-    EXPECT_EQ(session.protocol(), nullptr);
-    EXPECT_EQ(const_session.protocol(), nullptr);
+    EXPECT_EQ(session.protocol(), qb::io::async::no_protocol()) << "no protocol set ⇒ the NoProtocol sentinel (never null)";
+    EXPECT_EQ(const_session.protocol(), qb::io::async::no_protocol());
 
     auto *protocol = session.switch_protocol<FixedFrameProtocol>(session, 4u);
     ASSERT_NE(protocol, nullptr);
     EXPECT_EQ(session.protocol(), protocol);
 
     session.clear_protocols();
-    EXPECT_EQ(session.protocol(), nullptr);
+    EXPECT_EQ(session.protocol(), qb::io::async::no_protocol()) << "clear_protocols() restores the sentinel";
     EXPECT_FALSE(session.has_pending_read());
 }
 
@@ -422,7 +422,7 @@ TEST(BufferedIoSession, AccessorsCountersAndTypedDisconnectTrackLifecycle) {
     EXPECT_EQ(session.bytes_read(), 0u);
     EXPECT_EQ(session.bytes_written(), 0u);
     EXPECT_EQ(session.messages_processed(), 0u);
-    EXPECT_EQ(const_session.protocol(), nullptr);
+    EXPECT_EQ(const_session.protocol(), qb::io::async::no_protocol()); // default session ⇒ sentinel
 
     session.set_max_message_size(16u);
     EXPECT_EQ(session.max_message_size(), 16u);

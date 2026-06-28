@@ -107,6 +107,16 @@ class CoroutineScheduler;
 // spawned frame has no continuation/owner to free it otherwise.
 void defer_frame_destruction(std::coroutine_handle<>) noexcept;
 
+// Defined in scheduler.h. Scrubs a coroutine handle from the current scheduler's ready /
+// in-flight / suspended bookkeeping. Called from task<T>::~task (and move-assignment) just
+// before destroying a still-in-flight frame: a waker may have already queued it via
+// schedule_via_current() (e.g. a when_any/race loser subtree reclaimed in the same drain, or
+// any wait-list awaiter — mutex/semaphore/channel/scope/...), so without this the freed frame
+// would dangle in the ready queue for run_ready() to resume → heap-use-after-free. Mirrors the
+// libev awaiter_base::unschedule() teardown for the parked-handle (wait-list) awaiters, applied
+// centrally at every depth. CoroutineScheduler is incomplete here, hence the free-function hop.
+void forget_frame_if_current(std::coroutine_handle<>) noexcept;
+
 // ============================================================================
 // Coroutine frame freelist allocator (Finding 2.A.9)
 // ============================================================================
@@ -554,6 +564,13 @@ public:
      */
     ~task() {
         if (handle_) {
+            // Destroyed while still in flight (NOT at final_suspend) → a waker may have already
+            // queued this frame in the scheduler (schedule_via_current); scrub it before freeing so
+            // run_ready() cannot pop a dangling handle (UAF). Gated on !done(): the hot
+            // completed-task teardown pays only one done() check. See forget_frame_if_current.
+            if (!handle_.done()) {
+                forget_frame_if_current(handle_);
+            }
             handle_.destroy();
         }
     }
@@ -570,6 +587,9 @@ public:
     task &
     operator=(task &&other) noexcept {
         if (handle_) {
+            if (!handle_.done()) {
+                forget_frame_if_current(handle_); // see ~task: scrub a still-queued frame before free
+            }
             handle_.destroy();
         }
         handle_ = std::exchange(other.handle_, {});
@@ -626,6 +646,11 @@ public:
      */
     T
     await_resume() {
+        // Guard the empty/moved-from task: handle_ is null after a default-construct,
+        // a move, or detach(). promise() on a null handle is UB (it dereferences a null
+        // coroutine frame → SEGV in the result-variant access). Fail loudly instead.
+        if (!handle_)
+            throw std::logic_error("task<T>::await_resume called on an empty/moved-from task");
         auto &promise = handle_.promise();
         if (promise.has_exception()) {
             std::rethrow_exception(promise.exception());
@@ -817,6 +842,11 @@ public:
 
     ~task() {
         if (handle_) {
+            // See task<T>::~task: scrub a still-in-flight frame from the scheduler before freeing
+            // it, so a waker that already queued it cannot leave a dangling handle for run_ready().
+            if (!handle_.done()) {
+                forget_frame_if_current(handle_);
+            }
             handle_.destroy();
         }
     }
@@ -827,6 +857,9 @@ public:
     task &
     operator=(task &&other) noexcept {
         if (handle_) {
+            if (!handle_.done()) {
+                forget_frame_if_current(handle_); // see ~task: scrub a still-queued frame before free
+            }
             handle_.destroy();
         }
         handle_ = std::exchange(other.handle_, {});
@@ -865,6 +898,10 @@ public:
 
     void
     await_resume() {
+        // Guard the empty/moved-from task (see task<T>::await_resume): promise() on a
+        // null handle is UB. Fail loudly instead of dereferencing a null frame.
+        if (!handle_)
+            throw std::logic_error("task<void>::await_resume called on an empty/moved-from task");
         if (handle_.promise().has_exception()) {
             std::rethrow_exception(handle_.promise().exception_);
         }

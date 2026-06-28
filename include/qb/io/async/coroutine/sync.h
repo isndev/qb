@@ -71,6 +71,16 @@ public:
         : _permits(permits)
         , _available(permits) {}
 
+    // Mark the semaphore dead so a parked awaiter destroyed *after* the semaphore (e.g. both
+    // owned by a scope torn down in this order) skips the now-freed `_waiters`. Allocated lazily
+    // on the first park, so the uncontended path stays allocation-free (see `_alive`).
+    ~semaphore() {
+        if (_alive)
+            *_alive = false;
+    }
+    semaphore(const semaphore &)            = delete;
+    semaphore &operator=(const semaphore &) = delete;
+
     /**
      * @brief A queued acquirer. Lives in its awaiter's frame; the deque holds a pointer to it so a
      *        cancelled waiter can be retracted (erased) and `release()` can mark it `granted`.
@@ -89,9 +99,31 @@ public:
      * no other coroutine can observe or modify _available / _waiters.
      */
     struct acquire_awaiter {
-        semaphore  &sem;
-        waiter_node node{}; // default-init so `acquire_awaiter{*this}` stays -Wmissing-field-initializers clean
-        bool        _completed = false;
+        semaphore            &sem;
+        waiter_node           node{}; // default-init so the brace-init stays -Wmissing-field-initializers clean
+        bool                  _completed = false;
+        bool                  _parked    = false;
+        bool                  _resumed   = false; ///< set in await_resume: distinguishes granted-then-reclaimed
+        std::shared_ptr<bool> _sem_alive; ///< semaphore liveness; skip retract when false
+
+        // User-declared dtor below makes this a non-aggregate → provide the ctor `acquire()` uses.
+        explicit acquire_awaiter(semaphore &s)
+            : sem(s) {}
+
+        // Destroyed while still queued, not yet granted (e.g. a when_any/race loser reclaim):
+        // retract our node so a later release() cannot write `granted`/schedule a freed handle.
+        // If we were already GRANTED (release() popped our node and handed us the permit) but never
+        // resumed — the granted-then-reclaimed window of a when_any/with_deadline loser — the permit
+        // we were handed would otherwise be lost forever (the semaphore's effective capacity erodes
+        // by one). Hand it back via release() so the next waiter is served.
+        ~acquire_awaiter() {
+            if (!_parked || _resumed || !_sem_alive || !*_sem_alive)
+                return;
+            if (node.granted)
+                sem.release();          // return the permit we were granted but never consumed
+            else
+                sem.remove_waiter(&node);
+        }
 
         // Finding 2.C.10: fast-path for the uncontended case. In a
         // mono-thread cooperative scheduler, `_available > 0` at await_ready()
@@ -123,12 +155,16 @@ public:
                 _completed = true;
                 schedule_via_current(h);
             } else {
+                _sem_alive = sem.park_alive();
+                _parked    = true;
                 sem._waiters.push_back(&node);
             }
         }
 
         void
-        await_resume() noexcept {}
+        await_resume() noexcept {
+            _resumed = true;
+        }
     };
 
     /**
@@ -144,7 +180,10 @@ public:
         waiter_node                 node;
         cancellation_token::id_type cancel_id  = 0;
         std::shared_ptr<bool>       alive      = std::make_shared<bool>(true);
+        std::shared_ptr<bool>       _sem_alive; ///< semaphore liveness; skip retract when false
         bool                        _completed = false;
+        bool                        _parked    = false;
+        bool                        _resumed   = false; ///< set in await_resume: distinguishes granted-then-reclaimed
 
         cancel_acquire_awaiter(semaphore &s, cancellation_token t)
             : sem(s)
@@ -154,6 +193,14 @@ public:
             if (alive)
                 *alive = false; // neuter a callback still parked in the token after we are gone
             token.remove_on_cancel(cancel_id);
+            if (!_parked || _resumed || !_sem_alive || !*_sem_alive)
+                return;
+            // Destroyed while still queued/granted but never resumed (an OUTER when_any/race loser
+            // reclaim — distinct from this token's own cancel, which sets node.cancelled and resumes).
+            if (node.granted)
+                sem.release();            // return the granted-but-unconsumed permit to the next waiter
+            else if (!node.cancelled)
+                sem.remove_waiter(&node); // still parked: retract so release() cannot touch a freed frame
         }
 
         [[nodiscard]] bool
@@ -183,6 +230,8 @@ public:
                 schedule_via_current(h);
                 return;
             }
+            _sem_alive = sem.park_alive();
+            _parked    = true;
             sem._waiters.push_back(&node);
             auto a    = alive;
             cancel_id = token.on_cancel([this, a]() {
@@ -196,6 +245,7 @@ public:
 
         void
         await_resume() {
+            _resumed = true;
             token.remove_on_cancel(cancel_id);
             cancel_id = 0;
             if (_completed || node.granted)
@@ -340,10 +390,21 @@ private:
         }
     }
 
+    /// Liveness token shared with parked awaiters, lazily created on the first park so the
+    /// uncontended fast path allocates nothing. An awaiter destroyed after this semaphore checks
+    /// `*_alive == false` and skips the freed `_waiters`.
+    std::shared_ptr<bool> &
+    park_alive() {
+        if (!_alive)
+            _alive = std::make_shared<bool>(true);
+        return _alive;
+    }
+
     size_t                    _permits;
     size_t                    _available;
     size_t                    _held = 0; /**< Permits currently held by acquirers (over-release guard). */
     std::deque<waiter_node *> _waiters;
+    std::shared_ptr<bool>     _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================
@@ -380,6 +441,16 @@ public:
      */
     async_mutex() = default;
 
+    // Waiters hold a handle queued in `_waiters` tied to this object → non-copyable/non-movable.
+    // The dtor marks the lazily-allocated liveness token dead so an awaiter destroyed *after* the
+    // mutex skips the freed `_waiters`.
+    ~async_mutex() {
+        if (_alive)
+            *_alive = false;
+    }
+    async_mutex(const async_mutex &)            = delete;
+    async_mutex &operator=(const async_mutex &) = delete;
+
     /**
      * @brief Awaiter for locking
      *
@@ -387,8 +458,27 @@ public:
      * only one coroutine is active at a time, giving natural mutual exclusion.
      */
     struct lock_awaiter {
-        async_mutex &mtx;
-        bool         _completed = false;
+        async_mutex            &mtx;
+        bool                    _completed = false;
+        bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
+        std::coroutine_handle<> _parked{};   ///< set when queued in _waiters
+        std::shared_ptr<bool>   _mtx_alive;   ///< mutex liveness; skip retract when false
+
+        // User-declared dtor below makes this a non-aggregate → provide the ctor `lock()` uses.
+        explicit lock_awaiter(async_mutex &m)
+            : mtx(m) {}
+
+        // Destroyed while still parked (e.g. a when_any/race loser reclaim): retract our handle so
+        // a later unlock() cannot schedule a freed frame. If we were already WOKEN (unlock() popped
+        // us and handed the lock to us) but never resumed — the woken-then-reclaimed window of a
+        // when_any/with_deadline loser — the lock ownership we were handed would otherwise be lost
+        // forever (mutex stuck `_locked` with no holder). Release it so the next waiter is served.
+        ~lock_awaiter() {
+            if (!_parked || _resumed || !_mtx_alive || !*_mtx_alive)
+                return;
+            if (!mtx.remove_parked(_parked)) // not in _waiters ⇒ unlock() already handed us the lock
+                mtx.unlock();                // give the abandoned ownership back to the next waiter
+        }
 
         [[nodiscard]] bool
         await_ready() const noexcept {
@@ -402,12 +492,16 @@ public:
                 _completed  = true;
                 schedule_via_current(h);
             } else {
+                _mtx_alive = mtx.park_alive();
+                _parked    = h;
                 mtx._waiters.push_back(h);
             }
         }
 
         void
-        await_resume() noexcept {}
+        await_resume() noexcept {
+            _resumed = true;
+        }
     };
 
     /**
@@ -518,8 +612,32 @@ public:
     }
 
 private:
+    /// Retract a still-queued waiter handle (destroyed before being granted). O(n), tiny queue.
+    /// @return true if the handle was found and erased (it was still parked); false if it was not in
+    ///         the queue (already woken/handed the lock by unlock(), or already resumed).
+    bool
+    remove_parked(std::coroutine_handle<> h) noexcept {
+        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
+            if (*it == h) {
+                _waiters.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Liveness token shared with parked awaiters, lazily created on the first park so the
+    /// uncontended lock/unlock path allocates nothing.
+    std::shared_ptr<bool> &
+    park_alive() {
+        if (!_alive)
+            _alive = std::make_shared<bool>(true);
+        return _alive;
+    }
+
     bool                                _locked = false;
     std::deque<std::coroutine_handle<>> _waiters;
+    std::shared_ptr<bool>               _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================
@@ -552,12 +670,40 @@ private:
  */
 class async_rw_lock {
 public:
+    async_rw_lock() = default;
+
+    // Waiters hold handles queued in the wait lists tied to this object → non-copyable/non-movable.
+    ~async_rw_lock() {
+        if (_alive)
+            *_alive = false;
+    }
+    async_rw_lock(const async_rw_lock &)            = delete;
+    async_rw_lock &operator=(const async_rw_lock &) = delete;
+
     /**
      * @brief Awaiter for read lock
      */
     struct read_lock_awaiter {
-        async_rw_lock &rw;
-        bool           _completed = false;
+        async_rw_lock          &rw;
+        bool                    _completed = false;
+        bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
+        std::coroutine_handle<> _parked{};  ///< set when queued in _read_waiters
+        std::shared_ptr<bool>   _rw_alive;   ///< lock liveness; skip retract when false
+
+        explicit read_lock_awaiter(async_rw_lock &r)
+            : rw(r) {}
+
+        // Destroyed while still parked (when_any/race loser reclaim): retract our handle so a later
+        // unlock_write() cannot schedule a freed frame. If we were already WOKEN (unlock_write()
+        // admitted us as a reader: ++_readers, popped us) but never resumed — the woken-then-reclaimed
+        // window of a when_any/with_deadline loser — that reader count would otherwise leak forever
+        // (a future writer waits on _readers==0 that never comes). Give the read slot back.
+        ~read_lock_awaiter() {
+            if (!_parked || _resumed || !_rw_alive || !*_rw_alive)
+                return;
+            if (!erase_handle(rw._read_waiters, _parked)) // not parked ⇒ unlock_write() admitted us
+                rw.unlock_read();                         // return the abandoned reader slot
+        }
 
         [[nodiscard]] bool
         await_ready() const noexcept {
@@ -572,17 +718,38 @@ public:
                 _completed = true;
                 schedule_via_current(h);
             } else {
+                _rw_alive = rw.park_alive();
+                _parked   = h;
                 rw._read_waiters.push_back(h);
             }
         }
 
         void
-        await_resume() noexcept {}
+        await_resume() noexcept {
+            _resumed = true;
+        }
     };
 
     struct write_lock_awaiter {
-        async_rw_lock &rw;
-        bool           _completed = false;
+        async_rw_lock          &rw;
+        bool                    _completed = false;
+        bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
+        std::coroutine_handle<> _parked{};  ///< set when queued in _write_waiters
+        std::shared_ptr<bool>   _rw_alive;   ///< lock liveness; skip retract when false
+
+        explicit write_lock_awaiter(async_rw_lock &r)
+            : rw(r) {}
+
+        // Destroyed while still parked: retract. If we were already WOKEN (unlock_read()/unlock_write()
+        // handed us the write lock: _write_locked=true, popped us) but never resumed — the
+        // woken-then-reclaimed window of a when_any/with_deadline loser — the lock would otherwise be
+        // stuck `_write_locked` with no holder forever. Release it so the next waiter is served.
+        ~write_lock_awaiter() {
+            if (!_parked || _resumed || !_rw_alive || !*_rw_alive)
+                return;
+            if (!erase_handle(rw._write_waiters, _parked)) // not parked ⇒ we were handed the write lock
+                rw.unlock_write();                         // give the abandoned write lock back
+        }
 
         [[nodiscard]] bool
         await_ready() const noexcept {
@@ -596,12 +763,16 @@ public:
                 _completed       = true;
                 schedule_via_current(h);
             } else {
+                _rw_alive = rw.park_alive();
+                _parked   = h;
                 rw._write_waiters.push_back(h);
             }
         }
 
         void
-        await_resume() noexcept {}
+        await_resume() noexcept {
+            _resumed = true;
+        }
     };
 
     read_lock_awaiter
@@ -737,10 +908,33 @@ public:
     }
 
 private:
+    /// Retract a still-queued waiter handle from one of the wait lists. O(n), tiny queue.
+    /// @return true if found+erased (still parked); false if absent (already woken/admitted, or resumed).
+    static bool
+    erase_handle(std::deque<std::coroutine_handle<>> &q, std::coroutine_handle<> h) noexcept {
+        for (auto it = q.begin(); it != q.end(); ++it) {
+            if (*it == h) {
+                q.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Liveness token shared with parked awaiters, lazily created on the first park so the
+    /// uncontended lock/unlock path allocates nothing.
+    std::shared_ptr<bool> &
+    park_alive() {
+        if (!_alive)
+            _alive = std::make_shared<bool>(true);
+        return _alive;
+    }
+
     bool                                _write_locked = false;
     size_t                              _readers      = 0;
     std::deque<std::coroutine_handle<>> _read_waiters;
     std::deque<std::coroutine_handle<>> _write_waiters;
+    std::shared_ptr<bool>               _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================
@@ -769,8 +963,29 @@ public:
         : _expected(count)
         , _remaining(count) {}
 
+    // Waiters hold handles queued in `_waiters` tied to this object → non-copyable/non-movable.
+    ~barrier() {
+        if (_alive)
+            *_alive = false;
+    }
+    barrier(const barrier &)            = delete;
+    barrier &operator=(const barrier &) = delete;
+
     struct arrive_awaiter {
-        barrier &b;
+        barrier                &b;
+        std::coroutine_handle<> _parked{};  ///< set when queued in _waiters
+        std::shared_ptr<bool>   _b_alive;    ///< barrier liveness; skip retract when false
+
+        explicit arrive_awaiter(barrier &bar)
+            : b(bar) {}
+
+        // Destroyed while still parked (a non-final arrival reclaimed by when_any/race): retract our
+        // handle so the final arrival cannot schedule a freed frame. (The arrival already counted —
+        // _remaining stays decremented, matching "an arrived-then-gone waiter still arrived".)
+        ~arrive_awaiter() {
+            if (_parked && _b_alive && *_b_alive)
+                b.erase_handle(_parked);
+        }
 
         // Single-thread cooperative: _remaining won't change between
         // await_ready() and await_suspend() since we haven't suspended yet.
@@ -789,6 +1004,8 @@ public:
                 return;
             }
 
+            _b_alive = b.park_alive();
+            _parked  = h;
             b._waiters.push_back(h);
 
             if (--b._remaining == 0) {
@@ -817,9 +1034,29 @@ public:
     }
 
 private:
+    /// Retract a still-queued waiter handle (a reclaimed non-final arrival). O(n), tiny queue.
+    void
+    erase_handle(std::coroutine_handle<> h) noexcept {
+        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
+            if (*it == h) {
+                _waiters.erase(it);
+                return;
+            }
+        }
+    }
+
+    /// Liveness token shared with parked awaiters, lazily created on the first park.
+    std::shared_ptr<bool> &
+    park_alive() {
+        if (!_alive)
+            _alive = std::make_shared<bool>(true);
+        return _alive;
+    }
+
     size_t                               _expected;
     size_t                               _remaining;
     std::vector<std::coroutine_handle<>> _waiters;
+    std::shared_ptr<bool>                _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================
@@ -872,6 +1109,11 @@ public:
     async_event(const async_event &)            = delete;
     async_event &operator=(const async_event &) = delete;
 
+    ~async_event() {
+        if (_alive)
+            *_alive = false;
+    }
+
     /**
      * @brief Awaiter — suspends until the event is set
      *
@@ -879,7 +1121,26 @@ public:
      * executes between await_ready() and await_suspend().
      */
     struct wait_awaiter {
-        async_event &_ev;
+        async_event            &_ev;
+        bool                    _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
+        std::coroutine_handle<> _parked{};  ///< set when queued in _waiters
+        std::shared_ptr<bool>   _ev_alive;   ///< event liveness; skip retract when false
+
+        explicit wait_awaiter(async_event &ev)
+            : _ev(ev) {}
+
+        // Destroyed while still parked (when_any/race loser reclaim): retract our handle so a later
+        // set() cannot schedule a freed frame. For an AUTO-RESET event, if we were already WOKEN
+        // (set() consumed the one-shot signal to wake us and popped us) but never resumed — the
+        // woken-then-reclaimed window of a when_any/with_deadline loser — that signal would otherwise
+        // be lost forever (the next waiter parks indefinitely). Re-deliver it via set(). Manual-reset
+        // keeps _signaled latched, so nothing is consumed and no re-signal is needed there.
+        ~wait_awaiter() {
+            if (!_parked || _resumed || !_ev_alive || !*_ev_alive)
+                return;
+            if (!_ev.erase_handle(_parked) && _ev._auto_reset) // not parked ⇒ set() consumed a signal for us
+                _ev.set();                                     // re-deliver the abandoned wake
+        }
 
         [[nodiscard]] bool
         await_ready() noexcept {
@@ -898,12 +1159,16 @@ public:
                     _ev._signaled = false;
                 schedule_via_current(h);
             } else {
+                _ev_alive = _ev.park_alive();
+                _parked   = h;
                 _ev._waiters.push_back(h);
             }
         }
 
         void
-        await_resume() noexcept {}
+        await_resume() noexcept {
+            _resumed = true;
+        }
     };
 
     /** @brief Suspend until the event is set */
@@ -952,9 +1217,31 @@ public:
     }
 
 private:
+    /// Retract a still-queued waiter handle (a reclaimed waiter). O(n), tiny queue.
+    /// @return true if found+erased (still parked); false if absent (already woken by set(), or resumed).
+    bool
+    erase_handle(std::coroutine_handle<> h) noexcept {
+        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
+            if (*it == h) {
+                _waiters.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Liveness token shared with parked awaiters, lazily created on the first park.
+    std::shared_ptr<bool> &
+    park_alive() {
+        if (!_alive)
+            _alive = std::make_shared<bool>(true);
+        return _alive;
+    }
+
     bool                                _signaled;
     bool                                _auto_reset;
     std::deque<std::coroutine_handle<>> _waiters;
+    std::shared_ptr<bool>               _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================
@@ -994,6 +1281,11 @@ public:
     async_latch(const async_latch &)            = delete;
     async_latch &operator=(const async_latch &) = delete;
 
+    ~async_latch() {
+        if (_alive)
+            *_alive = false;
+    }
+
     /**
      * @brief Decrement the counter by n (default 1)
      *
@@ -1022,7 +1314,20 @@ public:
     }
 
     struct wait_awaiter {
-        async_latch &_latch;
+        async_latch            &_latch;
+        std::coroutine_handle<> _parked{};   ///< set when queued in _waiters
+        std::shared_ptr<bool>   _latch_alive; ///< latch liveness; skip retract when false
+
+        explicit wait_awaiter(async_latch &l)
+            : _latch(l) {}
+
+        // Destroyed while still parked (when_any/race loser reclaim): retract our handle so a later
+        // count_down()-to-zero cannot schedule a freed frame.
+        ~wait_awaiter() {
+            if (_parked && _latch_alive && *_latch_alive)
+                _latch.erase_handle(_parked);
+        }
+
         [[nodiscard]] bool
         await_ready() const noexcept {
             return _latch._count == 0;
@@ -1031,8 +1336,11 @@ public:
         await_suspend(std::coroutine_handle<> h) {
             if (_latch._count == 0)
                 schedule_via_current(h);
-            else
+            else {
+                _latch_alive = _latch.park_alive();
+                _parked      = h;
                 _latch._waiters.push_back(h);
+            }
         }
         void
         await_resume() noexcept {}
@@ -1052,8 +1360,28 @@ public:
     }
 
 private:
+    /// Retract a still-queued waiter handle (a reclaimed waiter). O(n), tiny queue.
+    void
+    erase_handle(std::coroutine_handle<> h) noexcept {
+        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
+            if (*it == h) {
+                _waiters.erase(it);
+                return;
+            }
+        }
+    }
+
+    /// Liveness token shared with parked awaiters, lazily created on the first park.
+    std::shared_ptr<bool> &
+    park_alive() {
+        if (!_alive)
+            _alive = std::make_shared<bool>(true);
+        return _alive;
+    }
+
     size_t                               _count;
     std::vector<std::coroutine_handle<>> _waiters;
+    std::shared_ptr<bool>                _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================

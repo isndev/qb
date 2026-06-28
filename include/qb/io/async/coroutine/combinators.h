@@ -87,6 +87,10 @@ private:
         size_t                  completed{0};
         std::coroutine_handle<> continuation;
         std::exception_ptr      first_exception;
+        // The spawned run_one frame for each branch, recorded so a destroy-while-parked teardown
+        // (awaiter unwound before all branches finished — e.g. a when_any/race loser reclaim) can
+        // reclaim every branch instead of letting it run detached and resume a freed continuation.
+        std::array<std::coroutine_handle<>, N> branch_handles{};
 
         explicit state_t(Tasks... ts)
             : tasks(std::move(ts)...) {}
@@ -103,21 +107,58 @@ private:
             if (!state->first_exception)
                 state->first_exception = std::current_exception();
         }
+        // This branch self-completed: clear its slot so the awaiter's pending-teardown dtor does
+        // not cancel_spawned() a frame that final_suspend is about to free (double-free).
+        state->branch_handles[I] = {};
         if (++state->completed == N) {
             if (state->continuation)
                 schedule_via_current(state->continuation);
         }
     }
 
+    // Reclaim one branch: destroy its spawned run_one frame, then the inner task it was parked
+    // on. Same owned-frame teardown + order as the when_any reclaim_branch. No-op for a cleared
+    // slot. The branch that resumed the continuation self-reclaims at its own final_suspend.
+    template <size_t I>
+    static void
+    reclaim_branch(state_t &st) {
+        if (!st.branch_handles[I])
+            return;
+        auto &sched = coro_scheduler();
+        sched.cancel_spawned(std::exchange(st.branch_handles[I], {}));
+        if (auto inner = std::get<I>(st.tasks).handle())
+            sched.forget(inner);
+        std::get<I>(st.tasks) = std::tuple_element_t<I, std::tuple<Tasks...>>{};
+    }
+
+    template <size_t... Is>
+    static void
+    reclaim_all_impl(state_t &st, std::index_sequence<Is...>) {
+        (reclaim_branch<Is>(st), ...);
+    }
+    static void
+    reclaim_all(state_t &st) {
+        reclaim_all_impl(st, std::make_index_sequence<N>{});
+    }
+
     template <size_t... Is>
     void
     start_all(std::index_sequence<Is...>) {
-        (coro_scheduler().spawn(run_one<Is>(_state)), ...);
+        ((_state->branch_handles[Is] = coro_scheduler().spawn_tracked(run_one<Is>(_state))), ...);
     }
 
 public:
     explicit when_all_awaiter(Tasks... tasks)
         : _state(std::make_shared<state_t>(std::move(tasks)...)) {}
+
+    // Pending-teardown reclamation: destroyed while still waiting (the awaiting coroutine's frame
+    // was unwound — e.g. it is a losing branch of an OUTER when_any, or scope cancellation). Every
+    // not-yet-finished branch would otherwise resume the freed continuation when it completes, so
+    // tear them all down. A completed branch already cleared its slot, so this is a no-op there.
+    ~when_all_awaiter() {
+        if (_state)
+            reclaim_all(*_state);
+    }
 
     [[nodiscard]] bool
     await_ready() const noexcept {
@@ -162,6 +203,15 @@ public:
     explicit when_all_vector_awaiter(std::vector<task<T>> tasks)
         : _state(std::make_shared<state_t>(std::move(tasks))) {}
 
+    // Pending-teardown reclamation: destroyed while still waiting (awaiter unwound — e.g. a
+    // when_any/race loser reclaim) → reclaim every not-yet-finished branch so none resumes the
+    // freed continuation. No-op once every branch self-completed (each cleared its own slot).
+    ~when_all_vector_awaiter() {
+        if (_state)
+            for (size_t j = 0; j < _state->branch_handles.size(); ++j)
+                reclaim_branch(*_state, j);
+    }
+
     [[nodiscard]] bool
     await_ready() const noexcept {
         return _state->tasks.empty();
@@ -172,8 +222,10 @@ public:
         _state->continuation           = h;
         const size_t             n     = _state->tasks.size();
         std::shared_ptr<state_t> state = _state;
+        // spawn_tracked records each run_one handle so the dtor can reclaim losing branches.
+        state->branch_handles.resize(n);
         for (size_t i = 0; i < n; ++i) {
-            coro_scheduler().spawn(run_one(state, i, n));
+            state->branch_handles[i] = coro_scheduler().spawn_tracked(run_one(state, i, n));
         }
     }
 
@@ -192,11 +244,27 @@ private:
         size_t                  completed{0}; // single-thread
         std::coroutine_handle<> continuation;
         std::exception_ptr      first_exception;
+        // Spawned run_one frame per branch — see the variadic when_all_awaiter. Recorded so a
+        // destroy-while-parked teardown can reclaim every not-yet-finished branch.
+        std::vector<std::coroutine_handle<>> branch_handles;
         explicit state_t(std::vector<task<T>> t)
             : tasks(std::move(t))
             , results(this->tasks.size()) {}
     };
     std::shared_ptr<state_t> _state;
+
+    // Reclaim one branch: destroy its spawned run_one frame, then the inner task<T> it awaited.
+    // Mirrors the when_any vector reclaim_branch. No-op for a cleared / self-completed slot.
+    static void
+    reclaim_branch(state_t &st, size_t j) {
+        if (j >= st.branch_handles.size() || !st.branch_handles[j])
+            return;
+        auto &sched = coro_scheduler();
+        sched.cancel_spawned(std::exchange(st.branch_handles[j], {}));
+        if (auto inner = st.tasks[j].handle())
+            sched.forget(inner);
+        st.tasks[j] = task<T>{};
+    }
 
     static task<void>
     run_one(std::shared_ptr<state_t> state, size_t i, size_t n) {
@@ -206,6 +274,10 @@ private:
             if (!state->first_exception)
                 state->first_exception = std::current_exception();
         }
+        // This branch self-completed: clear its slot so the dtor does not cancel_spawned() a frame
+        // final_suspend is about to free (double-free).
+        if (i < state->branch_handles.size())
+            state->branch_handles[i] = {};
         if (++state->completed == n) {
             if (state->continuation)
                 schedule_via_current(state->continuation);
@@ -626,6 +698,9 @@ class timeout_awaiter {
         // running; `finish()` always stops it before this state_t is destroyed.
         ev_timer timer{};
         bool     timer_started{false};
+        // The detached run_task driving inner_task. Recorded so a destroy-while-parked teardown
+        // (awaiter unwound mid-race) can reclaim it instead of letting it resume a freed frame.
+        std::coroutine_handle<> runner_handle{};
 
         explicit state_t(task<T> &&t)
             : inner_task(std::move(t)) {}
@@ -703,6 +778,22 @@ public:
     timeout_awaiter &operator=(timeout_awaiter &&)      = delete;
 
     ~timeout_awaiter() {
+        // Destroyed while still racing (awaiter unwound mid-race — e.g. a when_any/race loser
+        // reclaim): the detached run_task still holds _state and would later
+        // schedule_via_current(continuation) on our freed frame. Mark completed (so its late finish
+        // is a no-op), null the continuation, and tear down the runner + inner task. The `completed`
+        // guard keeps this a no-op once the task or the timeout already resolved — the documented
+        // "timeout does not interrupt the inner task" semantics apply to that resolved path, not to
+        // an unwound awaiter. Mirrors cancellable_operation / when_any branch reclamation.
+        if (_state && !_state->completed) {
+            _state->completed    = true;
+            _state->continuation = {};
+            if (_state->runner_handle)
+                coro_scheduler().cancel_spawned(std::exchange(_state->runner_handle, {}));
+            if (auto ih = _state->inner_task.handle())
+                coro_scheduler().forget(ih);
+            _state->inner_task = task<T>{};
+        }
         finish();
     }
 
@@ -713,8 +804,8 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
-        _state->continuation = h;
-        coro_scheduler().spawn(run_task(_state));
+        _state->continuation  = h;
+        _state->runner_handle = coro_scheduler().spawn_tracked(run_task(_state));
         // Arm a single self-stopping ev_timer instead of spawning a `co_await sleep`
         // coroutine. `data` points at the raw state_t (kept alive by _state while the
         // timer can fire); ev_now_update refreshes libev's cached time so the timeout is
@@ -780,6 +871,8 @@ class timeout_awaiter<void> {
         // is destroyed. See the non-void timeout_awaiter for the full lifetime contract.
         ev_timer timer{};
         bool     timer_started{false};
+        // The detached run_task driving inner_task — see the non-void timeout_awaiter.
+        std::coroutine_handle<> runner_handle{};
 
         explicit state_t(task<void> &&t)
             : inner_task(std::move(t)) {}
@@ -842,6 +935,18 @@ public:
     timeout_awaiter &operator=(timeout_awaiter &&)      = delete;
 
     ~timeout_awaiter() {
+        // Destroyed while still racing — see the non-void timeout_awaiter dtor. Tear down the
+        // detached run_task + inner task and null the continuation so neither resumes our freed
+        // frame; the `completed` guard makes this a no-op on the resolved / timed-out path.
+        if (_state && !_state->completed) {
+            _state->completed    = true;
+            _state->continuation = {};
+            if (_state->runner_handle)
+                coro_scheduler().cancel_spawned(std::exchange(_state->runner_handle, {}));
+            if (auto ih = _state->inner_task.handle())
+                coro_scheduler().forget(ih);
+            _state->inner_task = task<void>{};
+        }
         finish();
     }
 
@@ -852,8 +957,8 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
-        _state->continuation = h;
-        coro_scheduler().spawn(run_task(_state));
+        _state->continuation  = h;
+        _state->runner_handle = coro_scheduler().spawn_tracked(run_task(_state));
         auto loop = listener::current.loop();
         ev_timer_init(&_state->timer, &timeout_awaiter::on_timeout, qb::detail::to_ev_seconds(_timeout), 0.0);
         _state->timer.data = _state.get();

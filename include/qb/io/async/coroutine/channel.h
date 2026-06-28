@@ -281,17 +281,31 @@ public:
                 throw channel_closed();
             }
             if (!_completed) {
-                // Woken by a recv that freed buffer space — deliver our value.
-                // If a receiver is already waiting, hand it directly.
+                // Woken by a recv that freed buffer space, or by a select/recv_for that registered
+                // after we parked — deliver our value with the same priority as a direct send:
+                // a waiting receiver first, then a waiting select waiter, else buffer it.
                 if (!ch._recv_waiters.empty()) {
                     auto [recv_h, result_ptr] = ch._recv_waiters.front();
                     ch._recv_waiters.pop_front();
                     *result_ptr = std::move(value);
                     schedule_via_current(recv_h);
+                    _completed = true;
                 } else {
-                    ch._buffer.push(std::move(value));
+                    // Hand off to the first non-stale select waiter (resolve() schedules its outer).
+                    while (!ch._select_waiters.empty()) {
+                        auto entry = ch._select_waiters.front();
+                        ch._select_waiters.pop_front();
+                        if (!entry.state->resolved) {
+                            entry.state->resolve(entry.index, std::any(std::move(value)));
+                            _completed = true;
+                            break;
+                        }
+                    }
+                    if (!_completed) {
+                        ch._buffer.push(std::move(value));
+                        _completed = true;
+                    }
                 }
-                _completed = true;
             }
         }
     };
@@ -316,6 +330,7 @@ public:
     struct recv_awaiter {
         channel              &ch;
         std::optional<T>      _result;
+        bool                  _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
         std::shared_ptr<bool> _ch_alive; ///< channel liveness; skip ch access when false
 
         // Explicit constructor: the user-declared destructor below makes this a
@@ -329,16 +344,29 @@ public:
         // (e.g. scheduler teardown / a cancelled parent), remove its entry from
         // _recv_waiters so a later send()/try_send() cannot write through the
         // now-dangling &_result into freed memory (use-after-free).
+        //
+        // Wake-token preservation: a sender (send_awaiter / try_send) hands its value by writing
+        // *result_ptr (our _result) and POPPING us from _recv_waiters. If we are reclaimed before
+        // resuming (a when_any/race loser, woken-then-reclaimed), that value would be destroyed with
+        // the frame — a LOST MESSAGE, though the sender reported success. Detect it (we are no longer
+        // in _recv_waiters AND never resumed AND _result holds a value) and re-buffer it so the next
+        // receiver gets it. Gated on !_resumed: on the normal path await_resume std::move's _result
+        // (which leaves the optional engaged-but-moved-from), so without the gate we would re-buffer a
+        // moved-from value (double/garbage delivery).
         ~recv_awaiter() {
             if (!*_ch_alive)
                 return; // channel already freed: nothing to de-register
             auto &w = ch._recv_waiters;
             for (auto it = w.begin(); it != w.end(); ++it) {
                 if (it->second == &_result) {
-                    w.erase(it);
-                    break;
+                    w.erase(it); // still parked: no value handed yet, just retract
+                    return;
                 }
             }
+            // Not in the queue ⇒ a sender/buffer-drain already handed us a value. Reclaimed before
+            // consuming it → return it to the channel so the message is not lost.
+            if (!_resumed && _result.has_value())
+                ch._buffer.push(std::move(*_result));
         }
 
         [[nodiscard]] bool
@@ -374,6 +402,7 @@ public:
 
         std::optional<T>
         await_resume() {
+            _resumed = true; // consumed normally → the dtor must not re-buffer the moved-from _result
             // The channel was destroyed while we were parked (close() scheduled this
             // resume, ~channel then freed the channel): return nullopt — the documented
             // "channel closed" result — without touching the freed channel.
@@ -534,6 +563,12 @@ public:
             return;
         }
         _select_waiters.push_back({std::move(state), idx});
+        // Rendezvous (capacity==0) sender-first: if a sender is already parked with a value, wake one
+        // so its await_resume hands the value to this select/recv_for waiter. Without this, select()
+        // and recv_for() never observe a pending rendezvous value that recv()/try_recv() would (the
+        // send_awaiter only delivers to recv_waiters on a direct send, not to a select registered
+        // afterwards). Mirrors recv_awaiter::await_suspend.
+        wake_one_sender();
     }
 
     // -----------------------------------------------------------------------
@@ -560,21 +595,33 @@ public:
             channel<T>                           &ch;
             std::shared_ptr<channel_select_state> state;
             qb::duration                          timeout_ms;
+            bool                                  _resumed = false; ///< distinguishes resolved-then-reclaimed
+            std::shared_ptr<bool>                 _ch_alive;        ///< channel liveness; skip ch access when false
 
             timed_recv_awaiter(channel<T> &c, std::shared_ptr<channel_select_state> s, qb::duration t)
                 : ch(c)
                 , state(std::move(s))
-                , timeout_ms(t) {}
+                , timeout_ms(t)
+                , _ch_alive(c._alive) {}
 
             // Frame-destruction guard: this awaiter lives inside the recv_for
             // coroutine frame. If that frame is destroyed while parked, mark the
             // shared state resolved so neither channel_timer nor a later sender
             // schedules the now-dangling handle.
+            //
+            // Wake-token preservation (mirrors recv_awaiter): if a sender already RESOLVED us with a
+            // value (state->resolved, not a timeout/close) but we are reclaimed before consuming it,
+            // re-buffer that value so the sender's message is not lost. Guarded by _ch_alive (the
+            // channel may be torn down first) and !_resumed (await_resume already took the value).
             ~timed_recv_awaiter() {
                 if (state && !state->resolved) {
                     state->resolved = true;
                     state->outer    = {};
+                    return;
                 }
+                if (!_resumed && state && _ch_alive && *_ch_alive && state->winner != 1 && !state->closed
+                    && state->value.has_value())
+                    ch._buffer.push(std::any_cast<T>(std::move(state->value)));
             }
 
             [[nodiscard]] bool
@@ -590,11 +637,16 @@ public:
                 }
                 state->outer = h;
                 ch._select_waiters.push_back({state, 0});
+                // Rendezvous (capacity==0) sender-first: wake a parked sender so it delivers to this
+                // recv_for waiter (its await_resume now hands off to select waiters). Mirrors
+                // register_select_waiter / recv_awaiter::await_suspend.
+                ch.wake_one_sender();
                 coro_scheduler().spawn(channel_timer(state, h, timeout_ms));
             }
 
             std::optional<T>
             await_resume() {
+                _resumed = true; // consumed normally → the dtor must not re-buffer the value
                 if (!state->resolved || state->winner == 1 || state->closed)
                     return std::nullopt;
                 if (!state->value.has_value())
@@ -678,15 +730,30 @@ public:
                     return false;
                 if (ch._closed)
                     return false;
-                // Deliver directly to a pending receiver if one exists
+                // Deliver with the SAME priority as a direct/woken untimed send (send_awaiter):
+                // a waiting receiver first, then a waiting select/recv_for waiter, else buffer.
+                // The select hand-off is essential: a select()/recv_for() that woke us via
+                // wake_one_sender() registered in _select_waiters, NOT _recv_waiters. Without it
+                // the value would land in the buffer, the select/recv_for waiter would never observe
+                // it and would time out — a silently lost rendezvous message. Mirrors
+                // send_awaiter::await_resume.
                 if (!ch._recv_waiters.empty()) {
                     auto [recv_h, result_ptr] = ch._recv_waiters.front();
                     ch._recv_waiters.pop_front();
                     *result_ptr = std::move(val);
                     schedule_via_current(recv_h);
-                } else {
-                    ch._buffer.push(std::move(val));
+                    return true;
                 }
+                // Hand off to the first non-stale select waiter (resolve() schedules its outer).
+                while (!ch._select_waiters.empty()) {
+                    auto entry = ch._select_waiters.front();
+                    ch._select_waiters.pop_front();
+                    if (!entry.state->resolved) {
+                        entry.state->resolve(entry.index, std::any(std::move(val)));
+                        return true;
+                    }
+                }
+                ch._buffer.push(std::move(val));
                 return true;
             }
         };
@@ -937,36 +1004,38 @@ collect(channel<T> &ch) {
  * }, buffer_size);
  * @endcode
  *
- * NOTE: The caller must keep the returned channels alive while the pipeline
- * worker is running. The worker holds raw pointers to the channels.
+ * Lifetime: the worker CO-OWNS both channels via shared_ptr captured by value in its coroutine
+ * frame, so they stay alive for as long as the worker runs regardless of when the caller drops its
+ * own handles. The caller therefore has no "keep the channels alive" obligation, and the worker can
+ * never dereference (recv/send/close) a freed channel — the previous raw-pointer design left the
+ * loop-exit `close()` (and an in-flight `send`) writing through freed memory if the caller dropped
+ * the channels early (the recv side was already liveness-guarded; close()/send were not).
  */
 template <typename T, typename U, typename F>
 auto
 make_pipeline(F f, size_t buffer_size = 10) {
-    auto in  = std::make_unique<channel<T>>(buffer_size);
-    auto out = std::make_unique<channel<U>>(buffer_size);
+    auto in  = std::make_shared<channel<T>>(buffer_size);
+    auto out = std::make_shared<channel<U>>(buffer_size);
 
-    // Capture raw pointers BEFORE moving the unique_ptrs.
-    // Use a static function (not a lambda) so the coroutine frame stores fn,
-    // in_ptr, out_ptr as VALUE parameters — never as a pointer to a local lambda
-    // that would dangle after make_pipeline returns.
-    coro_scheduler().spawn(pipeline_worker<T, U>(std::move(f), in.get(), out.get()));
+    // The worker takes shared_ptr copies (value parameters in the frame) — it co-owns the channels
+    // and uses a static function (not a lambda) so nothing dangles after make_pipeline returns.
+    coro_scheduler().spawn(pipeline_worker<T, U>(std::move(f), in, out));
 
     return std::make_pair(std::move(in), std::move(out));
 }
 
-// Free function: fn, in_ptr, out_ptr are VALUE/pointer parameters stored
-// in the coroutine frame by the standard. No local-lambda dangling risk.
+// Free function: fn, in, out are VALUE parameters stored in the coroutine frame by the standard
+// (the channels are co-owned for the worker's whole lifetime). No dangling/UAF possible.
 template <typename T, typename U, typename F>
 task<void>
-pipeline_worker(F fn, channel<T> *in_ptr, channel<U> *out_ptr) {
+pipeline_worker(F fn, std::shared_ptr<channel<T>> in, std::shared_ptr<channel<U>> out) {
     while (true) {
-        auto val = co_await in_ptr->recv();
+        auto val = co_await in->recv();
         if (!val)
             break;
-        co_await out_ptr->send(fn(*val));
+        co_await out->send(fn(*val));
     }
-    out_ptr->close();
+    out->close();
 }
 
 // =============================================================================
@@ -1058,6 +1127,15 @@ public:
     // once resolved) instead of scheduling our now-destroyed coroutine handle — a
     // use-after-free. Only the refcounted _state is touched, never the channels (which
     // may already be freed).
+    //
+    // NOTE (intentional, documented edge): unlike recv()/recv_for() — which re-buffer a value handed
+    // to a receiver that is then reclaimed — a multi-way select() that is RESOLVED with a value but
+    // abandoned before resume (an outer when_any/race loser) DROPS that one value. Re-buffering it
+    // would require a runtime-index→compile-time-type dispatch over the heterogeneous channel tuple;
+    // and abandoning a whole multi-source select is semantically a choice-level abandon (you gave up
+    // waiting on ALL of them), so dropping the single in-flight value is acceptable and consistent
+    // across the variadic and vector select forms. Single-channel receives preserve the value; select
+    // does not. If this ever matters, route the receive through recv()/recv_for() on one channel.
     ~channel_select_awaiter() {
         if (_state) {
             _state->resolved = true;

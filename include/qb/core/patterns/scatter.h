@@ -177,6 +177,20 @@ template <typename E>
 struct quorum_awaiter {
     std::shared_ptr<quorum_state<E>>  st;
     qb::io::async::cancellation_token token; // the actor scope — a kill takes priority on resume
+    std::coroutine_handle<>           parked{}; ///< handle stored in st->cont (cleared on teardown)
+
+    // User-declared dtor below makes this a non-aggregate → provide the ctor ask_quorum uses.
+    quorum_awaiter(std::shared_ptr<quorum_state<E>> s, qb::io::async::cancellation_token t)
+        : st(std::move(s))
+        , token(std::move(t)) {}
+
+    // Destroyed while still parked (await_resume never ran — e.g. a when_any/race loser reclaim):
+    // the DETACHED collectors still hold `st` and would later quorum_wake() → schedule_via_current()
+    // our freed frame. Clear st->cont so that wake is a no-op. The held `st` keeps the state valid.
+    ~quorum_awaiter() {
+        if (parked && st->cont == parked)
+            st->cont = {};
+    }
 
     [[nodiscard]] bool
     await_ready() const noexcept {
@@ -185,6 +199,7 @@ struct quorum_awaiter {
     void
     await_suspend(std::coroutine_handle<> h) noexcept {
         st->cont = h; // collectors are already spawned; they will wake us (or already have)
+        parked   = h;
     }
     std::vector<E>
     await_resume() {

@@ -44,10 +44,13 @@
 #include <qb/io/async/coroutine.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/coroutine_reclaim_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
+using qb::io::test::reclaim_fast_winner;
+using qb::io::test::run_reclaim_driver;
 
 namespace {
 
@@ -853,4 +856,47 @@ TEST_F(CoroutineCombinators, WhenAnyNestedLoserDtorReclaimsNoLeak) {
     const long after = detail::CoroutineFrameAllocator::live_frames;
     EXPECT_EQ(after, baseline) << "nested when_any leaked " << (after - baseline)
                                << " frame(s) — the inner race's branches must be reclaimed via the awaiter dtor";
+}
+
+// =============================================================================
+// Destroy-while-parked reclamation (see shared/coroutine_reclaim_support.h)
+//
+// A nested when_all / coro_with_timeout reclaimed by an OUTER when_any: its spawned branches /
+// detached runner must be torn down by the awaiter dtor so the last one to finish does not resume
+// the freed continuation.
+// =============================================================================
+
+TEST_F(CoroutineCombinators, WhenAllReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        auto park = []() -> task<int> {
+            volatile char big[8192];
+            big[0]      = 7;
+            auto [a, b] = co_await when_all(
+                []() -> task<int> { co_await sleep(40ms); co_return 1; }(),
+                []() -> task<int> { co_await sleep(50ms); co_return 2; }());
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return a + b + (int) big[1];
+        };
+        auto r = co_await when_any(park(), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(70ms); // the inner branches finish — must NOT resume the reclaimed parker
+    });
+}
+
+TEST_F(CoroutineCombinators, TimeoutReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        auto park = []() -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            int v  = co_await coro_with_timeout(
+                []() -> task<int> { co_await sleep(40ms); co_return 7; }(), 1000ms);
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v + (int) big[1];
+        };
+        auto r = co_await when_any(park(), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(60ms); // the detached runner completes late — must NOT resume the freed frame
+    });
 }

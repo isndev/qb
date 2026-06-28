@@ -48,10 +48,12 @@
 #include <qb/io/async/coroutine.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/coroutine_reclaim_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
+using qb::io::test::run_reclaim_driver;
 
 namespace {
 
@@ -927,4 +929,212 @@ TEST_F(ChannelAsync, SendForTimeoutLeavesStaleWaiterThatLaterSendSkips) {
     auto second = ch.try_recv();
     ASSERT_TRUE(second.has_value());
     EXPECT_EQ(*second, 3) << "the stale waiter must be skipped; only the live sender's value remains";
+}
+
+// ---------------------------------------------------------------------------
+// Rendezvous (capacity 0): a select()/recv_for() that registers AFTER a sender has
+// already parked must wake that sender and observe its value — recv()/try_recv() did,
+// but select()/recv_for() previously never saw the pending rendezvous value.
+// ---------------------------------------------------------------------------
+
+TEST_F(ChannelAsync, RendezvousRecvForWakesParkedSender) {
+    channel<int>      ch(0); // rendezvous
+    int               got = -777;
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await ch.send(42); // parks: no receiver yet
+    });
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await sleep(10ms); // let the sender park first
+        auto v = co_await ch.recv_for(200ms);
+        got    = v ? *v : -1;
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "recv_for never completed";
+    EXPECT_EQ(got, 42) << "recv_for did not receive the parked rendezvous sender's value";
+}
+
+TEST_F(ChannelAsync, RendezvousSelectWakesParkedSender) {
+    channel<int>      ch(0); // rendezvous
+    int               got = -777;
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await ch.send(7); // parks: no receiver yet
+    });
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await sleep(10ms);
+        auto result = co_await select(ch); // single-channel select over the rendezvous channel
+        got         = std::any_cast<int>(result.value);
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "select never completed";
+    EXPECT_EQ(got, 7) << "select did not receive the parked rendezvous sender's value";
+}
+
+// ---------------------------------------------------------------------------
+// Same rendezvous wake-up, but the parked sender is a TIMED send_for(). recv_for()/select()
+// wakes it via wake_one_sender(); timed_send_awaiter::await_resume must hand the value off to
+// the select/recv_for waiter (not silently buffer it). Pre-fix the value was buffered, the
+// sender reported success, and the receiver timed out → a lost rendezvous message.
+// ---------------------------------------------------------------------------
+
+TEST_F(ChannelAsync, RendezvousRecvForWakesParkedTimedSender) {
+    channel<int>      ch(0); // rendezvous
+    int               got = -777;
+    std::atomic<bool> sent{false};
+    std::atomic<bool> sender_done{false};
+    std::atomic<bool> recv_done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        sent.store(co_await ch.send_for(42, 1000ms)); // parks: no receiver yet
+        sender_done.store(true);
+    });
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await sleep(10ms); // let the timed sender park first
+        auto v = co_await ch.recv_for(1000ms);
+        got    = v ? *v : -1;
+        recv_done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return recv_done.load() && sender_done.load(); })) << "recv_for/send_for never completed";
+    EXPECT_EQ(got, 42) << "recv_for did not receive the parked timed sender's value (lost message)";
+    EXPECT_TRUE(sent.load()) << "send_for must report success after the value was delivered";
+    EXPECT_TRUE(ch.empty()) << "the rendezvous value must not be left in the buffer";
+}
+
+TEST_F(ChannelAsync, RendezvousSelectWakesParkedTimedSender) {
+    channel<int>      ch(0); // rendezvous
+    int               got = -777;
+    std::atomic<bool> sent{false};
+    std::atomic<bool> sender_done{false};
+    std::atomic<bool> recv_done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        sent.store(co_await ch.send_for(7, 1000ms)); // parks: no receiver yet
+        sender_done.store(true);
+    });
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await sleep(10ms);
+        auto result = co_await select(ch); // single-channel select over the rendezvous channel
+        got         = std::any_cast<int>(result.value);
+        recv_done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return recv_done.load() && sender_done.load(); })) << "select/send_for never completed";
+    EXPECT_EQ(got, 7) << "select did not receive the parked timed sender's value (lost message)";
+    EXPECT_TRUE(sent.load()) << "send_for must report success after the value was delivered";
+    EXPECT_TRUE(ch.empty()) << "the rendezvous value must not be left in the buffer";
+}
+
+// ---------------------------------------------------------------------------
+// Destroy-while-parked, DEPTH-2: a recv() waiter nested one level below a when_any branch, WOKEN
+// (by a sender) in the SAME drain its subtree is reclaimed. The winner sends then completes in one
+// resume, so the depth-2 recv waiter is queued (schedule_via_current) exactly when the loser branch
+// is reclaimed. The deeper waiter is freed via the task<T> dtor cascade, which must forget() it from
+// the scheduler (task.h forget_frame_if_current) — else its queued handle dangles in ready_queue_ →
+// heap-UAF in run_ready(). Frame >4 KiB so it escapes the coroutine frame pool and ASan sees it.
+// ---------------------------------------------------------------------------
+
+TEST_F(ChannelAsync, RecvDepth2WaiterWokenThenReclaimedNoUAF) {
+    run_reclaim_driver([]() -> task<void> {
+        auto ch = std::make_shared<channel<int>>(0); // rendezvous: recv parks with no sender
+        auto inner = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            volatile char big[8192];
+            big[0]  = 7;
+            auto v  = co_await c->recv(); // parks; woken by the winner's try_send()
+            big[1]  = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v ? *v : -1;
+        };
+        auto outer = [inner](std::shared_ptr<channel<int>> c) -> task<int> {
+            co_return co_await inner(c); // depth-2: outer -> inner -> channel.recv
+        };
+        auto winner = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            co_await sleep(5ms);  // let the depth-2 receiver park first
+            (void) c->try_send(42); // delivers to the parked receiver -> schedules it (queued)
+            co_return 99;           // -> when_any reclaim destroys the (queued) receiver -> would dangle
+        };
+        auto r = co_await when_any(outer(ch), winner(ch));
+        EXPECT_EQ(r.index, 1u) << "the sending winner must win the race";
+        co_await sleep(20ms);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Wake-token-loss for channel recv(): a sender hands its value into the parked receiver's _result
+// and pops it from _recv_waiters (try_send / send_awaiter). If that receiver is reclaimed before it
+// resumes (a when_any/race loser, woken-then-reclaimed), the value is destroyed with the frame — a
+// LOST MESSAGE, even though the sender reported success. The recv_awaiter dtor must re-buffer the
+// unconsumed value so the next receiver still gets it (mirrors the sync-primitive wake-token return).
+// Deterministic: the winner sends then completes in one resume, so the value is handed to the
+// depth-2 receiver exactly when its branch is reclaimed.
+// ---------------------------------------------------------------------------
+
+TEST_F(ChannelAsync, RecvWokenThenReclaimedDoesNotLoseValue) {
+    int  recovered = -1;
+    bool had_value = false;
+    run_reclaim_driver([&recovered, &had_value]() -> task<void> {
+        auto ch = std::make_shared<channel<int>>(1); // buffered: try_send hands directly to a waiter
+        auto inner = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            volatile char big[8192];
+            big[0]  = 7;
+            auto v  = co_await c->recv(); // value handed by the winner's try_send(), then reclaimed
+            big[1]  = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v ? *v : -1;
+        };
+        auto outer  = [inner](std::shared_ptr<channel<int>> c) -> task<int> { co_return co_await inner(c); };
+        auto winner = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            co_await sleep(5ms);
+            (void) c->try_send(42); // hands 42 into the parked receiver's _result + pops it
+            co_return 99;           // -> when_any reclaim destroys the receiver holding 42
+        };
+        auto r = co_await when_any(outer(ch), winner(ch));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        // 42 was handed to the reclaimed receiver. Without re-buffering it is lost; with the fix the
+        // dtor returns it to the channel and the next receiver gets it.
+        auto again = co_await ch->recv_for(100ms);
+        had_value  = again.has_value();
+        recovered  = again.value_or(-1);
+    });
+    EXPECT_TRUE(had_value) << "value handed to a reclaimed receiver was LOST (wake token lost)";
+    EXPECT_EQ(recovered, 42);
+}
+
+// recv_for() variant of the above: a sender RESOLVES the timed receiver's shared select-state with a
+// value; if that recv_for is reclaimed before consuming it, timed_recv_awaiter must re-buffer the
+// value (mirrors recv_awaiter) so the message is not lost.
+TEST_F(ChannelAsync, RecvForWokenThenReclaimedDoesNotLoseValue) {
+    int  recovered = -1;
+    bool had_value = false;
+    run_reclaim_driver([&recovered, &had_value]() -> task<void> {
+        auto ch = std::make_shared<channel<int>>(0); // rendezvous
+        auto inner = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            volatile char big[8192];
+            big[0]  = 7;
+            auto v  = co_await c->recv_for(1000ms); // resolved by the parked sender, then reclaimed
+            big[1]  = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v ? *v : -1;
+        };
+        auto outer  = [inner](std::shared_ptr<channel<int>> c) -> task<int> { co_return co_await inner(c); };
+        auto winner = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            co_await sleep(5ms);    // let recv_for register its select-waiter first
+            co_await c->send(42);   // send_awaiter delivers to the recv_for select-waiter (resolve), synchronously
+            co_return 99;           // -> when_any reclaim destroys the resolved-but-unconsumed recv_for
+        };
+        auto r = co_await when_any(outer(ch), winner(ch));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        auto again = co_await ch->recv_for(100ms);
+        had_value  = again.has_value();
+        recovered  = again.value_or(-1);
+    });
+    EXPECT_TRUE(had_value) << "value resolved into a reclaimed recv_for was LOST (wake token lost)";
+    EXPECT_EQ(recovered, 42);
 }

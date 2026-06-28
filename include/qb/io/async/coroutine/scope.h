@@ -373,6 +373,20 @@ public:
             std::shared_ptr<scope_impl>              impl;
             std::shared_ptr<std::coroutine_handle<>> slot;
 
+            // User-declared dtor below → non-aggregate; provide the ctor the brace-init relies on.
+            join_all_awaiter(std::shared_ptr<scope_impl> i, std::shared_ptr<std::coroutine_handle<>> s)
+                : impl(std::move(i))
+                , slot(std::move(s)) {}
+
+            // Destroyed while still parked (e.g. a when_any/race loser reclaim): await_resume() never
+            // ran, so *slot still holds our (about-to-be-freed) handle and on_task_done()/wake_slots
+            // would dereference it (h.done()). Null it so the wake path skips us. impl also holds the
+            // slot, so the null is observed there too.
+            ~join_all_awaiter() {
+                if (slot)
+                    *slot = {};
+            }
+
             [[nodiscard]] bool
             await_ready() const noexcept {
                 return impl->active_count == 0;
@@ -413,6 +427,17 @@ public:
         struct join_any_awaiter {
             std::shared_ptr<scope_impl>              impl;
             std::shared_ptr<std::coroutine_handle<>> slot;
+
+            join_any_awaiter(std::shared_ptr<scope_impl> i, std::shared_ptr<std::coroutine_handle<>> s)
+                : impl(std::move(i))
+                , slot(std::move(s)) {}
+
+            // Destroyed while still parked (when_any/race loser reclaim): null *slot so
+            // on_task_done()/wake_slots skip our freed handle instead of dereferencing it.
+            ~join_any_awaiter() {
+                if (slot)
+                    *slot = {};
+            }
 
             [[nodiscard]] bool
             await_ready() const noexcept {
@@ -470,6 +495,25 @@ public:
             std::shared_ptr<scope_impl>              impl;
             std::shared_ptr<std::coroutine_handle<>> slot;
             qb::duration                             timeout_ms;
+            // Tracks the spawned join_all_timer frame so it can be reclaimed when the join resolves
+            // first (or this branch is reclaimed) instead of lingering parked for the full timeout.
+            std::shared_ptr<std::coroutine_handle<>> timer_slot{std::make_shared<std::coroutine_handle<>>()};
+
+            timed_join_awaiter(std::shared_ptr<scope_impl> i, std::shared_ptr<std::coroutine_handle<>> s, qb::duration t)
+                : impl(std::move(i))
+                , slot(std::move(s))
+                , timeout_ms(t) {}
+
+            // Destroyed while still parked (when_any/race loser reclaim) OR resolved normally: null
+            // *slot so neither on_task_done() nor the join_all_timer dereferences our freed handle in
+            // wake_slots / on expiry, and tear down the timeout timer if it is still parked (it self-
+            // clears *timer_slot once fired, so cancel_spawned is a no-op then). Mirrors with_deadline.
+            ~timed_join_awaiter() {
+                if (slot)
+                    *slot = {};
+                if (timer_slot && *timer_slot)
+                    coro_scheduler().cancel_spawned(std::exchange(*timer_slot, {}));
+            }
 
             [[nodiscard]] bool
             await_ready() const noexcept {
@@ -484,8 +528,9 @@ public:
                 }
                 *slot = h;
                 impl->join_all_waiter_slots.push_back(slot);
-                // Timer also holds the slot; reads *slot on expiry.
-                coro_scheduler().spawn(join_all_timer(slot, timeout_ms));
+                // Timer also holds the slot; reads *slot on expiry. spawn_tracked so the dtor can
+                // reclaim it the instant the join resolves first.
+                *timer_slot = coro_scheduler().spawn_tracked(join_all_timer(slot, timer_slot, timeout_ms));
             }
 
             bool
@@ -543,9 +588,14 @@ private:
      * Parameters are stored by VALUE in the coroutine frame — no dangling refs.
      */
     static task<void>
-    join_all_timer(std::shared_ptr<std::coroutine_handle<>> slot, qb::duration delay) {
+    join_all_timer(std::shared_ptr<std::coroutine_handle<>> slot, std::shared_ptr<std::coroutine_handle<>> timer_slot,
+                   qb::duration delay) {
         co_await sleep(delay);
         QB_SCOPE_TRACE("join_all_timer fired");
+        // Fired: this frame self-reclaims at final_suspend. Clear the tracked handle so a later
+        // timed_join_awaiter dtor cannot cancel_spawned() a frame that reused this address.
+        if (timer_slot)
+            *timer_slot = {};
         auto h = *slot;
         if (h && !h.done())
             schedule_via_current(h);

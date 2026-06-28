@@ -759,7 +759,7 @@ TEST_F(AsyncIoBaseTest, InputDisposesWhenProtocolIsInvalidOrClearedBeforeRead) {
         auto           pipes = make_pipe_pair();
         PipeInputProbe input{pipes.read.get()};
         ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input), nullptr);
-        ASSERT_NE(input.base().protocol(), nullptr);
+        ASSERT_NE(input.base().protocol(), qb::io::async::no_protocol()); // a real protocol is set
         input.base().protocol()->not_ok();
 
         input.base().start();
@@ -777,7 +777,7 @@ TEST_F(AsyncIoBaseTest, InputDisposesWhenProtocolIsInvalidOrClearedBeforeRead) {
         PipeInputProbe input{pipes.read.get()};
         ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input), nullptr);
         input.base().clear_protocols();
-        EXPECT_EQ(input.base().protocol(), nullptr);
+        EXPECT_EQ(input.base().protocol(), qb::io::async::no_protocol());
 
         input.base().start();
         ASSERT_EQ(::write(pipes.write.get(), "data", 4), 4);
@@ -792,7 +792,7 @@ TEST_F(AsyncIoBaseTest, InputDisposesWhenProtocolIsInvalidOrClearedBeforeRead) {
         auto           pipes = make_pipe_pair();
         PipeInputProbe input{pipes.read.get()};
         EXPECT_EQ(input.base().switch_protocol<RejectingInputProtocol>(input), nullptr);
-        EXPECT_EQ(input.base().protocol(), nullptr);
+        EXPECT_EQ(input.base().protocol(), qb::io::async::no_protocol());
     }
 }
 
@@ -923,14 +923,14 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolLifecycleAccessorsAndNoProtocolDisposal) {
         PipeDuplexProbe session{sockets.read.get()};
         const auto     &const_base = session.base();
 
-        EXPECT_EQ(session.base().protocol(), nullptr);
-        EXPECT_EQ(const_base.protocol(), nullptr);
+        EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
+        EXPECT_EQ(const_base.protocol(), qb::io::async::no_protocol());
         EXPECT_FALSE(session.base().has_pending_read());
         EXPECT_FALSE(session.base().has_pending_write());
         EXPECT_EQ(session.base().max_message_size(), QB_MAX_MESSAGE_SIZE);
 
         EXPECT_EQ(session.base().switch_protocol<RejectingDuplexProtocol>(session), nullptr);
-        EXPECT_EQ(session.base().protocol(), nullptr);
+        EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
 
         auto *protocol = session.base().switch_protocol<FourByteDuplexProtocol>(session);
         ASSERT_NE(protocol, nullptr);
@@ -946,7 +946,7 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolLifecycleAccessorsAndNoProtocolDisposal) {
         EXPECT_EQ(session.pendingWrite(), 6u);
 
         session.base().clear_protocols();
-        EXPECT_EQ(session.base().protocol(), nullptr);
+        EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
         EXPECT_FALSE(session.base().has_pending_read());
     }
 

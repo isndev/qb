@@ -491,7 +491,7 @@ scoped_callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
 template <typename _Derived>
 class file_watcher : public base<file_watcher<_Derived>, event::file> {
     using base_t                                      = base<file_watcher<_Derived>, event::file>;
-    IProtocol                              *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
+    IProtocol                              *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
     std::vector<std::unique_ptr<IProtocol>> _protocol_list;      /**< Owned protocol instances (RAII). */
     std::size_t                             _max_message_size = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size. */
 
@@ -515,8 +515,9 @@ public:
      *                 and leaked the instance unless callers tracked it manually).
      */
     file_watcher(IProtocol *protocol)
-        : _protocol(protocol) {
-        _protocol_list.push_back(std::unique_ptr<IProtocol>(protocol));
+        : _protocol(protocol ? protocol : no_protocol()) { // keep the never-null invariant
+        if (protocol)
+            _protocol_list.push_back(std::unique_ptr<IProtocol>(protocol));
     }
 
     /**
@@ -618,10 +619,8 @@ public:
             ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret))
                 return -1;
-            // Validate protocol before processing messages
-            if (unlikely(!this->_protocol))
-                return -1;
-            // Check protocol validity before and during message processing
+            // Stop if the protocol is invalid — or absent: a cleared/unset protocol is the
+            // NoProtocol sentinel whose ok() is false (so no separate null check is needed).
             if (unlikely(!this->_protocol->ok()))
                 return -1;
             // Use a separate variable for the framing loop: reusing `ret` here
@@ -685,7 +684,7 @@ private:
         }
 
         auto diff_read = event.attr.st_size - event.prev.st_size;
-        if (!_protocol || !_protocol->ok() || !event.attr.st_nlink
+        if (!_protocol->ok() || !event.attr.st_nlink
             || (diff_read < 0 && lseek(Derived.transport().native_handle(), 0, SEEK_SET)))
             ret = -1;
         else if (diff_read) {
@@ -798,7 +797,7 @@ private:
 template <typename _Derived>
 class input : public base<input<_Derived>, event::io> {
     using base_t                                      = base<input<_Derived>, event::io>;
-    IProtocol                              *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
+    IProtocol                              *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
     std::vector<std::unique_ptr<IProtocol>> _protocol_list;      /**< Owned protocol instances (RAII). */
     bool        _on_message         = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
     bool        _is_disposed        = false; /**< Internal flag to ensure `dispose()` is called only once. */
@@ -828,8 +827,9 @@ public:
      *       Currently, this constructor implies ownership.
      */
     input(IProtocol *protocol)
-        : _protocol(protocol) {
-        _protocol_list.push_back(std::unique_ptr<IProtocol>(protocol));
+        : _protocol(protocol ? protocol : no_protocol()) { // keep the never-null invariant
+        if (protocol)
+            _protocol_list.push_back(std::unique_ptr<IProtocol>(protocol));
     }
 
     /**
@@ -884,17 +884,17 @@ public:
     clear_protocols() {
         _protocol_list.clear();
         _protocol_list.shrink_to_fit();
-        _protocol = nullptr;
+        _protocol = no_protocol(); // never null → the framing loop / ok() guards stay branch-free
     }
 
     [[nodiscard]] IProtocol *
     protocol() noexcept {
-        return _protocol;
+        return _protocol; // never null; "no protocol set" is the NoProtocol sentinel → compare against no_protocol()
     }
 
     [[nodiscard]] IProtocol const *
     protocol() const noexcept {
-        return _protocol;
+        return _protocol; // never null (NoProtocol sentinel when none set)
     }
 
     /**
@@ -1028,7 +1028,7 @@ public:
      */
     [[nodiscard]] bool
     has_pending_data() const noexcept {
-        return _protocol && _protocol->ok() && static_cast<_Derived const &>(*this).pendingRead() > 0;
+        return _protocol->ok() && static_cast<_Derived const &>(*this).pendingRead() > 0; // sentinel ok()==false ⇒ no data
     }
 
     /**
@@ -1307,10 +1307,14 @@ private:
                 _on_message = false;
                 return false;
             }
-            // Check if the CURRENT (potentially new) protocol became invalid
+            // Check if the CURRENT protocol became invalid — OR was dropped entirely by onMessage()
+            // (clear_protocols() with no replacement). Both are caught by ok() alone: after a clear,
+            // _protocol is the NoProtocol sentinel whose ok() is false, so this stops cleanly with no
+            // per-message null check (the framing-loop top likewise no-ops on the sentinel's
+            // getMessageSize() == 0).
             if (unlikely(!this->_protocol->ok())) {
                 _system_error = 0;
-                _reason       = -1; // Protocol error
+                _reason       = -1; // Protocol error / protocol gone
                 _on_message   = false;
                 return false;
             }
@@ -1388,9 +1392,10 @@ private:
             _self_guard = Derived.shared();
         }
 
-        if (_reason || !_protocol || !_protocol->ok()) {
-            // Protocol error: capture it before disposing
-            if (_protocol && !_protocol->ok()) {
+        if (_reason || !_protocol->ok()) {
+            // Protocol error — or no protocol at all (the NoProtocol sentinel reads ok() == false).
+            // Capture it before disposing.
+            if (!_protocol->ok()) {
                 _system_error = 0;  // Protocol error, not system error
                 _reason       = -1; // Use reason code -1 for protocol errors (reserved for qb-io)
             }
@@ -1988,7 +1993,7 @@ protected:
 template <typename _Derived>
 class io : public base<io<_Derived>, event::io> {
     using base_t                                      = base<io<_Derived>, event::io>;
-    IProtocol                              *_protocol = nullptr;   /**< Active protocol (non-owning view into _protocol_list). */
+    IProtocol                              *_protocol = no_protocol();   /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
     std::vector<std::unique_ptr<IProtocol>> _protocol_list;        /**< Owned protocol instances (RAII). */
     bool                                    _on_message   = false; /**< Internal flag for re-entrance protection in `on(event::io&)`. */
     bool                                    _is_disposed  = false; /**< Internal flag for `dispose()` idempotency. */
@@ -2015,8 +2020,9 @@ public:
      *                 take ownership by adding it to its internal list of protocols.
      */
     io(IProtocol *protocol)
-        : _protocol(protocol) {
-        _protocol_list.push_back(std::unique_ptr<IProtocol>(protocol));
+        : _protocol(protocol ? protocol : no_protocol()) { // keep the never-null invariant
+        if (protocol)
+            _protocol_list.push_back(std::unique_ptr<IProtocol>(protocol));
     }
 
     /**
@@ -2070,17 +2076,17 @@ public:
     clear_protocols() {
         _protocol_list.clear();
         _protocol_list.shrink_to_fit();
-        _protocol = nullptr;
+        _protocol = no_protocol(); // never null → the framing loop / ok() guards stay branch-free
     }
 
     [[nodiscard]] IProtocol *
     protocol() noexcept {
-        return _protocol;
+        return _protocol; // never null; "no protocol set" is the NoProtocol sentinel → compare against no_protocol()
     }
 
     [[nodiscard]] IProtocol const *
     protocol() const noexcept {
-        return _protocol;
+        return _protocol; // never null (NoProtocol sentinel when none set)
     }
 
     /**
@@ -2251,7 +2257,7 @@ public:
      */
     [[nodiscard]] bool
     has_pending_read() const noexcept {
-        return _protocol && _protocol->ok() && static_cast<_Derived const &>(*this).pendingRead() > 0;
+        return _protocol->ok() && static_cast<_Derived const &>(*this).pendingRead() > 0; // sentinel ok()==false ⇒ no data
     }
 
     /**
@@ -2463,8 +2469,10 @@ public:
      */
     void
     close_after_deliver() noexcept {
-        if (_protocol)
-            _protocol->not_ok();
+        // Mark the protocol not-ok so the write path disposes once pending output is flushed.
+        // Unconditional: NoProtocol::not_ok() is a no-op, so on the shared sentinel this does nothing
+        // (it stays immutable / thread-safe) — no `== no_protocol()` guard needed.
+        _protocol->not_ok();
     }
 
     /**
@@ -2602,6 +2610,8 @@ private:
                 _on_message = false;
                 return false;
             }
+            // !ok() OR _protocol dropped entirely by onMessage() (clear_protocols() → the NoProtocol
+            // sentinel, whose ok() is false). Caught by ok() alone — no per-message null check.
             if (unlikely(!this->_protocol->ok())) {
                 if (likely(old_should_flush))
                     Derived.flush(ret);
@@ -2662,8 +2672,13 @@ private:
         _bytes_written += ret;
 
         if (!Derived.pendingWrite()) {
-            if (unlikely(_reason || !_protocol || !_protocol->ok()))
+            if (unlikely(_reason || !_protocol->ok())) { // ok()==false also covers the NoProtocol sentinel
+                // All output flushed and either a reason is pending or the protocol was marked
+                // not-ok by close_after_deliver(): dispose. The disconnected event's _system_error
+                // is finalized at the `error:` label in on(event::io) (io-defect-3 handled there —
+                // a protocol-initiated graceful close reports no system error).
                 return false;
+            }
             this->_async_event.set(EV_READ);
             if constexpr (qb::has_on<_Derived, event::eos>) {
                 auto evt__eos = event::eos{};
@@ -2710,7 +2725,7 @@ private:
         if (_reason)
             goto error;
 
-        if (event._revents & EV_READ && _protocol && _protocol->ok()) {
+        if (event._revents & EV_READ && _protocol->ok()) { // sentinel ok()==false → skip read when unset
             constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
 
             auto ret = static_cast<std::size_t>(Derived.read());
@@ -2769,8 +2784,15 @@ private:
         if (!_reason && qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
-        if (!_reason)
-            _system_error = qb::io::socket::get_last_errno();
+        if (!_reason) {
+            // io-defect-3: a protocol-initiated graceful close (close_after_deliver() marked the
+            // protocol not-ok, all output flushed — handle_write returned false with no _reason) is
+            // NOT a socket failure, so do not surface a stale errno left by an earlier non-fatal
+            // write. A genuine read/write error leaves the protocol ok() (it is the socket, not the
+            // protocol, that failed), so its real errno is still reported. The only path that reaches
+            // here with !_reason && !ok() is that graceful close (protocol errors set _reason = -1).
+            _system_error = this->_protocol->ok() ? qb::io::socket::get_last_errno() : 0;
+        }
         dispose();
     }
 

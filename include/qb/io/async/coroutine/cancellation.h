@@ -372,6 +372,23 @@ public:
             // Deregister the cancel hook on normal completion so a long-lived token does
             // not retain a dead callback per cancellable() wrap.
             token.remove_on_cancel(_cancel_id);
+            // Destroyed while the inner op is still in flight (e.g. a when_any/race loser reclaim
+            // with no cancel): the detached task_runner still holds `state` and would later
+            // schedule_via_current(state->continuation) on our freed frame. Tear it down and null
+            // the continuation so nothing resumes a dead frame. This mirrors the on_cancel hook's
+            // teardown; the task_done guard makes it a no-op on normal completion / after a cancel.
+            if (state && !state->task_done) {
+                state->task_done    = true;
+                state->continuation = {};
+                // Destroy the runner FIRST (inner_task's continuation_ points at the runner frame),
+                // scrub the inner frame from the scheduler queues, then drop the inner task — exact
+                // order of the on_cancel path.
+                if (state->runner_handle)
+                    coro_scheduler().cancel_spawned(std::exchange(state->runner_handle, {}));
+                if (auto ih = state->inner_task.handle())
+                    coro_scheduler().forget(ih);
+                state->inner_task = task<T>{};
+            }
         }
 
         [[nodiscard]] bool
@@ -498,6 +515,18 @@ public:
 
         ~awaiter() {
             token.remove_on_cancel(_cancel_id);
+            // Destroyed while the inner op is still in flight (when_any/race loser reclaim, no
+            // cancel): tear down the detached runner + inner task and null the continuation so the
+            // runner's late completion cannot resume our freed frame. See the non-void overload.
+            if (state && !state->task_done) {
+                state->task_done    = true;
+                state->continuation = {};
+                if (state->runner_handle)
+                    coro_scheduler().cancel_spawned(std::exchange(state->runner_handle, {}));
+                if (auto ih = state->inner_task.handle())
+                    coro_scheduler().forget(ih);
+                state->inner_task = task<void>{};
+            }
         }
 
         [[nodiscard]] bool
@@ -613,9 +642,10 @@ struct cancellable_sleep_awaiter {
         std::coroutine_handle<> timer_handle{};
     };
 
-    qb::duration                duration;
-    cancellation_token          token;
-    cancellation_token::id_type _cancel_id = 0;
+    qb::duration                 duration;
+    cancellation_token           token;
+    cancellation_token::id_type  _cancel_id = 0;
+    std::shared_ptr<sleep_state> state; ///< shared with the cancel hook + the detached timer_task
 
     // User-declared dtor below → non-aggregate; provide the ctor cancellable_sleep() uses.
     cancellable_sleep_awaiter(qb::duration d, cancellation_token t)
@@ -626,6 +656,13 @@ struct cancellable_sleep_awaiter {
         // Without this, a `co_await ctx.sleep(...)` loop on the long-lived actor scope token
         // accumulated one dead callback per iteration (the original unbounded-growth bug).
         token.remove_on_cancel(_cancel_id);
+        // Destroyed while still parked (the awaiter unwound mid-sleep — e.g. a when_any/race loser
+        // reclaim, where this branch loses): the detached timer_task still holds `state` and would
+        // later schedule_via_current(state->handle) on our freed frame. Tear it down. Mirrors
+        // with_deadline_timeout_awaiter; cancel_spawned is a no-op once the timer already fired
+        // (timer_task clears timer_handle then, so a reused address is never mistakenly reclaimed).
+        if (state && state->timer_handle)
+            coro_scheduler().cancel_spawned(std::exchange(state->timer_handle, {}));
     }
 
     [[nodiscard]] bool
@@ -635,22 +672,23 @@ struct cancellable_sleep_awaiter {
 
     void
     await_suspend(std::coroutine_handle<> h) {
-        auto state    = std::make_shared<sleep_state>();
+        // Member (not a local) so the destructor can reclaim the detached timer on a
+        // destroy-while-parked teardown — the awaiter keeps its own ref to the shared state.
+        state         = std::make_shared<sleep_state>();
         state->handle = h;
-        _cancel_id    = token.on_cancel([state]() {
-            if (!state->resumed) {
-                state->resumed = true;
+        auto s        = state;
+        _cancel_id    = token.on_cancel([s]() {
+            if (!s->resumed) {
+                s->resumed = true;
                 // Reclaim the detached timer_task NOW rather than letting it stay
                 // parked on the (e.g. multi-second) original sleep — otherwise its
                 // frame leaks until the timer fires, or for the rest of the thread's
                 // life on a core whose listener is never torn down (Main::start(false)).
-                if (state->timer_handle)
-                    coro_scheduler().cancel_spawned(std::exchange(state->timer_handle, {}));
-                schedule_via_current(state->handle);
+                if (s->timer_handle)
+                    coro_scheduler().cancel_spawned(std::exchange(s->timer_handle, {}));
+                schedule_via_current(s->handle);
             }
         });
-        // Keep our own shared_ptr ref (don't move) so we can record the spawned
-        // helper's handle on the shared state for the cancel path above.
         state->timer_handle = coro_scheduler().spawn_tracked(timer_task(duration, state));
     }
 
@@ -666,6 +704,10 @@ private:
     static task<void>
     timer_task(qb::duration d, std::shared_ptr<sleep_state> s) {
         co_await sleep(d);
+        // The timer has fired: its frame self-reclaims at final_suspend, so clear the tracked
+        // handle. A stale handle here would let a later dtor/cancel cancel_spawned() an unrelated
+        // frame that reused the address (mirrors deadline_timer_task).
+        s->timer_handle = {};
         if (!s->resumed) {
             s->resumed = true;
             schedule_via_current(s->handle);

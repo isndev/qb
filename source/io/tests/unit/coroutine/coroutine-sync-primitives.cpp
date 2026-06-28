@@ -40,10 +40,13 @@
 #include <qb/io/async/coroutine.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/coroutine_reclaim_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
+using qb::io::test::reclaim_fast_winner;
+using qb::io::test::run_reclaim_driver;
 
 namespace {
 
@@ -888,4 +891,337 @@ TEST_F(CoroutineSyncPrimitives, LatchExtraCountDownPastZeroIsSafe) {
     latch.count_down(); // no-op
     latch.count_down(); // no-op
     EXPECT_TRUE(pump_until([&] { return woken.load(); })) << "extra count_down past zero must be a safe no-op";
+}
+
+// =============================================================================
+// Destroy-while-parked reclamation (see shared/coroutine_reclaim_support.h)
+//
+// Each test pre-arms a primitive so the parker must suspend, races it against reclaim_fast_winner()
+// via when_any (the winner wins → the parker's frame is reclaimed while parked), then fires the
+// wake. The awaiter's retracting destructor must de-register the parked handle so the wake does not
+// schedule (or, for semaphore::release, write `granted` through) the freed frame.
+// =============================================================================
+
+namespace {
+// One parker per primitive: QB_RECLAIM_PARK suspends on the lock/wait, keeping a >4 KiB local live
+// across the suspend so the freed frame is visible to ASan.
+task<int> park_mutex(async_mutex &m) { QB_RECLAIM_PARK(m.lock()) }
+task<int> park_sem(semaphore &s) { QB_RECLAIM_PARK(s.acquire()) }
+task<int> park_read(async_rw_lock &r) { QB_RECLAIM_PARK(r.lock_read()) }
+task<int> park_write(async_rw_lock &r) { QB_RECLAIM_PARK(r.lock_write()) }
+task<int> park_event(async_event &e) { QB_RECLAIM_PARK(e.wait()) }
+task<int> park_latch(async_latch &l) { QB_RECLAIM_PARK(l.wait()) }
+task<int> park_barrier(barrier &b) { QB_RECLAIM_PARK(b.arrive_and_wait()) }
+} // namespace
+
+TEST_F(CoroutineSyncPrimitives, MutexReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        async_mutex m;
+        m.try_lock(); // pre-hold so the parker must suspend
+        auto r = co_await when_any(park_mutex(m), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        m.unlock(); // would schedule the reclaimed parker's freed frame without the fix
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Destroy-while-parked, DEPTH-2 variant: a wait-list waiter (mutex/semaphore) nested one level
+// below a when_any branch, WOKEN in the SAME drain its subtree is reclaimed. The winner unlocks
+// then completes in one resume, so the depth-2 waiter is queued (schedule_via_current) exactly
+// when the loser branch is reclaimed. The depth-1 reclaim forgets only the direct branch task; the
+// deeper waiter is freed via the task<T> dtor cascade — which must forget() it from the scheduler
+// (task.h forget_frame_if_current), else its queued handle dangles in ready_queue_ → heap-UAF in
+// run_ready(). Frame >4 KiB so it escapes the coroutine frame pool and ASan sees the free.
+// ---------------------------------------------------------------------------
+
+TEST_F(CoroutineSyncPrimitives, MutexDepth2WaiterWokenThenReclaimedNoUAF) {
+    run_reclaim_driver([]() -> task<void> {
+        auto m = std::make_shared<async_mutex>();
+        m->try_lock(); // pre-hold so the depth-2 waiter must suspend
+        auto inner = [](std::shared_ptr<async_mutex> mm) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await mm->lock(); // parks here; woken by the winner's unlock()
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto outer = [inner](std::shared_ptr<async_mutex> mm) -> task<int> {
+            co_return co_await inner(mm); // depth-2: outer -> inner -> mutex
+        };
+        auto winner = [](std::shared_ptr<async_mutex> mm) -> task<int> {
+            co_await sleep(5ms); // let the depth-2 waiter park first
+            mm->unlock();        // wakes the depth-2 waiter -> queued in ready_queue_
+            co_return 99;        // -> when_any reclaim destroys the (queued) waiter -> would dangle
+        };
+        auto r = co_await when_any(outer(m), winner(m));
+        EXPECT_EQ(r.index, 1u) << "the unlocking winner must win the race";
+        co_await sleep(20ms);
+    });
+}
+
+TEST_F(CoroutineSyncPrimitives, SemaphoreDepth2WaiterWokenThenReclaimedNoUAF) {
+    run_reclaim_driver([]() -> task<void> {
+        auto s = std::make_shared<semaphore>(1);
+        co_await s->acquire(); // drain the only permit so the depth-2 waiter must suspend
+        auto inner = [](std::shared_ptr<semaphore> ss) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await ss->acquire(); // parks; release() writes node.granted + schedules our handle
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto outer = [inner](std::shared_ptr<semaphore> ss) -> task<int> {
+            co_return co_await inner(ss); // depth-2: outer -> inner -> semaphore
+        };
+        auto winner = [](std::shared_ptr<semaphore> ss) -> task<int> {
+            co_await sleep(5ms);
+            ss->release(); // grants + schedules the depth-2 waiter -> queued
+            co_return 99;  // -> when_any reclaim destroys the (queued) waiter -> would dangle
+        };
+        auto r = co_await when_any(outer(s), winner(s));
+        EXPECT_EQ(r.index, 1u) << "the releasing winner must win the race";
+        co_await sleep(20ms);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Wake-token-loss: a primitive that HANDS OFF its token at wake time (mutex ownership / semaphore
+// permit) to a waiter that is then reclaimed before resuming must NOT lose that token — else a
+// long-lived primitive deadlocks (mutex stuck locked / permits eroded). The granted-but-reclaimed
+// waiter's dtor returns the abandoned token. These assert POST-reclaim USABILITY (would fail without
+// the fix: the primitive stays permanently held). Deterministic: winner unlocks/releases then
+// completes in one resume, so the depth-2 waiter is granted exactly when its branch is reclaimed.
+// ---------------------------------------------------------------------------
+
+TEST_F(CoroutineSyncPrimitives, MutexReusableAfterGrantedWaiterReclaimed) {
+    bool reusable = false;
+    run_reclaim_driver([&reusable]() -> task<void> {
+        auto m = std::make_shared<async_mutex>();
+        m->try_lock(); // hold it
+        auto inner = [](std::shared_ptr<async_mutex> mm) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await mm->lock(); // granted by winner's unlock(), then reclaimed before resume
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto outer  = [inner](std::shared_ptr<async_mutex> mm) -> task<int> { co_return co_await inner(mm); };
+        auto winner = [](std::shared_ptr<async_mutex> mm) -> task<int> {
+            co_await sleep(5ms);
+            mm->unlock(); // hands ownership to the depth-2 waiter (which is then reclaimed)
+            co_return 99;
+        };
+        auto r = co_await when_any(outer(m), winner(m));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        // Without the wake-token fix the mutex is stuck _locked (ownership handed to a gone waiter);
+        // with it, the reclaimed waiter's dtor released it → re-lockable.
+        reusable = m->try_lock();
+    });
+    EXPECT_TRUE(reusable) << "mutex stuck locked after a granted-then-reclaimed waiter (wake token lost)";
+}
+
+TEST_F(CoroutineSyncPrimitives, SemaphorePermitRestoredAfterGrantedWaiterReclaimed) {
+    bool permit_back = false;
+    run_reclaim_driver([&permit_back]() -> task<void> {
+        auto s = std::make_shared<semaphore>(1);
+        co_await s->acquire(); // drain to 0
+        auto inner = [](std::shared_ptr<semaphore> ss) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await ss->acquire(); // granted by winner's release(), then reclaimed before resume
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto outer  = [inner](std::shared_ptr<semaphore> ss) -> task<int> { co_return co_await inner(ss); };
+        auto winner = [](std::shared_ptr<semaphore> ss) -> task<int> {
+            co_await sleep(5ms);
+            ss->release(); // grants the permit to the depth-2 waiter (which is then reclaimed)
+            co_return 99;
+        };
+        auto r = co_await when_any(outer(s), winner(s));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        // Without the fix the granted permit is lost (available stuck at 0); with it, restored to 1.
+        EXPECT_EQ(s->available_permits(), 1u) << "granted-then-reclaimed acquirer leaked the permit";
+        permit_back = s->try_acquire(); // a fresh acquirer must succeed (permit not leaked)
+    });
+    EXPECT_TRUE(permit_back) << "semaphore permit lost after a granted-then-reclaimed acquirer (wake token lost)";
+}
+
+// ---------------------------------------------------------------------------
+// RwLock wake-token-loss (write side): the winner holds a READ lock so a writer must park; the
+// winner then unlock_read()s — handing the write lock to the parked writer (_write_locked=true) — and
+// completes in one resume, so the writer is granted exactly when its branch is reclaimed by when_any.
+// Without the fix the rwlock is stuck _write_locked with no holder → a later writer deadlocks. The
+// write_lock_awaiter dtor must hand the abandoned write lock back (rw.unlock_write()).
+// ---------------------------------------------------------------------------
+TEST_F(CoroutineSyncPrimitives, RwLockWriteReusableAfterGrantedWaiterReclaimed) {
+    bool reusable = false;
+    run_reclaim_driver([&reusable]() -> task<void> {
+        auto rw = std::make_shared<async_rw_lock>();
+        co_await rw->lock_read(); // hold a read lock so a writer must park
+        auto inner = [](std::shared_ptr<async_rw_lock> r) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await r->lock_write(); // granted by winner's unlock_read(), then reclaimed before resume
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto outer  = [inner](std::shared_ptr<async_rw_lock> r) -> task<int> { co_return co_await inner(r); };
+        auto winner = [](std::shared_ptr<async_rw_lock> r) -> task<int> {
+            co_await sleep(5ms);
+            r->unlock_read(); // _readers→0, hands the write lock to the parked writer (which is reclaimed)
+            co_return 99;
+        };
+        auto r = co_await when_any(outer(rw), winner(rw));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        // A fresh writer must be able to acquire (rwlock not stuck write-locked). Spawn it + flag so a
+        // stuck lock surfaces as "flag never set" rather than hanging the driver.
+        auto acquired = std::make_shared<std::atomic<bool>>(false);
+        coro_scheduler().spawn([](std::shared_ptr<async_rw_lock> r, std::shared_ptr<std::atomic<bool>> a) -> task<void> {
+            co_await r->lock_write();
+            a->store(true);
+        }(rw, acquired));
+        co_await sleep(30ms);
+        reusable = acquired->load();
+    });
+    EXPECT_TRUE(reusable) << "rwlock stuck write-locked after a granted-then-reclaimed writer (wake token lost)";
+}
+
+// RwLock wake-token-loss (read side): the winner holds a WRITE lock so readers must park; unlock_write()
+// admits the parked reader (++_readers) and completes in one resume, so the reader is granted exactly
+// when reclaimed. Without the fix _readers is leaked (stuck > 0) → a later writer can never acquire.
+// The read_lock_awaiter dtor must return the abandoned reader slot (rw.unlock_read()).
+TEST_F(CoroutineSyncPrimitives, RwLockReadReusableAfterGrantedWaiterReclaimed) {
+    bool reusable = false;
+    run_reclaim_driver([&reusable]() -> task<void> {
+        auto rw = std::make_shared<async_rw_lock>();
+        co_await rw->lock_write(); // hold the write lock so readers must park
+        auto inner = [](std::shared_ptr<async_rw_lock> r) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await r->lock_read(); // admitted by winner's unlock_write() (++_readers), then reclaimed
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto outer  = [inner](std::shared_ptr<async_rw_lock> r) -> task<int> { co_return co_await inner(r); };
+        auto winner = [](std::shared_ptr<async_rw_lock> r) -> task<int> {
+            co_await sleep(5ms);
+            r->unlock_write(); // admits the parked reader (++_readers), which is then reclaimed
+            co_return 99;
+        };
+        auto r = co_await when_any(outer(rw), winner(rw));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        // A later writer must acquire → requires _readers back to 0 (the reclaimed reader's slot returned).
+        auto acquired = std::make_shared<std::atomic<bool>>(false);
+        coro_scheduler().spawn([](std::shared_ptr<async_rw_lock> r, std::shared_ptr<std::atomic<bool>> a) -> task<void> {
+            co_await r->lock_write();
+            a->store(true);
+        }(rw, acquired));
+        co_await sleep(30ms);
+        reusable = acquired->load();
+    });
+    EXPECT_TRUE(reusable) << "rwlock leaked a reader slot after a granted-then-reclaimed reader (writers starve)";
+}
+
+// Auto-reset async_event wake-token-loss: set() consumes the one-shot signal to wake a single waiter;
+// if that waiter is reclaimed before resuming, the signal would be lost and the next waiter parks
+// forever. The wait_awaiter dtor must re-deliver it (auto-reset only). Assert a later wait() completes.
+TEST_F(CoroutineSyncPrimitives, AutoEventSignalSurvivesGrantedWaiterReclaimed) {
+    bool delivered = false;
+    run_reclaim_driver([&delivered]() -> task<void> {
+        auto ev = std::make_shared<async_event>(/*auto_reset=*/true);
+        auto inner = [](std::shared_ptr<async_event> e) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await e->wait(); // woken by winner's set() (consumes the one-shot), then reclaimed
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto outer  = [inner](std::shared_ptr<async_event> e) -> task<int> { co_return co_await inner(e); };
+        auto winner = [](std::shared_ptr<async_event> e) -> task<int> {
+            co_await sleep(5ms);
+            e->set(); // wakes the parked auto-reset waiter (consumes the signal), which is then reclaimed
+            co_return 99;
+        };
+        auto r = co_await when_any(outer(ev), winner(ev));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        // The signal must have survived (re-delivered) → a later waiter completes.
+        auto woke = std::make_shared<std::atomic<bool>>(false);
+        coro_scheduler().spawn([](std::shared_ptr<async_event> e, std::shared_ptr<std::atomic<bool>> w) -> task<void> {
+            co_await e->wait();
+            w->store(true);
+        }(ev, woke));
+        co_await sleep(30ms);
+        delivered = woke->load();
+    });
+    EXPECT_TRUE(delivered) << "auto-reset event signal lost after a woken-then-reclaimed waiter (wake token lost)";
+}
+
+TEST_F(CoroutineSyncPrimitives, SemaphoreReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        semaphore s(1);
+        co_await s.acquire(); // drain the only permit so the parker must suspend
+        auto r = co_await when_any(park_sem(s), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        s.release(); // semaphore::release writes `granted` through the freed node without the fix
+    });
+}
+
+TEST_F(CoroutineSyncPrimitives, RwLockReadReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        async_rw_lock rw;
+        co_await rw.lock_write(); // hold the write lock so a reader must suspend
+        auto r = co_await when_any(park_read(rw), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        rw.unlock_write();
+    });
+}
+
+TEST_F(CoroutineSyncPrimitives, RwLockWriteReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        async_rw_lock rw;
+        co_await rw.lock_read(); // hold a read lock so a writer must suspend
+        auto r = co_await when_any(park_write(rw), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        rw.unlock_read();
+    });
+}
+
+TEST_F(CoroutineSyncPrimitives, EventReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        async_event e; // unset → wait() suspends
+        auto r = co_await when_any(park_event(e), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        e.set();
+    });
+}
+
+TEST_F(CoroutineSyncPrimitives, LatchReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        async_latch l(1); // count 1 → wait() suspends until count_down
+        auto r = co_await when_any(park_latch(l), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        l.count_down();
+    });
+}
+
+TEST_F(CoroutineSyncPrimitives, BarrierReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        barrier b(2); // needs 2 arrivals → the first arrival suspends
+        auto r = co_await when_any(park_barrier(b), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await b.arrive_and_wait(); // the 2nd arrival fires the (reclaimed) first waiter
+    });
 }

@@ -466,3 +466,38 @@ TEST_F(RetryRunner, CatchesNonStdExceptionThrowable) {
     EXPECT_EQ(attempts.load(), 3);
     EXPECT_TRUE(caught_exhausted.load()) << "with_retry must treat non-std::exception throwables as retryable";
 }
+
+// ---------------------------------------------------------------------------
+// on_retry is NOT fired on the budget-exhausting attempt → exactly max_attempts-1 notifications.
+// Complements OnRetryReceivesCorrectIndexAndException (which succeeds on the last try); here EVERY
+// attempt fails, so the count must still be max_attempts-1 (the off-by-one regression fired it
+// max_attempts times, notifying on the final permanent failure that has no retry after it).
+// ---------------------------------------------------------------------------
+
+TEST_F(RetryRunner, OnRetryDoesNotFireOnBudgetExhaustingAttempt) {
+    std::atomic<int>  attempts{0};
+    std::atomic<int>  notifications{0};
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await with_retry(
+                [&]() -> task<void> {
+                    ++attempts;
+                    throw std::runtime_error("always fails");
+                    co_return;
+                },
+                retry_policy{.max_attempts = 3,
+                             .base_delay   = 1ms,
+                             .strategy     = backoff_strategy::fixed,
+                             .on_retry     = [&](size_t, const std::exception &) { ++notifications; }});
+        } catch (...) {
+            // exhausted → retry_exhausted; expected
+        }
+        done = true;
+    });
+
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(); })) << "with_retry never completed";
+    EXPECT_EQ(attempts.load(), 3) << "should attempt max_attempts times";
+    EXPECT_EQ(notifications.load(), 2) << "on_retry must fire max_attempts-1 times, not on the final failure";
+}

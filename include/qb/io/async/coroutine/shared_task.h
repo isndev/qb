@@ -145,7 +145,26 @@ public:
     // Awaiter
     // -----------------------------------------------------------------------
     struct awaiter {
-        std::shared_ptr<state> s;
+        std::shared_ptr<state>  s;
+        std::coroutine_handle<> _parked{}; ///< set when queued in s->_waiters
+
+        explicit awaiter(std::shared_ptr<state> st)
+            : s(std::move(st)) {}
+
+        // Destroyed while still parked (e.g. a when_any/race loser reclaim): retract our handle so a
+        // later flush() cannot schedule a freed frame. The held `s` keeps the state alive, so no
+        // separate liveness guard is needed — the list we erase from is always valid here.
+        ~awaiter() {
+            if (!_parked || !s)
+                return;
+            auto &w = s->_waiters;
+            for (auto it = w.begin(); it != w.end(); ++it) {
+                if (*it == _parked) {
+                    w.erase(it);
+                    break;
+                }
+            }
+        }
 
         [[nodiscard]] bool
         await_ready() const noexcept {
@@ -170,6 +189,7 @@ public:
             }
             // Pre-reserved capacity (see state::state) makes push_back
             // effectively noexcept for the common case.
+            _parked = h;
             s->_waiters.push_back(h);
         }
 
@@ -269,7 +289,26 @@ public:
     }
 
     struct awaiter {
-        std::shared_ptr<state> s;
+        std::shared_ptr<state>  s;
+        std::coroutine_handle<> _parked{}; ///< set when queued in s->_waiters
+
+        explicit awaiter(std::shared_ptr<state> st)
+            : s(std::move(st)) {}
+
+        // Destroyed while still parked (when_any/race loser reclaim): retract our handle so a later
+        // flush() cannot schedule a freed frame (the held `s` keeps the list valid here).
+        ~awaiter() {
+            if (!_parked || !s)
+                return;
+            auto &w = s->_waiters;
+            for (auto it = w.begin(); it != w.end(); ++it) {
+                if (*it == _parked) {
+                    w.erase(it);
+                    break;
+                }
+            }
+        }
+
         [[nodiscard]] bool
         await_ready() const noexcept {
             // Finding 2.A.1: same null-state guard as shared_task<T>.
@@ -284,6 +323,7 @@ public:
                 schedule_via_current(h);
                 return;
             }
+            _parked = h;
             s->_waiters.push_back(h);
         }
         void

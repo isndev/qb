@@ -33,6 +33,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -241,6 +242,12 @@ public:
      */
     async_stream<std::vector<T>>
     buffer(size_t batch_size) {
+        // batch_size == 0 would make the fill loop `while (size < 0)` never run, so the source is
+        // never pulled and the stream silently yields nothing — total, undiagnosable data loss on a
+        // legal-looking argument. Reject it loudly.
+        if (batch_size == 0) {
+            throw std::invalid_argument("async_stream::buffer batch_size must be >= 1");
+        }
         auto source = _next;
         auto buffer = std::make_shared<std::vector<T>>();
         buffer->reserve(batch_size);
@@ -468,6 +475,14 @@ public:
      */
     async_stream
     backpressure(size_t max_buffer, std::shared_ptr<semaphore> acquire_semaphore = nullptr) {
+        // max_buffer == 0 with no caller-supplied semaphore builds a 0-permit semaphore: the filler
+        // parks on acquire() forever (a permit is only released after a recv that can never happen
+        // because the rendezvous channel has no buffered slot) — a permanent deadlock with two
+        // orphaned frames. A caller-supplied semaphore drives backpressure itself, so a 0 buffer
+        // (pure rendezvous) is legal there.
+        if (max_buffer == 0 && !acquire_semaphore) {
+            throw std::invalid_argument("async_stream::backpressure max_buffer must be >= 1 unless a semaphore is supplied");
+        }
         auto source = _next;
         auto buffer = std::make_shared<channel<T>>(max_buffer);
         auto sem    = acquire_semaphore ? acquire_semaphore : std::make_shared<semaphore>(max_buffer);

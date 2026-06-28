@@ -241,8 +241,10 @@ requires(!std::same_as<typename std::invoke_result_t<F>::value_type, void>)
                 std::rethrow_exception(last_error);
             }
 
-            // Notify callback if set
-            if (policy.on_retry) {
+            // Notify callback if set — but NOT on the attempt that exhausts the budget: that
+            // failure is permanent (no retry follows), so firing on_retry there over-counts by one
+            // (max_attempts notifications instead of max_attempts-1). Matches with_retry_until.
+            if (policy.on_retry && current_attempt + 1 < policy.max_attempts) {
                 policy.on_retry(current_attempt + 1, e);
             }
         } catch (...) {
@@ -296,7 +298,8 @@ requires std::same_as<std::invoke_result_t<F>, task<void>>
             if (!policy.is_retryable(e)) {
                 std::rethrow_exception(last_error);
             }
-            if (policy.on_retry) {
+            // See the non-void overload: do not notify on the budget-exhausting attempt.
+            if (policy.on_retry && current_attempt + 1 < policy.max_attempts) {
                 policy.on_retry(current_attempt + 1, e);
             }
         } catch (...) {

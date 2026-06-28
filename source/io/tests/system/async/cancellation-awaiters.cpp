@@ -47,9 +47,12 @@
 #include <qb/io/async/coroutine.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/coroutine_reclaim_support.h"
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
+using qb::io::test::reclaim_fast_winner;
+using qb::io::test::run_reclaim_driver;
 
 namespace {
 
@@ -414,4 +417,49 @@ TEST_F(CancellationAwaiters, MakeCancellableSequentialReuseOnSharedToken) {
     EXPECT_GE(completed.load(), 2);
     EXPECT_GE(cancelled_count.load(), 1);
     EXPECT_EQ(completed.load() + cancelled_count.load(), 4) << "every operation must resolve exactly once";
+}
+
+// =============================================================================
+// Destroy-while-parked reclamation (see shared/coroutine_reclaim_support.h)
+//
+// make_cancellable / cancellable_sleep spawn a detached runner/timer holding the shared state; when
+// the awaiter's frame is reclaimed (when_any loser) the dtor must tear that runner/timer down so its
+// late completion does not resume the freed frame. (cancellable_sleep's small library frame is
+// pooled → ASan is masked here; the definitive proof is the pool-disabled repro. This still exercises
+// the teardown path + the no-spurious-resume guard + that nothing hangs.)
+// =============================================================================
+
+TEST_F(CancellationAwaiters, CancellableOperationReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        cancellation_token tok;
+        auto               park = [](cancellation_token t) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await make_cancellable(
+                []() -> task<int> { co_await sleep(40ms); co_return 7; }(), std::move(t));
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto r = co_await when_any(park(tok), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(60ms); // the detached inner op completes late — must NOT resume the freed frame
+    });
+}
+
+TEST_F(CancellationAwaiters, CancellableSleepReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        cancellation_token tok;
+        auto               park = [](cancellation_token t) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            co_await cancellable_sleep(40ms, std::move(t));
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return (int) big[1];
+        };
+        auto r = co_await when_any(park(tok), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(60ms); // the detached timer fires late — must NOT resume the freed frame
+    });
 }
