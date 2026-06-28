@@ -31,6 +31,7 @@
  * instrumentation from the original file is dropped entirely (it belonged to the async half).
  */
 
+#include <stdexcept>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -300,4 +301,73 @@ TEST(GeneratorSync, GeneratorProducesValuesRegression) {
     auto g      = gen();
     auto values = collect_to_vector(g);
     EXPECT_EQ(values, (std::vector<int>{1, 2, 3}));
+}
+
+// ---------------------------------------------------------------------------
+// Exception propagation + moved-from / exhausted iteration surfaces
+// ---------------------------------------------------------------------------
+
+// A generator body that throws AFTER yielding must surface the exception to the consumer through
+// the iterator (range-for), not silently end iteration. Drives promise_type::unhandled_exception
+// + iterator::rethrow_if_failed (the throwing-generator-vs-exhausted distinction).
+TEST(GeneratorSync, BodyExceptionPropagatesThroughIterator) {
+    auto gen = []() -> generator<int> {
+        co_yield 1;
+        throw std::runtime_error("gen boom");
+        co_yield 2; // unreached
+    };
+
+    auto             g = gen();
+    std::vector<int> seen;
+    bool             caught = false;
+    try {
+        for (auto v : g) // yields 1; advancing past it runs the throw -> operator++ rethrows
+            seen.push_back(v);
+    } catch (const std::runtime_error &e) {
+        EXPECT_STREQ(e.what(), "gen boom");
+        caught = true;
+    }
+    EXPECT_EQ(seen, (std::vector<int>{1})) << "values before the throw are still delivered";
+    EXPECT_TRUE(caught) << "a throwing generator body must surface its exception through the iterator";
+}
+
+// Same body-exception, surfaced through the has_next()/next() drive instead of the iterator. The
+// value before the throw is delivered; the next() that crosses the throw rethrows; a subsequent
+// next() returns a clean nullopt (the stored exception is cleared on rethrow). Drives next()'s
+// top-of-function and post-advance rethrow branches.
+TEST(GeneratorSync, BodyExceptionPropagatesThroughNext) {
+    auto gen = []() -> generator<int> {
+        co_yield 1;
+        throw std::runtime_error("next boom");
+    };
+
+    auto g  = gen();
+    auto v1 = g.next();
+    ASSERT_TRUE(v1.has_value());
+    EXPECT_EQ(*v1, 1);
+
+    bool caught = false;
+    try {
+        g.next(); // crosses the throw -> rethrows
+    } catch (const std::runtime_error &e) {
+        EXPECT_STREQ(e.what(), "next boom");
+        caught = true;
+    }
+    EXPECT_TRUE(caught) << "next() must rethrow the generator body's exception";
+    EXPECT_FALSE(g.next().has_value()) << "after the throw the stream ended: next() returns a clean nullopt";
+}
+
+// A moved-from generator owns no frame: next() returns nullopt, begin()==end(), has_next() is false
+// — and the moved-to generator still yields the full sequence. Drives the null-handle guards in
+// next()/begin()/has_next().
+TEST(GeneratorSync, MovedFromGeneratorIsInertAndMovedToYieldsAll) {
+    auto g  = range(1, 4);
+    auto g2 = std::move(g); // g is now moved-from (null handle)
+
+    EXPECT_FALSE(g.next().has_value()) << "next() on a moved-from generator returns nullopt";
+    EXPECT_EQ(g.begin(), g.end()) << "begin() on a moved-from generator is end()";
+    EXPECT_FALSE(g.has_next());
+
+    auto vec = collect_to_vector(g2);
+    EXPECT_EQ(vec, (std::vector<int>{1, 2, 3})) << "the moved-to generator must still yield the full sequence";
 }

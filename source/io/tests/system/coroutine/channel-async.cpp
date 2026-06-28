@@ -53,6 +53,7 @@
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
+using qb::io::test::reclaim_fast_winner;
 using qb::io::test::run_reclaim_driver;
 
 namespace {
@@ -1137,4 +1138,56 @@ TEST_F(ChannelAsync, RecvForWokenThenReclaimedDoesNotLoseValue) {
     });
     EXPECT_TRUE(had_value) << "value resolved into a reclaimed recv_for was LOST (wake token lost)";
     EXPECT_EQ(recovered, 42);
+}
+
+// recv_for() parked and reclaimed while UNRESOLVED (no sender, no timeout yet): the timed_recv_awaiter
+// dtor must mark the shared select-state resolved + drop the outer handle, so the still-parked
+// channel_timer's later fire is a no-op and nothing schedules the freed frame. Complements the
+// resolved-then-reclaimed test above (which drives the re-buffer branch); this drives the not-resolved
+// teardown branch.
+TEST_F(ChannelAsync, RecvForReclaimedWhileParkedUnresolved) {
+    run_reclaim_driver([]() -> task<void> {
+        auto ch   = std::make_shared<channel<int>>(0); // rendezvous, no sender → recv_for parks unresolved
+        auto park = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            auto v = co_await c->recv_for(1000ms); // parks; never resolved (reclaimed first)
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v ? *v : -1;
+        };
+        auto r = co_await when_any(park(ch), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms); // the recv_for frame was reclaimed unresolved; its channel_timer must no-op
+    });
+}
+
+// A sender parked on a FULL buffer, woken when a recv frees space with no other receiver/select
+// waiting, must buffer its value in await_resume (the woken-then-buffer branch) so the next recv
+// gets it. Drives send_awaiter::await_resume's buffer hand-off path.
+TEST_F(ChannelAsync, SendWokenBuffersValueWhenSpaceFreed) {
+    std::atomic<bool> done{false};
+    std::atomic<int>  combined{-1};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto ch = std::make_shared<channel<int>>(1); // capacity 1
+        co_await ch->send(10);                        // buffers 10 → buffer full
+
+        // A second sender parks (buffer full, no receiver waiting).
+        auto sender = [](std::shared_ptr<channel<int>> c) -> task<void> {
+            co_await c->send(20); // parks; woken when space frees → await_resume buffers 20
+        };
+        coro_scheduler().spawn(sender(ch));
+        co_await sleep(10ms); // let the second sender park
+
+        auto first = co_await ch->recv(); // drains 10 → frees space → wakes the parked sender
+        co_await sleep(10ms);             // let the woken sender's await_resume buffer 20
+        auto second = co_await ch->recv(); // gets 20 (buffered by the woken sender)
+
+        combined.store(first.value_or(-1) * 100 + second.value_or(-1));
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "send-woken-buffers coordinator never finished";
+    EXPECT_EQ(combined.load(), 10 * 100 + 20) << "a woken sender must buffer its value (await_resume buffer hand-off)";
 }
