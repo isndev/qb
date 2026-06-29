@@ -1,6 +1,6 @@
 # Distributed-computing simulation walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 An annotated reading of `examples/core/example10_distributed_computing.cpp`: five cooperating actor types that generate, schedule, execute, collect, and monitor a stream of simulated computational tasks across multiple cores.
 
@@ -22,17 +22,15 @@ It is a useful study of three patterns that recur in larger qb applications:
 
 ## Architecture at a glance
 
+```mermaid
+flowchart LR
+    TG["TaskGeneratorActor"] -- TaskMessage --> TS["TaskSchedulerActor"]
+    TS -- TaskAssignmentMessage --> W["WorkerNodeActor ×4"]
+    W -- "WorkerStatusMessage · WorkerHeartbeatMessage · TaskStatusUpdateMessage" --> TS
+    W -- ResultMessage --> RC["ResultCollectorActor"]
 ```
-TaskGeneratorActor ──TaskMessage──▶ TaskSchedulerActor ──TaskAssignmentMessage──▶ WorkerNodeActor (×4)
-                                          ▲   ▲                                         │   │
-            WorkerStatusMessage ──────────┘   │                                         │   │
-            WorkerHeartbeatMessage ───────────┘                                         │   │
-            TaskStatusUpdateMessage ◀──────────────────────────────────────────────────┘   │
-                                                                                            │
-                                              ResultCollectorActor ◀──────ResultMessage─────┘
 
-SystemMonitorActor: creates all actors, broadcasts InitializeMessage, prints SystemStatsMessage, broadcasts ShutdownMessage
-```
+`SystemMonitorActor` sits outside this flow: it creates all the actors, broadcasts `InitializeMessage` and `ShutdownMessage` to every actor, and prints `SystemStatsMessage`.
 
 All five actor types derive from `qb::Actor`. Each registers its event handlers in its constructor with `registerEvent<T>(*this)` and overrides `onInit()` for first-loop setup. Inter-actor communication uses `push<Event>(destination, ...)` and `broadcast<Event>(...)` exclusively — no shared mutable state crosses actor boundaries except the global `std::atomic` counters discussed below.
 
@@ -310,7 +308,7 @@ template <typename _Func, typename Rep, typename Period>
 void callback(_Func &&func, std::chrono::duration<Rep, Period> timeout);
 ```
 
-It accepts a `std::chrono::duration` only. The canonical `qb::duration` (`std::chrono::nanoseconds`) "accepts any finer-or-equal chrono literal implicitly and rejects bare integers" — so a bare `double` or `int` does **not** bind, and these calls do not compile as written against qb 2.0.0. Use chrono literals or explicit durations:
+It accepts a `std::chrono::duration` only. The canonical `qb::duration` (`std::chrono::nanoseconds`) "accepts any finer-or-equal chrono literal implicitly and rejects bare integers" — so a bare `double` or `int` does **not** bind, and these calls do not compile as written against qb 2.6.0. Use chrono literals or explicit durations:
 
 ```cpp
 #include <chrono>
@@ -327,11 +325,11 @@ qb::io::async::callback([this]{ /* ... */ }, delay);
 qb::io::async::callback([this]{ /* ... */ }, qb::duration::zero());
 ```
 
-This matches how the framework's own tests schedule delayed work, e.g. `500us`, `100ms`, `1ms`, and `qb::duration::zero()` in `qb/source/core/tests/system/test-actor-concurrency-safety.cpp` and `test-actor-delayed-events.cpp`.
+This matches how the framework's own tests schedule delayed work, e.g. `500us`, `100ms`, `1ms`, and `qb::duration::zero()` in `qb/source/core/tests/system/concurrency/actor-message-serialization.cpp` and `timer/async-callback-ordering.cpp`.
 
 ### The example's `getCurrentTimestamp()` is not the canonical clock
 
-The file defines a local `getCurrentTimestamp()` returning microseconds since epoch from `std::chrono::high_resolution_clock`. That is fine for an isolated demo, but it is **not** the framework time vocabulary. For real code, prefer the canonical types in [`qb/system/timestamp.h`](../../3_qb_io/utilities.md): `qb::mono_now()` (a `qb::mono_time` from `steady_clock`) for intervals, deadlines, and latency; and `qb::wall_now()` (a `qb::wall_time` from `system_clock`) for wall-clock instants. Mixing a wall clock into interval math, as the example does, is exactly what the canonical split exists to prevent.
+The file defines a local `getCurrentTimestamp()` returning microseconds since epoch from `std::chrono::high_resolution_clock`. That is fine for an isolated demo, but it is **not** the framework time vocabulary. For real code, prefer the canonical types in [`qb/system/time.h`](../../3_qb_io/utilities.md): `qb::mono_now()` (a `qb::mono_time` from `steady_clock`) for intervals, deadlines, and latency; and `qb::wall_now()` (a `qb::wall_time` from `system_clock`) for wall-clock instants. Mixing a wall clock into interval math, as the example does, is exactly what the canonical split exists to prevent.
 
 ### Scheduling is best-effort, not authoritative
 

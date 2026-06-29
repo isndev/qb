@@ -1,7 +1,7 @@
-<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 2.6.0 (C++20 default, C++23 supported) -->
 # Building from source
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 A reference for configuring, building, testing, and installing the qb framework from source with CMake: requirements, presets, options, generators, and install layout.
 
@@ -15,10 +15,10 @@ This page is the contributor-facing build reference. If you only want to *add qb
 |---|---|---|
 | C++ compiler | C++20-capable: GCC, Clang, Apple Clang, or MSVC. qb sets `QB_CXX_STANDARD=20` by default, accepts `QB_CXX_STANDARD=23`, and keeps `CMAKE_CXX_STANDARD_REQUIRED=ON` with extensions off. | `qb/cmake/qbConfig.cmake` |
 | CMake | 3.24 or newer. 3.24 is the floor because dependency resolution uses the `FetchContent` + `find_package` integration (`FIND_PACKAGE_ARGS`). | `qb/CMakeLists.txt:31`, `qb/CMakePresets.json:3-7` |
-| Threads | A POSIX threads (pthreads) implementation is required on non-Windows platforms; configuration fails with a fatal error if it is missing. | `qb/cmake/qbCompiler.cmake:344-347` |
+| Threads | A POSIX threads (pthreads) implementation is required on non-Windows platforms; configuration fails with a fatal error if it is missing. | `qb/cmake/qbCompiler.cmake:384-386` |
 | Git | Needed on the configure machine only when a fetchable dependency (GoogleTest, Google Benchmark, zlib) is absent from the system and is built from source. | see [cmake_dependencies.md](./cmake_dependencies.md) |
 
-Architectures: x86_64 and ARM64 (including Apple Silicon). The continuous integration matrix builds and tests every change on Linux (GCC, Clang / libstdc++), macOS (Apple Clang, GCC / libc++), and Windows (MSVC / MSVC STL). See [INSTALL.md](../../INSTALL.md#supported-toolchains) for the matrix.
+Architectures: x86_64 and ARM64 (including Apple Silicon). The continuous integration matrix builds and tests every change on Linux (GCC, Clang / libstdc++), macOS (Apple Clang / libc++), and Windows (MSVC / MSVC STL). See [INSTALL.md](../../INSTALL.md#supported-toolchains) for the matrix.
 
 Dependencies are resolved automatically: most builds need nothing installed beyond a compiler and CMake. libev and stduuid are bundled and built from `qb/modules/`; OpenSSL, Argon2, and ngtcp2 are system-only and gate optional features when absent. The full policy lives in [cmake_dependencies.md](./cmake_dependencies.md).
 
@@ -226,8 +226,9 @@ The two supported integration modes — embed via `add_subdirectory(qb)` or cons
 - **Network needed on first configure for a from-source fallback.** When a fetchable dependency is absent from the system, the first configure clones it from GitHub. For air-gapped builds, pre-populate `_deps` or force system packages — see [cmake_dependencies.md](./cmake_dependencies.md#offline-and-ci-builds).
 - **CI quality gates are split by concern.** The default CMake workflow remains the
   cross-platform Release matrix. Dedicated GitHub Actions workflows cover ASan/UBSan
-  (`sanitize`), TSan (`sanitize-thread`), coverage, clang-format on changed C++
-  files, and clang-tidy on changed translation units.
+  (`sanitize`), TSan (`sanitize-thread`), coverage, and clang-format on changed C++
+  files. clang-tidy is not run in CI — run it locally via `scripts/clang-tidy.sh`
+  before submitting.
 
 ## See also
 

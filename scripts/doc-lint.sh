@@ -41,7 +41,8 @@ doc_files() {
 # ---------------------------------------------------------------------------
 echo "== 1. Forbidden token scan =="
 # Capitalized retired types only; the lowercase qb::duration etc. are valid.
-FORBIDDEN='qb::Timestamp|qb::Duration|qb::TimePoint|to_timestamp\(|to_time_point\('
+# Also the renamed time header: the canonical path is qb/system/time.h (timestamp.h was removed).
+FORBIDDEN='qb::Timestamp|qb::Duration|qb::TimePoint|to_timestamp\(|to_time_point\(|qb/system/timestamp\.h'
 # These pages document the removal/migration of the old types, so they may name them.
 is_allowed() {
   case "$1" in
@@ -60,6 +61,16 @@ while read -r f; do
   fi
 done < <(doc_files)
 if [ "$hits" -eq 0 ]; then grn "  no forbidden tokens"; else fail=1; fi
+
+# ---------------------------------------------------------------------------
+echo "== 1b. Citation integrity (src: file + line ranges) =="
+# Validates every <!-- src: -->, // src:, and (src: ...) citation: cited file
+# exists and each line range is within the file's current length.
+if command -v python3 >/dev/null 2>&1; then
+  python3 "${SCRIPT_DIR}/cite-check.py" || fail=1
+else
+  ylw "  python3 not found — skipping citation check"
+fi
 
 # ---------------------------------------------------------------------------
 echo "== 2. Internal link check =="

@@ -1,6 +1,6 @@
 # Testing the framework
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 How the qb test suite is organized, how to build and run it with CTest and GoogleTest, and how the coverage option is wired.
 
@@ -8,7 +8,7 @@ How the qb test suite is organized, how to build and run it with CTest and Googl
 
 ## Summary
 
-qb ships its unit and integration tests as GoogleTest executables, registered with CTest by the `qb_add_test` CMake helper. Tests are built only when `QB_BUILD_TESTS` is `ON` (the repo-root build forces it on). GoogleTest is resolved system-first, with a pinned from-source fallback through FetchContent. Every registered test runs from `${CMAKE_BINARY_DIR}/bin/tests`, carries the CTest label `qb-tests`, and has a 300-second timeout. An optional `QB_BUILD_COVERAGE` flag adds lcov/gcovr report targets on Debug, non-Windows builds.
+qb ships its unit and integration tests as GoogleTest executables, registered with CTest by the `qb_add_test` CMake helper. Tests are built only when `QB_BUILD_TESTS` is `ON` (the repo-root build forces it on). GoogleTest is resolved system-first, with a pinned from-source fallback through FetchContent. Every registered test runs from `${CMAKE_BINARY_DIR}/bin/tests`, carries `tier:<tier>` and `module:<module>` CTest labels, and has a per-tier timeout (unit 60 s, system 120 s, integration 300 s). An optional `QB_BUILD_COVERAGE` flag adds lcov/gcovr report targets on Debug, non-Windows builds.
 
 This page is for contributors building and running the suite, and for anyone adding a new test. It does not document the actor or I/O APIs the tests exercise — see the relevant reference pages for those.
 
@@ -18,36 +18,43 @@ Test sources live under each component's `tests/` directory. The two libraries a
 
 | Path | Contents |
 | --- | --- |
-| `qb/source/core/tests/unit/` | Focused unit tests for single components (event router, the canonical time vocabulary, string utilities). |
-| `qb/source/core/tests/system/` | End-to-end actor-runtime tests that spin up a real `qb::Main` engine across one or more cores. |
-| `qb/source/io/tests/system/` | qb-io integration tests: URI parsing, TCP/UDP/Unix sockets, asynchronous I/O, plus optional crypto and compression suites. |
-| `qb/source/io/tests/coroutine/` | Tests for the C++20 coroutine runtime layered on libev (`task<T>`, generators, channels, scopes). |
+| `qb/source/core/tests/unit/` | Focused unit tests, grouped by subject (`container/`, `core/`, `json/`, `lockfree/`, `patterns/`, `system/`, `type/`): one class or function in isolation. |
+| `qb/source/core/tests/system/` | End-to-end actor-runtime tests, grouped by concern (`actor/`, `engine/`, `event/`, `messaging/`, `lifecycle/`, `coroutine/`, `concurrency/`, …): a real `qb::Main` across one or more cores. |
+| `qb/source/io/tests/unit/` | qb-io unit tests, grouped by subject (`core/`, `coroutine/`, `crypto/`, `compression/`, `protocol/`, `ssl/`, `stream/`, …). |
+| `qb/source/io/tests/system/` | qb-io integration tests, grouped by transport/feature (`tcp/`, `udp/`, `tls/`, `quic/`, `async/`, `session/`, …). |
+| `qb/source/{core,io}/tests/benchmark/` | Performance benchmarks, built under `QB_BUILD_BENCHMARKS` (not `QB_BUILD_TESTS`). |
+| `qb/source/{core,io}/tests/shared/` | Shared fixtures and helpers — not tests themselves. |
 
 <!-- src: qb/source/core/tests, qb/source/io/tests -->
 
-The distinction is one of scope, not of mechanism — both kinds are GoogleTest executables.
+The distinction between unit and system is one of scope, not of mechanism — both are GoogleTest executables and both register through the same `qb_add_test` helper.
 
-- **Unit tests** isolate one class or function with minimal dependencies. Examples: `test-timestamp.cpp` exercises `qb::duration` / `qb::mono_time` / `qb::wall_time`; `test-string.cpp` exercises the string utilities; `test-event-router.cpp` exercises event routing.
+- **Unit tests** isolate one class or function with minimal dependencies. Examples: `unit/system/time.cpp` exercises `qb::duration` / `qb::mono_time` / `qb::wall_time`; `unit/container/string.cpp` exercises the string utilities; `unit/system/event-router.cpp` exercises event routing.
 - **System/integration tests** verify several components working together. A typical core system test instantiates `qb::Main`, adds actors to one or more `VirtualCore`s, runs the engine, and asserts on the collected results and on `Main::hasError()`.
 
-Note the asymmetry: qb-core has both `unit/` and `system/` directories, while qb-io has `system/` and `coroutine/` but no `unit/` directory.
+Both libraries use the same three tiers — `unit/`, `system/`, and `benchmark/` — each split into topic subdirectories. Coroutine coverage is a subject group inside `unit/` and `system/` (tagged with the `coroutine` label), not a separate tier.
 
 ### Naming and target conventions
 
-Test source files are named `test-<feature>.cpp` for core and qb-io system tests (for example `test-actor-event.cpp`, `test-uri.cpp`). Coroutine sources use the same hyphenated convention and must start with `test-coroutine-` (for example `test-coroutine-regression.cpp`).
+Test sources sit in a topic subdirectory of their tier and are named for the subject under test — `actor/actor-add.cpp`, `core/uri-parse.cpp`, `system/time.cpp` — with no `test-` prefix. Each is registered with one `qb_add_test` call naming the module, tier, and short subject:
 
-CMake derives the executable name from the source file, prefixed with the owning project. Because the prefixes differ per directory, so do the resulting target names:
+```cmake
+qb_add_test(MODULE qb-core TIER system NAME actor-add SOURCES actor/actor-add.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io   TIER unit   NAME uri-parse SOURCES core/uri-parse.cpp  DEPENDS ${PROJECT_NAME})
+```
 
-| Source | CMake target (and ctest name) |
-| --- | --- |
-| `core/tests/system/test-actor-event.cpp` | `qb-core-gtest-system-test-actor-event` |
-| `core/tests/unit/test-timestamp.cpp` | `qb-core-gtest-unit-timestamp` |
-| `io/tests/system/test-async-io.cpp` | `qb-io-gtest-test-async-io` |
-| `io/tests/coroutine/test-coroutine-basic.cpp` | `qb-io-gtest-coroutine-basic` |
+The helper derives both the executable and the CTest entry name uniformly as `<module>-test-<tier>-<name>`:
 
-<!-- src: qb/source/core/tests/system/CMakeLists.txt:66-79, qb/source/io/tests/system/CMakeLists.txt:46-55, qb/source/io/tests/coroutine/CMakeLists.txt:55-91 -->
+| Source | `qb_add_test` arguments | Target / CTest name |
+| --- | --- | --- |
+| `core/tests/system/actor/actor-add.cpp` | `MODULE qb-core TIER system NAME actor-add` | `qb-core-test-system-actor-add` |
+| `core/tests/unit/system/time.cpp` | `MODULE qb-core TIER unit NAME time` | `qb-core-test-unit-time` |
+| `io/tests/unit/core/uri-parse.cpp` | `MODULE qb-io TIER unit NAME uri-parse` | `qb-io-test-unit-uri-parse` |
+| `io/tests/system/coroutine/channel-lifetime.cpp` | `MODULE qb-io TIER system NAME channel-lifetime` | `qb-io-test-system-channel-lifetime` |
 
-The core system and unit CMake files follow a `gtest-system-<file>` / `gtest-unit-<name>` scheme; the qb-io system file uses `gtest-<file>`; the coroutine file strips only the leading `test-`, which makes every coroutine target start with `qb-io-gtest-coroutine-`. When you add a coroutine test, name the source `test-coroutine-<feature>.cpp` and add it to `COROUTINE_TESTS`.
+<!-- src: qb/cmake/qbFunctions.cmake:395-412, qb/source/io/tests/unit/CMakeLists.txt:27 -->
+
+Every test also carries CTest labels — `tier:<tier>` and `module:<module>`, plus any capability tokens from `REQUIRES` (`ssl`, `quic`, `compression`, `network`, `live`) — and a per-tier default timeout (unit 60 s, system 120 s, integration 300 s). To add a test, drop the source into the right tier/topic directory and add one `qb_add_test` line; there are no per-directory naming rules to remember.
 
 ## Building the tests
 
@@ -61,9 +68,9 @@ cmake --build build --parallel
 
 <!-- src: qb/readme/7_reference/building.md -->
 
-When `QB_BUILD_TESTS` is `OFF`, `qb_add_test` returns early before defining any target, so no test executables and no CTest registrations exist (`qb/cmake/qbFunctions.cmake:251`).
+When `QB_BUILD_TESTS` is `OFF`, `qb_add_test` returns early before defining any target, so no test executables and no CTest registrations exist (`qb/cmake/qbFunctions.cmake:417`).
 
-Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:299`), not alongside the per-module build trees. After a build, list them with:
+Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:482`), not alongside the per-module build trees. After a build, list them with:
 
 ```bash
 ls build/bin/tests/
@@ -87,12 +94,12 @@ If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `q
 
 Some qb-io suites exist only when their optional dependency is present:
 
-- **Crypto tests** (`test-crypto*`, `test-crypto-jwt`) build only under `QB_HAS_SSL` (OpenSSL).
-- **Compression tests** (`test-compression`, `test-compression-levels`) build only under `QB_HAS_COMPRESSION` (zlib).
+- **Crypto tests** (the `unit/crypto/` group — `crypto-primitives`, `crypto-jwt`, `kdf-and-tokens`, `asymmetric-keys`, … — registered with `REQUIRES ssl`) build only under `QB_HAS_SSL` (OpenSSL).
+- **Compression tests** (`unit/compression/compression-codec`, registered with `REQUIRES compression`) build only under `QB_HAS_COMPRESSION` (zlib).
 
-<!-- src: qb/source/io/tests/system/CMakeLists.txt:79-210 -->
+<!-- src: qb/source/io/tests/unit/CMakeLists.txt:54-62 -->
 
-Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC is different: `test-quic.cpp` is always built (it is registered unconditionally), but its cases call `GTEST_SKIP()` at runtime when `QB_HAS_QUIC` is undefined, so they report as skipped rather than absent (`qb/source/io/tests/system/test-quic.cpp:727-728`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases in `test-main.cpp` check `EXPECT_GT(max_core, 1u)` (`qb/source/core/tests/system/test-main.cpp:73`).
+Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC is different: the quic suite is always built (it is registered unconditionally), but its cases are gated on `QB_HAS_QUIC`, so they report as skipped/absent rather than failing when QUIC is not compiled in (`qb/source/io/tests/system/quic/quic-handshake.cpp:86-92`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases skip when only one core is available (`qb/source/core/tests/system/engine/main-lifecycle.cpp:159`).
 
 ### Running under sanitizers
 
@@ -119,14 +126,15 @@ ctest -j8
 ctest -V
 
 # Run only tests whose name matches a regular expression
-ctest -R coroutine          # every coroutine test
-ctest -R test-actor-event   # the actor-event suite
+ctest -R messaging          # the messaging suites (messaging-api, …)
 
-# Select the framework's whole test corpus by label
-ctest -L qb-tests
+# Select by label
+ctest -L coroutine          # every test tagged 'coroutine'
+ctest -L tier:unit          # every unit-tier test
+ctest -L module:qb-io       # every qb-io test
 ```
 
-Every test registered by `qb_add_test` carries the label `qb-tests` and a 300-second timeout, and runs with its working directory set to `bin/tests` (`qb/cmake/qbFunctions.cmake:330-340`). The `-R` regular expression matches the CTest test name, which equals the target name from the table above.
+Every test registered by `qb_add_test` carries `tier:<tier>` and `module:<module>` labels (plus any capability tags such as `ssl` or `coroutine`) and a per-tier timeout (unit 60 s, system 120 s, integration 300 s), and runs with its working directory set to `bin/tests` (`qb/cmake/qbFunctions.cmake:514-535`). The `-R` regular expression matches the CTest test name (which equals the target name from the table above); `-L` matches labels.
 
 ### Running an executable directly
 
@@ -136,13 +144,13 @@ Running a test binary directly exposes GoogleTest's own command-line flags. Laun
 cd build/bin/tests
 
 # Run one suite, colorized
-./qb-core-gtest-system-test-actor-event --gtest_color=yes
+./qb-core-test-system-actor-add --gtest_color=yes
 
 # Run a single test case within that executable
-./qb-core-gtest-system-test-actor-event --gtest_filter='*SpecificCase*'
+./qb-core-test-system-actor-add --gtest_filter='*SpecificCase*'
 
 # List the cases an executable contains
-./qb-core-gtest-system-test-actor-event --gtest_list_tests
+./qb-core-test-system-actor-add --gtest_list_tests
 ```
 
 See the GoogleTest documentation for the full flag set.
@@ -154,7 +162,7 @@ Test cases use the standard GoogleTest macros. A unit test includes `<gtest/gtes
 ```cpp
 // A focused unit test.
 #include <gtest/gtest.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 TEST(Duration, DefaultIsZero) {
     qb::duration d{};
@@ -162,7 +170,7 @@ TEST(Duration, DefaultIsZero) {
 }
 ```
 
-<!-- src: qb/source/core/tests/unit/test-timestamp.cpp:23-39 -->
+<!-- src: qb/source/core/tests/unit/system/time.cpp:64-72 -->
 
 A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/include/qb/core/Main.h:487,512`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/include/qb/core/Main.h:483-484`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
 
@@ -206,23 +214,21 @@ TEST(WorkerSuite, HandlesPing) {
 }
 ```
 
-<!-- src: qb/source/core/tests/system/test-actor-event.cpp:309-313 -->
+<!-- src: qb/source/core/tests/system/event/service-event-ring.cpp:171-174 -->
 
 `Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/include/qb/core/Main.h:216,533`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
 
 ### Registering the test with CMake
 
-Add the source to the relevant `CMakeLists.txt` so it becomes a target. Core and qb-io system tests append the filename to a source list that a `foreach` loop feeds into `qb_add_test`; unit and coroutine files are registered with an explicit `qb_add_test` call. Follow the surrounding pattern in the directory you are adding to. A direct registration looks like:
+Add one `qb_add_test` call to the `CMakeLists.txt` of the tier you are adding to. Name the module, tier, short subject, and the source path (relative to the tier directory); follow the surrounding lines in that file:
 
 ```cmake
-qb_add_test(
-    NAME    ${PROJECT_NAME}-gtest-unit-my-feature
-    SOURCES test-my-feature.cpp
-    DEPENDS ${PROJECT_NAME}
-)
+qb_add_test(MODULE qb-core TIER unit NAME my-feature SOURCES core/my-feature.cpp DEPENDS ${PROJECT_NAME})
 ```
 
-<!-- src: qb/source/core/tests/unit/CMakeLists.txt:26-30 -->
+That registers the target and CTest entry as `qb-core-test-unit-my-feature`. Optional dependencies gate through `REQUIRES` (for example `REQUIRES ssl` builds the case only under `QB_HAS_SSL`); extra CTest labels go through `LABELS`.
+
+<!-- src: qb/source/core/tests/unit/CMakeLists.txt:25-36 -->
 
 `qb_add_test` links `GTest::gtest_main` for you; do not list `gtest_main` under `DEPENDS` as well (the helper strips a duplicate to avoid a linker warning, but listing it is redundant). Reconfigure CMake after editing the file, then rebuild.
 
@@ -254,9 +260,9 @@ The instrumentation flags (`-g -fprofile-arcs -ftest-coverage`, plus `--coverage
 
 - **No tests in a tests-off build.** With `QB_BUILD_TESTS=OFF`, `qb_add_test` returns before creating anything — there are no executables and nothing for CTest to discover. The repo-root build forces the option on, so this only bites custom configurations.
 - **Run from the right directory.** Tests resolve resources (SSL certs, fixtures) relative to `bin/tests`. CTest sets this automatically; if you launch a binary by hand, `cd build/bin/tests` first or resource-dependent cases fail.
-- **Optional suites are absent or skipped, depending on the dependency.** Crypto and compression suites are not configured without OpenSSL / zlib — those targets do not exist at all, so they cannot pass. QUIC is gated differently: `test-quic.cpp` is always built, but its cases `GTEST_SKIP()` when libngtcp2 was not found (`QB_HAS_QUIC` undefined), so they show as skipped. Either way, an absent or skipped suite means a missing dependency, not a passing run. Confirm which features were enabled at configure time before reading a green result as full coverage.
+- **Optional suites are absent or skipped, depending on the dependency.** Crypto and compression suites are not configured without OpenSSL / zlib — those targets do not exist at all, so they cannot pass. QUIC is gated differently: the quic suite is always built, but its cases are gated on `QB_HAS_QUIC` (libngtcp2), so they show as skipped/absent when it was not found. Either way, an absent or skipped suite means a missing dependency, not a passing run. Confirm which features were enabled at configure time before reading a green result as full coverage.
 - **Coverage is narrow.** `QB_BUILD_COVERAGE` works only on Debug, non-Windows, with lcov + gcov present, and the GCC/gcov toolchain. It is not a general-purpose option across all build types.
-- **Coroutine tests must clean up the per-thread state.** Async coroutine fixtures call `qb::io::async::init()` in `SetUp` and reset state in `TearDown`. The minimum is `qb::io::async::listener::current.clear()` (`qb/source/io/tests/coroutine/test-coroutine-channel.cpp:32-34`); fixtures that spawn coroutines drain the scheduler first — `run_for(5ms)` then `reset_coro_scheduler()` then `clear()` — to avoid leaking suspended coroutine frames across tests (`qb/source/io/tests/coroutine/test-coroutine-scope.cpp:314-319`). Follow the existing fixture pattern in the file you are adding to.
+- **Coroutine tests must clean up the per-thread state.** Async coroutine fixtures call `qb::io::async::init()` in `SetUp` and reset state in `TearDown`. The minimum is `qb::io::async::listener::current.clear()` (`qb/source/io/tests/system/coroutine/channel-lifetime.cpp:62-66`); fixtures that spawn coroutines drain the scheduler first — `run_for(5ms)` then `reset_coro_scheduler()` then `clear()` — to avoid leaking suspended coroutine frames across tests (`qb/source/io/tests/unit/coroutine/scope-structured-concurrency.cpp:58-63`). Follow the existing fixture pattern in the file you are adding to.
 - **CI coverage is split across workflows.** The cross-platform CMake workflow builds Release. Dedicated Ubuntu workflows run ASan/UBSan, TSan, coverage, and changed-file format checks. Clang-tidy is intentionally script-driven through `scripts/clang-tidy.sh` rather than a CMake workflow. Linux jobs install libngtcp2 through apt and prefer the OpenSSL crypto helper when the runner image provides it; if only the GnuTLS helper exists, the dependency install still succeeds but qb's current OpenSSL-based native QUIC backend stays auto-detected by CMake.
 
 ## See also
@@ -264,4 +270,4 @@ The instrumentation flags (`-g -fprofile-arcs -ftest-coverage`, plus `--coverage
 - [Building qb](./building.md) — configure presets, build types, toolchains.
 - [CMake options](./cmake_options.md) — every `QB_*` flag, including `QB_BUILD_TESTS`, `QB_BUILD_COVERAGE`, `QB_USE_SYSTEM_GTEST`, and `QB_SANITIZE`.
 - [CMake and dependencies](./cmake_dependencies.md) — how GoogleTest and the other dependencies are resolved.
-- [Glossary](./glossary.md) — definitions of system test, unit test, regression test, and the `qb-tests` CTest label.
+- [Glossary](./glossary.md) — definitions of system test, unit test, regression test, and the tier/module CTest labels.

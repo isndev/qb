@@ -1,6 +1,6 @@
 # Migration guide
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 Move an existing codebase to qb: from hand-rolled `std::thread` + locked queues to actors, and from the pre-2.0 `qb::Timestamp`/`qb::Duration` time types to the `qb::duration`/`qb::mono_time`/`qb::wall_time` chrono model.
 
@@ -206,22 +206,22 @@ qb 2.0 replaced the framework-specific time classes with three `std::chrono` ali
 | `qb::mono_time` | `std::chrono::steady_clock::time_point` | Deadlines, timers, the event-loop "now", latency, RTT — immune to NTP/DST. |
 | `qb::wall_time` | `std::chrono::system_clock::time_point` | Dates, expiry, JWT `exp`/`nbf`, TLS validity, logs, wire formats. |
 
-_(`qb/include/qb/system/timestamp.h:82,85,88`.)_
+_(`qb/include/qb/system/time.h:82,85,88`.)_
 
 Two design points drive the migration:
 
-- **A `qb::duration` rejects a bare integer.** It accepts any finer-or-equal `std::chrono` literal implicitly (`30s`, `100ms`, `5us`) but a raw `int` does not convert, so a seconds-versus-milliseconds unit confusion cannot compile. Wherever old code passed a number, pass a chrono literal. _(`qb/include/qb/system/timestamp.h:8-11`.)_
-- **`mono_time` and `wall_time` are distinct types.** Subtracting a wall instant from a monotonic one does not compile. Pick `mono_time` for anything you measure or schedule against (deadlines, elapsed time, RTT) and `wall_time` for anything tied to the calendar (expiry, logs, wire timestamps). _(`qb/include/qb/system/timestamp.h:18-20`.)_
+- **A `qb::duration` rejects a bare integer.** It accepts any finer-or-equal `std::chrono` literal implicitly (`30s`, `100ms`, `5us`) but a raw `int` does not convert, so a seconds-versus-milliseconds unit confusion cannot compile. Wherever old code passed a number, pass a chrono literal. _(`qb/include/qb/system/time.h:8-11`.)_
+- **`mono_time` and `wall_time` are distinct types.** Subtracting a wall instant from a monotonic one does not compile. Pick `mono_time` for anything you measure or schedule against (deadlines, elapsed time, RTT) and `wall_time` for anything tied to the calendar (expiry, logs, wire timestamps). _(`qb/include/qb/system/time.h:18-20`.)_
 
-The literal operators (`30s`, `100ms`, `5us`, …) are pulled into `qb` through `inline namespace qb::time_literals`, so call sites can write them after `#include <qb/system/timestamp.h>` with no extra `using`. _(`qb/include/qb/system/timestamp.h:104-106`.)_
+The literal operators (`30s`, `100ms`, `5us`, …) are pulled into `qb` through `inline namespace qb::time_literals`, so call sites can write them after `#include <qb/system/time.h>` with no extra `using`. _(`qb/include/qb/system/time.h:104-106`.)_
 
-> **Retired tokens — never reintroduce them.** `qb::Timestamp`, `qb::Duration`, and `qb::TimePoint` no longer exist anywhere in the framework; the canonical replacements are defined in `<qb/system/timestamp.h>`. Any reference to them is pre-2.0 code that must be ported. The documentation anti-drift guard rejects these tokens everywhere except the migration, contributing, and changelog surfaces. _(`qb/include/qb/system/timestamp.h:79-88`; `qb/scripts/doc-lint.sh:44-51`.)_
+> **Retired tokens — never reintroduce them.** `qb::Timestamp`, `qb::Duration`, and `qb::TimePoint` no longer exist anywhere in the framework; the canonical replacements are defined in `<qb/system/time.h>`. Any reference to them is pre-2.0 code that must be ported. The documentation anti-drift guard rejects these tokens everywhere except the migration, contributing, and changelog surfaces. _(`qb/include/qb/system/time.h:79-88`; `qb/scripts/doc-lint.sh:44-51`.)_
 
 ### Old-to-new mapping table
 
 | Pre-2.0 construct | qb 2.0 replacement | Header / note |
 |---|---|---|
-| `qb::Duration` (a span) | `qb::duration` (`std::chrono::nanoseconds`) | `<qb/system/timestamp.h>` |
+| `qb::Duration` (a span) | `qb::duration` (`std::chrono::nanoseconds`) | `<qb/system/time.h>` |
 | `qb::Timestamp` / `qb::TimePoint` used as a deadline, timer base, or elapsed-time anchor | `qb::mono_time` (`steady_clock::time_point`) | Monotonic; immune to clock steps. |
 | `qb::Timestamp` / `qb::TimePoint` used as a date, expiry, or wire timestamp | `qb::wall_time` (`system_clock::time_point`) | Calendar time. |
 | `Timestamp::now()` for a monotonic anchor | `qb::mono_now()` | Returns `qb::mono_time`. |
@@ -231,16 +231,16 @@ The literal operators (`30s`, `100ms`, `5us`, …) are pulled into `qb` through 
 | `Duration::microseconds(n)` | `std::chrono::microseconds(n)` / `5us` | Implicitly converts to `qb::duration`. |
 | `someDuration.seconds()` / `.toSeconds()` | `std::chrono::duration_cast<std::chrono::seconds>(d).count()` | Explicit cast; `count()` yields the integer. |
 | `someDuration.milliseconds()` | `std::chrono::duration_cast<std::chrono::milliseconds>(d).count()` | |
-| `Timestamp::epochSeconds()` on a wall instant | `qb::unix_seconds(tp)` | `int64_t` seconds since the Unix epoch. _(`timestamp.h:113`.)_ |
-| `Timestamp::epochMillis()` | `qb::unix_millis(tp)` (also `unix_micros`, `unix_nanos`) | `int64_t` since the Unix epoch. _(`timestamp.h:119`.)_ |
-| `Timestamp::fromEpochSeconds(s)` | `qb::wall_from_unix_seconds(s)` | Returns `qb::wall_time`. _(`timestamp.h:137`.)_ |
-| `Timestamp::fromEpochMillis(ms)` | `qb::wall_from_unix_millis(ms)` | Returns `qb::wall_time`. _(`timestamp.h:143`.)_ |
-| `timestamp.toString(fmt)` / custom date formatting | `qb::format_utc(tp, fmt)` — strftime-compatible, UTC | Empty string on failure. _(`timestamp.h:155`.)_ |
-| ISO-8601 string from a timestamp | `qb::to_iso8601(tp)`, returning `"YYYY-MM-DDTHH:MM:SSZ"` | _(`timestamp.h:173`.)_ |
-| Parsing a date string | `qb::parse_utc(str, fmt)` / `qb::from_iso8601(str)` | Returns `std::optional<qb::wall_time>` (`nullopt` on error), UTC only. _(`timestamp.h:181,205`.)_ |
+| `Timestamp::epochSeconds()` on a wall instant | `qb::unix_seconds(tp)` | `int64_t` seconds since the Unix epoch. _(`time.h:122`.)_ |
+| `Timestamp::epochMillis()` | `qb::unix_millis(tp)` (also `unix_micros`, `unix_nanos`) | `int64_t` since the Unix epoch. _(`time.h:128`.)_ |
+| `Timestamp::fromEpochSeconds(s)` | `qb::wall_from_unix_seconds(s)` | Returns `qb::wall_time`. _(`time.h:146`.)_ |
+| `Timestamp::fromEpochMillis(ms)` | `qb::wall_from_unix_millis(ms)` | Returns `qb::wall_time`. _(`time.h:152`.)_ |
+| `timestamp.toString(fmt)` / custom date formatting | `qb::format_utc(tp, fmt)` — strftime-compatible, UTC | Empty string on failure. _(`time.h:306`.)_ |
+| ISO-8601 string from a timestamp | `qb::to_iso8601(tp)`, returning `"YYYY-MM-DDTHH:MM:SSZ"` | _(`time.h:319`.)_ |
+| Parsing a date string | `qb::parse_utc(str, fmt)` / `qb::from_iso8601(str)` | Returns `std::optional<qb::wall_time>` (`nullopt` on error), UTC only. _(`time.h:327,346`.)_ |
 | `Duration::zero()` / a "no timeout" sentinel | `qb::duration::zero()` | Inherited from `std::chrono::nanoseconds`. |
-| A hand-rolled scope timer | `qb::ScopedTimer` / `qb::LogTimer` | Monotonic; callback receives a `qb::duration`. _(`timestamp.h:254,305`.)_ |
-| A raw RDTSC / CPU-counter read | `qb::tsc_ticks()` | Per-core, uncalibrated — micro-benchmark deltas only, **not a clock**. _(`timestamp.h:214-216`.)_ |
+| A hand-rolled scope timer | `qb::ScopedTimer` / `qb::LogTimer` | Monotonic; callback receives a `qb::duration`. _(`time.h:718,769`.)_ |
+| A raw RDTSC / CPU-counter read | `qb::tsc_ticks()` | Per-core, uncalibrated — micro-benchmark deltas only, **not a clock**. _(`time.h:684`.)_ |
 
 ### Before and after
 
@@ -256,8 +256,8 @@ qb::Timestamp deadline = start + qb::Duration::seconds(30);
 
 ```cpp
 // after.cpp — canonical chrono model
-// src: qb/include/qb/system/timestamp.h
-#include <qb/system/timestamp.h>   // qb::duration, qb::mono_time, qb::mono_now, literals
+// src: qb/include/qb/system/time.h
+#include <qb/system/time.h>   // qb::duration, qb::mono_time, qb::mono_now, literals
 
 qb::duration  timeout  = 500ms;                  // bare-int rejected; literal accepted
 qb::mono_time start    = qb::mono_now();         // monotonic anchor for elapsed time
@@ -271,8 +271,8 @@ qb::mono_time deadline = start + 30s;            // schedule against monotonic t
 A wall-clock example — formatting an expiry for a log line or a wire field:
 
 ```cpp
-// src: qb/include/qb/system/timestamp.h
-#include <qb/system/timestamp.h>
+// src: qb/include/qb/system/time.h
+#include <qb/system/time.h>
 
 qb::wall_time expiry = qb::wall_now() + 24h;          // 24h from now, wall clock
 std::string   iso    = qb::to_iso8601(expiry);        // "YYYY-MM-DDTHH:MM:SSZ"
@@ -289,10 +289,10 @@ The migration matters because the framework's own surfaces take these types. A f
 
 ### Pitfalls
 
-- **Do not pass a bare integer to a `qb::duration` parameter.** `setLatency(100)` does not compile by design; write `setLatency(100us)` (or `std::chrono::microseconds(100)`). This is the unit-confusion guard, not a defect. _(`qb/include/qb/system/timestamp.h:8-11`.)_
-- **Do not mix the two instant clocks.** You cannot subtract a `qb::wall_time` from a `qb::mono_time`; the compiler rejects it. Measure and schedule with `mono_time`; record dates and expiry with `wall_time`. Converting between them means going through a Unix-epoch scalar (`unix_seconds` / `wall_from_unix_seconds`) and accepting that the wall clock can step. _(`qb/include/qb/system/timestamp.h:18-20`.)_
-- **`tsc_ticks()` is not a clock.** It is monotonic per core but uncalibrated and not comparable across cores or to either clock. Use it only for single-thread micro-benchmark deltas. _(`qb/include/qb/system/timestamp.h:214-216`.)_
-- **`format_utc`/`parse_utc` are UTC-only.** There is no time-zone database on this toolchain; formatting uses `strftime` and parsing uses `std::get_time` + `timegm`, both in UTC. `format_utc` returns an empty string on failure; `parse_utc` and `from_iso8601` return `std::nullopt`. _(`qb/include/qb/system/timestamp.h:27-30,181-208`.)_
+- **Do not pass a bare integer to a `qb::duration` parameter.** `setLatency(100)` does not compile by design; write `setLatency(100us)` (or `std::chrono::microseconds(100)`). This is the unit-confusion guard, not a defect. _(`qb/include/qb/system/time.h:8-11`.)_
+- **Do not mix the two instant clocks.** You cannot subtract a `qb::wall_time` from a `qb::mono_time`; the compiler rejects it. Measure and schedule with `mono_time`; record dates and expiry with `wall_time`. Converting between them means going through a Unix-epoch scalar (`unix_seconds` / `wall_from_unix_seconds`) and accepting that the wall clock can step. _(`qb/include/qb/system/time.h:18-20`.)_
+- **`tsc_ticks()` is not a clock.** It is monotonic per core but uncalibrated and not comparable across cores or to either clock. Use it only for single-thread micro-benchmark deltas. _(`qb/include/qb/system/time.h:214-216`.)_
+- **`format_utc`/`parse_utc` are UTC-only.** There is no time-zone database on this toolchain; formatting uses `strftime` and parsing uses `std::get_time` + `timegm`, both in UTC. `format_utc` returns an empty string on failure; `parse_utc` and `from_iso8601` return `std::nullopt`. _(`qb/include/qb/system/time.h:27-30,181-208`.)_
 - **`Actor::time()` returns a raw `uint64_t`, not a chrono type.** It is the core's cached epoch-nanosecond count (sourced from `qb::wall_now()`), constant within one handler or `on(qb::LoopEvent const&)` invocation; it is not a `qb::mono_time` or `qb::wall_time`. For a fresh high-precision wall instant use `qb::unix_nanos(qb::wall_now())`. _(`qb/include/qb/core/Actor.h:513-528`.)_
 
 ## Part 3 — From the synchronous `onInit()` to the async-init APIs

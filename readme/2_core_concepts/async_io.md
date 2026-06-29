@@ -1,6 +1,6 @@
 # The asynchronous I/O model
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 How qb runs network and filesystem work without blocking a thread: a single-threaded, libev-backed event loop that dispatches readiness to `on()` handlers, plus a coroutine layer for code that prefers `co_await` over callbacks.
 
@@ -39,6 +39,18 @@ The loop is owned by `qb::io::async::listener` (`qb/io/async/listener.h`).
 - **Thread-local.** Each thread has exactly one listener, reachable as `qb::io::async::listener::current` (a `thread_local static` member). I/O objects bind to the listener of the thread that constructs them and must not be shared across threads. Under `qb-core`, each `VirtualCore` has its own listener.
 - **Watcher registry.** The listener registers and unregisters libev watchers (`registerEvent` / `unregisterEvent`), tracks them in an intrusive list, and uses a per-watcher-type thread-local freelist so a steady-state workload registers and frees watchers without allocating.
 - **Dispatch.** When a watcher fires, the listener updates the wrapper's triggered-flags field and calls the handler's `on(SpecificEvent&)` method. If the handler exposes `is_alive()`, the listener checks it first and skips the call on a dead object.
+
+```mermaid
+flowchart TB
+    T["VirtualCore worker thread"] --> B
+    subgraph B["each loop iteration · single-threaded · interleaved"]
+        direction LR
+        B1["process actor events<br/>one on() at a time"] --- B2["libev polls ready<br/>I/O · timers · signals"] --- B3["dispatch watchers →<br/>on(SpecificEvent&)<br/>(skipped if !is_alive())"]
+    end
+    B --> C{"stop requested or<br/>no active watchers?"}
+    C -- no --> B
+    C -- yes --> D["loop exits · teardown"]
+```
 
 > **Windows note.** libev's epoll backend on Windows is wepoll (IOCP-based). Keep the whole loop lifecycle — registration, `run()`, and teardown — on a single thread per listener; do not close a loop or its handle from another thread while it is running.
 
@@ -108,7 +120,7 @@ When a read or write fails, or `disconnect()` is requested, the component calls 
 All durations are `qb::duration` (a `std::chrono::nanoseconds` span); the literals from `<chrono>` work directly.
 
 ```cpp
-// src: qb/source/io/tests/system/test-async-io.cpp (adapted from TimerHandler)
+// src: qb/source/io/tests/system/async/timer-timeout.cpp (adapted from TimerHandler)
 #include <qb/io/async.h>
 #include <chrono>
 
@@ -148,7 +160,7 @@ void callback(_Func &&func, std::chrono::duration<Rep, Period> timeout); // (2)
 The self-deleting timer uses a thread-local freelist, so a steady stream of delayed callbacks reuses storage rather than churning the allocator.
 
 ```cpp
-// src: qb/source/io/tests/system/test-async-io.cpp (CallbackScheduledExecution)
+// src: qb/source/io/tests/system/async/callback-dispatch.cpp (CallbackScheduledExecution)
 #include <qb/io/async.h>
 #include <chrono>
 
@@ -186,6 +198,20 @@ qb::io::async::task<void> poll_once(int fd) {
     co_await qb::io::async::sleep(100ms);      // suspend without burning the thread
     co_return;
 }
+```
+
+A `co_await` suspends the coroutine and registers a watcher with the same listener; the worker thread stays free to run other actors and coroutines until the awaited event fires, at which point the scheduler resumes the coroutine **on the same thread**, exactly where it left off:
+
+```mermaid
+sequenceDiagram
+    participant Co as Coroutine (task&lt;&gt;)
+    participant Sched as coro_scheduler
+    participant Loop as listener (libev)
+    Co->>Loop: co_await wait_readable(fd)<br/>register watcher, suspend
+    Note over Loop: thread is free —<br/>other actors / coroutines run
+    Loop-->>Sched: fd readable → watcher fires
+    Sched->>Co: resume on the same thread, past the co_await
+    Note over Co: runs to the next<br/>co_await or co_return
 ```
 
 Key entry points (`qb::io::async`):

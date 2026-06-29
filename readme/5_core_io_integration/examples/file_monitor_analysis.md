@@ -1,6 +1,6 @@
 # File-monitor example: annotated walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 A guided reading of `examples/core_io/file_monitor`, which wraps `qb::io::async::directory_watcher` inside an actor so file-system attribute changes arrive as ordinary typed events on a `VirtualCore`.
 
@@ -22,20 +22,13 @@ The load-bearing integration point is that `qb::io::async::directory_watcher<_De
 
 ## Architecture
 
-```
-                 WatchDirectoryRequest
-   ClientActor ───────────────────────────►  DirectoryWatcher
-   (core 0)    ◄───────────────────────────  (core 0)
-                 WatchDirectoryResponse              │ owns
-                                                     ▼
-                                          DirectoryMonitor (CRTP)
-                                          qb::io::async::directory_watcher
-                                                     │ ev::stat poll
-                                                     ▼
-                                          on(event::file const&)
-                                                     │ callback
-   ClientActor ◄───────────────────────────  publishFileEvent → push<FileEvent>
-   (subscriber)        FileEvent
+```mermaid
+flowchart TD
+    C["ClientActor — core 0"] -- "WatchDirectoryRequest" --> DW["DirectoryWatcher — core 0"]
+    DW -- "WatchDirectoryResponse" --> C
+    DW -- owns --> DM["DirectoryMonitor (CRTP)<br/>qb::io::async::directory_watcher"]
+    DM -- "ev::stat poll" --> OF["on(event::file const&)"]
+    OF -- "callback → publishFileEvent → push&lt;FileEvent&gt;" --> C2["ClientActor (subscriber) — FileEvent"]
 ```
 
 `main.cpp` places `DirectoryWatcher` and `ClientActor` on core `0` and `FileProcessor` on core `1`:
@@ -357,7 +350,7 @@ Three facts to keep straight:
 
 ## Pitfalls
 
-- **The checked-in sources will not compile unmodified against qb 2.0.0.** They pass bare `double`/`int` to `start(…, qb::duration)` and `qb::io::async::callback(…, std::chrono::duration<Rep, Period>)`. Replace every such argument with a `std::chrono` duration, as shown above, before building.
+- **The checked-in sources will not compile unmodified against qb 2.6.0.** They pass bare `double`/`int` to `start(…, qb::duration)` and `qb::io::async::callback(…, std::chrono::duration<Rep, Period>)`. Replace every such argument with a `std::chrono` duration, as shown above, before building.
 - **Stat-diff watching is poll-based and coarse.** `ev::stat` polls at the configured interval and reports changes to the *watched path*, not per-child events. Changes within one interval can coalesce; a delete-then-recreate inside one poll window may surface as a single event. Pick `interval` for your latency/CPU trade-off, and do not expect per-file change journaling from this primitive.
 - **`qb::io::sys::file` blocks the event loop.** It is synchronous. Reading a large file inside `on(FileEvent&)` stalls the owning `VirtualCore`. Offload large reads to a worker actor or a `qb::io::async::callback` continuation.
 - **`FileProcessor` is not wired to receive events as shipped.** Only `ClientActor` subscribes. To exercise `FileProcessor`, add its `ActorId` to the subscriber set or forward `FileEvent`s to `processor_id` (see [Wiring caveat](#wiring-caveat-who-actually-receives-fileevent)).

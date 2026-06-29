@@ -1,6 +1,6 @@
 # qb-io invariants: threading, lifetime, and ownership
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 The rules the asynchronous stack assumes — one event loop per thread, where
 callbacks run, when objects may be destroyed, and who owns each socket — with
@@ -151,7 +151,7 @@ registry, or as a member — never relocate them.
   pre-2.0 capitalized time identifiers appear nowhere in this layer and must
   never be reintroduced; the canonical vocabulary is `qb::duration`,
   `qb::mono_time`, and `qb::wall_time`
-  (`include/qb/system/timestamp.h`).
+  (`include/qb/system/time.h`).
 
 > `callback()` refreshes libev's cached monotonic "now" (`ev_now_update`) before
 > arming a timer, so a timer scheduled after the owning thread blocked outside

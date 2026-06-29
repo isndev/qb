@@ -1,6 +1,6 @@
 # Secure TCP with SSL/TLS
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 `qb-io` layers OpenSSL-backed SSL/TLS over its TCP stack, with secure-by-default client verification, a context-owning listener, and a stream transport that drains OpenSSL's internal buffers.
 
@@ -23,6 +23,14 @@ The whole slice compiles only when the build was configured with OpenSSL availab
 [Build gating](#build-gating). Throughout, the socket and listener follow `qb-io`'s
 ownership conventions: they are move-only, and the listener owns its `SSL_CTX` for its
 lifetime.
+
+```mermaid
+flowchart TB
+    STCP["transport::stcp<br/>stream&lt;ssl::socket&gt; — is_secure() == true"]
+    STCP --> SS["tcp::ssl::socket<br/>owns SSL* — SSL_read / SSL_write, runs the handshake"]
+    SS --> TS["tcp::socket<br/>native handle (base)"]
+    L["tcp::ssl::listener<br/>owns SSL_CTX"] -- "mints a configured ssl::socket per accept" --> SS
+```
 
 ## Build gating
 
@@ -130,7 +138,7 @@ qb::io::tcp::ssl::socket c;
 c.set_insecure();                            // disables MITM protection — use deliberately
 int rc = c.connect_v4("127.0.0.1", 64388);
 ```
-<!-- src: qb/source/io/tests/system/test-async-io.cpp:786-801 -->
+<!-- src: qb/source/io/tests/system/tls/tls-peer-verification.cpp:140-145 -->
 
 When you supply your own `SSL` handle through `init(SSL*)`, `qb-io` does **not** modify the
 verification policy; your context's settings are used as-is.
@@ -283,7 +291,7 @@ file paths, and hand it to the transport's listener before listening. The aliase
 <!-- src: qb/include/qb/io/async.h:114-127 -->
 
 ```cpp
-// src: qb/source/io/tests/system/test-async-io.cpp:623-746 (adapted)
+// src: qb/source/io/tests/system/tls/tls-text-roundtrip.cpp:78-127 (adapted)
 #include <qb/io/async.h>
 #include <qb/io/protocol/text.h>
 #include <qb/io/tcp/ssl/socket.h>   // qb::io::ssl::create_server_context
@@ -341,7 +349,7 @@ The default client verifies the peer. Against a public CA-signed server, a plain
 `set_insecure()` before connecting.
 
 ```cpp
-// src: qb/source/io/tests/system/test-async-io.cpp:661-732 (adapted)
+// src: qb/source/io/tests/system/tls/tls-text-roundtrip.cpp:104-143 (adapted)
 #include <qb/io/async.h>
 #include <qb/io/protocol/text.h>
 

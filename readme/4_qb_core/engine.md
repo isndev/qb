@@ -1,6 +1,6 @@
 # The engine: `qb::Main` and `VirtualCore`
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 `qb::Main` is the runtime that launches one worker thread per logical core, places actors onto those workers, and drives event processing until shutdown; `qb::VirtualCore` is the per-thread worker it manages on your behalf.
 
@@ -17,27 +17,46 @@ The engine has two collaborating types, both declared in `qb/include/qb/core/Mai
 
 Each `VirtualCore` runs on its own thread and owns its actors exclusively, with no synchronization on the actor maps or the id pool. Thread safety is structural, not lock-based: actors communicate only by passing events between cores, never by touching another core's actor state directly (`qb/include/qb/core/VirtualCore.h`).
 
-```
-┌────────────────────────────────────────────────────────────┐
-│                          qb::Main                          │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │              SharedCoreCommunication                 │  │
-│  │     (one MPSC mailbox per used VirtualCore)          │  │
-│  └──────────┬───────────────────────────┬───────────────┘  │
-│             │                           │                   │
-│   ┌─────────▼────────┐        ┌─────────▼────────┐          │
-│   │  VirtualCore 0   │        │  VirtualCore 1   │   …      │
-│   │  (std::jthread)  │        │  (std::jthread)  │          │
-│   │  ┌────────────┐  │        │  ┌────────────┐  │          │
-│   │  │  Actor A   │  │        │  │  Actor C   │  │          │
-│   │  ├────────────┤  │        │  ├────────────┤  │          │
-│   │  │  Actor B   │  │        │  │  Actor D   │  │          │
-│   │  └────────────┘  │        │  └────────────┘  │          │
-│   └──────────────────┘        └──────────────────┘          │
-└────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    M["qb::Main (= qb::engine)"]
+    M --> SCC["SharedCoreCommunication<br/>one MPSC mailbox per used VirtualCore"]
+    SCC --> VC0
+    SCC --> VC1
+    subgraph VC0["VirtualCore 0 (std::jthread)"]
+        A["Actor A"]
+        B["Actor B"]
+    end
+    subgraph VC1["VirtualCore 1 (std::jthread)"]
+        C["Actor C"]
+        D["Actor D"]
+    end
 ```
 
 `qb::Main` holds a `std::stop_source` and hands a `std::stop_token` to every worker, so it can request cooperative cancellation without relying on OS signals (`qb/include/qb/core/Main.h`).
+
+```mermaid
+stateDiagram-v2
+    [*] --> Configuring
+    Configuring --> Starting: start()
+    Starting --> Running: every core past the startup barrier
+    Running --> Stopping: stop() / SIGINT → KillEvent broadcast
+    Stopping --> Stopped: join() returns
+    Stopped --> [*]
+
+    note right of Configuring
+        construct qb::Main · addActor(core, …) ·
+        tune cores (affinity, latency) — pre-start only
+    end note
+    note right of Starting
+        one VirtualCore per core on a std::jthread ·
+        apply affinity · construct + onInit() actors
+    end note
+    note right of Running
+        each core runs one event for one actor
+        to completion, then the next
+    end note
+```
 
 ---
 
@@ -253,12 +272,11 @@ The worker keeps an integer `_spin_credit` seeded from the total work observed i
 
 Cross-core delivery is a buffer-then-flush pipeline, not a direct call (`qb/include/qb/core/Main.h`, `qb/include/qb/system/lockfree/mpsc.h`):
 
-```
-Actor A (VC0)                VC1 mailbox (MPSC)          Actor C (VC1)
-┌─────────────┐   push<E>   ┌────────────────────┐      ┌────────────┐
-│  VirtualPipe │ ─────────► │ ringbuffer<Bucket> │ ───► │   on(E&)   │
-│  (per dest)  │  (batched)  │ (lock-free enqueue) │     └────────────┘
-└─────────────┘             └────────────────────┘
+```mermaid
+flowchart LR
+    A["Actor A (VC0)"] -- "push&lt;E&gt;()" --> VP["VirtualPipe (per dest)<br/>buffered locally"]
+    VP -- "__flush_all__ (batched)" --> MB["VC1 mailbox<br/>ringbuffer&lt;EventBucket&gt; — lock-free MPSC"]
+    MB -- "dequeue next iteration" --> C["Actor C (VC1)<br/>on(E&)"]
 ```
 
 1. Actor A calls `push<E>(actor_c_id, ...)`.
@@ -339,4 +357,4 @@ int main() {
 - [Event messaging](./messaging.md) — `push`, `broadcast`, and the cross-core pipeline in depth.
 - [Core concepts: concurrency and parallelism](../2_core_concepts/concurrency.md) — the engine's threading model at a higher level.
 - [API overview: time vocabulary](../7_reference/api_overview.md) — `qb::duration`, `qb::mono_time`, `qb::wall_time`.
-- Reference tests: `qb/source/core/tests/system/test-main.cpp`, `qb/source/core/tests/system/test-actor-event.cpp`.
+- Reference tests: `qb/source/core/tests/system/engine/main-lifecycle.cpp`, `qb/source/core/tests/system/messaging/messaging-api.cpp`.

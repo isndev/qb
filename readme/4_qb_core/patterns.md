@@ -1,6 +1,6 @@
 # Actor patterns
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 Compose the `qb::Actor` primitives into recurring designs: finite state machines, service registries, publish/subscribe, request/response with a timeout, supervision, and runtime dependency resolution.
 
@@ -33,7 +33,7 @@ The patterns also use two timing tools from `qb-io`:
   runs `func` immediately. The callback runs outside any actor context, so it must capture only what
   it needs and guard re-entry into the actor with `is_alive()`.
 - `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
-  For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/timestamp.h`).
+  For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/time.h`).
 
 ## The patterns library (`<qb/core/patterns.h>`)
 
@@ -118,6 +118,20 @@ public:
 };
 ```
 
+The `OrderActor` above is exactly this state machine:
+
+```mermaid
+stateDiagram-v2
+    [*] --> AwaitingPayment: PlaceOrder
+    AwaitingPayment --> Processing: PaymentTaken
+    Processing --> Shipped: ShipOrder (timed +2s via callback)
+    Shipped --> [*]
+    note right of Processing
+        PaymentTaken ignored unless AwaitingPayment;
+        ShipOrder ignored unless Processing
+    end note
+```
+
 Two rules keep an actor FSM correct:
 
 - **Guard every transition on the current state.** Handlers can fire in any order; an unguarded
@@ -139,7 +153,7 @@ shared resource — a logger, a metrics sink, a connection registry — that oth
 core reach by type, and actors on other cores reach by computed id.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/test-actor-service-event.cpp
+// src: derived from qb/source/core/tests/system/event/service-event-ring.cpp
 #include <qb/actor.h>
 #include <qb/io.h>
 
@@ -388,7 +402,7 @@ return `nullptr` while the child is still *Activating* (async `onInit` in flight
 init, or once it died. The child has its own `ActorId` and receives events normally.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/test-actor-add.cpp
+// src: derived from qb/source/core/tests/system/actor/actor-add.cpp
 auto helper = addRefActor<ChildHelper>(id());   // qb::ActorHandle<ChildHelper>
 push<Task>(helper.id(), 2, 3);                    // always safe — stashed if still Activating
 if (helper.ready())                              // sync-init child: ready at once
@@ -401,7 +415,7 @@ child finishes an async `onInit()` (the event is stashed and replayed FIFO once 
 any **direct** method call on `helper.ready()`; never `operator->` a non-ready handle.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/test-actor-add.cpp
+// src: derived from qb/source/core/tests/system/actor/actor-add.cpp
 #include <qb/actor.h>
 #include <qb/io.h>
 
@@ -543,7 +557,7 @@ is no status field). The requester overrides `on(RequireEvent&)` and uses `is<T>
 which type answered.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/test-actor-dependency.cpp
+// src: derived from qb/source/core/tests/system/actor/actor-dependency.cpp
 #include <qb/actor.h>
 
 class Client : public qb::Actor {
@@ -584,7 +598,7 @@ Behavior and limits:
   supervision pattern), not by waiting for a `Dead` `RequireEvent`.
 - **Static wiring is simpler when ids are known up front.** If you create the dependencies yourself,
   capture their `ActorId`s from `addActor` and pass them through constructors (the
-  `test-actor-dependency.cpp` `ActorIdList` form). Reserve `require<T>()` for when you genuinely do
+  `actor/actor-dependency.cpp` `ActorIdList` form). Reserve `require<T>()` for when you genuinely do
   not hold the ids.
 
 ## Coroutines for async I/O

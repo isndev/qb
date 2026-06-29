@@ -1,6 +1,6 @@
 # TCP and UDP transports and sockets
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 Transports bind the buffered stream abstractions to concrete sockets, turning a raw `tcp::socket` or `udp::socket` into a read/write/buffer unit that the asynchronous I/O layer and protocols build on.
 
@@ -22,12 +22,17 @@ SSL/TLS (`transport::stcp`) and QUIC are covered on their own pages; this page l
 
 ### The two layers: socket, then stream
 
-Every network transport is two layers stacked:
+Every network transport is two layers stacked (shown for `transport::tcp`):
 
-```
-  transport::tcp  : public stream<tcp::socket>     ← buffers + read()/write()/publish()
-        └── tcp::socket : protected qb::io::socket  ← connect()/read()/write()/disconnect()
-                  └── qb::io::socket                ← move-only RAII handle owner
+```mermaid
+flowchart TB
+    T["transport::tcp<br/>adapter — is_secure() == false"]
+    S["stream&lt;tcp::socket&gt;<br/>buffers + read() / write() / publish()"]
+    TS["tcp::socket<br/>connect() / read() / write() / disconnect()"]
+    BS["qb::io::socket<br/>move-only RAII handle owner"]
+    T -- "public inherits" --> S
+    S -- "owns _in" --> TS
+    TS -- "protected base" --> BS
 ```
 
 The lower layer is a thin, move-only wrapper over a native socket handle. The upper layer adds a pair of growable buffers (`qb::allocator::pipe<char>`) and the read/write loop that the event loop and protocols drive. The transport adapter itself is usually a few lines — it picks the socket type and sets compile-time flags such as `is_secure()`.
@@ -190,6 +195,16 @@ These transports back `qb::io::use<...>::udp::client` and `qb::io::use<...>::udp
 - **`transport::file`** (`qb/io/transport/file.h`) is `stream<sys::file>` for buffered local-file I/O; its `write()` is a no-op placeholder because file writes are driven through other mechanisms. Filesystem watching is covered in [the asynchronous I/O model](./async_system.md).
 - **QUIC** is not a `stream`-based transport. It is a reactor-driven endpoint over UDP; see [QUIC transport](./quic_transport.md).
 
+### Transport comparison
+
+| Transport | Base | Wraps | Secure | Message model | Distinctive trait |
+|---|---|---|---|---|---|
+| `transport::tcp` | `stream<tcp::socket>` | `tcp::socket` | no | byte stream (a [protocol](./protocols.md) frames it) | plain buffered read/write |
+| `transport::udp` | `stream<udp::socket>` | `udp::socket` | no | datagram (message-oriented) | per-datagram source/dest; `has_reset_on_pending_read` |
+| `transport::stcp` | `stream<tcp::ssl::socket>` | `tcp::ssl::socket` | yes | byte stream | drains `SSL_pending()` after each socket read |
+| `transport::accept` / `saccept` | — (used as an `_IO_` type, not a `stream`) | `tcp::listener` | n/a | one connection per `read()` | remaps transient accept errors to `EWOULDBLOCK` |
+| `transport::file` | `stream<sys::file>` | `sys::file` | no | byte stream | local file I/O; `write()` is a no-op placeholder |
+
 ## Examples
 
 ### Blocking TCP connect with a timeout
@@ -199,7 +214,7 @@ A standalone socket use, with no event loop, showing the `qb::duration`-bounded 
 ```cpp
 #include <qb/io/tcp/socket.h>
 #include <qb/io.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <cstring>                                 // std::strlen
 
 using namespace qb::time_literals;                // brings in 3s, 2s, …
@@ -230,7 +245,7 @@ int main() {
 }
 ```
 
-<!-- src: qb/include/qb/io/tcp/socket.h (connect timed overload), qb/source/io/tests/system/test-connection-timeout.cpp -->
+<!-- src: qb/include/qb/io/tcp/socket.h (connect timed overload), qb/source/io/tests/system/async/async-connect-timeout.cpp -->
 
 ### Reading a UDP datagram with a timeout
 
@@ -239,7 +254,7 @@ int main() {
 ```cpp
 #include <qb/io/udp/socket.h>
 #include <qb/io.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 using namespace qb::time_literals;
 

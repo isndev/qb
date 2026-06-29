@@ -1,6 +1,6 @@
 # qb-io utilities
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 Beyond sockets and the event loop, `qb-io` ships a set of standalone utilities — the canonical time vocabulary, cryptography and JWT, compression, URI parsing, fixed-capacity strings and flat hash maps, UUIDs, JSON, and endian helpers — usable on their own without the actor runtime.
 
@@ -14,7 +14,8 @@ These utilities live in headers under `qb/include/qb/`. Several are header-only 
 
 | Slice | Header | Namespace | Build gate |
 |---|---|---|---|
-| Time vocabulary | `qb/system/timestamp.h` | `qb` | always |
+| Time vocabulary | `qb/system/time.h` | `qb` | always |
+| Number parsing | `qb/system/parse.h` | `qb` | always |
 | Crypto + JWT | `qb/io/crypto.h`, `qb/io/crypto_jwt.h` | `qb::crypto`, `qb::jwt` | OpenSSL (`QB_WITH_SSL`) |
 | Compression | `qb/io/compression.h` | `qb::compression`, `qb::gzip`, `qb::deflate` | zlib (`QB_WITH_COMPRESSION`) |
 | URI | `qb/io/uri.h` | `qb::io` | always |
@@ -30,7 +31,7 @@ These utilities live in headers under `qb/include/qb/`. Several are header-only 
 
 ## Time vocabulary (`qb::duration`, `qb::mono_time`, `qb::wall_time`)
 
-The single source of truth for time across qb and its modules, built entirely on `std::chrono`. The model is deliberately minimal: one span type and two distinct instant types. _(`qb/include/qb/system/timestamp.h:82-88`.)_
+The single source of truth for time across qb and its modules, built entirely on `std::chrono`. The model is deliberately minimal: one span type and two distinct instant types. _(`qb/include/qb/system/time.h:82-88`.)_
 
 | Type | Alias | Use for |
 |---|---|---|
@@ -38,14 +39,14 @@ The single source of truth for time across qb and its modules, built entirely on
 | `qb::mono_time` | `std::chrono::steady_clock::time_point` | Deadlines, timers, the event-loop "now", latency, RTT. Immune to NTP/DST adjustments. |
 | `qb::wall_time` | `std::chrono::system_clock::time_point` | Dates, expiry, JWT `exp`/`nbf`, TLS validity, logs, wire formats. |
 
-`qb::duration` accepts any finer-or-equal `std::chrono` literal implicitly (`30s`, `100ms`, `5us`) and **rejects a bare integer**, so a seconds-versus-milliseconds unit confusion cannot compile. The two instant types are distinct on purpose: subtracting a wall instant from a monotonic one does not compile, which removes a class of "timeout fired early because the clock stepped" bugs. _(`qb/include/qb/system/timestamp.h:8-20`.)_
+`qb::duration` accepts any finer-or-equal `std::chrono` literal implicitly (`30s`, `100ms`, `5us`) and **rejects a bare integer**, so a seconds-versus-milliseconds unit confusion cannot compile. The two instant types are distinct on purpose: subtracting a wall instant from a monotonic one does not compile, which removes a class of "timeout fired early because the clock stepped" bugs. _(`qb/include/qb/system/time.h:8-20`.)_
 
 > The pre-2.0 PascalCase time aliases no longer exist. Use the three canonical lowercase types above.
 
 ### Public surface
 
 ```cpp
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 namespace qb {
 
@@ -74,19 +75,19 @@ uint64_t tsc_ticks() noexcept;
 
 } // namespace qb
 ```
-<!-- src: qb/include/qb/system/timestamp.h -->
+<!-- src: qb/include/qb/system/time.h -->
 
-The chrono literals (`30s`, `100ms`, `5us`, …) are pulled into `qb` via `inline namespace qb::time_literals`, so call sites can write them without an extra `using`. _(`qb/include/qb/system/timestamp.h:104-106`.)_
+The chrono literals (`30s`, `100ms`, `5us`, …) are pulled into `qb` via `inline namespace qb::time_literals`, so call sites can write them without an extra `using`. _(`qb/include/qb/system/time.h:104-106`.)_
 
-`format_utc`/`parse_utc` operate in UTC only and have no time-zone database dependency: formatting uses `strftime`, parsing uses `std::get_time` + `timegm`. `format_utc` returns an empty string on failure; `parse_utc`/`from_iso8601` return `std::nullopt` on any parse error. _(`qb/include/qb/system/timestamp.h:29-30,155-208`.)_
+`format_utc`/`parse_utc` operate in UTC only and have no time-zone database dependency: formatting uses `strftime`, parsing uses `std::get_time` + `timegm`. `format_utc` returns an empty string on failure; `parse_utc`/`from_iso8601` return `std::nullopt` on any parse error. _(`qb/include/qb/system/time.h:29-30,155-208`.)_
 
-`tsc_ticks()` reads the CPU time-stamp counter. It is monotonic per-core and high-resolution but uncalibrated and not comparable to wall or monotonic clocks — use it only for single-thread micro-benchmark deltas, never as a clock. _(`qb/include/qb/system/timestamp.h:214-216`.)_
+`tsc_ticks()` reads the CPU time-stamp counter. It is monotonic per-core and high-resolution but uncalibrated and not comparable to wall or monotonic clocks — use it only for single-thread micro-benchmark deltas, never as a clock. _(`qb/include/qb/system/time.h:214-216`.)_
 
 ### Scoped measurement helpers
 
 ```cpp
 #include <qb/io.h>                 // qb::io::cout
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 
 void process() {
     qb::ScopedTimer timer([](qb::duration d) {
@@ -97,11 +98,37 @@ void process() {
     // timer fires the callback with the measured qb::duration on scope exit.
 }
 ```
-<!-- src: qb/include/qb/system/timestamp.h:254-299 -->
+<!-- src: qb/include/qb/system/time.h:254-299 -->
 
-`ScopedTimer` measures elapsed monotonic time between construction and `stop()`/destruction, invoking the callback with the measured `qb::duration`; `stop()`, `restart()`, and `elapsed()` are available for manual control. It is non-copyable and non-movable. `LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction. _(`qb/include/qb/system/timestamp.h:254-327`.)_
+`ScopedTimer` measures elapsed monotonic time between construction and `stop()`/destruction, invoking the callback with the measured `qb::duration`; `stop()`, `restart()`, and `elapsed()` are available for manual control. It is non-copyable and non-movable. `LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction. _(`qb/include/qb/system/time.h:254-327`.)_
 
-> **Boundary seam.** The only place a raw `double` touches time is `qb::detail::to_ev_seconds` / `from_ev_seconds`, the conversion between `qb::duration` and libev's `ev_tstamp` (double seconds). Application code never needs these. _(`qb/include/qb/system/timestamp.h:333-348`.)_
+> **Boundary seam.** The only place a raw `double` touches time is `qb::detail::to_ev_seconds` / `from_ev_seconds`, the conversion between `qb::duration` and libev's `ev_tstamp` (double seconds). Application code never needs these. _(`qb/include/qb/system/time.h:333-348`.)_
+
+---
+
+## Number parsing (`qb::to_number`, `qb::to_number_prefix`)
+
+`qb/system/parse.h` provides locale-independent, non-throwing, allocation-free string→number conversion built on `std::from_chars` — the canonical replacement for `std::stoi`/`std::stol`/`std::stod`/`strtol`, which throw on bad input, depend on the global C locale, and (for `std::stod`) reject subnormals. Both functions take a `std::string_view` and return `std::optional<T>`, where `T` is any non-bool integral or floating-point type; a magnitude outside `T`'s range is reported as `std::nullopt`, never silently wrapped or truncated.
+
+Two contracts are offered:
+
+- **`qb::to_number<T>(sv, base = 10)` — strict.** The *entire* view must be a single canonical number: no surrounding whitespace, no leading `+`, no trailing characters. For integral `T` the `base` (2–36) is honoured exactly like `std::from_chars`, and only a leading `-` is accepted (an unsigned `T` rejects `-`). For floating `T` it parses fixed and scientific notation plus the case-insensitive `inf`/`infinity`/`nan` spellings, and parses subnormals exactly.
+- **`qb::to_number_prefix<T>(sv, consumed = nullptr, base = 10)` — lenient.** The `strtol`/`stoi` idiom: skip leading whitespace, accept a leading `+`, parse the longest numeric prefix, and ignore any trailing characters. When `consumed` is non-null it receives the number of bytes parsed (so you can advance a cursor through a larger buffer).
+
+```cpp
+#include <qb/system/parse.h>
+
+auto port = qb::to_number<std::uint16_t>("8080");           // std::optional{8080}
+auto bad  = qb::to_number<int>("12x");                      // std::nullopt — trailing 'x' rejected
+auto hex  = qb::to_number<int>("ff", 16);                   // std::optional{255}
+auto rate = qb::to_number<double>("3.5e-2");                // std::optional{0.035}
+
+std::size_t used = 0;
+auto lead = qb::to_number_prefix<long>("  42 rest", &used); // std::optional{42}, used == 4
+```
+<!-- src: qb/include/qb/system/parse.h:108,138 -->
+
+Reach for `to_number` to validate untrusted input — a malformed or out-of-range value is a `std::nullopt`, never an exception or a wrapped integer — and for `to_number_prefix` to scan a number off the front of a buffer. The compile-time trait `qb::is_parsable_number_v<T>` is what both functions `static_assert` on; the time vocabulary itself uses `to_number_prefix` internally to parse wire timestamps without touching the locale.
 
 ---
 
@@ -132,7 +159,7 @@ auto        raw    = qb::crypto::base64_decode(b64);
 std::string b64url = qb::crypto::base64url_encode(data);
 std::string hex    = qb::crypto::to_hex_string(std::string(data.begin(), data.end()));
 ```
-<!-- src: qb/source/io/tests/system/test-crypto.cpp -->
+<!-- src: qb/source/io/tests/unit/crypto/crypto-primitives.cpp -->
 
 The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a hexadecimal string and take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/include/qb/io/crypto.h:155-164,335-336,360-361,385-386,410-411,570-583`.)_
 
@@ -257,7 +284,7 @@ if (result.is_valid()) {
     // handle expiry
 }
 ```
-<!-- src: qb/source/io/tests/system/test-crypto-jwt.cpp:80-156 -->
+<!-- src: qb/source/io/tests/unit/crypto/crypto-jwt.cpp:91-146 -->
 
 `create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/include/qb/io/crypto_jwt.h:67-94,175-192`; `qb/source/io/src/crypto_jwt.cpp:282`.)_
 
@@ -279,9 +306,9 @@ std::string compressed   = qb::gzip::compress(original.c_str(), original.size())
 std::string decompressed = qb::gzip::uncompress(compressed.c_str(), compressed.size());
 // qb::deflate::compress / uncompress are the raw-deflate equivalents.
 ```
-<!-- src: qb/source/io/tests/system/test-compression.cpp:154-178 -->
+<!-- src: qb/source/io/tests/unit/compression/compression-codec.cpp:140-163 -->
 
-`compress(const char* data, size_t size, int level = Z_DEFAULT_COMPRESSION)` and `uncompress(const char* data, size_t size)` return a `std::string`. Generic container overloads, `uncompress(Output&, data, size, max = 0)`, accept a `max` output budget: a non-zero `max` rejects inputs that would inflate beyond it (a decompression-bomb guard), throwing `std::runtime_error`. A truncated or incomplete stream also throws `std::runtime_error`. _(`qb/include/qb/io/compression.h:487-563,662-733,838-909`; `qb/source/io/tests/system/test-compression.cpp:200-227`.)_
+`compress(const char* data, size_t size, int level = Z_DEFAULT_COMPRESSION)` and `uncompress(const char* data, size_t size)` return a `std::string`. Generic container overloads, `uncompress(Output&, data, size, max = 0)`, accept a `max` output budget: a non-zero `max` rejects inputs that would inflate beyond it (a decompression-bomb guard), throwing `std::runtime_error`. A truncated or incomplete stream also throws `std::runtime_error`. _(`qb/include/qb/io/compression.h:487-563,662-733,838-909`; `qb/source/io/tests/unit/compression/compression-codec.cpp:182-206`.)_
 
 `qb::gzip::is_compressed(data, size)` heuristically detects a gzip or zlib header. For streaming over large or chunked data, the lower-level `qb::compression` namespace exposes `compress_provider` / `decompress_provider` interfaces with an `operation_hint` (`is_last` / `has_more`) and provider factories. _(`qb/include/qb/io/compression.h:56-247,744-766`.)_
 
@@ -311,7 +338,7 @@ if (u.is_valid()) {
 std::string enc = qb::io::uri::encode("a b/c");   // "a+b%2Fc"
 std::string dec = qb::io::uri::decode(enc);        // "a b/c"
 ```
-<!-- src: qb/source/io/tests/system/test-io.cpp:45-79 -->
+<!-- src: qb/source/io/tests/unit/core/uri-parse.cpp:431-453 -->
 
 `u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0, not_found = "")` returns a single decoded value as `std::string const&`; `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/include/qb/io/uri.h:193,476-573`.)_
 

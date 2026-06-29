@@ -1,6 +1,6 @@
 # Concurrency in qb
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported) @ b87d39a
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported) @ b87d39a
 
 qb makes the actor the unit of concurrency: each actor owns its state, runs on exactly one worker thread, and processes its mailbox one event at a time, so application code never reaches for a mutex.
 
@@ -143,6 +143,22 @@ By default `start()` is asynchronous: it returns once all cores report ready, an
 ## Two threading surfaces: lock-free internals, single-thread-per-core code
 
 qb is single-thread-per-core almost everywhere, with exactly one genuinely multi-threaded surface inside the engine. Knowing which is which tells you where you can write plain code and where the framework is doing the hard part for you.
+
+```mermaid
+flowchart LR
+    subgraph C0["VirtualCore 0 — one thread (no locks)"]
+        A0["Actor A"]
+        B0["Actor B"]
+        M0["per-core maps + id pool<br/>(single owner, unsynchronized)"]
+    end
+    subgraph C1["VirtualCore 1 — one thread (no locks)"]
+        A1["Actor C"]
+        B1["Actor D"]
+    end
+    A0 -- "push() same-core" --> B0
+    A0 == "push() cross-core" ==> MB["MPSC mailbox<br/>lock-free — the only multi-threaded seam"]
+    MB ==> A1
+```
 
 **Single-thread-per-core (the surface you write against).** Your actors, their state, their event handlers, their `on(qb::LoopEvent const&)` ticks, and the per-core data structures the engine keeps for them all live on one thread. No part of the public actor API requires you to reason about concurrent access to your own state. The framework's own per-core structures — the actor maps, the service-id pool — also perform no synchronization, because they are owned by a single worker thread. (`include/qb/core/VirtualCore.h:172`)
 

@@ -1,6 +1,6 @@
 # Design philosophy
 
-> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 This page explains the design principles behind qb — share-nothing actor isolation, asynchronous-by-default I/O, a layered and modular architecture, explicit modern C++20/23, and lock-free inter-core messaging — and the rationale for each choice.
 
@@ -65,7 +65,7 @@ qb targets C++20 by default, supports C++23 explicitly, and uses the language di
 
 - **Static polymorphism via CRTP.** I/O building blocks are assembled with the Curiously Recurring Template Pattern — the `qb::io::use<>` helper composes transport, protocol, and handler behavior into a derived type at compile time. Dispatch is resolved statically, so the high-level API carries little or no virtual-call overhead on the hot path.
 - **RAII lifetimes.** Resources are tied to object lifetime, so cleanup is deterministic and tied to scope rather than manual bookkeeping.
-- **One `std::chrono` time vocabulary.** Durations and time points are expressed with `qb::duration` (a `std::chrono::nanoseconds` span), `qb::mono_time` (a `steady_clock` time point), and `qb::wall_time` (a `system_clock` time point), defined in `include/qb/system/timestamp.h`. Timeouts, latencies, and delays across the framework take `qb::duration`, so units are checked by the type system rather than passed as bare numbers.
+- **One `std::chrono` time vocabulary.** Durations and time points are expressed with `qb::duration` (a `std::chrono::nanoseconds` span), `qb::mono_time` (a `steady_clock` time point), and `qb::wall_time` (a `system_clock` time point), defined in `include/qb/system/time.h`. Timeouts, latencies, and delays across the framework take `qb::duration`, so units are checked by the type system rather than passed as bare numbers.
 - **`std::filesystem::path` for filesystem paths.** Anything that names a file or directory on the local filesystem — `sys::file::open`, the file/directory watchers, the TLS certificate/key/CA/DH helpers, the HTTP static-file root — takes a `std::filesystem::path`, so Unicode paths work correctly across platforms (Windows opens them via the wide-character APIs). The type also marks intent: paths that are *not* local filesystem locations — URLs, URIs, route patterns, and remote/wire paths handled by the other side — stay `std::string`. Local resource paths resolve through `qb::io::sys::resolve_resource()`, which looks up a relative path against the working directory and then the executable's own directory, so a binary shipped alongside its assets is self-locating and runs from any working directory (`include/qb/io/system/file.h`).
 - **Type-safe events.** Events are ordinary types; the compiler checks that a handler exists for the event it is dispatched, moving a class of routing errors to compile time.
 

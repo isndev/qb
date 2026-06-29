@@ -1,6 +1,6 @@
 # The event system
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 Events are the only channel through which actors communicate; this page covers how to define them, how the five delivery primitives differ, and what ordering and lifetime guarantees the runtime makes.
 
@@ -116,7 +116,7 @@ evt.value = 42.5; // modify before the pipe is flushed
 The fluent form `to(dest)` returns an `EventBuilder` that chains pushes over the same pipe, preserving that order:
 
 ```cpp
-// src: qb/core/Actor.h (EventBuilder)
+// src: qb/include/qb/core/Actor.h (EventBuilder)
 to(target_id)
     .push<StartProcessing>()
     .push<UpdateValue>(7, 42.5)
@@ -144,7 +144,7 @@ void broadcast(_Args &&...args) const noexcept;
 `broadcast<E>(args...)` delivers a copy of the event to every actor currently running across all `VirtualCore`s, with this actor as the source. It is built on the `send` path (`qb::VirtualCore::broadcast` calls `send` once per core), so it carries the same trivially-destructible expectation: broadcast plain-data or `qb::string<N>` events, not events holding `std::string`/`std::vector`. To target every actor on a single core instead, push to a `qb::BroadcastId`:
 
 ```cpp
-// src: qb/source/core/tests/system/test-actor-broadcast.cpp + ActorId.h (BroadcastId)
+// src: qb/source/core/tests/system/messaging/messaging-api.cpp + ActorId.h (BroadcastId)
 broadcast<SystemNotice>("shutting down");         // all actors, all cores
 push<SystemNotice>(qb::BroadcastId(core_id), ""); // all actors on one core
 ```
@@ -162,7 +162,7 @@ These two recycle the event object you are currently handling instead of constru
 - `forward(dest, event)` sets the destination to `dest`, **preserves the original source**, and re-marks the event alive, so the new recipient still sees the original sender (`qb/source/core/src/Actor.cpp`).
 
 ```cpp
-// src: qb/source/core/tests/system/test-actor-event.cpp (reply/forward handlers)
+// src: qb/source/core/tests/system/messaging/messaging-reply-forward.cpp (reply/forward handlers)
 void on(WorkItem &event) {       // non-const reference is required
     event.result = compute(event.input);
     reply(event);                // back to event.getSource()
@@ -251,11 +251,17 @@ A single actor processes its events one at a time, on its owning `VirtualCore` t
 
 Conceptual flow from sender to handler:
 
-```text
-+----------+   push/send/      +----------------------+   dispatch by    +-----------+
-|  Sender  |-- reply/forward ->| VirtualCore pipe +    |-- type id +    ->|  on(E&)   |
-|  actor   |   broadcast       | mailbox for receiver |   destination id |  handler  |
-+----------+                   +----------------------+                  +-----------+
+```mermaid
+sequenceDiagram
+    participant A as Sender actor
+    participant P as Source VirtualCore<br/>(outbound pipe)
+    participant M as Receiver VirtualCore<br/>(lock-free MPSC mailbox)
+    participant B as Receiver actor
+    A->>P: push / send / broadcast / reply / forward
+    Note over P: buffered, then flushed at the<br/>end of the core's loop iteration
+    P->>M: cross-core: MPSC enqueue<br/>(same core: direct hand-off)
+    M->>B: dequeue · dispatch by type id + destination id
+    Note over B: on(const E&) runs to completion<br/>before B's next event begins
 ```
 
 ## Pitfalls

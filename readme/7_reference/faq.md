@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 Short, grounded answers to the questions that come up most when adopting qb, each linking to the page that owns the full explanation.
 
@@ -46,9 +46,9 @@ Use `push()`. It is the default and covers nearly every case.
 | `push<Event>(dest, …)` | Ordered: FIFO per sender→receiver pair | Any event, including members with non-trivial destructors (`std::string`, `std::vector`, `std::shared_ptr`) |
 | `send<Event>(dest, …)` | **Unordered**, even to the same destination | Event type **must be trivially destructible** (POD members or `qb::string<N>` only) |
 
-`send()` exists for narrow, profiled cases where same-core latency matters and ordering does not; misusing it produces ordering bugs that are hard to trace. Both signatures are in `qb/include/qb/core/Actor.h` (`push` at line 728, `send` at line 751).
+`send()` exists for narrow, profiled cases where same-core latency matters and ordering does not; misusing it produces ordering bugs that are hard to trace. Both signatures are in `qb/include/qb/core/Actor.h` (`push` at line 798, `send` at line 821).
 
-One contract applies to both, and to `broadcast()`: they are declared `noexcept`. If growing the pipe buffer or running an event constructor throws — for example, an allocation failure under memory pressure — the throw crosses the `noexcept` boundary and calls `std::terminate()` (`qb/include/qb/core/Actor.h:723`). Keep events small and allocation-light. Full messaging semantics live in [Messaging](../4_qb_core/messaging.md).
+One contract applies to both, and to `broadcast()`: they are declared `noexcept`. If growing the pipe buffer or running an event constructor throws — for example, an allocation failure under memory pressure — the throw crosses the `noexcept` boundary and calls `std::terminate()` (`qb/include/qb/core/Actor.h:798,821,914`). Keep events small and allocation-light. Full messaging semantics live in [Messaging](../4_qb_core/messaging.md).
 
 ## Why is `qb::string<N>` preferred over `std::string` for event fields?
 
@@ -167,7 +167,7 @@ Continuous integration builds and tests every change on:
 | OS | Compilers | Standard library |
 |---|---|---|
 | Linux (`ubuntu-latest`) | GCC, Clang | libstdc++ |
-| macOS (`macos-latest`) | Apple Clang, GCC | libc++ |
+| macOS (`macos-latest`) | Apple Clang | libc++ |
 | Windows (`windows-latest`) | MSVC | MSVC STL |
 
 You need a C++20-capable compiler from one of those families, CMake 3.24 or newer, and — on non-Windows platforms — a POSIX threads (pthreads) implementation. Supported architectures are x86_64 and ARM64, including Apple Silicon. The full matrix and prerequisites are in [INSTALL.md](../../INSTALL.md).

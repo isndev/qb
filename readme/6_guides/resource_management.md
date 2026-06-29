@@ -1,6 +1,6 @@
 # Resource management
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 How RAII, actor ownership, and the actor lifecycle combine to release memory, descriptors, sockets, and TLS contexts deterministically, and where the framework hands ownership back to you.
 
@@ -90,7 +90,7 @@ Write an explicit `~MyActor()` only when you need an *action* (flush a buffer, e
 
 RAII releases resources, but it cannot perform side effects that must reach *other* actors or external systems while they are still operational. Sending an event, unregistering from a manager, or notifying a peer must happen during the shutdown sequence — before `~Actor()`. The hook for that is `on(const qb::KillEvent&)`.
 
-Every actor is, by default, subscribed to `KillEvent` (along with `SignalEvent`, `UnregisterCallbackEvent`, and `PingEvent`) at construction. (`source/core/src/Actor.cpp:38`) Constructing with `qb::no_default_events` skips all four, in which case the derived class must register at least `KillEvent` in `onInit()` to shut down gracefully. (`source/core/src/Actor.cpp:55`, `include/qb/core/Actor.h:75`)
+Every actor is, by default, subscribed to `KillEvent` (along with `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`) at construction. (`source/core/src/Actor.cpp:111-115`) Constructing with `qb::no_default_events` skips all five, in which case the derived class must register at least `KillEvent` in `onInit()` to shut down gracefully. (`include/qb/core/Actor.h:75`)
 
 Override `on(const qb::KillEvent&)`, perform the side effects, then **call `kill()`** to let the runtime proceed to destruction:
 
@@ -171,7 +171,7 @@ If the parent needs its referenced children gone when it stops, it must send eac
 The transport-based server pattern below is the common case: the freshly created context is passed straight into the transport's listener, which then owns it for the transport's lifetime.
 
 ```cpp
-// src: qb/source/io/tests/system/test-session-text.cpp:278
+// src: qb/source/io/tests/system/session/text-session-loopback.cpp:283
 #include <qb/io/tcp/ssl/socket.h>
 #include <qb/io/tcp/ssl/listener.h>
 

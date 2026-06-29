@@ -1,6 +1,6 @@
 # Glossary
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 A definition for every domain term used across the qb documentation, each grounded in the header that owns it and linking to the page that explains it in full.
 
@@ -156,7 +156,7 @@ The framework splits into two layers. `qb-io` is a standalone asynchronous I/O l
 
 ## Time vocabulary
 
-These three types are the single source of truth for time across qb and its modules. Defined in `include/qb/system/timestamp.h`. The earlier capitalized spellings (the old `Timestamp` / `Duration` / `TimePoint` aliases) were removed; use the lowercase chrono types below. See [Async system](../3_qb_io/async_system.md).
+These three types are the single source of truth for time across qb and its modules. Defined in `include/qb/system/time.h`. The earlier capitalized spellings (the old `Timestamp` / `Duration` / `TimePoint` aliases) were removed; use the lowercase chrono types below. See [Async system](../3_qb_io/async_system.md).
 
 **`qb::duration`** — An alias for `std::chrono::nanoseconds`: the span type used for every timeout, delay, TTL, interval, and core [latency](#latency-setlatency) in public APIs. `qb::duration::zero()` is the busy-spin / no-expiry sentinel depending on context.
 

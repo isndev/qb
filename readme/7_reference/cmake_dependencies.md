@@ -1,7 +1,7 @@
-<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 2.6.0 (C++20 default, C++23 supported) -->
 # CMake and third-party dependencies
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 qb groups every third-party dependency into one of three resolution classes — bundled in-tree, fetched from source on demand, or supplied by the system — and resolves each class with a single, predictable rule driven by `QB_DEPS_FETCH_FALLBACK` and the `QB_USE_SYSTEM_*` switches.
 

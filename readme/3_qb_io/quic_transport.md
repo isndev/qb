@@ -1,6 +1,6 @@
 # Native QUIC and HTTP/3 transport
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 `qb-io` exposes QUIC as an optional asynchronous I/O family built on libngtcp2 and OpenSSL: a reactor-driven endpoint owns one UDP socket, drives the ngtcp2 backend, routes packets by connection id, and dispatches typed lifecycle events for connections, streams, and datagrams.
 
@@ -54,9 +54,19 @@ The **endpoint** (`qb::io::async::quic::endpoint`) is the reactor object. It own
 
 The **backend** (`qb::io::quic::backend`) is the abstract engine contract: `configure`, `start_server`, `start_client`, `on_udp_datagram`, `on_timeout`, `next_timeout`, `wants_write`, `drain_packets`, `drain_events`, the stream and datagram mutators, and `current_stats`. The shipped implementation drives libngtcp2 plus OpenSSL and is obtained through `qb::io::quic::make_native_backend()`. Custom backends are possible by implementing the contract and passing the instance to the endpoint constructor or `set_backend(...)`.
 
-<!-- src: qb/include/qb/io/quic/backend.h:61-105 -->
+<!-- src: qb/include/qb/io/quic/backend.h:53-82 -->
 
 A **stream session** (`qb::io::async::quic::client` / `detail::session_base`) is a logical, per-stream buffered session with its own protocol and in/out pipes. Unlike a TCP session, it is not a movable kernel socket. A TCP session owns one file descriptor and can be extracted and moved to another `io_handler`; a QUIC connection owns one UDP descriptor plus shared congestion, ACK/loss recovery, TLS, timer, and connection-id state for every stream it carries. Moving a single stream to another thread would split that shared state, so streams stay on the endpoint owner.
+
+```mermaid
+flowchart TB
+    EP["async::quic::endpoint — reactor<br/>owns 1 UDP socket · libev I/O + timers · routes by connection id<br/>(the only polymorphic class)"]
+    EP -- owns --> BE["quic::backend (engine contract)<br/>make_native_backend() → libngtcp2 + OpenSSL"]
+    EP -- "routes {connection_id, stream_id}" --> S1["stream session — own protocol + in/out pipes"]
+    EP --> S2["stream session"]
+```
+
+All streams of a connection stay on the endpoint owner — a QUIC stream is not extracted to another listener the way a TCP session is.
 
 ### Endpoint affinity
 
@@ -159,7 +169,7 @@ A server requires `certificate_file` and `private_key_file`. For a client, `veri
 ### Server
 
 ```cpp
-// src: qb/source/io/tests/system/test-quic.cpp:219-251 (shape)
+// src: qb/source/io/tests/system/quic/quic-handshake.cpp:435-439 (shape)
 #include <qb/io/async.h>
 
 // The per-stream session: a buffered session with its own protocol pipe.
@@ -195,7 +205,7 @@ void run_server(Server& server) {
 ### Client
 
 ```cpp
-// src: qb/source/io/tests/system/test-quic.cpp:253-257 (shape)
+// src: qb/source/io/tests/system/quic/quic-handshake.cpp:621-627 (shape)
 #include <qb/io/async.h>
 
 class Client : public qb::io::use<Client>::quic::connector<StreamSession> {
@@ -305,7 +315,7 @@ A stream-session buffer overflow is fatal to the stream. Appending past `max_rea
   <!-- src: qb/include/qb/io/async/quic/endpoint.h:271-274 -->
 - **`listen` / `connect` and the stream mutators throw when QUIC is absent.** `ensure_backend()` throws `std::runtime_error` if `qb::io::quic::available()` is false or no backend could be created, and `make_native_backend()` throws when `QB_HAS_QUIC` is undefined. Guard with `available()` or `QB_HAS_QUIC` before calling them.
   <!-- src: qb/include/qb/io/async/quic/endpoint.h:78-86 -->
-  <!-- src: qb/source/io/src/quic.cpp:1335-1341 -->
+  <!-- src: qb/source/io/src/quic.cpp:1300-1306 -->
 - **Borrowed event payloads do not outlive the dispatch.** Copy `event::stream_data.payload` / `event::datagram.payload` before returning from the handler.
 - **Set `tls.server_name` for client connections.** Without it, the chain is validated but the hostname is not, leaving the connection open to an on-path certificate substitution. The string overload of `connect` sets it for you from the URI host.
 - **Do not move a stream across threads.** Keep the `io_handler` on the core that owns the endpoint and delegate work through `qb` events that carry the connection and stream ids.

@@ -1,6 +1,6 @@
 # Framing messages with protocols
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 A protocol is the pluggable framing strategy that turns a continuous byte stream into discrete application messages: it decides where one message ends and hands each complete message to the I/O component's handler.
 
@@ -84,6 +84,31 @@ The input buffer returned by `this->_io.in()` is a `qb::allocator::pipe<char>`. 
 - `buffer.cbegin()` — pointer to the first buffered byte, used to build `std::string_view`s and to `memcpy` out fixed headers.
 
 These views point into the live input buffer and are valid only until the buffer is flushed or refilled — copy out anything you need to retain past `onMessage()`.
+
+### The framing cycle
+
+On each read the framework drives the protocol until the buffer holds no further complete message:
+
+```mermaid
+sequenceDiagram
+    participant N as Transport read
+    participant F as Framework read loop
+    participant P as Protocol
+    participant S as Session handler
+    N->>F: read() appends bytes to input buffer
+    loop drain buffered frames
+        F->>P: getMessageSize()
+        P-->>F: size (or 0 = kNoMessage)
+        break size == 0
+            Note over F: incomplete frame; await next read()
+        end
+        F->>P: onMessage(size)
+        P->>S: _io.on(message&&)
+        F->>F: flush size bytes from buffer front
+    end
+```
+
+A `not_ok()` from either hook breaks out of this cycle: the framework closes the connection and dispatches `event::disconnected` instead of continuing the loop.
 
 ## Built-in protocols
 
@@ -172,7 +197,7 @@ You normally never name these directly; the secure transports wire them in for y
 Three steps connect a protocol to a session: declare it, install it, and handle its messages.
 
 ```cpp
-// src: qb/source/io/tests/system/test-session-text.cpp (adapted)
+// src: qb/source/io/tests/system/session/text-session-loopback.cpp (adapted)
 #include <qb/io/async.h>
 
 class CommandClient : public qb::io::use<CommandClient>::tcp::client<> {
@@ -206,14 +231,14 @@ public:
 The protocol frames inbound bytes; the sender must produce matching framing. For a delimiter protocol, append the delimiter exposed as `Protocol::end`:
 
 ```cpp
-// src: qb/source/io/tests/system/test-session-text.cpp
+// src: qb/source/io/tests/system/session/text-session-loopback.cpp
 *this << msg.text << Protocol::end; // command::end is '\n'
 ```
 
 For a length-prefixed binary protocol, write the network-order header followed by the payload:
 
 ```cpp
-// src: qb/source/io/tests/system/test-session-text.cpp
+// src: qb/source/io/tests/system/session/text-session-loopback.cpp
 uint16_t len = htons(static_cast<uint16_t>(payload.size()));
 *this << std::string_view(reinterpret_cast<const char *>(&len), sizeof(len))
       << std::string_view(payload.data(), payload.size());

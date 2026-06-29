@@ -1,6 +1,6 @@
 # qb-io feature catalog
 
-> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 An index of every `qb-io` capability — async engine, coroutines, transports, protocols, TLS, QUIC, crypto, compression, and utilities — with one-line summaries that link to the detail page that owns each topic.
 
@@ -110,7 +110,7 @@ Message framing over byte streams. A protocol cuts raw transport bytes into disc
 
 Cross-cutting helpers usable from any qb-io or qb-core code.
 
-- **Time vocabulary (`qb::duration`, `qb::mono_time`, `qb::wall_time`)** — the canonical `std::chrono` types: `duration` is `std::chrono::nanoseconds`, `mono_time` is a `steady_clock` time point, `wall_time` is a `system_clock` time point. Defined in `qb/system/timestamp.h`.
+- **Time vocabulary (`qb::duration`, `qb::mono_time`, `qb::wall_time`)** — the canonical `std::chrono` types: `duration` is `std::chrono::nanoseconds`, `mono_time` is a `steady_clock` time point, `wall_time` is a `system_clock` time point. Defined in `qb/system/time.h`.
 - **Cryptography (`qb::crypto`, optional `QB_HAS_SSL`)** — hashing (MD5, SHA-1, SHA-256, SHA-512, HMAC), key derivation (PBKDF2, HKDF, Argon2), encoding (Base64, Base64URL, hex), symmetric encryption (AES-CBC, AES-GCM, ChaCha20-Poly1305), asymmetric primitives (RSA, ECDSA over P-256/P-384/P-521, Ed25519, X25519 exchange, ECIES), and secure random/token helpers.
 - **JSON Web Tokens (`qb::jwt`, optional `QB_HAS_SSL`)** — create, sign, decode, and verify JWTs.
 - **Compression (`qb::compression`, optional `QB_HAS_COMPRESSION`)** — gzip and deflate, in-memory (`compress` / `uncompress`, `qb::gzip`, `qb::deflate`) and streaming (`compress_provider` / `decompress_provider`); `uncompress` enforces a caller-supplied output budget to reject decompression bombs.

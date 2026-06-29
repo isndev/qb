@@ -1,6 +1,6 @@
 # The actor model in qb
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 An actor is an isolated unit of state and behavior that communicates only by passing events; the runtime processes each actor's mailbox one event at a time, so its private state needs no locks.
 
@@ -85,7 +85,7 @@ public:
 
 Three points carry most of the model:
 
-- **`onInit()` is where subscriptions happen.** Call `registerEvent<YourEvent>(*this)` for each event type the actor handles. Returning `false` aborts startup: the actor is not added to the engine and is destroyed immediately. By default an actor is already subscribed to four system events at construction — see [Default system events](#default-system-events).
+- **`onInit()` is where subscriptions happen.** Call `registerEvent<YourEvent>(*this)` for each event type the actor handles. Returning `false` aborts startup: the actor is not added to the engine and is destroyed immediately. By default an actor is already subscribed to five system events at construction — see [Default system events](#default-system-events).
 - **Handlers are `on(...)` methods.** A registered handler is a public member function `void on(const YourEvent&)` (or `void on(YourEvent&)` when it needs to `reply` or `forward`).
 - **`kill()` requests termination.** An actor can shut itself down from any handler. The call only flags the actor — see [Lifecycle](#lifecycle).
 
@@ -120,23 +120,37 @@ push<SystemUpdateEvent>(qb::BroadcastId(1), /* args */);
 
 An actor moves through a fixed sequence of stages. The hooks you control are `onInit()`, `kill()`, and the destructor.
 
-```text
- construction      ── on the hosting VirtualCore's thread; ActorId assigned
-      │
-   onInit()        ── coroutine: register events, acquire resources, optionally co_await;
-      │             co_return true to activate
-      │
-      ├── co_await suspends ──► Activating: inbound unicast stashed + replayed FIFO once
-      │                          active; bounded by the activation deadline
-      │
-      ├── co_return false / throw ──► destructor runs; actor never starts
-      │
-   running         ── mailbox processed one event at a time (is_active() == true)
-      │
-   kill()          ── flags the actor (_alive = false); stops NEW events
-      │             (queued events may still drain)
-      │
-   destructor      ── runs later, under VirtualCore control; RAII cleanup
+```mermaid
+stateDiagram-v2
+    direction TB
+    [*] --> Constructing
+    Constructing --> Initializing: onInit()
+    Initializing --> Activating: co_await suspends
+    Initializing --> Active: co_return true
+    Activating --> Active: resumed, co_return true
+    Initializing --> Destroyed: co_return false / throw
+    Active --> Killing: kill()
+    Killing --> Destroyed: ~Actor()
+    Destroyed --> [*]
+
+    note right of Constructing
+        On the hosting VirtualCore thread.
+        ActorId assigned. Never the main thread.
+    end note
+    note right of Activating
+        Inbound unicast events are stashed and
+        replayed FIFO once Active, bounded by
+        VirtualCore::activation_deadline_ns.
+    end note
+    note right of Active
+        is_active() == true. The mailbox is
+        processed one event at a time.
+    end note
+    note right of Killing
+        kill() sets _alive = false and stops new
+        events; queued events may still drain.
+        ~Actor() runs later, VirtualCore-controlled.
+    end note
 ```
 
 Key invariants, each grounded in the source:
@@ -146,13 +160,13 @@ Key invariants, each grounded in the source:
 - **`kill()` only flags.** It sets the internal `_alive` flag to `false` and asks the `VirtualCore` to schedule removal. The actor stops receiving *new* events but may still drain events already queued; `~Actor()` runs later, under `VirtualCore` control, not at the point of the `kill()` call. `kill()` is `const noexcept` — handlers can call it even through a const `this`.
 - **The destructor is the RAII boundary.** It runs after the actor has terminated and the engine removes it. Member objects with their own destructors are cleaned up here; this is the natural place to release anything not covered by RAII members.
 
-The full lifecycle walkthrough, the `is_alive()` semantics, and graceful-shutdown patterns are owned by [qb-core: the Actor API](../4_qb_core/actor.md). Runnable lifecycle coverage lives in [`test-actor-lifecycle-hooks.cpp`](../../source/core/tests/system/test-actor-lifecycle-hooks.cpp).
+The full lifecycle walkthrough, the `is_alive()` semantics, and graceful-shutdown patterns are owned by [qb-core: the Actor API](../4_qb_core/actor.md). Runnable lifecycle coverage lives in [`tests/system/lifecycle/`](../../source/core/tests/system/lifecycle/).
 
 ### Default system events
 
-Constructing an actor with the default constructor auto-subscribes it to four system events: `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, and `PingEvent`. This is why a plain actor already shuts down cleanly on `Main::stop()` and on `SIGINT` without any handler code: the built-in `on(const KillEvent&)` calls `kill()`, and the built-in `on(const SignalEvent&)` calls `kill()` on `SIGINT`.
+Constructing an actor with the default constructor auto-subscribes it to five system events: `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`. This is why a plain actor already shuts down cleanly on `Main::stop()` and on `SIGINT` without any handler code: the built-in `on(const KillEvent&)` calls `kill()`, and the built-in `on(const SignalEvent&)` calls `kill()` on `SIGINT`.
 
-For pools of short-lived actors where four subscriptions per actor are measurable overhead, pass `qb::no_default_events` to the base constructor to skip all four. The derived class is then responsible for registering, in `onInit()`, any system event it expects — at minimum `KillEvent`, so the actor can still be stopped gracefully.
+For pools of short-lived actors where five subscriptions per actor are measurable overhead, pass `qb::no_default_events` to the base constructor to skip all five. The derived class is then responsible for registering, in `onInit()`, any system event it expects — at minimum `KillEvent`, so the actor can still be stopped gracefully.
 
 ```cpp
 class LeanWorker : public qb::Actor {

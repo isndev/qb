@@ -9,6 +9,10 @@ policy.
 
 Tracks changes on the development branch that are not yet part of a tagged release.
 
+_Nothing yet._
+
+## [2.6.0] - 2026-06-29
+
 ### Added
 
 - **Asynchronous actor initialization.** `Actor::onInit()` is now a coroutine
@@ -192,4 +196,5 @@ is broad, so entries are grouped rather than exhaustive.
 - QUIC: connection-limit denial-of-service mitigation, fail-closed RNG, and flow-control hardening.
 - async/transport and crypto paths hardened to fail closed under malformed or hostile input.
 
-[Unreleased]: https://github.com/isndev/qb/compare/main...HEAD
+[Unreleased]: https://github.com/isndev/qb/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/isndev/qb/releases/tag/v2.6.0

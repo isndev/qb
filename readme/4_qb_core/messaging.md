@@ -1,6 +1,6 @@
 # Event messaging between actors
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 A deep dive into the qb messaging layer: how `push`, `send`, `reply`, `forward`, and `broadcast` differ in delivery semantics, what ordering the runtime guarantees, and how events move through the per-actor pipe and the per-core mailbox both within a core and across cores.
 
@@ -51,6 +51,18 @@ All send methods are inherited from `qb::Actor` and are callable from inside any
 
 > **`noexcept` is load-bearing.** `push`, `send`, `broadcast`, `reply`, and `forward` are all `noexcept`, yet they grow the pipe buffer (which can throw `std::bad_alloc`) and run the event constructor in place (which can throw). A throw cannot cross a `noexcept` boundary, so any such failure calls `std::terminate()` and aborts the process — it is not recoverable. This is by design: events are expected to be small, allocation-light messages on an adequately provisioned system. Keep event constructors cheap, and move large heap data in through an already-allocated `std::shared_ptr` rather than allocating inside the constructor. (`qb/core/Pipe.h`, `qb/core/Actor.h`.)
 
+At a glance, the five primitives differ along five axes:
+
+| Primitive | Ordering | Event object | Trivially-destructible required? | Handler must take | Destination |
+|---|---|---|---|---|---|
+| `push` | FIFO per source→dest | new, at pipe **back** | no — dtor runs on the receiving side | — | one `ActorId` (or `BroadcastId(core)`) |
+| `send` | **none** | new, at pipe **front** | **yes** — else heap members leak on the cross-core path | — | one `ActorId` |
+| `reply` | n/a (redirects one event) | **reuses** the received event | n/a | `on(E&)` non-const | back to `event.source` |
+| `forward` | n/a (redirects one event) | **reuses** the received event | n/a | `on(E&)` non-const | new `ActorId`; `source` preserved |
+| `broadcast` | FIFO per recipient, no global order | new per core (fans out via `send`) | **yes** — same leak risk per remote core | — | every actor on every core |
+
+The subsections below detail each. When unsure, the answer is `push`.
+
 ### `push` — ordered, the default
 
 ```cpp
@@ -62,7 +74,7 @@ _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 `push` is the primary and recommended primitive. It constructs `_Event` in place at the **back** of the destination pipe (`allocate_back`, `qb/core/VirtualCore.tpp`) and returns a mutable reference to it, so the sender can finish populating the event after construction:
 
 ```cpp
-// derived from: qb/source/core/tests/system/test-actor-event.cpp (BasicPushActor)
+// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (BasicPushActor)
 #include <qb/actor.h>
 #include <qb/event.h>
 
@@ -97,7 +109,7 @@ void send(ActorId const &dest, _Args &&...args) const noexcept;
 `_Event` **must be trivially destructible**. This is a hard contract, but the enforcement is not uniform: `fill_event` `static_assert`s `std::is_trivially_destructible_v<T>` only for events deriving from `EventQOS0` (`if constexpr (event_qos0_type<T>)`, `qb/core/VirtualCore.tpp`). A plain `qb::Event`-derived type with a `std::string`, `std::vector`, or smart-pointer member therefore *compiles* through `send` — but on the early cross-core publish path the freed pipe slot is reclaimed by pointer arithmetic without running the event destructor (`pipe.free` advances `_begin`/`_end` only, `qb/system/allocator/pipe.h`), so any owned heap memory leaks. Derive fire-and-forget events from `qb::EventQOS0` so the requirement is caught at compile time, or restrict `send` to genuinely trivial events.
 
 ```cpp
-// derived from: qb/source/core/tests/system/test-actor-event.cpp (BasicSendActor)
+// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (BasicSendActor)
 #include <qb/actor.h>
 #include <qb/event.h>
 
@@ -122,7 +134,7 @@ void reply(Event &event) const noexcept;
 `reply` reuses the received event object instead of allocating a new one. The runtime swaps the event's `dest` and `source`, re-marks it alive, and sends it back (`std::swap(event.dest, event.source)`, `qb/core/VirtualCore.cpp`). The handler must therefore take its event **by non-const reference**, because the object is mutated in place:
 
 ```cpp
-// derived from: qb/source/core/tests/system/test-actor-event.cpp (TestReceiveReply)
+// derived from: qb/source/core/tests/system/messaging/messaging-reply-forward.cpp (reply handler)
 void Responder::on(MyRequest &request) {     // non-const reference
     request.response = compute(request.query);
     reply(request);                          // sent back to request's source
@@ -142,7 +154,7 @@ void forward(ActorId dest, Event &event) const noexcept;
 `forward` re-routes a received event to a new destination without allocating. It overwrites `event.dest` with the new target but **deliberately leaves `event.source` untouched**, so the original sender remains the logical origin and a downstream `reply` returns to the true client rather than to the forwarding actor (`qb/source/core/src/Actor.cpp`, `qb/source/core/src/VirtualCore.cpp`). As with `reply`, the handler must take a non-const reference, broadcast events cannot be forwarded, and the event is consumed after the call.
 
 ```cpp
-// derived from: qb/source/core/tests/system/test-actor-event.cpp (TestReceiveReply)
+// derived from: qb/source/core/tests/system/messaging/messaging-reply-forward.cpp (forward handler)
 void Router::on(WorkItem &item) {            // non-const reference
     forward(pick_worker(item), item);        // worker sees the original source
 }
@@ -204,7 +216,7 @@ For sending several events to one destination, or for events with large dynamic 
 `to(dest)` returns an `Actor::EventBuilder` bound to the destination's pipe; each `EventBuilder::push` forwards to `Pipe::push` and returns the builder for chaining (`qb/core/Actor.tpp`). The pipe is resolved once, so repeated sends to the same destination skip the per-call lookup. Ordering matches plain `push`.
 
 ```cpp
-// derived from: qb/source/core/tests/system/test-actor-event.cpp (EventBuilderPushActor)
+// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (EventBuilderPushActor)
 to(stats_id)
     .push<CounterIncrement>("login_attempts")
     .push<TimerStart>("session");
@@ -226,7 +238,7 @@ template <typename _Event, typename... _Args>
 ```
 
 ```cpp
-// derived from: qb/source/core/tests/system/test-actor-event.cpp (AllocatedPipePushActor); pattern from qb/include/qb/core/Pipe.h
+// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (AllocatedPipePushActor); pattern from qb/include/qb/core/Pipe.h
 qb::Pipe pipe = getPipe(processor_id);
 auto blob = std::make_shared<std::vector<std::byte>>(1024 * 1024); // 1 MB
 // ... fill blob ...

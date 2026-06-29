@@ -1,6 +1,6 @@
 # qb-core thread-safety and lifecycle invariants
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported) — 577606c
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported) — 577606c
 
 The rules `qb-core` assumes and the guarantees it gives in return: which thread owns what, when an actor is alive, and in what order events arrive — so you can reason about correctness without reading the scheduler.
 
@@ -26,7 +26,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 ### Construction
 
 - An actor must be constructed from inside a `VirtualCore` worker thread, never from the main thread or an arbitrary user thread. Every `Actor` constructor asserts `VirtualCore::_handler != nullptr` (`source/core/src/Actor.cpp:32`). Construct actors only through `Main::core(idx).addActor<T>(...)`, `CoreInitializer::addActor<T>(...)`, or `addRefActor<T>(...)` / `addRefHandle<T>(...)` from within another actor on the same core.
-- Default event registrations (`KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`) can be opted out by passing `qb::no_default_events` to the protected constructor (`include/qb/core/Actor.h:277`). Use this for ephemeral, pool-reused actors that never receive those control events.
+- Default event registrations (`KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, `RequireEvent`) can be opted out by passing `qb::no_default_events` to the protected constructor (`include/qb/core/Actor.h:277`). Use this for ephemeral, pool-reused actors that never receive those control events.
 
 ### Initialization
 
@@ -36,7 +36,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 
 - Event handlers (`on(...)`), `on(qb::LoopEvent const&)`, `onInit()`, and any coroutine resumed inside the actor all execute on the owning core's worker thread. You may read and write `this` members without synchronization.
 - `on(qb::LoopEvent const&)` (from `qb::ICallback`) runs once per `VirtualCore` loop iteration, near the end of the iteration: the worker flushes its outbound pipes, drains its inbound mailbox, removes any actors killed during the drain, and only then dispatches callbacks (`source/core/src/VirtualCore.cpp:408`). The `qb::LoopEvent` carries per-loop context (`now`, `iteration`). Events an `on(qb::LoopEvent const&)` pushes are therefore flushed at the start of the next iteration. It must be fast and non-blocking; blocking it stalls the entire core and every actor on it (`include/qb/core/ICallback.h:16`).
-- `Actor::time()` returns the `VirtualCore`'s cached nanosecond timestamp, refreshed once per loop iteration, so it is constant within a single handler or `on(qb::LoopEvent const&)` invocation (`include/qb/core/Actor.h:512`). For a continuously updating value use `qb::unix_nanos(qb::wall_now())` from `<qb/system/timestamp.h>`.
+- `Actor::time()` returns the `VirtualCore`'s cached nanosecond timestamp, refreshed once per loop iteration, so it is constant within a single handler or `on(qb::LoopEvent const&)` invocation (`include/qb/core/Actor.h:512`). For a continuously updating value use `qb::unix_nanos(qb::wall_now())` from `<qb/system/time.h>`.
 - `Actor::_alive` is a plain `bool`, not an atomic, by design: it is single-writer / single-reader, always touched on the one owning thread, because remote senders enqueue a `KillEvent` rather than flipping the flag (`include/qb/core/Actor.h:218`). External code **must not** read `_alive`. To test liveness of a referenced actor, dereference a `qb::RefActorHandle<T>` (below), which re-queries the owning core.
 
 ### Destruction
@@ -68,7 +68,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 | `broadcast<Event>(args...)` | per-core independent | any event type | fan-out to every active core |
 
 - `push<Event>()` guarantees ordered delivery to the same destination from the same source (`include/qb/core/Actor.h:728`, mirrored by `qb::Pipe::push`, `include/qb/core/Pipe.h:118`). It returns a mutable reference to the event in the pipe buffer; you may set fields on it before it is consumed, but you must not store the reference past the current scope.
-- `send<Event>()` is unordered and **requires the event type to be trivially destructible** — `VirtualCore::send` enforces this with `static_assert(std::is_trivially_destructible_v<T>, ...)` (`include/qb/core/VirtualCore.tpp:126`). Events holding `std::string`, `std::vector`, and similar non-trivial members are rejected at compile time. `qb::string<N>` and POD payloads are fine. Prefer `push()` unless you have measured a need.
+- `send<Event>()` is unordered and **requires trivially-destructible events for the EventQOS0-derived (`QoS < 2`) path** — `VirtualCore::fill_event` enforces this with `static_assert(std::is_trivially_destructible_v<T>, ...)` gated on `event_qos0_type<T>` (`include/qb/core/VirtualCore.tpp:130-132`). Such events holding `std::string`, `std::vector`, and similar non-trivial members are rejected at compile time. `qb::string<N>` and POD payloads are fine. Prefer `push()` unless you have measured a need.
 
 > The 16-bit `EventId` keeps an event's metadata (`state`, `bucket_size`, `id`, `dest`, `source`) within one cacheline. This is a deliberate trade-off; do not assume room for a wider id.
 
@@ -111,7 +111,7 @@ Termination is guaranteed in bounded time: after a partial flush the workflow dr
 ## CPU affinity and shutdown
 
 - `qb::CoreInitializer::setAffinity(CoreIdSet)` pins a worker's thread, best-effort. A logical `CoreId` need not map to a physical CPU, so a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` only warns and never fails `VirtualCore` init (`source/core/src/VirtualCore.cpp:302`). Core ids `>= qb::MaxCores`, including the `qb::NoAffinity` sentinel, are filtered out before pinning — pass a set containing only `qb::NoAffinity` to opt out of pinning explicitly.
-- Shutdown has three triggers wired to the same plumbing (`source/core/src/Main.cpp:172`): a POSIX signal (`SIGINT` / `SIGTERM` via `sigaction`), `Main::stop()` setting a `volatile sig_atomic_t` that the workflow polls, and the C++20 `qb::stop_source` (`request_stop()` on `~Main` or programmatically). A worker that observes any of them synthesizes a virtual `SIGINT` and broadcasts a `SignalEvent`, so existing shutdown handlers keep working on platforms with or without POSIX signals.
+- Shutdown has three triggers wired to the same plumbing (`source/core/src/Main.cpp:172`): a POSIX signal (`SIGINT` / `SIGTERM` via `sigaction`), `Main::stop()` setting a `std::atomic<std::sig_atomic_t>` that the workflow polls, and the C++20 `qb::stop_source` (`request_stop()` on `~Main` or programmatically). A worker that observes any of them synthesizes a virtual `SIGINT` and broadcasts a `SignalEvent`, so existing shutdown handlers keep working on platforms with or without POSIX signals.
 
 ## Memory ordering cheat-sheet
 
@@ -120,7 +120,7 @@ Termination is guaranteed in bounded time: after a partial flush the workflow dr
 | `Actor::_alive` | plain read/write | single-thread owner (`include/qb/core/Actor.h:218`) |
 | `Actor` member fields | plain read/write | same |
 | `VirtualCore` actor maps / callback list | plain read/write | mutated only on the owning worker thread (`include/qb/core/VirtualCore.h:172`) |
-| `Main` signal flag | `volatile std::sig_atomic_t` | async-signal-safe poll in the worker loop |
+| `Main` signal flag | `std::atomic<std::sig_atomic_t>` | async-signal-safe poll in the worker loop |
 | `Main::_stop_source` / `_stop_token` | `qb::stop_*` | standard library ordering when backed by `std::stop_*`; acquire/release atomic ordering in qb's fallback |
 | Service-id registration | atomic + magic-static + mutex | one-time cross-thread publish (`include/qb/core/Actor.tpp:153`) |
 | Inter-core mailbox | lock-free MPSC ring buffer | own internal acquire/release (see [lock-free primitives](./lockfree_primitives.md)) |
@@ -134,7 +134,7 @@ There is no `std::mutex` on the message path. The only locks in `qb-core` guard 
 - **Capturing `this` (or any member by reference) into a `spawn_detached` coroutine.** The actor can die while the coroutine is suspended (`include/qb/core/Actor.h:988`). Capture by value; reach the actor only through `CoroContext`.
 - **Blocking the worker thread.** `std::this_thread::sleep_for`, a heavy syscall, or a long computation in a handler or `on(qb::LoopEvent const&)` stalls every actor on the core (`include/qb/core/ICallback.h:16`). Offload to a coroutine or a dedicated I/O actor.
 - **Letting an event constructor throw under load.** The `noexcept` message path terminates the process on a thrown exception (`include/qb/core/Pipe.h:126`). Keep events small and allocation-light.
-- **Using `send()` for ordered work.** `send()` is unordered and rejects non-trivially-destructible events at compile time (`include/qb/core/VirtualCore.tpp:126`). When ordering matters, use `push()`.
+- **Using `send()` for ordered work.** `send()` is unordered and rejects non-trivially-destructible events at compile time on the EventQOS0-derived (`QoS < 2`) path (`include/qb/core/VirtualCore.tpp:130-132`). When ordering matters, use `push()`.
 - **Persisting `type_id<T>()`.** It is process-local and not stable across runs.
 
 ## See also

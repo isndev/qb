@@ -1,6 +1,6 @@
 # The async runtime: event loop, timers, and callbacks
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 `qb::io::async` is the single-threaded, libev-backed event loop that drives every non-blocking operation in `qb-io`: socket readiness, timers, scheduled callbacks, file-system watching, and the C++20 coroutine scheduler.
 
@@ -93,9 +93,9 @@ The delayed path is self-managing: the `Timeout<_Func>` registers with the liste
 > **Exceptions are swallowed.** The delayed `Timeout<_Func>` invokes the callable inside `try { _func(); } catch (...) {}`. An exception escaping your callback is discarded, not propagated. Handle errors inside the callback.
 
 ```cpp
-// src: derived from qb/source/io/tests/system/test-async-io.cpp
+// src: derived from qb/source/io/tests/system/async/callback-dispatch.cpp
 #include <qb/io/async.h>
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -149,19 +149,20 @@ handle.reset();
 
 A timeout of zero or less fires the callback inline at construction (matching `callback`'s immediate semantics) and marks the timer as fired. `ScopedTimeout` also exposes `fired()` and `cancel()` (which sets the timeout to `qb::duration::zero()`). As with `callback`, the callable runs inside a `catch (...)` and exceptions are swallowed.
 
-| | `callback()` | `scoped_callback()` |
-|---|---|---|
-| Ownership | Self-deleting `Timeout<F>` | Caller-owned `unique_ptr<ScopedTimeout<F>>` |
-| Cancellation | Not possible | `handle.reset()` or `handle->cancel()` |
-| Heap traffic (steady state) | Zero (freelist) | One allocation per call |
-| Best for | Fire-and-forget tasks | Watchdogs, retry loops, cancellable deadlines |
+| | `callback()` | `scoped_callback()` | `with_timeout<D>` |
+|---|---|---|---|
+| Shape | free function | free function → handle | CRTP base (`on(event::timer)`) |
+| Ownership | self-deleting `Timeout<F>` | caller-owned `unique_ptr<ScopedTimeout<F>>` | member timer, lives with the object |
+| Cancellation | not possible | `handle.reset()` / `handle->cancel()` | `setTimeout(0)`; `updateTimeout()` defers |
+| Heap traffic (steady state) | zero (freelist) | one allocation per call | none |
+| Best for | fire-and-forget tasks | watchdogs, retry loops, cancellable deadlines | inactivity / idle deadlines, recurring ticks |
 
 ## Inactivity timeouts: `async::with_timeout<Derived>`
 
 `with_timeout<Derived>` (`qb/io/async/io.h`) is a CRTP base that adds an inactivity timer to a class. It is the mechanism behind session idle-timeouts and operation deadlines.
 
 ```cpp
-// src: derived from qb/source/io/tests/system/test-async-io.cpp (TimerHandler)
+// src: derived from qb/source/io/tests/system/async/timer-timeout.cpp (TimerHandler)
 #include <qb/io/async.h>
 #include <chrono>
 

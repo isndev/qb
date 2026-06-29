@@ -131,7 +131,7 @@
  * @details Format is 0xMMNNRR where MM=major, NN=minor, RR=revision
  * @ingroup IO
  */
-#define QB_VERSION_NUM 0x033705
+#define QB_VERSION_NUM 0x020600
 
 /**
  * @def QB_DEFAULT_MULTICAST_TTL
