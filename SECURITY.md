@@ -1,4 +1,4 @@
-<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 2.6.0 (C++20 default, C++23 supported) -->
 
 # Security policy
 

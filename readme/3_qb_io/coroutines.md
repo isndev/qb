@@ -1,6 +1,6 @@
 # C++20 coroutines
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 `qb::io::async` ships a native C++20/23 coroutine layer — `task<T>`, awaiters, combinators, channels, structured-concurrency scopes, generators, streams, retry, and cancellation — running directly on the same single-threaded libev loop as the rest of `qb-io`, so asynchronous code reads as straight-line sequential code.
 
@@ -27,13 +27,14 @@ Every timed coroutine API on this page takes a `qb::duration` (a `std::chrono::n
 
 ## The execution model
 
-```
-qb::io::async::listener         (one per thread — owns the libev loop)
-    └── CoroutineScheduler       (one per listener; thread-local)
-            ├── spawn(task<void>&&)      detached, fire-and-forget
-            ├── spawn(Callable)          closure-owning overload
-            ├── schedule_resume(handle)  wake a continuation after co_await
-            └── run_ready()              drain the ready queue each loop tick
+```mermaid
+flowchart TB
+    L["qb::io::async::listener<br/>one per thread · owns the libev loop"]
+    L --> Sched["CoroutineScheduler<br/>one per listener · thread-local"]
+    Sched --> A["spawn(task&lt;void&gt;&&)<br/>detached, fire-and-forget"]
+    Sched --> B["spawn(Callable)<br/>closure-owning overload"]
+    Sched --> C["schedule_resume(handle)<br/>wake a continuation after co_await"]
+    Sched --> D["run_ready()<br/>drain the ready queue each loop tick"]
 ```
 
 | Property | Value | Source |
@@ -248,8 +249,8 @@ int v = std::any_cast<int>(value);
 co_await race(network_task(), local_cache_task());
 ```
 
-`when_any_result::get<T>()` casts the winning value (and re-throws if the winner threw). Losers are **not** cancelled — they keep running in the background owned by the scheduler, and their results are dropped. For real interruption, wrap each task in a `cancellable_operation` and cancel the token (see [Cancellation](#cancellation)).
-<!-- src: qb/include/qb/io/async/coroutine/combinators.h:223 (when_any_result), :371 (when_any), :644 (race); io_invariants Factbook combinators.h:544 -->
+`when_any_result::get<T>()` casts the winning value (and re-throws if the winner threw). On win, the losing branches are **reclaimed (cancelled)** — the scheduler tears down each loser, stopping its timers and dropping its result — so nothing lingers in the background.
+<!-- src: qb/include/qb/io/async/coroutine/combinators.h:308 (when_any_result), :533 (when_any), :1011 (race) -->
 
 ### `coro_with_timeout` — deadline wrapper
 
@@ -262,7 +263,7 @@ try {
 }
 ```
 
-`coro_with_timeout(task<T>&&, qb::duration)` returns `T` and **throws `timeout_error`** on timeout — it does not return an `std::optional`. As with `when_any`, the inner task keeps running in the background until it finishes naturally; its result is then dropped.
+`coro_with_timeout(task<T>&&, qb::duration)` returns `T` and **throws `timeout_error`** on timeout — it does not return an `std::optional`. On timeout the inner task keeps running in the background until it finishes naturally; its result is then dropped.
 <!-- src: qb/include/qb/io/async/coroutine/combinators.h:555 (coro_with_timeout returns T, throws), :526 (await_resume throws timeout_error) -->
 
 ## Cancellation
@@ -479,7 +480,7 @@ auto fromi = from_iterator(my_vector.begin(), my_vector.end());
 ```
 
 A `generator<T>` must outlive any iterator over it; a throwing generator body surfaces the exception to the consumer rather than appearing as normal exhaustion. `collect_to_vector(gen)` takes the generator by reference.
-<!-- src: qb/include/qb/io/async/coroutine/generator.h:74 (generator), :99 (await_transform deleted), :397 (collect_to_vector ref), :426 (from_range), :465 (from_iterator), :479 (iota), range/repeat (:491/:509) -->
+<!-- src: qb/include/qb/io/async/coroutine/generator.h:74 (generator), :109 (await_transform deleted), :510 (collect_to_vector ref), :540 (from_range), :581 (from_iterator), :596 (iota), range/repeat (:613/:628) -->
 
 ### Asynchronous `async_generator<T>`
 
@@ -611,7 +612,7 @@ public:
 The most common coroutine bug in this layer is a dangling capture: a *temporary* lambda is destroyed as soon as its call expression finishes, but the coroutine frame may outlive it and reference its captures after the first suspension.
 
 ```cpp
-// src: derived from qb/include/qb/io/async/coroutine.h, coroutine/task.h
+// src: derived from qb/include/qb/io/async/coroutine.h, qb/include/qb/io/async/coroutine/task.h
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 

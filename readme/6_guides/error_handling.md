@@ -1,6 +1,6 @@
 # Error handling and resilience
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 How qb propagates, contains, and reports failure: the exception policy, the `VirtualCore` fail-stop boundary, supervision patterns you build yourself, asynchronous I/O error events, and the `async::callback` lifetime rules.
 
@@ -42,6 +42,18 @@ This is a deliberate fail-stop design: a thrown exception signals that an invari
 
 > **Note.** Only `std::exception` (and types derived from it) are caught at the `start_thread` boundary. An exception that is not derived from `std::exception` escapes even that handler and terminates the process via `std::terminate`. Throw `std::exception` subtypes.
 
+```mermaid
+flowchart TD
+    H["handler / on(LoopEvent) throws"] --> NOEX{"in a noexcept context?<br/>(push OOM · on(KillEvent) · …)"}
+    NOEX -- yes --> TERM["std::terminate — process aborts"]
+    NOEX -- no --> T{"std::exception subtype?"}
+    T -- "no" --> TERM
+    T -- "yes" --> UW["stack unwinds out of VirtualCore::__workflow__"]
+    UW --> SC["caught one level up in Main::start_thread"]
+    SC --> FLAG["core flagged ExceptionThrown<br/>worker thread exits → every actor on that core stops"]
+    FLAG --> OBS["Main::hasError() reports it after the run"]
+```
+
 ### `noexcept` boundaries
 
 Several framework operations are marked `noexcept` and therefore cannot signal failure by throwing. Their failure modes are different:
@@ -79,7 +91,7 @@ Because an escaping exception stops the whole core, keep failure inside the acto
 Wrap any operation that may throw — third-party calls, parsing, allocation you cannot otherwise bound — in a local `try`/`catch`, and turn the failure into a value: log it, reply with a status event, transition to a degraded state, or self-terminate with `kill()`.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/test-actor-error-handling.cpp
+// src: derived from qb/source/core/tests/system/init/init-lifecycle.cpp
 #include <qb/actor.h>
 #include <qb/io.h>
 #include <qb/string.h>
@@ -148,7 +160,7 @@ If an actor reaches a state from which it cannot safely continue, it calls `this
 When the engine stops, you can ask whether any core failed.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/test-actor-error-handling.cpp
+// src: derived from qb/source/core/tests/system/init/init-lifecycle.cpp
 #include <qb/main.h>
 
 qb::Main main;
@@ -372,7 +384,7 @@ qb::io::async::callback([this]() {
 **2. Own the timer with `scoped_callback`** so it is cancelled deterministically when the actor dies. `scoped_callback` returns `std::unique_ptr<ScopedTimeout<…>>`; store it as an actor member. When the actor is destroyed, the member's destructor stops the watcher and releases its registration, so the callback can never run after the actor is gone:
 
 ```cpp
-// src: derived from qb/source/core/tests/system/test-actor-error-handling.cpp
+// src: qb/include/qb/io/async/io.h:385-468 (ScopedTimeout / scoped_callback)
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <chrono>
@@ -396,7 +408,7 @@ public:
 };
 ```
 
-This is the same fix the framework's own test uses, with the rationale recorded in the source: *"A fire-and-forget callback capturing `this` can outlive the actor and dereference freed memory."* Prefer `scoped_callback` for any timer whose lifetime should be tied to the actor — watchdogs, retry loops, per-connection deadlines. Reserve bare `callback()` for one-shot, self-contained work that captures only owned values.
+This uses the `scoped_callback` helper the framework provides for exactly this case — `ScopedTimeout` owns the timer and cancels it when the actor is destroyed, unlike the self-deleting `Timeout` behind a bare `callback()`. The hazard it removes: *a fire-and-forget callback capturing `this` can outlive the actor and dereference freed memory.* Prefer `scoped_callback` for any timer whose lifetime should be tied to the actor — watchdogs, retry loops, per-connection deadlines. Reserve bare `callback()` for one-shot, self-contained work that captures only owned values.
 
 > **Note.** `callback(func)` with no timeout, and `callback(func, d)` with `d <= 0`, run `func()` *inline, immediately* — not on a later iteration. The lifetime hazard above applies only to the positive-timeout path that defers execution.
 

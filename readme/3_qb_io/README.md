@@ -1,6 +1,6 @@
 # qb-io: asynchronous I/O runtime
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 `qb-io` is the C++20 asynchronous I/O runtime under the qb actor framework, with optional C++23 validation: a single-threaded, libev-backed event loop with non-blocking TCP, UDP, SSL/TLS, and QUIC transports, a pluggable protocol layer, native C++20 coroutines, and a set of standalone utilities.
 
@@ -28,7 +28,7 @@ Both run on the same `listener`/libev loop, so a coroutine can `co_await` socket
 | [C++20 coroutines](./coroutines.md) | The native `task<T>` coroutine layer: awaiters, combinators (`when_all`, `when_any`, `race`), channels, structured-concurrency scopes, generators, async streams, retry policies, cancellation, and safe actor integration. |
 | [TCP and UDP transports and sockets](./transports.md) | How the buffered `istream`/`ostream`/`stream` abstractions bind to concrete `tcp::socket`, `udp::socket`, listeners, and files to form read/write/buffer units for the async layer and protocols. |
 | [Framing messages with protocols](./protocols.md) | Built-in and custom `AProtocol` implementations that turn a continuous byte stream into discrete messages — byte/sequence-terminated and size-header framing, text, JSON/MessagePack, and the accept/handshake protocols. |
-| [Secure TCP with SSL/TLS](./ssl_transport.md) | OpenSSL-backed SSL/TLS over the TCP stack (`QB_IO_WITH_SSL`): secure-by-default client verification, a context-owning listener, and a stream transport that drains OpenSSL's internal buffers. |
+| [Secure TCP with SSL/TLS](./ssl_transport.md) | OpenSSL-backed SSL/TLS over the TCP stack (`QB_WITH_SSL`): secure-by-default client verification, a context-owning listener, and a stream transport that drains OpenSSL's internal buffers. |
 | [Native QUIC and HTTP/3 transport](./quic_transport.md) | The optional QUIC family built on libngtcp2 (`QB_WITH_QUIC`): a reactor-driven endpoint over one UDP socket, connection-id routing, typed stream and datagram events, flow-control hooks, and the threading model. |
 | [qb-io utilities](./utilities.md) | The standalone helpers — canonical time vocabulary, cryptography and JWT, compression, URI parsing, fixed-capacity strings and flat hash maps, UUIDs, JSON, and endian helpers — usable without the actor runtime. |
 | [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md) | The single source of truth for thread-ownership, freelist, and CRTP-dispatch invariants. Required reading before writing a custom protocol, transport, or async component. |

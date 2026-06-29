@@ -1,7 +1,7 @@
-<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 2.6.0 (C++20 default, C++23 supported) -->
 # CMake options reference
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 Every `QB_*` CMake variable that configures a qb build, its default, and what it controls.
 
@@ -48,7 +48,7 @@ The tables below group the options by purpose. Defaults are taken verbatim from 
 | `QB_INSTALL` | `ON` | Install the framework: export `qbTargets`/`qbConfig` and headers (see `find_package(qb)` integration). |
 
 The repository-root `CMakeLists.txt` forces `QB_BUILD_TESTS=ON`, `QB_BUILD_BENCHMARKS=ON`, and
-`QB_BUILD_EXAMPLES=OFF` when building the whole workspace; building qb standalone uses the defaults
+`QB_BUILD_EXAMPLES=ON` when building the whole workspace; building qb standalone uses the defaults
 above.
 
 ## Dependency resolution

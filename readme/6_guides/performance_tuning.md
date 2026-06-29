@@ -1,6 +1,6 @@
 # Performance tuning
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 A method-driven guide to the knobs that affect throughput and latency in a qb actor system: core placement, event-loop idle latency, allocation behavior, the lock-free transport, and the two build flags (`QB_ENABLE_NATIVE_ARCH`, `QB_ENABLE_LTO`) that change codegen.
 
@@ -117,7 +117,7 @@ engine.core(0).setLatency(qb::duration::zero());
 engine.core(1).setLatency(std::chrono::nanoseconds(500'000));
 ```
 
-The `qb::time_literals` inline namespace re-exports the standard chrono literals, so the duration above can also be written `500us` once those literals are in scope (`#include <qb/system/timestamp.h>`; `using namespace qb::time_literals;`).
+The `qb::time_literals` inline namespace re-exports the standard chrono literals, so the duration above can also be written `500us` once those literals are in scope (`#include <qb/system/time.h>`; `using namespace qb::time_literals;`).
 
 There is no published latency-versus-CPU table. Pick a starting value from your tail-latency budget (a server tolerating single-digit milliseconds can park for hundreds of microseconds to milliseconds; a tight control loop uses zero), then measure idle CPU and pickup latency under realistic load.
 
@@ -146,7 +146,7 @@ Selection is safe: an unknown name, a backend not compiled in, or one that fails
 To find the best backend on a given machine, run the cross-backend stress benchmark — it sweeps every compiled backend in one run and prints a side-by-side comparison (build with `-DQB_BUILD_BENCHMARKS=ON`):
 
 ```sh
-./qb-io-benchmark-ev-backends                 # all available backends
+./qb-io-bench-ev-backends                     # all available backends
 # On a native Linux host (or: docker run --security-opt seccomp=unconfined) io_uring joins the sweep.
 ```
 
@@ -222,7 +222,7 @@ Both flags apply to the Release configuration. A Debug build is not a meaningful
 - **Reaching for `send` before `push`.** The ordering guarantee `push` gives is cheap; the bugs `send` introduces are not. Use `send` only when the event is `qb::trivial_event` and order is provably irrelevant.
 - **Sizing `allocated_push` to the payload, not the in-pipe footprint.** When the payload is behind a smart pointer, the pipe holds only the pointer — a large hint wastes the reservation it was meant to save.
 - **Shipping a `QB_ENABLE_NATIVE_ARCH=ON` binary to other machines.** The default build is host-tuned and non-portable; it can fault on an older CPU. Build distributables with the flag off.
-- **Quoting numbers you did not measure.** qb publishes no throughput or latency figures. Every tuning decision here is directional; the magnitude is yours to benchmark, in Release, on your target hardware, under realistic load. Use a system profiler (`perf`, Instruments, VTune) to find the hot core or actor, and `qb::ScopedTimer` / `qb::LogTimer` (`qb/system/timestamp.h`) to time critical sections.
+- **Quoting numbers you did not measure.** qb publishes no throughput or latency figures. Every tuning decision here is directional; the magnitude is yours to benchmark, in Release, on your target hardware, under realistic load. Use a system profiler (`perf`, Instruments, VTune) to find the hot core or actor, and `qb::ScopedTimer` / `qb::LogTimer` (`qb/system/time.h`) to time critical sections.
 
 ## See also
 

@@ -1,6 +1,6 @@
 # Writing actors with qb::Actor
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 How to define an actor, initialize it, handle events, send messages, manage its lifecycle, run periodic work, and expose it as a per-core service.
 
@@ -64,9 +64,9 @@ public:
 };
 ```
 
-`registerEvent<T>(*this)` may only be called once the actor has an `ActorId` — that is, from
-`onInit()` or later, never from the constructor. Registering an event type requires a public
-`on(T const &)` or `on(T &)` method on the actor; the framework dispatches by event type.
+Prefer calling `registerEvent<T>(*this)` from `onInit()`; constructor-body registration also works
+(the id is assigned in the initializer list before the body runs). Registering an event type requires
+a public `on(T const &)` or `on(T &)` method on the actor; the framework dispatches by event type.
 
 ### State encapsulation
 
@@ -108,10 +108,10 @@ are decayed and stored by value. See [The engine page](./engine.md) for `addActo
 
 ### Lightweight actors: no_default_events
 
-The default `Actor` constructor subscribes the actor to four system events at construction time:
-`KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, and `PingEvent`
+The default `Actor` constructor subscribes the actor to five system events at construction time:
+`KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`
 (`source/core/src/Actor.cpp`). For pools of short-lived actors where that bookkeeping is measurable
-overhead, pass `qb::no_default_events` to the base constructor to skip all four.
+overhead, pass `qb::no_default_events` to the base constructor to skip all five.
 
 ```cpp
 class ComputeTask : public qb::Actor {
@@ -134,34 +134,20 @@ public:
 ```
 
 > **Warning:** With `qb::no_default_events`, the actor does **not** respond to `KillEvent`,
-> `SignalEvent`, `PingEvent`, or `UnregisterCallbackEvent` unless you re-register them in `onInit()`.
+> `SignalEvent`, `PingEvent`, `UnregisterCallbackEvent`, or `RequireEvent` unless you re-register them in `onInit()`.
 > Register at least `KillEvent` so the actor terminates on `Main::stop()`.
 
 ## The actor lifecycle
 
-```
-addActor<A>(core, args...)
-      │
-      ▼
- A::A(args...)         constructed on the target VirtualCore thread
-      │
-      ▼
- onInit()              register events, acquire resources, look up services
-      │
- ┌────┴── returns false ─► ~A()   actor is destroyed, never started
- │
- returns true
-      │
-      ▼
- running               on(Event&) handlers / on(qb::LoopEvent const&) ticks
-      │
- kill() takes effect   _alive = false; stops receiving new events
-      │
-      ▼
- drain                 events already queued may still be processed
-      │
-      ▼
- ~A()                  destructor runs under VirtualCore control (RAII cleanup)
+```mermaid
+flowchart TD
+    AA["addActor&lt;A&gt;(core, args…)"] --> CT["A::A(args…)<br/>constructed on the target VirtualCore thread"]
+    CT --> OI["onInit()<br/>register events · acquire resources · look up services"]
+    OI -- "co_return false / throw" --> DX["~A() — destroyed, never started"]
+    OI -- "co_return true" --> RUN["running<br/>on(Event&) handlers · on(LoopEvent) ticks"]
+    RUN --> K["kill() takes effect<br/>_alive = false; stops receiving new events"]
+    K --> DR["drain<br/>already-queued events may still be processed"]
+    DR --> DT["~A()<br/>destructor under VirtualCore control (RAII cleanup)"]
 ```
 
 ### onInit: the initialization checkpoint
@@ -199,8 +185,9 @@ qb::io::async::task<bool> onInit() override {
 }
 ```
 
-`onInit()` is the only safe place to call `registerEvent<T>()`, because it is the first point at
-which the actor has a valid `ActorId`. Use `getService<T>()` to confirm a service is actually
+Prefer `onInit()` for calling `registerEvent<T>()`; constructor-body registration also works (the id
+is assigned in the initializer list before the body runs), but `onInit()` keeps everything in one
+place. Use `getService<T>()` to confirm a service is actually
 present on this core: `getServiceId<Tag>(core)` only computes the deterministic id for the tag and
 never reports whether such a service is registered.
 
@@ -277,7 +264,7 @@ The destructor runs after `kill()` has taken effect and the actor has been remov
 `time()` returns a `uint64_t` nanosecond value that the `VirtualCore` refreshes once per loop
 iteration. Every call within a single handler or `on(qb::LoopEvent const&)` invocation returns the *same* value.
 For a continuously updating, high-precision timestamp, use `qb::unix_nanos(qb::wall_now())` from
-`<qb/system/timestamp.h>` (see the canonical time vocabulary in [qb-io
+`<qb/system/time.h>` (see the canonical time vocabulary in [qb-io
 utilities](../3_qb_io/utilities.md)).
 
 ## Sending events
@@ -426,7 +413,7 @@ type runs on a given core, and any actor on that core can obtain a typed pointer
 `getService<T>()`. The `Tag` is an empty struct that makes the service type unique.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/test-actor-add.cpp
+// src: derived from qb/source/core/tests/system/actor/actor-add.cpp
 #include <qb/actor.h>
 
 struct LoggerTag {};  // unique tag for this service type
@@ -468,8 +455,9 @@ ordering.
 
 ## Pitfalls
 
-- **Registering events in the constructor.** The actor has no `ActorId` until after construction.
-  Call `registerEvent<T>()` from `onInit()`, never the constructor.
+- **Registering events in the constructor.** Prefer `onInit()` for `registerEvent<T>()`;
+  constructor-body registration also works (the id is assigned in the initializer list before the
+  body runs), but `onInit()` keeps all subscriptions in one place.
 - **Constructing an actor off-thread.** Actors must be created on a `VirtualCore` worker thread via
   `Main::core(idx).addActor<T>(...)` (or `addRefActor<T>()` from within an actor), never from the
   main thread or an arbitrary user thread. The constructors assert this in debug builds.

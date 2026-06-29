@@ -1,6 +1,6 @@
 # Public API overview
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 A reference map of the public API: the namespaces, key types, and signatures of `qb-core` and
 `qb-io`, each linked to the header that owns it.
@@ -438,7 +438,7 @@ Used by both libraries.
 
 ### Time
 
-- **Header:** `qb/system/timestamp.h`
+- **Header:** `qb/system/time.h`
 
 | Type | Definition |
 |---|---|

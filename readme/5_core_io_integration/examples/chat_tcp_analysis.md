@@ -1,6 +1,6 @@
 # TCP chat: an annotated walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 A line-by-line reading of the `chat_tcp` example: how a multi-actor TCP server accepts connections, frames a custom binary protocol, manages per-client sessions, and centralizes chat state, paired with a reconnecting client.
 
@@ -33,27 +33,13 @@ examples/core_io/chat_tcp/
 
 The server splits four responsibilities across cores. Connection acceptance, session I/O, and chat logic each run on their own `VirtualCore`, so a burst of accepts never stalls message broadcasting and vice versa.
 
-```text
-        TCP clients
-             │  connect to :3001 / :3002
-             ▼
-   ┌──────────────────────┐   core 0
-   │  AcceptActor ×2       │   listen + round-robin
-   └──────────┬───────────┘
-              │  NewSessionEvent (carries the accepted socket)
-              ▼
-   ┌──────────────────────┐   core 1
-   │  ServerActor ×2       │   owns a map of ChatSession objects
-   │   └─ ChatSession ×N   │   protocol parse + per-client timeout
-   └──────────┬───────────┘
-              │  AuthEvent / ChatEvent / DisconnectEvent
-              ▼
-   ┌──────────────────────┐   core 3
-   │  ChatRoomActor        │   usernames, presence, broadcast
-   └──────────┬───────────┘
-              │  SendMessageEvent (routed back to the owning ServerActor)
-              ▼
-        back to ChatSession ──► client socket
+```mermaid
+flowchart TD
+    CL["TCP clients<br/>connect to :3001 / :3002"] --> AA["AcceptActor ×2 — core 0<br/>listen + round-robin"]
+    AA -- "NewSessionEvent (carries the accepted socket)" --> SA["ServerActor ×2 — core 1<br/>owns a map of ChatSession ×N<br/>protocol parse + per-client timeout"]
+    SA -- "AuthEvent / ChatEvent / DisconnectEvent" --> CR["ChatRoomActor — core 3<br/>usernames · presence · broadcast"]
+    CR -- "SendMessageEvent (routed to the owning ServerActor)" --> SA
+    SA -- "write via ChatSession" --> CL
 ```
 
 The actual core placement is set in `server/main.cpp`: `ChatRoomActor` on core 3, two `ServerActor`s on core 1, and two `AcceptActor`s on core 0 listening on ports 3001 and 3002. There is no actor on core 2; the numbering leaves headroom.
@@ -523,7 +509,7 @@ The connect deadline and the reconnect delay are both fixed at five seconds; the
 - **`setTimeout` is on the timeout mixin, not the client.** `updateTimeout()` must be called on every meaningful activity (inbound *and* outbound), or the session drops mid-conversation. The example resets it in both `ChatSession::on(Message)` and `ServerActor::on(SendMessageEvent&)`.
 - **Console input blocks its core.** Keep `std::getline`-style readers off any core that carries network actors. The example isolates `InputActor` on core 0 for exactly this reason.
 - **Bad-frame handling is minimal.** `ChatProtocol::reset()` does not drain the buffer, so a malformed header wedges the parser. Harden framing before reuse.
-- **Timeouts are `qb::duration` now, not `double`.** The checked-in client passes `static constexpr double` constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `5.0`) to `qb::io::async::tcp::connect()` and `qb::io::async::callback()`. That predates the canonical time model and no longer compiles — a bare `double` does not convert to `qb::duration`. Pass a chrono literal such as `std::chrono::seconds(5)`. See [Async I/O inside actors](../async_in_actors.md). <!-- src: qb/include/qb/system/timestamp.h:82 -->
+- **Timeouts are `qb::duration` now, not `double`.** The checked-in client passes `static constexpr double` constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `5.0`) to `qb::io::async::tcp::connect()` and `qb::io::async::callback()`. That predates the canonical time model and no longer compiles — a bare `double` does not convert to `qb::duration`. Pass a chrono literal such as `std::chrono::seconds(5)`. See [Async I/O inside actors](../async_in_actors.md). <!-- src: qb/include/qb/system/time.h:82 -->
 
 ## See also
 

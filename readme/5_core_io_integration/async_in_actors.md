@@ -1,6 +1,6 @@
 # Asynchronous operations inside actors
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 How an actor uses the `qb-io` event loop — deferred callbacks, inactivity timers, and coroutines — to perform time-based and I/O-bound work without blocking its `VirtualCore`.
 
@@ -121,7 +121,7 @@ public:
 };
 ```
 
-`startOperation` takes a `qb::duration` — the canonical span type used for every timeout, delay, and interval in the public API. It is an alias for `std::chrono::nanoseconds` and accepts any finer-or-equal chrono literal implicitly (`5s`, `200ms`), while rejecting a bare integer at compile time. <!-- src: qb/include/qb/system/timestamp.h:82 -->
+`startOperation` takes a `qb::duration` — the canonical span type used for every timeout, delay, and interval in the public API. It is an alias for `std::chrono::nanoseconds` and accepts any finer-or-equal chrono literal implicitly (`5s`, `200ms`), while rejecting a bare integer at compile time. <!-- src: qb/include/qb/system/time.h:82 -->
 
 ### Common uses
 
@@ -190,7 +190,7 @@ Mechanics, verified against the header:
 
 - The constructor takes a `qb::duration` and **defaults to `std::chrono::seconds(3)`**. A value `<= 0` starts disabled. <!-- src: qb/include/qb/io/async/io.h:118 -->
 - `updateTimeout()` records "now" as the last-activity time; call it from handlers that count as activity to push the deadline forward.
-- When the configured span elapses with no `updateTimeout()`, the mixin invokes `_Derived::on(qb::io::async::event::timer const&)`. The canonical handler signature takes the event by `const &`. <!-- src: qb/include/qb/io/async/io.h:178; qb/source/io/tests/system/test-event.cpp:69 -->
+- When the configured span elapses with no `updateTimeout()`, the mixin invokes `_Derived::on(qb::io::async::event::timer const&)`. The canonical handler signature takes the event by `const &`. <!-- src: qb/include/qb/io/async/io.h:184; qb/source/io/tests/system/async/timer-timeout.cpp:91 -->
 - `setTimeout(d)` reconfigures and restarts the timer; `setTimeout(qb::duration::zero())` stops it. <!-- src: qb/include/qb/io/async/io.h:146 -->
 
 ```cpp
@@ -323,7 +323,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
 
 ## Pitfalls
 
-- **Passing a `double` as a delay.** `callback`/`with_timeout` take `qb::duration` (a `std::chrono` span), not seconds-as-`double`. Write `5s` or `std::chrono::milliseconds(200)`, never `5.0`. A bare integer does not compile. <!-- src: qb/include/qb/system/timestamp.h:82 -->
+- **Passing a `double` as a delay.** `callback`/`with_timeout` take `qb::duration` (a `std::chrono` span), not seconds-as-`double`. Write `5s` or `std::chrono::milliseconds(200)`, never `5.0`. A bare integer does not compile. <!-- src: qb/include/qb/system/time.h:82 -->
 - **Expecting `callback(f)` or a zero delay to defer.** A non-positive duration runs `func()` inline at the call site. Use a strictly positive delay to schedule for a later loop turn. <!-- src: qb/include/qb/io/async/io.h:305,313 -->
 - **Touching `this` after the actor died.** A delayed callback can outlive its actor — guard with `is_alive()`, or prefer `push`-back-to-self over direct mutation.
 - **Accessing actor state after `co_await`.** Inside a coroutine, the actor may be destroyed across any suspension point. Copy state by value before the first `co_await` and use only the `CoroContext` afterward.

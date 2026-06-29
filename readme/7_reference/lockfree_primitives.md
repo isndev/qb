@@ -1,6 +1,6 @@
 # Lock-free primitives
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 The lock-free building blocks under `qb/system/lockfree` — SPSC and MPSC ring buffers, an unbounded MPSC queue, and a spinlock — that back the engine's inter-core message path, plus the threading contract you must honor to use them directly.
 
@@ -128,6 +128,30 @@ The SPSC buffer is the building block of the MPSC mailbox, not a directly used t
 A bounded multi-producer/single-consumer ring buffer, built as an array (fixed) or vector (runtime) of per-producer SPSC rings. Each producer owns a dedicated SPSC ring, so producers that write to distinct rings never contend; the single consumer drains across all rings. Each `Producer` struct pads its `SpinLock` out to a full cache line to keep producers off each other's cache lines (`include/qb/system/lockfree/mpsc.h:58`).
 
 This is the core data structure for inter-`VirtualCore` communication. See [Where the engine uses it](#where-the-engine-uses-it-1) below.
+
+Each destination core owns one mailbox; every other core writes into its own dedicated SPSC slot of that mailbox, and the destination core is the sole consumer that drains across all slots:
+
+```mermaid
+flowchart LR
+    P0["VirtualCore 0<br/>(producer)"]
+    P1["VirtualCore 1<br/>(producer)"]
+    PN["VirtualCore N<br/>(producer)"]
+    subgraph MB["Destination Mailbox — mpsc::ringbuffer&lt;EventBucket, MaxRingEvents, 0&gt;"]
+        direction TB
+        R0["Producer slot 0<br/>SPSC ring"]
+        R1["Producer slot 1<br/>SPSC ring"]
+        RN["Producer slot N<br/>SPSC ring"]
+    end
+    DC["Destination VirtualCore<br/>(single consumer)"]
+    P0 -- "enqueue(0, bucket)" --> R0
+    P1 -- "enqueue(1, bucket)" --> R1
+    PN -- "enqueue(N, bucket)" --> RN
+    R0 -- "dequeue(func, …) drains all slots" --> DC
+    R1 --> DC
+    RN --> DC
+```
+
+The producer index is the **sender's** resolved core id, so each producer is permanently bound to one slot and rides the lock-free indexed path — no `SpinLock`, no cross-producer contention (`source/core/src/Main.cpp:139`). The single consumer appends each slot's items into one output buffer rather than overwriting (`include/qb/system/lockfree/mpsc.h:176`).
 
 ### Two enqueue families — read this before using
 

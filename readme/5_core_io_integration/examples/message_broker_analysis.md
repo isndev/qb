@@ -1,6 +1,6 @@
 # Publish/subscribe message broker: an annotated walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 A reading of the `message_broker` example: a topic-based pub/sub broker that fans one published message out to many subscribers by sharing a single reference-counted payload across cores, framed over a custom binary protocol.
 
@@ -33,26 +33,12 @@ examples/core_io/message_broker/
 
 The server splits four responsibilities across three cores. Connection acceptance, session I/O, and topic logic each run on a dedicated `VirtualCore`, so an accept burst never stalls a broadcast and a broadcast never stalls accepts. The placement below is from `server/main.cpp`.
 
-```text
-        TCP clients
-             │  connect to :12345
-             ▼
-   ┌──────────────────────┐   core 0
-   │     AcceptActor      │   tcp::acceptor
-   └──────────┬───────────┘
-              │  NewSessionEvent (round-robin)
-              ▼
-   ┌──────────────────────┐   core 1
-   │  ServerActor × 2     │   tcp::io_handler<BrokerSession>
-   │   owns BrokerSession │
-   └───┬──────────────▲───┘
-       │ Sub/Unsub/   │ SendMessageEvent
-       │ Publish/     │  (shared payload)
-       │ Disconnect   │
-       ▼              │
-   ┌──────────────────┴───┐   core 2
-   │  TopicManagerActor   │   topic registry + fan-out
-   └──────────────────────┘
+```mermaid
+flowchart TD
+    CL["TCP clients<br/>connect to :12345"] --> AA["AcceptActor — core 0<br/>tcp::acceptor"]
+    AA -- "NewSessionEvent (round-robin)" --> SA["ServerActor ×2 — core 1<br/>tcp::io_handler&lt;BrokerSession&gt; — owns BrokerSession"]
+    SA -- "Sub / Unsub / Publish / Disconnect" --> TM["TopicManagerActor — core 2<br/>topic registry + fan-out"]
+    TM -- "SendMessageEvent (shared payload)" --> SA
 ```
 
 <!-- src: examples/core_io/message_broker/server/main.cpp -->

@@ -1,6 +1,6 @@
 # qb-core: the actor engine
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 `qb-core` is the C++20-first actor runtime layered on `qb-io`: it owns the `qb::Main` engine, the per-thread `qb::VirtualCore` workers, the `qb::Actor` base class, and the event-passing layer that connects them.
 
@@ -21,22 +21,20 @@ into recurring designs.
 
 ## Architecture at a glance
 
-```
-┌───────────────────────────────────────────────────────────┐
-│                          qb::Main                         │
-│   (engine controller — spawns one jthread per VirtualCore)│
-└──────────┬──────────────────────────────┬─────────────────┘
-           │ owns                          │ owns
-    ┌──────▼──────────┐           ┌────────▼────────┐
-    │  VirtualCore 0  │           │  VirtualCore 1  │  …
-    │  ┌───────────┐  │           │  ┌───────────┐  │
-    │  │  Actor A  │  │           │  │  Actor C  │  │
-    │  ├───────────┤  │  ◄ MPSC ► │  ├───────────┤  │
-    │  │  Actor B  │  │ mailboxes │  │  Actor D  │  │
-    │  └───────────┘  │           │  └───────────┘  │
-    │  (event loop +  │           │  (event loop +  │
-    │   io listener)  │           │   io listener)  │
-    └─────────────────┘           └─────────────────┘
+```mermaid
+flowchart TB
+    M["qb::Main<br/>engine controller — one jthread per VirtualCore"]
+    M -- owns --> VC0
+    M -- owns --> VC1
+    subgraph VC0["VirtualCore 0 — event loop + io listener"]
+        A["Actor A"]
+        B["Actor B"]
+    end
+    subgraph VC1["VirtualCore 1 — event loop + io listener"]
+        C["Actor C"]
+        D["Actor D"]
+    end
+    VC0 <-- "MPSC mailboxes" --> VC1
 ```
 
 Key design points, each documented on the linked page:
@@ -61,6 +59,7 @@ Key design points, each documented on the linked page:
 | [Event messaging between actors](./messaging.md) | How `push`, `send`, `reply`, `forward`, and `broadcast` differ in delivery semantics and ordering, and how events move through the per-destination-core pipe and per-core mailbox within and across cores. |
 | [The engine: `qb::Main` and `VirtualCore`](./engine.md) | Engine startup and shutdown, the `CoreInitializer` configuration step, CPU affinity, the `VirtualCore` loop, inter-core flushing, signal handling, and the stop-token cancellation path. |
 | [Actor patterns](./patterns.md) | Composing the `Actor` primitives into recurring designs: finite state machines, service registries, publish/subscribe, request/response with timeouts, supervision, referenced actors with `RefActorHandle`, runtime dependency resolution with `require`, and coroutine flows. |
+| [Interaction patterns library](./patterns_library.md) | The header-only toolkit that packages those designs as ready-made coroutine primitives — `qb::ask`/`answer`, scatter-gather (`ask_all`/`ask_any`/`ask_quorum`), discovery (`ping`/`require`), `run_saga`, resilience (`ask_retry`/`CircuitBreaker`/`rate_limiter`/`bulkhead`), `ask_stream`, `PubSub`, `Supervisor`, `WorkerPool`, `answer_idempotent`, and `batcher`. |
 
 ## Suggested reading order
 
@@ -71,6 +70,8 @@ Key design points, each documented on the linked page:
    so you understand the runtime your actors execute on.
 4. **[Actor patterns](./patterns.md)** — practical ways to structure application logic once the
    fundamentals are clear.
+5. **[Interaction patterns library](./patterns_library.md)** — the ready-made coroutine primitives
+   (ask, scatter-gather, saga, resilience, supervision, …) that implement those patterns for you.
 
 ## See also
 

@@ -1,8 +1,8 @@
-<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 2.6.0 (C++20 default, C++23 supported) -->
 
 # Versioning and compatibility
 
-qb follows [Semantic Versioning 2.0.0](https://semver.org/). The current version is **2.0.0**, defined in
+qb follows [Semantic Versioning 2.0.0](https://semver.org/). The current version is **2.6.0**, defined in
 `cmake/qbConfig.cmake` and consumed by `project()` in `CMakeLists.txt`.
 
 ## What each release level means

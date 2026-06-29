@@ -1,6 +1,6 @@
 # The threading model
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported) @ b87d39a
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported) @ b87d39a
 
 qb runs one `VirtualCore` worker thread per engine core, each owning its actors and draining a private lock-free mailbox, so the only genuinely multi-threaded surface is the message-passing layer between cores.
 
@@ -50,6 +50,17 @@ The idle latency of a core is a `qb::duration` (`std::chrono::nanoseconds`; see 
 - `setLatency(qb::duration::zero())` — the default — puts the core in busy-spin low-latency mode: the loop never blocks and the thread holds its CPU at 100% to react with minimal delay (`include/qb/core/Main.h:248`).
 - `setLatency(d)` with `d > 0` lets the core park on a `std::condition_variable` for up to `d` when idle (`include/qb/core/Main.h:250`, mailbox `wait()` at `include/qb/core/Main.h:320`). A peer enqueuing an event calls `notify()` to wake it. This trades worst-case wake-up latency for lower CPU.
 
+```mermaid
+flowchart TB
+    Loop["VirtualCore loop iteration"] --> W{"work ready?<br/>events · I/O"}
+    W -- yes --> P["process it · reseed spin credit"] --> Loop
+    W -- no --> S{"spin credit left?"}
+    S -- yes --> Spin["spin the lock-free fast path<br/>(burn the credit)"] --> Loop
+    S -- no --> L{"setLatency == 0?"}
+    L -- "yes · default" --> Loop
+    L -- "no · d > 0" --> Park["park on condition_variable up to d<br/>peer notify() wakes it"] --> Loop
+```
+
 The loop does not park the instant it goes idle. A per-core adaptive backoff seeds a spin credit from the work done in the previous iteration; the core burns through that credit on the lock-free fast path before it is allowed to block on `_mail_box.wait()` (`source/core/src/VirtualCore.cpp:449`). When latency is zero, that branch is skipped entirely and the loop spins.
 
 Two scopes set latency:
@@ -80,7 +91,7 @@ The following pattern dedicates one zero-latency core to a hot accept loop and r
 // src: examples/all/auction_house/src/main.cpp (adapted/illustrative)
 #include <qb/main.h>           // qb::Main, qb::CoreInitializer
 #include <qb/io.h>             // qb::io::cerr
-#include <qb/system/timestamp.h>
+#include <qb/system/time.h>
 // ... your actor headers: ListenerActor, WorkerActor ...
 
 int main() {
@@ -120,7 +131,7 @@ To lower CPU on cores that tolerate a small wake-up delay, set a non-zero latenc
 ```cpp
 // src: examples/all/taskmanager/src/main.cpp (adapted/illustrative latency topology)
 #include <qb/main.h>             // qb::Main, qb::CoreInitializer
-#include <qb/system/timestamp.h> // qb::duration, qb::time_literals
+#include <qb/system/time.h> // qb::duration, qb::time_literals
 
 using namespace qb::time_literals; // std::chrono suffixes (ms, us) re-exported into qb
 
@@ -129,7 +140,7 @@ engine.core(0).setLatency(qb::duration::zero()); // hot loop, 100% CPU on core 0
 engine.core(1).setLatency(200us);                // park up to 200 us when idle
 ```
 
-`std::chrono::microseconds` (`200us`) and `std::chrono::milliseconds` (`1ms`) convert implicitly to `qb::duration`, which is `std::chrono::nanoseconds` (`include/qb/system/timestamp.h:82`).
+`std::chrono::microseconds` (`200us`) and `std::chrono::milliseconds` (`1ms`) convert implicitly to `qb::duration`, which is `std::chrono::nanoseconds` (`include/qb/system/time.h:82`).
 
 A per-core `setLatency` is idempotent — calling it more than once on the same core overwrites the previous value (`source/core/src/Main.cpp:69`). `Main::setLatency` applies unconditionally to all registered cores (`source/core/src/Main.cpp:231`), so a per-core override must follow it, not precede it.
 

@@ -1,6 +1,6 @@
 # What qb is
 
-> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model, composed of two libraries: an actor engine (`qb-core`) layered on a standalone non-blocking asynchronous I/O runtime (`qb-io`).
 
@@ -26,6 +26,39 @@ Higher-level application protocols (HTTP/1.1, HTTP/2, and HTTP/3, WebSocket, Pos
 
 Both are exposed to CMake as the aliases `qb::io` and `qb::core`. Link only `qb::io` when you need the asynchronous runtime without the actor model; link `qb::core` (which brings `qb::io` transitively) for the full engine.
 <!-- src: docs-overhaul/qb/FACTBOOK.md:152-154 -->
+
+## Architecture at a glance
+
+`qb::Main` spawns one `VirtualCore` worker thread per core. Each `VirtualCore` is single-threaded: it owns a set of thread-affine actors, drives its own `qb-io` event loop, and receives cross-core events through a lock-free MPSC mailbox. Application code and the optional qbm modules sit on top; everything rests on the `qb-io` runtime.
+
+```mermaid
+flowchart TB
+    App["Your application<br/>+ optional qbm modules · HTTP · PostgreSQL · Redis"]
+
+    subgraph Core["qb-core · actor engine"]
+        Main["qb::Main (engine)<br/>configures cores · start / stop / join"]
+        subgraph VC0["VirtualCore 0 · one worker thread"]
+            A0["actors (thread-affine,<br/>one event at a time)"]
+            MB0["lock-free MPSC mailbox"]
+        end
+        subgraph VCN["VirtualCore N · one worker thread"]
+            AN["actors"]
+            MBN["lock-free MPSC mailbox"]
+        end
+        Main --> VC0
+        Main --> VCN
+        A0 -. "push / broadcast" .-> MBN
+        AN -. "push / broadcast" .-> MB0
+    end
+
+    subgraph IO["qb-io · async runtime, one event loop per VirtualCore"]
+        EL["libev loop · TCP / UDP / TLS · C++20 coroutines · timers · crypto"]
+    end
+
+    App --> Core
+    VC0 --> IO
+    VCN --> IO
+```
 
 ## The problem qb addresses
 
@@ -69,7 +102,7 @@ The actor model removes most low-level synchronization from your code, but a wor
 
 ### Shared utilities
 
-- **Canonical time vocabulary** — `qb::duration` (a `std::chrono::nanoseconds` span), `qb::mono_time` (steady-clock time point), and `qb::wall_time` (system-clock time point), with helpers in `qb/system/timestamp.h`.
+- **Canonical time vocabulary** — `qb::duration` (a `std::chrono::nanoseconds` span), `qb::mono_time` (steady-clock time point), and `qb::wall_time` (system-clock time point), with helpers in `qb/system/time.h`.
 - **URI parsing** — `qb::io::uri`.
 - **Cryptography** — hashing, encryption, and key utilities, available when built with OpenSSL (`QB_WITH_SSL`, on by default).
 - **Compression** — gzip and deflate, available when built with zlib (`QB_WITH_COMPRESSION`, on by default).

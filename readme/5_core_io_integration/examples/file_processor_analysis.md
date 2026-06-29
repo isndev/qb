@@ -1,6 +1,6 @@
 # File-processor walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
 An annotated reading of `examples/core_io/file_processor/`: a manager-worker topology that confines blocking file I/O to dedicated worker cores so the rest of the actor system stays responsive.
 
@@ -21,20 +21,12 @@ A `ClientActor` drives the system: it writes five test files, reads each one bac
 
 ## Architecture at a glance
 
-```
-                          ReadFileRequest / WriteFileRequest
-ClientActor ─────────────────────────────────────────────────▶ FileManager
- (core 0)                                                       (core 0)
-     ▲                                                              │
-     │                          dispatch one request per idle worker│
-     │                          (ReadFileRequest / WriteFileRequest)│
-     │                                                              ▼
-     │                                                        FileWorker × 4
-     │   ReadFileResponse / WriteFileResponse                 (cores 1, 2, 3)
-     └──────────────────────────────────────────────────────────┘  │
-                          (direct reply to the original requestor)   │
-                                              WorkerAvailable        │
-                          FileManager ◀────────────────────────────┘
+```mermaid
+flowchart LR
+    C["ClientActor — core 0"] -- "ReadFileRequest / WriteFileRequest" --> FM["FileManager — core 0"]
+    FM -- "dispatch one request per idle worker" --> W["FileWorker ×4 — cores 1, 2, 3"]
+    W -- "ReadFileResponse / WriteFileResponse<br/>(direct reply to the requestor)" --> C
+    W -- "WorkerAvailable" --> FM
 ```
 
 All three actor types derive from `qb::Actor`, register their handlers in the constructor with `registerEvent<T>(*this)`, and communicate exclusively through `push<Event>(destination, ...)` and `broadcast<Event>(...)`. Note the response path: each worker replies **directly to the client**, not back through the manager. The manager only learns that a worker is free again, through a separate `WorkerAvailable` event.
@@ -335,7 +327,7 @@ engine.join();
 - **`callback(func)` with no delay runs inline.** This is the central correction to the example's framing: the worker's blocking I/O executes synchronously inside the message handler, not on a later loop turn. The responsiveness guarantee comes from placing workers on dedicated cores, not from the callback. Pass a strictly positive `qb::duration` to genuinely defer. <!-- src: qb/include/qb/io/async/io.h:305,313 -->
 - **The lambda does not guard `is_alive()`.** The worker's callback captures `this`. In this example the callback fires inline, so `this` is necessarily valid — but if you adapt the code to a *delayed* callback, the actor can be killed before the timer fires. A delayed callback that touches `this` must check `is_alive()` first, or push a result back to self instead of mutating directly. See [Async in actors → capture safety](../async_in_actors.md#capture-safety-the-actor-may-be-gone). <!-- src: examples/core_io/file_processor/file_worker.h:100 -->
 - **The manager's response handlers never run.** `FileManager::on(ReadFileResponse&)` / `on(WriteFileResponse&)` are registered but unreachable, because workers reply to the client directly. Do not cite them as the response path. If you want responses to flow through the manager (for example, to centralize logging or retries), have the worker reply to `_manager_id` and let the manager `forward` to `response.requestor`.
-- **`async::callback` takes `qb::duration`, not `double`.** The example passes `0.5` and `1.0`. The current overload signature is `callback(_Func&&, std::chrono::duration<Rep, Period>)`; a `double` no longer matches it. Use the [`qb` chrono literals](../../3_qb_io/utilities.md) instead — `callback(f, 500ms)` and `callback(f, 1s)` (`qb::time_literals` re-exports `std::chrono_literals`). <!-- src: qb/include/qb/io/async/io.h:309 ; qb/include/qb/system/timestamp.h:104 -->
+- **`async::callback` takes `qb::duration`, not `double`.** The example passes `0.5` and `1.0`. The current overload signature is `callback(_Func&&, std::chrono::duration<Rep, Period>)`; a `double` no longer matches it. Use the [`qb` chrono literals](../../3_qb_io/utilities.md) instead — `callback(f, 500ms)` and `callback(f, 1s)` (`qb::time_literals` re-exports `std::chrono_literals`). <!-- src: qb/include/qb/io/async/io.h:309 ; qb/include/qb/system/time.h:104 -->
 - **Read priority can starve writes.** `on(WorkerAvailable&)` always drains `_read_requests` before `_write_requests`. Under sustained read load, queued writes wait indefinitely. A fair dispatcher would interleave the two queues.
 - **More workers than cores share a thread.** Mapping four workers onto three cores means two workers contend for one core's thread; their blocking I/O serializes. Size the worker pool to the I/O cores you actually reserved.
 - **`stat` outside the descriptor races.** The read path calls `stat(path)` separately from `open(path)`, so the size can change between the two calls. For exactly-correct reads, `fstat` the open descriptor or read in a loop until EOF.
