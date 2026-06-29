@@ -220,8 +220,7 @@ TEST(Compression, GenericTemplateUpfrontBudgetGuardRejects) {
 
     // max = 1: 1 && compressed.size() > 0 -> throws "size may use more memory than intended".
     std::string out;
-    EXPECT_THROW(qb::gzip::uncompress(out, compressed.c_str(), compressed.size(), static_cast<std::size_t>(1)),
-                 std::runtime_error);
+    EXPECT_THROW(qb::gzip::uncompress(out, compressed.c_str(), compressed.size(), static_cast<std::size_t>(1)), std::runtime_error);
     EXPECT_TRUE(out.empty() || out.size() <= 1u);
 }
 
@@ -241,8 +240,7 @@ TEST(Compression, GenericTemplateInLoopBombGuardRejects) {
 
     // A generous budget through the SAME generic template round-trips the full payload.
     std::string out_ok;
-    EXPECT_NO_THROW(qb::gzip::uncompress(out_ok, compressed.c_str(), compressed.size(),
-                                         static_cast<std::size_t>(8 * 1024 * 1024)));
+    EXPECT_NO_THROW(qb::gzip::uncompress(out_ok, compressed.c_str(), compressed.size(), static_cast<std::size_t>(8 * 1024 * 1024)));
     EXPECT_EQ(out_ok.size(), original.size());
     EXPECT_EQ(out_ok, original);
 }

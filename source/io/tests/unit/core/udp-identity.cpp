@@ -47,8 +47,8 @@ make(const char *ip, unsigned short port) {
  * @brief A differing port or a differing address each break equality.
  */
 TEST(UdpIdentity, EqualityComparesAddressAndPort) {
-    const identity a = make("127.0.0.1", 5000);
-    const identity b = make("127.0.0.1", 5000);
+    const identity a         = make("127.0.0.1", 5000);
+    const identity b         = make("127.0.0.1", 5000);
     const identity diff_port = make("127.0.0.1", 5001);
     const identity diff_addr = make("192.168.1.1", 5000);
 
@@ -72,8 +72,8 @@ TEST(UdpIdentity, EqualityComparesAddressAndPort) {
  *        for these well-separated addresses it holds and was asserted in the original suite.
  */
 TEST(UdpIdentity, HasherIsConsistentWithEquality) {
-    const identity a = make("127.0.0.1", 5000);
-    const identity b = make("127.0.0.1", 5000);
+    const identity a    = make("127.0.0.1", 5000);
+    const identity b    = make("127.0.0.1", 5000);
     const identity diff = make("10.0.0.1", 5000);
 
     identity::hasher h;

@@ -112,7 +112,7 @@ public:
     onInit() override {
         registerEvent<PayloadEvent>(*this);
         co_await context().until_cancelled(); // parks until killed; throws cancelled_error
-        co_return true;                        // unreachable
+        co_return true;                       // unreachable
     }
     void
     on(PayloadEvent &) {
@@ -149,8 +149,7 @@ TEST(InitStashLifetime, KillDuringInitPassesGateAndDisposesStash) {
         main.join();
     }
     EXPECT_EQ(g_killed_handler_calls.load(), 0); // killed-during-init: stash never replayed
-    EXPECT_EQ(PayloadEvent::live.load(), 0L)
-        << "stashed payloads leaked when the actor was killed during init";
+    EXPECT_EQ(PayloadEvent::live.load(), 0L) << "stashed payloads leaked when the actor was killed during init";
 }
 
 // ===========================================================================
@@ -178,8 +177,7 @@ TEST(InitStashLifetime, ActivationDeadlineDisposesStash) {
         main.start(false);
         main.join();
     }
-    EXPECT_EQ(PayloadEvent::live.load(), 0L)
-        << "stashed payloads leaked when the activation deadline expired";
+    EXPECT_EQ(PayloadEvent::live.load(), 0L) << "stashed payloads leaked when the activation deadline expired";
 }
 
 // ===========================================================================
@@ -197,8 +195,7 @@ TEST(InitStashLifetime, StashOverflowDisposesAllDroppedPayloads) {
         main.start(false);
         main.join();
     }
-    EXPECT_EQ(PayloadEvent::live.load(), 0L)
-        << "overflowed/stashed payloads leaked when the stash cap was exceeded";
+    EXPECT_EQ(PayloadEvent::live.load(), 0L) << "overflowed/stashed payloads leaked when the stash cap was exceeded";
 }
 
 // ===========================================================================

@@ -273,8 +273,7 @@ run_router_mailbox(std::size_t const nb_producers, std::uint64_t const total, st
         }
     };
 
-    const std::uint64_t fails =
-        qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_routed_bucket, consume);
+    const std::uint64_t fails = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_routed_bucket, consume);
 
     return {fails, local_checksum.value};
 }

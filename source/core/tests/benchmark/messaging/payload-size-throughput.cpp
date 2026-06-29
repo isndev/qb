@@ -155,8 +155,12 @@ ApplyPayloadTtls(benchmark::internal::Benchmark *b) {
 
 } // namespace
 
-#define REGISTER_PAYLOAD_MONO(WORDS)                                                                                                          \
-    BENCHMARK_TEMPLATE(BM_PayloadPingPong_Mono, WORDS)->Apply(ApplyPayloadTtls<WORDS>)->ArgName("initial_ttl")->Unit(benchmark::kMillisecond)->UseRealTime()
+#define REGISTER_PAYLOAD_MONO(WORDS)                   \
+    BENCHMARK_TEMPLATE(BM_PayloadPingPong_Mono, WORDS) \
+        ->Apply(ApplyPayloadTtls<WORDS>)               \
+        ->ArgName("initial_ttl")                       \
+        ->Unit(benchmark::kMillisecond)                \
+        ->UseRealTime()
 
 REGISTER_PAYLOAD_MONO(0);
 REGISTER_PAYLOAD_MONO(1);
@@ -166,8 +170,12 @@ REGISTER_PAYLOAD_MONO(127);
 
 // Cross-core variant: registered unconditionally (it self-skips at run time when < 2 cores), so the
 // row is always visible in the report even on a single-core runner.
-#define REGISTER_PAYLOAD_XCORE(WORDS)                                                                                                         \
-    BENCHMARK_TEMPLATE(BM_PayloadPingPong_XCore, WORDS)->Apply(ApplyPayloadTtls<WORDS>)->ArgName("initial_ttl")->Unit(benchmark::kMillisecond)->UseRealTime()
+#define REGISTER_PAYLOAD_XCORE(WORDS)                   \
+    BENCHMARK_TEMPLATE(BM_PayloadPingPong_XCore, WORDS) \
+        ->Apply(ApplyPayloadTtls<WORDS>)                \
+        ->ArgName("initial_ttl")                        \
+        ->Unit(benchmark::kMillisecond)                 \
+        ->UseRealTime()
 
 REGISTER_PAYLOAD_XCORE(0);
 REGISTER_PAYLOAD_XCORE(1);

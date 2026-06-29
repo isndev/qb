@@ -200,8 +200,8 @@ TEST(CryptoJWT, ExpirationIsEnforcedWithoutSleeping) {
     EXPECT_TRUE(jwt::verify(expired_token, verify_options).is_valid());
 
     // A token whose exp is well in the future verifies cleanly.
-    verify_options.clock_skew       = std::chrono::seconds(0);
-    const std::string live_token    = jwt::create({{"user_id", "12345"}, {"exp", std::to_string(unix_now_seconds() + 3600)}}, create_options);
+    verify_options.clock_skew    = std::chrono::seconds(0);
+    const std::string live_token = jwt::create({{"user_id", "12345"}, {"exp", std::to_string(unix_now_seconds() + 3600)}}, create_options);
     EXPECT_TRUE(jwt::verify(live_token, verify_options).is_valid());
 }
 
@@ -525,7 +525,8 @@ namespace {
  * array, etc. — types jwt::create cannot emit.
  */
 std::string
-make_hs256_token(const std::string &payload_json, const std::string &secret, const std::string &header_json = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}") {
+make_hs256_token(const std::string &payload_json, const std::string &secret,
+                 const std::string &header_json = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}") {
     const std::string header_b64  = to_base64url(header_json);
     const std::string payload_b64 = to_base64url(payload_json);
     const std::string signing_in  = header_b64 + "." + payload_b64;
@@ -556,7 +557,7 @@ TEST(CryptoJWT, CreateTokenStampsNotBeforeWhenPositive) {
     create_options.key       = "secret";
 
     const int64_t     before = unix_now_seconds();
-    const std::string token  = jwt::create_token(payload, /*issuer*/ "", /*subject*/ "", /*audience*/ "", /*expires_in*/ std::chrono::seconds(0),
+    const std::string token = jwt::create_token(payload, /*issuer*/ "", /*subject*/ "", /*audience*/ "", /*expires_in*/ std::chrono::seconds(0),
                                                 /*not_before*/ std::chrono::hours(1), /*jti*/ "", create_options);
 
     const auto decoded = jwt::decode(token);

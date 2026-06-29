@@ -161,8 +161,8 @@ TEST(TCPSocket, BlockingLoopbackTransfersExactPayload) {
     with_tcp_pair(
         [&](qb::io::tcp::socket accepted) {
             accepted.set_nonblocking(false);
-            char buffer[512] = {};
-            const int got = accepted.read(buffer, sizeof(buffer));
+            char      buffer[512] = {};
+            const int got         = accepted.read(buffer, sizeof(buffer));
             ASSERT_EQ(got, static_cast<int>(sizeof(message)));
             EXPECT_STREQ(buffer, message);
         },
@@ -308,8 +308,7 @@ TEST(TCPSocket, NonBlockingConnectForcesGenuineEinprogressThenCompletes) {
     // The definitive proof that the connect completed is the SO_ERROR readback below.
     qb::io::socket &pending = backlog.back();
     const int       ready   = pending.handle_write_ready(2s);
-    EXPECT_GT(ready, 0) << "handle_write_ready did not report the in-progress connect writable; errno="
-                        << qb::io::socket::get_last_errno();
+    EXPECT_GT(ready, 0) << "handle_write_ready did not report the in-progress connect writable; errno=" << qb::io::socket::get_last_errno();
 
     int so_error = -1;
     ASSERT_EQ(pending.get_optval(SOL_SOCKET, SO_ERROR, so_error), 0);
@@ -458,8 +457,7 @@ TEST(TCPSocket, ReadReportsPeerCloseWithoutStaleErrno) {
 
                       char buffer[8] = {};
                       EXPECT_EQ(client.read(buffer, sizeof(buffer)), -1);
-                      EXPECT_EQ(qb::io::socket::get_last_errno(), 0)
-                          << "EOF/peer-close must clear errno, not leak a stale value";
+                      EXPECT_EQ(qb::io::socket::get_last_errno(), 0) << "EOF/peer-close must clear errno, not leak a stale value";
                       client.close();
                   });
 }
@@ -611,14 +609,12 @@ TEST(TCPSocket, LowLevelResolutionAndInterfaceDiscovery) {
     std::vector<qb::io::endpoint> v4_endpoints;
     EXPECT_EQ(qb::io::socket::resolve_v4(v4_endpoints, "127.0.0.1", 4242), 0);
     ASSERT_FALSE(v4_endpoints.empty());
-    EXPECT_TRUE(std::all_of(v4_endpoints.begin(), v4_endpoints.end(),
-                            [](const auto &ep) { return ep.af() == AF_INET && ep.port() == 4242; }));
+    EXPECT_TRUE(std::all_of(v4_endpoints.begin(), v4_endpoints.end(), [](const auto &ep) { return ep.af() == AF_INET && ep.port() == 4242; }));
 
     std::vector<qb::io::endpoint> v6_endpoints;
     EXPECT_EQ(qb::io::socket::resolve_v6(v6_endpoints, "::1", 4242), 0);
     ASSERT_FALSE(v6_endpoints.empty());
-    EXPECT_TRUE(std::all_of(v6_endpoints.begin(), v6_endpoints.end(),
-                            [](const auto &ep) { return ep.af() == AF_INET6 && ep.port() == 4242; }));
+    EXPECT_TRUE(std::all_of(v6_endpoints.begin(), v6_endpoints.end(), [](const auto &ep) { return ep.af() == AF_INET6 && ep.port() == 4242; }));
 
     std::vector<qb::io::endpoint> mapped_endpoints;
     EXPECT_EQ(qb::io::socket::resolve_v4to6(mapped_endpoints, "127.0.0.1", 4242), 0);
@@ -773,16 +769,14 @@ TEST(TCPSocket, LowLevelDisconnectDissolvesAssociation) {
 
     // Instance disconnect(): connect(AF_UNSPEC) on a connected UDP socket.
     const int instance_result = sender.disconnect();
-    EXPECT_TRUE(instance_result == 0 || instance_result == -1)
-        << "unexpected instance disconnect result=" << instance_result;
+    EXPECT_TRUE(instance_result == 0 || instance_result == -1) << "unexpected instance disconnect result=" << instance_result;
 
     // Static disconnect(socket_type): same dissolve via the fd-based entry point.
     qb::io::socket sender2(AF_INET, SOCK_DGRAM, 0);
     ASSERT_TRUE(sender2.is_open());
     ASSERT_EQ(sender2.connect(qb::io::endpoint("127.0.0.1", peer_port)), 0);
     const int static_result = qb::io::socket::disconnect(sender2.native_handle());
-    EXPECT_TRUE(static_result == 0 || static_result == -1)
-        << "unexpected static disconnect result=" << static_result;
+    EXPECT_TRUE(static_result == 0 || static_result == -1) << "unexpected static disconnect result=" << static_result;
 }
 
 // send_n / recv_n must traverse their EWOULDBLOCK retry loop, not merely a single
@@ -799,7 +793,7 @@ TEST(TCPSocket, LowLevelSendNRecvNTraverseWouldBlockRetryLoop) {
 
     // A payload comfortably larger than typical loopback socket buffers, so the
     // non-blocking sender cannot flush it in one shot and must wait on writability.
-    constexpr int payload_size = 4 * 1024 * 1024;
+    constexpr int     payload_size = 4 * 1024 * 1024;
     std::vector<char> payload(payload_size);
     for (int i = 0; i < payload_size; ++i) {
         payload[static_cast<std::size_t>(i)] = static_cast<char>(i & 0xFF);
@@ -817,7 +811,7 @@ TEST(TCPSocket, LowLevelSendNRecvNTraverseWouldBlockRetryLoop) {
     ASSERT_EQ(client.pconnect("127.0.0.1", port), 0);
 
     std::vector<char> received(payload_size, 0);
-    const int got = client.recv_n(received.data(), payload_size, 5s);
+    const int         got = client.recv_n(received.data(), payload_size, 5s);
     EXPECT_EQ(got, payload_size) << "recv_n did not drain the full payload through the retry loop";
     EXPECT_EQ(received, payload) << "payload corrupted across the send_n/recv_n round-trip";
 
@@ -839,8 +833,7 @@ TEST(TCPSocket, TimedConnectNSurfacesRefusedAndTimeoutFailures) {
 
     qb::io::socket refused_client;
     ASSERT_TRUE(refused_client.open(AF_INET, SOCK_STREAM, 0));
-    const int refused_ret =
-        qb::io::socket::connect_n(refused_client.native_handle(), qb::io::endpoint("127.0.0.1", dead_port), 1s);
+    const int refused_ret = qb::io::socket::connect_n(refused_client.native_handle(), qb::io::endpoint("127.0.0.1", dead_port), 1s);
     EXPECT_EQ(refused_ret, -1) << "connect_n to a closed loopback port must fail";
     refused_client.close();
 
@@ -850,8 +843,7 @@ TEST(TCPSocket, TimedConnectNSurfacesRefusedAndTimeoutFailures) {
     //    holes the SYN; a 1ns budget guarantees the select()<=0 timeout branch.
     qb::io::socket timeout_client;
     ASSERT_TRUE(timeout_client.open(AF_INET, SOCK_STREAM, 0));
-    const int timeout_ret =
-        qb::io::socket::connect_n(timeout_client.native_handle(), qb::io::endpoint("192.0.2.1", 9), qb::duration(1));
+    const int timeout_ret = qb::io::socket::connect_n(timeout_client.native_handle(), qb::io::endpoint("192.0.2.1", 9), qb::duration(1));
     EXPECT_EQ(timeout_ret, -1) << "connect_n to a black-holed address with a 1ns budget must time out";
     timeout_client.close();
 }
@@ -879,8 +871,7 @@ TEST(TCPSocket, CrossStackXpConnectReachesIPv6LoopbackServer) {
     xp_client.close();
 
     qb::io::socket xp_timeout_client;
-    EXPECT_EQ(xp_timeout_client.xpconnect_n("::1", port, 1s), 0)
-        << "xpconnect_n could not reach the ::1 loopback server";
+    EXPECT_EQ(xp_timeout_client.xpconnect_n("::1", port, 1s), 0) << "xpconnect_n could not reach the ::1 loopback server";
     xp_timeout_client.close();
 
     server_thread.join();

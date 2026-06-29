@@ -97,8 +97,8 @@ public:
 
     qb::io::async::task<bool>
     onInit() final {
-        push<qb::KillEvent>(id());                // self
-        push<qb::KillEvent>(qb::BroadcastId(1));   // every actor on core 1
+        push<qb::KillEvent>(id());               // self
+        push<qb::KillEvent>(qb::BroadcastId(1)); // every actor on core 1
         co_return true;
     }
 };

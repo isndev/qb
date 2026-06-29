@@ -366,14 +366,13 @@ BM_SessionJson_Tls(benchmark::State &state) {
     }
     const std::size_t warmup_received = g_client_received.load(std::memory_order_relaxed);
 
-    std::size_t sent     = 0;
-    bool        stalled  = false;
+    std::size_t sent    = 0;
+    bool        stalled = false;
     for (auto _ : state) {
         const auto target = g_client_received.load(std::memory_order_relaxed) + batch;
         g_batch_request.fetch_add(batch, std::memory_order_relaxed);
         sent += batch;
-        if (!wait_with_pump_until([&] { return g_client_received.load(std::memory_order_relaxed) >= target; },
-                                  pump_server_slice, 10s)) {
+        if (!wait_with_pump_until([&] { return g_client_received.load(std::memory_order_relaxed) >= target; }, pump_server_slice, 10s)) {
             stalled = true;
             break;
         }

@@ -163,7 +163,7 @@ public:
     onInit() override {
         auto v = _victim;
         qb::io::async::callback([this, v] { push<qb::KillEvent>(v); }, 40ms); // kill while parked
-        qb::io::async::callback([] { qb::Main::stop(); }, 2s);                 // backstop only
+        qb::io::async::callback([] { qb::Main::stop(); }, 2s);                // backstop only
         co_return true;
     }
 };
@@ -203,9 +203,9 @@ public:
         auto prod = _prod;
         spawn([prod](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
             Feed f;
-            f.count = 20;                                            // flood
+            f.count = 20;                                             // flood
             auto s  = qb::ask_stream(c, prod, f, 1s, /*capacity=*/2); // tiny buffer
-            co_await c.sleep(60ms);                                  // stall: let the producer overrun the buffer
+            co_await c.sleep(60ms);                                   // stall: let the producer overrun the buffer
             int n = 0;
             try {
                 while (auto chunk = co_await s.next())

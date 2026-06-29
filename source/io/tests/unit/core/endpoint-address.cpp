@@ -450,8 +450,7 @@ TEST(EndpointAddress, UnixDomainPathRoundTrips) {
     e.as_un("/tmp/qb-endpoint-address.sock");
     EXPECT_EQ(e.af(), AF_UNIX);
     EXPECT_TRUE(static_cast<bool>(e)) << "an AF_UNIX endpoint is valid";
-    EXPECT_EQ(e.to_string(), "/tmp/qb-endpoint-address.sock")
-        << "the AF_UNIX to_string() arm returns the raw sun_path";
+    EXPECT_EQ(e.to_string(), "/tmp/qb-endpoint-address.sock") << "the AF_UNIX to_string() arm returns the raw sun_path";
 }
 #endif
 
@@ -531,7 +530,6 @@ TEST(EndpointAddress, StdEqualityComparesFamilyAddrPort) {
  * @brief Drives the trivial constexpr accessor on qb::io::tcp::socket without opening a socket.
  */
 TEST(EndpointAddress, TcpSocketIsNotSecure) {
-    static_assert(!qb::io::tcp::socket::is_secure(),
-                  "plaintext tcp::socket must report is_secure() == false");
+    static_assert(!qb::io::tcp::socket::is_secure(), "plaintext tcp::socket must report is_secure() == false");
     EXPECT_FALSE(qb::io::tcp::socket::is_secure());
 }

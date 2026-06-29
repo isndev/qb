@@ -50,8 +50,8 @@ using qb::test::TestEvent;
 namespace {
 
 // Per-run oracles (reset in each fixture SetUp).
-std::atomic<std::uint32_t> g_delivered{0};       // total TestEvent receipts across the ring
-std::atomic<bool>          g_checksum_ok{true};   // every received payload self-validated
+std::atomic<std::uint32_t> g_delivered{0};           // total TestEvent receipts across the ring
+std::atomic<bool>          g_checksum_ok{true};      // every received payload self-validated
 std::atomic<bool>          g_extra_data_seen{false}; // some receiver saw has_extra_data == true
 
 void
@@ -160,8 +160,7 @@ protected:
     }
 };
 
-using Implementations = testing::Types<BasicPushActor, BasicSendActor, EventBuilderPushActor,
-                                       PipePushActor, AllocatedPipePushActor>;
+using Implementations = testing::Types<BasicPushActor, BasicSendActor, EventBuilderPushActor, PipePushActor, AllocatedPipePushActor>;
 
 TYPED_TEST_SUITE(ActorEventMulti, Implementations);
 
@@ -174,17 +173,14 @@ TYPED_TEST(ActorEventMulti, SendEvents) {
 
     EXPECT_FALSE(this->main.hasError());
     // Anti-vacuity oracle: the token visited every actor in the ring exactly once.
-    EXPECT_EQ(g_delivered.load(), this->max_core)
-        << "every one of the " << this->max_core << " ring actors must receive exactly one TestEvent";
+    EXPECT_EQ(g_delivered.load(), this->max_core) << "every one of the " << this->max_core << " ring actors must receive exactly one TestEvent";
     EXPECT_TRUE(g_checksum_ok.load()) << "every delivered payload must self-validate (exact bytes)";
 
     // has_extra_data is implementation-true: set iff this impl uses allocated_push.
     if constexpr (uses_extra_data<TypeParam>)
-        EXPECT_TRUE(g_extra_data_seen.load())
-            << "allocated_push must deliver an event flagged has_extra_data == true";
+        EXPECT_TRUE(g_extra_data_seen.load()) << "allocated_push must deliver an event flagged has_extra_data == true";
     else
-        EXPECT_FALSE(g_extra_data_seen.load())
-            << "a non-allocated send must never set has_extra_data";
+        EXPECT_FALSE(g_extra_data_seen.load()) << "a non-allocated send must never set has_extra_data";
 }
 
 } // namespace

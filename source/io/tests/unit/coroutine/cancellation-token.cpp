@@ -195,7 +195,7 @@ TEST(CancellationToken, NullTokenOwnsNoStateAndNeverCancels) {
     const auto        id = token.on_cancel([&fired]() { fired = true; });
     EXPECT_EQ(id, 0u) << "an empty token drops the callback and returns id 0";
 
-    token.cancel();                  // no-op on an empty token
+    token.cancel(); // no-op on an empty token
     EXPECT_FALSE(token.is_cancelled());
     EXPECT_FALSE(fired.load()) << "an empty token never fires its dropped callback";
     EXPECT_NO_THROW(token.throw_if_cancelled());

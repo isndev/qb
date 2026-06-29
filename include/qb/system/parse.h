@@ -58,8 +58,7 @@ namespace detail {
 /// domain keyword like "true"/"t", not a number), or any floating-point type.
 template <class T>
 inline constexpr bool is_parsable_number_v =
-    (std::is_integral_v<T> && !std::is_same_v<std::remove_cv_t<T>, bool>) ||
-    std::is_floating_point_v<T>;
+    (std::is_integral_v<T> && !std::is_same_v<std::remove_cv_t<T>, bool>) || std::is_floating_point_v<T>;
 
 /// Strip leading C-locale whitespace (the exact set std::strtol skips), without
 /// touching the global locale. Returns a sub-view of the same buffer.
@@ -109,10 +108,9 @@ from_chars_dispatch(const char *first, const char *last, T &value, int base) noe
 template <class T>
 [[nodiscard]] std::optional<T>
 to_number(std::string_view s, int base = 10) noexcept {
-    static_assert(detail::is_parsable_number_v<T>,
-                  "qb::to_number<T>: T must be a non-bool integral or "
-                  "floating-point type");
-    T          value{};
+    static_assert(detail::is_parsable_number_v<T>, "qb::to_number<T>: T must be a non-bool integral or "
+                                                   "floating-point type");
+    T           value{};
     const char *first = s.data();
     const char *last  = s.data() + s.size();
     const auto  r     = detail::from_chars_dispatch(first, last, value, base);
@@ -139,11 +137,9 @@ to_number(std::string_view s, int base = 10) noexcept {
  */
 template <class T>
 [[nodiscard]] std::optional<T>
-to_number_prefix(std::string_view s, std::size_t *consumed = nullptr,
-                 int base = 10) noexcept {
-    static_assert(detail::is_parsable_number_v<T>,
-                  "qb::to_number_prefix<T>: T must be a non-bool integral or "
-                  "floating-point type");
+to_number_prefix(std::string_view s, std::size_t *consumed = nullptr, int base = 10) noexcept {
+    static_assert(detail::is_parsable_number_v<T>, "qb::to_number_prefix<T>: T must be a non-bool integral or "
+                                                   "floating-point type");
     const char      *origin = s.data();
     std::string_view body   = detail::ltrim_ascii_ws(s);
     // std::from_chars rejects a leading '+' (for both integral and floating
@@ -151,7 +147,7 @@ to_number_prefix(std::string_view s, std::size_t *consumed = nullptr,
     // tolerated identically.
     if (!body.empty() && body.front() == '+')
         body.remove_prefix(1);
-    T          value{};
+    T           value{};
     const char *first = body.data();
     const char *last  = body.data() + body.size();
     const auto  r     = detail::from_chars_dispatch(first, last, value, base);

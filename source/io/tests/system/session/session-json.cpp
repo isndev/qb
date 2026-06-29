@@ -67,9 +67,9 @@ using qb::io::test::pump_until;
 
 namespace {
 
-constexpr std::size_t NB_ITERATION    = 64; // correctness count; throughput is owned by the benchmark
+constexpr std::size_t NB_ITERATION     = 64; // correctness count; throughput is owned by the benchmark
 constexpr char        STRING_MESSAGE[] = "Here is my content test";
-constexpr std::size_t MESSAGE_LEN     = sizeof(STRING_MESSAGE) - 1;
+constexpr std::size_t MESSAGE_LEN      = sizeof(STRING_MESSAGE) - 1;
 
 std::atomic<std::size_t> msg_count_server{0};
 std::atomic<std::size_t> msg_count_client{0};
@@ -367,7 +367,7 @@ namespace {
 
 class EchoJsonQuicSession : public use<EchoJsonQuicSession>::quic::session {
 public:
-    using Protocol = qb::protocol::json<EchoJsonQuicSession>;
+    using Protocol       = qb::protocol::json<EchoJsonQuicSession>;
     std::size_t messages = 0;
     explicit EchoJsonQuicSession(std::uint64_t stream_id)
         : client(stream_id) {}

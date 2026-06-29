@@ -150,7 +150,12 @@ BM_Pipe_FragmentedSlidingWindow(benchmark::State &state) {
 BENCHMARK(BM_Pipe_AppendReset)->Args({64})->Args({1024})->Args({16 * 1024})->ArgNames({"bytes"})->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Pipe_PublishStylePut)->Args({64})->Args({1024})->Args({16 * 1024})->ArgNames({"bytes"})->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Pipe_ConsumeAndReuseWindow)->Args({64})->Args({1024})->Args({16 * 1024})->ArgNames({"chunk_bytes"})->Unit(benchmark::kNanosecond);
-BENCHMARK(BM_Pipe_FragmentedSlidingWindow)->Args({64})->Args({1024})->Args({16 * 1024})->ArgNames({"chunk_bytes"})->Unit(benchmark::kNanosecond);
+BENCHMARK(BM_Pipe_FragmentedSlidingWindow)
+    ->Args({64})
+    ->Args({1024})
+    ->Args({16 * 1024})
+    ->ArgNames({"chunk_bytes"})
+    ->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Pipe_GrowLargeFrame)
     ->Args({4 * 1024})
     ->Args({64 * 1024})

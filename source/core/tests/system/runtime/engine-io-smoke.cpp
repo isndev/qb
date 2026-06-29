@@ -74,8 +74,7 @@ public:
         EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
         g_inits.fetch_add(1, std::memory_order_relaxed);
         // Uniquely-tagged CRIT line — the content oracle greps for this in the flushed log file.
-        LOG_CRIT(kLogTag << " init core=" << static_cast<std::uint32_t>(getIndex())
-                         << " id=" << static_cast<std::uint32_t>(id()));
+        LOG_CRIT(kLogTag << " init core=" << static_cast<std::uint32_t>(getIndex()) << " id=" << static_cast<std::uint32_t>(id()));
         registerEvent<TestEvent>(*this);
         push<TestEvent>(id()); // self-send: drives the handler, then self-kill
         co_return true;
@@ -101,11 +100,10 @@ protected:
         g_inits.store(0);
         g_handled.store(0);
         // Unique directory: temp / engine-io-smoke-<pid>-<test name>.
-        const auto *info = testing::UnitTest::GetInstance()->current_test_info();
+        const auto        *info = testing::UnitTest::GetInstance()->current_test_info();
         std::ostringstream name;
-        name << "qb-engine-io-smoke-" << static_cast<std::uint64_t>(::getpid()) << "-"
-             << (info ? info->name() : "anon");
-        _dir  = std::filesystem::temp_directory_path() / name.str();
+        name << "qb-engine-io-smoke-" << static_cast<std::uint64_t>(::getpid()) << "-" << (info ? info->name() : "anon");
+        _dir = std::filesystem::temp_directory_path() / name.str();
         std::error_code ec;
         std::filesystem::remove_all(_dir, ec); // start clean
         std::filesystem::create_directories(_dir, ec);
@@ -134,7 +132,7 @@ protected:
 
     [[nodiscard]] static std::string
     read_file(std::filesystem::path const &p) {
-        std::ifstream in(p, std::ios::binary);
+        std::ifstream      in(p, std::ios::binary);
         std::ostringstream ss;
         ss << in.rdbuf();
         return ss.str();
@@ -171,8 +169,7 @@ TEST_F(EngineIoSmoke, MonoCoreLogsActorLifecycleToFile) {
     const auto content = read_file(log);
     EXPECT_FALSE(content.empty()) << "log file must not be empty after the engine ran";
     // Content oracle: the actor's uniquely-tagged init line is on disk.
-    EXPECT_EQ(count_occurrences(content, kLogTag), 1u)
-        << "the actor's tagged CRIT line must appear exactly once in " << log;
+    EXPECT_EQ(count_occurrences(content, kLogTag), 1u) << "the actor's tagged CRIT line must appear exactly once in " << log;
     EXPECT_NE(content.find("core=0"), std::string::npos) << "the logged core index must be present";
 }
 
@@ -207,8 +204,7 @@ TEST_F(EngineIoSmoke, MultiCoreLogsEveryActorAndLevelGateHolds) {
     ASSERT_TRUE(std::filesystem::exists(log)) << "log file must exist at " << log;
     const auto content = read_file(log);
     // One tagged init line per core actor — proves every core's actor logged to the same file.
-    EXPECT_EQ(count_occurrences(content, kLogTag), static_cast<std::size_t>(cores))
-        << "expected one tagged CRIT line per core in " << log;
+    EXPECT_EQ(count_occurrences(content, kLogTag), static_cast<std::size_t>(cores)) << "expected one tagged CRIT line per core in " << log;
 }
 
 } // namespace

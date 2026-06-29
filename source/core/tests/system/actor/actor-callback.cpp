@@ -45,9 +45,9 @@ namespace {
 // ---------------------------------------------------------------------------
 // Case 1+2: quota ticking + never-registered. Atoms mirror the in-actor counts.
 // ---------------------------------------------------------------------------
-std::atomic<std::uint64_t> g_quota_ticks{0};   // ticks observed by the quota actor
+std::atomic<std::uint64_t> g_quota_ticks{0};       // ticks observed by the quota actor
 std::atomic<bool>          g_quota_dtor_ok{false}; // dtor saw count == quota
-std::atomic<std::uint64_t> g_never_ticks{0};   // ticks observed by the never-registered actor
+std::atomic<std::uint64_t> g_never_ticks{0};       // ticks observed by the never-registered actor
 
 class QuotaCallbackActor final
     : public qb::Actor
@@ -122,7 +122,7 @@ class UnregisterActor final
     : public qb::Actor
     , public qb::ICallback {
     static constexpr std::uint64_t kUnregisterAt = 50;
-    std::uint64_t                  _ticks         = 0;
+    std::uint64_t                  _ticks        = 0;
 
     struct StopProbe : public qb::Event {};
 
@@ -140,8 +140,8 @@ public:
         g_unreg_total.store(_ticks, std::memory_order_relaxed);
         if (_ticks == kUnregisterAt) {
             g_unreg_at_unregister.store(_ticks, std::memory_order_relaxed);
-            unregisterCallback();     // async: routes UnregisterCallbackEvent to self
-            push<StopProbe>(id());    // processed AFTER the unregister event (FIFO mailbox)
+            unregisterCallback();  // async: routes UnregisterCallbackEvent to self
+            push<StopProbe>(id()); // processed AFTER the unregister event (FIFO mailbox)
         }
     }
 
@@ -169,8 +169,7 @@ TEST(CallbackActor, UnregisterStopsCallbackFiring) {
     EXPECT_EQ(g_unreg_at_unregister.load(), 50u) << "the actor must have unregistered at tick 50";
     // The load-bearing assertion: NO tick fired after unregister — the total equals the count we
     // captured the instant we unregistered.
-    EXPECT_EQ(g_unreg_total.load(), g_unreg_at_unregister.load())
-        << "no LoopEvent may fire after unregisterCallback() takes effect";
+    EXPECT_EQ(g_unreg_total.load(), g_unreg_at_unregister.load()) << "no LoopEvent may fire after unregisterCallback() takes effect";
 }
 
 // ---------------------------------------------------------------------------

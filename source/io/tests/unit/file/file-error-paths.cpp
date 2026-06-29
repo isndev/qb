@@ -85,9 +85,9 @@ protected:
 
     void
     SetUp() override {
-        dir = std::filesystem::temp_directory_path() /
-              ("qb_file_err_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_" +
-               ::testing::UnitTest::GetInstance()->current_test_info()->name());
+        dir = std::filesystem::temp_directory_path()
+              / ("qb_file_err_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_"
+                 + ::testing::UnitTest::GetInstance()->current_test_info()->name());
         std::filesystem::remove_all(dir);
         std::filesystem::create_directories(dir);
     }
@@ -121,8 +121,8 @@ TEST_F(FileErrorPaths, OpenByFdAdoptsAnExistingDescriptor) {
     EXPECT_TRUE(f.is_open());
     EXPECT_EQ(f.native_handle(), raw);
 
-    char buf[32] = {0};
-    const int n = f.read(buf, sizeof(buf) - 1);
+    char      buf[32] = {0};
+    const int n       = f.read(buf, sizeof(buf) - 1);
     ASSERT_GT(n, 0);
     EXPECT_EQ(std::string(buf, static_cast<std::size_t>(n)), "adopted-content");
 }
@@ -138,8 +138,8 @@ TEST_F(FileErrorPaths, OpenByPathClosesThePreviousDescriptorFirst) {
 
     // Re-open() must drop the old fd and adopt the new file's content.
     ASSERT_GE(f.open(second, O_RDONLY), 0);
-    char buf[32] = {0};
-    const int n = f.read(buf, sizeof(buf) - 1);
+    char      buf[32] = {0};
+    const int n       = f.read(buf, sizeof(buf) - 1);
     ASSERT_GT(n, 0);
     EXPECT_EQ(std::string(buf, static_cast<std::size_t>(n)), "second-file");
 }
@@ -189,7 +189,7 @@ TEST_F(FileErrorPaths, TruncateDispositionEmptiesAnExistingFileOnOpen) {
 // ===========================================================================
 
 TEST_F(FileErrorPaths, PartialReadReturnsRemainderThenEof) {
-    const auto path = dir / "partial.txt";
+    const auto        path    = dir / "partial.txt";
     const std::string content = "1234567890";
     std::ofstream(path, std::ios::binary) << content;
 
@@ -197,8 +197,8 @@ TEST_F(FileErrorPaths, PartialReadReturnsRemainderThenEof) {
     ASSERT_TRUE(f.is_open());
 
     // A buffer larger than the file returns exactly the file size...
-    char buf[64] = {0};
-    const int n = f.read(buf, sizeof(buf));
+    char      buf[64] = {0};
+    const int n       = f.read(buf, sizeof(buf));
     EXPECT_EQ(n, static_cast<int>(content.size()));
     EXPECT_EQ(std::string(buf, static_cast<std::size_t>(n)), content);
 
@@ -238,8 +238,7 @@ TEST_F(FileErrorPaths, ReadWriteOnOneDescriptorSharesTheFileOffset) {
     // The write advanced the offset to EOF; a read here therefore returns 0,
     // proving the offset is shared (not a fresh independent read cursor).
     char buf[16] = {0};
-    EXPECT_EQ(f.read(buf, sizeof(buf)), 0)
-        << "after writing to EOF on the same fd, a sequential read must see EOF";
+    EXPECT_EQ(f.read(buf, sizeof(buf)), 0) << "after writing to EOF on the same fd, a sequential read must see EOF";
     f.close();
 
     EXPECT_EQ(slurp(path), payload);
@@ -257,7 +256,7 @@ TEST_F(FileErrorPaths, ReadOnReadOnlyAndWriteOnWriteOnlyAreDirectional) {
     ASSERT_TRUE(ro.is_open());
     EXPECT_LT(ro.write("x", 1), 0) << "writing an O_RDONLY descriptor must fail";
 
-    const auto wo_path = dir / "wo.txt";
+    const auto        wo_path = dir / "wo.txt";
     qb::io::sys::file wo;
     ASSERT_GE(wo.open(wo_path, O_WRONLY | O_CREAT, 0644), 0);
     EXPECT_EQ(wo.write("payload", 7), 7);

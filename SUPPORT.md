@@ -1,15 +1,16 @@
 <!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+
 # Support
 
 How to get help with qb, and what to expect.
 
 ## Where to ask
 
-| Channel | Use it for |
-|---|---|
-| **GitHub Discussions** | Questions, design help, "how do I…", sharing what you built |
-| **GitHub Issues** | Reproducible bugs and concrete feature requests |
-| **Security advisory** | Vulnerabilities — privately, per [SECURITY.md](./SECURITY.md). Never in a public issue. |
+| Channel                | Use it for                                                                              |
+|------------------------|-----------------------------------------------------------------------------------------|
+| **GitHub Discussions** | Questions, design help, "how do I…", sharing what you built                             |
+| **GitHub Issues**      | Reproducible bugs and concrete feature requests                                         |
+| **Security advisory**  | Vulnerabilities — privately, per [SECURITY.md](./SECURITY.md). Never in a public issue. |
 
 Before opening an issue, please:
 

@@ -355,8 +355,7 @@ TEST_F(ChannelAsync, UnbufferedSenderFirstRendezvous) {
         receiver_done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return sender_done.load() && receiver_done.load(); }))
-        << "rendezvous never completed";
+    EXPECT_TRUE(pump_until([&] { return sender_done.load() && receiver_done.load(); })) << "rendezvous never completed";
     EXPECT_EQ(received.load(), 7);
 }
 
@@ -370,7 +369,7 @@ TEST_F(ChannelAsync, UnbufferedRecvParkedThenCloseResolvesNullopt) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         receiver_parked.store(true);
-        got  = co_await ch.recv();
+        got = co_await ch.recv();
         done.store(true);
     });
 
@@ -476,7 +475,7 @@ TEST_F(ChannelAsync, TransformFilterCollectComposeAcrossChannels) {
     channel<int> doubled(4);
     channel<int> filtered(4);
 
-    std::vector<int> collected;
+    std::vector<int>  collected;
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn(transform<int, int>(source, doubled, [](int v) { return v * 2; }));
@@ -616,8 +615,7 @@ TEST_F(ChannelAsync, SelectStaleWaiterIsSkippedByLaterSend) {
         received = co_await ch_a.recv();
         receiver_done.store(true);
     });
-    EXPECT_TRUE(pump_until([&] { return stale_sender_done.load() && receiver_done.load(); }))
-        << "the later send never reached a real receiver";
+    EXPECT_TRUE(pump_until([&] { return stale_sender_done.load() && receiver_done.load(); })) << "the later send never reached a real receiver";
     ASSERT_TRUE(received.has_value());
     EXPECT_EQ(*received, 77);
 }
@@ -829,7 +827,7 @@ TEST_F(ChannelAsync, RecvForClosedChannelReturnsNullopt) {
 }
 
 TEST_F(ChannelAsync, SendForClosedChannelReturnsFalseWithoutParking) {
-    channel<int>      ch(1);
+    channel<int> ch(1);
     ch.close();
     std::atomic<bool> done{false};
     std::atomic<bool> sent{true};
@@ -877,7 +875,7 @@ TEST_F(ChannelAsync, SendForResumesWhenBackpressureReleased) {
     // Collapses the three near-identical backpressure-release variants from the original
     // file into one: a timed sender parks on a full cap-1 channel, a drain frees the slot,
     // and the sender must resume and deliver its value (before timeout).
-    channel<int>      ch(1);
+    channel<int> ch(1);
     ASSERT_TRUE(ch.try_send(1));
 
     std::atomic<bool> sender_done{false};
@@ -1042,12 +1040,12 @@ TEST_F(ChannelAsync, RendezvousSelectWakesParkedTimedSender) {
 
 TEST_F(ChannelAsync, RecvDepth2WaiterWokenThenReclaimedNoUAF) {
     run_reclaim_driver([]() -> task<void> {
-        auto ch = std::make_shared<channel<int>>(0); // rendezvous: recv parks with no sender
+        auto ch    = std::make_shared<channel<int>>(0); // rendezvous: recv parks with no sender
         auto inner = [](std::shared_ptr<channel<int>> c) -> task<int> {
             volatile char big[8192];
-            big[0]  = 7;
-            auto v  = co_await c->recv(); // parks; woken by the winner's try_send()
-            big[1]  = big[0];
+            big[0] = 7;
+            auto v = co_await c->recv(); // parks; woken by the winner's try_send()
+            big[1] = big[0];
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return v ? *v : -1;
         };
@@ -1055,7 +1053,7 @@ TEST_F(ChannelAsync, RecvDepth2WaiterWokenThenReclaimedNoUAF) {
             co_return co_await inner(c); // depth-2: outer -> inner -> channel.recv
         };
         auto winner = [](std::shared_ptr<channel<int>> c) -> task<int> {
-            co_await sleep(5ms);  // let the depth-2 receiver park first
+            co_await sleep(5ms);    // let the depth-2 receiver park first
             (void) c->try_send(42); // delivers to the parked receiver -> schedules it (queued)
             co_return 99;           // -> when_any reclaim destroys the (queued) receiver -> would dangle
         };
@@ -1079,16 +1077,18 @@ TEST_F(ChannelAsync, RecvWokenThenReclaimedDoesNotLoseValue) {
     int  recovered = -1;
     bool had_value = false;
     run_reclaim_driver([&recovered, &had_value]() -> task<void> {
-        auto ch = std::make_shared<channel<int>>(1); // buffered: try_send hands directly to a waiter
+        auto ch    = std::make_shared<channel<int>>(1); // buffered: try_send hands directly to a waiter
         auto inner = [](std::shared_ptr<channel<int>> c) -> task<int> {
             volatile char big[8192];
-            big[0]  = 7;
-            auto v  = co_await c->recv(); // value handed by the winner's try_send(), then reclaimed
-            big[1]  = big[0];
+            big[0] = 7;
+            auto v = co_await c->recv(); // value handed by the winner's try_send(), then reclaimed
+            big[1] = big[0];
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return v ? *v : -1;
         };
-        auto outer  = [inner](std::shared_ptr<channel<int>> c) -> task<int> { co_return co_await inner(c); };
+        auto outer = [inner](std::shared_ptr<channel<int>> c) -> task<int> {
+            co_return co_await inner(c);
+        };
         auto winner = [](std::shared_ptr<channel<int>> c) -> task<int> {
             co_await sleep(5ms);
             (void) c->try_send(42); // hands 42 into the parked receiver's _result + pops it
@@ -1114,20 +1114,22 @@ TEST_F(ChannelAsync, RecvForWokenThenReclaimedDoesNotLoseValue) {
     int  recovered = -1;
     bool had_value = false;
     run_reclaim_driver([&recovered, &had_value]() -> task<void> {
-        auto ch = std::make_shared<channel<int>>(0); // rendezvous
+        auto ch    = std::make_shared<channel<int>>(0); // rendezvous
         auto inner = [](std::shared_ptr<channel<int>> c) -> task<int> {
             volatile char big[8192];
-            big[0]  = 7;
-            auto v  = co_await c->recv_for(1000ms); // resolved by the parked sender, then reclaimed
-            big[1]  = big[0];
+            big[0] = 7;
+            auto v = co_await c->recv_for(1000ms); // resolved by the parked sender, then reclaimed
+            big[1] = big[0];
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return v ? *v : -1;
         };
-        auto outer  = [inner](std::shared_ptr<channel<int>> c) -> task<int> { co_return co_await inner(c); };
+        auto outer = [inner](std::shared_ptr<channel<int>> c) -> task<int> {
+            co_return co_await inner(c);
+        };
         auto winner = [](std::shared_ptr<channel<int>> c) -> task<int> {
-            co_await sleep(5ms);    // let recv_for register its select-waiter first
-            co_await c->send(42);   // send_awaiter delivers to the recv_for select-waiter (resolve), synchronously
-            co_return 99;           // -> when_any reclaim destroys the resolved-but-unconsumed recv_for
+            co_await sleep(5ms);  // let recv_for register its select-waiter first
+            co_await c->send(42); // send_awaiter delivers to the recv_for select-waiter (resolve), synchronously
+            co_return 99;         // -> when_any reclaim destroys the resolved-but-unconsumed recv_for
         };
         auto r = co_await when_any(outer(ch), winner(ch));
         EXPECT_EQ(r.index, 1u);
@@ -1171,7 +1173,7 @@ TEST_F(ChannelAsync, SendWokenBuffersValueWhenSpaceFreed) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         auto ch = std::make_shared<channel<int>>(1); // capacity 1
-        co_await ch->send(10);                        // buffers 10 → buffer full
+        co_await ch->send(10);                       // buffers 10 → buffer full
 
         // A second sender parks (buffer full, no receiver waiting).
         auto sender = [](std::shared_ptr<channel<int>> c) -> task<void> {
@@ -1180,8 +1182,8 @@ TEST_F(ChannelAsync, SendWokenBuffersValueWhenSpaceFreed) {
         coro_scheduler().spawn(sender(ch));
         co_await sleep(10ms); // let the second sender park
 
-        auto first = co_await ch->recv(); // drains 10 → frees space → wakes the parked sender
-        co_await sleep(10ms);             // let the woken sender's await_resume buffer 20
+        auto first = co_await ch->recv();  // drains 10 → frees space → wakes the parked sender
+        co_await sleep(10ms);              // let the woken sender's await_resume buffer 20
         auto second = co_await ch->recv(); // gets 20 (buffered by the woken sender)
 
         combined.store(first.value_or(-1) * 100 + second.value_or(-1));

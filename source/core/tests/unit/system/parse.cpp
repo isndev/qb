@@ -28,21 +28,18 @@ TEST(QbToNumber, StrictIntBasic) {
     EXPECT_EQ(to_number<int>("0"), 0);
     EXPECT_EQ(to_number<int>("42"), 42);
     EXPECT_EQ(to_number<int>("-42"), -42);
-    EXPECT_EQ(to_number<long long>("9223372036854775807"),
-              std::numeric_limits<long long>::max());
-    EXPECT_EQ(to_number<long long>("-9223372036854775808"),
-              std::numeric_limits<long long>::min());
-    EXPECT_EQ(to_number<std::uint64_t>("18446744073709551615"),
-              std::numeric_limits<std::uint64_t>::max());
+    EXPECT_EQ(to_number<long long>("9223372036854775807"), std::numeric_limits<long long>::max());
+    EXPECT_EQ(to_number<long long>("-9223372036854775808"), std::numeric_limits<long long>::min());
+    EXPECT_EQ(to_number<std::uint64_t>("18446744073709551615"), std::numeric_limits<std::uint64_t>::max());
 }
 
 TEST(QbToNumber, StrictIntRejectsSurroundingsAndJunk) {
-    EXPECT_FALSE(to_number<int>("").has_value());     // empty
-    EXPECT_FALSE(to_number<int>(" 42").has_value());  // leading whitespace
-    EXPECT_FALSE(to_number<int>("42 ").has_value());  // trailing whitespace
-    EXPECT_FALSE(to_number<int>("+42").has_value());  // leading '+'
+    EXPECT_FALSE(to_number<int>("").has_value());      // empty
+    EXPECT_FALSE(to_number<int>(" 42").has_value());   // leading whitespace
+    EXPECT_FALSE(to_number<int>("42 ").has_value());   // trailing whitespace
+    EXPECT_FALSE(to_number<int>("+42").has_value());   // leading '+'
     EXPECT_FALSE(to_number<int>("12abc").has_value()); // trailing junk
-    EXPECT_FALSE(to_number<int>("0x10").has_value()); // base-10: 'x' is junk
+    EXPECT_FALSE(to_number<int>("0x10").has_value());  // base-10: 'x' is junk
     EXPECT_FALSE(to_number<int>("abc").has_value());
 }
 

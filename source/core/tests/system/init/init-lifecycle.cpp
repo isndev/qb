@@ -204,7 +204,7 @@ TEST(InitLifecycle, SyncOnInitThrowsWithoutCoAwait) {
     main.addActor<SyncThrowInit>(0);
     main.start(false);
     main.join();
-    EXPECT_TRUE(main.hasError());                // uncaught sync throw ⇒ init failure aborts start
+    EXPECT_TRUE(main.hasError()); // uncaught sync throw ⇒ init failure aborts start
     EXPECT_TRUE(g_syncthrow_destroyed.load());
 }
 

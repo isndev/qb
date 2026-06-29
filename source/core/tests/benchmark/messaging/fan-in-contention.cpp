@@ -99,7 +99,7 @@ BM_FanIn_OneWayPush(benchmark::State &state) {
     for (auto _ : state) {
         state.PauseTiming();
         qb::Main main;
-        (void)build_fan_in(main, producers, msgs_per, consumer_core, cap, same_core);
+        (void) build_fan_in(main, producers, msgs_per, consumer_core, cap, same_core);
         state.ResumeTiming();
 
         main.start(true);

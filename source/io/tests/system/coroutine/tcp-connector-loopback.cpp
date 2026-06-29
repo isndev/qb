@@ -158,9 +158,8 @@ TEST_F(TcpConnectorLoopbackTest, ConnectResumesWithOpenSocket) {
     bool              connected = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
-        connected = socket.has_value() && socket->is_open();
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
+        connected   = socket.has_value() && socket->is_open();
         if (socket)
             socket->close();
         done.store(true);
@@ -234,21 +233,20 @@ TEST_F(TcpConnectorLoopbackTest, RequestResponseRoundTrip) {
 
     std::atomic<bool> client_done{false};
     std::string       response;
-    bool              connected   = false;
-    bool              write_ok    = false;
+    bool              connected    = false;
+    bool              write_ok     = false;
     bool              read_timeout = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
-        connected = socket.has_value();
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
+        connected   = socket.has_value();
         if (!socket) {
             client_done.store(true);
             co_return;
         }
 
         const char request[] = "PING";
-        write_ok = socket->write(request, std::strlen(request)) == static_cast<int>(std::strlen(request));
+        write_ok             = socket->write(request, std::strlen(request)) == static_cast<int>(std::strlen(request));
         if (!write_ok) {
             socket->close();
             client_done.store(true);
@@ -261,8 +259,7 @@ TEST_F(TcpConnectorLoopbackTest, RequestResponseRoundTrip) {
         co_return;
     });
 
-    EXPECT_TRUE(pump_until([&] { return client_done.load() && server_done.load(); }))
-        << "request/response never completed";
+    EXPECT_TRUE(pump_until([&] { return client_done.load() && server_done.load(); })) << "request/response never completed";
     if (server.joinable())
         server.join();
 
@@ -307,19 +304,17 @@ TEST_F(TcpConnectorLoopbackTest, ConnectedSocketWritesToServer) {
     bool              write_ok = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
         if (socket) {
             const char payload[] = "PING";
-            write_ok = socket->write(payload, std::strlen(payload)) == static_cast<int>(std::strlen(payload));
+            write_ok             = socket->write(payload, std::strlen(payload)) == static_cast<int>(std::strlen(payload));
             socket->close();
         }
         client_done.store(true);
         co_return;
     });
 
-    EXPECT_TRUE(pump_until([&] { return client_done.load() && server_done.load(); }))
-        << "write coroutine never completed";
+    EXPECT_TRUE(pump_until([&] { return client_done.load() && server_done.load(); })) << "write coroutine never completed";
     if (server.joinable())
         server.join();
 
@@ -360,8 +355,7 @@ TEST_F(TcpConnectorLoopbackTest, CoalescedServerWritesReadInOneRecv) {
     bool              read_timeout = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
         if (!socket) {
             done.store(true);
             co_return;
@@ -410,8 +404,7 @@ TEST_F(TcpConnectorLoopbackTest, FailedConnectDoesNotPoisonLaterConnect) {
         auto failed  = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(dead_port)}, 500ms);
         first_failed = !failed.has_value();
 
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
+        auto socket      = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
         second_succeeded = socket.has_value() && socket->is_open();
         if (socket)
             socket->close();
@@ -460,8 +453,7 @@ TEST_F(TcpConnectorLoopbackTest, ParallelClientsAllConnect) {
 
     for (int i = 0; i < kClients; ++i) {
         coro_scheduler().spawn([&]() -> task<void> {
-            auto socket = co_await qb::io::async::tcp::connect(
-                qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
+            auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
             if (socket) {
                 ++connected;
                 socket->close();
@@ -516,8 +508,7 @@ TEST_F(TcpConnectorLoopbackTest, ConnectWithExistingSocketSucceeds) {
         }
 
         auto socket = co_await qb::io::async::tcp::connect_with_socket(
-            std::move(existing_socket),
-            qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
+            std::move(existing_socket), qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
         connected = socket.has_value() && socket->is_open();
         if (socket)
             socket->close();
@@ -569,8 +560,7 @@ TEST_F(TcpConnectorLoopbackTest, SequentialAttemptsReuseScheduler) {
             co_return;
         });
 
-        EXPECT_TRUE(pump_until([&] { return completions.load() == attempt + 1; }))
-            << "attempt " << attempt << " never completed";
+        EXPECT_TRUE(pump_until([&] { return completions.load() == attempt + 1; })) << "attempt " << attempt << " never completed";
         if (server.joinable())
             server.join();
     }

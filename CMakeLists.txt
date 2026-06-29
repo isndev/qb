@@ -45,10 +45,10 @@ project(${QB_FRAMEWORK_NAME}
 
 qb_initialize_project_configuration()
 
-if(QB_BUILD_TESTS)
+if (QB_BUILD_TESTS)
     include(CTest)
     enable_testing()
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Core Framework Initialization
@@ -94,21 +94,21 @@ add_subdirectory("${QB_SOURCE_DIR}/core")
 # Framework Targets and Aliases
 # -----------------------------------------------------------------------------
 # Create convenience aliases for the main libraries
-if(TARGET qb-io)
+if (TARGET qb-io)
     add_library(qb::io ALIAS qb-io)
     list(APPEND QB_CORE_LIBRARIES qb-io)
     set(QB_IO_FOUND TRUE)
-endif()
+endif ()
 
-if(TARGET qb-core)
+if (TARGET qb-core)
     add_library(qb::core ALIAS qb-core)
     list(APPEND QB_CORE_LIBRARIES qb-core)
     set(QB_CORE_FOUND TRUE)
-endif()
+endif ()
 
-if(TARGET ev)
+if (TARGET ev)
     set(QB_EV_FOUND TRUE)
-endif()
+endif ()
 
 # Update global library lists
 set(QB_ALL_LIBRARIES ${QB_CORE_LIBRARIES} ${QB_MODULE_LIBRARIES})
@@ -116,202 +116,202 @@ set(QB_ALL_LIBRARIES ${QB_CORE_LIBRARIES} ${QB_MODULE_LIBRARIES})
 # -----------------------------------------------------------------------------
 # Test resources (SSL certificates, etc.)
 # -----------------------------------------------------------------------------
-if(QB_BUILD_TESTS)
+if (QB_BUILD_TESTS)
     qb_setup_test_resources()
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Code Coverage Setup
 # -----------------------------------------------------------------------------
-if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
     include("${QB_CMAKE_DIR}/CodeCoverage.cmake")
 
     find_program(LCOV_PATH lcov)
-    if(NOT GCOV_PATH)
+    if (NOT GCOV_PATH)
         find_program(GCOV_PATH gcov)
-    endif()
-    
-    if(LCOV_PATH AND GCOV_PATH)
+    endif ()
+
+    if (LCOV_PATH AND GCOV_PATH)
         qb_status_message("Code coverage enabled")
-        
+
         set(COVERAGE_LCOV_EXCLUDES
-            '/usr/*'
-            '*benchmark*'
-            '*modules*'
-            '*examples/*'
-            '*test*'
+                '/usr/*'
+                '*benchmark*'
+                '*modules*'
+                '*examples/*'
+                '*test*'
         )
 
         set(COVERAGE_GCOVR_EXCLUDES
-            '/usr/.*'
-            '${PROJECT_BINARY_DIR}/_deps/.*'
-            '${PROJECT_SOURCE_DIR}/modules/.*'
-            '${PROJECT_SOURCE_DIR}/examples/.*'
-            '${PROJECT_SOURCE_DIR}/source/.*/tests/benchmark/.*'
-            '${PROJECT_SOURCE_DIR}/source/.*/tests/.*'
-            '.*benchmark.*'
+                '/usr/.*'
+                '${PROJECT_BINARY_DIR}/_deps/.*'
+                '${PROJECT_SOURCE_DIR}/modules/.*'
+                '${PROJECT_SOURCE_DIR}/examples/.*'
+                '${PROJECT_SOURCE_DIR}/source/.*/tests/benchmark/.*'
+                '${PROJECT_SOURCE_DIR}/source/.*/tests/.*'
+                '.*benchmark.*'
         )
 
         set(COVERAGE_GCOVR_ARGS
-            --gcov-ignore-parse-errors=all
-            --gcov-ignore-errors=source_not_found
+                --gcov-ignore-parse-errors=all
+                --gcov-ignore-errors=source_not_found
         )
 
         set(QB_COVERAGE_DEPENDENCIES qb-core)
-        if(QB_BUILD_TESTS)
+        if (QB_BUILD_TESTS)
             get_property(QB_TEST_TARGETS GLOBAL PROPERTY QB_TEST_TARGETS)
-            if(QB_TEST_TARGETS)
+            if (QB_TEST_TARGETS)
                 list(APPEND QB_COVERAGE_DEPENDENCIES ${QB_TEST_TARGETS})
                 list(REMOVE_DUPLICATES QB_COVERAGE_DEPENDENCIES)
-            endif()
-        endif()
-        
+            endif ()
+        endif ()
+
         SETUP_TARGET_FOR_COVERAGE_LCOV(
-            NAME qb-coverage
-            EXECUTABLE ctest
-            DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
-            LCOV_ARGS
+                NAME qb-coverage
+                EXECUTABLE ctest
+                DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
+                LCOV_ARGS
                 --ignore-errors mismatch,mismatch
                 --ignore-errors unused,unused
                 --ignore-errors inconsistent,inconsistent
         )
-        
+
         SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(
-            NAME qb-coverage-xml
-            EXECUTABLE ctest
-            DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
-            GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
+                NAME qb-coverage-xml
+                EXECUTABLE ctest
+                DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
+                GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
         )
-        
+
         SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML(
-            NAME qb-coverage-html
-            EXECUTABLE ctest
-            DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
-            GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
+                NAME qb-coverage-html
+                EXECUTABLE ctest
+                DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
+                GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
         )
-    else()
+    else ()
         qb_warning_message("Coverage requested but tools not found (lcov, gcov)")
-    endif()
-endif()
+    endif ()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Documentation
 # -----------------------------------------------------------------------------
-if(QB_BUILD_DOCS)
+if (QB_BUILD_DOCS)
     add_subdirectory("${QB_ROOT_DIR}/docs")
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Installation Configuration
 # -----------------------------------------------------------------------------
-if(QB_INSTALL)
+if (QB_INSTALL)
     include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
-    
+
     # Collect the library targets that should be installed.
     # Bundled dependencies (ev, stduuid) MUST be in the same export set so
     # CMake rewrites their names with the qb:: namespace in the transitive
     # dependency list of qb::io / qb::core.
     set(_QB_INSTALL_TARGETS)
-    if(TARGET qb-io)
+    if (TARGET qb-io)
         list(APPEND _QB_INSTALL_TARGETS qb-io)
-    endif()
-    if(TARGET qb-core)
+    endif ()
+    if (TARGET qb-core)
         list(APPEND _QB_INSTALL_TARGETS qb-core)
-    endif()
-    if(TARGET ev)
+    endif ()
+    if (TARGET ev)
         list(APPEND _QB_INSTALL_TARGETS ev)
-    endif()
-    if(TARGET stduuid)
+    endif ()
+    if (TARGET stduuid)
         list(APPEND _QB_INSTALL_TARGETS stduuid)
-    endif()
-    
+    endif ()
+
     # Install library targets with an EXPORT set so CMake can generate
     # the *Targets.cmake files required by find_package(qb).
-    if(_QB_INSTALL_TARGETS)
+    if (_QB_INSTALL_TARGETS)
         install(TARGETS ${_QB_INSTALL_TARGETS}
-            EXPORT qbTargets
-            RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
-            LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+                EXPORT qbTargets
+                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+                LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         )
-    endif()
-    
+    endif ()
+
     # Install the export set
     install(EXPORT qbTargets
-        FILE        qbTargets.cmake
-        NAMESPACE   qb::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+            FILE qbTargets.cmake
+            NAMESPACE qb::
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
     )
-    
+
     # Install public headers
     install(
-        DIRECTORY "${QB_INCLUDE_DIR}/"
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        FILES_MATCHING 
+            DIRECTORY "${QB_INCLUDE_DIR}/"
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+            FILES_MATCHING
             PATTERN "*.h"
             PATTERN "*.hpp"
             PATTERN "*.tpp"
     )
-    
+
     # Install header-only internal modules (nlohmann, ska_hash, nanolog)
-    foreach(_hdr_mod ${QB_HEADER_ONLY_MODULES})
+    foreach (_hdr_mod ${QB_HEADER_ONLY_MODULES})
         set(_hdr_mod_dir "${QB_MODULES_DIR}/${_hdr_mod}")
-        if(IS_DIRECTORY "${_hdr_mod_dir}")
+        if (IS_DIRECTORY "${_hdr_mod_dir}")
             install(
-                DIRECTORY "${_hdr_mod_dir}/"
-                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${_hdr_mod}
-                FILES_MATCHING
+                    DIRECTORY "${_hdr_mod_dir}/"
+                    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${_hdr_mod}
+                    FILES_MATCHING
                     PATTERN "*.h"
                     PATTERN "*.hpp"
             )
-        endif()
-    endforeach()
-    
+        endif ()
+    endforeach ()
+
     # Version compatibility file
     write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
-        VERSION ${QB_FRAMEWORK_VERSION}
-        COMPATIBILITY SameMajorVersion
+            "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
+            VERSION ${QB_FRAMEWORK_VERSION}
+            COMPATIBILITY SameMajorVersion
     )
-    
+
     # Package config file (from template, for find_package(qb))
     configure_package_config_file(
-        "${QB_CMAKE_DIR}/qbConfig.cmake.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/qbInstallConfig.cmake"
-        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+            "${QB_CMAKE_DIR}/qbConfig.cmake.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/qbInstallConfig.cmake"
+            INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
     )
-    
+
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/qbInstallConfig.cmake"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
-        RENAME qbConfig.cmake
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+            RENAME qbConfig.cmake
     )
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
-    )
-    
-    # Install FindArgon2 module so consumers can resolve the Argon2 dependency
-    if(QB_HAS_ARGON2)
-        install(FILES "${QB_CMAKE_DIR}/FindArgon2.cmake"
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+    )
+
+    # Install FindArgon2 module so consumers can resolve the Argon2 dependency
+    if (QB_HAS_ARGON2)
+        install(FILES "${QB_CMAKE_DIR}/FindArgon2.cmake"
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
         )
-    endif()
+    endif ()
 
     # Install FindNgtcp2 so find_package(qb) consumers of a QUIC-enabled build can
     # recreate the Ngtcp2:: imported targets that qb::io links transitively.
-    if(QB_HAS_QUIC)
+    if (QB_HAS_QUIC)
         install(FILES "${QB_CMAKE_DIR}/FindNgtcp2.cmake"
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
         )
-    endif()
-    
+    endif ()
+
     qb_status_message("Installation configured:")
     qb_status_message("  Prefix: ${CMAKE_INSTALL_PREFIX}")
     qb_status_message("  Libraries: ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
     qb_status_message("  Headers: ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}")
     qb_status_message("  CMake: ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/qb")
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Export Framework Configuration
@@ -330,23 +330,23 @@ set(QB_EV_TARGET ev)
 # Parent Scope Export (for add_subdirectory usage)
 # -----------------------------------------------------------------------------
 get_directory_property(hasParent PARENT_DIRECTORY)
-if(hasParent)
+if (hasParent)
     # Export all important variables to parent scope
     set(QB_FOUND TRUE PARENT_SCOPE)
     set(QB_CORE_FOUND ${QB_CORE_FOUND} PARENT_SCOPE)
     set(QB_IO_FOUND ${QB_IO_FOUND} PARENT_SCOPE)
     set(QB_EV_FOUND ${QB_EV_FOUND} PARENT_SCOPE)
-    
+
     # Export targets
     set(QB_CORE_TARGET ${QB_CORE_TARGET} PARENT_SCOPE)
     set(QB_IO_TARGET ${QB_IO_TARGET} PARENT_SCOPE)
     set(QB_EV_TARGET ${QB_EV_TARGET} PARENT_SCOPE)
-    
+
     # Export library lists
     set(QB_LIBRARIES ${QB_LIBRARIES} PARENT_SCOPE)
     set(QB_ALL_LIBRARIES ${QB_ALL_LIBRARIES} PARENT_SCOPE)
     set(QB_INCLUDE_DIRS "${QB_INCLUDE_DIR};${QB_MODULES_DIR}" PARENT_SCOPE)
-    
+
     # Export configuration
     set(QB_FRAMEWORK_VERSION ${QB_FRAMEWORK_VERSION} PARENT_SCOPE)
     set(QB_FRAMEWORK_VERSION_MAJOR ${QB_FRAMEWORK_VERSION_MAJOR} PARENT_SCOPE)
@@ -358,20 +358,20 @@ if(hasParent)
     set(QB_HAS_QUIC ${QB_HAS_QUIC} PARENT_SCOPE)
     set(QB_WITH_QUIC ${QB_WITH_QUIC} PARENT_SCOPE)
     set(QB_SSL_RESOURCES ${QB_SSL_RESOURCES} PARENT_SCOPE)
-    
+
     # Export build flags and settings
     set(QB_BUILD_TESTS ${QB_BUILD_TESTS} PARENT_SCOPE)
     set(QB_BUILD_BENCHMARKS ${QB_BUILD_BENCHMARKS} PARENT_SCOPE)
     set(QB_HAS_GTEST ${QB_HAS_GTEST} PARENT_SCOPE)
     set(QB_HAS_BENCHMARK ${QB_HAS_BENCHMARK} PARENT_SCOPE)
-    
+
     # Export compatibility variables
     set(OPENSSL_FOUND ${QB_HAS_SSL} PARENT_SCOPE)
     set(ZLIB_FOUND ${QB_HAS_COMPRESSION} PARENT_SCOPE)
     set(QB_IO_WITH_SSL ${QB_HAS_SSL} PARENT_SCOPE)
-    
+
     qb_status_message("Framework variables exported to parent scope")
-endif()
+endif ()
 
 # Print final summary
 qb_print_dependencies()

@@ -122,7 +122,7 @@ public:
 template <ScatterMode Mode>
 void
 build_scatter(qb::Main &main, std::uint32_t const responders, std::shared_ptr<pg::latency<1000 * 1000, 900000>> const &latency) {
-    const auto cap = qb::bench::cappedBenchmarkCores();
+    const auto               cap = qb::bench::cappedBenchmarkCores();
     std::vector<qb::ActorId> targets;
     targets.reserve(responders);
     for (std::uint32_t i = 0; i < responders; ++i) {
@@ -135,8 +135,8 @@ build_scatter(qb::Main &main, std::uint32_t const responders, std::shared_ptr<pg
 
 void
 record_scatter_counters(benchmark::State &state, std::uint32_t const responders) {
-    const auto lat                    = qb::bench::last_latency_stats_snapshot();
-    state.counters["scatters_per_s"]  = benchmark::Counter(static_cast<double>(kBenchIters), benchmark::Counter::kIsIterationInvariantRate);
+    const auto lat                   = qb::bench::last_latency_stats_snapshot();
+    state.counters["scatters_per_s"] = benchmark::Counter(static_cast<double>(kBenchIters), benchmark::Counter::kIsIterationInvariantRate);
     state.counters["asks_issued_per_s"] =
         benchmark::Counter(static_cast<double>(kBenchIters) * static_cast<double>(responders), benchmark::Counter::kIsIterationInvariantRate);
     state.counters["latency_samples"] = static_cast<double>(lat.samples);

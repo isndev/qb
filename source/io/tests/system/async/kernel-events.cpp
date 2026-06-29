@@ -319,8 +319,7 @@ TEST(KernelEvents, RawPeriodicTimerFiresThenStops) {
     RawPeriodicTimer timer(0.02); // 20ms period
 
     // It must fire several times within a bounded budget.
-    EXPECT_TRUE(qb::io::test::pump_until([&] { return timer.count.load() >= 3; }))
-        << "raw ev::timer did not fire repeatedly";
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return timer.count.load() >= 3; })) << "raw ev::timer did not fire repeatedly";
 
     timer.stop();
     const int frozen = timer.count.load();

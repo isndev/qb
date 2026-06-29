@@ -579,9 +579,7 @@ TEST(QuicHandshakeLoopback, ServerRoutesMultipleClientsByConnectionId) {
     second.send_stream_data(second_stream.id(), "second-client\n", true);
 
     EXPECT_TRUE(pump_until(
-        [&] {
-            return server.received.find("first-client") != std::string::npos && server.received.find("second-client") != std::string::npos;
-        },
+        [&] { return server.received.find("first-client") != std::string::npos && server.received.find("second-client") != std::string::npos; },
         std::chrono::seconds(5)))
         << "server should demux both client payloads";
 
@@ -670,8 +668,7 @@ TEST(QuicHandshakeLoopback, GracefulCloseDeliversTypedDisconnectReasonToClient) 
 
     client.close(0x1234, "client graceful close");
 
-    EXPECT_TRUE(pump_until([&] { return server.closed >= 1; }, std::chrono::seconds(5)))
-        << "server never observed the client's graceful close";
+    EXPECT_TRUE(pump_until([&] { return server.closed >= 1; }, std::chrono::seconds(5))) << "server never observed the client's graceful close";
     EXPECT_NE(server.last_close_reason, qb::io::quic::disconnect_reason::none) << "the close must carry a typed disconnect reason";
 
     server.close();
@@ -747,8 +744,8 @@ TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
     ASSERT_TRUE(client_connected);
     ASSERT_NE(server_connection_id, 0u);
 
-    const std::string  message = "acked-stream-payload";
-    const auto         stream  = server->open_stream(server_connection_id, qb::io::quic::stream_direction::bidirectional);
+    const std::string message = "acked-stream-payload";
+    const auto        stream  = server->open_stream(server_connection_id, qb::io::quic::stream_direction::bidirectional);
     server->send_stream_data(server_connection_id, stream,
                              std::span<const std::byte>{reinterpret_cast<const std::byte *>(message.data()), message.size()}, true);
 
@@ -819,8 +816,7 @@ TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
 
     bool       client_got_datagram = false;
     const auto deadline            = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while ((!client_got_datagram || server->current_stats().datagrams_acked == 0)
-           && std::chrono::steady_clock::now() < deadline) {
+    while ((!client_got_datagram || server->current_stats().datagrams_acked == 0) && std::chrono::steady_clock::now() < deadline) {
         deliver_quic_packets(*client, *server);
         deliver_quic_packets(*server, *client);
         for (auto const &event : client->drain_events()) {
@@ -872,13 +868,12 @@ TEST(QuicHandshakeNativeBackend, PeerObservesStreamResetFromServer) {
 
     // Let the stream be created on the peer before resetting it.
     bool       client_saw_stream = false;
-    const auto open_deadline      = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    const auto open_deadline     = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while (!client_saw_stream && std::chrono::steady_clock::now() < open_deadline) {
         deliver_quic_packets(*client, *server);
         deliver_quic_packets(*server, *client);
         for (auto const &event : client->drain_events())
-            if (event.type == qb::io::quic::backend_event::kind::stream_started
-                || event.type == qb::io::quic::backend_event::kind::stream_data)
+            if (event.type == qb::io::quic::backend_event::kind::stream_started || event.type == qb::io::quic::backend_event::kind::stream_data)
                 client_saw_stream = true;
         (void) server->drain_events();
     }
@@ -886,10 +881,10 @@ TEST(QuicHandshakeNativeBackend, PeerObservesStreamResetFromServer) {
 
     server->reset_stream(server_connection_id, stream, 0x42);
 
-    bool                              client_saw_reset   = false;
-    qb::io::quic::stream_close_reason observed_reason    = qb::io::quic::stream_close_reason::none;
-    std::uint64_t                     observed_error     = 0;
-    const auto                        reset_deadline     = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    bool                              client_saw_reset = false;
+    qb::io::quic::stream_close_reason observed_reason  = qb::io::quic::stream_close_reason::none;
+    std::uint64_t                     observed_error   = 0;
+    const auto                        reset_deadline   = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while (!client_saw_reset && std::chrono::steady_clock::now() < reset_deadline) {
         deliver_quic_packets(*client, *server);
         deliver_quic_packets(*server, *client);
@@ -1041,8 +1036,7 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
         (void) client->drain_events();
     }
 
-    ASSERT_GT(server_stop_sending_count, 0)
-        << "server never observed its own STOP_SENDING (stop_stream queue + stream_stop_sending_cb)";
+    ASSERT_GT(server_stop_sending_count, 0) << "server never observed its own STOP_SENDING (stop_stream queue + stream_stop_sending_cb)";
     EXPECT_EQ(observed_reason, qb::io::quic::stream_close_reason::stop_sending);
     EXPECT_EQ(observed_error, app_error) << "stop_sending must carry the application error code passed to stop_stream";
     EXPECT_EQ(server_stream_id, stream);
@@ -1084,8 +1078,8 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
     auto first = qb::io::quic::make_native_backend();
     first->start_client(first_endpoint, server_endpoint, {"h3"}, client_tls);
 
-    bool first_connected      = false;
-    auto first_connection_id  = direct_handshake(*first, *server, first_connected);
+    bool first_connected     = false;
+    auto first_connection_id = direct_handshake(*first, *server, first_connected);
     ASSERT_TRUE(first_connected) << "the first client must connect to fill the single connection slot";
     ASSERT_NE(first_connection_id, 0u);
     EXPECT_EQ(server->current_stats().active_connections, 1u);
@@ -1095,9 +1089,9 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
     auto second = qb::io::quic::make_native_backend();
     second->start_client(second_endpoint, server_endpoint, {"h3"}, client_tls);
 
-    bool       second_connected     = false;
-    bool       server_self_closed   = false;
-    const auto deadline             = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    bool       second_connected   = false;
+    bool       server_self_closed = false;
+    const auto deadline           = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     while (!second_connected && std::chrono::steady_clock::now() < deadline) {
         deliver_quic_packets(*second, *server);
         deliver_quic_packets(*server, *second);
@@ -1239,8 +1233,7 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     bool       client_saw_finished         = false;
     bool       client_synthesised          = false;
     const auto close_deadline              = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while ((!server_saw_synthetic_fin || !server_saw_finished || !client_saw_finished)
-           && std::chrono::steady_clock::now() < close_deadline) {
+    while ((!server_saw_synthetic_fin || !server_saw_finished || !client_saw_finished) && std::chrono::steady_clock::now() < close_deadline) {
         deliver_quic_packets(*client, *server);
         deliver_quic_packets(*server, *client);
         for (auto const &event : server->drain_events()) {
@@ -1266,8 +1259,7 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
         << "the local FIN-and-clean-close of an un-FIN'd read half must synthesise a trailing FIN-marked stream_data (error_code == 1)";
     EXPECT_TRUE(synthetic_fin_payload_empty) << "the synthesised FIN event must carry an empty payload";
     EXPECT_TRUE(server_saw_finished) << "the gracefully torn-down stream must also produce stream_closed(finished)";
-    EXPECT_TRUE(client_saw_finished)
-        << "the peer (which learned the FIN through recv_stream_data_cb) must observe stream_closed(finished)";
+    EXPECT_TRUE(client_saw_finished) << "the peer (which learned the FIN through recv_stream_data_cb) must observe stream_closed(finished)";
     EXPECT_FALSE(client_synthesised) << "the peer must NOT synthesise a FIN: it already received one via recv_stream_data_cb";
 }
 

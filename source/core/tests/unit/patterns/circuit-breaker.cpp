@@ -163,9 +163,9 @@ TEST(CircuitBreaker, HalfOpenSuccessCloses) {
 TEST(CircuitBreaker, HalfOpenFailureReopensAndReArmsCooldown) {
     qb::CircuitBreaker cb(2, 100ms);
     cb.on_failure(0);
-    cb.on_failure(0);          // open at t=0
+    cb.on_failure(0);                // open at t=0
     ASSERT_TRUE(cb.allow(100 * MS)); // -> half_open
-    cb.on_failure(100 * MS);   // trial failed -> reopen at t=100ms (cooldown re-armed from here)
+    cb.on_failure(100 * MS);         // trial failed -> reopen at t=100ms (cooldown re-armed from here)
     EXPECT_EQ(cb.state(), State::open);
     EXPECT_FALSE(cb.allow(150 * MS)) << "50ms into the NEW cooldown -> fail fast";
     EXPECT_TRUE(cb.allow(200 * MS)) << "100ms after reopen -> a fresh trial";
@@ -180,7 +180,7 @@ TEST(CircuitBreaker, HalfOpenAdmitsExactlyOneTrial) {
     qb::CircuitBreaker cb(2, 100ms);
     cb.on_failure(0);
     cb.on_failure(0);                // open at t=0
-    EXPECT_TRUE(cb.allow(100 * MS));  // first call after cooldown -> the one trial
+    EXPECT_TRUE(cb.allow(100 * MS)); // first call after cooldown -> the one trial
     EXPECT_EQ(cb.state(), State::half_open);
     EXPECT_FALSE(cb.allow(101 * MS)) << "a concurrent caller must fail fast (no thundering herd)";
     EXPECT_FALSE(cb.allow(199 * MS)) << "still exactly one trial in flight";
@@ -192,7 +192,7 @@ TEST(CircuitBreaker, AbandonedHalfOpenTrialReArmsCooldownAndDoesNotWedge) {
     qb::CircuitBreaker cb(2, 100ms);
     cb.on_failure(0);
     cb.on_failure(0);                // open at t=0
-    ASSERT_TRUE(cb.allow(100 * MS));  // -> half_open (trial admitted)
+    ASSERT_TRUE(cb.allow(100 * MS)); // -> half_open (trial admitted)
     cb.on_abandoned(120 * MS);       // trial's caller was killed: release, re-arm cooldown from t=120ms
     EXPECT_EQ(cb.state(), State::open);
     EXPECT_FALSE(cb.allow(150 * MS)) << "30ms into the re-armed cooldown -> fail fast";

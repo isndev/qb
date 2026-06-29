@@ -87,8 +87,8 @@ BM_Channel_TrySendTryRecv(benchmark::State &state) {
     qb::io::async::listener::current.clear();
 
     // Expected total: each iteration drains 0+1+...+(count-1).
-    const std::uint64_t per_iter  = (count == 0) ? 0u : (count - 1u) * count / 2u;
-    const std::uint64_t expected  = per_iter * static_cast<std::uint64_t>(state.iterations());
+    const std::uint64_t per_iter = (count == 0) ? 0u : (count - 1u) * count / 2u;
+    const std::uint64_t expected = per_iter * static_cast<std::uint64_t>(state.iterations());
     if (sink != expected)
         state.SkipWithError("channel try_send/try_recv produced an unexpected sum");
 
@@ -257,10 +257,9 @@ gen_range(std::uint64_t count) {
 
 // Coordinator: ag_map(gen, *2) then sum, and ag_filter(gen, even) then count.
 task<void>
-run_ag_map_filter(std::uint64_t count, std::atomic<std::uint64_t> *map_sum, std::atomic<std::size_t> *filt_count,
-                  std::atomic<bool> *done) {
-    auto doubled = co_await ag_map(gen_range(count), [](std::uint64_t v) { return v * 2u; });
-    std::uint64_t s = 0;
+run_ag_map_filter(std::uint64_t count, std::atomic<std::uint64_t> *map_sum, std::atomic<std::size_t> *filt_count, std::atomic<bool> *done) {
+    auto          doubled = co_await ag_map(gen_range(count), [](std::uint64_t v) { return v * 2u; });
+    std::uint64_t s       = 0;
     for (auto v : doubled)
         s += v;
     map_sum->store(s, std::memory_order_relaxed);
@@ -304,8 +303,8 @@ BM_Generator_MapFilter(benchmark::State &state) {
         state.ResumeTiming();
     }
 
-    const std::uint64_t expected_sum   = (count == 0) ? 0u : (count - 1u) * count;       // 2 * (0+...+count-1)
-    const std::size_t   expected_count = static_cast<std::size_t>((count + 1u) / 2u);    // evens in [0,count)
+    const std::uint64_t expected_sum   = (count == 0) ? 0u : (count - 1u) * count;    // 2 * (0+...+count-1)
+    const std::size_t   expected_count = static_cast<std::size_t>((count + 1u) / 2u); // evens in [0,count)
     if (last_sum != expected_sum || last_count != expected_count)
         state.SkipWithError("async_generator ag_map/ag_filter produced unexpected results");
 
@@ -314,39 +313,10 @@ BM_Generator_MapFilter(benchmark::State &state) {
 
 } // namespace
 
-BENCHMARK(BM_Channel_TrySendTryRecv)
-    ->Arg(64)
-    ->Arg(1024)
-    ->Arg(8192)
-    ->ArgName("messages")
-    ->Unit(benchmark::kNanosecond);
-BENCHMARK(BM_Channel_SendRecv)
-    ->Arg(64)
-    ->Arg(512)
-    ->Arg(2048)
-    ->ArgName("messages")
-    ->Unit(benchmark::kMicrosecond)
-    ->UseRealTime();
-BENCHMARK(BM_Stream_FilterMapReduce)
-    ->Arg(64)
-    ->Arg(512)
-    ->Arg(4096)
-    ->ArgName("items")
-    ->Unit(benchmark::kMicrosecond)
-    ->UseRealTime();
-BENCHMARK(BM_Stream_MapCollect)
-    ->Arg(64)
-    ->Arg(512)
-    ->Arg(4096)
-    ->ArgName("items")
-    ->Unit(benchmark::kMicrosecond)
-    ->UseRealTime();
-BENCHMARK(BM_Generator_MapFilter)
-    ->Arg(64)
-    ->Arg(512)
-    ->Arg(4096)
-    ->ArgName("items")
-    ->Unit(benchmark::kMicrosecond)
-    ->UseRealTime();
+BENCHMARK(BM_Channel_TrySendTryRecv)->Arg(64)->Arg(1024)->Arg(8192)->ArgName("messages")->Unit(benchmark::kNanosecond);
+BENCHMARK(BM_Channel_SendRecv)->Arg(64)->Arg(512)->Arg(2048)->ArgName("messages")->Unit(benchmark::kMicrosecond)->UseRealTime();
+BENCHMARK(BM_Stream_FilterMapReduce)->Arg(64)->Arg(512)->Arg(4096)->ArgName("items")->Unit(benchmark::kMicrosecond)->UseRealTime();
+BENCHMARK(BM_Stream_MapCollect)->Arg(64)->Arg(512)->Arg(4096)->ArgName("items")->Unit(benchmark::kMicrosecond)->UseRealTime();
+BENCHMARK(BM_Generator_MapFilter)->Arg(64)->Arg(512)->Arg(4096)->ArgName("items")->Unit(benchmark::kMicrosecond)->UseRealTime();
 
 BENCHMARK_MAIN();

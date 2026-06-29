@@ -167,8 +167,7 @@ TEST(UDPSocket, SetBufferSizeGrowsReceiveBuffer) {
 
     int rcvbuf = 0;
     ASSERT_EQ(socket.get_optval(SOL_SOCKET, SO_RCVBUF, rcvbuf), 0);
-    EXPECT_GE(static_cast<std::size_t>(rcvbuf), requested)
-        << "set_buffer_size did not raise SO_RCVBUF to at least the requested size";
+    EXPECT_GE(static_cast<std::size_t>(rcvbuf), requested) << "set_buffer_size did not raise SO_RCVBUF to at least the requested size";
 }
 
 TEST(UDPSocket, BindRejectsFamilyMismatchForAlreadyOpenSocket) {

@@ -110,9 +110,9 @@ TEST(CryptoReachableEdgesTest, SecureRandomStringRefillsPoolUnderBiasedRange) {
     // A 5000-char request pre-draws 10000 bytes; with ~half rejected, the pool is exhausted
     // and refilled at least once mid-string — the path the 2-char-range neighbour can never
     // reach (256 % 2 == 0 -> zero rejections -> dead refill branch).
-    const std::string range   = make_range(129);
-    const std::size_t length  = 5000;
-    const std::string result  = qb::crypto::generate_secure_random_string(length, range);
+    const std::string range  = make_range(129);
+    const std::size_t length = 5000;
+    const std::string result = qb::crypto::generate_secure_random_string(length, range);
 
     // Length contract holds regardless of how many bytes were rejected/refilled.
     ASSERT_EQ(result.size(), length);

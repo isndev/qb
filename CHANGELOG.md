@@ -38,38 +38,38 @@ Tracks changes on the development branch that are not yet part of a tagged relea
 - `qb::LoopEvent` — per-loop-pass context (`now`, `iteration`) handed to the actor periodic tick,
   unifying the tick with the `on(Event&)` dispatch shape and keeping it forward-compatible.
 - **Patterns enrichment.**
-  - Quorum scatter: `qb::ask_quorum(ctx, targets, k, req, timeout)` resolves with the first **k** of
-    N replies (the majority middle-ground between `ask_any` and `ask_all`); throws if the quorum
-    becomes unreachable, and is cancel-on-kill.
-  - Bounded scatter: `qb::ask_all(ctx, targets, req, timeout, max_in_flight)` caps in-flight asks
-    via a true cancel-safe **sliding window** — fan out to many targets without overwhelming a
-    downstream.
-  - `qb::bulkhead` (failure isolation): bounds concurrent operations through a resource;
-    `co_await bulkhead.enter(ctx)` returns an RAII slot, waiting cancellation-aware when full.
-  - `qb::io::async::semaphore::acquire(cancellation_token)`: a **cancellation-aware** acquire — a
-    kill while parked unwinds cleanly and retracts the queued claim (no permit leak), so the next
-    waiter is served correctly. (Backs `bulkhead` and bounded `ask_all`.)
-  - `qb::retry_policy::jitter` (in `[0, 1]`, default `0`): randomizes each `ask_retry` backoff over
-    `[backoff*(1-jitter), backoff]` to desynchronize retry storms.
-  - `qb::Supervisor`: killing the supervisor (a `KillEvent`) now tears down its children first (no
-    orphans); and an optional `restart_window` turns `max_restarts` into a sliding-window intensity
-    ("N restarts within T") instead of a lifetime-cumulative cap.
-  - `qb::run_saga` compensation is cancellation-aware: a kill mid-rollback aborts the remaining
-    compensations instead of spinning through them.
-  - `qb::rate_limiter` (alias `qb::token_bucket`): a cancellation-aware token-bucket throttle
-    (`acquire(ctx)` / `try_acquire(now)`) completing the resilience trio with `CircuitBreaker` and
-    `ask_retry`.
-  - Deadline budget: `qb::deadline` + `qb::deadline_in(ctx, dur)` / `qb::remaining(dl, ctx)` /
-    `qb::ask_by(ctx, target, req, deadline)` — thread one absolute deadline through an ask chain to
-    bound its *total* latency end-to-end (fails fast once the budget is spent).
-  - **Coroutine discovery & liveness.** `co_await qb::ping(ctx, target, timeout)` → `bool` (targeted
-    liveness) and `co_await qb::require<T>(ctx, timeout)` → `std::vector<ActorId>` (typed discovery
-    within a window), with `qb::resolve_require(e)` for the asker's `on(RequireEvent&)`. An awaitable
-    replacement for the legacy `Actor::require<...>()` + `on(RequireEvent&)` + `is<T>()` dance (which
-    still works). `qb::PingEvent`/`qb::RequireEvent` now carry an echoed `correlation_id` (0 = legacy
-    path), and `PingEvent` type `0` is a wildcard liveness probe.
-  - `qb::CoroContext::broadcast<E>(args)` — broadcast from inside a spawned coroutine (mirrors
-    `Actor::broadcast`; backs `qb::require`).
+    - Quorum scatter: `qb::ask_quorum(ctx, targets, k, req, timeout)` resolves with the first **k** of
+      N replies (the majority middle-ground between `ask_any` and `ask_all`); throws if the quorum
+      becomes unreachable, and is cancel-on-kill.
+    - Bounded scatter: `qb::ask_all(ctx, targets, req, timeout, max_in_flight)` caps in-flight asks
+      via a true cancel-safe **sliding window** — fan out to many targets without overwhelming a
+      downstream.
+    - `qb::bulkhead` (failure isolation): bounds concurrent operations through a resource;
+      `co_await bulkhead.enter(ctx)` returns an RAII slot, waiting cancellation-aware when full.
+    - `qb::io::async::semaphore::acquire(cancellation_token)`: a **cancellation-aware** acquire — a
+      kill while parked unwinds cleanly and retracts the queued claim (no permit leak), so the next
+      waiter is served correctly. (Backs `bulkhead` and bounded `ask_all`.)
+    - `qb::retry_policy::jitter` (in `[0, 1]`, default `0`): randomizes each `ask_retry` backoff over
+      `[backoff*(1-jitter), backoff]` to desynchronize retry storms.
+    - `qb::Supervisor`: killing the supervisor (a `KillEvent`) now tears down its children first (no
+      orphans); and an optional `restart_window` turns `max_restarts` into a sliding-window intensity
+      ("N restarts within T") instead of a lifetime-cumulative cap.
+    - `qb::run_saga` compensation is cancellation-aware: a kill mid-rollback aborts the remaining
+      compensations instead of spinning through them.
+    - `qb::rate_limiter` (alias `qb::token_bucket`): a cancellation-aware token-bucket throttle
+      (`acquire(ctx)` / `try_acquire(now)`) completing the resilience trio with `CircuitBreaker` and
+      `ask_retry`.
+    - Deadline budget: `qb::deadline` + `qb::deadline_in(ctx, dur)` / `qb::remaining(dl, ctx)` /
+      `qb::ask_by(ctx, target, req, deadline)` — thread one absolute deadline through an ask chain to
+      bound its *total* latency end-to-end (fails fast once the budget is spent).
+    - **Coroutine discovery & liveness.** `co_await qb::ping(ctx, target, timeout)` → `bool` (targeted
+      liveness) and `co_await qb::require<T>(ctx, timeout)` → `std::vector<ActorId>` (typed discovery
+      within a window), with `qb::resolve_require(e)` for the asker's `on(RequireEvent&)`. An awaitable
+      replacement for the legacy `Actor::require<...>()` + `on(RequireEvent&)` + `is<T>()` dance (which
+      still works). `qb::PingEvent`/`qb::RequireEvent` now carry an echoed `correlation_id` (0 = legacy
+      path), and `PingEvent` type `0` is a wildcard liveness probe.
+    - `qb::CoroContext::broadcast<E>(args)` — broadcast from inside a spawned coroutine (mirrors
+      `Actor::broadcast`; backs `qb::require`).
 - **`onInit()` is a first-class coroutine context for the WHOLE pattern library.** A unified
   *continuation registry* + a generalized activation gate now deliver **every** correlated coroutine
   reply (`ask`, `ask_stream`, `ping`, `require`) to an actor that is still *Activating* — not just
@@ -79,16 +79,16 @@ Tracks changes on the development branch that are not yet part of a tagged relea
   unifies the routing; `AskEvent`/`RequireEvent` derive it.
 - `qb::Actor::now()` — the typed `qb::wall_time` view of `time()` (cached per loop iteration); plus
   `qb::wall_from_unix_nanos(ns)`.
-  - Idempotency: `qb::answer_idempotent(self, e, cache, fn)` + `qb::dedup_map` (bounded LRU) +
-    `qb::idempotent_event` — a responder runs the effect **once per stable `idempotency_key`** and
-    replays the cached response for retries/duplicates.
-  - Aggregation: `qb::batcher<T>` coalesces items and flushes on a **count** or **time** window
-    (whichever first); the window timer is scope-bound (a kill cancels it, no `on_flush` on a dead
-    actor).
-  - Streaming: `qb::ask_stream` returns a `qb::stream<E>` of many replies for one request
-    (`qb::StreamRequest<Chunk>`, responder helpers `qb::yield_answer` / `qb::end_stream`; the asker
-    routes chunks with `resolve_ask` — they are `AskEvent`s); per-chunk timeout, cancel-on-kill, and
-    a loud `stream_overflow_error` rather than silently dropping chunks.
+    - Idempotency: `qb::answer_idempotent(self, e, cache, fn)` + `qb::dedup_map` (bounded LRU) +
+      `qb::idempotent_event` — a responder runs the effect **once per stable `idempotency_key`** and
+      replays the cached response for retries/duplicates.
+    - Aggregation: `qb::batcher<T>` coalesces items and flushes on a **count** or **time** window
+      (whichever first); the window timer is scope-bound (a kill cancels it, no `on_flush` on a dead
+      actor).
+    - Streaming: `qb::ask_stream` returns a `qb::stream<E>` of many replies for one request
+      (`qb::StreamRequest<Chunk>`, responder helpers `qb::yield_answer` / `qb::end_stream`; the asker
+      routes chunks with `resolve_ask` — they are `AskEvent`s); per-chunk timeout, cancel-on-kill, and
+      a loud `stream_overflow_error` rather than silently dropping chunks.
 - **Self-locating resources** (`qb/io/system/file.h`, namespace `qb::io::sys`):
   `self_path()` (absolute path of the running executable, via `GetModuleFileNameW` /
   `/proc/self/exe` / `_NSGetExecutablePath` — independent of `argv[0]` and the cwd), `self_dir()`

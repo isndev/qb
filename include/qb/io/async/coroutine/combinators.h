@@ -959,7 +959,7 @@ public:
     await_suspend(std::coroutine_handle<> h) {
         _state->continuation  = h;
         _state->runner_handle = coro_scheduler().spawn_tracked(run_task(_state));
-        auto loop = listener::current.loop();
+        auto loop             = listener::current.loop();
         ev_timer_init(&_state->timer, &timeout_awaiter::on_timeout, qb::detail::to_ev_seconds(_timeout), 0.0);
         _state->timer.data = _state.get();
         ev_now_update(static_cast<struct ev_loop *>(loop));

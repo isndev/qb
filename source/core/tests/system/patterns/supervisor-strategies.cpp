@@ -62,8 +62,8 @@ using namespace std::chrono_literals;
 namespace {
 // Single-core suite ⇒ every write happens on core 0; reads happen after join() (which establishes
 // the happens-before), so plain atomics are sufficient.
-std::atomic<int>  g_spawns{0};            // total worker onInit() calls (initial + restarts)
-std::atomic<int>  g_acks{0};              // total SpawnAcks the coordinator saw
+std::atomic<int>  g_spawns{0}; // total worker onInit() calls (initial + restarts)
+std::atomic<int>  g_acks{0};   // total SpawnAcks the coordinator saw
 std::atomic<bool> g_escalated{false};
 std::atomic<bool> g_slot_replaced{false}; // a restarted slot reported a NEW ActorId
 
@@ -113,14 +113,13 @@ class SpawnCoordinator : public qb::Actor {
     std::vector<std::size_t> _crash_slots;
     std::vector<qb::ActorId> _last_id; // last id reported per slot
     std::vector<int>         _slot_acks;
-    int                      _acks    = 0;
-    std::size_t             _issued  = 0;
-    int                      _settle  = 0;
+    int                      _acks     = 0;
+    std::size_t              _issued   = 0;
+    int                      _settle   = 0;
     bool                     _settling = false;
 
 public:
-    SpawnCoordinator(int initial, std::size_t slots, std::vector<std::size_t> crash_slots,
-                     int stop_at_acks)
+    SpawnCoordinator(int initial, std::size_t slots, std::vector<std::size_t> crash_slots, int stop_at_acks)
         : _initial(initial)
         , _stop_at_acks(stop_at_acks)
         , _crash_slots(std::move(crash_slots))
@@ -155,8 +154,7 @@ public:
         }
 
         // Fire the next scripted crash once we have seen the initial fan-in plus `_issued` restarts.
-        if (_sup.is_valid() && _issued < _crash_slots.size()
-            && _acks >= _initial + static_cast<int>(_issued)) {
+        if (_sup.is_valid() && _issued < _crash_slots.size() && _acks >= _initial + static_cast<int>(_issued)) {
             push<TriggerCrash>(_sup, _crash_slots[_issued]);
             ++_issued;
             // In settle-mode, once the last scripted crash is issued, begin the settle countdown.
@@ -221,8 +219,8 @@ class TestSupervisor : public qb::Supervisor {
     qb::ActorId _coord;
 
 public:
-    TestSupervisor(qb::restart_strategy strat, std::size_t count, qb::ActorId coord,
-                   unsigned max_restarts = 0, qb::duration window = qb::duration::zero())
+    TestSupervisor(qb::restart_strategy strat, std::size_t count, qb::ActorId coord, unsigned max_restarts = 0,
+                   qb::duration window = qb::duration::zero())
         : qb::Supervisor(strat, count, max_restarts, window)
         , _coord(coord) {}
 
@@ -250,13 +248,12 @@ protected:
 // Restart-case runner: ends when exactly `expected_spawns` acks have arrived. Asserts the EXACT
 // spawn total + that the crashed slot was replaced by a fresh ActorId.
 static void
-run_strategy(qb::restart_strategy strat, std::size_t child_count, std::vector<std::size_t> crash_slots,
-             int expected_spawns) {
+run_strategy(qb::restart_strategy strat, std::size_t child_count, std::vector<std::size_t> crash_slots, int expected_spawns) {
     reset_globals();
     qb::Main main;
 
-    auto coord = main.addActor<SpawnCoordinator>(0, static_cast<int>(child_count), child_count,
-                                                 std::move(crash_slots), /*stop_at_acks*/ expected_spawns);
+    auto coord = main.addActor<SpawnCoordinator>(0, static_cast<int>(child_count), child_count, std::move(crash_slots),
+                                                 /*stop_at_acks*/ expected_spawns);
     main.addActor<TestSupervisor>(0, strat, child_count, coord);
 
     main.start(false);
@@ -415,8 +412,8 @@ TEST(ActorSupervisor, MaxRestartsEscalatesCumulative) {
 TEST(SupervisorRestartWindow, EscalatesWithinWindow) {
     reset_globals();
     qb::Main main;
-    auto coord = main.addActor<SpawnCoordinator>(0, /*initial*/ 1, 1, std::vector<std::size_t>{},
-                                                 /*stop_at_acks*/ 1000);
+    auto     coord = main.addActor<SpawnCoordinator>(0, /*initial*/ 1, 1, std::vector<std::size_t>{},
+                                                     /*stop_at_acks*/ 1000);
     // window huge vs the test, so all 3 restarts fall inside it and the 4th escalates.
     main.addActor<EscalatingSupervisor>(0, coord, /*max_restarts*/ 3u, /*window*/ 10s, /*crashes*/ 4);
 
@@ -578,7 +575,7 @@ public:
     onInit() override {
         registerEvent<Crash>(*this);
         g_spawns.fetch_add(1);
-        co_await context().sleep(1ms); // async activation
+        co_await context().sleep(1ms);                     // async activation
         push<SpawnAck>(_coord, _slot, id(), supervisor()); // ack only once active
         co_return true;
     }

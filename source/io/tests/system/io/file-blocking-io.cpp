@@ -72,8 +72,8 @@ class ScratchFile {
 public:
     explicit ScratchFile(const std::string &tag) {
         static std::atomic<unsigned> counter{0};
-        const auto name = "qbio_file_blocking_" + tag + "_" + std::to_string(current_pid()) + "_" +
-                          std::to_string(counter.fetch_add(1)) + ".tmp";
+        const auto                   name =
+            "qbio_file_blocking_" + tag + "_" + std::to_string(current_pid()) + "_" + std::to_string(counter.fetch_add(1)) + ".tmp";
         _path = (std::filesystem::temp_directory_path() / name).string();
         std::error_code ec;
         std::filesystem::remove(_path, ec);
@@ -174,7 +174,7 @@ TEST(FileBlockingIo, NonblockingModeStillReadsRegularFile) {
 // =============================================================================
 
 TEST(FileBlockingIo, OpenMissingPathFails) {
-    const auto missing = (std::filesystem::temp_directory_path() / "qbio_definitely_absent_file_xyz.tmp").string();
+    const auto      missing = (std::filesystem::temp_directory_path() / "qbio_definitely_absent_file_xyz.tmp").string();
     std::error_code ec;
     std::filesystem::remove(missing, ec); // make sure it really is absent
 

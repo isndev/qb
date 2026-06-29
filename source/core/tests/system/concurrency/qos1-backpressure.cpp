@@ -31,7 +31,8 @@ namespace {
 
 struct StressEvent : public qb::Event {
     std::uint32_t seq;
-    explicit StressEvent(std::uint32_t s) noexcept : seq(s) {}
+    explicit StressEvent(std::uint32_t s) noexcept
+        : seq(s) {}
 };
 struct StressEosEvent : public qb::Event {};
 
@@ -47,8 +48,12 @@ public:
         registerEvent<StressEosEvent>(*this);
         co_return true;
     }
-    void on(StressEvent const &) { stress_received.fetch_add(1, std::memory_order_relaxed); }
-    void on(StressEosEvent const &) {
+    void
+    on(StressEvent const &) {
+        stress_received.fetch_add(1, std::memory_order_relaxed);
+    }
+    void
+    on(StressEosEvent const &) {
         // Kill only once every source has flushed its burst — guarantees all QoS-1 events were
         // counted (FIFO: the EOS lands strictly after this source's burst).
         if (stress_eos_received.fetch_add(1, std::memory_order_acq_rel) + 1 == stress_eos_expected)
@@ -61,7 +66,9 @@ class StressSourceActor : public qb::Actor {
     std::uint32_t _budget;
 
 public:
-    StressSourceActor(qb::ActorId sink, std::uint32_t budget) : _sink(sink), _budget(budget) {}
+    StressSourceActor(qb::ActorId sink, std::uint32_t budget)
+        : _sink(sink)
+        , _budget(budget) {}
     qb::io::async::task<bool>
     onInit() final {
         for (std::uint32_t i = 0; i < _budget; ++i)
@@ -94,12 +101,10 @@ TEST(DeadlockRecovery, QoS1HighBackpressureNoLivelock) {
     const auto t_start = std::chrono::steady_clock::now();
     main.start(false);
     main.join();
-    const auto elapsed =
-        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t_start);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t_start);
 
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(stress_received.load(), kTotal)
-        << "all QoS-1 events must be delivered — recovery must preserve full FIFO, no drops";
+    EXPECT_EQ(stress_received.load(), kTotal) << "all QoS-1 events must be delivered — recovery must preserve full FIFO, no drops";
     EXPECT_EQ(stress_eos_received.load(), kSources) << "every source's EOS marker must arrive";
     EXPECT_LT(elapsed.count(), 60) << "deadlock recovery must terminate in bounded time (no livelock)";
 }

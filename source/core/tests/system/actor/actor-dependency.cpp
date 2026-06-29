@@ -106,8 +106,8 @@ public:
     AbsentDependencyActor() {
         registerEvent<qb::RequireEvent>(*this);
         registerEvent<ControlProbe>(*this);
-        require<AbsentActor>();      // nobody matches → no reply expected
-        push<ControlProbe>(id());    // ordered AFTER the require broadcast: confirms liveness
+        require<AbsentActor>();   // nobody matches → no reply expected
+        push<ControlProbe>(id()); // ordered AFTER the require broadcast: confirms liveness
     }
 
     void
@@ -174,8 +174,7 @@ TEST(ActorDependency, GetActorIdDependencyFromRequireEvent) {
     main.join();
     EXPECT_FALSE(main.hasError());
     // The discoverer must have seen EXACTLY one RequireEvent reply per live TestActor.
-    EXPECT_EQ(g_discovered.load(), MAX_ACTOR)
-        << "require<TestActor>() must resolve every one of the " << MAX_ACTOR << " live actors";
+    EXPECT_EQ(g_discovered.load(), MAX_ACTOR) << "require<TestActor>() must resolve every one of the " << MAX_ACTOR << " live actors";
 }
 
 // ===========================================================================
@@ -195,10 +194,8 @@ TEST(ActorDependency, RequireWithNoMatchingActorsResolvesToZeroAndDoesNotHang) {
     main.join();
 
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_control_seen.load())
-        << "the discoverer must have drained its mailbox (control event landed) — not a never-scheduled pass";
-    EXPECT_EQ(g_discovered.load(), 0u)
-        << "require<AbsentActor>() must resolve zero peers: no live AbsentActor exists";
+    EXPECT_TRUE(g_control_seen.load()) << "the discoverer must have drained its mailbox (control event landed) — not a never-scheduled pass";
+    EXPECT_EQ(g_discovered.load(), 0u) << "require<AbsentActor>() must resolve zero peers: no live AbsentActor exists";
 }
 
 } // namespace

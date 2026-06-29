@@ -54,8 +54,8 @@ class FramedSession : public qb::io::async::buffered_io<FramedSession> {
     // `mutable`: stream::in() is non-const, but buffered_io's const accessors (pendingRead(),
     // the const in() overload) must read the same input pipe — reading the buffer is logically const.
     mutable qb::io::stream<ScriptedStreamTransport> _io;
-    qb::allocator::pipe<char>               _out;
-    std::size_t                             _max_write_buffer_size = QB_MAX_WRITE_BUFFER_SIZE;
+    qb::allocator::pipe<char>                       _out;
+    std::size_t                                     _max_write_buffer_size = QB_MAX_WRITE_BUFFER_SIZE;
 
 public:
     using base_io_t = qb::io::async::buffered_io<FramedSession>;
@@ -138,11 +138,10 @@ public:
         const auto pending = _io.pendingRead();
         if (pending < kHeader)
             return 0u;
-        const auto      *raw = reinterpret_cast<const unsigned char *>(_io.in().begin());
-        const std::size_t payload =
-            static_cast<std::size_t>(raw[0]) | (static_cast<std::size_t>(raw[1]) << 8) |
-            (static_cast<std::size_t>(raw[2]) << 16) | (static_cast<std::size_t>(raw[3]) << 24);
-        const std::size_t frame = kHeader + payload;
+        const auto       *raw     = reinterpret_cast<const unsigned char *>(_io.in().begin());
+        const std::size_t payload = static_cast<std::size_t>(raw[0]) | (static_cast<std::size_t>(raw[1]) << 8)
+                                    | (static_cast<std::size_t>(raw[2]) << 16) | (static_cast<std::size_t>(raw[3]) << 24);
+        const std::size_t frame   = kHeader + payload;
         return pending >= frame ? frame : 0u;
     }
 

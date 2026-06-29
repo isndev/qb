@@ -121,8 +121,8 @@ public:
         auto src      = p.getSource();
         auto delay    = _delay;
         spawn([resp, src, delay](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            co_await ctx.sleep(delay);              // cancelled if this market is killed first
-            ctx.template push_to<Ping>(src, resp);  // safe via context (dropped if asker is gone)
+            co_await ctx.sleep(delay);             // cancelled if this market is killed first
+            ctx.template push_to<Ping>(src, resp); // safe via context (dropped if asker is gone)
         });
     }
 };

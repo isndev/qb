@@ -165,8 +165,7 @@ TEST(Jsonb, DumpPreservesInt64AndDoublePrecision) {
     const double d = 3.141592653589793;
     json         d_j(d);
     jsonb        jd(d_j);
-    EXPECT_DOUBLE_EQ(json::parse(jd.dump()).get<double>(), d)
-        << "double must round-trip through dump() without float truncation";
+    EXPECT_DOUBLE_EQ(json::parse(jd.dump()).get<double>(), d) << "double must round-trip through dump() without float truncation";
 }
 
 TEST(Jsonb, ParseErrorAndParsedConstruction) {

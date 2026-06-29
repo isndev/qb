@@ -149,7 +149,7 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std
 
     while (received < size && std::chrono::steady_clock::now() < deadline) {
         const int ret = socket.read(out + received, size - received);
-        last           = ret;
+        last          = ret;
         if (ret > 0) {
             received += static_cast<std::size_t>(ret);
             continue;
@@ -176,7 +176,7 @@ write_exactly(qb::io::tcp::ssl::socket &socket, const void *data, std::size_t si
 
     while (written < size && std::chrono::steady_clock::now() < deadline) {
         const int ret = socket.write(in + written, size - written);
-        last           = ret;
+        last          = ret;
         if (ret > 0) {
             written += static_cast<std::size_t>(ret);
             continue;
@@ -480,7 +480,7 @@ TEST(SSLSocketLoopback, IPv6AndUnixConnectVariantsCompleteHandshake) {
         const auto port = listener.local_endpoint().port();
         ASSERT_NE(port, 0);
 
-        std::thread server_thread([&] {
+        std::thread       server_thread([&] {
             qb::io::tcp::ssl::socket server_socket;
             ASSERT_EQ(listener.accept(server_socket), 0);
             drive_server_handshake(server_socket);
@@ -519,7 +519,7 @@ TEST(SSLSocketLoopback, IPv6AndUnixConnectVariantsCompleteHandshake) {
         ASSERT_NE(listener.ssl_handle(), nullptr);
         ASSERT_EQ(listener.listen(uri), 0);
 
-        std::thread server_thread([&] {
+        std::thread       server_thread([&] {
             qb::io::tcp::ssl::socket server_socket;
             ASSERT_EQ(listener.accept(server_socket), 0);
             drive_server_handshake(server_socket);
@@ -642,7 +642,7 @@ TEST(SSLSocketLoopback, DriveNonBlockingConnectToCompletion) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] {
+    std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
@@ -704,10 +704,7 @@ make_san_server_context(std::string &out_cert_path, std::string &out_key_path) {
     ok = ok && X509_set_pubkey(x509, pkey) == 1;
 
     X509_NAME *name = X509_get_subject_name(x509);
-    ok             = ok
-         && X509_NAME_add_entry_by_txt(
-                name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char *>("qb-san-test"), -1, -1, 0)
-                == 1;
+    ok = ok && X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char *>("qb-san-test"), -1, -1, 0) == 1;
     ok = ok && X509_set_issuer_name(x509, name) == 1;
 
     // DNS + IPv4 + IPv6 SANs, each exercising a different branch of the extractor.
@@ -715,10 +712,9 @@ make_san_server_context(std::string &out_cert_path, std::string &out_key_path) {
         GENERAL_NAMES *gens = sk_GENERAL_NAME_new_null();
         if (gens) {
             auto add_dns = [&](const char *dns) {
-                GENERAL_NAME  *gen = GENERAL_NAME_new();
+                GENERAL_NAME   *gen = GENERAL_NAME_new();
                 ASN1_IA5STRING *ia5 = ASN1_IA5STRING_new();
-                if (gen && ia5
-                    && ASN1_STRING_set(ia5, dns, static_cast<int>(std::char_traits<char>::length(dns))) == 1) {
+                if (gen && ia5 && ASN1_STRING_set(ia5, dns, static_cast<int>(std::char_traits<char>::length(dns))) == 1) {
                     GENERAL_NAME_set0_value(gen, GEN_DNS, ia5);
                     sk_GENERAL_NAME_push(gens, gen);
                 } else {
@@ -759,15 +755,13 @@ make_san_server_context(std::string &out_cert_path, std::string &out_key_path) {
     ok = ok && X509_sign(x509, pkey, EVP_sha256()) != 0;
 
     if (ok) {
-        const std::string base =
-            std::string("/tmp/qb-ssl-san-") + std::to_string(::getpid());
-        out_cert_path = base + "-cert.pem";
-        out_key_path  = base + "-key.pem";
+        const std::string base = std::string("/tmp/qb-ssl-san-") + std::to_string(::getpid());
+        out_cert_path          = base + "-cert.pem";
+        out_key_path           = base + "-key.pem";
 
         FILE *cf = std::fopen(out_cert_path.c_str(), "wb");
         FILE *kf = std::fopen(out_key_path.c_str(), "wb");
-        if (cf && kf && PEM_write_X509(cf, x509) == 1
-            && PEM_write_PrivateKey(kf, pkey, nullptr, nullptr, 0, nullptr, nullptr) == 1) {
+        if (cf && kf && PEM_write_X509(cf, x509) == 1 && PEM_write_PrivateKey(kf, pkey, nullptr, nullptr, 0, nullptr, nullptr) == 1) {
             // ok
         } else {
             ok = false;
@@ -849,8 +843,7 @@ TEST(SSLSocketLoopback, PeerCertificateSubjectAlternativeNamesAreExtracted) {
     ASSERT_TRUE(client.handshake_complete());
 
     const auto details = client.get_peer_certificate_details();
-    ASSERT_FALSE(details.subject_alternative_names.empty())
-        << "SAN extraction produced no entries from a SAN-bearing certificate";
+    ASSERT_FALSE(details.subject_alternative_names.empty()) << "SAN extraction produced no entries from a SAN-bearing certificate";
 
     bool saw_dns  = false;
     bool saw_ipv4 = false;
@@ -1012,7 +1005,7 @@ TEST(SSLSocketLoopback, ConnectedFinalizerDrivesNonBlockingHandshake) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] {
+    std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
@@ -1086,7 +1079,7 @@ TEST(SSLSocketLoopback, BlockingTimedUriUnixLegCompletesHandshake) {
     ASSERT_NE(listener.ssl_handle(), nullptr);
     ASSERT_EQ(listener.listen(uri), 0);
 
-    std::thread server_thread([&] {
+    std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
@@ -1129,7 +1122,7 @@ TEST(SSLSocketLoopback, InitClientUpgradesAlreadyConnectedSocket) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] {
+    std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
@@ -1252,9 +1245,8 @@ TEST(SSLSocketLoopback, PostHandshakeAuthRequestSucceedsWhenServerEnablesIt) {
 
     ASSERT_TRUE(server_done.load()) << "server never recorded a PHA result within the deadline";
     ASSERT_EQ(server_is_tls13.load(), 1) << "PHA requires a TLS 1.3 negotiation";
-    EXPECT_EQ(server_pha_result.load(), 1)
-        << "server-side PHA request failed despite PHA enabled on the server, advertised by the "
-           "client, TLS 1.3 negotiated, and SSL_VERIFY_PEER set";
+    EXPECT_EQ(server_pha_result.load(), 1) << "server-side PHA request failed despite PHA enabled on the server, advertised by the "
+                                              "client, TLS 1.3 negotiated, and SSL_VERIFY_PEER set";
 }
 
 // ===========================================================================
@@ -1450,6 +1442,5 @@ TEST(SSLSocketLoopback, Tls12NegotiationRejectsServerPostHandshakeAuth) {
 
     ASSERT_TRUE(server_done.load()) << "server never recorded a PHA result within the deadline";
     ASSERT_EQ(server_version_is_12.load(), 1) << "negotiation did not land on TLS 1.2";
-    EXPECT_EQ(server_pha_result.load(), 0)
-        << "server-side PHA must fail over a TLS 1.2 connection (PHA is TLS 1.3-only)";
+    EXPECT_EQ(server_pha_result.load(), 0) << "server-side PHA must fail over a TLS 1.2 connection (PHA is TLS 1.3-only)";
 }

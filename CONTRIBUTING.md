@@ -1,4 +1,5 @@
 <!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+
 # Contributing to qb
 
 Thank you for your interest in improving qb. This document describes how to report issues, propose changes,

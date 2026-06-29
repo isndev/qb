@@ -61,7 +61,7 @@ using qb::io::test::reset_async_context;
 
 namespace {
 
-constexpr const char        TEXT_MESSAGE[] = "Hello, Text Protocol!";
+constexpr const char        TEXT_MESSAGE[]  = "Hello, Text Protocol!";
 constexpr const std::size_t TEXT_ITERATIONS = 10;
 
 class SessionRoundtripTest : public ::testing::Test {
@@ -282,7 +282,7 @@ TEST_F(SessionRoundtripTest, CloseAfterDeliverSendsDataThenDisconnects) {
         sock.write("ping\n", 5);
 
         char        buffer[512]{};
-        std::size_t total = 0;
+        std::size_t total    = 0;
         const auto  deadline = std::chrono::steady_clock::now() + 3s;
         sock.set_nonblocking(true);
         while (total == 0 && std::chrono::steady_clock::now() < deadline) {
@@ -298,8 +298,7 @@ TEST_F(SessionRoundtripTest, CloseAfterDeliverSendsDataThenDisconnects) {
         client_done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return g_destroyed.load() && client_done.load(); }, 5s))
-        << "close_after_deliver did not flush-then-dispose";
+    EXPECT_TRUE(pump_until([&] { return g_destroyed.load() && client_done.load(); }, 5s)) << "close_after_deliver did not flush-then-dispose";
     t.join();
 
     EXPECT_TRUE(got_goodbye.load()) << "the pending 'goodbye' was not delivered before close";
@@ -316,7 +315,7 @@ class BroadcastServer;
 
 class BroadcastSession : public use<BroadcastSession>::tcp::client<BroadcastServer> {
 public:
-    using Protocol = qb::protocol::text::command<BroadcastSession>;
+    using Protocol    = qb::protocol::text::command<BroadcastSession>;
     int message_count = 0;
 
     explicit BroadcastSession(IOServer &server)
@@ -385,10 +384,13 @@ TEST_F(SessionRoundtripTest, BroadcastReachesAllSessions) {
         });
     }
 
-    EXPECT_TRUE(pump_until([&] {
-        server.check_all_received();
-        return server.all_received;
-    }, 5s)) << "broadcast did not reach all sessions";
+    EXPECT_TRUE(pump_until(
+        [&] {
+            server.check_all_received();
+            return server.all_received;
+        },
+        5s))
+        << "broadcast did not reach all sessions";
 
     for (auto &t : clients)
         t.join();

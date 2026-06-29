@@ -93,8 +93,7 @@ TEST(InitAskGate, ReplyDeliveredNotStashedSameCore) {
     main.join();
     EXPECT_TRUE(g_sc_ok.load()) << "the in-init ask must resolve";
     EXPECT_EQ(g_sc_value.load(), 70); // 7 * 10, computed by the responder
-    EXPECT_EQ(g_sc_stash_hits.load(), 0)
-        << "the ask reply was routed through on(Cfg&) — it was stashed instead of delivered to the awaiter";
+    EXPECT_EQ(g_sc_stash_hits.load(), 0) << "the ask reply was routed through on(Cfg&) — it was stashed instead of delivered to the awaiter";
     EXPECT_FALSE(main.hasError());
 }
 
@@ -114,8 +113,7 @@ TEST(InitAskGate, ReplyDeliveredNotStashedCrossCore) {
     main.join();
     EXPECT_TRUE(g_sc_ok.load());
     EXPECT_EQ(g_sc_value.load(), 70);
-    EXPECT_EQ(g_sc_stash_hits.load(), 0)
-        << "cross-core ask reply was stashed instead of delivered to the awaiter";
+    EXPECT_EQ(g_sc_stash_hits.load(), 0) << "cross-core ask reply was stashed instead of delivered to the awaiter";
     EXPECT_FALSE(main.hasError());
 }
 
@@ -174,8 +172,7 @@ TEST(InitAskGate, ReplyFromActivatingResponderDeliveredNotStashed) {
     main.start(false);
     main.join();
     EXPECT_EQ(g_both_value.load(), 40); // request stashed at the Activating responder, reply delivered
-    EXPECT_EQ(g_both_stash_hits.load(), 0)
-        << "reply from an Activating responder was stashed at the asker instead of delivered to the awaiter";
+    EXPECT_EQ(g_both_stash_hits.load(), 0) << "reply from an Activating responder was stashed at the asker instead of delivered to the awaiter";
     EXPECT_FALSE(main.hasError());
 }
 

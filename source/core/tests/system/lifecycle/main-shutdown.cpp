@@ -35,8 +35,14 @@ public:
         registerEvent<qb::SignalEvent>(*this);
         co_return true; // stays alive — no kill() in onInit
     }
-    void on(qb::KillEvent const &) { kill(); }
-    void on(qb::SignalEvent const &) { kill(); }
+    void
+    on(qb::KillEvent const &) {
+        kill();
+    }
+    void
+    on(qb::SignalEvent const &) {
+        kill();
+    }
 };
 
 } // namespace
@@ -53,8 +59,7 @@ TEST(StopSource, ExplicitStopShutsDownPromptly) {
         main.join();
         EXPECT_FALSE(main.hasError());
     }
-    const auto elapsed =
-        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t_start);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t_start);
     EXPECT_LT(elapsed.count(), 10) << "Main::stop() must broadcast SIGINT and shut down promptly";
 }
 
@@ -71,7 +76,6 @@ TEST(StopSource, MainDestructorJoinsRunningWorkers) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         // fall off the scope — ~Main() issues request_stop() + join()
     }
-    const auto elapsed =
-        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t_start);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t_start);
     EXPECT_LT(elapsed.count(), 10) << "~Main() must shut down promptly via std::stop_source/jthread";
 }

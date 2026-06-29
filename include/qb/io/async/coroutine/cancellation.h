@@ -674,10 +674,10 @@ struct cancellable_sleep_awaiter {
     await_suspend(std::coroutine_handle<> h) {
         // Member (not a local) so the destructor can reclaim the detached timer on a
         // destroy-while-parked teardown — the awaiter keeps its own ref to the shared state.
-        state         = std::make_shared<sleep_state>();
-        state->handle = h;
-        auto s        = state;
-        _cancel_id    = token.on_cancel([s]() {
+        state               = std::make_shared<sleep_state>();
+        state->handle       = h;
+        auto s              = state;
+        _cancel_id          = token.on_cancel([s]() {
             if (!s->resumed) {
                 s->resumed = true;
                 // Reclaim the detached timer_task NOW rather than letting it stay

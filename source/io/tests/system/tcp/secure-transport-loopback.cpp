@@ -207,8 +207,7 @@ TEST(SecureTransport, SacceptAndStcpRoundTripEncryptedPayload) {
         }
 
         qb::io::tcp::ssl::socket &server_socket = acceptor.getAccepted();
-        EXPECT_EQ(static_cast<std::size_t>(server_socket.native_handle()), handle)
-            << "getAccepted() must wrap the handle read() returned";
+        EXPECT_EQ(static_cast<std::size_t>(server_socket.native_handle()), handle) << "getAccepted() must wrap the handle read() returned";
 
         // Complete the server-side handshake, then echo one encrypted line.
         drive_server_handshake(server_socket);

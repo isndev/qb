@@ -101,10 +101,10 @@ TEST_F(CryptoAsymmetricTest, KeyGenerationProducesWellFormedMaterial) {
 TEST_F(CryptoAsymmetricTest, Ed25519MatchesRfc8032Vector) {
     // RFC 8032, Section 7.1, TEST 1 (empty message). The 32-byte SECRET KEY is the
     // Ed25519 seed, which is exactly the raw private key OpenSSL expects.
-    const auto seed       = hex_to_bytes("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
-    const auto public_key = hex_to_bytes("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
-    const auto expected_signature =
-        hex_to_bytes("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
+    const auto seed               = hex_to_bytes("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
+    const auto public_key         = hex_to_bytes("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+    const auto expected_signature = hex_to_bytes(
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
     const std::vector<unsigned char> empty_message;
 
     const auto signature = qb::crypto::ed25519_sign(empty_message, seed);
@@ -187,15 +187,15 @@ TEST_F(CryptoAsymmetricTest, X25519MatchesRfc7748Vector) {
 TEST_F(CryptoAsymmetricTest, X25519SharedSecretIsSymmetricPemAndRaw) {
     auto [alice_pem_priv, alice_pem_pub] = qb::crypto::generate_x25519_keypair();
     auto [bob_pem_priv, bob_pem_pub]     = qb::crypto::generate_x25519_keypair();
-    const auto secret_pem     = qb::crypto::x25519_key_exchange(alice_pem_priv, bob_pem_pub);
-    const auto secret_pem_rev = qb::crypto::x25519_key_exchange(bob_pem_priv, alice_pem_pub);
+    const auto secret_pem                = qb::crypto::x25519_key_exchange(alice_pem_priv, bob_pem_pub);
+    const auto secret_pem_rev            = qb::crypto::x25519_key_exchange(bob_pem_priv, alice_pem_pub);
     EXPECT_FALSE(secret_pem.empty());
     EXPECT_EQ(secret_pem, secret_pem_rev);
 
     auto [alice_raw_priv, alice_raw_pub] = qb::crypto::generate_x25519_keypair_bytes();
     auto [bob_raw_priv, bob_raw_pub]     = qb::crypto::generate_x25519_keypair_bytes();
-    const auto secret_raw     = qb::crypto::x25519_key_exchange(alice_raw_priv, bob_raw_pub);
-    const auto secret_raw_rev = qb::crypto::x25519_key_exchange(bob_raw_priv, alice_raw_pub);
+    const auto secret_raw                = qb::crypto::x25519_key_exchange(alice_raw_priv, bob_raw_pub);
+    const auto secret_raw_rev            = qb::crypto::x25519_key_exchange(bob_raw_priv, alice_raw_pub);
     EXPECT_EQ(secret_raw.size(), 32u); // X25519 shared secrets are 32 bytes
     EXPECT_EQ(secret_raw, secret_raw_rev);
 }
@@ -249,14 +249,16 @@ TEST_F(CryptoAsymmetricTest, RsaKeyGenerationSignVerifyAndErrorContracts) {
 TEST_F(CryptoAsymmetricTest, RsaSignVerifyAcrossKeySizesAndDigests) {
     // 3072-bit keygen + round-trip.
     auto [private_key_3072, public_key_3072] = qb::crypto::generate_rsa_keypair(3072);
-    const auto sig_3072 = qb::crypto::rsa_sign(test_data, private_key_3072, qb::crypto::DigestAlgorithm::SHA256);
+    const auto sig_3072                      = qb::crypto::rsa_sign(test_data, private_key_3072, qb::crypto::DigestAlgorithm::SHA256);
     ASSERT_FALSE(sig_3072.empty());
     EXPECT_TRUE(qb::crypto::rsa_verify(test_data, sig_3072, public_key_3072, qb::crypto::DigestAlgorithm::SHA256));
 
     // 2048-bit across all common digests.
-    auto [private_key, public_key] = qb::crypto::generate_rsa_keypair(2048);
+    auto [private_key, public_key]                         = qb::crypto::generate_rsa_keypair(2048);
     const std::vector<qb::crypto::DigestAlgorithm> digests = {
-        qb::crypto::DigestAlgorithm::SHA1, qb::crypto::DigestAlgorithm::SHA256, qb::crypto::DigestAlgorithm::SHA384,
+        qb::crypto::DigestAlgorithm::SHA1,
+        qb::crypto::DigestAlgorithm::SHA256,
+        qb::crypto::DigestAlgorithm::SHA384,
         qb::crypto::DigestAlgorithm::SHA512,
     };
     for (const auto digest : digests) {
@@ -316,7 +318,9 @@ TEST_F(CryptoAsymmetricTest, EciesModesMatrix) {
     auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
 
     const std::vector<qb::crypto::ECIESMode> modes = {
-        qb::crypto::ECIESMode::STANDARD, qb::crypto::ECIESMode::AES_GCM, qb::crypto::ECIESMode::CHACHA20,
+        qb::crypto::ECIESMode::STANDARD,
+        qb::crypto::ECIESMode::AES_GCM,
+        qb::crypto::ECIESMode::CHACHA20,
     };
     const std::vector<std::size_t> sizes = {0, 16, 1024, 8192};
 
@@ -342,7 +346,7 @@ TEST_F(CryptoAsymmetricTest, EciesModesMatrix) {
 TEST_F(CryptoAsymmetricTest, EciesLargePayloadRoundTrip) {
     const auto large_data = qb::crypto::generate_random_bytes(1024 * 1024);
 
-    auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+    auto [private_key, public_key]     = qb::crypto::generate_x25519_keypair_bytes();
     auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(large_data, public_key, {}, qb::crypto::ECIESMode::AES_GCM);
     ASSERT_FALSE(ephemeral_public.empty());
     ASSERT_FALSE(encrypted.empty());
@@ -352,7 +356,7 @@ TEST_F(CryptoAsymmetricTest, EciesLargePayloadRoundTrip) {
 }
 
 TEST_F(CryptoAsymmetricTest, EciesAuthenticatesContext) {
-    auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+    auto [private_key, public_key]           = qb::crypto::generate_x25519_keypair_bytes();
     const std::vector<unsigned char> context = {'a', 'u', 't', 'h', 'e', 'n', 't', 'i', 'c', 'a', 't', 'e', 'd'};
 
     auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(test_data, public_key, context, qb::crypto::ECIESMode::AES_GCM);
@@ -428,7 +432,7 @@ TEST_F(CryptoAsymmetricTest, CrossAlgorithmInteroperability) {
     combined.insert(combined.end(), ed_public.begin(), ed_public.end());
 
     auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(combined, x_public, {}, qb::crypto::ECIESMode::AES_GCM);
-    const auto decrypted = qb::crypto::ecies_decrypt(encrypted, ephemeral_public, x_private, {}, qb::crypto::ECIESMode::AES_GCM);
+    const auto decrypted               = qb::crypto::ecies_decrypt(encrypted, ephemeral_public, x_private, {}, qb::crypto::ECIESMode::AES_GCM);
 
     ASSERT_GE(decrypted.size(), test_data.size() + signature.size() + ed_public.size());
     const std::vector<unsigned char> recovered_data(decrypted.begin(), decrypted.begin() + test_data.size());

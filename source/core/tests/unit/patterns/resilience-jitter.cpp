@@ -42,8 +42,7 @@ constexpr int kDraws = 5000;
 TEST(RetryJitter, ZeroJitterIsExactForEveryDraw) {
     const qb::duration d = 100ms;
     for (int i = 0; i < kDraws; ++i)
-        EXPECT_EQ(qb::detail::apply_retry_jitter(d, 0.0), d)
-            << "jitter == 0 must return the backoff unchanged (no randomness)";
+        EXPECT_EQ(qb::detail::apply_retry_jitter(d, 0.0), d) << "jitter == 0 must return the backoff unchanged (no randomness)";
 }
 
 TEST(RetryJitter, HalfJitterStaysInLowerHalfBandAndVaries) {
@@ -132,6 +131,5 @@ TEST(RetryBackoff, HugeProductDoesNotOverflowTheCast) {
     EXPECT_EQ(grow_backoff(qb::duration{qb::duration::max().count() / 2}, 4.0, cap), cap);
     // a realistic-but-large config (1h backoff, ×100, 365-day cap) stays exact (no overflow,
     // 100h < the 8760h cap so it is NOT clamped).
-    EXPECT_EQ(grow_backoff(std::chrono::hours(1), 100.0, std::chrono::hours(24 * 365)),
-              std::chrono::hours(100));
+    EXPECT_EQ(grow_backoff(std::chrono::hours(1), 100.0, std::chrono::hours(24 * 365)), std::chrono::hours(100));
 }

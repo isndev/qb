@@ -72,7 +72,7 @@ double_value(std::uint64_t v) {
 // The shared computation: a cheap value that all N waiters observe.
 task<std::uint64_t>
 compute_shared(std::uint64_t seed) {
-    co_return seed * seed + 7u;
+    co_return seed *seed + 7u;
 }
 
 // One waiter on the shared_task: awaits the handle and accumulates the result.
@@ -88,8 +88,8 @@ shared_waiter(shared_task<std::uint64_t> sh, std::atomic<std::uint64_t> *sink, s
 task<void>
 run_parallel_map(const std::vector<std::uint64_t> *items, std::size_t max_concurrency, std::atomic<std::uint64_t> *sink,
                  std::atomic<bool> *done) {
-    auto results = co_await parallel_map(*items, [](std::uint64_t v) { return double_value(v); }, max_concurrency);
-    std::uint64_t acc = 0;
+    auto          results = co_await parallel_map(*items, [](std::uint64_t v) { return double_value(v); }, max_concurrency);
+    std::uint64_t acc     = 0;
     for (auto r : results)
         acc += r;
     sink->store(acc, std::memory_order_relaxed);
@@ -184,12 +184,6 @@ BENCHMARK(BM_Scope_ParallelMap)
     ->ArgNames({"items", "max_concurrency"})
     ->Unit(benchmark::kMicrosecond)
     ->UseRealTime();
-BENCHMARK(BM_SharedTask_FanOut)
-    ->Arg(16)
-    ->Arg(128)
-    ->Arg(512)
-    ->ArgName("waiters")
-    ->Unit(benchmark::kMicrosecond)
-    ->UseRealTime();
+BENCHMARK(BM_SharedTask_FanOut)->Arg(16)->Arg(128)->Arg(512)->ArgName("waiters")->Unit(benchmark::kMicrosecond)->UseRealTime();
 
 BENCHMARK_MAIN();

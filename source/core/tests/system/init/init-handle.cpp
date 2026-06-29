@@ -96,9 +96,9 @@ TEST(InitHandle, ReadyAsyncAndIdStash) {
     main.start(false);
     main.join();
     EXPECT_TRUE(g_h_parent_ran.load());   // the parent's onInit ran all checks (no vacuous pass)
-    EXPECT_TRUE(g_h_unready_seen.load());  // handle was valid-but-not-ready while Activating
-    EXPECT_TRUE(g_h_ready_seen.load());    // ready_async resolved once the child activated
-    EXPECT_TRUE(g_h_served.load());        // the id()-addressed event was stashed + replayed
+    EXPECT_TRUE(g_h_unready_seen.load()); // handle was valid-but-not-ready while Activating
+    EXPECT_TRUE(g_h_ready_seen.load());   // ready_async resolved once the child activated
+    EXPECT_TRUE(g_h_served.load());       // the id()-addressed event was stashed + replayed
     EXPECT_FALSE(main.hasError());
 }
 
@@ -155,7 +155,7 @@ public:
     onInit() override {
         g_shut_started.store(true);
         co_await context().sleep(500ms); // cancelled by the broadcast shutdown
-        g_shut_completed.store(true);     // must NOT happen
+        g_shut_completed.store(true);    // must NOT happen
         co_return true;
     }
     ~ShutdownVictim() override {
@@ -243,7 +243,7 @@ public:
         addRefActor<NeverReadyChild>();
         auto child2 = addRefActor<NeverReadyChild>();
         co_await child2.ready_async(context(), 10s); // long wait — we are killed first
-        co_return true;                               // unreachable
+        co_return true;                              // unreachable
     }
     ~WaiterParent() override {
         g_pk_destroyed.store(true);

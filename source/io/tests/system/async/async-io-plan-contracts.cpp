@@ -309,8 +309,8 @@ TEST_F(IoPlanContractsTest, RegisterSessionRejectsBeyondCapAndClosesTheFd) {
 #ifndef _WIN32
             // Finding 2.11 (strengthened): the socket we handed in must already be
             // CLOSED — probing its fd must fail with EBADF (no leaked descriptor).
-            errno              = 0;
-            const int probe    = ::fcntl(fd, F_GETFD);
+            errno               = 0;
+            const int probe     = ::fcntl(fd, F_GETFD);
             const int probe_err = errno;
             EXPECT_EQ(probe, -1) << "rejected socket fd " << fd << " is still open (leaked descriptor)";
             EXPECT_EQ(probe_err, EBADF) << "rejected socket fd must be closed (errno EBADF), got errno=" << probe_err;
@@ -464,8 +464,8 @@ TEST_F(IoPlanContractsTest, HandshakeGetMessageSizeIsCachedAcrossOnMessage) {
 
     // Second probe: done → returns size; onMessage() must consume the cached value
     // without re-invoking do_handshake().
-    io._t.next_result      = 7;
-    const auto reported    = proto.getMessageSize();
+    io._t.next_result       = 7;
+    const auto reported     = proto.getMessageSize();
     const int  before_calls = io._t.do_handshake_calls;
     EXPECT_EQ(reported, 7u);
     EXPECT_EQ(before_calls, 2);

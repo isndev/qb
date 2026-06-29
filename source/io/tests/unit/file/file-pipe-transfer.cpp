@@ -90,9 +90,9 @@ protected:
 
     void
     SetUp() override {
-        test_dir = std::filesystem::temp_directory_path() /
-                   ("qb_file_pipe_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_" +
-                    ::testing::UnitTest::GetInstance()->current_test_info()->name());
+        test_dir = std::filesystem::temp_directory_path()
+                   / ("qb_file_pipe_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_"
+                      + ::testing::UnitTest::GetInstance()->current_test_info()->name());
         std::filesystem::remove_all(test_dir);
         std::filesystem::create_directories(test_dir);
     }
@@ -108,7 +108,9 @@ protected:
 // SIZE-PARAMETERISED ROUND-TRIP — collapses 4 size-escalating duplicates.
 // =============================================================================
 
-class FilePipeRoundTrip : public FilePipeTest, public ::testing::WithParamInterface<std::size_t> {};
+class FilePipeRoundTrip
+    : public FilePipeTest
+    , public ::testing::WithParamInterface<std::size_t> {};
 
 /**
  * @test file → pipe → file is byte-identical at {tiny, 1 MiB, 2 MiB}.
@@ -120,7 +122,7 @@ class FilePipeRoundTrip : public FilePipeTest, public ::testing::WithParamInterf
  *        byte-for-byte equal to the source.
  */
 TEST_P(FilePipeRoundTrip, FilePipeFileIsByteIdentical) {
-    const std::size_t size = GetParam();
+    const std::size_t size    = GetParam();
     const std::string payload = make_payload(size);
 
     const std::filesystem::path source = test_dir / "source.dat";
@@ -153,7 +155,7 @@ TEST_P(FilePipeRoundTrip, FilePipeFileIsByteIdentical) {
 
     // ---- pipe -> file ---------------------------------------------------------
     const std::filesystem::path dest = test_dir / "dest.dat";
-    qb::io::sys::pipe_to_file p2f(pipe);
+    qb::io::sys::pipe_to_file   p2f(pipe);
     ASSERT_TRUE(p2f.open(dest));
 
     const int written = p2f.write_all();
@@ -166,10 +168,8 @@ TEST_P(FilePipeRoundTrip, FilePipeFileIsByteIdentical) {
     EXPECT_EQ(slurp(dest), payload) << "round-tripped file must be byte-identical to the source";
 }
 
-INSTANTIATE_TEST_SUITE_P(Sizes,
-                         FilePipeRoundTrip,
-                         ::testing::Values(static_cast<std::size_t>(64),
-                                           static_cast<std::size_t>(1024 * 1024),
+INSTANTIATE_TEST_SUITE_P(Sizes, FilePipeRoundTrip,
+                         ::testing::Values(static_cast<std::size_t>(64), static_cast<std::size_t>(1024 * 1024),
                                            static_cast<std::size_t>(2 * 1024 * 1024)),
                          [](const ::testing::TestParamInfo<std::size_t> &info) {
                              switch (info.param) {
@@ -192,8 +192,8 @@ INSTANTIATE_TEST_SUITE_P(Sizes,
  *        dependent); read_all() must then be a 0-byte no-op, and a post-EOF read() returns 0.
  */
 TEST_F(FilePipeTest, SingleReadThenReadAllThenEofIsIdempotent) {
-    const std::filesystem::path file = test_dir / "content.txt";
-    const std::string content = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-the-quick-brown-fox";
+    const std::filesystem::path file    = test_dir / "content.txt";
+    const std::string           content = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-the-quick-brown-fox";
     std::ofstream(file, std::ios::binary) << content;
 
     qb::allocator::pipe<char> pipe;
@@ -294,7 +294,7 @@ TEST_F(FilePipeTest, WritesGappedPipeContiguously) {
     pipe.free_front(5); // drop "First" → live view begins at " segment.Second segment."
 
     const std::filesystem::path out = test_dir / "gap.txt";
-    qb::io::sys::pipe_to_file p2f(pipe);
+    qb::io::sys::pipe_to_file   p2f(pipe);
     ASSERT_TRUE(p2f.open(out));
     EXPECT_GT(p2f.write_all(), 0);
     EXPECT_TRUE(p2f.eos());
@@ -314,7 +314,7 @@ TEST_F(FilePipeTest, WritesBinaryDataWithEmbeddedNuls) {
     std::memcpy(pipe.allocate_back(data.size()), data.data(), data.size());
 
     const std::filesystem::path out = test_dir / "binary.bin";
-    qb::io::sys::pipe_to_file p2f(pipe);
+    qb::io::sys::pipe_to_file   p2f(pipe);
     ASSERT_TRUE(p2f.open(out));
     EXPECT_EQ(p2f.write_all(), static_cast<int>(data.size()));
     p2f.close();
@@ -337,10 +337,10 @@ TEST_F(FilePipeTest, WriteResumesPartialPipeUntilEos) {
     std::memcpy(pipe.allocate_back(payload.size()), payload.data(), payload.size());
 
     const std::filesystem::path out = test_dir / "resumed.dat";
-    qb::io::sys::pipe_to_file p2f(pipe);
+    qb::io::sys::pipe_to_file   p2f(pipe);
     ASSERT_TRUE(p2f.open(out));
 
-    std::size_t last = 0;
+    std::size_t last      = 0;
     int         write_ops = 0;
     while (!p2f.eos()) {
         const int n = p2f.write();

@@ -174,8 +174,7 @@ TEST_F(ScopeStructuredConcurrency, JoinAllRethrowsWorkerExceptionWithoutHanging)
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); }))
-        << "join_all hung on a throwing worker (coroutine_scope failure-propagation deadlock)";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "join_all hung on a throwing worker (coroutine_scope failure-propagation deadlock)";
     EXPECT_EQ(sibling_ran.load(), 1) << "a sibling worker must still drain when another throws";
     EXPECT_TRUE(rethrew.load()) << "join_all must rethrow the worker's uncaught exception";
 }
@@ -186,8 +185,12 @@ TEST_F(ScopeStructuredConcurrency, JoinAnyReturnsFirstCompletedIndex) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         coroutine_scope scope;
-        scope.spawn([]() -> task<void> { co_await sleep(10ms); }());  // index 0, fast
-        scope.spawn([]() -> task<void> { co_await sleep(100ms); }()); // index 1, slow
+        scope.spawn([]() -> task<void> {
+            co_await sleep(10ms);
+        }()); // index 0, fast
+        scope.spawn([]() -> task<void> {
+            co_await sleep(100ms);
+        }()); // index 1, slow
 
         index.store(co_await scope.join_any());
         done.store(true);
@@ -203,7 +206,9 @@ TEST_F(ScopeStructuredConcurrency, JoinAllForReturnsFalseOnTimeout) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         coroutine_scope scope;
-        scope.spawn([]() -> task<void> { co_await sleep(500ms); }());
+        scope.spawn([]() -> task<void> {
+            co_await sleep(500ms);
+        }());
         completed.store(co_await scope.join_all_for(50ms));
         done.store(true);
     });
@@ -242,8 +247,12 @@ TEST_F(ScopeStructuredConcurrency, ActiveCountDecrementsMidFlight) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         coroutine_scope scope;
-        scope.spawn([]() -> task<void> { co_await sleep(100ms); }());
-        scope.spawn([]() -> task<void> { co_await sleep(10ms); }());
+        scope.spawn([]() -> task<void> {
+            co_await sleep(100ms);
+        }());
+        scope.spawn([]() -> task<void> {
+            co_await sleep(10ms);
+        }());
         active_at_start.store(scope.active_count());
 
         co_await sleep(50ms); // the fast one completes in this window
@@ -400,8 +409,12 @@ TEST_F(ScopeStructuredConcurrency, PruneCompletedRemovesFinishedEntries) {
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
         coroutine_scope scope;
-        scope.spawn([]() -> task<void> { co_await sleep(10ms); }());
-        scope.spawn([]() -> task<void> { co_await sleep(10ms); }());
+        scope.spawn([]() -> task<void> {
+            co_await sleep(10ms);
+        }());
+        scope.spawn([]() -> task<void> {
+            co_await sleep(10ms);
+        }());
 
         co_await scope.join_all();
         EXPECT_EQ(scope.active_count(), 0u);
@@ -423,10 +436,10 @@ TEST_F(ScopeStructuredConcurrency, ParallelMapTransformsAllItems) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&]() -> task<void> {
-        std::vector<int> items = {1, 2, 3, 4, 5};
+        std::vector<int> items   = {1, 2, 3, 4, 5};
         auto             results = co_await parallel_map(items, [](int v) -> task<int> {
             co_await sleep(10ms);
-            co_return v * v;
+            co_return v *v;
         });
         EXPECT_EQ(results.size(), 5u);
         int sum = 0;
@@ -830,11 +843,11 @@ TEST_F(ScopeStructuredConcurrency, MoveAssignedScopeOwnsTheTasks) {
         });
         EXPECT_EQ(src.active_count(), 1u);
 
-        coroutine_scope dst;          // its own (different) impl
-        dst = std::move(src);         // move-assign: dst now owns src's task + token + policy
+        coroutine_scope dst;  // its own (different) impl
+        dst = std::move(src); // move-assign: dst now owns src's task + token + policy
         EXPECT_EQ(dst.active_count(), 1u) << "the moved-into scope must own the spawned task";
 
-        co_await dst.join_all();      // the moved-into scope drains the worker
+        co_await dst.join_all(); // the moved-into scope drains the worker
         EXPECT_EQ(dst.active_count(), 0u);
         done.store(true);
     });
@@ -885,10 +898,12 @@ TEST_F(ScopeStructuredConcurrency, JoinAnyFastPathWhenTaskAlreadyDone) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         coroutine_scope scope;
-        scope.spawn([]() -> task<void> { co_return; }()); // completes on first drain, index 0
-        co_await sleep(20ms);                              // ensure it is marked completed
+        scope.spawn([]() -> task<void> {
+            co_return;
+        }());                 // completes on first drain, index 0
+        co_await sleep(20ms); // ensure it is marked completed
         EXPECT_EQ(scope.active_count(), 0u);
-        idx.store(co_await scope.join_any());              // await_ready() is already true
+        idx.store(co_await scope.join_any()); // await_ready() is already true
         done.store(true);
     });
 
@@ -925,7 +940,9 @@ TEST_F(ScopeStructuredConcurrency, JoinAllForFastPathWhenAllAlreadyDone) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         coroutine_scope scope;
-        scope.spawn([]() -> task<void> { co_await sleep(5ms); }());
+        scope.spawn([]() -> task<void> {
+            co_await sleep(5ms);
+        }());
         co_await sleep(25ms); // let the worker finish first
         EXPECT_EQ(scope.active_count(), 0u);
         completed.store(co_await scope.join_all_for(50ms)); // awaiter await_ready true
@@ -948,7 +965,9 @@ TEST_F(ScopeStructuredConcurrency, JoinAllForFastPathWhenAllAlreadyDone) {
 TEST_F(ScopeStructuredConcurrency, JoinAllReclaimedWhileParked) {
     run_reclaim_driver([]() -> task<void> {
         auto scope = std::make_shared<coroutine_scope>(coroutine_scope::cleanup_policy::detach);
-        scope->spawn([]() -> task<void> { co_await sleep(40ms); }());
+        scope->spawn([]() -> task<void> {
+            co_await sleep(40ms);
+        }());
         auto park = [](std::shared_ptr<coroutine_scope> s) -> task<int> {
             volatile char big[8192];
             big[0] = 7;
@@ -966,7 +985,9 @@ TEST_F(ScopeStructuredConcurrency, JoinAllReclaimedWhileParked) {
 TEST_F(ScopeStructuredConcurrency, JoinAllForReclaimedWhileParked) {
     run_reclaim_driver([]() -> task<void> {
         auto scope = std::make_shared<coroutine_scope>(coroutine_scope::cleanup_policy::detach);
-        scope->spawn([]() -> task<void> { co_await sleep(40ms); }());
+        scope->spawn([]() -> task<void> {
+            co_await sleep(40ms);
+        }());
         auto park = [](std::shared_ptr<coroutine_scope> s) -> task<int> {
             volatile char big[8192];
             big[0] = 7;

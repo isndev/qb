@@ -136,7 +136,7 @@ refused_uri(unsigned short port) {
 // libev/wepoll), so matching the fake's int fd here is consistent with the framework.
 inline bool
 make_loopback_pair(int &a, int &b) {
-    a = b = -1;
+    a = b      = -1;
     SOCKET lst = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (lst == INVALID_SOCKET)
         return false;
@@ -146,8 +146,8 @@ make_loopback_pair(int &a, int &b) {
     addr.sin_port        = 0;
     int  len             = static_cast<int>(sizeof(addr));
     bool ok              = false;
-    if (::bind(lst, reinterpret_cast<sockaddr *>(&addr), len) == 0 && ::listen(lst, 1) == 0 &&
-        ::getsockname(lst, reinterpret_cast<sockaddr *>(&addr), &len) == 0) {
+    if (::bind(lst, reinterpret_cast<sockaddr *>(&addr), len) == 0 && ::listen(lst, 1) == 0
+        && ::getsockname(lst, reinterpret_cast<sockaddr *>(&addr), &len) == 0) {
         SOCKET cli = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (cli != INVALID_SOCKET) {
             if (::connect(cli, reinterpret_cast<sockaddr *>(&addr), len) == 0) {
@@ -547,9 +547,9 @@ TEST_F(TcpConnectorStateMachineTest, AwaiterWithFakeSocketMovesResult) {
     bool              connected = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto socket = co_await qb::io::async::tcp::connect_with_socket<FakeConnectorTransport>(
-            FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:4"}, 0ms);
-        connected = socket.has_value() && socket->is_open();
+        auto socket = co_await qb::io::async::tcp::connect_with_socket<FakeConnectorTransport>(FakeConnectorSocket{shared},
+                                                                                               qb::io::uri{"tcp://fake.local:4"}, 0ms);
+        connected   = socket.has_value() && socket->is_open();
         done.store(true);
         co_return;
     });
@@ -569,19 +569,17 @@ TEST_F(TcpConnectorStateMachineTest, AwaiterWithFakeSocketMovesResult) {
 // ---------------------------------------------------------------------------
 TEST_F(TcpConnectorStateMachineTest, DestroyedAwaiterIgnoresLateCallback) {
     {
-        auto awaiter = qb::io::async::tcp::connect_awaiter<FakeConnectorSocket>{
-            qb::io::uri{"tcp://fake.local:5"}, 1ms};
+        auto awaiter = qb::io::async::tcp::connect_awaiter<FakeConnectorSocket>{qb::io::uri{"tcp://fake.local:5"}, 1ms};
         EXPECT_FALSE(awaiter.await_ready());
         // awaiter destroyed here without ever being co_awaited / resumed.
     }
 
-    auto shared    = std::make_shared<FakeConnectorSocket::state>();
-    shared->result = FakeConnectorSocket::connect_result::pending;
+    auto shared               = std::make_shared<FakeConnectorSocket::state>();
+    shared->result            = FakeConnectorSocket::connect_result::pending;
     shared->handshake_results = {0};
 
     qb::io::async::tcp::connect<FakeConnectorSocket>(
-        FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:6"},
-        [](FakeConnectorSocket &&) {}, 1ms);
+        FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:6"}, [](FakeConnectorSocket &&) {}, 1ms);
 
     EXPECT_TRUE(pump_until([&] { return shared->disconnect_calls > 0; })) << "independent connect never tore down";
 
@@ -596,9 +594,9 @@ TEST_F(TcpConnectorStateMachineTest, ParallelAwaitersAllCompleteOnRefused) {
     const unsigned short port = refused_port();
     ASSERT_GT(port, 0u);
 
-    constexpr int    kConnectors = 5;
-    std::atomic<int> completions{0};
-    std::atomic<int> successes{0};
+    constexpr int     kConnectors = 5;
+    std::atomic<int>  completions{0};
+    std::atomic<int>  successes{0};
     const std::string uri = refused_uri(port);
 
     for (int i = 0; i < kConnectors; ++i) {
@@ -611,8 +609,7 @@ TEST_F(TcpConnectorStateMachineTest, ParallelAwaitersAllCompleteOnRefused) {
         });
     }
 
-    EXPECT_TRUE(pump_until([&] { return completions.load() == kConnectors; }, 3s))
-        << "not all refused awaiters completed";
+    EXPECT_TRUE(pump_until([&] { return completions.load() == kConnectors; }, 3s)) << "not all refused awaiters completed";
 
     EXPECT_EQ(completions.load(), kConnectors);
     EXPECT_EQ(successes.load(), 0);
@@ -656,8 +653,7 @@ TEST_F(TcpConnectorStateMachineTest, SyncFailureDeferredCallbackReclaimedOnListe
     // strong-capture fix that releases the connector → user callback → sentinel.
     qb::io::async::listener::current.clear();
 
-    EXPECT_TRUE(weak_sentinel.expired())
-        << "LEAK: the deferred-failure Timeout was destroyed by listener teardown but never released "
-           "the connector (self-hold cycle) — connector + user callback leaked";
+    EXPECT_TRUE(weak_sentinel.expired()) << "LEAK: the deferred-failure Timeout was destroyed by listener teardown but never released "
+                                            "the connector (self-hold cycle) — connector + user callback leaked";
     EXPECT_EQ(shared->n_connect_calls, 1) << "the synchronous-failure path must have been taken";
 }

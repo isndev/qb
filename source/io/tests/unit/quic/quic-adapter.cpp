@@ -380,7 +380,13 @@ TEST(QuicAdapterEndpoint, BaseEndpointAcceptsAllBackendEventsAndTracksState) {
 
     raw->queued_events.push_back({qb::io::quic::backend_event::kind::stream_data_acked, 3, 0, 2, {}, {}});
     raw->queued_events.push_back(
-        {qb::io::quic::backend_event::kind::stream_closed, 3, 0, 9, {}, {}, qb::io::quic::disconnect_reason::none,
+        {qb::io::quic::backend_event::kind::stream_closed,
+         3,
+         0,
+         9,
+         {},
+         {},
+         qb::io::quic::disconnect_reason::none,
          qb::io::quic::stream_close_reason::finished});
 
     qb::io::quic::backend_event datagram;
@@ -941,7 +947,13 @@ TEST(QuicAdapterServer, ConnectionCloseClearsOnlyMatchingServerSessions) {
 
     raw->stats.active_connections = 1;
     raw->queued_events.push_back(
-        {qb::io::quic::backend_event::kind::connection_closed, 1, 0, 55, "first closed", {}, qb::io::quic::disconnect_reason::application_close});
+        {qb::io::quic::backend_event::kind::connection_closed,
+         1,
+         0,
+         55,
+         "first closed",
+         {},
+         qb::io::quic::disconnect_reason::application_close});
 
     server.poll();
 
@@ -968,7 +980,13 @@ TEST(QuicAdapterServer, ConnectionCloseWithoutRemainingConnectionsKeepsListenerO
 
     raw->stats.active_connections = 0;
     raw->queued_events.push_back(
-        {qb::io::quic::backend_event::kind::connection_closed, 7, 0, 0, "last client closed", {}, qb::io::quic::disconnect_reason::idle_timeout});
+        {qb::io::quic::backend_event::kind::connection_closed,
+         7,
+         0,
+         0,
+         "last client closed",
+         {},
+         qb::io::quic::disconnect_reason::idle_timeout});
 
     server.poll();
 
@@ -1038,7 +1056,13 @@ TEST(QuicAdapterServer, RemoteStreamFinIsDeliveredAndThenSessionIsUnregistered) 
     raw->queued_events.push_back(std::move(data));
 
     raw->queued_events.push_back(
-        {qb::io::quic::backend_event::kind::stream_closed, 9, 1, 0, {}, {}, qb::io::quic::disconnect_reason::none,
+        {qb::io::quic::backend_event::kind::stream_closed,
+         9,
+         1,
+         0,
+         {},
+         {},
+         qb::io::quic::disconnect_reason::none,
          qb::io::quic::stream_close_reason::finished});
 
     server.poll();

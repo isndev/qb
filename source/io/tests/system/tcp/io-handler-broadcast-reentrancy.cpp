@@ -317,8 +317,7 @@ TEST(IoHandlerBroadcastReentrancy, ClientDropShrinksRegistryViaDisconnected) {
 
     EXPECT_TRUE(pump_until([&] { return server.session_count() == static_cast<std::size_t>(kClients - 1); }, 3s))
         << "server never erased the dropped session; session_count=" << server.session_count();
-    EXPECT_EQ(server.session_count(), static_cast<std::size_t>(kClients - 1))
-        << "exactly one session must have been erased by disconnected()";
+    EXPECT_EQ(server.session_count(), static_cast<std::size_t>(kClients - 1)) << "exactly one session must have been erased by disconnected()";
 
     stop.store(true);
     worker.join();

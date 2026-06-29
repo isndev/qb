@@ -60,7 +60,7 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         g_stuck_started.store(true);
-        co_await context().until_cancelled();   // parks forever — only the deadline cancels it
+        co_await context().until_cancelled();    // parks forever — only the deadline cancels it
         g_stuck_completed_naturally.store(true); // must NOT happen (no natural completion)
         co_return true;
     }

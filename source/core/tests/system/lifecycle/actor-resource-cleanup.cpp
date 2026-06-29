@@ -165,10 +165,10 @@ public:
 // `force_path` selects which teardown the single resource actor takes.
 // ---------------------------------------------------------------------------
 class ResourceCoordinator : public qb::Actor {
-    const int   _n_alloc;
+    const int    _n_alloc;
     const size_t _bytes;
-    const bool  _force_path;
-    qb::ActorId _actor;
+    const bool   _force_path;
+    qb::ActorId  _actor;
 
 public:
     ResourceCoordinator(int n_alloc, size_t bytes, bool force_path)
@@ -197,8 +197,7 @@ public:
         EXPECT_EQ(e.live_bytes, static_cast<size_t>(_n_alloc) * _bytes);
         // Direct not-all-freed-before-shutdown oracle: while the actor is alive and holding its
         // resources, the global free count must lag the alloc count.
-        EXPECT_LT(g_freed.load(), g_alloc.load())
-            << "resources must still be live before shutdown (none released early)";
+        EXPECT_LT(g_freed.load(), g_alloc.load()) << "resources must still be live before shutdown (none released early)";
 
         if (_force_path)
             to(_actor).push<ForceShutdown>();

@@ -1,311 +1,311 @@
 {
-    "version": 3,
-    "cmakeMinimumRequired": {
-        "major": 3,
-        "minor": 24,
-        "patch": 0
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/vcpkg-optional.cmake",
+      "cacheVariables": {
+        "QB_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "QB_BUILD_TESTS": "ON",
+        "QB_BUILD_BENCHMARKS": "OFF",
+        "QB_BUILD_EXAMPLES": "ON",
+        "QB_ENABLE_NATIVE_ARCH": "OFF",
+        "QB_INSTALL": "OFF",
+        "QB_WITH_QUIC": "AUTO"
+      }
     },
-    "configurePresets": [
-        {
-            "name": "base",
-            "hidden": true,
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "toolchainFile": "${sourceDir}/cmake/vcpkg-optional.cmake",
-            "cacheVariables": {
-                "QB_CXX_STANDARD": "20",
-                "CMAKE_CXX_STANDARD_REQUIRED": "ON",
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-                "QB_BUILD_TESTS": "ON",
-                "QB_BUILD_BENCHMARKS": "OFF",
-                "QB_BUILD_EXAMPLES": "ON",
-                "QB_ENABLE_NATIVE_ARCH": "OFF",
-                "QB_INSTALL": "OFF",
-                "QB_WITH_QUIC": "AUTO"
-            }
-        },
-        {
-            "name": "cxx23-base",
-            "hidden": true,
-            "inherits": "base",
-            "cacheVariables": {
-                "QB_CXX_STANDARD": "23"
-            }
-        },
-        {
-            "name": "debug",
-            "displayName": "Debug",
-            "description": "Standalone qb Debug build on the default C++20 baseline.",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
-        },
-        {
-            "name": "dev",
-            "displayName": "Development",
-            "description": "Standalone qb development build with tests, examples, and benchmarks enabled.",
-            "inherits": "debug",
-            "cacheVariables": {
-                "QB_BUILD_BENCHMARKS": "ON"
-            }
-        },
-        {
-            "name": "debug-cxx23",
-            "displayName": "Debug (C++23)",
-            "description": "Standalone qb Debug build in C++23 mode for validating the modern feature path.",
-            "inherits": "cxx23-base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
-        },
-        {
-            "name": "dev-cxx23",
-            "displayName": "Development (C++23)",
-            "description": "Standalone qb development build in C++23 mode.",
-            "inherits": "debug-cxx23",
-            "cacheVariables": {
-                "QB_BUILD_BENCHMARKS": "ON"
-            }
-        },
-        {
-            "name": "relwithdebinfo",
-            "displayName": "RelWithDebInfo",
-            "description": "Optimized standalone qb build with debug symbols.",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
-            }
-        },
-        {
-            "name": "release",
-            "displayName": "Release",
-            "description": "Optimized standalone qb release build with tests enabled.",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "sanitize",
-            "displayName": "Sanitizers (ASan + UBSan)",
-            "description": "Standalone qb Debug build with AddressSanitizer and UndefinedBehaviorSanitizer.",
-            "inherits": "debug",
-            "cacheVariables": {
-                "QB_SANITIZE": "address,undefined"
-            }
-        },
-        {
-            "name": "sanitize-thread",
-            "displayName": "Sanitizers (TSan)",
-            "description": "Standalone qb Debug build with ThreadSanitizer.",
-            "inherits": "debug",
-            "cacheVariables": {
-                "QB_SANITIZE": "thread"
-            }
-        },
-        {
-            "name": "coverage",
-            "displayName": "Coverage",
-            "description": "Standalone qb Debug build with gcov-compatible coverage instrumentation.",
-            "inherits": "debug",
-            "cacheVariables": {
-                "QB_BUILD_COVERAGE": "ON",
-                "QB_BUILD_EXAMPLES": "OFF",
-                "QB_BUILD_BENCHMARKS": "OFF"
-            }
-        },
-        {
-            "name": "release-lto",
-            "displayName": "Release + LTO",
-            "description": "Release build with Link Time Optimization",
-            "inherits": "release",
-            "cacheVariables": {
-                "QB_ENABLE_LTO": "ON"
-            }
-        },
-        {
-            "name": "release-native",
-            "displayName": "Release + Native Arch",
-            "description": "Release build optimized for the host CPU (native is on by default; this preset is explicit)",
-            "inherits": "release",
-            "cacheVariables": {
-                "QB_ENABLE_NATIVE_ARCH": "ON"
-            }
-        },
-        {
-            "name": "release-portable",
-            "displayName": "Release + Portable Arch",
-            "description": "Release build with a portable CPU baseline (native arch OFF) for distributable binaries",
-            "inherits": "release",
-            "cacheVariables": {
-                "QB_ENABLE_NATIVE_ARCH": "OFF"
-            }
-        }
-    ],
-    "buildPresets": [
-        {
-            "name": "debug",
-            "configurePreset": "debug"
-        },
-        {
-            "name": "dev",
-            "configurePreset": "dev"
-        },
-        {
-            "name": "debug-cxx23",
-            "configurePreset": "debug-cxx23"
-        },
-        {
-            "name": "dev-cxx23",
-            "configurePreset": "dev-cxx23"
-        },
-        {
-            "name": "relwithdebinfo",
-            "configurePreset": "relwithdebinfo"
-        },
-        {
-            "name": "release",
-            "configurePreset": "release"
-        },
-        {
-            "name": "sanitize",
-            "configurePreset": "sanitize"
-        },
-        {
-            "name": "sanitize-thread",
-            "configurePreset": "sanitize-thread"
-        },
-        {
-            "name": "coverage",
-            "configurePreset": "coverage"
-        },
-        {
-            "name": "coverage-html",
-            "configurePreset": "coverage",
-            "targets": [
-                "qb-coverage-html"
-            ]
-        },
-        {
-            "name": "coverage-xml",
-            "configurePreset": "coverage",
-            "targets": [
-                "qb-coverage-xml"
-            ]
-        },
-        {
-            "name": "release-lto",
-            "configurePreset": "release-lto"
-        },
-        {
-            "name": "release-native",
-            "configurePreset": "release-native"
-        },
-        {
-            "name": "release-portable",
-            "configurePreset": "release-portable"
-        }
-    ],
-    "testPresets": [
-        {
-            "name": "debug",
-            "configurePreset": "debug",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "timeout": 300,
-                "jobs": 4
-            }
-        },
-        {
-            "name": "dev",
-            "configurePreset": "dev",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "timeout": 300,
-                "jobs": 4
-            }
-        },
-        {
-            "name": "debug-cxx23",
-            "configurePreset": "debug-cxx23",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "timeout": 300,
-                "jobs": 4
-            }
-        },
-        {
-            "name": "dev-cxx23",
-            "configurePreset": "dev-cxx23",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "timeout": 300,
-                "jobs": 4
-            }
-        },
-        {
-            "name": "relwithdebinfo",
-            "configurePreset": "relwithdebinfo",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "timeout": 300,
-                "jobs": 4
-            }
-        },
-        {
-            "name": "release",
-            "configurePreset": "release",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "timeout": 300,
-                "jobs": 4
-            }
-        },
-        {
-            "name": "sanitize",
-            "configurePreset": "sanitize",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "timeout": 600,
-                "jobs": 1
-            }
-        },
-        {
-            "name": "sanitize-thread",
-            "configurePreset": "sanitize-thread",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "timeout": 900,
-                "jobs": 1
-            }
-        },
-        {
-            "name": "coverage",
-            "configurePreset": "coverage",
-            "output": {
-                "outputOnFailure": true
-            },
-            "execution": {
-                "timeout": 600,
-                "jobs": 4
-            }
-        }
-    ]
+    {
+      "name": "cxx23-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "QB_CXX_STANDARD": "23"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "description": "Standalone qb Debug build on the default C++20 baseline.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "Development",
+      "description": "Standalone qb development build with tests, examples, and benchmarks enabled.",
+      "inherits": "debug",
+      "cacheVariables": {
+        "QB_BUILD_BENCHMARKS": "ON"
+      }
+    },
+    {
+      "name": "debug-cxx23",
+      "displayName": "Debug (C++23)",
+      "description": "Standalone qb Debug build in C++23 mode for validating the modern feature path.",
+      "inherits": "cxx23-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "dev-cxx23",
+      "displayName": "Development (C++23)",
+      "description": "Standalone qb development build in C++23 mode.",
+      "inherits": "debug-cxx23",
+      "cacheVariables": {
+        "QB_BUILD_BENCHMARKS": "ON"
+      }
+    },
+    {
+      "name": "relwithdebinfo",
+      "displayName": "RelWithDebInfo",
+      "description": "Optimized standalone qb build with debug symbols.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "description": "Optimized standalone qb release build with tests enabled.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "sanitize",
+      "displayName": "Sanitizers (ASan + UBSan)",
+      "description": "Standalone qb Debug build with AddressSanitizer and UndefinedBehaviorSanitizer.",
+      "inherits": "debug",
+      "cacheVariables": {
+        "QB_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "sanitize-thread",
+      "displayName": "Sanitizers (TSan)",
+      "description": "Standalone qb Debug build with ThreadSanitizer.",
+      "inherits": "debug",
+      "cacheVariables": {
+        "QB_SANITIZE": "thread"
+      }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Coverage",
+      "description": "Standalone qb Debug build with gcov-compatible coverage instrumentation.",
+      "inherits": "debug",
+      "cacheVariables": {
+        "QB_BUILD_COVERAGE": "ON",
+        "QB_BUILD_EXAMPLES": "OFF",
+        "QB_BUILD_BENCHMARKS": "OFF"
+      }
+    },
+    {
+      "name": "release-lto",
+      "displayName": "Release + LTO",
+      "description": "Release build with Link Time Optimization",
+      "inherits": "release",
+      "cacheVariables": {
+        "QB_ENABLE_LTO": "ON"
+      }
+    },
+    {
+      "name": "release-native",
+      "displayName": "Release + Native Arch",
+      "description": "Release build optimized for the host CPU (native is on by default; this preset is explicit)",
+      "inherits": "release",
+      "cacheVariables": {
+        "QB_ENABLE_NATIVE_ARCH": "ON"
+      }
+    },
+    {
+      "name": "release-portable",
+      "displayName": "Release + Portable Arch",
+      "description": "Release build with a portable CPU baseline (native arch OFF) for distributable binaries",
+      "inherits": "release",
+      "cacheVariables": {
+        "QB_ENABLE_NATIVE_ARCH": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "debug-cxx23",
+      "configurePreset": "debug-cxx23"
+    },
+    {
+      "name": "dev-cxx23",
+      "configurePreset": "dev-cxx23"
+    },
+    {
+      "name": "relwithdebinfo",
+      "configurePreset": "relwithdebinfo"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize"
+    },
+    {
+      "name": "sanitize-thread",
+      "configurePreset": "sanitize-thread"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    },
+    {
+      "name": "coverage-html",
+      "configurePreset": "coverage",
+      "targets": [
+        "qb-coverage-html"
+      ]
+    },
+    {
+      "name": "coverage-xml",
+      "configurePreset": "coverage",
+      "targets": [
+        "qb-coverage-xml"
+      ]
+    },
+    {
+      "name": "release-lto",
+      "configurePreset": "release-lto"
+    },
+    {
+      "name": "release-native",
+      "configurePreset": "release-native"
+    },
+    {
+      "name": "release-portable",
+      "configurePreset": "release-portable"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300,
+        "jobs": 4
+      }
+    },
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300,
+        "jobs": 4
+      }
+    },
+    {
+      "name": "debug-cxx23",
+      "configurePreset": "debug-cxx23",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300,
+        "jobs": 4
+      }
+    },
+    {
+      "name": "dev-cxx23",
+      "configurePreset": "dev-cxx23",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300,
+        "jobs": 4
+      }
+    },
+    {
+      "name": "relwithdebinfo",
+      "configurePreset": "relwithdebinfo",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300,
+        "jobs": 4
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300,
+        "jobs": 4
+      }
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 600,
+        "jobs": 1
+      }
+    },
+    {
+      "name": "sanitize-thread",
+      "configurePreset": "sanitize-thread",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 900,
+        "jobs": 1
+      }
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 600,
+        "jobs": 4
+      }
+    }
+  ]
 }

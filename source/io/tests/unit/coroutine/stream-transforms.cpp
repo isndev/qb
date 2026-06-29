@@ -238,9 +238,9 @@ TEST_F(StreamTransforms, ChainConcatenatesTwoStreams) {
     std::vector<int>  result;
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
-        auto s1      = async_stream<int>::from_vector({1, 2, 3});
-        auto s2      = async_stream<int>::from_vector({4, 5, 6});
-        result       = co_await s1.chain(std::move(s2)).collect();
+        auto s1 = async_stream<int>::from_vector({1, 2, 3});
+        auto s2 = async_stream<int>::from_vector({4, 5, 6});
+        result  = co_await s1.chain(std::move(s2)).collect();
         done.store(true);
     });
 
@@ -495,7 +495,7 @@ TEST_F(StreamTransforms, ZipShortCircuitsWhenFirstStreamEndsFirst) {
     std::vector<std::pair<int, int>> result;
     std::atomic<bool>                done{false};
     coro_scheduler().spawn([&]() -> task<void> {
-        auto shorter = async_stream<int>::from_vector({1, 2, 3});          // first, shorter
+        auto shorter = async_stream<int>::from_vector({1, 2, 3}); // first, shorter
         auto longer  = async_stream<int>::from_vector({10, 11, 12, 13, 14});
         result       = co_await zip(std::move(shorter), std::move(longer)).collect();
         done.store(true);

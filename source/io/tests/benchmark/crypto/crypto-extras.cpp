@@ -278,8 +278,8 @@ BM_Jwt_Rs256CreateVerify(benchmark::State &state) {
 
 BENCHMARK(BM_Crypto_Hkdf)->Arg(32)->Arg(64)->Arg(256)->ArgName("out_bytes")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Crypto_Argon2id)
-    ->Args({1, 1 << 12})  // t=1, m=4 MiB
-    ->Args({3, 1 << 16})  // t=3, m=64 MiB (OWASP-ish)
+    ->Args({1, 1 << 12}) // t=1, m=4 MiB
+    ->Args({3, 1 << 16}) // t=3, m=64 MiB (OWASP-ish)
     ->ArgNames({"t_cost", "m_cost_kib"})
     ->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_Crypto_Ed25519Sign)->Unit(benchmark::kMicrosecond);

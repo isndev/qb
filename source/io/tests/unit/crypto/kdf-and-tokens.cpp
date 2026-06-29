@@ -117,7 +117,9 @@ TEST_F(CryptoKdfAndTokensTest, HkdfIsDigestSensitiveAndHandlesEmptyInputs) {
 
     // The same IKM under different digests must yield pairwise-distinct OKMs.
     const std::vector<qb::crypto::DigestAlgorithm> digests = {
-        qb::crypto::DigestAlgorithm::SHA1, qb::crypto::DigestAlgorithm::SHA256, qb::crypto::DigestAlgorithm::SHA384,
+        qb::crypto::DigestAlgorithm::SHA1,
+        qb::crypto::DigestAlgorithm::SHA256,
+        qb::crypto::DigestAlgorithm::SHA384,
         qb::crypto::DigestAlgorithm::SHA512,
     };
 
@@ -134,9 +136,9 @@ TEST_F(CryptoKdfAndTokensTest, HkdfIsDigestSensitiveAndHandlesEmptyInputs) {
     }
 
     // Empty info and empty salt are both accepted; empty salt changes the output.
-    const auto with_salt    = qb::crypto::hkdf(input, salt, info, out, qb::crypto::DigestAlgorithm::SHA256);
-    const auto empty_salt   = qb::crypto::hkdf(input, {}, info, out, qb::crypto::DigestAlgorithm::SHA256);
-    const auto empty_info   = qb::crypto::hkdf(input, salt, {}, out, qb::crypto::DigestAlgorithm::SHA256);
+    const auto with_salt  = qb::crypto::hkdf(input, salt, info, out, qb::crypto::DigestAlgorithm::SHA256);
+    const auto empty_salt = qb::crypto::hkdf(input, {}, info, out, qb::crypto::DigestAlgorithm::SHA256);
+    const auto empty_info = qb::crypto::hkdf(input, salt, {}, out, qb::crypto::DigestAlgorithm::SHA256);
     EXPECT_EQ(empty_salt.size(), out);
     EXPECT_EQ(empty_info.size(), out);
     EXPECT_NE(empty_salt, with_salt);
@@ -244,7 +246,7 @@ TEST_F(CryptoKdfAndTokensTest, Base64UrlRoundTripsAndIsUrlSafe) {
         EXPECT_EQ(std::string(round.begin(), round.end()), plain);
     }
 
-    const std::vector<unsigned char> url_bytes = {0xfb, 0xff};
+    const std::vector<unsigned char> url_bytes   = {0xfb, 0xff};
     const std::string                url_encoded = qb::crypto::base64url_encode(url_bytes);
     EXPECT_EQ(url_encoded, "-_8");
     EXPECT_EQ(qb::crypto::base64url_decode(url_encoded), url_bytes);
@@ -282,7 +284,7 @@ TEST_F(CryptoKdfAndTokensTest, TokenExpiryIsEnforcedWithoutSleeping) {
     expired_json["payload"] = payload;
     expired_json["exp"]     = unix_now_seconds() - 100; // 100s in the past
 
-    const std::string              expired_str = expired_json.dump();
+    const std::string                expired_str = expired_json.dump();
     const std::vector<unsigned char> expired_bytes(expired_str.begin(), expired_str.end());
     const auto                       ciphertext = qb::crypto::encrypt(expired_bytes, test_key, iv, qb::crypto::SymmetricAlgorithm::AES_256_GCM);
 
@@ -302,7 +304,7 @@ TEST_F(CryptoKdfAndTokensTest, TokensRejectMalformedAndTruncatedInputs) {
     EXPECT_TRUE(qb::crypto::verify_token(qb::crypto::base64url_encode(too_short), test_key).empty());
 
     // Authentic AEAD whose decrypted payload is not valid token JSON.
-    const auto                       iv = qb::crypto::generate_iv(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+    const auto                       iv           = qb::crypto::generate_iv(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
     const std::string                invalid_json = "not-json";
     const std::vector<unsigned char> invalid_json_bytes(invalid_json.begin(), invalid_json.end());
     const auto encrypted_invalid = qb::crypto::encrypt(invalid_json_bytes, test_key, iv, qb::crypto::SymmetricAlgorithm::AES_256_GCM);
@@ -316,7 +318,7 @@ TEST_F(CryptoKdfAndTokensTest, TokensRejectMalformedAndTruncatedInputs) {
 TEST_F(CryptoKdfAndTokensTest, TokensCarryComplexPayloads) {
     const std::string json_payload = "{\"user_id\":123,\"roles\":[\"admin\",\"user\"],"
                                      "\"permissions\":{\"read\":true,\"write\":true}}";
-    const std::string json_token = qb::crypto::generate_token(json_payload, test_key, std::chrono::seconds(60));
+    const std::string json_token   = qb::crypto::generate_token(json_payload, test_key, std::chrono::seconds(60));
     EXPECT_EQ(qb::crypto::verify_token(json_token, test_key), json_payload);
 
     // Printable-ASCII payload (avoids invalid UTF-8 in the JSON envelope).
@@ -449,7 +451,8 @@ TEST_F(CryptoKdfAndTokensTest, PasswordHashingVerifiesAndRejects) {
     EXPECT_TRUE(qb::crypto::verify_password(long_password, long_hash));
     EXPECT_FALSE(qb::crypto::verify_password(long_password + "X", long_hash));
 
-    const std::string unicode_password = "\xd0\xbf\xd0\xb0\xd1\x80\xd0\xbe\xd0\xbb\xd1\x8c""123!@#"; // Cyrillic + specials
+    const std::string unicode_password = "\xd0\xbf\xd0\xb0\xd1\x80\xd0\xbe\xd0\xbb\xd1\x8c"
+                                         "123!@#"; // Cyrillic + specials
     const std::string unicode_hash     = qb::crypto::hash_password(unicode_password);
     EXPECT_TRUE(qb::crypto::verify_password(unicode_password, unicode_hash));
 

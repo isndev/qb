@@ -48,7 +48,8 @@ std::atomic<bool> g_optout_survived_external_kill{false};
 // Opts out of default registrations and self-kills — proves kill() works without any handler.
 class OptOutActor : public qb::Actor {
 public:
-    OptOutActor() : qb::Actor(qb::no_default_events) {}
+    OptOutActor()
+        : qb::Actor(qb::no_default_events) {}
     qb::io::async::task<bool>
     onInit() final {
         g_optout_self_kill_ran.store(true, std::memory_order_relaxed);
@@ -62,13 +63,15 @@ public:
 // then confirms the actor was still alive and tears it down.
 class OptOutSurvivesKillActor : public qb::Actor {
 public:
-    OptOutSurvivesKillActor() : qb::Actor(qb::no_default_events) {}
+    OptOutSurvivesKillActor()
+        : qb::Actor(qb::no_default_events) {}
     qb::io::async::task<bool>
     onInit() final {
         registerEvent<OptOutControlEvent>(*this);
         co_return true;
     }
-    void on(OptOutControlEvent const &) {
+    void
+    on(OptOutControlEvent const &) {
         // Reaching here proves the preceding KillEvent did NOT kill us.
         g_optout_survived_external_kill.store(true, std::memory_order_relaxed);
         kill();
@@ -79,7 +82,8 @@ public:
 // Opts out then opts back in to KillEvent → external push<KillEvent> kills it as usual.
 class OptOutOptInKillActor : public qb::Actor {
 public:
-    OptOutOptInKillActor() : qb::Actor(qb::no_default_events) {}
+    OptOutOptInKillActor()
+        : qb::Actor(qb::no_default_events) {}
     qb::io::async::task<bool>
     onInit() final {
         registerEvent<qb::KillEvent>(*this);
@@ -122,18 +126,17 @@ TEST(NoDefaultEvents, ExternalKillEventIsIgnoredWithoutHandler) {
     // push<KillEvent> — only the subsequent control event tears it down.
     g_optout_survived_external_kill.store(false, std::memory_order_relaxed);
     qb::Main main;
-    auto target = main.core(0).addActor<OptOutSurvivesKillActor>();
+    auto     target = main.core(0).addActor<OptOutSurvivesKillActor>();
     main.core(0).addActor<KillThenControlSender>(target, /*also_control=*/true);
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_optout_survived_external_kill.load())
-        << "no_default_events actor must ignore an unhandled external KillEvent";
+    EXPECT_TRUE(g_optout_survived_external_kill.load()) << "no_default_events actor must ignore an unhandled external KillEvent";
 }
 
 TEST(NoDefaultEvents, OptInKillEventEnablesExternalKill) {
     qb::Main main;
-    auto target = main.core(0).addActor<OptOutOptInKillActor>();
+    auto     target = main.core(0).addActor<OptOutOptInKillActor>();
     main.core(0).addActor<KillThenControlSender>(target, /*also_control=*/false);
     main.start(false);
     main.join();

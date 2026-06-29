@@ -90,11 +90,8 @@ establish_loopback(Server &server, Client &client, std::vector<std::string> cons
     const auto uri = std::string{"quic://127.0.0.1:"} + std::to_string(server.local_endpoint().port());
     ASSERT_TRUE(client.connect(qb::io::uri{uri}, client_tls, alpn));
 
-    ASSERT_TRUE(pump_until(
-        [&] {
-            return server.current_state() == State::connected && client.current_state() == State::connected;
-        },
-        std::chrono::seconds(5)))
+    ASSERT_TRUE(pump_until([&] { return server.current_state() == State::connected && client.current_state() == State::connected; },
+                           std::chrono::seconds(5)))
         << "QUIC loopback handshake did not complete";
 }
 

@@ -63,12 +63,12 @@ make_http_payload(std::size_t const records) {
     qb::json data = qb::json::array();
     for (std::size_t i = 0; i < records; ++i) {
         qb::json rec;
-        rec["id"]          = static_cast<std::uint64_t>(i);
-        rec["created_at"]  = kBigTimestampNs + static_cast<std::int64_t>(i);  // int64
-        rec["balance"]     = kPreciseDouble * static_cast<double>(i + 1);     // double
-        rec["name"]        = "record-" + std::to_string(i);
-        rec["active"]      = (i % 2u) == 0u;
-        rec["tags"]        = {"alpha", "beta", "gamma"};
+        rec["id"]         = static_cast<std::uint64_t>(i);
+        rec["created_at"] = kBigTimestampNs + static_cast<std::int64_t>(i); // int64
+        rec["balance"]    = kPreciseDouble * static_cast<double>(i + 1);    // double
+        rec["name"]       = "record-" + std::to_string(i);
+        rec["active"]     = (i % 2u) == 0u;
+        rec["tags"]       = {"alpha", "beta", "gamma"};
         data.push_back(std::move(rec));
     }
     root["data"] = std::move(data);
@@ -119,10 +119,9 @@ BM_Json_Parse(benchmark::State &state) {
     // precise double exactly (guards the int64/double truncation regression). Broken serialization
     // fails here, before timing — not as a duration gate.
     {
-        const qb::json round = qb::json::parse(text);
-        const bool     int64_ok =
-            round.at("meta").at("server_time").get<std::int64_t>() == kBigTimestampNs;
-        const bool double_ok = std::abs(round.at("meta").at("latency_ms").get<double>() - kPreciseDouble) < 1e-12;
+        const qb::json round     = qb::json::parse(text);
+        const bool     int64_ok  = round.at("meta").at("server_time").get<std::int64_t>() == kBigTimestampNs;
+        const bool     double_ok = std::abs(round.at("meta").at("latency_ms").get<double>() - kPreciseDouble) < 1e-12;
         if (!int64_ok || !double_ok) {
             state.SkipWithError("json round-trip corrupted an int64 timestamp or a double");
             return;

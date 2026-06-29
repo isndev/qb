@@ -76,8 +76,7 @@ BM_MpscMailbox_FanInDrain(benchmark::State &state) {
     // One-shot out-of-loop correctness probe: a consumer that never reaches `total` would hang here,
     // catching a structurally broken harness before any timing. DoNotOptimize keeps it from folding.
     {
-        std::uint64_t probe_fails =
-            qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_empty_bucket, consume_noop);
+        std::uint64_t probe_fails = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_empty_bucket, consume_noop);
         benchmark::DoNotOptimize(probe_fails);
     }
 

@@ -75,8 +75,7 @@ TEST(SelfLocate, SelfPathPointsAtThisExecutable) {
 
     const std::string stem = exe.stem().string();
     EXPECT_FALSE(stem.empty()) << exe.string();
-    EXPECT_NE(stem.find("test"), std::string::npos)
-        << "self_path() must point at this test binary: " << exe.string();
+    EXPECT_NE(stem.find("test"), std::string::npos) << "self_path() must point at this test binary: " << exe.string();
 }
 
 /**

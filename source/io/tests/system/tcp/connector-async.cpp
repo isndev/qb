@@ -55,8 +55,8 @@
 using namespace qb::io;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
-using qb::io::test::reset_async_context;
 using qb::io::test::reserve_free_tcp_port;
+using qb::io::test::reset_async_context;
 
 namespace {
 
@@ -119,16 +119,24 @@ TEST_F(ConnectorAsyncTest, ClearWhileConnectInFlightReclaimsConnector) {
     static std::atomic<long> live;
     live.store(0);
     struct Tracer {
-        Tracer() { live.fetch_add(1); }
-        Tracer(const Tracer &) { live.fetch_add(1); }
-        Tracer(Tracer &&) noexcept { live.fetch_add(1); }
-        ~Tracer() { live.fetch_sub(1); }
+        Tracer() {
+            live.fetch_add(1);
+        }
+        Tracer(const Tracer &) {
+            live.fetch_add(1);
+        }
+        Tracer(Tracer &&) noexcept {
+            live.fetch_add(1);
+        }
+        ~Tracer() {
+            live.fetch_sub(1);
+        }
     };
     {
         Tracer probe;
         async::tcp::connect<qb::io::tcp::socket>(
-            uri("tcp://240.0.0.1:9"),                                  // non-routable: stays in flight
-            [probe](qb::io::tcp::socket &&) { (void) probe; }, 60s);   // long deadline: never completes here
+            uri("tcp://240.0.0.1:9"),                                // non-routable: stays in flight
+            [probe](qb::io::tcp::socket &&) { (void) probe; }, 60s); // long deadline: never completes here
     }
     for (int i = 0; i < 8; ++i)
         async::run(EVRUN_NOWAIT); // arm the io watcher + deadline
@@ -179,9 +187,9 @@ TEST_F(ConnectorAsyncTest, ConnectDeadlineBoundsSlowRefusedConnect) {
 
     EXPECT_EQ(callbacks, 1) << "exactly one completion callback";
     EXPECT_FALSE(socket_open) << "a refused/deadlined connect must hand back a closed socket";
-    EXPECT_LT(elapsed, 1500ms)
-        << "the connect deadline must bound the wait below the OS connect-failure latency "
-           "(took " << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() << "ms)";
+    EXPECT_LT(elapsed, 1500ms) << "the connect deadline must bound the wait below the OS connect-failure latency "
+                                  "(took "
+                               << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() << "ms)";
 }
 
 // =============================================================================
@@ -335,19 +343,17 @@ TEST_F(ConnectorAsyncTest, FreshSocketConnectsWithoutDeadlineAndEchoesByte) {
 
     // No timeout argument -> qb::duration::zero() -> deadline_ == 0 -> arm_deadline()
     // takes its `deadline_ <= 0.` early return; only the EV_WRITE completion drives it.
-    async::tcp::connect<qb::io::tcp::socket>(
-        uri{"tcp://127.0.0.1:" + std::to_string(port)},
-        [&](qb::io::tcp::socket &&sock) {
-            connected = sock.is_open();
-            if (sock.is_open()) {
-                ASSERT_EQ(sock.write("z", 1), 1);
-                char reply = 0;
-                sock.set_nonblocking(false);
-                echoed = (sock.read(&reply, sizeof(reply)) == 1) && (reply == 'z');
-                sock.disconnect();
-            }
-            done = true;
-        });
+    async::tcp::connect<qb::io::tcp::socket>(uri{"tcp://127.0.0.1:" + std::to_string(port)}, [&](qb::io::tcp::socket &&sock) {
+        connected = sock.is_open();
+        if (sock.is_open()) {
+            ASSERT_EQ(sock.write("z", 1), 1);
+            char reply = 0;
+            sock.set_nonblocking(false);
+            echoed = (sock.read(&reply, sizeof(reply)) == 1) && (reply == 'z');
+            sock.disconnect();
+        }
+        done = true;
+    });
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "no-deadline connect callback never delivered";
     EXPECT_TRUE(connected) << "no-deadline connect did not yield an open socket";

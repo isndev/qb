@@ -88,7 +88,7 @@ public:
         : _ok(false) {
         if (::getrlimit(RLIMIT_NOFILE, &_saved) != 0)
             return;
-        rlimit clamped = _saved;
+        rlimit clamped   = _saved;
         clamped.rlim_cur = soft_limit;
         _ok              = (::setrlimit(RLIMIT_NOFILE, &clamped) == 0);
     }
@@ -181,8 +181,7 @@ TEST(AcceptTransientErrors, FdExhaustionRemapsToWouldBlockAndKeepsAcceptorAlive)
         // The remap branch fired: no socket produced, errno remapped to EWOULDBLOCK.
         EXPECT_EQ(handle, static_cast<std::size_t>(-1)) << "read() must not yield a socket under fd exhaustion";
         EXPECT_EQ(qb::io::socket::get_last_errno(), EWOULDBLOCK)
-            << "an EMFILE accept failure must be remapped to EWOULDBLOCK (retryable), got errno="
-            << qb::io::socket::get_last_errno();
+            << "an EMFILE accept failure must be remapped to EWOULDBLOCK (retryable), got errno=" << qb::io::socket::get_last_errno();
 
         // The acceptor itself is untouched: the listener is still open and would
         // accept once fds free up. eof() is a documented no-op and must be harmless.

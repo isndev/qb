@@ -45,13 +45,13 @@ namespace {
 // ---------------------------------------------------------------------------
 // Observability atoms (reset per test). Mirror in-actor outcomes to the body.
 // ---------------------------------------------------------------------------
-std::atomic<bool> g_service_ctor_ran{false};  // ServiceActor ctor body ran (and its checks held)
-std::atomic<bool> g_service_init_ran{false};  // ServiceActor onInit body ran (identity held)
-std::atomic<bool> g_peer_saw_service{false};  // a peer actor observed the service via getService<>()
-std::atomic<bool> g_returned_false{false};    // a failing onInit reached its clean co_return false
-std::atomic<bool> g_threw{false};             // a throwing onInit reached its throw site
-std::atomic<int>  g_kill_targets_alive{0};    // live TestKillActor instances (must return to 0)
-std::atomic<int>  g_kill_targets_built{0};    // TestKillActor instances ever constructed
+std::atomic<bool> g_service_ctor_ran{false}; // ServiceActor ctor body ran (and its checks held)
+std::atomic<bool> g_service_init_ran{false}; // ServiceActor onInit body ran (identity held)
+std::atomic<bool> g_peer_saw_service{false}; // a peer actor observed the service via getService<>()
+std::atomic<bool> g_returned_false{false};   // a failing onInit reached its clean co_return false
+std::atomic<bool> g_threw{false};            // a throwing onInit reached its throw site
+std::atomic<int>  g_kill_targets_alive{0};   // live TestKillActor instances (must return to 0)
+std::atomic<int>  g_kill_targets_built{0};   // TestKillActor instances ever constructed
 
 void
 reset_atoms() {
@@ -183,7 +183,7 @@ TEST(AddActor, EngineShouldAbortIfActorThrewDuringInitAtStart) {
 TEST(AddActor, ShouldReturnValidActorIdAtStart) {
     reset_atoms();
     qb::Main main;
-    auto id = main.addActor<TestServiceActor>(0, true);
+    auto     id = main.addActor<TestServiceActor>(0, true);
     main.addActor<CheckServiceActor>(0);
     EXPECT_NE(static_cast<std::uint32_t>(id), 0u);
 
@@ -198,7 +198,7 @@ TEST(AddActor, ShouldReturnValidActorIdAtStart) {
 TEST(AddActor, ShouldReturnValidServiceActorIdAtStart) {
     reset_atoms();
     qb::Main main;
-    auto id = main.addActor<TestServiceActor>(0, true);
+    auto     id = main.addActor<TestServiceActor>(0, true);
     EXPECT_EQ(static_cast<std::uint32_t>(id), 1u); // first ServiceActor id is deterministic 1
 
     main.start(false);
@@ -222,7 +222,7 @@ TEST(AddActorUsingCoreBuilder, ShouldNotAddActorWhenEngineIsRunning) {
 TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
     reset_atoms();
     qb::Main main;
-    auto builder = main.core(0).builder().addActor<TestServiceActor>(true).addActor<TestActor>(true);
+    auto     builder = main.core(0).builder().addActor<TestServiceActor>(true).addActor<TestActor>(true);
     EXPECT_TRUE(static_cast<bool>(builder));
     EXPECT_EQ(builder.idList().size(), 2u);
     EXPECT_EQ(static_cast<std::uint32_t>(builder.idList()[0]), 1u); // service id
@@ -267,7 +267,7 @@ public:
     qb::io::async::task<bool>
     onInit() final {
         EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
-        push<qb::KillEvent>(id());            // self
+        push<qb::KillEvent>(id());               // self
         push<qb::KillEvent>(qb::BroadcastId(1)); // every actor on core 1
         co_return true;
     }
@@ -304,8 +304,7 @@ TEST(KillActor, BroadcastKillLeavesNoSurvivors) {
 
     EXPECT_FALSE(main.hasError());
     EXPECT_EQ(g_kill_targets_built.load(), kTargets) << "all 1024 broadcast targets must have been created";
-    EXPECT_EQ(g_kill_targets_alive.load(), 0)
-        << "every broadcast-killed actor must be destroyed — zero survivors after join";
+    EXPECT_EQ(g_kill_targets_alive.load(), 0) << "every broadcast-killed actor must be destroyed — zero survivors after join";
 }
 
 } // namespace

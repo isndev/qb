@@ -180,20 +180,21 @@ BM_PINGPONG(benchmark::State &state) {
     }
 
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * static_cast<std::uint64_t>(round_trips_total)));
-    state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations() * 2ull * static_cast<std::uint64_t>(round_trips_total) * sizeof(EventTrait)));
+    state.SetBytesProcessed(
+        static_cast<std::int64_t>(state.iterations() * 2ull * static_cast<std::uint64_t>(round_trips_total) * sizeof(EventTrait)));
     state.counters["round_trips_per_s"] = benchmark::Counter(round_trips_total, benchmark::Counter::kIsIterationInvariantRate);
     state.counters["messages_per_s"]    = benchmark::Counter(messages_total, benchmark::Counter::kIsIterationInvariantRate);
 }
 
 } // namespace
 
-#define REGISTER_PINGPONG(TRAIT)                                                                                                             \
-    BENCHMARK_TEMPLATE(BM_PINGPONG, TRAIT)                                                                                                   \
-        ->RangeMultiplier(2)                                                                                                                 \
-        ->Ranges({{1, 64}, {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT}, {1u, max_core_range_for_bench()}})                                  \
-        ->ArgNames({"NB_PING_ACTOR", "NB_PING", "NB_CORE"})                                                                                  \
-        ->Iterations(MAX_BENCHMARK_ITERATION)                                                                                                \
-        ->UseRealTime()                                                                                                                      \
+#define REGISTER_PINGPONG(TRAIT)                                                                            \
+    BENCHMARK_TEMPLATE(BM_PINGPONG, TRAIT)                                                                  \
+        ->RangeMultiplier(2)                                                                                \
+        ->Ranges({{1, 64}, {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT}, {1u, max_core_range_for_bench()}}) \
+        ->ArgNames({"NB_PING_ACTOR", "NB_PING", "NB_CORE"})                                                 \
+        ->Iterations(MAX_BENCHMARK_ITERATION)                                                               \
+        ->UseRealTime()                                                                                     \
         ->Unit(benchmark::kMillisecond)
 
 REGISTER_PINGPONG(TinyEvent);

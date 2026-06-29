@@ -442,9 +442,8 @@ TEST_F(CoroutineExceptionTests, ExceptionFromAsyncGeneratorPropagates) {
     auto values_ptr = &values_seen;
     auto caught_ptr = &caught;
     auto done_ptr   = &done;
-    coro_scheduler().spawn([values_ptr, caught_ptr, done_ptr]() -> task<void> {
-        co_await consume_failing_gen(values_ptr, caught_ptr, done_ptr);
-    });
+    coro_scheduler().spawn(
+        [values_ptr, caught_ptr, done_ptr]() -> task<void> { co_await consume_failing_gen(values_ptr, caught_ptr, done_ptr); });
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "generator consumer never completed";
     EXPECT_EQ(values_seen.load(), 2) << "consumer should have received the two values before the throw";
@@ -516,8 +515,7 @@ TEST_F(CoroutineExceptionTests, UnhandledExceptionDoesNotStopOtherCoroutines) {
     coro_scheduler().spawn(throwing());
     coro_scheduler().spawn(normal());
 
-    EXPECT_TRUE(pump_until([&] { return other_completed.load(); }))
-        << "a sibling throwing coroutine prevented the normal one from completing";
+    EXPECT_TRUE(pump_until([&] { return other_completed.load(); })) << "a sibling throwing coroutine prevented the normal one from completing";
     EXPECT_TRUE(other_completed.load());
 }
 

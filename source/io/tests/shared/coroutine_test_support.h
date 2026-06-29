@@ -81,9 +81,7 @@ inline constexpr std::chrono::milliseconds kDefaultPumpStep{5};
 // this helper exists to kill.
 // ---------------------------------------------------------------------------
 [[nodiscard]] inline bool
-wait_until(std::function<bool()> pred,
-           std::chrono::milliseconds timeout,
-           std::chrono::milliseconds step) {
+wait_until(std::function<bool()> pred, std::chrono::milliseconds timeout, std::chrono::milliseconds step) {
     // Check up-front: an already-satisfied predicate must cost zero loop time.
     if (pred())
         return true;
@@ -110,8 +108,7 @@ wait_until(std::function<bool()> pred,
 //         << "coroutine never completed";
 // ---------------------------------------------------------------------------
 [[nodiscard]] inline bool
-pump_until(std::function<bool()> pred,
-           std::chrono::milliseconds timeout = kDefaultPumpTimeout,
+pump_until(std::function<bool()> pred, std::chrono::milliseconds timeout = kDefaultPumpTimeout,
            std::chrono::milliseconds step = kDefaultPumpStep) {
     return wait_until(std::move(pred), timeout, step);
 }

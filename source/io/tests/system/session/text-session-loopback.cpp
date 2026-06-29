@@ -83,9 +83,9 @@ using qb::io::test::pump_until;
 
 namespace {
 
-constexpr std::size_t NB_ITERATION    = 64; // correctness count; throughput is owned by the benchmark
+constexpr std::size_t NB_ITERATION     = 64; // correctness count; throughput is owned by the benchmark
 constexpr char        STRING_MESSAGE[] = "Here is my content test";
-constexpr std::size_t MESSAGE_LEN     = sizeof(STRING_MESSAGE) - 1;
+constexpr std::size_t MESSAGE_LEN      = sizeof(STRING_MESSAGE) - 1;
 
 #ifndef _WIN32
 // RAII per-PID Unix-domain socket path that is unlinked on construction and teardown.
@@ -427,9 +427,8 @@ TYPED_TEST(TextCommandTransport, CommandEchoRoundTrip) {
         client_thread_ok.store(ok);
     });
 
-    EXPECT_TRUE(pump_until(
-        [&] { return Policy::Counters::server.load() == NB_ITERATION && Policy::Counters::client.load() == NB_ITERATION; },
-        std::chrono::seconds(10)))
+    EXPECT_TRUE(pump_until([&] { return Policy::Counters::server.load() == NB_ITERATION && Policy::Counters::client.load() == NB_ITERATION; },
+                           std::chrono::seconds(10)))
         << "server/client did not converge on NB_ITERATION";
 
     worker.join();
@@ -512,12 +511,12 @@ TEST(TextSessionBinary16, Binary16EchoOverTcp) {
             client.publish(std::string_view(reinterpret_cast<const char *>(&len), sizeof(len)), std::string_view(STRING_MESSAGE, MESSAGE_LEN));
         }
 
-        EXPECT_TRUE(pump_until([&] { return bin_server.load() >= BIN_ITERATIONS && bin_client.load() >= BIN_ITERATIONS; },
-                               std::chrono::seconds(10)));
+        EXPECT_TRUE(
+            pump_until([&] { return bin_server.load() >= BIN_ITERATIONS && bin_client.load() >= BIN_ITERATIONS; }, std::chrono::seconds(10)));
     });
 
-    EXPECT_TRUE(pump_until([&] { return bin_server.load() >= BIN_ITERATIONS && bin_client.load() >= BIN_ITERATIONS; },
-                           std::chrono::seconds(10)));
+    EXPECT_TRUE(
+        pump_until([&] { return bin_server.load() >= BIN_ITERATIONS && bin_client.load() >= BIN_ITERATIONS; }, std::chrono::seconds(10)));
     worker.join();
 
     EXPECT_EQ(bin_server.load(), BIN_ITERATIONS);
@@ -600,8 +599,8 @@ TEST(TextSessionProtocolSwitch, TextToBinary) {
     ASSERT_NE(port, 0);
     server.start();
 
-    std::atomic<bool>  worker_ok{false};
-    constexpr char     payload[] = "binary_data!";
+    std::atomic<bool>     worker_ok{false};
+    constexpr char        payload[]   = "binary_data!";
     constexpr std::size_t payload_len = sizeof(payload) - 1;
 
     std::thread worker([&] {
@@ -619,8 +618,7 @@ TEST(TextSessionProtocolSwitch, TextToBinary) {
 
         // trigger the protocol switch and wait for it (no wall-clock guess)
         ASSERT_GT(sock.write("SWITCH\n", 7), 0);
-        EXPECT_TRUE(pump_until([&] { return switch_done.load(); }, std::chrono::seconds(5)))
-            << "server never switched to binary16";
+        EXPECT_TRUE(pump_until([&] { return switch_done.load(); }, std::chrono::seconds(5))) << "server never switched to binary16";
 
         // one binary frame: 16-bit length + payload
         const std::uint16_t len = htons(static_cast<std::uint16_t>(payload_len));
@@ -628,7 +626,7 @@ TEST(TextSessionProtocolSwitch, TextToBinary) {
         ASSERT_GT(sock.write(payload, payload_len), 0);
 
         // read back the full echoed binary frame (length prefix + payload), unconditionally
-        char     reply[2 + payload_len]{};
+        char       reply[2 + payload_len]{};
         const auto got = read_exact(sock, reply, sizeof(reply));
         ASSERT_EQ(got, sizeof(reply)) << "short read of the echoed binary frame";
         const std::uint16_t got_len = ntohs(*reinterpret_cast<std::uint16_t *>(reply));
@@ -711,12 +709,10 @@ TEST(TextSessionUdp, CommandOverUdp) {
         }
 
         // Datagrams can be dropped on loopback under load; require at least one round-trip, bounded.
-        EXPECT_TRUE(pump_until([&] { return udp_client.load() >= 1; }, std::chrono::seconds(5)))
-            << "client never received any UDP echo";
+        EXPECT_TRUE(pump_until([&] { return udp_client.load() >= 1; }, std::chrono::seconds(5))) << "client never received any UDP echo";
     });
 
-    EXPECT_TRUE(pump_until([&] { return udp_server.load() >= 1; }, std::chrono::seconds(5)))
-        << "server never received any UDP datagram";
+    EXPECT_TRUE(pump_until([&] { return udp_server.load() >= 1; }, std::chrono::seconds(5))) << "server never received any UDP datagram";
     worker.join();
 
     EXPECT_GE(udp_server.load(), 1u);
@@ -734,7 +730,7 @@ namespace {
 
 class EchoTextQuicSession : public use<EchoTextQuicSession>::quic::session {
 public:
-    using Protocol = qb::protocol::text::command<EchoTextQuicSession>;
+    using Protocol       = qb::protocol::text::command<EchoTextQuicSession>;
     std::size_t messages = 0;
     explicit EchoTextQuicSession(std::uint64_t stream_id)
         : client(stream_id) {}

@@ -77,11 +77,11 @@ protected:
 // =============================================================================
 
 TEST_F(CoroutineSyncPrimitives, SemaphoreLimitsConcurrency) {
-    semaphore         sem(2);
-    std::atomic<int>  concurrent{0};
-    std::atomic<int>  max_concurrent{0};
-    std::atomic<int>  finished{0};
-    constexpr int     N = 5;
+    semaphore        sem(2);
+    std::atomic<int> concurrent{0};
+    std::atomic<int> max_concurrent{0};
+    std::atomic<int> finished{0};
+    constexpr int    N = 5;
 
     auto worker = [&]() -> task<void> {
         co_await sem.acquire();
@@ -493,7 +493,9 @@ TEST_F(CoroutineSyncPrimitives, RWLockScopedGuardsProveWriterExclusion) {
     coro_scheduler().spawn([&]() -> task<void> {
         {
             // Read guard then write guard, exercising both scoped paths.
-            { auto rg = co_await rw.scoped_read_lock(); }
+            {
+                auto rg = co_await rw.scoped_read_lock();
+            }
             auto wg = co_await rw.scoped_write_lock();
             first_writer_holding.store(true);
 
@@ -744,17 +746,21 @@ TEST_F(CoroutineSyncPrimitives, EventWaitIsCancellableViaCheckCancelled) {
     // branch completes first; cancelling the token completes the check_cancelled branch and
     // unblocks the otherwise-permanently-parked ev.wait(). The result must carry index 1
     // (the cancellation branch won) — proving the event wait was the one still pending.
-    async_event        ev; // never set
-    cancellation_token token;
-    std::atomic<bool>  parked{false};
-    std::atomic<bool>  done{false};
+    async_event         ev; // never set
+    cancellation_token  token;
+    std::atomic<bool>   parked{false};
+    std::atomic<bool>   done{false};
     std::atomic<size_t> winner{99};
 
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         auto result = co_await when_any(
-            [&ev]() -> task<void> { co_await ev.wait(); }(),
-            [token]() -> task<void> { co_await check_cancelled(token); }());
+            [&ev]() -> task<void> {
+                co_await ev.wait();
+            }(),
+            [token]() -> task<void> {
+                co_await check_cancelled(token);
+            }());
         winner.store(result.index);
         done.store(true);
     });
@@ -905,13 +911,16 @@ TEST_F(CoroutineSyncPrimitives, LatchExtraCountDownPastZeroIsSafe) {
 namespace {
 // One parker per primitive: QB_RECLAIM_PARK suspends on the lock/wait, keeping a >4 KiB local live
 // across the suspend so the freed frame is visible to ASan.
-task<int> park_mutex(async_mutex &m) { QB_RECLAIM_PARK(m.lock()) }
-task<int> park_sem(semaphore &s) { QB_RECLAIM_PARK(s.acquire()) }
-task<int> park_read(async_rw_lock &r) { QB_RECLAIM_PARK(r.lock_read()) }
-task<int> park_write(async_rw_lock &r) { QB_RECLAIM_PARK(r.lock_write()) }
-task<int> park_event(async_event &e) { QB_RECLAIM_PARK(e.wait()) }
-task<int> park_latch(async_latch &l) { QB_RECLAIM_PARK(l.wait()) }
-task<int> park_barrier(barrier &b) { QB_RECLAIM_PARK(b.arrive_and_wait()) }
+task<int>
+park_mutex(async_mutex &m){QB_RECLAIM_PARK(m.lock())} task<int> park_sem(semaphore &s){
+    QB_RECLAIM_PARK(s.acquire())
+} task<int> park_read(async_rw_lock &r){QB_RECLAIM_PARK(r.lock_read())} task<int> park_write(async_rw_lock &r){
+    QB_RECLAIM_PARK(r.lock_write())
+} task<int> park_event(async_event &e){QB_RECLAIM_PARK(e.wait())} task<int> park_latch(async_latch &l){
+    QB_RECLAIM_PARK(l.wait())
+} task<int> park_barrier(barrier &b) {
+    QB_RECLAIM_PARK(b.arrive_and_wait())
+}
 } // namespace
 
 TEST_F(CoroutineSyncPrimitives, MutexReclaimedWhileParked) {
@@ -1008,7 +1017,9 @@ TEST_F(CoroutineSyncPrimitives, MutexReusableAfterGrantedWaiterReclaimed) {
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return (int) big[1];
         };
-        auto outer  = [inner](std::shared_ptr<async_mutex> mm) -> task<int> { co_return co_await inner(mm); };
+        auto outer = [inner](std::shared_ptr<async_mutex> mm) -> task<int> {
+            co_return co_await inner(mm);
+        };
         auto winner = [](std::shared_ptr<async_mutex> mm) -> task<int> {
             co_await sleep(5ms);
             mm->unlock(); // hands ownership to the depth-2 waiter (which is then reclaimed)
@@ -1037,7 +1048,9 @@ TEST_F(CoroutineSyncPrimitives, SemaphorePermitRestoredAfterGrantedWaiterReclaim
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return (int) big[1];
         };
-        auto outer  = [inner](std::shared_ptr<semaphore> ss) -> task<int> { co_return co_await inner(ss); };
+        auto outer = [inner](std::shared_ptr<semaphore> ss) -> task<int> {
+            co_return co_await inner(ss);
+        };
         auto winner = [](std::shared_ptr<semaphore> ss) -> task<int> {
             co_await sleep(5ms);
             ss->release(); // grants the permit to the depth-2 waiter (which is then reclaimed)
@@ -1073,7 +1086,9 @@ TEST_F(CoroutineSyncPrimitives, RwLockWriteReusableAfterGrantedWaiterReclaimed) 
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return (int) big[1];
         };
-        auto outer  = [inner](std::shared_ptr<async_rw_lock> r) -> task<int> { co_return co_await inner(r); };
+        auto outer = [inner](std::shared_ptr<async_rw_lock> r) -> task<int> {
+            co_return co_await inner(r);
+        };
         auto winner = [](std::shared_ptr<async_rw_lock> r) -> task<int> {
             co_await sleep(5ms);
             r->unlock_read(); // _readers→0, hands the write lock to the parked writer (which is reclaimed)
@@ -1112,7 +1127,9 @@ TEST_F(CoroutineSyncPrimitives, RwLockReadReusableAfterGrantedWaiterReclaimed) {
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return (int) big[1];
         };
-        auto outer  = [inner](std::shared_ptr<async_rw_lock> r) -> task<int> { co_return co_await inner(r); };
+        auto outer = [inner](std::shared_ptr<async_rw_lock> r) -> task<int> {
+            co_return co_await inner(r);
+        };
         auto winner = [](std::shared_ptr<async_rw_lock> r) -> task<int> {
             co_await sleep(5ms);
             r->unlock_write(); // admits the parked reader (++_readers), which is then reclaimed
@@ -1139,7 +1156,7 @@ TEST_F(CoroutineSyncPrimitives, RwLockReadReusableAfterGrantedWaiterReclaimed) {
 TEST_F(CoroutineSyncPrimitives, AutoEventSignalSurvivesGrantedWaiterReclaimed) {
     bool delivered = false;
     run_reclaim_driver([&delivered]() -> task<void> {
-        auto ev = std::make_shared<async_event>(/*auto_reset=*/true);
+        auto ev    = std::make_shared<async_event>(/*auto_reset=*/true);
         auto inner = [](std::shared_ptr<async_event> e) -> task<int> {
             volatile char big[8192];
             big[0] = 7;
@@ -1148,7 +1165,9 @@ TEST_F(CoroutineSyncPrimitives, AutoEventSignalSurvivesGrantedWaiterReclaimed) {
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return (int) big[1];
         };
-        auto outer  = [inner](std::shared_ptr<async_event> e) -> task<int> { co_return co_await inner(e); };
+        auto outer = [inner](std::shared_ptr<async_event> e) -> task<int> {
+            co_return co_await inner(e);
+        };
         auto winner = [](std::shared_ptr<async_event> e) -> task<int> {
             co_await sleep(5ms);
             e->set(); // wakes the parked auto-reset waiter (consumes the signal), which is then reclaimed
@@ -1221,7 +1240,9 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreCancelAcquireGrantedThenReclaimedReturn
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return (int) big[1];
         };
-        auto outer  = [inner](std::shared_ptr<semaphore> ss) -> task<int> { co_return co_await inner(ss); };
+        auto outer = [inner](std::shared_ptr<semaphore> ss) -> task<int> {
+            co_return co_await inner(ss);
+        };
         auto winner = [](std::shared_ptr<semaphore> ss) -> task<int> {
             co_await sleep(5ms);
             ss->release(); // grants the parked cancel-acquirer (node.granted = true)
@@ -1259,7 +1280,7 @@ TEST_F(CoroutineSyncPrimitives, RwLockWriteReclaimedWhileParked) {
 TEST_F(CoroutineSyncPrimitives, EventReclaimedWhileParked) {
     run_reclaim_driver([]() -> task<void> {
         async_event e; // unset → wait() suspends
-        auto r = co_await when_any(park_event(e), reclaim_fast_winner());
+        auto        r = co_await when_any(park_event(e), reclaim_fast_winner());
         EXPECT_EQ(r.index, 1u);
         e.set();
     });
@@ -1268,7 +1289,7 @@ TEST_F(CoroutineSyncPrimitives, EventReclaimedWhileParked) {
 TEST_F(CoroutineSyncPrimitives, LatchReclaimedWhileParked) {
     run_reclaim_driver([]() -> task<void> {
         async_latch l(1); // count 1 → wait() suspends until count_down
-        auto r = co_await when_any(park_latch(l), reclaim_fast_winner());
+        auto        r = co_await when_any(park_latch(l), reclaim_fast_winner());
         EXPECT_EQ(r.index, 1u);
         l.count_down();
     });
@@ -1277,7 +1298,7 @@ TEST_F(CoroutineSyncPrimitives, LatchReclaimedWhileParked) {
 TEST_F(CoroutineSyncPrimitives, BarrierReclaimedWhileParked) {
     run_reclaim_driver([]() -> task<void> {
         barrier b(2); // needs 2 arrivals → the first arrival suspends
-        auto r = co_await when_any(park_barrier(b), reclaim_fast_winner());
+        auto    r = co_await when_any(park_barrier(b), reclaim_fast_winner());
         EXPECT_EQ(r.index, 1u);
         co_await b.arrive_and_wait(); // the 2nd arrival fires the (reclaimed) first waiter
     });

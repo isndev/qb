@@ -411,8 +411,8 @@ public:
 
     struct next_awaiter {
         handle_type             handle;
-        std::shared_ptr<bool>   _gen_alive;  ///< generator liveness; skip promise access when false
-        std::coroutine_handle<> _parked{};   ///< consumer handle parked in the generator's continuation
+        std::shared_ptr<bool>   _gen_alive; ///< generator liveness; skip promise access when false
+        std::coroutine_handle<> _parked{};  ///< consumer handle parked in the generator's continuation
 
         // User-declared dtor below makes this a non-aggregate → provide the ctor `next()` uses.
         next_awaiter(handle_type h, std::shared_ptr<bool> alive)
@@ -424,8 +424,7 @@ public:
         // transfers into noop_coroutine() rather than our freed frame. No-op once the generator
         // already resumed us (continuation cleared/moved on) or if the generator itself is gone.
         ~next_awaiter() {
-            if (_parked && _gen_alive && *_gen_alive && handle &&
-                handle.promise().continuation == _parked)
+            if (_parked && _gen_alive && *_gen_alive && handle && handle.promise().continuation == _parked)
                 handle.promise().continuation = {};
         }
 

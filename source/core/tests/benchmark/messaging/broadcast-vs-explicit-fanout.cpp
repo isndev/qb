@@ -103,8 +103,8 @@ public:
 
 template <FanoutMode Mode>
 void
-build_fanout(qb::Main &main, std::uint32_t const n, std::uint64_t const waves, std::uint32_t const producer_c,
-             std::uint32_t const consumer_c, std::shared_ptr<DeliveryLatch> const &latch) {
+build_fanout(qb::Main &main, std::uint32_t const n, std::uint64_t const waves, std::uint32_t const producer_c, std::uint32_t const consumer_c,
+             std::shared_ptr<DeliveryLatch> const &latch) {
     latch->count.store(0, std::memory_order_relaxed);
     latch->target = static_cast<std::uint64_t>(n) * waves;
 

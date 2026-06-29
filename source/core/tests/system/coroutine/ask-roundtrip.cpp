@@ -467,8 +467,7 @@ TEST(ActorCoroutineAsk, LateReplyAfterTimeoutIsUnsolicitedAndSafe) {
     main.join();
     EXPECT_FALSE(main.hasError());
     EXPECT_TRUE(g_ask_timed_out.load()) << "the ask must time out before the gated reply is released";
-    EXPECT_TRUE(g_late_unsolicited.load())
-        << "a reply released after the timeout must arrive as unsolicited (resolve_ask false)";
+    EXPECT_TRUE(g_late_unsolicited.load()) << "a reply released after the timeout must arrive as unsolicited (resolve_ask false)";
 }
 
 // Cross-core variant: the timeout fires on core 0 while a reply is in flight from core 1. The slow

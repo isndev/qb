@@ -65,8 +65,7 @@ namespace {
 // datagram arrives or the deadline elapses. Returns the byte count (>0) or -1 on
 // timeout, so callers get a precise failure instead of a slept-out empty read.
 int
-receive_datagram(qb::io::udp::socket &socket, char *buffer, std::size_t len, qb::io::endpoint &peer,
-                 std::chrono::milliseconds timeout = 1s) {
+receive_datagram(qb::io::udp::socket &socket, char *buffer, std::size_t len, qb::io::endpoint &peer, std::chrono::milliseconds timeout = 1s) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     do {
         const int got = socket.read(buffer, len, peer);
@@ -116,8 +115,7 @@ TEST(UDPDatagram, Ipv4LoopbackDeliversPayloadAndPeer) {
     ASSERT_TRUE(sender.init());
 
     constexpr std::string_view message = "Hello, UDP datagram!";
-    ASSERT_EQ(sender.write(message.data(), message.size(), qb::io::endpoint().as_in("127.0.0.1", port)),
-              static_cast<int>(message.size()));
+    ASSERT_EQ(sender.write(message.data(), message.size(), qb::io::endpoint().as_in("127.0.0.1", port)), static_cast<int>(message.size()));
 
     char             buffer[512] = {};
     qb::io::endpoint peer;
@@ -151,8 +149,7 @@ TEST(UDPDatagram, Ipv6LoopbackNonBlockingDeliversPayload) {
     sender.set_nonblocking(true);
 
     constexpr std::string_view message = "Hello v6 datagram!";
-    ASSERT_EQ(sender.write(message.data(), message.size(), qb::io::endpoint().as_in("::1", port)),
-              static_cast<int>(message.size()));
+    ASSERT_EQ(sender.write(message.data(), message.size(), qb::io::endpoint().as_in("::1", port)), static_cast<int>(message.size()));
 
     qb::io::endpoint peer;
     const int        got = receive_datagram(receiver, buffer, sizeof(buffer), peer);
@@ -252,8 +249,7 @@ void
 send_one(unsigned short port, std::string_view payload) {
     qb::io::udp::socket sender;
     ASSERT_TRUE(sender.init());
-    ASSERT_EQ(sender.write(payload.data(), payload.size(), qb::io::endpoint().as_in("127.0.0.1", port)),
-              static_cast<int>(payload.size()));
+    ASSERT_EQ(sender.write(payload.data(), payload.size(), qb::io::endpoint().as_in("127.0.0.1", port)), static_cast<int>(payload.size()));
 }
 
 } // namespace
@@ -287,8 +283,7 @@ TEST(UDPTransportBranches, ReadRefusesWhenBufferAlreadyOverCap) {
 
     // Now the buffer holds `payload.size()` bytes; cap it strictly below that.
     receiver.set_max_read_buffer_size(payload.size() - 1);
-    EXPECT_EQ(receiver.read(), qb::io::ErrBufferLimitExceeded)
-        << "read() must refuse when the input buffer already exceeds the cap";
+    EXPECT_EQ(receiver.read(), qb::io::ErrBufferLimitExceeded) << "read() must refuse when the input buffer already exceeds the cap";
     // The refusal is a pure early-out: the buffered bytes are left untouched.
     EXPECT_EQ(receiver.in().size(), payload.size());
 }

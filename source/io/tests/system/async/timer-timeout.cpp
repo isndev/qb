@@ -142,8 +142,7 @@ TEST_F(TimerTimeoutTest, SetTimeoutZeroDisablesTimer) {
     timer.setTimeout(qb::duration::zero()); // disable before it can fire
 
     // Pump well past the original 50ms deadline — it must stay silent.
-    EXPECT_FALSE(pump_until([&] { return timer.triggered.load(); }, 200ms))
-        << "a timer disabled via setTimeout(zero) still fired";
+    EXPECT_FALSE(pump_until([&] { return timer.triggered.load(); }, 200ms)) << "a timer disabled via setTimeout(zero) still fired";
     EXPECT_EQ(timer.getTimeout(), qb::duration::zero());
 }
 
@@ -180,8 +179,7 @@ TEST_F(TimerTimeoutTest, CancelledTimerNeverFires) {
     timer.setTimeout(qb::duration::zero());
     timer.force_stop();
 
-    EXPECT_FALSE(pump_until([&] { return timer.triggered.load(); }, 250ms))
-        << "a cancelled timer still fired";
+    EXPECT_FALSE(pump_until([&] { return timer.triggered.load(); }, 250ms)) << "a cancelled timer still fired";
     EXPECT_EQ(timer.count.load(), 0);
 }
 
@@ -233,8 +231,9 @@ TEST_F(TimerTimeoutTest, TimeoutUtilityFiresViaLoop) {
 // Timeout<F>: immediate fire (zero / negative) — consolidates the 5 dups
 // =============================================================================
 
-class ImmediateTimeoutTest : public TimerTimeoutTest,
-                             public ::testing::WithParamInterface<qb::duration> {};
+class ImmediateTimeoutTest
+    : public TimerTimeoutTest
+    , public ::testing::WithParamInterface<qb::duration> {};
 
 TEST_P(ImmediateTimeoutTest, NonPositiveTimeoutFiresInlineWithoutLoop) {
     std::atomic<bool> fired{false};
@@ -244,10 +243,8 @@ TEST_P(ImmediateTimeoutTest, NonPositiveTimeoutFiresInlineWithoutLoop) {
     EXPECT_TRUE(fired.load()) << "non-positive Timeout did not fire inline at construction";
 }
 
-INSTANTIATE_TEST_SUITE_P(NonPositiveTimeouts,
-                         ImmediateTimeoutTest,
-                         ::testing::Values(qb::duration::zero(),
-                                           std::chrono::duration_cast<qb::duration>(-1ms),
+INSTANTIATE_TEST_SUITE_P(NonPositiveTimeouts, ImmediateTimeoutTest,
+                         ::testing::Values(qb::duration::zero(), std::chrono::duration_cast<qb::duration>(-1ms),
                                            std::chrono::duration_cast<qb::duration>(-5s)));
 
 // =============================================================================
@@ -257,9 +254,9 @@ INSTANTIATE_TEST_SUITE_P(NonPositiveTimeouts,
 TEST_F(TimerTimeoutTest, TimeoutFiresWithinPlausibleWindow) {
     using clock = std::chrono::steady_clock;
 
-    constexpr auto kTimeout = 100ms;
-    std::atomic<bool> fired{false};
-    const clock::time_point created = clock::now();
+    constexpr auto          kTimeout = 100ms;
+    std::atomic<bool>       fired{false};
+    const clock::time_point created  = clock::now();
     clock::time_point       fired_at = created;
 
     new async::Timeout<std::function<void()>>(
@@ -353,7 +350,7 @@ TEST_F(TimerTimeoutTest, StaggeredTimeoutsAllExecuteExactlyOnce) {
 // =============================================================================
 
 TEST_F(TimerTimeoutTest, DroppedTimeoutsStillFire) {
-    constexpr int kCount = 10;
+    constexpr int    kCount = 10;
     std::atomic<int> completed{0};
 
     for (int i = 0; i < kCount; ++i) {
@@ -384,7 +381,6 @@ TEST_F(TimerTimeoutTest, ThrowingTimeoutDoesNotLeakOrStallTheLoop) {
 
     new async::Timeout<std::function<void()>>([&normal_count]() { normal_count.fetch_add(1); }, 60ms);
 
-    EXPECT_TRUE(pump_until([&] { return normal_count.load() == 1; }))
-        << "the throwing timer wedged the loop — the sibling never fired";
+    EXPECT_TRUE(pump_until([&] { return normal_count.load() == 1; })) << "the throwing timer wedged the loop — the sibling never fired";
     EXPECT_EQ(throw_count.load(), 1) << "the throwing callback ran exactly once";
 }

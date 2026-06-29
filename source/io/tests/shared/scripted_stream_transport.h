@@ -97,7 +97,7 @@ class ScriptedStreamTransport {
     bool                     _fail_writes = false;
 
 public:
-    std::string written;            /**< Bytes accepted by write(), in order. */
+    std::string written;              /**< Bytes accepted by write(), in order. */
     bool        disconnected = false; /**< Set true by disconnect(). */
     bool        closed       = false; /**< Set true by close(). */
 
@@ -108,9 +108,7 @@ public:
      * @param write_limits Per-call write caps that force partial writes.
      * @param fail_reads   When true, read() always returns -1.
      */
-    explicit ScriptedStreamTransport(std::string              read_data,
-                                     std::vector<std::size_t> write_limits = {},
-                                     bool                     fail_reads   = false)
+    explicit ScriptedStreamTransport(std::string read_data, std::vector<std::size_t> write_limits = {}, bool fail_reads = false)
         : _read_data(std::move(read_data))
         , _write_limits(std::move(write_limits))
         , _fail_reads(fail_reads) {}
@@ -216,7 +214,7 @@ public:
 // ---------------------------------------------------------------------------
 template <typename Base>
 class TransformStream {
-    Base                               &_base_stream;
+    Base                                    &_base_stream;
     std::function<void(char *, std::size_t)> _transform_func;
 
 public:

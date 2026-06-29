@@ -106,8 +106,7 @@ run_throughput(benchmark::State &state, std::uint32_t const consumer_core) {
 
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * kBenchMessages));
     state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations() * kBenchMessages * sizeof(PcMsg)));
-    state.counters["messages_per_s"] =
-        benchmark::Counter(static_cast<double>(kBenchMessages), benchmark::Counter::kIsIterationInvariantRate);
+    state.counters["messages_per_s"] = benchmark::Counter(static_cast<double>(kBenchMessages), benchmark::Counter::kIsIterationInvariantRate);
 }
 
 void

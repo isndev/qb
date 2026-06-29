@@ -139,7 +139,7 @@ public:
 
     void
     on(const RestoreState &) {
-        _failed       = false;
+        _failed = false;
         g_recovered.store(true);
     }
 
@@ -202,8 +202,7 @@ public:
     on(const MarkerEcho &) {
         // The stateful actor has processed everything up to and including the dropped query: the
         // failure-window query produced NO response (the count is frozen at the pre-marker value).
-        EXPECT_EQ(g_responses.load(), _responses_at_failure_marker)
-            << "a query during the failure window must produce NO response";
+        EXPECT_EQ(g_responses.load(), _responses_at_failure_marker) << "a query during the failure window must produce NO response";
 
         // Step 3: restore, then re-query (tag 2) to prove state survived the cycle.
         to(_stateful).push<RestoreState>();

@@ -1,4 +1,5 @@
 <!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+
 # Security policy
 
 ## Supported versions
@@ -6,9 +7,9 @@
 Security fixes are provided for the latest minor of the current major series.
 
 | Version | Supported |
-|---|---|
-| 2.0.x | Yes |
-| < 2.0 | No |
+|---------|-----------|
+| 2.0.x   | Yes       |
+| < 2.0   | No        |
 
 ## Reporting a vulnerability
 

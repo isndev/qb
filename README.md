@@ -1,9 +1,11 @@
 <!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+
 # qb Actor Framework
 
 <p align="center"><img src="./resources/logo.svg" width="180px" alt="qb Actor Framework logo" /></p>
 
-qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model. It pairs
+qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor
+model. It pairs
 share-nothing actors with a non-blocking asynchronous I/O engine and native C++20 coroutines, so
 application code expresses *what* should happen on each message while the runtime handles scheduling,
 multicore distribution, and non-blocking I/O.
@@ -116,11 +118,11 @@ Concepts are introduced in [Core concepts](./readme/2_core_concepts/); the engin
 Optional modules add application protocols on top of qb. Each is a separate repository, added as a
 submodule and discovered by CMake:
 
-| Module | Provides |
-|---|---|
-| [qbm-http](https://github.com/isndev/qbm-http) | HTTP/1.1, routing, middleware; plus HTTP/2, WebSocket (RFC 6455), and JWT authentication on SSL-enabled builds, and HTTP/3 on QUIC builds |
-| [qbm-pgsql](https://github.com/isndev/qbm-pgsql) | Asynchronous PostgreSQL client with prepared statements and transactions |
-| [qbm-redis](https://github.com/isndev/qbm-redis) | Asynchronous Redis client covering the full command surface |
+| Module                                           | Provides                                                                                                                                  |
+|--------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| [qbm-http](https://github.com/isndev/qbm-http)   | HTTP/1.1, routing, middleware; plus HTTP/2, WebSocket (RFC 6455), and JWT authentication on SSL-enabled builds, and HTTP/3 on QUIC builds |
+| [qbm-pgsql](https://github.com/isndev/qbm-pgsql) | Asynchronous PostgreSQL client with prepared statements and transactions                                                                  |
+| [qbm-redis](https://github.com/isndev/qbm-redis) | Asynchronous Redis client covering the full command surface                                                                               |
 
 ```bash
 git submodule add https://github.com/isndev/qbm-http qbm/http
@@ -164,15 +166,15 @@ ctest --test-dir build --output-on-failure
 
 ### Common options
 
-| Option | Default | Purpose |
-|---|---|---|
-| `QB_WITH_SSL` | `ON` | SSL/TLS and crypto (OpenSSL); auto-disabled if OpenSSL is absent |
-| `QB_WITH_COMPRESSION` | `ON` | Compression (zlib) |
-| `QB_WITH_QUIC` | `AUTO` | QUIC/HTTP3 via ngtcp2: `AUTO` enables it when found |
-| `QB_WITH_LOGGING` | `ON` | Logging support |
-| `QB_BUILD_TESTS` | `ON` | Build the test suite |
-| `QB_BUILD_BENCHMARKS` | `OFF` | Build benchmarks (Google Benchmark) |
-| `QB_ENABLE_NATIVE_ARCH` | `ON` | Tune codegen for the build host (`-march=native`); turn **off** for portable binaries |
+| Option                  | Default | Purpose                                                                               |
+|-------------------------|---------|---------------------------------------------------------------------------------------|
+| `QB_WITH_SSL`           | `ON`    | SSL/TLS and crypto (OpenSSL); auto-disabled if OpenSSL is absent                      |
+| `QB_WITH_COMPRESSION`   | `ON`    | Compression (zlib)                                                                    |
+| `QB_WITH_QUIC`          | `AUTO`  | QUIC/HTTP3 via ngtcp2: `AUTO` enables it when found                                   |
+| `QB_WITH_LOGGING`       | `ON`    | Logging support                                                                       |
+| `QB_BUILD_TESTS`        | `ON`    | Build the test suite                                                                  |
+| `QB_BUILD_BENCHMARKS`   | `OFF`   | Build benchmarks (Google Benchmark)                                                   |
+| `QB_ENABLE_NATIVE_ARCH` | `ON`    | Tune codegen for the build host (`-march=native`); turn **off** for portable binaries |
 
 The complete option list is in [CMake options](./readme/7_reference/cmake_options.md); installation details
 are in [INSTALL.md](./INSTALL.md).
@@ -181,24 +183,24 @@ are in [INSTALL.md](./INSTALL.md).
 
 Continuous integration builds and tests every change on:
 
-| OS | Compilers | Standard library |
-|---|---|---|
-| Linux (`ubuntu-latest`) | GCC, Clang | libstdc++ |
-| macOS (`macos-latest`) | Apple Clang | libc++ |
-| Windows (`windows-latest`) | MSVC | MSVC STL |
+| OS                         | Compilers   | Standard library |
+|----------------------------|-------------|------------------|
+| Linux (`ubuntu-latest`)    | GCC, Clang  | libstdc++        |
+| macOS (`macos-latest`)     | Apple Clang | libc++           |
+| Windows (`windows-latest`) | MSVC        | MSVC STL         |
 
 Supported architectures: x86_64 and ARM64 (including Apple Silicon).
 
 ## Documentation
 
 - **[Documentation home](./readme/README.md)** — the full guide, organized for progressive learning:
-  - [1. Introduction](./readme/1_introduction/) — what qb is, its philosophy, and when to use it
-  - [2. Core concepts](./readme/2_core_concepts/) — actors, events, async I/O, concurrency, threading model
-  - [3. qb-io](./readme/3_qb_io/) — the asynchronous runtime, transports, protocols, coroutines
-  - [4. qb-core](./readme/4_qb_core/) — the actor engine and messaging
-  - [5. Integration](./readme/5_core_io_integration/) — actors and async I/O together, with worked examples
-  - [6. Guides](./readme/6_guides/) — getting started, patterns, performance, error handling, migration
-  - [7. Reference](./readme/7_reference/) — API overview, build, invariants, benchmarks, FAQ, glossary
+    - [1. Introduction](./readme/1_introduction/) — what qb is, its philosophy, and when to use it
+    - [2. Core concepts](./readme/2_core_concepts/) — actors, events, async I/O, concurrency, threading model
+    - [3. qb-io](./readme/3_qb_io/) — the asynchronous runtime, transports, protocols, coroutines
+    - [4. qb-core](./readme/4_qb_core/) — the actor engine and messaging
+    - [5. Integration](./readme/5_core_io_integration/) — actors and async I/O together, with worked examples
+    - [6. Guides](./readme/6_guides/) — getting started, patterns, performance, error handling, migration
+    - [7. Reference](./readme/7_reference/) — API overview, build, invariants, benchmarks, FAQ, glossary
 - **Project policies:** [INSTALL](./INSTALL.md) · [VERSIONING](./VERSIONING.md) ·
   [CHANGELOG](./CHANGELOG.md) · [SECURITY](./SECURITY.md) · [SUPPORT](./SUPPORT.md) ·
   [CONTRIBUTING](./CONTRIBUTING.md)

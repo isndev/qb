@@ -56,7 +56,7 @@ TEST(DedupMap, ContainsDoesNotPromote) {
     qb::dedup_map<int, int> m(2);
     m.put(1, 10);
     m.put(2, 20);
-    EXPECT_TRUE(m.contains(1));  // peek at 1 — must NOT promote it
+    EXPECT_TRUE(m.contains(1)); // peek at 1 — must NOT promote it
     EXPECT_FALSE(m.contains(9));
     // Since contains() did not promote 1, the LRU is still 1; inserting 3 evicts 1, not 2.
     m.put(3, 30);

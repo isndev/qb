@@ -149,7 +149,9 @@ TEST(ProtocolBaseFraming, SizeHeaderRejectsZeroAndChecksHeaderCapacity) {
     EXPECT_FALSE(protocol.ok()) << "a zero-length frame is a protocol error";
 
     // Header() throws when the payload exceeds the header width.
-    auto make_too_large_header = [] { return SizeHeaderProtocol<std::uint8_t>::Header(256u); };
+    auto make_too_large_header = [] {
+        return SizeHeaderProtocol<std::uint8_t>::Header(256u);
+    };
     EXPECT_THROW((void) make_too_large_header(), std::runtime_error);
 
     // A 1-byte header is the raw value.
@@ -196,11 +198,11 @@ TEST(ProtocolBaseFraming, SizeHeaderHandlesOneAndFourByteWidthsAcrossPartialFram
         ProtocolProbe                     probe;
         SizeHeaderProtocol<std::uint32_t> protocol{probe};
         const auto                        header = SizeHeaderProtocol<std::uint32_t>::Header(4u);
-        const std::string_view header_view{reinterpret_cast<char const *>(&header), sizeof(header)};
+        const std::string_view            header_view{reinterpret_cast<char const *>(&header), sizeof(header)};
 
         probe.append(header_view.substr(0u, 2u)); // first half of the header
         EXPECT_EQ(protocol.getMessageSize(), 0u) << "header incomplete";
-        probe.append(header_view.substr(2u));     // second half
+        probe.append(header_view.substr(2u)); // second half
         EXPECT_EQ(protocol.getMessageSize(), 0u) << "header complete, payload absent";
         EXPECT_EQ(probe.in().size(), 0u);
 
@@ -232,7 +234,7 @@ TEST(ProtocolBaseFraming, SizeHeaderTwoByteWidthAtBoundaryAndOneShort) {
 
     probe.append("1234"); // one byte short of the announced 5
     EXPECT_EQ(protocol.getMessageSize(), 0u) << "4 of 5 payload bytes — no frame";
-    probe.append("5");    // exactly at the boundary
+    probe.append("5"); // exactly at the boundary
     EXPECT_EQ(protocol.getMessageSize(), 5u) << "the fifth byte completes the frame";
     EXPECT_TRUE(protocol.ok());
 }
@@ -259,7 +261,7 @@ TEST(ProtocolBaseFraming, SizeHeaderEightByteWidthFramesViaRawPath) {
 
     probe.append("abcde"); // one short
     EXPECT_EQ(protocol.getMessageSize(), 0u);
-    probe.append("f");     // exactly 6
+    probe.append("f"); // exactly 6
     EXPECT_EQ(protocol.getMessageSize(), 6u);
     EXPECT_TRUE(protocol.ok());
 }
