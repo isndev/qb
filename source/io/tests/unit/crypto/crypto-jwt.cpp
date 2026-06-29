@@ -614,6 +614,19 @@ TEST(CryptoJWT, VerifyRejectsUndecodableSignatureSegment) {
     EXPECT_EQ(jwt::verify(header + "." + payload + ".x", verify_options).error, jwt::ValidationError::INVALID_FORMAT);
 }
 
+TEST(CryptoJWT, VerifyRejectsHeaderThatDecodesToNonJson) {
+    // The header segment is valid base64url but decodes to non-JSON text: the
+    // header json::parse throws and is mapped to INVALID_FORMAT (src 402), reached
+    // before the alg and signature checks. Complements the payload-non-JSON path
+    // (the existing suite only feeds a non-JSON payload, never a non-JSON header).
+    const std::string token = make_hs256_token("{}", "secret", /*header_json=*/"not-json");
+
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::HS256;
+    verify_options.key       = "secret";
+    EXPECT_EQ(jwt::verify(token, verify_options).error, jwt::ValidationError::INVALID_FORMAT);
+}
+
 TEST(CryptoJWT, NumericTypedExpClaimIsAcceptedAndEnforced) {
     // RFC 7519 defines exp as a NumericDate (a JSON number). A standards-compliant
     // external token carries exp as a raw number, not a string. read_numeric_date's
