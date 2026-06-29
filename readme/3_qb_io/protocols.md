@@ -98,13 +98,14 @@ sequenceDiagram
     N->>F: read() appends bytes to input buffer
     loop drain buffered frames
         F->>P: getMessageSize()
-        P-->>F: size (or 0 = kNoMessage)
-        break size == 0
-            Note over F: incomplete frame; await next read()
+        P-->>F: size, or 0 (kNoMessage)
+        alt complete frame (size > 0)
+            F->>P: onMessage(size)
+            P->>S: _io.on(message)
+            F->>F: flush size bytes from buffer front
+        else incomplete (size == 0)
+            Note over F: stop, await the next read()
         end
-        F->>P: onMessage(size)
-        P->>S: _io.on(message&&)
-        F->>F: flush size bytes from buffer front
     end
 ```
 
