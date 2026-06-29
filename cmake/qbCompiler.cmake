@@ -63,11 +63,16 @@ endif()
 # -----------------------------------------------------------------------------
 # Base Compiler Flags
 # -----------------------------------------------------------------------------
-set(QB_CXX_FLAGS_BASE)
-set(QB_CXX_FLAGS_DEBUG)
-set(QB_CXX_FLAGS_RELEASE)
-set(QB_CXX_FLAGS_RELWITHDEBINFO)
-set(QB_CXX_FLAGS_MINSIZEREL)
+# Initialize to an empty STRING (not a bare `set(VAR)`): these are re-published
+# to CACHE INTERNAL below, and a bare unset would let the later `list(APPEND)`
+# read through to the stale cache and accumulate flags across reconfigures. An
+# empty-string normal variable shadows the cache so each configure rebuilds
+# cleanly (same idiom as QB_SANITIZE_*/QB_COVERAGE_* opts).
+set(QB_CXX_FLAGS_BASE "")
+set(QB_CXX_FLAGS_DEBUG "")
+set(QB_CXX_FLAGS_RELEASE "")
+set(QB_CXX_FLAGS_RELWITHDEBINFO "")
+set(QB_CXX_FLAGS_MINSIZEREL "")
 
 # Common base flags for all compilers
 if(QB_COMPILER_MSVC)

@@ -279,8 +279,14 @@ macro(qb_initialize_project_configuration)
         endif()
     endif()
 
-    # Definitions and preprocessor macros
-    set(QB_COMPILE_DEFINITIONS)
+    # Definitions and preprocessor macros.
+    # Clear any stale CACHE INTERNAL shadow published by qbDependencies on a
+    # prior configure BEFORE rebuilding: a bare `set(QB_COMPILE_DEFINITIONS)`
+    # only unsets the normal variable, so `list(APPEND)` would read through to
+    # the cached value and accumulate outdated entries across reconfigures
+    # (e.g. a bumped QB_VERSION, producing a -Wmacro-redefined warning).
+    unset(QB_COMPILE_DEFINITIONS CACHE)
+    set(QB_COMPILE_DEFINITIONS "")
     list(APPEND QB_COMPILE_DEFINITIONS
         "QB_VERSION_MAJOR=${QB_FRAMEWORK_VERSION_MAJOR}"
         "QB_VERSION_MINOR=${QB_FRAMEWORK_VERSION_MINOR}"
