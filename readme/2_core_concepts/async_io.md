@@ -204,12 +204,12 @@ A `co_await` suspends the coroutine and registers a watcher with the same listen
 
 ```mermaid
 sequenceDiagram
-    participant Co as Coroutine (task&lt;&gt;)
+    participant Co as Coroutine
     participant Sched as coro_scheduler
-    participant Loop as listener (libev)
-    Co->>Loop: co_await wait_readable(fd)<br/>register watcher, suspend
-    Note over Loop: thread is free —<br/>other actors / coroutines run
-    Loop-->>Sched: fd readable → watcher fires
+    participant Ev as listener libev
+    Co->>Ev: co_await wait_readable(fd)<br/>register watcher, suspend
+    Note over Ev: thread is free —<br/>other actors / coroutines run
+    Ev-->>Sched: fd readable → watcher fires
     Sched->>Co: resume on the same thread, past the co_await
     Note over Co: runs to the next<br/>co_await or co_return
 ```
