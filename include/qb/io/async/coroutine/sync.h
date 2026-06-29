@@ -104,7 +104,7 @@ public:
         bool                  _completed = false;
         bool                  _parked    = false;
         bool                  _resumed   = false; ///< set in await_resume: distinguishes granted-then-reclaimed
-        std::shared_ptr<bool> _sem_alive; ///< semaphore liveness; skip retract when false
+        std::shared_ptr<bool> _sem_alive;         ///< semaphore liveness; skip retract when false
 
         // User-declared dtor below makes this a non-aggregate → provide the ctor `acquire()` uses.
         explicit acquire_awaiter(semaphore &s)
@@ -120,7 +120,7 @@ public:
             if (!_parked || _resumed || !_sem_alive || !*_sem_alive)
                 return;
             if (node.granted)
-                sem.release();          // return the permit we were granted but never consumed
+                sem.release(); // return the permit we were granted but never consumed
             else
                 sem.remove_waiter(&node);
         }
@@ -178,8 +178,8 @@ public:
         semaphore                  &sem;
         cancellation_token          token;
         waiter_node                 node;
-        cancellation_token::id_type cancel_id  = 0;
-        std::shared_ptr<bool>       alive      = std::make_shared<bool>(true);
+        cancellation_token::id_type cancel_id = 0;
+        std::shared_ptr<bool>       alive     = std::make_shared<bool>(true);
         std::shared_ptr<bool>       _sem_alive; ///< semaphore liveness; skip retract when false
         bool                        _completed = false;
         bool                        _parked    = false;
@@ -198,7 +198,7 @@ public:
             // Destroyed while still queued/granted but never resumed (an OUTER when_any/race loser
             // reclaim — distinct from this token's own cancel, which sets node.cancelled and resumes).
             if (node.granted)
-                sem.release();            // return the granted-but-unconsumed permit to the next waiter
+                sem.release(); // return the granted-but-unconsumed permit to the next waiter
             else if (!node.cancelled)
                 sem.remove_waiter(&node); // still parked: retract so release() cannot touch a freed frame
         }
@@ -461,8 +461,8 @@ public:
         async_mutex            &mtx;
         bool                    _completed = false;
         bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
-        std::coroutine_handle<> _parked{};   ///< set when queued in _waiters
-        std::shared_ptr<bool>   _mtx_alive;   ///< mutex liveness; skip retract when false
+        std::coroutine_handle<> _parked{};          ///< set when queued in _waiters
+        std::shared_ptr<bool>   _mtx_alive;         ///< mutex liveness; skip retract when false
 
         // User-declared dtor below makes this a non-aggregate → provide the ctor `lock()` uses.
         explicit lock_awaiter(async_mutex &m)
@@ -687,8 +687,8 @@ public:
         async_rw_lock          &rw;
         bool                    _completed = false;
         bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
-        std::coroutine_handle<> _parked{};  ///< set when queued in _read_waiters
-        std::shared_ptr<bool>   _rw_alive;   ///< lock liveness; skip retract when false
+        std::coroutine_handle<> _parked{};          ///< set when queued in _read_waiters
+        std::shared_ptr<bool>   _rw_alive;          ///< lock liveness; skip retract when false
 
         explicit read_lock_awaiter(async_rw_lock &r)
             : rw(r) {}
@@ -734,8 +734,8 @@ public:
         async_rw_lock          &rw;
         bool                    _completed = false;
         bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
-        std::coroutine_handle<> _parked{};  ///< set when queued in _write_waiters
-        std::shared_ptr<bool>   _rw_alive;   ///< lock liveness; skip retract when false
+        std::coroutine_handle<> _parked{};          ///< set when queued in _write_waiters
+        std::shared_ptr<bool>   _rw_alive;          ///< lock liveness; skip retract when false
 
         explicit write_lock_awaiter(async_rw_lock &r)
             : rw(r) {}
@@ -973,8 +973,8 @@ public:
 
     struct arrive_awaiter {
         barrier                &b;
-        std::coroutine_handle<> _parked{};  ///< set when queued in _waiters
-        std::shared_ptr<bool>   _b_alive;    ///< barrier liveness; skip retract when false
+        std::coroutine_handle<> _parked{}; ///< set when queued in _waiters
+        std::shared_ptr<bool>   _b_alive;  ///< barrier liveness; skip retract when false
 
         explicit arrive_awaiter(barrier &bar)
             : b(bar) {}
@@ -1123,8 +1123,8 @@ public:
     struct wait_awaiter {
         async_event            &_ev;
         bool                    _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
-        std::coroutine_handle<> _parked{};  ///< set when queued in _waiters
-        std::shared_ptr<bool>   _ev_alive;   ///< event liveness; skip retract when false
+        std::coroutine_handle<> _parked{};        ///< set when queued in _waiters
+        std::shared_ptr<bool>   _ev_alive;        ///< event liveness; skip retract when false
 
         explicit wait_awaiter(async_event &ev)
             : _ev(ev) {}
@@ -1315,7 +1315,7 @@ public:
 
     struct wait_awaiter {
         async_latch            &_latch;
-        std::coroutine_handle<> _parked{};   ///< set when queued in _waiters
+        std::coroutine_handle<> _parked{};    ///< set when queued in _waiters
         std::shared_ptr<bool>   _latch_alive; ///< latch liveness; skip retract when false
 
         explicit wait_awaiter(async_latch &l)

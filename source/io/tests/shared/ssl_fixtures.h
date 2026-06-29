@@ -62,9 +62,9 @@ namespace qb::io::test {
 ssl_resource_path(const std::string &file_name) {
     // `__FILE__` is THIS header (tests/shared/), so the source-tree copy lives one
     // level up under system/resources/ssl/ — stable no matter where the test sits.
-    const std::filesystem::path here          = std::filesystem::path(__FILE__).parent_path();
-    const std::filesystem::path source_tree   = here.parent_path() / "system" / "resources" / "ssl" / file_name;
-    const std::filesystem::path cwd           = std::filesystem::current_path();
+    const std::filesystem::path here        = std::filesystem::path(__FILE__).parent_path();
+    const std::filesystem::path source_tree = here.parent_path() / "system" / "resources" / "ssl" / file_name;
+    const std::filesystem::path cwd         = std::filesystem::current_path();
 
     const std::array<std::filesystem::path, 4> candidates{
         cwd / file_name,

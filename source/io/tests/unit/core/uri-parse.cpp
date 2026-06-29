@@ -57,9 +57,8 @@ using qb::io::uri;
  * percent-decoded value, and an `&&`/bare-flag run are all asserted in one place.
  */
 TEST(UriParse, FullAuthorityIpv6QueriesAndFragment) {
-    const uri u(
-        "https://user:pass@[2001:db8::1]/api/v1/resource"
-        "?name=qb+framework&dup=1&dup=2&empty=&encoded=%7Bok%7D&&flag#section-2");
+    const uri u("https://user:pass@[2001:db8::1]/api/v1/resource"
+                "?name=qb+framework&dup=1&dup=2&empty=&encoded=%7Bok%7D&&flag#section-2");
 
     ASSERT_TRUE(u.is_valid());
     EXPECT_EQ(u.scheme(), "https");
@@ -110,12 +109,12 @@ TEST(UriParse, EncodedQueryKeysDecodeBeforeLookup) {
 namespace {
 
 struct ResolveCase {
-    const char    *source;
-    const char    *scheme;
-    const char    *user_info; // "" when absent
-    const char    *host;
-    std::uint16_t  port;
-    int            af;
+    const char   *source;
+    const char   *scheme;
+    const char   *user_info; // "" when absent
+    const char   *host;
+    std::uint16_t port;
+    int           af;
 };
 
 class UriResolveMatrix : public ::testing::TestWithParam<ResolveCase> {};
@@ -141,35 +140,41 @@ INSTANTIATE_TEST_SUITE_P(
     Resolving, UriResolveMatrix,
     ::testing::Values(
         // host = DNS name, default vs explicit port, no userinfo
-        ResolveCase{"https://www.example.com/section1/section2/action?query1=value1&query2=value2",
-                    "https", "", "www.example.com", 443, AF_INET},
-        ResolveCase{"https://www.example.com:8080/section1/section2/action?query1=value1&query2=value2",
-                    "https", "", "www.example.com", 8080, AF_INET},
-        ResolveCase{"https://localhost/section1/section2/action?query1=value1&query2=value2",
-                    "https", "", "localhost", 443, AF_INET},
-        ResolveCase{"https://localhost:8080/section1/section2/action?query1=value1&query2=value2",
-                    "https", "", "localhost", 8080, AF_INET},
+        ResolveCase{
+            "https://www.example.com/section1/section2/action?query1=value1&query2=value2", "https", "", "www.example.com", 443, AF_INET
+        },
+        ResolveCase{
+            "https://www.example.com:8080/section1/section2/action?query1=value1&query2=value2", "https", "", "www.example.com", 8080, AF_INET
+        },
+        ResolveCase{"https://localhost/section1/section2/action?query1=value1&query2=value2", "https", "", "localhost", 443, AF_INET},
+        ResolveCase{"https://localhost:8080/section1/section2/action?query1=value1&query2=value2", "https", "", "localhost", 8080, AF_INET},
         // host = IPv4 literal
-        ResolveCase{"https://127.0.0.1/section1/section2/action?query1=value1&query2=value2",
-                    "https", "", "127.0.0.1", 443, AF_INET},
-        ResolveCase{"https://127.0.0.1:8080/section1/section2/action?query1=value1&query2=value2",
-                    "https", "", "127.0.0.1", 8080, AF_INET},
+        ResolveCase{"https://127.0.0.1/section1/section2/action?query1=value1&query2=value2", "https", "", "127.0.0.1", 443, AF_INET},
+        ResolveCase{"https://127.0.0.1:8080/section1/section2/action?query1=value1&query2=value2", "https", "", "127.0.0.1", 8080, AF_INET},
         // host = IPv6 literal (bracketed) → AF_INET6
-        ResolveCase{"https://[::1]/section1/section2/action?query1=value1&query2=value2",
-                    "https", "", "::1", 443, AF_INET6},
-        ResolveCase{"https://[::1]:8080/section1/section2/action?query1=value1&query2=value2",
-                    "https", "", "::1", 8080, AF_INET6},
+        ResolveCase{"https://[::1]/section1/section2/action?query1=value1&query2=value2", "https", "", "::1", 443, AF_INET6},
+        ResolveCase{"https://[::1]:8080/section1/section2/action?query1=value1&query2=value2", "https", "", "::1", 8080, AF_INET6},
         // with userinfo across each host family
-        ResolveCase{"https://user:password@www.example.com/section1/section2/action?query1=value1&query2=value2",
-                    "https", "user:password", "www.example.com", 443, AF_INET},
-        ResolveCase{"https://user:password@www.example.com:8080/section1/section2/action?query1=value1&query2=value2",
-                    "https", "user:password", "www.example.com", 8080, AF_INET},
-        ResolveCase{"https://user:password@localhost:8080/section1/section2/action?query1=value1&query2=value2",
-                    "https", "user:password", "localhost", 8080, AF_INET},
-        ResolveCase{"https://user:password@127.0.0.1/section1/section2/action?query1=value1&query2=value2",
-                    "https", "user:password", "127.0.0.1", 443, AF_INET},
-        ResolveCase{"https://user:password@[::1]:8080/section1/section2/action?query1=value1&query2=value2",
-                    "https", "user:password", "::1", 8080, AF_INET6}));
+        ResolveCase{
+            "https://user:password@www.example.com/section1/section2/action?query1=value1&query2=value2", "https", "user:password",
+            "www.example.com", 443, AF_INET
+        },
+        ResolveCase{
+            "https://user:password@www.example.com:8080/section1/section2/action?query1=value1&query2=value2", "https", "user:password",
+            "www.example.com", 8080, AF_INET
+        },
+        ResolveCase{
+            "https://user:password@localhost:8080/section1/section2/action?query1=value1&query2=value2", "https", "user:password", "localhost",
+            8080, AF_INET
+        },
+        ResolveCase{
+            "https://user:password@127.0.0.1/section1/section2/action?query1=value1&query2=value2", "https", "user:password", "127.0.0.1", 443,
+            AF_INET
+        },
+        ResolveCase{
+            "https://user:password@[::1]:8080/section1/section2/action?query1=value1&query2=value2", "https", "user:password", "::1", 8080,
+            AF_INET6
+        }));
 
 // =============================================================================
 // RELATIVE / UNIX / DEFAULT / COPY-MOVE / PORT CONTRACTS
@@ -217,7 +222,7 @@ TEST(UriParse, RelativeUnixCopyMoveAndPortContracts) {
     EXPECT_EQ(copied.source(), assigned.source());
     EXPECT_EQ(copied.host(), "127.0.0.1");
 
-    uri to_move(assigned);
+    uri       to_move(assigned);
     const uri moved(std::move(to_move));
     EXPECT_EQ(moved.host(), "127.0.0.1");
     EXPECT_EQ(moved.u_port(), 4242u);
@@ -325,7 +330,7 @@ TEST(UriParse, CopyAndMovePreserveAddressFamily) {
     EXPECT_EQ(copy_constructed.u_port(), 5000u);
 
     // Move-assign: unix.
-    uri       unix_src("unix:///var/run/app.sock");
+    uri unix_src("unix:///var/run/app.sock");
     ASSERT_EQ(unix_src.af(), AF_UNIX);
     uri move_assigned;
     move_assigned = std::move(unix_src);
@@ -333,7 +338,7 @@ TEST(UriParse, CopyAndMovePreserveAddressFamily) {
     EXPECT_EQ(move_assigned.scheme(), "unix");
 
     // Move-construct: unix.
-    uri       unix_src2("unix://my.sock/service");
+    uri unix_src2("unix://my.sock/service");
     ASSERT_EQ(unix_src2.af(), AF_UNIX);
     const uri move_constructed(std::move(unix_src2));
     EXPECT_EQ(move_constructed.af(), AF_UNIX);
@@ -448,16 +453,10 @@ TEST_P(UriRoundtrip, EncodeThenDecodeRecoversOriginal) {
     EXPECT_EQ(uri::decode(uri::encode(original)), original);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    Corpus, UriRoundtrip,
-    ::testing::Values(std::string("simple text"),
-                      std::string("special: !@#$%^&*()"),
-                      std::string(""),
-                      std::string("unicode: \xC3\xA9\xC3\xA0\xC3\xBC"),
-                      std::string("slashes/and?query=yes&more=true"),
-                      std::string(1000, 'X'),
-                      std::string("trailing%"),
-                      std::string("%already%20encoded")));
+INSTANTIATE_TEST_SUITE_P(Corpus, UriRoundtrip,
+                         ::testing::Values(std::string("simple text"), std::string("special: !@#$%^&*()"), std::string(""),
+                                           std::string("unicode: \xC3\xA9\xC3\xA0\xC3\xBC"), std::string("slashes/and?query=yes&more=true"),
+                                           std::string(1000, 'X'), std::string("trailing%"), std::string("%already%20encoded")));
 
 TEST(UriParse, SchemeAndHostValidators) {
     EXPECT_TRUE(uri::is_valid_scheme("h2+tls"));
@@ -488,29 +487,25 @@ class UriNormalize : public ::testing::TestWithParam<NormalizeCase> {};
 } // namespace
 
 TEST_P(UriNormalize, ResolvesDotSegmentsAndSlashes) {
-    const auto &c = GetParam();
+    const auto &c    = GetParam();
     std::string path = c.input;
     EXPECT_TRUE(uri::normalize_path(path)) << c.input;
     EXPECT_EQ(path, c.expected) << "normalize_path(\"" << c.input << "\")";
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    DotSegments, UriNormalize,
-    ::testing::Values(
-        // empty / dot → root
-        NormalizeCase{"", "/"},
-        NormalizeCase{".", "/"},
-        // absolute path: `..` pops, `.` and `//` collapse, trailing slash stripped
-        NormalizeCase{"/a/b/../c/./d//", "/a/c/d"},
-        // relative path: leading `..` are retained (cannot escape above the relative root)
-        NormalizeCase{"../a/./b/../../c", "../c"},
-        // spec D4: a `/../`-escape attempt at the absolute root is clamped (no traversal above /)
-        NormalizeCase{"/../../../etc/passwd", "/etc/passwd"},
-        NormalizeCase{"/a/../../b", "/b"},
-        // spec D4: Windows backslashes are standardized to '/', and a drive-letter-style
-        // path normalizes its separators + dot segments like any other.
-        NormalizeCase{"a\\b\\..\\c", "a/c"},
-        NormalizeCase{"C:\\Users\\.\\qb\\..\\io", "C:/Users/io"}));
+INSTANTIATE_TEST_SUITE_P(DotSegments, UriNormalize,
+                         ::testing::Values(
+                             // empty / dot → root
+                             NormalizeCase{"", "/"}, NormalizeCase{".", "/"},
+                             // absolute path: `..` pops, `.` and `//` collapse, trailing slash stripped
+                             NormalizeCase{"/a/b/../c/./d//", "/a/c/d"},
+                             // relative path: leading `..` are retained (cannot escape above the relative root)
+                             NormalizeCase{"../a/./b/../../c", "../c"},
+                             // spec D4: a `/../`-escape attempt at the absolute root is clamped (no traversal above /)
+                             NormalizeCase{"/../../../etc/passwd", "/etc/passwd"}, NormalizeCase{"/a/../../b", "/b"},
+                             // spec D4: Windows backslashes are standardized to '/', and a drive-letter-style
+                             // path normalizes its separators + dot segments like any other.
+                             NormalizeCase{"a\\b\\..\\c", "a/c"}, NormalizeCase{"C:\\Users\\.\\qb\\..\\io", "C:/Users/io"}));
 
 // =============================================================================
 // RFC 3986 CHARACTER CLASSIFIERS — the free `qb::io::is_*` predicates
@@ -561,9 +556,9 @@ TEST(UriClassifiers, SubDelimMatchesEverySwitchArm) {
  *        a pure sub-delim, and an unreserved char that satisfies neither.
  */
 TEST(UriClassifiers, ReservedIsUnionOfGenAndSubDelims) {
-    EXPECT_TRUE(qb::io::is_reserved('/'))  << "gen-delim leg";
+    EXPECT_TRUE(qb::io::is_reserved('/')) << "gen-delim leg";
     EXPECT_TRUE(qb::io::is_reserved('@'));
-    EXPECT_TRUE(qb::io::is_reserved('!'))  << "sub-delim leg";
+    EXPECT_TRUE(qb::io::is_reserved('!')) << "sub-delim leg";
     EXPECT_TRUE(qb::io::is_reserved(';'));
 
     // unreserved characters are never reserved.
@@ -578,11 +573,11 @@ TEST(UriClassifiers, ReservedIsUnionOfGenAndSubDelims) {
  *        and a gen-delim rejection that distinguishes userinfo from authority.
  */
 TEST(UriClassifiers, UserInfoCharacterSet) {
-    EXPECT_TRUE(qb::io::is_user_info_character('a'));   // unreserved
+    EXPECT_TRUE(qb::io::is_user_info_character('a')); // unreserved
     EXPECT_TRUE(qb::io::is_user_info_character('~'));
-    EXPECT_TRUE(qb::io::is_user_info_character('!'));   // sub-delim
-    EXPECT_TRUE(qb::io::is_user_info_character('%'));   // pct-encoded marker
-    EXPECT_TRUE(qb::io::is_user_info_character(':'));   // user:pass separator
+    EXPECT_TRUE(qb::io::is_user_info_character('!')); // sub-delim
+    EXPECT_TRUE(qb::io::is_user_info_character('%')); // pct-encoded marker
+    EXPECT_TRUE(qb::io::is_user_info_character(':')); // user:pass separator
 
     EXPECT_FALSE(qb::io::is_user_info_character('@')) << "'@' terminates userinfo";
     EXPECT_FALSE(qb::io::is_user_info_character('/'));
@@ -596,7 +591,7 @@ TEST(UriClassifiers, UserInfoCharacterSet) {
  *        predicates must agree character-for-character, and both must admit the extra `?`.
  */
 TEST(UriClassifiers, QueryAndFragmentShareTheSameSetPlusQuestionMark) {
-    EXPECT_TRUE(qb::io::is_query_character('?'))    << "'?' is legal inside a query";
+    EXPECT_TRUE(qb::io::is_query_character('?')) << "'?' is legal inside a query";
     EXPECT_TRUE(qb::io::is_query_character('/'));
     EXPECT_TRUE(qb::io::is_query_character('a'));
     EXPECT_TRUE(qb::io::is_query_character('@'));
@@ -606,8 +601,7 @@ TEST(UriClassifiers, QueryAndFragmentShareTheSameSetPlusQuestionMark) {
 
     // fragment is defined as identical to query — assert byte-for-byte agreement.
     for (int c = 0; c < 256; ++c)
-        EXPECT_EQ(qb::io::is_fragment_character(c), qb::io::is_query_character(c))
-            << "fragment vs query divergence at byte " << c;
+        EXPECT_EQ(qb::io::is_fragment_character(c), qb::io::is_query_character(c)) << "fragment vs query divergence at byte " << c;
     EXPECT_TRUE(qb::io::is_fragment_character('?'));
     EXPECT_FALSE(qb::io::is_fragment_character('#'));
 }
@@ -623,7 +617,7 @@ TEST(UriClassifiers, QueryAndFragmentShareTheSameSetPlusQuestionMark) {
  *        percent-escapes are already decoded. Pins the const overload (uri.h queries() const).
  */
 TEST(UriParse, ConstQueriesMapExposesDecodedMultiValues) {
-    const uri u("http://host/p?dup=1&dup=2&dup=3&solo=%7Bx%7D");
+    const uri   u("http://host/p?dup=1&dup=2&dup=3&solo=%7Bx%7D");
     const auto &qmap = u.queries();
 
     ASSERT_TRUE(qmap.has("dup"));
@@ -653,9 +647,9 @@ TEST(UriParse, QueryMissReturnsEmptyAndQueryOrHitReturnsStoredValue) {
     const uri u("http://host/p?present=A&multi=x&multi=y");
 
     // query() misses → empty string reference (uri.h query() fall-through).
-    EXPECT_EQ(u.query("absent"), "")            << "absent key → empty";
-    EXPECT_EQ(u.query("present", 1), "")        << "present key, index past end → empty";
-    EXPECT_EQ(u.query("multi", 5), "")          << "index well beyond size → empty";
+    EXPECT_EQ(u.query("absent"), "") << "absent key → empty";
+    EXPECT_EQ(u.query("present", 1), "") << "present key, index past end → empty";
+    EXPECT_EQ(u.query("multi", 5), "") << "index well beyond size → empty";
 
     // The empty results are a real, stable reference (never a dangling temporary).
     const std::string &miss = u.query("absent");
@@ -680,7 +674,7 @@ TEST(UriParse, MutableQueriesAccessorAllowsInPlaceEdit) {
     uri u("http://host/p?k=orig");
     EXPECT_EQ(u.query("k"), "orig");
 
-    u.queries()["k"] = {"edited"};
+    u.queries()["k"]        = {"edited"};
     u.queries()["injected"] = {"new1", "new2"};
 
     EXPECT_EQ(u.query("k"), "edited");

@@ -92,7 +92,7 @@ TEST_F(CryptoPrimitivesTest, Base64RoundTripsAsciiBinaryAndEmpty) {
     EXPECT_TRUE(qb::crypto::base64_decode(empty_encoded).empty());
 
     // Binary payload with NUL and high bytes must round-trip exactly (was swallowed).
-    const std::vector<unsigned char> binary_data = {0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD};
+    const std::vector<unsigned char> binary_data    = {0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD};
     const std::string                binary_encoded = qb::crypto::base64_encode(binary_data.data(), binary_data.size());
     EXPECT_FALSE(binary_encoded.empty());
     EXPECT_EQ(qb::crypto::base64_decode(binary_encoded), binary_data);
@@ -147,11 +147,13 @@ TEST_F(CryptoPrimitivesTest, HexEncodingAndParsingContracts) {
 
 TEST_F(CryptoPrimitivesTest, DigestKnownAnswerVectors) {
     EXPECT_EQ(qb::crypto::to_hex_string(qb::crypto::md5(test_string), qb::crypto::range_hex_lower), "39076285a6c5ba8ecb12881f3263987f");
-    EXPECT_EQ(qb::crypto::to_hex_string(qb::crypto::sha1(test_string), qb::crypto::range_hex_lower), "93fcd83c3e94fd6b028c811033333c42e9c5cc6b");
+    EXPECT_EQ(qb::crypto::to_hex_string(qb::crypto::sha1(test_string), qb::crypto::range_hex_lower),
+              "93fcd83c3e94fd6b028c811033333c42e9c5cc6b");
     EXPECT_EQ(qb::crypto::to_hex_string(qb::crypto::sha256(test_string), qb::crypto::range_hex_lower),
               "9a15e201db8dbc4fe4ad851cc66e28c650400393ee05932d22132cfae71c803b");
-    EXPECT_EQ(qb::crypto::to_hex_string(qb::crypto::sha512(test_string), qb::crypto::range_hex_lower),
-              "13365f2c51fb536130b1cdb2da3b89968a4dbe45fc14ec786d47f0b9345faace1c1b45f23ef6ba71b74016cc300c31c9a5412201db29e3cd7f0ab175664986ab");
+    EXPECT_EQ(
+        qb::crypto::to_hex_string(qb::crypto::sha512(test_string), qb::crypto::range_hex_lower),
+        "13365f2c51fb536130b1cdb2da3b89968a4dbe45fc14ec786d47f0b9345faace1c1b45f23ef6ba71b74016cc300c31c9a5412201db29e3cd7f0ab175664986ab");
 }
 
 TEST_F(CryptoPrimitivesTest, EmptyInputDigestVectors) {
@@ -161,8 +163,9 @@ TEST_F(CryptoPrimitivesTest, EmptyInputDigestVectors) {
     EXPECT_EQ(qb::crypto::to_hex_string(qb::crypto::sha1(""), qb::crypto::range_hex_lower), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
     EXPECT_EQ(qb::crypto::to_hex_string(qb::crypto::sha256(""), qb::crypto::range_hex_lower),
               "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    EXPECT_EQ(qb::crypto::to_hex_string(qb::crypto::sha512(""), qb::crypto::range_hex_lower),
-              "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e");
+    EXPECT_EQ(
+        qb::crypto::to_hex_string(qb::crypto::sha512(""), qb::crypto::range_hex_lower),
+        "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e");
 }
 
 TEST_F(CryptoPrimitivesTest, IteratedHashingDiffersFromSinglePass) {
@@ -267,7 +270,9 @@ TEST_F(CryptoPrimitivesTest, HmacSha256MatchesKnownVector) {
 TEST_F(CryptoPrimitivesTest, Pbkdf2MatchesRfc6070Vectors) {
     // qb::crypto::pbkdf2 uses PKCS5_PBKDF2_HMAC_SHA1, so the RFC 6070
     // PBKDF2-HMAC-SHA1 test vectors apply byte-for-byte.
-    const auto hex = [](const std::string &raw) { return qb::crypto::to_hex_string(raw, qb::crypto::range_hex_lower); };
+    const auto hex = [](const std::string &raw) {
+        return qb::crypto::to_hex_string(raw, qb::crypto::range_hex_lower);
+    };
 
     EXPECT_EQ(hex(qb::crypto::pbkdf2("password", "salt", 1, 20)), "0c60c80f961f0e71f3a9b524af6012062fe037a6");
     EXPECT_EQ(hex(qb::crypto::pbkdf2("password", "salt", 2, 20)), "ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957");
@@ -287,11 +292,11 @@ TEST_F(CryptoPrimitivesTest, Pbkdf2IsDeterministicAndParameterSensitive) {
     EXPECT_EQ(key2.size(), 32u);
     EXPECT_EQ(key3.size(), 16u);
 
-    EXPECT_NE(key1, key2); // key size matters
-    EXPECT_NE(key1, key3); // iteration count matters
-    EXPECT_EQ(key1, qb::crypto::pbkdf2(password, salt, 1000, 16));                 // deterministic
-    EXPECT_NE(key1, qb::crypto::pbkdf2("different_password", salt, 1000, 16));     // password matters
-    EXPECT_NE(key1, qb::crypto::pbkdf2(password, "different_salt", 1000, 16));     // salt matters
+    EXPECT_NE(key1, key2);                                                     // key size matters
+    EXPECT_NE(key1, key3);                                                     // iteration count matters
+    EXPECT_EQ(key1, qb::crypto::pbkdf2(password, salt, 1000, 16));             // deterministic
+    EXPECT_NE(key1, qb::crypto::pbkdf2("different_password", salt, 1000, 16)); // password matters
+    EXPECT_NE(key1, qb::crypto::pbkdf2(password, "different_salt", 1000, 16)); // salt matters
 
     // Empty password and empty salt are accepted and produce the requested length
     // (was a `try/catch{cout}` swallow — now a hard expectation).
@@ -448,8 +453,8 @@ TEST_F(CryptoPrimitivesTest, CbcDecryptThrowsOnFinalizationFailure) {
 // =============================================================================
 
 TEST_F(CryptoPrimitivesTest, XorBytesContracts) {
-    const std::vector<unsigned char> a = {0x01, 0x02, 0x03, 0x04, 0x05};
-    const std::vector<unsigned char> b = {0x10, 0x20, 0x30, 0x40, 0x50};
+    const std::vector<unsigned char> a        = {0x01, 0x02, 0x03, 0x04, 0x05};
+    const std::vector<unsigned char> b        = {0x10, 0x20, 0x30, 0x40, 0x50};
     const std::vector<unsigned char> expected = {0x11, 0x22, 0x33, 0x44, 0x55};
 
     EXPECT_EQ(qb::crypto::xor_bytes(a, b), expected);

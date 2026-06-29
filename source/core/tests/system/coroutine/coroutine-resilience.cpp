@@ -78,9 +78,9 @@ constexpr auto kAskTimeout = 40ms;
 
 /// First backoff and growth factor. With multiplier 2 and a 320ms cap, the first few inter-attempt
 /// gaps are ~20ms, ~40ms, ~80ms — comfortably distinguishable by the VirtualCore clock.
-constexpr auto    kBackoff       = 20ms;
-constexpr double  kMultiplier    = 2.0;
-constexpr auto    kMaxBackoff    = 320ms;
+constexpr auto   kBackoff    = 20ms;
+constexpr double kMultiplier = 2.0;
+constexpr auto   kMaxBackoff = 320ms;
 
 /// Delay before the kill-then-stop driver fires (interrupts an in-flight ask) and then stops.
 constexpr auto kKillAfter = 25ms;

@@ -75,7 +75,9 @@ TEST(GeneratorSync, FibonacciGenerator) {
 }
 
 TEST(GeneratorSync, EmptyGeneratorYieldsNothing) {
-    auto gen = []() -> generator<int> { co_return; };
+    auto gen = []() -> generator<int> {
+        co_return;
+    };
 
     std::vector<int> result;
     for (auto val : gen())
@@ -280,8 +282,8 @@ TEST(GeneratorSync, HasNextAndNextHonorExhaustionContract) {
 // ---------------------------------------------------------------------------
 
 TEST(GeneratorSync, MoveTransfersTheEntireSequence) {
-    auto gen1 = range(1, 4);
-    auto gen2 = std::move(gen1); // moved-from gen1 must own nothing; gen2 owns the frame
+    auto gen1   = range(1, 4);
+    auto gen2   = std::move(gen1); // moved-from gen1 must own nothing; gen2 owns the frame
     auto result = collect_to_vector(gen2);
     EXPECT_EQ(result, (std::vector<int>{1, 2, 3})) << "the moved-to generator must yield the full original sequence, "
                                                       "in order, with no dropped or duplicated element";

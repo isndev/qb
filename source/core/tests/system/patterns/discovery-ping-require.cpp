@@ -43,12 +43,12 @@ using namespace qb;
 using namespace std::chrono_literals;
 
 namespace {
-std::atomic<int>  g_disc_alive{-1};   // ping known target
-std::atomic<int>  g_disc_dead{-1};    // ping invalid target
-std::atomic<int>  g_disc_count{-1};   // require<DiscWorker> count
-std::atomic<int>  g_disc_empty{-1};   // require<GhostWorker> count (expected 0)
+std::atomic<int>  g_disc_alive{-1}; // ping known target
+std::atomic<int>  g_disc_dead{-1};  // ping invalid target
+std::atomic<int>  g_disc_count{-1}; // require<DiscWorker> count
+std::atomic<int>  g_disc_empty{-1}; // require<GhostWorker> count (expected 0)
 std::atomic<bool> g_disc_cancelled{false};
-std::atomic<bool> g_disc_ran{false};  // the probe coroutine reached its terminal state
+std::atomic<bool> g_disc_ran{false}; // the probe coroutine reached its terminal state
 } // namespace
 
 // Plain actor: the kernel auto-registers PingEvent, so it answers discovery/liveness out of the box.
@@ -166,7 +166,7 @@ public:
     onInit() override {
         auto v = _victim;
         qb::io::async::callback([this, v] { push<qb::KillEvent>(v); }, 40ms); // kill while parked
-        qb::io::async::callback([] { qb::Main::stop(); }, 2s);                 // backstop only
+        qb::io::async::callback([] { qb::Main::stop(); }, 2s);                // backstop only
         co_return true;
     }
 };

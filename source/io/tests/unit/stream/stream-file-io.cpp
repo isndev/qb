@@ -96,9 +96,9 @@ protected:
 
     void
     SetUp() override {
-        test_dir = std::filesystem::temp_directory_path() /
-                   ("qb_stream_file_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_" +
-                    ::testing::UnitTest::GetInstance()->current_test_info()->name());
+        test_dir = std::filesystem::temp_directory_path()
+                   / ("qb_stream_file_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_"
+                      + ::testing::UnitTest::GetInstance()->current_test_info()->name());
         std::filesystem::remove_all(test_dir);
         std::filesystem::create_directories(test_dir);
 
@@ -170,7 +170,7 @@ TEST_F(StreamFileIoTest, FileOutputStream) {
     qb::io::ostream<qb::io::sys::file> output_stream2;
     output_stream2.transport() = std::move(file2);
 
-    const std::string vec_content = "Vector content test";
+    const std::string       vec_content = "Vector content test";
     const std::vector<char> vec_buffer(vec_content.begin(), vec_content.end());
     ASSERT_NE(output_stream2.publish(vec_buffer.data(), vec_buffer.size()), nullptr);
     ASSERT_GT(output_stream2.write(), 0);
@@ -308,7 +308,7 @@ TEST_F(StreamFileIoTest, ClosedTransportReadWriteFail) {
 TEST_F(StreamFileIoTest, StreamChaining) {
     const std::filesystem::path source_file = test_dir / "source_chain.txt";
     const std::filesystem::path dest_file   = test_dir / "dest_chain.txt";
-    const std::string content = "Testing stream chaining with non-trivial content 12345!@#$%";
+    const std::string           content     = "Testing stream chaining with non-trivial content 12345!@#$%";
     std::ofstream(source_file, std::ios::binary) << content;
 
     qb::io::sys::file file_source;
@@ -347,7 +347,7 @@ TEST_F(StreamFileIoTest, StreamChaining) {
  */
 TEST_F(StreamFileIoTest, DeletedInputFileDoesNotBreakSubsequentOutput) {
     const std::filesystem::path temp_file = test_dir / "temp_delete.txt";
-    const std::string seeded = "This file will be deleted during read/write operations";
+    const std::string           seeded    = "This file will be deleted during read/write operations";
     std::ofstream(temp_file, std::ios::binary) << seeded;
 
     qb::io::sys::file read_file;
@@ -368,7 +368,7 @@ TEST_F(StreamFileIoTest, DeletedInputFileDoesNotBreakSubsequentOutput) {
 
     // A fresh, independent output stream must still work.
     const std::filesystem::path out = test_dir / "after_delete.txt";
-    qb::io::sys::file write_file;
+    qb::io::sys::file           write_file;
     ASSERT_GE(write_file.open(out, O_WRONLY | O_CREAT, 0644), 0);
 
     qb::io::ostream<qb::io::sys::file> output_stream;
@@ -394,7 +394,7 @@ TEST_F(StreamFileIoTest, DeletedInputFileDoesNotBreakSubsequentOutput) {
 TEST_F(StreamFileIoTest, StreamComposition) {
     const std::filesystem::path source_file = test_dir / "transform_source.txt";
     const std::filesystem::path dest_file   = test_dir / "transform_dest.txt";
-    const std::string content = "abcdefghijklmnopqrstuvwxyz";
+    const std::string           content     = "abcdefghijklmnopqrstuvwxyz";
     std::ofstream(source_file, std::ios::binary) << content;
 
     const auto uppercase = [](char *data, std::size_t size) {

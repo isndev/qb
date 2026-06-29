@@ -112,8 +112,7 @@ TEST_F(CoroutineSchedulerTests, TaskIsCreatedAndExecutes) {
     // spawn() transferred the handle: the moved-from task is now empty.
     EXPECT_FALSE(static_cast<bool>(t));
 
-    EXPECT_TRUE(pump_until([&] { return executed.load(std::memory_order_acquire); }))
-        << "spawned coroutine never executed";
+    EXPECT_TRUE(pump_until([&] { return executed.load(std::memory_order_acquire); })) << "spawned coroutine never executed";
     EXPECT_EQ(coro_scheduler().active_count(), 0u);
 }
 
@@ -149,8 +148,7 @@ TEST_F(CoroutineSchedulerTests, SpawnedCoroutineContinuesAfterHandleReleased) {
         // task/closure goes out of scope here — must NOT cancel the spawned coroutine.
     }
 
-    EXPECT_TRUE(pump_until([&] { return completed.load(); }))
-        << "spawned coroutine was cancelled when its originating closure was released";
+    EXPECT_TRUE(pump_until([&] { return completed.load(); })) << "spawned coroutine was cancelled when its originating closure was released";
     EXPECT_EQ(coro_scheduler().active_count(), 0u);
 }
 
@@ -193,7 +191,9 @@ TEST_F(CoroutineSchedulerTests, CoAwaitMovedFromTaskThrowsLogicError) {
     auto d  = &done;
     coro_scheduler().spawn([ti, tv, d]() -> task<void> {
         // task<int>: move the handle out, then co_await the empty husk → await_resume throws.
-        auto t    = []() -> task<int> { co_return 5; }();
+        auto t = []() -> task<int> {
+            co_return 5;
+        }();
         auto sink = std::move(t); // `sink` owns the never-run frame; `t` is now empty
         try {
             (void) co_await t;
@@ -201,7 +201,9 @@ TEST_F(CoroutineSchedulerTests, CoAwaitMovedFromTaskThrowsLogicError) {
             ti->store(true);
         }
         // task<void>: same contract.
-        auto tvoid = []() -> task<void> { co_return; }();
+        auto tvoid = []() -> task<void> {
+            co_return;
+        }();
         auto sinkv = std::move(tvoid);
         try {
             co_await tvoid;
@@ -508,8 +510,7 @@ TEST_F(CoroutineSchedulerTests, UnhandledExceptionTerminatesCoroutine) {
     });
 
     // The unhandled exception is captured in the promise; the spawned frame completes and is reclaimed.
-    EXPECT_TRUE(pump_until([&] { return coro_scheduler().active_count() == 0u; }))
-        << "scheduler never drained the throwing coroutine";
+    EXPECT_TRUE(pump_until([&] { return coro_scheduler().active_count() == 0u; })) << "scheduler never drained the throwing coroutine";
     EXPECT_FALSE(after_throw.load());
 }
 
@@ -523,7 +524,7 @@ TEST_F(CoroutineSchedulerTests, ExceptionFromAwaitedTaskPropagates) {
     std::atomic<bool> caught{false};
     std::atomic<bool> outer_continued{false};
 
-    auto inner_ptr = &inner_started;
+    auto inner_ptr  = &inner_started;
     auto caught_ptr = &caught;
     auto outer_ptr  = &outer_continued;
     coro_scheduler().spawn([inner_ptr, caught_ptr, outer_ptr]() -> task<void> {
@@ -782,7 +783,9 @@ TEST_F(CoroutineSchedulerTests, ScheduleAndEnqueueRejectNullAndDone) {
     EXPECT_EQ(sched.pending_count(), 0u);
 
     // A completed (done) handle: build a trivial task, run it to done, then verify it is refused.
-    auto t = []() -> task<void> { co_return; }();
+    auto t = []() -> task<void> {
+        co_return;
+    }();
     auto h = t.handle();
     h.resume(); // runs the body to completion; handle is now done()
     ASSERT_TRUE(h.done());
@@ -807,7 +810,9 @@ TEST_F(CoroutineSchedulerTests, ForgetUnknownHandleIsNoOp) {
     // forget() never frees — `t` still owns the frame and destroys it exactly once in its
     // destructor at scope end. (Calling h.destroy() here as well would double-free the frame
     // and corrupt the thread-local CoroutineFrameAllocator free-list.)
-    auto t = []() -> task<void> { co_await std::suspend_always{}; }();
+    auto t = []() -> task<void> {
+        co_await std::suspend_always{};
+    }();
     auto h = t.handle();
     sched.forget(h);
     EXPECT_EQ(sched.active_count(), 0u);
@@ -819,7 +824,7 @@ TEST_F(CoroutineSchedulerTests, ForgetUnknownHandleIsNoOp) {
  *        suspended count.
  */
 TEST_F(CoroutineSchedulerTests, RegisterSuspendedNullHandleIgnored) {
-    auto &sched = coro_scheduler();
+    auto      &sched  = coro_scheduler();
     const auto before = sched.active_count();
 
     sched.register_suspended(std::coroutine_handle<>{});
@@ -866,7 +871,7 @@ TEST_F(CoroutineSchedulerTests, IsDrainingReadyReflectsRunReadyWindow) {
     EXPECT_FALSE(sched.is_draining_ready());
 
     std::atomic<bool> saw_draining{false};
-    auto saw_ptr = &saw_draining;
+    auto              saw_ptr = &saw_draining;
     coro_scheduler().spawn([saw_ptr]() -> task<void> {
         saw_ptr->store(coro_scheduler().is_draining_ready());
         co_return;
@@ -903,11 +908,11 @@ TEST_F(CoroutineSchedulerTests, SpawnTrackedEmptyTaskReturnsNull) {
  *        waiting for the timer. Drives the cancel_spawned ownership-gate + bookkeeping-scrub path.
  */
 TEST_F(CoroutineSchedulerTests, SpawnTrackedThenCancelReclaimsHelper) {
-    auto &sched = coro_scheduler();
+    auto      &sched    = coro_scheduler();
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
 
     std::atomic<bool> ran_past_sleep{false};
-    auto ran_ptr = &ran_past_sleep;
+    auto              ran_ptr = &ran_past_sleep;
 
     // A helper that parks on a long timer; if it ever fires it flips the flag (it must NOT).
     auto make_helper = [ran_ptr]() -> task<void> {
@@ -949,7 +954,9 @@ TEST_F(CoroutineSchedulerTests, CancelSpawnedNullAndNonOwnedNoOp) {
     EXPECT_EQ(sched.active_count(), 0u);
 
     // A live frame the scheduler does not own: cancel_spawned must NOT free it (ownership gate).
-    auto t = []() -> task<void> { co_await std::suspend_always{}; }();
+    auto t = []() -> task<void> {
+        co_await std::suspend_always{};
+    }();
     auto h = t.handle();
     sched.cancel_spawned(h);
     EXPECT_EQ(sched.active_count(), 0u);
@@ -966,11 +973,11 @@ TEST_F(CoroutineSchedulerTests, CancelSpawnedNullAndNonOwnedNoOp) {
  *        sweep. After it runs, active_count() is 0 and no frame leaked, with the loop still valid.
  */
 TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedTearsDownMixedFrames) {
-    auto &sched = coro_scheduler();
+    auto      &sched    = coro_scheduler();
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
 
     std::atomic<int> fired{0};
-    auto fired_ptr = &fired;
+    auto             fired_ptr = &fired;
 
     // (a) Owned root: spawn_tracked helper that parks on a long plain sleep (cannot be woken by cancel).
     auto owned = [fired_ptr]() -> task<void> {
@@ -1010,16 +1017,18 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedTearsDownMixedFrames) {
  *        (scheduler.h:518-525). Proven by the live-frame counter returning to baseline after the drain.
  */
 TEST_F(CoroutineSchedulerTests, DeferDestroyDrainsCompletedFrame) {
-    auto &sched = coro_scheduler();
+    auto      &sched    = coro_scheduler();
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
 
     std::atomic<bool> done{false};
-    auto done_ptr = &done;
+    auto              done_ptr = &done;
 
     // A spawned root that awaits an inner task: it reaches final_suspend via symmetric transfer,
     // so its frame is reclaimed only through the defer_destroy / frames_to_destroy_ drain.
     coro_scheduler().spawn([done_ptr]() -> task<void> {
-        auto inner = []() -> task<int> { co_return 7; };
+        auto inner = []() -> task<int> {
+            co_return 7;
+        };
         int v = co_await inner();
         EXPECT_EQ(v, 7);
         done_ptr->store(true);
@@ -1066,8 +1075,7 @@ TEST_F(CoroutineSchedulerTests, CurrentLazilyCreatesSchedulerOnBareThread) {
 
     EXPECT_EQ(ptr_before.load(), nullptr) << "current_ptr() should be null before current() is called";
     EXPECT_NE(from_current.load(), nullptr) << "current() must lazily create a fallback scheduler";
-    EXPECT_EQ(from_current.load(), from_ptr.load())
-        << "current_ptr() must report the scheduler current() just created";
+    EXPECT_EQ(from_current.load(), from_ptr.load()) << "current_ptr() must report the scheduler current() just created";
 }
 
 // =============================================================================
@@ -1142,8 +1150,8 @@ TEST_F(CoroutineSchedulerTests, DestructorDestroysOwnedReadyHandle) {
     auto              body_ptr = &body_ran;
 
     {
-        CoroutineScheduler      standalone{qb::io::async::listener::current.loop()};
-        ScopedCurrentScheduler  guard{standalone};
+        CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+        ScopedCurrentScheduler guard{standalone};
 
         // by-value-parameter coroutine: body_ptr is copied into the frame, no dangling closure.
         auto h = standalone.spawn_tracked(flag_setting_coro(body_ptr));
@@ -1155,8 +1163,7 @@ TEST_F(CoroutineSchedulerTests, DestructorDestroysOwnedReadyHandle) {
     }
 
     EXPECT_FALSE(body_ran.load()) << "the destroyed ready frame must not have run its body";
-    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
-        << "destructor leaked the owned ready frame";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "destructor leaked the owned ready frame";
 
     // Restore a valid TLS scheduler for the fixture TearDown.
     CoroutineScheduler::set_current(&qb::io::async::listener::current.coro_scheduler());
@@ -1192,8 +1199,7 @@ TEST_F(CoroutineSchedulerTests, DestructorDrainsDeferredDestroyFrames) {
         // standalone dies here: the frames_to_destroy_ teardown loop frees it.
     }
 
-    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
-        << "destructor failed to drain the deferred-destroy frame";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "destructor failed to drain the deferred-destroy frame";
 
     CoroutineScheduler::set_current(&qb::io::async::listener::current.coro_scheduler());
 }
@@ -1220,14 +1226,12 @@ TEST_F(CoroutineSchedulerTests, CancelSpawnedScrubsDeferredDestroyEntry) {
     ASSERT_TRUE(h);
     h.resume(); // -> final_suspend -> defer_frame_destruction routes into standalone
     ASSERT_TRUE(h.done());
-    EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline)
-        << "frame should be alive and queued for deferred destruction";
+    EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline) << "frame should be alive and queued for deferred destruction";
 
     // The owned + deferred frame: cancel_spawned passes the ownership gate, scrubs it from
     // frames_to_destroy_ (line 296), and frees it once.
     standalone.cancel_spawned(h);
-    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
-        << "cancel_spawned failed to free the deferred frame";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "cancel_spawned failed to free the deferred frame";
 
     // A second cancel of the now-freed handle hits the ownership gate and is a safe no-op:
     // owned_frames_ no longer contains it, so it returns before any destroy.
@@ -1273,9 +1277,8 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsOwnedRootFromDeferredDe
     standalone.destroy_all_suspended();
     // The owned-root cascade does not touch the ready queue, so the stale (done) ready entry left
     // by the manual resume survives — active_count() counts it. suspended_coroutines_ is empty.
-    EXPECT_EQ(standalone.active_count(), 1u)
-        << "manual resume left a done() entry in the ready queue; destroy_all_suspended() "
-           "does not scrub it (only owned/suspended/deferred bookkeeping)";
+    EXPECT_EQ(standalone.active_count(), 1u) << "manual resume left a done() entry in the ready queue; destroy_all_suspended() "
+                                                "does not scrub it (only owned/suspended/deferred bookkeeping)";
 
     // Drain the stale ready entry BEFORE freeing the frame (the frame is still alive here). The
     // deferred-destroy scrub emptied frames_to_destroy_, so run_ready() must NOT free this frame:
@@ -1289,8 +1292,7 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsOwnedRootFromDeferredDe
     // with no task<T> owner, so we destroy it exactly once here — nothing else will (no double-free).
     EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline);
     h.destroy();
-    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
-        << "owned-root scrub path leaked the frame";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "owned-root scrub path leaked the frame";
 }
 
 /**
@@ -1336,8 +1338,7 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedSweepsNonOwnedSuspendedFrame)
     // non-owned suspended sweep (lines 693-702) destroys it.
     sched.destroy_all_suspended();
     EXPECT_EQ(sched.active_count(), 0u) << "non-owned suspended frame not swept";
-    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline)
-        << "destroy_all_suspended leaked the non-owned suspended frame";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "destroy_all_suspended leaked the non-owned suspended frame";
 
     // The awaiter destructor stopped the timer; pumping the loop must not fire the body.
     qb::io::async::run_for(10ms);

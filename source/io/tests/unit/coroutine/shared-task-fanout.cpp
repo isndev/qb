@@ -124,8 +124,8 @@ TEST_F(SharedTaskFanout, SingleConsumerReceivesResult) {
 }
 
 TEST_F(SharedTaskFanout, MultipleConsumersReceiveSameResult) {
-    std::vector<int>  results(3, 0);
-    std::atomic<int>  woken{0};
+    std::vector<int> results(3, 0);
+    std::atomic<int> woken{0};
 
     auto sh = make_shared_task(compute_after(99, 10ms));
     for (int i = 0; i < 3; ++i) {
@@ -298,7 +298,7 @@ TEST_F(SharedTaskFanout, NonDefaultConstructibleResultType) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto sh = make_shared_task([]() -> task<NoDefault> {
+        auto sh     = make_shared_task([]() -> task<NoDefault> {
             co_await sleep(10ms);
             co_return NoDefault{42};
         }());
@@ -439,7 +439,7 @@ TEST_F(SharedTaskFanout, ScopeFanOutMultipleWorkersAwaitSameData) {
     std::vector<int>  outputs;
 
     coro_scheduler().spawn([&done, &outputs]() -> task<void> {
-        auto data_handle = make_shared_task([]() -> task<int> {
+        auto            data_handle = make_shared_task([]() -> task<int> {
             co_await sleep(10ms);
             co_return 100;
         }());
@@ -478,7 +478,7 @@ TEST_F(SharedTaskFanout, AwaiterReclaimedWhileParked) {
             co_await sleep(40ms);
             co_return 5;
         }());
-        auto park = [](shared_task<int> st) -> task<int> {
+        auto park   = [](shared_task<int> st) -> task<int> {
             volatile char big[8192];
             big[0] = 7;
             int v  = co_await st;
@@ -498,7 +498,9 @@ TEST_F(SharedTaskFanout, VoidAwaiterReclaimedWhileParked) {
     // list in its dtor so the later flush() does not resume the freed frame. Drives the void
     // awaiter's retract loop.
     run_reclaim_driver([]() -> task<void> {
-        auto shared = make_shared_task([]() -> task<void> { co_await sleep(40ms); }());
+        auto shared = make_shared_task([]() -> task<void> {
+            co_await sleep(40ms);
+        }());
         auto park   = [](shared_task<void> st) -> task<int> {
             volatile char big[8192];
             big[0] = 7;

@@ -85,9 +85,9 @@ protected:
     SetUp() override {
         // A per-test directory under the OS temp area keeps parallel test processes isolated
         // (no shared "./test_files" collision) and survives any working-directory churn.
-        test_dir = std::filesystem::temp_directory_path() /
-                   ("qb_file_sys_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_" +
-                    ::testing::UnitTest::GetInstance()->current_test_info()->name());
+        test_dir = std::filesystem::temp_directory_path()
+                   / ("qb_file_sys_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_"
+                      + ::testing::UnitTest::GetInstance()->current_test_info()->name());
         std::filesystem::remove_all(test_dir);
         std::filesystem::create_directories(test_dir);
 
@@ -156,8 +156,8 @@ TEST_F(FileSysTest, OpenReadWriteCloseRoundTrip) {
     ASSERT_GE(reader.open(test_file, O_RDONLY), 0);
     ASSERT_TRUE(reader.is_open());
 
-    char buffer[128] = {0};
-    const int bytes_read = reader.read(buffer, sizeof(buffer) - 1);
+    char      buffer[128] = {0};
+    const int bytes_read  = reader.read(buffer, sizeof(buffer) - 1);
     EXPECT_EQ(bytes_read, static_cast<int>(test_content.size()));
     EXPECT_EQ(std::string(buffer, static_cast<std::size_t>(bytes_read)), test_content);
 
@@ -165,7 +165,7 @@ TEST_F(FileSysTest, OpenReadWriteCloseRoundTrip) {
     EXPECT_FALSE(reader.is_open());
 
     const std::filesystem::path out = test_dir / "write_test.txt";
-    qb::io::sys::file writer;
+    qb::io::sys::file           writer;
     ASSERT_GE(writer.open(out, O_WRONLY | O_CREAT, 0644), 0);
     ASSERT_TRUE(writer.is_open());
 
@@ -226,8 +226,8 @@ TEST_F(FileSysTest, MoveAssignClosesPreviousDescriptor) {
     EXPECT_TRUE(dst.is_open());
     EXPECT_EQ(dst.native_handle(), src_handle);
 
-    char buffer[32] = {0};
-    const int n = dst.read(buffer, sizeof(buffer) - 1);
+    char      buffer[32] = {0};
+    const int n          = dst.read(buffer, sizeof(buffer) - 1);
     ASSERT_GT(n, 0);
     EXPECT_EQ(std::string(buffer, static_cast<std::size_t>(n)), "second-file-content");
 }
@@ -249,7 +249,7 @@ TEST_F(FileSysTest, AccessModesEnforceDirectionAndAppend) {
 
     // Write-only: reading must fail, writing must succeed.
     const std::filesystem::path wo_path = test_dir / "write_only.txt";
-    qb::io::sys::file wo;
+    qb::io::sys::file           wo;
     ASSERT_GE(wo.open(wo_path, O_WRONLY | O_CREAT, 0644), 0);
     EXPECT_EQ(wo.write("test", 4), 4);
     char buffer[8] = {0};
@@ -367,8 +367,8 @@ TEST_F(FileSysTest, WriterThenReaderPrefixMatches) {
     qb::io::sys::file reader;
     ASSERT_GE(reader.open(path, O_RDONLY), 0);
 
-    char chunk[256] = {0};
-    const int n = reader.read(chunk, sizeof(chunk));
+    char      chunk[256] = {0};
+    const int n          = reader.read(chunk, sizeof(chunk));
     ASSERT_GT(n, 0);
     reader.close();
 

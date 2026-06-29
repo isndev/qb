@@ -148,9 +148,11 @@ TEST(RetryBackoffMath, JitterStaysWithinExponentialToOnePointFiveBand) {
  */
 TEST(RetryBackoffMath, ExponentialOverflowGuardSaturatesToMaxDelay) {
     using namespace std::chrono;
-    retry_policy policy{.base_delay = milliseconds(10'000'000'000LL), // 1e10 ms
-                        .max_delay  = hours(24),
-                        .strategy   = backoff_strategy::exponential};
+    retry_policy policy{
+        .base_delay = milliseconds(10'000'000'000LL), // 1e10 ms
+        .max_delay  = hours(24),
+        .strategy   = backoff_strategy::exponential
+    };
     // retry_number 31+ -> shift clamps to 30 -> factor 2^30; base_ms*factor overflows -> max_delay.
     auto delay = detail::calculate_delay(40, policy);
     EXPECT_EQ(delay, hours(24)) << "an overflowing exponential step must saturate to max_delay, not wrap";
@@ -163,9 +165,7 @@ TEST(RetryBackoffMath, ExponentialOverflowGuardSaturatesToMaxDelay) {
  */
 TEST(RetryBackoffMath, ExponentialJitterOverflowGuardSaturatesToMaxDelay) {
     using namespace std::chrono;
-    retry_policy policy{.base_delay = milliseconds(10'000'000'000LL),
-                        .max_delay  = hours(24),
-                        .strategy   = backoff_strategy::exponential_jitter};
+    retry_policy policy{.base_delay = milliseconds(10'000'000'000LL), .max_delay = hours(24), .strategy = backoff_strategy::exponential_jitter};
     for (int i = 0; i < 32; ++i) {
         auto delay = detail::calculate_delay(40, policy);
         // Pre-jitter delay is clamped to max_delay; jitter on a value already == max cannot grow it.
@@ -207,9 +207,7 @@ TEST(RetryBackoffMath, LinearLargeBaseMultiplyThenClampSaturates) {
     // base_ms = 9e9 (9e18 ns, representable). retry_number 20 -> mult 20 -> product 1.8e11 ms (fits
     // int64, no guard), which overshoots max_delay = 1e9 ms, so the trailing clamp saturates it.
     const milliseconds big_max{1'000'000'000LL};
-    retry_policy       policy{.base_delay = milliseconds(9'000'000'000LL),
-                              .max_delay  = big_max,
-                              .strategy   = backoff_strategy::linear};
+    retry_policy       policy{.base_delay = milliseconds(9'000'000'000LL), .max_delay = big_max, .strategy = backoff_strategy::linear};
     EXPECT_EQ(detail::calculate_delay(20, policy), big_max)
         << "a linear step (base*mult, computed without overflow) above max_delay must clamp to max_delay";
     // Even mult=2 already overshoots max_delay (2 * 9e9 ms >> 1e9 ms), so it saturates too.
@@ -251,9 +249,7 @@ TEST(RetryBackoffMath, ExponentialJitterSaturatesToMaxDelay) {
     // Largest comfortably-representable max_delay (9e12 ms = 9e21 ns < INT64_MAX) and a base whose
     // 2^shift factor overflows past it, so the pre-jitter exponential is clamped to max_ms first.
     const milliseconds big_max{9'000'000'000'000LL};
-    retry_policy       policy{.base_delay = milliseconds(1'000'000'000LL),
-                              .max_delay  = big_max,
-                              .strategy   = backoff_strategy::exponential_jitter};
+    retry_policy policy{.base_delay = milliseconds(1'000'000'000LL), .max_delay = big_max, .strategy = backoff_strategy::exponential_jitter};
     for (int i = 0; i < 64; ++i) {
         auto delay = detail::calculate_delay(40, policy);
         // delay_ms is clamped to max_ms before jitter; jitter then adds 0-50% (which itself never

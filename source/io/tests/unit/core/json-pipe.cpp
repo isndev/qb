@@ -37,9 +37,9 @@
 
 #include <gtest/gtest.h>
 
-#include <qb/json.h>            // pulls qb::json + the uuids json codec (to_json / from_json)
+#include <qb/json.h> // pulls qb::json + the uuids json codec (to_json / from_json)
 #include <qb/system/allocator/pipe.h>
-#include <qb/uuid.h>            // qb::uuid + qb::generate_random_uuid
+#include <qb/uuid.h> // qb::uuid + qb::generate_random_uuid
 
 namespace {
 
@@ -122,7 +122,7 @@ TEST(JsonPipe, SerializesInt64WithoutTruncation) {
  *        pattern — proving the serializer kept double precision end to end.
  */
 TEST(JsonPipe, SerializesDoubleWithoutPrecisionLoss) {
-    const double precise = 0.123456789012345; // 15 significant digits — beyond float's ~7
+    const double      precise    = 0.123456789012345; // 15 significant digits — beyond float's ~7
     const std::string serialized = pipe_json(qb::json(precise));
 
     const qb::json reparsed = qb::json::parse(serialized);

@@ -67,10 +67,10 @@ public:
                 auto slot = co_await bh->enter(c); // waits while 2 are already in flight
                 g_bh_inflight.fetch_add(1);
                 bh_bump_max();
-                co_await c.sleep(15ms);            // hold the slot so overlap is observable
+                co_await c.sleep(15ms); // hold the slot so overlap is observable
                 g_bh_inflight.fetch_sub(1);
                 if (g_bh_done.fetch_add(1) + 1 == 5)
-                    qb::Main::stop();              // event-driven: stop when all five have finished
+                    qb::Main::stop(); // event-driven: stop when all five have finished
             });
         }
         co_return true;
@@ -135,7 +135,7 @@ public:
     onInit() override {
         auto v = _victim;
         qb::io::async::callback([this, v] { push<qb::KillEvent>(v); }, 40ms); // lands while parked
-        qb::io::async::callback([] { qb::Main::stop(); }, 2s); // backstop only — never the oracle
+        qb::io::async::callback([] { qb::Main::stop(); }, 2s);                // backstop only — never the oracle
         co_return true;
     }
 };

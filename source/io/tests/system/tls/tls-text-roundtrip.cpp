@@ -66,8 +66,8 @@ using qb::io::test::ssl_resource_path;
 
 namespace {
 
-constexpr const char        kMessage[]   = "Hello, Secure Text Protocol!";
-constexpr const std::size_t kIterations  = 10;
+constexpr const char        kMessage[]  = "Hello, Secure Text Protocol!";
+constexpr const std::size_t kIterations = 10;
 
 std::atomic<std::size_t> g_server_echoed{0};
 std::atomic<std::size_t> g_client_received{0};
@@ -151,11 +151,9 @@ TEST(TlsTextRoundtrip, SecureSessionEchoesEveryFramedMessage) {
         client_thread_ok.store(ok);
     });
 
-    const bool done = pump_until(
-        [&] { return g_server_echoed.load() >= kIterations && g_client_received.load() >= kIterations; },
-        5s);
-    EXPECT_TRUE(done) << "secure echo round-trip stalled: server echoed " << g_server_echoed.load()
-                      << ", client received " << g_client_received.load() << " of " << kIterations;
+    const bool done = pump_until([&] { return g_server_echoed.load() >= kIterations && g_client_received.load() >= kIterations; }, 5s);
+    EXPECT_TRUE(done) << "secure echo round-trip stalled: server echoed " << g_server_echoed.load() << ", client received "
+                      << g_client_received.load() << " of " << kIterations;
 
     worker.join();
 

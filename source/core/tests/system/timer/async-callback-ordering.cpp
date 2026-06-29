@@ -44,8 +44,8 @@ using namespace std::chrono_literals;
 // after join() so a never-scheduled chain cannot pass vacuously.
 // ---------------------------------------------------------------------------
 namespace {
-std::vector<int>  g_order;       // single-writer (one chain on one core), read after join()
-std::atomic<int>  g_fired{0};    // total callbacks that fired
+std::vector<int>  g_order;    // single-writer (one chain on one core), read after join()
+std::atomic<int>  g_fired{0}; // total callbacks that fired
 std::atomic<bool> g_chain_done{false};
 } // namespace
 
@@ -160,9 +160,9 @@ TEST(AsyncCallbackOrdering, FixedDelayChainHonoursElapsedLowerBound) {
     g_elapsed_ns.store(0);
     g_timed_done.store(false);
 
-    constexpr int kCount     = 50;
-    constexpr auto kDelay    = 1ms;
-    const uint64_t lower_ns  = static_cast<uint64_t>(kCount) * 1'000'000ull; // 50 * 1ms
+    constexpr int  kCount   = 50;
+    constexpr auto kDelay   = 1ms;
+    const uint64_t lower_ns = static_cast<uint64_t>(kCount) * 1'000'000ull; // 50 * 1ms
     // Generous upper bound: even a heavily-loaded CI box runs 50 1ms ticks well under 5s. If the
     // chain wedged, this fails LOUDLY rather than hanging (the ctest TIMEOUT is the last backstop).
     const uint64_t upper_ns = 5'000'000'000ull;
@@ -178,7 +178,6 @@ TEST(AsyncCallbackOrdering, FixedDelayChainHonoursElapsedLowerBound) {
     EXPECT_EQ(g_timed_fired.load(), kCount) << "exactly kCount callbacks must fire";
 
     const uint64_t elapsed = g_elapsed_ns.load();
-    EXPECT_GE(elapsed, lower_ns)
-        << "N sequential " << 1 << "ms waits cannot finish in under N ms (elapsed=" << elapsed << "ns)";
+    EXPECT_GE(elapsed, lower_ns) << "N sequential " << 1 << "ms waits cannot finish in under N ms (elapsed=" << elapsed << "ns)";
     EXPECT_LT(elapsed, upper_ns) << "the chain must not wedge (elapsed=" << elapsed << "ns)";
 }

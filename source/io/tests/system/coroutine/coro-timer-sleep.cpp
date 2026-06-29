@@ -151,8 +151,7 @@ TEST_F(CoroutineTimerSleep, LongDurationTimerDoesNotFireEarly) {
     });
 
     // Not long enough — must still be parked. The pump must NOT see completion in 40ms.
-    EXPECT_FALSE(qb::io::test::pump_until([&] { return completed.load(); }, 40ms))
-        << "a 300ms timer fired within 40ms";
+    EXPECT_FALSE(qb::io::test::pump_until([&] { return completed.load(); }, 40ms)) << "a 300ms timer fired within 40ms";
     EXPECT_FALSE(completed.load()) << "a 300ms timer fired within 40ms";
 
     // Now wait it out.
@@ -240,8 +239,7 @@ TEST_F(CoroutineTimerSleep, CancelWhileParkedOnSleepUnwindsPromptly) {
         done = true;
     });
 
-    EXPECT_TRUE(qb::io::test::pump_until([&] { return token.get_state()->callbacks.size() == 1u; }))
-        << "coroutine never parked on the sleep";
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return token.get_state()->callbacks.size() == 1u; })) << "coroutine never parked on the sleep";
     EXPECT_FALSE(done.load());
 
     token.cancel();

@@ -1,4 +1,5 @@
 <!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+
 # Installation
 
 How to add qb to a project and build it from source. For the day-to-day build-command reference see
@@ -9,11 +10,11 @@ How to add qb to a project and build it from source. For the day-to-day build-co
 
 Continuous integration builds and tests every change on the following matrix:
 
-| OS | Compilers | Standard library |
-|---|---|---|
-| Linux (`ubuntu-latest`) | GCC, Clang | libstdc++ |
-| macOS (`macos-latest`) | Apple Clang | libc++ |
-| Windows (`windows-latest`) | MSVC | MSVC STL |
+| OS                         | Compilers   | Standard library |
+|----------------------------|-------------|------------------|
+| Linux (`ubuntu-latest`)    | GCC, Clang  | libstdc++        |
+| macOS (`macos-latest`)     | Apple Clang | libc++           |
+| Windows (`windows-latest`) | MSVC        | MSVC STL         |
 
 Requirements:
 
@@ -28,17 +29,17 @@ Architectures: x86_64 and ARM64 (including Apple Silicon).
 
 qb resolves dependencies in three ways. Most builds need nothing installed beyond a compiler and CMake.
 
-| Dependency | How it is obtained | Needed for |
-|---|---|---|
-| libev | Bundled (`qb/modules/ev`), built automatically | Always (the event loop) |
-| stduuid | Bundled (`qb/modules/uuid`); falls back to system uuid if absent | Always (UUIDs) |
-| GoogleTest | Fetched at configure time when `QB_BUILD_TESTS=ON` | Tests |
-| Google Benchmark | Fetched at configure time when `QB_BUILD_BENCHMARKS=ON` | Benchmarks |
-| zlib | System first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` | `QB_WITH_COMPRESSION` |
-| OpenSSL | System only (`find_package`) | `QB_WITH_SSL` (TLS, crypto) |
-| Argon2 | System only, looked up only when OpenSSL is present | Password hashing |
-| ngtcp2 | System only | `QB_WITH_QUIC` (requires SSL) |
-| gperftools | System only | `QB_WITH_PROFILING` |
+| Dependency       | How it is obtained                                                   | Needed for                    |
+|------------------|----------------------------------------------------------------------|-------------------------------|
+| libev            | Bundled (`qb/modules/ev`), built automatically                       | Always (the event loop)       |
+| stduuid          | Bundled (`qb/modules/uuid`); falls back to system uuid if absent     | Always (UUIDs)                |
+| GoogleTest       | Fetched at configure time when `QB_BUILD_TESTS=ON`                   | Tests                         |
+| Google Benchmark | Fetched at configure time when `QB_BUILD_BENCHMARKS=ON`              | Benchmarks                    |
+| zlib             | System first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` | `QB_WITH_COMPRESSION`         |
+| OpenSSL          | System only (`find_package`)                                         | `QB_WITH_SSL` (TLS, crypto)   |
+| Argon2           | System only, looked up only when OpenSSL is present                  | Password hashing              |
+| ngtcp2           | System only                                                          | `QB_WITH_QUIC` (requires SSL) |
+| gperftools       | System only                                                          | `QB_WITH_PROFILING`           |
 
 Optional system packages, by platform:
 

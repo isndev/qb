@@ -157,11 +157,11 @@ ArgsMessagingApiCores(benchmark::internal::Benchmark *b) {
 
 } // namespace
 
-#define REGISTER_MSGAPI(KIND)                                                                                                                \
-    BENCHMARK_TEMPLATE(BM_MessagingApi_OneWay, MessagingApiKind::KIND)                                                                        \
-        ->Apply(ArgsMessagingApiCores)                                                                                                        \
-        ->ArgNames({"messages", "producer_core", "consumer_core"})                                                                            \
-        ->Unit(benchmark::kMillisecond)                                                                                                       \
+#define REGISTER_MSGAPI(KIND)                                          \
+    BENCHMARK_TEMPLATE(BM_MessagingApi_OneWay, MessagingApiKind::KIND) \
+        ->Apply(ArgsMessagingApiCores)                                 \
+        ->ArgNames({"messages", "producer_core", "consumer_core"})     \
+        ->Unit(benchmark::kMillisecond)                                \
         ->UseRealTime()
 
 REGISTER_MSGAPI(Push);

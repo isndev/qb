@@ -64,10 +64,10 @@ namespace {
 // Shared observability atoms (reset per test). Mirror in-actor outcomes so a
 // worker-thread side effect is attributed to the right named test after join().
 // ---------------------------------------------------------------------------
-std::atomic<bool> g_init_ran{false};      // a happy-path onInit reached its co_return true
-std::atomic<bool> g_threw{false};         // a throwing onInit reached the throw site
+std::atomic<bool> g_init_ran{false};       // a happy-path onInit reached its co_return true
+std::atomic<bool> g_threw{false};          // a throwing onInit reached the throw site
 std::atomic<bool> g_returned_false{false}; // a failing onInit reached its co_return false
-std::atomic<bool> g_signal_seen{false};   // an actor observed a SignalEvent
+std::atomic<bool> g_signal_seen{false};    // an actor observed a SignalEvent
 
 void
 reset_atoms() {
@@ -242,8 +242,7 @@ TEST(MainLifecycle, MultiCoreWithAClearedCoreAbortsWithNoActor) {
     constexpr unsigned kSeed = 0xC0FFEEu; // fixed seed → deterministic, reproducible choice
     std::mt19937       rng(kSeed);
     const auto         fail_core = rng() % cores;
-    qb::io::cout() << "[MainLifecycle] seed=" << kSeed << " cleared core=" << fail_core
-                   << " of " << cores << std::endl;
+    qb::io::cout() << "[MainLifecycle] seed=" << kSeed << " cleared core=" << fail_core << " of " << cores << std::endl;
 
     qb::Main main;
     for (auto i = 0u; i < cores; ++i)

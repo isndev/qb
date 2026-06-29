@@ -58,8 +58,8 @@ using namespace std::chrono_literals;
 namespace {
 
 // Mirrors from the worker thread to the bench thread (read after start(false) returns).
-std::atomic<std::uint64_t> g_delivered{0};     // completion events the actor counted
-std::atomic<std::uint64_t> g_peak_active{0};   // active_coroutine_count() sampled right after spawn loop
+std::atomic<std::uint64_t> g_delivered{0};   // completion events the actor counted
+std::atomic<std::uint64_t> g_peak_active{0}; // active_coroutine_count() sampled right after spawn loop
 std::atomic<bool>          g_watchdog_fired{false};
 
 void
@@ -194,13 +194,7 @@ BM_Coroutine_SuspendResumeLatency(benchmark::State &state) {
 
 } // namespace
 
-BENCHMARK(BM_Coroutine_SpawnThroughput)
-    ->Arg(100)
-    ->Arg(1000)
-    ->Arg(5000)
-    ->ArgName("coroutines")
-    ->Unit(benchmark::kMicrosecond)
-    ->UseRealTime();
+BENCHMARK(BM_Coroutine_SpawnThroughput)->Arg(100)->Arg(1000)->Arg(5000)->ArgName("coroutines")->Unit(benchmark::kMicrosecond)->UseRealTime();
 BENCHMARK(BM_Coroutine_SuspendResumeLatency)
     ->Arg(100)
     ->Arg(500)

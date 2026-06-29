@@ -224,8 +224,7 @@ BM_Protocol_JsonDepthGuardOverDepth(benchmark::State &state) {
 
     bool last = true;
     for (auto _ : state) {
-        last = qb::protocol::detail::json_depth_within(json.data(), json.size(),
-                                                       qb::protocol::detail::kJsonMaxNestingDepth);
+        last = qb::protocol::detail::json_depth_within(json.data(), json.size(), qb::protocol::detail::kJsonMaxNestingDepth);
         benchmark::DoNotOptimize(last);
     }
 
@@ -255,7 +254,12 @@ BM_Protocol_MsgpackDepthGuard(benchmark::State &state) {
 } // namespace
 
 BENCHMARK(BM_Protocol_ByteTerminatedScan)->Args({32})->Args({1024})->Args({64 * 1024})->ArgName("payload_bytes")->Unit(benchmark::kNanosecond);
-BENCHMARK(BM_Protocol_ByteTerminatedNoDelimiter)->Args({32})->Args({1024})->Args({64 * 1024})->ArgName("buffer_bytes")->Unit(benchmark::kNanosecond);
+BENCHMARK(BM_Protocol_ByteTerminatedNoDelimiter)
+    ->Args({32})
+    ->Args({1024})
+    ->Args({64 * 1024})
+    ->ArgName("buffer_bytes")
+    ->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Protocol_BytesTerminatedScan)->Args({4})->Args({32})->Args({128})->ArgName("headers")->Unit(benchmark::kNanosecond);
 BENCHMARK_TEMPLATE(BM_Protocol_SizeHeader, std::uint16_t)
     ->Args({32})

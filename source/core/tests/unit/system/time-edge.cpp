@@ -115,12 +115,11 @@ TEST(CalendarEdge, ProlepticExtremesMatchChronoOracle) {
     // Independent oracle: sys_days{year_month_day{...}} computes the same epoch-day
     // count through libc++'s calendar, a different code path than Hinnant's here.
     auto oracle = [](int y, unsigned m, unsigned d) -> std::int64_t {
-        return std::chrono::sys_days{std::chrono::year{y} / std::chrono::month{m} / std::chrono::day{d}}
-            .time_since_epoch()
-            .count();
+        return std::chrono::sys_days{std::chrono::year{y} / std::chrono::month{m} / std::chrono::day{d}}.time_since_epoch().count();
     };
-    for (auto [y, m, d] : {std::tuple{1, 1, 1}, std::tuple{9999, 12, 31}, std::tuple{1582, 10, 15},
-                           std::tuple{1600, 2, 29}, std::tuple{2400, 2, 29}, std::tuple{4000, 12, 31}}) {
+    for (auto [y, m, d] :
+         {std::tuple{1, 1, 1}, std::tuple{9999, 12, 31}, std::tuple{1582, 10, 15}, std::tuple{1600, 2, 29}, std::tuple{2400, 2, 29},
+          std::tuple{4000, 12, 31}}) {
         EXPECT_EQ(days_from_civil(y, static_cast<unsigned>(m), static_cast<unsigned>(d)),
                   oracle(y, static_cast<unsigned>(m), static_cast<unsigned>(d)))
             << "y=" << y << " m=" << m << " d=" << d;
@@ -147,16 +146,14 @@ TEST(CalendarEdge, LeapCenturyRulesAcrossCenturies) {
 TEST(CalendarEdge, CivilFromDaysFarNegativeAndYearZero) {
     // Year 0 exists in the proleptic Gregorian calendar used here (NOT skipped).
     // 0000-01-01 oracle:
-    const std::int64_t y0 = std::chrono::sys_days{std::chrono::year{0} / std::chrono::January / 1}
-                                .time_since_epoch()
-                                .count();
-    auto c0 = qb::detail::civil_from_days(y0);
+    const std::int64_t y0 = std::chrono::sys_days{std::chrono::year{0} / std::chrono::January / 1}.time_since_epoch().count();
+    auto               c0 = qb::detail::civil_from_days(y0);
     EXPECT_EQ(c0.year, 0);
     EXPECT_EQ(c0.month, 1u);
     EXPECT_EQ(c0.day, 1u);
 
     // A BCE date: 1 BCE == proleptic year 0; 2 BCE == year -1. Round-trip -1.
-    auto bce = qb::detail::days_from_civil(-1, 6, 15);
+    auto bce  = qb::detail::days_from_civil(-1, 6, 15);
     auto cbce = qb::detail::civil_from_days(bce);
     EXPECT_EQ(cbce.year, -1);
     EXPECT_EQ(cbce.month, 6u);
@@ -207,7 +204,7 @@ TEST(SafeGmtimeEdge, EndOfYearYdayLeapAndNonLeap) {
 TEST(SafeGmtimeEdge, WeekdayBeforeEpochFloorsCorrectly) {
     // wday for a NEGATIVE day count must floor, not truncate. 1970-01-01 = Thu(4).
     // 1969-12-29 is the Monday of that week; days = -3. (-3 % 7 + 4) % 7 must be 1.
-    std::tm tm{};
+    std::tm           tm{};
     const std::time_t mon = qb::safe_timegm([] {
         std::tm t{};
         t.tm_year = 69;
@@ -235,9 +232,8 @@ TEST(SafeGmtimeEdge, YearOverflowGuardReturnsFalse) {
     // Use seconds for ~ year 3e9: days = year*365.25 ~ (3e9-1970)*365.25, secs = days*86400.
     // Build straight from a giant positive time_t near the int64 ceiling.
     const std::int64_t huge = std::numeric_limits<std::int64_t>::max(); // ~292 billion years
-    std::tm tm{};
-    EXPECT_FALSE(qb::safe_gmtime(static_cast<std::time_t>(huge), tm))
-        << "a year past INT_MAX+1900 must fail the tm_year guard";
+    std::tm            tm{};
+    EXPECT_FALSE(qb::safe_gmtime(static_cast<std::time_t>(huge), tm)) << "a year past INT_MAX+1900 must fail the tm_year guard";
 
     // Symmetric far-negative also overflows the guard.
     const std::int64_t huge_neg = std::numeric_limits<std::int64_t>::min();
@@ -276,8 +272,7 @@ TEST(ParseDateEdge, NegativeYearAndPartialFields) {
     EXPECT_EQ(*neg, qb::detail::days_from_civil(-44, 3, 15));
 
     // Round-trip: format then parse a BCE date.
-    EXPECT_EQ(qb::parse_date(qb::format_date(qb::detail::days_from_civil(-1, 12, 31))).value(),
-              qb::detail::days_from_civil(-1, 12, 31));
+    EXPECT_EQ(qb::parse_date(qb::format_date(qb::detail::days_from_civil(-1, 12, 31))).value(), qb::detail::days_from_civil(-1, 12, 31));
 
     // Fewer than 3 fields -> nullopt (sscanf returns <3).
     EXPECT_FALSE(qb::parse_date("2024-03").has_value());
@@ -362,8 +357,7 @@ TEST(UtcOffsetFormatEdge, SubMinuteSecondsAreDroppedFromFormat) {
     // of -00:00 is not a canonical wire token; the oracle-correct render of any
     // offset that rounds to zero minutes is "+00:00". If this fails, the formatter
     // is emitting a negative-zero offset string.
-    EXPECT_EQ(qb::format_utc_offset(-30), "+00:00")
-        << "BUG: negative sub-minute offset prints negative-zero '-00:00'";
+    EXPECT_EQ(qb::format_utc_offset(-30), "+00:00") << "BUG: negative sub-minute offset prints negative-zero '-00:00'";
 }
 
 TEST(UtcOffsetParseEdge, AllFormsLowercaseZAndMalformed) {
@@ -413,7 +407,7 @@ TEST(UtcOffsetRoundTrip, MinuteGranularSpanRoundTrips) {
 // ---------------------------------------------------------------------------
 
 TEST(CalendarIntervalEdge, NegativeComponentsFold) {
-    using us = std::chrono::microseconds;
+    using us                              = std::chrono::microseconds;
     constexpr std::int64_t USECS_PER_DAY  = 86400LL * 1'000'000;
     constexpr std::int64_t USECS_PER_YEAR = 31557600LL * 1'000'000; // 365.25 days
 
@@ -421,16 +415,13 @@ TEST(CalendarIntervalEdge, NegativeComponentsFold) {
     EXPECT_EQ(qb::calendar_interval(-1, 0, us{0}).to_micros().count(), -30 * USECS_PER_DAY);
 
     // -13 months == -(1 year + 1 month) under trunc-toward-zero: -1*YEAR + -1*30d.
-    EXPECT_EQ(qb::calendar_interval(-13, 0, us{0}).to_micros().count(),
-              -USECS_PER_YEAR - 30 * USECS_PER_DAY);
+    EXPECT_EQ(qb::calendar_interval(-13, 0, us{0}).to_micros().count(), -USECS_PER_YEAR - 30 * USECS_PER_DAY);
 
     // +13 months mirror.
-    EXPECT_EQ(qb::calendar_interval(13, 0, us{0}).to_micros().count(),
-              USECS_PER_YEAR + 30 * USECS_PER_DAY);
+    EXPECT_EQ(qb::calendar_interval(13, 0, us{0}).to_micros().count(), USECS_PER_YEAR + 30 * USECS_PER_DAY);
 
     // Mixed signs: +1 month, -2 days, +500000us.
-    EXPECT_EQ(qb::calendar_interval(1, -2, us{500'000}).to_micros().count(),
-              500'000 + (-2) * USECS_PER_DAY + 30 * USECS_PER_DAY);
+    EXPECT_EQ(qb::calendar_interval(1, -2, us{500'000}).to_micros().count(), 500'000 + (-2) * USECS_PER_DAY + 30 * USECS_PER_DAY);
 
     // -24 months == exactly -2 years, no residual month.
     EXPECT_EQ(qb::calendar_interval(-24, 0, us{0}).to_micros().count(), -2 * USECS_PER_YEAR);
@@ -456,8 +447,7 @@ TEST(CalendarIntervalEdge, ToStringSignsAndPluralAndZero) {
 TEST(CalendarIntervalEdge, ComponentsStaySeparateAndComparable) {
     using us = std::chrono::microseconds;
     // 1 month and 30 days fold to the SAME micros but are DISTINCT values (lossless).
-    EXPECT_EQ(qb::calendar_interval(1, 0, us{0}).to_micros(),
-              qb::calendar_interval(0, 30, us{0}).to_micros());
+    EXPECT_EQ(qb::calendar_interval(1, 0, us{0}).to_micros(), qb::calendar_interval(0, 30, us{0}).to_micros());
     EXPECT_NE(qb::calendar_interval(1, 0, us{0}), qb::calendar_interval(0, 30, us{0}));
     // The defaulted spaceship orders lexicographically by (months, days, micros).
     EXPECT_LT(qb::calendar_interval(0, 5, us{0}), qb::calendar_interval(1, 0, us{0}));
@@ -541,8 +531,7 @@ TEST(TimeOfDayEdge, BoundaryValuesAndHms) {
     EXPECT_EQ(h.subseconds().count(), 999'999);
 
     // from_hms with an explicit microsecond field.
-    EXPECT_EQ(qb::time_of_day::from_hms(1, 2, 3, 4).since_midnight().count(),
-              (1 * 3600LL + 2 * 60 + 3) * 1'000'000 + 4);
+    EXPECT_EQ(qb::time_of_day::from_hms(1, 2, 3, 4).since_midnight().count(), (1 * 3600LL + 2 * 60 + 3) * 1'000'000 + 4);
 
     // Default-constructed is midnight.
     EXPECT_EQ(qb::time_of_day{}.since_midnight().count(), 0);
@@ -554,11 +543,9 @@ TEST(TimeOfDayEdge, BoundaryValuesAndHms) {
 
 TEST(TimeOfDayTzEdge, NegativeOffsetAndFractionRendering) {
     // Negative whole-hour offset with a fractional time-of-day.
-    EXPECT_EQ(qb::time_of_day_tz::from_hms_offset(23, 59, 59, 999'999, -5 * 3600).to_string(),
-              "23:59:59.999999-05:00");
+    EXPECT_EQ(qb::time_of_day_tz::from_hms_offset(23, 59, 59, 999'999, -5 * 3600).to_string(), "23:59:59.999999-05:00");
     // 45-minute eastern offset.
-    EXPECT_EQ(qb::time_of_day_tz::from_hms_offset(12, 0, 0, 0, 5 * 3600 + 45 * 60).to_string(),
-              "12:00:00+05:45");
+    EXPECT_EQ(qb::time_of_day_tz::from_hms_offset(12, 0, 0, 0, 5 * 3600 + 45 * 60).to_string(), "12:00:00+05:45");
     // Default-constructed: midnight at +00:00.
     EXPECT_EQ(qb::time_of_day_tz{}.to_string(), "00:00:00+00:00");
     // Equality of the aggregate via the defaulted spaceship.

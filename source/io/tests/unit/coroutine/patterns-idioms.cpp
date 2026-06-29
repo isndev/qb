@@ -192,11 +192,11 @@ TEST_F(CoroutineSyncPatterns, PipelineWithBackpressure) {
  * @brief Producer never overruns a 3-slot buffer; consumer drains all items. Exactly num_items flow.
  */
 TEST_F(CoroutineSyncPatterns, ProducerConsumerBounded) {
-    constexpr int     num_items   = 10;
-    constexpr int     buffer_size = 3;
-    std::vector<int>  buffer;
-    std::atomic<int>  produced{0};
-    std::atomic<int>  consumed{0};
+    constexpr int    num_items   = 10;
+    constexpr int    buffer_size = 3;
+    std::vector<int> buffer;
+    std::atomic<int> produced{0};
+    std::atomic<int> consumed{0};
     // Gate on actual coroutine COMPLETION, not an intermediate counter: when `consumed` first hits
     // num_items the consumer is still parked on its trailing `sleep()` and has NOT yet co_returned.
     // Returning on the counter alone ends the test with that coroutine still live, so TearDown's
@@ -232,8 +232,7 @@ TEST_F(CoroutineSyncPatterns, ProducerConsumerBounded) {
     coro_scheduler().spawn(producer());
     coro_scheduler().spawn(consumer());
 
-    EXPECT_TRUE(pump_until([&] { return producer_done.load() && consumer_done.load(); }))
-        << "producer/consumer never drained";
+    EXPECT_TRUE(pump_until([&] { return producer_done.load() && consumer_done.load(); })) << "producer/consumer never drained";
     EXPECT_EQ(produced.load(), num_items);
     EXPECT_EQ(consumed.load(), num_items);
 }
@@ -364,8 +363,8 @@ TEST_F(CoroutineTimingPatterns, TimeoutPattern) {
             op_ptr->store(true);
             co_return;
         };
-        auto operation = slow_operation();
-        const auto start = std::chrono::steady_clock::now();
+        auto       operation = slow_operation();
+        const auto start     = std::chrono::steady_clock::now();
         while (std::chrono::steady_clock::now() - start < 50ms) {
             if (operation.handle().promise().is_ready()) {
                 co_await operation;
@@ -440,7 +439,7 @@ TEST_F(CoroutineWorkflowPatterns, RetryWithBackoff) {
     std::atomic<bool> succeeded{false};
     std::atomic<bool> done{false};
 
-    auto attempts_ptr = &attempts;
+    auto attempts_ptr  = &attempts;
     auto succeeded_ptr = &succeeded;
     auto done_ptr      = &done;
     coro_scheduler().spawn([attempts_ptr, succeeded_ptr, done_ptr]() -> task<void> {

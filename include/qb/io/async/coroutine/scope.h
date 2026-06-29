@@ -588,8 +588,7 @@ private:
      * Parameters are stored by VALUE in the coroutine frame — no dangling refs.
      */
     static task<void>
-    join_all_timer(std::shared_ptr<std::coroutine_handle<>> slot, std::shared_ptr<std::coroutine_handle<>> timer_slot,
-                   qb::duration delay) {
+    join_all_timer(std::shared_ptr<std::coroutine_handle<>> slot, std::shared_ptr<std::coroutine_handle<>> timer_slot, qb::duration delay) {
         co_await sleep(delay);
         QB_SCOPE_TRACE("join_all_timer fired");
         // Fired: this frame self-reclaims at final_suspend. Clear the tracked handle so a later

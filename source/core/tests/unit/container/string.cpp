@@ -436,16 +436,14 @@ TEST_F(StringAlgorithmTest, FindRFindStartPositionEdges) {
     // Substring present only BEFORE pos -> not found (search starts at data()+pos): "Hello" is at
     // index 0, so searching from pos 1 onward must miss it.
     EXPECT_EQ(test_str_.find("Hello"), 0u);
-    EXPECT_EQ(test_str_.find("Hello", 1), qb::string<50>::npos)
-        << "a match wholly before pos must not be reported";
+    EXPECT_EQ(test_str_.find("Hello", 1), qb::string<50>::npos) << "a match wholly before pos must not be reported";
 
     // rfind(char) clamps pos to size()-1 rather than short-circuiting, so a past-end pos still
     // searches the whole string and finds the LAST occurrence (here 'l' at index 10 in "World").
     EXPECT_EQ(test_str_.rfind('l', sz + 100), test_str_.rfind('l'));
     // rfind with pos 0 only considers index 0 ('H'); a char absent there -> npos.
     EXPECT_EQ(test_str_.rfind('H', 0), 0u);
-    EXPECT_EQ(test_str_.rfind('e', 0), qb::string<50>::npos)
-        << "rfind(ch, 0) inspects only index 0";
+    EXPECT_EQ(test_str_.rfind('e', 0), qb::string<50>::npos) << "rfind(ch, 0) inspects only index 0";
 }
 
 // Modifiers tests

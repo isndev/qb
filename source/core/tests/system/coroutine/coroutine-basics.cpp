@@ -52,14 +52,14 @@ namespace {
 // ---------------------------------------------------------------------------
 // Per-run observation flags (reset at the start of every TEST).
 // ---------------------------------------------------------------------------
-std::atomic<int>  g_basic_result{-1};       // value the BasicCoroActor handler observed
-std::atomic<int>  g_multi_completed{0};     // increments delivered to MultiCoroActor
-std::atomic<bool> g_exc_caught{false};      // local catch inside ExceptionCoroActor ran
-std::atomic<int>  g_safety_result{-1};      // value the SafetyTestActor handler observed
-std::atomic<bool> g_safety_ctx_valid{false}; // ctx.id().is_valid() && ctx.time() > 0 held
+std::atomic<int>  g_basic_result{-1};          // value the BasicCoroActor handler observed
+std::atomic<int>  g_multi_completed{0};        // increments delivered to MultiCoroActor
+std::atomic<bool> g_exc_caught{false};         // local catch inside ExceptionCoroActor ran
+std::atomic<int>  g_safety_result{-1};         // value the SafetyTestActor handler observed
+std::atomic<bool> g_safety_ctx_valid{false};   // ctx.id().is_valid() && ctx.time() > 0 held
 std::atomic<bool> g_quickkill_body_ran{false}; // the parked coro body MUST NOT complete
-std::atomic<bool> g_escaping_threw{false};  // the escaping coroutine reached its throw
-std::atomic<int>  g_survivor_result{-1};    // sibling coroutine that must still deliver
+std::atomic<bool> g_escaping_threw{false};     // the escaping coroutine reached its throw
+std::atomic<int>  g_survivor_result{-1};       // sibling coroutine that must still deliver
 
 // A LOUD bounded watchdog: stops the engine after `deadline` and flips `g_watchdog_fired`.
 // A test asserts `g_watchdog_fired == false` after join() — a hung run fails with a message
@@ -278,7 +278,7 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            co_await ctx.until_cancelled(); // parks; cancelled (not resumed) when we die
+            co_await ctx.until_cancelled();                              // parks; cancelled (not resumed) when we die
             g_quickkill_body_ran.store(true, std::memory_order_relaxed); // MUST NOT run
         });
         // Die immediately, while the coroutine is parked.
@@ -297,8 +297,7 @@ TEST(ActorCoroutine, ActorDiesWithParkedCoroutine) {
     // The watchdog firing here is the EXPECTED, designed shutdown (QuickKillActor never stops the
     // engine), so we do NOT assert on it — only that the parked body stayed parked.
     EXPECT_FALSE(main.hasError());
-    EXPECT_FALSE(g_quickkill_body_ran.load())
-        << "a coroutine parked on until_cancelled() must be cancelled, not resumed, when its actor dies";
+    EXPECT_FALSE(g_quickkill_body_ran.load()) << "a coroutine parked on until_cancelled() must be cancelled, not resumed, when its actor dies";
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +344,5 @@ TEST(ActorCoroutine, UncaughtExceptionEscapingCoroutineIsAbsorbed) {
     EXPECT_FALSE(main.hasError()) << "an uncaught coroutine exception must not surface as an engine error";
     EXPECT_FALSE(g_watchdog_fired.load()) << "the surviving sibling coroutine did not complete in time";
     EXPECT_TRUE(g_escaping_threw.load()) << "the escaping coroutine must have reached its throw";
-    EXPECT_EQ(g_survivor_result.load(), 7)
-        << "a sibling coroutine must still run after another coroutine threw uncaught";
+    EXPECT_EQ(g_survivor_result.load(), 7) << "a sibling coroutine must still run after another coroutine threw uncaught";
 }

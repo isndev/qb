@@ -331,7 +331,7 @@ public:
         channel              &ch;
         std::optional<T>      _result;
         bool                  _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
-        std::shared_ptr<bool> _ch_alive; ///< channel liveness; skip ch access when false
+        std::shared_ptr<bool> _ch_alive;        ///< channel liveness; skip ch access when false
 
         // Explicit constructor: the user-declared destructor below makes this a
         // non-aggregate, so recv() needs a constructor for brace-init.
@@ -619,8 +619,7 @@ public:
                     state->outer    = {};
                     return;
                 }
-                if (!_resumed && state && _ch_alive && *_ch_alive && state->winner != 1 && !state->closed
-                    && state->value.has_value())
+                if (!_resumed && state && _ch_alive && *_ch_alive && state->winner != 1 && !state->closed && state->value.has_value())
                     ch._buffer.push(std::any_cast<T>(std::move(state->value)));
             }
 

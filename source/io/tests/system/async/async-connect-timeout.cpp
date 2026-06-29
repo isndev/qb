@@ -71,7 +71,7 @@ namespace {
 // "not connected" assertion fails). A Class E target instead fails fast locally
 // (ENETUNREACH / WSAENETUNREACH), which still yields an empty/closed socket within
 // the connect budget for every test below.
-constexpr const char *kUnroutableHost = "240.0.0.1";
+constexpr const char    *kUnroutableHost = "240.0.0.1";
 constexpr unsigned short kUnroutablePort = 12345;
 
 class AsyncConnectTimeoutTest : public ::testing::Test {

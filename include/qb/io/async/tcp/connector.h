@@ -218,9 +218,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
         // it; teardown destroying the Timeout (and its captured shared_ptr) also releases it. Either
         // way the connector + its captured completion callback are reclaimed; no leak.
         auto self = this->shared_from_this();
-        qb::io::async::callback(
-            [self = std::move(self)]() { self->deliver_failure(); },
-            std::chrono::nanoseconds(1));
+        qb::io::async::callback([self = std::move(self)]() { self->deliver_failure(); }, std::chrono::nanoseconds(1));
     }
 
     enum class finalize_result { done, pending, failed };

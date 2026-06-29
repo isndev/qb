@@ -132,8 +132,7 @@ TEST_F(TimerStressTest, BulkTimersFireThenDestroyLeavesNoLiveWatchers) {
     // Every handler registered a watcher.
     EXPECT_EQ(async::listener::current.size(), baseline + kCount);
 
-    EXPECT_TRUE(pump_until([&] { return count_fired(timers) == kCount; }))
-        << "not all bulk timers fired before teardown";
+    EXPECT_TRUE(pump_until([&] { return count_fired(timers) == kCount; })) << "not all bulk timers fired before teardown";
 
     // Destroy them all and pump once to settle any pending teardown.
     timers.clear();
@@ -175,8 +174,8 @@ TEST_F(TimerStressTest, DestroyingHalfTheTimersMidFlightIsSafe) {
 // =============================================================================
 
 TEST_F(TimerStressTest, PerThreadLoopsEachFireAllTheirTimers) {
-    constexpr int kThreads          = 4;
-    constexpr int kTimersPerThread  = 5;
+    constexpr int kThreads         = 4;
+    constexpr int kTimersPerThread = 5;
 
     std::atomic<int>         total_completed{0};
     std::vector<std::thread> threads;
@@ -206,7 +205,7 @@ TEST_F(TimerStressTest, PerThreadLoopsEachFireAllTheirTimers) {
 // =============================================================================
 
 TEST_F(TimerStressTest, HighVolumeBurstCompletesInFull) {
-    constexpr int kOperations = 1000;
+    constexpr int    kOperations = 1000;
     std::atomic<int> completed{0};
 
     for (int i = 0; i < kOperations; ++i)

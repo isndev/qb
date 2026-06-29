@@ -156,8 +156,7 @@ TEST_F(CancellationAwaiters, CancellableSleepThrowsOnCancelMidSleep) {
     });
 
     // It must still be sleeping (one on_cancel hook registered, not resumed).
-    EXPECT_TRUE(qb::io::test::pump_until([&] { return token.get_state()->callbacks.size() == 1u; }))
-        << "cancellable_sleep never parked";
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return token.get_state()->callbacks.size() == 1u; })) << "cancellable_sleep never parked";
     EXPECT_FALSE(done.load());
 
     token.cancel();
@@ -166,10 +165,10 @@ TEST_F(CancellationAwaiters, CancellableSleepThrowsOnCancelMidSleep) {
 }
 
 TEST_F(CancellationAwaiters, CancellableSleepWakesImmediatelyOnCancelObservedElapsed) {
-    cancellation_token         token;
-    std::atomic<bool>          done{false};
-    std::chrono::milliseconds  observed{0};
-    constexpr auto             kSleep = 5000ms; // huge: we must wake far earlier than this
+    cancellation_token        token;
+    std::atomic<bool>         done{false};
+    std::chrono::milliseconds observed{0};
+    constexpr auto            kSleep = 5000ms; // huge: we must wake far earlier than this
 
     coro_scheduler().spawn([&]() -> task<void> {
         const auto start = std::chrono::steady_clock::now();
@@ -227,8 +226,7 @@ TEST_F(CancellationAwaiters, CancellableSleepLoopDeregistersOnEachIteration) {
     // The token outlives the coroutine; every per-sleep on_cancel must have been removed — this is
     // the awaiter-level proof of the unbounded-growth fix.
     EXPECT_TRUE(token.get_state()->callbacks.empty())
-        << "cancellable_sleep left " << token.get_state()->callbacks.size()
-        << " dead callbacks — the unbounded-growth bug is back";
+        << "cancellable_sleep left " << token.get_state()->callbacks.size() << " dead callbacks — the unbounded-growth bug is back";
 }
 
 // ---------------------------------------------------------------------------
@@ -436,7 +434,11 @@ TEST_F(CancellationAwaiters, CancellableOperationReclaimedWhileParked) {
             volatile char big[8192];
             big[0] = 7;
             co_await make_cancellable(
-                []() -> task<int> { co_await sleep(40ms); co_return 7; }(), std::move(t));
+                []() -> task<int> {
+                    co_await sleep(40ms);
+                    co_return 7;
+                }(),
+                std::move(t));
             big[1] = big[0];
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return (int) big[1];

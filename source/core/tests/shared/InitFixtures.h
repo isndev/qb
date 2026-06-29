@@ -81,7 +81,7 @@ struct PayloadEvent : public qb::Event {
     // (multiple init-suite targets do) without an ODR clash or a separate .cpp definition.
     inline static std::atomic<long> live{0};
     std::string                     data; // heap allocation (> SSO) so ASan also guards double-free
-    int                      seq{0};
+    int                             seq{0};
 
     PayloadEvent() {
         live.fetch_add(1, std::memory_order_relaxed);

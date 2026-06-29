@@ -376,8 +376,7 @@ TEST_F(ChannelLoopOps, SendForParkedDeliversDirectlyToLaterReceiver) {
         }
     });
 
-    EXPECT_TRUE(pump_until([&] { return sent.load() && got_value.load(); }))
-        << "the parked send_for never delivered to the later receiver";
+    EXPECT_TRUE(pump_until([&] { return sent.load() && got_value.load(); })) << "the parked send_for never delivered to the later receiver";
     EXPECT_TRUE(sender_result.load()) << "the direct hand-off must report success";
     EXPECT_EQ(received.load(), 77);
     EXPECT_TRUE(ch.empty()) << "a direct hand-off must not touch the buffer";
@@ -417,9 +416,7 @@ TEST_F(ChannelLoopOps, SelectSuspendsOnEmptyOpenChannelsThenResolvesOnSend) {
     // path that satisfies a registered _select_waiters entry (try_send only ever
     // wakes _recv_waiters / buffers, never a parked select). This resolves the
     // select with ch_b as the winner.
-    coro_scheduler().spawn([&]() -> task<void> {
-        co_await ch_b.send(std::string{"picked"});
-    });
+    coro_scheduler().spawn([&]() -> task<void> { co_await ch_b.send(std::string{"picked"}); });
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "select never resolved after a send";
     EXPECT_EQ(winner.load(), 1u) << "the channel that received the value must win";
@@ -436,10 +433,10 @@ TEST_F(ChannelLoopOps, SelectSuspendsOnEmptyOpenChannelsThenResolvesOnSend) {
 // ---------------------------------------------------------------------------
 
 TEST_F(ChannelLoopOps, ParkedRecvDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
-    channel<int>       ch(0); // unbuffered: recv parks
-    cancellation_token token;
-    std::atomic<bool>  parked{false};
-    std::atomic<bool>  done{false};
+    channel<int>        ch(0); // unbuffered: recv parks
+    cancellation_token  token;
+    std::atomic<bool>   parked{false};
+    std::atomic<bool>   done{false};
     std::atomic<size_t> winner{99};
 
     coro_scheduler().spawn([&]() -> task<void> {
@@ -447,8 +444,12 @@ TEST_F(ChannelLoopOps, ParkedRecvDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
         // recv() parks forever (nobody sends); check_cancelled wins on cancel,
         // and the race teardown destroys the parked recv frame -> dtor de-registers.
         auto res = co_await when_any(
-            [&ch]() -> task<void> { (void) co_await ch.recv(); }(),
-            [token]() -> task<void> { co_await check_cancelled(token); }());
+            [&ch]() -> task<void> {
+                (void) co_await ch.recv();
+            }(),
+            [token]() -> task<void> {
+                co_await check_cancelled(token);
+            }());
         winner.store(res.index);
         done.store(true);
     });
@@ -474,10 +475,10 @@ TEST_F(ChannelLoopOps, ParkedRecvDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
 // ---------------------------------------------------------------------------
 
 TEST_F(ChannelLoopOps, ParkedSendDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
-    channel<int>       ch(1);
-    cancellation_token token;
-    std::atomic<bool>  parked{false};
-    std::atomic<bool>  done{false};
+    channel<int>        ch(1);
+    cancellation_token  token;
+    std::atomic<bool>   parked{false};
+    std::atomic<bool>   done{false};
     std::atomic<size_t> winner{99};
 
     ASSERT_TRUE(ch.try_send(1)); // fill cap-1 buffer so the send parks
@@ -491,7 +492,9 @@ TEST_F(ChannelLoopOps, ParkedSendDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
                 } catch (const channel_closed &) {
                 }
             }(),
-            [token]() -> task<void> { co_await check_cancelled(token); }());
+            [token]() -> task<void> {
+                co_await check_cancelled(token);
+            }());
         winner.store(res.index);
         done.store(true);
     });

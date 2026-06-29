@@ -66,7 +66,7 @@ protected:
 // ---------------------------------------------------------------------------
 
 TEST_F(CoroutineCaptureSafety, IntCaptureIsolatedFromLaterMutation) {
-    std::atomic<int> observed{-1};
+    std::atomic<int>  observed{-1};
     std::atomic<bool> done{false};
     int               local_var = 42;
 
@@ -180,9 +180,9 @@ TEST_F(CoroutineCaptureSafety, SharedPtrMoveCaptureKeepsResourceAliveAcrossSuspe
 
     auto resource = std::make_shared<int>(7);
     coro_scheduler().spawn([res = resource, &observed_use_count, &observed_value, &done]() -> task<void> {
-        co_await sleep(10ms);                  // suspend with only the frame's copy alive
-        observed_use_count = res.use_count();  // >= 1 (the frame's own copy)
-        observed_value     = *res;             // pointee must still be valid
+        co_await sleep(10ms);                 // suspend with only the frame's copy alive
+        observed_use_count = res.use_count(); // >= 1 (the frame's own copy)
+        observed_value     = *res;            // pointee must still be valid
         done               = true;
     });
     resource.reset(); // drop the local owner immediately — frame must own the lifetime now
@@ -202,7 +202,9 @@ TEST_F(CoroutineCaptureSafety, ExceptionFromPlainCallIsCaught) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         try {
-            []() { throw std::runtime_error("captured error"); }();
+            []() {
+                throw std::runtime_error("captured error");
+            }();
         } catch (const std::runtime_error &e) {
             caught = std::string(e.what()) == "captured error";
         }

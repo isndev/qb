@@ -180,13 +180,7 @@ BM_WithTimeout_Rearm(benchmark::State &state) {
 } // namespace
 
 BENCHMARK(BM_Callback_ImmediateDispatch)->Unit(benchmark::kNanosecond)->UseRealTime();
-BENCHMARK(BM_Callback_BulkDispatch)
-    ->Arg(64)
-    ->Arg(1024)
-    ->Arg(4096)
-    ->ArgName("timers")
-    ->Unit(benchmark::kMicrosecond)
-    ->UseRealTime();
+BENCHMARK(BM_Callback_BulkDispatch)->Arg(64)->Arg(1024)->Arg(4096)->ArgName("timers")->Unit(benchmark::kMicrosecond)->UseRealTime();
 BENCHMARK(BM_ScopedCallback_ConstructFireDestroy)->Unit(benchmark::kNanosecond)->UseRealTime();
 BENCHMARK(BM_WithTimeout_Rearm)->Unit(benchmark::kNanosecond)->UseRealTime();
 

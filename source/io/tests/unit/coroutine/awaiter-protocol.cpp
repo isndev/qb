@@ -517,8 +517,8 @@ TEST_F(CoroutineAwaiterTests, CustomSymmetricTransfer) {
     // Shared box so the target coroutine can reach the suspended caller's handle.
     auto caller_handle = std::make_shared<std::coroutine_handle<>>();
 
-    auto order_ptr  = &order;
-    auto done_ptr   = &done;
+    auto order_ptr = &order;
+    auto done_ptr  = &done;
 
     // Target coroutine: records its marker, then re-schedules the caller it transferred from.
     auto make_target = [order_ptr, caller_handle]() -> task<void> {
@@ -528,7 +528,7 @@ TEST_F(CoroutineAwaiterTests, CustomSymmetricTransfer) {
             coro_scheduler().schedule_resume(*caller_handle);
         co_return;
     };
-    auto target = make_target();
+    auto target        = make_target();
     auto target_handle = target.handle();
 
     coro_scheduler().spawn([order_ptr, done_ptr, target_handle, caller_handle]() -> task<void> {
@@ -536,7 +536,7 @@ TEST_F(CoroutineAwaiterTests, CustomSymmetricTransfer) {
 
         // Custom awaiter whose await_suspend returns the target handle (symmetric transfer).
         struct transfer {
-            std::coroutine_handle<>                target;
+            std::coroutine_handle<>                  target;
             std::shared_ptr<std::coroutine_handle<>> caller_box;
             bool
             await_ready() const noexcept {
@@ -544,8 +544,8 @@ TEST_F(CoroutineAwaiterTests, CustomSymmetricTransfer) {
             }
             std::coroutine_handle<>
             await_suspend(std::coroutine_handle<> caller) noexcept {
-                *caller_box = caller;      // publish our handle for the target to resume
-                return target;             // tail-transfer into the target
+                *caller_box = caller; // publish our handle for the target to resume
+                return target;        // tail-transfer into the target
             }
             void
             await_resume() const noexcept {}
@@ -764,10 +764,10 @@ TEST_F(CoroutineAwaiterTests, WaitReadableResumesWhenDataArrives) {
     coro_scheduler().spawn([stage_ptr, byte_ptr, read_fd]() -> task<void> {
         stage_ptr->store(1);             // running, about to park on the read end
         co_await wait_readable(read_fd); // suspends in socket_awaiter::await_suspend (ev_io armed)
-        char c = 0;
+        char    c = 0;
         ssize_t n = ::read(read_fd, &c, 1);
         byte_ptr->store(n == 1 ? c : 0);
-        stage_ptr->store(2);             // resumed only after the fd became readable
+        stage_ptr->store(2); // resumed only after the fd became readable
         co_return;
     });
 
@@ -800,7 +800,7 @@ TEST_F(CoroutineAwaiterTests, WaitWritableResumesOnWritableFd) {
     const int write_fd = fds[1];
 
     std::atomic<bool> wrote{false};
-    auto wrote_ptr = &wrote;
+    auto              wrote_ptr = &wrote;
     coro_scheduler().spawn([wrote_ptr, write_fd]() -> task<void> {
         co_await wait_writable(write_fd); // pipe write end is writable → resumes promptly
         const char c = 'Q';
@@ -829,7 +829,7 @@ TEST_F(CoroutineAwaiterTests, SocketAwaiterDestructorStopsArmedWatcher) {
     const int read_fd  = fds[0];
     const int write_fd = fds[1];
 
-    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
     std::atomic<bool> resumed{false};
 
     auto resumed_ptr = &resumed;
@@ -871,7 +871,7 @@ TEST_F(CoroutineAwaiterTests, SocketAwaiterDestructorStopsArmedWatcher) {
  *        before the timer fires. The body after the sleep never runs and the frame is reclaimed.
  */
 TEST_F(CoroutineAwaiterTests, TimerAwaiterDestructorStopsArmedTimer) {
-    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
     std::atomic<bool> resumed{false};
 
     auto resumed_ptr = &resumed;

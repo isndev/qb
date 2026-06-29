@@ -43,9 +43,9 @@ constexpr int OPS_PER_WORKER = 200;
 constexpr int TOTAL_OPS      = NUM_WORKERS * OPS_PER_WORKER; // 1000
 
 // Read after join() (happens-before via Main::join()).
-std::atomic<int> g_emitted{0};       // increments actually emitted by the workers
-std::atomic<int> g_counter_total{0}; // the counter's own running total at query time
-std::atomic<int> g_bucket_sum{0};    // sum of the per-bucket counters at query time
+std::atomic<int>  g_emitted{0};       // increments actually emitted by the workers
+std::atomic<int>  g_counter_total{0}; // the counter's own running total at query time
+std::atomic<int>  g_bucket_sum{0};    // sum of the per-bucket counters at query time
 std::atomic<bool> g_done{false};
 } // namespace
 

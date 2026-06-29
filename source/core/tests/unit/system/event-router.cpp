@@ -322,7 +322,7 @@ TEST(EventRouting, MEMH) {
     // touches _count, so _count is purely the dispose/dtor count. Routes per iteration:
     // 5 targeted + 1 broadcast = 6 → 6 × 1024 = 6144 destructor calls. (The dest-1/2/3
     // routes still dispose even though no live handler matches.)
-    constexpr std::size_t kRoutesPerIter = 6;        // 5 targeted (j=1..5) + 1 broadcast
+    constexpr std::size_t kRoutesPerIter = 6;                      // 5 targeted (j=1..5) + 1 broadcast
     constexpr std::size_t kDisposed      = kRoutesPerIter * 1024u; // = 6144
     static_assert(kDisposed == 6144u, "MEMH destroy-count derivation");
     Test_MEMH<TestDestroyEvent>(kDisposed);

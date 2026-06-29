@@ -31,7 +31,7 @@ using qb::test::TestEvent;
 // EventForward is a distinct type so the responder can route it through forward() (vs reply()).
 struct EventForward : public TestEvent {};
 
-static std::atomic<int> g_answers_home{0};   // replies + forwards observed back at the requester
+static std::atomic<int> g_answers_home{0}; // replies + forwards observed back at the requester
 
 // Sends one TestEvent (expects a reply) and one EventForward (expects a forward-back); on the
 // cross-core variant it additionally broadcasts both to the peer core index first.
@@ -39,7 +39,8 @@ class RequesterActor final : public qb::Actor {
     const qb::ActorId _to;
     int               _received = 0;
 
-    void finishIfDone() {
+    void
+    finishIfDone() {
         if (_received < 2)
             return;
         // Both answers are home: tear the (possibly multi-actor) test down deterministically.
@@ -48,16 +49,20 @@ class RequesterActor final : public qb::Actor {
     }
 
 public:
-    explicit RequesterActor(qb::ActorId const to) : _to(to) {}
+    explicit RequesterActor(qb::ActorId const to)
+        : _to(to) {}
 
-    ~RequesterActor() final { EXPECT_EQ(_received, 2); }
+    ~RequesterActor() final {
+        EXPECT_EQ(_received, 2);
+    }
 
-    qb::io::async::task<bool> onInit() final {
+    qb::io::async::task<bool>
+    onInit() final {
         EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
         registerEvent<TestEvent>(*this);
         registerEvent<EventForward>(*this);
 
-        if (_to.index()) {  // cross-core: also exercise the broadcast-to-core path
+        if (_to.index()) { // cross-core: also exercise the broadcast-to-core path
             push<TestEvent>(qb::BroadcastId(_to.index()));
             push<EventForward>(qb::BroadcastId(_to.index()));
         }
@@ -66,13 +71,15 @@ public:
         co_return true;
     }
 
-    void on(TestEvent &event) {
+    void
+    on(TestEvent &event) {
         EXPECT_TRUE(event.checkSum());
         ++_received;
         g_answers_home.fetch_add(1, std::memory_order_relaxed);
         finishIfDone();
     }
-    void on(EventForward &event) {
+    void
+    on(EventForward &event) {
         EXPECT_TRUE(event.checkSum());
         ++_received;
         g_answers_home.fetch_add(1, std::memory_order_relaxed);
@@ -90,21 +97,24 @@ public:
         EXPECT_EQ(_handled, id().index() ? 4 : 2);
     }
 
-    qb::io::async::task<bool> onInit() final {
+    qb::io::async::task<bool>
+    onInit() final {
         EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
         registerEvent<TestEvent>(*this);
         registerEvent<EventForward>(*this);
         co_return true;
     }
 
-    void on(TestEvent &event) {
+    void
+    on(TestEvent &event) {
         EXPECT_TRUE(event.checkSum());
-        reply(event);                       // return to source
+        reply(event); // return to source
         ++_handled;
     }
-    void on(EventForward &event) {
+    void
+    on(EventForward &event) {
         EXPECT_TRUE(event.checkSum());
-        forward(event.getSource(), event);  // re-route preserving source
+        forward(event.getSource(), event); // re-route preserving source
         ++_handled;
     }
 };
@@ -116,7 +126,7 @@ TEST(MessagingReplyForward, SameCore) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_answers_home.load(), 2);   // one reply + one forward came home
+    EXPECT_EQ(g_answers_home.load(), 2); // one reply + one forward came home
 }
 
 TEST(MessagingReplyForward, CrossCore) {
@@ -128,5 +138,5 @@ TEST(MessagingReplyForward, CrossCore) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_answers_home.load(), 2);   // direct reply + forward home (broadcasts are extra peer load)
+    EXPECT_EQ(g_answers_home.load(), 2); // direct reply + forward home (broadcasts are extra peer load)
 }

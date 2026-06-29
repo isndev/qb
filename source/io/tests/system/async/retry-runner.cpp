@@ -151,9 +151,7 @@ TEST_F(RetryRunner, NonRetryableErrorAbortsImmediatelyRethrowingOriginal) {
             co_return 0;
         };
         try {
-            co_await with_retry(op, retry_policy{.max_attempts = 5,
-                                                 .base_delay   = 5ms,
-                                                 .is_retryable = [](const std::exception &e) {
+            co_await with_retry(op, retry_policy{.max_attempts = 5, .base_delay = 5ms, .is_retryable = [](const std::exception &e) {
                                                      return std::string(e.what()) != "fatal";
                                                  }});
             ADD_FAILURE() << "a non-retryable error must abort with_retry";
@@ -184,12 +182,12 @@ TEST_F(RetryRunner, IsRetryableConsultedMidSequence) {
             co_return 0;
         };
         try {
-            co_await with_retry(op, retry_policy{.max_attempts = 10,
-                                                 .base_delay   = 2ms,
-                                                 .strategy     = backoff_strategy::fixed,
-                                                 .is_retryable = [](const std::exception &e) {
-                                                     return std::string(e.what()) == "transient";
-                                                 }});
+            co_await with_retry(op, retry_policy{
+                                        .max_attempts = 10,
+                                        .base_delay   = 2ms,
+                                        .strategy     = backoff_strategy::fixed,
+                                        .is_retryable = [](const std::exception &e) { return std::string(e.what()) == "transient"; }
+                                    });
             ADD_FAILURE() << "the fatal mid-sequence error must abort with_retry";
         } catch (const std::runtime_error &e) {
             caught_fatal = std::string(e.what()) == "fatal-mid-sequence";
@@ -219,10 +217,9 @@ TEST_F(RetryRunner, FixedBackoffSucceedsAndWaitsBaseDelayPerRetry) {
             co_return 42;
         };
         const auto start = std::chrono::steady_clock::now();
-        value            = co_await with_retry(
-            op, retry_policy{.max_attempts = 3, .base_delay = 20ms, .strategy = backoff_strategy::fixed});
-        elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
-        done    = true;
+        value            = co_await with_retry(op, retry_policy{.max_attempts = 3, .base_delay = 20ms, .strategy = backoff_strategy::fixed});
+        elapsed          = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+        done             = true;
     });
 
     EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(); })) << "fixed-backoff retry never completed";
@@ -272,13 +269,15 @@ TEST_F(RetryRunner, OnRetryReceivesCorrectIndexAndException) {
                 throw std::runtime_error("flaky-" + std::to_string(attempts.load()));
             co_return 42;
         };
-        co_await with_retry(op, retry_policy{.max_attempts = 3,
-                                             .base_delay   = 2ms,
-                                             .strategy     = backoff_strategy::fixed,
-                                             .on_retry     = [&](size_t attempt, const std::exception &e) {
-                                                 retry_indices.push_back(attempt);
-                                                 retry_messages.emplace_back(e.what());
-                                             }});
+        co_await with_retry(op, retry_policy{
+                                    .max_attempts = 3,
+                                    .base_delay   = 2ms,
+                                    .strategy     = backoff_strategy::fixed,
+                                    .on_retry     = [&](size_t attempt, const std::exception &e) {
+                                        retry_indices.push_back(attempt);
+                                        retry_messages.emplace_back(e.what());
+                                    }
+                                });
         done = true;
     });
 
@@ -302,7 +301,7 @@ TEST_F(RetryRunner, WithRetryUntilSucceedsWhenPredicateMet) {
     coro_scheduler().spawn([&]() -> task<void> {
         value = co_await with_retry_until([&]() -> task<int> { co_return ++calls; }, [](int v) { return v >= 3; },
                                           retry_policy{.max_attempts = 10, .base_delay = 1ms, .strategy = backoff_strategy::fixed});
-        done = true;
+        done  = true;
     });
 
     EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(); })) << "with_retry_until never completed";
@@ -369,7 +368,7 @@ TEST_F(RetryRunner, RetryDefaultPolicySucceeds) {
                 throw std::runtime_error("transient");
             co_return 99;
         });
-        done = true;
+        done  = true;
     });
 
     // The default policy's first backoff is exponential from 100ms; give the pump headroom.
@@ -455,7 +454,8 @@ TEST_F(RetryRunner, CatchesNonStdExceptionThrowable) {
             co_return 0;
         };
         try {
-            (void) co_await with_retry(flaky, retry_policy{.max_attempts = 3, .base_delay = 1ms, .max_delay = 5ms, .strategy = backoff_strategy::fixed});
+            (void) co_await with_retry(
+                flaky, retry_policy{.max_attempts = 3, .base_delay = 1ms, .max_delay = 5ms, .strategy = backoff_strategy::fixed});
         } catch (const retry_exhausted &) {
             caught_exhausted = true;
         }
@@ -487,10 +487,11 @@ TEST_F(RetryRunner, OnRetryDoesNotFireOnBudgetExhaustingAttempt) {
                     throw std::runtime_error("always fails");
                     co_return;
                 },
-                retry_policy{.max_attempts = 3,
-                             .base_delay   = 1ms,
-                             .strategy     = backoff_strategy::fixed,
-                             .on_retry     = [&](size_t, const std::exception &) { ++notifications; }});
+                retry_policy{
+                    .max_attempts = 3, .base_delay = 1ms, .strategy = backoff_strategy::fixed, .on_retry = [&](size_t, const std::exception &) {
+                        ++notifications;
+                    }
+                });
         } catch (...) {
             // exhausted → retry_exhausted; expected
         }
@@ -522,9 +523,7 @@ TEST_F(RetryRunner, VoidOverloadNonRetryableErrorRethrowsOriginal) {
                     throw std::runtime_error("fatal");
                     co_return;
                 },
-                retry_policy{.max_attempts = 5,
-                             .base_delay   = 1ms,
-                             .is_retryable = [](const std::exception &) { return false; }});
+                retry_policy{.max_attempts = 5, .base_delay = 1ms, .is_retryable = [](const std::exception &) { return false; }});
             ADD_FAILURE() << "expected the original exception";
         } catch (const retry_exhausted &) {
             ADD_FAILURE() << "a non-retryable error must rethrow the original, not retry_exhausted";
@@ -581,12 +580,12 @@ TEST_F(RetryRunner, WithRetryUntilFiresOnRetryCallback) {
     coro_scheduler().spawn([&]() -> task<void> {
         try {
             co_await with_retry_until(
-                [&calls]() -> task<int> { co_return ++calls; },
-                [](int) { return false; }, // never successful → exhausts the budget
-                retry_policy{.max_attempts = 4,
-                             .base_delay   = 1ms,
-                             .strategy     = backoff_strategy::fixed,
-                             .on_retry     = [&](size_t, const std::exception &) { ++notifications; }});
+                [&calls]() -> task<int> { co_return ++calls; }, [](int) { return false; }, // never successful → exhausts the budget
+                retry_policy{
+                    .max_attempts = 4, .base_delay = 1ms, .strategy = backoff_strategy::fixed, .on_retry = [&](size_t, const std::exception &) {
+                        ++notifications;
+                    }
+                });
             ADD_FAILURE() << "with_retry_until must exhaust when the predicate never holds";
         } catch (const retry_exhausted &) {
             caught = true;

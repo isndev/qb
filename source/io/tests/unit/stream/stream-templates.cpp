@@ -254,7 +254,7 @@ TEST(StreamTemplates, LargeChunkedWriteEmitsExactWireImage) {
         payload[i] = static_cast<char>('a' + (i % 26));
 
     // Cap every write() at 4 KiB so the drain genuinely spans many calls.
-    std::vector<std::size_t> limits(64, 4096u);
+    std::vector<std::size_t>                 limits(64, 4096u);
     qb::io::ostream<ScriptedStreamTransport> output;
     output.transport() = ScriptedStreamTransport{"", std::move(limits)};
 
@@ -297,7 +297,7 @@ TEST(StreamTemplates, FlushConsumesFrontAndPreservesRemainder) {
     // keep pointing at the already-flushed front.
     auto first_line_len = [&]() -> std::size_t {
         const char *data = input.in().begin();
-        std::size_t  end = 0;
+        std::size_t end  = 0;
         while (end < input.in().size() && data[end] != '\n')
             ++end;
         return end + 1; // include the newline

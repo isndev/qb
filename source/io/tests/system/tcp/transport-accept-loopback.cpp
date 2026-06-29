@@ -125,8 +125,7 @@ TEST(TransportAccept, ReadAcceptsAPendingConnectionAndGetAcceptedRoundTrips) {
 
     qb::io::tcp::socket &accepted = acceptor.getAccepted();
     ASSERT_TRUE(accepted.is_open());
-    EXPECT_EQ(static_cast<std::size_t>(accepted.native_handle()), handle)
-        << "getAccepted() must wrap the exact handle read() returned";
+    EXPECT_EQ(static_cast<std::size_t>(accepted.native_handle()), handle) << "getAccepted() must wrap the exact handle read() returned";
 
     // Drain the client's "ping" and echo "pong" back.
     accepted.set_nonblocking(false);
@@ -161,8 +160,7 @@ TEST(TransportAccept, ReadWithNoPendingConnectionReportsFailure) {
     // must report failure as (size_t)-1.
     acceptor.transport().set_nonblocking(true);
 
-    EXPECT_EQ(acceptor.read(), static_cast<std::size_t>(-1))
-        << "read() with no pending connection must return (size_t)-1";
+    EXPECT_EQ(acceptor.read(), static_cast<std::size_t>(-1)) << "read() with no pending connection must return (size_t)-1";
 }
 
 TEST(TransportAccept, CloseStopsTheListenerFromAccepting) {
@@ -269,8 +267,7 @@ TEST(IoHandler, MaxSessionsAccountingAndDosCap) {
     });
 
     // All three TCP connects established on the client side...
-    EXPECT_TRUE(pump_until([&] { return connected.load() == 3; }, 3s))
-        << "not all three clients connected at the TCP layer";
+    EXPECT_TRUE(pump_until([&] { return connected.load() == 3; }, 3s)) << "not all three clients connected at the TCP layer";
 
     // ...but the server admits exactly the cap (2), and on(session&) fired for those 2 only.
     EXPECT_TRUE(pump_until([&] { return server.admitted.load() == 2u; }, 3s))
@@ -297,7 +294,7 @@ TEST(IoHandler, BroadcastReachesAllSessionsAndExtractRemovesOne) {
     server.start();
     server.set_max_sessions(0); // unlimited
 
-    constexpr int kClients = 3;
+    constexpr int     kClients = 3;
     std::atomic<int>  ready{0};
     std::atomic<bool> stop{false};
     std::atomic<int>  total_received{0};

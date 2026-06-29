@@ -102,8 +102,8 @@ BM_AllocVsPush_BigMsg(benchmark::State &state) {
     // One-shot out-of-loop correctness probe: a sink that never reaches its quota would hang join()
     // here, catching a structurally broken topology before any timing.
     {
-        qb::Main   probe;
-        auto expect = build_topology<UseAllocatedPush>(probe, count, producer_c, consumer_c, extra);
+        qb::Main probe;
+        auto     expect = build_topology<UseAllocatedPush>(probe, count, producer_c, consumer_c, extra);
         probe.start(true);
         probe.join();
         benchmark::DoNotOptimize(expect);
@@ -122,7 +122,7 @@ BM_AllocVsPush_BigMsg(benchmark::State &state) {
     const double bytes = static_cast<double>(count) * static_cast<double>(sizeof(BigPipeMsg));
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * count));
     state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations() * static_cast<std::uint64_t>(bytes)));
-    state.counters["messages_per_s"]             = benchmark::Counter(static_cast<double>(count), benchmark::Counter::kIsIterationInvariantRate);
+    state.counters["messages_per_s"] = benchmark::Counter(static_cast<double>(count), benchmark::Counter::kIsIterationInvariantRate);
     state.counters["approx_payload_bytes_per_s"] = benchmark::Counter(bytes, benchmark::Counter::kIsIterationInvariantRate);
     state.counters["extra_alloc_bytes"]          = static_cast<double>(extra);
 }

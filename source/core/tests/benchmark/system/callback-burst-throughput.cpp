@@ -141,8 +141,9 @@ BM_ProducerBurst_OneWay(benchmark::State &state) {
     const std::uint64_t observed = g_observed_callbacks.load(std::memory_order_relaxed);
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * total));
     state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations() * total * sizeof(BurstMsg)));
-    state.counters["messages_per_s"]          = benchmark::Counter(static_cast<double>(total), benchmark::Counter::kIsIterationInvariantRate);
-    state.counters["observed_callbacks_per_s"] = benchmark::Counter(static_cast<double>(observed), benchmark::Counter::kIsIterationInvariantRate);
+    state.counters["messages_per_s"] = benchmark::Counter(static_cast<double>(total), benchmark::Counter::kIsIterationInvariantRate);
+    state.counters["observed_callbacks_per_s"] =
+        benchmark::Counter(static_cast<double>(observed), benchmark::Counter::kIsIterationInvariantRate);
     state.counters["derived_callbacks_per_s"] =
         benchmark::Counter(static_cast<double>(derived_ticks), benchmark::Counter::kIsIterationInvariantRate);
     state.counters["burst_size"] = static_cast<double>(BurstPerCallbackV);

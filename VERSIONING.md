@@ -1,4 +1,5 @@
 <!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
+
 # Versioning and compatibility
 
 qb follows [Semantic Versioning 2.0.0](https://semver.org/). The current version is **2.0.0**, defined in

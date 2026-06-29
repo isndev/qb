@@ -314,8 +314,7 @@ public:
         // Register as a loop-owned object: this Timeout self-`delete`s only when its
         // one-shot timer fires, so a listener teardown (`clear()`) before that fire
         // would otherwise orphan it. The deleter lets `clear()` reclaim it instead.
-        this->_async_event._interface->set_owner(
-            this, [](void *p) noexcept { delete static_cast<Timeout *>(p); });
+        this->_async_event._interface->set_owner(this, [](void *p) noexcept { delete static_cast<Timeout *>(p); });
         if (timeout <= qb::duration::zero()) {
             try {
                 _func();
@@ -490,9 +489,9 @@ scoped_callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
  */
 template <typename _Derived>
 class file_watcher : public base<file_watcher<_Derived>, event::file> {
-    using base_t                                      = base<file_watcher<_Derived>, event::file>;
-    IProtocol                              *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list;      /**< Owned protocol instances (RAII). */
+    using base_t         = base<file_watcher<_Derived>, event::file>;
+    IProtocol *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
+    std::vector<std::unique_ptr<IProtocol>> _protocol_list;                          /**< Owned protocol instances (RAII). */
     std::size_t                             _max_message_size = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size. */
 
 public:
@@ -571,8 +570,7 @@ public:
      *          The `on(event::file&)` handler will be called when changes are detected.
      */
     void
-    start(const std::filesystem::path &fpath,
-          qb::duration interval = std::chrono::milliseconds(100)) noexcept {
+    start(const std::filesystem::path &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
         // ev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
         // must own the narrow path string for as long as it is active.
         _watched_path = fpath.string();
@@ -684,8 +682,7 @@ private:
         }
 
         auto diff_read = event.attr.st_size - event.prev.st_size;
-        if (!_protocol->ok() || !event.attr.st_nlink
-            || (diff_read < 0 && lseek(Derived.transport().native_handle(), 0, SEEK_SET)))
+        if (!_protocol->ok() || !event.attr.st_nlink || (diff_read < 0 && lseek(Derived.transport().native_handle(), 0, SEEK_SET)))
             ret = -1;
         else if (diff_read) {
             if constexpr (_Derived::do_read) {
@@ -737,8 +734,7 @@ public:
      *          The `on(event::file&)` handler will be called when changes to the directory's attributes are detected.
      */
     void
-    start(const std::filesystem::path &fpath,
-          qb::duration interval = std::chrono::milliseconds(100)) noexcept {
+    start(const std::filesystem::path &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
         // ev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
         // must own the narrow path string for as long as it is active.
         _watched_path = fpath.string();
@@ -796,9 +792,9 @@ private:
  */
 template <typename _Derived>
 class input : public base<input<_Derived>, event::io> {
-    using base_t                                      = base<input<_Derived>, event::io>;
-    IProtocol                              *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list;      /**< Owned protocol instances (RAII). */
+    using base_t         = base<input<_Derived>, event::io>;
+    IProtocol *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
+    std::vector<std::unique_ptr<IProtocol>> _protocol_list; /**< Owned protocol instances (RAII). */
     bool        _on_message         = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
     bool        _is_disposed        = false; /**< Internal flag to ensure `dispose()` is called only once. */
     int         _reason             = 0;     /**< Stores the reason for disconnection if initiated by `disconnect()`. */
@@ -1992,8 +1988,8 @@ protected:
  */
 template <typename _Derived>
 class io : public base<io<_Derived>, event::io> {
-    using base_t                                      = base<io<_Derived>, event::io>;
-    IProtocol                              *_protocol = no_protocol();   /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
+    using base_t         = base<io<_Derived>, event::io>;
+    IProtocol *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
     std::vector<std::unique_ptr<IProtocol>> _protocol_list;        /**< Owned protocol instances (RAII). */
     bool                                    _on_message   = false; /**< Internal flag for re-entrance protection in `on(event::io&)`. */
     bool                                    _is_disposed  = false; /**< Internal flag for `dispose()` idempotency. */

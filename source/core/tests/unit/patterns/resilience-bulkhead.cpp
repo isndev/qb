@@ -63,7 +63,7 @@ TEST(BulkheadAccounting, SlotReleasesOnScopeExit) {
 }
 
 TEST(BulkheadAccounting, MoveTransfersOwnershipWithoutDoubleRelease) {
-    qb::bulkhead bh(1);
+    qb::bulkhead       bh(1);
     qb::bulkhead::slot s1;
     EXPECT_TRUE(bh.try_enter(s1));
     EXPECT_EQ(bh.available(), 0u);
@@ -71,10 +71,10 @@ TEST(BulkheadAccounting, MoveTransfersOwnershipWithoutDoubleRelease) {
     qb::bulkhead::slot s2 = std::move(s1); // ownership moves to s2; s1 is now inert
     EXPECT_EQ(bh.available(), 0u);         // the move itself releases nothing
 
-    s1.release();                          // moved-from → no-op
+    s1.release(); // moved-from → no-op
     EXPECT_EQ(bh.available(), 0u) << "moved-from slot must not release the new owner's permit";
 
-    s2.release();                          // the real owner frees it exactly once
+    s2.release(); // the real owner frees it exactly once
     EXPECT_EQ(bh.available(), 1u);
 }
 

@@ -480,8 +480,7 @@ TEST(ActorAskPatterns, AskAllCancelledMidGather) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_all_cancelled.load())
-        << "killing the asker mid-ask_all must unwind with cancelled_error, not timeout_error";
+    EXPECT_TRUE(g_all_cancelled.load()) << "killing the asker mid-ask_all must unwind with cancelled_error, not timeout_error";
     EXPECT_FALSE(g_all_completed.load()) << "ask_all must NOT complete once the asker is cancelled";
 }
 
@@ -504,8 +503,7 @@ TEST(ActorAskPatterns, AskAnyCrossCore) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_any_resp.load(), 20)
-        << "ask_any must resolve on the immediate cross-core market (key*2); the latched one cannot win";
+    EXPECT_EQ(g_any_resp.load(), 20) << "ask_any must resolve on the immediate cross-core market (key*2); the latched one cannot win";
 }
 
 // ---------------------------------------------------------------------------
@@ -615,7 +613,7 @@ std::atomic<bool> g_saga_ok{false};
 // Order in which compensations executed. SINGLE-WRITER / READ-AFTER-JOIN: written only from the saga
 // client's own VirtualCore (single-thread per core) and read by the test thread ONLY after
 // main.join() — join() establishes the happens-before, so the plain std::vector needs no extra sync.
-std::vector<int>  g_comp_order;
+std::vector<int> g_comp_order;
 } // namespace
 
 // Reserves items and, on compensation, releases them.

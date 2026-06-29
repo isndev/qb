@@ -210,8 +210,7 @@ TEST(InitGateEdges, CustomBroadcastPassesGateWhileActivating) {
     main.start(false);
     main.join();
     EXPECT_TRUE(g_cb_received.load()) << "custom broadcast must reach the Activating actor (not stashed)";
-    EXPECT_TRUE(g_cb_while_activating.load())
-        << "the broadcast must be delivered DURING the Activating phase, proving it bypassed the stash";
+    EXPECT_TRUE(g_cb_while_activating.load()) << "the broadcast must be delivered DURING the Activating phase, proving it bypassed the stash";
     EXPECT_FALSE(main.hasError());
 }
 

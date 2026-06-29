@@ -440,8 +440,7 @@ TEST(BufferedIoSession, AccessorsCountersAndTypedDisconnectTrackLifecycle) {
 
     session.disconnect(qb::io::async::event::disconnect_reason::user_initiated);
     EXPECT_FALSE(session.is_connected());
-    EXPECT_EQ(session.disconnection_reason(),
-              static_cast<int>(qb::io::async::event::disconnect_reason::user_initiated));
+    EXPECT_EQ(session.disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::user_initiated));
 
     session.dispose();
     EXPECT_EQ(session.disconnected_events, 1u);
@@ -673,8 +672,7 @@ TEST(BufferedIoSession, PublishOverflowRollsBackPartialAppendAndDisconnects) {
     session.publish(std::string_view{"cdef"}); // would exceed the 4-byte cap
     EXPECT_EQ(session.pendingWrite(), 4u);
     EXPECT_EQ(std::string_view(session.out().begin(), session.out().size()), "abcd");
-    EXPECT_EQ(session.disconnection_reason(),
-              static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+    EXPECT_EQ(session.disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
 
     session.publish(std::string_view{"ignored"}); // post-overflow publishes are dropped
     EXPECT_EQ(std::string_view(session.out().begin(), session.out().size()), "abcd");
@@ -689,8 +687,7 @@ TEST(BufferedIoSession, PublishAtExistingWriteCapDisconnectsWithoutAppending) {
 
     session.publish(std::string_view{"c"}); // already at cap
     EXPECT_EQ(std::string_view(session.out().begin(), session.out().size()), "ab");
-    EXPECT_EQ(session.disconnection_reason(),
-              static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+    EXPECT_EQ(session.disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
 }
 
 // =============================================================================
@@ -707,8 +704,7 @@ TEST(BufferedIoSession, DisposeIsIdempotentAndResetRestoresConnectionState) {
 
     EXPECT_EQ(session.disconnected_events, 1u);
     EXPECT_EQ(session.dispose_events, 1u);
-    EXPECT_EQ(session.last_disconnect_reason,
-              static_cast<int>(qb::io::async::event::disconnect_reason::user_initiated));
+    EXPECT_EQ(session.last_disconnect_reason, static_cast<int>(qb::io::async::event::disconnect_reason::user_initiated));
     EXPECT_FALSE(session.process_input());
 
     session.reset_state();

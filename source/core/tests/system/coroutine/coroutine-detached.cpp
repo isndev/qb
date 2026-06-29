@@ -85,8 +85,7 @@ public:
 };
 
 // Helper: a TEST asserts the watchdog did not have to fire (completion was observed in time).
-#define EXPECT_NO_WATCHDOG() \
-    EXPECT_FALSE(g_watchdog_fired.load()) << "engine hit the bounded deadline — a coroutine never completed"
+#define EXPECT_NO_WATCHDOG() EXPECT_FALSE(g_watchdog_fired.load()) << "engine hit the bounded deadline — a coroutine never completed"
 
 // ---------------------------------------------------------------------------
 // Shared test events
@@ -228,7 +227,7 @@ TEST(ActorCoroutineAdvanced, NonTrivialCaptureVector) {
 // ===========================================================================
 
 static std::atomic<int> g_count_at_spawn{-1}; // active_coroutine_count() right after spawning N
-static std::atomic<int> g_count_after{-1};     // active_coroutine_count() once all N completed
+static std::atomic<int> g_count_after{-1};    // active_coroutine_count() once all N completed
 
 class CounterAccuracyActor : public qb::Actor {
     int                  completed_{0};
@@ -445,9 +444,7 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         for (int i = 0; i < 5; ++i) {
-            spawn_detached([](auto) -> qb::io::async::task<void> {
-                co_await qb::io::async::sleep(500ms);
-            });
+            spawn_detached([](auto) -> qb::io::async::task<void> { co_await qb::io::async::sleep(500ms); });
         }
         EXPECT_TRUE(has_active_coroutines());
         g_earlydeath_count.store(static_cast<int>(active_coroutine_count()), std::memory_order_relaxed);
@@ -602,8 +599,8 @@ struct TriggerEvent : qb::Event {
 static std::atomic<int> g_perevent_sum{-1};
 
 class SpawnPerEventActor : public qb::Actor {
-    int results_sum_{0};
-    int received_count_{0};
+    int                  results_sum_{0};
+    int                  received_count_{0};
     static constexpr int EXPECTED = 4;
 
 public:
@@ -768,7 +765,7 @@ TEST(ActorCoroutineAdvanced, MultipleActorsWithCoroutinesOnSameCore) {
     g_multi_actor_sum  = 0;
     g_multi_actor_done = 0;
     g_watchdog_fired   = false;
-    qb::Main main;
+    qb::Main      main;
     constexpr int N = 10;
     for (int i = 1; i <= N; ++i)
         main.addActor<MultiActorCoroWorker>(0, i, N);
@@ -937,8 +934,7 @@ TEST(ActorCoroutineAdvanced, CoroutineOutlivesActor) {
     main.join();
     EXPECT_FALSE(main.hasError());
     EXPECT_NO_WATCHDOG();
-    EXPECT_TRUE(g_orphan_coro_completed.load())
-        << "a detached coroutine must complete even after its spawning actor died";
+    EXPECT_TRUE(g_orphan_coro_completed.load()) << "a detached coroutine must complete even after its spawning actor died";
 }
 
 // ===========================================================================
@@ -1302,7 +1298,7 @@ TEST(ActorCoroutineAdvanced, CrossCorePushTo) {
     g_cross_core_value = -1;
     g_watchdog_fired   = false;
     qb::Main main;
-    auto receiver = main.addActor<CrossCoreReceiverActor>(1); // core 1
+    auto     receiver = main.addActor<CrossCoreReceiverActor>(1); // core 1
     ASSERT_NE(receiver, ActorId::NotFound);
     main.addActor<CrossCoreSenderActor>(0, receiver); // core 0
     main.addActor<WatchdogActor>(0, 5s);
@@ -1328,8 +1324,8 @@ struct WaveEvent : qb::Event {
 static std::atomic<int> g_wave_total{-1};
 
 class MultiHandlerSpawnActor : public qb::Actor {
-    int total_{0};
-    int remaining_{0};
+    int                  total_{0};
+    int                  remaining_{0};
     static constexpr int WAVES = 3;
 
 public:
@@ -1399,8 +1395,8 @@ public:
 
         spawn_detached([num, name, weights, self](auto ctx) -> qb::io::async::task<void> {
             co_await qb::io::async::sleep(5ms);
-            const bool ok = num == 7 && name == "hello" && weights.size() == 3u && weights[0] == 1.5 &&
-                            weights[1] == 2.5 && weights[2] == 3.5 && self == ctx.id();
+            const bool ok = num == 7 && name == "hello" && weights.size() == 3u && weights[0] == 1.5 && weights[1] == 2.5 && weights[2] == 3.5
+                            && self == ctx.id();
             g_mixed_captures_ok.store(ok, std::memory_order_relaxed);
             co_await qb::io::async::sleep(5ms);
             int result = num + static_cast<int>(weights.size());

@@ -91,8 +91,8 @@ contains(const std::string &name, Phase phase) {
 } // namespace
 
 // Control events.
-struct TerminateSelf : public qb::Event {};    // coordinator → worker: kill yourself
-struct WorkerGone : public qb::Event {         // worker → coordinator: I am about to die
+struct TerminateSelf : public qb::Event {}; // coordinator → worker: kill yourself
+struct WorkerGone : public qb::Event {      // worker → coordinator: I am about to die
     qb::ActorId who;
     explicit WorkerGone(qb::ActorId w)
         : who(w) {}
@@ -170,7 +170,7 @@ public:
 TEST(ActorLifecycle, HooksFireInConstructorOnInitKillDestructorOrder) {
     reset_log();
 
-    qb::Main main;
+    qb::Main      main;
     constexpr int kWorkers = 3;
     main.core(0).addActor<LifeCoordinator>(kWorkers);
 

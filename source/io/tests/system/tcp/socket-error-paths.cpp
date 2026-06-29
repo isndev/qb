@@ -142,8 +142,7 @@ TEST(SocketErrorPaths, BindToAnAlreadyOccupiedPortFails) {
     // rebinding TIME_WAIT ports but not an actively-bound listening port.)
     qb::io::socket second;
     ASSERT_TRUE(second.open(AF_INET, SOCK_STREAM, 0));
-    EXPECT_NE(second.bind(qb::io::endpoint("127.0.0.1", port)), 0)
-        << "binding an actively-occupied loopback port must fail";
+    EXPECT_NE(second.bind(qb::io::endpoint("127.0.0.1", port)), 0) << "binding an actively-occupied loopback port must fail";
     second.close();
     holder.close();
 }
@@ -188,10 +187,8 @@ TEST(SocketErrorPaths, OptionAccessorsFailOnClosedDescriptor) {
     qb::io::socket closed;
 
     int value = 0;
-    EXPECT_NE(closed.get_optval(SOL_SOCKET, SO_REUSEADDR, value), 0)
-        << "get_optval on a closed fd must fail";
-    EXPECT_NE(closed.set_optval(SOL_SOCKET, SO_REUSEADDR, 1), 0)
-        << "set_optval on a closed fd must fail";
+    EXPECT_NE(closed.get_optval(SOL_SOCKET, SO_REUSEADDR, value), 0) << "get_optval on a closed fd must fail";
+    EXPECT_NE(closed.set_optval(SOL_SOCKET, SO_REUSEADDR, 1), 0) << "set_optval on a closed fd must fail";
 }
 
 TEST(SocketErrorPaths, GetOptvalReadsBackAKnownOptionOnAnOpenSocket) {
@@ -293,8 +290,7 @@ TEST(SocketErrorPaths, AcceptObjectFormOnClosedSocketYieldsClosedResult) {
 TEST(SocketErrorPaths, ShutdownAndNonblockingFailOnClosedDescriptor) {
     qb::io::socket closed;
     EXPECT_EQ(closed.shutdown(SD_BOTH), -1) << "shutdown of a closed socket must fail";
-    EXPECT_EQ(qb::io::socket::set_nonblocking(closed.native_handle(), true), -1)
-        << "set_nonblocking on an invalid fd must fail";
+    EXPECT_EQ(qb::io::socket::set_nonblocking(closed.native_handle(), true), -1) << "set_nonblocking on an invalid fd must fail";
 }
 
 TEST(SocketErrorPaths, DisconnectOnAFreshDatagramSocketIsWellDefined) {

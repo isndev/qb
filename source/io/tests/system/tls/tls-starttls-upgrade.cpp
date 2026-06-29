@@ -127,7 +127,7 @@ public:
         // the refused-upgrade case). A non-blocking accept returns immediately when no
         // connection is pending, so the loop re-checks _stop every iteration and joins.
         _listener.set_nonblocking(true);
-        _port = _listener.local_endpoint().port();
+        _port   = _listener.local_endpoint().port();
         _thread = std::thread([this, verdict] {
             const auto to = 2000ms;
             while (!_stop.load()) {
@@ -212,7 +212,7 @@ TEST(TlsStarttlsUpgrade, OpportunisticUpgradeCompletesViaCallbackAndCoroutine) {
     // ---- coroutine (co_await) form ----
     bool coro_done = false, coro_secure = false;
     qb::io::async::run_sync([&]() -> qb::io::async::task<void> {
-        auto sock = co_await qb::io::async::tcp::starttls_connect<qb::io::transport::stcp, test_starttls_negotiator>(remote, 5s, false);
+        auto sock   = co_await qb::io::async::tcp::starttls_connect<qb::io::transport::stcp, test_starttls_negotiator>(remote, 5s, false);
         coro_done   = true;
         coro_secure = sock.has_value() && sock->is_open() && sock->handshake_complete();
         co_return;

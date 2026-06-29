@@ -117,7 +117,7 @@ public:
     onInit() override {
         auto v = _victim;
         qb::io::async::callback([this, v] { push<qb::KillEvent>(v); }, 40ms); // lands while parked
-        qb::io::async::callback([] { qb::Main::stop(); }, 2s); // backstop only — never the oracle
+        qb::io::async::callback([] { qb::Main::stop(); }, 2s);                // backstop only — never the oracle
         co_return true;
     }
 };

@@ -65,12 +65,9 @@ static_assert(transport::saccept::is_secure() == true, "transport::saccept::is_s
 // storing reason codes as plain `int` keep working across versions.
 static_assert(std::is_same_v<std::underlying_type_t<async::event::disconnect_reason>, int>,
               "disconnect_reason must remain ABI-compatible with int");
-static_assert(static_cast<int>(async::event::disconnect_reason::peer_closed) == 0,
-              "disconnect_reason::peer_closed must keep value 0");
-static_assert(static_cast<int>(async::event::disconnect_reason::user_initiated) == 1,
-              "disconnect_reason::user_initiated must keep value 1");
-static_assert(static_cast<int>(async::event::disconnect_reason::protocol_error) == -1,
-              "disconnect_reason::protocol_error must keep value -1");
+static_assert(static_cast<int>(async::event::disconnect_reason::peer_closed) == 0, "disconnect_reason::peer_closed must keep value 0");
+static_assert(static_cast<int>(async::event::disconnect_reason::user_initiated) == 1, "disconnect_reason::user_initiated must keep value 1");
+static_assert(static_cast<int>(async::event::disconnect_reason::protocol_error) == -1, "disconnect_reason::protocol_error must keep value -1");
 static_assert(static_cast<int>(async::event::disconnect_reason::message_too_large) == -2,
               "disconnect_reason::message_too_large must keep value -2");
 
@@ -79,8 +76,7 @@ static_assert(async::IProtocol::kNoMessage == 0, "IProtocol::kNoMessage must equ
 
 // Finding 2.22 — `event::eof` is a backward-compatible alias of `event::input_drained`
 // (asserted ONCE here; test-io-plan.cpp restated it twice).
-static_assert(std::is_same_v<async::event::eof, async::event::input_drained>,
-              "event::eof must be an alias for event::input_drained");
+static_assert(std::is_same_v<async::event::eof, async::event::input_drained>, "event::eof must be an alias for event::input_drained");
 
 /**
  * @test A runtime no-op whose existence makes the file a non-empty translation unit and surfaces
@@ -150,8 +146,8 @@ TEST(AsyncTransportTraits, HandshakeOnMessageConsumesCachedSizeWithoutRedrive) {
 
     // Second probe: handshake "done" → returns the size; onMessage() must consume the cached value
     // without invoking do_handshake() again.
-    io._t.next_result          = 7;
-    const auto reported        = proto.getMessageSize();
+    io._t.next_result            = 7;
+    const auto reported          = proto.getMessageSize();
     const int  calls_after_probe = io._t.do_handshake_calls;
     EXPECT_EQ(reported, 7u);
     EXPECT_EQ(calls_after_probe, 2);

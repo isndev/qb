@@ -262,7 +262,7 @@ TEST_F(GeneratorAsync, AgCollectSymmetricTransferRegression) {
 
 TEST_F(GeneratorAsync, NextReclaimedWhileParked) {
     run_reclaim_driver([]() -> task<void> {
-        auto gen = std::make_shared<async_generator<int>>([]() -> async_generator<int> {
+        auto gen  = std::make_shared<async_generator<int>>([]() -> async_generator<int> {
             co_await sleep(40ms);
             co_yield 1;
             co_yield 2;
@@ -304,7 +304,7 @@ TEST_F(GeneratorAsync, GeneratorOwnFrameWokenThenDestroyedNoUAF) {
                 big[1] = big[0];
                 co_yield (int) big[1];
             }(mm));
-            auto v = co_await gen->next(); // drives the generator until it parks on the mutex
+            auto v   = co_await gen->next(); // drives the generator until it parks on the mutex
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return v ? *v : -1;
         };
@@ -331,12 +331,14 @@ TEST_F(GeneratorAsync, NextOverPullAndMovedFromReturnNullopt) {
     std::atomic<int>  v1{-1};
     std::atomic<bool> b_empty{false}, c_empty{false}, d_empty{false};
     coro_scheduler().spawn([&]() -> task<void> {
-        auto gen = []() -> async_generator<int> { co_yield 7; }();
-        auto a   = co_await gen.next(); // 7
-        auto b   = co_await gen.next(); // clean end -> nullopt
-        auto c   = co_await gen.next(); // OVER-PULL on a done generator -> nullopt (was UB)
+        auto gen = []() -> async_generator<int> {
+            co_yield 7;
+        }();
+        auto                 a     = co_await gen.next(); // 7
+        auto                 b     = co_await gen.next(); // clean end -> nullopt
+        auto                 c     = co_await gen.next(); // OVER-PULL on a done generator -> nullopt (was UB)
         async_generator<int> moved = std::move(gen);
-        auto d = co_await gen.next(); // MOVED-FROM (null handle) -> nullopt (was UB)
+        auto                 d     = co_await gen.next(); // MOVED-FROM (null handle) -> nullopt (was UB)
         v1.store(a.value_or(-1));
         b_empty.store(!b.has_value());
         c_empty.store(!c.has_value());

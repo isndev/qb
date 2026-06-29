@@ -165,7 +165,7 @@ BM_Compression_StreamingProvider(benchmark::State &state, Codec codec) {
         return;
     }
 
-    const auto  out_block = std::max<std::size_t>(chunk_size * 2u, 256u);
+    const auto  out_block       = std::max<std::size_t>(chunk_size * 2u, 256u);
     std::size_t last_compressed = 0;
     for (auto _ : state) {
         compressor->reset();

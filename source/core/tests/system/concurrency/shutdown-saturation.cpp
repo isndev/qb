@@ -45,19 +45,31 @@ std::atomic<std::int64_t> g_live_payloads{0};
 
 struct Tracked {
     std::string s;
-    Tracked() : s(48, 'x') { g_live_payloads.fetch_add(1, std::memory_order_relaxed); }
-    Tracked(const Tracked &o) : s(o.s) { g_live_payloads.fetch_add(1, std::memory_order_relaxed); }
-    Tracked(Tracked &&o) noexcept : s(std::move(o.s)) { g_live_payloads.fetch_add(1, std::memory_order_relaxed); }
+    Tracked()
+        : s(48, 'x') {
+        g_live_payloads.fetch_add(1, std::memory_order_relaxed);
+    }
+    Tracked(const Tracked &o)
+        : s(o.s) {
+        g_live_payloads.fetch_add(1, std::memory_order_relaxed);
+    }
+    Tracked(Tracked &&o) noexcept
+        : s(std::move(o.s)) {
+        g_live_payloads.fetch_add(1, std::memory_order_relaxed);
+    }
     Tracked &operator=(const Tracked &) = default;
     Tracked &operator=(Tracked &&)      = default;
-    ~Tracked() { g_live_payloads.fetch_sub(1, std::memory_order_relaxed); }
+    ~Tracked() {
+        g_live_payloads.fetch_sub(1, std::memory_order_relaxed);
+    }
 };
 
 // Default QoS = 2, NON-trivially-destructible (owns a heap std::string via Tracked).
 struct HeavyEvent : public qb::Event {
     Tracked       payload;
     std::uint32_t seq;
-    explicit HeavyEvent(std::uint32_t s) : seq(s) {}
+    explicit HeavyEvent(std::uint32_t s)
+        : seq(s) {}
 };
 
 std::atomic<std::uint64_t> g_received{0};
@@ -123,8 +135,8 @@ TEST(ShutdownSaturation, StopMidFloodTerminatesAndLeaksNothing) {
         GTEST_SKIP() << "needs >= 3 hardware cores (1 sink + >= 2 sources)";
     }
 
-    constexpr int kIterations = 5;
-    const qb::CoreId nsrc      = 2;
+    constexpr int    kIterations = 5;
+    const qb::CoreId nsrc        = 2;
 
     for (int iter = 0; iter < kIterations; ++iter) {
         g_sink_id.store(0, std::memory_order_relaxed);
@@ -157,7 +169,6 @@ TEST(ShutdownSaturation, StopMidFloodTerminatesAndLeaksNothing) {
     }
 
     // Every HeavyEvent payload constructed must have been destroyed exactly once.
-    EXPECT_EQ(g_live_payloads.load(std::memory_order_relaxed), 0)
-        << "non-trivial QoS-2 payloads leaked at shutdown";
+    EXPECT_EQ(g_live_payloads.load(std::memory_order_relaxed), 0) << "non-trivial QoS-2 payloads leaked at shutdown";
     EXPECT_GT(g_received.load(std::memory_order_relaxed), 0u) << "the sink received no events";
 }

@@ -57,8 +57,7 @@ namespace {
 // cannot share a bug with getItemSize<>().
 constexpr std::size_t
 ceil_buckets(std::size_t bytes) noexcept {
-    return bytes / QB_LOCKFREE_EVENT_BUCKET_BYTES +
-           (bytes % QB_LOCKFREE_EVENT_BUCKET_BYTES != 0 ? 1u : 0u);
+    return bytes / QB_LOCKFREE_EVENT_BUCKET_BYTES + (bytes % QB_LOCKFREE_EVENT_BUCKET_BYTES != 0 ? 1u : 0u);
 }
 
 // ---------------------------------------------------------------------------
@@ -90,10 +89,8 @@ TEST(EventHeader, EventIsExactlyOneBucketAndAligned) {
 
 TEST(EventHeader, DefaultEventIsAliveWithQos1) {
     Event e;
-    EXPECT_TRUE(e.is_alive())
-        << "the prot[] magic default-initializes the alive bit to 1";
-    EXPECT_EQ(e.getQOS(), 1u)
-        << "default QOS encoded by the prot[] magic is 1 (EventQOS1 == base Event)";
+    EXPECT_TRUE(e.is_alive()) << "the prot[] magic default-initializes the alive bit to 1";
+    EXPECT_EQ(e.getQOS(), 1u) << "default QOS encoded by the prot[] magic is 1 (EventQOS1 == base Event)";
 }
 
 TEST(EventHeader, DefaultDestinationAndSourceAreNotFound) {
@@ -129,8 +126,7 @@ TEST(EventHeader, EventQos0DiffersFromDefaultQos) {
     EXPECT_EQ(q0.getQOS(), 0u);
 }
 
-static_assert(std::is_trivially_destructible_v<qb::EventQOS0>,
-              "QOS0 must stay byte-relocatable (no dtor) for the ring");
+static_assert(std::is_trivially_destructible_v<qb::EventQOS0>, "QOS0 must stay byte-relocatable (no dtor) for the ring");
 
 // NOTE on getSize(): the accessor is `bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES`, but
 // `bucket_size` is private to Event and only ever written by the framework's friends
@@ -148,11 +144,17 @@ static_assert(std::is_trivially_destructible_v<qb::EventQOS0>,
 
 namespace {
 // E1: a 1-char member sits in Event's trailing padding, so sizeof stays one bucket (64B).
-struct E1 : Event { char pad[1]; };
+struct E1 : Event {
+    char pad[1];
+};
 // Eover: a full-bucket-sized member forces the type to span exactly two buckets (128B).
-struct Eover : Event { char pad[QB_LOCKFREE_EVENT_BUCKET_BYTES]; };
+struct Eover : Event {
+    char pad[QB_LOCKFREE_EVENT_BUCKET_BYTES];
+};
 // EBig: a 200B member rounds the aligned type to four buckets (256B).
-struct EBig : Event { char pad[200]; };
+struct EBig : Event {
+    char pad[200];
+};
 } // namespace
 
 static_assert(sizeof(E1) == 64, "a 1-char member must fit Event's trailing padding (still 1 bucket)");
@@ -213,13 +215,11 @@ TEST(EventHeader, BucketSizeUint16TruncationCap) {
     // 65536 buckets wraps the field to 0 and would stall the receiver. Prove the truncation is real
     // (this is a documented hazard, asserted here so the doc and the type stay in sync).
     const std::size_t buckets_65536 = 65536;
-    EXPECT_EQ(static_cast<std::uint16_t>(buckets_65536), 0u)
-        << "65536 buckets truncates the uint16 bucket_size to 0 (documented stall hazard)";
+    EXPECT_EQ(static_cast<std::uint16_t>(buckets_65536), 0u) << "65536 buckets truncates the uint16 bucket_size to 0 (documented stall hazard)";
 
     // The largest event that still fits the receiver mailbox is < 65536 buckets; the practical cap
     // the docs cite (~1023 buckets ~= 64 KiB) survives the uint16 intact.
-    const std::size_t practical_cap = std::numeric_limits<std::uint16_t>::max() /
-                                      QB_LOCKFREE_EVENT_BUCKET_BYTES; // 1023
+    const std::size_t practical_cap = std::numeric_limits<std::uint16_t>::max() / QB_LOCKFREE_EVENT_BUCKET_BYTES; // 1023
     EXPECT_EQ(practical_cap, 1023u);
     EXPECT_EQ(static_cast<std::uint16_t>(practical_cap), 1023u);
     EXPECT_EQ(practical_cap * QB_LOCKFREE_EVENT_BUCKET_BYTES, 65472u); // ~64 KiB
@@ -242,11 +242,9 @@ TEST(ServiceEventLogic, ReceivedSwapsDestinationWithForwardAndStaysAlive) {
     se.received();
 
     // dest and forward must have swapped.
-    EXPECT_EQ(static_cast<std::uint32_t>(se.getDestination()),
-              static_cast<std::uint32_t>(forward_target))
+    EXPECT_EQ(static_cast<std::uint32_t>(se.getDestination()), static_cast<std::uint32_t>(forward_target))
         << "received() must move the forward target into dest";
-    EXPECT_EQ(static_cast<std::uint32_t>(se.forward),
-              static_cast<std::uint32_t>(dest_before))
+    EXPECT_EQ(static_cast<std::uint32_t>(se.forward), static_cast<std::uint32_t>(dest_before))
         << "received() must move the old dest into forward";
 
     // received() marks the event alive so it survives the router's dispose().
@@ -266,10 +264,8 @@ TEST(ServiceEventLogic, ReceivedIsItsOwnInverseOnDestForward) {
     se.received();
     se.received();
 
-    EXPECT_EQ(static_cast<std::uint32_t>(se.getDestination()),
-              static_cast<std::uint32_t>(dest0));
-    EXPECT_EQ(static_cast<std::uint32_t>(se.forward),
-              static_cast<std::uint32_t>(forward0));
+    EXPECT_EQ(static_cast<std::uint32_t>(se.getDestination()), static_cast<std::uint32_t>(dest0));
+    EXPECT_EQ(static_cast<std::uint32_t>(se.forward), static_cast<std::uint32_t>(forward0));
     EXPECT_TRUE(se.is_alive());
 }
 

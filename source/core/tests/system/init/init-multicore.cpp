@@ -100,9 +100,9 @@ TEST(InitMulticore, CrossCoreUnicastToActivatingIsStashed) {
     main.addActor<XCoreSender>(0, slow);           // sender on core 0
     main.start(false);
     main.join();
-    EXPECT_EQ(g_xc_count.load(), 4);  // all four replayed
-    EXPECT_TRUE(g_xc_after.load());   // all delivered strictly after activation
-    EXPECT_TRUE(g_xc_order.load());   // in FIFO order across the cross-core stash
+    EXPECT_EQ(g_xc_count.load(), 4); // all four replayed
+    EXPECT_TRUE(g_xc_after.load());  // all delivered strictly after activation
+    EXPECT_TRUE(g_xc_order.load());  // in FIFO order across the cross-core stash
     EXPECT_FALSE(main.hasError());
 }
 
@@ -136,7 +136,7 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         co_await context().sleep(20ms); // let XCoreLong enter its long init first
-        push<qb::KillEvent>(_t);         // cross-core unicast kill of an Activating actor
+        push<qb::KillEvent>(_t);        // cross-core unicast kill of an Activating actor
         kill();
         co_return true;
     }
@@ -153,9 +153,9 @@ TEST(InitMulticore, CrossCoreKillOfActivatingActor) {
     main.addActor<XCoreKiller>(0, t);
     main.start(false);
     main.join();
-    EXPECT_TRUE(g_xck_started.load());    // the long init started on core 1
-    EXPECT_FALSE(g_xck_done.load());      // ...but was cancelled by the cross-core kill
-    EXPECT_TRUE(g_xck_destroyed.load());  // actor destroyed cleanly (deferred destroy)
+    EXPECT_TRUE(g_xck_started.load());   // the long init started on core 1
+    EXPECT_FALSE(g_xck_done.load());     // ...but was cancelled by the cross-core kill
+    EXPECT_TRUE(g_xck_destroyed.load()); // actor destroyed cleanly (deferred destroy)
     EXPECT_FALSE(main.hasError());
 }
 

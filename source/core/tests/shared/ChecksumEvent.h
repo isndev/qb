@@ -56,9 +56,7 @@ struct TestEvent : public qb::Event {
     checkSum() const {
         bool tail_ok = true;
         if (has_extra_data) {
-            tail_ok = std::memcmp(_data,
-                                  reinterpret_cast<const std::uint8_t *>(this) + sizeof(TestEvent),
-                                  sizeof(_data)) == 0;
+            tail_ok = std::memcmp(_data, reinterpret_cast<const std::uint8_t *>(this) + sizeof(TestEvent), sizeof(_data)) == 0;
         }
         return std::accumulate(std::begin(_data), std::end(_data), 0u) == _sum && tail_ok;
     }

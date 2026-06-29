@@ -195,7 +195,9 @@ TEST_F(CoroutineCombinators, WhenAllPropagatesFirstException) {
     coro_scheduler().spawn([&]() -> task<void> {
         try {
             co_await when_all(
-                []() -> task<int> { co_return 1; }(),
+                []() -> task<int> {
+                    co_return 1;
+                }(),
                 []() -> task<int> {
                     throw std::runtime_error("fail");
                     co_return 0;
@@ -317,7 +319,9 @@ TEST_F(CoroutineCombinators, WhenAnyResultIndexAndValueIsSpecificWinner) {
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
         auto result = co_await when_any(
-            []() -> task<int> { co_return 10; }(),           // instant winner
+            []() -> task<int> {
+                co_return 10;
+            }(), // instant winner
             []() -> task<int> {
                 co_await sleep(1s);
                 co_return 20;
@@ -449,7 +453,9 @@ TEST_F(CoroutineCombinators, WhenAnyResultGetExtractsTypedValue) {
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
         auto result = co_await when_any(
-            []() -> task<int> { co_return 42; }(),
+            []() -> task<int> {
+                co_return 42;
+            }(),
             []() -> task<std::string> {
                 co_await sleep(1s);
                 co_return "slow";
@@ -486,7 +492,9 @@ TEST_F(CoroutineCombinators, WhenAnyResultHasExceptionFalseOnSuccess) {
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
         auto result = co_await when_any(
-            []() -> task<int> { co_return 1; }(),
+            []() -> task<int> {
+                co_return 1;
+            }(),
             []() -> task<int> {
                 co_await sleep(1s);
                 co_return 2;
@@ -502,7 +510,9 @@ TEST_F(CoroutineCombinators, WhenAnyResultStructuredBinding) {
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
         auto result = co_await when_any(
-            []() -> task<int> { co_return 7; }(),
+            []() -> task<int> {
+                co_return 7;
+            }(),
             []() -> task<int> {
                 co_await sleep(1s);
                 co_return 0;
@@ -580,7 +590,11 @@ TEST_F(CoroutineCombinators, TimeoutVoidThrowsWhenOperationTooSlow) {
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
         try {
-            co_await coro_with_timeout([]() -> task<void> { co_await sleep(200ms); }(), 20ms);
+            co_await coro_with_timeout(
+                []() -> task<void> {
+                    co_await sleep(200ms);
+                }(),
+                20ms);
             ADD_FAILURE() << "expected timeout_error";
         } catch (const timeout_error &) {
             caught.store(true);
@@ -808,7 +822,11 @@ TEST_F(CoroutineCombinators, WithTimeoutVoidOperationWonLeavesNoZombieTimer) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&]() -> task<void> {
-        co_await coro_with_timeout([]() -> task<void> { co_await sleep(10ms); }(), 10000ms);
+        co_await coro_with_timeout(
+            []() -> task<void> {
+                co_await sleep(10ms);
+            }(),
+            10000ms);
         done.store(true);
     });
 
@@ -872,8 +890,14 @@ TEST_F(CoroutineCombinators, WhenAllReclaimedWhileParked) {
             volatile char big[8192];
             big[0]      = 7;
             auto [a, b] = co_await when_all(
-                []() -> task<int> { co_await sleep(40ms); co_return 1; }(),
-                []() -> task<int> { co_await sleep(50ms); co_return 2; }());
+                []() -> task<int> {
+                    co_await sleep(40ms);
+                    co_return 1;
+                }(),
+                []() -> task<int> {
+                    co_await sleep(50ms);
+                    co_return 2;
+                }());
             big[1] = big[0];
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return a + b + (int) big[1];
@@ -890,7 +914,11 @@ TEST_F(CoroutineCombinators, TimeoutReclaimedWhileParked) {
             volatile char big[8192];
             big[0] = 7;
             int v  = co_await coro_with_timeout(
-                []() -> task<int> { co_await sleep(40ms); co_return 7; }(), 1000ms);
+                []() -> task<int> {
+                    co_await sleep(40ms);
+                    co_return 7;
+                }(),
+                1000ms);
             big[1] = big[0];
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return v + (int) big[1];
@@ -1007,7 +1035,11 @@ TEST_F(CoroutineCombinators, TimeoutVoidReclaimedWhileParked) {
         auto park = []() -> task<int> {
             volatile char big[8192];
             big[0] = 7;
-            co_await coro_with_timeout([]() -> task<void> { co_await sleep(40ms); }(), 1000ms);
+            co_await coro_with_timeout(
+                []() -> task<void> {
+                    co_await sleep(40ms);
+                }(),
+                1000ms);
             big[1] = big[0];
             qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
             co_return (int) big[1];

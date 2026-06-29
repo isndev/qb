@@ -64,16 +64,13 @@ void
 run_reclaim_driver(DriverFactory make_driver) {
     g_resumed_after_reclaim.store(false, std::memory_order_relaxed);
     auto done = std::make_shared<std::atomic<bool>>(false);
-    qb::io::async::coro_scheduler().spawn(
-        [](std::shared_ptr<std::atomic<bool>> d, DriverFactory mk) -> qb::io::async::task<void> {
-            co_await mk();
-            d->store(true, std::memory_order_relaxed);
-            co_return;
-        }(done, std::move(make_driver)));
-    EXPECT_TRUE(pump_until([&] { return done->load(std::memory_order_relaxed); }))
-        << "reclaim driver coroutine never completed";
-    EXPECT_FALSE(g_resumed_after_reclaim.load(std::memory_order_relaxed))
-        << "a reclaimed-while-parked coroutine was resumed (dangling handle)";
+    qb::io::async::coro_scheduler().spawn([](std::shared_ptr<std::atomic<bool>> d, DriverFactory mk) -> qb::io::async::task<void> {
+        co_await mk();
+        d->store(true, std::memory_order_relaxed);
+        co_return;
+    }(done, std::move(make_driver)));
+    EXPECT_TRUE(pump_until([&] { return done->load(std::memory_order_relaxed); })) << "reclaim driver coroutine never completed";
+    EXPECT_FALSE(g_resumed_after_reclaim.load(std::memory_order_relaxed)) << "a reclaimed-while-parked coroutine was resumed (dangling handle)";
 }
 
 } // namespace qb::io::test
@@ -82,12 +79,12 @@ run_reclaim_driver(DriverFactory make_driver) {
 // (>4 KiB) local kept live across the suspend so the frame escapes the coroutine frame-allocator
 // pool (otherwise a pooled frame is never returned to the allocator and ASan cannot see the free).
 // The post-suspend writes only execute on a (buggy) resume → they trip g_resumed_after_reclaim.
-#define QB_RECLAIM_PARK(EXPR)                                                                       \
-    volatile char big[8192];                                                                        \
-    big[0] = 7;                                                                                      \
-    co_await (EXPR);                                                                                 \
-    big[1] = big[0];                                                                                 \
-    ::qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);                  \
+#define QB_RECLAIM_PARK(EXPR)                                                       \
+    volatile char big[8192];                                                        \
+    big[0] = 7;                                                                     \
+    co_await (EXPR);                                                                \
+    big[1] = big[0];                                                                \
+    ::qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed); \
     co_return (int) big[1];
 
 #endif // QB_IO_TESTS_SHARED_COROUTINE_RECLAIM_SUPPORT_H

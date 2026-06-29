@@ -176,7 +176,7 @@ quorum_wake(quorum_state<E> &st) noexcept {
 template <typename E>
 struct quorum_awaiter {
     std::shared_ptr<quorum_state<E>>  st;
-    qb::io::async::cancellation_token token; // the actor scope — a kill takes priority on resume
+    qb::io::async::cancellation_token token;    // the actor scope — a kill takes priority on resume
     std::coroutine_handle<>           parked{}; ///< handle stored in st->cont (cleared on teardown)
 
     // User-declared dtor below makes this a non-aggregate → provide the ctor ask_quorum uses.

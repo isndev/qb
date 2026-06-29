@@ -398,12 +398,12 @@ self_path() {
     if (size == 0 || _NSGetExecutablePath(buffer.data(), &size) != 0)
         return {};
     buffer.resize(std::char_traits<char>::length(buffer.c_str()));
-    std::error_code      ec;
+    std::error_code       ec;
     std::filesystem::path canonical = std::filesystem::weakly_canonical(std::filesystem::path(buffer), ec);
     return ec ? std::filesystem::path(buffer) : canonical; // resolve the /./ and symlinks dyld may return
 #else
     // Linux and other procfs systems expose the executable as a symlink.
-    std::error_code      ec;
+    std::error_code       ec;
     std::filesystem::path link = std::filesystem::read_symlink("/proc/self/exe", ec);
     return ec ? std::filesystem::path{} : link;
 #endif

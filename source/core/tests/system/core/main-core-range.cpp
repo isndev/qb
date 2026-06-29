@@ -38,15 +38,13 @@ public:
 
 TEST(MainCoreRange, RejectsExactlyAtMaxCores) {
     qb::Main main;
-    EXPECT_THROW(main.core(static_cast<qb::CoreId>(qb::MaxCores)).addActor<TerminateImmediatelyActor>(),
-                 std::range_error)
+    EXPECT_THROW(main.core(static_cast<qb::CoreId>(qb::MaxCores)).addActor<TerminateImmediatelyActor>(), std::range_error)
         << "core(MaxCores) must throw — the boundary is half-open";
 }
 
 TEST(MainCoreRange, RejectsAboveMaxCores) {
     qb::Main main;
-    EXPECT_THROW(main.core(static_cast<qb::CoreId>(qb::MaxCores + 100)).addActor<TerminateImmediatelyActor>(),
-                 std::range_error);
+    EXPECT_THROW(main.core(static_cast<qb::CoreId>(qb::MaxCores + 100)).addActor<TerminateImmediatelyActor>(), std::range_error);
 }
 
 TEST(MainCoreRange, AcceptsLastValidCoreId) {
@@ -69,9 +67,7 @@ TEST(NoAffinity, SetAffinityWithSentinelOnlyDoesNotCrash) {
 TEST(NoAffinity, SetAffinityWithMixedSentinelAndRealCoreIsSafe) {
     qb::Main main;
     // Real CPU id 0 is always present; the sentinel must be filtered, pinning still targets core 0.
-    main.core(0)
-        .setAffinity(qb::CoreIdSet{static_cast<qb::CoreId>(0), qb::NoAffinity})
-        .addActor<TerminateImmediatelyActor>();
+    main.core(0).setAffinity(qb::CoreIdSet{static_cast<qb::CoreId>(0), qb::NoAffinity}).addActor<TerminateImmediatelyActor>();
     main.start(false);
     EXPECT_FALSE(main.hasError());
 }

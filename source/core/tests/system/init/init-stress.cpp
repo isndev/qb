@@ -193,7 +193,7 @@ TEST(InitStress, StashOverflowFailsActivation) {
     main.addActor<Flooder>(0, victim);
     main.start(false);
     main.join();
-    EXPECT_TRUE(g_overflow_destroyed.load());     // overflow forced the activation to fail + remove it
+    EXPECT_TRUE(g_overflow_destroyed.load());      // overflow forced the activation to fail + remove it
     EXPECT_EQ(g_overflow_handler_calls.load(), 0); // the flood was never replayed (the actor failed init)
     EXPECT_FALSE(main.hasError());
 }

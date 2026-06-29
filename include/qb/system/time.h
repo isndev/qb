@@ -379,9 +379,8 @@ parse_date(std::string_view date) noexcept {
     // and fails); trailing characters after the day are ignored, as with sscanf.
     std::size_t pos = 0;
     int         y = 0, m = 0, d = 0;
-    if (!detail::scan_int_field(date, pos, y) || !detail::scan_literal(date, pos, '-') ||
-        !detail::scan_int_field(date, pos, m) || !detail::scan_literal(date, pos, '-') ||
-        !detail::scan_int_field(date, pos, d))
+    if (!detail::scan_int_field(date, pos, y) || !detail::scan_literal(date, pos, '-') || !detail::scan_int_field(date, pos, m)
+        || !detail::scan_literal(date, pos, '-') || !detail::scan_int_field(date, pos, d))
         return std::nullopt;
     return detail::days_from_civil(y, static_cast<unsigned>(m), static_cast<unsigned>(d));
 }
@@ -412,11 +411,10 @@ parse_time_of_day(std::string_view tod) noexcept {
     // Faithful replacement for sscanf("%d:%d:%d.%d") < 3: HH:MM:SS are required
     // (a missing field or wrong separator fails); the ".ffffff" fraction is optional
     // and taken verbatim as microseconds. Trailing characters are ignored.
-    std::size_t pos    = 0;
+    std::size_t pos  = 0;
     int         hour = 0, minute = 0, second = 0, micros = 0;
-    if (!detail::scan_int_field(tod, pos, hour) || !detail::scan_literal(tod, pos, ':') ||
-        !detail::scan_int_field(tod, pos, minute) || !detail::scan_literal(tod, pos, ':') ||
-        !detail::scan_int_field(tod, pos, second))
+    if (!detail::scan_int_field(tod, pos, hour) || !detail::scan_literal(tod, pos, ':') || !detail::scan_int_field(tod, pos, minute)
+        || !detail::scan_literal(tod, pos, ':') || !detail::scan_int_field(tod, pos, second))
         return std::nullopt;
     if (detail::scan_literal(tod, pos, '.'))
         (void) detail::scan_int_field(tod, pos, micros); // optional fraction; absent -> 0
@@ -455,12 +453,11 @@ parse_utc_offset(std::string_view off) noexcept {
     // Faithful replacement for sscanf("%d:%d:%d") < 1: the hour is required; minute
     // and second are optional and the scan stops at the first absent field (so "07"
     // and "07:30" are valid, "07::15" yields just the hour like sscanf).
-    std::size_t pos    = 0;
+    std::size_t pos  = 0;
     int         hour = 0, minute = 0, second = 0;
     if (!detail::scan_int_field(s, pos, hour))
         return std::nullopt;
-    if (detail::scan_literal(s, pos, ':') && detail::scan_int_field(s, pos, minute) &&
-        detail::scan_literal(s, pos, ':'))
+    if (detail::scan_literal(s, pos, ':') && detail::scan_int_field(s, pos, minute) && detail::scan_literal(s, pos, ':'))
         (void) detail::scan_int_field(s, pos, second);
     return sign * (hour * 3600 + minute * 60 + second);
 }

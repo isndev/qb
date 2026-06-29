@@ -58,7 +58,7 @@ struct TopologyMetrics {
     std::uint64_t fanout_factor;
 };
 
-constexpr TopologyMetrics kPipelineMetrics{3, 1, 3, 1}; // p -> c1 -> c2 -> c3
+constexpr TopologyMetrics kPipelineMetrics{3, 1, 3, 1};  // p -> c1 -> c2 -> c3
 constexpr TopologyMetrics kMulticastMetrics{3, 3, 1, 3}; // producer -> {c1,c2,c3}
 constexpr TopologyMetrics kDiamondMetrics{4, 2, 2, 2};   // producer -> {left,right} -> end
 
@@ -97,10 +97,10 @@ run_topology_benchmark(benchmark::State &state, TopologyMetrics const &metrics, 
         main.join();
 
         state.counters["source_events_per_s"]     = benchmark::Counter(source_events_total, benchmark::Counter::kIsIterationInvariantRate);
-        state.counters["deliveries_per_s"]         = benchmark::Counter(deliveries_total, benchmark::Counter::kIsIterationInvariantRate);
-        state.counters["completed_paths_per_s"]    = benchmark::Counter(completed_paths_total, benchmark::Counter::kIsIterationInvariantRate);
-        state.counters["topology_hops_per_event"]  = static_cast<double>(metrics.hops_per_source_event);
-        state.counters["fanout_factor"]            = static_cast<double>(metrics.fanout_factor);
+        state.counters["deliveries_per_s"]        = benchmark::Counter(deliveries_total, benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["completed_paths_per_s"]   = benchmark::Counter(completed_paths_total, benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["topology_hops_per_event"] = static_cast<double>(metrics.hops_per_source_event);
+        state.counters["fanout_factor"]           = static_cast<double>(metrics.fanout_factor);
 
         const auto lat                    = qb::bench::last_latency_stats_snapshot();
         state.counters["latency_samples"] = static_cast<double>(lat.samples);

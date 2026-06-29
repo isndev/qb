@@ -77,8 +77,7 @@ BM_Listener_RegisterUnregister_Batch(benchmark::State &state) {
 
     for (auto _ : state) {
         for (std::size_t i = 0; i < count; ++i) {
-            auto &ev =
-                listener.registerEvent<qb::io::async::event::io>(actor, -1, EV_NONE);
+            auto &ev = listener.registerEvent<qb::io::async::event::io>(actor, -1, EV_NONE);
             handles.push_back(ev._interface);
         }
         benchmark::DoNotOptimize(handles.data());
@@ -128,15 +127,14 @@ BM_ScopedCallback_ConstructCancel(benchmark::State &state) {
 void
 BM_AsyncCallback_DelayedFire(benchmark::State &state) {
     qb::io::async::init();
-    const auto delay = std::chrono::microseconds(state.range(0));
+    const auto delay    = std::chrono::microseconds(state.range(0));
     auto      &listener = qb::io::async::listener::current;
 
     std::atomic<std::size_t> counter{0};
     std::size_t              expected = 0;
     for (auto _ : state) {
         const auto before = counter.load(std::memory_order_relaxed);
-        qb::io::async::callback([&counter] { counter.fetch_add(1, std::memory_order_relaxed); },
-                                delay);
+        qb::io::async::callback([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }, delay);
         // Pump the loop until the timer fires (guarded so a broken timer can't
         // hang the harness forever).
         long guard = 0;
@@ -158,20 +156,9 @@ BM_AsyncCallback_DelayedFire(benchmark::State &state) {
 } // namespace
 
 BENCHMARK(BM_Listener_RegisterUnregister)->Unit(benchmark::kNanosecond)->UseRealTime();
-BENCHMARK(BM_Listener_RegisterUnregister_Batch)
-    ->Arg(16)
-    ->Arg(256)
-    ->Arg(4096)
-    ->ArgName("watchers")
-    ->Unit(benchmark::kNanosecond)
-    ->UseRealTime();
+BENCHMARK(BM_Listener_RegisterUnregister_Batch)->Arg(16)->Arg(256)->Arg(4096)->ArgName("watchers")->Unit(benchmark::kNanosecond)->UseRealTime();
 BENCHMARK(BM_AsyncCallback_ImmediateFire)->Unit(benchmark::kNanosecond)->UseRealTime();
-BENCHMARK(BM_AsyncCallback_DelayedFire)
-    ->Arg(100)
-    ->Arg(1000)
-    ->ArgName("delay_us")
-    ->Unit(benchmark::kMicrosecond)
-    ->UseRealTime();
+BENCHMARK(BM_AsyncCallback_DelayedFire)->Arg(100)->Arg(1000)->ArgName("delay_us")->Unit(benchmark::kMicrosecond)->UseRealTime();
 BENCHMARK(BM_ScopedCallback_ConstructCancel)->Unit(benchmark::kNanosecond)->UseRealTime();
 
 BENCHMARK_MAIN();

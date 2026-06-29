@@ -53,8 +53,7 @@ TEST(CpuTopology, ReportsConsistentTopology) {
 
     if (logical > 0 && physical > 0) {
         EXPECT_GE(logical, physical) << "logical cores cannot be fewer than physical";
-        EXPECT_EQ(qb::CPU::HyperThreading(), logical != physical)
-            << "HyperThreading() must equal (logical != physical)";
+        EXPECT_EQ(qb::CPU::HyperThreading(), logical != physical) << "HyperThreading() must equal (logical != physical)";
     } else {
         EXPECT_FALSE(qb::CPU::HyperThreading()) << "unknown topology must not claim hyper-threading";
     }
