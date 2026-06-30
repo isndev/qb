@@ -171,7 +171,7 @@ The header is written from a stack value; the payload is appended only when non-
 
 ## Shared payloads: `broker::MessageContainer`
 
-The fan-out optimization lives in `shared/Events.h`. `broker::MessageContainer` wraps a `std::shared_ptr<broker::Message>` and exposes its accessors through atomic load/store so the handle can be copied safely across cores.
+The fan-out optimization lives in `shared/Events.h`. `broker::MessageContainer` wraps a plain `std::shared_ptr<broker::Message>` and exposes its accessors directly; the handle is copied safely across cores by `shared_ptr`'s intrinsically atomic reference count.
 
 ```cpp
 // src: examples/core_io/message_broker/shared/Events.h
@@ -181,8 +181,7 @@ class MessageContainer {
 public:
     MessageContainer() = default;
 
-    MessageContainer(const MessageContainer &other)
-        : _message(std::atomic_load(&other._message)) {}
+    MessageContainer(const MessageContainer &other) = default;
 
     explicit MessageContainer(broker::Message &&msg)
         : _message(std::make_shared<broker::Message>(std::move(msg))) {}
@@ -191,14 +190,12 @@ public:
         : _message(std::make_shared<broker::Message>(type, std::move(payload))) {}
 
     std::string_view payload() const {
-        auto msg = std::atomic_load(&_message);
-        return msg ? std::string_view(msg->payload) : std::string_view{};
+        return _message ? std::string_view(_message->payload) : std::string_view{};
     }
 
     const broker::Message &message() const {
         static const broker::Message empty_msg{};
-        auto msg = std::atomic_load(&_message);
-        return msg ? *msg : empty_msg;
+        return _message ? *_message : empty_msg;
     }
     // type(), valid(), operator bool elided
 };
@@ -206,7 +203,7 @@ public:
 
 Copying a `MessageContainer` shares the underlying `broker::Message`; it does not duplicate the payload string. Because the payload lives behind a stable `shared_ptr`, a `std::string_view` taken from `payload()` stays valid as long as any copy of the container is alive. The events below exploit exactly that.
 
-> **A note on atomics.** The container uses the `std::atomic_load`/`std::atomic_store` free-function overloads for `std::shared_ptr`. These are deprecated in C++20 in favor of `std::atomic<std::shared_ptr<T>>`, but remain valid under the C++23 toolchain (only deprecated, not removed). Inside one `TopicManagerActor` the broadcast container is never mutated after construction, so the synchronization that matters is the reference-count traffic when copies are made on, and destroyed on, different cores — which `shared_ptr` handles regardless.
+> **A note on atomics.** The container holds a plain `std::shared_ptr` and reads it directly — there is no `std::atomic_load`/`std::atomic_store` of the pointer. (An earlier revision used those C++20-deprecated free functions; the source comment records that they "were unnecessary and have been removed.") In the qb model each actor runs single-threaded on its core and the broadcast container is never mutated after construction, so the pointer itself is never raced; the only cross-core synchronization that matters is the reference-count traffic when copies are made on, and destroyed on, different cores — which `shared_ptr`'s intrinsically atomic refcount handles regardless.
 
 ## Event types
 
@@ -520,7 +517,8 @@ void ClientActor::connect() {
             if (socket.is_open()) onConnected(std::move(socket));
             else                  onConnectionFailed();
         },
-        std::chrono::seconds(5));     // connection deadline
+        std::chrono::duration_cast<qb::duration>(            // connection deadline
+            std::chrono::duration<double>(CONNECT_TIMEOUT)));
 }
 
 void ClientActor::onConnected(qb::io::tcp::socket &&socket) {
@@ -532,13 +530,16 @@ void ClientActor::onConnected(qb::io::tcp::socket &&socket) {
 void ClientActor::on(qb::io::async::event::disconnected const &) {
     _connected = false;
     if (_should_reconnect)
-        qb::io::async::callback([this] { connect(); }, std::chrono::seconds(5));   // retry delay
+        qb::io::async::callback([this] {
+            qb::io::cout() << "Attempting to reconnect..." << std::endl;
+            connect();
+        }, std::chrono::duration<double>(RECONNECT_DELAY));   // retry delay
 }
 ```
 
 The connection deadline and the reconnect delay are both five seconds. Reconnection is scheduled with `qb::io::async::callback`, which runs the lambda on the actor's own event loop after the delay — no extra thread.
 
-> **Framework contract vs. the example.** `qb::io::async::tcp::connect()` takes its timeout as a `qb::duration` (`std::chrono::nanoseconds`, per [the canonical time model](../../7_reference/glossary.md)), and `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in example stores both deadlines as `static constexpr double CONNECT_TIMEOUT = 5.0;` / `RECONNECT_DELAY = 5.0;` and passes them directly — a form that predates the time migration and no longer compiles, because a bare `double` does not convert to `qb::duration`. New code should pass a chrono literal such as `std::chrono::seconds(5)`, as shown above.
+> **Framework contract vs. the example.** `qb::io::async::tcp::connect()` takes its timeout as a `qb::duration` (`std::chrono::nanoseconds`, per [the canonical time model](../../7_reference/glossary.md)), and `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in example stores both deadlines as `static constexpr double CONNECT_TIMEOUT = 5.0;` / `RECONNECT_DELAY = 5.0;` and adapts them at the call site rather than passing a bare `double`: `connect()` wraps the value as `std::chrono::duration_cast<qb::duration>(std::chrono::duration<double>(CONNECT_TIMEOUT))`, and the reconnect paths pass `std::chrono::duration<double>(RECONNECT_DELAY)`. That compiles. Passing a chrono literal such as `std::chrono::seconds(5)` directly — dropping the `double` constants and the wrappers — is a clarity improvement, not a fix for a compile error.
 
 Outbound commands are built as `broker::Message` and written with `*this << msg`:
 
@@ -583,7 +584,7 @@ Subscribe two clients to `news`, publish from a third, and both subscribers rece
 - **Topic conversion is the one copy.** `std::string_view` carries the topic to `TopicManagerActor`, but a `std::map<std::string, ...>` key forces one `std::string` construction per lookup. That copy is intrinsic to keying a map on a string; the views save the copies *before* that point, not the key itself.
 - **The fan-out shares payloads, not socket writes.** Sharing the `MessageContainer` removes per-subscriber heap churn inside the broker. Each subscriber still incurs one serialization and one socket write in `ServerActor`. Do not expect the optimization to reduce per-client network work.
 - **The timeout is 600 s, not 120 s.** The source comment is wrong; `setTimeout(std::chrono::seconds(600))` arms a 600-second inactivity window. Tune it for your traffic; idle subscribers that never publish will otherwise be disconnected.
-- **Timeouts are `qb::duration` now, not `double`.** The checked-in client passes `static constexpr double` constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `5.0`) to `qb::io::async::tcp::connect()` and `qb::io::async::callback()`. That predates the canonical time model and no longer compiles — a bare `double` does not convert to `qb::duration`. Pass a chrono literal such as `std::chrono::seconds(5)`. See [Async I/O inside actors](../async_in_actors.md).
+- **Prefer chrono literals over `double` deadlines.** The checked-in client stores `static constexpr double` constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `5.0`) and adapts them at the call site — `std::chrono::duration<double>(...)` for `qb::io::async::callback()`, plus a `duration_cast<qb::duration>` for `qb::io::async::tcp::connect()`. That compiles, but a bare `double` does *not* convert to `qb::duration` on its own. For new code, pass a chrono literal such as `std::chrono::seconds(5)` directly and skip the wrappers. See [Async I/O inside actors](../async_in_actors.md).
 - **`getMessageSize()` stays side-effect-free.** When you adapt this protocol, keep `getMessageSize()` a pure query and confine consumption to `onMessage()`; the framework calls the former repeatedly while a frame is still arriving. See [Custom protocols](../../3_qb_io/protocols.md).
 
 ## See also

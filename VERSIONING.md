@@ -43,7 +43,7 @@ A migration path is provided for every removal. See, for example, the time-type 
 
 ## Supported versions
 
-The `2.0.x` line is the actively maintained series. Security and bug fixes target the latest minor of the
+The `2.6.x` line is the actively maintained series. Security and bug fixes target the latest minor of the
 current major. There is no separate long-term-support branch at this time; this section will be updated if
 one is introduced.
 

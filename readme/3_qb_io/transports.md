@@ -83,7 +83,7 @@ A return of `0` from `connect`-family calls is success; `qb::io::SocketStatus::D
 
 The Unix-domain-socket entry points (`connect_un`, `n_connect_un`, and `tcp::listener::listen_un` / `udp::socket::bind_un`, and the `ssl::socket` mirrors) take a `std::filesystem::path`, so a `std::filesystem::path`, a `std::string`, or a string literal all bind without an explicit conversion.
 
-The timed `connect(endpoint, qb::duration)` overload performs a non-blocking connect and waits up to `wtimeout` for completion. Non-positive durations are clamped to zero, meaning a single poll. On expiry the call fails and the underlying error is observable through the socket's last-error accessor (`get_last_errno()`).
+The timed `connect(endpoint, qb::duration)` overload performs a non-blocking connect and waits up to `wtimeout` for completion. Non-positive durations are clamped to zero, meaning a single poll. On expiry the call fails and the underlying error is read through the static base accessor `qb::io::socket::get_last_errno()` (it is not re-exported as a typed-socket member).
 
 <!-- src: qb/include/qb/io/tcp/socket.h -->
 
@@ -229,7 +229,7 @@ int main() {
     // Bound the TCP handshake to 3 seconds; non-positive durations poll once.
     qb::io::endpoint ep = qb::io::endpoint().as_in("127.0.0.1", 8888);
     if (sock.connect(ep, 3s) != 0) {              // 0 == SocketStatus::Done
-        qb::io::cerr() << "connect failed/timed out: " << sock.get_last_errno() << '\n';
+        qb::io::cerr() << "connect failed/timed out: " << qb::io::socket::get_last_errno() << '\n';
         return 1;
     }
 

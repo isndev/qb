@@ -33,13 +33,15 @@ The tables below group the options by purpose. Defaults are taken verbatim from 
   Benchmark, Zlib) can be built from source via `FetchContent`; the `QB_*_GIT_TAG` variables pin them.
   OpenSSL, Argon2, and libngtcp2 are never fetched. The policy is owned by
   [CMake and dependencies](./cmake_dependencies.md).
-- **Cache types** — most options are CMake `option()` booleans (`ON`/`OFF`). Five are `STRING` cache
-  variables: `QB_WITH_QUIC` (`AUTO`/`ON`/`OFF`), `QB_SANITIZE`, and the three `QB_*_GIT_TAG` pins.
+- **Cache types** — most options are CMake `option()` booleans (`ON`/`OFF`). Six are `STRING` cache
+  variables: `QB_CXX_STANDARD` (`20`/`23`), `QB_WITH_QUIC` (`AUTO`/`ON`/`OFF`), `QB_SANITIZE`, and the
+  three `QB_*_GIT_TAG` pins.
 
 ## Build configuration
 
 | Option | Default | Purpose |
 |---|---|---|
+| `QB_CXX_STANDARD` | `20` | C++ standard required by qb targets. `STRING` cache variable accepting `20` or `23` (configure fails otherwise); pass `-DQB_CXX_STANDARD=23` for the modern path, as the `debug-cxx23`/`dev-cxx23` presets do. |
 | `QB_BUILD_TESTS` | `ON` | Build the qb GoogleTest suites. Gates GoogleTest resolution and the `qb_add_test` helper. |
 | `QB_BUILD_EXAMPLES` | `ON` | Build the bundled examples. |
 | `QB_BUILD_BENCHMARKS` | `OFF` | Build the Google Benchmark suites. Gates Google Benchmark resolution. |
@@ -47,9 +49,9 @@ The tables below group the options by purpose. Defaults are taken verbatim from 
 | `QB_BUILD_SHARED_LIBS` | `${BUILD_SHARED_LIBS}` | Build the qb libraries as shared objects instead of static. Defaults to the standard `BUILD_SHARED_LIBS`, so `-DBUILD_SHARED_LIBS=ON` also switches qb to shared, while still allowing a qb-only override. |
 | `QB_INSTALL` | `ON` | Install the framework: export `qbTargets`/`qbConfig` and headers (see `find_package(qb)` integration). |
 
-The repository-root `CMakeLists.txt` forces `QB_BUILD_TESTS=ON`, `QB_BUILD_BENCHMARKS=ON`, and
-`QB_BUILD_EXAMPLES=ON` when building the whole workspace; building qb standalone uses the defaults
-above.
+The repository-root `CMakeLists.txt` forces `QB_BUILD_TESTS=ON` and `QB_BUILD_EXAMPLES=ON`, and
+defaults `QB_BUILD_BENCHMARKS=ON` (overridable, e.g. the `coverage` preset turns it off) when building
+the whole workspace; building qb standalone uses the defaults above.
 
 ## Dependency resolution
 

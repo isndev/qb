@@ -409,7 +409,7 @@ void InputActor::on(qb::LoopEvent const &) {
 `onInit()` registers the input event and kicks off the first connect. Connection is asynchronous via `qb::io::async::tcp::connect`. The timeout argument is a `qb::duration` (a `std::chrono::nanoseconds` span), so pass a chrono value, not a bare `double`:
 
 ```cpp
-// current-API pattern; cf. examples/core_io/chat_tcp/client/ClientActor.cpp (passes a double)
+// src: examples/core_io/chat_tcp/client/ClientActor.cpp
 void ClientActor::connect() {
     qb::io::async::tcp::connect<qb::io::tcp::socket>(
         _server_uri,
@@ -425,7 +425,7 @@ void ClientActor::connect() {
 
 The callback receives the connected socket by value; an open socket means success.
 
-> **Framework contract vs. the example.** `qb::io::async::tcp::connect()` takes its timeout as a `qb::duration` (`std::chrono::nanoseconds`, per [the canonical time model](../../7_reference/glossary.md)), and `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in example stores both deadlines as `static constexpr double CONNECT_TIMEOUT = 5.0;` / `RECONNECT_DELAY = 5.0;` and passes them directly to `connect()` and `callback()` — a form that predates the time migration and no longer compiles, because a bare `double` does not convert to `qb::duration`. New code should pass a chrono literal such as `std::chrono::seconds(5)`, as shown above.
+> **Framework contract vs. the example.** `qb::io::async::tcp::connect()` takes its timeout as a `qb::duration` (`std::chrono::nanoseconds`, per [the canonical time model](../../7_reference/glossary.md)), and `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in example already stores both deadlines as chrono values (`static constexpr auto CONNECT_TIMEOUT = std::chrono::seconds(5);` / `RECONNECT_DELAY = std::chrono::seconds(5);`), passing `std::chrono::duration_cast<qb::duration>(CONNECT_TIMEOUT)` to `connect()` and `RECONNECT_DELAY` directly to `callback()`. New code should likewise pass a chrono literal such as `std::chrono::seconds(5)`, as shown above; a bare `double` does not convert to `qb::duration`.
 
 `onConnected` adopts the socket into the client transport, switches on the protocol, and starts the I/O before authenticating:
 
@@ -477,7 +477,7 @@ void ClientActor::on(const chat::Message& msg) {
 Reconnection uses `qb::io::async::callback` to retry after a fixed delay rather than spin:
 
 ```cpp
-// current-API pattern; cf. examples/core_io/chat_tcp/client/ClientActor.cpp (passes a double)
+// src: examples/core_io/chat_tcp/client/ClientActor.cpp
 void ClientActor::on(qb::io::async::event::disconnected const&) {
     _connected     = false;
     _authenticated = false;
@@ -509,7 +509,7 @@ The connect deadline and the reconnect delay are both fixed at five seconds; the
 - **`setTimeout` is on the timeout mixin, not the client.** `updateTimeout()` must be called on every meaningful activity (inbound *and* outbound), or the session drops mid-conversation. The example resets it in both `ChatSession::on(Message)` and `ServerActor::on(SendMessageEvent&)`.
 - **Console input blocks its core.** Keep `std::getline`-style readers off any core that carries network actors. The example isolates `InputActor` on core 0 for exactly this reason.
 - **Bad-frame handling is minimal.** `ChatProtocol::reset()` does not drain the buffer, so a malformed header wedges the parser. Harden framing before reuse.
-- **Timeouts are `qb::duration` now, not `double`.** The checked-in client passes `static constexpr double` constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `5.0`) to `qb::io::async::tcp::connect()` and `qb::io::async::callback()`. That predates the canonical time model and no longer compiles — a bare `double` does not convert to `qb::duration`. Pass a chrono literal such as `std::chrono::seconds(5)`. See [Async I/O inside actors](../async_in_actors.md). <!-- src: qb/include/qb/system/time.h:82 -->
+- **Timeouts are `qb::duration` now, not `double`.** `qb::io::async::tcp::connect()` takes a `qb::duration`; `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in client uses chrono constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `std::chrono::seconds(5)`), passing a `std::chrono::duration_cast<qb::duration>` to `connect()` and the delay directly to `callback()`. New code should likewise pass a chrono literal such as `std::chrono::seconds(5)`; a bare `double` does not convert to `qb::duration`. See [Async I/O inside actors](../async_in_actors.md). <!-- src: qb/include/qb/system/time.h:90 -->
 
 ## See also
 

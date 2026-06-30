@@ -160,7 +160,7 @@ is broad, so entries are grouped rather than exhaustive.
   supported, extensions off).
 - A canonical `std::chrono` time vocabulary: `qb::duration` (nanosecond span), `qb::mono_time`
   (steady-clock instants), and `qb::wall_time` (system-clock instants), with helpers in
-  `qb/include/qb/system/timestamp.h`.
+  `qb/include/qb/system/time.h`.
 - QUIC/HTTP3 transport with tri-state `QB_WITH_QUIC` auto-detection (enabled when ngtcp2 is present).
 - Tree-wide position-independent code and a modernized CMake configuration (presets, install/export,
   dependency resolution with system-first fallback).

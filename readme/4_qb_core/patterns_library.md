@@ -45,7 +45,7 @@ this page only states what the patterns depend on.
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
   (`qb/include/qb/core/Actor.h:1153`, `:1658-1662`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
-  `qb/include/qb/core/Actor.h:1298-1327`) plus the scope token and cancellation-aware `sleep`
+  `qb/include/qb/core/Actor.h:1298-1333`) plus the scope token and cancellation-aware `sleep`
   (`qb/include/qb/core/Actor.h:1584-1616`). **Never capture `this` past a `co_await`** — capture by
   value (`qb/include/qb/core/Actor.h:1567-1568`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a

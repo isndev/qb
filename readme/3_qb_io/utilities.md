@@ -77,11 +77,11 @@ uint64_t tsc_ticks() noexcept;
 ```
 <!-- src: qb/include/qb/system/time.h -->
 
-The chrono literals (`30s`, `100ms`, `5us`, …) are pulled into `qb` via `inline namespace qb::time_literals`, so call sites can write them without an extra `using`. _(`qb/include/qb/system/time.h:104-106`.)_
+The chrono literals (`30s`, `100ms`, `5us`, …) are pulled into `qb` via `inline namespace qb::time_literals`, so call sites can write them without an extra `using`. _(`qb/include/qb/system/time.h:110-114`.)_
 
-`format_utc`/`parse_utc` operate in UTC only and have no time-zone database dependency: formatting uses `strftime`, parsing uses `std::get_time` + `timegm`. `format_utc` returns an empty string on failure; `parse_utc`/`from_iso8601` return `std::nullopt` on any parse error. _(`qb/include/qb/system/time.h:29-30,155-208`.)_
+`format_utc`/`parse_utc` operate in UTC only and have no time-zone database dependency: formatting uses `strftime`, parsing uses `std::get_time` + `timegm`. `format_utc` returns an empty string on failure; `parse_utc`/`from_iso8601` return `std::nullopt` on any parse error. _(`qb/include/qb/system/time.h:29-30,303-347`.)_
 
-`tsc_ticks()` reads the CPU time-stamp counter. It is monotonic per-core and high-resolution but uncalibrated and not comparable to wall or monotonic clocks — use it only for single-thread micro-benchmark deltas, never as a clock. _(`qb/include/qb/system/time.h:214-216`.)_
+`tsc_ticks()` reads the CPU time-stamp counter. It is monotonic per-core and high-resolution but uncalibrated and not comparable to wall or monotonic clocks — use it only for single-thread micro-benchmark deltas, never as a clock. _(`qb/include/qb/system/time.h:680-684`.)_
 
 ### Scoped measurement helpers
 
@@ -98,11 +98,11 @@ void process() {
     // timer fires the callback with the measured qb::duration on scope exit.
 }
 ```
-<!-- src: qb/include/qb/system/time.h:254-299 -->
+<!-- src: qb/include/qb/system/time.h:718-763 -->
 
-`ScopedTimer` measures elapsed monotonic time between construction and `stop()`/destruction, invoking the callback with the measured `qb::duration`; `stop()`, `restart()`, and `elapsed()` are available for manual control. It is non-copyable and non-movable. `LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction. _(`qb/include/qb/system/time.h:254-327`.)_
+`ScopedTimer` measures elapsed monotonic time between construction and `stop()`/destruction, invoking the callback with the measured `qb::duration`; `stop()`, `restart()`, and `elapsed()` are available for manual control. It is non-copyable and non-movable. `LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction. _(`qb/include/qb/system/time.h:714-790`.)_
 
-> **Boundary seam.** The only place a raw `double` touches time is `qb::detail::to_ev_seconds` / `from_ev_seconds`, the conversion between `qb::duration` and libev's `ev_tstamp` (double seconds). Application code never needs these. _(`qb/include/qb/system/time.h:333-348`.)_
+> **Boundary seam.** The only place a raw `double` touches time is `qb::detail::to_ev_seconds` / `from_ev_seconds`, the conversion between `qb::duration` and libev's `ev_tstamp` (double seconds). Application code never needs these. _(`qb/include/qb/system/time.h:796-809`.)_
 
 ---
 
@@ -128,7 +128,7 @@ auto lead = qb::to_number_prefix<long>("  42 rest", &used); // std::optional{42}
 ```
 <!-- src: qb/include/qb/system/parse.h:108,138 -->
 
-Reach for `to_number` to validate untrusted input — a malformed or out-of-range value is a `std::nullopt`, never an exception or a wrapped integer — and for `to_number_prefix` to scan a number off the front of a buffer. The compile-time trait `qb::is_parsable_number_v<T>` is what both functions `static_assert` on; the time vocabulary itself uses `to_number_prefix` internally to parse wire timestamps without touching the locale.
+Reach for `to_number` to validate untrusted input — a malformed or out-of-range value is a `std::nullopt`, never an exception or a wrapped integer — and for `to_number_prefix` to scan a number off the front of a buffer. The compile-time trait `qb::detail::is_parsable_number_v<T>` (an internal, `detail`-namespace trait) is what both functions `static_assert` on; the time vocabulary itself uses `to_number_prefix` internally to parse wire timestamps without touching the locale.
 
 ---
 
@@ -161,7 +161,7 @@ std::string hex    = qb::crypto::to_hex_string(std::string(data.begin(), data.en
 ```
 <!-- src: qb/source/io/tests/unit/crypto/crypto-primitives.cpp -->
 
-The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a hexadecimal string and take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/include/qb/io/crypto.h:155-164,335-336,360-361,385-386,410-411,570-583`.)_
+The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a hexadecimal string and take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/include/qb/io/crypto.h:142,309-393`.)_
 
 ### Random data
 
@@ -191,9 +191,9 @@ auto pt = C::decrypt(ct,        key, iv, C::SymmetricAlgorithm::AES_256_GCM, aad
 // pt is EMPTY if the GCM authentication tag fails — treat empty as authentication
 // failure, never as "decrypted to nothing".
 ```
-<!-- src: qb/include/qb/io/crypto.h:540-561 -->
+<!-- src: qb/include/qb/io/crypto.h:507-526 -->
 
-`SymmetricAlgorithm` covers AES-CBC and AES-GCM at 128/192/256-bit, plus `CHACHA20_POLY1305`. For AEAD modes, `encrypt` appends and `decrypt` verifies the authentication tag; a failed tag yields an empty result. _(`qb/include/qb/io/crypto.h:143-152,531-561`; `docs-overhaul/qb/FACTBOOK.md:484`.)_
+`SymmetricAlgorithm` covers AES-CBC and AES-GCM at 128/192/256-bit, plus `CHACHA20_POLY1305`. For AEAD modes, `encrypt` appends and `decrypt` verifies the authentication tag; a failed tag yields an empty result. _(`qb/include/qb/io/crypto.h:139,507-526`; `docs-overhaul/qb/FACTBOOK.md:484`.)_
 
 ### Key derivation and password hashing
 
@@ -210,7 +210,7 @@ auto salt = C::generate_salt(16);
 auto dk   = C::derive_key("password", salt, /*key_length*/ 32,
                           C::KdfAlgorithm::Argon2);   // or PBKDF2 / HKDF
 ```
-<!-- src: qb/include/qb/io/crypto.h:771-792,919-936 -->
+<!-- src: qb/include/qb/io/crypto.h:737-872 -->
 
 `KdfAlgorithm` is `PBKDF2`, `HKDF`, or `Argon2`; `derive_key` defaults to `Argon2` with `iterations = 10000` (used only by PBKDF2) and a default `Argon2Params`. Dedicated entry points exist for each primitive: `pbkdf2`, `hkdf`, `argon2_kdf`. `Argon2Params` defaults to `t_cost = 3`, `m_cost = 1 << 16` KiB, `parallelism = 1`; `Argon2Variant` is `Argon2d`, `Argon2i`, or `Argon2id`. _(`qb/include/qb/io/crypto.h:701-792,926-936`.)_
 
@@ -229,7 +229,7 @@ _(`qb/include/qb/io/crypto.h:603-681,807-860,938-1052`.)_
 
 ### Constant-time comparison and secure tokens
 
-`constant_time_compare(a, b)` compares two byte vectors without short-circuiting (use it for HMACs and password hashes). `generate_token(payload, key, ttl)` produces an encrypted, authenticated token; `verify_token(token, key)` returns the payload or an empty string on any failure (tampering, malformed input, or expiry). _(`qb/include/qb/io/crypto.h:599-601,873-888`.)_
+`constant_time_compare(a, b)` compares two byte vectors without short-circuiting (use it for HMACs and password hashes). `generate_token(payload, key, ttl)` produces an encrypted, authenticated token; `verify_token(token, key)` returns the payload or an empty string on any failure (tampering, malformed input, or expiry). _(`qb/include/qb/io/crypto.h:562,812-825`.)_
 
 ```cpp
 auto key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
@@ -239,7 +239,7 @@ std::string token = qb::crypto::generate_token("session:abc", key, qb::duration{
 
 std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/expired
 ```
-<!-- src: qb/include/qb/io/crypto.h:862-888 -->
+<!-- src: qb/include/qb/io/crypto.h:812-825 -->
 
 `generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/source/io/src/crypto_advanced.cpp:235,243-244,249-252`; `docs-overhaul/qb/FACTBOOK.md:481-483`.)_
 
@@ -294,7 +294,7 @@ if (result.is_valid()) {
 
 ## Compression (`qb::gzip`, `qb::deflate`)
 
-zlib-backed gzip and deflate. Requires `QB_WITH_COMPRESSION` → `QB_HAS_COMPRESSION`. The convenience namespaces `qb::gzip` and `qb::deflate` are `using`-aliases of `qb::compression::gzip` / `qb::compression::deflate`. _(`qb/include/qb/io/compression.h:975-987`.)_
+zlib-backed gzip and deflate. Requires `QB_WITH_COMPRESSION` → `QB_HAS_COMPRESSION`. The convenience namespaces `qb::gzip` and `qb::deflate` are `using`-aliases of `qb::compression::gzip` / `qb::compression::deflate`. _(`qb/include/qb/io/compression.h:949-962`.)_
 
 ```cpp
 #include <qb/io/compression.h>
@@ -340,7 +340,7 @@ std::string dec = qb::io::uri::decode(enc);        // "a b/c"
 ```
 <!-- src: qb/source/io/tests/unit/core/uri-parse.cpp:431-453 -->
 
-`u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0, not_found = "")` returns a single decoded value as `std::string const&`; `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/include/qb/io/uri.h:193,476-573`.)_
+`u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0)` returns a single decoded value as `std::string const&` (a reference to a static empty string on a miss); `query_or(name, fallback, index = 0)` returns the value **by value** with a custom fallback. `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/include/qb/io/uri.h:193,476-573`.)_
 
 ---
 
