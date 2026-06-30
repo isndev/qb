@@ -124,15 +124,15 @@ A server derives from `server<Derived, StreamSession>`; a client that manages st
 | `enable_datagrams`          | `bool`          | `false`              |
 | `enable_keylog`             | `bool`          | `false`              |
 
-<!-- src: qb/include/qb/io/quic/types.h:51-72 -->
+<!-- src: qb/include/qb/io/quic/types.h:45-66 -->
 
 `handshake_timeout` bounds how long the QUIC/TLS handshake may take before failing; it maps to `ngtcp2_settings.handshake_timeout`. `idle_timeout` is the inactivity ceiling after which the connection closes with `disconnect_reason::idle_timeout`; it maps to the QUIC `max_idle_timeout` transport parameter. Both are converted to milliseconds and multiplied by `NGTCP2_MILLISECONDS` when the native settings are built, so any sub-millisecond precision is truncated.
 
-<!-- src: qb/source/io/src/quic.cpp:780-799 -->
+<!-- src: qb/source/io/src/quic.cpp:766-784 -->
 
 Not every field is wired in the shipped backend. The verified enforcement points are:
 
-- The transport-parameter fields (`max_stream_data_*`, `connection_recv_window` → `initial_max_data`, `max_streams_bidi`, `max_streams_uni`, `max_datagram_frame_size`) are written into the ngtcp2 transport parameters when the connection starts. <!-- src: qb/source/io/src/quic.cpp:787-805 -->
+- The transport-parameter fields (`max_stream_data_*`, `connection_recv_window` → `initial_max_data`, `max_streams_bidi`, `max_streams_uni`, `max_datagram_frame_size`) are written into the ngtcp2 transport parameters when the connection starts. <!-- src: qb/source/io/src/quic.cpp:776-786 -->
 - `max_pending_stream_bytes` / `max_pending_stream_frames` and `max_pending_datagram_bytes` / `max_pending_datagram_frames` are enforced inside the native backend; overrunning a pending queue closes the connection with `disconnect_reason::buffer_overflow`. <!-- src: qb/source/io/src/quic.cpp:400-412 -->
 - `udp_rx_batch_size` and `udp_tx_batch_size` are enforced by the endpoint's UDP read and write loops, not the backend; a value of `0` means an unbounded batch. <!-- src: qb/include/qb/io/async/quic/endpoint.h:151,509 -->
 
@@ -158,11 +158,11 @@ endpoint.set_settings(cfg);
 
 `qb::io::quic::tls_config` carries `certificate_file`, `private_key_file`, `server_name`, and `verify_peer` (default `true`).
 
-<!-- src: qb/include/qb/io/quic/types.h:74-79 -->
+<!-- src: qb/include/qb/io/quic/types.h:68-73 -->
 
 A server requires `certificate_file` and `private_key_file`. For a client, `verify_peer` validates the certificate chain, but chain validation alone accepts any CA-trusted certificate for any host. The backend binds OpenSSL hostname verification (`SSL_set1_host`) only when `verify_peer` is true **and** `server_name` is set. The string-overload of `endpoint::connect` populates `tls.server_name` from the URI host automatically; if you build the `tls_config` yourself, set `server_name` explicitly so client connections are protected against an on-path attacker.
 
-<!-- src: qb/source/io/src/quic.cpp:756-768 -->
+<!-- src: qb/source/io/src/quic.cpp:742-750 -->
 
 ## Examples
 
@@ -306,13 +306,13 @@ QUIC DATAGRAMs are off by default: `settings.enable_datagrams` is `false` and `m
 
 A stream-session buffer overflow is fatal to the stream. Appending past `max_read_buffer_size` or publishing past `max_write_buffer_size` both disconnect the session with `buffer_overflow`; the handler turns the resulting feed failure into a `reset_stream` with error code `1`.
 
-<!-- src: qb/include/qb/io/async/quic/stream.h:139-169 -->
-<!-- src: qb/include/qb/io/async/quic/server.h:114-122 -->
+<!-- src: qb/include/qb/io/async/quic/stream.h:185-214 -->
+<!-- src: qb/include/qb/io/async/quic/server.h:123-129 -->
 
 ## Pitfalls
 
 - **The endpoint cannot be moved.** All copy and move operations are deleted. Construct it in place and hold it by pointer or reference; never store it in a container that relocates its elements.
-  <!-- src: qb/include/qb/io/async/quic/endpoint.h:271-274 -->
+  <!-- src: qb/include/qb/io/async/quic/endpoint.h:245-248 -->
 - **`listen` / `connect` and the stream mutators throw when QUIC is absent.** `ensure_backend()` throws `std::runtime_error` if `qb::io::quic::available()` is false or no backend could be created, and `make_native_backend()` throws when `QB_HAS_QUIC` is undefined. Guard with `available()` or `QB_HAS_QUIC` before calling them.
   <!-- src: qb/include/qb/io/async/quic/endpoint.h:78-86 -->
   <!-- src: qb/source/io/src/quic.cpp:1300-1306 -->

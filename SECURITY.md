@@ -8,7 +8,7 @@ Security fixes are provided for the latest minor of the current major series.
 
 | Version | Supported |
 |---------|-----------|
-| 2.0.x   | Yes       |
+| 2.6.x   | Yes       |
 | < 2.0   | No        |
 
 ## Reporting a vulnerability

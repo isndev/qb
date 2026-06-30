@@ -23,7 +23,7 @@ The framework targets C++20 by default; coroutine support requires a compiler wi
 <!-- src: qb/README.md (C++20 requirement); connector.h gated on __cpp_impl_coroutine -->
 
 Every timed coroutine API on this page takes a `qb::duration` (a `std::chrono::nanoseconds` span; any `std::chrono::duration` converts implicitly). Deadlines that need an absolute point use `std::chrono::steady_clock::time_point` (the type behind `qb::mono_time`). Raw `double`-seconds arguments are not part of this surface.
-<!-- src: qb/include/qb/io/async/coroutine/awaiter.h:262, cancellation.h:560 -->
+<!-- src: qb/include/qb/io/async/coroutine/awaiter.h:262, cancellation.h:854 -->
 
 ## The execution model
 
@@ -105,15 +105,15 @@ task<void> caller() {
 
 | Property | Detail | Source |
 |---|---|---|
-| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:275`, `:396` |
-| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:346`, `:613` |
-| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:464`, `:478` |
-| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:521` |
-| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:502` |
-| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:135` |
+| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:361`, `:716` |
+| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:433` |
+| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:581`, `:601` |
+| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:483`, `:656` |
+| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:628` |
+| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:156` |
 
 `await_resume()` always checks for a stored exception first and re-throws it; if the task is somehow not ready it throws `std::logic_error` rather than returning an uninitialized value. You generally never see these paths — you `co_await` the task and the result (or exception) is delivered.
-<!-- src: qb/include/qb/io/async/coroutine/task.h:521-534 -->
+<!-- src: qb/include/qb/io/async/coroutine/task.h:648-665 -->
 
 > `task<T>` is move-only. Pass it to `spawn` (or any consumer) with `std::move`. `coro_scheduler().spawn(t)` is a compile error; write `coro_scheduler().spawn(std::move(t))`. See the [`spawn(Callable)` overload](#the-scheduler) for the case where you want to hand a lambda directly.
 <!-- src: qb/include/qb/io/async/coroutine/task.h:464; scheduler.h:457 (Factbook) -->
@@ -160,7 +160,7 @@ std::size_t live    = coro_scheduler().active_count();   // ready + suspended
 std::size_t pending = coro_scheduler().pending_count();  // ready queue only
 bool        ready   = coro_scheduler().has_ready();
 ```
-<!-- src: qb/include/qb/io/async/coroutine/scheduler.h:225 (spawn task), :251 (spawn Callable), :467 (active_count), :417 (pending_count), :399 (has_ready); utils.h:204 (coro_scheduler) -->
+<!-- src: qb/include/qb/io/async/coroutine/scheduler.h:223 (spawn task), :378 (spawn Callable), :613 (active_count), :556 (pending_count), :536 (has_ready); utils.h:204 (coro_scheduler) -->
 
 `spawn(task<void>&&)` takes ownership of the handle: the coroutine runs to completion even after the original `task` object is destroyed, and the scheduler frees the frame when it finishes. `spawn(Callable)` accepts a no-argument callable returning `task<void>` and moves the closure into an owning wrapper frame — the fix for the "dangling lambda" trap described in [Lifetime footguns](#lifetime-footguns). `schedule_resume()` does *not* take ownership; it is how awaiters wake a continuation whose frame belongs to a `task<T>` object elsewhere.
 <!-- src: qb/include/qb/io/async/coroutine/scheduler.h:203-258, :462 (Factbook) -->
@@ -217,7 +217,7 @@ task<void> connect_to(qb::io::uri remote) {
 ```
 
 `connect<Transport>(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` defaults to `transport::tcp`. A zero timeout means no deadline.
-<!-- src: qb/include/qb/io/async/tcp/connector.h:460-471 -->
+<!-- src: qb/include/qb/io/async/tcp/connector.h:706-710 (connect factory), :685 (await_resume std::optional<Socket_>) -->
 
 ## Combinators
 
@@ -234,7 +234,7 @@ std::vector<task<int>> work;
 for (int i = 0; i < 8; ++i) work.push_back(compute(i));
 std::vector<int> results = co_await when_all(std::move(work));
 ```
-<!-- src: qb/include/qb/io/async/coroutine/combinators.h:141 (variadic), :210 (vector) -->
+<!-- src: qb/include/qb/io/async/coroutine/combinators.h:191 (variadic), :296 (vector) -->
 
 ### `when_any` / `race` — first to finish wins
 
@@ -264,7 +264,7 @@ try {
 ```
 
 `coro_with_timeout(task<T>&&, qb::duration)` returns `T` and **throws `timeout_error`** on timeout — it does not return an `std::optional`. On timeout the inner task keeps running in the background until it finishes naturally; its result is then dropped.
-<!-- src: qb/include/qb/io/async/coroutine/combinators.h:555 (coro_with_timeout returns T, throws), :526 (await_resume throws timeout_error) -->
+<!-- src: qb/include/qb/io/async/coroutine/combinators.h:852 (coro_with_timeout returns T, throws), :825 (throws timeout_error) -->
 
 ## Cancellation
 
@@ -295,7 +295,7 @@ token.cancel();                                 // same thread only
 ```
 
 `cancellation_token` is copyable (it shares state through a `shared_ptr`) and holds no mutex: `cancel()` and `on_cancel()` must run on the token's own thread. `with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {})` throws `timeout_error` (including if the deadline is already past on entry) or `cancelled_error`; a winning operation result is authoritative and is never reclassified against wall-clock time. `check_cancelled(token)` and `yield_or_cancel(token)` throw `cancelled_error` when the token is set; `make_cancellable(task, token)` wraps a task so it surfaces cancellation.
-<!-- src: qb/include/qb/io/async/coroutine/cancellation.h:104 (cancel), :120 (on_cancel), :560 (with_deadline), :185 (check_cancelled), :216 (yield_or_cancel), :404 (make_cancellable), :468 (cancellable_sleep) -->
+<!-- src: qb/include/qb/io/async/coroutine/cancellation.h:147 (cancel), :176 (on_cancel), :854 (with_deadline), :280 (check_cancelled), :317 (yield_or_cancel), :616 (make_cancellable), :726 (cancellable_sleep) -->
 
 > **Cross-thread cancellation.** A token has no lock. To cancel from another thread, send a `qb-core` actor event to the owning thread and call `token.cancel()` from that actor's synchronous handler, where it runs on the right thread.
 <!-- src: qb/include/qb/io/async/coroutine/cancellation.h:97-103 -->
@@ -348,7 +348,7 @@ co_await with_lock(mtx,     [] { return do_sync_work(); });
 ```
 
 Notes grounded in the headers: the mutex methods are `lock()` / `unlock()` / `scoped_lock()`; the read/write lock exposes `lock_read()` / `lock_write()` / `unlock_read()` / `unlock_write()` plus the RAII `scoped_read_lock()` / `scoped_write_lock()`. `async_event(bool auto_reset = false, bool initially_set = false)`. `with_semaphore` and `with_lock` take a *synchronous* callable and return its result (they `co_return f()`), not a task factory. Over-releasing a semaphore is a no-op; unlocking an unheld mutex or rw-lock asserts in debug builds.
-<!-- src: qb/include/qb/io/async/coroutine/sync.h:120 (acquire), :207 (scoped_acquire), :283 (lock), :300 (unlock), :361 (scoped_lock), :548/:553 (scoped_read/write_lock), :458/:472 (unlock_read/write), :619 (arrive_and_wait), :679 (async_event ctor), :725 (set), :796 (count_down), :845/:866 (with_semaphore/with_lock), :30/:141/:301 (no-op / assert) -->
+<!-- src: qb/include/qb/io/async/coroutine/sync.h:261 (acquire), :376 (scoped_acquire), :511 (lock), :534 (unlock), :601 (scoped_lock), :899/:905 (scoped_read/write_lock), :789/:803 (unlock_read/write), :1023 (arrive_and_wait), :1104 (async_event ctor), :1187 (set), :1296 (count_down), :1401/:1425 (with_semaphore/with_lock), :294/:535 (no-op / assert) -->
 
 ## Channels
 
@@ -388,7 +388,7 @@ auto [in_p, out_p] = make_pipeline<int, int>(            // pair of unique_ptr c
 ```
 
 `recv_for` / `send_for` are **member functions** (`ch.recv_for(timeout)` returns `task<std::optional<T>>`; `ch.send_for(value, timeout)` returns `task<bool>`). `send(value)`/`recv()` return awaiters; `recv()` yields `std::optional<T>` that is empty once the channel is closed, while `send(value)` throws `channel_closed` on a closed channel. `make_channel` and `make_pipeline` return `std::unique_ptr` so the caller owns the channel's lifetime.
-<!-- src: qb/include/qb/io/async/coroutine/channel.h:121 (capacity default 0), :296 (send), :383 (recv), :507 (recv_for), :563 (send_for), :391/:434 (try_send/try_recv), :450 (close), :707 (make_channel), :860 (make_pipeline), :794/:814/:834 (transform/filter/collect) -->
+<!-- src: qb/include/qb/io/async/coroutine/channel.h:130 (capacity default 0), :320 (send), :428 (recv), :584 (recv_for), :667 (send_for), :438/:483 (try_send/try_recv), :500 (close), :838 (make_channel), :1015 (make_pipeline), :939/:961/:983 (transform/filter/collect) -->
 
 ### `select` — first ready channel wins
 
@@ -399,7 +399,7 @@ else if (!res.closed)    use(res.get<std::string>());
 ```
 
 `select(...)` returns `select_result { size_t index; bool closed; std::any value; }`: `index` is the 0-based channel that won, `closed` is true when that channel was closed (the value is then empty), and `get<T>()` casts the received value.
-<!-- src: qb/include/qb/io/async/coroutine/channel.h:890 (select_result), :997 (select variadic), :1063 (select vector) -->
+<!-- src: qb/include/qb/io/async/coroutine/channel.h:1051 (select_result), :1179 (select variadic), :1255 (select vector) -->
 
 > A `channel<T>` is single-thread only. Its destructor clears an internal liveness flag *before* closing, so a parked sender or receiver whose frame is torn down does not touch freed channel memory. `channel_range` (and `async_stream::from_channel`) drain non-blocking and stop at the first empty slot — use [`async_stream`](#async-streams) for true async iteration, and prefer `from_channel_shared` to avoid the borrowed-reference lifetime trap.
 <!-- src: qb/include/qb/io/async/coroutine/channel.h:133, :712 (Factbook); stream.h:95/:108 -->
@@ -553,7 +553,7 @@ The numeric source is `range_stream(start, end)` (there is no `async_stream<T>::
 
 Under `qb-core`, each `VirtualCore` runs one thread, one listener, and one coroutine scheduler. The actor dispatch model assumes a handler runs to completion with exclusive access to its actor's state — but a `co_await` *yields the thread*, letting other handlers run in between. A coroutine that touches actor members across a suspension point is therefore a single-thread data race, and the actor may even be destroyed while the coroutine is parked.
 
-The supported integration points are `Actor::spawn` and `Actor::spawn_detached`. Both launch an *isolated* coroutine and may communicate back only through events. `spawn` is the recommended default: the coroutine is *scoped* to the actor (cancelled when the actor is killed) and receives a `qb::ScopedCoroContext` with cancellation-aware operations and the native `ask()` helper. `spawn_detached` is the explicit fire-and-forget variant: the coroutine outlives the actor and receives a plain `qb::CoroContext` (an `ActorId`-by-value handle). The example below uses `spawn`.
+The supported integration points are `Actor::spawn` and `Actor::spawn_detached`. Both launch an *isolated* coroutine and may communicate back only through events. `spawn` is the recommended default: the coroutine is *scoped* to the actor (cancelled when the actor is killed) and receives a `qb::ScopedCoroContext` with cancellation-aware operations, usable with the free `qb::ask()` request/reply helper. `spawn_detached` is the explicit fire-and-forget variant: the coroutine outlives the actor and receives a plain `qb::CoroContext` (an `ActorId`-by-value handle). The example below uses `spawn`.
 
 ```cpp
 // src: derived from examples/coroutine/actor_example.cpp
@@ -593,8 +593,8 @@ public:
 };
 ```
 
-`CoroContext` exposes exactly four members: `push<Event>(args…)` (send an event to the spawning actor — i.e. to `self`), `push_to<Event>(dest, args…)` (send to a specific `ActorId`), `id()`, and `time()`. Events sent to a now-dead actor are ignored, so the context is safe to use after any suspension. A `spawn` coroutine instead receives a `qb::ScopedCoroContext`, which derives from `CoroContext` and adds cancellation-aware operations (`sleep`, `until_cancelled`, `cancellation_point`, `cancellable`) plus the native `ask<Reply>(dest, args…)` helper. `has_active_coroutines()` reports whether the actor still has spawned coroutines in flight.
-<!-- src: qb/include/qb/core/Actor.h:1208 (CoroContext: push/push_to/id/time), :1427 (ScopedCoroContext), :1080 (spawn), :1043 (spawn_detached); Actor.tpp:269,256 (debug-assert a TLS scheduler) -->
+`CoroContext` exposes exactly four members: `push<Event>(args…)` (send an event to the spawning actor — i.e. to `self`), `push_to<Event>(dest, args…)` (send to a specific `ActorId`), `id()`, and `time()`. Events sent to a now-dead actor are ignored, so the context is safe to use after any suspension. A `spawn` coroutine instead receives a `qb::ScopedCoroContext`, which derives from `CoroContext` and adds cancellation-aware operations (`sleep`, `until_cancelled`, `cancellation_point`, `cancellable`). For request/reply, use the free helper `qb::ask(ctx, target, Event{...}, timeout)` (declared in `qb/core/patterns/request.h`): it sends `Event` to `target` and `co_return`s the same `Event` filled in by the responder's `reply()` — e.g. `auto r = co_await qb::ask(ctx, target, PriceQuery{"BTC"}, 500ms);`. `has_active_coroutines()` reports whether the actor still has spawned coroutines in flight.
+<!-- src: qb/include/qb/core/Actor.h:1281 (CoroContext: push/push_to/id/time), :1570 (ScopedCoroContext), :1135 (spawn), :1098 (spawn_detached); qb/include/qb/core/patterns/request.h:98-105 (ask free helper); Actor.tpp:269,256 (debug-assert a TLS scheduler) -->
 
 | Rule | Reason | Source |
 |---|---|---|

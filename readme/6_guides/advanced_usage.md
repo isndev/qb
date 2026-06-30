@@ -175,12 +175,16 @@ Place an actor on a specific core with `Main::addActor<T>(core_id, args...)`, or
 int main() {
     qb::Main engine;
 
-    const auto n_cores = std::thread::hardware_concurrency();
+    const unsigned int n_cores = std::thread::hardware_concurrency();
+    const unsigned int cores_to_use = std::max(2u, std::min(4u, n_cores));
 
-    // One DispatcherActor on core 0; a WorkerActor on every other core.
-    auto dispatcher = engine.addActor<DispatcherActor>(0);
-    for (qb::CoreId core = 1; core < n_cores; ++core)
-        engine.addActor<WorkerActor>(core, dispatcher);
+    // A WorkerActor on each used core, collected into a vector...
+    std::vector<qb::ActorId> workers;
+    for (unsigned int i = 0; i < cores_to_use; ++i)
+        workers.push_back(engine.addActor<WorkerActor>(i % cores_to_use));
+
+    // ...then one DispatcherActor on core 0 that owns the worker ids.
+    engine.addActor<DispatcherActor>(0, workers);
 
     engine.start();   // spawns one worker thread per used core
     engine.join();

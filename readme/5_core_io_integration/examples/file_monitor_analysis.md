@@ -18,7 +18,7 @@ The example builds three actors that cooperate over typed events:
 
 The load-bearing integration point is that `qb::io::async::directory_watcher<_Derived>` is a CRTP base whose `on(qb::io::async::event::file const&)` callback runs on the same `VirtualCore` event loop that dispatches actor messages. The watcher needs no extra thread, lock, or queue: its notifications and the actor's `on(Event&)` handlers are serialized by the same loop.
 
-> **Note on the checked-in sources.** The `examples/core_io/file_monitor` tree predates the canonical `std::chrono` time-model migration. It calls `start(path, 0.5)` and `qb::io::async::callback(fn, 0.5)` with bare `double` arguments. The current signatures take a `std::chrono` duration (`start(std::filesystem::path const&, qb::duration)`, `callback(_Func&&, std::chrono::duration<Rep, Period>)`), which does not accept a bare `double`. Every code block below shows the **current** API. Where it differs from the on-disk file, the difference is called out. Treat the signatures here, not the example text, as authoritative.
+> **Note on the time model.** The `examples/core_io/file_monitor` tree uses the canonical `std::chrono` time model. It arms watchers with `start(std::filesystem::path const&, qb::duration)` and schedules work with `callback(_Func&&, std::chrono::duration<Rep, Period>)` — every interval and delay is a `std::chrono` duration, never a bare `double`. The code blocks below match the on-disk sources.
 
 ## Architecture
 
@@ -68,7 +68,7 @@ class DirectoryMonitor : public qb::io::async::directory_watcher<DirectoryMonito
 public:
     explicit DirectoryMonitor(FileEventCallback callback);
     void on(qb::io::async::event::file const &event);   // notification entry point
-    void startWatching(const std::string &path,
+    void startWatching(const std::filesystem::path &path,
                        qb::duration interval = std::chrono::milliseconds(500));
     void stopWatching();
 };
@@ -84,7 +84,7 @@ public:
 
 `directory_watcher` sets `constexpr static bool do_read = false`, so — unlike `file_watcher` — it never reads the watched path's contents; it only forwards the attribute-change event to your `on` handler. The base `on(event::file const&)` invokes `_Derived::on(event)` only when `_Derived` defines that handler (detected at compile time via `qb::has_on`).
 
-> **Interval is a `qb::duration`, not a `double`.** The checked-in `startWatching` declares `double interval = 0.5` and calls `start(path, 0.5)`. Against the current `start(std::filesystem::path const&, qb::duration)` that does not compile — `qb::duration` is `std::chrono::nanoseconds`, which has no implicit conversion from `double`. Pass a `std::chrono` duration: `start(path, std::chrono::milliseconds(500))`. The example's intent ("check every 500 ms") is preserved by `std::chrono::milliseconds(500)`. (The path parameter is now a `std::filesystem::path`; the example's `std::string` path argument converts implicitly.)
+> **Interval is a `qb::duration`, not a `double`.** `startWatching` declares `qb::duration interval = std::chrono::milliseconds(500)` and forwards it to `start(std::filesystem::path const&, qb::duration)`. `qb::duration` is `std::chrono::nanoseconds`, which has no implicit conversion from `double`, so the interval must be a `std::chrono` duration: the example uses `std::chrono::milliseconds(500)` ("check every 500 ms"). The path parameter is a `std::filesystem::path`.
 
 ### How change detection works
 
@@ -181,14 +181,14 @@ Two integration details earn their place here:
 - **`qb::io::async::callback` schedules onto this actor's loop.** It is not a thread pool. The closure runs later on the same `VirtualCore`, so it may touch `_watched_directories` and call `push<>` without synchronization. The single-overload form `callback(fn)` runs `fn()` immediately; the timed form `callback(fn, duration)` runs it after the duration (or immediately if the duration is `<= 0`). Here the immediate form is used purely to move a possibly slow directory scan out of the message-handler frame.
 - **`push<WatchDirectoryResponse>(requestor, …)`** addresses the reply to the recorded `ActorId`. The response carries `success`, the normalized path, and an error string — the same envelope you would expect from any request/response actor pair.
 
-> **`callback` takes a duration, not a `double`.** The checked-in `setupDirectoryWatch` calls `startWatching(path, 0.5)` and various `qb::io::async::callback(fn, 0.5)` / `callback(fn, seconds_as_int)`. The current overload set is `callback(_Func&&)` and `callback(_Func&&, std::chrono::duration<Rep, Period>)`; neither deduces from a bare `double` or `int`. Use `std::chrono::milliseconds(500)`, `std::chrono::seconds(duration)`, and so on.
+> **`callback` takes a duration, not a `double`.** The overload set is `callback(_Func&&)` and `callback(_Func&&, std::chrono::duration<Rep, Period>)`; neither deduces from a bare `double` or `int`. Accordingly `setupDirectoryWatch` arms its watcher with `startWatching(path, std::chrono::milliseconds(500))`, and the timed `qb::io::async::callback` calls pass `std::chrono` durations (`std::chrono::milliseconds(500)`, `std::chrono::seconds(duration)`, and so on).
 
 ### Recursion and subscriber tracking
 
 `setupDirectoryWatch` creates the `DirectoryMonitor`, hands it a callback that both publishes the event and bumps statistics, then arms it:
 
 ```cpp
-// src: examples/core_io/file_monitor/watcher.cpp (start() argument modernized)
+// src: examples/core_io/file_monitor/watcher.cpp
 watch->watcher = std::make_unique<DirectoryMonitor>(
     [this, path](const std::string &file_path, FileEventType event_type) {
         publishFileEvent(file_path, event_type);
@@ -200,7 +200,7 @@ watch->watcher = std::make_unique<DirectoryMonitor>(
         }
     });
 
-watch->watcher->startWatching(path, std::chrono::milliseconds(500)); // was: 0.5
+watch->watcher->startWatching(path, std::chrono::milliseconds(500));
 ```
 
 For a recursive request, the method iterates `std::filesystem::directory_iterator(path)` and recurses into each subdirectory, propagating the parent's subscriber list. Each subdirectory gets its own `DirectoryMonitor` and its own `ev::stat` watcher. State lives in a tree of `WatchInfo` nodes:
@@ -208,7 +208,7 @@ For a recursive request, the method iterates `std::filesystem::directory_iterato
 ```cpp
 // src: examples/core_io/file_monitor/watcher.h
 struct WatchInfo {
-    std::string path;
+    std::filesystem::path path;
     bool recursive;
     std::vector<qb::ActorId> subscribers;
     std::unique_ptr<DirectoryMonitor> watcher;
@@ -224,12 +224,13 @@ This recursion is a snapshot: directories created *after* the watch is set up ar
 
 ```cpp
 // src: examples/core_io/file_monitor/watcher.cpp
-void DirectoryWatcher::publishFileEvent(const std::string &file_path,
+void DirectoryWatcher::publishFileEvent(const std::filesystem::path &file_path,
                                         FileEventType event_type) {
     std::shared_ptr<WatchInfo> watch;
     std::string watch_dir;
+    const std::string file_path_str = file_path.string();      // compare/store as a string
     for (const auto &pair : _watched_directories) {
-        if (file_path.find(pair.first) == 0) {                 // path starts with dir
+        if (file_path_str.find(pair.first) == 0) {             // path starts with dir
             if (watch_dir.empty() || pair.first.length() > watch_dir.length()) {
                 watch_dir = pair.first;
                 watch = pair.second;
@@ -238,7 +239,7 @@ void DirectoryWatcher::publishFileEvent(const std::string &file_path,
     }
     if (watch)
         for (const auto &subscriber : watch->subscribers)
-            push<FileEvent>(subscriber, file_path, event_type);
+            push<FileEvent>(subscriber, file_path_str, event_type);
 }
 ```
 
@@ -311,9 +312,9 @@ Three facts to keep straight:
 1. **`onInit()`** creates the test directory if absent and schedules `startMonitoring` shortly after, using the timed form of `qb::io::async::callback`:
 
    ```cpp
-   // src: examples/core_io/file_monitor/main.cpp (duration modernized)
+   // src: examples/core_io/file_monitor/main.cpp
    qb::io::async::callback([this]() { startMonitoring(); },
-                           std::chrono::milliseconds(500)); // was: 0.5
+                           std::chrono::milliseconds(500));
    ```
 
 2. **`startMonitoring`** sends the watch request with `recursive = true`, passing its own `id()` as the subscriber:
@@ -328,10 +329,10 @@ Three facts to keep straight:
 4. **File activity** runs through `qb::io::async::callback`. `createTestFile`/`modifyTestFile` open the file via `qb::io::sys::file` and write synchronously; `deleteTestFile` uses `std::filesystem::remove`. `scheduleRandomModifications` re-arms itself on a randomized delay, forming a self-perpetuating timed chain on the loop. Modernized, each delay is a `std::chrono` duration:
 
    ```cpp
-   // src: examples/core_io/file_monitor/main.cpp (delay modernized)
+   // src: examples/core_io/file_monitor/main.cpp
    double secs = 0.5 + (std::rand() % 1000) / 1000.0;       // 0.5–1.5 s
    qb::io::async::callback([this]() { scheduleRandomModifications(); },
-                           std::chrono::duration<double>(secs)); // was: callback(fn, secs)
+                           std::chrono::duration<double>(secs));
    ```
 
    `std::chrono::duration<double>` is itself a `std::chrono::duration<Rep, Period>`, so it satisfies the `callback` template; the bare `double secs` does not.
@@ -350,7 +351,7 @@ Three facts to keep straight:
 
 ## Pitfalls
 
-- **The checked-in sources will not compile unmodified against qb 2.6.0.** They pass bare `double`/`int` to `start(…, qb::duration)` and `qb::io::async::callback(…, std::chrono::duration<Rep, Period>)`. Replace every such argument with a `std::chrono` duration, as shown above, before building.
+- **Intervals and delays are `std::chrono` durations, not bare numbers.** `start(…, qb::duration)` and `qb::io::async::callback(…, std::chrono::duration<Rep, Period>)` do not accept a bare `double`/`int`. The sources pass `std::chrono` durations throughout; keep any new interval or delay you add in that form.
 - **Stat-diff watching is poll-based and coarse.** `ev::stat` polls at the configured interval and reports changes to the *watched path*, not per-child events. Changes within one interval can coalesce; a delete-then-recreate inside one poll window may surface as a single event. Pick `interval` for your latency/CPU trade-off, and do not expect per-file change journaling from this primitive.
 - **`qb::io::sys::file` blocks the event loop.** It is synchronous. Reading a large file inside `on(FileEvent&)` stalls the owning `VirtualCore`. Offload large reads to a worker actor or a `qb::io::async::callback` continuation.
 - **`FileProcessor` is not wired to receive events as shipped.** Only `ClientActor` subscribes. To exercise `FileProcessor`, add its `ActorId` to the subscriber set or forward `FileEvent`s to `processor_id` (see [Wiring caveat](#wiring-caveat-who-actually-receives-fileevent)).

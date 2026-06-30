@@ -39,7 +39,7 @@ but OpenSSL is found by `find_package(OpenSSL QUIET)` and is **never** fetched. 
 is not present, `QB_WITH_SSL` is forced `OFF`, the resolved capability `QB_HAS_SSL` becomes
 false, and the entire SSL/TLS slice is absent.
 
-<!-- src: qb/cmake/qbConfig.cmake:101, qb/cmake/qbDependencies.cmake:124-146 -->
+<!-- src: qb/cmake/qbConfig.cmake:99, qb/cmake/qbDependencies.cmake:124-146 -->
 
 | Symbol | Meaning |
 | --- | --- |
@@ -63,8 +63,9 @@ references them must also be compiled under that definition.
 
 Declared in `qb/io/tcp/ssl/socket.h`. Inherits `qb::io::tcp::socket` and owns the OpenSSL
 `SSL*` through a `std::unique_ptr<SSL, …>`. It is move-only (the copy constructor is
-deleted; move construction and move assignment are defaulted), so ownership of both the
-native handle and the `SSL` object transfers on move.
+deleted, move construction is defaulted, and move assignment is user-provided — it must
+free the existing `SSL` and client `SSL_CTX` before taking over the source), so ownership
+of both the native handle and the `SSL` object transfers on move.
 
 ```cpp
 class QB_API socket : public tcp::socket {
@@ -143,7 +144,7 @@ int rc = c.connect_v4("127.0.0.1", 64388);
 When you supply your own `SSL` handle through `init(SSL*)`, `qb-io` does **not** modify the
 verification policy; your context's settings are used as-is.
 
-<!-- src: qb/include/qb/io/tcp/ssl/socket.h:716-739 -->
+<!-- src: qb/include/qb/io/tcp/ssl/socket.h:765-782 -->
 
 #### Pre-handshake configuration
 
@@ -404,7 +405,7 @@ command (RSA-2048, `CN=localhost`, 365-day validity, with a `subjectAltName` so 
 verification can pass for `localhost`) is:
 
 ```bash
-# src: qb/source/io/tests/system/CMakeLists.txt:133-136
+# src: qb/source/io/tests/system/CMakeLists.txt:99-101
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
     -days 365 -nodes \
     -subj "/CN=localhost/O=QB Tests/C=US" \
@@ -430,7 +431,7 @@ A self-signed certificate is rejected by a default (verifying) client; pair it w
 - **Timed connect does not bound the handshake.** The timed `connect(ep, hostname, wtimeout)`
   overloads bound only the underlying TCP connect phase; the TLS handshake itself is not
   separately timed.
-  <!-- src: qb/include/qb/io/tcp/ssl/socket.h:441-457 -->
+  <!-- src: qb/include/qb/io/tcp/ssl/socket.h:467-469, 479-481; qb/source/io/src/tcp/ssl/socket.cpp:743-779 -->
 - **`SSL_CTX` ownership splits by path.** A context from `create_*_context` is caller-owned
   and must be `SSL_CTX_free`d — unless it is passed to `listener::init()`, which then owns
   and frees it. A `Session` from `get_session()` is always caller-owned; release it with

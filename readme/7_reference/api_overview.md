@@ -282,7 +282,7 @@ See [Transports](../3_qb_io/transports.md) and [Network actors](../5_core_io_int
 
 | Member | Signature |
 |---|---|
-| `registerEvent` | `template<class _Actor, class... _Args> auto& registerEvent(_Actor& actor, _Args&&... args)` |
+| `registerEvent` | `template<class _Event, class _Actor, class... _Args> _Event& registerEvent(_Actor& actor, _Args&&... args)` |
 | `unregisterEvent` | `void unregisterEvent(IRegisteredKernelEvent* kevent)` |
 | `run` | `void run(int flag = 0)` |
 | `break_one` | `void break_one()` |

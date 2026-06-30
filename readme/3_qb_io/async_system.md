@@ -162,7 +162,7 @@ A timeout of zero or less fires the callback inline at construction (matching `c
 `with_timeout<Derived>` (`qb/io/async/io.h`) is a CRTP base that adds an inactivity timer to a class. It is the mechanism behind session idle-timeouts and operation deadlines.
 
 ```cpp
-// src: derived from qb/source/io/tests/system/async/timer-timeout.cpp (TimerHandler)
+// src: derived from qb/source/io/tests/system/async/timer-timeout.cpp (CountingTimer)
 #include <qb/io/async.h>
 #include <chrono>
 
@@ -188,7 +188,7 @@ public:
 - **`updateTimeout()`** records the current loop time as the last activity. Because the underlying timer measures from last activity, calling this on each event resets the effective deadline without re-arming the watcher on every byte.
 - **`setTimeout(qb::duration)`** changes the period and restarts the timer; pass `qb::duration::zero()` to disable it.
 - **`getTimeout()`** returns the configured period as a `qb::duration` (zero when disabled).
-- **Handler.** Implement `on(event::timer const&)` (or `on(event::timer&&)`). The base only forwards to your handler once the real deadline — accounting for the latest `updateTimeout()` — has elapsed; if activity is more recent, it silently re-arms for the remaining interval.
+- **Handler.** Implement `on(event::timer const&)` (or `on(event::timer&)`). Unlike rvalue-delivered events, `with_timeout` forwards the timer to your handler as an **lvalue**, so an `on(event::timer&&)` rvalue-reference handler will not bind. The base only forwards to your handler once the real deadline — accounting for the latest `updateTimeout()` — has elapsed; if activity is more recent, it silently re-arms for the remaining interval.
 
 ## Watching the file system: `async::file_watcher` and `async::directory_watcher`
 
@@ -248,7 +248,7 @@ public:
 
 ### Disconnect reason codes
 
-The `disconnected` event carries a `reason` field of type `disconnect_reason`, an `int`-backed enum. The integer backing keeps it interchangeable with raw codes, so applications may pass their own positive values.
+The `disconnected` event carries an `int reason` field whose values correspond to the `disconnect_reason` enum (an `int`-backed scoped enum); cast with `static_cast<disconnect_reason>(reason)` to switch on the named constants. The integer backing keeps it interchangeable with raw codes, so applications may pass their own positive values.
 
 | Code | Named constant | Meaning |
 |---|---|---|

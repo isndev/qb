@@ -77,7 +77,7 @@ Two practical rules follow. First, sending an event never throws, so you cannot 
 | Exception in `noexcept` context (e.g. `push` OOM, throwing `on(KillEvent)`) | `std::terminate` | Process aborts | OS / crash handler |
 | `onInit()` returns `false` at runtime (`addRefActor`) | Actor not added | Actor destroyed immediately; never processes events | The code calling `addRefActor` (returns an invalid handle/id) |
 | `onInit()` returns `false` at startup (pre-start `addActor`) | Core flagged `BadActorInit` | Core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
-| `onInit()` throws at startup | Caught at `start_thread` | Core flagged `ExceptionThrown` (not `BadActorInit`); core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
+| `onInit()` throws at startup | Caught inside `__drive_init__`; converted to an init failure | Core flagged `BadActorInit` (not `ExceptionThrown`); core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
 | `push`/`send` to a dead or unknown `ActorId` | Silent | Event dropped; sender keeps running | Nobody — design an explicit ack/timeout if you need to know |
 | Peer closes, socket error, protocol violation | `on(event::disconnected&&)` | Connection disposed; event delivered to the I/O component | The actor's `disconnected` handler |
 | Callback exception (`async::callback`, `scoped_callback`) | Swallowed | Caught by an internal `catch (...)`; the timer still self-deletes | Nobody — see [the callback footgun](#the-asynccallback-lifetime-footgun) |
@@ -179,8 +179,8 @@ if (main.hasError()) {
 |---|---|---|
 | `BadInit` | `1u << 9` | The `VirtualCore` itself failed to initialize. |
 | `NoActor` | `1u << 10` | The core started with zero actors. |
-| `BadActorInit` | `1u << 11` | An actor's `onInit()` returned `false` during startup (the *false-return* path only; a startup `onInit()` that throws sets `ExceptionThrown` instead). |
-| `ExceptionThrown` | `1u << 12` | An unhandled exception escaped — either a startup `onInit()` throw or, during execution, an actor handler or `on(qb::LoopEvent const&)`. |
+| `BadActorInit` | `1u << 11` | An actor's `onInit()` failed during startup — either it returned `false`, or it threw (the throw is caught inside `__drive_init__` and converted to this outcome, not `ExceptionThrown`). |
+| `ExceptionThrown` | `1u << 12` | During execution, an unhandled exception escaped an actor handler or `on(qb::LoopEvent const&)` out of `__workflow__` and was caught at `start_thread` (a startup `onInit()` throw does *not* reach here — it becomes `BadActorInit`). |
 
 `hasError()` collapses all of these to a single boolean; it does not tell you *which* core failed or which sentinel fired. Use it as a post-run health gate (CI, supervised relaunch) and rely on the critical log lines (`LOG_CRIT`) for the specific cause. For finer-grained detection at runtime, build it yourself with the supervision patterns below.
 

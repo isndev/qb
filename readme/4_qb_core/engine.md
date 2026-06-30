@@ -40,7 +40,7 @@ stateDiagram-v2
     [*] --> Configuring
     Configuring --> Starting: start()
     Starting --> Running: every core past the startup barrier
-    Running --> Stopping: stop() / SIGINT → KillEvent broadcast
+    Running --> Stopping: stop() / SIGINT → SignalEvent broadcast → each actor on(SignalEvent)→kill()
     Stopping --> Stopped: join() returns
     Stopped --> [*]
 

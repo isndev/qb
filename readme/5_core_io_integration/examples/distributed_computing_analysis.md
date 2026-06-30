@@ -18,7 +18,7 @@ It is a useful study of three patterns that recur in larger qb applications:
 - **Self-paced periodic work** built from one-shot [`qb::io::async::callback`](../../3_qb_io/async_system.md) timers that re-arm themselves, rather than a blocking loop.
 - **A supervisor-driven lifecycle**, where one actor owns setup and teardown for the whole system.
 
-> **Read this as a pattern catalog, not a copy-paste template.** The example trades correctness for brevity in a few places that this page calls out explicitly under [Pitfalls](#pitfalls-and-corrections) — most importantly, its load-balancing decisions race against stale metrics, and its raw-`double` timer arguments do not match the current `async::callback` signature. Where the source and the current API disagree, the API is ground truth.
+> **Read this as a pattern catalog, not a copy-paste template.** The example trades correctness for brevity in a few places that this page calls out explicitly under [Pitfalls](#pitfalls-and-corrections) — most importantly, its load-balancing decisions race against stale metrics. Where the source and the current API disagree, the API is ground truth.
 
 ## Architecture at a glance
 
@@ -124,13 +124,13 @@ void scheduleTaskGeneration() {
             generateTask();
             scheduleTaskGeneration();    // re-arm: a self-pacing loop
         }
-    }, seconds_per_task);
+    }, std::chrono::duration<double>(seconds_per_task));
 }
 ```
 
 This is the **self-rescheduling timer** pattern: each callback fires once, does its work, and arms the next one. There is no blocking sleep and no busy loop — the [event loop](../../3_qb_io/async_system.md) on this core stays free to dispatch other actors between ticks. `generateTask()` builds a randomized `Task`, pushes it to the scheduler with `push<TaskMessage>(_scheduler_id, task)`, and increments the global `g_total_tasks` counter.
 
-> The `seconds_per_task` value above is a raw `double`, and the current `async::callback` overload does **not** accept one — see [Pitfalls](#timer-delays-must-be-chrono-durations). Treat the timer *shape* here as correct and the *argument type* as something you must modernize.
+> The runtime delay above is a `double` count of seconds, wrapped in `std::chrono::duration<double>` before it reaches `async::callback`, because the timed overload accepts only a `std::chrono::duration` — see [Pitfalls](#timer-delays-must-be-chrono-durations). A bare `double` or `int` would not bind.
 
 ### 2. `TaskSchedulerActor` — the dispatcher and load balancer
 
@@ -211,7 +211,7 @@ void on(TaskAssignmentMessage &msg) {
     double processing_time = generateProcessingTime(_current_task->complexity);
     qb::io::async::callback([this]() {
         if (_is_active) completeCurrentTask();       // "finish" after the simulated delay
-    }, processing_time);
+    }, std::chrono::duration<double>(processing_time));
 }
 ```
 
@@ -245,7 +245,7 @@ void on(InitializeMessage &) {
 
     qb::io::async::callback([this]() {                        // one-shot end-of-run timer
         if (_is_active) shutdownSystem();
-    }, SIMULATION_DURATION_SECONDS);
+    }, std::chrono::seconds(SIMULATION_DURATION_SECONDS));
 }
 ```
 
@@ -300,7 +300,7 @@ int main() {
 
 ### Timer delays must be chrono durations
 
-The example passes raw `double` and `int` seconds to `qb::io::async::callback` (`scheduleTaskGeneration` uses `seconds_per_task`; the monitor passes `SIMULATION_DURATION_SECONDS`; heartbeats pass `1.0`). The current timed overload is:
+Every delay in the example reaches `qb::io::async::callback` as a `std::chrono` duration — `std::chrono::duration<double>(seconds_per_task)` in `scheduleTaskGeneration`, `std::chrono::seconds(SIMULATION_DURATION_SECONDS)` in the monitor, `std::chrono::seconds(1)` for heartbeats — because the timed overload requires it. The current overload is:
 
 ```cpp
 // src: qb/include/qb/io/async/io.h
@@ -308,7 +308,7 @@ template <typename _Func, typename Rep, typename Period>
 void callback(_Func &&func, std::chrono::duration<Rep, Period> timeout);
 ```
 
-It accepts a `std::chrono::duration` only. The canonical `qb::duration` (`std::chrono::nanoseconds`) "accepts any finer-or-equal chrono literal implicitly and rejects bare integers" — so a bare `double` or `int` does **not** bind, and these calls do not compile as written against qb 2.6.0. Use chrono literals or explicit durations:
+It accepts a `std::chrono::duration` only. The canonical `qb::duration` (`std::chrono::nanoseconds`) accepts any finer-or-equal chrono literal implicitly and rejects bare integers — so a bare `double` or `int` does **not** bind. If you adapt this code, keep delays as chrono literals or explicit durations, exactly as the example does:
 
 ```cpp
 #include <chrono>
@@ -321,11 +321,12 @@ qb::io::async::callback([this]{ /* ... */ }, 20ms);
 auto delay = std::chrono::duration<double>(1.0 / TASKS_PER_SECOND);
 qb::io::async::callback([this]{ /* ... */ }, delay);
 
-// Fire on the next loop iteration:
+// Run the callable immediately (inline) — a non-positive duration fires
+// synchronously in this call; it does NOT defer to the next loop iteration:
 qb::io::async::callback([this]{ /* ... */ }, qb::duration::zero());
 ```
 
-This matches how the framework's own tests schedule delayed work, e.g. `500us`, `100ms`, `1ms`, and `qb::duration::zero()` in `qb/source/core/tests/system/concurrency/actor-message-serialization.cpp` and `timer/async-callback-ordering.cpp`.
+This matches how the framework's own tests schedule delayed work, e.g. the `1ms` chained callbacks in `qb/source/core/tests/system/timer/async-callback-ordering.cpp` (line 81).
 
 ### The example's `getCurrentTimestamp()` is not the canonical clock
 
@@ -346,7 +347,7 @@ Read the load-balancing logic as a demonstration of *how to route on reported me
 
 ### Build note
 
-`example10_distributed_computing` is registered in `examples/core/CMakeLists.txt`. Before building or borrowing its timer calls, apply the chrono-duration fix above; the source predates the current `async::callback` signature.
+`example10_distributed_computing` is registered in `examples/core/CMakeLists.txt`. Its timer calls already pass `std::chrono` durations, so it builds against the current `async::callback` signature with no changes.
 
 ## See also
 

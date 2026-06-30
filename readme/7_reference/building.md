@@ -15,7 +15,7 @@ This page is the contributor-facing build reference. If you only want to *add qb
 |---|---|---|
 | C++ compiler | C++20-capable: GCC, Clang, Apple Clang, or MSVC. qb sets `QB_CXX_STANDARD=20` by default, accepts `QB_CXX_STANDARD=23`, and keeps `CMAKE_CXX_STANDARD_REQUIRED=ON` with extensions off. | `qb/cmake/qbConfig.cmake` |
 | CMake | 3.24 or newer. 3.24 is the floor because dependency resolution uses the `FetchContent` + `find_package` integration (`FIND_PACKAGE_ARGS`). | `qb/CMakeLists.txt:31`, `qb/CMakePresets.json:3-7` |
-| Threads | A POSIX threads (pthreads) implementation is required on non-Windows platforms; configuration fails with a fatal error if it is missing. | `qb/cmake/qbCompiler.cmake:384-386` |
+| Threads | A POSIX threads (pthreads) implementation is required on non-Windows platforms; configuration fails with a fatal error if it is missing. | `qb/cmake/qbCompiler.cmake:389-392` |
 | Git | Needed on the configure machine only when a fetchable dependency (GoogleTest, Google Benchmark, zlib) is absent from the system and is built from source. | see [cmake_dependencies.md](./cmake_dependencies.md) |
 
 Architectures: x86_64 and ARM64 (including Apple Silicon). The continuous integration matrix builds and tests every change on Linux (GCC, Clang / libstdc++), macOS (Apple Clang / libc++), and Windows (MSVC / MSVC STL). See [INSTALL.md](../../INSTALL.md#supported-toolchains) for the matrix.
@@ -24,21 +24,21 @@ Dependencies are resolved automatically: most builds need nothing installed beyo
 
 ## Quick build
 
-An out-of-source build, cloned with submodules so the bundled libev/stduuid are present:
+An out-of-source build. libev and stduuid are vendored as committed files under `qb/modules/`, so they arrive with any clone — the `--recursive` flag is not needed for them:
 
 ```bash
 # src: qb/INSTALL.md
-git clone --recursive https://github.com/isndev/qb.git
+git clone https://github.com/isndev/qb.git
 cd qb
 cmake -DCMAKE_BUILD_TYPE=Release -B build
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-If you cloned without `--recursive`, initialize the bundled modules first:
+If the bundled modules are somehow missing from your checkout, restore them from the repo (a `git submodule update` will not bring them back, because they are committed files, not submodules):
 
 ```bash
-git submodule update --init --recursive
+git checkout -- modules/ev modules/uuid
 ```
 
 `-B build` selects (and creates) the build tree; the source tree is left untouched. `cmake --build` drives whichever generator CMake picked, so the same commands work across Make, Ninja, and Visual Studio. `--parallel` builds with all available cores.
@@ -57,16 +57,16 @@ ctest --preset debug
 
 | Preset | Build type | Key cache variables | Source |
 |---|---|---|---|
-| `debug` | `Debug` | inherits `base` | `CMakePresets.json:20-27` |
-| `release` | `Release` | tests enabled, optimized codegen | `CMakePresets.json` |
-| `relwithdebinfo` | `RelWithDebInfo` | inherits `base` | `CMakePresets.json:38-46` |
-| `dev` | `Debug` | `QB_BUILD_TESTS=ON`, `QB_BUILD_BENCHMARKS=ON`, `QB_BUILD_EXAMPLES=ON` | `CMakePresets.json:47-58` |
-| `sanitize` | `Debug` | `QB_SANITIZE=address,undefined` | `CMakePresets.json:59-68` |
-| `sanitize-thread` | `Debug` | `QB_SANITIZE=thread` | `CMakePresets.json:69-78` |
-| `coverage` | `Debug` | `QB_BUILD_COVERAGE=ON` | `CMakePresets.json:79-88` |
-| `release-lto` | `Release` | inherits `release` + `QB_ENABLE_LTO=ON` | `CMakePresets.json:89-97` |
-| `release-native` | `Release` | inherits `release` + `QB_ENABLE_NATIVE_ARCH=ON` (the only preset that turns native arch back ON — `base` pins it OFF) | `CMakePresets.json:98-106` |
-| `release-portable` | `Release` | inherits `release` + `QB_ENABLE_NATIVE_ARCH=OFF` (portable, distributable binaries) | `CMakePresets.json:107-115` |
+| `debug` | `Debug` | inherits `base` | `CMakePresets.json:35-43` |
+| `release` | `Release` | tests enabled, optimized codegen | `CMakePresets.json:80-88` |
+| `relwithdebinfo` | `RelWithDebInfo` | inherits `base` | `CMakePresets.json:71-79` |
+| `dev` | `Debug` | `QB_BUILD_TESTS=ON`, `QB_BUILD_BENCHMARKS=ON`, `QB_BUILD_EXAMPLES=ON` | `CMakePresets.json:44-52` |
+| `sanitize` | `Debug` | `QB_SANITIZE=address,undefined` | `CMakePresets.json:89-97` |
+| `sanitize-thread` | `Debug` | `QB_SANITIZE=thread` | `CMakePresets.json:98-106` |
+| `coverage` | `Debug` | `QB_BUILD_COVERAGE=ON` | `CMakePresets.json:107-117` |
+| `release-lto` | `Release` | inherits `release` + `QB_ENABLE_LTO=ON` | `CMakePresets.json:118-126` |
+| `release-native` | `Release` | inherits `release` + `QB_ENABLE_NATIVE_ARCH=ON` (the only preset that turns native arch back ON — `base` pins it OFF) | `CMakePresets.json:127-135` |
+| `release-portable` | `Release` | inherits `release` + `QB_ENABLE_NATIVE_ARCH=OFF` (portable, distributable binaries) | `CMakePresets.json:136-144` |
 
 ### Build and test presets
 
@@ -106,8 +106,8 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | `QB_BUILD_TESTS` | bool; `ON` | Build the unit and system tests (GoogleTest). Gates GoogleTest resolution (`qbConfig.cmake:59`). |
 | `QB_BUILD_BENCHMARKS` | bool; `OFF` | Build performance benchmarks (Google Benchmark) (`qbConfig.cmake:61`). |
 | `QB_BUILD_EXAMPLES` | bool; `ON` | Build the example applications (`qbConfig.cmake:60`). |
-| `QB_BUILD_DOCS` | bool; `OFF` | Add the Doxygen documentation subdirectory (`qbConfig.cmake:79`, `CMakeLists.txt:162-164`). |
-| `QB_INSTALL` | bool; `ON` | Generate installation rules (`cmake --install`) (`qbConfig.cmake:83`, `CMakeLists.txt:169`). |
+| `QB_BUILD_DOCS` | bool; `OFF` | Add the Doxygen documentation subdirectory (`qbConfig.cmake:79`, `CMakeLists.txt:200-202`). |
+| `QB_INSTALL` | bool; `ON` | Generate installation rules (`cmake --install`) (`qbConfig.cmake:83`, `CMakeLists.txt:207`). |
 | `CMAKE_INSTALL_PREFIX` | path | Standard install root. |
 
 ### Optional features
@@ -117,8 +117,8 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | `QB_WITH_SSL` | bool; `ON` | SSL/TLS and crypto in `qb-io` via OpenSSL. Forced `OFF` (with the feature disabled rather than a build failure) when OpenSSL is not found. Argon2 password hashing is enabled when libargon2 is also present (`qbConfig.cmake:99`). |
 | `QB_WITH_COMPRESSION` | bool; `ON` | Compression in `qb-io` via zlib — system first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` (`qbConfig.cmake:100`). |
 | `QB_WITH_QUIC` | `AUTO` \| `ON` \| `OFF`; `AUTO` | QUIC transport via libngtcp2. `AUTO` enables it iff libngtcp2 is found (quiet when absent); `ON` requires it (warns if missing); `OFF` disables it. Requires `QB_WITH_SSL` (`qbConfig.cmake:103-105`). |
-| `QB_WITH_LOGGING` | bool; `ON` | Logging subsystem (nanolog); defines `QB_WITH_LOGGING=1` (`qbConfig.cmake:98,313`). |
-| `QB_STDOUT_LOGGING` | bool; `OFF` | Stdout logging fallback; defines `QB_STDOUT_LOGGING=1` (`qbConfig.cmake:110,328`). |
+| `QB_WITH_LOGGING` | bool; `ON` | Logging subsystem (nanolog); defines `QB_WITH_LOGGING=1` (`qbConfig.cmake:98,319`). |
+| `QB_STDOUT_LOGGING` | bool; `OFF` | Stdout logging fallback; defines `QB_STDOUT_LOGGING=1` (`qbConfig.cmake:110,334`). |
 | `QB_WITH_PROFILING` | bool; `OFF` | Link gperftools (tcmalloc/profiler) when found. Incompatible with `QB_SANITIZE` (`qbConfig.cmake:105`). |
 
 ### Performance
@@ -126,18 +126,18 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | Option | Type / default | Effect |
 |---|---|---|
 | `QB_ENABLE_OPTIMIZATIONS` | bool; `ON` | Extra Release optimization flags — `-funroll-loops`, `-ftree-vectorize`, `-ffunction-sections`/`-fdata-sections` on GCC/Clang, `/Ot`/`/Gy` on MSVC (`qbConfig.cmake:86`, `qbCompiler.cmake`). |
-| `QB_ENABLE_NATIVE_ARCH` | bool; `ON` | Tune codegen for the build-host CPU: `-march=native`, falling back to `-mcpu=native` (validated per compiler; `/arch:AVX2` on MSVC). **Turn `OFF` for portable / distributable binaries** — see the `release-portable` preset (`qbConfig.cmake:91`, `qbCompiler.cmake:234-248`). |
-| `QB_ENABLE_LTO` | bool; `OFF` | Link-time optimization for Release (`-flto`, or `/GL` + `/LTCG` on MSVC) (`qbConfig.cmake:87`, `qbCompiler.cmake:266-281`). |
-| `QB_ENABLE_FAST_MATH` | bool; `OFF` | `-ffast-math` / `/fp:fast`. Breaks IEEE-754 compliance (`qbConfig.cmake:92`, `qbCompiler.cmake:210,225-227`). |
+| `QB_ENABLE_NATIVE_ARCH` | bool; `ON` | Tune codegen for the build-host CPU: `-march=native`, falling back to `-mcpu=native` (validated per compiler; `/arch:AVX2` on MSVC). **Turn `OFF` for portable / distributable binaries** — see the `release-portable` preset (`qbConfig.cmake:91`, `qbCompiler.cmake:239-264`). |
+| `QB_ENABLE_LTO` | bool; `OFF` | Link-time optimization for Release (`-flto`, or `/GL` + `/LTCG` on MSVC) (`qbConfig.cmake:87`, `qbCompiler.cmake:271-294`). |
+| `QB_ENABLE_FAST_MATH` | bool; `OFF` | `-ffast-math` / `/fp:fast`. Breaks IEEE-754 compliance (`qbConfig.cmake:92`, `qbCompiler.cmake:216,232`). |
 
 ### Diagnostics
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING` (`qbConfig.cmake:115`, `qbCompiler.cmake:308-339`). |
+| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING` (`qbConfig.cmake:115`, `qbCompiler.cmake:312-344`). |
 | `QB_DEBUG_MEMORY` | bool; `OFF` | Legacy alias: when `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined` (`qbConfig.cmake:108,117-118`). |
-| `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets when `lcov`/`gcov` are found (`qbConfig.cmake:95`, `CMakeLists.txt:119-157`). |
-| `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:109,325`). |
+| `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets when `lcov`/`gcov` are found (`qbConfig.cmake:95`, `CMakeLists.txt:126-195`). |
+| `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:109,331`). |
 
 ### Dependency resolution
 
@@ -182,7 +182,7 @@ ctest --test-dir build --output-on-failure
 
 A successful build produces the two libraries and, when enabled, the example, test, and benchmark executables.
 
-- **Libraries:** `qb-io` (asynchronous I/O and utilities) and `qb-core` (the actor engine, which depends on `qb-io`). Consumers link the namespaced aliases `qb::io` and `qb::core` (`CMakeLists.txt:90-100`). Shared builds carry the platform extension (`libqb-io.so`, `libqb-io.dylib`, `qb-io.dll`).
+- **Libraries:** `qb-io` (asynchronous I/O and utilities) and `qb-core` (the actor engine, which depends on `qb-io`). Consumers link the namespaced aliases `qb::io` and `qb::core` (`CMakeLists.txt:97-107`). Shared builds carry the platform extension (`libqb-io.so`, `libqb-io.dylib`, `qb-io.dll`).
 - **Output directories:** unless a parent project has already chosen them, runtime artifacts go under `${CMAKE_BINARY_DIR}/bin` and libraries/archives under `${CMAKE_BINARY_DIR}/lib` (`qbConfig.cmake:177-188`). When qb is embedded via `add_subdirectory`, it does not override an output tree the parent already set.
 - **Coverage targets** (`QB_BUILD_COVERAGE=ON`, Debug, non-Windows): `qb-coverage`, `qb-coverage-xml`, `qb-coverage-html`.
 
@@ -196,11 +196,11 @@ cmake --build build --parallel
 cmake --install build --prefix /your/prefix    # omit --prefix for the system default
 ```
 
-The install (`CMakeLists.txt:169-276`) lays out:
+The install (`CMakeLists.txt:207-314`) lays out:
 
 - **Libraries** under `${CMAKE_INSTALL_LIBDIR}`, **runtime** under `${CMAKE_INSTALL_BINDIR}`, **headers** under `${CMAKE_INSTALL_INCLUDEDIR}` (GNU install dirs). The export set bundles `qb-io`, `qb-core`, and the bundled `ev`/`stduuid` targets so their names are rewritten under the `qb::` namespace in the dependency graph.
-- **CMake package files** under `${CMAKE_INSTALL_LIBDIR}/cmake/qb`: `qbTargets.cmake` (namespaced `qb::`), `qbConfig.cmake`, and a `qbConfigVersion.cmake` written with `COMPATIBILITY SameMajorVersion` (`CMakeLists.txt:234-254`).
-- **Find modules for consumers:** `FindArgon2.cmake` is installed when the build resolved Argon2 (`QB_HAS_ARGON2`), and `FindNgtcp2.cmake` when QUIC was enabled (`QB_HAS_QUIC`), so a downstream `find_package(qb)` of a QUIC- or Argon2-enabled build can recreate the imported targets `qb::io` links transitively (`CMakeLists.txt:256-269`).
+- **CMake package files** under `${CMAKE_INSTALL_LIBDIR}/cmake/qb`: `qbTargets.cmake` (namespaced `qb::`), `qbConfig.cmake`, and a `qbConfigVersion.cmake` written with `COMPATIBILITY SameMajorVersion` (`CMakeLists.txt:273-292`).
+- **Find modules for consumers:** `FindArgon2.cmake` is installed when the build resolved Argon2 (`QB_HAS_ARGON2`), and `FindNgtcp2.cmake` when QUIC was enabled (`QB_HAS_QUIC`), so a downstream `find_package(qb)` of a QUIC- or Argon2-enabled build can recreate the imported targets `qb::io` links transitively (`CMakeLists.txt:295-307`).
 
 Downstream then consumes the installed copy with `find_package`:
 
@@ -214,12 +214,12 @@ The two supported integration modes — embed via `add_subdirectory(qb)` or cons
 ## Platform notes
 
 - **Linux:** POSIX sockets. Use GCC or Clang with solid C++20 support. Install optional dependency headers when enabling features (`libssl-dev`, `libargon2-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL). Install libngtcp2 packages when QUIC is required. qb links `dl` and `rt` (`qb/cmake/qbDependencies.cmake`).
-- **macOS:** POSIX sockets. Recent Xcode / Apple Clang. Homebrew supplies optional dependencies (`brew install openssl argon2 zlib`); point CMake at them with `CMAKE_PREFIX_PATH` when needed. On Apple Silicon, native-arch tuning uses `-mcpu=native` because `-march=native` is rejected (`qbCompiler.cmake:236-246`); qb links the `Foundation` framework.
+- **macOS:** POSIX sockets. Recent Xcode / Apple Clang. Homebrew supplies optional dependencies (`brew install openssl argon2 zlib`); point CMake at them with `CMAKE_PREFIX_PATH` when needed. On Apple Silicon, native-arch tuning uses `-mcpu=native` because `-march=native` is rejected (`qbCompiler.cmake:243-249`); qb links the `Foundation` framework.
 - **Windows:** Winsock2. Use a Visual Studio 2022 (or newer) MSVC toolset that supports `/std:c++23`. For optional features, put OpenSSL/zlib development libraries on `CMAKE_PREFIX_PATH` (or set `OPENSSL_ROOT_DIR`); CI uses vcpkg. qb links `ws2_32` and `mswsock`.
 
 ## Pitfalls
 
-- **Bundled deps missing after a non-recursive clone.** libev and stduuid are bundled submodules, not fetched; a `libev … not found` fatal error means you must run `git submodule update --init --recursive`.
+- **Bundled deps missing from a checkout.** libev and stduuid are vendored as committed files under `qb/modules/`, not submodules and not fetched; a normal clone always ships them. A `libev … not found` fatal error means they are missing — restore them with `git checkout -- modules/ev modules/uuid` or re-clone. A `git submodule update` will not bring them back.
 - **Host-tuned binary fails on another machine.** The default `QB_ENABLE_NATIVE_ARCH=ON` targets the build host's CPU. Rebuild with `-DQB_ENABLE_NATIVE_ARCH=OFF` (or the `release-portable` preset) for distributable artifacts.
 - **`CMAKE_BUILD_TYPE` ignored.** With multi-config generators (Visual Studio, Ninja Multi-Config), the configuration is chosen at build time via `--config`, not at configure time.
 - **Sanitizers and profiling collide.** `QB_SANITIZE` and `QB_WITH_PROFILING` intercept the same hooks; enabling both emits a warning. Pick one.

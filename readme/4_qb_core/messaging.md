@@ -131,7 +131,7 @@ void reply(Event &event) const noexcept;
 ```
 <!-- src: qb/include/qb/core/Actor.h -->
 
-`reply` reuses the received event object instead of allocating a new one. The runtime swaps the event's `dest` and `source`, re-marks it alive, and sends it back (`std::swap(event.dest, event.source)`, `qb/core/VirtualCore.cpp`). The handler must therefore take its event **by non-const reference**, because the object is mutated in place:
+`reply` reuses the received event object instead of allocating a new one. The runtime swaps the event's `dest` and `source`, re-marks it alive, and sends it back (`std::swap(event.dest, event.source)`, `qb/source/core/src/VirtualCore.cpp`). The handler must therefore take its event **by non-const reference**, because the object is mutated in place:
 
 ```cpp
 // derived from: qb/source/core/tests/system/messaging/messaging-reply-forward.cpp (reply handler)

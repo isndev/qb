@@ -57,7 +57,7 @@ Quality-of-service levels. QoS is a **binary backpressure policy**, not a priori
 
 | Type | `state.qos` | Behavior on cross-core backpressure |
 |---|---|---|
-| `qb::Event` (aliases `qb::EventQOS2`, `qb::EventQOS1`) | `2` (default) | Guaranteed delivery: bounded spin-then-yield retry until the slot drains. `EventQOS1` is the same type as `EventQOS2` (`using ... = Event`) with no behavioral difference. |
+| `qb::Event` (aliases `qb::EventQOS2`, `qb::EventQOS1`) | `1` (default) | Guaranteed delivery: bounded spin-then-yield retry until the slot drains. Both `EventQOS2` and `EventQOS1` are `using ... = Event` aliases with no behavioral difference; the base `Event` encodes `qos == 1`, so `EventQOS2` does not raise the value to 2. |
 | `qb::EventQOS0` | `0` | Best-effort: dropped after a single failed `try_send`, never retried. Distinct subclass that sets `state.qos = 0`. |
 
 Sending methods:

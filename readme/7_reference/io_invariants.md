@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`include/qb/io/async/listener.h:617`). `listener::current` is a
+  (`include/qb/io/async/listener.h:717`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -78,14 +78,14 @@ registry, or as a member — never relocate them.
 - To reset event-loop state (for example in a unit-test teardown), call
   `listener::current.clear()` directly — never via `init()`.
 - `listener::clear()` (and the destructor) **detach** watchers without
-  **deleting** them (`include/qb/io/async/listener.h:371`). Each `async::base`
+  **deleting** them (`include/qb/io/async/listener.h:448`). Each `async::base`
   still holds a reference to its embedded event, so the owning object's
   destructor performs the final unregister and delete. Deleting in `clear()`
   would leave a dangling `_async_event`.
 - `clear()` runs the loop four times with `EVRUN_NOWAIT`, not `EVRUN_ONCE`,
   because under a monotonic-clock + timerfd libev build the loop can pick a
   multi-million-second wait time when `timercnt == 0`, which would wedge thread
-  teardown (`include/qb/io/async/listener.h:371`). This is intentional; do not
+  teardown (`include/qb/io/async/listener.h:486`). This is intentional; do not
   "simplify" it to a single `EVRUN_ONCE`.
 
 ---
@@ -96,20 +96,20 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`include/qb/io/async/listener.h:632`).
+  (`include/qb/io/async/listener.h:732`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
-  `run_for()` (`include/qb/io/async/coroutine/utils.h:278`, `:218`): they are for
+  `run_for()` (`include/qb/io/async/coroutine/utils.h:285`, `:227`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
   `ensure_not_inside_ready_drain()` on entry, so a re-entrant call asserts in
   debug and throws `std::logic_error` in release
-  (`include/qb/io/async/coroutine/utils.h:283`, `:219`). A second, deeper
+  (`include/qb/io/async/coroutine/utils.h:288`, `:228`). A second, deeper
   per-scheduler `in_run_ready_` guard inside `run_ready()` itself asserts in
   debug and returns `0` in release should a nested drain still be reached
-  (`include/qb/io/async/coroutine/scheduler.h:317`).
+  (`include/qb/io/async/coroutine/scheduler.h:465`).
 - `input` / `io` add a second, single-thread re-entrance guard: `on(event::io)`
   returns immediately when `_on_message` is already set, preventing recursive
   message processing within the same thread
-  (`include/qb/io/async/io.h:1299`). This is intra-thread re-entrance
+  (`include/qb/io/async/io.h:1379`). This is intra-thread re-entrance
   protection, not cross-thread synchronization.
 
 > **`run_once()` footgun.** The bundled libev disables timerfd by default — the
@@ -117,7 +117,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`include/qb/io/async/listener.h:678`).
+> `run(EVRUN_NOWAIT)` instead (`include/qb/io/async/listener.h:777`).
 
 ---
 
@@ -125,15 +125,15 @@ registry, or as a member — never relocate them.
 
 - `async::callback(func)` with no duration, or with a non-positive duration,
   runs `func()` **inline immediately** — not on the next loop iteration
-  (`include/qb/io/async/io.h:303`, `:311`). `Timeout<F>` and `ScopedTimeout<F>`
+  (`include/qb/io/async/io.h:360`, `:366`). `Timeout<F>` and `ScopedTimeout<F>`
   mirror this fire-immediately semantics in their constructors.
 - `async::callback(func, timeout)` with a positive duration creates a
   self-deleting `Timeout<F>` on the heap, which registers a libev timer.
   `Timeout<F>` owns its own lifetime and calls `delete this` when it fires
-  (`include/qb/io/async/io.h:202`). Do not store, delete, or otherwise hold a
+  (`include/qb/io/async/io.h:342`). Do not store, delete, or otherwise hold a
   `Timeout<F>` — it is fire-and-forget by design.
 - For a timer you can **cancel or own**, use `async::scoped_callback(...)` /
-  `ScopedTimeout<F>` (`include/qb/io/async/io.h:202`). These are caller-owned
+  `ScopedTimeout<F>` (`include/qb/io/async/io.h:462`). These are caller-owned
   via `unique_ptr`; cancellation is destroying or reusing the object. They do
   not participate in the `delete this` dance.
 - `Timeout`, `ScopedTimeout`, and the `RegisteredKernelEvent` slab use
@@ -156,7 +156,7 @@ registry, or as a member — never relocate them.
 > `callback()` refreshes libev's cached monotonic "now" (`ev_now_update`) before
 > arming a timer, so a timer scheduled after the owning thread blocked outside
 > the loop does not expire far earlier than requested
-> (`include/qb/io/async/io.h:325`).
+> (`include/qb/io/async/io.h:380`).
 
 ---
 
@@ -166,19 +166,19 @@ registry, or as a member — never relocate them.
   `async::tcp::acceptor`, `async::input`/`output`/`io`) and the user's
   `_Derived` class is resolved **at compile time** via CRTP plus trait
   predicates such as `qb::has_on<T, Event>`
-  (`include/qb/utility/type_traits.h:799`).
+  (`include/qb/utility/type_traits.h:802`).
 - The framework dispatches most lifecycle events as **rvalues** — for example
   `event::disconnected` is delivered with `std::move`. A user handler must use a
   compatible signature: `on(event::X&&)` or `on(const event::X&)`. A plain
   `on(event::X&)` (non-const lvalue reference) will not bind and is treated as
-  *no override* (`include/qb/utility/type_traits.h:818`).
+  *no override* (`include/qb/utility/type_traits.h:843`).
 - When a CRTP base needs to decide whether `_Derived` **genuinely overrides** a
   handler (rather than merely inheriting the base fallback), use
   `qb::has_own_on<Derived, Base, Event>`
-  (`include/qb/utility/type_traits.h:877`), **not** `qb::has_on`. `has_on`
+  (`include/qb/utility/type_traits.h:912`), **not** `qb::has_on`. `has_on`
   evaluates `true` for the inherited overload, so using it to drive a
   `static_cast<Derived&>(*this).on(e)` re-dispatch produces silent infinite
-  recursion (`include/qb/utility/type_traits.h:799`).
+  recursion (`include/qb/utility/type_traits.h:802`).
 
 ---
 
@@ -202,15 +202,15 @@ registry, or as a member — never relocate them.
 - `disconnect(0)` is remapped to `user_initiated` (`1`) because internally
   `_reason == 0` is the sentinel for "no disconnect pending"; the `peer_closed`
   (`0`) code is generated automatically on kernel EOF
-  (`include/qb/io/async/io.h:1158`).
+  (`include/qb/io/async/io.h:1239`).
 - `dispose()` is **idempotent** — guarded by `_is_disposed`, it runs once
-  (`include/qb/io/async/io.h:1372`). It fires `on(event::disconnected)` if the
+  (`include/qb/io/async/io.h:1455`). It fires `on(event::disconnected)` if the
   derived class implements it; for a server-owned object it then notifies
   `server().disconnected(id())`, otherwise it stops the watcher and fires
   `on(event::dispose)`.
 - For the entire duration of `on(event::io)`, the handler holds a
   `std::shared_ptr<void> _self_guard` to itself — acquired before any branch
-  that can reach `dispose()` (`include/qb/io/async/io.h:1297`). This means a user
+  that can reach `dispose()` (`include/qb/io/async/io.h:1377`). This means a user
   who releases the last external `shared_ptr` from inside `on(disconnected)`
   cannot trigger a use-after-free in the rest of `dispose()`. The guard is typed
   `shared_ptr<void>` so it works even when `_Derived` inherits
@@ -262,15 +262,15 @@ The protocol base class `IProtocol` / `AProtocol<_IO_>` lives in
   `not_ok()`; the I/O component then closes the connection, and the protocol
   cannot be recovered (`include/qb/io/async/protocol.h:185`).
 - `set_should_flush(bool)` controls whether the input buffer is flushed after
-  each message (`include/qb/io/async/protocol.h:193`). `process_messages`
+  each message (`include/qb/io/async/protocol.h:202`). `process_messages`
   snapshots the **old** protocol pointer and its `should_flush()` before calling
   `onMessage()`, because `onMessage()` may `switch_protocol()` (handshake or
   upgrade) and leave the old protocol dangling — the flush must use the old
-  protocol's policy (`include/qb/io/async/io.h:2498`).
+  protocol's policy (`include/qb/io/async/io.h:1296`).
 - The `handshake` protocol is the documented exception to the pure-query rule:
   its `getMessageSize()` calls `transport().do_handshake()` (a side effect) and
   caches the result so the handshake step is never executed twice per buffer
-  cycle (`include/qb/io/protocol/handshake.h:70`).
+  cycle (`include/qb/io/protocol/handshake.h:88`).
 
 > **`event::eof` is not end-of-stream.** The event class is
 > `event::input_drained`, with `using eof = input_drained` as a back-compat
@@ -296,7 +296,7 @@ with I/O lifetime are:
   `qb::io::async::listener` is created on the thread. `schedule_via_current()`
   asserts in debug and silently no-ops in release if no scheduler exists,
   leaving any queued waiter permanently unresumed
-  (`include/qb/io/async/coroutine/scheduler.h:615`).
+  (`include/qb/io/async/coroutine/scheduler.h:815`).
 - **Awaiters must remain alive until `await_resume()`**
   (`include/qb/io/async/coroutine/awaiter.h:30`). Never create a temporary
   awaiter that goes out of scope before resumption; watchers are stopped in
@@ -314,7 +314,7 @@ with I/O lifetime are:
   **without invoking it** (`spawn(f)`, not `spawn(f())`): creating a coroutine
   from a temporary lambda with reference or loop-variable captures dangles after
   the first suspension. `spawn(Callable)` moves the closure into an owning frame
-  (`include/qb/io/async/coroutine/scheduler.h:255`).
+  (`include/qb/io/async/coroutine/scheduler.h:378`).
 
 ---
 
@@ -352,14 +352,14 @@ with I/O lifetime are:
   Timeout semantics are deliberately asymmetric: `ssl` timed connect bounds only
   the TCP phase (the TLS handshake is unbounded), and `udp::socket::read_timeout`
   returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
-  returns `0` (`include/qb/io/tcp/ssl/socket.h:456`,
-  `source/io/src/udp/socket.cpp:88`).
+  returns `0` (`include/qb/io/tcp/ssl/socket.h:469`,
+  `source/io/src/udp/socket.cpp:102`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
   libev's `ev_stat` stores the narrow `const char *` it is given **without
   copying** (`modules/ev/ev++.h:696`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
-  `_watched_path.c_str()` to the watcher (`include/qb/io/async/io.h:532`, `:700`).
+  `_watched_path.c_str()` to the watcher (`include/qb/io/async/io.h:576`, `:740`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and
   do not reassign or shrink `_watched_path` while the watcher is armed — the
   pointer libev holds would dangle and the next stat poll would read freed memory.
