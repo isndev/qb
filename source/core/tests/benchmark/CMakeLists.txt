@@ -47,6 +47,7 @@ qbc_bench(micro mpsc-mailbox-fanin)
 qbc_bench(micro mpsc-router-dispatch)
 qbc_bench(micro spinlock-contention)
 qbc_bench(micro jsonb-dump)
+qbc_bench(micro parse-numbers)
 
 # --- system/ ---
 qbc_bench(system push-allocated-bigmsg)
@@ -73,4 +74,9 @@ qbc_bench(topology pipeline-chain-latency)
 qbc_bench(topology multicast-latency)
 qbc_bench(topology topology-zoo)
 
-qb_status_message("Configured qb-core benchmarks (tiered: micro/system/messaging/topology)")
+# --- patterns/ ---
+qbc_bench(patterns pubsub-dispatch)
+qbc_bench(patterns saga-orchestration)
+qbc_bench(patterns resilience-overhead)
+
+qb_status_message("Configured qb-core benchmarks (tiered: micro/system/messaging/topology/patterns)")

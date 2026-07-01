@@ -36,7 +36,9 @@
 #ifndef QB_BENCHMARK_ACTORS_H
 #define QB_BENCHMARK_ACTORS_H
 
+#include <atomic>
 #include <cstdint>
+#include <memory>
 #include <qb/actor.h>
 
 namespace qb::bench {
@@ -47,15 +49,27 @@ namespace qb::bench {
  *
  * The marker is registered in \c onInit() (not the ctor) so registration runs on the owning
  * VirtualCore worker under \c Main::start(true), matching the throughput-bench placement model.
+ *
+ * An optional \c tally (a cross-thread atomic) receives the final delivery count in the destructor
+ * — which runs on the worker during shutdown, before \c join() returns — so an out-of-loop probe
+ * can assert the topology delivered exactly \c expect (a positive check rather than relying on a
+ * \c join() hang to surface a dropped/mis-routed message). Pass \c nullptr (the default) to opt out.
  */
 template <typename Event>
 class CountAndKillSinkActor final : public qb::Actor {
-    const std::uint64_t _expect;
-    std::uint64_t       _got = 0;
+    const std::uint64_t                         _expect;
+    std::uint64_t                               _got = 0;
+    std::shared_ptr<std::atomic<std::uint64_t>> _tally;
 
 public:
-    explicit CountAndKillSinkActor(std::uint64_t const expect)
-        : _expect(expect) {}
+    explicit CountAndKillSinkActor(std::uint64_t const expect, std::shared_ptr<std::atomic<std::uint64_t>> tally = nullptr)
+        : _expect(expect)
+        , _tally(std::move(tally)) {}
+
+    ~CountAndKillSinkActor() final {
+        if (_tally)
+            _tally->store(_got, std::memory_order_relaxed);
+    }
 
     qb::io::async::task<bool>
     onInit() final {

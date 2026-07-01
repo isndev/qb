@@ -34,8 +34,10 @@
  * Drops the old `remote_producers` self-counter (it merely echoed the placement configuration).
  */
 
+#include <atomic>
 #include <benchmark/benchmark.h>
 #include <cstdint>
+#include <memory>
 #include <qb/actor.h>
 #include <qb/main.h>
 
@@ -66,9 +68,9 @@ producer_core_for_index(std::uint32_t const i, std::uint32_t const consumer_core
 // Build the fan-in topology into `main`; returns the total messages the sink must observe.
 [[nodiscard]] std::uint64_t
 build_fan_in(qb::Main &main, std::uint32_t const producers, std::uint64_t const msgs_per, std::uint32_t const consumer_core,
-             std::uint32_t const cap, bool const same_core) {
+             std::uint32_t const cap, bool const same_core, std::shared_ptr<std::atomic<std::uint64_t>> const &tally = nullptr) {
     const std::uint64_t total = static_cast<std::uint64_t>(producers) * msgs_per;
-    auto const          sink  = main.addActor<qb::bench::CountAndKillSinkActor<FanInMsg>>(consumer_core, total);
+    auto const          sink  = main.addActor<qb::bench::CountAndKillSinkActor<FanInMsg>>(consumer_core, total, tally);
     for (std::uint32_t i = 0; i < producers; ++i) {
         const auto pc = producer_core_for_index(i, consumer_core, cap, same_core);
         main.addActor<qb::bench::LoopAndKillSourceActor<FanInMsg>>(pc, sink, msgs_per);
@@ -86,14 +88,19 @@ BM_FanIn_OneWayPush(benchmark::State &state) {
     const auto          cap   = qb::bench::cappedBenchmarkCores();
     const std::uint64_t total = static_cast<std::uint64_t>(producers) * msgs_per;
 
-    // One-shot out-of-loop correctness probe: a structurally broken topology (sink that never
-    // reaches its quota) would hang join() here, catching the breakage before any timing.
+    // One-shot out-of-loop correctness probe: assert the single sink actually counted every
+    // message across all producers (a dropped/mis-routed push is caught by a positive check,
+    // not merely by a join() hang on a sink that never reaches quota).
     {
+        auto     tally  = std::make_shared<std::atomic<std::uint64_t>>(0);
         qb::Main probe;
-        auto     expect = build_fan_in(probe, producers, msgs_per, consumer_core, cap, same_core);
+        auto     expect = build_fan_in(probe, producers, msgs_per, consumer_core, cap, same_core, tally);
         probe.start(true);
         probe.join();
-        benchmark::DoNotOptimize(expect);
+        if (tally->load(std::memory_order_relaxed) != expect) {
+            state.SkipWithError("fan-in dropped messages: sink count != producers * msgs_per_producer");
+            return;
+        }
     }
 
     for (auto _ : state) {

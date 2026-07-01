@@ -32,9 +32,11 @@
  */
 
 #include <array>
+#include <atomic>
 #include <benchmark/benchmark.h>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <qb/actor.h>
 #include <qb/main.h>
 
@@ -61,13 +63,21 @@ public:
 
 template <std::size_t ExtraWords>
 class SizedPingActor final : public qb::Actor {
-    const std::uint64_t _max;
-    const qb::ActorId   _peer;
+    const std::uint64_t                         _max;
+    const qb::ActorId                           _peer;
+    std::uint64_t                               _completed = 0;
+    std::shared_ptr<std::atomic<std::uint64_t>> _tally; // optional cross-thread round-trip count
 
 public:
-    SizedPingActor(std::uint64_t const max, qb::ActorId const peer)
+    SizedPingActor(std::uint64_t const max, qb::ActorId const peer, std::shared_ptr<std::atomic<std::uint64_t>> tally = nullptr)
         : _max(max)
-        , _peer(peer) {}
+        , _peer(peer)
+        , _tally(std::move(tally)) {}
+
+    ~SizedPingActor() final {
+        if (_tally)
+            _tally->store(_completed, std::memory_order_relaxed);
+    }
 
     qb::io::async::task<bool>
     onInit() final {
@@ -78,6 +88,7 @@ public:
 
     void
     on(SizedPingEvent<ExtraWords> &event) {
+        ++_completed; // one inbound hop per completed round-trip ⇒ ends at exactly `_max`
         if (event._ttl)
             reply(event);
         else {
@@ -89,22 +100,27 @@ public:
 
 template <std::size_t ExtraWords>
 void
-build_payload_pingpong(qb::Main &main, std::uint64_t const ttl, std::uint32_t const pong_core) {
+build_payload_pingpong(qb::Main &main, std::uint64_t const ttl, std::uint32_t const pong_core,
+                       std::shared_ptr<std::atomic<std::uint64_t>> const &tally = nullptr) {
     auto const pong = main.addActor<SizedPongActor<ExtraWords>>(pong_core);
-    main.addActor<SizedPingActor<ExtraWords>>(0, ttl, pong);
+    main.addActor<SizedPingActor<ExtraWords>>(0, ttl, pong, tally);
 }
 
 template <std::size_t ExtraWords>
 void
 run_payload_pingpong(benchmark::State &state, std::uint64_t const ttl, std::uint32_t const pong_core) {
-    // One-shot out-of-loop correctness probe.
+    // One-shot out-of-loop correctness probe: assert the chain completed exactly `ttl` round-trips
+    // (a dropped cross-core reply is caught by a positive check, not only by a join() hang).
     {
+        auto     tally = std::make_shared<std::atomic<std::uint64_t>>(0);
         qb::Main probe;
-        build_payload_pingpong<ExtraWords>(probe, ttl, pong_core);
+        build_payload_pingpong<ExtraWords>(probe, ttl, pong_core, tally);
         probe.start(true);
         probe.join();
-        auto sentinel = ttl;
-        benchmark::DoNotOptimize(sentinel);
+        if (tally->load(std::memory_order_relaxed) != ttl) {
+            state.SkipWithError("payload ping-pong dropped round-trips: completed != initial_ttl");
+            return;
+        }
     }
 
     for (auto _ : state) {
