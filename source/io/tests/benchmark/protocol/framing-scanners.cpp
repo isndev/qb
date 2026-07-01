@@ -198,10 +198,17 @@ BM_Protocol_ByteTerminatedNoDelimiter(benchmark::State &state) {
     ProtocolProbe             probe;
     BenchByteTerminated<'\n'> protocol(probe);
 
+    // Build the delimiter-free buffer ONCE: getMessageSize()'s not-found path (base.h:106-108)
+    // only advances the resume cursor `_offset`, it never consumes/mutates the buffer. So the
+    // buffer persists, and each iteration must rewind the cursor with protocol.reset() — otherwise
+    // _offset stays at end-of-buffer after iteration 1 and every later call scans ZERO bytes,
+    // measuring nothing. Resetting (one assignment) instead of rebuilding the buffer per-iteration
+    // also isolates the scan cost cleanly.
+    std::memcpy(probe.input.allocate_back(frame.size()), frame.data(), frame.size());
+
     std::size_t last = 1;
     for (auto _ : state) {
-        probe.input.reset();
-        std::memcpy(probe.input.allocate_back(frame.size()), frame.data(), frame.size());
+        protocol.reset();
         last = protocol.getMessageSize();
         benchmark::DoNotOptimize(last);
     }

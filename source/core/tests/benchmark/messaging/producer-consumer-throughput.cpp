@@ -29,8 +29,10 @@
  * never silently degenerates into a mono-core run on a 1-core runner.
  */
 
+#include <atomic>
 #include <benchmark/benchmark.h>
 #include <cstdint>
+#include <memory>
 #include <qb/actor.h>
 #include <qb/main.h>
 
@@ -44,9 +46,20 @@ struct PcMsg final : qb::Event {
 };
 
 class PcConsumerActor final : public qb::Actor {
-    std::uint64_t _received = 0;
+    std::uint64_t                               _received = 0;
+    std::shared_ptr<std::atomic<std::uint64_t>> _tally; // optional cross-thread delivery count
 
 public:
+    explicit PcConsumerActor(std::shared_ptr<std::atomic<std::uint64_t>> tally = nullptr)
+        : _tally(std::move(tally)) {}
+
+    ~PcConsumerActor() final {
+        // Runs on the worker during shutdown (before join() returns); publishes the final count so
+        // the out-of-loop probe can assert the topology actually delivered every message.
+        if (_tally)
+            _tally->store(_received, std::memory_order_relaxed);
+    }
+
     qb::io::async::task<bool>
     onInit() final {
         registerEvent<PcMsg>(*this);
@@ -78,20 +91,25 @@ public:
 
 // Build a producer→consumer pair on the given cores (producer always on core 0).
 void
-build_producer_consumer(qb::Main &main, std::uint32_t const consumer_core) {
-    main.addActor<PcProducerActor>(0, main.addActor<PcConsumerActor>(consumer_core));
+build_producer_consumer(qb::Main &main, std::uint32_t const consumer_core,
+                        std::shared_ptr<std::atomic<std::uint64_t>> const &tally = nullptr) {
+    main.addActor<PcProducerActor>(0, main.addActor<PcConsumerActor>(consumer_core, tally));
 }
 
 void
 run_throughput(benchmark::State &state, std::uint32_t const consumer_core) {
-    // One-shot out-of-loop correctness probe.
+    // One-shot out-of-loop correctness probe: assert the consumer actually received every message
+    // (a dropped/mis-routed push would otherwise only surface as a join() hang, never a check).
     {
+        auto     tally = std::make_shared<std::atomic<std::uint64_t>>(0);
         qb::Main probe;
-        build_producer_consumer(probe, consumer_core);
+        build_producer_consumer(probe, consumer_core, tally);
         probe.start(true);
         probe.join();
-        auto sentinel = consumer_core;
-        benchmark::DoNotOptimize(sentinel);
+        if (tally->load(std::memory_order_relaxed) != kBenchMessages) {
+            state.SkipWithError("producer-consumer dropped messages: received != kBenchMessages");
+            return;
+        }
     }
 
     for (auto _ : state) {

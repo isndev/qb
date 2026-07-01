@@ -143,7 +143,12 @@ BM_Fanout_Deliveries(benchmark::State &state) {
         build_fanout<Mode>(probe, n, waves, producer_c, consumer_c, probe_latch);
         probe.start(true);
         probe.join();
-        benchmark::DoNotOptimize(probe_latch->count.load());
+        // Assert every fan-out delivery landed (count == target). The latch already carries both,
+        // so a dropped/over-delivered topology is caught by a positive check, not only a join() hang.
+        if (probe_latch->count.load(std::memory_order_relaxed) != probe_latch->target) {
+            state.SkipWithError("fanout delivery count != target: the topology dropped or duplicated events");
+            return;
+        }
     }
 
     auto const latch = std::make_shared<DeliveryLatch>();

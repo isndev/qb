@@ -120,7 +120,10 @@ public:
     qb::io::async::task<bool>
     onInit() final {
         registerEvent<EventTrait>(*this);
-        send<EventTrait>(_peer, _max_sends);
+        // push (ordered) — NOT send: send<E> requires E trivially destructible (Actor.h:810),
+        // which the heap-owning DynamicEvent trait violates. push has no such constraint and the
+        // single kick-off message has nothing to be ordered against, so semantics are unchanged.
+        push<EventTrait>(_peer, _max_sends);
         co_return true;
     }
 
