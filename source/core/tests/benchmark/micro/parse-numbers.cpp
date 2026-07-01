@@ -86,10 +86,12 @@ BM_Parse_Int_QbToNumber(benchmark::State &state) {
         }
     }
 
-    std::int64_t sum = 0;
+    // Accumulate in unsigned: the corpus spans the full int64 range, so a signed sum would overflow
+    // (UB). Unsigned wraparound is well-defined and still a valid anti-elision sink.
+    std::uint64_t sum = 0;
     for (auto _ : state) {
         for (auto const &s : corpus)
-            sum += qb::to_number<std::int64_t>(s).value_or(0);
+            sum += static_cast<std::uint64_t>(qb::to_number<std::int64_t>(s).value_or(0));
         benchmark::DoNotOptimize(sum);
     }
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * corpus.size()));
@@ -98,13 +100,13 @@ BM_Parse_Int_QbToNumber(benchmark::State &state) {
 
 void
 BM_Parse_Int_FromChars(benchmark::State &state) {
-    const auto   corpus = expand(kIntBase, 64);
-    std::int64_t sum    = 0;
+    const auto    corpus = expand(kIntBase, 64);
+    std::uint64_t sum    = 0; // unsigned: full-range corpus would overflow a signed sum (UB)
     for (auto _ : state) {
         for (auto const &s : corpus) {
             std::int64_t v = 0;
             std::from_chars(s.data(), s.data() + s.size(), v);
-            sum += v;
+            sum += static_cast<std::uint64_t>(v);
         }
         benchmark::DoNotOptimize(sum);
     }
@@ -114,11 +116,11 @@ BM_Parse_Int_FromChars(benchmark::State &state) {
 
 void
 BM_Parse_Int_Strtoll(benchmark::State &state) {
-    const auto   corpus = expand(kIntBase, 64);
-    std::int64_t sum    = 0;
+    const auto    corpus = expand(kIntBase, 64);
+    std::uint64_t sum    = 0; // unsigned: full-range corpus would overflow a signed sum (UB)
     for (auto _ : state) {
         for (auto const &s : corpus)
-            sum += static_cast<std::int64_t>(std::strtoll(s.c_str(), nullptr, 10));
+            sum += static_cast<std::uint64_t>(std::strtoll(s.c_str(), nullptr, 10));
         benchmark::DoNotOptimize(sum);
     }
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * corpus.size()));
@@ -128,11 +130,11 @@ BM_Parse_Int_Strtoll(benchmark::State &state) {
 // Lenient (stoi/strtol idiom) prefix parse — accepts a trailing remainder.
 void
 BM_Parse_Int_QbToNumberPrefix(benchmark::State &state) {
-    const auto   corpus = expand(kIntBase, 64);
-    std::int64_t sum    = 0;
+    const auto    corpus = expand(kIntBase, 64);
+    std::uint64_t sum    = 0; // unsigned: full-range corpus would overflow a signed sum (UB)
     for (auto _ : state) {
         for (auto const &s : corpus)
-            sum += qb::to_number_prefix<std::int64_t>(s).value_or(0);
+            sum += static_cast<std::uint64_t>(qb::to_number_prefix<std::int64_t>(s).value_or(0));
         benchmark::DoNotOptimize(sum);
     }
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * corpus.size()));
