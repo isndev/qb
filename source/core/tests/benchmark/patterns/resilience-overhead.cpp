@@ -41,7 +41,7 @@ BM_Resilience_CircuitBreaker_Closed(benchmark::State &state) {
     std::uint64_t      now = 0;
     std::uint64_t      passed = 0;
     for (auto _ : state) {
-        const bool ok = breaker.allow(now);
+        bool ok = breaker.allow(now);
         if (ok) {
             ++passed;
             breaker.on_success();
@@ -69,7 +69,7 @@ BM_Resilience_CircuitBreaker_OpenFastFail(benchmark::State &state) {
 
     std::uint64_t rejected = 0;
     for (auto _ : state) {
-        const bool ok = breaker.allow(now); // still cooling down (now stays < opened+cooldown)
+        bool ok = breaker.allow(now); // still cooling down (now stays < opened+cooldown)
         if (!ok)
             ++rejected;
         now += 1000; // 1 µs/op — far below the 10 s cooldown, so it stays open
@@ -103,7 +103,7 @@ BM_Resilience_RateLimiter_TryAcquire(benchmark::State &state) {
     qb::rate_limiter limiter(8.0, 100ns);
     std::uint64_t    now = 0, granted = 0, throttled = 0;
     for (auto _ : state) {
-        const bool ok = limiter.try_acquire(now);
+        bool ok = limiter.try_acquire(now);
         ok ? ++granted : ++throttled;
         now += 40;
         benchmark::DoNotOptimize(ok);
