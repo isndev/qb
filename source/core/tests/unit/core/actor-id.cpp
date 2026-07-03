@@ -30,6 +30,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <qb/core/Actor.h>   // qb::detail::ask_next_id — the correlation-id codec (core index + counter)
 #include <qb/core/ActorId.h>
 
 using qb::ActorId;
@@ -115,6 +116,33 @@ TEST(ActorId, NonBroadcastSidIndexConstruction) {
     NormalId zero(0, 0);
     EXPECT_EQ(static_cast<std::uint32_t>(zero), ActorId::NotFound);
     EXPECT_FALSE(zero.is_valid());
+}
+
+// `ask_next_id()` salts the per-thread correlation counter with the OWNER actor's core index in
+// the high 16 bits, so two VirtualCores' independent counters (both starting at 1) can never
+// produce the same id. Without the salt (the audited type-confusion bug), a cross-core `ask` reply
+// carrying a colliding id resolved the receiver's own pending slot and handed its `ask_awaiter<E>`
+// an event of the wrong type. Pure codec — no engine, no running core.
+TEST(ActorId, AskCorrelationIdIsSaltedWithOwnerCoreIndex) {
+    const NormalId owner_core0(5, 0);
+    const NormalId owner_core7(5, 7);
+
+    const std::uint64_t id0 = qb::detail::ask_next_id(owner_core0);
+    const std::uint64_t id7 = qb::detail::ask_next_id(owner_core7);
+
+    // High 16 bits carry the owning core index — the cross-core disambiguator.
+    EXPECT_EQ(id0 >> 48, 0u);
+    EXPECT_EQ(id7 >> 48, 7u);
+    // Distinct owning cores therefore never collide, independent of the per-thread counter.
+    EXPECT_NE(id0, id7);
+    // Low 48 bits are the counter, never 0 (0 is reserved for "not an ask").
+    EXPECT_NE(id0 & 0x0000FFFFFFFFFFFFull, 0u);
+    EXPECT_NE(id7 & 0x0000FFFFFFFFFFFFull, 0u);
+
+    // Same owner, successive calls: the counter advances while the core salt stays put.
+    const std::uint64_t id0b = qb::detail::ask_next_id(owner_core0);
+    EXPECT_EQ(id0b >> 48, 0u);
+    EXPECT_NE(id0b, id0);
 }
 
 // --- CoreIdBitSet ------------------------------------------------------------

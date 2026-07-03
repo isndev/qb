@@ -141,6 +141,25 @@ TEST(EndpointAddress, AfSetterMarksEndpointValid) {
     EXPECT_TRUE(static_cast<bool>(e)) << "valid once a family is set";
 }
 
+#if defined(QB_ENABLE_UDS) && QB__HAS_UDS
+// =============================================================================
+// @test An unnamed AF_UNIX endpoint (kernel addrlen == 2, i.e. the family field
+//       alone) stringifies to empty without reading past the address union.
+//       Regression for the size_t underflow in to_string()'s AF_UNIX arm: the old
+//       `len() - offsetof(sun_path) - 1` wrapped to ~4 GiB for len()==2 and
+//       `assign(sun_path, ~4 GiB)` then read far past the ~110-byte union (SIGSEGV
+//       / ASan OOB). Every unbound UDS peer reports addrlen == 2 via
+//       getsockname()/getpeername(), so this is ordinary reachable input.
+// =============================================================================
+TEST(EndpointAddress, UnnamedUnixEndpointToStringDoesNotUnderflow) {
+    endpoint e;
+    e.af(AF_UNIX); // sets sa_family only; leaves len() at 0
+    e.len(2);      // the kernel-reported addrlen of an unbound UDS peer
+    const std::string s = e.to_string();
+    EXPECT_TRUE(s.empty()) << "an unnamed UDS endpoint must stringify empty, not read past the union";
+}
+#endif
+
 TEST(EndpointAddress, Uint32CtorIsInetWithPort) {
     // endpoint(uint32_t) takes a HOST-order IPv4 address (addr_v4 applies htonl internally).
     endpoint e(static_cast<uint32_t>(INADDR_LOOPBACK), static_cast<unsigned short>(53));
