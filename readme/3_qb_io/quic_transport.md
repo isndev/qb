@@ -136,7 +136,7 @@ Not every field is wired in the shipped backend. The verified enforcement points
 - `max_pending_stream_bytes` / `max_pending_stream_frames` and `max_pending_datagram_bytes` / `max_pending_datagram_frames` are enforced inside the native backend; overrunning a pending queue closes the connection with `disconnect_reason::buffer_overflow`. <!-- src: qb/source/io/src/quic.cpp:400-412 -->
 - `udp_rx_batch_size` and `udp_tx_batch_size` are enforced by the endpoint's UDP read and write loops, not the backend; a value of `0` means an unbounded batch. <!-- src: qb/include/qb/io/async/quic/endpoint.h:151,509 -->
 
-`enable_stateless_retry` (default on) performs **address validation via Retry** (RFC 9000 §8.1): the server answers a first Initial with a Retry packet carrying an address-bound token and allocates **no** connection state; only once the client re-sends its Initial echoing a valid token does the server complete `ngtcp2_accept` and build the connection. This defends against off-path spoofed-Initial floods. <!-- src: qb/source/io/src/quic.cpp find_or_accept_server_connection / send_retry -->
+`enable_stateless_retry` (default on) performs **address validation via Retry** (RFC 9000 §8.1): the server answers a first Initial with a Retry packet carrying an address-bound token and allocates **no** connection state; only once the client re-sends its Initial echoing a valid token does the server complete `ngtcp2_accept` and build the connection. This defends against off-path spoofed-Initial floods. <!-- src: qb/source/io/src/quic.cpp:751-802 -->
 
 The following fields are carried in the struct but have **no observed effect** in the shipped native backend, so do not rely on them: `stream_recv_window` is not read anywhere; `enable_keylog` has no TLS keylog wiring. Treat both as reserved until the backend implements them.
 
@@ -156,6 +156,19 @@ endpoint.set_settings(cfg);
 
 <!-- src: qb/source/io/src/quic.cpp:648-697 -->
 
+### Connection migration
+
+QUIC connection migration is supported within the owning endpoint: a peer that changes its network path — a client whose NAT rebinds it to a new source port, or one that deliberately migrates — keeps its connection instead of being dropped. Two mechanisms cooperate:
+
+- **Path rebind on send.** Outgoing packets are addressed to the peer's *current*, path-validated address that ngtcp2 writes back after each `writev`, not the address cached when the connection was accepted. Sending to the stale accept-time address would black-hole every packet and idle-time-out the connection.
+  <!-- src: qb/source/io/src/quic.cpp:1055-1071 -->
+- **Connection-id rotation.** When ngtcp2 issues fresh Source Connection IDs (which the peer may migrate onto), the server re-indexes the connection's current SCID set, so a later datagram carrying a rotated destination connection id still routes to the existing connection rather than being mistaken for a brand-new one.
+  <!-- src: qb/source/io/src/quic.cpp:695-711 -->
+
+Active migration is enabled at the transport-parameter level (`disable_active_migration = 0`). This is path migration *within* the one core that owns the endpoint; moving a connection across cores/threads is a separate concern (see [V1 limits](#v1-limits)).
+
+<!-- src: qb/source/io/src/quic.cpp:920 -->
+
 ### TLS and hostname verification
 
 `qb::io::quic::tls_config` carries `certificate_file`, `private_key_file`, `server_name`, and `verify_peer` (default `true`).
@@ -164,7 +177,7 @@ endpoint.set_settings(cfg);
 
 A server requires `certificate_file` and `private_key_file`. For a client, `verify_peer` validates the certificate chain, but chain validation alone accepts any CA-trusted certificate for any host. The backend binds OpenSSL hostname verification (`SSL_set1_host`) only when `verify_peer` is true **and** `server_name` is set. The string-overload of `endpoint::connect` populates `tls.server_name` from the URI host automatically; if you build the `tls_config` yourself, set `server_name` explicitly so client connections are protected against an on-path attacker.
 
-<!-- src: qb/source/io/src/quic.cpp:742-750 -->
+<!-- src: qb/source/io/src/quic.cpp:875-884 -->
 
 ## Examples
 
@@ -330,10 +343,10 @@ The native QUIC layer is intentionally transport-only:
 
 - no HTTP, QPACK, request, or response concepts live in `qb-io`;
 - no QUIC stream extraction across listeners;
-- no cross-thread connection migration;
+- no migration of a connection *across cores/threads* — QUIC path migration (NAT rebind and connection-id rotation) is supported, but always within the one core that owns the endpoint (see [Connection migration](#connection-migration));
 - HTTP/3 server push and HTTP semantics belong to `qbm/http`.
 
-`SO_REUSEPORT`, a central connection-id dispatcher, and connection migration across threads can be layered on top later, but the model remains one endpoint owner per UDP socket.
+`SO_REUSEPORT`, a central connection-id dispatcher, and moving a live connection between cores can be layered on top later, but the model remains one endpoint owner per UDP socket.
 
 ## See also
 
