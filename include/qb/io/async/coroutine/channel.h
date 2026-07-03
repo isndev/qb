@@ -445,6 +445,18 @@ public:
             schedule_via_current(recv_h);
             return true;
         }
+        // Satisfy a parked select()/recv_for() waiter before the buffer — mirrors send_awaiter.
+        // Without this, try_send returned false on a cap-0 channel (or a full buffer) even when a
+        // select waiter was ready, deadlocking a rendezvous (the send path already handles both).
+        while (!_select_waiters.empty()) {
+            auto &entry = _select_waiters.front();
+            if (!entry.state->resolved) {
+                entry.state->resolve(entry.index, std::any(value));
+                _select_waiters.pop_front();
+                return true;
+            }
+            _select_waiters.pop_front(); // stale, skip
+        }
         if (_buffer.size() < _capacity) {
             _buffer.push(value);
             return true;
@@ -467,6 +479,20 @@ public:
             *result_ptr = std::move(value);
             schedule_via_current(recv_h);
             return true;
+        }
+        // Satisfy a parked select()/recv_for() waiter before the buffer — mirrors send_awaiter.
+        // Guarded: select() type-erases through std::any (copy-constructible only), so a move-only
+        // channel can never hold a select waiter — the block is dead there and must not instantiate.
+        if constexpr (std::is_copy_constructible_v<T>) {
+            while (!_select_waiters.empty()) {
+                auto &entry = _select_waiters.front();
+                if (!entry.state->resolved) {
+                    entry.state->resolve(entry.index, std::any(std::move(value)));
+                    _select_waiters.pop_front();
+                    return true;
+                }
+                _select_waiters.pop_front(); // stale, skip
+            }
         }
         if (_buffer.size() < _capacity) {
             _buffer.push(std::move(value));
