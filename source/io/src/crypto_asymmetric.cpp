@@ -651,24 +651,33 @@ crypto::ecies_encrypt(const std::vector<unsigned char> &data, const std::vector<
                                                    64,                   // 32 bytes for key, 16 for IV
                                                    DigestAlgorithm::SHA256);
 
-    // Extract key and IV from the derived material
-    std::vector<unsigned char> symmetric_key(key_material.begin(), key_material.begin() + 32);
-    std::vector<unsigned char> iv(key_material.begin() + 32, key_material.begin() + 48);
-
-    // Select symmetric algorithm based on mode
+    // Select symmetric algorithm + nonce length from the mode. GCM/ChaCha take a
+    // 12-byte nonce, CBC a 16-byte IV. Slicing the exact length (not a fixed 16)
+    // keeps AEAD nonces at the standard 96 bits now that the symmetric path
+    // requires an exact IV length. This is byte-identical to the previous
+    // behaviour: OpenSSL already consumed only the first 12 bytes of the old
+    // 16-byte GCM/ChaCha IV, so the derived nonce is unchanged.
     SymmetricAlgorithm sym_algorithm;
+    std::size_t        iv_len;
     switch (mode) {
         case ECIESMode::AES_GCM:
             sym_algorithm = SymmetricAlgorithm::AES_256_GCM;
+            iv_len        = 12;
             break;
         case ECIESMode::CHACHA20:
             sym_algorithm = SymmetricAlgorithm::CHACHA20_POLY1305;
+            iv_len        = 12;
             break;
         case ECIESMode::STANDARD:
         default:
             sym_algorithm = SymmetricAlgorithm::AES_256_CBC;
+            iv_len        = 16;
             break;
     }
+
+    // Extract key and IV from the derived material
+    std::vector<unsigned char> symmetric_key(key_material.begin(), key_material.begin() + 32);
+    std::vector<unsigned char> iv(key_material.begin() + 32, key_material.begin() + 32 + iv_len);
 
     // Encrypt the data using the derived key and IV
     std::vector<unsigned char> encrypted_data = encrypt(data, symmetric_key, iv, sym_algorithm);
@@ -692,24 +701,30 @@ crypto::ecies_decrypt(const std::vector<unsigned char> &encrypted_data, const st
                                                    64,                   // 32 bytes for key, 16 for IV
                                                    DigestAlgorithm::SHA256);
 
-    // Extract key and IV from the derived material
-    std::vector<unsigned char> symmetric_key(key_material.begin(), key_material.begin() + 32);
-    std::vector<unsigned char> iv(key_material.begin() + 32, key_material.begin() + 48);
-
-    // Select symmetric algorithm based on mode
+    // Select symmetric algorithm + nonce length from the mode (must mirror
+    // ecies_encrypt): GCM/ChaCha 12-byte nonce, CBC 16-byte IV. Byte-identical
+    // to the prior fixed-16 slice for the derived nonce (see ecies_encrypt).
     SymmetricAlgorithm sym_algorithm;
+    std::size_t        iv_len;
     switch (mode) {
         case ECIESMode::AES_GCM:
             sym_algorithm = SymmetricAlgorithm::AES_256_GCM;
+            iv_len        = 12;
             break;
         case ECIESMode::CHACHA20:
             sym_algorithm = SymmetricAlgorithm::CHACHA20_POLY1305;
+            iv_len        = 12;
             break;
         case ECIESMode::STANDARD:
         default:
             sym_algorithm = SymmetricAlgorithm::AES_256_CBC;
+            iv_len        = 16;
             break;
     }
+
+    // Extract key and IV from the derived material
+    std::vector<unsigned char> symmetric_key(key_material.begin(), key_material.begin() + 32);
+    std::vector<unsigned char> iv(key_material.begin() + 32, key_material.begin() + 32 + iv_len);
 
     // Decrypt the data using the derived key and IV
     std::vector<unsigned char> decrypted_data = decrypt(encrypted_data, symmetric_key, iv, sym_algorithm);

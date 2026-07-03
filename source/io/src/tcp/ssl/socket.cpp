@@ -651,6 +651,12 @@ socket::handCheck() noexcept {
         return 1;
     if (!_ssl_handle)
         return -1;
+    // OpenSSL requires an EMPTY thread error queue before an SSL I/O call for
+    // SSL_get_error() to be reliable: a stale entry left by an unrelated op on
+    // this VirtualCore thread (many TLS sessions share one thread) can turn a
+    // benign WANT_READ/WANT_WRITE into SSL_ERROR_SSL and tear down a healthy
+    // handshake. Clear it first.
+    ERR_clear_error();
     auto ret = SSL_do_handshake(ssl_handle());
     if (ret != 1) {
         auto err = SSL_get_error(ssl_handle(), ret);
@@ -957,6 +963,7 @@ socket::read(void *data, std::size_t size) noexcept {
         size = static_cast<std::size_t>(std::numeric_limits<int>::max());
     auto ret = handCheck();
     if (ret == 1) {
+        ERR_clear_error(); // empty the thread error queue so SSL_get_error is reliable (see handCheck)
         ret = SSL_read(ssl_handle(), data, static_cast<int>(size));
         if (ret > 0)
             return ret;
@@ -988,6 +995,7 @@ socket::write(const void *data, std::size_t size) noexcept {
         size = static_cast<std::size_t>(std::numeric_limits<int>::max());
     auto ret = handCheck();
     if (ret == 1) {
+        ERR_clear_error(); // empty the thread error queue so SSL_get_error is reliable (see handCheck)
         ret = SSL_write(ssl_handle(), data, static_cast<int>(size));
         // Consult SSL_get_error for ret <= 0, not just ret < 0. The io layer
         // only writes when size > 0, where SSL_write() returns 0 to signal a

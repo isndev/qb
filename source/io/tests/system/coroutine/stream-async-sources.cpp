@@ -280,3 +280,33 @@ TEST_F(StreamAsyncSources, BackpressureReleasesPermitOnEofAcrossPasses) {
 
     EXPECT_TRUE(pump_until([&] { return finished.load(); })) << "backpressure leaked a permit on the shared semaphore at EOF";
 }
+
+// Regression: a source whose _next() throws must (1) close the buffer so the
+// consumer is not stranded forever and (2) surface the exception to the consumer
+// (rethrown at end-of-stream) rather than silently vanishing as EOF. Previously
+// backpressure_fill_task had no try/catch — the exception killed the filler frame
+// and the buffer was never closed, hanging the consumer.
+TEST_F(StreamAsyncSources, BackpressureSurfacesThrowingSourceInsteadOfHanging) {
+    std::atomic<bool> done{false};
+    std::atomic<bool> caught{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto calls = std::make_shared<int>(0);
+        // Emits 1, 2, then throws on the third pull.
+        async_stream<int> source([calls]() -> task<std::optional<int>> {
+            if ((*calls)++ >= 2)
+                throw std::runtime_error("source boom");
+            co_return std::optional<int>(*calls);
+        });
+        try {
+            (void) co_await source.backpressure(2).collect();
+        } catch (const std::runtime_error &) {
+            caught.store(true);
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); }))
+        << "backpressure consumer hung after the source threw — the buffer was never closed";
+    EXPECT_TRUE(caught.load()) << "a throwing source must surface its exception to the consumer, not vanish as EOF";
+}

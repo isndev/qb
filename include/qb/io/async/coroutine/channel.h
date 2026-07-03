@@ -571,6 +571,24 @@ public:
         wake_one_sender();
     }
 
+    /**
+     * @brief True iff a `select()` / `recv_for()` waiter is currently parked and
+     *        unresolved — i.e. `send()`'s fast path can hand it a value right now.
+     * @details `send_for()` must consult this (not just `_recv_waiters` / buffer
+     *          space): a `recv_for()` parks in `_select_waiters`, not
+     *          `_recv_waiters`, so a `send_for()` that ignored it would take the
+     *          slow path and park with a timer while a ready rendezvous partner
+     *          waits — both then time out. Stale (resolved) entries are ignored so
+     *          a channel littered with them still routes through the timed path.
+     */
+    [[nodiscard]] bool
+    has_live_select_waiter() const noexcept {
+        for (const auto &entry : _select_waiters)
+            if (entry.state && !entry.state->resolved)
+                return true;
+        return false;
+    }
+
     // -----------------------------------------------------------------------
     // Timed recv / send
     // -----------------------------------------------------------------------
@@ -667,8 +685,13 @@ public:
     send_for(T value, qb::duration timeout) {
         if (_closed)
             co_return false;
-        // Fast path: space available
-        if (_buffer.size() < _capacity || !_recv_waiters.empty()) {
+        // Fast path: a receiver, a live select()/recv_for() waiter, or buffer
+        // space can take the value synchronously. send()'s await_ready performs
+        // the actual recv/select/buffer hand-off (and lazily drops stale select
+        // entries). The has_live_select_waiter() term is the fix for send_for
+        // parking with a timer while a ready recv_for/select partner waits — on a
+        // rendezvous channel both would otherwise time out despite a match.
+        if (_buffer.size() < _capacity || !_recv_waiters.empty() || has_live_select_waiter()) {
             co_await send(std::move(value));
             co_return true;
         }
@@ -1028,11 +1051,22 @@ make_pipeline(F f, size_t buffer_size = 10) {
 template <typename T, typename U, typename F>
 task<void>
 pipeline_worker(F fn, std::shared_ptr<channel<T>> in, std::shared_ptr<channel<U>> out) {
-    while (true) {
-        auto val = co_await in->recv();
-        if (!val)
-            break;
-        co_await out->send(fn(*val));
+    // Close `out` on EVERY exit so a consumer parked on out->recv() wakes instead
+    // of hanging forever when the transform `fn` (or a send) throws. make_pipeline
+    // exposes no error channel, so a transform exception is reported downstream as
+    // end-of-stream rather than rethrown (surfacing it would require a
+    // make_pipeline API change) — but the pipeline never deadlocks.
+    try {
+        while (true) {
+            auto val = co_await in->recv();
+            if (!val)
+                break;
+            co_await out->send(fn(*val));
+        }
+    } catch (const channel_closed &) {
+        // Downstream closed `out` — terminal state, not an error.
+    } catch (...) {
+        // Transform / send failed: fall through to close() so the consumer isn't stranded.
     }
     out->close();
 }

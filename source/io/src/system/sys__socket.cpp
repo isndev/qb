@@ -907,6 +907,18 @@ int
 socket::select(socket_type s, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, qb::duration wtimeout) {
     int n = 0;
 
+#if !defined(_WIN32)
+    // On POSIX an `fd_set` is a fixed FD_SETSIZE-bit stack bitmap, so `FD_SET(s)`
+    // with `s >= FD_SETSIZE` (a server easily holds > 1024 fds) is an
+    // out-of-bounds stack write (CWE-787). Fail loudly instead of corrupting the
+    // stack — callers needing a high fd must take a poll-based path. (Windows'
+    // `fd_set` is a count+array of sockets, unaffected by the fd value.)
+    if (s < 0 || s >= FD_SETSIZE) {
+        socket::set_last_errno(EINVAL);
+        return -1;
+    }
+#endif
+
     // A negative timeval makes ::select fail with EINVAL on most platforms;
     // clamp to zero (poll once) so a negative remaining timeout is well-defined.
     if (wtimeout.count() < 0)

@@ -383,6 +383,17 @@ TEST_F(CryptoPrimitivesTest, ModernSymmetricAlgorithmsRoundTripAndRejectBadInput
 
             std::vector<unsigned char> too_short(8, 0x42);
             EXPECT_THROW(qb::crypto::decrypt(too_short, key, iv, entry.algorithm), std::runtime_error);
+
+            // An OVERSIZED AEAD nonce must be rejected, not silently truncated to
+            // 12 bytes: the cipher is initialised with the default length and
+            // never SET_IVLEN, so accepting a longer IV let a caller varying only
+            // its tail reuse the same 96-bit GCM nonce (key/tag recovery). The IV
+            // length is now required to be exact for AEAD too.
+            auto oversized_iv = iv;
+            oversized_iv.push_back(0x00);
+            oversized_iv.push_back(0x00); // 14 bytes for a 12-byte nonce cipher
+            EXPECT_THROW(qb::crypto::encrypt(test_data, key, oversized_iv, entry.algorithm, aad), std::invalid_argument);
+            EXPECT_THROW(qb::crypto::decrypt(encrypted, key, oversized_iv, entry.algorithm, aad), std::invalid_argument);
         }
     }
 

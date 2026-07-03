@@ -849,7 +849,11 @@ VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) noexcept {
 
 bool
 VirtualCore::try_send(Event const &event) const noexcept {
-    return _engine.send(event);
+    // Pass THIS core's resolved index as the MPSC producer slot: the physical
+    // sending thread owns exactly one single-producer ring per destination
+    // mailbox. `event.source` can name a different core after `forward()`, so it
+    // must NOT drive slot selection (that would be a cross-core two-writer race).
+    return _engine.send(_resolved_index, event);
 }
 
 void

@@ -322,7 +322,7 @@ private:
 template <stream_event_type E>
 [[nodiscard]] stream<E>
 ask_stream(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout = std::chrono::seconds{5}, std::size_t capacity = 256) {
-    const std::uint64_t id = qb::detail::ask_next_id();
+    const std::uint64_t id = qb::detail::ask_next_id(ctx.id());
     auto                st = std::make_shared<detail::stream_state<E>>(capacity ? capacity : std::size_t{1});
     st->token              = ctx.token();
     // Register a multi-shot continuation slot so chunks are delivered uniformly (active or

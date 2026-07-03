@@ -656,6 +656,16 @@ struct cancellable_sleep_awaiter {
         // Without this, a `co_await ctx.sleep(...)` loop on the long-lived actor scope token
         // accumulated one dead callback per iteration (the original unbounded-growth bug).
         token.remove_on_cancel(_cancel_id);
+        // Mark the shared state resolved BEFORE reclaiming the timer. cancel()
+        // iterates a MOVED-OUT copy of the callback list, so `remove_on_cancel`
+        // above cannot retract our on_cancel hook if it is still pending in that
+        // in-flight cascade (e.g. an outer cancellable_operation hook, running
+        // first, destroyed this frame). Left unset, that hook would then hit
+        // `if (!resumed) schedule_via_current(handle)` on our freed frame — a
+        // use-after-free. Setting the flag makes it a no-op. Mirrors
+        // cancellable_operation::awaiter's `task_done = true`.
+        if (state)
+            state->resumed = true;
         // Destroyed while still parked (the awaiter unwound mid-sleep — e.g. a when_any/race loser
         // reclaim, where this branch loses): the detached timer_task still holds `state` and would
         // later schedule_via_current(state->handle) on our freed frame. Tear it down. Mirrors
@@ -755,6 +765,14 @@ struct with_deadline_timeout_awaiter {
 
     ~with_deadline_timeout_awaiter() {
         token.remove_on_cancel(_cancel_id);
+        // Mark the shared state completed BEFORE reclaiming the timer: cancel()
+        // iterates a moved-out copy of the callback list, so `remove_on_cancel`
+        // above cannot retract our still-pending hook if an earlier hook in the
+        // same in-flight cascade already destroyed this frame. Left unset, that
+        // hook would `schedule_via_current(handle)` on the freed frame (UAF).
+        // Mirrors cancellable_operation::awaiter's `task_done = true`.
+        if (state)
+            state->completed = true;
         // Reclaim the detached deadline timer if it is still parked. This fires when the
         // operation branch wins the when_any race: `when_any` destroys this (losing) branch
         // frame, which runs this dtor while the timer is still sleeping. cancel_spawned is a

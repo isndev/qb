@@ -196,16 +196,21 @@ listener::set_supported_alpn_protocols(const std::vector<std::string> &protocols
     if (!_ctx || protocols.empty())
         return false;
 
-    // Serialize protocols into length-prefixed wire format
-    _alpn_wire.clear();
+    // Serialize protocols into length-prefixed wire format. The buffer lives on
+    // the heap (unique_ptr) so its address survives a listener move; that address
+    // is what the alpn_select_cb below receives as `arg`.
+    if (!_alpn_wire)
+        _alpn_wire = std::make_unique<std::vector<unsigned char>>();
+    auto &wire = *_alpn_wire;
+    wire.clear();
     for (const auto &proto : protocols) {
         if (proto.length() > 255)
             continue;
-        _alpn_wire.push_back(static_cast<unsigned char>(proto.length()));
-        _alpn_wire.insert(_alpn_wire.end(), proto.begin(), proto.end());
+        wire.push_back(static_cast<unsigned char>(proto.length()));
+        wire.insert(wire.end(), proto.begin(), proto.end());
     }
 
-    if (_alpn_wire.empty())
+    if (wire.empty())
         return false;
 
     // Static callback wrapper
@@ -217,7 +222,7 @@ listener::set_supported_alpn_protocols(const std::vector<std::string> &protocols
                                           in, inlen);
             return (r == OPENSSL_NPN_NEGOTIATED) ? SSL_TLSEXT_ERR_OK : SSL_TLSEXT_ERR_NOACK;
         },
-        &_alpn_wire);
+        _alpn_wire.get());
 
     return true;
 }

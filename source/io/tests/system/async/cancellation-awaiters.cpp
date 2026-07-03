@@ -384,6 +384,47 @@ TEST_F(CancellationAwaiters, MakeCancellablePropagatesInnerExceptionWhenNotCance
     EXPECT_TRUE(caught.load()) << "make_cancellable must not swallow inner exceptions";
 }
 
+// Regression (destroy-while-parked, nested-cancel variant): a cancellable_operation
+// whose inner task parks in cancellable_sleep, BOTH on the same token. On cancel(),
+// the operation hook (registered first) synchronously destroys the parked inner
+// frame; the sleep hook (still pending in cancel()'s moved-out callback list — its
+// remove_on_cancel no-ops against the emptied list) must NOT then reschedule that
+// freed frame. QB_RECLAIM_PARK's >4KiB local escapes the coroutine frame pool so
+// ASan sees the stray free; its post-suspend write trips g_resumed_after_reclaim if
+// the freed frame is wrongly resumed. Reachable in practice via
+// `co_await ctx.cancellable(worker())` where worker `co_await ctx.sleep(...)`, then
+// the actor is killed (ctx.cancellable and ctx.sleep share the actor scope token).
+TEST_F(CancellationAwaiters, NestedCancellableSleepFrameNotRescheduledOnCancel) {
+    cancellation_token token;
+    qb::io::test::g_resumed_after_reclaim.store(false, std::memory_order_relaxed);
+    std::atomic<bool> done{false};
+
+    // The parker awaits the sleep awaiter DIRECTLY so its own (test) frame carries
+    // the >4KiB local and is the exact frame the sleep hook would reschedule.
+    // Parenthesised so the preprocessor does not split the braced comma into two macro args.
+    auto parker = [](cancellation_token t) -> task<int> { QB_RECLAIM_PARK((cancellable_sleep_awaiter{60000ms, t})); };
+
+    coro_scheduler().spawn([&, parker]() -> task<void> {
+        try {
+            co_await make_cancellable(parker(token), token, /*throw_on_cancel=*/true);
+        } catch (const cancelled_error &) {
+        }
+        done.store(true, std::memory_order_relaxed);
+    });
+
+    // Wait until BOTH hooks are registered: the operation hook (make_cancellable's
+    // await_suspend) and the sleep hook (when the inner parker parks).
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return token.get_state()->callbacks.size() == 2u; }))
+        << "operation + sleep hooks never both parked on the token";
+
+    token.cancel(); // operation hook destroys the parked inner frame; sleep hook must not reschedule it
+
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return done.load(std::memory_order_relaxed); }))
+        << "cancellable_operation never resumed after cancel";
+    EXPECT_FALSE(qb::io::test::g_resumed_after_reclaim.load(std::memory_order_relaxed))
+        << "the cancellable_sleep hook rescheduled a freed frame (destroy-while-parked UAF)";
+}
+
 TEST_F(CancellationAwaiters, MakeCancellableSequentialReuseOnSharedToken) {
     std::atomic<int>   completed{0};
     std::atomic<int>   cancelled_count{0};
