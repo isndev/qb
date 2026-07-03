@@ -1363,7 +1363,7 @@ struct ask_slot {
     void (*deliver)(void *self, qb::Event &resp) noexcept = nullptr;
 };
 
-[[nodiscard]] std::uint64_t ask_next_id() noexcept;
+[[nodiscard]] std::uint64_t ask_next_id(qb::ActorId owner) noexcept;
 void                        ask_register(std::uint64_t id, ask_slot *slot) noexcept;
 void                        ask_unregister(std::uint64_t id) noexcept;
 bool                        ask_deliver(std::uint64_t id, qb::ActorId owner, qb::Event &resp) noexcept;

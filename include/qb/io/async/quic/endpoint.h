@@ -158,7 +158,17 @@ protected:
             const auto ret = _socket.write(pkt.payload.data(), pkt.payload.size(), pkt.remote);
             if (ret < 0) {
                 if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
-                    break;
+                    break; // transient (EWOULDBLOCK/EAGAIN/EINTR/ENOBUFS) — retry on the next writable event
+                if (_server_role) {
+                    // A server multiplexes many connections on ONE UDP socket: a
+                    // per-datagram / per-peer send error (EHOSTUNREACH, ECONNREFUSED,
+                    // EMSGSIZE, …) must drop only THIS datagram — never tear down the
+                    // whole listener and every other connection. fail_transport closes
+                    // the socket and reports connection_closed{0} (= listener closed),
+                    // so calling it here let one unreachable peer kill the entire server.
+                    _pending_udp_packets.pop_front();
+                    continue;
+                }
                 fail_transport(static_cast<std::uint64_t>(qb::io::socket::get_last_errno()), "QUIC UDP write failed");
                 return;
             }
@@ -502,12 +512,23 @@ public:
             return;
         if (event._revents & EV_READ) {
             std::uint64_t budget = _settings.udp_rx_batch_size ? _settings.udp_rx_batch_size : std::numeric_limits<std::uint64_t>::max();
+            // Reused across the batch and left UNINITIALISED on purpose: only the
+            // `ret` bytes recvfrom writes are ever read. The previous per-iteration
+            // `buffer{}` value-initialised all 64 KiB up to udp_rx_batch_size times
+            // per readable event (~16 MiB of pointless zeroing) for datagrams that
+            // are ≤1500 B on the wire.
+            std::array<std::byte, qb::io::udp::socket::MaxDatagramSize> buffer;
             while (budget-- > 0) {
-                std::array<std::byte, qb::io::udp::socket::MaxDatagramSize> buffer{};
-                qb::io::endpoint                                            remote;
-                const auto                                                  ret = _socket.read(buffer.data(), buffer.size(), remote);
+                qb::io::endpoint remote;
+                const auto       ret = _socket.read(buffer.data(), buffer.size(), remote);
                 if (ret < 0) {
                     if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+                        break;
+                    // A per-peer recv error on a server's shared listener socket must
+                    // not tear down every connection either — stop this batch and retry
+                    // on the next readable event. Only a client's own connection is
+                    // terminal on a hard read error.
+                    if (_server_role)
                         break;
                     close(static_cast<std::uint64_t>(qb::io::quic::disconnect_reason::transport_error), "QUIC UDP read failed");
                     return;

@@ -19,17 +19,19 @@ pipe<char>::put<qb::json>(const qb::json &val) {
             // first n-1 elements
             auto i = val.cbegin();
             for (std::size_t cnt = 0; cnt < val.size() - 1; ++cnt, ++i) {
-                *this << '\"';
-                *this << i.key();
-                *this << "\":";
+                // Escape the key: a raw key containing '"', '\\' or a control
+                // char would otherwise emit syntactically-invalid JSON (and be a
+                // JSON-injection vector). `json(key).dump()` yields the fully
+                // quoted+escaped string. Values already go through `dump()`.
+                *this << qb::json(i.key()).dump();
+                *this << ':';
                 put(i.value());
                 *this << ',';
             }
 
             // last element
-            *this << '\"';
-            *this << i.key();
-            *this << "\":";
+            *this << qb::json(i.key()).dump();
+            *this << ':';
             put(i.value());
 
             *this << '}';

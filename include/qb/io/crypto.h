@@ -624,15 +624,6 @@ public:
                           DigestAlgorithm digest = DigestAlgorithm::SHA256);
 
     /**
-     * @brief Derive a shared secret using ECDH
-     *
-     * @param private_key PEM-encoded EC private key
-     * @param peer_public_key PEM-encoded EC public key
-     * @return Vector containing the shared secret
-     */
-    static std::vector<unsigned char> ecdh_derive_secret(const std::string &private_key, const std::string &peer_public_key);
-
-    /**
      * @brief Fill a vector with secure random bytes
      *
      * @param buffer The vector to fill
@@ -737,66 +728,6 @@ public:
     static std::vector<unsigned char> derive_key(const std::string &password, const std::vector<unsigned char> &salt, size_t key_length,
                                                  KdfAlgorithm algorithm = KdfAlgorithm::Argon2, int iterations = 10000,
                                                  const Argon2Params &argon2_params = Argon2Params());
-
-    /**
-     * @brief Integrated Elliptic Curve Encryption (ECIES)
-     *
-     * Implements ECIES (Elliptic Curve Integrated Encryption Scheme), which combines
-     * public key cryptography using elliptic curves and symmetric encryption
-     * to provide a secure hybrid system.
-     *
-     * @param plaintext Data to encrypt
-     * @param recipient_public_key Recipient's public key (PEM)
-     * @param mode ECIES operation mode
-     * @param digest Hash algorithm to use
-     * @return Encrypted data
-     */
-    static std::vector<unsigned char> ecies_encrypt(const std::vector<unsigned char> &plaintext, const std::string &recipient_public_key,
-                                                    ECIESMode mode = ECIESMode::AES_GCM, DigestAlgorithm digest = DigestAlgorithm::SHA256);
-
-    /**
-     * @brief ECIES decryption
-     *
-     * Decrypts data encrypted with ECIES.
-     *
-     * @param ciphertext Encrypted data
-     * @param private_key Recipient's private key (PEM)
-     * @param mode ECIES operation mode used for encryption
-     * @param digest Hash algorithm used for encryption
-     * @return Decrypted data or empty vector on failure
-     */
-    static std::vector<unsigned char> ecies_decrypt(const std::vector<unsigned char> &ciphertext, const std::string &private_key,
-                                                    ECIESMode mode = ECIESMode::AES_GCM, DigestAlgorithm digest = DigestAlgorithm::SHA256);
-
-    /**
-     * @brief Envelope encryption
-     *
-     * Implements envelope encryption: a symmetric key is generated,
-     * used to encrypt the data, and then itself encrypted with a public key.
-     * This method is more efficient than ECIES for large volumes of data.
-     *
-     * @param plaintext Data to encrypt
-     * @param recipient_public_key Recipient's public key (PEM)
-     * @param algorithm Symmetric algorithm to use
-     * @param format Output format for encrypted data
-     * @return Encrypted data in the specified format
-     */
-    static std::string envelope_encrypt(const std::vector<unsigned char> &plaintext, const std::string &recipient_public_key,
-                                        SymmetricAlgorithm algorithm = SymmetricAlgorithm::AES_256_GCM,
-                                        EnvelopeFormat     format    = EnvelopeFormat::BASE64);
-
-    /**
-     * @brief Envelope decryption
-     *
-     * Decrypts data encrypted with envelope encryption.
-     *
-     * @param ciphertext Encrypted data
-     * @param private_key Recipient's private key (PEM)
-     * @param format Format of the encrypted data
-     * @return Decrypted data or empty vector on failure
-     */
-    static std::vector<unsigned char> envelope_decrypt(const std::string &ciphertext, const std::string &private_key,
-                                                       EnvelopeFormat format = EnvelopeFormat::BASE64);
 
     /**
      * @brief Generate a secure token with optional TTL

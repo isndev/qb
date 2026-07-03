@@ -186,7 +186,7 @@ ping(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout = std::
     auto st       = std::make_shared<detail::discovery_state>();
     st->single    = true;
     st->token     = ctx.token();
-    const auto id = qb::detail::ask_next_id();
+    const auto id = qb::detail::ask_next_id(ctx.id());
     detail::register_discovery(id, *st, ctx.id());
     qb::detail::ask_slot_guard guard{id};                              // deregister if the send throws before the awaiter takes over
     ctx.template push_to<qb::PingEvent>(target, std::uint32_t{0}, id); // type 0 = wildcard liveness
@@ -219,7 +219,7 @@ require(qb::ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseco
     auto st       = std::make_shared<detail::discovery_state>();
     st->single    = false;
     st->token     = ctx.token();
-    const auto id = qb::detail::ask_next_id();
+    const auto id = qb::detail::ask_next_id(ctx.id());
     detail::register_discovery(id, *st, ctx.id());
     qb::detail::ask_slot_guard guard{id}; // deregister if the broadcast throws before the awaiter takes over
     ctx.template broadcast<qb::PingEvent>(static_cast<std::uint32_t>(qb::type_id<_Actor>()), id);

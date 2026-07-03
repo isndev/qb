@@ -55,6 +55,11 @@
 #include <qb/io/crypto_jwt.h>
 #include <qb/system/parse.h>
 
+#include <openssl/bn.h>
+#include <openssl/ecdsa.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+
 using namespace qb;
 
 namespace {
@@ -80,6 +85,96 @@ to_base64url(const std::string &data) {
         encoded.erase(padding);
     }
     return encoded;
+}
+
+// --- Independent ECDSA/JOSE helpers (an external verifier's viewpoint) --------
+// These deliberately use OpenSSL primitives directly, NOT qb's ec_sign/ec_verify
+// or crypto_jwt's own converters, so they cross-check the JOSE R‖S encoding
+// against a second implementation of RFC 7518 §3.4.
+
+const EVP_MD *
+es_digest(jwt::Algorithm alg) {
+    switch (alg) {
+        case jwt::Algorithm::ES256:
+            return EVP_sha256();
+        case jwt::Algorithm::ES384:
+            return EVP_sha384();
+        case jwt::Algorithm::ES512:
+            return EVP_sha512();
+        default:
+            return nullptr;
+    }
+}
+
+// Verify a raw R‖S JOSE signature over `msg` with a PEM public key, using OpenSSL
+// directly (raw → ECDSA_SIG → DER → EVP_DigestVerify). Returns true iff valid.
+bool
+openssl_verify_raw_ecdsa(const std::string &msg, const std::vector<unsigned char> &raw, const std::string &pub_pem, jwt::Algorithm alg,
+                         std::size_t coord_len) {
+    if (raw.size() != 2 * coord_len)
+        return false;
+    BIO      *bio  = BIO_new_mem_buf(pub_pem.data(), static_cast<int>(pub_pem.size()));
+    EVP_PKEY *pkey = bio ? PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr) : nullptr;
+    BIO_free(bio);
+    if (!pkey)
+        return false;
+    ECDSA_SIG *sig = ECDSA_SIG_new();
+    BIGNUM    *r   = BN_bin2bn(raw.data(), static_cast<int>(coord_len), nullptr);
+    BIGNUM    *s   = BN_bin2bn(raw.data() + coord_len, static_cast<int>(coord_len), nullptr);
+    bool       ok  = false;
+    if (sig && r && s && ECDSA_SIG_set0(sig, r, s) == 1) {
+        unsigned char *der     = nullptr;
+        const int      der_len = i2d_ECDSA_SIG(sig, &der);
+        if (der_len > 0) {
+            EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+            ok = ctx && EVP_DigestVerifyInit(ctx, nullptr, es_digest(alg), nullptr, pkey) == 1 &&
+                 EVP_DigestVerify(ctx, der, static_cast<std::size_t>(der_len), reinterpret_cast<const unsigned char *>(msg.data()), msg.size()) == 1;
+            EVP_MD_CTX_free(ctx);
+        }
+        OPENSSL_free(der);
+    } else {
+        BN_free(r);
+        BN_free(s);
+    }
+    ECDSA_SIG_free(sig);
+    EVP_PKEY_free(pkey);
+    return ok;
+}
+
+// Sign `msg` with a PEM EC private key using OpenSSL directly and return the
+// signature as raw R‖S (what a standards-compliant JOSE library emits).
+std::vector<unsigned char>
+openssl_sign_raw_ecdsa(const std::string &msg, const std::string &priv_pem, jwt::Algorithm alg, std::size_t coord_len) {
+    BIO      *bio  = BIO_new_mem_buf(priv_pem.data(), static_cast<int>(priv_pem.size()));
+    EVP_PKEY *pkey = bio ? PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr) : nullptr;
+    BIO_free(bio);
+    if (!pkey)
+        return {};
+    std::vector<unsigned char> raw;
+    EVP_MD_CTX                *ctx = EVP_MD_CTX_new();
+    std::size_t                der_len = 0;
+    if (ctx && EVP_DigestSignInit(ctx, nullptr, es_digest(alg), nullptr, pkey) == 1 &&
+        EVP_DigestSign(ctx, nullptr, &der_len, reinterpret_cast<const unsigned char *>(msg.data()), msg.size()) == 1) {
+        std::vector<unsigned char> der(der_len);
+        if (EVP_DigestSign(ctx, der.data(), &der_len, reinterpret_cast<const unsigned char *>(msg.data()), msg.size()) == 1) {
+            der.resize(der_len);
+            const unsigned char *p   = der.data();
+            ECDSA_SIG           *sig = d2i_ECDSA_SIG(nullptr, &p, static_cast<long>(der.size()));
+            if (sig) {
+                const BIGNUM *r = nullptr;
+                const BIGNUM *s = nullptr;
+                ECDSA_SIG_get0(sig, &r, &s);
+                raw.assign(2 * coord_len, 0);
+                if (!r || !s || BN_bn2binpad(r, raw.data(), static_cast<int>(coord_len)) != static_cast<int>(coord_len) ||
+                    BN_bn2binpad(s, raw.data() + coord_len, static_cast<int>(coord_len)) != static_cast<int>(coord_len))
+                    raw.clear();
+                ECDSA_SIG_free(sig);
+            }
+        }
+    }
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(pkey);
+    return raw;
 }
 
 } // namespace
@@ -319,6 +414,71 @@ TEST(CryptoJWT, ECDSASignature) {
     auto [_, other_public] = crypto::generate_ec_keypair("prime256v1");
     verify_options.key     = other_public;
     EXPECT_FALSE(jwt::verify(token, verify_options).is_valid());
+}
+
+// RFC 7518 §3.4: an ES* JWS signature is the fixed-size big-endian R‖S, NOT the
+// ASN.1 DER ECDSA-Sig-Value OpenSSL emits natively. This proves qb emits and
+// accepts the standard encoding and interoperates with an independent verifier
+// in both directions (regression guard for the DER-vs-raw defect).
+TEST(CryptoJWT, ECDSAEmitsRawJoseSignatureAndInteroperates) {
+    struct Case {
+        jwt::Algorithm alg;
+        const char    *curve;
+        std::size_t    coord_len; // per-coordinate bytes; the signature is 2×
+    };
+    const Case cases[] = {
+        {jwt::Algorithm::ES256, "prime256v1", 32},
+        {jwt::Algorithm::ES384, "secp384r1", 48},
+        {jwt::Algorithm::ES512, "secp521r1", 66},
+    };
+
+    for (const auto &c : cases) {
+        SCOPED_TRACE(c.curve);
+        auto [priv, pub] = crypto::generate_ec_keypair(c.curve);
+        ASSERT_FALSE(priv.empty());
+        ASSERT_FALSE(pub.empty());
+
+        const std::map<std::string, std::string> payload = {{"user_id", "42"}};
+        jwt::CreateOptions                        co;
+        co.algorithm            = c.alg;
+        co.key                  = priv;
+        const std::string token = jwt::create(payload, co);
+
+        // Split "header.payload.signature".
+        const auto dot2 = token.rfind('.');
+        ASSERT_NE(dot2, std::string::npos);
+        const std::string signing_input = token.substr(0, dot2);
+        const auto        sig           = crypto::base64url_decode(token.substr(dot2 + 1));
+
+        // (1) Fixed-size raw R‖S, NOT ASN.1 DER (which is variable ~70/103/139 B).
+        EXPECT_EQ(sig.size(), 2 * c.coord_len) << "ES* JWT signature must be raw R‖S (RFC 7518 §3.4), not DER";
+
+        // (2) qb round-trips its own token.
+        jwt::VerifyOptions vo;
+        vo.algorithm = c.alg;
+        vo.key       = pub;
+        EXPECT_TRUE(jwt::verify(token, vo).is_valid());
+
+        // (3) INTEROP OUT: an independent OpenSSL verifier accepts qb's signature.
+        EXPECT_TRUE(openssl_verify_raw_ecdsa(signing_input, sig, pub, c.alg, c.coord_len))
+            << "qb's ES* signature must verify under a standard (non-qb) JOSE verifier";
+
+        // (4) INTEROP IN: qb accepts a standards-compliant token signed elsewhere.
+        const auto ext_raw = openssl_sign_raw_ecdsa(signing_input, priv, c.alg, c.coord_len);
+        ASSERT_EQ(ext_raw.size(), 2 * c.coord_len);
+        const std::string ext_token = signing_input + "." + crypto::base64url_encode(ext_raw);
+        EXPECT_TRUE(jwt::verify(ext_token, vo).is_valid()) << "qb must accept an externally-produced raw R‖S ES* token";
+
+        // (5) A corrupted signature is rejected.
+        auto corrupt = sig;
+        corrupt[corrupt.size() / 2] ^= 0x01;
+        EXPECT_FALSE(jwt::verify(signing_input + "." + crypto::base64url_encode(corrupt), vo).is_valid());
+
+        // (6) A wrong-length (e.g. DER-shaped) signature is rejected, not mis-parsed.
+        auto wrong_len = sig;
+        wrong_len.push_back(0x00);
+        EXPECT_FALSE(jwt::verify(signing_input + "." + crypto::base64url_encode(wrong_len), vo).is_valid());
+    }
 }
 
 TEST(CryptoJWT, EdDSASignature) {

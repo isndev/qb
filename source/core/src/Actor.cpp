@@ -49,9 +49,19 @@ thread_local std::unordered_set<Event::id_type> tls_ask_types;
 } // namespace
 
 std::uint64_t
-ask_next_id() noexcept {
-    // 0 is reserved for "not an ask"; skip it on the (astronomically rare) wrap.
-    return ++tls_ask_counter ? tls_ask_counter : ++tls_ask_counter;
+ask_next_id(qb::ActorId const owner) noexcept {
+    // Salt the per-thread counter with the OWNER actor's core index (high 16
+    // bits) so correlation ids are globally unique across VirtualCores. Two
+    // cores' independent per-thread counters would otherwise produce identical
+    // values, and `ask_deliver` matches on (id, owner) only — a cross-core
+    // request carrying a colliding id would resolve the receiver's OWN pending
+    // slot and hand its `ask_awaiter<E>` an event of the wrong type (type
+    // confusion). Encoding the slot-owning core in the id makes a lookup on any
+    // other core miss. Low 48 bits = counter (never realistically wrapped);
+    // 0 stays reserved for "not an ask".
+    const std::uint64_t n   = ++tls_ask_counter;
+    const std::uint64_t seq = n ? n : ++tls_ask_counter;
+    return (static_cast<std::uint64_t>(owner.index()) << 48) | seq;
 }
 
 void

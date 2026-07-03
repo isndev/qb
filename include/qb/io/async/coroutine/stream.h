@@ -486,17 +486,24 @@ public:
         auto source = _next;
         auto buffer = std::make_shared<channel<T>>(max_buffer);
         auto sem    = acquire_semaphore ? acquire_semaphore : std::make_shared<semaphore>(max_buffer);
+        // Surface a throwing source to the consumer instead of silently turning
+        // it into end-of-stream (mirrors debounce).
+        auto source_error = std::make_shared<std::exception_ptr>();
 
-        coro_scheduler().spawn(backpressure_fill_task(std::move(source), buffer, sem));
+        coro_scheduler().spawn(backpressure_fill_task(std::move(source), buffer, sem, source_error));
 
         // Consumer: read from buffer and release one semaphore slot so the
         // producer may push the next item.
-        return async_stream([buffer, sem]() -> task<std::optional<T>> {
+        return async_stream([buffer, sem, source_error]() -> task<std::optional<T>> {
             auto opt = co_await buffer->recv();
             if (opt) {
                 sem->release();
+                co_return opt;
             }
-            co_return opt;
+            // Producer ended: propagate a pending source error before reporting EOF.
+            if (*source_error)
+                std::rethrow_exception(*source_error);
+            co_return std::nullopt;
         });
     }
 
@@ -612,26 +619,35 @@ public:
         }
     }
 
-    // Static free function: fn, buffer, sem are VALUE parameters in the
+    // Static free function: fn, buffer, sem, err are VALUE parameters in the
     // coroutine frame — no dangling-lambda risk even after backpressure() returns.
     //
-    // Finding 2.C.5: the EOF branch now releases the already-acquired
-    // permit before closing the buffer. Without this, the semaphore ends
-    // each stream short by one permit; repeatedly re-using the same
-    // semaphore (when the caller passes their own) would slowly starve
-    // subsequent producers.
+    // A throwing source must not silently strand the consumer: the buffer is
+    // closed on EVERY exit (so a consumer parked on recv() wakes) and the
+    // exception is stored so the consumer rethrows it rather than seeing a bare
+    // end-of-stream. Mirrors debounce()'s producer.
+    //
+    // Finding 2.C.5: the last-acquired (unconsumed) permit is released before
+    // close so a caller-supplied, reused semaphore stays balanced; release() is a
+    // no-op if no permit is held (e.g. acquire() itself was cancelled).
     static task<void>
-    backpressure_fill_task(std::function<task<std::optional<T>>()> fn, std::shared_ptr<channel<T>> buffer, std::shared_ptr<semaphore> sem) {
-        while (true) {
-            co_await sem->acquire();
-            auto opt = co_await fn();
-            if (!opt) {
-                sem->release();
-                buffer->close();
-                co_return;
+    backpressure_fill_task(std::function<task<std::optional<T>>()> fn, std::shared_ptr<channel<T>> buffer, std::shared_ptr<semaphore> sem,
+                           std::shared_ptr<std::exception_ptr> err) {
+        try {
+            while (true) {
+                co_await sem->acquire();
+                auto opt = co_await fn();
+                if (!opt)
+                    break; // EOF
+                co_await buffer->send(std::move(*opt));
             }
-            co_await buffer->send(std::move(*opt));
+        } catch (const channel_closed &) {
+            // Consumer closed the buffer — terminal state, not an error.
+        } catch (...) {
+            *err = std::current_exception();
         }
+        sem->release();
+        buffer->close();
     }
 
     // Expose next function for composition helpers (zip, merge_streams)

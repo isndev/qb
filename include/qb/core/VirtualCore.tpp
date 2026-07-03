@@ -154,8 +154,13 @@ VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) noe
 template <typename T, typename... _Init>
 void
 VirtualCore::broadcast(ActorId const source, _Init &&...init) noexcept {
+    // Each core needs its OWN copy of the payload. Never `std::forward` the same
+    // pack into more than one `send`: forwarding an rvalue moves it into the
+    // first core's event and leaves every subsequent core constructing `T` from
+    // moved-from arguments (e.g. an empty string). Pass the arguments as lvalues
+    // so every `send` copy-constructs `T`.
     for (const auto it : _engine._core_set.raw())
-        send<T, _Init...>(BroadcastId(it), source, std::forward<_Init>(init)...);
+        send<T>(BroadcastId(it), source, init...);
 }
 
 template <typename T, typename... _Init>

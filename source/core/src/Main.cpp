@@ -131,9 +131,14 @@ SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_
 SharedCoreCommunication::~SharedCoreCommunication() noexcept = default;
 
 bool
-SharedCoreCommunication::send(Event const &event) const noexcept {
-    const CoreId source_index = _core_set.resolve(event.source.index());
-    const CoreId dest_index   = _core_set.resolve(event.dest.index());
+SharedCoreCommunication::send(CoreId const source_index, Event const &event) const noexcept {
+    // `source_index` MUST be the PHYSICAL core whose thread is calling (the
+    // caller's `_resolved_index`), NOT `_core_set.resolve(event.source.index())`.
+    // Each MPSC producer slot is a single-producer ring; deriving it from
+    // `event.source` let a `forward()` — which preserves the original sender —
+    // write another core's slot concurrently with that core itself, a two-writer
+    // data race that tears the ring's write index / bucket bytes.
+    const CoreId dest_index = _core_set.resolve(event.dest.index());
 
     if (static_cast<bool>(_mail_boxes[dest_index]->enqueue(source_index, reinterpret_cast<const EventBucket *>(&event), event.bucket_size))) {
         _mail_boxes[dest_index]->notify();
@@ -214,6 +219,26 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     VirtualCore::_handler = &core;
     io::async::init();
 
+    // Publish this core as stopped on EVERY exit from here on — including an
+    // exception escaping a callback / IO handler inside __workflow__. Normally
+    // __workflow__ marks itself stopped at its tail, but on a throw that tail is
+    // skipped, so peers keep treating the crashed core as live and the shutdown
+    // residual drain (which waits for every core's stopped flag) hangs
+    // Main::join() forever. mark_core_stopped is an idempotent release store on
+    // this core's own thread, so the normal in-workflow call is unaffected.
+    struct ExitGuard {
+        SharedCoreCommunication &com;
+        CoreId                   idx;
+        ~ExitGuard() {
+            com.mark_core_stopped(idx);
+            // `core` is a stack local; leaving `_handler` pointing at it dangles
+            // once this returns. Matters for start(false), where the caller's own
+            // thread ran start_thread and may touch the framework afterwards (an
+            // Actor ctor only asserts non-null). Fires on every exit path.
+            VirtualCore::_handler = nullptr;
+        }
+    } exit_guard{params.shared_com, core._resolved_index};
+
     try {
         // Init VirtualCore
         auto &core_factory = initializer._actor_factories;
@@ -237,6 +262,12 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         core.__workflow__();
     } catch (const std::exception &e) {
         LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
+        params.sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
+        initializer.clear();
+    } catch (...) {
+        // A non-std::exception throw would otherwise escape this noexcept
+        // function and std::terminate — and skip the stopped-flag publish.
+        LOG_CRIT("Non-standard exception thrown on " << core);
         params.sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
         initializer.clear();
     }

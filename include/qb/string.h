@@ -783,11 +783,14 @@ public:
      */
     string &
     append(const char *str, std::size_t len) noexcept {
-        std::size_t new_size   = std::min(_size + len, static_cast<std::size_t>(_Size));
-        std::size_t actual_len = new_size - _size;
+        // Clamp on the free room, never on `_size + len`: the latter wraps when
+        // `len > SIZE_MAX - _size`, making `new_size < _size` so `new_size - _size`
+        // underflows to a huge count and the memcpy overruns the fixed buffer.
+        const std::size_t room       = static_cast<std::size_t>(_Size) - _size;
+        const std::size_t actual_len = std::min(len, room);
 
         std::memcpy(base_t::data() + _size, str, actual_len);
-        _size                 = static_cast<size_type>(new_size);
+        _size                 = static_cast<size_type>(_size + actual_len);
         base_t::data()[_size] = '\0';
 
         return *this;
@@ -813,11 +816,13 @@ public:
      */
     string &
     append(std::size_t count, char ch) noexcept {
-        std::size_t new_size     = std::min(_size + count, static_cast<std::size_t>(_Size));
-        std::size_t actual_count = new_size - _size;
+        // Clamp on the free room, never on `_size + count` (see append(const
+        // char*, len)): the sum wraps for a hostile count and underflows the fill.
+        const std::size_t room         = static_cast<std::size_t>(_Size) - _size;
+        const std::size_t actual_count = std::min(count, room);
 
         std::fill_n(base_t::data() + _size, actual_count, ch);
-        _size                 = static_cast<size_type>(new_size);
+        _size                 = static_cast<size_type>(_size + actual_count);
         base_t::data()[_size] = '\0';
 
         return *this;

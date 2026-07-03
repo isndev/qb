@@ -98,7 +98,7 @@ using request = Request<Resp>;
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<E>
 ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) {
-    const std::uint64_t aid = qb::detail::ask_next_id();
+    const std::uint64_t aid = qb::detail::ask_next_id(ctx.id());
     req.correlation_id      = aid;
     ctx.template push_to<E>(target, std::move(req)); // send to target, source = asker
     co_return co_await qb::detail::ask_awaiter<E>{aid, ctx.id(), timeout, ctx.token()};

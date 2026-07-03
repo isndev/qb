@@ -175,6 +175,40 @@ TEST_F(ChannelAsync, TrySendCopyThenMoveWakesParkedReceiverInOrder) {
     EXPECT_EQ(received[1], "move-path");
 }
 
+// Regression: on a rendezvous (cap-0) channel, send_for() must deliver to a
+// recv_for()/select() waiter that is ALREADY parked. recv_for parks in
+// _select_waiters (not _recv_waiters); send_for's fast path used to consult only
+// _recv_waiters/buffer, so it took the timed slow path and BOTH sides stayed
+// parked until their timeouts elapsed instead of matching immediately. The op
+// timeouts (10s) far exceed pump_until's window (2s), so with the bug neither
+// side completes in-window and pump_until fails loudly; with the fix they match
+// synchronously.
+TEST_F(ChannelAsync, SendForMatchesAlreadyParkedRecvForOnRendezvous) {
+    channel<int>      ch(0);
+    std::atomic<bool> recv_done{false};
+    std::atomic<bool> send_done{false};
+    std::atomic<bool> send_ok{false};
+    std::atomic<int>  received{-1};
+
+    // Receiver parks FIRST (recv_for registers in _select_waiters).
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto v = co_await ch.recv_for(10s);
+        if (v)
+            received.store(*v);
+        recv_done.store(true);
+    });
+    // Sender's fast path must see the parked recv_for and hand off synchronously.
+    coro_scheduler().spawn([&]() -> task<void> {
+        send_ok.store(co_await ch.send_for(42, 10s));
+        send_done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return recv_done.load() && send_done.load(); }))
+        << "send_for ignored the parked recv_for on a rendezvous channel — both parked (hang)";
+    EXPECT_TRUE(send_ok.load()) << "send_for should report success on a rendezvous match";
+    EXPECT_EQ(received.load(), 42) << "recv_for should receive the rendezvous value, not time out";
+}
+
 // ---------------------------------------------------------------------------
 // Awaited send/recv close semantics
 // ---------------------------------------------------------------------------
@@ -443,6 +477,37 @@ TEST_F(ChannelAsync, MakePipelineTransformsAndPropagatesClose) {
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "pipeline consumer never finished";
     EXPECT_EQ(sum.load(), (1 + 2 + 3 + 4 + 5) * 10) << "pipeline must transform every value";
     EXPECT_TRUE(out->is_closed()) << "closing the input must propagate close to the output";
+}
+
+// Regression: a make_pipeline transform that throws must still close `out` so the
+// consumer wakes (end-of-stream) instead of hanging forever. Previously the
+// exception propagated out of pipeline_worker and out->close() was skipped.
+TEST_F(ChannelAsync, MakePipelineThrowingTransformClosesOutputInsteadOfHanging) {
+    auto [in, out] = make_pipeline<int, int>(
+        [](int v) -> int {
+            if (v == 3)
+                throw std::runtime_error("transform boom");
+            return v * 10;
+        },
+        8);
+
+    std::atomic<bool> done{false};
+
+    coro_scheduler().spawn([in = in.get()]() -> task<void> {
+        for (int i = 1; i <= 5; ++i)
+            co_await in->send(i);
+        in->close();
+    });
+    coro_scheduler().spawn([out = out.get(), &done]() -> task<void> {
+        while (auto v = co_await out->recv()) {
+            // drain whatever the transform produced before it threw
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); }))
+        << "pipeline consumer hung after the transform threw — out was never closed";
+    EXPECT_TRUE(out->is_closed()) << "a throwing transform must still close the output channel";
 }
 
 TEST_F(ChannelAsync, MakePipelineTypeChangingTransform) {

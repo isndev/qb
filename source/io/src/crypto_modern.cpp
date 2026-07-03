@@ -52,7 +52,12 @@ validate_symmetric_parameters(const EVP_CIPHER *cipher, const std::vector<unsign
         return;
     }
 
-    if ((!is_aead && iv.size() != expected_iv_size) || (is_aead && iv.size() < expected_iv_size)) {
+    // Require the EXACT IV/nonce length — for AEAD too. The old `iv.size() <
+    // expected` accepted an oversized nonce, but the cipher is initialised with
+    // only the default (12-byte) length and never SET_IVLEN, so the extra bytes
+    // were silently ignored: a caller varying only the tail of a 16-byte "nonce"
+    // reused the same effective 96-bit GCM nonce (catastrophic key/tag recovery).
+    if (iv.size() != expected_iv_size) {
         throw std::invalid_argument("Invalid IV size for symmetric algorithm");
     }
 }

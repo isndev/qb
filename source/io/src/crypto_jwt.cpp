@@ -22,10 +22,91 @@
 #include <qb/io/crypto_jwt.h>
 #include <qb/json.h>
 #include <qb/system/parse.h>
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
 
+#include <openssl/bn.h>
+#include <openssl/ecdsa.h>
+
 namespace qb {
+
+namespace {
+
+// --- JOSE ECDSA signature encoding (RFC 7518 §3.4) -------------------------
+// `crypto::ec_sign`/`ec_verify` speak OpenSSL's native ASN.1 DER ECDSA-Sig-Value
+// (variable length). JWS mandates the fixed-size big-endian concatenation R‖S,
+// each coordinate padded to the curve's byte length. These helpers bridge the
+// two so qb's ES* tokens interoperate with every standards-compliant verifier
+// (and vice-versa). They return an empty vector on any malformed input, which
+// the callers turn into a signing error / a failed verification (fail-closed).
+
+// Fixed coordinate byte length per JWS ES* algorithm (RFC 7518 §3.4):
+// ES256 → P-256 (32), ES384 → P-384 (48), ES512 → P-521 (66, 521 bits rounded up).
+std::size_t
+es_coordinate_length(jwt::Algorithm alg) noexcept {
+    switch (alg) {
+        case jwt::Algorithm::ES256:
+            return 32;
+        case jwt::Algorithm::ES384:
+            return 48;
+        case jwt::Algorithm::ES512:
+            return 66;
+        default:
+            return 0;
+    }
+}
+
+// DER ECDSA-Sig-Value → raw R‖S (2 * coord_len bytes). Empty on parse failure or
+// if a coordinate does not fit in coord_len.
+std::vector<unsigned char>
+ecdsa_der_to_raw(const std::vector<unsigned char> &der, std::size_t coord_len) {
+    if (coord_len == 0 || der.empty())
+        return {};
+    const unsigned char *p   = der.data();
+    ECDSA_SIG           *sig = d2i_ECDSA_SIG(nullptr, &p, static_cast<long>(der.size()));
+    if (!sig)
+        return {};
+    const BIGNUM *r = nullptr;
+    const BIGNUM *s = nullptr;
+    ECDSA_SIG_get0(sig, &r, &s);
+    std::vector<unsigned char> raw(2 * coord_len, 0);
+    const bool                 ok = r && s && BN_bn2binpad(r, raw.data(), static_cast<int>(coord_len)) == static_cast<int>(coord_len) &&
+                    BN_bn2binpad(s, raw.data() + coord_len, static_cast<int>(coord_len)) == static_cast<int>(coord_len);
+    ECDSA_SIG_free(sig);
+    if (!ok)
+        return {};
+    return raw;
+}
+
+// Raw R‖S (must be exactly 2 * coord_len bytes) → DER ECDSA-Sig-Value. Empty on
+// a length mismatch or an encoding failure (rejects a malformed wire signature).
+std::vector<unsigned char>
+ecdsa_raw_to_der(const std::vector<unsigned char> &raw, std::size_t coord_len) {
+    if (coord_len == 0 || raw.size() != 2 * coord_len)
+        return {};
+    ECDSA_SIG *sig = ECDSA_SIG_new();
+    if (!sig)
+        return {};
+    BIGNUM *r = BN_bin2bn(raw.data(), static_cast<int>(coord_len), nullptr);
+    BIGNUM *s = BN_bin2bn(raw.data() + coord_len, static_cast<int>(coord_len), nullptr);
+    if (!r || !s || ECDSA_SIG_set0(sig, r, s) != 1) { // set0 takes ownership of r,s only on success
+        BN_free(r);
+        BN_free(s);
+        ECDSA_SIG_free(sig);
+        return {};
+    }
+    unsigned char             *der     = nullptr; // i2d allocates
+    const int                  der_len = i2d_ECDSA_SIG(sig, &der);
+    std::vector<unsigned char> out;
+    if (der_len > 0)
+        out.assign(der, der + der_len);
+    OPENSSL_free(der);
+    ECDSA_SIG_free(sig); // frees r,s (owned via set0)
+    return out;
+}
+
+} // namespace
 
 // Convert base64url to standard base64
 std::string
@@ -95,8 +176,15 @@ jwt::sign_data(const std::string &data, const CreateOptions &options) {
 
         case Algorithm::ES256:
         case Algorithm::ES384:
-        case Algorithm::ES512:
-            return crypto::ec_sign(data_bytes, options.key, get_digest_algorithm(options.algorithm));
+        case Algorithm::ES512: {
+            // ec_sign returns ASN.1 DER ECDSA-Sig-Value; JWS requires fixed-size
+            // raw R‖S (RFC 7518 §3.4). Convert so the token verifies elsewhere.
+            const auto der = crypto::ec_sign(data_bytes, options.key, get_digest_algorithm(options.algorithm));
+            auto       raw = ecdsa_der_to_raw(der, es_coordinate_length(options.algorithm));
+            if (raw.empty())
+                throw std::runtime_error("Failed to encode ECDSA signature to JOSE (R‖S) format");
+            return raw;
+        }
 
         case Algorithm::EdDSA:
             return crypto::ed25519_sign(data_bytes, options.key);
@@ -132,8 +220,15 @@ jwt::verify_signature(const std::string &data, const std::vector<unsigned char> 
 
         case Algorithm::ES256:
         case Algorithm::ES384:
-        case Algorithm::ES512:
-            return crypto::ec_verify(data_bytes, signature, options.key, get_digest_algorithm(options.algorithm));
+        case Algorithm::ES512: {
+            // JWS carries the signature as raw R‖S (RFC 7518 §3.4); ec_verify
+            // expects ASN.1 DER. A wrong-length / malformed value converts to an
+            // empty DER and fails closed.
+            const auto der = ecdsa_raw_to_der(signature, es_coordinate_length(options.algorithm));
+            if (der.empty())
+                return false;
+            return crypto::ec_verify(data_bytes, der, options.key, get_digest_algorithm(options.algorithm));
+        }
 
         case Algorithm::EdDSA:
             return crypto::ed25519_verify(data_bytes, signature, options.key);
@@ -471,7 +566,15 @@ jwt::verify(const std::string &token, const VerifyOptions &options) {
                 return true;
             }
             if (v.is_number_float()) {
-                out = static_cast<int64_t>(v.get<double>());
+                const double d = v.get<double>();
+                // static_cast<int64_t>(double) is UB for NaN / inf / out-of-range
+                // ([conv.fpint]); on aarch64 it saturates to INT64_MAX, which would
+                // make an `exp` comparison pass (silent expiration bypass). Fail
+                // closed on anything not exactly representable as int64. 2^63 is
+                // exact as double; [-2^63, 2^63) is the safe cast range.
+                if (!std::isfinite(d) || d < -9223372036854775808.0 || d >= 9223372036854775808.0)
+                    return false;
+                out = static_cast<int64_t>(d);
                 return true;
             }
             if (v.is_string()) {

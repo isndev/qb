@@ -401,6 +401,10 @@ public:
     /**
      * @brief Send an event to the mailbox of its destination VirtualCore.
      * @ingroup Engine
+     * @param source_index The **physical** producer core's resolved index (the calling
+     *        VirtualCore's `_resolved_index`). Selects the single-producer ring in the
+     *        destination MPSC mailbox — it must be the sending thread's own core, not
+     *        `event.source` (which `forward()` preserves as the original sender).
      * @param event The `qb::Event` to send. The event's `dest_core()` determines the target mailbox.
      * @return `true` if the event was successfully enqueued into the destination core's mailbox.
      *         `false` if the destination core ID is invalid, the mailbox is full (rare),
@@ -408,7 +412,7 @@ public:
      * @details This method is used internally by actors and the engine to route events between cores.
      *          It relies on the MPSC ringbuffer implementation for the mailboxes.
      */
-    [[nodiscard]] bool send(Event const &event) const noexcept;
+    [[nodiscard]] bool send(CoreId source_index, Event const &event) const noexcept;
 
     /**
      * @brief Get the mailbox for a specific VirtualCore.

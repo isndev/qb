@@ -42,7 +42,11 @@ namespace qb::io::tcp::ssl {
  */
 class QB_API listener : public tcp::listener {
     std::unique_ptr<SSL_CTX, void (*)(SSL_CTX *)> _ctx; /**< Unique pointer managing the OpenSSL SSL_CTX (context) object. */
-    mutable std::vector<unsigned char>            _alpn_wire;
+    // Held behind a unique_ptr so the ALPN wire buffer keeps a STABLE heap
+    // address across a listener move (the defaulted move ops transfer the
+    // SSL_CTX, which has this buffer's address registered as the alpn_select_cb
+    // arg — a pointer into a moved-from member would dangle).
+    mutable std::unique_ptr<std::vector<unsigned char>> _alpn_wire;
 
 public:
     /** @brief Indicates that this socket implementation is secure */

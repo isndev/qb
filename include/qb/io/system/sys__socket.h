@@ -600,10 +600,24 @@ public:
                 n += snprintf(&addr.front() + n, QB_MAX_CHAR_USHORT + 2, "]:%u", this->port());
                 break;
 #if defined(QB_ENABLE_UDS) && QB__HAS_UDS
-            case AF_UNIX:
-                n = this->len() - offsetof(struct sockaddr_un, sun_path) - 1;
+            case AF_UNIX: {
+                // `len()` is the kernel-reported sockaddr size. For a pathname
+                // socket it is `offsetof(sun_path) + strlen(path) + 1`; for an
+                // unnamed / autobind socket it can be as small as the family
+                // field alone (e.g. `len() == 2` for an unbound UDS peer). The
+                // old `len() - offsetof - 1` underflowed `size_t` in that case
+                // and `assign()` then read ~4 GiB past the union. Bound the path
+                // length to what is actually present and stop at the first NUL.
+                constexpr auto off  = offsetof(struct sockaddr_un, sun_path);
+                std::size_t    span = this->len() > off ? static_cast<std::size_t>(this->len()) - off : 0u;
+                if (span > sizeof(un_.sun_path))
+                    span = sizeof(un_.sun_path);
+                n = 0;
+                while (n < span && un_.sun_path[n] != '\0')
+                    ++n;
                 addr.assign(un_.sun_path, n);
                 break;
+            }
 #endif
         }
 
