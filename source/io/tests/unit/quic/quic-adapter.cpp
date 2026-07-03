@@ -92,6 +92,36 @@ make_fake(FakeQuicBackend *&out) {
 
 using State = qb::io::async::quic::endpoint::state;
 
+// An endpoint that re-enters the transport from inside a stream_data dispatch: while handling a
+// read it sends on the stream. With the backend's close_on_send_stream_data set, that send queues
+// a connection_closed — the exact reentrancy the drain guard defends. The reentrant close must be
+// dispatched only AFTER the stream_data handler has fully unwound (never nested inside it), so a
+// real handler cannot have the connection/session/buffer it is still using freed under its feet.
+struct ReentrantSendEndpoint : qb::io::async::quic::endpoint {
+    using qb::io::async::quic::endpoint::endpoint;
+
+    std::vector<std::string> order;
+    bool                     in_stream_data        = false;
+    bool                     close_seen_reentrantly = false;
+
+    void
+    dispatch(qb::io::async::quic::event::stream_data const &ev) override {
+        order.push_back("stream_data:enter");
+        in_stream_data = true;
+        const std::byte payload[] = {std::byte{'x'}};
+        send_stream_data(ev.connection_id, ev.id, std::span<const std::byte>(payload, 1), false);
+        in_stream_data = false;
+        order.push_back("stream_data:exit");
+    }
+
+    void
+    dispatch(qb::io::async::quic::event::connection_closed const &) override {
+        order.push_back("connection_closed");
+        if (in_stream_data)
+            close_seen_reentrantly = true;
+    }
+};
+
 } // namespace
 
 // =============================================================================
@@ -403,6 +433,41 @@ TEST(QuicAdapterEndpoint, BaseEndpointAcceptsAllBackendEventsAndTracksState) {
 
     EXPECT_FALSE(endpoint.is_open());
     EXPECT_EQ(endpoint.current_state(), State::closed);
+}
+
+/**
+ * @test A close queued by a send issued from inside a stream_data dispatch is NOT dispatched on the
+ *       nested stack — it is deferred until the outer dispatch unwinds. Regression for the QUIC
+ *       reentrant-drain UAF/underflow class: drain_backend_events() re-entered from send_stream_data
+ *       used to dispatch the freshly-queued connection_closed immediately, freeing the connection /
+ *       session / output buffer the outer handler was still operating on.
+ */
+TEST(QuicAdapterEndpoint, ReentrantSendCloseIsDeferredPastTheOuterDispatch) {
+    FakeQuicBackend      *raw = nullptr;
+    ReentrantSendEndpoint endpoint{make_fake(raw)};
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    raw->queued_events.push_back({qb::io::quic::backend_event::kind::connected, 3, 0, 0, "h3", {}});
+    endpoint.poll();
+    ASSERT_EQ(endpoint.current_state(), State::connected);
+
+    // From now on, any send_stream_data reentrantly queues a connection_closed.
+    raw->close_on_send_stream_data = true;
+
+    qb::io::quic::backend_event data;
+    data.type          = qb::io::quic::backend_event::kind::stream_data;
+    data.connection_id = 3;
+    data.stream_id     = 0;
+    data.payload       = {std::byte{'r'}, std::byte{'q'}};
+    raw->queued_events.push_back(std::move(data));
+    endpoint.poll();
+
+    EXPECT_FALSE(endpoint.close_seen_reentrantly)
+        << "connection_closed was dispatched on a nested stack inside the stream_data handler";
+    ASSERT_EQ(endpoint.order.size(), 3u);
+    EXPECT_EQ(endpoint.order[0], "stream_data:enter");
+    EXPECT_EQ(endpoint.order[1], "stream_data:exit");
+    EXPECT_EQ(endpoint.order[2], "connection_closed") << "the deferred close must run after the read fully unwinds";
 }
 
 /**
