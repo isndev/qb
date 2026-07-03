@@ -232,6 +232,42 @@ TEST_F(ChannelSyncOps, RegisterSelectWaiterResolvesClosedChannelAsClosed) {
     EXPECT_FALSE(state->value.has_value());
 }
 
+// try_send must hand its value to a PARKED select waiter, mirroring the coroutine send() path.
+// Regression for the cap-0 rendezvous gap: try_send only checked _recv_waiters + the buffer, so
+// with a parked select()/recv_for() waiter and no usable buffer (cap 0) it returned false and the
+// rendezvous deadlocked, even though a partner was ready.
+TEST_F(ChannelSyncOps, TrySendSatisfiesParkedSelectWaiterOnRendezvousChannel) {
+    channel<int> ch(0); // cap-0 rendezvous: no buffer — a sender must hand off directly
+    auto         state = std::make_shared<channel_select_state>();
+
+    ch.register_select_waiter(state, /*idx=*/7); // empty channel, no recv waiter -> parks
+    ASSERT_FALSE(state->resolved) << "select waiter must park on an empty rendezvous channel";
+
+    EXPECT_TRUE(ch.try_send(99)) << "try_send must satisfy a parked select waiter on a cap-0 channel (pre-fix returned false)";
+    EXPECT_TRUE(state->resolved);
+    EXPECT_FALSE(state->closed);
+    EXPECT_EQ(state->winner, 7u);
+    ASSERT_TRUE(state->value.has_value());
+    EXPECT_EQ(std::any_cast<int>(state->value), 99);
+    EXPECT_TRUE(ch.empty()) << "the value went to the select waiter, not the buffer";
+}
+
+// The move overload of try_send must satisfy a parked select waiter too.
+TEST_F(ChannelSyncOps, TrySendMoveSatisfiesParkedSelectWaiter) {
+    channel<std::string> ch(0);
+    auto                 state = std::make_shared<channel_select_state>();
+
+    ch.register_select_waiter(state, /*idx=*/2);
+    ASSERT_FALSE(state->resolved);
+
+    std::string v = "handoff";
+    EXPECT_TRUE(ch.try_send(std::move(v)));
+    EXPECT_TRUE(state->resolved);
+    EXPECT_EQ(state->winner, 2u);
+    ASSERT_TRUE(state->value.has_value());
+    EXPECT_EQ(std::any_cast<std::string>(state->value), "handoff");
+}
+
 // ===========================================================================
 // Event-loop-driven channel paths
 //
