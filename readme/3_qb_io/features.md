@@ -83,6 +83,7 @@ A reactor-driven QUIC transport over ngtcp2 and OpenSSL. Requires SSL to be enab
 - **Streams and sessions** — logical per-stream buffered sessions (`stream_session`, `client`), bidirectional and unidirectional stream creation, flow-control hooks (`extend_stream_credit`), and reset/stop controls.
 - **Events (`qb::io::async::quic::event::*`)** — `connected`, `connection_closed`, `stream_started`, `stream_data`, `stream_data_acked`, `stream_closed`, `datagram`.
 - **Settings (`qb::io::quic::settings`)** — `handshake_timeout` (default 10 s) and `idle_timeout` (default 30 s) as `qb::duration`, plus **address-validation Retry** via `enable_stateless_retry` (default on): the server answers a first Initial with a Retry token and only allocates connection state once the client echoes it, so an off-path spoofed-Initial flood cannot exhaust server resources (RFC 9000 §8.1). The only offered ALPN is `h3` (HTTP/3). Note: `stream_recv_window` and `enable_keylog` are still **reserved** — carried in the struct but not yet acted on by the native backend.
+- **Connection migration** — a peer that changes its network path keeps its connection: the server sends to the peer's current, path-validated address (NAT rebind) and re-indexes rotated connection ids so migrated datagrams still route to the existing connection. Path migration only, within the core that owns the endpoint.
 
 → [Native QUIC](./quic_transport.md)
 
