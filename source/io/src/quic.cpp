@@ -81,6 +81,26 @@ cid_key(ngtcp2_cid const &cid) {
     return cid_key(cid.data, cid.datalen);
 }
 
+// Wrap an ngtcp2 C callback so a C++ exception can never unwind through ngtcp2's C frames (UB /
+// std::terminate). Our callbacks allocate (`_events.push_back`, `payload.assign`, map inserts) on
+// peer-sized data, so bad_alloc under memory pressure is reachable. `guarded<Cb>::call` has the
+// SAME signature as Cb (R + A... deduced from the function-pointer non-type parameter), so it drops
+// straight into the ngtcp2 callback field; on any throw it returns NGTCP2_ERR_CALLBACK_FAILURE,
+// which ngtcp2 turns into a clean connection failure. Mirrors the HTTP/3 guard_callback.
+template <auto Cb>
+struct guarded;
+template <typename R, typename... A, R (*Fn)(A...)>
+struct guarded<Fn> {
+    static R
+    call(A... args) noexcept {
+        try {
+            return Fn(args...);
+        } catch (...) {
+            return static_cast<R>(NGTCP2_ERR_CALLBACK_FAILURE);
+        }
+    }
+};
+
 int
 fill_new_connection_id(ngtcp2_cid *cid, uint8_t *token, size_t tokenlen, size_t cidlen) {
     uint8_t cidbuf[NGTCP2_MAX_CIDLEN];
@@ -178,6 +198,15 @@ class native_backend final : public backend {
     tls_config                                                        _server_tls;
     std::string                                                       _local_cid_key;
     std::string                                                       _original_dcid_key;
+    // Address-validation Retry (RFC 9000 §8.1). PARENT: a stable secret keys the retry tokens it
+    // generates and later verifies. CHILD: when the connection was accepted only after a validated
+    // Retry token, carry the recovered original DCID (from the token) + the retry SCID we issued, so
+    // accept_server_connection sets original_dcid/retry_scid in the transport params correctly.
+    std::array<std::uint8_t, 32>                                      _retry_secret{};
+    bool                                                              _retry_secret_ready = false;
+    bool                                                              _has_retry_context  = false;
+    ngtcp2_cid                                                        _retry_odcid{};
+    ngtcp2_cid                                                        _retry_scid{};
     std::chrono::steady_clock::time_point                             _base       = std::chrono::steady_clock::now();
     ngtcp2_conn                                                      *_conn       = nullptr;
     ngtcp2_crypto_ossl_ctx                                           *_crypto_ctx = nullptr;
@@ -621,6 +650,48 @@ private:
         return it == _server_connections.end() || is_deferred_closed_connection(connection_id) ? nullptr : it->second.get();
     }
 
+    void
+    ensure_retry_secret() {
+        if (!_retry_secret_ready) {
+            // A failed CSPRNG here only weakens Retry to "tokens we minted this run" (still
+            // unforgeable by an off-path attacker who never saw them); it is never a safety issue.
+            fill_random(_retry_secret.data(), _retry_secret.size());
+            _retry_secret_ready = true;
+        }
+    }
+
+    // Send a Retry (address-validation challenge) for an untokened Initial: mint a fresh SCID, bind a
+    // token to (client address, that SCID, the client's original DCID), and queue the Retry on the
+    // listener's own packet vector. NO connection state is created — the client must re-send its
+    // Initial carrying the token, proving it can receive at its claimed address, before we spend a
+    // full handshake (ngtcp2_conn + SSL) on it. This is the anti-spoofed-Initial-flood defense.
+    void
+    send_retry(packet_view datagram, ngtcp2_pkt_hd const &hd) {
+        ensure_retry_secret();
+        std::uint8_t scidbuf[NGTCP2_MIN_INITIAL_DCIDLEN];
+        if (!fill_random(scidbuf, sizeof(scidbuf)))
+            return;
+        ngtcp2_cid retry_scid;
+        ngtcp2_cid_init(&retry_scid, scidbuf, sizeof(scidbuf));
+        const auto   now      = timestamp(std::chrono::steady_clock::now());
+        std::uint8_t token[NGTCP2_CRYPTO_MAX_RETRY_TOKENLEN];
+        const auto   tokenlen = ngtcp2_crypto_generate_retry_token(
+            token, _retry_secret.data(), _retry_secret.size(), hd.version,
+            reinterpret_cast<const ngtcp2_sockaddr *>(&datagram.remote.sa_), datagram.remote.len(), &retry_scid, &hd.dcid, now);
+        if (tokenlen < 0)
+            return;
+        std::uint8_t buf[NGTCP2_MAX_UDP_PAYLOAD_SIZE];
+        const auto   n = ngtcp2_crypto_write_retry(buf, sizeof(buf), hd.version, &hd.scid, &retry_scid, &hd.dcid, token,
+                                                   static_cast<std::size_t>(tokenlen));
+        if (n < 0)
+            return;
+        packet pkt;
+        pkt.remote = datagram.remote;
+        pkt.local  = datagram.local;
+        pkt.payload.assign(reinterpret_cast<std::byte *>(buf), reinterpret_cast<std::byte *>(buf + n));
+        _packets.push_back(std::move(pkt));
+    }
+
     // Index every Source Connection ID the child currently advertises under its connection id, so
     // packets arriving on a rotated / migrated DCID route to it. ngtcp2 caps the active CID set
     // (active_connection_id_limit), so this is a handful of entries. Add-only: a retired CID left in
@@ -677,9 +748,46 @@ private:
             return nullptr;
         }
 
+        // Address validation via Retry (RFC 9000 §8.1): before spending a full handshake (ngtcp2_conn
+        // + SSL) on a new Initial, make the client prove it can receive at its claimed source address.
+        // An off-path attacker spoofing source addresses can never complete this round-trip, so it
+        // cannot make us allocate connection state. Gated on the (previously inert) enable_stateless_retry.
+        bool       retry_validated      = false;
+        ngtcp2_cid validated_odcid      = {};
+        ngtcp2_cid validated_retry_scid = {};
+        if (_config.enable_stateless_retry) {
+            ngtcp2_pkt_hd hd = {};
+            if (ngtcp2_accept(&hd, reinterpret_cast<const uint8_t *>(datagram.payload.data()), datagram.payload.size()) == 0) {
+                ensure_retry_secret();
+                if (hd.tokenlen == 0) {
+                    // First contact: answer with a Retry challenge and create no state.
+                    send_retry(datagram, hd);
+                    return nullptr;
+                }
+                // The re-sent Initial carries a token: verify it proves this exact (client address,
+                // retry SCID) pair received our Retry. Invalid / expired / replayed -> drop.
+                const ngtcp2_duration token_ttl = 10 * NGTCP2_SECONDS;
+                const auto            now        = timestamp(std::chrono::steady_clock::now());
+                if (ngtcp2_crypto_verify_retry_token(&validated_odcid, hd.token, hd.tokenlen, _retry_secret.data(),
+                                                     _retry_secret.size(), hd.version,
+                                                     reinterpret_cast<const ngtcp2_sockaddr *>(&datagram.remote.sa_),
+                                                     datagram.remote.len(), &hd.dcid, token_ttl, now)
+                    != 0) {
+                    return nullptr;
+                }
+                retry_validated      = true;
+                validated_retry_scid = hd.dcid; // the SCID we issued in the Retry, now the client's DCID
+            }
+        }
+
         auto child = std::make_unique<native_backend>();
         child->configure(_config);
         child->start_server_child(_next_connection_id, _local, _alpn, _wire_alpn, _server_tls);
+        if (retry_validated) {
+            child->_has_retry_context = true;
+            child->_retry_odcid       = validated_odcid;
+            child->_retry_scid        = validated_retry_scid;
+        }
         child->on_udp_datagram(datagram);
         if (!child->_conn)
             return nullptr;
@@ -841,16 +949,20 @@ private:
 #else
         callbacks.get_path_challenge_data = ngtcp2_crypto_get_path_challenge_data_cb;
 #endif
-        callbacks.recv_stream_data         = recv_stream_data_cb;
-        callbacks.acked_stream_data_offset = acked_stream_data_offset_cb;
-        callbacks.stream_open              = stream_open_cb;
-        callbacks.stream_close             = stream_close_cb;
-        callbacks.stream_reset             = stream_reset_cb;
-        callbacks.stream_stop_sending      = stream_stop_sending_cb;
-        callbacks.recv_datagram            = recv_datagram_cb;
-        callbacks.ack_datagram             = ack_datagram_cb;
-        callbacks.lost_datagram            = lost_datagram_cb;
-        callbacks.handshake_completed      = handshake_completed_cb;
+        // Every own callback below touches heap state (event queue / maps) and so can throw; route
+        // each through guarded<>::call so a bad_alloc becomes NGTCP2_ERR_CALLBACK_FAILURE instead of
+        // unwinding through ngtcp2's C frames. (The crypto_* callbacks above are ngtcp2's own C code
+        // and never throw; rand/new_connection_id fill fixed buffers and already fail closed.)
+        callbacks.recv_stream_data         = &guarded<recv_stream_data_cb>::call;
+        callbacks.acked_stream_data_offset = &guarded<acked_stream_data_offset_cb>::call;
+        callbacks.stream_open              = &guarded<stream_open_cb>::call;
+        callbacks.stream_close             = &guarded<stream_close_cb>::call;
+        callbacks.stream_reset             = &guarded<stream_reset_cb>::call;
+        callbacks.stream_stop_sending      = &guarded<stream_stop_sending_cb>::call;
+        callbacks.recv_datagram            = &guarded<recv_datagram_cb>::call;
+        callbacks.ack_datagram             = &guarded<ack_datagram_cb>::call;
+        callbacks.lost_datagram            = &guarded<lost_datagram_cb>::call;
+        callbacks.handshake_completed      = &guarded<handshake_completed_cb>::call;
         return callbacks;
     }
 
@@ -898,10 +1010,20 @@ private:
         _remote = datagram.remote;
         _local  = datagram.local;
 
-        auto native_settings         = make_native_settings();
-        auto params                  = make_transport_params();
-        params.original_dcid         = hd.dcid;
-        params.original_dcid_present = 1;
+        auto native_settings = make_native_settings();
+        auto params          = make_transport_params();
+        if (_has_retry_context) {
+            // Accepted after a validated Retry: the client's ORIGINAL DCID is the one recovered from
+            // the token (hd.dcid is now the retry SCID we issued), and we must echo the retry SCID so
+            // the client can confirm the Retry it received was genuinely ours (RFC 9000 §7.3).
+            params.original_dcid         = _retry_odcid;
+            params.original_dcid_present = 1;
+            params.retry_scid            = _retry_scid;
+            params.retry_scid_present    = 1;
+        } else {
+            params.original_dcid         = hd.dcid;
+            params.original_dcid_present = 1;
+        }
 
         uint8_t scidbuf[NGTCP2_MIN_INITIAL_DCIDLEN];
         // Fail closed on CSPRNG failure (see make_client_connection): a zeroed server SCID is

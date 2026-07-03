@@ -136,7 +136,9 @@ Not every field is wired in the shipped backend. The verified enforcement points
 - `max_pending_stream_bytes` / `max_pending_stream_frames` and `max_pending_datagram_bytes` / `max_pending_datagram_frames` are enforced inside the native backend; overrunning a pending queue closes the connection with `disconnect_reason::buffer_overflow`. <!-- src: qb/source/io/src/quic.cpp:400-412 -->
 - `udp_rx_batch_size` and `udp_tx_batch_size` are enforced by the endpoint's UDP read and write loops, not the backend; a value of `0` means an unbounded batch. <!-- src: qb/include/qb/io/async/quic/endpoint.h:151,509 -->
 
-The following fields are carried in the struct but have **no observed effect** in the shipped native backend, so do not rely on them: `stream_recv_window` is not read anywhere; `enable_stateless_retry` is stored and forwarded to `configure(...)` but never acted on, and `disconnect_reason::stateless_retry_failed` is never emitted; `enable_keylog` has no TLS keylog wiring. Treat all three as reserved until the backend implements them. <!-- TODO(verify): stream_recv_window / enable_stateless_retry / enable_keylog unreferenced in qb/source/io/src/quic.cpp as of this revision -->
+`enable_stateless_retry` (default on) performs **address validation via Retry** (RFC 9000 §8.1): the server answers a first Initial with a Retry packet carrying an address-bound token and allocates **no** connection state; only once the client re-sends its Initial echoing a valid token does the server complete `ngtcp2_accept` and build the connection. This defends against off-path spoofed-Initial floods. <!-- src: qb/source/io/src/quic.cpp find_or_accept_server_connection / send_retry -->
+
+The following fields are carried in the struct but have **no observed effect** in the shipped native backend, so do not rely on them: `stream_recv_window` is not read anywhere; `enable_keylog` has no TLS keylog wiring. Treat both as reserved until the backend implements them.
 
 Apply settings through the constructor or `set_settings(...)` before `listen` / `connect`:
 
