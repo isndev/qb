@@ -82,7 +82,7 @@ A reactor-driven QUIC transport over ngtcp2 and OpenSSL. Requires SSL to be enab
 - **Endpoint (`qb::io::async::quic::endpoint`)** — owns the UDP socket and backend, drives the handshake, and dispatches connection and stream events. `listen` for servers, `connect` for clients.
 - **Streams and sessions** — logical per-stream buffered sessions (`stream_session`, `client`), bidirectional and unidirectional stream creation, flow-control hooks (`extend_stream_credit`), and reset/stop controls.
 - **Events (`qb::io::async::quic::event::*`)** — `connected`, `connection_closed`, `stream_started`, `stream_data`, `stream_data_acked`, `stream_closed`, `datagram`.
-- **Settings (`qb::io::quic::settings`)** — `handshake_timeout` (default 10 s) and `idle_timeout` (default 30 s) as `qb::duration`, plus address-validation Retry via `enable_stateless_retry` (default on). The only offered ALPN is `h3` (HTTP/3).
+- **Settings (`qb::io::quic::settings`)** — `handshake_timeout` (default 10 s) and `idle_timeout` (default 30 s) as `qb::duration`, plus **address-validation Retry** via `enable_stateless_retry` (default on): the server answers a first Initial with a Retry token and only allocates connection state once the client echoes it, so an off-path spoofed-Initial flood cannot exhaust server resources (RFC 9000 §8.1). The only offered ALPN is `h3` (HTTP/3). Note: `stream_recv_window` and `enable_keylog` are still **reserved** — carried in the struct but not yet acted on by the native backend.
 
 → [Native QUIC](./quic_transport.md)
 

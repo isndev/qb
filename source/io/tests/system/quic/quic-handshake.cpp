@@ -426,6 +426,100 @@ TEST(QuicHandshakeNativeBackend, DirectBackendsRouteServerChildOperations) {
 }
 
 // =============================================================================
+// Address-validation Retry (RFC 9000 §8.1). With enable_stateless_retry on (the default), the
+// server answers a first, untokened Initial with a Retry and allocates NO connection state; the
+// client must re-send its Initial carrying the token (proving it can receive at its claimed source
+// address) before the handshake proceeds. An off-path spoofed-Initial flood cannot make the server
+// allocate state. With the setting off, the server accepts the Initial directly. Both must handshake.
+// =============================================================================
+namespace {
+void
+drive_two_backend_handshake(qb::io::quic::backend &client, qb::io::quic::backend &server, bool &client_connected,
+                            std::uint64_t &server_connection_id) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while ((!client_connected || server_connection_id == 0) && std::chrono::steady_clock::now() < deadline) {
+        deliver_quic_packets(server, client);
+        deliver_quic_packets(client, server);
+        for (auto const &event : client.drain_events())
+            if (event.type == qb::io::quic::backend_event::kind::connected)
+                client_connected = true;
+        for (auto const &event : server.drain_events())
+            if (event.type == qb::io::quic::backend_event::kind::connected)
+                server_connection_id = event.connection_id;
+    }
+}
+} // namespace
+
+TEST(QuicHandshakeNativeBackend, StatelessRetryChallengesBeforeAllocatingConnection) {
+    ASSERT_TRUE(require_ssl_files());
+
+    qb::io::quic::settings settings;
+    settings.enable_stateless_retry = true; // the default, made explicit
+
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+    server->configure(settings);
+    client->configure(settings);
+
+    const qb::io::endpoint  server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint  client_endpoint{"127.0.0.1", 54321};
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    // First (untokened) Initial reaches the server: it answers with a Retry and allocates nothing.
+    deliver_quic_packets(*client, *server);
+    EXPECT_EQ(server->current_stats().active_connections, 0u)
+        << "a Retry-enabled server must not allocate a connection for an unvalidated (untokened) Initial";
+
+    bool          client_connected     = false;
+    std::uint64_t server_connection_id = 0;
+    drive_two_backend_handshake(*client, *server, client_connected, server_connection_id);
+    EXPECT_TRUE(client_connected) << "the Retry round-trip must complete the handshake";
+    EXPECT_NE(server_connection_id, 0u);
+    EXPECT_EQ(server->current_stats().active_connections, 1u);
+}
+
+TEST(QuicHandshakeNativeBackend, DisabledStatelessRetryAcceptsInitialWithoutChallenge) {
+    ASSERT_TRUE(require_ssl_files());
+
+    qb::io::quic::settings settings;
+    settings.enable_stateless_retry = false;
+
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+    server->configure(settings);
+    client->configure(settings);
+
+    const qb::io::endpoint  server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint  client_endpoint{"127.0.0.1", 54321};
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    // Retry disabled: the first Initial is accepted directly — a connection exists immediately.
+    deliver_quic_packets(*client, *server);
+    EXPECT_EQ(server->current_stats().active_connections, 1u)
+        << "with Retry disabled the server accepts the first Initial without a challenge round-trip";
+
+    bool          client_connected     = false;
+    std::uint64_t server_connection_id = 0;
+    drive_two_backend_handshake(*client, *server, client_connected, server_connection_id);
+    EXPECT_TRUE(client_connected);
+    EXPECT_EQ(server->current_stats().active_connections, 1u);
+}
+
+// =============================================================================
 // REAL LOOPBACK HANDSHAKES (event loop + UDP socket + TLS)
 // =============================================================================
 
