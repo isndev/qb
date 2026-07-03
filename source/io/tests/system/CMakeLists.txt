@@ -22,8 +22,10 @@
 # WINDOWS_EXCLUDE skips POSIX-only raw-syscall harnesses on Windows.
 # -----------------------------------------------------------------------------
 
-# --- async-bases (input/output/io CRTP framing over local pipe/socketpair) ---
-qb_add_test(MODULE qb-io TIER system NAME async-bases-framing SOURCES async-bases/async-bases-framing.cpp DEPENDS ${PROJECT_NAME} WINDOWS_EXCLUDE)
+# --- async-bases (input/output/io CRTP framing over a local loopback socket pair) ---
+# Portable: the probes drive the async bases over qb::io::tcp loopback sockets (ephemeral port),
+# not raw POSIX pipe()/socketpair() — so it builds and runs on Windows too (was WINDOWS_EXCLUDE).
+qb_add_test(MODULE qb-io TIER system NAME async-bases-framing SOURCES async-bases/async-bases-framing.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 
 # --- async (timers / callbacks / event loop / kernel events / connect timeout) ---
 qb_add_test(MODULE qb-io TIER system NAME timer-timeout          SOURCES async/timer-timeout.cpp          DEPENDS ${PROJECT_NAME})
@@ -31,6 +33,9 @@ qb_add_test(MODULE qb-io TIER system NAME callback-dispatch      SOURCES async/c
 qb_add_test(MODULE qb-io TIER system NAME timer-stress           SOURCES async/timer-stress.cpp           DEPENDS ${PROJECT_NAME} LABELS slow)
 qb_add_test(MODULE qb-io TIER system NAME event-loop-lifecycle   SOURCES async/event-loop-lifecycle.cpp   DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER system NAME kernel-events          SOURCES async/kernel-events.cpp          DEPENDS ${PROJECT_NAME} LABELS signal)
+# event-combined couples signal + FILE-CHANGE (ev::stat/inotify) events and delivers SIGINT via
+# `system("kill -2")` (POSIX); the file watcher has no reliable Windows equivalent. Signal handling
+# on Windows is already covered by kernel-events (above, not excluded). Hence WINDOWS_EXCLUDE.
 qb_add_test(MODULE qb-io TIER system NAME event-combined         SOURCES async/event-combined.cpp         DEPENDS ${PROJECT_NAME} LABELS signal slow WINDOWS_EXCLUDE)
 qb_add_test(MODULE qb-io TIER system NAME async-io-plan-contracts SOURCES async/async-io-plan-contracts.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME async-connect-timeout  SOURCES async/async-connect-timeout.cpp  DEPENDS ${PROJECT_NAME} REQUIRES network)
@@ -72,7 +77,7 @@ qb_add_test(MODULE qb-io TIER system NAME tls-peer-verification SOURCES tls/tls-
 qb_add_test(MODULE qb-io TIER system NAME tls-starttls-upgrade  SOURCES tls/tls-starttls-upgrade.cpp  DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
 
 # --- session (text/binary command loopback / json / text protocol roundtrip) ---
-qb_add_test(MODULE qb-io TIER system NAME text-session-loopback SOURCES session/text-session-loopback.cpp DEPENDS ${PROJECT_NAME} REQUIRES network WINDOWS_EXCLUDE)
+qb_add_test(MODULE qb-io TIER system NAME text-session-loopback SOURCES session/text-session-loopback.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME session-json          SOURCES session/session-json.cpp          DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME text-protocol-roundtrip SOURCES session/text-protocol-roundtrip.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 
