@@ -162,6 +162,7 @@ class native_backend final : public backend {
     qb::unordered_map<std::uint64_t, bool>                            _stream_fin_seen;
     qb::unordered_map<std::uint64_t, std::unique_ptr<native_backend>> _server_connections;
     qb::unordered_map<std::string, std::uint64_t>                     _server_cid_index;
+    std::vector<ngtcp2_cid>                                           _scid_scratch; // reused by reconcile_server_cids (no per-packet alloc)
     std::vector<std::uint64_t>                                        _server_closed_connections;
     std::uint64_t                                                     _queued_stream_bytes    = 0;
     std::uint64_t                                                     _queued_stream_frames   = 0;
@@ -260,8 +261,14 @@ public:
     void
     on_udp_datagram(packet_view datagram) override {
         if (_server_parent) {
-            if (auto *connection = find_or_accept_server_connection(datagram))
+            if (auto *connection = find_or_accept_server_connection(datagram)) {
                 connection->on_udp_datagram(datagram);
+                // Reading the packet may have made ngtcp2 issue fresh Source Connection IDs (via
+                // new_connection_id_cb) that the peer can migrate to. Index the child's CURRENT SCID
+                // set so a later packet carrying a rotated DCID still routes to this connection
+                // instead of missing the index and being mis-accepted as a brand-new connection.
+                reconcile_server_cids(connection);
+            }
             return;
         }
         if (!_conn && _server && !accept_server_connection(datagram))
@@ -614,6 +621,24 @@ private:
         return it == _server_connections.end() || is_deferred_closed_connection(connection_id) ? nullptr : it->second.get();
     }
 
+    // Index every Source Connection ID the child currently advertises under its connection id, so
+    // packets arriving on a rotated / migrated DCID route to it. ngtcp2 caps the active CID set
+    // (active_connection_id_limit), so this is a handful of entries. Add-only: a retired CID left in
+    // the index still routes to the owning child (which drops it), and drain_events() erases all of a
+    // connection's CID entries when it closes — so no stale mapping outlives the connection.
+    void
+    reconcile_server_cids(native_backend *child) {
+        if (!child || !child->_conn)
+            return;
+        const std::size_t n = ngtcp2_conn_get_scid(child->_conn, nullptr);
+        if (n == 0)
+            return;
+        _scid_scratch.resize(n);
+        ngtcp2_conn_get_scid(child->_conn, _scid_scratch.data());
+        for (std::size_t i = 0; i < n; ++i)
+            _server_cid_index.emplace(cid_key(_scid_scratch[i]), child->_connection_id);
+    }
+
     native_backend *
     find_or_accept_server_connection(packet_view datagram) {
         if (!_server_parent || datagram.payload.empty())
@@ -837,8 +862,10 @@ private:
 
         uint8_t dcidbuf[NGTCP2_MIN_INITIAL_DCIDLEN];
         uint8_t scidbuf[NGTCP2_MIN_INITIAL_DCIDLEN];
-        fill_random(dcidbuf, sizeof(dcidbuf));
-        fill_random(scidbuf, sizeof(scidbuf));
+        // Fail closed on CSPRNG failure: fill_random zeroes the buffer and returns false, and an
+        // all-zero initial connection ID is predictable/linkable. Mirrors fill_new_connection_id.
+        if (!fill_random(dcidbuf, sizeof(dcidbuf)) || !fill_random(scidbuf, sizeof(scidbuf)))
+            throw std::runtime_error("QUIC client: CSPRNG failed to generate initial connection IDs");
         ngtcp2_cid dcid;
         ngtcp2_cid scid;
         ngtcp2_cid_init(&dcid, dcidbuf, sizeof(dcidbuf));
@@ -877,7 +904,10 @@ private:
         params.original_dcid_present = 1;
 
         uint8_t scidbuf[NGTCP2_MIN_INITIAL_DCIDLEN];
-        fill_random(scidbuf, sizeof(scidbuf));
+        // Fail closed on CSPRNG failure (see make_client_connection): a zeroed server SCID is
+        // predictable/linkable. Returning false discards the half-built child (its _conn stays null).
+        if (!fill_random(scidbuf, sizeof(scidbuf)))
+            return false;
         ngtcp2_cid scid;
         ngtcp2_cid_init(&scid, scidbuf, sizeof(scidbuf));
         _local_cid_key = cid_key(scid);
@@ -898,6 +928,24 @@ private:
         ngtcp2_conn_set_tls_native_handle(_conn, _crypto_ctx);
         _stats.active_connections = 1;
         return true;
+    }
+
+    // Fill an outgoing packet's addresses from the network path ngtcp2 wrote back into `ps` after a
+    // writev — i.e. the peer's CURRENT, path-validated address — rather than the address cached at
+    // accept time (`_remote`). This is what lets a peer that migrates or is NAT-rebound keep
+    // receiving: ngtcp2 has already validated the new path; sending to the stale `_remote` would
+    // black-hole every packet and idle-time-out the connection. Falls back to the cached endpoint
+    // only if ngtcp2 left the path empty (should not happen once a packet was produced).
+    void
+    fill_packet_path(packet &pkt, ngtcp2_path_storage const &ps) const {
+        if (ps.path.remote.addrlen > 0)
+            pkt.remote.as_is_raw(ps.path.remote.addr, ps.path.remote.addrlen);
+        else
+            pkt.remote = _remote;
+        if (ps.path.local.addrlen > 0)
+            pkt.local.as_is_raw(ps.path.local.addr, ps.path.local.addrlen);
+        else
+            pkt.local = _local;
     }
 
     void
@@ -966,8 +1014,7 @@ private:
             }
 
             packet pkt;
-            pkt.remote = _remote;
-            pkt.local  = _local;
+            fill_packet_path(pkt, ps);
             pkt.payload.assign(reinterpret_cast<std::byte *>(buf.data()), reinterpret_cast<std::byte *>(buf.data() + written));
             _packets.push_back(std::move(pkt));
             ++_stats.packets_sent;
@@ -1031,8 +1078,7 @@ private:
                                                                      timestamp(std::chrono::steady_clock::now()));
         if (written > 0) {
             packet pkt;
-            pkt.remote = _remote;
-            pkt.local  = _local;
+            fill_packet_path(pkt, ps);
             pkt.payload.assign(reinterpret_cast<std::byte *>(buf.data()), reinterpret_cast<std::byte *>(buf.data() + written));
             _packets.push_back(std::move(pkt));
             ++_stats.packets_sent;

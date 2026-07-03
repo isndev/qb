@@ -44,6 +44,12 @@ private:
     state                                  _state       = state::idle;
     bool                                   _server_role = false;
     bool                                   _open        = false;
+    // Non-reentrant event-dispatch guard (see drain_backend_events). `_draining_events` is set
+    // while the dispatch loop is running; a send/credit/reset issued by a user handler re-enters
+    // drain_backend_events, which then only raises `_drain_events_again` so the outermost loop
+    // drains the newly-queued events after the current handler has fully unwound.
+    bool                                   _draining_events    = false;
+    bool                                   _drain_events_again = false;
 
 protected:
     virtual void
@@ -198,7 +204,22 @@ protected:
     drain_backend_events() {
         if (!_backend)
             return;
-        for (auto const &event : _backend->drain_events()) {
+        // Non-reentrant event dispatch. A user handler reached from a dispatch() below may
+        // synchronously call send_stream_data() / extend_stream_credit() / reset_stream(), each of
+        // which re-enters this function. Dispatching the freshly-queued events on that nested stack
+        // is the root of a whole class of UAF / buffer-underflow bugs: the reentrant event (a
+        // connection_closed / stream_closed / RST) frees the very connection, session or stream
+        // output buffer the outer caller is still operating on. Defer instead — a reentrant call
+        // only flags a re-drain, and the outermost loop dispatches the queued events after the
+        // current handler has fully unwound and its objects are stable again.
+        if (_draining_events) {
+            _drain_events_again = true;
+            return;
+        }
+        _draining_events = true;
+        do {
+            _drain_events_again = false;
+            for (auto const &event : _backend->drain_events()) {
             if (event.type == qb::io::quic::backend_event::kind::connected) {
                 _state = state::connected;
                 dispatch(qb::io::async::quic::event::connected{event.connection_id, event.text});
@@ -240,8 +261,16 @@ protected:
                 });
             }
         }
-        _stats = _backend->current_stats();
-        after_dispatch_events();
+        } while (_drain_events_again && _backend);
+        _draining_events = false;
+        // Reap / stats run once, at the outermost drain, after every event has been dispatched and
+        // no reentrant re-drain remains pending — so after_dispatch_events() (the HTTP/3 connection
+        // reap) never frees a connection while a dispatch is still on the stack. It performs no
+        // sends, so running it with the guard cleared cannot re-enter a nested dispatch.
+        if (_backend) {
+            _stats = _backend->current_stats();
+            after_dispatch_events();
+        }
     }
 
 public:
