@@ -1,10 +1,20 @@
 /**
- * @file qb/source/io/tests/system/test-async-io-bases.cpp
- * @brief Focused tests for async::input and async::output CRTP bases.
+ * @file qb/source/io/tests/system/async-bases/async-bases-framing.cpp
+ * @brief Focused tests for async::input, async::output and async::io CRTP bases.
  *
- * These tests use local POSIX pipes to drive libev read/write readiness without
- * relying on TCP timing. They exercise the protocol processing and output drain
- * paths that concrete transports inherit from qb-io async bases.
+ * These tests drive libev read/write readiness over a local connected socket pair without
+ * relying on TCP timing across hosts. They exercise the protocol processing and output
+ * drain paths that concrete transports inherit from the qb-io async bases.
+ *
+ * Portable by construction: the byte-stream endpoints are qb's own cross-platform
+ * `qb::io::tcp` sockets on an ephemeral loopback port (replacing the original POSIX
+ * `pipe()`/`socketpair()` + raw `::read`/`::write`, which do not exist for winsock
+ * SOCKETs). The probe transports route I/O through `qb::io::tcp::socket::read()/write()` —
+ * the very methods the production transports use — so the base's read/write/would-block
+ * handling is exercised identically on Windows, Linux and macOS. The forced would-block /
+ * hard-error paths use `qb::io::socket::set_last_errno()` (WSASetLastError on Windows /
+ * errno on POSIX) so the base's `not_send_error()` / `system_error()` verdicts are the same
+ * everywhere.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -16,20 +26,20 @@
 #include <gtest/gtest.h>
 
 #include <qb/io/async/io.h>
+#include <qb/io/system/sys__socket.h>
+#include <qb/io/tcp/listener.h>
+#include <qb/io/tcp/socket.h>
 #include <qb/system/allocator/pipe.h>
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
-#include <cstring>
-#include <fcntl.h>
+#include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <sys/socket.h>
-#include <tuple>
 #include <utility>
-#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -47,104 +57,87 @@ protected:
     }
 };
 
-class UniqueFd {
-    int _fd = -1;
-
-public:
-    UniqueFd() = default;
-    explicit UniqueFd(int fd) noexcept
-        : _fd(fd) {}
-    UniqueFd(UniqueFd const &)            = delete;
-    UniqueFd &operator=(UniqueFd const &) = delete;
-
-    UniqueFd(UniqueFd &&other) noexcept
-        : _fd(std::exchange(other._fd, -1)) {}
-
-    UniqueFd &
-    operator=(UniqueFd &&other) noexcept {
-        if (this != &other) {
-            reset();
-            _fd = std::exchange(other._fd, -1);
-        }
-        return *this;
-    }
-
-    ~UniqueFd() {
-        reset();
-    }
-
-    [[nodiscard]] int
-    get() const noexcept {
-        return _fd;
-    }
-    [[nodiscard]] bool
-    valid() const noexcept {
-        return _fd >= 0;
-    }
-
-    void
-    reset(int fd = -1) noexcept {
-        if (_fd >= 0)
-            ::close(_fd);
-        _fd = fd;
-    }
+// A connected loopback socket pair. `probe` is the end the async base under test drives;
+// `peer` is the far end the test injects bytes into / reads replies back from. The pair
+// OWNS both sockets (they close on scope exit); a probe only BORROWS its end via
+// SocketTransport, so the pair MUST outlive the probe. This mirrors the original ownership
+// split (fds owned by PipePair, borrowed by FdTransport) and matters on Windows/wepoll,
+// where the base must stop its watcher BEFORE the underlying SOCKET is closed.
+struct StreamPair {
+    qb::io::tcp::socket probe;
+    qb::io::tcp::socket peer;
 };
 
-struct PipePair {
-    UniqueFd read;
-    UniqueFd write;
-};
+StreamPair
+make_stream_pair() {
+    qb::io::tcp::listener listener;
+    if (listener.listen_v4(0, "127.0.0.1") != qb::io::SocketStatus::Done)
+        throw std::runtime_error("make_stream_pair: listen_v4 failed");
+    const std::uint16_t port = listener.local_endpoint().port();
+    if (port == 0)
+        throw std::runtime_error("make_stream_pair: ephemeral port is zero");
 
-PipePair
-make_pipe_pair() {
-    int fds[2] = {-1, -1};
-    if (::pipe(fds) != 0)
-        throw std::runtime_error(std::strerror(errno));
-    return PipePair{UniqueFd{fds[0]}, UniqueFd{fds[1]}};
+    qb::io::tcp::socket peer; // the far end (connector) — stays blocking for the test's raw I/O
+    if (peer.connect_v4("127.0.0.1", port) != qb::io::SocketStatus::Done)
+        throw std::runtime_error("make_stream_pair: connect_v4 failed");
+
+    qb::io::tcp::socket probe; // the base-driven end (accepted) — the base makes it non-blocking
+    if (listener.accept(probe) != qb::io::SocketStatus::Done)
+        throw std::runtime_error("make_stream_pair: accept failed");
+
+    listener.disconnect();
+    return StreamPair{std::move(probe), std::move(peer)};
 }
 
-PipePair
-make_socket_pair() {
-    int fds[2] = {-1, -1};
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
-        throw std::runtime_error(std::strerror(errno));
-    return PipePair{UniqueFd{fds[0]}, UniqueFd{fds[1]}};
-}
+// The native handle type of a qb socket (SOCKET on Windows, int on POSIX) — deduced from the
+// API so this test does not depend on the platform typedef's namespace.
+using socket_handle_t = decltype(std::declval<qb::io::tcp::socket>().native_handle());
 
-class FdTransport {
-    int _fd = -1;
+// Non-owning view of one StreamPair end, exposing exactly the transport surface the async
+// CRTP bases require. I/O routes through qb::io::tcp::socket::read()/write() (the production
+// transport methods → identical cross-platform semantics). close() only DETACHES: the
+// StreamPair still owns and closes the socket, matching the original FdTransport whose fd
+// was owned by PipePair. native_handle() keeps returning the captured handle after detach —
+// the base never touches it post-close, and the socket stays open until the pair dies.
+class SocketTransport {
+    qb::io::tcp::socket *_sock   = nullptr;
+    socket_handle_t      _handle = static_cast<socket_handle_t>(-1);
 
 public:
-    FdTransport() = default;
-    explicit FdTransport(int fd) noexcept
-        : _fd(fd) {}
+    SocketTransport() = default;
+    explicit SocketTransport(qb::io::tcp::socket &sock) noexcept
+        : _sock(&sock)
+        , _handle(sock.native_handle()) {}
 
-    [[nodiscard]] int
+    [[nodiscard]] socket_handle_t
     native_handle() const noexcept {
-        return _fd;
+        return _handle;
     }
 
     void
     set_nonblocking(bool enabled) const noexcept {
-        if (_fd < 0)
-            return;
-        const int flags = ::fcntl(_fd, F_GETFL, 0);
-        if (flags < 0)
-            return;
-        if (enabled)
-            std::ignore = ::fcntl(_fd, F_SETFL, flags | O_NONBLOCK);
-        else
-            std::ignore = ::fcntl(_fd, F_SETFL, flags & ~O_NONBLOCK);
+        if (_sock)
+            _sock->set_nonblocking(enabled);
+    }
+
+    int
+    read(void *dst, std::size_t n) const noexcept {
+        return _sock ? _sock->read(dst, n) : -1;
+    }
+
+    int
+    write(const void *src, std::size_t n) const noexcept {
+        return _sock ? _sock->write(src, n) : -1;
     }
 
     void
     close() noexcept {
-        _fd = -1;
+        _sock = nullptr;
     }
 };
 
 class PipeInputProbe : public qb::io::async::input<PipeInputProbe> {
-    FdTransport               _transport;
+    SocketTransport           _transport;
     qb::allocator::pipe<char> _in;
 
 public:
@@ -157,8 +150,8 @@ public:
     std::size_t              dispose_events         = 0u;
     int                      last_disconnect_reason = 0;
 
-    explicit PipeInputProbe(int fd) noexcept
-        : _transport(fd) {}
+    explicit PipeInputProbe(qb::io::tcp::socket &sock) noexcept
+        : _transport(sock) {}
 
     base_io_t &
     base() noexcept {
@@ -168,7 +161,7 @@ public:
     base() const noexcept {
         return *this;
     }
-    FdTransport &
+    SocketTransport &
     transport() noexcept {
         return _transport;
     }
@@ -185,7 +178,7 @@ public:
     read() noexcept {
         constexpr std::size_t kChunk = 64u;
         auto                 *dst    = _in.allocate_back(kChunk);
-        const auto            ret    = ::read(_transport.native_handle(), dst, kChunk);
+        const auto            ret    = _transport.read(dst, kChunk);
         if (ret >= 0)
             _in.free_back(kChunk - static_cast<std::size_t>(ret));
         else
@@ -295,7 +288,7 @@ public:
 class PipeOutputProbe : public qb::io::async::output<PipeOutputProbe> {
     enum class write_mode { normal, would_block, hard_error };
 
-    FdTransport               _transport;
+    SocketTransport           _transport;
     qb::allocator::pipe<char> _out;
     std::size_t               _max_chunk             = 64u;
     std::size_t               _max_write_buffer_size = QB_MAX_WRITE_BUFFER_SIZE;
@@ -310,8 +303,8 @@ public:
     std::size_t dispose_events         = 0u;
     int         last_disconnect_reason = 0;
 
-    explicit PipeOutputProbe(int fd) noexcept
-        : _transport(fd) {}
+    explicit PipeOutputProbe(qb::io::tcp::socket &sock) noexcept
+        : _transport(sock) {}
 
     base_io_t &
     base() noexcept {
@@ -321,7 +314,7 @@ public:
     base() const noexcept {
         return *this;
     }
-    FdTransport &
+    SocketTransport &
     transport() noexcept {
         return _transport;
     }
@@ -361,16 +354,16 @@ public:
     int
     write() noexcept {
         if (_write_mode == write_mode::would_block) {
-            errno = EWOULDBLOCK;
+            qb::io::socket::set_last_errno(EWOULDBLOCK);
             return -1;
         }
         if (_write_mode == write_mode::hard_error) {
-            errno = EPIPE;
+            qb::io::socket::set_last_errno(EPIPE);
             return -1;
         }
 
         const auto count = std::min(_max_chunk, _out.size());
-        const auto ret   = ::write(_transport.native_handle(), _out.begin(), count);
+        const auto ret   = _transport.write(_out.begin(), count);
         if (ret > 0)
             _out.free_front(static_cast<std::size_t>(ret));
         return static_cast<int>(ret);
@@ -402,7 +395,7 @@ public:
 class PipeDuplexProbe : public qb::io::async::io<PipeDuplexProbe> {
     enum class write_mode { normal, would_block, hard_error };
 
-    FdTransport               _transport;
+    SocketTransport           _transport;
     qb::allocator::pipe<char> _in;
     qb::allocator::pipe<char> _out;
     std::size_t               _max_chunk             = 64u;
@@ -422,8 +415,8 @@ public:
     std::size_t              dispose_events         = 0u;
     int                      last_disconnect_reason = 0;
 
-    explicit PipeDuplexProbe(int fd) noexcept
-        : _transport(fd) {}
+    explicit PipeDuplexProbe(qb::io::tcp::socket &sock) noexcept
+        : _transport(sock) {}
 
     base_io_t &
     base() noexcept {
@@ -433,7 +426,7 @@ public:
     base() const noexcept {
         return *this;
     }
-    FdTransport &
+    SocketTransport &
     transport() noexcept {
         return _transport;
     }
@@ -495,7 +488,7 @@ public:
 
         constexpr std::size_t kChunk = 64u;
         auto                 *dst    = _in.allocate_back(kChunk);
-        const auto            ret    = ::read(_transport.native_handle(), dst, kChunk);
+        const auto            ret    = _transport.read(dst, kChunk);
         if (ret >= 0)
             _in.free_back(kChunk - static_cast<std::size_t>(ret));
         else
@@ -506,16 +499,16 @@ public:
     int
     write() noexcept {
         if (_write_mode == write_mode::would_block) {
-            errno = EWOULDBLOCK;
+            qb::io::socket::set_last_errno(EWOULDBLOCK);
             return -1;
         }
         if (_write_mode == write_mode::hard_error) {
-            errno = EPIPE;
+            qb::io::socket::set_last_errno(EPIPE);
             return -1;
         }
 
         const auto count = std::min(_max_chunk, _out.size());
-        const auto ret   = ::write(_transport.native_handle(), _out.begin(), count);
+        const auto ret   = _transport.write(_out.begin(), count);
         if (ret > 0)
             _out.free_front(static_cast<std::size_t>(ret));
         return static_cast<int>(ret);
@@ -696,12 +689,12 @@ run_nowait_iterations(int count = 16) {
 } // namespace
 
 TEST_F(AsyncIoBaseTest, InputReadsFramesAndReportsPendingThenEof) {
-    auto           pipes = make_pipe_pair();
-    PipeInputProbe input{pipes.read.get()};
+    auto           pair = make_stream_pair();
+    PipeInputProbe input{pair.probe};
     ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input), nullptr);
 
     input.base().start();
-    ASSERT_EQ(::write(pipes.write.get(), "abcdefghZ", 9), 9);
+    ASSERT_EQ(pair.peer.write("abcdefghZ", 9), 9);
 
     run_nowait_iterations();
 
@@ -714,7 +707,7 @@ TEST_F(AsyncIoBaseTest, InputReadsFramesAndReportsPendingThenEof) {
     EXPECT_TRUE(input.base().has_pending_data());
 
     input.flush(input.pendingRead());
-    ASSERT_EQ(::write(pipes.write.get(), "wxyz", 4), 4);
+    ASSERT_EQ(pair.peer.write("wxyz", 4), 4);
     run_nowait_iterations();
 
     EXPECT_EQ(input.messages.back(), "wxyz");
@@ -724,12 +717,12 @@ TEST_F(AsyncIoBaseTest, InputReadsFramesAndReportsPendingThenEof) {
 
 TEST_F(AsyncIoBaseTest, InputDisconnectsOnProtocolErrorAndOversizedFrame) {
     {
-        auto           pipes = make_pipe_pair();
-        PipeInputProbe input{pipes.read.get()};
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
         ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input, true), nullptr);
 
         input.base().start();
-        ASSERT_EQ(::write(pipes.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(input.messages, (std::vector<std::string>{"data"}));
@@ -740,13 +733,13 @@ TEST_F(AsyncIoBaseTest, InputDisconnectsOnProtocolErrorAndOversizedFrame) {
     }
 
     {
-        auto           pipes = make_pipe_pair();
-        PipeInputProbe input{pipes.read.get()};
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
         ASSERT_NE(input.base().switch_protocol<OversizedInputProtocol>(input), nullptr);
         input.base().set_max_message_size(4u);
 
         input.base().start();
-        ASSERT_EQ(::write(pipes.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(input.disconnected_events, 1u);
@@ -756,14 +749,14 @@ TEST_F(AsyncIoBaseTest, InputDisconnectsOnProtocolErrorAndOversizedFrame) {
 
 TEST_F(AsyncIoBaseTest, InputDisposesWhenProtocolIsInvalidOrClearedBeforeRead) {
     {
-        auto           pipes = make_pipe_pair();
-        PipeInputProbe input{pipes.read.get()};
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
         ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input), nullptr);
         ASSERT_NE(input.base().protocol(), qb::io::async::no_protocol()); // a real protocol is set
         input.base().protocol()->not_ok();
 
         input.base().start();
-        ASSERT_EQ(::write(pipes.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(input.disconnected_events, 1u);
@@ -773,14 +766,14 @@ TEST_F(AsyncIoBaseTest, InputDisposesWhenProtocolIsInvalidOrClearedBeforeRead) {
     }
 
     {
-        auto           pipes = make_pipe_pair();
-        PipeInputProbe input{pipes.read.get()};
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
         ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input), nullptr);
         input.base().clear_protocols();
         EXPECT_EQ(input.base().protocol(), qb::io::async::no_protocol());
 
         input.base().start();
-        ASSERT_EQ(::write(pipes.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(input.disconnected_events, 1u);
@@ -789,16 +782,16 @@ TEST_F(AsyncIoBaseTest, InputDisposesWhenProtocolIsInvalidOrClearedBeforeRead) {
     }
 
     {
-        auto           pipes = make_pipe_pair();
-        PipeInputProbe input{pipes.read.get()};
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
         EXPECT_EQ(input.base().switch_protocol<RejectingInputProtocol>(input), nullptr);
         EXPECT_EQ(input.base().protocol(), qb::io::async::no_protocol());
     }
 }
 
 TEST_F(AsyncIoBaseTest, OutputDrainsPartialWritesAndPublishesEos) {
-    auto            pipes = make_pipe_pair();
-    PipeOutputProbe output{pipes.write.get()};
+    auto            pair = make_stream_pair();
+    PipeOutputProbe output{pair.probe};
     output.set_max_chunk(3u);
 
     output.base().start();
@@ -811,14 +804,14 @@ TEST_F(AsyncIoBaseTest, OutputDrainsPartialWritesAndPublishesEos) {
     ASSERT_FALSE(output.base().has_pending_data());
 
     std::array<char, 8> buffer{};
-    const auto          read = ::read(pipes.read.get(), buffer.data(), buffer.size());
+    const auto          read = pair.peer.read(buffer.data(), buffer.size());
     ASSERT_EQ(read, 6);
     EXPECT_EQ(std::string_view(buffer.data(), 6), "abcdef");
 }
 
 TEST_F(AsyncIoBaseTest, OutputDisconnectIsIdempotentAndReportsReason) {
-    auto            pipes = make_pipe_pair();
-    PipeOutputProbe output{pipes.write.get()};
+    auto            pair = make_stream_pair();
+    PipeOutputProbe output{pair.probe};
 
     output.base().start();
     EXPECT_TRUE(output.base().is_connected());
@@ -836,8 +829,8 @@ TEST_F(AsyncIoBaseTest, OutputDisconnectIsIdempotentAndReportsReason) {
 }
 
 TEST_F(AsyncIoBaseTest, OutputPublishOverflowRollsBackAndDisconnects) {
-    auto            pipes = make_pipe_pair();
-    PipeOutputProbe output{pipes.write.get()};
+    auto            pair = make_stream_pair();
+    PipeOutputProbe output{pair.probe};
     output.set_max_write_buffer_size(4u);
 
     output.base().start();
@@ -856,8 +849,8 @@ TEST_F(AsyncIoBaseTest, OutputPublishOverflowRollsBackAndDisconnects) {
 
 TEST_F(AsyncIoBaseTest, OutputWriteErrorsDistinguishWouldBlockFromHardFailure) {
     {
-        auto            pipes = make_pipe_pair();
-        PipeOutputProbe output{pipes.write.get()};
+        auto            pair = make_stream_pair();
+        PipeOutputProbe output{pair.probe};
         output.force_write_would_block();
 
         output.base().start();
@@ -872,8 +865,8 @@ TEST_F(AsyncIoBaseTest, OutputWriteErrorsDistinguishWouldBlockFromHardFailure) {
     }
 
     {
-        auto            pipes = make_pipe_pair();
-        PipeOutputProbe output{pipes.write.get()};
+        auto            pair = make_stream_pair();
+        PipeOutputProbe output{pair.probe};
         output.force_write_hard_error();
 
         output.base().start();
@@ -888,13 +881,13 @@ TEST_F(AsyncIoBaseTest, OutputWriteErrorsDistinguishWouldBlockFromHardFailure) {
 }
 
 TEST_F(AsyncIoBaseTest, DuplexProcessesInputAndDrainsReplyInSameEventCycle) {
-    auto            sockets = make_socket_pair();
-    PipeDuplexProbe session{sockets.read.get()};
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
     session.set_max_chunk(2u);
     ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, false, true), nullptr);
 
     session.base().start();
-    ASSERT_EQ(::write(sockets.write.get(), "abcdZ", 5), 5);
+    ASSERT_EQ(pair.peer.write("abcdZ", 5), 5);
 
     run_nowait_iterations();
 
@@ -912,15 +905,15 @@ TEST_F(AsyncIoBaseTest, DuplexProcessesInputAndDrainsReplyInSameEventCycle) {
     EXPECT_FALSE(session.base().has_pending_write());
 
     std::array<char, 8> buffer{};
-    const auto          read = ::read(sockets.write.get(), buffer.data(), buffer.size());
+    const auto          read = pair.peer.read(buffer.data(), buffer.size());
     ASSERT_EQ(read, 4);
     EXPECT_EQ(std::string_view(buffer.data(), 4), "pong");
 }
 
 TEST_F(AsyncIoBaseTest, DuplexProtocolLifecycleAccessorsAndNoProtocolDisposal) {
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         const auto     &const_base = session.base();
 
         EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
@@ -951,11 +944,11 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolLifecycleAccessorsAndNoProtocolDisposal) {
     }
 
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
 
         session.base().start();
-        ASSERT_EQ(::write(sockets.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(session.disconnected_events, 1u);
@@ -966,13 +959,13 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolLifecycleAccessorsAndNoProtocolDisposal) {
 
 TEST_F(AsyncIoBaseTest, DuplexClearedProtocolAndCloseAfterDeliverDisposeCleanly) {
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
         session.base().clear_protocols();
 
         session.base().start();
-        ASSERT_EQ(::write(sockets.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages.size(), 0u);
@@ -982,12 +975,12 @@ TEST_F(AsyncIoBaseTest, DuplexClearedProtocolAndCloseAfterDeliverDisposeCleanly)
     }
 
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true, true), nullptr);
 
         session.base().start();
-        ASSERT_EQ(::write(sockets.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
@@ -999,7 +992,7 @@ TEST_F(AsyncIoBaseTest, DuplexClearedProtocolAndCloseAfterDeliverDisposeCleanly)
         EXPECT_FALSE(session.base().is_connected());
 
         std::array<char, 8> buffer{};
-        const auto          read = ::read(sockets.write.get(), buffer.data(), buffer.size());
+        const auto          read = pair.peer.read(buffer.data(), buffer.size());
         ASSERT_EQ(read, 4);
         EXPECT_EQ(std::string_view(buffer.data(), 4), "pong");
 
@@ -1009,8 +1002,8 @@ TEST_F(AsyncIoBaseTest, DuplexClearedProtocolAndCloseAfterDeliverDisposeCleanly)
 }
 
 TEST_F(AsyncIoBaseTest, DuplexWriteOverflowRollsBackAndBlocksFurtherPublish) {
-    auto            sockets = make_socket_pair();
-    PipeDuplexProbe session{sockets.read.get()};
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
     session.set_max_write_buffer_size(4u);
 
     session.base().start();
@@ -1029,12 +1022,12 @@ TEST_F(AsyncIoBaseTest, DuplexWriteOverflowRollsBackAndBlocksFurtherPublish) {
 
 TEST_F(AsyncIoBaseTest, DuplexDisconnectsOnInvalidProtocolAndReadOverflow) {
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true), nullptr);
 
         session.base().start();
-        ASSERT_EQ(::write(sockets.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
@@ -1045,14 +1038,14 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectsOnInvalidProtocolAndReadOverflow) {
     }
 
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         ASSERT_EQ(session.base().switch_protocol<RejectingDuplexProtocol>(session), nullptr);
         ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, false, false), nullptr);
         session.force_read_overflow();
 
         session.base().start();
-        ASSERT_EQ(::write(sockets.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages.size(), 0u);
@@ -1063,13 +1056,13 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectsOnInvalidProtocolAndReadOverflow) {
 
 TEST_F(AsyncIoBaseTest, DuplexProtocolEdgeCasesPreserveFlushAndDeferredDrainSemantics) {
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<OversizedDuplexProtocol>(session, 8u), nullptr);
         session.base().set_max_message_size(4u);
 
         session.base().start();
-        ASSERT_EQ(::write(sockets.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_TRUE(session.messages.empty());
@@ -1079,12 +1072,12 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolEdgeCasesPreserveFlushAndDeferredDrainSema
     }
 
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<DisconnectingDuplexProtocol>(session), nullptr);
 
         session.base().start();
-        ASSERT_EQ(::write(sockets.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
@@ -1094,18 +1087,18 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolEdgeCasesPreserveFlushAndDeferredDrainSema
         EXPECT_EQ(session.last_disconnect_reason, 77);
 
         std::array<char, 8> buffer{};
-        const auto          read = ::read(sockets.write.get(), buffer.data(), buffer.size());
+        const auto          read = pair.peer.read(buffer.data(), buffer.size());
         ASSERT_EQ(read, 4);
         EXPECT_EQ(std::string_view(buffer.data(), 4), "bye!");
     }
 
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<NonFlushingDuplexProtocol>(session), nullptr);
 
         session.base().start();
-        ASSERT_EQ(::write(sockets.write.get(), "data", 4), 4);
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
@@ -1117,8 +1110,8 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolEdgeCasesPreserveFlushAndDeferredDrainSema
 
 TEST_F(AsyncIoBaseTest, DuplexWriteErrorsDistinguishWouldBlockFromHardFailure) {
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
         session.force_write_would_block();
 
@@ -1133,8 +1126,8 @@ TEST_F(AsyncIoBaseTest, DuplexWriteErrorsDistinguishWouldBlockFromHardFailure) {
     }
 
     {
-        auto            sockets = make_socket_pair();
-        PipeDuplexProbe session{sockets.read.get()};
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
         session.force_write_hard_error();
 
