@@ -185,12 +185,18 @@ SharedCoreCommunication::getNbCore() const noexcept {
 // !SharedCoreCommunication
 
 static_assert(std::atomic<std::sig_atomic_t>::is_always_lock_free, "Main signal flag must stay lock-free to remain signal-handler-safe");
+static_assert(std::atomic<unsigned int>::is_always_lock_free, "Main signal generation must stay lock-free to remain signal-handler-safe");
 
 std::atomic<std::sig_atomic_t> Main::_signal_pending{0};
+std::atomic<unsigned int>      Main::_signal_generation{0};
 
 void
 Main::onSignal(int const signum) noexcept {
     _signal_pending.store(signum, std::memory_order_relaxed);
+    // Advance the generation (release) AFTER publishing the signum so a core that observes the new
+    // generation (acquire) also observes the new signum. This is what lets every core re-deliver a
+    // signal even when `_signal_pending` already held one — see Main::_signal_generation.
+    _signal_generation.fetch_add(1u, std::memory_order_release);
 }
 
 Main::Main() noexcept
@@ -311,6 +317,8 @@ Main::start(bool async) noexcept {
 
     _is_running = true;
     _signal_pending.store(0, std::memory_order_relaxed);
+    _signal_generation.store(0, std::memory_order_relaxed); // fresh cores start at generation 0
+
     _shared_com = std::make_unique<SharedCoreCommunication>(_core_initializers);
     _cores.resize(_core_initializers.size());
 
@@ -362,6 +370,9 @@ Main::stop() noexcept {
     // lock-free atomic operations in signal handlers; the static_assert above
     // keeps that contract explicit.
     _signal_pending.store(SIGINT, std::memory_order_relaxed);
+    // Bump the generation like onSignal() so stop() is honoured even after an earlier signal was
+    // already delivered (otherwise a prior SIGHUP/SIGINT would leave the engine unstoppable).
+    _signal_generation.fetch_add(1u, std::memory_order_release);
 }
 
 void

@@ -32,6 +32,7 @@
 #include <openssl/ssl.h>
 #include <qb/system/time.h>
 #include "../socket.h"
+#include "context.h"
 
 namespace qb::io::ssl {
 
@@ -339,8 +340,13 @@ class QB_API socket : public tcp::socket {
     bool                                  _connected;              /**< Flag indicating if the SSL handshake has successfully completed. */
     std::string                           _pending_sni_hostname;   /**< Desired SNI hostname to apply to the next/client SSL handle. */
     std::vector<std::string>              _pending_alpn_protocols; /**< Desired ALPN offers to apply before handshake starts. */
+    std::unique_ptr<SSL_SESSION, void (*)(SSL_SESSION *)> _pending_session{
+        nullptr, SSL_SESSION_free}; /**< Session to resume, held (own ref) until the SSL is minted at connect. */
+    bool _pending_disable_resumption = false; /**< Deferred disable_session_resumption(): applied when the SSL is minted at connect. */
+    bool _pending_request_ocsp       = false; /**< Deferred request_ocsp_stapling(true): applied when the SSL is minted at connect. */
     bool _verify_peer = true; /**< Secure-by-default: verify the server certificate chain + hostname on the auto-created client context. Cleared
                                  by set_insecure(). */
+    qb::io::ssl::Context _ctx; /**< Optional value-semantic context to mint the client SSL from; empty => auto-create a secure client context. */
 
     /**
      * @brief Performs the SSL handshake check after a non-blocking connect.
@@ -381,17 +387,51 @@ class QB_API socket : public tcp::socket {
     bool apply_pending_client_settings() noexcept;
 
     /**
+     * @brief Ensure a client `SSL` handle exists, minting it from the bound context or auto-creating one.
+     * @return true if `_ssl_handle` is usable, false on allocation failure.
+     * @details No-op if a handle already exists (e.g. supplied via `init(SSL*)`). If the socket was built
+     *          from an `ssl::Context`, mints `SSL_new(_ctx.native())`; otherwise auto-creates a
+     *          secure-by-default client context (TLS 1.2+, system trust store when verifying).
+     * @private
+     */
+    bool ensure_client_ssl_() noexcept;
+
+    /**
+     * @brief Apply the per-connection client verification policy to the current SSL handle.
+     * @param hostname SNI / hostname-verification target (empty for chain-only, e.g. AF_UNIX).
+     * @details Auto-context path: this socket owns the policy (`SSL_VERIFY_PEER` + hostname, or none when
+     *          insecure). Context path: honor an explicit `set_insecure()`, else RESPECT the context's own
+     *          verify mode and install the per-connection hostname target only when the context already
+     *          verifies the peer — never force a mode the user's context did not ask for.
+     * @private
+     */
+    void apply_client_verification_(const std::string &hostname) noexcept;
+
+    /**
      * @brief Set up the client-side TLS state on this socket without connecting TCP.
      * @param hostname Optional SNI hostname.
      * @return 0 on success, a non-zero error code on failure (the TCP socket is closed on failure).
      * @details Creates the client `SSL_CTX`/`SSL` (unless one was supplied via init()),
      *          applies SNI/ALPN + peer-verification policy, and calls `SSL_set_connect_state`.
-     *          Shared by `n_connect()` (after its TCP connect) and `init_client()` (which runs it
-     *          on an already-connected fd for STARTTLS-style opportunistic upgrades). Does NOT touch
-     *          the fd until the first `handshake_status()`/`connected()` attaches it to the SSL object.
+     *          Shared by the blocking `connect()` overloads (via `finish_client_connect_()`),
+     *          `n_connect()` (after its TCP connect) and `init_client()` (which runs it on an
+     *          already-connected fd for STARTTLS-style opportunistic upgrades). Does NOT touch the fd
+     *          until the first `handshake_status()`/`connected()` attaches it to the SSL object.
      * @private
      */
     int setup_client_ssl(std::string const &hostname) noexcept;
+
+    /**
+     * @brief Shared completion for the two blocking `connect()` overloads (they differ only in whether the
+     *        TCP connect is time-bounded): the connect-error gate, `setup_client_ssl()`, the fd attach and
+     *        the inline handshake — identical across both — live here once.
+     * @param ret The return value of the underlying `tcp::socket::connect()`.
+     * @param err `qb::io::socket::get_last_errno()` captured immediately after that connect.
+     * @param hostname SNI / hostname-verification target.
+     * @return 0 on success (or connect-in-progress), a non-zero error code / -1 on failure.
+     * @private
+     */
+    int finish_client_connect_(int ret, int err, const std::string &hostname) noexcept;
 
 public:
     /** @brief Indicates that this socket implementation is secure */
@@ -411,6 +451,15 @@ public:
      *        Call `init()` with an `SSL_CTX` and then a `connect` or `accept` related method.
      */
     socket() noexcept;
+
+    /**
+     * @brief Construct a client socket bound to a value-semantic `qb::io::ssl::Context`.
+     * @param ctx The TLS context the connection's `SSL` is minted from — e.g.
+     *            `qb::io::ssl::Context::client().alpn({"h2"})`. Shared by reference count, so there is no
+     *            manual `SSL_CTX` lifetime management. Per-connection settings (`sni()`, `resume()`,
+     *            `insecure()`) still apply on top of it.
+     */
+    explicit socket(qb::io::ssl::Context ctx) noexcept;
 
     /**
      * @brief Constructor from an existing OpenSSL `SSL` structure and an established `tcp::socket`.
@@ -435,13 +484,12 @@ public:
     /**
      * @brief Move assignment operator.
      * @return Reference to this socket.
-     * @details NOT defaulted: a defaulted memberwise move would `SSL_free` this
-     *          socket's old `SSL` (via the unique_ptr) but leak the `SSL_CTX` it was
-     *          created from (the client context is freed only here / in the destructor,
-     *          never by the unique_ptr). Move-assigning over a socket that already owns
-     *          a TLS session — e.g. an in-place reconnect — would therefore orphan the
-     *          old context and its trust store. This releases the existing SSL+context
-     *          first, then takes over @p rhs.
+     * @details Releases this socket's current `SSL` before taking over @p rhs. Under the
+     *          reference-counted `SSL_CTX` model (`SSL_free` drops the `SSL`'s own context reference;
+     *          the socket never `SSL_CTX_free`s directly), a defaulted memberwise move would already
+     *          be correct — the explicit release simply keeps the teardown ordering obvious for an
+     *          in-place reconnect. A caller that passes its own context via `init()` owns that
+     *          `SSL_CTX` and must free it (see `create_client_context()`).
      */
     socket &operator=(socket &&rhs) noexcept;
 
@@ -582,9 +630,15 @@ public:
     int n_connect_un(std::filesystem::path const &path) noexcept;
 
     /**
-     * @brief Gracefully shut down the SSL/TLS connection and close the underlying socket.
-     * @return 0 on success, non-zero error code on failure during SSL shutdown.
-     * @details Performs `SSL_shutdown()` and then calls the base class `disconnect()`.
+     * @brief Close the SSL/TLS connection and the underlying socket.
+     * @return 0 on success, non-zero error code from the base-class `disconnect()`.
+     * @details Does NOT send a TLS `close_notify`: the auto-created client context is put into
+     *          quiet-shutdown mode at connect time (`SSL_set_quiet_shutdown`), so teardown is
+     *          immediate and this call just clears the connected flag and closes the underlying TCP
+     *          socket. The `SSL` object — and, through it, its reference to the reference-counted
+     *          `SSL_CTX` — is released when the socket is destroyed or re-`init()`ed, not here.
+     *          Higher-level framing (HTTP `Content-Length`/chunked, WebSocket close) delimits
+     *          messages, so the absence of a `close_notify` is not a truncation ambiguity there.
      */
     int disconnect() noexcept;
 
@@ -662,18 +716,22 @@ public:
 
     /**
      * @brief Disable SSL/TLS session resumption for this specific connection (client-side).
-     * @details Must be called before the SSL handshake (e.g., before `connect` or `connected`).
-     *          This function sets the SSL_OP_NO_TICKET and SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION options
-     *          and attempts to clear any previously set session using SSL_set_session(ssl, NULL).
-     * @return true if options were set successfully and an SSL handle exists, false otherwise.
+     * @details Call before the SSL handshake. Sets SSL_OP_NO_TICKET and
+     *          SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION and clears any set session
+     *          (`SSL_set_session(ssl, NULL)`). If the `SSL` handle is not minted yet (a socket built from an
+     *          `ssl::Context`), the request is DEFERRED and applied when the handle is created at connect;
+     *          any pending `resume()` session is dropped, since disabling resumption and resuming are
+     *          mutually exclusive (the last of the two calls wins).
+     * @return Always true — the request is applied to the existing handle or deferred to connect.
      */
     bool disable_session_resumption() noexcept;
 
     /**
      * @brief Request OCSP stapling from the server for this connection (client-side).
-     * @details Must be called before the SSL handshake.
+     * @details Call before the SSL handshake. If the `SSL` handle is not minted yet (a socket built from an
+     *          `ssl::Context`), the request is DEFERRED and applied when the handle is created at connect.
      * @param enable Set to true to request OCSP stapling, false to not request (or clear previous request).
-     * @return true if the request preference was set and an SSL handle exists, false otherwise.
+     * @return true when the request is applied or deferred; false only if enabling it on an existing handle failed.
      * @note The actual handling of the OCSP response needs to be done via a callback
      *       set on the SSL_CTX using `qb::io::ssl::set_ocsp_stapling_client_callback`.
      */
@@ -706,7 +764,9 @@ public:
      *          The provided session should be one previously obtained from `get_session()` from a connection
      *          to the same server and subsequently stored by the application.
      * @param session The qb::io::ssl::Session object to attempt to resume.
-     * @return true if the session was successfully set on the SSL handle, false otherwise (e.g., no SSL handle, invalid session).
+     * @return true when the session is accepted — applied to the `SSL` handle if one already exists, otherwise
+     *         DEFERRED (held with its own reference and applied when the handle is minted at connect, e.g. a
+     *         socket built from an `ssl::Context`); false only if the session is invalid.
      * @note Setting a session does not guarantee resumption; the server must also agree.
      */
     bool set_session(qb::io::ssl::Session &session) noexcept;
@@ -729,7 +789,8 @@ public:
      *          call this before `connect()` / `n_connect()` create the `SSL` handle.
      *          This overrides any SNI set by connect methods if called after them but before handshake.
      * @param hostname The hostname to use for SNI.
-     * @return true if SNI was set successfully and an SSL handle exists, false otherwise.
+     * @return true when the hostname is accepted — cached for the pending handshake and, if the `SSL` handle
+     *         already exists, applied to it; false if @p hostname is empty (or applying to an existing handle failed).
      */
     bool set_sni_hostname(const std::string &hostname) noexcept;
 
@@ -740,7 +801,8 @@ public:
      *          before `connect()` / `n_connect()`. Overrides ALPN protocols set on the SSL_CTX
      *          for this connection.
      * @param protocols A vector of protocol strings (e.g., {"h2", "http/1.1"}).
-     * @return true if ALPN protocols were set successfully and an SSL handle exists, false otherwise.
+     * @return true when the protocols are accepted — cached for the pending handshake and, if the `SSL` handle
+     *         already exists, applied to it; false if @p protocols is empty (or applying to an existing handle failed).
      */
     bool set_alpn_protocols(const std::vector<std::string> &protocols) noexcept;
 
@@ -787,6 +849,35 @@ public:
      */
     [[nodiscard]] bool verify_peer() const noexcept;
 
+    /**
+     * @brief Access the value-semantic TLS context bound to this socket (falsy if none / auto-context).
+     */
+    [[nodiscard]] const qb::io::ssl::Context &context() const noexcept;
+
+    /**
+     * @brief Set this connection's SNI + hostname-verification target (chainable). Call before connecting.
+     * @return `*this` for fluent chaining.
+     */
+    socket &sni(std::string hostname) noexcept;
+
+    /**
+     * @brief Offer this connection's ALPN protocols (chainable), overriding any set on the context.
+     * @return `*this` for fluent chaining.
+     */
+    socket &alpn(std::vector<std::string> protocols) noexcept;
+
+    /**
+     * @brief Resume a previously saved TLS session on this connection (chainable). Call before connecting.
+     * @return `*this` for fluent chaining.
+     */
+    socket &resume(qb::io::ssl::Session session) noexcept;
+
+    /**
+     * @brief Opt this connection out of peer verification (chainable). Equivalent to `set_insecure()`.
+     * @return `*this` for fluent chaining.
+     */
+    socket &insecure() noexcept;
+
     inline int
     do_handshake() noexcept {
         return handCheck();
@@ -796,10 +887,12 @@ private:
     //    friend class ssl::listener; // If listener needs to call private methods for accept
 
     /**
-     * @brief Free the owned `SSL` and (for a client socket) its `SSL_CTX`.
-     * @details Shared teardown for the destructor and the move-assignment operator: a
-     *          client context is created per-socket and owned here, so it must be freed;
-     *          a server context is shared (owned by the listener) and is left alone.
+     * @brief Release the owned `SSL` (shared teardown for the destructor and move-assignment).
+     * @details `SSL_free` (via the `unique_ptr` deleter) drops this `SSL`'s reference to its
+     *          reference-counted `SSL_CTX`; the socket never calls `SSL_CTX_free` directly. The context
+     *          is destroyed automatically once its last referencing `SSL` — and, for the `ssl::Context`
+     *          path, the last `Context` copy — is gone, so a shared/caller-provided context is never
+     *          torn out from under its other users.
      */
     void release_ssl_() noexcept;
 };

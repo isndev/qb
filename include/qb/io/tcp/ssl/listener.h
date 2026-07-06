@@ -26,6 +26,7 @@
 #define QB_IO_TCP_SSL_LISTENER_H_
 #include <filesystem>
 #include "../listener.h"
+#include "context.h"
 #include "socket.h"
 
 namespace qb::io::tcp::ssl {
@@ -41,11 +42,13 @@ namespace qb::io::tcp::ssl {
  * it creates and returns a `qb::io::tcp::ssl::socket` ready for secure communication after handshake.
  */
 class QB_API listener : public tcp::listener {
-    std::unique_ptr<SSL_CTX, void (*)(SSL_CTX *)> _ctx; /**< Unique pointer managing the OpenSSL SSL_CTX (context) object. */
+    qb::io::ssl::Context _ctx; /**< Value-semantic TLS context shared (by reference count) across every accepted connection. */
     // Held behind a unique_ptr so the ALPN wire buffer keeps a STABLE heap
     // address across a listener move (the defaulted move ops transfer the
     // SSL_CTX, which has this buffer's address registered as the alpn_select_cb
-    // arg — a pointer into a moved-from member would dangle).
+    // arg — a pointer into a moved-from member would dangle). Used only by the
+    // raw `set_supported_alpn_protocols()` path; the `Context::alpn()` path keeps
+    // its wire buffer on the context's ex-data instead.
     mutable std::unique_ptr<std::vector<unsigned char>> _alpn_wire;
 
 public:
@@ -63,10 +66,18 @@ public:
 
     /**
      * @brief Default constructor.
-     * @details Initializes the listener with a null SSL context deleter. The SSL context
-     *          must be set via `init(SSL_CTX*)` before the listener can be used to accept secure connections.
+     * @details Creates a listener with an empty TLS context. Give it one via the `Context` constructor
+     *          or `init(SSL_CTX*)` before `listen()` if secure connections are to be accepted.
      */
     listener() noexcept;
+
+    /**
+     * @brief Construct a listener from a value-semantic `qb::io::ssl::Context`.
+     * @param ctx The server context (e.g. `qb::io::ssl::Context::server(cert, key).alpn({"h2"})`). It is
+     *            shared by reference count with every connection this listener accepts — no `SSL_CTX_free`
+     *            bookkeeping, and the same context can be shared across listeners.
+     */
+    explicit listener(qb::io::ssl::Context ctx) noexcept;
 
     /**
      * @brief Deleted copy constructor. Listeners are not copyable.
@@ -85,13 +96,23 @@ public:
     listener &operator=(listener &&) = default;
 
     /**
-     * @brief Initialize the listener with a pre-configured SSL context.
+     * @brief Initialize the listener with a pre-configured raw `SSL_CTX` (advanced/escape-hatch path).
      * @param ctx A pointer to an `SSL_CTX` object, typically created and configured using
      *            `qb::io::ssl::create_server_context()` or directly with OpenSSL functions.
-     *            This listener takes ownership of the context via `std::unique_ptr`.
-     * @note This must be called before `listen()` if secure connections are to be accepted.
+     *            The listener takes over the caller's single reference (transferred into its internal
+     *            `qb::io::ssl::Context`; the caller must NOT `SSL_CTX_free` it afterwards).
+     * @note Must be called before `listen()`. Prefer the `init(qb::io::ssl::Context)` overload below —
+     *       no raw context lifetime to manage.
      */
     void init(SSL_CTX *ctx) noexcept;
+
+    /**
+     * @brief Initialize (or replace) the listener's TLS context from a value-semantic `qb::io::ssl::Context`.
+     * @param ctx The server context (e.g. `qb::io::ssl::Context::server(cert, key).alpn({"h2"})`), shared by
+     *            reference count with every accepted connection. Preferred over `init(SSL_CTX*)` — no raw
+     *            `SSL_CTX` lifetime to manage, fail-closed via `context().ok()`.
+     */
+    void init(qb::io::ssl::Context ctx) noexcept;
 
     /**
      * @brief Accept a new secure connection and return it as a new `ssl::socket`.
@@ -123,6 +144,12 @@ public:
      * @note Allows direct access to the OpenSSL API for advanced context configuration if needed.
      */
     [[nodiscard]] SSL_CTX *ssl_handle() const noexcept;
+
+    /**
+     * @brief Access the value-semantic TLS context backing this listener.
+     * @return The shared `qb::io::ssl::Context` (falsy if the listener has none yet).
+     */
+    [[nodiscard]] const qb::io::ssl::Context &context() const noexcept;
 
     /**
      * @brief Load CA certificates from a file for client peer verification (mTLS).

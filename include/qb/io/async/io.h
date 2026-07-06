@@ -933,6 +933,13 @@ public:
      */
     void
     start() noexcept {
+        // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into
+        // `anfds[-1]` (the debug assert is compiled out in release → OOB, CWE-787). start() is
+        // "begin I/O on a connected transport"; if the transport is not open, no-op. Gated on
+        // native_handle() (== is_open() here — sys__socket: `fd != invalid_socket`), NOT is_open(),
+        // to keep the async transport surface minimal (native_handle/read/write/set_nonblocking/close).
+        if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
+            return;
         _is_disposed  = false;
         _on_message   = false;
         _reason       = 0;
@@ -949,8 +956,11 @@ public:
      */
     void
     ready_to_read() noexcept {
-        if (!(this->_async_event.events & EV_READ))
+        if (!(this->_async_event.events & EV_READ)) {
+            if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
+                return; // don't arm ev::io on an invalid fd (release OOB into anfds[-1])
             this->_async_event.start(Derived.transport().native_handle(), EV_READ);
+        }
     }
 
     /**
@@ -1579,6 +1589,10 @@ public:
      */
     void
     start() noexcept {
+        // See input::start(): arming ev::io on an invalid fd is a release-mode OOB write into
+        // anfds[-1]. Skip when the transport is not open (e.g. start() before connect).
+        if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
+            return;
         _is_disposed  = false;
         _reason       = 0;
         _system_error = 0;
@@ -1593,8 +1607,11 @@ public:
      */
     void
     ready_to_write() noexcept {
-        if (!(this->_async_event.events & EV_WRITE))
+        if (!(this->_async_event.events & EV_WRITE)) {
+            if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
+                return; // don't arm ev::io on an invalid fd (release OOB into anfds[-1])
             this->_async_event.start(Derived.transport().native_handle(), this->_async_event.events | EV_WRITE);
+        }
     }
 
     /**
@@ -2129,6 +2146,13 @@ public:
      */
     void
     start() noexcept {
+        // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into
+        // `anfds[-1]` (the debug assert is compiled out in release → OOB, CWE-787). start() is
+        // "begin I/O on a connected transport"; if the transport is not open, no-op. Gated on
+        // native_handle() (== is_open() here — sys__socket: `fd != invalid_socket`), NOT is_open(),
+        // to keep the async transport surface minimal (native_handle/read/write/set_nonblocking/close).
+        if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
+            return;
         _is_disposed  = false;
         _on_message   = false;
         _reason       = 0;

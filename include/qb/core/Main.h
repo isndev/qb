@@ -484,6 +484,13 @@ class Main {
     using Mailbox = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
 
     static std::atomic<std::sig_atomic_t> _signal_pending;
+    /// Bumped by `onSignal()` and `stop()` on every raised signal. `_signal_pending` only holds the
+    /// LATEST signum and is never cleared during a run, so a per-core "already consumed" latch would
+    /// drop every signal after the first (a SIGHUP reload then SIGTERM, or `stop()` after any earlier
+    /// signal, left the engine unstoppable). Each `VirtualCore` re-synthesizes its `SignalEvent`
+    /// whenever this generation advances past the one it last delivered — so distinct AND repeated
+    /// signals are all delivered. Must stay lock-free for signal-handler safety (asserted in Main.cpp).
+    static std::atomic<unsigned int> _signal_generation;
 
     std::atomic<uint64_t> _sync_start;
     static void           onSignal(int signal) noexcept;

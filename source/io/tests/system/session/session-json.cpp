@@ -209,8 +209,7 @@ TEST(SessionJson, JsonOverSecureTcp) {
     msg_count_client.store(0);
 
     JsonSecureServer server;
-    server.transport().init(ssl::create_server_context(SSLv23_server_method(), qb::io::test::ssl_resource_path("cert.pem"),
-                                                       qb::io::test::ssl_resource_path("key.pem")));
+    server.transport().init(ssl::Context::server(qb::io::test::ssl_resource_path("cert.pem"), qb::io::test::ssl_resource_path("key.pem")));
     ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), 0);
     const auto port = server.transport().local_endpoint().port();
     ASSERT_NE(port, 0);

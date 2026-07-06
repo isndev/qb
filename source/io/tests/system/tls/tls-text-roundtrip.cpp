@@ -123,7 +123,7 @@ TEST(TlsTextRoundtrip, SecureSessionEchoesEveryFramedMessage) {
 
     // Secure server on an ephemeral loopback port.
     SecureServer server;
-    server.transport().init(ssl::create_server_context(TLS_server_method(), ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")));
+    server.transport().init(ssl::Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")));
     ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), 0);
     const auto port = server.transport().local_endpoint().port();
     ASSERT_NE(port, 0);

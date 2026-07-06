@@ -323,6 +323,7 @@ TEST(SSLSocketLoopback, LoopbackHandshakeExposesNegotiatedState) {
         auto                    *ctx = qb::io::ssl::create_client_context(TLS_client_method());
         ASSERT_NE(ctx, nullptr);
         resumption_socket.init(SSL_new(ctx));
+        SSL_CTX_free(ctx); // caller owns the SSL_CTX (create_client_context); the socket's SSL keeps its own ref
         EXPECT_TRUE(resumption_socket.set_session(session));
     }
     qb::io::ssl::free_session(session);
@@ -913,7 +914,8 @@ TEST(SSLSocketLoopback, PostHandshakeAccessorsAndChannelBinding) {
     qb::io::tcp::ssl::socket client;
     auto                    *client_ctx = qb::io::ssl::create_client_context(TLS_client_method());
     ASSERT_NE(client_ctx, nullptr);
-    client.init(SSL_new(client_ctx)); // socket takes ownership of the client SSL+CTX
+    client.init(SSL_new(client_ctx)); // socket owns the SSL; the caller owns the SSL_CTX
+    SSL_CTX_free(client_ctx);          // drop the creator ref — the SSL keeps its own (create_client_context contract)
     ASSERT_NE(client.ssl_handle(), nullptr);
     client.set_insecure();
     ASSERT_TRUE(client.request_ocsp_stapling(true));
@@ -971,9 +973,13 @@ TEST(SSLSocketLoopback, AccessorsOnSocketWithoutHandleReturnEmpty) {
     EXPECT_EQ(bare.get_last_ssl_error_string(), "No SSL handle");
     EXPECT_FALSE(bare.get_session().is_valid());
 
-    // Mutators that require a handle all fail closed.
-    EXPECT_FALSE(bare.disable_session_resumption());
-    EXPECT_FALSE(bare.request_ocsp_stapling(true));
+    // Per-connection client toggles with no ssl::Context equivalent DEFER on a handle-less socket (applied
+    // when the SSL is minted at connect), like sni()/alpn()/resume() — so they return true here, not fail.
+    EXPECT_TRUE(bare.disable_session_resumption());
+    EXPECT_TRUE(bare.request_ocsp_stapling(true));
+    // Verification is an ssl::Context concern (verify()/on_verify()); these raw socket-level overrides
+    // still require an existing SSL handle, and request_client_post_handshake_auth needs a live TLS 1.3
+    // connection — all fail closed here.
     EXPECT_FALSE(bare.set_verify_depth(2));
     EXPECT_FALSE(bare.set_verify_callback(nullptr, SSL_VERIFY_NONE));
     EXPECT_FALSE(bare.request_client_post_handshake_auth());
@@ -1224,6 +1230,7 @@ TEST(SSLSocketLoopback, PostHandshakeAuthRequestSucceedsWhenServerEnablesIt) {
     SSL_CTX_set_post_handshake_auth(client_ctx, 1);
 #endif
     client.init(SSL_new(client_ctx));
+    SSL_CTX_free(client_ctx); // caller owns the SSL_CTX; the socket's SSL keeps its own ref
     ASSERT_NE(client.ssl_handle(), nullptr);
     client.set_insecure();
     ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
@@ -1427,6 +1434,7 @@ TEST(SSLSocketLoopback, Tls12NegotiationRejectsServerPostHandshakeAuth) {
     ASSERT_NE(client_ctx, nullptr);
     ASSERT_TRUE(qb::io::ssl::set_tls_protocol_versions(client_ctx, TLS1_2_VERSION, TLS1_2_VERSION));
     client.init(SSL_new(client_ctx));
+    SSL_CTX_free(client_ctx); // caller owns the SSL_CTX; the socket's SSL keeps its own ref
     ASSERT_NE(client.ssl_handle(), nullptr);
     client.set_insecure();
     ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);

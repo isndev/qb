@@ -578,16 +578,35 @@ VirtualCore::__workflow__() {
         // so the existing signum semantics are preserved: we synthesise a
         // virtual SIGINT to reuse the same shutdown plumbing (SignalEvent
         // broadcast + actors' `onSignal` / `kill()` chain).
+        // Steady state carries no pending signal, so keep the hot path at exactly one relaxed load +
+        // the stop-token check (the pre-existing cost) and pull the generation load into the cold
+        // shutdown branch below — an atomic load per loop pass is not free on this hot path.
         const auto pending_signal = Main::_signal_pending.load(std::memory_order_relaxed);
-        const bool signal_pending = (pending_signal != 0);
         const bool stop_requested = _stop_token.stop_possible() && _stop_token.stop_requested();
-        if ((signal_pending || stop_requested) && !_signal_consumed) {
-            _signal_consumed = true;
-            SignalEvent sig_event;
-            fill_event<SignalEvent>(sig_event, BroadcastId(_index), BroadcastId(_index));
-            sig_event.signum = signal_pending ? pending_signal : SIGINT;
-            auto &pipe       = __getPipe__(_index);
-            pipe.recycle(sig_event, sig_event.bucket_size);
+        if (unlikely(pending_signal != 0 || stop_requested)) {
+            // Cold (shutdown only). A single per-core "consumed" latch used to drop every signal after
+            // the first — leaving the engine unstoppable after e.g. a SIGHUP reload, a double Ctrl-C,
+            // or Main::stop() after an earlier signal. Re-synthesize on every newly-raised signal
+            // (Main::_signal_generation advanced) and once for the cooperative stop_token latch.
+            // Signals COALESCE to the latest generation: the single _signal_pending slot holds only the
+            // most recent signum, so two signals between loop passes deliver one event carrying the latest
+            // — sufficient for the lifecycle/shutdown contract (no per-signum fan-out guarantee).
+            // Acquire the generation, then re-load the signum under it so (generation, signum) stay
+            // coherent — pairs with the release bump in onSignal()/stop().
+            const auto signal_generation = Main::_signal_generation.load(std::memory_order_acquire);
+            const auto signum            = Main::_signal_pending.load(std::memory_order_relaxed);
+            const bool new_signal        = (signum != 0) && (signal_generation != _last_signal_generation);
+            if (new_signal || (stop_requested && !_stop_delivered)) {
+                if (new_signal)
+                    _last_signal_generation = signal_generation;
+                if (stop_requested)
+                    _stop_delivered = true;
+                SignalEvent sig_event;
+                fill_event<SignalEvent>(sig_event, BroadcastId(_index), BroadcastId(_index));
+                sig_event.signum = (signum != 0) ? signum : SIGINT;
+                auto &pipe       = __getPipe__(_index);
+                pipe.recycle(sig_event, sig_event.bucket_size);
+            }
         }
 
         if (io::async::listener::current.has_coro_scheduler() || io::async::listener::current.size()) {

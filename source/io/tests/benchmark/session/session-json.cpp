@@ -276,8 +276,7 @@ BM_SessionJson_Tls(benchmark::State &state) {
     g_client_received.store(0);
 
     JsonSecureServer server;
-    server.transport().init(ssl::create_server_context(SSLv23_server_method(), qb::io::test::ssl_resource_path("cert.pem"),
-                                                       qb::io::test::ssl_resource_path("key.pem")));
+    server.transport().init(ssl::Context::server(qb::io::test::ssl_resource_path("cert.pem"), qb::io::test::ssl_resource_path("key.pem")));
     if (server.transport().listen_v4(0, "127.0.0.1") != 0) {
         state.SkipWithError("failed to bind loopback TLS listener");
         return;

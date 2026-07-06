@@ -11,13 +11,21 @@
 Secure TCP in `qb-io` is the plain TCP stack with an OpenSSL encryption layer spliced
 underneath the same stream and async interfaces. The pieces are:
 
+- `qb::io::ssl::Context` — **the preferred way to configure TLS.** A value-semantic,
+  reference-counted, secure-by-default handle over an `SSL_CTX`: copyable (copies share one
+  context, freed exactly once — no user `SSL_CTX_free`), fluent (`Context::client()` /
+  `Context::server(cert, key).alpn({"h2"})`), fail-closed (a bad cert yields a falsy Context
+  whose `error()` explains why). Hand it to a socket or listener; there is no raw context
+  lifetime to manage. See [The `ssl::Context` type](#the-sslcontext-type).
 - `qb::io::tcp::ssl::socket` — a `tcp::socket` that owns an OpenSSL `SSL*` and runs the
-  handshake plus transparent `SSL_read`/`SSL_write`.
-- `qb::io::tcp::ssl::listener` — a `tcp::listener` that owns an `SSL_CTX` and mints a
+  handshake plus transparent `SSL_read`/`SSL_write`. Build it from a `Context`
+  (`ssl::socket{ssl::Context::client()}`) or let `connect()` auto-create a secure client one.
+- `qb::io::tcp::ssl::listener` — a `tcp::listener` that holds a `Context` and mints a
   configured `ssl::socket` per accepted connection.
 - `qb::io::transport::stcp` — the `stream<ssl::socket>` specialization that backs every
   asynchronous secure session.
-- Free functions in `qb::io::ssl` for building and configuring `SSL_CTX` objects.
+- Free functions in `qb::io::ssl` for building and configuring raw `SSL_CTX` objects — the
+  advanced/escape-hatch layer, kept permanently but superseded by `ssl::Context` for most uses.
 
 The whole slice compiles only when the build was configured with OpenSSL available; see
 [Build gating](#build-gating). Throughout, the socket and listener follow `qb-io`'s
@@ -59,13 +67,58 @@ references them must also be compiled under that definition.
 
 ## Core components
 
+### The `ssl::Context` type
+
+Declared in `qb/io/tcp/ssl/context.h`. A `Context` is a value: copy it and both copies share the
+same reference-counted `SSL_CTX`, destroyed exactly once when the last copy — and the last `SSL`
+minted from it — is gone. There is no user-visible `SSL_CTX_free`, so the double-free / leak
+footguns of hand-rolled OpenSSL ownership are structurally impossible.
+
+<!-- src: qb/include/qb/io/tcp/ssl/context.h:127 -->
+
+It is **secure by default** and **fails closed**: `Context::client()` pins TLS 1.2+, loads the
+system trust store, and verifies the peer; a construction or configuration error (a missing cert, a
+bad cipher list) yields a falsy Context whose `error()` explains why — it never silently degrades to
+an insecure context.
+
+```cpp
+// Server: one shared, fluently-configured context.
+auto ctx = qb::io::ssl::Context::server("cert.pem", "key.pem").alpn({"h2", "http/1.1"});
+qb::io::tcp::ssl::listener listener{ctx};              // shared by ref-count across every accept
+
+// Client: secure by default; per-connection SNI on top.
+qb::io::tcp::ssl::socket client{qb::io::ssl::Context::client().alpn({"h2"})};
+client.sni("example.com").connect(ep);
+```
+
+The factories are `Context::client()`, `Context::server(cert, key)`, and two escape hatches for
+wrapping a raw `SSL_CTX*`: `Context::adopt` (transfer the caller's reference) and `Context::share`
+(take a new reference; the caller keeps theirs).
+
+<!-- src: qb/include/qb/io/tcp/ssl/context.h:138-163 -->
+
+Configuration is a fluent chain (`min_version`/`max_version`, `verify`, `trust`/`trust_system`,
+`identity`, `alpn`, `ciphers`/`ciphersuites`/`curves`, `dh_params`, `session_cache`/
+`session_timeout`); each call is a no-op once the Context has errored, so a single `ok()` check at
+the end suffices. The verification, key-log and SNI hooks are **typed** callbacks (`on_verify` /
+`on_keylog` / `on_sni` take `std::function`s, not raw C pointers): the closures live on the
+context's `SSL_CTX` ex-data, so they are reachable from every minted `SSL` and are destroyed with
+the context. `VerifyMode` is `none` / `peer` / `peer_require` (the last adds fail-if-no-cert, i.e.
+mutual TLS); `TlsVersion` is `v1_2` / `v1_3`.
+
+<!-- src: qb/include/qb/io/tcp/ssl/context.h:62, qb/include/qb/io/tcp/ssl/context.h:72 -->
+
+The raw `qb::io::ssl::` free functions and `socket::init(SSL*)` / `listener::init(SSL_CTX*)` remain
+available as an advanced escape hatch for fully hand-built configurations.
+
 ### `qb::io::tcp::ssl::socket`
 
 Declared in `qb/io/tcp/ssl/socket.h`. Inherits `qb::io::tcp::socket` and owns the OpenSSL
-`SSL*` through a `std::unique_ptr<SSL, …>`. It is move-only (the copy constructor is
-deleted, move construction is defaulted, and move assignment is user-provided — it must
-free the existing `SSL` and client `SSL_CTX` before taking over the source), so ownership
-of both the native handle and the `SSL` object transfers on move.
+`SSL*` through a `std::unique_ptr<SSL, …>`, plus an optional `ssl::Context` it was built from.
+It is move-only (the copy constructor is deleted, move construction is defaulted, and move
+assignment is user-provided — it releases the existing `SSL` before taking over the source; the
+`SSL`'s reference to its reference-counted `SSL_CTX` is dropped by `SSL_free`, never by a direct
+`SSL_CTX_free`), so ownership of the native handle, the `SSL`, and the context transfers on move.
 
 ```cpp
 class QB_API socket : public tcp::socket {
@@ -104,6 +157,12 @@ Key behaviors verified in the header:
   takes ownership of an `SSL` handle (created with `SSL_new` from an `SSL_CTX`). The
   blocking `connect*` family builds an `SSL_CTX` and handle for you when none is supplied,
   which is why those calls work directly on a default-constructed socket.
+- **Async connector with a Context.** For full control the async connectors take a caller-built
+  `ssl::Context` socket — a private CA (`trust`), a client certificate (`identity`, mutual TLS), or a
+  custom verify mode: `connect(ssl::socket{Context::client()…}, uri, cb)`, and the STARTTLS sibling
+  `starttls_connect(socket, uri, cb)` for PostgreSQL `SSLRequest` / SMTP·IMAP `STARTTLS`. The `qbm`
+  PostgreSQL (`ssl_root_cert`/`ssl_cert`/`ssl_key`) and Redis (`set_ssl_root_cert` /
+  `set_ssl_client_certificate`) clients drive exactly this path.
 - **Return convention.** `connect*` and `n_connect*` return `int`: `0` on success (the
   value of `qb::io::SocketStatus::Done`), non-zero on failure. A failed peer-verification
   surfaces as `qb::io::SocketStatus::CertificateError` (value `1`).

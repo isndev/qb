@@ -529,24 +529,14 @@ apply_alpn_protocols(SSL *ssl_handle, const std::vector<std::string> &protocols)
     return SSL_set_alpn_protos(ssl_handle, serialized.data(), static_cast<unsigned int>(serialized.size())) == 0;
 }
 
-// Secure-by-default peer verification for the client SSL handle created by
-// qb-io. When `insecure` is false (the default), the handshake must validate
-// the server certificate chain (SSL_VERIFY_PEER, against the trust store loaded
-// on the SSL_CTX) and the certificate must match the target hostname/IP. When
-// `insecure` is true (set_insecure()), verification is turned off.
+// Install the per-connection hostname/IP verification target on `ssl` (no-op for an empty hostname,
+// e.g. a Unix-domain transport, where only the chain is checked). Fails CLOSED: if the target cannot
+// be installed, a reject-every-certificate callback aborts the handshake — silently continuing would
+// leave only chain verification and accept a valid-chain cert issued for a DIFFERENT host (a MITM hole).
 void
-apply_client_peer_verification(SSL *ssl, const std::string &hostname, bool insecure) noexcept {
-    if (!ssl)
-        return;
-    if (insecure) {
-        SSL_set_verify(ssl, SSL_VERIFY_NONE, nullptr);
-        return;
-    }
-    // On a client, SSL_VERIFY_PEER makes OpenSSL abort the handshake when the
-    // certificate chain cannot be verified against the trust store.
-    SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr);
+apply_hostname_target(SSL *ssl, const std::string &hostname) noexcept {
     if (hostname.empty())
-        return; // chain-only verification (e.g. Unix-domain transport)
+        return;
     X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
     if (!param)
         return;
@@ -561,13 +551,26 @@ apply_client_peer_verification(SSL *ssl, const std::string &hostname, bool insec
         rc = X509_VERIFY_PARAM_set1_host(param, hostname.c_str(), 0);
     }
     if (rc != 1) {
-        // Could not install hostname/IP verification (e.g. allocation failure).
-        // Fail CLOSED: install a verify callback that rejects every certificate
-        // so the handshake aborts. Silently continuing here would leave only
-        // chain verification active and accept a valid-chain cert issued for a
-        // DIFFERENT host — a MITM hole.
         SSL_set_verify(ssl, SSL_VERIFY_PEER, [](int, X509_STORE_CTX *) -> int { return 0; });
     }
+}
+
+// Secure-by-default peer verification for the AUTO-created client context, where THIS socket owns the
+// policy. When `insecure` is false (the default), the handshake must validate the server certificate
+// chain (SSL_VERIFY_PEER, against the trust store on the SSL_CTX) and the certificate must match the
+// target hostname/IP. When `insecure` is true (set_insecure()), verification is turned off.
+void
+apply_client_peer_verification(SSL *ssl, const std::string &hostname, bool insecure) noexcept {
+    if (!ssl)
+        return;
+    if (insecure) {
+        SSL_set_verify(ssl, SSL_VERIFY_NONE, nullptr);
+        return;
+    }
+    // On a client, SSL_VERIFY_PEER makes OpenSSL abort the handshake when the
+    // certificate chain cannot be verified against the trust store.
+    SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr);
+    apply_hostname_target(ssl, hostname);
 }
 
 } // namespace
@@ -582,15 +585,23 @@ socket::socket(SSL *ctx, tcp::socket &sock) noexcept
     , _ssl_handle(ctx, SSL_free)
     , _connected(false) {}
 
+socket::socket(qb::io::ssl::Context ctx) noexcept
+    : tcp::socket()
+    , _ssl_handle(nullptr, SSL_free)
+    , _connected(false)
+    , _ctx(std::move(ctx)) {}
+
 void
 socket::release_ssl_() noexcept {
     if (_ssl_handle) {
-        const auto handle    = ssl_handle();
-        const auto ctx       = SSL_get_SSL_CTX(handle);
-        const auto is_client = !SSL_is_server(handle);
+        // SSL_free (via the unique_ptr deleter) drops THIS SSL's reference to its
+        // reference-counted SSL_CTX. We never SSL_CTX_free directly: the context is destroyed
+        // automatically when its last referencing SSL is freed. For the auto-connect() path
+        // this socket already dropped its creator reference right after SSL_new (see connect()),
+        // so SSL_free here releases the final reference; for a caller-provided or listener-shared
+        // context, the other holders' references keep it alive (the old SSL_is_server heuristic
+        // wrongly freed any client-mode context and tore shared ones out from under their users).
         _ssl_handle.reset(nullptr); // SSL_free
-        if (is_client && ctx)
-            SSL_CTX_free(ctx);
         _connected = false;
     }
 }
@@ -603,37 +614,34 @@ socket &
 socket::operator=(socket &&rhs) noexcept {
     if (this == &rhs)
         return *this;
-    // Free our own SSL + (client) context BEFORE taking over rhs — a defaulted
-    // memberwise move would SSL_free our old SSL but leak its SSL_CTX (see header note).
+    // Release our current SSL before taking over rhs: SSL_free (via the unique_ptr deleter)
+    // drops this SSL's reference to its reference-counted SSL_CTX, so the context is freed only
+    // once its last referencing SSL is gone — nothing leaks and a shared context is never
+    // over-freed.
     release_ssl_();
     tcp::socket::operator=(std::move(rhs));
-    _ssl_handle             = std::move(rhs._ssl_handle);
-    _connected              = rhs._connected;
-    _pending_sni_hostname   = std::move(rhs._pending_sni_hostname);
-    _pending_alpn_protocols = std::move(rhs._pending_alpn_protocols);
-    _verify_peer            = rhs._verify_peer;
-    rhs._connected          = false;
+    _ssl_handle                 = std::move(rhs._ssl_handle);
+    _connected                  = rhs._connected;
+    _pending_sni_hostname       = std::move(rhs._pending_sni_hostname);
+    _pending_alpn_protocols     = std::move(rhs._pending_alpn_protocols);
+    _pending_session            = std::move(rhs._pending_session);
+    _pending_disable_resumption = rhs._pending_disable_resumption;
+    _pending_request_ocsp       = rhs._pending_request_ocsp;
+    _verify_peer                = rhs._verify_peer;
+    _ctx                        = std::move(rhs._ctx);
     return *this;
 }
 
 void
 socket::init(SSL *handle) noexcept {
     _connected = false;
-    if (!_ssl_handle) {
-        _ssl_handle.reset(handle);
-        if (_ssl_handle)
-            apply_pending_client_settings();
-        return;
-    } else {
-        auto *old_ssl    = _ssl_handle.get();
-        auto *old_ctx    = SSL_get_SSL_CTX(old_ssl);
-        bool  was_client = !SSL_is_server(old_ssl);
-        _ssl_handle.reset(handle);
-        if (was_client && old_ctx)
-            SSL_CTX_free(old_ctx);
-        if (_ssl_handle)
-            apply_pending_client_settings();
-    }
+    // reset() SSL_free's any previous handle, which drops that SSL's reference to its
+    // reference-counted SSL_CTX; the incoming handle carries its own reference. No manual
+    // SSL_CTX_free — the context lives as long as some SSL references it, so a caller-provided
+    // or shared context is never torn out from under its other users.
+    _ssl_handle.reset(handle);
+    if (_ssl_handle)
+        apply_pending_client_settings();
 }
 
 bool
@@ -642,7 +650,75 @@ socket::apply_pending_client_settings() noexcept {
         return true;
 
     auto *ssl = ssl_handle();
-    return apply_sni_hostname(ssl, _pending_sni_hostname) && apply_alpn_protocols(ssl, _pending_alpn_protocols);
+    if (!apply_sni_hostname(ssl, _pending_sni_hostname) || !apply_alpn_protocols(ssl, _pending_alpn_protocols))
+        return false;
+    if (_pending_disable_resumption) {
+        // Deferred disable_session_resumption(): mutually exclusive with a pending session (each setter
+        // clears the other), so this never fights the _pending_session block below.
+        SSL_set_options(ssl, SSL_OP_NO_TICKET | SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+        SSL_set_session(ssl, nullptr);
+        _pending_disable_resumption = false;
+    }
+    if (_pending_session) {
+        SSL_set_session(ssl, _pending_session.get()); // SSL takes its own reference; drop our deferred one
+        _pending_session.reset();
+    }
+    if (_pending_request_ocsp) {
+        SSL_set_tlsext_status_type(ssl, TLSEXT_STATUSTYPE_ocsp); // deferred request_ocsp_stapling(true)
+        _pending_request_ocsp = false;
+    }
+    return true;
+}
+
+bool
+socket::ensure_client_ssl_() noexcept {
+    if (_ssl_handle)
+        return true;
+    if (_ctx.native() != nullptr) {
+        // A Context (carrying an SSL_CTX) was supplied. FAIL CLOSED if it is not ok() — a config step
+        // failed (trust()/identity()/ciphers()/...): do NOT silently fall back to a generic auto-created
+        // context, which would trust a different anchor and drop the client identity (a security
+        // downgrade). Keying off native() (was a Context supplied?) not ok() is what makes this closed.
+        if (!_ctx.ok())
+            return false;
+        // Built from an ssl::Context: mint the per-connection SSL from the shared context.
+        _ssl_handle.reset(SSL_new(_ctx.native()));
+        return _ssl_handle != nullptr;
+    }
+    // No context supplied -> auto-create a secure-by-default client context (TLS 1.2+, system trust store).
+    const auto ctx = SSL_CTX_new(TLS_client_method());
+    if (ctx) {
+        SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+        if (_verify_peer)
+            SSL_CTX_set_default_verify_paths(ctx);
+    }
+    _ssl_handle.reset(SSL_new(ctx));
+    // SSL_new() took its own reference to the reference-counted SSL_CTX; drop our creator reference now
+    // so the context is destroyed exactly when this socket's SSL is freed (teardown never SSL_CTX_free's
+    // directly). On SSL_new failure this drops the sole reference and frees the context; no-op if null.
+    SSL_CTX_free(ctx);
+    return _ssl_handle != nullptr;
+}
+
+void
+socket::apply_client_verification_(const std::string &hostname) noexcept {
+    auto *ssl = ssl_handle();
+    if (!ssl)
+        return;
+    if (_ctx.native() == nullptr) {
+        // Auto-created context (no Context supplied): this socket owns the verification policy.
+        apply_client_peer_verification(ssl, hostname, !_verify_peer);
+        return;
+    }
+    // Context path (native non-null AND ok() — ensure_client_ssl_ already failed closed otherwise): the
+    // ssl::Context owns the verify mode. An explicit set_insecure() still wins.
+    if (!_verify_peer) {
+        SSL_set_verify(ssl, SSL_VERIFY_NONE, nullptr);
+        return;
+    }
+    // Respect the context's mode; add the per-connection hostname target only when it verifies the peer.
+    if ((SSL_get_verify_mode(ssl) & SSL_VERIFY_PEER) != 0)
+        apply_hostname_target(ssl, hostname);
 }
 
 int
@@ -705,40 +781,17 @@ socket::connect_in(int af, std::string const &host, uint16_t port, qb::duration 
     return ret;
 }
 
+// Shared completion for the two blocking connect() overloads, which differ ONLY in whether the TCP
+// connect is time-bounded. Everything after that is identical — the connect-error gate, the client-SSL
+// setup (setup_client_ssl: mint/quiet-shutdown/SNI/ALPN/session/verify/connect_state, itself shared with
+// n_connect()/init_client()), the fd attach, and the inline handshake — so it lives here once.
 int
-socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
-    auto      ret = tcp::socket::connect(ep);
-    const int err = qb::io::socket::get_last_errno();
+socket::finish_client_connect_(int ret, int err, const std::string &hostname) noexcept {
     if (ret != 0 && !socket_no_error(err) && err != EISCONN)
         return ret;
-    if (!_ssl_handle) {
-        const auto ctx = SSL_CTX_new(TLS_client_method());
-        // Secure-by-default: load the system trust store so the auto-created
-        // client context can verify the server certificate chain. Opt out via
-        // set_insecure(). When the caller brings their own SSL via init(), this
-        // branch is skipped and they own the verification policy.
-        if (ctx && _verify_peer)
-            SSL_CTX_set_default_verify_paths(ctx);
-        _ssl_handle.reset(SSL_new(ctx));
-        if (!_ssl_handle) {
-            SSL_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            tcp::socket::disconnect();
-            return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-    }
-    const auto h_ssl = ssl_handle();
-    SSL_set_quiet_shutdown(h_ssl, 1);
-    if (!hostname.empty())
-        _pending_sni_hostname = hostname;
-    if (!apply_pending_client_settings()) {
-        tcp::socket::disconnect();
-        return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-    // Secure-by-default: enable certificate-chain + hostname verification for
-    // the auto-created context (no-op once set_insecure() cleared _verify_peer).
-    apply_client_peer_verification(h_ssl, _pending_sni_hostname, !_verify_peer);
-    SSL_set_connect_state(h_ssl);
-    if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
+    if (setup_client_ssl(hostname) != 0) // mints the SSL + applies SNI/ALPN/session/verify; disconnects on failure
+        return SocketStatus::Error;      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (!qb::io::ssl::attach_socket(ssl_handle(), native_handle()))
         return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     if (ret != 0 && socket_no_error(err))
         return ret;
@@ -746,43 +799,17 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
 }
 
 int
+socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
+    const auto ret = tcp::socket::connect(ep);
+    const int  err = qb::io::socket::get_last_errno();
+    return finish_client_connect_(ret, err, hostname);
+}
+
+int
 socket::connect(endpoint const &ep, std::string const &hostname, qb::duration wtimeout) noexcept {
-    auto      ret = tcp::socket::connect(ep, wtimeout);
-    const int err = qb::io::socket::get_last_errno();
-    if (ret != 0 && !socket_no_error(err) && err != EISCONN)
-        return ret;
-    if (!_ssl_handle) {
-        const auto ctx = SSL_CTX_new(TLS_client_method());
-        // Secure-by-default: load the system trust store so the auto-created
-        // client context can verify the server certificate chain. Opt out via
-        // set_insecure(). When the caller brings their own SSL via init(), this
-        // branch is skipped and they own the verification policy.
-        if (ctx && _verify_peer)
-            SSL_CTX_set_default_verify_paths(ctx);
-        _ssl_handle.reset(SSL_new(ctx));
-        if (!_ssl_handle) {
-            SSL_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            tcp::socket::disconnect();
-            return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
-    }
-    const auto h_ssl = ssl_handle();
-    SSL_set_quiet_shutdown(h_ssl, 1);
-    if (!hostname.empty())
-        _pending_sni_hostname = hostname;
-    if (!apply_pending_client_settings()) {
-        tcp::socket::disconnect();
-        return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-    // Secure-by-default: enable certificate-chain + hostname verification for
-    // the auto-created context (no-op once set_insecure() cleared _verify_peer).
-    apply_client_peer_verification(h_ssl, _pending_sni_hostname, !_verify_peer);
-    SSL_set_connect_state(h_ssl);
-    if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
-        return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    if (ret != 0 && socket_no_error(err))
-        return ret;
-    return handCheck() < 0 ? -1 : 0;
+    const auto ret = tcp::socket::connect(ep, wtimeout);
+    const int  err = qb::io::socket::get_last_errno();
+    return finish_client_connect_(ret, err, hostname);
 }
 
 int
@@ -846,20 +873,9 @@ socket::n_connect_in(int af, std::string const &host, uint16_t port) noexcept {
 
 int
 socket::setup_client_ssl(std::string const &hostname) noexcept {
-    if (!_ssl_handle) {
-        const auto ctx = SSL_CTX_new(TLS_client_method());
-        // Secure-by-default: load the system trust store so the auto-created
-        // client context can verify the server certificate chain. Opt out via
-        // set_insecure(). When the caller brings their own SSL via init(), this
-        // branch is skipped and they own the verification policy.
-        if (ctx && _verify_peer)
-            SSL_CTX_set_default_verify_paths(ctx);
-        _ssl_handle.reset(SSL_new(ctx));
-        if (!_ssl_handle) {
-            SSL_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            tcp::socket::disconnect();
-            return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        }
+    if (!ensure_client_ssl_()) {
+        tcp::socket::disconnect();
+        return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
     const auto h_ssl = ssl_handle();
     SSL_set_quiet_shutdown(h_ssl, 1);
@@ -869,9 +885,10 @@ socket::setup_client_ssl(std::string const &hostname) noexcept {
         tcp::socket::disconnect();
         return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
-    // Secure-by-default: enable certificate-chain + hostname verification for
-    // the auto-created context (no-op once set_insecure() cleared _verify_peer).
-    apply_client_peer_verification(h_ssl, _pending_sni_hostname, !_verify_peer);
+    // Secure-by-default certificate-chain + hostname verification. For the auto-created context this
+    // socket owns the policy; for a bound ssl::Context it respects the context's verify mode. A prior
+    // set_insecure() disables verification either way.
+    apply_client_verification_(_pending_sni_hostname);
     SSL_set_connect_state(h_ssl);
     return 0;
 }
@@ -1102,22 +1119,29 @@ socket::get_last_ssl_error_string() const noexcept {
 
 bool
 socket::disable_session_resumption() noexcept {
-    if (!_ssl_handle)
-        return false;
-    SSL_set_options(_ssl_handle.get(), SSL_OP_NO_TICKET | SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
-    SSL_set_session(_ssl_handle.get(), nullptr);
+    if (_ssl_handle) {
+        SSL_set_options(_ssl_handle.get(), SSL_OP_NO_TICKET | SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+        SSL_set_session(_ssl_handle.get(), nullptr);
+        return true;
+    }
+    // No SSL yet (a socket built from an ssl::Context mints it at connect): defer to
+    // apply_pending_client_settings(), and drop any pending session — disabling resumption and resuming a
+    // session are mutually exclusive, so the last of the two calls wins.
+    _pending_disable_resumption = true;
+    _pending_session.reset();
     return true;
 }
 
 bool
 socket::request_ocsp_stapling(bool enable) noexcept {
-    if (!_ssl_handle)
-        return false;
-    if (enable) {
-        if (SSL_set_tlsext_status_type(_ssl_handle.get(), TLSEXT_STATUSTYPE_ocsp) != 1) {
+    if (_ssl_handle) {
+        if (enable && SSL_set_tlsext_status_type(_ssl_handle.get(), TLSEXT_STATUSTYPE_ocsp) != 1)
             return false;
-        }
+        return true;
     }
+    // No SSL yet (a socket built from an ssl::Context mints it at connect): defer the request to
+    // apply_pending_client_settings().
+    _pending_request_ocsp = enable;
     return true;
 }
 
@@ -1221,10 +1245,18 @@ socket::get_session() const noexcept {
 
 bool
 socket::set_session(qb::io::ssl::Session &session) noexcept {
-    if (!_ssl_handle || !session.is_valid()) {
+    if (!session.is_valid())
         return false;
-    }
-    return SSL_set_session(_ssl_handle.get(), session._session_handle) == 1;
+    if (_ssl_handle)
+        return SSL_set_session(_ssl_handle.get(), session._session_handle) == 1;
+    // No SSL yet (a socket built from an ssl::Context mints it lazily at connect): defer the session,
+    // taking our own reference, and apply it in apply_pending_client_settings() after SSL_new — so
+    // resume()/set_session() honor their "call before connecting" contract on a Context socket instead
+    // of silently dropping the session (which would produce a full, non-resumed handshake).
+    SSL_SESSION_up_ref(session._session_handle);
+    _pending_session.reset(session._session_handle);
+    _pending_disable_resumption = false; // resuming a session and disabling resumption are mutually exclusive
+    return true;
 }
 
 bool
@@ -1292,6 +1324,35 @@ socket::set_insecure() noexcept {
 bool
 socket::verify_peer() const noexcept {
     return _verify_peer;
+}
+
+const qb::io::ssl::Context &
+socket::context() const noexcept {
+    return _ctx;
+}
+
+socket &
+socket::sni(std::string hostname) noexcept {
+    set_sni_hostname(hostname);
+    return *this;
+}
+
+socket &
+socket::alpn(std::vector<std::string> protocols) noexcept {
+    set_alpn_protocols(protocols);
+    return *this;
+}
+
+socket &
+socket::resume(qb::io::ssl::Session session) noexcept {
+    set_session(session);
+    return *this;
+}
+
+socket &
+socket::insecure() noexcept {
+    set_insecure();
+    return *this;
 }
 
 } // namespace qb::io::tcp::ssl

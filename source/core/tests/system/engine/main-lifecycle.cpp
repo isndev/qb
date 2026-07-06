@@ -68,6 +68,7 @@ std::atomic<bool> g_init_ran{false};       // a happy-path onInit reached its co
 std::atomic<bool> g_threw{false};          // a throwing onInit reached the throw site
 std::atomic<bool> g_returned_false{false}; // a failing onInit reached its co_return false
 std::atomic<bool> g_signal_seen{false};    // an actor observed a SignalEvent
+std::atomic<int>  g_signals_observed{0};   // number of SignalEvents an actor observed (multi-signal regression)
 
 void
 reset_atoms() {
@@ -75,6 +76,7 @@ reset_atoms() {
     g_threw.store(false);
     g_returned_false.store(false);
     g_signal_seen.store(false);
+    g_signals_observed.store(0);
 }
 
 [[nodiscard]] std::uint32_t
@@ -107,6 +109,27 @@ public:
         g_signal_seen.store(true);
         if (event.signum == SIGINT || event.signum == SIGABRT)
             kill();
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Multi-signal actor: SURVIVES the first SignalEvent (simulating a SIGHUP-style reload) and only
+// self-kills on the second. Used to prove that a signal / Main::stop() after an already-consumed
+// first one is still delivered (the Main::_signal_generation regression).
+// ---------------------------------------------------------------------------
+class SurviveFirstSignalActor : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<qb::SignalEvent>(*this);
+        g_init_ran.store(true);
+        co_return true;
+    }
+
+    void
+    on(qb::SignalEvent const & /*event*/) {
+        if (g_signals_observed.fetch_add(1) + 1 >= 2)
+            kill(); // die only on the SECOND signal; stay live through the first
     }
 };
 
@@ -213,6 +236,29 @@ TEST(MainLifecycle, StopMultiCoreViaRaisedSignalNoError) {
     EXPECT_TRUE(g_init_ran.load());
     // Note: SignalEvent fan-out to actors is best-effort once stop() races teardown, so we do not
     // require g_signal_seen — the load-bearing contract here is a CLEAN (error-free) signal stop.
+}
+
+// Regression (Main::_signal_generation): a per-core "signal already consumed" latch used to drop
+// EVERY signal after the first, so an actor that survives the first signal (a SIGHUP-style reload)
+// could never be stopped by a second signal / Main::stop() — join() hung forever. Deliver two
+// stop()s with the first fully observed before the second, and require the engine to still stop.
+// Pre-fix this test hangs in join() (ctest timeout); with the generation counter it completes clean.
+TEST(MainLifecycle, SecondSignalStopsEngineAfterSurvivedFirst) {
+    reset_atoms();
+    qb::Main main;
+    main.addActor<SurviveFirstSignalActor>(0);
+    main.start();       // non-blocking
+    main.stop();        // signal #1 — the actor observes it but stays live (reload semantics)
+    // The two stop()s MUST be observed as distinct generations: wait until the core has delivered
+    // #1 before raising #2, otherwise they coalesce into one bump and the actor sees a single event.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (g_signals_observed.load() < 1 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_GE(g_signals_observed.load(), 1) << "the first signal was never delivered to the actor";
+    main.stop();        // signal #2 — with the fix this is delivered and the actor self-kills
+    main.join();        // pre-fix: hangs here (the second signal was dropped)
+    EXPECT_FALSE(main.hasError());
+    EXPECT_GE(g_signals_observed.load(), 2) << "a signal after an already-consumed one must still be delivered";
 }
 
 // ===========================================================================

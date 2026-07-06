@@ -59,6 +59,7 @@ generate_random_uuid() {
 #include "tcp/ssl/init.cpp"
 #include "tcp/ssl/listener.cpp"
 #include "tcp/ssl/socket.cpp"
+#include "tcp/ssl/context.cpp"
 #endif
 #ifdef QB_HAS_COMPRESSION
 #include "compression.cpp"

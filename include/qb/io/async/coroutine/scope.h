@@ -651,10 +651,21 @@ capture_result(task<T> t, std::optional<T> &result) {
 }
 
 namespace detail {
+// Shared-ownership variant used by parallel(): the worker co-owns its result slot
+// (shared_ptr by value in its frame) so a parallel() frame reclaimed while parked at
+// join_all() — a when_any / with_deadline loser, or actor-scope cancellation — never
+// leaves this detached worker writing through a freed slot (use-after-free). Mirrors
+// parallel_map_worker.
+template <typename T>
+task<void>
+capture_result_shared(task<T> t, std::shared_ptr<std::optional<T>> result) {
+    *result = co_await std::move(t);
+}
+
 template <typename Scope, typename ResultsTuple, typename TasksTuple, size_t... Is>
 void
 spawn_capture_impl(Scope &scope, ResultsTuple &results, TasksTuple &tasks_tuple, std::index_sequence<Is...>) {
-    (scope.spawn(capture_result(std::move(std::get<Is>(tasks_tuple)), std::get<Is>(results))), ...);
+    (scope.spawn(capture_result_shared(std::move(std::get<Is>(tasks_tuple)), std::get<Is>(results))), ...);
 }
 } // namespace detail
 
@@ -670,15 +681,18 @@ task<std::tuple<typename Tasks::value_type...>>
 parallel(Tasks... tasks) {
     coroutine_scope scope(coroutine_scope::cleanup_policy::join_all);
 
-    using result_tuple = std::tuple<std::optional<typename Tasks::value_type>...>;
-    result_tuple         results;
+    // Each result slot is a shared_ptr co-owned by its worker (see spawn_capture_impl):
+    // a parallel() frame reclaimed while parked at join_all() (a when_any / with_deadline
+    // loser, or actor-scope cancellation) must not leave a detached worker writing through
+    // a freed slot (use-after-free). The workers keep the slots alive until they finish.
+    auto                 results = std::make_tuple(std::make_shared<std::optional<typename Tasks::value_type>>()...);
     std::tuple<Tasks...> tasks_tuple(std::move(tasks)...);
 
     detail::spawn_capture_impl(scope, results, tasks_tuple, std::index_sequence_for<Tasks...>{});
 
     co_await scope.join_all();
 
-    co_return std::apply([](auto &&...opts) { return std::tuple(*opts...); }, results);
+    co_return std::apply([](auto &&...slots) { return std::tuple(std::move(**slots)...); }, results);
 }
 
 /**
@@ -719,11 +733,18 @@ namespace detail {
 // Free function (not a lambda): parameters are stored BY VALUE in the coroutine
 // frame by the standard, so there is no dangling-lambda-pointer risk here even
 // when this task is spawned from inside a loop.
+//
+// `sem` and the result vector are co-owned by shared_ptr: parallel_map's coordinator
+// frame may be destroyed while parked at join_all() (a when_any / with_deadline loser,
+// or actor-scope cancellation) while these detached workers are still in flight. Holding
+// both alive for the worker's whole lifetime degrades a reclaimed coordinator to harmless
+// wasted work instead of a use-after-free write through freed frame storage.
 template <typename F, typename Item, typename R>
 task<void>
-parallel_map_worker(semaphore *sem, F fn, std::optional<R> *result, Item item) {
-    auto guard = co_await sem->scoped_acquire();
-    *result    = co_await fn(item);
+parallel_map_worker(std::shared_ptr<semaphore> sem, F fn, std::shared_ptr<std::vector<std::optional<R>>> results,
+                    std::size_t idx, Item item) {
+    auto guard      = co_await sem->scoped_acquire();
+    (*results)[idx] = co_await fn(item);
 }
 
 } // namespace detail
@@ -745,25 +766,25 @@ parallel_map(const Range &items, F f, size_t max_concurrency = 10)
     using result_type       = std::invoke_result_t<F, typename Range::value_type>;
     using inner_result_type = typename result_type::value_type;
 
-    semaphore       sem(max_concurrency);
+    // sem + results are co-owned (shared_ptr) with the detached workers: if this
+    // coordinator frame is destroyed while parked at join_all() below (a when_any /
+    // with_deadline loser, or actor-scope cancellation), workers still in flight keep the
+    // storage alive rather than writing through a freed frame local (use-after-free).
+    auto            sem     = std::make_shared<semaphore>(max_concurrency);
+    auto            results = std::make_shared<std::vector<std::optional<inner_result_type>>>(items.size());
     coroutine_scope scope;
-
-    std::vector<std::optional<inner_result_type>> results(items.size());
 
     size_t i = 0;
     for (const auto &item : items) {
-        // Pass sem, f and result slot as raw pointers / by-value copies into a
-        // free function. parallel_map suspends at join_all() below, so sem and
-        // results[i] remain valid for the entire lifetime of the workers.
-        scope.spawn(detail::parallel_map_worker(&sem, f, &results[i], item));
+        scope.spawn(detail::parallel_map_worker(sem, f, results, i, item));
         ++i;
     }
 
     co_await scope.join_all();
 
     std::vector<inner_result_type> final_results;
-    final_results.reserve(results.size());
-    for (auto &opt : results) {
+    final_results.reserve(results->size());
+    for (auto &opt : *results) {
         if (opt) {
             final_results.push_back(std::move(*opt));
         }

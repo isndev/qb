@@ -22,23 +22,28 @@
  * @ingroup IO
  */
 
+#include <utility>
 #include <qb/io/tcp/ssl/listener.h>
 
 namespace qb::io::tcp::ssl {
 
-void
-bristou(SSL_CTX *ctx) {
-    SSL_CTX_free(ctx);
-}
-
 listener::~listener() noexcept {}
 
-listener::listener() noexcept
-    : _ctx(nullptr, bristou) {}
+listener::listener() noexcept {}
+
+listener::listener(qb::io::ssl::Context ctx) noexcept
+    : _ctx(std::move(ctx)) {}
 
 void
 listener::init(SSL_CTX *ctx) noexcept {
-    _ctx.reset(ctx);
+    // TRANSFER the caller's single reference into the value-semantic context (matches the historical
+    // `reset(ctx)` ownership: the listener frees it on teardown; the caller must not).
+    _ctx = qb::io::ssl::Context::adopt(ctx);
+}
+
+void
+listener::init(qb::io::ssl::Context ctx) noexcept {
+    _ctx = std::move(ctx);
 }
 
 ssl::socket
@@ -83,112 +88,117 @@ listener::accept(ssl::socket &ssock) const noexcept {
 
 [[nodiscard]] SSL_CTX *
 listener::ssl_handle() const noexcept {
-    return _ctx.get();
+    return _ctx.native();
+}
+
+[[nodiscard]] const qb::io::ssl::Context &
+listener::context() const noexcept {
+    return _ctx;
 }
 
 bool
 listener::load_ca_certificates_for_client_auth(const std::filesystem::path &ca_file_path) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::load_ca_certificates(_ctx.get(), ca_file_path);
+    return qb::io::ssl::load_ca_certificates(_ctx.native(), ca_file_path);
 }
 
 bool
 listener::load_ca_directory_for_client_auth(const std::filesystem::path &ca_dir_path) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::load_ca_directory(_ctx.get(), ca_dir_path);
+    return qb::io::ssl::load_ca_directory(_ctx.native(), ca_dir_path);
 }
 
 bool
 listener::set_cipher_list(const std::string &ciphers) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::set_cipher_list(_ctx.get(), ciphers);
+    return qb::io::ssl::set_cipher_list(_ctx.native(), ciphers);
 }
 
 bool
 listener::set_ciphersuites_tls13(const std::string &ciphersuites) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::set_ciphersuites_tls13(_ctx.get(), ciphersuites);
+    return qb::io::ssl::set_ciphersuites_tls13(_ctx.native(), ciphersuites);
 }
 
 bool
 listener::set_tls_protocol_versions(int min_version, int max_version) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::set_tls_protocol_versions(_ctx.get(), min_version, max_version);
+    return qb::io::ssl::set_tls_protocol_versions(_ctx.native(), min_version, max_version);
 }
 
 bool
 listener::configure_mtls(const std::filesystem::path &client_ca_file_path, int verification_mode) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::configure_mtls_server_context(_ctx.get(), client_ca_file_path, verification_mode);
+    return qb::io::ssl::configure_mtls_server_context(_ctx.native(), client_ca_file_path, verification_mode);
 }
 
 bool
 listener::set_alpn_selection_callback(SSL_CTX_alpn_select_cb_func callback, void *arg) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::set_alpn_selection_callback_server(_ctx.get(), callback, arg);
+    return qb::io::ssl::set_alpn_selection_callback_server(_ctx.native(), callback, arg);
 }
 
 bool
 listener::enable_session_caching(long cache_size) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::enable_server_session_caching(_ctx.get(), cache_size);
+    return qb::io::ssl::enable_server_session_caching(_ctx.native(), cache_size);
 }
 
 bool
 listener::set_custom_client_verify_callback(int (*callback)(int, X509_STORE_CTX *), int verification_mode) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::set_custom_verify_callback(_ctx.get(), callback, verification_mode);
+    return qb::io::ssl::set_custom_verify_callback(_ctx.native(), callback, verification_mode);
 }
 
 bool
 listener::set_ocsp_stapling_responder_callback(int (*callback)(SSL *s, void *arg), void *arg) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::set_ocsp_stapling_responder_server(_ctx.get(), callback, arg);
+    return qb::io::ssl::set_ocsp_stapling_responder_server(_ctx.native(), callback, arg);
 }
 
 bool
 listener::set_sni_selection_callback(int (*callback)(SSL *s, int *al, void *arg), void *arg) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::set_sni_hostname_selection_callback_server(_ctx.get(), callback, arg);
+    return qb::io::ssl::set_sni_hostname_selection_callback_server(_ctx.native(), callback, arg);
 }
 
 bool
 listener::set_keylog_callback(SSL_CTX_keylog_cb_func callback) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::set_keylog_callback(_ctx.get(), callback);
+    return qb::io::ssl::set_keylog_callback(_ctx.native(), callback);
 }
 
 bool
 listener::configure_dh_parameters(const std::filesystem::path &dh_param_file_path) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::configure_dh_parameters_server(_ctx.get(), dh_param_file_path);
+    return qb::io::ssl::configure_dh_parameters_server(_ctx.native(), dh_param_file_path);
 }
 
 bool
 listener::configure_ecdh_curves(const std::string &curve_names_list) {
     if (!_ctx)
         return false;
-    return qb::io::ssl::configure_ecdh_curves_server(_ctx.get(), curve_names_list);
+    return qb::io::ssl::configure_ecdh_curves_server(_ctx.native(), curve_names_list);
 }
 
 bool
 listener::enable_post_handshake_auth() {
     if (!_ctx)
         return false;
-    return qb::io::ssl::enable_post_handshake_auth_server(_ctx.get());
+    return qb::io::ssl::enable_post_handshake_auth_server(_ctx.native());
 }
 
 bool
@@ -215,7 +225,7 @@ listener::set_supported_alpn_protocols(const std::vector<std::string> &protocols
 
     // Static callback wrapper
     SSL_CTX_set_alpn_select_cb(
-        _ctx.get(),
+        _ctx.native(),
         [](SSL *, const unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *arg) -> int {
             auto *protos = static_cast<std::vector<unsigned char> *>(arg);
             int r = SSL_select_next_proto(const_cast<unsigned char **>(out), outlen, protos->data(), static_cast<unsigned int>(protos->size()),
@@ -231,70 +241,70 @@ int
 listener::get_min_protocol_version() const {
     if (!_ctx)
         return 0;
-    return static_cast<int>(SSL_CTX_get_min_proto_version(_ctx.get()));
+    return static_cast<int>(SSL_CTX_get_min_proto_version(_ctx.native()));
 }
 
 int
 listener::get_max_protocol_version() const {
     if (!_ctx)
         return 0;
-    return static_cast<int>(SSL_CTX_get_max_proto_version(_ctx.get()));
+    return static_cast<int>(SSL_CTX_get_max_proto_version(_ctx.native()));
 }
 
 int
 listener::get_verify_mode() const {
     if (!_ctx)
         return -1;
-    return SSL_CTX_get_verify_mode(_ctx.get());
+    return SSL_CTX_get_verify_mode(_ctx.native());
 }
 
 int
 listener::get_verify_depth() const {
     if (!_ctx)
         return -1;
-    return SSL_CTX_get_verify_depth(_ctx.get());
+    return SSL_CTX_get_verify_depth(_ctx.native());
 }
 
 long
 listener::get_session_cache_mode() const {
     if (!_ctx)
         return -1;
-    return SSL_CTX_get_session_cache_mode(_ctx.get());
+    return SSL_CTX_get_session_cache_mode(_ctx.native());
 }
 
 long
 listener::get_session_cache_size() const {
     if (!_ctx)
         return -1;
-    return SSL_CTX_sess_get_cache_size(_ctx.get());
+    return SSL_CTX_sess_get_cache_size(_ctx.native());
 }
 
 long
 listener::set_options(long options_to_set) {
     if (!_ctx)
         return 0;
-    return SSL_CTX_set_options(_ctx.get(), options_to_set);
+    return SSL_CTX_set_options(_ctx.native(), options_to_set);
 }
 
 long
 listener::clear_options(long options_to_clear) {
     if (!_ctx)
         return 0;
-    return SSL_CTX_clear_options(_ctx.get(), options_to_clear);
+    return SSL_CTX_clear_options(_ctx.native(), options_to_clear);
 }
 
 long
 listener::set_session_timeout(long seconds) {
     if (!_ctx)
         return 0;
-    return SSL_CTX_set_timeout(_ctx.get(), seconds);
+    return SSL_CTX_set_timeout(_ctx.native(), seconds);
 }
 
 bool
 listener::set_info_callback(void (*callback)(const SSL *ssl, int type, int val)) {
     if (!_ctx)
         return false;
-    SSL_CTX_set_info_callback(_ctx.get(), callback);
+    SSL_CTX_set_info_callback(_ctx.native(), callback);
     return true;
 }
 
@@ -303,8 +313,8 @@ listener::set_msg_callback(void (*callback)(int write_p, int version, int conten
                            void *arg) {
     if (!_ctx)
         return false;
-    SSL_CTX_set_msg_callback(_ctx.get(), callback);
-    SSL_CTX_set_msg_callback_arg(_ctx.get(), arg);
+    SSL_CTX_set_msg_callback(_ctx.native(), callback);
+    SSL_CTX_set_msg_callback_arg(_ctx.native(), arg);
     return true;
 }
 

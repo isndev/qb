@@ -595,6 +595,27 @@ starttls_connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::dur
     op->run();
 }
 
+/**
+ * @brief STARTTLS connect with a caller-supplied socket carrying its own TLS policy.
+ * @details Mirrors `connect(existing, remote, func, ...)` for the opportunistic-TLS path: pass a secure
+ *          socket already built from a `qb::io::ssl::Context` (custom CA via `trust()`, client certificate
+ *          via `identity()`, verify mode, ALPN, …). There is no `verify_peer` bool — the socket's Context
+ *          governs verification, so the connector never forces `set_insecure()`. This is the escape from the
+ *          bool-only limitation of the other overload: custom-CA / client-cert / mTLS over STARTTLS
+ *          (PostgreSQL `SSLRequest`, SMTP/IMAP `STARTTLS`, …). The socket fails CLOSED on a broken Context.
+ * @tparam Socket_ The (secure) socket type to deliver, e.g. `qb::io::tcp::ssl::socket`.
+ * @tparam Negotiator_ A @ref StarttlsNegotiator policy.
+ */
+template <typename Socket_, typename Negotiator_, typename Func_>
+requires StarttlsNegotiator<Negotiator_> && std::invocable<std::remove_reference_t<Func_> &, Socket_ &&>
+void
+starttls_connect(Socket_ &&existing, uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero()) {
+    auto op = std::make_shared<connector<Socket_, Func_, Negotiator_>>(std::forward<Func_>(func), std::move(existing), remote,
+                                                                       qb::detail::to_ev_seconds(timeout), /*verify_peer*/ true);
+    LOG_DEBUG("Connector: Initializing STARTTLS (Context socket) for " << remote.source());
+    op->run();
+}
+
 // =============================================================================
 // C++20 Coroutine Support
 // =============================================================================

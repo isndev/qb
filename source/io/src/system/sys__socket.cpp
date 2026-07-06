@@ -723,13 +723,13 @@ socket::connect_n(socket_type s, const endpoint &ep, const qb::duration &wtimeou
 
     auto remaining = qb::duration(std::max<qb::duration::rep>(wtimeout.count(), 0));
 
-    fd_set readfds;
-    fd_set writefds;
-    FD_ZERO(&readfds);
-    FD_ZERO(&writefds);
-    FD_SET(s, &readfds);
-    FD_SET(s, &writefds);
-
+    // Do NOT FD_ZERO/FD_SET(s) here: socket::select() applies the FD_SETSIZE bound and
+    // (re)initialises both sets itself via reregister_descriptor(). Setting s here bypasses
+    // that guard, so for a high descriptor (s >= FD_SETSIZE — a process holding > 1024 fds)
+    // it is an out-of-bounds stack write on the fixed-size POSIX fd_set (CWE-787). The sets
+    // are pure out-parameters of socket::select().
+    fd_set    readfds;
+    fd_set    writefds;
     const int sel = socket::select(s, &readfds, &writefds, nullptr, remaining);
     if (sel <= 0) {
         set_nonblocking(s, false);
