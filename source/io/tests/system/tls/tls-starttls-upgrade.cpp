@@ -119,7 +119,7 @@ class starttls_mock_server {
 public:
     starttls_mock_server(char verdict, std::atomic<bool> &stop)
         : _stop(stop) {
-        _listener.init(qb::io::ssl::create_server_context(TLS_server_method(), ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")));
+        _listener.init(qb::io::ssl::Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")));
         EXPECT_EQ(_listener.listen_v4(0, "127.0.0.1"), 0);
         // Non-blocking accept: a *blocking* accept() cannot be interrupted by
         // disconnect() on macOS, so shutdown()'s join() would hang forever once the

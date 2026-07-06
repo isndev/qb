@@ -1001,3 +1001,46 @@ TEST_F(ScopeStructuredConcurrency, JoinAllForReclaimedWhileParked) {
         co_await sleep(60ms); // slot must be nulled AND the timeout timer cancelled on reclaim
     });
 }
+
+// A slow worker function so parallel()/parallel_map()'s detached workers are still parked when the
+// coordinator frame is reclaimed by the fast when_any winner below.
+task<int>
+reclaim_slow_scale(int v) {
+    co_await sleep(30ms);
+    co_return v * 2;
+}
+
+// parallel_map() coordinator reclaimed (when_any loser) while parked at join_all(): its detached
+// workers keep running and later write their result slot + release the semaphore. Pre-fix those
+// lived as raw &sem / &results[i] into the reclaimed frame → heap-use-after-free (ASan) once the
+// workers resume at 30ms, past the 5ms reclaim. shared_ptr co-ownership of sem + results keeps that
+// storage alive for the workers' whole lifetime, so the reclaim degrades to harmless wasted work.
+TEST_F(ScopeStructuredConcurrency, ParallelMapReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        std::vector<int> items(8);
+        std::iota(items.begin(), items.end(), 1);
+        auto pmap = [](std::vector<int> in) -> task<int> {
+            auto results = co_await parallel_map(
+                in, [](int v) -> task<int> { return reclaim_slow_scale(v); }, 10);
+            co_return static_cast<int>(results.size());
+        };
+        auto r = co_await when_any(pmap(items), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(60ms); // the 30ms workers resume here → write result slot + release sem
+    });
+}
+
+// Same reclaim scenario for the variadic parallel(): each result slot is a shared_ptr co-owned by
+// its worker, so a parallel() frame reclaimed while parked at join_all() never leaves a detached
+// worker writing through a freed slot (use-after-free).
+TEST_F(ScopeStructuredConcurrency, ParallelReclaimedWhileParked) {
+    run_reclaim_driver([]() -> task<void> {
+        auto par = []() -> task<int> {
+            auto [a, b] = co_await parallel(reclaim_slow_scale(1), reclaim_slow_scale(2));
+            co_return a + b;
+        };
+        auto r = co_await when_any(par(), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(60ms); // both workers resume here → write their co-owned result slot
+    });
+}

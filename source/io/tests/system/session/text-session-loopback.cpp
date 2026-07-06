@@ -280,8 +280,7 @@ struct SecureTcpPolicy {
     }
     static unsigned short
     listen(Server &server) {
-        server.transport().init(ssl::create_server_context(SSLv23_server_method(), qb::io::test::ssl_resource_path("cert.pem"),
-                                                           qb::io::test::ssl_resource_path("key.pem")));
+        server.transport().init(ssl::Context::server(qb::io::test::ssl_resource_path("cert.pem"), qb::io::test::ssl_resource_path("key.pem")));
         EXPECT_EQ(server.transport().listen_v4(0, "127.0.0.1"), 0);
         return server.transport().local_endpoint().port();
     }
@@ -338,8 +337,7 @@ struct SecureUtcpPolicy {
     }
     static unsigned short
     listen(Server &server) {
-        server.transport().init(ssl::create_server_context(SSLv23_server_method(), qb::io::test::ssl_resource_path("cert.pem"),
-                                                           qb::io::test::ssl_resource_path("key.pem")));
+        server.transport().init(ssl::Context::server(qb::io::test::ssl_resource_path("cert.pem"), qb::io::test::ssl_resource_path("key.pem")));
         EXPECT_EQ(server.transport().listen_un(socket_path->path), SocketStatus::Done);
         return 0;
     }

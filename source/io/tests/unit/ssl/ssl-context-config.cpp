@@ -312,8 +312,13 @@ TEST(SSLSocketConfig, DefaultStateAndPreHandshakeConfiguration) {
     EXPECT_TRUE(socket.get_alpn_selected_protocol().empty());
     EXPECT_TRUE(socket.get_peer_certificate_chain().empty());
     EXPECT_FALSE(socket.get_session().is_valid());
-    EXPECT_FALSE(socket.disable_session_resumption());
-    EXPECT_FALSE(socket.request_ocsp_stapling());
+    // Per-connection client toggles with NO ssl::Context equivalent DEFER on a handle-less socket (applied
+    // when the SSL is minted at connect) instead of failing — so they work on a socket built from an
+    // ssl::Context before it connects, exactly like sni()/alpn()/resume().
+    EXPECT_TRUE(socket.disable_session_resumption());
+    EXPECT_TRUE(socket.request_ocsp_stapling());
+    // Verification IS configured on the ssl::Context (verify()/on_verify()); these raw socket-level
+    // overrides still require an existing SSL handle (the init(SSL*) tier), so they fail closed here.
     EXPECT_FALSE(socket.set_verify_callback(always_verify, SSL_VERIFY_PEER));
     EXPECT_FALSE(socket.set_verify_depth(2));
     qb::io::ssl::Session invalid_session;
@@ -327,6 +332,11 @@ TEST(SSLSocketConfig, DefaultStateAndPreHandshakeConfiguration) {
     auto *ctx = qb::io::ssl::create_client_context(TLS_client_method());
     ASSERT_NE(ctx, nullptr);
     socket.init(SSL_new(ctx));
+    // create_client_context() contract: the CALLER owns the SSL_CTX. Drop our reference now — the
+    // socket's SSL keeps its own (SSL_new up-ref'd the context), so it lives until the socket frees
+    // that SSL. (Under the pre-refcount-fix code the socket ALSO freed the context on teardown, so a
+    // caller honouring this contract double-freed it: this line is a negative-proof of finding #4.)
+    SSL_CTX_free(ctx);
     EXPECT_NE(socket.ssl_handle(), nullptr);
     EXPECT_TRUE(socket.disable_session_resumption());
     EXPECT_TRUE(socket.request_ocsp_stapling());
@@ -346,6 +356,7 @@ TEST(SSLSocketConfig, ReinitializesHandleAndFailsPreConnectionOperationsCleanly)
     ASSERT_NE(first_ctx, nullptr);
     auto *first_ssl = SSL_new(first_ctx);
     ASSERT_NE(first_ssl, nullptr);
+    SSL_CTX_free(first_ctx); // caller owns the context; the SSL holds its own reference (see above)
     socket.init(first_ssl);
     ASSERT_NE(socket.ssl_handle(), nullptr);
 
@@ -362,6 +373,7 @@ TEST(SSLSocketConfig, ReinitializesHandleAndFailsPreConnectionOperationsCleanly)
     ASSERT_NE(second_ctx, nullptr);
     auto *second_ssl = SSL_new(second_ctx);
     ASSERT_NE(second_ssl, nullptr);
+    SSL_CTX_free(second_ctx); // caller owns the context; the SSL holds its own reference
     socket.init(second_ssl);
     EXPECT_NE(socket.ssl_handle(), nullptr);
     EXPECT_FALSE(socket.handshake_complete());
@@ -370,4 +382,29 @@ TEST(SSLSocketConfig, ReinitializesHandleAndFailsPreConnectionOperationsCleanly)
     EXPECT_FALSE(socket.set_session(invalid_session));
     socket.set_insecure();
     EXPECT_FALSE(socket.verify_peer());
+}
+
+// Regression (finding #4 — SSL_CTX reference counting): two ssl::sockets sharing ONE client SSL_CTX
+// must each drop only their OWN reference on teardown, never SSL_CTX_free the shared context. The
+// pre-fix `!SSL_is_server` heuristic freed the context for every client-mode SSL, so the first
+// socket to die tore the shared context out from under the second (double-free / UAF). With the
+// refcount fix the context survives until its last referencing SSL is freed AND the caller drops
+// its own reference — proven here by still using the context after both sockets are destroyed.
+TEST(SSLSocketConfig, SharedClientContextSurvivesUntilLastReferenceDropped) {
+    auto *shared = qb::io::ssl::create_client_context(TLS_client_method());
+    ASSERT_NE(shared, nullptr);
+    {
+        qb::io::tcp::ssl::socket s1;
+        qb::io::tcp::ssl::socket s2;
+        s1.init(SSL_new(shared)); // shared refs: creator + s1's SSL
+        s2.init(SSL_new(shared)); // shared refs: + s2's SSL
+        ASSERT_NE(s1.ssl_handle(), nullptr);
+        ASSERT_NE(s2.ssl_handle(), nullptr);
+    } // both sockets destroyed: each SSL_free drops ONLY its own ref. Pre-fix, the first also
+      // SSL_CTX_free'd `shared`, making the second socket's teardown + the use below a UAF.
+    SSL *probe = SSL_new(shared); // the caller's reference must still be alive
+    EXPECT_NE(probe, nullptr) << "shared client SSL_CTX was freed early (double-free regression)";
+    if (probe)
+        SSL_free(probe);
+    SSL_CTX_free(shared); // the caller's own reference (create_client_context contract)
 }
