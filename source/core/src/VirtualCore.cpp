@@ -609,7 +609,8 @@ VirtualCore::__workflow__() {
             }
         }
 
-        if (io::async::listener::current.has_coro_scheduler() || io::async::listener::current.size()) {
+        if (io::async::listener::current.has_coro_scheduler() || io::async::listener::current.size() ||
+            io::async::listener::current.has_deferred()) {
             // Hot path: call `listener::run` directly — no `async::run` wrapper
             // (avoids redundant checks; metrics match `nb_invoked_event()` contract).
             io::async::listener::current.run(EVRUN_NOWAIT);

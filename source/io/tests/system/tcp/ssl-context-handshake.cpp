@@ -301,13 +301,18 @@ TEST(SslContextHandshake, SessionResumeBeforeConnectIsDeferredNotDropped) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> stop{false};
-    std::atomic<int>  accepted{0};
-    std::thread       server_thread([&] {
-        while (!stop.load()) {
+    std::atomic<int> accepted{0};
+    // Accept exactly the two connections this test makes, then self-exit. A `while(!stop)` loop
+    // would re-enter a BLOCKING accept() after the 2nd connection; on macOS/BSD a cross-thread
+    // listener.disconnect()/shutdown() does NOT wake a blocked accept() (ENOTCONN on a listening
+    // socket), so join() would hang — a race the fast dev build won and ASan/TSan timing lost.
+    // Bounding the loop keeps teardown portable and race-free, mirroring the single-accept
+    // sibling tests above (the server thread self-exits; no cross-thread accept cancellation).
+    std::thread server_thread([&] {
+        for (int i = 0; i < 2; ++i) {
             qb::io::tcp::ssl::socket server_socket;
             if (listener.accept(server_socket) != 0)
-                return; // disconnect() (or a real error) breaks the loop
+                return; // real error — stop driving
             accepted.fetch_add(1);
             drive_server_handshake(server_socket);
         }
@@ -333,10 +338,9 @@ TEST(SslContextHandshake, SessionResumeBeforeConnectIsDeferredNotDropped) {
         EXPECT_TRUE(c2.handshake_complete()) << "the deferred session must be applied without breaking the handshake";
     }
 
+    server_thread.join(); // exits after exactly two accepts — no cross-thread accept cancellation
     qb::io::ssl::free_session(session);
-    stop = true;
     listener.disconnect();
-    server_thread.join();
     EXPECT_GE(accepted.load(), 2);
 }
 

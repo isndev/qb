@@ -27,6 +27,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
+#include <functional>
 #include <memory>
 #include <new>
 #include <stdexcept>
@@ -292,6 +294,57 @@ private:
     // Coroutine support
     std::unique_ptr<class CoroutineScheduler> _coro_scheduler; /**< Coroutine scheduler */
 
+    // ---- Deferred callbacks (next-tick post queue) --------------------------
+    // Callbacks queued via `async::defer()`: each runs once, at the tail of the
+    // same `run()` iteration — right after every libev watcher for this turn has
+    // returned. This is the correct primitive for "continue after this event
+    // handler unwinds", most importantly a handler that must destroy or replace
+    // the very object it is running on (a reconnect = destroy+recreate a
+    // connection). Unlike `callback(fn)` it never runs `fn` inline; unlike
+    // `callback(fn, delay)` it needs no libev timer, no heap `Timeout`, and no
+    // magic delay. It is the non-coroutine twin of `co_await sleep(0ms)`'s
+    // cooperative yield (mirrors the coroutine scheduler's `ready_queue_`).
+    std::deque<std::function<void()>> _deferred;
+    bool                              _in_defer_drain = false;
+
+    // Run every callback queued BEFORE this pass; one that itself defers is left
+    // for the next loop turn (the snapshot count bounds the drain and stops a
+    // self-re-deferring callback from starving the loop). Never runs re-entrantly.
+    std::size_t
+    _drain_deferred() {
+        if (_in_defer_drain || _deferred.empty())
+            return 0; // branch-only fast path when nothing is queued
+        // RAII re-entrancy guard (mirrors CoroutineScheduler::run_ready): the flag is
+        // cleared on every exit path, so a nested run()/drain is refused and the guard
+        // can never be stranded — even if a container op below were to throw.
+        struct DrainGuard {
+            bool &flag;
+            explicit DrainGuard(bool &f) noexcept
+                : flag(f) {
+                flag = true;
+            }
+            ~DrainGuard() noexcept {
+                flag = false;
+            }
+        } guard{_in_defer_drain};
+        std::size_t n       = _deferred.size();
+        std::size_t drained = 0;
+        while (n-- > 0 && !_deferred.empty()) {
+            std::function<void()> fn = std::move(_deferred.front());
+            _deferred.pop_front();
+            if (fn) {
+                // Runs inside the loop: an escaping exception would unwind through
+                // libev's C frames (UB). Contain it, exactly as `Timeout` does.
+                try {
+                    fn();
+                } catch (...) {
+                }
+                ++drained;
+            }
+        }
+        return drained;
+    }
+
     /** @brief Prepend `e` to the registered-events list. O(1), no alloc. */
     inline void
     _link(IRegisteredKernelEvent *e) noexcept {
@@ -447,6 +500,13 @@ public:
     void
     clear() {
         QB_LISTENER_TRACE("clear() begin registeredEvents=%zu has_coro_scheduler=%d", _registered_count, _coro_scheduler != nullptr);
+        // Drop pending deferred callbacks: they must not run against a listener being
+        // torn down (they may touch registrations we are about to destroy). Each
+        // std::function's destructor releases its captured state (e.g. a shared_ptr
+        // held only to keep a target alive across the defer) cleanly — no leak, no
+        // execution. Watchers are detached below before the flush runs(), so nothing
+        // new is enqueued here.
+        _deferred.clear();
         if (_registered_head) {
             // Detach every handler but do not delete it here: async::base stores
             // a reference to the embedded event, so deleting the wrapper while
@@ -611,12 +671,48 @@ public:
         _nb_invoked_events = 0;
         _loop.run(flag);
 
+        // Deferred callbacks: continuations of the dispatch that just unwound.
+        // Drained before coroutines so a `defer()` that wakes a coroutine is
+        // picked up by `run_ready()` in the same turn.
+        const std::size_t deferred_count = _drain_deferred();
+        _nb_invoked_events += deferred_count;
+        _total_events_processed += deferred_count;
+
         // Process ready coroutines
         if (_coro_scheduler) {
             std::size_t coro_count = _coro_scheduler->run_ready();
             _nb_invoked_events += coro_count;
             _total_events_processed += coro_count;
         }
+    }
+
+    /**
+     * @brief Queue `fn` to run once, at the tail of the current `run()` turn.
+     *
+     * The callback executes after every libev watcher for this turn has returned,
+     * so it never runs re-entrantly from inside an event handler. Use it when a
+     * handler must continue work that is unsafe inline — above all destroying or
+     * replacing the object the handler is currently executing on (a reconnect that
+     * frees+recreates its connection). It is the non-coroutine twin of the
+     * `co_await sleep(0ms)` cooperative yield.
+     *
+     * Prefer it over `async::callback(fn, tiny_delay)` for "next turn" semantics:
+     * no libev timer, no heap `Timeout`, no arbitrary delay. Captured state is
+     * released when the callback fires OR when the loop is torn down (`clear()`),
+     * whichever comes first — so a strong (`shared_ptr`) capture keeps its target
+     * alive exactly until then, leak-free. Same-thread only.
+     *
+     * @note The queued `fn` is drained by `run()`; drive the loop with a NOWAIT pump
+     *       (`async::run_until`/`run_sync`, or a VirtualCore tick — which gates on
+     *       `has_deferred()` so a bare `defer()` still pumps), not a single blocking
+     *       `run(EVRUN_ONCE)` that could park before the drain. A `defer()` issued
+     *       *from a coroutine* (which runs after the drain) fires on the next turn.
+     * @note Only the drain contains a throwing `fn`; the enqueue here is a plain
+     *       allocation and may itself throw `std::bad_alloc` under OOM.
+     */
+    void
+    defer(std::function<void()> fn) {
+        _deferred.push_back(std::move(fn));
     }
 
     /**
@@ -658,6 +754,18 @@ public:
     [[nodiscard]] inline std::size_t
     size() const {
         return _registered_count;
+    }
+
+    /**
+     * @brief Whether any `defer()`ed callback is pending drain.
+     * @return `true` if the next `run()` turn has deferred work to execute.
+     * @details qb-core's `VirtualCore` only pumps the loop when there is io/coroutine
+     *          work; it folds this into that gate so a `defer()` issued from a pure-actor
+     *          handler (no live qb-io object) is still drained on the next core tick.
+     */
+    [[nodiscard]] inline bool
+    has_deferred() const noexcept {
+        return !_deferred.empty();
     }
 
     /**
@@ -758,6 +866,30 @@ run(int flag = 0) {
     ensure_not_inside_ready_drain("async::run()");
     listener::current.run(flag);
     return listener::current.nb_invoked_event();
+}
+
+/**
+ * @brief Defer `func` to run at the tail of the current event-loop turn.
+ * @ingroup Async
+ *
+ * The one correct primitive for "continue after this event handler unwinds":
+ * `func` runs once, after every libev watcher for this turn has returned, so it
+ * never executes re-entrantly from inside a handler. Forwards to the current
+ * thread's `listener::defer()` — see it for the full semantics and lifetime rules.
+ *
+ * Choose deliberately:
+ *  - **`defer(func)`** — run on the next loop turn, no delay, no timer. Use when a
+ *    handler must destroy/replace the object it is running on (e.g. a reconnect).
+ *  - **`callback(func, delay)`** with `delay > 0` — run after a real timed delay.
+ *  - **`func()`** directly — run inline, right now.
+ *
+ * Note: `callback(func)` (and `callback(func, d<=0)`) run `func` INLINE, not on the
+ * next turn — do not use them to break re-entrancy; use `defer()` for that.
+ */
+template <typename _Func>
+inline void
+defer(_Func &&func) {
+    listener::current.defer(std::forward<_Func>(func));
 }
 
 /**

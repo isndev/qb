@@ -305,4 +305,58 @@ TEST(ServiceEventLogic, CopyPreservesAliveBit) {
     EXPECT_EQ(live_copy.getQOS(), original.getQOS());
 }
 
+// ---------------------------------------------------------------------------
+// CorrelatedEvent / PingEvent / RequireEvent constructors — the discovery /
+// coroutine-reply carriers. `type` is a public payload field; `correlation_id`
+// is inherited from CorrelatedEvent (NSDMI default 0) and set only by the
+// two-arg ctors. Pure ctor logic — no engine, no router.
+// ---------------------------------------------------------------------------
+
+TEST(EventHeader, CorrelatedEventDefaultCorrelationIsZero) {
+    qb::CorrelatedEvent ce;
+    EXPECT_EQ(ce.correlation_id, 0ull) << "0 means 'not correlated' (the NSDMI default)";
+}
+
+TEST(EventHeader, RequireEventSingleArgCtorSetsTypeAndZeroCorrelation) {
+    // The legacy broadcast reply path: only `type` is provided; correlation_id stays at the
+    // CorrelatedEvent default (0 == not correlated).
+    qb::RequireEvent re{42u};
+    EXPECT_EQ(re.type, 42u);
+    EXPECT_EQ(re.correlation_id, 0ull) << "single-arg ctor leaves correlation_id at the base default";
+}
+
+TEST(EventHeader, RequireEventTwoArgCtorCarriesCorrelation) {
+    // The coroutine qb::require / qb::ping reply path: the two-arg ctor stamps the inherited
+    // correlation_id so the awaiting continuation can match the reply.
+    qb::RequireEvent re{7u, 0xDEADBEEFCAFEull};
+    EXPECT_EQ(re.type, 7u);
+    EXPECT_EQ(re.correlation_id, 0xDEADBEEFCAFEull);
+}
+
+TEST(EventHeader, PingEventCtorsSetTypeAndCorrelation) {
+    // Single-arg: discovery target type, no correlation (the legacy broadcast require<>()).
+    qb::PingEvent p1{9u};
+    EXPECT_EQ(p1.type, 9u);
+    EXPECT_EQ(p1.correlation_id, 0ull);
+
+    // Two-arg: correlated liveness ping, correlation echoed back in the RequireEvent reply.
+    qb::PingEvent p2{3u, 12345ull};
+    EXPECT_EQ(p2.type, 3u);
+    EXPECT_EQ(p2.correlation_id, 12345ull);
+}
+
+// ---------------------------------------------------------------------------
+// Event::getSize() accessor. getSize() == bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES, but
+// `bucket_size` is PRIVATE and only ever written by framework friends (VirtualCore::fill_event /
+// Pipe::push), both of which require a live engine — so a *pushed* event's concrete getSize() is a
+// system-tier concern (see the NOTE above). What CAN be pinned engine-free is the accessor's
+// arithmetic on a value-initialized Event: value-initialization zero-inits `bucket_size` (Event's
+// defaulted default ctor is not user-provided), so getSize() is exactly 0.
+// ---------------------------------------------------------------------------
+
+TEST(EventHeader, ValueInitializedEventGetSizeIsZero) {
+    qb::Event e{};
+    EXPECT_EQ(e.getSize(), static_cast<std::size_t>(0)) << "a value-initialized event has bucket_size 0 -> getSize() 0";
+}
+
 } // namespace

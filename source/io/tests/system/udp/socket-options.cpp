@@ -293,3 +293,47 @@ TEST(UDPSocket, Ipv6MulticastRejectsBadInputsAndAcceptsValidGroups) {
     EXPECT_EQ(socket.leave_multicast_group("ff02::1", kLoopbackInterface), 0);
 #endif
 }
+
+// The default-interface (empty iface) multicast branch: a VALID group with an empty
+// interface takes the INADDR_ANY (v4) / resolve_iface_index("")==0 (v6) path — distinct
+// from the malformed-group / malformed-iface rejections the other cases drive. The
+// membership itself may be refused on a host with no multicast route, so the join/leave
+// return is asserted leniently (0 or -1); the point is to exercise the empty-iface arm.
+TEST(UDPSocket, MulticastJoinLeaveWithDefaultInterface) {
+    {
+        qb::io::udp::socket socket;
+        ASSERT_EQ(socket.bind_v4(0, "127.0.0.1"), 0);
+
+        const int joined = socket.join_multicast_group("239.0.0.1", ""); // -> imr_interface = INADDR_ANY
+        EXPECT_TRUE(joined == 0 || joined == -1);
+        const int left = socket.leave_multicast_group("239.0.0.1", "");
+        EXPECT_TRUE(left == 0 || left == -1);
+        if (joined == 0) {
+            EXPECT_EQ(left, 0) << "leaving a group that was successfully joined must succeed";
+        }
+    }
+
+    if (!ipv6_loopback_available()) {
+        GTEST_SKIP() << "IPv6 loopback (::1) is not available; the v4 default-interface leg already ran";
+    }
+
+    qb::io::udp::socket socket6;
+    ASSERT_EQ(socket6.bind_v6(0, "::1"), 0);
+
+    const int joined6 = socket6.join_multicast_group("ff02::1", ""); // -> resolve_iface_index("") == 0 (any)
+    EXPECT_TRUE(joined6 == 0 || joined6 == -1);
+    const int left6 = socket6.leave_multicast_group("ff02::1", "");
+    EXPECT_TRUE(left6 == 0 || left6 == -1);
+    if (joined6 == 0) {
+        EXPECT_EQ(left6, 0) << "leaving a v6 group that was successfully joined must succeed";
+    }
+}
+
+// bind(uri) with a URI whose address family is neither AF_INET/AF_INET6/AF_UNIX falls
+// through the switch to the -1 error return.
+TEST(UDPSocket, BindWithUnknownAddressFamilyUriFails) {
+    qb::io::udp::socket socket;
+    const qb::io::uri unknown_af("", AF_UNSPEC); // af() == AF_UNSPEC -> switch fallthrough
+    EXPECT_EQ(socket.bind(unknown_af), -1);
+    EXPECT_FALSE(socket.is_open());
+}

@@ -36,6 +36,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
@@ -104,4 +106,69 @@ TEST_F(CallbackDispatchTest, ScheduledCallbackFiresViaLoopAndNotBefore) {
     // And it must fire exactly once — pump further to prove no re-fire.
     EXPECT_FALSE(pump_until([&] { return fired.load() > 1; }, 100ms)) << "deferred callback fired more than once";
     EXPECT_EQ(fired.load(), 1);
+}
+
+// =============================================================================
+// defer() — next loop turn (after the current dispatch unwinds), no timer
+// =============================================================================
+
+TEST_F(CallbackDispatchTest, DeferDoesNotRunInline) {
+    bool executed = false;
+    async::defer([&executed]() { executed = true; });
+    // Unlike callback(fn) (inline), defer(fn) does NOT run before the call returns.
+    EXPECT_FALSE(executed) << "defer(fn) ran inline — it must wait for the loop turn";
+    EXPECT_TRUE(pump_until([&] { return executed; })) << "deferred callback never ran";
+}
+
+TEST_F(CallbackDispatchTest, DeferRunsInFifoOrder) {
+    std::vector<int> order;
+    async::defer([&] { order.push_back(1); });
+    async::defer([&] { order.push_back(2); });
+    async::defer([&] { order.push_back(3); });
+    EXPECT_TRUE(order.empty()) << "no deferred callback may run before the loop turns";
+    EXPECT_TRUE(pump_until([&] { return order.size() == 3; }));
+    EXPECT_EQ(order, (std::vector<int>{1, 2, 3}));
+}
+
+TEST_F(CallbackDispatchTest, DeferRunsAfterTheDispatchingHandlerUnwinds) {
+    // A defer() issued from inside a running handler must execute only AFTER that
+    // handler returns — the re-entrancy-break contract. Drive a timer callback
+    // (itself a loop dispatch) that records 1, then defers a record-2.
+    std::vector<int> order;
+    async::callback(
+        [&] {
+            order.push_back(1);
+            async::defer([&] { order.push_back(2); });
+        },
+        1ms);
+    EXPECT_TRUE(pump_until([&] { return order.size() == 2; }));
+    EXPECT_EQ(order, (std::vector<int>{1, 2})) << "deferred work must run after the handler that queued it";
+}
+
+TEST_F(CallbackDispatchTest, DeferFromWithinDeferWaitsForTheNextTurn) {
+    // A deferred callback that itself defers is left for the NEXT turn (snapshot-count
+    // drain), never resumed in the same drain pass — no same-pass starvation.
+    std::atomic<int> stage{0};
+    async::defer([&] {
+        stage.store(1);
+        async::defer([&] { stage.store(2); });
+    });
+    EXPECT_TRUE(pump_until([&] { return stage.load() == 2; }));
+    EXPECT_EQ(stage.load(), 2);
+}
+
+TEST_F(CallbackDispatchTest, PendingDeferIsDroppedOnListenerClear) {
+    // Teardown drops pending deferred callbacks WITHOUT running them; each captured
+    // shared_ptr is released (the std::function destructor runs), so `ran` stays false
+    // and the captured target frees — a strong capture keeps its target alive exactly
+    // until fire-or-drop, leak-free.
+    auto               alive = std::make_shared<int>(0);
+    std::weak_ptr<int> weak  = alive;
+    bool               ran   = false;
+    async::defer([alive, &ran]() { ran = true; });
+    alive.reset(); // the deferred callback now holds the only strong ref
+    EXPECT_FALSE(weak.expired()) << "capture must keep the target alive until fire-or-drop";
+    async::listener::current.clear(); // teardown drops the queue
+    EXPECT_FALSE(ran) << "a dropped defer must NOT run at teardown";
+    EXPECT_TRUE(weak.expired()) << "dropping the defer must release its captured state";
 }

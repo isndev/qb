@@ -254,3 +254,27 @@ TEST(CoreIdBitSet, Iteration) {
     EXPECT_EQ(seen[1], static_cast<CoreId>(3));
     EXPECT_EQ(seen[2], static_cast<CoreId>(200));
 }
+
+TEST(CoreIdBitSet, PostIncrementIteratorVisitsEachMember) {
+    // The range-for Iteration test above only drives PRE-increment (operator++()); the
+    // post-increment operator++(int) — which returns a COPY of the iterator positioned BEFORE the
+    // advance — was never exercised. A manual for-loop with `it++` covers it and the same visited
+    // membership must fall out.
+    CoreIdBitSet        s{1, 3, 5};
+    std::vector<CoreId> seen;
+    for (auto it = s.begin(); it != s.end(); it++)
+        seen.push_back(*it);
+    std::sort(seen.begin(), seen.end());
+    ASSERT_EQ(seen.size(), 3u);
+    EXPECT_EQ(seen[0], static_cast<CoreId>(1));
+    EXPECT_EQ(seen[1], static_cast<CoreId>(3));
+    EXPECT_EQ(seen[2], static_cast<CoreId>(5));
+
+    // The returned pre-advance copy is the whole point of operator++(int): capture it, advance the
+    // live iterator, and confirm the copy still dereferences to the OLD position while the live one
+    // has moved on to the next set bit.
+    auto it  = s.begin();          // -> 1 (first set bit)
+    auto old = it++;               // old -> 1, it -> 3
+    EXPECT_EQ(*old, static_cast<CoreId>(1)) << "post-increment must return the pre-advance position";
+    EXPECT_EQ(*it, static_cast<CoreId>(3)) << "the live iterator advanced to the next member";
+}

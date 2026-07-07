@@ -346,7 +346,7 @@ Errors from the underlying `read`/`write` syscalls are handled inside the transp
 
 ## The `async::callback` lifetime footgun
 
-`qb::io::async::callback` (`include/qb/io/async/io.h`) is the framework's "run this later on the loop thread" primitive. Its behavior has two sharp edges that cause use-after-free in practice.
+`qb::io::async::callback` (`include/qb/io/async/io.h`) schedules work on the loop thread. Despite the name it does **not** always defer: `callback(fn)` and `callback(fn, delay <= 0)` run `fn` **inline, right now**; only `callback(fn, delay > 0)` defers, via a heap timer. For "run after the current handler unwinds, on the next loop turn" (no delay), use **`qb::io::async::defer(fn)`** instead (see below). `callback` has two sharp edges that cause use-after-free in practice.
 
 ### Exceptions in callbacks are swallowed
 
@@ -411,6 +411,35 @@ public:
 This uses the `scoped_callback` helper the framework provides for exactly this case — `ScopedTimeout` owns the timer and cancels it when the actor is destroyed, unlike the self-deleting `Timeout` behind a bare `callback()`. The hazard it removes: *a fire-and-forget callback capturing `this` can outlive the actor and dereference freed memory.* Prefer `scoped_callback` for any timer whose lifetime should be tied to the actor — watchdogs, retry loops, per-connection deadlines. Reserve bare `callback()` for one-shot, self-contained work that captures only owned values.
 
 > **Note.** `callback(func)` with no timeout, and `callback(func, d)` with `d <= 0`, run `func()` *inline, immediately* — not on a later iteration. The lifetime hazard above applies only to the positive-timeout path that defers execution.
+
+### Deferring to the next loop turn: `defer()`
+
+The correct primitive for "continue **after the current event handler returns**, on the next loop turn, with no delay" is `qb::io::async::defer(fn)` — **not** a bare `callback(fn)` (which runs inline) and **not** a `callback(fn, tiny_delay)` timer hack. `defer` posts `fn` to the tail of the current loop turn: it runs once every libev watcher for this turn has unwound, so it never executes re-entrantly from inside a handler.
+
+Use it when a handler must do something that is unsafe inline — above all, destroy or replace the very object it is running on:
+
+```cpp
+// src: qb/include/qb/io/async/listener.h:861 (qb::io::async::defer)
+void on(event::disconnected const &) {
+    // Reconnect = destroy the current connection and build a new one. Doing it
+    // inline here (still inside this handler's dispatch) frees `this` mid-call —
+    // a use-after-free. Defer it: it runs after the dispatch has fully unwound.
+    auto weak = weak_from_this();
+    qb::io::async::defer([weak]() {
+        if (auto self = weak.lock()) self->reconnect();
+    });
+}
+```
+
+Captured state is released when the callback fires **or** when the loop is torn down (whichever comes first), so a strong (`shared_ptr`) capture keeps its target alive exactly until then, leak-free. A throwing `fn` is contained (same as `callback`). Same-thread only. In coroutine code the equivalent cooperative yield is `co_await sleep(std::chrono::milliseconds(0))`.
+
+Decision table:
+
+| You want to… | Use |
+|---|---|
+| Continue after this handler unwinds (next turn, no delay) | `defer(fn)` |
+| Run after a real timed delay (timeout / deadline) | `callback(fn, delay)` with `delay > 0` (or `scoped_callback` for actor-owned timers) |
+| Run inline, right now | just call `fn()` (or `callback(fn)`) |
 
 ## Pitfalls
 
