@@ -344,16 +344,23 @@ public:
 };
 
 /**
- * @brief Utility function to schedule a callable for execution after a timeout.
+ * @brief Run a callable INLINE, right now (no scheduling).
  * @ingroup Async
  * @tparam _Func The type of the callable (function, lambda, functor).
- * @param func The callable to execute. It is moved into the internal `Timeout` object.
- * @param timeout Timeout duration in seconds before execution. A timeout of `0.0` (or less)
- *                typically means the callback will be scheduled for the next iteration of the event loop,
- *                or executed immediately if the `Timeout` class logic handles it that way.
- * @details This function creates a `Timeout<_Func>` object on the heap (`new Timeout`), which
- *          then manages its own lifetime, deleting itself after `func` is called.
- *          It provides a convenient way to achieve delayed execution without manual timer management.
+ * @param func The callable to execute.
+ *
+ * @warning Despite the name, this overload does **not** defer: it simply calls
+ *          `func()` synchronously. It is a convenience alias for `func()`; there is
+ *          no `Timeout`, no event-loop turn, no timer. If you call it from inside an
+ *          event handler to "schedule work for later", the work runs immediately,
+ *          re-entrantly — a classic source of use-after-free when `func` destroys the
+ *          object the handler is running on.
+ *
+ * Pick the right primitive:
+ *  - run on the **next loop turn** (after the current handler unwinds, no delay) →
+ *    use `async::defer(func)`;
+ *  - run after a **real timed delay** → use `callback(func, duration)` with `duration > 0`;
+ *  - run **inline right now** → this overload, or just call `func()`.
  */
 template <typename _Func>
 void

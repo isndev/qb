@@ -59,6 +59,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <thread>
 #include <vector>
@@ -875,4 +876,43 @@ TEST(TCPSocket, CrossStackXpConnectReachesIPv6LoopbackServer) {
     xp_timeout_client.close();
 
     server_thread.join();
+}
+
+// ===========================================================================
+// Typed tcp::socket edge branches in source/io/src/tcp/socket.cpp: the read/write
+// len>INT_MAX clamp and the URI dispatch fallthrough for an unknown address family.
+// No peer required — an invalid fd rejects the read/write immediately (EBADF is
+// returned before the buffer is touched), and the fallthrough returns before any
+// socket operation.
+// ===========================================================================
+
+TEST(TCPSocket, ReadWriteClampAndUnknownAddressFamilyUriFallthrough) {
+    // read()/write() clamp a len beyond INT_MAX before calling recv()/send(); on a
+    // closed descriptor the syscall then fails cleanly with -1 (the buffer is never
+    // accessed, so the oversized len is safe under the sanitizers).
+    qb::io::tcp::socket closed;
+    char                buffer[8] = {};
+    const std::size_t   oversize  = static_cast<std::size_t>(std::numeric_limits<int>::max()) + 1;
+    EXPECT_EQ(closed.read(buffer, oversize), -1);
+    EXPECT_EQ(closed.write(buffer, oversize), -1);
+
+    // A URI whose address family is neither AF_INET/AF_INET6/AF_UNIX falls through the
+    // switch to the -1 error return in bind()/connect()/connect(timeout)/n_connect().
+    const qb::io::uri unknown_af("", AF_UNSPEC);
+    {
+        qb::io::tcp::socket sock;
+        EXPECT_EQ(sock.bind(unknown_af), -1);
+    }
+    {
+        qb::io::tcp::socket sock;
+        EXPECT_EQ(sock.connect(unknown_af), -1);
+    }
+    {
+        qb::io::tcp::socket sock;
+        EXPECT_EQ(sock.connect(unknown_af, 1s), -1);
+    }
+    {
+        qb::io::tcp::socket sock;
+        EXPECT_EQ(sock.n_connect(unknown_af), -1);
+    }
 }

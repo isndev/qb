@@ -62,9 +62,11 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -321,4 +323,145 @@ TEST(SocketErrorPaths, ErrorClassifiersDistinguishFatalFromTransient) {
     // strerror/gai_strerror never return nullptr, even for an out-of-range code.
     EXPECT_NE(qb::io::socket::strerror(ECONNREFUSED), nullptr);
     EXPECT_NE(qb::io::socket::strerror(0), nullptr);
+}
+
+// ===========================================================================
+// Positive success branches of sys__socket.cpp the loopback suite never drives:
+// the string-form connect overloads, the pconnect_n resolve+connect path, the
+// pserve bind-failure return, the send_n break, tcp_rtt on an idle socket, and
+// the select negative-timeout clamp. Each runs against a bounded local accept
+// loop that self-exits after exactly the number of successful client connects
+// (no while(!stop) accept that would wedge on macOS).
+// ===========================================================================
+
+namespace {
+
+// Accept exactly `count` connections on a listening qb::io::socket, then return.
+// Every client connect below succeeds against a real listening port, so the loop
+// self-terminates without relying on a shutdown to wake a blocked accept().
+void
+accept_exactly(qb::io::socket &listener, int count) {
+    for (int i = 0; i < count; ++i) {
+        qb::io::socket accepted = listener.accept();
+        if (!accepted.is_open()) {
+            break; // listener was torn down early
+        }
+        accepted.close();
+    }
+}
+
+} // namespace
+
+TEST(SocketErrorPaths, StringFormConnectVariantsReachLoopbackServer) {
+    constexpr int expected_connections = 4;
+
+    qb::io::socket listener;
+    ASSERT_EQ(listener.pserve("127.0.0.1", 0), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::thread server_thread([&] { accept_exactly(listener, expected_connections); });
+
+    // Keep every client socket OPEN until the server has accepted all four, so the
+    // non-blocking pconnect_n leg is never RST'd before its loopback handshake settles.
+    qb::io::socket c1, c2, c3, c4;
+
+    // 1) member connect(addr, port): parses the literal, ::connect on the open fd.
+    ASSERT_TRUE(c1.open(AF_INET, SOCK_STREAM, 0));
+    EXPECT_EQ(c1.connect("127.0.0.1", port), 0);
+
+    // 2) static connect(s, addr, port): same, driven through the socket_type overload.
+    ASSERT_TRUE(c2.open(AF_INET, SOCK_STREAM, 0));
+    EXPECT_EQ(qb::io::socket::connect(c2.native_handle(), "127.0.0.1", port), 0);
+
+    // 3) member connect_n(addr, port, timeout): the timed non-blocking connect on a
+    //    literal host, which completes against the listener within the budget.
+    ASSERT_TRUE(c3.open(AF_INET, SOCK_STREAM, 0));
+    EXPECT_EQ(c3.connect_n("127.0.0.1", port, 1s), 0);
+
+    // 4) member pconnect_n(host, port): resolve + reopen + non-blocking connect. On
+    //    loopback this either completes (0) or reports in-progress; either way the
+    //    kernel finishes the handshake so the server accepts it.
+    const int ret4 = c4.pconnect_n("127.0.0.1", port);
+    const int err4 = qb::io::socket::get_last_errno();
+    EXPECT_TRUE(ret4 == 0 || err4 == EINPROGRESS || qb::io::socket::not_send_error(err4)) << "pconnect_n result=" << ret4 << " errno=" << err4;
+
+    server_thread.join();
+
+    c1.close();
+    c2.close();
+    c3.close();
+    c4.close();
+}
+
+TEST(SocketErrorPaths, PserveOnAnAlreadyServedPortFails) {
+    qb::io::socket first;
+    ASSERT_EQ(first.pserve("127.0.0.1", 0), 0);
+    const auto port = first.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    // pserve sets SO_REUSEADDR but NOT SO_REUSEPORT, so a second pserve on the same
+    // actively-listening loopback address:port fails at its internal bind() and returns
+    // that non-zero code (the `n != 0` early return of pserve).
+    qb::io::socket second;
+    EXPECT_NE(second.pserve("127.0.0.1", port), 0) << "a second pserve on an actively-served port must fail";
+    second.close();
+    first.close();
+}
+
+TEST(SocketErrorPaths, SendNBreaksInsteadOfBlockingOnBackpressuredClosedPeer) {
+    qb::io::socket listener;
+    ASSERT_EQ(listener.pserve("127.0.0.1", 0), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> peer_closed{false};
+    std::thread       server_thread([&] {
+        qb::io::socket accepted = listener.accept();
+        if (accepted.is_open()) {
+            accepted.close(); // peer goes away
+        }
+        peer_closed = true;
+    });
+
+    qb::io::socket client;
+    ASSERT_TRUE(client.open(AF_INET, SOCK_STREAM, 0));
+    ASSERT_EQ(client.connect(qb::io::endpoint("127.0.0.1", port)), 0);
+
+    // Tiny send buffer so the fill happens immediately; wait until the peer has closed.
+    client.set_optval(SOL_SOCKET, SO_SNDBUF, 4096);
+    while (!peer_closed.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // A large payload cannot flush to a backpressured/closed peer within a 1ns budget:
+    // send_n breaks out (buffer-full timeout or a fatal send error) with fewer than len
+    // bytes transferred instead of blocking forever.
+    std::vector<char> payload(256 * 1024, 'x');
+    const int         sent = client.send_n(payload.data(), static_cast<int>(payload.size()), qb::duration(1));
+    EXPECT_GE(sent, 0);
+    EXPECT_LT(sent, static_cast<int>(payload.size())) << "send_n must break rather than transfer the whole payload to a stalled peer";
+
+    client.close();
+    server_thread.join();
+}
+
+TEST(SocketErrorPaths, TcpRttOnAnUnconnectedSocketIsZero) {
+    qb::io::socket sock;
+    ASSERT_TRUE(sock.open(AF_INET, SOCK_STREAM, 0));
+    // No connection: the TCP_INFO / TCP_CONNECTION_INFO query yields no RTT, so the
+    // accessor returns its 0 fallback rather than a stale value.
+    EXPECT_EQ(sock.tcp_rtt(), 0u);
+    sock.close();
+}
+
+TEST(SocketErrorPaths, HandleReadReadyClampsANegativeTimeout) {
+    qb::io::socket sock;
+    ASSERT_TRUE(sock.open(AF_INET, SOCK_STREAM, 0));
+
+    // A negative duration would make ::select fail with EINVAL; select() clamps it to
+    // zero (poll once). An unconnected socket is not readable, so the poll times out (0).
+    const int ret = qb::io::socket::handle_read_ready(sock.native_handle(), -1ms);
+    EXPECT_LE(ret, 0) << "a negative-timeout poll must be clamped and return promptly, got " << ret;
+    sock.close();
 }

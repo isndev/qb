@@ -181,3 +181,54 @@ TEST(AsyncCallbackOrdering, FixedDelayChainHonoursElapsedLowerBound) {
     EXPECT_GE(elapsed, lower_ns) << "N sequential " << 1 << "ms waits cannot finish in under N ms (elapsed=" << elapsed << "ns)";
     EXPECT_LT(elapsed, upper_ns) << "the chain must not wedge (elapsed=" << elapsed << "ns)";
 }
+
+// ---------------------------------------------------------------------------
+// async::defer() from inside a real actor event handler must run on the next core
+// tick — NOT inline (proving the re-entrancy-break contract in the actor context),
+// and NOT stranded (the VirtualCore pump gates on has_deferred(), so a bare defer()
+// from actor code with no other io/coroutine work is still drained).
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<bool> g_defer_ran{false};
+std::atomic<bool> g_defer_inline{false};
+} // namespace
+
+struct WakeEvent : qb::Event {};
+
+class DeferringActor : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<WakeEvent>(*this);
+        push<WakeEvent>(id()); // defer from a genuine handler, not onInit
+        co_return true;
+    }
+
+    void
+    on(WakeEvent const &) {
+        // Capture only `this` (the actor lives until its own deferred kill()); NEVER a
+        // local by reference — the deferred body runs after on() has returned.
+        qb::io::async::defer([this]() {
+            g_defer_ran.store(true);
+            qb::Main::stop();
+            kill();
+        });
+        // defer() must NOT have executed inline: the body has not run yet here.
+        if (g_defer_ran.load())
+            g_defer_inline.store(true);
+    }
+};
+
+TEST(AsyncCallbackOrdering, DeferFromActorHandlerRunsOnNextTickNotInline) {
+    g_defer_ran.store(false);
+    g_defer_inline.store(false);
+
+    qb::Main main;
+    main.addActor<DeferringActor>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_defer_ran.load()) << "a defer() queued from an actor handler must be drained (VirtualCore gates on has_deferred())";
+    EXPECT_FALSE(g_defer_inline.load()) << "defer() must NOT run inline inside the handler";
+}

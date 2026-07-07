@@ -201,24 +201,23 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
     // refusal right away rather than deferring it via WSAEWOULDBLOCK — and
     // delivering the failure inline re-enters the caller (e.g. a client that pushes
     // a request from inside its own disconnect/failure handler, which then re-enters
-    // that handler and drops work queued during the current pass). Posting it keeps
-    // connect() uniformly asynchronous on every platform: the completion callback is
+    // that handler and drops work queued during the current pass). `async::defer()`
+    // posts it to the tail of the current loop turn, so the completion callback is
     // never invoked re-entrantly from run(), exactly matching the POSIX path where a
     // non-blocking connect goes EINPROGRESS and the result is reported from the loop
-    // (EV_WRITE / deadline). A minimal positive delay is required because
-    // async::callback() with a non-positive delay executes the functor inline.
+    // (EV_WRITE / deadline).
     void
     deliver_failure_deferred() {
         // Bind the connector's lifetime to the deferred callback via a STRONG capture — NOT
         // self_hold_ + a weak capture. This path arms no io watcher, so it installs no
         // on_listener_teardown reclaim hook (that lives in arm_io). A self_hold_ self-cycle + weak
-        // capture would LEAK if listener::clear()/~listener destroys the still-pending Timeout before
-        // its 1 ns timer fires: the callback never runs, so the cycle is never broken. With a strong
-        // capture the connector lives exactly as long as the Timeout — firing delivers then releases
-        // it; teardown destroying the Timeout (and its captured shared_ptr) also releases it. Either
-        // way the connector + its captured completion callback are reclaimed; no leak.
+        // capture would LEAK if the deferred callback is dropped by listener::clear()/~listener before
+        // it runs: the callback never fires, so the cycle is never broken. With a strong capture the
+        // connector lives exactly as long as the deferred callback — firing delivers then releases it;
+        // teardown clearing the defer queue (and its captured shared_ptr) also releases it. Either way
+        // the connector + its captured completion callback are reclaimed; no leak.
         auto self = this->shared_from_this();
-        qb::io::async::callback([self = std::move(self)]() { self->deliver_failure(); }, std::chrono::nanoseconds(1));
+        qb::io::async::defer([self = std::move(self)]() { self->deliver_failure(); });
     }
 
     enum class finalize_result { done, pending, failed };

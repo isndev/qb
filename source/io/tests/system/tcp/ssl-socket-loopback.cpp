@@ -53,10 +53,13 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -1451,4 +1454,429 @@ TEST(SSLSocketLoopback, Tls12NegotiationRejectsServerPostHandshakeAuth) {
     ASSERT_TRUE(server_done.load()) << "server never recorded a PHA result within the deadline";
     ASSERT_EQ(server_version_is_12.load(), 1) << "negotiation did not land on TLS 1.2";
     EXPECT_EQ(server_pha_result.load(), 0) << "server-side PHA must fail over a TLS 1.2 connection (PHA is TLS 1.3-only)";
+}
+
+// ===========================================================================
+// Additional coverage for the separately-compiled TU source/io/src/tcp/ssl/socket.cpp:
+// the SSL_get_error read/write switches that only fire on WANT_READ / peer-abort /
+// backpressure, the connect-to-closed-port early return, the queued-error string
+// path, the resume() chainable + deferred set_session, self-move, and the raw
+// qb::io::ssl::* free-function edge branches. Every case is deterministic (busy-poll
+// / bounded accept / explicit backpressure) — no sleep-as-synchronization.
+// ===========================================================================
+
+namespace {
+
+// Learn a loopback TCP port that is currently NOT listening (bind ephemeral, release)
+// so a connect to it is refused — no peer, pure local bind.
+unsigned short
+reserve_then_release_tcp_port() {
+    qb::io::tcp::listener probe;
+    if (probe.listen_v4(0, "127.0.0.1") != 0) {
+        return 0;
+    }
+    const auto port = probe.local_endpoint().port();
+    probe.disconnect();
+    return port;
+}
+
+// Abortively close an ssl::socket's underlying fd: SO_LINGER{on,0} + close() WITHOUT
+// a preceding shutdown() (close(-1) skips the SD_BOTH shutdown) makes the kernel emit
+// a RST, so the peer's next SSL_read/SSL_write observes ECONNRESET (SSL_ERROR_SYSCALL),
+// driving the *default* arm of the read/write switches — distinct from a clean FIN.
+void
+abortive_close(qb::io::tcp::ssl::socket &sock) {
+    struct linger lin;
+    lin.l_onoff  = 1;
+    lin.l_linger = 0;
+    sock.set_optval(SOL_SOCKET, SO_LINGER, lin);
+    sock.close(-1); // shut_how < 0 -> skip ::shutdown so SO_LINGER yields a RST, not a FIN
+}
+
+// Write a fresh, self-signed-cert-UNRELATED EC private key to a PEM file so
+// configure_client_certificate() sees a valid cert paired with a NON-matching key.
+bool
+write_temp_ec_private_key(const std::string &path) {
+    EVP_PKEY *pkey = EVP_EC_gen("P-256");
+    if (!pkey) {
+        return false;
+    }
+    FILE *f  = std::fopen(path.c_str(), "wb");
+    bool  ok = f && PEM_write_PrivateKey(f, pkey, nullptr, nullptr, 0, nullptr, nullptr) == 1;
+    if (f) {
+        std::fclose(f);
+    }
+    EVP_PKEY_free(pkey);
+    return ok;
+}
+
+} // namespace
+
+// Self-move assignment must be a no-op (the `this == &rhs` guard), leaving the socket
+// intact — the aliasing pointer prevents clang's -Wself-move from firing.
+TEST(SSLSocketLoopback, SelfMoveAssignmentIsANoOp) {
+    qb::io::tcp::ssl::socket sock;
+    qb::io::tcp::ssl::socket *alias = &sock;
+    *alias                         = std::move(sock); // this == &rhs -> early return
+    EXPECT_EQ(sock.ssl_handle(), nullptr);
+    EXPECT_FALSE(sock.handshake_complete());
+    EXPECT_TRUE(sock.verify_peer());
+}
+
+// Raw qb::io::ssl::* free-function branches not covered by the null-guard sweep in
+// unit/ssl/ssl-context-config.cpp: bogus min/max protocol versions, a VALID CApath
+// directory, and a valid-cert / non-matching-key pair.
+TEST(SSLSocketLoopback, FreeFunctionContextConfigurationEdgeBranches) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    SSL_CTX *ctx = qb::io::ssl::create_client_context(TLS_client_method());
+    ASSERT_NE(ctx, nullptr);
+
+    // Bogus protocol versions: SSL_CTX_set_min/max_proto_version reject an out-of-range
+    // version number, so set_tls_protocol_versions reports failure for each branch.
+    EXPECT_FALSE(qb::io::ssl::set_tls_protocol_versions(ctx, 0xFFFF, 0)) << "an out-of-range min version must be rejected";
+    EXPECT_FALSE(qb::io::ssl::set_tls_protocol_versions(ctx, 0, 0xFFFF)) << "an out-of-range max version must be rejected";
+
+    // A real, existing directory is accepted as a CApath (the success return of load_ca_directory).
+    const std::filesystem::path cert_dir = std::filesystem::path(ssl_resource_path("cert.pem")).parent_path();
+    EXPECT_TRUE(qb::io::ssl::load_ca_directory(ctx, cert_dir)) << "an existing CA directory must load as a CApath";
+
+    // A valid cert paired with a freshly-generated, UNRELATED key must be rejected
+    // (OpenSSL's cert/key consistency check fails).
+    const std::string mismatched_key = std::string("/tmp/qb-ssl-mismatch-key-") + std::to_string(::getpid()) + ".pem";
+    std::remove(mismatched_key.c_str());
+    ASSERT_TRUE(write_temp_ec_private_key(mismatched_key));
+    EXPECT_FALSE(qb::io::ssl::configure_client_certificate(ctx, ssl_resource_path("cert.pem"), mismatched_key))
+        << "a certificate paired with a non-matching private key must be rejected";
+    std::remove(mismatched_key.c_str());
+
+    SSL_CTX_free(ctx);
+}
+
+// A blocking connect and a non-blocking n_connect to a CLOSED loopback port must fail
+// before any SSL state is set up (the connect-error gates in finish_client_connect_() /
+// n_connect()).
+TEST(SSLSocketLoopback, ConnectToClosedPortFailsBeforeSslSetup) {
+    const auto dead_port = reserve_then_release_tcp_port();
+    ASSERT_NE(dead_port, 0);
+
+    {
+        qb::io::tcp::ssl::socket client;
+        client.set_insecure();
+        EXPECT_NE(client.connect_v4("127.0.0.1", dead_port), 0) << "blocking TLS connect to a refused port must fail";
+        EXPECT_FALSE(client.handshake_complete());
+    }
+    {
+        qb::io::tcp::ssl::socket client;
+        client.set_insecure();
+        EXPECT_NE(client.n_connect_v4("127.0.0.1", dead_port), 0) << "non-blocking TLS connect to a refused port must fail";
+        EXPECT_FALSE(client.handshake_complete());
+    }
+}
+
+// After a FAILED verifying handshake the SSL error queue is populated, so
+// get_last_ssl_error_string() returns the formatted queued error — the branch distinct
+// from the "No SSL handle" and "No SSL error in queue" sentinels.
+TEST(SSLSocketLoopback, GetLastSslErrorStringReportsQueuedHandshakeError) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(make_server_context());
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> stop{false};
+    std::thread       acceptor([&] {
+        qb::io::tcp::ssl::socket server_socket;
+        if (listener.accept(server_socket) == 0) {
+            const auto deadline = std::chrono::steady_clock::now() + 2s;
+            while (!server_socket.handshake_complete() && std::chrono::steady_clock::now() < deadline) {
+                if (server_socket.handshake_status() < 0) {
+                    break; // client rejected our self-signed cert
+                }
+                std::this_thread::sleep_for(1ms);
+            }
+        }
+        (void) stop;
+    });
+    thread_join_guard acceptor_join(acceptor, [&] {
+        stop = true;
+        listener.disconnect();
+    });
+
+    qb::io::tcp::ssl::socket verifying_client;
+    ASSERT_TRUE(verifying_client.verify_peer());
+    ASSERT_TRUE(verifying_client.set_sni_hostname("localhost"));
+    const int         ret     = verifying_client.connect_v4("localhost", port);
+    const std::string err_str = verifying_client.get_last_ssl_error_string();
+
+    EXPECT_NE(ret, 0) << "the verifying handshake against a self-signed cert must fail";
+    EXPECT_NE(err_str, "No SSL handle") << "a socket that owns an SSL handle must not report the no-handle sentinel";
+    EXPECT_FALSE(err_str.empty());
+}
+
+// resume() (the chainable set_session wrapper) accepts a captured session on a
+// handle-less socket, deferring it until the SSL is minted at connect.
+TEST(SSLSocketLoopback, ResumeChainableAcceptsCapturedSessionBeforeConnect) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(make_server_context());
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> server_ready{false};
+    std::thread       server_thread([&] {
+        qb::io::tcp::ssl::socket server_socket;
+        server_ready = true;
+        ASSERT_EQ(listener.accept(server_socket), 0);
+        drive_server_handshake(server_socket);
+        char marker = 0;
+        record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)));
+    });
+    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+
+    while (!server_ready.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    qb::io::tcp::ssl::socket client;
+    client.set_insecure();
+    ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
+    ASSERT_TRUE(client.handshake_complete());
+
+    auto session = client.get_session();
+    ASSERT_TRUE(session.is_valid());
+
+    {
+        // resume() takes the Session by value (up-refs it) and, with no SSL handle yet,
+        // defers it; the deferred reference is released when `resumer` is destroyed.
+        qb::io::tcp::ssl::socket resumer;
+        resumer.resume(session);
+        EXPECT_EQ(resumer.ssl_handle(), nullptr);
+    }
+    qb::io::ssl::free_session(session);
+    EXPECT_FALSE(session.is_valid());
+
+    EXPECT_TRUE(write_exactly(client, "x", 1));
+    client.disconnect();
+}
+
+// A non-blocking read with no application data pending returns 0 (SSL_read ->
+// SSL_ERROR_WANT_READ), never a negative error.
+TEST(SSLSocketLoopback, NonBlockingReadWithoutDataYieldsWouldBlockAsZero) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(make_server_context());
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> server_ready{false};
+    std::atomic<bool> client_done{false};
+    std::thread       server_thread([&] {
+        qb::io::tcp::ssl::socket server_socket;
+        server_ready = true;
+        ASSERT_EQ(listener.accept(server_socket), 0);
+        drive_server_handshake(server_socket);
+        // Never send application data; just hold the connection open until the client
+        // has observed the would-block read.
+        while (!client_done.load()) {
+            std::this_thread::sleep_for(1ms);
+        }
+    });
+    thread_join_guard server_join(server_thread, [&] {
+        client_done = true;
+        listener.disconnect();
+    });
+
+    while (!server_ready.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    qb::io::tcp::ssl::socket client;
+    client.set_insecure();
+    ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
+    ASSERT_TRUE(client.handshake_complete());
+
+    ASSERT_EQ(client.set_nonblocking(true), 0);
+    char      buffer[64] = {};
+    const int ret        = client.read(buffer, sizeof(buffer));
+    EXPECT_EQ(ret, 0) << "a non-blocking read with no data pending must report would-block as 0, not " << ret;
+
+    client_done = true;
+    client.disconnect();
+}
+
+// After the peer aborts the connection with a RST, the client's read converges to -1
+// via the *default* SSL_get_error arm (SSL_ERROR_SYSCALL / ECONNRESET), not the clean
+// close_notify (SSL_ERROR_ZERO_RETURN) path.
+TEST(SSLSocketLoopback, ReadAfterAbortiveCloseReportsTermination) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(make_server_context());
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> server_ready{false};
+    std::atomic<bool> server_aborted{false};
+    std::thread       server_thread([&] {
+        qb::io::tcp::ssl::socket server_socket;
+        server_ready = true;
+        ASSERT_EQ(listener.accept(server_socket), 0);
+        drive_server_handshake(server_socket);
+        abortive_close(server_socket);
+        server_aborted = true;
+    });
+    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+
+    while (!server_ready.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    qb::io::tcp::ssl::socket client;
+    client.set_insecure();
+    ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
+    ASSERT_TRUE(client.handshake_complete());
+    ASSERT_EQ(client.set_nonblocking(true), 0);
+
+    while (!server_aborted.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    int        ret      = 0;
+    char       buffer[64];
+    while (std::chrono::steady_clock::now() < deadline) {
+        ret = client.read(buffer, sizeof(buffer));
+        if (ret < 0) {
+            break; // RST observed -> termination
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+    EXPECT_EQ(ret, -1) << "read after a peer RST must report termination (-1), last=" << ret;
+    client.disconnect();
+}
+
+// After the peer aborts with a RST, the client's write converges to -1 via the
+// *default* SSL_get_error arm of the write path (SSL_write <= 0, not WANT_WRITE).
+TEST(SSLSocketLoopback, WriteAfterAbortiveCloseReportsTermination) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(make_server_context());
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> server_ready{false};
+    std::atomic<bool> server_aborted{false};
+    std::thread       server_thread([&] {
+        qb::io::tcp::ssl::socket server_socket;
+        server_ready = true;
+        ASSERT_EQ(listener.accept(server_socket), 0);
+        drive_server_handshake(server_socket);
+        abortive_close(server_socket);
+        server_aborted = true;
+    });
+    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+
+    while (!server_ready.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    qb::io::tcp::ssl::socket client;
+    client.set_insecure();
+    ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
+    ASSERT_TRUE(client.handshake_complete());
+    ASSERT_EQ(client.set_nonblocking(true), 0);
+
+    while (!server_aborted.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    const auto  deadline    = std::chrono::steady_clock::now() + 5s;
+    int         ret         = 0;
+    const char  payload[64] = {};
+    while (std::chrono::steady_clock::now() < deadline) {
+        ret = client.write(payload, sizeof(payload));
+        if (ret < 0) {
+            break; // RST observed on write -> termination
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+    EXPECT_EQ(ret, -1) << "write after a peer RST must report termination (-1), last=" << ret;
+    client.disconnect();
+}
+
+// A non-blocking write to a peer that never reads eventually fills the socket buffers,
+// so SSL_write reports SSL_ERROR_WANT_WRITE and write() returns 0 (would-block), never
+// a negative error.
+TEST(SSLSocketLoopback, NonBlockingWriteToBackpressuredPeerYieldsWouldBlockAsZero) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(make_server_context());
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> server_ready{false};
+    std::atomic<bool> client_done{false};
+    std::thread       server_thread([&] {
+        qb::io::tcp::ssl::socket server_socket;
+        server_ready = true;
+        ASSERT_EQ(listener.accept(server_socket), 0);
+        drive_server_handshake(server_socket);
+        // Deliberately never read the client's data so its send buffer fills — hold the
+        // connection open until the client has observed the would-block write.
+        while (!client_done.load()) {
+            std::this_thread::sleep_for(1ms);
+        }
+    });
+    thread_join_guard server_join(server_thread, [&] {
+        client_done = true;
+        listener.disconnect();
+    });
+
+    while (!server_ready.load()) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    qb::io::tcp::ssl::socket client;
+    client.set_insecure();
+    ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
+    ASSERT_TRUE(client.handshake_complete());
+
+    // Small send buffer + non-blocking so backpressure appears quickly and deterministically.
+    const int small_sndbuf = 4096;
+    client.set_optval(SOL_SOCKET, SO_SNDBUF, small_sndbuf);
+    ASSERT_EQ(client.set_nonblocking(true), 0);
+
+    std::vector<char> chunk(8192, 'x');
+    bool              saw_would_block = false;
+    for (int i = 0; i < 100000 && !saw_would_block; ++i) {
+        const int w = client.write(chunk.data(), chunk.size());
+        if (w == 0) {
+            saw_would_block = true; // SSL_ERROR_WANT_WRITE surfaced as 0
+        } else if (w < 0) {
+            ADD_FAILURE() << "unexpected write error " << w << " before backpressure was observed";
+            break;
+        }
+    }
+    EXPECT_TRUE(saw_would_block) << "a full non-blocking send buffer must surface WANT_WRITE as a 0-byte write";
+
+    client_done = true;
+    client.disconnect();
 }

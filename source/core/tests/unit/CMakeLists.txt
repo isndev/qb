@@ -25,6 +25,7 @@
 qb_add_test(MODULE qb-core TIER unit NAME string         SOURCES container/string.cpp        DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME jsonb-wrapper  SOURCES json/jsonb-wrapper.cpp      DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME actor-id                SOURCES core/actor-id.cpp                 DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME coreset-edges           SOURCES core/coreset-edges.cpp            DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME type-id-identity        SOURCES core/type-id-identity.cpp         DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME service-index-uniqueness SOURCES core/service-index-uniqueness.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME event-header   SOURCES core/event-header.cpp        DEPENDS ${PROJECT_NAME})

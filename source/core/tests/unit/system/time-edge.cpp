@@ -586,4 +586,65 @@ TEST(ParseUtcEdge, PartialAndTrailingGarbage) {
     EXPECT_EQ(qb::unix_seconds(*preneg), -1);
 }
 
+// ---------------------------------------------------------------------------
+// ScopedTimer::restart() + the inactive-stop() early return — the two lines the
+// happy-path ScopedTimer test (time.cpp) never reaches. Deterministic: no sleep,
+// so the measured spans may be ~0 but the control flow (fire-once, inert
+// second stop, re-arm) is exact.
+// ---------------------------------------------------------------------------
+
+TEST(ScopedTimerEdge, RestartRearmsAndSecondStopIsInertReturningStoredSpan) {
+    int          calls    = 0;
+    qb::duration cb_value = qb::duration::min();
+    // Declaration order matters: `timer` is declared last, so it is destroyed FIRST at scope exit
+    // (reverse order) while `calls`/`cb_value` are still alive for the dtor's callback.
+    qb::ScopedTimer timer([&](qb::duration d) {
+        ++calls;
+        cb_value = d;
+    });
+
+    // First explicit stop(): fires the callback exactly once and returns a non-negative span.
+    const auto first = timer.stop();
+    EXPECT_EQ(calls, 1) << "stop() fires the callback once";
+    EXPECT_GE(first.count(), 0);
+    EXPECT_EQ(cb_value.count(), first.count()) << "the callback receives the measured span";
+
+    // A second stop() while inactive takes the `if (!_active) return _elapsed;` early return: it
+    // returns the STORED span unchanged and does NOT fire the callback again.
+    const auto second = timer.stop();
+    EXPECT_EQ(second.count(), first.count()) << "an inactive stop() returns the stored elapsed span";
+    EXPECT_EQ(calls, 1) << "the callback must not fire again on an already-stopped timer";
+
+    // restart() re-arms the timer: elapsed() reads the live monotonic delta again (non-negative).
+    timer.restart();
+    EXPECT_GE(timer.elapsed().count(), 0) << "restart() makes elapsed() a live measure again";
+    // The dtor now runs stop() on the re-armed timer, firing the callback a final time.
+}
+
+// ---------------------------------------------------------------------------
+// qb::date::today() + to_sys_days() — the two date accessors the happy-path
+// file never calls. today() is from_wall_time(wall_now()); to_sys_days()
+// exposes the underlying std::chrono::sys_days.
+// ---------------------------------------------------------------------------
+
+TEST(DateEdge, TodayAndToSysDaysAccessors) {
+    const auto today = qb::date::today();
+    // A plausible modern date: strictly after 2020-01-01 (day 18262), consistent with the
+    // wall-clock assumptions the companion file already makes.
+    EXPECT_GT(today.days_since_epoch(), 18262) << "today must be after 2020-01-01 (epoch day 18262)";
+
+    // to_sys_days() epoch-day count equals days_since_epoch(); reconstructing a date from it
+    // round-trips to an equal value.
+    EXPECT_EQ(today.to_sys_days().time_since_epoch().count(), today.days_since_epoch());
+    EXPECT_EQ(qb::date{today.to_sys_days()}, today);
+
+    // today() and a fresh from_wall_time(wall_now()) computed here must be the same UTC calendar
+    // day, or exactly one day apart if UTC midnight ticks between the two clock reads (via_wall is
+    // read second, so the gap is 0 or +1).
+    const auto via_wall = qb::date::from_wall_time(qb::wall_now());
+    const auto gap      = via_wall - today; // std::chrono::days
+    EXPECT_GE(gap.count(), 0);
+    EXPECT_LE(gap.count(), 1) << "today() and a fresh from_wall_time(now) differ by at most a midnight tick";
+}
+
 } // namespace

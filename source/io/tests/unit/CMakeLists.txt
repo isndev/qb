@@ -64,6 +64,7 @@ qb_add_test(MODULE qb-io TIER unit NAME compression-codec SOURCES compression/co
 # --- ssl (SSL_CTX config, no socket) / async (transport traits) / quic (FakeBackend adapter) ---
 qb_add_test(MODULE qb-io TIER unit NAME ssl-context-config     SOURCES ssl/ssl-context-config.cpp     DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME ssl-context-value      SOURCES ssl/ssl-context-value.cpp      DEPENDS ${PROJECT_NAME} REQUIRES ssl)
+qb_add_test(MODULE qb-io TIER unit NAME ssl-context-guards     SOURCES ssl/ssl-context-guards.cpp     DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME async-transport-traits SOURCES async/async-transport-traits.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME quic-adapter           SOURCES quic/quic-adapter.cpp          DEPENDS ${PROJECT_NAME} LABELS quic)
 
