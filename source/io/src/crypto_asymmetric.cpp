@@ -506,6 +506,38 @@ crypto::x25519_key_exchange(const std::string &private_key_pem, const std::strin
         throw;
     }
 
+    // Reject a peer key of the wrong ALGORITHM here, before OpenSSL ever sees it.
+    //
+    // Both PEMs are caller-supplied, and in a key-agreement handshake the PEER one normally comes
+    // off the wire — so its algorithm is chosen by the remote end, not by us. A well-formed
+    // Ed25519 public key parses fine above (it is valid PEM, merely the wrong curve) and then
+    // reaches EVP_PKEY_derive_set_peer() as a type mismatch, which OpenSSL treats as a CALLER bug
+    // rather than an input error: crypto/evp/keymgmt_lib.c asserts
+    // `match_type(pk->keymgmt, keymgmt)`. On an OpenSSL built with NDEBUG (the usual release
+    // packaging on Linux/macOS) `ossl_assert` degrades to a plain test and the call merely returns
+    // 0, so the throw below is reached and nothing looks wrong. On an OpenSSL built WITH
+    // assertions (vcpkg's Windows debug triplet, and several distro debug builds) the same call
+    // reaches OPENSSL_die() and **abort()s the process** — a remote peer picking the wrong key
+    // type takes the server down.
+    //
+    // Doing the check ourselves makes the rejection qb's own and therefore independent of how the
+    // linked OpenSSL happens to be configured.
+    //
+    // The test is deliberately "the two key types AGREE", not "both are X25519", even though the
+    // header documents this as an X25519 helper: agreement is EXACTLY the precondition
+    // EVP_PKEY_derive_set_peer() asserts on, so this guard cannot reject any input that used to
+    // work (a matched X448 or EC pair still derives, as it did before). It only converts the
+    // undefined-behaviour case into a clean exception.
+    //
+    // The raw-bytes overload below needs no equivalent guard: it builds BOTH keys itself with
+    // EVP_PKEY_new_raw_{private,public}_key(EVP_PKEY_X25519, ...), so the types match by
+    // construction and a wrong-algorithm peer cannot be expressed.
+    if (EVP_PKEY_base_id(priv_key) != EVP_PKEY_base_id(pub_key)) {
+        EVP_PKEY_free(priv_key);
+        EVP_PKEY_free(pub_key);
+        throw std::runtime_error("x25519_key_exchange: peer public key algorithm does not match the private key's");
+    }
+
     // Create key exchange context
     EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(priv_key, NULL);
     if (!ctx) {

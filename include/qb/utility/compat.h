@@ -18,8 +18,20 @@
 #include <utility>
 #include <variant>
 
+// <version> first: it is the standard, near-free way to populate the LIBRARY feature-test macros
+// the conditional includes below key off.
+//
+// Pulling in <expected> on the strength of __has_include alone is wrong on MSVC: its <expected>
+// EXISTS in C++20 mode but is inert, and it emits `warning STL4038: The contents of <expected> are
+// available only with C++23 or later` in every translation unit that reaches it -- hundreds across
+// a qbm build, which drowns the real diagnostics. Gate on the macro the standard library itself
+// advertises instead. This changes no behaviour anywhere: QB_COMPAT_HAS_STD_EXPECTED below already
+// required exactly this macro, so a library that does not advertise the feature was already taking
+// the fallback path -- it now simply stops including a header it cannot use.
+#include <version>
+
 #if defined(__has_include)
-#if __has_include(<expected>)
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L && __has_include(<expected>)
 #include <expected>
 #endif
 #if __has_include(<stop_token>)

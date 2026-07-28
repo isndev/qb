@@ -158,7 +158,18 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Tick>(*this);
-        co_await context().sleep(80ms); // stay Activating while the flood arrives
+        // Stay Activating while the flood arrives. This is an UPPER BOUND, not a delay: the
+        // stash overflow fails the activation and cancels the sleep, so the case still completes
+        // in ~170 ms whatever the number here — widening it costs nothing.
+        //
+        // It has to be generous, because losing this race does not fail the test, it HANGS it.
+        // If the 6000 pushes do not all land before the victim finishes activating, the victim
+        // activates SUCCESSFULLY, and on that path nothing ever kill()s it — so main.join()
+        // never returns and the binary spins forever (measured under ASan at the old 80 ms:
+        // ***Timeout with 788 s of CPU burned, while the other three cases in this file each
+        // finished in ~42 ms). ASan simply makes 6000 push allocations take longer than 80 ms.
+        // 3 s gives ~37x headroom over the observed cost on an instrumented build.
+        co_await context().sleep(3000ms);
         co_return true;
     }
     void

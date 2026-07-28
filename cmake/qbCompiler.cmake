@@ -85,7 +85,19 @@ if(QB_COMPILER_MSVC)
         "/Zc:__cplusplus"   # Enable proper __cplusplus macro
         "/Zc:preprocessor"  # Conformant preprocessor (required for __VA_OPT__)
         "/utf-8"            # Use UTF-8 encoding
+        "/bigobj"           # Raise the COFF section-count limit (see below)
     )
+    # /bigobj is not optional for this codebase. A COFF object file carries a 16-bit section
+    # count (65280 usable); heavy template + coroutine translation units approach it on their
+    # own, and AddressSanitizer pushes them over by emitting per-variable instrumentation
+    # metadata sections. Without it:
+    #   qbm/http/tests/system/http3/http3-loopback.cpp:
+    #     fatal error C1128: number of sections exceeded object file format limit
+    # under `cmake --preset sanitize -DQB_SANITIZE=address`. ELF and Mach-O have no comparable
+    # limit, so neither the Linux nor the macOS toolchain can ever surface this -- it is a pure
+    # COFF/Windows constraint. Applied to EVERY target rather than to the one file that tripped
+    # first, because the next heavy TU would simply hit it again. The only cost is slightly
+    # larger .obj files; there is no codegen or runtime effect.
 
     # Warning configuration
     list(APPEND QB_CXX_FLAGS_BASE
@@ -336,7 +348,28 @@ if(QB_SANITIZE)
         # MSVC only ships AddressSanitizer.
         if(QB_SANITIZE MATCHES "address")
             list(APPEND QB_SANITIZE_COMPILE_OPTS "/fsanitize=address")
-            qb_status_message("Sanitizers enabled (MSVC): address")
+
+            # ...and it must reach EVERY object in the link, including third-party ones.
+            #
+            # With /fsanitize=address the Microsoft STL turns on its container annotations and
+            # stamps a `detect_mismatch` record into each object file. Linking an object built
+            # WITH the flag against one built WITHOUT it is then a hard error, not a degraded
+            # build:
+            #   gtest.lib(gtest-all.cc.obj) : error LNK2038: mismatch detected for
+            #   'annotate_string': value '0' doesn't match value '1' in pipe-allocator.cpp.obj
+            #   (same for 'annotate_vector' and 'annotate_optional')
+            # QB_SANITIZE_COMPILE_OPTS is applied per target by qb_apply_compiler_flags(), which
+            # covers qb's and qbm's own targets but NOT the googletest/gmock targets FetchContent
+            # builds -- so every single test executable failed to link and the `sanitize` preset
+            # was completely unusable on Windows. clang and gcc link mixed sanitized/unsanitized
+            # objects without complaint, which is exactly why neither reference platform could
+            # reveal this.
+            #
+            # Directory-scope so every target created afterwards inherits it -- this include()
+            # runs before qbFetchGoogleDeps.cmake, so googletest is covered. Targets that also
+            # receive the flag per-target simply get it twice, which MSVC accepts.
+            add_compile_options("/fsanitize=address")
+            qb_status_message("Sanitizers enabled (MSVC): address (build-wide: MSVC cannot link mixed ASan/non-ASan objects)")
         else()
             qb_warning_message("MSVC only supports /fsanitize=address; ignoring QB_SANITIZE='${QB_SANITIZE}'")
         endif()
@@ -439,6 +472,46 @@ function(qb_apply_linker_flags target)
     endif()
 
     if(QB_COMPILER_MSVC)
+        # Give Windows the stack POSIX already gives.
+        #
+        # A PE image reserves 1 MiB of stack by default; Linux and macOS give 8 MiB, and
+        # std::thread inherits the image's reserve, so every VirtualCore worker gets it too.
+        # qb's recursion budgets were calibrated on the POSIX figure -- concretely,
+        # kJsonMaxNestingDepth = 512 in qb/io/protocol/json.h bounds a recursive-descent parse.
+        # Measured max survivable nesting on this toolchain, one process per depth, parsing on a
+        # thread created with an explicit reserve:
+        #
+        #                              1 MiB stack        8 MiB stack
+        #   json::parse   (text)       ~32760  (64x)      -            <- text frames are tiny
+        #   from_msgpack  /O2          ~2208   (4.3x)     -
+        #   from_msgpack  /Od          ~1144   (2.2x)     -
+        #   from_msgpack  ASan         ~492    (1.0x)     ~3988 (7.8x)
+        #
+        # The binary reader's frames are ~30x the text parser's, so at 1 MiB the accepted limit
+        # (512) sits exactly ON the cliff (492) under ASan -- which is precisely the
+        # `AddressSanitizer: stack-overflow` that killed qb-io-test-unit-json-depth-guard. At
+        # 8 MiB the margin is 7.8x, i.e. the margin the constant was chosen for.
+        #
+        # Reserving is not committing: this costs address space, not RAM. On x64 that is free.
+        # Preferred over lowering the depth limit because it changes NO accepted input and fixes
+        # the whole class rather than the one path that happened to be measured. INTERFACE so an
+        # application linking qb inherits it; MSVC honours the LAST /STACK, so a consumer that
+        # wants a different size just passes its own.
+        #
+        # 64-BIT ONLY, deliberately. A 32-bit process has ~2 GiB of user address space, so an
+        # 8 MiB *reserve* per thread caps it at ~256 threads -- an actor framework can plausibly
+        # want more, and exhausting address space is a worse failure than a deep parse. qb does
+        # support 32-bit (QB_ARCH_32), so on that target the right lever is a lower nesting limit
+        # for the binary path, not a bigger stack. Left as a stated gap rather than traded away
+        # silently.
+        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+            target_link_options(${target} PRIVATE /STACK:8388608)
+            get_target_property(_qb_type ${target} TYPE)
+            if(NOT _qb_type STREQUAL "EXECUTABLE")
+                target_link_options(${target} INTERFACE /STACK:8388608)
+            endif()
+        endif()
+
         # MSVC linker optimizations
         target_link_options(${target} PRIVATE 
             $<$<CONFIG:Release>:/OPT:REF>

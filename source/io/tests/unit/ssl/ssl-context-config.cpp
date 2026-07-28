@@ -44,8 +44,10 @@
  * @ingroup Tests
  */
 
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -247,8 +249,8 @@ TEST(SSLListenerConfig, UninitializedAccessorsReturnSentinels) {
     EXPECT_EQ(uninitialized.get_verify_depth(), -1);
     EXPECT_EQ(uninitialized.get_session_cache_mode(), -1);
     EXPECT_EQ(uninitialized.get_session_cache_size(), -1);
-    EXPECT_EQ(uninitialized.set_options(SSL_OP_NO_COMPRESSION), 0);
-    EXPECT_EQ(uninitialized.clear_options(SSL_OP_NO_COMPRESSION), 0);
+    EXPECT_EQ(uninitialized.set_options(SSL_OP_NO_COMPRESSION), 0ull);
+    EXPECT_EQ(uninitialized.clear_options(SSL_OP_NO_COMPRESSION), 0ull);
     EXPECT_EQ(uninitialized.set_session_timeout(10), 0);
     EXPECT_FALSE(uninitialized.set_info_callback(info_callback));
     EXPECT_FALSE(uninitialized.set_msg_callback(msg_callback, nullptr));
@@ -285,8 +287,8 @@ TEST(SSLListenerConfig, LiveContextExposesAndRoundTripsConfiguration) {
     EXPECT_TRUE(listener.set_supported_alpn_protocols({"h2", "http/1.1"}));
     EXPECT_FALSE(listener.set_supported_alpn_protocols({}));
     EXPECT_FALSE(listener.set_supported_alpn_protocols({std::string(256, 'x')}));
-    EXPECT_NE(listener.set_options(SSL_OP_NO_COMPRESSION), 0);
-    EXPECT_NE(listener.clear_options(SSL_OP_NO_COMPRESSION), 0);
+    EXPECT_NE(listener.set_options(SSL_OP_NO_COMPRESSION), 0ull);
+    EXPECT_NE(listener.clear_options(SSL_OP_NO_COMPRESSION), 0ull);
     EXPECT_GE(listener.set_session_timeout(5), 0);
     EXPECT_TRUE(listener.set_info_callback(info_callback));
     EXPECT_TRUE(listener.set_msg_callback(msg_callback, nullptr));
@@ -407,4 +409,76 @@ TEST(SSLSocketConfig, SharedClientContextSurvivesUntilLastReferenceDropped) {
     if (probe)
         SSL_free(probe);
     SSL_CTX_free(shared); // the caller's own reference (create_client_context contract)
+}
+
+// ===========================================================================
+// set_options / clear_options carry the FULL 64-bit SSL_OP_* mask.
+//
+// OpenSSL 3.x types the option mask `uint64_t` and defines flags above bit 31:
+// SSL_OP_NO_TX_CERTIFICATE_COMPRESSION (32), SSL_OP_NO_RX_CERTIFICATE_COMPRESSION (33),
+// SSL_OP_ENABLE_KTLS_TX_ZEROCOPY_SENDFILE (34), SSL_OP_PREFER_NO_DHE_KEX (35),
+// SSL_OP_LEGACY_EC_POINT_FORMATS (36). The wrapper used to take and return `long`, which is
+// 64-bit on LP64 (Linux/macOS) but 32-BIT ON WINDOWS (LLP64).
+//
+// DISCRIMINATION: these cases FAIL only on an LLP64 target (Windows/MSVC). On LP64 `long` is
+// already 64-bit, so they pass with or without the fix — they are a portability guard, not
+// coverage, for macOS and Linux. That is not a defect in the test: the bug itself is unobservable
+// on LP64. The static_assert below is what keeps the guard honest on every platform.
+// ===========================================================================
+
+// The contract under test, checkable everywhere: the parameter/return type must be wide enough for
+// the flags OpenSSL actually defines. This fires at compile time on any target where it is not.
+static_assert(sizeof(decltype(std::declval<qb::io::tcp::ssl::listener &>().set_options(0))) >= sizeof(std::uint64_t),
+              "the SSL option mask must be 64-bit wide: SSL_OP_* flags reach bit 36 and a 32-bit "
+              "long (Windows/LLP64) truncates them to 0");
+
+// SSL_OP_NO_RX_CERTIFICATE_COMPRESSION arrived in OpenSSL 3.2; on 3.0/3.1 there is no >32-bit flag
+// to drive this with, so the runtime half self-skips and the static_assert above carries the
+// contract alone.
+#if defined(SSL_OP_NO_RX_CERTIFICATE_COMPRESSION)
+TEST(SSLListenerConfig, SetOptionsCarriesFlagsAboveBit31) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(qb::io::ssl::create_server_context(TLS_server_method(), ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")));
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+
+    // Bit 33. Through a 32-bit long this truncates to 0, SSL_CTX_set_options() is handed 0, and the
+    // option the caller asked for is silently never applied.
+    const std::uint64_t high_bit_flag = SSL_OP_NO_RX_CERTIFICATE_COMPRESSION;
+    ASSERT_GT(high_bit_flag, 0xFFFFFFFFull) << "this case is only meaningful for a flag above bit 31";
+
+    listener.set_options(high_bit_flag);
+    const std::uint64_t after_set = SSL_CTX_get_options(listener.ssl_handle());
+    EXPECT_EQ(after_set & high_bit_flag, high_bit_flag)
+        << "a >32-bit SSL_OP_* flag was dropped on the way to SSL_CTX_set_options()";
+
+    listener.clear_options(high_bit_flag);
+    EXPECT_EQ(SSL_CTX_get_options(listener.ssl_handle()) & high_bit_flag, 0ull)
+        << "a >32-bit SSL_OP_* flag was dropped on the way to SSL_CTX_clear_options()";
+}
+#endif // SSL_OP_NO_RX_CERTIFICATE_COMPRESSION
+
+TEST(SSLListenerConfig, SetOptionsBit31DoesNotSignExtendIntoTheHighFlags) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(qb::io::ssl::create_server_context(TLS_server_method(), ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")));
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+
+    // Bit 31 is the nastier half of the same bug: through a 32-bit SIGNED long it becomes
+    // 0x80000000 -> -2147483648, which sign-extends back to uint64_t as 0xFFFFFFFF80000000 and
+    // sets EVERY option from bit 31 to bit 63 at once — including the certificate-compression and
+    // DHE-kex flags the caller never mentioned.
+    const std::uint64_t bit31 = SSL_OP_CRYPTOPRO_TLSEXT_BUG;
+    ASSERT_EQ(bit31, 0x80000000ull);
+
+    const std::uint64_t before = SSL_CTX_get_options(listener.ssl_handle());
+    listener.set_options(bit31);
+    const std::uint64_t after = SSL_CTX_get_options(listener.ssl_handle());
+
+    EXPECT_EQ(after & bit31, bit31) << "the requested bit-31 flag was not applied";
+    // Nothing above bit 31 that was not already set may have appeared.
+    EXPECT_EQ((after & ~before) >> 32, 0ull)
+        << "setting bit 31 smeared into the high SSL_OP_* flags (sign extension through a 32-bit long)";
 }
