@@ -307,6 +307,38 @@ private:
     std::deque<std::function<void()>> _deferred;
     bool                              _in_defer_drain = false;
 
+    // ---- In-loop drain hook -------------------------------------------------
+    // Draining only *after* `_loop.run()` returns is not enough: a blocking
+    // `run()` (flag 0 — `qb::io::async::run()`, the documented standalone main
+    // loop) never returns while any watcher is active, so a `defer()` posted from
+    // a handler would be starved forever. That is reachable from framework code on
+    // a public API path (`tcp::connector::deliver_failure_deferred()`, qbm-http's
+    // reconnect), so the queue must also be serviced from INSIDE the loop.
+    //
+    // `_defer_wake` is that hook. It is normally never started, so it holds no
+    // reference on the loop and never perturbs `activecnt` or the poll timeout;
+    // `defer()` merely FEEDS it an event. libev drains `pendings` from the highest
+    // priority downwards and this watcher sits at `EV_MINPRI` (every qb watcher
+    // stays at the default priority), so its callback runs after every other
+    // watcher pending in the same iteration — precisely `defer()`'s "tail of the
+    // current turn, never re-entrant from inside a handler" contract, and it holds
+    // identically under `run(0)`, `EVRUN_ONCE` and `EVRUN_NOWAIT`.
+    //
+    // Leftovers (a callback that itself defers — excluded from this pass by the
+    // snapshot bound) must NOT be re-fed: `ev_feed_event` lands in the pass that is
+    // still draining and would run them in the same turn. They are re-armed with a
+    // 0-delay one-shot instead, which expires on the next loop iteration.
+    ev::timer _defer_wake;
+
+    void
+    _on_defer_wake(ev::timer &, int) {
+        const std::size_t n = _drain_deferred();
+        _nb_invoked_events += n;
+        _total_events_processed += n;
+        if (!_deferred.empty() && !_defer_wake.is_active())
+            _defer_wake.start(0.); // next turn, never this pass
+    }
+
     // Run every callback queued BEFORE this pass; one that itself defers is left
     // for the next loop turn (the snapshot count bounds the drain and stops a
     // self-re-deferring callback from starving the loop). Never runs re-entrantly.
@@ -451,7 +483,14 @@ public:
      * `QB_EV_BACKEND` environment variable (see `_resolve_backend_flags()`).
      */
     listener()
-        : _loop(_resolve_backend_flags()) {}
+        : _loop(_resolve_backend_flags())
+        , _defer_wake(_loop) {
+        _defer_wake.set<listener, &listener::_on_defer_wake>(this);
+        // Lowest priority: libev invokes pendings highest-priority-first, so the
+        // drain lands after every other watcher pending in the same iteration.
+        // Safe here — the watcher is neither active nor pending at construction.
+        ev_set_priority(static_cast<ev_timer *>(&_defer_wake), EV_MINPRI);
+    }
 
     /**
      * @brief libev backend actually in use by this listener's loop.
@@ -507,20 +546,28 @@ public:
         // execution. Watchers are detached below before the flush runs(), so nothing
         // new is enqueued here.
         _deferred.clear();
+        _defer_wake.stop(); // also clears a pending feed; nothing is left to drain
         if (_registered_head) {
             // Detach every handler but do not delete it here: async::base stores
             // a reference to the embedded event, so deleting the wrapper while
             // the owning async object is still alive leaves a dangling
             // `_async_event`. The owner's destructor will unregister and delete
             // the detached wrapper later.
-            IRegisteredKernelEvent *cur = _registered_head;
-            _registered_head            = nullptr;
-            _registered_count           = 0;
-            while (cur) {
-                auto *next = cur->_list_next;
+            //
+            // Drain strictly from the head, popping each node with `_unlink()` BEFORE
+            // touching it, and re-reading `_registered_head` on every iteration. Never
+            // cache a `_list_next` across `destroy(owner)`: that call runs arbitrary
+            // user code (the `async::callback` closure's captured state — e.g. the last
+            // `shared_ptr` to a still-registered session), and that code's own `~base`
+            // re-enters `unregisterEvent()` on ANOTHER still-linked node, freeing it. A
+            // cached `next` pointing at that node then becomes dangling and the next
+            // `cur->stop()` is a use-after-free. Popping through `_unlink()` also keeps
+            // `_registered_count` exact — the previous "null the head + zero the count"
+            // prelude let such a re-entrant `_unlink` underflow the counter to SIZE_MAX.
+            while (_registered_head) {
+                IRegisteredKernelEvent *cur = _registered_head;
+                (void) _unlink(cur);
                 cur->stop();
-                cur->_list_prev         = nullptr;
-                cur->_list_next         = nullptr;
                 cur->_detached_by_clear = true;
                 if (cur->_destroy_owner && !_is_dispatching(cur)) {
                     // Loop-owned, self-deleting handler (e.g. an `async::callback`
@@ -541,7 +588,6 @@ public:
                     cur->_destroy_owner = nullptr;
                     destroy(owner); // frees `cur`; do not touch it afterwards
                 }
-                cur = next;
             }
             for (int i = 0; i < 4; ++i)
                 run(EVRUN_NOWAIT);
@@ -585,7 +631,23 @@ public:
         // (the wrapper), so nothing below dereferences w._interface afterwards.
         DispatchNode node{w._interface, _dispatch_top};
         _dispatch_top = &node;
-        w._interface->invoke();
+        // Contain user exceptions HERE — the single locus every watcher dispatch flows
+        // through. `invoke()` runs arbitrary user code (`on(event::disconnected&&)`,
+        // `on(event::pending_read&&)`, `on(event::eos&&)`, a protocol handler, an
+        // `ev::stat` observer, …), and libev is built as C (qb/modules/ev, LANGUAGES C):
+        // letting an exception unwind through `ev_invoke_pending`/`ev_run` is UB — it
+        // skips libev's own epilogue (`--loop_depth`, the `loop_done = EVBREAK_CANCEL`
+        // reset that re-arms a broken loop) and, on toolchains that do not emit unwind
+        // info for C (MSVC), is a hard failure. It also strands `_dispatch_top` on a
+        // destroyed stack frame, permanently corrupting the re-entrancy guard `clear()`
+        // reads. Zero cost on the non-throwing path (table-driven EH), and it matches the
+        // policy already applied at every other loop-facing boundary (`Timeout::on`,
+        // `ScopedTimeout::on`, `_drain_deferred`).
+        try {
+            w._interface->invoke();
+        } catch (...) {
+            LOG_WARN("[qb-io] exception escaped an event handler; contained by the event loop");
+        }
         _dispatch_top = node.prev;
         ++_nb_invoked_events;
         ++_total_events_processed;
@@ -713,6 +775,13 @@ public:
     void
     defer(std::function<void()> fn) {
         _deferred.push_back(std::move(fn));
+        // Arm the in-loop drain hook (see `_defer_wake`) so the queue is serviced even
+        // when `run()` never returns. Skipped while draining: a callback that defers
+        // must land on the NEXT turn, and `_on_defer_wake` re-arms it with a 0-delay
+        // one-shot for exactly that. The pending/active tests keep a burst of defers to
+        // a single queue entry.
+        if (!_in_defer_drain && !_defer_wake.is_pending() && !_defer_wake.is_active())
+            _defer_wake.feed_event(EV_CUSTOM);
     }
 
     /**

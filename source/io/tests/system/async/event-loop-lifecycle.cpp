@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -356,6 +357,101 @@ TEST_F(EventLoopLifecycleTest, ClearDestroysPendingLoopOwnedCallback) {
     // Pumping afterwards must not resurrect the destroyed callback.
     async::run(EVRUN_NOWAIT);
     EXPECT_FALSE(ran);
+    EXPECT_EQ(async::listener::current.size(), 0u);
+}
+
+// =============================================================================
+// The dispatch locus contains an exception thrown by a watcher handler
+// =============================================================================
+
+// Regression: listener::on() invoked the handler unguarded, so a throwing user
+// handler -- `on(event::disconnected&&)`, `on(event::pending_read&&)`, an ev::stat
+// observer, any of them reachable from application code that merely allocates --
+// unwound straight through libev's `ev_invoke_pending`/`ev_run`. libev is built as
+// C (qb/modules/ev, LANGUAGES C), so that is UB: it skips libev's epilogue
+// (`--loop_depth`, the `loop_done` reset that re-arms a broken loop) and has no
+// unwind info at all on MSVC. It also stranded `listener::_dispatch_top` on a
+// destroyed stack frame, corrupting the re-entrancy guard clear() reads. The loop
+// must contain it instead, exactly as Timeout::on and the defer drain already do.
+TEST_F(EventLoopLifecycleTest, HandlerExceptionIsContainedAtTheDispatchLocus) {
+    struct Thrower {
+        bool entered = false;
+        void
+        on(async::event::timer &) {
+            entered = true;
+            throw std::runtime_error("handler boom");
+        }
+    } thrower;
+
+    auto &watcher = async::listener::current.registerEvent<async::event::timer>(thrower);
+    // start(0.) — an ALREADY-EXPIRED one-shot, which libev dispatches on the next loop iteration.
+    // A 1 ms timer pumped with EVRUN_NOWAIT (which does NOT block) was a timing trap: 2000 non-
+    // blocking iterations complete in well under a millisecond on a fast host, so the timer never
+    // expired and the handler never ran. It only passed because earlier tests in the same binary
+    // burned enough wall time first — run this case in isolation and it failed deterministically.
+    watcher.start(0.);
+
+    // A pending loop-owned callback so the post-throw clear() below exercises the
+    // `_destroy_owner` branch (the one that consults `_dispatch_top`).
+    bool ran = false;
+    async::callback([&ran]() { ran = true; }, 30s);
+
+    // The throw must NOT escape the event loop. Bound the pump by wall clock as well as by
+    // iterations so a regression that stops dispatching cannot hang the suite.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    EXPECT_NO_THROW({
+        while (!thrower.entered && std::chrono::steady_clock::now() < deadline)
+            async::run(EVRUN_NOWAIT);
+    });
+    EXPECT_TRUE(thrower.entered) << "the throwing handler never ran";
+
+    // The loop is still healthy and the registry is still coherent afterwards.
+    EXPECT_NO_THROW(async::run(EVRUN_NOWAIT));
+    EXPECT_NO_THROW(async::listener::current.clear());
+    EXPECT_EQ(async::listener::current.size(), 0u) << "clear() must still reclaim every watcher after a contained throw";
+    EXPECT_FALSE(ran);
+
+    // `Thrower` is a bare stack object, not an `async::base`, so nothing unregisters on its
+    // behalf. That matters because `clear()` deliberately only DETACHES a user-owned watcher —
+    // deleting it there would dangle the `_async_event` reference an owning `async::base` still
+    // holds — and leaves reclamation to the owner's destructor. This test owns the registration,
+    // so this test must release it. Caught by LSan on Linux (macOS ASan has no leak detector, so
+    // the suite was green there); the wrapper, not the product, was at fault.
+    async::listener::current.unregisterEvent(watcher._interface);
+}
+
+// =============================================================================
+// clear(): a destroyed owner may unregister ANOTHER still-linked watcher
+// =============================================================================
+
+// Regression (use-after-free): clear() used to cache `cur->_list_next` and then
+// run `destroy(owner)`, which executes arbitrary user code -- the async::callback
+// closure's captured state. Here that state is the last shared_ptr to a live
+// FlagTimer, so its ~with_timeout re-enters unregisterEvent() on the very node the
+// cached `next` pointed at and frees it; the loop then called `stop()` on freed
+// memory (SEGV: the RegisteredKernelEvent freelist had already overwritten the
+// vptr). It also drove _registered_count (zeroed up-front) below zero to SIZE_MAX.
+//
+// Registration order is load-bearing: the registry is a prepend list, so the
+// FlagTimer (built first) must sit immediately AFTER the Timeout (built last) for
+// the cached-next to be the node the destructor frees.
+TEST_F(EventLoopLifecycleTest, ClearSurvivesOwnerDestructorUnregisteringAnotherWatcher) {
+    const auto baseline = async::listener::current.size();
+
+    {
+        auto victim = std::make_shared<FlagTimer>(30s); // registers the watcher that follows
+        async::callback([victim]() { FAIL() << "callback must not fire"; }, 30s);
+        EXPECT_EQ(async::listener::current.size(), baseline + 2) << "expected one watcher for the timer and one for the pending callback";
+    } // the closure now holds the ONLY reference to `victim`
+
+    // clear() destroys the loop-owned Timeout -> ~closure -> ~FlagTimer ->
+    // unregisterEvent(next node). Must not touch freed memory, and must leave an
+    // exact (non-underflowed) count.
+    EXPECT_NO_THROW(async::listener::current.clear());
+    EXPECT_EQ(async::listener::current.size(), 0u) << "clear() must reclaim both watchers and keep the count exact";
+
+    // The loop is still healthy afterwards.
+    EXPECT_NO_THROW(async::run(EVRUN_NOWAIT));
     EXPECT_EQ(async::listener::current.size(), 0u);
 }
 

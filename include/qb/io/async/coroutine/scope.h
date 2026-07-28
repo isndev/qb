@@ -656,10 +656,17 @@ namespace detail {
 // join_all() — a when_any / with_deadline loser, or actor-scope cancellation — never
 // leaves this detached worker writing through a freed slot (use-after-free). Mirrors
 // parallel_map_worker.
+// `void` branches store a `std::monostate` (detail::value_slot_t) so `parallel()` accepts
+// `task<void>` — the default task type — like any other. See task.h for the trait.
 template <typename T>
 task<void>
-capture_result_shared(task<T> t, std::shared_ptr<std::optional<T>> result) {
-    *result = co_await std::move(t);
+capture_result_shared(task<T> t, std::shared_ptr<std::optional<value_slot_t<T>>> result) {
+    if constexpr (std::is_void_v<T>) {
+        co_await std::move(t);
+        *result = std::monostate{};
+    } else {
+        *result = co_await std::move(t);
+    }
 }
 
 template <typename Scope, typename ResultsTuple, typename TasksTuple, size_t... Is>
@@ -677,7 +684,7 @@ spawn_capture_impl(Scope &scope, ResultsTuple &results, TasksTuple &tasks_tuple,
  * @ingroup Coroutine
  */
 template <typename... Tasks>
-task<std::tuple<typename Tasks::value_type...>>
+task<std::tuple<detail::value_slot_t<typename Tasks::value_type>...>>
 parallel(Tasks... tasks) {
     coroutine_scope scope(coroutine_scope::cleanup_policy::join_all);
 
@@ -685,7 +692,7 @@ parallel(Tasks... tasks) {
     // a parallel() frame reclaimed while parked at join_all() (a when_any / with_deadline
     // loser, or actor-scope cancellation) must not leave a detached worker writing through
     // a freed slot (use-after-free). The workers keep the slots alive until they finish.
-    auto                 results = std::make_tuple(std::make_shared<std::optional<typename Tasks::value_type>>()...);
+    auto                 results = std::make_tuple(std::make_shared<std::optional<detail::value_slot_t<typename Tasks::value_type>>>()...);
     std::tuple<Tasks...> tasks_tuple(std::move(tasks)...);
 
     detail::spawn_capture_impl(scope, results, tasks_tuple, std::index_sequence_for<Tasks...>{});
@@ -739,12 +746,19 @@ namespace detail {
 // or actor-scope cancellation) while these detached workers are still in flight. Holding
 // both alive for the worker's whole lifetime degrades a reclaimed coordinator to harmless
 // wasted work instead of a use-after-free write through freed frame storage.
+// `R` is already the storage type (detail::value_slot_t of the mapped task's value_type),
+// so a `task<void>` mapper stores a `std::monostate` marker instead of failing to compile.
 template <typename F, typename Item, typename R>
 task<void>
 parallel_map_worker(std::shared_ptr<semaphore> sem, F fn, std::shared_ptr<std::vector<std::optional<R>>> results,
                     std::size_t idx, Item item) {
-    auto guard      = co_await sem->scoped_acquire();
-    (*results)[idx] = co_await fn(item);
+    auto guard = co_await sem->scoped_acquire();
+    if constexpr (std::is_same_v<R, std::monostate>) {
+        co_await fn(item);
+        (*results)[idx] = std::monostate{};
+    } else {
+        (*results)[idx] = co_await fn(item);
+    }
 }
 
 } // namespace detail
@@ -762,9 +776,10 @@ parallel_map_worker(std::shared_ptr<semaphore> sem, F fn, std::shared_ptr<std::v
 template <typename Range, typename F>
 auto
 parallel_map(const Range &items, F f, size_t max_concurrency = 10)
-    -> task<std::vector<typename std::invoke_result_t<F, typename Range::value_type>::value_type>> {
-    using result_type       = std::invoke_result_t<F, typename Range::value_type>;
-    using inner_result_type = typename result_type::value_type;
+    -> task<std::vector<detail::value_slot_t<typename std::invoke_result_t<F, typename Range::value_type>::value_type>>> {
+    using result_type = std::invoke_result_t<F, typename Range::value_type>;
+    // Storage type, not the raw result type: a `task<void>` mapper maps to std::monostate.
+    using inner_result_type = detail::value_slot_t<typename result_type::value_type>;
 
     // sem + results are co-owned (shared_ptr) with the detached workers: if this
     // coordinator frame is destroyed while parked at join_all() below (a when_any /

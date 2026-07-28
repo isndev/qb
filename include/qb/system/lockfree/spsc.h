@@ -271,6 +271,16 @@ protected:
      * @param internal_buffer Pointer to the internal buffer
      * @param max_size Maximum size of the buffer
      * @return Number of elements processed
+     *
+     * @warning **Only safe when each ring slot is an independent item.** This walks the ring
+     *          storage IN PLACE, so when the readable range wraps the end of the buffer it
+     *          invokes @p functor TWICE, on two disjoint segments — splitting any logical item
+     *          that spans several slots (e.g. a multi-bucket `qb::Event`, which the producer's
+     *          `enqueue` deliberately writes with a two-section memcpy across the wrap). A
+     *          consumer that parses variable-length items by an embedded size field will then
+     *          read a header whose item runs past the segment. If your items can span more than
+     *          one slot, use the copy-out `dequeue(func, scratch, n)` overload instead: it
+     *          reassembles the batch contiguously before calling the functor.
      */
     template <typename _Func>
     size_t

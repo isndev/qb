@@ -62,7 +62,10 @@ namespace qb::io::test {
 ssl_resource_path(const std::string &file_name) {
     // `__FILE__` is THIS header (tests/shared/), so the source-tree copy lives one
     // level up under system/resources/ssl/ — stable no matter where the test sits.
-    const std::filesystem::path here        = std::filesystem::path(__FILE__).parent_path();
+    // lexically_normal() first: `__FILE__` is the include path as WRITTEN, so from a test under
+    // e.g. system/tcp/ it carries `..` components that make the purely-lexical parent_path()
+    // chain drift off the source tree. See the same note in qbm/http/tests/shared/ssl_test_resource.h.
+    const std::filesystem::path here        = std::filesystem::path(__FILE__).lexically_normal().parent_path();
     const std::filesystem::path source_tree = here.parent_path() / "system" / "resources" / "ssl" / file_name;
     const std::filesystem::path cwd         = std::filesystem::current_path();
 

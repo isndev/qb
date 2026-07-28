@@ -38,6 +38,7 @@
 #include <set>
 #include <stdexcept>
 #include <tuple>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -1048,4 +1049,65 @@ TEST_F(CoroutineCombinators, TimeoutVoidReclaimedWhileParked) {
         EXPECT_EQ(r.index, 1u);
         co_await sleep(60ms); // the detached void runner completes late — must NOT resume the freed frame
     });
+}
+
+// =============================================================================
+// task<void> composes through the whole aggregate-combinator family
+// =============================================================================
+
+// Regression (hard COMPILE error, not a runtime bug): every combinator that STORES
+// per-branch results derived its storage straight from `Task::value_type`, so
+// `task<void>` — the framework's DEFAULT task type — instantiated `std::tuple<void>` /
+// `std::vector<void>` / `std::optional<void>` and failed deep inside libc++ ("field has
+// incomplete type 'void'"). Broken: when_all (variadic + vector), when_any(vector),
+// parallel, parallel_map, with_deadline. Nothing in the tree ever composed void tasks, so
+// nothing caught it. The fix routes every result SLOT through detail::value_slot_t (void →
+// std::monostate); this test is the instantiation that keeps the family buildable, and it
+// pins the mixed-pack rule (a void branch keeps its tuple position).
+TEST_F(CoroutineCombinators, VoidTasksComposeThroughEveryAggregateCombinator) {
+    std::atomic<int>  ran{0};
+    std::atomic<bool> done{false};
+
+    auto v = [&ran]() -> task<void> {
+        co_await sleep(1ms);
+        ran.fetch_add(1);
+    };
+    auto i = []() -> task<int> {
+        co_await sleep(1ms);
+        co_return 7;
+    };
+
+    coro_scheduler().spawn([&, v, i]() -> task<void> {
+        co_await when_all(v(), v());
+
+        std::vector<task<void>> vec;
+        vec.push_back(v());
+        vec.push_back(v());
+        co_await when_all(std::move(vec));
+
+        std::vector<task<void>> vec2;
+        vec2.push_back(v());
+        auto any_v = co_await when_any(std::move(vec2));
+        EXPECT_EQ(any_v.first, 0u);
+
+        co_await parallel(v(), v());
+
+        std::vector<int> items{1, 2, 3};
+        auto             mapped = co_await parallel_map(items, [&ran](int) -> task<void> { ran.fetch_add(1); co_return; }, 2);
+        EXPECT_EQ(mapped.size(), 3u) << "a void mapper still yields one (monostate) slot per item";
+
+        co_await with_deadline(v(), std::chrono::steady_clock::now() + 2s);
+
+        // Mixed pack: the void branch keeps its position and binds to std::monostate.
+        auto [mono, seven] = co_await when_all(v(), i());
+        static_assert(std::is_same_v<decltype(mono), std::monostate>, "a void branch must occupy a monostate slot");
+        EXPECT_EQ(seven, 7);
+
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); }, 5s)) << "void-task combinator coordinator never finished";
+    // 2 (when_all) + 2 (when_all vector) + 1 (when_any vector) + 2 (parallel)
+    // + 3 (parallel_map) + 1 (with_deadline) + 1 (mixed when_all) = 12
+    EXPECT_EQ(ran.load(), 12) << "every void branch must actually have run";
 }

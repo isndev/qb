@@ -24,6 +24,14 @@ public:
         return endpoint::connect(remote_uri, alpn_protocols);
     }
 
+    /// Braced-ALPN overload — see `endpoint::connect(uri, std::initializer_list<std::string>)`.
+    /// Required HERE too: these declarations HIDE the base's overload set, so without it
+    /// `connect(uri, {"h3"})` on a connector is again ambiguous against the `tls_config` overload.
+    bool
+    connect(qb::io::uri const &remote_uri, std::initializer_list<std::string> alpn_protocols) {
+        return endpoint::connect(remote_uri, std::vector<std::string>(alpn_protocols));
+    }
+
     bool
     connect(qb::io::uri const &remote_uri, qb::io::quic::tls_config tls,
             std::vector<std::string> const &alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
@@ -87,6 +95,14 @@ public:
     bool
     connect(qb::io::uri const &remote_uri, std::vector<std::string> const &alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
         return endpoint::connect(remote_uri, alpn_protocols);
+    }
+
+    /// Braced-ALPN overload — see `endpoint::connect(uri, std::initializer_list<std::string>)`.
+    /// Required HERE too: these declarations HIDE the base's overload set, so without it
+    /// `connect(uri, {"h3"})` on a connector is again ambiguous against the `tls_config` overload.
+    bool
+    connect(qb::io::uri const &remote_uri, std::initializer_list<std::string> alpn_protocols) {
+        return endpoint::connect(remote_uri, std::vector<std::string>(alpn_protocols));
     }
 
     bool

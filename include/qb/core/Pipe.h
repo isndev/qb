@@ -111,8 +111,16 @@ public:
      * @param  args    Arguments forwarded to the `_Event` constructor.
      * @return Mutable reference to the newly constructed event in the pipe buffer.
      *         The caller may modify event fields via this reference before the event
-     *         is consumed by the destination actor. Do **not** store the reference
-     *         past the current scope — its lifetime is managed by the framework.
+     *         is consumed by the destination actor.
+     *
+     * @attention **The reference is invalidated by the very next event queued into this pipe** —
+     *            the pipe is a growable buffer, so a later `push`/`allocated_push` (including one
+     *            issued indirectly by `Actor::push`/`send`/`broadcast` to any actor on the same
+     *            destination core) either reallocates it or compacts it in place. Compaction is
+     *            the dangerous case: the stale reference stays inside a live allocation and
+     *            silently aliases a different event. Finish populating the event before queueing
+     *            anything else. Pinned by `PipeAllocatorContract.*` in
+     *            `qb-io/tests/unit/core/pipe-allocator.cpp`.
      *
      * @details
      * Events pushed through `Pipe::push()` are delivered in FIFO order relative to
@@ -150,6 +158,7 @@ public:
      *                 a large dynamic payload (e.g. a `std::shared_ptr<std::vector<T>>`).
      * @param  args    Arguments forwarded to the `_Event` constructor.
      * @return Mutable reference to the newly constructed event in the pre-allocated slot.
+     *         Invalidated by the next event queued into this pipe — same contract as `push()`.
      *
      * @details
      * Use this overload instead of `push()` when the event's **effective in-pipe size**

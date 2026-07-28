@@ -157,6 +157,34 @@ TEST_F(CallbackDispatchTest, DeferFromWithinDeferWaitsForTheNextTurn) {
     EXPECT_EQ(stage.load(), 2);
 }
 
+// Regression: the deferred queue used to be drained ONLY after `_loop.run()` returned.
+// A blocking `async::run()` -- the documented standalone main loop ("run forever") --
+// never returns while any watcher is active, so a defer() posted from a handler was
+// starved indefinitely. That is reachable from framework code on a public API path:
+// tcp::connector::deliver_failure_deferred() (a synchronously-failing connect) and the
+// qbm-http/1.1 reconnect both defer. The queue must now also be serviced from INSIDE the
+// loop, at the tail of the current turn.
+//
+// Observable contract: with a long-lived watcher keeping the loop parked, the deferred
+// callback must run BEFORE a later real timer -- not after run() finally returns. The
+// watchdog timer always breaks the loop, so this test fails loudly instead of hanging.
+TEST_F(CallbackDispatchTest, DeferIsDrainedFromInsideABlockingRun) {
+    std::vector<int> order; // 1 = deferred callback, 2 = watchdog timer
+
+    async::callback([] {}, 1h); // a never-firing watcher keeps ev_run parked
+    async::callback(
+        [&order] {
+            order.push_back(2);
+            async::break_parent(); // guarantees run() returns even if the defer starves
+        },
+        200ms);
+    async::defer([&order] { order.push_back(1); });
+
+    async::run(); // blocking run — the documented standalone loop
+
+    EXPECT_EQ(order, (std::vector<int>{1, 2})) << "defer() must be drained inside the blocking run, not only after it returns";
+}
+
 TEST_F(CallbackDispatchTest, PendingDeferIsDroppedOnListenerClear) {
     // Teardown drops pending deferred callbacks WITHOUT running them; each captured
     // shared_ptr is released (the std::function destructor runs), so `ran` stays false

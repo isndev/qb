@@ -293,6 +293,36 @@ private:
         ::operator delete(p, std::align_val_t{::qb::io::async::detail::CoroutineFrameAllocator::kAlign}); \
     }
 
+/**
+ * @brief Storage stand-in for a coroutine result type.
+ *
+ * `task<void>` is the framework's DEFAULT task type, but `void` is not an object type:
+ * it cannot sit in a `std::tuple`, a `std::vector`, or a `std::optional`. Every aggregate
+ * combinator that STORES per-branch results (`when_all`, `when_any(vector)`, `parallel`,
+ * `parallel_map`) therefore has to route the result type through this trait instead of
+ * using `Task::value_type` directly — otherwise the whole family rejects `task<void>` with
+ * a hard compile error deep inside `<tuple>`/`<optional>` ("field has incomplete type
+ * 'void'").
+ *
+ * `void` maps to `std::monostate`: a real, empty, default-constructible object type. That
+ * keeps ONE uniform rule and preserves positional indexing for MIXED packs — e.g.
+ * `co_await when_all(void_task(), int_task())` binds to `[std::monostate, int]` — instead
+ * of silently renumbering the tuple when a branch happens to return nothing.
+ *
+ * Pair it with `if constexpr (std::is_void_v<...>)` at the `co_await`-and-store site: a
+ * void branch is awaited for its effect and its slot is simply left value-initialised.
+ */
+template <typename T>
+struct value_slot {
+    using type = T;
+};
+template <>
+struct value_slot<void> {
+    using type = std::monostate;
+};
+template <typename T>
+using value_slot_t = typename value_slot<T>::type;
+
 } // namespace detail
 
 // schedule_via_current is defined in scheduler.h - include after this file

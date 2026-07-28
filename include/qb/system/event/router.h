@@ -831,16 +831,20 @@ public:
         } else {
             onError(event);
             if constexpr (_CleanEvent) {
-                // A never-subscribed event type has no registered disposer
-                // (disposers are registered on subscribe<T>). Using `.at()` here
-                // throws std::out_of_range for such an event, and that exception
-                // propagates out of VirtualCore::__receive_events__ /
-                // __workflow__ — start_thread() catches it and flags
-                // ExceptionThrown, killing the whole VirtualCore (all its actors)
-                // for a single misaddressed/unhandled event. Look the disposer up
-                // and skip when absent: the event is dropped (a leak only for the
-                // rare unhandled non-trivially-destructible type) instead of
-                // taking the core down.
+                // Free the payload of an event nobody subscribed to. The lookup is deliberately
+                // tolerant (find, never `.at()`): `.at()` would throw std::out_of_range, and that
+                // exception propagates out of VirtualCore::__receive_events__ / __workflow__ —
+                // start_thread() catches it and flags ExceptionThrown, killing the whole
+                // VirtualCore (every actor on it) for one misaddressed event.
+                //
+                // A missing disposer used to be the NORM here, not a corner case: disposers were
+                // registered only by `subscribe<T>()`, so a type that was pushed but never
+                // subscribed anywhere had none and this branch silently leaked its
+                // `std::string` / `std::vector` members on every such event — unbounded, and
+                // reachable by an ordinary refactor mistake. `router::ensure_disposer<Event, T>()`
+                // now runs at every enqueue funnel (VirtualCore::push/send, Pipe::push/
+                // allocated_push), so the disposer always exists by the time an event can reach
+                // this branch. The find-and-skip stays as the no-throw safety net.
                 std::lock_guard lk(_disposers_mtx);
                 if (const auto dit = _disposers.find(event.getID()); dit != _disposers.cend())
                     dit->second->dispose(&event);
@@ -856,8 +860,9 @@ public:
      *          `VirtualCore::__pump_activations__` discarding an activation stash when an actor's
      *          async `onInit()` fails or it is killed during init, or dropping an event that
      *          overflowed the stash cap. Without it, a `push`'d event carrying a `std::string` /
-     *          `std::vector` would leak its heap storage. No-op for a never-subscribed type (no
-     *          registered disposer) — identical leak semantics to an unhandled event in `route()`.
+     *          `std::vector` would leak its heap storage. The disposer is guaranteed to exist for
+     *          any enqueued non-trivially-destructible type by `router::ensure_disposer<>()` at the
+     *          enqueue funnels; the absent-disposer branch remains only as a no-throw safety net.
      */
     void
     dispose(_RawEvent &event) const {
@@ -926,6 +931,30 @@ public:
             it.second->unsubscribe(id);
     }
 };
+
+
+/**
+ * @brief Guarantee a type-erased disposer exists for a NON-TRIVIALLY-DESTRUCTIBLE event type.
+ *
+ * The disposer registry that frees an event the framework must DROP (undeliverable residue at
+ * shutdown, a stash overflow, or an event whose type no actor on the destination core subscribed
+ * to) is populated only as a side effect of `memh::subscribe<E>()`. A type that is enqueued but
+ * never subscribed anywhere therefore has NO disposer, so every drop path silently leaks its
+ * `std::string` / `std::vector` members — reachable by ordinary means (a push to an actor that
+ * does not handle that type). Call this at every ENQUEUE site: that is the one place which
+ * statically knows each type entering the system.
+ *
+ * `if constexpr` emits NOTHING for the common trivially-destructible event; a non-trivial type
+ * pays one function-local static guard (a well-predicted relaxed load) per enqueue.
+ */
+template <typename _RawEvent, typename _Event>
+inline void
+ensure_disposer() noexcept {
+    if constexpr (!std::is_trivially_destructible_v<_Event>) {
+        static const typename memh<_RawEvent>::template SafeDispose<_Event> registered{};
+        (void) registered;
+    }
+}
 
 } // namespace qb::router
 

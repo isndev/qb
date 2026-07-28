@@ -459,9 +459,20 @@ TEST(SocketErrorPaths, HandleReadReadyClampsANegativeTimeout) {
     qb::io::socket sock;
     ASSERT_TRUE(sock.open(AF_INET, SOCK_STREAM, 0));
 
-    // A negative duration would make ::select fail with EINVAL; select() clamps it to
-    // zero (poll once). An unconnected socket is not readable, so the poll times out (0).
-    const int ret = qb::io::socket::handle_read_ready(sock.native_handle(), -1ms);
-    EXPECT_LE(ret, 0) << "a negative-timeout poll must be clamped and return promptly, got " << ret;
+    // A negative duration would make ::select fail with EINVAL; socket::select clamps it to zero
+    // (poll once). What is under test is the CLAMP, and its two observable consequences are that
+    // the call does not fail (-1/EINVAL) and that it returns immediately instead of blocking.
+    //
+    // Deliberately NOT asserted: whether the socket comes back readable. That is platform
+    // behaviour, not ours — Linux reports an unconnected TCP socket as select-readable (a read
+    // would return an error, which counts as readable) and returns 1, while macOS reports it as
+    // not readable and returns 0. The original `EXPECT_LE(ret, 0)` encoded the macOS answer and
+    // failed on Linux; it was conflating "the timeout was clamped" with "nothing is readable".
+    const auto start = std::chrono::steady_clock::now();
+    const int  ret   = qb::io::socket::handle_read_ready(sock.native_handle(), -1ms);
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    EXPECT_GE(ret, 0) << "a negative timeout must be clamped, not passed through to ::select as EINVAL (-1)";
+    EXPECT_LT(elapsed, 1s) << "a clamped (zero) timeout must poll once and return, never block";
     sock.close();
 }

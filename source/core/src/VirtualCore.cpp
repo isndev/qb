@@ -167,7 +167,20 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
             // must NOT be stashed or its init would deadlock on its own reply) or stashed
             // and replayed FIFO once the actor becomes active.
             if (!dest.is_broadcast() && __is_activating__(dest) && event->getID() != qb::Event::type_to_id<qb::KillEvent>()) {
-                if (!qb::detail::ask_try_deliver_reply(*event, dest)) {
+                if (qb::detail::ask_try_deliver_reply(*event, dest)) {
+                    // Consumed by a pending continuation — and this is the END of that event's
+                    // life, so it must be disposed exactly like every other terminal path
+                    // (route() disposes after the handler; the stash disposes on overflow and
+                    // on a failed init; the replay routes and disposes). The awaiter took what
+                    // it needed BY VALUE — `ask` moves the event into its `result`, `ask_stream`
+                    // moves it into the chunk deque, `ping`/`require` copy two scalars — so
+                    // nothing references these bytes afterwards. Skipping the destructor leaked
+                    // whatever the thunk did not move out: the whole payload for a thunk that
+                    // moves nothing (`ask_stream`'s end-of-stream marker, discovery replies),
+                    // and the original's heap for any exchange event whose move degrades to a
+                    // copy (a const member, or a user-declared copy ctor suppressing the move).
+                    _router.dispose(*event);
+                } else {
                     // Stash for FIFO replay on activation. If the cap overflowed the event is
                     // dropped here, so dispose its payload (the byte-copy never happened) to
                     // avoid leaking a non-trivial std::string/std::vector member.
@@ -180,7 +193,7 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
                 continue;
             }
         }
-        event->state.alive = 0;
+        event->state.bits.alive = 0;
         _router.route(*event, [this](auto &event) {
             if (!event.getDestination().is_broadcast())
                 LOG_WARN(*this << " failed to send event[" << event.getID() << "] sent from " << event.getSource());
@@ -234,7 +247,7 @@ VirtualCore::__receive__() {
 //   >= YIELD_THRESHOLD    partial bail: wake the destination's mailbox and
 //                         return to the workflow loop.
 //
-// Non-QoS events (`event.state.qos == 0`) preserve their original
+// Non-QoS events (`event.state.bits.qos == 0`) preserve their original
 // best-effort semantics: a single `try_send` attempt, then drop on failure.
 // -----------------------------------------------------------------------------
 
@@ -275,7 +288,7 @@ VirtualCore::__flush_all__() noexcept {
                 continue;
             }
 
-            if (!event.state.qos) {
+            if (!event.state.bits.qos) {
                 // Best-effort event: dropped on backpressure (preserves the
                 // original fire-and-forget semantics for QoS-0 events such as
                 // metrics or heartbeats). The "sent" counter is advanced to
@@ -555,7 +568,7 @@ VirtualCore::__pump_activations__() noexcept {
         LOG_INFO(*ait->second << " activated");
         for (auto &buckets : act.stash) {
             auto *ev        = reinterpret_cast<Event *>(buckets.data());
-            ev->state.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
+            ev->state.bits.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
             _router.route(*ev, [this](auto &e) {
                 if (!e.getDestination().is_broadcast())
                     LOG_WARN(*this << " failed to deliver stashed event[" << e.getID() << "]");
@@ -893,14 +906,14 @@ VirtualCore::push(Event const &event) noexcept {
 void
 VirtualCore::reply(Event &event) noexcept {
     std::swap(event.dest, event.source);
-    event.state.alive = 1;
+    event.state.bits.alive = 1;
     send(event);
 }
 
 void
 VirtualCore::forward(ActorId const dest, Event &event) noexcept {
     event.dest        = dest;
-    event.state.alive = 1;
+    event.state.bits.alive = 1;
     send(event);
 }
 //! Event Api

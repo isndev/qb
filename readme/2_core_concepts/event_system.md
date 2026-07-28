@@ -23,7 +23,7 @@ Every message exchanged between actors derives publicly from `qb::Event`, define
 | `getID()` | `Event::id_type` | The event's type identifier, used to dispatch to the matching `on()` handler. |
 | `getSource()` | `qb::ActorId` | The `ActorId` of the actor that sent the event. |
 | `getDestination()` | `qb::ActorId` | The `ActorId` the event was routed to. |
-| `getQOS()` | `uint8_t` | Quality-of-service level, `0`–`2` (higher is higher priority). |
+| `getQOS()` | `uint8_t` | Quality-of-service level: `2` on the base `Event` (the default), `0` on `EventQOS0`. Read only by the cross-core flush, as a binary `!= 0` gate. |
 | `is_alive()` | `bool` | Framework liveness bit used during event reuse by `reply()`/`forward()`. |
 | `getSize()` | `std::size_t` | Total bytes the event occupies in the pipe (its bucket count times the bucket size). |
 

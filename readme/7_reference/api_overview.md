@@ -202,8 +202,10 @@ class CacheService : public qb::ServiceActor<CacheTag> { /* ... */ };
 `Event::id_type` is `qb::EventId` in release builds (`NDEBUG`) and `const char *` in debug builds, so
 route on the event's runtime type rather than storing a raw `getID()` value across build configurations.
 
-Quality-of-service variants are `EventQOS2`/`EventQOS1` (both aliases of `Event`, higher value processed
-first) and `EventQOS0`, a distinct lowest-priority, unordered event. System events include `KillEvent`,
+Quality-of-service variants are `EventQOS2`/`EventQOS1` (both plain aliases of `Event`, which carries
+`qos == 2`) and `EventQOS0`, a distinct type carrying `qos == 0`. QoS is **not** a dispatch priority:
+events always drain FIFO, and `qos` is read in exactly one place — the cross-core flush, as a binary
+`!= 0` gate deciding *guaranteed retry* vs *drop on backpressure*. System events include `KillEvent`,
 `SignalEvent`, `PingEvent`, `RequireEvent`, and `UnregisterCallbackEvent`. For payloads, prefer
 [`qb::string<N>`](#strings-and-containers) for inline strings and a smart pointer for large or
 dynamically sized data. See [The event system](../2_core_concepts/event_system.md).

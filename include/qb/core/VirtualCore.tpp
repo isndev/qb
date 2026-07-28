@@ -142,6 +142,7 @@ VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) noexc
 template <typename T, typename... _Init>
 void
 VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) noexcept {
+    router::ensure_disposer<Event, T>(); // no-op for the trivially-destructible events send requires
     auto &pipe = __getPipe__(dest._core_id);
     auto &data = pipe.template allocate<T>(std::forward<_Init>(init)...);
 
@@ -166,6 +167,9 @@ VirtualCore::broadcast(ActorId const source, _Init &&...init) noexcept {
 template <typename T, typename... _Init>
 T &
 VirtualCore::push(ActorId const dest, ActorId const source, _Init &&...init) noexcept {
+    // THE enqueue funnel for Actor::push / to().push / reply / forward: guarantee this type can
+    // be freed on any drop path even if no actor ever subscribes to it. See Pipe.tpp.
+    router::ensure_disposer<Event, T>();
     auto &pipe = __getPipe__(dest._core_id);
     auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
 

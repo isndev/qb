@@ -25,6 +25,7 @@
 
 #include <qb/io/udp/socket.h>
 #include <charconv>
+#include <limits>
 #include <cstring>
 #if !defined(_WIN32)
 #include <net/if.h>
@@ -33,6 +34,18 @@
 namespace qb::io::udp {
 
 namespace {
+// Clamp a caller-supplied byte count to what the `int`-taking `recvfrom`/`sendto`
+// wrappers can represent, exactly as `tcp::socket::read`/`write` already do.
+// Without it, a `len > INT_MAX` narrows to a NEGATIVE `int`, which the POSIX
+// `recvfrom(2)` prototype then widens back to a huge `size_t` — the kernel would
+// write far past the caller's buffer. `qb::io::udp::socket` is public API, so the
+// bound belongs here rather than at each of its call sites.
+[[nodiscard]] inline int
+clamp_io_len(std::size_t len) noexcept {
+    constexpr auto kMax = static_cast<std::size_t>(std::numeric_limits<int>::max());
+    return static_cast<int>(len > kMax ? kMax : len);
+}
+
 // Resolves an interface specification (numeric index or name like "eth0") to
 // an interface index in a noexcept-safe way. The previous implementation used
 // std::stoi(iface), which throws on non-numeric input — fatal here because
@@ -95,7 +108,7 @@ socket::init(int af) noexcept {
 
 int
 socket::read(void *dest, std::size_t len, qb::io::endpoint &peer) const noexcept {
-    return recvfrom(dest, static_cast<int>(len), peer);
+    return recvfrom(dest, clamp_io_len(len), peer);
 }
 
 int
@@ -121,7 +134,7 @@ socket::read_timeout(void *dest, std::size_t len, qb::io::endpoint &peer, const 
     }
 
     // Read the data
-    result = recvfrom(dest, static_cast<int>(len), peer);
+    result = recvfrom(dest, clamp_io_len(len), peer);
 
     // Restore blocking mode if needed
     if (was_blocking) {
@@ -144,7 +157,7 @@ socket::try_read(void *dest, std::size_t len, qb::io::endpoint &peer) const noex
     }
 
     // Try to read without waiting
-    int result = recvfrom(dest, static_cast<int>(len), peer);
+    int result = recvfrom(dest, clamp_io_len(len), peer);
 
     // Restore blocking mode if needed
     if (was_blocking) {
@@ -156,7 +169,7 @@ socket::try_read(void *dest, std::size_t len, qb::io::endpoint &peer) const noex
 
 int
 socket::write(const void *data, std::size_t len, qb::io::endpoint const &to) const noexcept {
-    return sendto(data, static_cast<int>(len), to);
+    return sendto(data, clamp_io_len(len), to);
 }
 
 int
