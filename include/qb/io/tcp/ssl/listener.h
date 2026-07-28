@@ -290,16 +290,29 @@ public:
     /**
      * @brief Set specific SSL options on the listener's context.
      * @param options_to_set A bitmask of SSL_OP_* flags to set.
-     * @return The new options mask after setting, or current options if context is null.
+     * @return The new options mask after setting, or 0 if context is null.
+     *
+     * @note The mask is `uint64_t`, matching `SSL_CTX_set_options()` in OpenSSL 3.x. It must NOT
+     *       be `long`: `long` is 64-bit on LP64 (Linux/macOS) but **32-bit on Windows** (LLP64),
+     *       and OpenSSL defines `SSL_OP_*` flags above bit 31 —
+     *       `SSL_OP_NO_TX_CERTIFICATE_COMPRESSION` (32), `SSL_OP_NO_RX_CERTIFICATE_COMPRESSION`
+     *       (33), `SSL_OP_ENABLE_KTLS_TX_ZEROCOPY_SENDFILE` (34), `SSL_OP_PREFER_NO_DHE_KEX` (35),
+     *       `SSL_OP_LEGACY_EC_POINT_FORMATS` (36). Through a 32-bit `long` those truncate to 0 (the
+     *       call silently becomes a no-op and the option the caller asked for is never applied),
+     *       and bit 31 (`SSL_OP_CRYPTOPRO_TLSEXT_BUG`) is worse still: it lands on the sign bit and
+     *       sign-extends back to `uint64_t` as `0xFFFFFFFF80000000`, setting every option from bit
+     *       31 to 63 at once. Neither is observable on LP64, which is why this only surfaces on
+     *       Windows.
      */
-    long set_options(long options_to_set);
+    uint64_t set_options(uint64_t options_to_set);
 
     /**
      * @brief Clear specific SSL options on the listener's context.
      * @param options_to_clear A bitmask of SSL_OP_* flags to clear.
-     * @return The new options mask after clearing, or current options if context is null.
+     * @return The new options mask after clearing, or 0 if context is null.
+     * @note `uint64_t` for the same LLP64 reason as @ref set_options.
      */
-    long clear_options(long options_to_clear);
+    uint64_t clear_options(uint64_t options_to_clear);
 
     /**
      * @brief Set the session timeout for the listener's SSL_CTX.

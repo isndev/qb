@@ -24,6 +24,7 @@
  * @ingroup Tests
  */
 
+#include <chrono>
 #include <vector>
 
 #include <openssl/ssl.h>
@@ -342,6 +343,33 @@ TEST(SslContextValue, OneServerContextSharedAcrossManyConnections) {
     SSL *s = SSL_new(server.native());
     ASSERT_NE(s, nullptr) << "the shared server context was freed early";
     SSL_free(s);
+}
+
+TEST(SslContextValue, FluentConfigKnobsAllApply) {
+    // Exercise the fluent config knobs the other cases don't touch, keeping the whole public config surface
+    // under test (secure-by-default client base + every remaining knob).
+    auto c = Context::client()
+                 .max_version(TlsVersion::v1_3)
+                 .ciphers("HIGH:!aNULL:!MD5")
+                 .ciphersuites("TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256")
+                 .curves("X25519:P-256")
+                 .session_cache(64)
+                 .session_timeout(std::chrono::seconds(600))
+                 .on_keylog([](std::string_view) {});
+    ASSERT_TRUE(c.ok()) << c.error();
+    EXPECT_EQ(SSL_CTX_get_max_proto_version(c.native()), TLS1_3_VERSION);
+}
+
+TEST(SslContextValue, BadConfigValueFailsClosedAndPreservesFirstError) {
+    // A malformed config value must fail the context CLOSED (records an error, ok() == false) — never
+    // silently ignored; this covers the fail() branch of the fluent setters.
+    auto c = Context::client().ciphersuites("qb-not-a-real-tls13-ciphersuite");
+    EXPECT_FALSE(c.ok());
+    EXPECT_FALSE(c.error().empty());
+    // Once in the error state, subsequent setters are no-ops that preserve the FIRST error.
+    const auto first = c.error();
+    c.curves("qb-not-a-real-curve").session_cache(8);
+    EXPECT_EQ(c.error(), first);
 }
 
 // No in-file main(): links the framework's shared gtest-main.

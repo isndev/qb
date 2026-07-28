@@ -279,15 +279,18 @@ listener::get_session_cache_size() const {
     return SSL_CTX_sess_get_cache_size(_ctx.native());
 }
 
-long
-listener::set_options(long options_to_set) {
+// uint64_t, not long -- see the note on listener::set_options in the header: `long` is 32-bit on
+// Windows (LLP64), which truncates every SSL_OP_* flag above bit 31 to 0 and sign-extends bit 31
+// into all of bits 31..63.
+uint64_t
+listener::set_options(uint64_t options_to_set) {
     if (!_ctx)
         return 0;
     return SSL_CTX_set_options(_ctx.native(), options_to_set);
 }
 
-long
-listener::clear_options(long options_to_clear) {
+uint64_t
+listener::clear_options(uint64_t options_to_clear) {
     if (!_ctx)
         return 0;
     return SSL_CTX_clear_options(_ctx.native(), options_to_clear);

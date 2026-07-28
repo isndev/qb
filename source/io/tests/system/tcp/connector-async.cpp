@@ -95,7 +95,10 @@ echo_one_byte_server(qb::io::tcp::listener &listener, int count) {
 // and its `close()` path from a SYSTEM test, deterministically over loopback.
 struct RawAcceptorServer : qb::io::async::tcp::acceptor<RawAcceptorServer, qb::io::transport::accept> {
     std::atomic<int> *accepted_count = nullptr;
-    int               last_handle    = -1;
+    // The portable descriptor type, not `int`: on Windows a native handle is a SOCKET
+    // (UINT_PTR, 64-bit and unsigned), so storing it in an `int` truncates it and turns the
+    // sentinel comparison below into a sign test that means nothing there.
+    ::socket_type last_handle = qb::io::invalid_socket;
 
     void
     on(qb::io::tcp::socket &&accepted) {
@@ -392,7 +395,7 @@ TEST_F(ConnectorAsyncTest, AcceptTransportAcceptsClientAndClosesListener) {
 
     EXPECT_TRUE(pump_until([&] { return accepted_count.load() == 1; })) << "accept transport never accepted the loopback client";
     EXPECT_EQ(accepted_count.load(), 1);
-    EXPECT_GE(server.last_handle, 0) << "accepted socket should carry a valid native handle";
+    EXPECT_NE(server.last_handle, qb::io::invalid_socket) << "accepted socket should carry a valid native handle";
 
     client.disconnect();
 

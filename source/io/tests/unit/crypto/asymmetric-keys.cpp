@@ -203,12 +203,23 @@ TEST_F(CryptoAsymmetricTest, X25519SharedSecretIsSymmetricPemAndRaw) {
 TEST_F(CryptoAsymmetricTest, X25519PemRejectsIncompatiblePeerKey) {
     auto [x_private, x_public]   = qb::crypto::generate_x25519_keypair();
     auto [ed_private, ed_public] = qb::crypto::generate_ed25519_keypair();
-    (void) x_public;
-    (void) ed_private;
 
     EXPECT_THROW(qb::crypto::x25519_key_exchange("not a pem", ed_public), std::runtime_error);
     EXPECT_THROW(qb::crypto::x25519_key_exchange(x_private, "not a pem"), std::runtime_error);
+
+    // A wrong-ALGORITHM peer key is the dangerous one: it is well-formed PEM, so it parses, and
+    // the mismatch only surfaces inside EVP_PKEY_derive_set_peer(). OpenSSL treats that as a
+    // caller bug (crypto/evp/keymgmt_lib.c asserts match_type(...)), so on a build with
+    // assertions compiled in — vcpkg's Windows debug triplet, and several distro debug packages —
+    // it calls abort() instead of returning an error. qb must therefore reject the type itself.
+    //
+    // DISCRIMINATION: with the guard in crypto_asymmetric.cpp reverted this case ABORTS the test
+    // process (exit code 3) on an assertion-enabled OpenSSL, and merely passes on an NDEBUG one —
+    // which is why the defect survived two audit passes on macOS and Linux.
     EXPECT_THROW(qb::crypto::x25519_key_exchange(x_private, ed_public), std::runtime_error);
+    // Symmetric half: the PRIVATE key must be X25519 too. Reached through the same guard, so it
+    // never gets far enough to depend on OpenSSL's own diagnostics.
+    EXPECT_THROW(qb::crypto::x25519_key_exchange(ed_private, x_public), std::runtime_error);
 }
 
 // =============================================================================

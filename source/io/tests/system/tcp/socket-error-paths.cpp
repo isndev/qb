@@ -428,19 +428,44 @@ TEST(SocketErrorPaths, SendNBreaksInsteadOfBlockingOnBackpressuredClosedPeer) {
     ASSERT_TRUE(client.open(AF_INET, SOCK_STREAM, 0));
     ASSERT_EQ(client.connect(qb::io::endpoint("127.0.0.1", port)), 0);
 
-    // Tiny send buffer so the fill happens immediately; wait until the peer has closed.
-    client.set_optval(SOL_SOCKET, SO_SNDBUF, 4096);
+    // Tiny send buffer; wait until the peer has closed.
+    ASSERT_EQ(client.set_optval(SOL_SOCKET, SO_SNDBUF, 4096), 0);
     while (!peer_closed.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    // A large payload cannot flush to a backpressured/closed peer within a 1ns budget:
-    // send_n breaks out (buffer-full timeout or a fatal send error) with fewer than len
-    // bytes transferred instead of blocking forever.
+    // send_n's contract is that it BREAKS OUT within its time budget instead of blocking on a
+    // peer that cannot take the data. It is NOT a promise about how many bytes the kernel
+    // accepts — that is platform behaviour, and the two platforms disagree:
+    //
+    //   * POSIX honours SO_SNDBUF as a real cap, so the socket fills after a few KiB, send()
+    //     returns EWOULDBLOCK, the 1ns budget is already spent, and send_n returns a SHORT count.
+    //   * Winsock does NOT treat SO_SNDBUF as a cap on an individual send: it buffers the
+    //     caller's data regardless and surfaces the dead peer on a LATER operation. The whole
+    //     256 KiB is accepted by one send() and send_n returns len having never waited at all.
+    //
+    // Both satisfy the contract. Asserting a short count therefore tested the operating system
+    // rather than qb, and failed on Windows for a reason nothing in send_n could cause (measured:
+    // the call returns in ~2 ms with sent == len). So the count/promptness half is asserted
+    // unconditionally, and the short-count half only where it is a real property.
+    //
+    // It is genuinely NOT testable on Windows, and not for want of a better setup: a variant with
+    // a peer that ACCEPTS and then never reads a byte — the textbook way to close the receive
+    // window — was tried, and Winsock still took a whole 8 MiB payload in 6 ms with SO_SNDBUF at
+    // 4096. Windows simply pends the caller's buffer rather than refusing it. This case is
+    // therefore POSIX-only coverage, and is marked as such instead of being weakened for
+    // everyone.
     std::vector<char> payload(256 * 1024, 'x');
-    const int         sent = client.send_n(payload.data(), static_cast<int>(payload.size()), qb::duration(1));
+    const auto        t0      = std::chrono::steady_clock::now();
+    const int         sent    = client.send_n(payload.data(), static_cast<int>(payload.size()), qb::duration(1));
+    const auto        elapsed = std::chrono::steady_clock::now() - t0;
+
     EXPECT_GE(sent, 0);
+    EXPECT_LE(sent, static_cast<int>(payload.size())) << "send_n must never claim more than it was given";
+    EXPECT_LT(elapsed, std::chrono::seconds(5)) << "send_n must honour its time budget, not block on a dead peer";
+#if !defined(_WIN32)
     EXPECT_LT(sent, static_cast<int>(payload.size())) << "send_n must break rather than transfer the whole payload to a stalled peer";
+#endif
 
     client.close();
     server_thread.join();
