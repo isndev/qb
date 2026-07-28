@@ -27,9 +27,11 @@
 
 namespace qb {
 
+
 template <typename T, typename... _Args>
 T &
 Pipe::push(_Args &&...args) const noexcept {
+    router::ensure_disposer<Event, T>();
     constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
     auto                 &data        = pipe->template allocate_back<T>(std::forward<_Args>(args)...);
     data.id                           = data.template type_to_id<T>();
@@ -48,6 +50,7 @@ Pipe::push(_Args &&...args) const noexcept {
 template <typename T, typename... _Args>
 T &
 Pipe::allocated_push(std::size_t size, _Args &&...args) const noexcept {
+    router::ensure_disposer<Event, T>();
     size += sizeof(T);
     size       = size / sizeof(EventBucket) + static_cast<bool>(size % sizeof(EventBucket));
     auto &data = *(new (reinterpret_cast<T *>(pipe->allocate_back(size))) T(std::forward<_Args>(args)...));

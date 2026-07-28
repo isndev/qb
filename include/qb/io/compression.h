@@ -477,6 +477,19 @@ size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t
 template <typename Output>
 std::size_t
 uncompress(Output &output, const char *data, std::size_t size, std::size_t max, int window_bits) {
+    // Empty input decompresses to nothing. This early return is REQUIRED, not an
+    // optimisation: with `size == 0` the decode loop below computes `chunk = 2 * size == 0`,
+    // so `avail_out` is 0 on entry, `inflate()` can make no progress and returns Z_BUF_ERROR
+    // (an accepted status), `size_uncompressed` never advances, and
+    // `while (inflate_s.avail_out == 0)` spins FOREVER — an unkillable 100%-CPU loop on the
+    // calling (event-loop) thread that allocates nothing, so it never even trips a memory
+    // limit. The `pipe<char>` specialisation in compression.cpp has carried this guard; the
+    // generic template — which is what `std::string` and every user-supplied container
+    // instantiate, and what the public one-shot `gzip::uncompress(data, size)` /
+    // `deflate::uncompress(data, size)` call — did not. Found by fuzzing.
+    if (size == 0)
+        return 0;
+
     z_stream inflate_s;
 
     inflate_s.zalloc   = Z_NULL;

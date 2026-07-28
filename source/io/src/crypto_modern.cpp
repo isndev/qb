@@ -450,34 +450,39 @@ crypto::hmac(const std::vector<unsigned char> &data, const std::vector<unsigned 
     }
 
     try {
-        // Créer la clé pour HMAC
-        EVP_PKEY *pkey = EVP_PKEY_new_mac_key(EVP_PKEY_HMAC, nullptr, key.data(), key.size());
+        // Ownership rules here match crypto::encrypt / decrypt / hash above, and the match is
+        // LOAD-BEARING: `mdctx` is owned by the `catch` below, so NO path inside this `try` may
+        // free it. Every error path used to do `EVP_MD_CTX_free(mdctx); throw;` — and the catch
+        // then freed it a SECOND time. That is a real, deterministic DOUBLE FREE (heap
+        // corruption), reachable through the public API by the most ordinary misconfiguration
+        // there is: an EMPTY HMAC key. `EVP_PKEY_new_mac_key(..., nullptr, 0)` fails, the first
+        // error path fires, and the process double-frees — so a service whose JWT secret env var
+        // is unset corrupts its heap on the first `jwt::create()` / `jwt::verify()`.
+        //
+        // `pkey` is now an RAII holder rather than five hand-written `EVP_PKEY_free` calls: the
+        // duplication is exactly what let the two owners drift apart, so removing it is the fix,
+        // not just deleting the extra frees.
+        const std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey{
+            EVP_PKEY_new_mac_key(EVP_PKEY_HMAC, nullptr, key.data(), static_cast<int>(key.size())), &EVP_PKEY_free};
         if (!pkey) {
-            EVP_MD_CTX_free(mdctx);                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             throw std::runtime_error("Failed to create HMAC key: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                                      get_openssl_error());           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Initialiser l'opération de signature
-        if (EVP_DigestSignInit(mdctx, nullptr, md, nullptr, pkey) != 1) {
-            EVP_PKEY_free(pkey);                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            EVP_MD_CTX_free(mdctx);                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        if (EVP_DigestSignInit(mdctx, nullptr, md, nullptr, pkey.get()) != 1) {
             throw std::runtime_error("Failed to initialize HMAC: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                                      get_openssl_error());           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Mettre à jour le contexte avec les données
         if (EVP_DigestSignUpdate(mdctx, data.data(), data.size()) != 1) {
-            EVP_PKEY_free(pkey);                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            EVP_MD_CTX_free(mdctx);                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             throw std::runtime_error("Failed to update HMAC: " + get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Déterminer la taille du résultat
         size_t hmac_len = 0;
         if (EVP_DigestSignFinal(mdctx, nullptr, &hmac_len) != 1) {
-            EVP_PKEY_free(pkey);                                         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            EVP_MD_CTX_free(mdctx);                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             throw std::runtime_error("Failed to determine HMAC size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                                      get_openssl_error());               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
@@ -485,13 +490,10 @@ crypto::hmac(const std::vector<unsigned char> &data, const std::vector<unsigned 
         // Récupérer le résultat final
         std::vector<unsigned char> hmac_value(hmac_len);
         if (EVP_DigestSignFinal(mdctx, hmac_value.data(), &hmac_len) != 1) {
-            EVP_PKEY_free(pkey);                                                         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-            EVP_MD_CTX_free(mdctx);                                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             throw std::runtime_error("Failed to finalize HMAC: " + get_openssl_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         // Nettoyer
-        EVP_PKEY_free(pkey);
         EVP_MD_CTX_free(mdctx);
         return hmac_value;
     } catch (const std::exception &) {

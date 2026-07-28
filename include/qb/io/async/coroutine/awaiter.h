@@ -58,9 +58,11 @@
 #ifndef QB_IO_ASYNC_COROUTINE_AWAITER_H
 #define QB_IO_ASYNC_COROUTINE_AWAITER_H
 
+#include <cassert>
 #include <coroutine>
 #include <chrono>
 #include <functional>
+#include <optional>
 // No <atomic>: libev callbacks fire on the same thread as the coroutines
 // (VirtualCore thread). Plain bools are sufficient for single-thread cooperative.
 #include <memory>
@@ -148,9 +150,20 @@ struct awaiter_base {
      * @brief Resume the coroutine
      *
      * Called when the operation completes. Stops the watcher.
+     *
+     * @note Deliberately NON-virtual. `await_resume()` is resolved statically by the
+     *       compiler-generated `co_await` machinery on the *concrete* awaiter — it is
+     *       never dispatched through an `awaiter_base*` (nothing in qb-io, or in any
+     *       awaiter contract, ever holds one). Making it virtual pinned every awaiter's
+     *       result type to `void`: a result-carrying awaiter such as `async_awaiter<T>`
+     *       declares `T await_resume()`, which as an override is ill-formed (`error:
+     *       virtual function 'await_resume' has a different return type`) — the whole
+     *       documented `async_awaiter<int>` / `async_awaiter<std::string>` bridge failed
+     *       to compile. Keeping it non-virtual is what makes result-carrying awaiters
+     *       expressible at all, and drops an indirect call from every `co_await`.
      */
-    virtual void
-    await_resume() {
+    void
+    await_resume() noexcept {
         resumed_ = true;
     }
 
@@ -343,7 +356,7 @@ struct timer_awaiter : awaiter_base {
      * Also marks the awaiter as resumed and unregisters from suspended set.
      */
     void
-    await_resume() override {
+    await_resume() {
         if (yield_only_) {
             awaiter_base::await_resume();
             return;
@@ -505,7 +518,7 @@ struct socket_awaiter : awaiter_base {
      * Also marks the awaiter as resumed and unregisters from suspended set.
      */
     void
-    await_resume() override {
+    await_resume() {
         // Gate only on `started_`, never on `ev_is_active`: `ev_io_stop` clears
         // any pending event for this watcher first (so a fired-but-not-yet-drained
         // watcher cannot be invoked on a freed frame later), then no-ops if the
@@ -647,6 +660,10 @@ struct async_awaiter : awaiter_base {
     await_resume() {
         unregister_suspended();
         awaiter_base::await_resume();
+        // Invariant: the ONLY path that schedules this frame for resumption is
+        // `callback_`, which engages `result_` before calling `on_event_ready()`.
+        assert(result_.has_value() && "async_awaiter resumed without a result — the async operation "
+                                      "must invoke its callback exactly once to complete the await");
         return std::move(*result_);
     }
 

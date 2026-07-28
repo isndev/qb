@@ -895,7 +895,14 @@ with_deadline(task<T> &&operation, std::chrono::steady_clock::time_point deadlin
     // load or at the millisecond boundary, silently discarding a valid
     // value. `when_any` already guarantees that the loser is irrelevant.
     if (res.index == 0) {
-        co_return res.template get<T>();
+        // `get<void>()` would be ill-formed (`std::any_cast<void>`): a void operation has
+        // nothing to unwrap, only a possible exception to re-surface.
+        if constexpr (std::is_void_v<T>) {
+            res.rethrow_if_exception();
+            co_return;
+        } else {
+            co_return res.template get<T>();
+        }
     }
     if (res.template get<int>() == 1) {
         throw cancelled_error();

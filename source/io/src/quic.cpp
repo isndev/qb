@@ -149,6 +149,31 @@ get_conn_cb(ngtcp2_crypto_conn_ref *ref) {
     return *static_cast<ngtcp2_conn **>(ref->user_data);
 }
 
+// ngtcp2 1.23 deprecated `ngtcp2_conn_get_scid` and `ngtcp2_conn_get_expiry` in favour of the
+// const-correct `*2` spellings (identical semantics; only the `conn` parameter gained `const`).
+// qb's FindNgtcp2 does not pin a minimum version, so select at COMPILE TIME rather than dropping
+// support for pre-1.23 releases — an unconditional switch would simply fail to build there.
+// NGTCP2_VERSION_NUM is 0xMMmmpp; 1.23.0 == 0x011700.
+#if defined(NGTCP2_VERSION_NUM) && NGTCP2_VERSION_NUM >= 0x011700
+inline std::size_t
+conn_get_scid(const ngtcp2_conn *conn, ngtcp2_cid *dest) noexcept {
+    return ngtcp2_conn_get_scid2(conn, dest);
+}
+inline ngtcp2_tstamp
+conn_get_expiry(const ngtcp2_conn *conn) noexcept {
+    return ngtcp2_conn_get_expiry2(conn);
+}
+#else
+inline std::size_t
+conn_get_scid(ngtcp2_conn *conn, ngtcp2_cid *dest) noexcept {
+    return ngtcp2_conn_get_scid(conn, dest);
+}
+inline ngtcp2_tstamp
+conn_get_expiry(ngtcp2_conn *conn) noexcept {
+    return ngtcp2_conn_get_expiry(conn);
+}
+#endif
+
 std::chrono::steady_clock::time_point
 to_time_point(ngtcp2_tstamp ts, std::chrono::steady_clock::time_point base) {
     if (ts == UINT64_MAX)
@@ -183,6 +208,7 @@ class native_backend final : public backend {
     qb::unordered_map<std::uint64_t, std::unique_ptr<native_backend>> _server_connections;
     qb::unordered_map<std::string, std::uint64_t>                     _server_cid_index;
     std::vector<ngtcp2_cid>                                           _scid_scratch; // reused by reconcile_server_cids (no per-packet alloc)
+    std::vector<std::string>                                          _cid_key_scratch; // reused by reconcile_server_cids (no per-packet alloc)
     std::vector<std::uint64_t>                                        _server_closed_connections;
     std::uint64_t                                                     _queued_stream_bytes    = 0;
     std::uint64_t                                                     _queued_stream_frames   = 0;
@@ -198,6 +224,11 @@ class native_backend final : public backend {
     tls_config                                                        _server_tls;
     std::string                                                       _local_cid_key;
     std::string                                                       _original_dcid_key;
+    /// CID keys this child currently owns in the PARENT's `_server_cid_index`, as installed by
+    /// `reconcile_server_cids` from ngtcp2's ACTIVE (non-retired) SCID set. Kept so reconcile can
+    /// remove the ones ngtcp2 has since retired — see the note there. Excludes `_local_cid_key` /
+    /// `_original_dcid_key`, which the accept path owns and which must outlive CID rotation.
+    std::vector<std::string> _indexed_scid_keys;
     // Address-validation Retry (RFC 9000 §8.1). PARENT: a stable secret keys the retry tokens it
     // generates and later verifies. CHILD: when the connection was accepted only after a validated
     // Retry token, carry the recovered original DCID (from the token) + the retry SCID we issued, so
@@ -352,7 +383,7 @@ public:
         }
         if (!_conn)
             return std::chrono::steady_clock::time_point::max();
-        return to_time_point(ngtcp2_conn_get_expiry(_conn), _base);
+        return to_time_point(conn_get_expiry(_conn), _base);
     }
 
     bool
@@ -701,13 +732,49 @@ private:
     reconcile_server_cids(native_backend *child) {
         if (!child || !child->_conn)
             return;
-        const std::size_t n = ngtcp2_conn_get_scid(child->_conn, nullptr);
+        // `conn_get_scid` (ngtcp2's get_scid2) returns only the SCIDs that are NOT RETIRED.
+        // This used to emplace that active set and never remove anything, so every CID the peer
+        // caused to be rotated out stayed in `_server_cid_index` for the whole life of the
+        // connection — and a peer can drive rotation at will with RETIRE_CONNECTION_ID. The index
+        // grew without bound on a long-lived connection (only `drain_events()` swept it, at
+        // close), and stale entries kept routing retired-DCID packets into ngtcp2 just to be
+        // rejected. It also made the function's name a lie: it added, it did not reconcile.
+        //
+        // Now it reconciles against the keys this child owns. `n` is bounded by the peer's
+        // active_connection_id_limit (a handful), so the set difference below is trivially small —
+        // and the common per-datagram case, where nothing rotated, exits after one comparison and
+        // performs NO hash lookups at all, which is strictly cheaper than the previous
+        // unconditional re-emplace of every active CID on every datagram.
+        const std::size_t n = conn_get_scid(child->_conn, nullptr);
         if (n == 0)
             return;
         _scid_scratch.resize(n);
-        ngtcp2_conn_get_scid(child->_conn, _scid_scratch.data());
+        conn_get_scid(child->_conn, _scid_scratch.data());
+
+        _cid_key_scratch.clear();
+        _cid_key_scratch.reserve(n);
         for (std::size_t i = 0; i < n; ++i)
-            _server_cid_index.emplace(cid_key(_scid_scratch[i]), child->_connection_id);
+            _cid_key_scratch.push_back(cid_key(_scid_scratch[i]));
+
+        // Unchanged (ngtcp2 keeps a stable order): nothing to do.
+        if (_cid_key_scratch == child->_indexed_scid_keys)
+            return;
+
+        // Retire the keys this child no longer advertises. `_local_cid_key` and
+        // `_original_dcid_key` are installed by the accept path and must survive rotation, so they
+        // are never removed here even if ngtcp2 has retired them as SCIDs.
+        for (auto const &old_key : child->_indexed_scid_keys) {
+            if (std::find(_cid_key_scratch.begin(), _cid_key_scratch.end(), old_key) != _cid_key_scratch.end())
+                continue;
+            if (old_key == child->_local_cid_key || old_key == child->_original_dcid_key)
+                continue;
+            if (auto it = _server_cid_index.find(old_key); it != _server_cid_index.end() && it->second == child->_connection_id)
+                _server_cid_index.erase(it);
+        }
+        for (auto const &key : _cid_key_scratch)
+            _server_cid_index.emplace(key, child->_connection_id);
+
+        child->_indexed_scid_keys = _cid_key_scratch;
     }
 
     native_backend *

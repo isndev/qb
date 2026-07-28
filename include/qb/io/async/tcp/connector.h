@@ -540,7 +540,19 @@ public:
  *                    certificate chain + hostname (default `true`, secure).
  *                    Pass `false` only for trusted/self-signed channels.
  */
+// `requires std::invocable<...>` is LOAD-BEARING, not decoration (it mirrors the guard the
+// starttls_connect overloads already carry). `Socket_` is not deducible, so the moment a caller
+// writes the documented coroutine form WITH an explicit transport and a timeout —
+// `co_await connect<qb::io::transport::stcp>(uri, 5s)` — this overload also becomes viable:
+// `Func_` deduces to `std::chrono::seconds` (an EXACT match), beating the coroutine overload's
+// `qb::duration` parameter (a chrono conversion). It then wins overload resolution and the build
+// dies deep inside `connector<transport::stcp, std::chrono::seconds>`. Constraining `Func_` to
+// things actually callable with a socket removes this overload from that contest, so the
+// coroutine factory is selected as documented. No test caught it because the tests only ever call
+// `connect(uri, timeout)` without an explicit template argument (where `Socket_` is non-deducible
+// and this overload is already excluded).
 template <typename Socket_, typename Func_>
+requires std::invocable<std::remove_reference_t<Func_> &, Socket_ &&>
 void
 connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
     auto op = std::make_shared<connector<Socket_, Func_>>(std::forward<Func_>(func), remote, qb::detail::to_ev_seconds(timeout), verify_peer);
@@ -561,7 +573,10 @@ connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::ze
  * @param func Callback function to call when connection completes
  * @param timeout Connection timeout in seconds (`0` = no deadline)
  */
+// Same constraint as the uri-first overload above — see its note. Keeping BOTH callback
+// overloads constrained is what stops the family from drifting apart again.
 template <typename Socket_, typename Func_>
+requires std::invocable<std::remove_reference_t<Func_> &, Socket_ &&>
 void
 connect(Socket_ &&existing_socket, uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
     auto op = std::make_shared<connector<Socket_, Func_>>(std::forward<Func_>(func), std::move(existing_socket), remote,

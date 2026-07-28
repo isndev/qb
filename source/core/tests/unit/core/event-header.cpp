@@ -82,15 +82,22 @@ TEST(EventHeader, EventIsExactlyOneBucketAndAligned) {
 // on the wire before VirtualCore overwrites `alive` at consume time, so they
 // are the real default contract — previously asserted nowhere.
 //
-// The Header union's only default member-initializer is `prot[4]`; reading it
-// back through the overlaid bitfields yields alive=1, qos=1 with the default
-// 64-byte bucket. (Verified against the compiled type, not hand-derived.)
+// The Header union's only default member-initializer is `prot[4]`; the bitfields read it back
+// out of `prot[3]` (the `: 16, : 8` padding declarators place `alive` at bit 24). The magic
+// `4 | ((bucket_bytes / 16) << 3)` therefore decodes to alive=0, qos=2, factor=bucket_bytes/16.
+//
+// This is a bitfield-layout oracle, hand-derived from the magic constant rather than echoed
+// back from the type: if the bitfields ever stop living in their own named struct member, every
+// one of them collapses onto bit 0 of `prot[0]` (in a union each member — including each
+// bitfield declarator — sits at offset 0) and these values all change.
 // ---------------------------------------------------------------------------
 
-TEST(EventHeader, DefaultEventIsAliveWithQos1) {
+TEST(EventHeader, DefaultEventIsNotAliveWithQos2) {
     Event e;
-    EXPECT_TRUE(e.is_alive()) << "the prot[] magic default-initializes the alive bit to 1";
-    EXPECT_EQ(e.getQOS(), 1u) << "default QOS encoded by the prot[] magic is 1 (EventQOS1 == base Event)";
+    EXPECT_FALSE(e.is_alive()) << "a freshly built event has NOT been re-enqueued: the liveness bit "
+                                  "is the reply()/forward() reuse marker and must start clear";
+    EXPECT_EQ(e.getQOS(), 2u) << "the prot[] magic encodes QOS 2 (`EventQOS2 == Event`, the "
+                                 "documented default) — a 1 here means the bitfields aliased bit 0";
 }
 
 TEST(EventHeader, DefaultDestinationAndSourceAreNotFound) {
@@ -104,12 +111,12 @@ TEST(EventHeader, DefaultDestinationAndSourceAreNotFound) {
 }
 
 // ---------------------------------------------------------------------------
-// EventQOS0's constructor sets state.qos = 0 through the union bitfield. Pin
-// the *observable* result on the real type: QOS becomes 0. This also documents
-// that writing the qos bitfield re-reads the alive bit as 0 (the QOS event is
-// trivially destructible and only ever delivered after VirtualCore forces
-// alive=0 anyway, so this is benign — but it is a surprising side effect worth
-// locking down so a "fix" that changes it is caught).
+// EventQOS0's constructor sets state.bits.qos = 0. `qos` and `alive` are DISJOINT fields of the
+// header word, so that write must leave the liveness bit alone — and, symmetrically, the
+// `alive = 1` that `reply()` / `forward()` perform on a re-enqueued event must leave `qos`
+// alone. If the two ever overlap again, `__flush_all__`'s `if (!event.state.bits.qos)` drop
+// test starts reading the liveness bit: a forwarded QOS0 event silently stops being droppable
+// under backpressure, and QOS0 construction silently marks the event as already-reused.
 // ---------------------------------------------------------------------------
 
 TEST(EventHeader, EventQos0HasQosZero) {
@@ -117,13 +124,37 @@ TEST(EventHeader, EventQos0HasQosZero) {
     EXPECT_EQ(q0.getQOS(), 0u) << "EventQOS0 ctor must encode QOS level 0";
 }
 
+TEST(EventHeader, EventQos0ConstructionDoesNotDisturbTheLivenessBit) {
+    qb::EventQOS0 q0;
+    EXPECT_FALSE(q0.is_alive()) << "setting qos must not write the alive bit";
+}
+
 TEST(EventHeader, EventQos0DiffersFromDefaultQos) {
-    // QOS0 is genuinely a different priority than the base Event default (1).
+    // QOS0 is genuinely a different priority than the base Event default (2).
     Event         base;
     qb::EventQOS0 q0;
     EXPECT_NE(q0.getQOS(), base.getQOS());
-    EXPECT_EQ(base.getQOS(), 1u);
+    EXPECT_EQ(base.getQOS(), 2u);
     EXPECT_EQ(q0.getQOS(), 0u);
+}
+
+// The reply()/forward() shape: a QOS0 event is consumed (alive=0), then re-enqueued (alive=1).
+// Its QOS must survive both writes, or the engine promotes a best-effort event to guaranteed
+// and spends the full 512-attempt backoff budget on it instead of dropping it.
+TEST(EventHeader, TogglingLivenessPreservesQosAcrossTheReplyForwardCycle) {
+    // `live()` is public only on ServiceEvent, and ServiceEvent is never QOS0 — so check the
+    // qos-write half on the QOS0 event the engine actually builds, and the alive-write half on
+    // a ServiceEvent. Together they pin both directions of the disjointness.
+    qb::EventQOS0 q0;
+    EXPECT_EQ(q0.getQOS(), 0u);
+    EXPECT_FALSE(q0.is_alive());
+
+    qb::ServiceEvent se;
+    const auto       qos_before = se.getQOS();
+    se.live(false); // __receive_events__ marks it consumed
+    EXPECT_EQ(se.getQOS(), qos_before) << "clearing the liveness bit must not touch qos";
+    se.live(true); // reply()/forward() re-enqueues it
+    EXPECT_EQ(se.getQOS(), qos_before) << "setting the liveness bit must not touch qos";
 }
 
 static_assert(std::is_trivially_destructible_v<qb::EventQOS0>, "QOS0 must stay byte-relocatable (no dtor) for the ring");

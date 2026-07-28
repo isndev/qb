@@ -26,6 +26,8 @@
 #include <qb/io/compression.h>
 #include <qb/io/crypto.h>
 #include <qb/system/allocator/pipe.h>
+#include <atomic>
+#include <chrono>
 #include <thread>
 #include <vector>
 
@@ -449,4 +451,57 @@ TEST(Compression, PipeSpecializationInitFailureThrows) {
     // size must be non-zero so the early `size == 0` return does not pre-empt init.
     EXPECT_THROW(qb::compression::uncompress(uncompress_out, payload.data(), payload.size(), /*max*/ 0u, /*window_bits*/ 7),
                  std::runtime_error);
+}
+
+// =============================================================================
+// Empty input must TERMINATE (regression: infinite 100%-CPU loop)
+// =============================================================================
+
+/**
+ * @test uncompress() with size == 0 returns immediately instead of spinning forever
+ * @brief Regression (hang, found by fuzzing): the generic
+ *        `template <typename Output> compression::uncompress(...)` lacked the `size == 0`
+ *        early return that the `pipe<char>` specialisation has. With size 0 the decode loop
+ *        computes `chunk = 2 * size == 0`, so `avail_out` is 0 on entry, `inflate()` can make
+ *        no progress and returns Z_BUF_ERROR (an accepted status), `size_uncompressed` never
+ *        advances, and `while (avail_out == 0)` never exits — an unkillable 100%-CPU spin on
+ *        the calling (event-loop) thread that allocates nothing, so no memory limit ever trips
+ *        it. Reached by the PUBLIC one-shot API `gzip::uncompress(data, 0)` /
+ *        `deflate::uncompress(data, 0)` and by the generic template with any container.
+ *
+ *        Driven on a worker thread with a hard deadline so a regression FAILS loudly instead
+ *        of hanging the whole suite.
+ */
+TEST(Compression, EmptyInputUncompressTerminates) {
+    std::atomic<bool> finished{false};
+    std::atomic<int>  completed{0};
+
+    std::thread worker([&] {
+        // Every public shape that routes through the generic template.
+        if (qb::gzip::uncompress(nullptr, 0).empty())
+            ++completed;
+        if (qb::deflate::uncompress(nullptr, 0).empty())
+            ++completed;
+        std::string out;
+        if (qb::compression::uncompress(out, nullptr, 0, 0, 15 + 16) == 0 && out.empty())
+            ++completed;
+        // The pipe specialisation already had the guard — keep it covered so the pair cannot drift.
+        qb::allocator::pipe<char> pipe_out;
+        if (qb::compression::uncompress(pipe_out, nullptr, 0, 0, 15 + 16) == 0)
+            ++completed;
+        finished.store(true, std::memory_order_release);
+    });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!finished.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    const bool done = finished.load(std::memory_order_acquire);
+    if (done)
+        worker.join();
+    else
+        worker.detach(); // it is spinning; let the process reap it at exit
+
+    ASSERT_TRUE(done) << "uncompress(data, 0) never returned — the size == 0 guard is missing";
+    EXPECT_EQ(completed.load(), 4) << "every empty-input uncompress shape must yield empty output";
 }

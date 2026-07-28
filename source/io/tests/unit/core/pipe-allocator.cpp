@@ -252,3 +252,54 @@ TEST(PipeAllocatorRobustness, MoveAssignLeavesSourceEmpty) {
     EXPECT_EQ(dst.view(), "MOVE_ASSIGN");
     EXPECT_TRUE(src.empty());
 }
+
+// =============================================================================
+// CONTRACT: allocate_back INVALIDATES every previously returned pointer
+// =============================================================================
+
+/**
+ * @test A pointer handed out by `allocate_back` is invalidated by the next `allocate_back` that
+ *       has to grow the buffer.
+ * @brief This is the allocator-level contract behind `qb::Actor::push` / `qb::Pipe::push`
+ *        returning a *reference* to the queued event for in-place population: the reference is
+ *        valid only until the next event is queued into the SAME pipe (i.e. the next
+ *        push/send/broadcast reaching the same destination core). Growth reallocates and memcpys,
+ *        so the old pointer dangles.
+ *
+ *        Only addresses are compared — the stale pointer is never dereferenced — so the test
+ *        proves the hazard without itself committing the UB it documents.
+ */
+TEST(PipeAllocatorContract, AllocateBackGrowthInvalidatesEarlierPointers) {
+    qb::allocator::pipe<char> p;
+    const auto                cap0  = p.capacity();
+    char *const               first = p.allocate_back(8);
+    ASSERT_NE(first, nullptr);
+
+    // Force at least one growth: request strictly more than the initial capacity can hold.
+    (void) p.allocate_back(cap0 + 1);
+    ASSERT_GT(p.capacity(), cap0) << "the pipe must have grown for this test to prove anything";
+
+    EXPECT_TRUE(first < p.begin() || first >= p.begin() + p.capacity())
+        << "after growth the earlier pointer no longer aliases the live buffer — any event "
+           "reference obtained from a previous push<>() is dangling at this point";
+}
+
+/**
+ * @test `reorder()` (the in-place compaction `allocate_back` performs instead of growing when the
+ *       freed prefix is large enough) also invalidates earlier pointers.
+ * @brief The nastier half of the contract: compaction keeps the SAME buffer and memmoves the live
+ *        bytes down, so a stale pointer stays inside the allocation and silently aliases a
+ *        DIFFERENT event. No allocator debugger can see that — only this contract can.
+ */
+TEST(PipeAllocatorContract, ReorderInvalidatesEarlierPointersWithoutFreeingTheBuffer) {
+    qb::allocator::pipe<char> p;
+    p.put("0123456789", 10);
+    p.free_front(6); // live bytes now start at offset 6
+    char *const before = p.begin();
+    ASSERT_EQ(p.view(), "6789");
+
+    p.reorder(); // compacts the live bytes back to offset 0 — same buffer, moved contents
+    EXPECT_EQ(p.view(), "6789");
+    EXPECT_NE(before, p.begin()) << "reorder moved the live bytes: a pointer captured before it "
+                                    "now aliases stale/other data inside a still-live allocation";
+}

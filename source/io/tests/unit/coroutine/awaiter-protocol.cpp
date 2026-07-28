@@ -41,6 +41,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -894,4 +895,49 @@ TEST_F(CoroutineAwaiterTests, TimerAwaiterDestructorStopsArmedTimer) {
 
     const long after = detail::CoroutineFrameAllocator::live_frames;
     EXPECT_EQ(after, baseline) << "timer awaiter teardown leaked " << (after - baseline) << " frame(s)";
+}
+
+// =============================================================================
+// async_awaiter<T> — the callback → co_await bridge
+// =============================================================================
+
+/**
+ * @test The documented async_awaiter<T> bridge compiles and delivers its result
+ * @brief Regression: awaiter_base::await_resume() used to be `virtual void`, which made
+ *        async_awaiter<T>'s `T await_resume()` an ill-formed override — every non-void
+ *        instantiation was a HARD COMPILE ERROR ("virtual function 'await_resume' has a
+ *        different return type"). The type is public, documented API (llm/qb.llm.api.md,
+ *        qb/readme/3_qb_io/coroutines.md) but was instantiated nowhere in the tree, so
+ *        nothing caught it. This test is the instantiation that keeps it buildable —
+ *        for a trivially-copyable result AND a non-trivial one — and pins the contract
+ *        that the value handed to the callback is what `co_await` yields.
+ */
+TEST_F(CoroutineAwaiterTests, AsyncAwaiterBridgesACallbackResult) {
+    std::atomic<int>          got_int{0};
+    std::atomic<bool>         done{false};
+    std::string               got_string;
+    std::function<void(int)>  deferred_cb; // proves the deferred (not-inline) completion path
+
+    auto *got_int_ptr    = &got_int;
+    auto *done_ptr       = &done;
+    auto *got_string_ptr = &got_string;
+    auto *deferred_cb_ptr = &deferred_cb;
+
+    coro_scheduler().spawn([got_int_ptr, done_ptr, got_string_ptr, deferred_cb_ptr]() -> task<void> {
+        // (a) callback invoked synchronously from inside await_suspend
+        got_string_ptr->assign(co_await async_awaiter<std::string>([](auto cb) { cb(std::string("hello")); }));
+        // (b) callback stashed and invoked later, from the loop
+        got_int_ptr->store(co_await async_awaiter<int>([deferred_cb_ptr](auto cb) { *deferred_cb_ptr = std::move(cb); }));
+        done_ptr->store(true);
+        co_return;
+    });
+
+    // Drive (a); the coroutine then parks inside (b) waiting on the stashed callback.
+    EXPECT_TRUE(pump_until([&] { return static_cast<bool>(deferred_cb); })) << "async_awaiter never reached the deferred stage";
+    EXPECT_EQ(got_string, "hello") << "synchronously-completed async_awaiter lost its result";
+    EXPECT_FALSE(done.load()) << "the coroutine resumed before its deferred callback fired";
+
+    deferred_cb(42); // complete the deferred operation
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "deferred async_awaiter never resumed";
+    EXPECT_EQ(got_int.load(), 42) << "deferred async_awaiter delivered the wrong result";
 }

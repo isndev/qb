@@ -558,4 +558,38 @@ TEST_F(CryptoPrimitivesTest, ConstantTimeCompareContracts) {
     EXPECT_TRUE(qb::crypto::constant_time_compare({}, {}));
 }
 
+// =============================================================================
+// hmac() error paths must not double-free (regression: heap corruption)
+// =============================================================================
+
+/**
+ * @test An HMAC key that OpenSSL rejects fails cleanly instead of double-freeing
+ * @brief Regression (DOUBLE FREE / heap corruption, found by fuzzing): `crypto::hmac` owned its
+ *        `EVP_MD_CTX` in the enclosing `catch`, yet EVERY error path inside the `try` also did
+ *        `EVP_MD_CTX_free(mdctx); throw;` — so the catch freed it a SECOND time. Its three sibling
+ *        functions (`encrypt`, `decrypt`, `hash`) all get this right; `hmac` was the lone outlier.
+ *
+ *        The trigger needs no attacker: an EMPTY key. `EVP_PKEY_new_mac_key(..., nullptr, 0)`
+ *        fails, the first error path fires, and the process double-frees — so a service whose JWT
+ *        secret comes from an unset environment variable corrupts its heap on the very first
+ *        `jwt::create()` / `jwt::verify()`. Under ASan the pre-fix code ABORTS here rather than
+ *        failing the assertion, which is the negative proof.
+ */
+TEST(Crypto, HmacWithRejectedKeyThrowsWithoutDoubleFree) {
+    const std::vector<unsigned char> data{'p', 'a', 'y', 'l', 'o', 'a', 'd'};
+    const std::vector<unsigned char> empty_key;
+
+    for (const auto alg : {qb::crypto::DigestAlgorithm::SHA256, qb::crypto::DigestAlgorithm::SHA512,
+                           qb::crypto::DigestAlgorithm::SHA1}) {
+        EXPECT_THROW((void) qb::crypto::hmac(data, empty_key, alg), std::runtime_error)
+            << "an empty HMAC key must be rejected, not silently accepted";
+    }
+
+    // The library is still usable afterwards — the failed call left no corrupted state.
+    const std::vector<unsigned char> good_key{'k', 'e', 'y', '-', 'm', 'a', 't', 'e', 'r', 'i', 'a', 'l'};
+    const auto                       mac = qb::crypto::hmac(data, good_key, qb::crypto::DigestAlgorithm::SHA256);
+    EXPECT_EQ(mac.size(), 32u);
+    EXPECT_EQ(qb::crypto::hmac(data, good_key, qb::crypto::DigestAlgorithm::SHA256), mac) << "HMAC must be deterministic";
+}
+
 } // namespace

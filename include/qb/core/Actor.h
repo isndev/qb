@@ -787,8 +787,16 @@ public:
      * // push<AnotherEvent>(target_id); // This will be processed by target_id after my_evt
      * @endcode
      * @note If the event type has a non-trivial destructor, the framework ensures it is called appropriately.
-     * @attention Do not store the returned reference beyond the current scope, as the event object's lifetime
-     *            is managed by the framework after it's sent.
+     * @attention **The returned reference dies at the very next event queued to the same
+     *            destination core** — not merely at the end of the enclosing scope. The pipe is a
+     *            growable buffer: the next `push`/`send`/`broadcast` whose destination resolves to
+     *            that core may reallocate it (invalidating the reference) or compact it in place
+     *            (leaving the reference aliasing a *different* event inside a still-live
+     *            allocation — which no allocator debugger can detect). Populate the event fully
+     *            **before** queueing anything else, exactly as the example above does; never hold
+     *            the reference across another send, a helper call that may send, or a loop
+     *            iteration. Pinned by `PipeAllocatorContract.*` in
+     *            `qb-io/tests/unit/core/pipe-allocator.cpp`.
      * @warning `noexcept`: an allocation failure while growing the pipe buffer or
      *          constructing the event (e.g. under OOM) cannot be reported and calls
      *          `std::terminate()`. Keep events small / allocation-light. See

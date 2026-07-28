@@ -164,7 +164,24 @@ public:
 
 private:
     union Header {
-        uint32_t : 16, : 8, alive : 1, qos : 2, factor : 5;
+        /**
+         * @brief Bit-field view of the 4-byte header word.
+         * @details The bit-fields **must** live in a named struct member, never as bare union
+         *          members: in a union every member is allocated at offset 0, and each bit-field
+         *          declarator is its own member — so `alive` (bit 0), `qos` (bits 0-1) and
+         *          `factor` (bits 0-4) would all alias one another **and** `prot[0]`. Writing
+         *          `alive` would rewrite `qos`, `EventQOS0`'s `qos = 0` would clear `alive`, and
+         *          the `'q'` of the magic would be mutated on every reply()/forward().
+         *
+         *          Inside a struct the `: 16, : 8` padding declarators do their job and place
+         *          `alive` at bit 24 — i.e. `prot[3]`, the one byte the default member
+         *          initializer below actually encodes (`4` → `qos = 2`, `<< 3` → `factor =
+         *          bucket_bytes / 16`, `alive = 0`). `prot[0..2]` ("qb\0") stays an untouched
+         *          magic for the whole life of the event.
+         */
+        struct {
+            uint32_t : 16, : 8, alive : 1, qos : 2, factor : 5;
+        } bits;
         uint8_t prot[4] = {'q', 'b', '\0', 4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) << 3)};
     } state;
     uint16_t bucket_size;
@@ -184,7 +201,7 @@ public:
      */
     [[nodiscard]] inline bool
     is_alive() const noexcept {
-        return state.alive;
+        return state.bits.alive;
     }
     /*!
      * @brief Get the event's type ID for event routing and handling
@@ -200,7 +217,7 @@ public:
      */
     [[nodiscard]] inline uint8_t
     getQOS() const noexcept {
-        return state.qos;
+        return state.bits.qos;
     }
     /*!
      * @brief Get the destination actor ID
@@ -255,7 +272,7 @@ using EventQOS1 = Event;
  */
 struct EventQOS0 : public Event {
     EventQOS0() {
-        state.qos = 0;
+        state.bits.qos = 0;
     }
 };
 
@@ -288,7 +305,7 @@ struct ServiceEvent : public Event {
      */
     inline void
     live(bool flag) noexcept {
-        state.alive = flag;
+        state.bits.alive = flag;
     }
 };
 

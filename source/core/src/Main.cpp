@@ -159,22 +159,37 @@ SharedCoreCommunication::dispose_residual_mailbox_events() noexcept {
     // instance; a default-constructed router suffices (it carries no per-core state for the
     // dispose path). Each surviving mailbox event is a byte-copy whose producer abandoned its
     // pipe copy without freeing the payload, so the mailbox copy is the sole owner — dispose
-    // it exactly once. consume_all walks the ring storage in place (no scratch buffer).
-    router::memh<Event> disposer;
+    // it exactly once.
+    //
+    // This MUST use the copy-out `dequeue(func, scratch, n)` — the same primitive the live
+    // receive path (`VirtualCore::__receive__`) uses — and NOT `consume_all`. `consume_all`
+    // walks the ring storage IN PLACE, so when the readable range wraps the end of the ring it
+    // invokes the functor TWICE, on two disjoint segments. Events are bucket-granular with no
+    // wrap alignment (the producer's `enqueue` splits them with a two-section memcpy), so a
+    // multi-bucket event straddling the wrap is torn in half: the first call sees a header whose
+    // `bucket_size` runs past the segment and disposes an event whose payload bytes are not
+    // there — running `~std::string` / `~std::vector` on out-of-range memory — and the second
+    // call reinterprets that event's TAIL buckets as a fresh event header and disposes a bogus
+    // type. A saturated mailbox (exactly the state this teardown sweep exists for) is guaranteed
+    // to wrap. Copying out first yields one contiguous, event-aligned batch per producer ring.
+    router::memh<Event>      disposer;
+    std::vector<EventBucket> scratch(MaxRingEvents);
     for (auto &mb : _mail_boxes) {
         if (!mb)
             continue;
-        mb->consume_all([&disposer](EventBucket *buffer, std::size_t const nb_buckets) {
-            std::size_t i = 0;
-            while (i < nb_buckets) {
-                auto      &event = *reinterpret_cast<Event *>(buffer + i);
-                const auto bsz   = event.bucket_size;
-                if (bsz == 0)
-                    break; // defensive: malformed event, avoid a zero-stride infinite loop
-                disposer.dispose(event);
-                i += bsz;
-            }
-        });
+        mb->dequeue(
+            [&disposer](EventBucket *buffer, std::size_t const nb_buckets) {
+                std::size_t i = 0;
+                while (i < nb_buckets) {
+                    auto      &event = *reinterpret_cast<Event *>(buffer + i);
+                    const auto bsz   = event.bucket_size;
+                    if (bsz == 0)
+                        break; // defensive: malformed event, avoid a zero-stride infinite loop
+                    disposer.dispose(event);
+                    i += bsz;
+                }
+            },
+            scratch.data(), MaxRingEvents);
     }
 }
 

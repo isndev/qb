@@ -41,6 +41,7 @@ qb_add_test(MODULE qb-core TIER system NAME async-callback-ordering SOURCES time
 # --- messaging --------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME messaging-api           SOURCES messaging/messaging-api.cpp           DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER system NAME messaging-reply-forward SOURCES messaging/messaging-reply-forward.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER system NAME messaging-send-nontrivial SOURCES messaging/send-nontrivial-payload.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 
 # --- event ------------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME service-event-ring SOURCES event/service-event-ring.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
@@ -68,6 +69,8 @@ qb_add_test(MODULE qb-core TIER system NAME actor-customization-points SOURCES c
 qb_add_test(MODULE qb-core TIER system NAME actor-message-serialization SOURCES concurrency/actor-message-serialization.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER system NAME qos1-backpressure           SOURCES concurrency/qos1-backpressure.cpp           DEPENDS ${PROJECT_NAME} LABELS slow requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME shutdown-saturation         SOURCES concurrency/shutdown-saturation.cpp         DEPENDS ${PROJECT_NAME} LABELS slow requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME shutdown-multibucket-residue SOURCES concurrency/shutdown-multibucket-residue.cpp DEPENDS ${PROJECT_NAME} LABELS slow requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME unhandled-event-disposal SOURCES concurrency/unhandled-event-disposal.cpp DEPENDS ${PROJECT_NAME})
 
 # --- regression -------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME router-callback-regressions SOURCES regression/router-callback-regressions.cpp DEPENDS ${PROJECT_NAME})
@@ -98,5 +101,6 @@ qb_add_test(MODULE qb-core TIER system NAME init-deadline      SOURCES init/init
 qb_add_test(MODULE qb-core TIER system NAME init-stress        SOURCES init/init-stress.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine slow)
 qb_add_test(MODULE qb-core TIER system NAME init-handle        SOURCES init/init-handle.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-gate-edges    SOURCES init/init-gate-edges.cpp    DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-gate-disposal SOURCES init/init-gate-disposal.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 
 qb_debug_message("Configured ${CMAKE_CURRENT_SOURCE_DIR} with the tiered test helper")

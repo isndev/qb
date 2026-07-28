@@ -65,6 +65,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -119,6 +120,31 @@ struct ReentrantSendEndpoint : qb::io::async::quic::endpoint {
         order.push_back("connection_closed");
         if (in_stream_data)
             close_seen_reentrantly = true;
+    }
+};
+
+
+// An endpoint whose first stream_data dispatch throws. Models any real handler that can throw —
+// an HTTP/3 route handler, or a plain std::bad_alloc while building a response.
+struct ThrowingDispatchEndpoint : qb::io::async::quic::endpoint {
+    using qb::io::async::quic::endpoint::endpoint;
+
+    int  data_dispatches = 0;
+    int  close_dispatches = 0;
+    bool throw_next       = true;
+
+    void
+    dispatch(qb::io::async::quic::event::stream_data const &) override {
+        ++data_dispatches;
+        if (throw_next) {
+            throw_next = false;
+            throw std::runtime_error("handler boom");
+        }
+    }
+
+    void
+    dispatch(qb::io::async::quic::event::connection_closed const &) override {
+        ++close_dispatches;
     }
 };
 
@@ -1424,4 +1450,81 @@ TEST(QuicAdapterEndpoint, QuicAvailabilityProbesAreComplementary) {
     } else {
         EXPECT_FALSE(reason.empty()) << "an unavailable QUIC build must explain why";
     }
+}
+
+/**
+ * @test A throwing dispatch must not permanently wedge the endpoint's event delivery
+ * @brief Regression: drain_backend_events() cleared its `_draining_events` re-entrancy flag with a
+ *        bare assignment at the bottom of the function. Every `dispatch()` is a VIRTUAL call into
+ *        user code and the events carry heap payloads, so an escaping exception (a user throw, or a
+ *        plain std::bad_alloc) is reachable — and it unwound straight past that reset, stranding the
+ *        flag at `true` FOREVER. From then on every drain returned at the guard: the endpoint kept
+ *        reading the socket but silently delivered NO further event (no data, no stream close, no
+ *        connection close) — a total, invisible wedge of the connection, or of every connection a
+ *        server multiplexes. The flag is now owned by an RAII guard.
+ */
+TEST(QuicAdapterEndpoint, ThrowingDispatchDoesNotWedgeLaterEventDelivery) {
+    FakeQuicBackend         *raw = nullptr;
+    ThrowingDispatchEndpoint endpoint{make_fake(raw)};
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    raw->queued_events.push_back({qb::io::quic::backend_event::kind::connected, 3, 0, 0, "h3", {}});
+    endpoint.poll();
+    ASSERT_EQ(endpoint.current_state(), State::connected);
+
+    qb::io::quic::backend_event data;
+    data.type          = qb::io::quic::backend_event::kind::stream_data;
+    data.connection_id = 3;
+    data.stream_id     = 0;
+    data.payload       = {std::byte{'x'}};
+    raw->queued_events.push_back(std::move(data));
+
+    // The throw propagates out of poll() (the real loop contains it at the dispatch locus);
+    // what matters is the state it leaves the endpoint in.
+    EXPECT_THROW(endpoint.poll(), std::runtime_error);
+    EXPECT_EQ(endpoint.data_dispatches, 1);
+
+    // The endpoint must still be live: a subsequent event is delivered normally.
+    qb::io::quic::backend_event more;
+    more.type          = qb::io::quic::backend_event::kind::stream_data;
+    more.connection_id = 3;
+    more.stream_id     = 0;
+    more.payload       = {std::byte{'y'}};
+    raw->queued_events.push_back(std::move(more));
+    EXPECT_NO_THROW(endpoint.poll());
+    EXPECT_EQ(endpoint.data_dispatches, 2) << "event delivery was permanently wedged by the earlier throw";
+
+    raw->queued_events.push_back({qb::io::quic::backend_event::kind::connection_closed, 3, 0, 9, "bye", {}});
+    endpoint.poll();
+    EXPECT_EQ(endpoint.close_dispatches, 1) << "connection_closed was never delivered after the throw";
+    EXPECT_EQ(endpoint.current_state(), State::closed);
+}
+
+/**
+ * @test The documented braced-ALPN spelling `connect(uri, {"h3", ...})` compiles and is honoured
+ * @brief Regression (hard COMPILE error, ambiguous overload): `qb::io::quic::tls_config` is an
+ *        AGGREGATE whose first member is a `std::filesystem::path`, so a braced list of string
+ *        literals initialises it exactly as well as it initialises `std::vector<std::string>` —
+ *        making `connect(remote_uri, {"h3"})` ambiguous against the `tls_config` overload. That is
+ *        the spelling the parameter's own default argument and qb/readme/3_qb_io/quic_transport.md
+ *        both advertise, and it is how a caller selects a non-default ALPN set; no test or example
+ *        ever used it, so nothing caught it. A `std::initializer_list<std::string>` overload now
+ *        disambiguates it (a braced-init-list prefers `initializer_list` over any other
+ *        list-initialisation, [over.ics.rank]/3.1) on `endpoint` AND on both `connector`
+ *        specialisations, whose own declarations hide the base overload set.
+ */
+TEST(QuicAdapterEndpoint, BracedAlpnListSelectsTheVectorOverload) {
+    FakeQuicBackend              *raw = nullptr;
+    qb::io::async::quic::endpoint endpoint{make_fake(raw)};
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}, {"h3", "hq-interop"}));
+    EXPECT_EQ(endpoint.current_state(), State::connecting);
+    ASSERT_EQ(raw->start_client_calls, 1);
+    EXPECT_EQ(raw->last_alpn, (std::vector<std::string>{"h3", "hq-interop"})) << "the braced list must reach the backend verbatim";
+
+    // The connector specialisations hide the base overload set — cover them too.
+    FakeQuicBackend   *raw2 = nullptr;
+    CallbackQuicClient client{make_fake(raw2)};
+    ASSERT_TRUE(client.connect(qb::io::uri{"quic://127.0.0.1:4433"}, {"h3"}));
+    EXPECT_EQ(raw2->last_alpn, (std::vector<std::string>{"h3"}));
 }

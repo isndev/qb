@@ -8,6 +8,7 @@
 
 #include <array>
 #include <deque>
+#include <initializer_list>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -221,7 +222,25 @@ protected:
             _drain_events_again = true;
             return;
         }
-        _draining_events = true;
+        // RAII, not a bare `_draining_events = false` at the bottom: every `dispatch()` below is a
+        // VIRTUAL call into user code (an HTTP/3 route handler, an application callback), and the
+        // events themselves carry heap `std::string`/payloads, so an escaping exception — a user
+        // throw or a plain `std::bad_alloc` — is reachable. Unwinding past a manual reset would
+        // strand `_draining_events == true` FOREVER, and every later call would bail out at the
+        // guard above: the endpoint keeps reading the socket but silently stops delivering ANY
+        // event (no data, no stream close, no connection close) — a total, invisible wedge of the
+        // connection (or, on a server, of every connection it multiplexes). Mirrors the guards in
+        // `listener::_drain_deferred` and `CoroutineScheduler::run_ready`.
+        struct DrainGuard {
+            bool &flag;
+            explicit DrainGuard(bool &f) noexcept
+                : flag(f) {
+                flag = true;
+            }
+            ~DrainGuard() noexcept {
+                flag = false;
+            }
+        } drain_guard{_draining_events};
         do {
             _drain_events_again = false;
             for (auto const &event : _backend->drain_events()) {
@@ -267,7 +286,7 @@ protected:
             }
         }
         } while (_drain_events_again && _backend);
-        _draining_events = false;
+        _draining_events = false; // clear BEFORE the reap below (the guard's dtor is a harmless re-clear)
         // Reap / stats run once, at the outermost drain, after every event has been dispatched and
         // no reentrant re-drain remains pending — so after_dispatch_events() (the HTTP/3 connection
         // reap) never frees a connection while a dispatch is still on the stack. It performs no
@@ -369,6 +388,24 @@ public:
         qb::io::quic::tls_config tls;
         tls.server_name.assign(remote_uri.host());
         return connect(remote_uri, tls, alpn_protocols);
+    }
+
+    /**
+     * @brief Braced-ALPN overload: `connect(uri, {"h3", "hq-interop"})`.
+     *
+     * Load-bearing, not sugar. `qb::io::quic::tls_config` is an AGGREGATE whose first member is a
+     * `std::filesystem::path`, so a braced list of string literals initialises it just as well as it
+     * initialises `std::vector<std::string>` — which made the documented spelling
+     * `connect(remote_uri, alpn_protocols = {"h3"})` (qb/readme/3_qb_io/quic_transport.md) an
+     * AMBIGUOUS-overload compile error against the `tls_config` overload below. A braced-init-list
+     * binds to `std::initializer_list` in preference to any other list-initialisation
+     * ([over.ics.rank]/3.1), so this overload disambiguates without changing either signature, and
+     * forwards straight through. `connect(uri)` (default ALPN) and `connect(uri, tls, {...})` are
+     * unaffected — this overload is not viable for either arity.
+     */
+    bool
+    connect(qb::io::uri const &remote_uri, std::initializer_list<std::string> alpn_protocols) {
+        return connect(remote_uri, std::vector<std::string>(alpn_protocols));
     }
 
     bool

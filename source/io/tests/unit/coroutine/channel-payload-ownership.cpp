@@ -167,3 +167,78 @@ TEST_F(ChannelPayloadOwnership, SharedChannelKeepsSourceAliveAcrossConsumerCorou
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "shared-channel consumer never completed";
     EXPECT_EQ(result, (std::vector<std::string>{"first", "second"}));
 }
+
+// Regression (hard COMPILE error): every `channel<T>` send path handed the value to a
+// possible `select()` waiter by boxing it into a `std::any`, which requires a
+// COPY-CONSTRUCTIBLE payload. A move-only channel can never hold a select waiter (select()
+// itself would not compile for such a T), so the block is provably dead there — but it
+// still had to instantiate. The `if constexpr` guard existed on `try_send(T&&)` ALONE, so
+// `try_send` worked on a move-only channel while `co_await send(...)` and `send_for(...)`
+// did not compile at all. The other move-only tests above only ever call `try_send`, so
+// nothing exercised the awaiter paths. The guard now lives in ONE private helper that every
+// send path routes through; this test instantiates all of them.
+TEST_F(ChannelPayloadOwnership, MoveOnlyPayloadGoesThroughEverySendPath) {
+    channel<std::unique_ptr<int>> messages{2};
+    std::atomic<bool>             done{false};
+    std::vector<int>              received;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await messages.send(std::make_unique<int>(1)); // send_awaiter (buffered fast path)
+        auto a = co_await messages.recv();
+        if (a && *a)
+            received.push_back(**a);
+
+        const bool sent = co_await messages.send_for(std::make_unique<int>(2), 100ms); // timed_send_awaiter
+        EXPECT_TRUE(sent) << "send_for on a move-only channel with buffer space must succeed";
+        auto b = co_await messages.recv_for(100ms);
+        if (b && *b)
+            received.push_back(**b);
+
+        EXPECT_TRUE(messages.try_send(std::make_unique<int>(3))); // try_send(T&&)
+        auto c = co_await messages.recv();
+        if (c && *c)
+            received.push_back(**c);
+
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "move-only send-path coroutine never completed";
+    EXPECT_EQ(received, (std::vector<int>{1, 2, 3})) << "every send path must deliver its move-only payload intact";
+}
+
+// A move-only recv_for() with an EMPTY buffer takes the slow path: it parks on the shared select()
+// state, which type-erases through std::any — and std::any requires CopyConstructible. Two things
+// follow, and both are pinned here because neither is obvious from the call site:
+//
+//   1. It must COMPILE. `std::any_cast<T>` carries a hard static_assert that libstdc++ fires at
+//      instantiation, so an unguarded `any_cast<T>` in the awaiter made this whole TU fail to build
+//      on Linux while compiling fine on macOS/libc++. This test only exercises the guard by
+//      existing; the earlier MoveOnlyPayloadGoesThroughEverySendPath case never reached the slow
+//      path because its buffer was always primed.
+//   2. It must not LOSE the value. The parked receiver cannot be handed a move-only payload, so it
+//      runs to its full timeout and reports empty — but the sender's value stays buffered and the
+//      next recv() collects it intact. Latency, not data loss. If that contract ever changes to
+//      real wake-on-send, this test is where it gets noticed.
+TEST_F(ChannelPayloadOwnership, MoveOnlyRecvForSlowPathTimesOutButKeepsTheValue) {
+    channel<std::unique_ptr<int>> messages{2};
+    std::atomic<bool>             done{false};
+    bool                          timed_out_empty = false;
+    int                           recovered       = 0;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        // Buffer is empty -> recv_for takes the slow path and parks on the select state.
+        auto a          = co_await messages.recv_for(20ms);
+        timed_out_empty = !a.has_value();
+
+        // The value the slow path could not accept is still deliverable.
+        EXPECT_TRUE(messages.try_send(std::make_unique<int>(42)));
+        auto b = co_await messages.recv();
+        if (b && *b)
+            recovered = **b;
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "move-only recv_for slow-path coroutine never completed";
+    EXPECT_TRUE(timed_out_empty) << "documented contract: a move-only recv_for slow path resolves as a timeout";
+    EXPECT_EQ(recovered, 42) << "the timeout must not consume or destroy a subsequently sent value";
+}

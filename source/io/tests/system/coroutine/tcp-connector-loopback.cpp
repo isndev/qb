@@ -50,7 +50,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <optional>
 #include <string>
+#include <type_traits>
 #include <thread>
 #include <vector>
 
@@ -60,6 +62,7 @@
 #include <qb/io/async/tcp/connector.h>
 #include <qb/io/tcp/listener.h>
 #include <qb/io/tcp/socket.h>
+#include <qb/io/transport/tcp.h>
 
 #include "../../shared/coroutine_test_support.h"
 #include "../../shared/loopback_fixture.h"
@@ -567,4 +570,64 @@ TEST_F(TcpConnectorLoopbackTest, SequentialAttemptsReuseScheduler) {
 
     EXPECT_EQ(completions.load(), kAttempts);
     EXPECT_EQ(successes.load(), kAttempts);
+}
+
+// ---------------------------------------------------------------------------
+// The documented EXPLICIT-transport coroutine form must resolve to the coroutine
+// factory, not to the callback overload.
+//
+// Regression (hard COMPILE error): `connect<Transport>(uri, timeout)` — the form
+// `llm/qb.llm.api.md` documents for choosing a transport (notably
+// `connect<qb::io::transport::stcp>(...)` for a secure coroutine connect) — also made
+// the CALLBACK overload viable, because `Socket_` is supplied explicitly and `Func_`
+// then deduces from the second argument. `Func_ = std::chrono::seconds` is an EXACT
+// match while the coroutine factory's `qb::duration` parameter needs a chrono
+// conversion, so the callback overload won and the build died inside
+// `connector<Transport, std::chrono::seconds>`. Every existing test calls
+// `connect(uri, timeout)` WITHOUT an explicit template argument (where `Socket_` is
+// non-deducible and the callback overload is already excluded), so nothing caught it.
+// The callback overloads now carry the same `std::invocable` constraint the
+// `starttls_connect` family always had. This test is the instantiation that keeps the
+// explicit form buildable AND proves it still connects for real.
+TEST_F(TcpConnectorLoopbackTest, ExplicitTransportCoroutineConnectResolvesToTheCoroutineOverload) {
+    std::atomic<int>  server_port{0};
+    std::atomic<bool> accepted{false};
+
+    std::thread server([&] {
+        qb::io::tcp::listener listener;
+        ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+        server_port.store(static_cast<int>(listener.local_endpoint().port()));
+
+        qb::io::tcp::socket sock = listener.accept();
+        accepted.store(sock.is_open());
+        sock.close();
+        listener.disconnect();
+        listener.close();
+    });
+
+    ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
+
+    std::atomic<bool> done{false};
+    bool              connected = false;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        // Explicit transport + timeout: the ONLY form that used to break.
+        auto socket = co_await qb::io::async::tcp::connect<qb::io::transport::tcp>(
+            qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
+        static_assert(std::is_same_v<decltype(socket), std::optional<qb::io::tcp::socket>>,
+                      "connect<Transport>() must resolve to the coroutine factory, yielding optional<socket>");
+        connected = socket.has_value() && socket->is_open();
+        if (socket)
+            socket->close();
+        done.store(true);
+        co_return;
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "explicit-transport connect coroutine never completed";
+    if (server.joinable())
+        server.join();
+
+    ASSERT_TRUE(done.load());
+    EXPECT_TRUE(connected);
+    EXPECT_TRUE(accepted.load());
 }

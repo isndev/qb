@@ -82,8 +82,21 @@ public:
         Node *node = new Node(std::move(item));
         node->next.store(nullptr, std::memory_order_relaxed);
         Node *prev = tail_.exchange(node, std::memory_order_acq_rel);
-        prev->next.store(node, std::memory_order_release);
+        // Count the item BEFORE publishing it. `count_` is unsigned and `pop()` decrements the
+        // instant it observes `prev->next`, so incrementing afterwards leaves a window in which the
+        // consumer's `fetch_sub` runs against a counter that was never incremented — and at
+        // count_ == 0 that wraps, making `size()` report SIZE_MAX (~1.8e19) instead of 0. The
+        // window is one instruction wide but entirely reachable: a consumer spinning on a
+        // near-empty queue pops inside it routinely.
+        //
+        // Ordering the increment first removes it by construction: the `fetch_add` is
+        // sequenced-before the release store below, the consumer acquires that store before it can
+        // pop, so the `fetch_add` always precedes the matching `fetch_sub` in `count_`'s
+        // modification order and the counter can never go negative. The only cost is that `size()`
+        // becomes a slight OVER-estimate (an item is counted a few instructions before it is
+        // poppable), which is the documented "approximate" direction and the harmless one.
         count_.fetch_add(1, std::memory_order_relaxed);
+        prev->next.store(node, std::memory_order_release);
     }
 
     /**

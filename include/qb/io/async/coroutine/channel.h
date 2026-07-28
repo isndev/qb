@@ -207,15 +207,9 @@ public:
                 return true;
             }
             // 2. Satisfy a select waiter (lazy-clean stale resolved entries)
-            while (!ch._select_waiters.empty()) {
-                auto &entry = ch._select_waiters.front();
-                if (!entry.state->resolved) {
-                    entry.state->resolve(entry.index, std::any(std::move(value)));
-                    ch._select_waiters.pop_front();
-                    _completed = true;
-                    return true;
-                }
-                ch._select_waiters.pop_front(); // stale, skip
+            if (ch.offer_to_select_waiter(std::move(value))) {
+                _completed = true;
+                return true;
             }
             // 3. Buffer
             if (ch._buffer.size() < ch._capacity) {
@@ -245,16 +239,10 @@ public:
                 schedule_via_current(h);
                 return;
             }
-            while (!ch._select_waiters.empty()) {
-                auto &entry = ch._select_waiters.front();
-                if (!entry.state->resolved) {
-                    entry.state->resolve(entry.index, std::any(std::move(value)));
-                    ch._select_waiters.pop_front();
-                    _completed = true;
-                    schedule_via_current(h);
-                    return;
-                }
-                ch._select_waiters.pop_front();
+            if (ch.offer_to_select_waiter(std::move(value))) {
+                _completed = true;
+                schedule_via_current(h);
+                return;
             }
             if (ch._buffer.size() < ch._capacity) {
                 ch._buffer.push(std::move(value));
@@ -292,15 +280,8 @@ public:
                     _completed = true;
                 } else {
                     // Hand off to the first non-stale select waiter (resolve() schedules its outer).
-                    while (!ch._select_waiters.empty()) {
-                        auto entry = ch._select_waiters.front();
-                        ch._select_waiters.pop_front();
-                        if (!entry.state->resolved) {
-                            entry.state->resolve(entry.index, std::any(std::move(value)));
-                            _completed = true;
-                            break;
-                        }
-                    }
+                    if (ch.offer_to_select_waiter(std::move(value)))
+                        _completed = true;
                     if (!_completed) {
                         ch._buffer.push(std::move(value));
                         _completed = true;
@@ -448,15 +429,8 @@ public:
         // Satisfy a parked select()/recv_for() waiter before the buffer — mirrors send_awaiter.
         // Without this, try_send returned false on a cap-0 channel (or a full buffer) even when a
         // select waiter was ready, deadlocking a rendezvous (the send path already handles both).
-        while (!_select_waiters.empty()) {
-            auto &entry = _select_waiters.front();
-            if (!entry.state->resolved) {
-                entry.state->resolve(entry.index, std::any(value));
-                _select_waiters.pop_front();
-                return true;
-            }
-            _select_waiters.pop_front(); // stale, skip
-        }
+        if (offer_to_select_waiter(value))
+            return true;
         if (_buffer.size() < _capacity) {
             _buffer.push(value);
             return true;
@@ -481,19 +455,8 @@ public:
             return true;
         }
         // Satisfy a parked select()/recv_for() waiter before the buffer — mirrors send_awaiter.
-        // Guarded: select() type-erases through std::any (copy-constructible only), so a move-only
-        // channel can never hold a select waiter — the block is dead there and must not instantiate.
-        if constexpr (std::is_copy_constructible_v<T>) {
-            while (!_select_waiters.empty()) {
-                auto &entry = _select_waiters.front();
-                if (!entry.state->resolved) {
-                    entry.state->resolve(entry.index, std::any(std::move(value)));
-                    _select_waiters.pop_front();
-                    return true;
-                }
-                _select_waiters.pop_front(); // stale, skip
-            }
-        }
+        if (offer_to_select_waiter(std::move(value)))
+            return true;
         if (_buffer.size() < _capacity) {
             _buffer.push(std::move(value));
             return true;
@@ -623,6 +586,22 @@ public:
      * @brief Receive with timeout
      * @param timeout Maximum time to wait
      * @return Optional value — empty on timeout or closed channel
+     *
+     * @warning **Move-only `T` (e.g. `std::unique_ptr`): this wakes only on the buffered fast
+     *          path.** The slow path parks on the shared `select()` state, which type-erases the
+     *          delivered value through `std::any` — and `std::any` requires a CopyConstructible
+     *          type. A sender therefore cannot hand a move-only value to a parked `recv_for`, so
+     *          the wait always runs to its full `timeout` and reports empty even if a value
+     *          arrives meanwhile.
+     *
+     *          **Nothing is lost**: the sender buffers the value (or stays parked on a rendezvous
+     *          channel), so the next `recv()` / `recv_for()` picks it up. The cost is latency, not
+     *          data. For a move-only payload that needs prompt timed delivery, prefer plain
+     *          `recv()` plus an external deadline, or box the payload in a copyable handle
+     *          (`std::shared_ptr`).
+     *
+     *          This is a constraint of the `std::any`-based `select()` machinery — `select_result`
+     *          exposes `get<T>()` by value as public API — not of this function alone.
      */
     task<std::optional<T>>
     recv_for(qb::duration timeout) {
@@ -663,8 +642,18 @@ public:
                     state->outer    = {};
                     return;
                 }
-                if (!_resumed && state && _ch_alive && *_ch_alive && state->winner != 1 && !state->closed && state->value.has_value())
-                    ch._buffer.push(std::any_cast<T>(std::move(state->value)));
+                // `if constexpr`: `std::any_cast<T>` carries a hard `static_assert` that T be
+                // CopyConstructible, and libstdc++ fires it at INSTANTIATION — so leaving this
+                // unguarded made `channel<std::unique_ptr<...>>::recv_for()` fail to COMPILE on
+                // Linux/libstdc++ even though the branch can never run there. (libc++ accepts it,
+                // which is why macOS never saw this.) For a move-only T nothing can populate
+                // `state->value` in the first place — see the select-machinery note on
+                // `offer_to_select_waiter` — so the branch is provably dead, not merely untaken.
+                if constexpr (std::is_copy_constructible_v<T>) {
+                    if (!_resumed && state && _ch_alive && *_ch_alive && state->winner != 1 && !state->closed
+                        && state->value.has_value())
+                        ch._buffer.push(std::any_cast<T>(std::move(state->value)));
+                }
             }
 
             [[nodiscard]] bool
@@ -692,9 +681,17 @@ public:
                 _resumed = true; // consumed normally → the dtor must not re-buffer the value
                 if (!state->resolved || state->winner == 1 || state->closed)
                     return std::nullopt;
-                if (!state->value.has_value())
+                // Same `if constexpr` rationale as the destructor above: `std::any_cast<T>` must
+                // not be INSTANTIATED for a move-only T (hard static_assert under libstdc++).
+                if constexpr (std::is_copy_constructible_v<T>) {
+                    if (!state->value.has_value())
+                        return std::nullopt;
+                    return std::any_cast<T>(std::move(state->value));
+                } else {
+                    // Move-only payload: the select machinery cannot carry it (documented on
+                    // `recv_for` below), so the slow path only ever resolves as a timeout.
                     return std::nullopt;
-                return std::any_cast<T>(std::move(state->value));
+                }
             }
         };
 
@@ -793,14 +790,8 @@ public:
                     return true;
                 }
                 // Hand off to the first non-stale select waiter (resolve() schedules its outer).
-                while (!ch._select_waiters.empty()) {
-                    auto entry = ch._select_waiters.front();
-                    ch._select_waiters.pop_front();
-                    if (!entry.state->resolved) {
-                        entry.state->resolve(entry.index, std::any(std::move(val)));
-                        return true;
-                    }
-                }
+                if (ch.offer_to_select_waiter(std::move(val)))
+                    return true;
                 ch._buffer.push(std::move(val));
                 return true;
             }
@@ -810,6 +801,43 @@ public:
     }
 
 private:
+    /**
+     * @brief Hand `value` to the first non-stale parked `select()` waiter, if there is one.
+     * @return `true` when the value was delivered (resolve() schedules that waiter's outer
+     *         coroutine); `false` when no live select waiter is queued — the caller then
+     *         falls through to its own next step (buffer, or park).
+     *
+     * THE single select hand-off. Every send path must go through it, because `select()`
+     * type-erases the delivered value through `std::any`, and `std::any` requires a
+     * COPY-CONSTRUCTIBLE payload. A move-only `channel<T>` (e.g. `channel<std::unique_ptr<X>>`)
+     * therefore can never hold a select waiter at all — the block is provably dead there — but
+     * without the `if constexpr` it still has to INSTANTIATE, turning every send into a hard
+     * compile error. That guard used to exist on `try_send(T&&)` alone, so `try_send` worked on
+     * a move-only channel while `co_await send(...)` / `send_for(...)` did not compile. Keeping
+     * exactly one guarded copy is what stops that from drifting apart again.
+     *
+     * Stale (already-resolved) entries are consumed as they are encountered — the lazy cleanup
+     * the select protocol relies on. Popping BEFORE resolving keeps the deque untouched across
+     * the call.
+     */
+    template <typename U>
+    bool
+    offer_to_select_waiter(U &&value) {
+        if constexpr (std::is_copy_constructible_v<T>) {
+            while (!_select_waiters.empty()) {
+                auto entry = _select_waiters.front();
+                _select_waiters.pop_front();
+                if (!entry.state->resolved) {
+                    entry.state->resolve(entry.index, std::any(std::forward<U>(value)));
+                    return true;
+                }
+            }
+        } else {
+            (void) value;
+        }
+        return false;
+    }
+
     // Free functions: parameters stored by value in the coroutine frame.
     static task<void>
     channel_timer(std::shared_ptr<channel_select_state> state, std::coroutine_handle<> h, qb::duration delay) {

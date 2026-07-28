@@ -75,7 +75,10 @@ namespace qb::io::async {
 template <typename... Tasks>
 class when_all_awaiter {
 public:
-    using result_type         = std::tuple<typename Tasks::value_type...>;
+    // `void` branches get a `std::monostate` slot (detail::value_slot_t) so `task<void>` —
+    // the default task type — composes here exactly like a value-returning task, and a
+    // MIXED pack keeps positional indexing.
+    using result_type         = std::tuple<detail::value_slot_t<typename Tasks::value_type>...>;
     static constexpr size_t N = sizeof...(Tasks);
 
 private:
@@ -102,7 +105,12 @@ private:
     static task<void>
     run_one(std::shared_ptr<state_t> state) {
         try {
-            std::get<I>(state->results) = co_await std::get<I>(state->tasks);
+            // A `task<void>` branch is awaited for its effect only; its monostate slot
+            // stays value-initialised.
+            if constexpr (std::is_void_v<typename std::tuple_element_t<I, std::tuple<Tasks...>>::value_type>)
+                co_await std::get<I>(state->tasks);
+            else
+                std::get<I>(state->results) = co_await std::get<I>(state->tasks);
         } catch (...) {
             if (!state->first_exception)
                 state->first_exception = std::current_exception();
@@ -198,7 +206,9 @@ when_all(Tasks... tasks) {
 template <typename T>
 class when_all_vector_awaiter {
 public:
-    using result_type = std::vector<T>;
+    // See the variadic when_all_awaiter: `void` maps to a `std::monostate` slot so a
+    // `std::vector<task<void>>` composes like any other.
+    using result_type = std::vector<detail::value_slot_t<T>>;
 
     explicit when_all_vector_awaiter(std::vector<task<T>> tasks)
         : _state(std::make_shared<state_t>(std::move(tasks))) {}
@@ -239,9 +249,9 @@ public:
 
 private:
     struct state_t {
-        std::vector<task<T>>    tasks;
-        std::vector<T>          results;
-        size_t                  completed{0}; // single-thread
+        std::vector<task<T>>              tasks;
+        std::vector<detail::value_slot_t<T>> results;
+        size_t                            completed{0}; // single-thread
         std::coroutine_handle<> continuation;
         std::exception_ptr      first_exception;
         // Spawned run_one frame per branch — see the variadic when_all_awaiter. Recorded so a
@@ -269,7 +279,10 @@ private:
     static task<void>
     run_one(std::shared_ptr<state_t> state, size_t i, size_t n) {
         try {
-            state->results[i] = co_await state->tasks[i];
+            if constexpr (std::is_void_v<T>)
+                co_await state->tasks[i]; // nothing to store — monostate slot stays as-is
+            else
+                state->results[i] = co_await state->tasks[i];
         } catch (...) {
             if (!state->first_exception)
                 state->first_exception = std::current_exception();
@@ -322,6 +335,18 @@ struct when_any_result {
     [[nodiscard]] bool
     has_exception() const noexcept {
         return exception != nullptr;
+    }
+
+    /**
+     * @brief Rethrow the winner's exception, if it threw.
+     * @details `get<T>()` does this before unwrapping `value`. Call this directly when the
+     *          winning branch is a `task<void>`: there is no value to unwrap, and
+     *          `get<void>()` would be ill-formed (`std::any_cast<void>`).
+     */
+    void
+    rethrow_if_exception() const {
+        if (exception)
+            std::rethrow_exception(exception);
     }
 };
 
@@ -611,10 +636,16 @@ private:
     run_one(std::shared_ptr<state_t> state, size_t i, size_t n) {
         (void) n;
         try {
-            auto value = co_await state->tasks[i];
+            // `task<void>` has no value to box into the result's `std::any` — await it for
+            // its effect and report an empty `any`, exactly as the variadic when_any does.
+            std::any boxed;
+            if constexpr (std::is_void_v<T>)
+                co_await state->tasks[i];
+            else
+                boxed = std::any(co_await state->tasks[i]);
             if (!state->done) {
                 state->done              = true;
-                state->result            = result_type{i, std::any(std::move(value))};
+                state->result            = result_type{i, std::move(boxed)};
                 state->branch_handles[i] = {}; // winner self-reclaims at final_suspend
                 for (size_t j = 0; j < state->branch_handles.size(); ++j)
                     reclaim_branch(*state, j);
