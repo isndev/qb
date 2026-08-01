@@ -602,8 +602,9 @@ TEST_F(ScopeStructuredConcurrency, CaptureResultStoresTaskResult) {
             result));
         co_await scope.join_all();
         EXPECT_TRUE(result.has_value());
-        if (result.has_value())
+        if (result.has_value()) {
             EXPECT_EQ(*result, 42);
+        }
         done.store(true);
     });
 

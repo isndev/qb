@@ -272,11 +272,13 @@ TEST_F(ChannelAsync, RecvDrainsBufferedValuesThenReportsCloseAsNullopt) {
         auto v3 = co_await ch.recv();
 
         EXPECT_TRUE(v1.has_value());
-        if (v1.has_value())
+        if (v1.has_value()) {
             EXPECT_EQ(*v1, 10);
+        }
         EXPECT_TRUE(v2.has_value());
-        if (v2.has_value())
+        if (v2.has_value()) {
             EXPECT_EQ(*v2, 20);
+        }
         EXPECT_FALSE(v3.has_value()) << "after the buffer drains, a closed channel yields nullopt";
         done.store(true);
     });
@@ -505,8 +507,7 @@ TEST_F(ChannelAsync, MakePipelineThrowingTransformClosesOutputInsteadOfHanging) 
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); }))
-        << "pipeline consumer hung after the transform threw — out was never closed";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "pipeline consumer hung after the transform threw — out was never closed";
     EXPECT_TRUE(out->is_closed()) << "a throwing transform must still close the output channel";
 }
 
@@ -915,8 +916,9 @@ TEST_F(ChannelAsync, SendForSucceedsImmediatelyWhenSpaceAvailable) {
         EXPECT_TRUE(sent);
         auto v = ch.try_recv();
         EXPECT_TRUE(v.has_value());
-        if (v.has_value())
+        if (v.has_value()) {
             EXPECT_EQ(*v, 42);
+        }
         done.store(true);
     });
 
