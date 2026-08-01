@@ -99,11 +99,10 @@ TEST(StreamDrainCost, PartialWritesAdvanceTheCursorInsteadOfRelocatingThePending
         if (output.pendingWrite() == 0u)
             break; // fully drained: the buffer is reset(), offset 0 is correct here
 
-        ASSERT_EQ(front_offset(output), sent)
-            << "after " << sent << " bytes accepted the pending tail sits at offset " << front_offset(output)
-            << " instead of " << sent
-            << ": the buffer is being compacted on every partial write, so each turn memmoves all "
-               "the bytes still queued and draining one payload costs O(bytes x turns)";
+        ASSERT_EQ(front_offset(output), sent) << "after " << sent << " bytes accepted the pending tail sits at offset " << front_offset(output)
+                                              << " instead of " << sent
+                                              << ": the buffer is being compacted on every partial write, so each turn memmoves all "
+                                                 "the bytes still queued and draining one payload costs O(bytes x turns)";
     }
 
     EXPECT_EQ(sent, payload.size());
@@ -146,23 +145,25 @@ TEST(StreamDrainCost, ASteadilyStreamedOutputBufferStaysBounded) {
     for (std::size_t round = 0; round < kRounds; ++round) {
         ASSERT_NE(output.publish(chunk.data(), chunk.size()), nullptr);
         ASSERT_EQ(output.write(), static_cast<int>(kChunk));
-        ASSERT_EQ(output.pendingWrite(), kBacklog)
-            << "round " << round << ": the socket took the whole buffer, so this turn never reached the "
-            << "partial-write path the test exists to measure";
+        ASSERT_EQ(output.pendingWrite(), kBacklog) << "round " << round << ": the socket took the whole buffer, so this turn never reached the "
+                                                   << "partial-write path the test exists to measure";
 
         const auto now = front_offset(output);
         if (now != offset + kChunk) // the tail was moved back to the front instead of the cursor forward
             relocated += output.pendingWrite();
         offset = now;
 
-        if (round == kRounds / 8u)
+        if (round == kRounds / 8u) {
             settled = output.out().capacity(); // past the initial growth
-        else if (round > kRounds / 8u)
+        } else if (round > kRounds / 8u) {
+            // Braced deliberately: ASSERT_EQ expands to an if/else, so leaving it bare under this
+            // `else if` is a -Wdangling-else error under GCC's -Werror (clang stays silent).
             ASSERT_EQ(output.out().capacity(), settled)
                 << "the output buffer grew at round " << round << " (" << output.out().capacity() << " vs " << settled
                 << " bytes) although publish and drain are perfectly matched: retiring bytes by "
                    "advancing the cursor is leaking capacity instead of being reclaimed by "
                    "allocate_back()'s compaction";
+        }
     }
 
     ASSERT_GT(settled, 0u);

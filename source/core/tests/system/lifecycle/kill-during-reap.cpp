@@ -157,10 +157,9 @@ TEST(KillDuringReap, ActorKilledFromAnotherDestructorIsStillReaped) {
     g_victims.clear();
     g_victims.reserve(kPairs);
 
-    ASSERT_TRUE(run_engine(std::chrono::seconds(30)))
-        << "engine did not terminate: an actor killed from another actor's destructor was "
-           "inserted into _actor_to_remove behind the reap iterator, then discarded by the "
-           "unconditional clear() — it stays in _actors forever, so _actors.empty() never holds";
+    ASSERT_TRUE(run_engine(std::chrono::seconds(30))) << "engine did not terminate: an actor killed from another actor's destructor was "
+                                                         "inserted into _actor_to_remove behind the reap iterator, then discarded by the "
+                                                         "unconditional clear() — it stays in _actors forever, so _actors.empty() never holds";
 
     EXPECT_EQ(g_a_destroyed.load(), static_cast<int>(kPairs));
     EXPECT_EQ(g_b_destroyed.load(), static_cast<int>(kPairs)) << "every victim killed from a destructor must still be reaped";

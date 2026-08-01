@@ -90,8 +90,8 @@ TEST(SslContextValue, FailsClosedOnBadSetter) {
 TEST(SslContextValue, ErrorShortCircuitsRestOfChain) {
     auto ctx = Context::client()
                    .identity("qb-nonexistent-cert.pem", "qb-nonexistent-key.pem") // fails here
-                   .min_version(TlsVersion::v1_3)                                  // no-op after error
-                   .alpn({"h2"});                                                  // no-op after error
+                   .min_version(TlsVersion::v1_3)                                 // no-op after error
+                   .alpn({"h2"});                                                 // no-op after error
     EXPECT_FALSE(ctx.ok());
 }
 
@@ -195,9 +195,7 @@ TEST(SslContextValue, ShareCanBeSharedAgain) {
 // --- typed callbacks live/die with the context (ex-data) ------------------------------------------
 
 TEST(SslContextValue, TypedCallbacksAttachAndFreeCleanly) {
-    auto ctx = Context::client()
-                   .on_keylog([](std::string_view) {})
-                   .on_verify([](bool preverified, VerifyContext &) { return preverified; });
+    auto ctx = Context::client().on_keylog([](std::string_view) {}).on_verify([](bool preverified, VerifyContext &) { return preverified; });
     ASSERT_TRUE(ctx.ok()) << ctx.error();
     // A copy shares the same ctx + the same ex-data callback state.
     auto copy = ctx;
@@ -207,9 +205,7 @@ TEST(SslContextValue, TypedCallbacksAttachAndFreeCleanly) {
 
 TEST(SslContextValue, VerifyStaysInstalledAcrossModeChange) {
     // on_verify installs the trampoline; a later verify() must not drop it.
-    auto ctx = Context::client()
-                   .on_verify([](bool ok, VerifyContext &) { return ok; })
-                   .verify(VerifyMode::peer_require);
+    auto ctx = Context::client().on_verify([](bool ok, VerifyContext &) { return ok; }).verify(VerifyMode::peer_require);
     ASSERT_TRUE(ctx.ok());
     EXPECT_EQ(SSL_CTX_get_verify_mode(ctx.native()), SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT);
     EXPECT_NE(SSL_CTX_get_verify_callback(ctx.native()), nullptr) << "verify() must preserve the on_verify trampoline";

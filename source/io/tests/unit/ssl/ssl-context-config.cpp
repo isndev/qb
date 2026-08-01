@@ -450,8 +450,7 @@ TEST(SSLListenerConfig, SetOptionsCarriesFlagsAboveBit31) {
 
     listener.set_options(high_bit_flag);
     const std::uint64_t after_set = SSL_CTX_get_options(listener.ssl_handle());
-    EXPECT_EQ(after_set & high_bit_flag, high_bit_flag)
-        << "a >32-bit SSL_OP_* flag was dropped on the way to SSL_CTX_set_options()";
+    EXPECT_EQ(after_set & high_bit_flag, high_bit_flag) << "a >32-bit SSL_OP_* flag was dropped on the way to SSL_CTX_set_options()";
 
     listener.clear_options(high_bit_flag);
     EXPECT_EQ(SSL_CTX_get_options(listener.ssl_handle()) & high_bit_flag, 0ull)
@@ -479,6 +478,5 @@ TEST(SSLListenerConfig, SetOptionsBit31DoesNotSignExtendIntoTheHighFlags) {
 
     EXPECT_EQ(after & bit31, bit31) << "the requested bit-31 flag was not applied";
     // Nothing above bit 31 that was not already set may have appeared.
-    EXPECT_EQ((after & ~before) >> 32, 0ull)
-        << "setting bit 31 smeared into the high SSL_OP_* flags (sign extension through a 32-bit long)";
+    EXPECT_EQ((after & ~before) >> 32, 0ull) << "setting bit 31 smeared into the high SSL_OP_* flags (sign extension through a 32-bit long)";
 }

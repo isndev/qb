@@ -389,8 +389,11 @@ private:
             _nanotimer          = ts;
         }
     } _metrics;
-    unsigned int _last_signal_generation = 0; ///< `Main::_signal_generation` value at this core's last SignalEvent synthesis; a newer value (a fresh signal or `Main::stop()`) re-triggers delivery. Replaces the old single-shot `_signal_consumed` latch that dropped every signal after the first.
-    bool         _stop_delivered = false;      ///< One-way latch: whether this core has delivered the cooperative `stop_token`'s synthetic SIGINT (the token cannot be un-requested).
+    unsigned int _last_signal_generation =
+        0; ///< `Main::_signal_generation` value at this core's last SignalEvent synthesis; a newer value (a fresh signal or `Main::stop()`)
+           ///< re-triggers delivery. Replaces the old single-shot `_signal_consumed` latch that dropped every signal after the first.
+    bool _stop_delivered = false; ///< One-way latch: whether this core has delivered the cooperative `stop_token`'s synthetic SIGINT (the token
+                                  ///< cannot be un-requested).
     /// Monotonic count of event-loop passes; surfaced to callbacks via `qb::LoopEvent::iteration`.
     std::uint64_t _loop_count = 0;
     /**

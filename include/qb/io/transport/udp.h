@@ -399,8 +399,7 @@ public:
         // `begin() + _last_pushed_offset` in the ProxyOut append path — stay correctly aligned
         // for their `reinterpret_cast<pushed_message *>`. That is what lets this function retire
         // a datagram by advancing the cursor instead of compacting the queue behind it.
-        static_assert(message_storage_size(0) % alignof(pushed_message) == 0
-                          && message_storage_size(1) % alignof(pushed_message) == 0
+        static_assert(message_storage_size(0) % alignof(pushed_message) == 0 && message_storage_size(1) % alignof(pushed_message) == 0
                           && message_storage_size(alignof(pushed_message) - 1u) % alignof(pushed_message) == 0,
                       "pushed_message storage must be a whole multiple of its alignment");
 

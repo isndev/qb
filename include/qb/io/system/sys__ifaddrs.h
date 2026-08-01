@@ -634,7 +634,7 @@ fill_sa_address(struct sockaddr **sa, struct ifaddrmsg *net_address, void *rta_d
 
         case AF_INET6: {
             struct sockaddr_in6 *sa6;
-            assert(rta_payload_length == 16); /* IPv6 address length */
+            assert(rta_payload_length == 16);                /* IPv6 address length */
             if (rta_payload_length > sizeof(sa6->sin6_addr)) // see the AF_INET branch
                 return -1;
             sa6 = (struct sockaddr_in6 *) calloc(1, sizeof(*sa6));

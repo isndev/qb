@@ -1093,7 +1093,13 @@ TEST_F(CoroutineCombinators, VoidTasksComposeThroughEveryAggregateCombinator) {
         co_await parallel(v(), v());
 
         std::vector<int> items{1, 2, 3};
-        auto             mapped = co_await parallel_map(items, [&ran](int) -> task<void> { ran.fetch_add(1); co_return; }, 2);
+        auto             mapped = co_await parallel_map(
+            items,
+            [&ran](int) -> task<void> {
+                ran.fetch_add(1);
+                co_return;
+            },
+            2);
         EXPECT_EQ(mapped.size(), 3u) << "a void mapper still yields one (monostate) slot per item";
 
         co_await with_deadline(v(), std::chrono::steady_clock::now() + 2s);

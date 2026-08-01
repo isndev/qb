@@ -617,7 +617,7 @@ VirtualCore::__pump_activations__() noexcept {
         ait->second->_activated = true;
         LOG_INFO(*ait->second << " activated");
         for (auto &buckets : act.stash) {
-            auto *ev        = reinterpret_cast<Event *>(buckets.data());
+            auto *ev             = reinterpret_cast<Event *>(buckets.data());
             ev->state.bits.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
             _router.route(*ev, [this](auto &e) {
                 if (!e.getDestination().is_broadcast())
@@ -672,8 +672,8 @@ VirtualCore::__workflow__() {
             }
         }
 
-        if (io::async::listener::current.has_coro_scheduler() || io::async::listener::current.size() ||
-            io::async::listener::current.has_deferred()) {
+        if (io::async::listener::current.has_coro_scheduler() || io::async::listener::current.size()
+            || io::async::listener::current.has_deferred()) {
             // Hot path: call `listener::run` directly — no `async::run` wrapper
             // (avoids redundant checks; metrics match `nb_invoked_event()` contract).
             io::async::listener::current.run(EVRUN_NOWAIT);
@@ -985,7 +985,7 @@ VirtualCore::reply(Event &event) noexcept {
 
 void
 VirtualCore::forward(ActorId const dest, Event &event) noexcept {
-    event.dest        = dest;
+    event.dest             = dest;
     event.state.bits.alive = 1;
     send(event);
 }

@@ -207,7 +207,7 @@ class native_backend final : public backend {
     qb::unordered_map<std::uint64_t, bool>                            _stream_fin_seen;
     qb::unordered_map<std::uint64_t, std::unique_ptr<native_backend>> _server_connections;
     qb::unordered_map<std::string, std::uint64_t>                     _server_cid_index;
-    std::vector<ngtcp2_cid>                                           _scid_scratch; // reused by reconcile_server_cids (no per-packet alloc)
+    std::vector<ngtcp2_cid>                                           _scid_scratch;    // reused by reconcile_server_cids (no per-packet alloc)
     std::vector<std::string>                                          _cid_key_scratch; // reused by reconcile_server_cids (no per-packet alloc)
     std::vector<std::uint64_t>                                        _server_closed_connections;
     std::uint64_t                                                     _queued_stream_bytes    = 0;
@@ -233,22 +233,22 @@ class native_backend final : public backend {
     // generates and later verifies. CHILD: when the connection was accepted only after a validated
     // Retry token, carry the recovered original DCID (from the token) + the retry SCID we issued, so
     // accept_server_connection sets original_dcid/retry_scid in the transport params correctly.
-    std::array<std::uint8_t, 32>                                      _retry_secret{};
-    bool                                                              _retry_secret_ready = false;
-    bool                                                              _has_retry_context  = false;
-    ngtcp2_cid                                                        _retry_odcid{};
-    ngtcp2_cid                                                        _retry_scid{};
-    std::chrono::steady_clock::time_point                             _base       = std::chrono::steady_clock::now();
-    ngtcp2_conn                                                      *_conn       = nullptr;
-    ngtcp2_crypto_ossl_ctx                                           *_crypto_ctx = nullptr;
-    SSL_CTX                                                          *_ssl_ctx    = nullptr;
-    SSL                                                              *_ssl        = nullptr;
-    ngtcp2_crypto_conn_ref                                            _conn_ref{};
-    bool                                                              _server             = false;
-    bool                                                              _server_parent      = false;
-    bool                                                              _started            = false;
-    bool                                                              _closing            = false;
-    bool                                                              _close_event_queued = false;
+    std::array<std::uint8_t, 32>          _retry_secret{};
+    bool                                  _retry_secret_ready = false;
+    bool                                  _has_retry_context  = false;
+    ngtcp2_cid                            _retry_odcid{};
+    ngtcp2_cid                            _retry_scid{};
+    std::chrono::steady_clock::time_point _base       = std::chrono::steady_clock::now();
+    ngtcp2_conn                          *_conn       = nullptr;
+    ngtcp2_crypto_ossl_ctx               *_crypto_ctx = nullptr;
+    SSL_CTX                              *_ssl_ctx    = nullptr;
+    SSL                                  *_ssl        = nullptr;
+    ngtcp2_crypto_conn_ref                _conn_ref{};
+    bool                                  _server             = false;
+    bool                                  _server_parent      = false;
+    bool                                  _started            = false;
+    bool                                  _closing            = false;
+    bool                                  _close_event_queued = false;
 
     [[nodiscard]] std::string
     negotiated_alpn() const {
@@ -724,16 +724,16 @@ private:
             return;
         ngtcp2_cid retry_scid;
         ngtcp2_cid_init(&retry_scid, scidbuf, sizeof(scidbuf));
-        const auto   now      = timestamp(std::chrono::steady_clock::now());
+        const auto   now = timestamp(std::chrono::steady_clock::now());
         std::uint8_t token[NGTCP2_CRYPTO_MAX_RETRY_TOKENLEN];
-        const auto   tokenlen = ngtcp2_crypto_generate_retry_token(
-            token, _retry_secret.data(), _retry_secret.size(), hd.version,
-            reinterpret_cast<const ngtcp2_sockaddr *>(&datagram.remote.sa_), datagram.remote.len(), &retry_scid, &hd.dcid, now);
+        const auto   tokenlen = ngtcp2_crypto_generate_retry_token(token, _retry_secret.data(), _retry_secret.size(), hd.version,
+                                                                   reinterpret_cast<const ngtcp2_sockaddr *>(&datagram.remote.sa_),
+                                                                   datagram.remote.len(), &retry_scid, &hd.dcid, now);
         if (tokenlen < 0)
             return;
         std::uint8_t buf[NGTCP2_MAX_UDP_PAYLOAD_SIZE];
-        const auto   n = ngtcp2_crypto_write_retry(buf, sizeof(buf), hd.version, &hd.scid, &retry_scid, &hd.dcid, token,
-                                                   static_cast<std::size_t>(tokenlen));
+        const auto   n =
+            ngtcp2_crypto_write_retry(buf, sizeof(buf), hd.version, &hd.scid, &retry_scid, &hd.dcid, token, static_cast<std::size_t>(tokenlen));
         if (n < 0)
             return;
         packet pkt;
@@ -854,10 +854,9 @@ private:
                 // The re-sent Initial carries a token: verify it proves this exact (client address,
                 // retry SCID) pair received our Retry. Invalid / expired / replayed -> drop.
                 const ngtcp2_duration token_ttl = 10 * NGTCP2_SECONDS;
-                const auto            now        = timestamp(std::chrono::steady_clock::now());
-                if (ngtcp2_crypto_verify_retry_token(&validated_odcid, hd.token, hd.tokenlen, _retry_secret.data(),
-                                                     _retry_secret.size(), hd.version,
-                                                     reinterpret_cast<const ngtcp2_sockaddr *>(&datagram.remote.sa_),
+                const auto            now       = timestamp(std::chrono::steady_clock::now());
+                if (ngtcp2_crypto_verify_retry_token(&validated_odcid, hd.token, hd.tokenlen, _retry_secret.data(), _retry_secret.size(),
+                                                     hd.version, reinterpret_cast<const ngtcp2_sockaddr *>(&datagram.remote.sa_),
                                                      datagram.remote.len(), &hd.dcid, token_ttl, now)
                     != 0) {
                     return nullptr;

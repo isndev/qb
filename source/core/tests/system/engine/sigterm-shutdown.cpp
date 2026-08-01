@@ -217,7 +217,8 @@ TEST(SignalShutdown, EngineInstallsTheSigtermHandlerItself) {
 TEST(SignalShutdown, SighupIsNotTerminal) {
     g_hup_seen.store(0, std::memory_order_relaxed);
     // The engine must still be running after SIGHUP; it is stopped afterwards via SIGINT.
-    EXPECT_FALSE(engine_stops_on<ReloadActor>(SIGHUP, std::chrono::seconds(3))) << "SIGHUP must not terminate the engine (it is the documented reload signal)";
+    EXPECT_FALSE(engine_stops_on<ReloadActor>(SIGHUP, std::chrono::seconds(3)))
+        << "SIGHUP must not terminate the engine (it is the documented reload signal)";
     EXPECT_GT(g_hup_seen.load(), 0) << "the SIGHUP SignalEvent must still reach actors";
     std::raise(SIGINT); // let the detached engine finish
     std::this_thread::sleep_for(std::chrono::milliseconds(500));

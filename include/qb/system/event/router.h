@@ -194,7 +194,7 @@ public:
                 // rationale; handlers are not destroyed until end-of-frame and
                 // invoke() re-checks is_alive(), so the snapshot stays valid.
                 static thread_local std::vector<_Handler *> bcast_snapshot;
-                const std::size_t base = bcast_snapshot.size();
+                const std::size_t                           base = bcast_snapshot.size();
                 for (auto &it : _subscribed_handlers)
                     bcast_snapshot.push_back(it.second);
                 const std::size_t end = bcast_snapshot.size();
@@ -321,7 +321,7 @@ public:
                 // base/restore keeps nested broadcasts allocation-free and
                 // correct (each nested route pushes/pops its own [base,end)).
                 static thread_local std::vector<Entry> bcast_snapshot;
-                const std::size_t base = bcast_snapshot.size();
+                const std::size_t                      base = bcast_snapshot.size();
                 for (const auto &it : _subscribed_handlers)
                     bcast_snapshot.push_back(it.second);
                 const std::size_t end = bcast_snapshot.size();
@@ -980,7 +980,6 @@ public:
             it.second->unsubscribe(id);
     }
 };
-
 
 /**
  * @brief Guarantee a type-erased disposer exists for a NON-TRIVIALLY-DESTRUCTIBLE event type.

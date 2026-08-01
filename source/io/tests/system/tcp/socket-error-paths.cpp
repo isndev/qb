@@ -493,8 +493,8 @@ TEST(SocketErrorPaths, HandleReadReadyClampsANegativeTimeout) {
     // would return an error, which counts as readable) and returns 1, while macOS reports it as
     // not readable and returns 0. The original `EXPECT_LE(ret, 0)` encoded the macOS answer and
     // failed on Linux; it was conflating "the timeout was clamped" with "nothing is readable".
-    const auto start = std::chrono::steady_clock::now();
-    const int  ret   = qb::io::socket::handle_read_ready(sock.native_handle(), -1ms);
+    const auto start   = std::chrono::steady_clock::now();
+    const int  ret     = qb::io::socket::handle_read_ready(sock.native_handle(), -1ms);
     const auto elapsed = std::chrono::steady_clock::now() - start;
 
     EXPECT_GE(ret, 0) << "a negative timeout must be clamped, not passed through to ::select as EINVAL (-1)";

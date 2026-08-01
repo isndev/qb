@@ -341,12 +341,14 @@ class QB_API socket : public tcp::socket {
     std::string                           _pending_sni_hostname;   /**< Desired SNI hostname to apply to the next/client SSL handle. */
     std::vector<std::string>              _pending_alpn_protocols; /**< Desired ALPN offers to apply before handshake starts. */
     std::unique_ptr<SSL_SESSION, void (*)(SSL_SESSION *)> _pending_session{
-        nullptr, SSL_SESSION_free}; /**< Session to resume, held (own ref) until the SSL is minted at connect. */
+        nullptr, SSL_SESSION_free
+    };                                        /**< Session to resume, held (own ref) until the SSL is minted at connect. */
     bool _pending_disable_resumption = false; /**< Deferred disable_session_resumption(): applied when the SSL is minted at connect. */
     bool _pending_request_ocsp       = false; /**< Deferred request_ocsp_stapling(true): applied when the SSL is minted at connect. */
     bool _verify_peer = true; /**< Secure-by-default: verify the server certificate chain + hostname on the auto-created client context. Cleared
                                  by set_insecure(). */
-    qb::io::ssl::Context _ctx; /**< Optional value-semantic context to mint the client SSL from; empty => auto-create a secure client context. */
+    qb::io::ssl::Context
+        _ctx; /**< Optional value-semantic context to mint the client SSL from; empty => auto-create a secure client context. */
 
     /**
      * @brief Performs the SSL handshake check after a non-blocking connect.
