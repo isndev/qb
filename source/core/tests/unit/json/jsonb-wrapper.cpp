@@ -170,8 +170,8 @@ TEST(Jsonb, DumpPreservesInt64AndDoublePrecision) {
 
 TEST(Jsonb, ParseErrorAndParsedConstruction) {
     // Malformed JSON must throw a parse_error (nlohmann's exception type), not silently yield null.
-    EXPECT_THROW((void) json::parse("{ this is : not json"), json::parse_error);
-    EXPECT_THROW((void) json::parse(""), json::parse_error);
+    EXPECT_THROW({ [[maybe_unused]] auto &&discarded_ = json::parse("{ this is : not json"); }, json::parse_error);
+    EXPECT_THROW({ [[maybe_unused]] auto &&discarded_ = json::parse(""); }, json::parse_error);
 
     // A wrapper built from a successfully parsed string exposes the parsed structure.
     jsonb parsed(json::parse(R"({"k": 5, "arr": [1, 2, 3]})"));
