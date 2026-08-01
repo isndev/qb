@@ -342,7 +342,7 @@ class QB_API socket : public tcp::socket {
     std::vector<std::string>              _pending_alpn_protocols; /**< Desired ALPN offers to apply before handshake starts. */
     std::unique_ptr<SSL_SESSION, void (*)(SSL_SESSION *)> _pending_session{
         nullptr, SSL_SESSION_free
-    };                                        /**< Session to resume, held (own ref) until the SSL is minted at connect. */
+    }; /**< Session to resume, held (own ref) until the SSL is minted at connect. */
     bool _pending_disable_resumption = false; /**< Deferred disable_session_resumption(): applied when the SSL is minted at connect. */
     bool _pending_request_ocsp       = false; /**< Deferred request_ocsp_stapling(true): applied when the SSL is minted at connect. */
     bool _verify_peer = true; /**< Secure-by-default: verify the server certificate chain + hostname on the auto-created client context. Cleared
