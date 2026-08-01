@@ -580,8 +580,19 @@ function(qb_add_benchmark)
     
     # Apply common properties
     _qb_apply_target_properties(${BENCH_NAME})
+    # Deprecations warn but do not fail HERE only. Benchmark targets are the one place that
+    # compiles against google-benchmark's headers, and its API name for the registration object
+    # differs by version: the pinned FetchContent build (QB_GOOGLEBENCHMARK_GIT_TAG, v1.9.2) knows
+    # only `benchmark::internal::Benchmark`, while newer system packages
+    # (-DQB_USE_SYSTEM_BENCHMARK=ON, which CI uses) deprecate that spelling in favour of
+    # `benchmark::Benchmark` — an alias v1.9.2 does not have. No single spelling compiles warning-
+    # free under both, so promoting a THIRD-PARTY deprecation to an error just makes the build
+    # depend on which benchmark package the machine happens to provide. Our own -Werror still
+    # applies to every other warning in these targets, and to all test targets unchanged.
     target_compile_options(${BENCH_NAME} PRIVATE
         $<$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang>:-Wno-c2y-extensions>
+        $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-Wno-error=deprecated-declarations>
+        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4996>
     )
     
     if(TARGET benchmark::benchmark)

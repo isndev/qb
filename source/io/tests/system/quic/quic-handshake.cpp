@@ -112,7 +112,7 @@ TEST(QuicHandshakeAvailability, EndpointUsesNativeBackendWhenAvailable) {
     EXPECT_EQ(endpoint.current_state(), qb::io::async::quic::endpoint::state::connecting);
     ASSERT_NE(endpoint.backend(), nullptr);
 #else
-    EXPECT_THROW((void) endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}), std::runtime_error);
+    EXPECT_THROW({ [[maybe_unused]] auto &&discarded_ = endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}); }, std::runtime_error);
     EXPECT_FALSE(endpoint.is_open());
     EXPECT_EQ(endpoint.current_state(), qb::io::async::quic::endpoint::state::idle);
 #endif
@@ -177,7 +177,8 @@ TEST(QuicHandshakeNativeBackend, PreConnectionOperationsAreStableAndReportFailur
     EXPECT_TRUE(backend->drain_packets().empty());
     EXPECT_TRUE(backend->drain_events().empty());
     EXPECT_EQ(backend->current_stats().active_connections, 0u);
-    EXPECT_THROW((void) backend->open_stream(qb::io::quic::stream_direction::bidirectional), std::runtime_error);
+    EXPECT_THROW(
+        { [[maybe_unused]] auto &&discarded_ = backend->open_stream(qb::io::quic::stream_direction::bidirectional); }, std::runtime_error);
 
     qb::io::quic::packet_view datagram{remote, local, std::span<const std::byte>{payload.data(), payload.size()}};
     backend->on_udp_datagram(datagram);
@@ -340,7 +341,8 @@ TEST(QuicHandshakeNativeBackend, ServerParentNoConnectionPathsRemainOpen) {
     backend->stop_stream(99, 1, 3);
     backend->close_connection(99, 4, "missing");
     EXPECT_TRUE(backend->drain_events().empty());
-    EXPECT_THROW((void) backend->open_stream(99, qb::io::quic::stream_direction::bidirectional), std::runtime_error);
+    EXPECT_THROW(
+        { [[maybe_unused]] auto &&discarded_ = backend->open_stream(99, qb::io::quic::stream_direction::bidirectional); }, std::runtime_error);
 
     backend->close(5, "server closed");
     auto events = backend->drain_events();

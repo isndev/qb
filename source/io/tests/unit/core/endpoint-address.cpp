@@ -249,9 +249,14 @@ TEST(EndpointAddress, StaticFactoriesOnInvalidFdReturnInvalid) {
  *        (memcpy of sockaddr_in + len()). We build the sockaddr_in by hand so there is no live I/O.
  */
 TEST(EndpointAddress, ConstructFromSockaddrInet) {
-    sockaddr_in sin{};
-    sin.sin_family = AF_INET;
-    sin.sin_port   = htons(static_cast<unsigned short>(1234));
+    // sockaddr_storage, not sockaddr_in: `as_is(const sockaddr *)` dispatches on sa_family at
+    // runtime, so GCC cannot prove the AF_INET6 arm (28 bytes) is unreachable and reports a
+    // -Warray-bounds over-read of a 16-byte sockaddr_in. Real POSIX callers pass storage for
+    // exactly this reason (recvfrom, getpeername).
+    sockaddr_storage sin_store{};
+    auto            &sin = reinterpret_cast<sockaddr_in &>(sin_store);
+    sin.sin_family       = AF_INET;
+    sin.sin_port         = htons(static_cast<unsigned short>(1234));
     ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "8.8.4.4", &sin.sin_addr), 1);
 
     endpoint e(reinterpret_cast<const sockaddr *>(&sin));
@@ -406,8 +411,13 @@ TEST(EndpointAddress, InaddrToCsvNlFiltersNonGlobalV6) {
  * @brief Drives the static sockaddr overload (line 714) which builds a temporary endpoint.
  */
 TEST(EndpointAddress, StaticInaddrToCsvNlFromSockaddr) {
-    sockaddr_in sin{};
-    sin.sin_family = AF_INET;
+    // sockaddr_storage, not sockaddr_in: `as_is(const sockaddr *)` dispatches on sa_family at
+    // runtime, so GCC cannot prove the AF_INET6 arm (28 bytes) is unreachable and reports a
+    // -Warray-bounds over-read of a 16-byte sockaddr_in. Real POSIX callers pass storage for
+    // exactly this reason (recvfrom, getpeername).
+    sockaddr_storage sin_store{};
+    auto            &sin = reinterpret_cast<sockaddr_in &>(sin_store);
+    sin.sin_family       = AF_INET;
     ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "198.51.100.7", &sin.sin_addr), 1);
 
     std::string csv;
@@ -415,8 +425,13 @@ TEST(EndpointAddress, StaticInaddrToCsvNlFromSockaddr) {
     EXPECT_EQ(csv, "198.51.100.7,");
 
     // loopback sockaddr is filtered.
-    sockaddr_in lo{};
-    lo.sin_family = AF_INET;
+    // sockaddr_storage, not sockaddr_in: `as_is(const sockaddr *)` dispatches on sa_family at
+    // runtime, so GCC cannot prove the AF_INET6 arm (28 bytes) is unreachable and reports a
+    // -Warray-bounds over-read of a 16-byte sockaddr_in. Real POSIX callers pass storage for
+    // exactly this reason (recvfrom, getpeername).
+    sockaddr_storage lo_store{};
+    auto            &lo = reinterpret_cast<sockaddr_in &>(lo_store);
+    lo.sin_family       = AF_INET;
     ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, "127.0.0.5", &lo.sin_addr), 1);
     std::string csv2 = "x,";
     endpoint::inaddr_to_csv_nl(reinterpret_cast<const sockaddr *>(&lo), csv2);

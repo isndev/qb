@@ -152,7 +152,7 @@ TEST(ProtocolBaseFraming, SizeHeaderRejectsZeroAndChecksHeaderCapacity) {
     auto make_too_large_header = [] {
         return SizeHeaderProtocol<std::uint8_t>::Header(256u);
     };
-    EXPECT_THROW((void) make_too_large_header(), std::runtime_error);
+    EXPECT_THROW({ [[maybe_unused]] auto &&discarded_ = make_too_large_header(); }, std::runtime_error);
 
     // A 1-byte header is the raw value.
     EXPECT_EQ(SizeHeaderProtocol<std::uint8_t>::Header(7u), 7u);

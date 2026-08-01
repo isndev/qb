@@ -579,9 +579,9 @@ TEST(Crypto, HmacWithRejectedKeyThrowsWithoutDoubleFree) {
     const std::vector<unsigned char> data{'p', 'a', 'y', 'l', 'o', 'a', 'd'};
     const std::vector<unsigned char> empty_key;
 
-    for (const auto alg : {qb::crypto::DigestAlgorithm::SHA256, qb::crypto::DigestAlgorithm::SHA512,
-                           qb::crypto::DigestAlgorithm::SHA1}) {
-        EXPECT_THROW((void) qb::crypto::hmac(data, empty_key, alg), std::runtime_error)
+    for (const auto alg : {qb::crypto::DigestAlgorithm::SHA256, qb::crypto::DigestAlgorithm::SHA512, qb::crypto::DigestAlgorithm::SHA1}) {
+        EXPECT_THROW(
+            { [[maybe_unused]] auto &&discarded_ = qb::crypto::hmac(data, empty_key, alg); }, std::runtime_error)
             << "an empty HMAC key must be rejected, not silently accepted";
     }
 
