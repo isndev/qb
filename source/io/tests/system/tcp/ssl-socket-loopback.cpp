@@ -51,6 +51,7 @@
  */
 
 #include <atomic>
+#include <cerrno> // errno — distinguishes a clean close_notify from a real read error
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -158,7 +159,17 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std
             continue;
         }
         if (ret < 0) {
-            return ::testing::AssertionFailure() << "SSL read failed after " << received << "/" << size << " bytes";
+            // socket::read() collapses two very different outcomes into -1: a real SSL error, and
+            // SSL_ERROR_ZERO_RETURN (the peer sent close_notify — a CLEAN shutdown, which for this
+            // helper means the peer went away before writing what we were waiting for). Report the
+            // queued OpenSSL error and errno so a CI log can tell them apart: an empty error string
+            // with errno 0 is the clean-close case, and points at a lifetime race in the test rather
+            // than at the TLS stack.
+            const auto ssl_err = socket.get_last_ssl_error_string();
+            return ::testing::AssertionFailure()
+                   << "SSL read failed after " << received << "/" << size << " bytes"
+                   << "; openssl=\"" << (ssl_err.empty() ? "<none: clean close_notify or EOF>" : ssl_err) << "\""
+                   << ", errno=" << errno;
         }
         std::this_thread::sleep_for(1ms);
     }
@@ -957,7 +968,14 @@ TEST(SSLSocketLoopback, PostHandshakeAccessorsAndChannelBinding) {
 
     // verify depth / callback setters operate on the live SSL object.
     EXPECT_TRUE(client.set_verify_depth(4));
-    EXPECT_TRUE(client.set_verify_callback([](int ok, X509_STORE_CTX *) -> int { return ok; }, SSL_VERIFY_PEER));
+    // SSL_VERIFY_NONE, deliberately: this asserts that the SETTER works, not that verification
+    // does. Arming SSL_VERIFY_PEER here would re-arm verification on a LIVE connection that
+    // set_insecure() opened against the self-signed fixture, and TLS 1.3 processes pending
+    // post-handshake messages (NewSessionTicket) on the next SSL_write — so the re-verification
+    // fires there, fails on the self-signed chain and tears the connection down under the peer.
+    // Whether a ticket is already pending is pure timing, which is why that shape passed locally
+    // and failed on a loaded CI runner with the server's read returning a bare -1.
+    EXPECT_TRUE(client.set_verify_callback([](int ok, X509_STORE_CTX *) -> int { return ok; }, SSL_VERIFY_NONE));
 
     // request_ocsp_stapling(false) is a no-op that still reports success.
     EXPECT_TRUE(client.request_ocsp_stapling(false));
