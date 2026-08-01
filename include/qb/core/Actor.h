@@ -403,25 +403,25 @@ public:
     /**
      * @brief Handler for SignalEvent.
      *
-     * Default handler for system signals (e.g., SIGINT) that terminates the actor.
-     * Derived classes can override this handler to perform custom signal handling.
-     * If overridden, ensure proper state management or actor termination if needed.
+     * `SIGINT` and `SIGTERM` are terminal: for either one the default handler calls `kill()`,
+     * so a Ctrl-C or a container stop unwinds every actor. `Main::start()` installs both.
+     *
+     * Every other signal is delivered but is **not** terminal — the default handler ignores
+     * it. A signal you add with `qb::Main::registerSignal()` (`SIGHUP`, `SIGUSR1`, ...) arrives
+     * here for a config reload or a stats dump; override this handler to act on it, and call
+     * `kill()` there if that signal should stop the actor too.
      *
      * @param event The received signal event, containing `event.signum`.
      * Example of overriding:
      * @code
      * void on(qb::SignalEvent const &event) override {
-     *   if (event.signum == SIGINT) {
-     *     LOG_INFO("Actor " << id() << " received SIGINT, performing graceful shutdown.");
-     *     // Custom shutdown logic here...
-     *     kill(); // Terminate the actor
-     *   } else if (event.signum == SIGUSR1) {
+     *   if (event.signum == SIGUSR1) {
      *     LOG_INFO("Actor " << id() << " received SIGUSR1, reloading configuration.");
-     *     reloadConfig();
+     *     reloadConfig(); // stays alive: SIGUSR1 is not terminal
      *   } else {
-     *     LOG_WARN("Actor " << id() << " received unhandled signal: " << event.signum);
-     *     // Default behavior for other signals might be to kill, or call base:
-     *     // Actor::on(event);
+     *     LOG_INFO("Actor " << id() << " shutting down on signal " << event.signum);
+     *     flushPendingWork();
+     *     Actor::on(event); // kills the actor on SIGINT / SIGTERM, no-op otherwise
      *   }
      * }
      * @endcode
@@ -777,7 +777,25 @@ public:
      * to the same destination actor from the same source actor are guaranteed to be received
      * in the order they were pushed.
      * The event is queued and sent by the `VirtualCore` at an appropriate time (usually at the end of the current processing loop).
-     * Supports events with non-trivially destructible members (e.g., `std::string`, `std::vector`).
+     * Supports events with non-trivially destructible members (`std::vector`, smart pointers,
+     * `qb::string<N>`): the framework runs the event's destructor exactly once, after the handler.
+     * @warning **The member must be trivially RELOCATABLE — it must not hold a pointer into
+     *          itself.** Cross-core delivery moves an event by raw `memcpy` (sender pipe → peer
+     *          mailbox ring → receive buffer) and never runs the source destructor, so a
+     *          self-referential member still addresses the *sender's* buffer after the hop.
+     *          A **short `std::string` by value is exactly that on libstdc++** (its `_M_p` points
+     *          at its own inline `_M_local_buf`): the handler reads reused memory and
+     *          `~basic_string()` then calls `operator delete` on a pointer that never came from
+     *          the heap. libc++ recomputes `data()` from `this`, so macOS never shows it and only
+     *          Linux corrupts. Use `qb::string<N>` for inline text, or keep the data on the heap
+     *          behind a `std::shared_ptr` / `std::unique_ptr` member.
+     * @note    **Debug builds catch this for you.** Before relocating an event cross-core the
+     *          engine scans it for a pointer into its own storage and aborts with a diagnostic
+     *          instead of corrupting the peer (`SharedCoreCommunication::send`). It is compiled
+     *          out entirely under `NDEBUG`, so a release build pays nothing — the point is to make
+     *          the defect visible on the development platform, where the standard library hides
+     *          it. Pinned by `RelocatablePayload.*` / `RelocatablePayloadDeathTest.*` in
+     *          `system/messaging/relocatable-payload.cpp`.
      * @code
      * // ActorId target_id = GetSomeActorId();
      * // auto& my_evt = push<MyDataEvent>(target_id, initial_value);
@@ -851,6 +869,29 @@ public:
      */
     template <typename _Event, typename... _Args>
     [[nodiscard]] _Event build_event(qb::ActorId const source, _Args &&...args) const noexcept;
+
+    /**
+     * @brief Is `id` an actor that is still alive and active on **this** VirtualCore?
+     * @param id The actor identifier to test.
+     * @return `true` iff an actor with that id exists on this core and its `onInit()` has
+     *         completed; `false` for an invalid id, an actor on another core, one whose async
+     *         `onInit()` is still in flight, and one that has been killed.
+     * @details
+     * The untyped counterpart of `qb::ActorHandle<T>::ready()`: one hash lookup, no
+     * `dynamic_cast`, no knowledge of the concrete type. It exists for bookkeeping that stores
+     * bare `ActorId`s — a subscriber list, a routing table, a worker registry — and must drop
+     * entries whose actor has gone. The framework prunes its **own** such map when an actor dies
+     * (`VirtualCore::removeActor` → `unregisterEvents`), so any user-space mirror of it needs
+     * this to stay bounded; `qb::PubSub<Topic>` uses it exactly so.
+     * @attention Same-core only, by construction: an actor map belongs to its own VirtualCore and
+     *            is not synchronized. A `false` for a *remote* id is therefore not evidence that
+     *            the actor is gone — for cross-core liveness, ask the remote actor
+     *            (`co_await qb::ping(...)`).
+     * @code
+     * // std::erase_if(_subscribers, [this](qb::ActorId s) { return !is_actor_alive(s); });
+     * @endcode
+     */
+    [[nodiscard]] bool is_actor_alive(ActorId id) const noexcept;
 
     /**
      * @brief Check if a given ID matches the type ID of `_Type`.
@@ -986,7 +1027,9 @@ public:
      * // ActorId target_id = GetSomeActorId();
      * // qb::Pipe comm_pipe = getPipe(target_id);
      * // auto& ev1 = comm_pipe.push<MyEvent1>();
-     * // auto& ev2 = comm_pipe.allocated_push<LargeEvent>(data_size, constructor_args_for_large_event);
+     * // // allocated_push's first argument is the TRAILING bytes reserved after the event
+     * // // (sizeof(LargeEvent) is added internally) — pass 0 unless you write raw bytes past it.
+     * // auto& ev2 = comm_pipe.allocated_push<LargeEvent>(0, constructor_args_for_large_event);
      * @endcode
      * @see qb::Pipe
      * @see Pipe::push

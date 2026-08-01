@@ -182,10 +182,30 @@ TEST(SpinLock, TimedAcquirePathsAreMutuallyExclusiveUnderContention) {
     for (int t = 0; t < kThreads; ++t) {
         threads.emplace_back([&sl, &counter, &acquired, t]() {
             for (int i = 0; i < kIters; ++i) {
-                // Alternate the two timed paths; both budgets are generous enough that a correct
-                // implementation always eventually acquires.
-                const bool ok = (t % 2 == 0) ? sl.trylock_for(std::chrono::seconds{10}) : sl.trylock(1 << 20);
-                ASSERT_TRUE(ok) << "a generous budget must always eventually acquire an uncontended-in-the-limit lock";
+                // The two budgets are NOT equivalent, and treating them as such made this test
+                // flaky (measured: 2 failures in 8 standalone runs, always on the spin path, always
+                // at i == 0 — the thundering herd at thread start).
+                //
+                //   trylock_for(10s)  bounds WALL TIME. Under this workload — 8 threads, a
+                //                     `++counter` critical section — 10 s is genuinely unreachable,
+                //                     so a false here would be a real defect and is asserted.
+                //   trylock(1 << 20)  bounds ATTEMPTS, not time. A TTAS read-spin is ~1 ns, so the
+                //                     whole budget is ~1 ms of wall clock; losing every attempt for
+                //                     1 ms against 7 contenders is ordinary contention, and
+                //                     returning false is exactly what TtasWaitLoopStillHonoursIts-
+                //                     Budget requires of it. Retry instead of asserting.
+                bool ok;
+                if (t % 2 == 0) {
+                    ok = sl.trylock_for(std::chrono::seconds{10});
+                    ASSERT_TRUE(ok) << "a 10-second WALL-CLOCK budget must acquire: this workload cannot hold the lock that long";
+                } else {
+                    // Bounded so a genuine livelock still fails the test rather than hanging it:
+                    // 4096 x ~1 ms is ~4 s of trying, orders of magnitude past any real contention.
+                    ok = false;
+                    for (int attempt = 0; attempt < 4096 && !ok; ++attempt)
+                        ok = sl.trylock(1 << 20);
+                    ASSERT_TRUE(ok) << "the attempt-budgeted path never acquired across 4096 full budgets — that is livelock, not contention";
+                }
                 ++counter; // critical section
                 acquired.fetch_add(1, std::memory_order_relaxed);
                 sl.unlock();

@@ -312,10 +312,19 @@ public:
         const auto ret = _out.write(_out_buffer.begin(), _out_buffer.size());
 
         if (ret > 0) {
-            if (static_cast<std::size_t>(ret) != _out_buffer.size()) {
+            // A partial write only advances the read cursor: `free_front()` is O(1) and `begin()`/
+            // `size()` stay correct at the new offset, so the next write() resumes exactly where the
+            // socket stopped. Compacting here instead would memmove every byte still pending on
+            // EVERY turn, which makes draining one large payload quadratic — a 64 MB body flushed
+            // 64 KiB at a time moved 32 GB and burnt 728 ms of loop time (measured), all of it
+            // stolen from the actors sharing this core. What this retires is reclaimed by the next
+            // `publish()`: `allocate_back()` compacts once `_begin` passes half the capacity and
+            // grows otherwise, and it only grows when the bytes that stay live already fill half of
+            // it. A stream published into while it drains (a permanent backlog, so every round
+            // lands here) settles at ~4x the bytes in flight — and settles, it does not creep up.
+            if (static_cast<std::size_t>(ret) != _out_buffer.size())
                 _out_buffer.free_front(ret);
-                _out_buffer.reorder();
-            } else
+            else
                 _out_buffer.reset();
         }
 
@@ -446,10 +455,11 @@ public:
     {
         const auto ret = this->_in.write(_out_buffer.begin(), _out_buffer.size());
         if (ret > 0) {
-            if (static_cast<std::size_t>(ret) != _out_buffer.size()) {
+            // Advance the cursor, never relocate the tail — see the identical comment on
+            // `ostream::write()` for why compacting here is quadratic and unnecessary.
+            if (static_cast<std::size_t>(ret) != _out_buffer.size())
                 _out_buffer.free_front(ret);
-                _out_buffer.reorder();
-            } else
+            else
                 _out_buffer.reset();
         }
         return ret;

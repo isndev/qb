@@ -31,6 +31,7 @@
 #include <numeric>
 #include <random>
 #include <qb/actor.h>
+#include "PayloadRng.h"
 
 namespace qb::test {
 
@@ -41,8 +42,7 @@ struct TestEvent : public qb::Event {
     bool          has_extra_data = false;
 
     TestEvent() {
-        std::random_device                 rand_dev;
-        std::mt19937                       generator(rand_dev());
+        auto                              &generator = detail::payload_rng();
         std::uniform_int_distribution<int> random_number(0, 255);
         std::generate(std::begin(_data), std::end(_data), [&]() {
             auto number = static_cast<std::uint8_t>(random_number(generator));

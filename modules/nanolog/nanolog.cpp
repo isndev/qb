@@ -26,6 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include "nanolog.h"
 #include <algorithm>
 #include <atomic>
+#include <new>   // std::align_val_t for the over-aligned ring allocation
 #include <chrono>
 #include <cstring>
 #include <ctime>
@@ -383,7 +384,14 @@ public:
 
     RingBuffer(size_t const size)
         : m_size(size)
-        , m_ring(static_cast<Item *>(std::malloc(size * sizeof(Item))))
+        // `Item` is alignas(64) to keep producers off each other's cache lines. std::malloc only
+        // guarantees __STDCPP_DEFAULT_NEW_ALIGNMENT__ (16 here), so placement-new'ing an
+        // over-aligned type into malloc'd storage is undefined behaviour — it merely happened to
+        // work because this allocator returns 64-aligned blocks for large requests (measured:
+        // 200/200 at the ring's real size, but 8/400 for small ones, and Windows' allocator is a
+        // different implementation entirely). The aligned operator new states the requirement
+        // instead of relying on the allocator's luck.
+        , m_ring(static_cast<Item *>(::operator new(size * sizeof(Item), std::align_val_t{alignof(Item)})))
         , m_write_index(0)
         , m_read_index(0) {
         for (size_t i = 0; i < m_size; ++i) {
@@ -396,7 +404,7 @@ public:
         for (size_t i = 0; i < m_size; ++i) {
             m_ring[i].~Item();
         }
-        std::free(m_ring);
+        ::operator delete(m_ring, m_size * sizeof(Item), std::align_val_t{alignof(Item)});
     }
 
     void

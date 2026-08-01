@@ -389,3 +389,87 @@ TEST(EventRouting, MEMHonErrorFiresForUnregisteredEvent) {
     EXPECT_EQ(on_error_calls, 2u);
     EXPECT_EQ(TestEvent::_count, 1u) << "the unknown event never reached a handler";
 }
+// =============================================================================
+// memh — the per-router disposer memo.
+//
+// `_disposers` is `static`: one map for the whole process, and every read of it used to take a
+// process-global mutex. That read sits on a path reached at full event rate — an event whose type
+// has no resolver on this core takes `route()`'s `else` branch, which is exactly what
+// `broadcast<E>()` produces on every core where no actor subscribed to `E` (the engine treats it
+// as normal: `VirtualCore::__receive_events__`'s onError only logs for non-broadcast). So a
+// broadcasting system serialised all of its cores through one lock. Measured on this very router,
+// per event: 10.1 ns at 1 thread, 35.1 at 2, 125.9 at 4, 256.6 at 8 — throughput going DOWN as
+// cores were added (98.7 -> 31.2 M events/s). With the memo: 5.4-5.8 ns flat, 178 -> 1379 M/s.
+//
+// The memo's one subtle obligation is below: a MISS must not be memoised. Disposers are registered
+// lazily (`ensure_disposer<>()` at the enqueue funnels, `subscribe<E>()`), so a router can very
+// well see a type before its disposer exists — and if it remembered that absence it would go on
+// leaking that type's payload forever.
+// =============================================================================
+
+namespace {
+
+struct LateDisposeEvent : public RawEvent {
+    static std::size_t _count;
+    LateDisposeEvent() {
+        alive = false; // route() only disposes a non-alive payload
+        id    = RawEvent::type_to_id<LateDisposeEvent>();
+    }
+    ~LateDisposeEvent() {
+        ++_count;
+    }
+};
+std::size_t LateDisposeEvent::_count = 0;
+
+} // namespace
+
+TEST(EventRouting, MemhDisposerMemoDoesNotCacheAMiss) {
+    qb::router::memh<RawEvent, true, void> router;
+    const auto                             noop = [](auto &) {};
+
+    // Before any disposer exists for this type, the router must find none — and must not remember
+    // that. Nothing is registered on the router either, so this takes the `else` branch.
+    LateDisposeEvent::_count = 0;
+    {
+        LateDisposeEvent early;
+        router.route(early, noop);
+    }
+    // Exactly one destructor ran: `early`'s own, at end of scope. The router disposed nothing.
+    ASSERT_EQ(LateDisposeEvent::_count, 1u) << "precondition: with no disposer registered, route() must dispose nothing";
+
+    // The disposer appears later — the ordinary lifecycle, since enqueue funnels register on first
+    // use and actors subscribe at runtime.
+    qb::router::ensure_disposer<RawEvent, LateDisposeEvent>();
+
+    LateDisposeEvent::_count = 0;
+    {
+        LateDisposeEvent late;
+        router.route(late, noop);
+        EXPECT_EQ(LateDisposeEvent::_count, 1u)
+            << "the router did not pick up a disposer registered after its first lookup missed: a "
+               "negative result was memoised, so every event of this type leaks its payload for the "
+               "life of the process";
+    }
+    EXPECT_EQ(LateDisposeEvent::_count, 2u) << "route() disposed the payload, then the scope destroyed the object";
+}
+
+TEST(EventRouting, MemhDisposerMemoStaysCorrectAcrossRepeatedRoutes) {
+    qb::router::ensure_disposer<RawEvent, TestDestroyEvent>();
+
+    qb::router::memh<RawEvent, true, void> router;
+    const auto                             noop = [](auto &) {};
+
+    // Every route must dispose exactly once — the memo must not skip, double-dispose, or go stale
+    // once it is warm. Counting destructor runs is the oracle; the objects here are constructed in
+    // place and never destroyed by the scope, so the count is attributable to route() alone.
+    constexpr std::size_t kRoutes = 4096u;
+    TestDestroyEvent::_count      = 0;
+
+    alignas(TestDestroyEvent) unsigned char storage[sizeof(TestDestroyEvent)];
+    for (std::size_t i = 0; i < kRoutes; ++i) {
+        auto *ev = new (storage) TestDestroyEvent{};
+        router.route(*ev, noop);
+    }
+
+    EXPECT_EQ(TestDestroyEvent::_count, kRoutes) << "each unrouted event must have its payload disposed exactly once";
+}

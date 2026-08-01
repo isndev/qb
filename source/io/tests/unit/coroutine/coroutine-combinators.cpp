@@ -573,12 +573,13 @@ TEST_F(CoroutineCombinators, TimeoutVoidSuccess) {
     std::atomic<bool> ran{false};
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
-        co_await coro_with_timeout(
-            [&ran]() -> task<void> {
-                co_await sleep(20ms);
-                ran.store(true);
-            }(),
-            200ms);
+        // Named local of this frame: `task`'s initial_suspend is suspend_always, so the body runs
+        // on a later run_ready() — an immediately-invoked temporary closure would be gone by then.
+        auto op = [&ran]() -> task<void> {
+            co_await sleep(20ms);
+            ran.store(true);
+        };
+        co_await coro_with_timeout(op(), 200ms);
         done.store(true);
     });
 
@@ -618,13 +619,12 @@ TEST_F(CoroutineCombinators, TimeoutAbandonsButDoesNotInterruptSlowOperation) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         try {
-            co_await coro_with_timeout(
-                [&inner_finished]() -> task<int> {
-                    co_await sleep(60ms); // outlives the 20ms timeout
-                    inner_finished.store(true);
-                    co_return 7;
-                }(),
-                20ms);
+            auto op = [&inner_finished]() -> task<int> {
+                co_await sleep(60ms); // outlives the 20ms timeout
+                inner_finished.store(true);
+                co_return 7;
+            };
+            co_await coro_with_timeout(op(), 20ms);
             ADD_FAILURE() << "expected timeout_error";
         } catch (const timeout_error &) {
             caught.store(true);

@@ -514,18 +514,18 @@ spawn([prod, count, to](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
 
 | Symbol | Signature | Source |
 |---|---|---|
-| `qb::PubSub<Topic>` | `class PubSub : public qb::ServiceActor<PubSub<Topic>>` | `pubsub.h:49-50` |
-| `PubSub::subscribe` | `void subscribe(ActorId who)` (idempotent) | `pubsub.h:59-66` |
-| `PubSub::unsubscribe` | `void unsubscribe(ActorId who)` | `pubsub.h:67-71` |
-| `PubSub::publish` | `template <class... Args> void publish(Args const &...args)` | `pubsub.h:78-87` |
-| `PubSub::subscriber_count` | `std::size_t subscriber_count() const noexcept` | `pubsub.h:72-76` |
+| `qb::PubSub<Topic>` | `class PubSub : public qb::ServiceActor<PubSub<Topic>>` | `pubsub.h:61-62` |
+| `PubSub::subscribe` | `void subscribe(ActorId who)` (idempotent) | `pubsub.h:81-98` |
+| `PubSub::unsubscribe` | `void unsubscribe(ActorId who)` | `pubsub.h:99-103` |
+| `PubSub::publish` | `template <class... Args> void publish(Args const &...args)` | `pubsub.h:124-150` |
+| `PubSub::subscriber_count` | `std::size_t subscriber_count() const noexcept` | `pubsub.h:117-122` |
 
 `PubSub<Topic>` is a `ServiceActor` (one instance per `VirtualCore`); add it with
 `main.addActor<qb::PubSub<Topic>>(coreId)`. Same-core actors reach it via
 `getService<qb::PubSub<Topic>>()`. A subscriber calls `subscribe(id())` (and registers a `Topic`
 handler); a publisher calls `publish(args…)`, which builds a `Topic{args…}` and pushes a copy to
 every current subscriber. **Per-core by design** — a publication reaches subscribers on the bus's own
-core only; add a bus per core for cross-core topics (`pubsub.h:31-47`).
+core only; add a bus per core for cross-core topics (`pubsub.h:36-40`).
 
 ### Example
 
@@ -775,7 +775,7 @@ qb::io::async::task<bool> onInit() override {
 | Throttle call rate | resilience | `qb::rate_limiter` (`resilience.h:239`) |
 | Cap concurrent calls to a resource | resilience | `qb::bulkhead` (`resilience.h:331`) |
 | One request, many replies | streaming | `qb::ask_stream` + `qb::yield_answer` / `qb::end_stream` (`streaming.h:322,352,368`) |
-| Fan an event to many subscribers (per core) | pub/sub | `qb::PubSub<Topic>` (`pubsub.h:49`) |
+| Fan an event to many subscribers (per core) | pub/sub | `qb::PubSub<Topic>` (`pubsub.h:62`) |
 | Restart child actors on failure | supervision | `qb::Supervisor` + `qb::SupervisedActor` (`supervisor.h:121,70`) |
 | Distribute work across workers | routing | `qb::WorkerPool` (`routing.h:48`) |
 | Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:158,64`) |

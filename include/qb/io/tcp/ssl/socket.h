@@ -505,9 +505,19 @@ public:
     /**
      * @brief Establish a blocking SSL/TLS connection to a remote endpoint.
      * @param ep The `qb::io::endpoint` of the remote server.
-     * @param hostname Optional hostname string for Server Name Indication (SNI). If empty, SNI is not used.
+     * @param hostname Hostname (or IP literal) used for BOTH Server Name Indication **and the
+     *                 certificate verification target**. See the warning below before omitting it.
      * @return 0 on successful connection and SSL handshake, non-zero error code on failure.
      * @details Requires `init(SSL_CTX*)` to have been called first to set up the SSL context for this socket.
+     * @warning Leaving @p hostname empty does **not** merely skip SNI. It also leaves the connection
+     *          with *chain verification only*: the peer's certificate must chain to a trusted CA, but
+     *          nothing checks that it was issued for the host you meant to reach, so any valid
+     *          certificate from any trusted CA is accepted. Prefer `connect(uri)` / `n_connect(uri)`,
+     *          which take the hostname from the URI, or pass it explicitly here. The empty default
+     *          exists for transports that genuinely have no hostname (Unix domain sockets), where
+     *          only the chain is meaningful. To turn verification off deliberately, call
+     *          `set_insecure()` — that choice should be explicit, never a side effect of an omitted
+     *          argument.
      */
     int connect(endpoint const &ep, std::string const &hostname = "") noexcept;
 
@@ -555,11 +565,19 @@ public:
     /**
      * @brief Initiate a non-blocking SSL/TLS connection to a remote endpoint.
      * @param ep The `qb::io::endpoint` of the remote server.
-     * @param hostname Optional hostname for SNI. If empty, SNI is not used.
+     * @param hostname Hostname (or IP literal) used for BOTH Server Name Indication **and the
+     *                 certificate verification target**. See the warning below before omitting it.
      * @return 0 if TCP connection is in progress or succeeded (SSL handshake follows via `connected()`).
      *         Non-zero error code on immediate TCP connection failure.
-     * @details Sets up SNI if `hostname` is provided. After this call, use event loop mechanisms
-     *          to wait for socket writability, then call `connected()` to perform/complete the SSL handshake.
+     * @details Sets up SNI and the verification target if `hostname` is provided. After this call, use
+     *          event loop mechanisms to wait for socket writability, then call `connected()` to
+     *          perform/complete the SSL handshake.
+     * @warning Same hazard as the blocking `connect(endpoint, hostname)`: an empty @p hostname leaves
+     *          the handshake with *chain verification only*, so a valid certificate issued for a
+     *          different host is accepted. The framework's own async path is unaffected —
+     *          `async::tcp::connector` connects through `n_connect(uri)`, which supplies the URI host —
+     *          but a direct caller of this overload must pass the hostname, or call `set_insecure()`
+     *          to make the choice explicit.
      */
     int n_connect(qb::io::endpoint const &ep, std::string const &hostname = "") noexcept;
 

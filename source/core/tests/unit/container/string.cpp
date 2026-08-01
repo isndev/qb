@@ -28,6 +28,7 @@
 #include <sstream>
 #include <string>
 
+#include <cstring>
 #include <gtest/gtest.h>
 #include <qb/string.h>
 
@@ -346,6 +347,53 @@ TEST_F(StringTest, Swap) {
     swap(str1, str2);
     EXPECT_STREQ(str1.c_str(), "First");
     EXPECT_STREQ(str2.c_str(), "Second");
+}
+
+// `swap()` is the one mutator whose correctness is not obvious from reading it. It saves the raw
+// `std::array` base, copy-assigns the *other string* over `*this`, then assigns that saved BASE
+// back into `other` — and a `base_t` reaches `assign(data(), size())` with `size()` being the full
+// capacity, so `other` is rebuilt from `_Size` bytes and only afterwards has its `_size` restored.
+// Nothing re-terminates at the restored length: `c_str()` stays correct **only** because the
+// memcpy carries the source's own embedded '\0' along with the characters.
+//
+// The case above cannot show that. Both operands are short and both buffers were freshly
+// value-initialised, so every byte past the text is already 0 — any implementation looks right.
+// These two pin the property where it actually has to hold.
+
+TEST_F(StringTest, SwapIntoASlotThatHeldALongerStringStaysTerminated) {
+    qb::string<30> shorter("ab");
+    qb::string<30> longer("XXXXXXXXXXXXXXXXXXXXXXXXXXXX"); // 28 chars: fills the tail with non-zero
+
+    longer.swap(shorter);
+
+    EXPECT_EQ(longer.size(), 2u);
+    EXPECT_STREQ(longer.c_str(), "ab") << "the short text landed in a buffer whose tail still holds the previous, longer "
+                                          "content, and nothing re-terminated at the restored length";
+    EXPECT_EQ(std::strlen(longer.c_str()), longer.size()) << "c_str() must not run past size()";
+
+    EXPECT_EQ(shorter.size(), 28u);
+    EXPECT_STREQ(shorter.c_str(), "XXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+    EXPECT_EQ(std::strlen(shorter.c_str()), shorter.size());
+}
+
+TEST_F(StringTest, SwapAtFullCapacityStaysTerminated) {
+    // At exactly _Size there is no '\0' anywhere inside [0, _Size): the terminator lives in the
+    // one extra slot the array carries, which is precisely the byte the base-assignment path
+    // rewrites. Both directions must survive.
+    qb::string<10> full("0123456789");
+    qb::string<10> tiny("z");
+    ASSERT_EQ(full.size(), 10u);
+    ASSERT_EQ(full.capacity(), 10u);
+
+    full.swap(tiny);
+
+    EXPECT_EQ(full.size(), 1u);
+    EXPECT_STREQ(full.c_str(), "z");
+    EXPECT_EQ(std::strlen(full.c_str()), 1u);
+
+    EXPECT_EQ(tiny.size(), 10u);
+    EXPECT_STREQ(tiny.c_str(), "0123456789");
+    EXPECT_EQ(std::strlen(tiny.c_str()), 10u) << "a full-capacity string must stay terminated by the extra array slot";
 }
 
 // String operations tests

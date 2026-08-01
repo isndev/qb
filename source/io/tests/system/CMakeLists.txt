@@ -45,6 +45,7 @@ qb_add_test(MODULE qb-io TIER system NAME deadline-combinator     SOURCES async/
 qb_add_test(MODULE qb-io TIER system NAME retry-runner            SOURCES async/retry-runner.cpp            DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER system NAME scheduler-runtime       SOURCES async/scheduler-runtime.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER system NAME scheduler-stress        SOURCES async/scheduler-stress.cpp        DEPENDS ${PROJECT_NAME} LABELS coroutine slow)
+qb_add_test(MODULE qb-io TIER system NAME loop-turn-fairness    SOURCES async/loop-turn-fairness.cpp    DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER system NAME coroutine-capture-safety SOURCES async/coroutine-capture-safety.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER system NAME coroutine-memory-pressure SOURCES async/coroutine-memory-pressure.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine slow)
 

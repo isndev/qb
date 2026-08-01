@@ -92,10 +92,13 @@ TEST_F(SchedulerRuntime, RunSyncReturnsValueAndActuallyWaits) {
 TEST_F(SchedulerRuntime, RunSyncVoidTaskRunsToCompletion) {
     std::atomic<bool> executed{false};
 
-    run_sync([&executed]() -> task<void> {
+    // The closure has to outlive the task it returns: `task`'s initial_suspend is suspend_always,
+    // so the body only starts once run_sync pumps — an immediately-invoked temporary is dead by then.
+    auto op = [&executed]() -> task<void> {
         co_await sleep(10ms);
         executed = true;
-    }());
+    };
+    run_sync(op());
 
     EXPECT_TRUE(executed.load());
 }

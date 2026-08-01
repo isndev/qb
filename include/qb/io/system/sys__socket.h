@@ -29,6 +29,7 @@
 #ifndef QB_IO_SOCKET_H
 #define QB_IO_SOCKET_H
 
+#include <algorithm> // std::min — used by endpoint::as_is_raw's length clamp
 #include <chrono>
 #include <errno.h>
 #include <functional>
@@ -506,9 +507,15 @@ public:
 
     endpoint &
     as_is_raw(const void *ai_addr, size_t ai_addrlen) {
+        // Clamp to the storage union rather than trusting the caller's length. Today every production caller
+        // feeds a system-supplied one — `as_is(const addrinfo *)`, run by `socket::resolve_i` on every
+        // getaddrinfo answer (every resolve and hostname connect), and ngtcp2's path addresses, filled by
+        // recvfrom — so it cannot currently be exceeded. But this is a public `(const void *, size_t)` entry
+        // that memcpy's straight into `*this`, and an over-long length would run off the end of the object.
+        const size_t n = std::min(ai_addrlen, sizeof(*this));
         this->zeroset();
-        ::memcpy(reinterpret_cast<void *>(this), ai_addr, ai_addrlen);
-        this->len(ai_addrlen);
+        ::memcpy(reinterpret_cast<void *>(this), ai_addr, n);
+        this->len(n);
         return *this;
     }
 

@@ -67,7 +67,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 | `send<Event>(dest, args...)` | **unordered** | event type must be trivially destructible | order is irrelevant and you have measured a need to skip ordering |
 | `broadcast<Event>(args...)` | per-core independent | any event type | fan-out to every active core |
 
-- `push<Event>()` guarantees ordered delivery to the same destination from the same source (`include/qb/core/Actor.h:798`, mirrored by `qb::Pipe::push`, `include/qb/core/Pipe.h:118`). It returns a mutable reference to the event in the pipe buffer; you may set fields on it before it is consumed, but you must not store the reference past the current scope.
+- `push<Event>()` guarantees ordered delivery to the same destination from the same source (`include/qb/core/Actor.h:823-824`, mirrored by `qb::Pipe::push`, `include/qb/core/Pipe.h:127-130`). It returns a mutable reference to the event in the pipe buffer; you may set fields on it before it is consumed, but you must not store the reference past the current scope.
 - `send<Event>()` is unordered and **requires trivially-destructible events for the EventQOS0-derived (`QoS < 2`) path** — `VirtualCore::fill_event` enforces this with `static_assert(std::is_trivially_destructible_v<T>, ...)` gated on `event_qos0_type<T>` (`include/qb/core/VirtualCore.tpp:130-132`). Such events holding `std::string`, `std::vector`, and similar non-trivial members are rejected at compile time. `qb::string<N>` and POD payloads are fine. Prefer `push()` unless you have measured a need.
 
 > The 16-bit `EventId` keeps an event's metadata (`state`, `bucket_size`, `id`, `dest`, `source`) within one cacheline. This is a deliberate trade-off; do not assume room for a wider id.
@@ -80,18 +80,27 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 
 ### Events must be trivially relocatable
 
-The pipe buffer relocates existing event buckets when it grows. Events must therefore be **trivially relocatable**: no self-pointers, and no member that registers itself with an external registry from its constructor or destructor. PODs, `qb::string<N>`, `std::string` with SSO, and `std::unique_ptr` satisfy this. If an event must hold a self-reference, redesign it to keep the indirection elsewhere.
+The runtime relocates events with raw `memcpy`: it copies the bytes to a new address and abandons the source without running a destructor there. Events must therefore be **trivially relocatable**: no self-pointers, and no member that registers itself with an external registry from its constructor or destructor. PODs, `qb::string<N>`, `std::vector`, `std::unique_ptr` and `std::shared_ptr` satisfy this. A **by-value `std::string` does not**: a short one is self-referential on libstdc++ (`_M_p` addresses its own `_M_local_buf`), which corrupts on Linux and is structurally invisible under libc++/macOS. If an event must hold a self-reference, redesign it to keep the indirection elsewhere.
+
+The requirement is **not** scoped to cross-core delivery. Three independent relocations exist:
+
+- the source pipe `memcpy`s everything it already holds when `allocate_back` outgrows the current capacity, and `reorder()` compacts a pipe in place with `memmove` (`include/qb/system/allocator/pipe.h:356-392`, `include/qb/system/allocator/pipe.h:520-528`) — this moves events bound for the **sending** core too, since `push` places those in a pipe as well;
+- `reply`/`forward` byte-recycle the received event through the pipe's `recycle` (`include/qb/system/allocator/pipe.h:509-513`), same core or not;
+- the cross-core hop copies the event twice more (sender pipe → peer mailbox ring → receive buffer).
+
+The debug-only scan in `SharedCoreCommunication::send` (`source/core/src/Main.cpp:161-192`) catches the common case but is not a proof of absence: it runs **only** on the cross-core hop, and it searches for a word addressing the event's *current* bytes, so a self-pointer that an earlier pipe growth already left dangling now points at the old buffer and is outside the scanned range. It is compiled out under `NDEBUG`.
 
 ### noexcept on the message path
 
-`push()`, `send()`, `broadcast()`, and `Pipe::push()` / `Pipe::allocated_push()` are all `noexcept`, yet they may grow the pipe buffer (which can throw `std::bad_alloc`) or run an event constructor that throws. Because a throw cannot escape a `noexcept` function, **any such failure calls `std::terminate()` and aborts the process** (`include/qb/core/Actor.h:798`, `include/qb/core/Pipe.h:126`). This is intentional, not a recoverable error. Keep events small and their constructors allocation-light.
+`push()`, `send()`, `broadcast()`, and `Pipe::push()` / `Pipe::allocated_push()` are all `noexcept`, yet they may grow the pipe buffer (which can throw `std::bad_alloc`) or run an event constructor that throws. Because a throw cannot escape a `noexcept` function, **any such failure calls `std::terminate()` and aborts the process** (`include/qb/core/Actor.h:818-824`, `include/qb/core/Pipe.h:135-150`). This is intentional, not a recoverable error. Keep events small and their constructors allocation-light.
 
 ### Bounded inter-core flush (no cross-core deadlock)
 
-`VirtualCore::__flush_all__` drains outbound pipes into peer mailboxes (`source/core/src/VirtualCore.cpp:250`). When a peer's mailbox is full:
+`VirtualCore::__flush_all__` drains outbound pipes into peer mailboxes (`source/core/src/VirtualCore.cpp:273-274`). A failed `try_send` falls into one of three cases, tested in this order:
 
-- **Best-effort events** (`event.state.qos == 0`): a single `try_send` attempt, then dropped on failure.
-- **QoS-guaranteed events**: a bounded spin-then-yield backoff before partial flush, with tunables `kFlushSpinAttempts = 64` and `kFlushYieldAttempts = 512` (`source/core/src/VirtualCore.cpp:244-245`):
+- **Permanently unsendable — not backpressure.** An event wider than the peer's ring (`bucket_size > kMaxDeliverableBuckets`) can never be enqueued, because the ring enqueue is all-or-nothing: no amount of draining helps, and retrying would hold the whole FIFO pipe hostage behind it. The flush logs at `LOG_CRIT`, **disposes** the event (its destructor runs) and skips it (`source/core/src/VirtualCore.cpp:329-339`). A malformed `bucket_size == 0` — reachable only by overflowing that `uint16_t` field — cannot even be stepped over, so the rest of that pipe is discarded instead (`source/core/src/VirtualCore.cpp:319-328`). Separating these two shapes from genuine backpressure is what keeps the flush terminating.
+- **Best-effort events** (`event.state.bits.qos == 0`): a single `try_send` attempt, then dropped on failure — and dropped *without* being disposed, which is exactly why `fill_event` `static_assert`s that an `EventQOS0`-derived event is trivially destructible.
+- **QoS-guaranteed events**: a bounded spin-then-yield backoff before partial flush, with tunables `kFlushSpinAttempts = 64` and `kFlushYieldAttempts = 512` (`source/core/src/VirtualCore.cpp:261-262`):
   - attempts `[0, 64)` — `qb::spin_loop_pause()` (CPU hint, no scheduler involvement);
   - attempts `[64, 512)` — `std::this_thread::yield()` (give the peer consumer a slot);
   - at `512` — partial flush: keep the unsent tail in the pipe, notify the peer, and return to the workflow.

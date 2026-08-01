@@ -44,6 +44,7 @@ qb_add_test(MODULE qb-io TIER unit NAME quic-protocol-statemachine SOURCES proto
 qb_add_test(MODULE qb-io TIER unit NAME stream-templates SOURCES stream/stream-templates.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME stream-file-io   SOURCES stream/stream-file-io.cpp   DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME stream-limits    SOURCES stream/stream-limits.cpp    DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME stream-drain-cost SOURCES stream/stream-drain-cost.cpp DEPENDS ${PROJECT_NAME})
 
 # --- file (sys::file / pipe transfer / self-locate) ---
 qb_add_test(MODULE qb-io TIER unit NAME file-sys           SOURCES file/file-sys.cpp           DEPENDS ${PROJECT_NAME})

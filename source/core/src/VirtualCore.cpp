@@ -55,7 +55,11 @@ CPU_SET(int num, cpu_set_t *cs) {
     if (num < 0 || num >= CPU_SETSIZE) {
         return;
     }
-    cs->count |= (1 << num);
+    // `1u`, not `1`: CPU_SETSIZE is 32, so `num` reaches 31 and `1 << 31` shifts into an int's
+    // sign bit. C++20 defines that modulo 2^32, but the value then round-trips through
+    // uint32_t and back to int in CPU_ISSET, which is out-of-range and implementation-defined.
+    // An unsigned literal keeps the whole path well-defined on every standard qb targets (20/23).
+    cs->count |= (1u << num);
 }
 
 static inline int
@@ -63,7 +67,7 @@ CPU_ISSET(int num, cpu_set_t *cs) {
     if (num < 0 || num >= CPU_SETSIZE) {
         return 0;
     }
-    return (cs->count & (1 << num));
+    return static_cast<int>((cs->count & (1u << num)) != 0u);
 }
 
 // NB: a macOS shim for pthread_getaffinity_np() used to live here, but
@@ -259,6 +263,13 @@ constexpr std::uint32_t kFlushYieldAttempts = 512; // total budget per event.
 static_assert(kFlushSpinAttempts < kFlushYieldAttempts, "spin phase must precede yield phase");
 } // namespace
 
+// Widest event a destination mailbox ring can EVER accept — `kMaxDeliverableBuckets`,
+// declared with the class in VirtualCore.h. Single source of truth:
+// `SharedCoreCommunication::MaxRingEvents` sizes every per-producer SPSC ring, and
+// `spsc::enqueue<_All = true>` is all-or-nothing, so an event wider than this is not
+// "backpressured" — it is permanently unsendable however much the consumer drains.
+// Separating the two cases is what keeps `__flush_all__` terminating (see below).
+
 bool
 VirtualCore::__flush_all__() noexcept {
     bool        any_work = false;
@@ -278,10 +289,49 @@ VirtualCore::__flush_all__() noexcept {
         bool        partial = false;
 
         while (cur < end) {
-            const auto &event = *reinterpret_cast<const Event *>(cur);
+            // Non-const: an undeliverable event is disposed here (its payload must be freed
+            // exactly like every other terminal path), so we need a mutable reference.
+            auto &event = *reinterpret_cast<Event *>(cur);
             ++_metrics._nb_event_sent_try;
 
             if (try_send(event)) {
+                ++_metrics._nb_event_sent;
+                _metrics._nb_bucket_sent += event.bucket_size;
+                cur += event.bucket_size;
+                continue;
+            }
+
+            // --- Permanently unsendable, NOT backpressure -----------------------------
+            // Everything below this point assumes `try_send` failed because the peer's ring
+            // is momentarily full and will drain. Two shapes break that assumption, and for
+            // them the retry never converges: the bounded backoff expires, we partial-bail,
+            // and the next pass re-queues the exact same event. The pipe is FIFO, so the
+            // whole outbound stream to that core is held hostage behind it (head-of-line),
+            // including whatever would have killed the destination actor; the sender then
+            // leaves its main loop and spins in the shutdown residual drain forever because
+            // the destination is still "live". Net effect: `qb::Main::join()` never returns
+            // and two cores burn 100% CPU with no diagnostic. Pinned by
+            // `OversizeEvent.OversizedEventDoesNotWedgeTheEngine`.
+            //
+            // Both shapes are cold (they cost one compare against a constant on a path that
+            // already failed a send), and dropping is the only terminating action available:
+            // the event is undeliverable by construction, not by timing.
+            if (unlikely(event.bucket_size == 0)) {
+                // Malformed: a zero-width event leaves `cur` standing still, so the pipe can
+                // no longer be walked and the remaining events cannot even be identified to
+                // dispose them. Only reachable by overflowing `bucket_size`'s uint16 via a
+                // >= 65536-bucket `allocated_push`. Discard what is left of this pipe
+                // (`partial` stays false, so the trailing `pipe.reset()` frees it).
+                LOG_CRIT(*this << " outbound pipe to core(" << pipe_idx << ") holds a zero-width event (bucket_size overflowed); "
+                               << "discarding the rest of the pipe");
+                break;
+            }
+            if (unlikely(event.bucket_size > kMaxDeliverableBuckets)) {
+                LOG_CRIT(*this << " dropping event[" << event.getID() << "] from " << event.getSource() << " to " << event.getDestination()
+                               << ": " << event.bucket_size << " buckets exceeds the " << kMaxDeliverableBuckets
+                               << "-bucket mailbox ring, so it can never be delivered cross-core. Keep events small and move bulk "
+                                  "data behind a pointer member (see Pipe::allocated_push).");
+                _router.dispose(event);
                 ++_metrics._nb_event_sent;
                 _metrics._nb_bucket_sent += event.bucket_size;
                 cur += event.bucket_size;
@@ -672,10 +722,22 @@ VirtualCore::__workflow__() {
         // check if callbacks killed actors
         if (unlikely(!_actor_to_remove.empty())) {
         removeActors:
-            // remove dead actors
-            for (auto const &actor : _actor_to_remove)
-                removeActor(actor);
-            _actor_to_remove.clear();
+            // Reap dead actors. `removeActor()` destroys the actor, running user code that may `kill()`
+            // ANOTHER actor and so re-enter `killActor()` → `_actor_to_remove.insert()`. The scratch
+            // buffer keeps that re-entrant insert off the container being iterated (a growth rehash of
+            // the release flat set reallocates its entries and invalidates a live iterator) and keeps
+            // late kills from being discarded by the clear (which stranded a `!is_alive()` actor in
+            // `_actors`, so `_actors.empty()` never held and the core never terminated). Terminates:
+            // only that user code refills the set and it runs at most once per actor — once an id has
+            // left `_actors`, `removeActor()` destroys nothing — so a pass that destroys nothing ends it.
+            // Pinned by `KillDuringReap.ActorKilledFromAnotherDestructorIsStillReaped`.
+            while (!_actor_to_remove.empty()) {
+                _actor_remove_batch.clear();
+                _actor_remove_batch.swap(_actor_to_remove);
+                for (auto const &actor : _actor_remove_batch)
+                    removeActor(actor);
+            }
+            _actor_remove_batch.clear(); // drop the last batch's ids (capacity is kept for reuse)
             if (_actors.empty()) {
                 break;
             }
@@ -850,6 +912,17 @@ VirtualCore::removeActor(ActorId const id) noexcept {
 }
 
 //! Actor Management
+
+bool
+VirtualCore::isActorAlive(ActorId const id) const noexcept {
+    if (!id.is_valid())
+        return false;
+    const auto it = _actors.find(id);
+    // Same phase oracle as findActor<T>(): an actor whose async onInit() is still in flight is
+    // addressable but not yet active, and one that has been killed is skipped even though its
+    // destruction is deferred to the reap phase.
+    return it != _actors.end() && it->second->is_active();
+}
 
 void
 VirtualCore::killActor(ActorId const id) noexcept {

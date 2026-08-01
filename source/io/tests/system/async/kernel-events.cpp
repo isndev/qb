@@ -215,14 +215,35 @@ TEST(KernelEvents, File) {
     EXPECT_EQ(actor.nb_events, 1);
     EXPECT_EQ(actor.observed_file_size, actor.expected_file_size);
     t.join();
+
+    // Leave the working directory as we found it. Under ctest the CWD is the build tree so
+    // the stray file went unnoticed, but running this binary by hand dropped `test.file`
+    // wherever the user happened to be.
+    std::remove("./test.file");
+    std::remove("./test.file.tmp");
 }
 
 #ifndef _WIN32
 
 TEST(KernelEvents, BasicIO) {
+    // Self-sufficient: create the file this case reads instead of inheriting the one
+    // `KernelEvents.File` happens to leave in the CWD. Relying on that ordering made this
+    // case SEGFAULT whenever it ran alone (`--gtest_filter`, `--gtest_shuffle`, a sharded
+    // run, or simply a clean working directory): `sys::file` reports a failed open as
+    // `native_handle() == -1`, and `ev_io_start` indexes its `anfds` array by fd, so a
+    // negative fd is an out-of-bounds access. libev guards it with
+    // `EV_ASSERT_MSG(fd >= 0, ...)` (`modules/ev/ev.c`), but assertions are compiled out
+    // under NDEBUG — so Debug asserted while Release crashed with EXC_BAD_ACCESS.
+    {
+        std::ofstream seed("./test.file", std::ios::binary);
+        seed << "test\n";
+    }
+
     qb::io::async::listener handler;
     qb::io::sys::file       f("test.file");
-    FakeActor               actor;
+    ASSERT_TRUE(f.is_open()) << "cannot open ./test.file — registering an io watcher on a "
+                                "negative fd is undefined behaviour, not a test failure";
+    FakeActor actor;
 
     actor.fd_test = f.native_handle();
 
@@ -233,6 +254,9 @@ TEST(KernelEvents, BasicIO) {
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);
     EXPECT_EQ(actor.nb_events, 1);
+
+    f.close();
+    std::remove("./test.file");
 }
 
 #endif
@@ -289,7 +313,12 @@ public:
         : _path(std::move(path)) {
         _watcher = new ev::stat(qb::io::async::listener::current.loop());
         _watcher->set<RawFileWatcher, &RawFileWatcher::on_change>(this);
-        _watcher->set(_path.c_str());
+        // Poll explicitly instead of taking libev's default. `ev_stat_set(..., 0.)` means
+        // DEF_STAT_INTERVAL = 5.0074 s (ev.c), and with no inotify on macOS that default IS the
+        // detection latency — this case spent 5.0 s of the suite waiting out one poll tick. 0.1 is
+        // clamped up to MIN_STAT_INTERVAL (0.1075 s), which is what the watcher actually polls at.
+        // The contract under test is unchanged: ev::stat still has to notice the rename.
+        _watcher->set(_path.c_str(), 0.1);
         _watcher->start();
     }
 

@@ -60,11 +60,14 @@ struct LogLine : qb::Event {
     explicit LogLine(const char *msg) : text(msg) {}
 };
 
-// 4. A std::string member: heap-backed, NOT trivially destructible.
-//    Valid for push(); not valid for send() (see the "send" section below).
+// 4. Heap-owned text. NOTE: a by-value std::string is NOT safe in an event -- a short one
+//    points into its own inline buffer on libstdc++, and the runtime memcpy-relocates events
+//    (pipe growth, reply/forward, every cross-core hop -- same core is no exception).
+//    Box it (or use qb::string<N> above) so only a heap pointer travels.
 struct UserCommand : qb::Event {
-    std::string input;
-    explicit UserCommand(std::string in) : input(std::move(in)) {}
+    std::shared_ptr<std::string> input;
+    explicit UserCommand(std::string in)
+        : input(std::make_shared<std::string>(std::move(in))) {}
 };
 
 // 5. Large payload shared by pointer, so only the pointer is copied across cores.
@@ -79,7 +82,8 @@ Guidance for payload data:
 
 - **Small POD-like data:** direct members are the right choice.
 - **`qb::string<N>`:** use when a string has a known, modest maximum length. It avoids heap allocation and stays trivially destructible, so it is usable with `send()` as well as `push()`.
-- **`std::string`, `std::vector`, and other heap-backed members:** valid with `push()`. The framework calls the event's destructor after delivery, so these members are cleaned up correctly. They are **not** permitted with `send()`.
+- **`std::vector`, smart pointers, and other heap-backed members:** valid with `push()`. The framework calls the event's destructor after delivery, so these members are cleaned up correctly. They are **not** permitted with `send()`.
+- **A by-value `std::string` is NOT valid in an event, on any path.** The runtime relocates events with raw `memcpy`: the bytes are copied to a new address and the source is abandoned without a destructor running there, so a member holding a pointer into its own storage dangles after the move. This is not a cross-core-only concern: the source pipe `memcpy`s everything it already holds when it grows, and `reply`/`forward` byte-recycle the event — both apply to a same-core `push`. A *short* `std::string` is exactly the offending shape on libstdc++ (small-string buffer referenced by an internal pointer): the receiver reads reused memory and its destructor frees a non-heap address. libc++ recomputes `data()` from `this`, so this corrupts on Linux while passing every macOS test. Use `qb::string<N>`, or box the string in a `std::shared_ptr`. ([Full rule, and what the debug-build check does and does not cover](../4_qb_core/messaging.md#push--ordered-the-default).)
 - **Large or shared payloads:** wrap them in a `std::shared_ptr` so that crossing cores copies only the pointer, not the bytes.
 
 ### System and quality-of-service variants
@@ -130,7 +134,7 @@ template <typename _Event, typename... _Args>
 void send(ActorId const &dest, _Args &&...args) const noexcept;
 ```
 
-`send<E>(dest, args...)` is a fire-and-forget variant. It returns nothing and makes **no ordering guarantee** (even between two sends from the same source to the same destination). Unlike `push`, the `send` path moves the event by raw bytes and does not run the event's destructor on the sending core, so `E` **must be trivially destructible**: events holding a `std::string`, `std::vector`, or other heap-backed member are not valid here. Use `qb::string<N>` or plain data members instead. Prefer `push` unless ordering genuinely does not matter for the message.
+`send<E>(dest, args...)` is a fire-and-forget variant. It returns nothing and makes **no ordering guarantee** (even between two sends from the same source to the same destination). `E` **must be trivially destructible**: `send` is the primitive fire-and-forget messages use, and a fire-and-forget message should derive from `qb::EventQOS0` — the one class of event the engine is allowed to **drop** when a peer's mailbox is full, discarding it without running its destructor. Events holding a `std::vector` or another heap-backed member are not valid here; use `qb::string<N>` or plain data members instead. Prefer `push` unless ordering genuinely does not matter for the message.
 
 The trivially-destructible requirement is a usage contract documented on `Actor::send` (`qb/include/qb/core/Actor.h`). It is enforced at compile time only for events that derive from `qb::EventQOS0`, through a `static_assert` in `qb::VirtualCore::fill_event` (`qb/include/qb/core/VirtualCore.tpp`); a plain `qb::Event` subclass with a non-trivial member still compiles, so the constraint is yours to honor.
 
@@ -177,7 +181,7 @@ Three constraints follow from the implementation:
 
 1. **Broadcast events cannot be replied to or forwarded.** If `event.getDestination()` is a broadcast id, `reply`/`forward` log a warning and drop the call (`qb/source/core/src/Actor.cpp`).
 2. **Both route through the unordered `send` path,** not `push`. A replied or forwarded event therefore carries no ordering guarantee relative to events you `push` to the same destination.
-3. **Both byte-recycle the existing event** (`qb::VirtualCore::send(Event const&)` calls `Pipe::recycle`), so they carry the same trivially-destructible expectation as `send`. Reply or forward events whose members are plain data or `qb::string<N>`; copy a heap-backed payload out and `push` a fresh event instead.
+3. **Both byte-recycle the existing event** (`qb::VirtualCore::send(Event const&)` calls `VirtualPipe::recycle`, a raw `memcpy` into the pipe — on the same core as much as across cores), so they carry the same trivially-destructible expectation as `send`, and the relocation rule applies to them unconditionally. Reply or forward events whose members are plain data or `qb::string<N>`; copy a heap-backed payload out and `push` a fresh event instead.
 
 ### How the five primitives compare
 
@@ -189,7 +193,7 @@ Three constraints follow from the implementation:
 | `broadcast<E>(…)` | none | trivially destructible (uses `send` path) | all actors, all cores | `void` |
 | `reply(event)` / `forward(dest, event)` | none (uses `send` path) | non-broadcast received event; trivially destructible | source / `dest` | `void` |
 
-The "trivially destructible" rows are a usage contract: the `send` path moves events by raw bytes and does not run their destructor on the sending core. It is compiler-enforced only for events deriving from `qb::EventQOS0`; for a plain `qb::Event` subclass the requirement is yours to honor. Only `push` (and the fluent `to(dest).push`) run the event's destructor, so only `push` is valid for heap-backed events such as those holding a `std::string` or `std::vector`.
+The "trivially destructible" rows are a usage contract, not a statement about delivery: an event that *is* delivered has its destructor run exactly once by the receiving core, whichever primitive queued it. What the contract protects is the **drop** path — a `qb::EventQOS0` event discarded on a full peer mailbox is never disposed, and a heap-owning member then leaks. It is compiler-enforced only for events deriving from `qb::EventQOS0`; for a plain `qb::Event` subclass the requirement is yours to honor. Reach for `push` for heap-backed payloads such as a `std::vector`. Independently of all this, a by-value `std::string` is invalid in *any* event on *any* path — see the relocation rule under [Defining your own events](#defining-your-own-events).
 
 ## Receiving events
 
@@ -232,9 +236,10 @@ public:
     }
 
     void on(const UserCommand &event) { // read-only: heap-backed event
-        // UserCommand holds a std::string, so it cannot be replied or forwarded
-        // (those byte-recycle the event). Read it, then push a fresh, trivially
-        // destructible response back to the sender.
+        // UserCommand boxes its text in a std::shared_ptr, so it is not trivially
+        // destructible and carries the same expectation as send(): reply/forward
+        // byte-recycle the event into the pipe. Read it (*event.input), then push a
+        // fresh, trivially destructible response back to the sender.
         push<LogLine>(event.getSource(), "ack");
     }
 
@@ -266,7 +271,7 @@ sequenceDiagram
 
 ## Pitfalls
 
-- **Using `send` with a non-trivially-destructible event.** The `send` path does not run the event's destructor on the sending core, so events with `std::string`/`std::vector`/etc. members leak or corrupt their heap state. For a plain `qb::Event` subclass this is a documented contract, not a compile error, so the mistake is silent — use `push` for those events.
+- **Using `send` with a non-trivially-destructible event.** Delivery itself is safe: the receiving core destroys the event exactly once, on every placement path. The contract exists for the **drop** path — a `qb::EventQOS0` event discarded on a full peer mailbox is never disposed, so a `std::vector` or smart-pointer member leaks there. For a plain `qb::Event` subclass this is a documented contract, not a compile error, so the mistake is silent — use `push` for those events.
 - **Relying on cross-source ordering.** `push` orders events only per source→destination pipe. Events from two different senders to one actor have no defined relative order; do not assume one.
 - **Assuming `reply`/`forward` preserve order with `push`.** They route through the unordered `send` path. If a response must follow earlier pushed events in order, `push` a new event instead.
 - **Replying to or forwarding a broadcast event.** The call is logged and dropped. Construct and send a fresh event to a concrete destination instead.

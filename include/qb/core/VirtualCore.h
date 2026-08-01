@@ -146,6 +146,8 @@ private:
     friend class ActorHandle; // RefActorHandle is an alias of ActorHandle
     ////////////
     constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
+    /// Widest event a destination mailbox ring can ever accept — see VirtualCore.cpp.
+    static constexpr std::size_t kMaxDeliverableBuckets = SharedCoreCommunication::MaxRingEvents;
     // Types
     using Mailbox         = SharedCoreCommunication::Mailbox;
     using EventBuffer     = std::array<EventBucket, MaxRingEvents>;
@@ -285,6 +287,23 @@ private:
     };
     std::vector<CallbackEntry> _callback_list;
     RemoveActorList            _actor_to_remove;
+    /**
+     * @brief Scratch buffer the reap loop drains `_actor_to_remove` into.
+     * @details
+     * `removeActor()` destroys the actor, which runs arbitrary user code (its destructor,
+     * and any referenced actor it owns). That code may `kill()` a *different* actor, which
+     * re-enters `killActor()` → `_actor_to_remove.insert()`. Iterating `_actor_to_remove`
+     * directly therefore mutates the container mid-iteration: under NDEBUG it is the ska flat
+     * hash set, whose growth rehash REALLOCATES the entry array and invalidates the live
+     * iterator (release-only — the sanitizer presets use a node-based `std::unordered_set`
+     * and cannot see it), and even where the iterator survives, an id landing behind the
+     * cursor is silently dropped by the subsequent `clear()`, leaving a `!is_alive()` actor
+     * in `_actors` forever so the core never terminates. The loop swaps into this buffer
+     * instead and repeats until no new kill appears. Member (not `thread_local`) because the
+     * reap block is a `goto` target — jumping across a block-scope thread_local's
+     * initialization is best avoided.
+     */
+    RemoveActorList _actor_remove_batch;
 
     // --- Asynchronous actor initialization (the *Activating* phase) ----------
     //
@@ -511,6 +530,20 @@ private:
      */
     template <typename _Actor>
     [[nodiscard]] _Actor *findActor(ActorId id) const noexcept;
+
+    /*!
+     * @brief Untyped, phase-aware liveness query for an `ActorId` on this core.
+     * @param id The actor identifier to test.
+     * @return true iff `id` names an actor that is alive **and** active (its `onInit()` has
+     *         completed) on this VirtualCore.
+     * @details The type-erased sibling of `findActor<T>()`: one hash lookup, no `dynamic_cast`.
+     *          It exists for bookkeeping that holds bare ids — a subscriber list, a routing
+     *          table — and needs to drop entries whose actor has been destroyed. The framework
+     *          does the same thing for its own subscription map in `removeActor()`
+     *          (`unregisterEvents`), but a user-space mirror of that map has no such hook.
+     *          Backs `Actor::is_actor_alive()`.
+     */
+    [[nodiscard]] bool isActorAlive(ActorId id) const noexcept;
 
     void killActor(ActorId id) noexcept;
 

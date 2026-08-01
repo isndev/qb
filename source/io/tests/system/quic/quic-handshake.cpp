@@ -691,6 +691,104 @@ TEST(QuicHandshakeLoopback, ServerRoutesMultipleClientsByConnectionId) {
 }
 
 /**
+ * @test Closing one connection must not disturb how the server routes the survivors.
+ * @brief The parent retires a closed connection's entries from `_server_cid_index` by the key set
+ *        the child records (its reconciled SCIDs plus the accept path's local/original CID keys)
+ *        rather than by sweeping the index for its id — the sweep costs O(active connections) per
+ *        close, which is a permanent tax under churn and a multi-second stall when many
+ *        connections close at once. The routing hazard of a keyed retirement is dropping one entry
+ *        too many, and the case above never checks it: it asserts the survivor is still `connected`
+ *        but never makes it speak again, and a connection whose CIDs were evicted stays `connected`
+ *        while its datagrams silently miss the index and get mis-accepted as brand-new. Here the
+ *        two survivors each send NEW payloads AFTER the middle connection is gone, so a
+ *        misrouted CID fails instead of passing quietly.
+ */
+TEST(QuicHandshakeLoopback, ClosingOneConnectionLeavesTheSurvivorsRoutable) {
+    ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
+
+    qb::io::async::init();
+
+    CallbackQuicServer server;
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"), {"h3"}));
+    ASSERT_GT(server.local_endpoint().port(), 0);
+
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+
+    CallbackQuicClient left;
+    CallbackQuicClient middle;
+    CallbackQuicClient right;
+    const auto         uri = std::string{"quic://127.0.0.1:"} + std::to_string(server.local_endpoint().port());
+    ASSERT_TRUE(left.connect(qb::io::uri{uri}, client_tls, {"h3"}));
+    ASSERT_TRUE(middle.connect(qb::io::uri{uri}, client_tls, {"h3"}));
+    ASSERT_TRUE(right.connect(qb::io::uri{uri}, client_tls, {"h3"}));
+
+    ASSERT_TRUE(pump_until([&] { return server.connected >= 3 && server.stats().active_connections == 3u; }, std::chrono::seconds(5)))
+        << "all three clients should connect";
+
+    // Make every connection speak once, so each one owns index entries before the close.
+    auto left_stream   = left.open_bidirectional_stream();
+    auto middle_stream = middle.open_bidirectional_stream();
+    auto right_stream  = right.open_bidirectional_stream();
+    left.send_stream_data(left_stream.id(), "left-before\n", true);
+    middle.send_stream_data(middle_stream.id(), "middle-before\n", true);
+    right.send_stream_data(right_stream.id(), "right-before\n", true);
+
+    ASSERT_TRUE(pump_until(
+        [&] {
+            return server.received.find("left-before") != std::string::npos && server.received.find("middle-before") != std::string::npos
+                   && server.received.find("right-before") != std::string::npos;
+        },
+        std::chrono::seconds(5)))
+        << "server should demux all three clients before the close";
+
+    // Retire the middle connection: drain_events() runs the keyed retirement for its id.
+    middle.close();
+    ASSERT_TRUE(pump_until([&] { return server.stats().active_connections == 2u; }, std::chrono::seconds(5)))
+        << "the middle connection should be retired, leaving two";
+
+    // Two rounds of post-close traffic are needed, and both are load-bearing.
+    //
+    // `active_connections` subtracts the DEFERRED close list, so it reaches 2 while the retirement
+    // is still only queued, and the retirement itself runs in drain_events() — which is driven by
+    // traffic, not by wall time. So round 1 below is what actually flushes it: that datagram is
+    // still routed through the pre-retirement index, and the retirement runs after it. Only round 2
+    // exercises the index the retirement left behind.
+    //
+    // Both were verified against a retirement deliberately wiping every survivor entry from the
+    // index: with a single round (or with a timed settle instead of round 1) this case stayed
+    // GREEN through a total index wipe. It fails, as it should, only with round 2 present.
+    auto left_settle = left.open_bidirectional_stream();
+    left.send_stream_data(left_settle.id(), "left-settle\n", true);
+    ASSERT_TRUE(pump_until([&] { return server.received.find("left-settle") != std::string::npos; }, std::chrono::seconds(5)))
+        << "round 1 should reach the server and let drain_events() run the retirement";
+
+    // The survivors must still route. New payloads, so nothing can be satisfied by what the
+    // server already received above.
+    auto left_after  = left.open_bidirectional_stream();
+    auto right_after = right.open_bidirectional_stream();
+    left.send_stream_data(left_after.id(), "left-after\n", true);
+    right.send_stream_data(right_after.id(), "right-after\n", true);
+
+    EXPECT_TRUE(pump_until(
+        [&] { return server.received.find("left-after") != std::string::npos && server.received.find("right-after") != std::string::npos; },
+        std::chrono::seconds(5)))
+        << "after one connection closed, the survivors' datagrams no longer reach their sessions: "
+           "retiring the closed connection's CID entries evicted index entries that still belonged "
+           "to a live connection, so its packets miss the index and are treated as new connections";
+
+    EXPECT_EQ(server.stats().active_connections, 2u) << "a misrouted survivor would be re-accepted as a fresh connection";
+    EXPECT_EQ(left.current_state(), qb::io::async::quic::endpoint::state::connected);
+    EXPECT_EQ(right.current_state(), qb::io::async::quic::endpoint::state::connected);
+
+    left.close();
+    right.close();
+    server.close();
+    qb::io::async::listener::current.clear();
+}
+
+/**
  * @test A server-initiated stream is delivered to the client over the live loopback (ADDED — dossier §"Missing")
  * @brief After the handshake, the SERVER opens a bidirectional stream session on the connection and pushes
  *        "from-server\n"; the client (a connector carrying HandshakeStreamSession) registers the inbound

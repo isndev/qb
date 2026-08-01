@@ -742,10 +742,13 @@ TEST_F(CoroutineSchedulerTests, ScheduleResumeAndEnqueueDedup) {
 
     // Reach the suspended frame's handle through the scheduler is not exposed; instead exercise the
     // dedup on a fresh, manually-built handle that we keep parked at initial_suspend.
-    auto manual = [stage_ptr]() -> task<void> {
+    // The closure must outlive the task: the body only starts on a later run_ready()
+    // (initial_suspend is suspend_always), so an immediately-invoked temporary would be dead.
+    auto manual_fn = [stage_ptr]() -> task<void> {
         co_await std::suspend_always{}; // never resumes on its own
         stage_ptr->fetch_add(1000);
-    }();
+    };
+    auto manual = manual_fn();
     auto h = manual.handle();
     ASSERT_TRUE(h);
 
@@ -1319,10 +1322,11 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedSweepsNonOwnedSuspendedFrame)
 
     // A non-spawned task parked on a long timer: register_suspended runs, but the frame is
     // never inserted into owned_frames_ (no spawn).
-    auto parked = [fired_ptr]() -> task<void> {
+    auto parked_fn = [fired_ptr]() -> task<void> {
         co_await sleep(5000ms);
         fired_ptr->store(true); // must NEVER fire — frame destroyed while parked
-    }();
+    };
+    auto parked = parked_fn();
 
     auto h = parked.handle();
     ASSERT_TRUE(h);

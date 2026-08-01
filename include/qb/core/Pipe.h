@@ -69,13 +69,15 @@ namespace qb {
  *
  * ### Example — large payload with `allocated_push`
  * @code
- * // Pre-size the pipe buffer for a 1 MB payload to avoid internal reallocation.
+ * // 1 MB of bulk data, kept on the heap so the event stays small.
  * auto large_vec = std::make_shared<std::vector<char>>(1024 * 1024);
  * // ... fill large_vec ...
  *
  * qb::Pipe pipe = getPipe(processor_id);
- * std::size_t hint = sizeof(LargeDataEvent) + large_vec->size();
- * auto& ev = pipe.allocated_push<LargeDataEvent>(hint, large_vec);
+ * // `size` is the TRAILING bytes reserved AFTER the event, not the total footprint:
+ * // allocated_push adds sizeof(LargeDataEvent) itself. The vector is owned by the
+ * // shared_ptr, so the event carries only the pointer — no trailing bytes needed.
+ * auto& ev = pipe.allocated_push<LargeDataEvent>(0, large_vec);
  * // ev is fully constructed in the pre-allocated buffer slot.
  * @endcode
  *
@@ -152,10 +154,15 @@ public:
      *
      * @tparam _Event  Event type to construct and send (must derive from `qb::Event`).
      * @tparam _Args   Types of constructor arguments forwarded to `_Event`.
-     * @param  size    Total byte size to pre-allocate for this event in the pipe buffer.
-     *                 Typically `sizeof(_Event) + dynamic_payload_bytes`. Providing an
-     *                 accurate value avoids internal reallocation when the event carries
-     *                 a large dynamic payload (e.g. a `std::shared_ptr<std::vector<T>>`).
+     * @param  size    **Extra** bytes to reserve *after* the event object — NOT the total
+     *                 footprint. The implementation adds `sizeof(_Event)` itself
+     *                 (`Pipe.tpp`: `size += sizeof(T)`) and then rounds the sum up to whole
+     *                 `QB_LOCKFREE_EVENT_BUCKET_BYTES` buckets. So pass only the trailing
+     *                 payload bytes: `allocated_push<E>(0)` reserves exactly one event, and
+     *                 `allocated_push<E>(n)` reserves `ceil((sizeof(E) + n) / bucket)` buckets.
+     *                 Passing `sizeof(_Event) + n` — as an earlier revision of this comment
+     *                 wrongly advised — over-reserves by a whole event and **halves the usable
+     *                 cross-core size ceiling** documented in the @warning below.
      * @param  args    Arguments forwarded to the `_Event` constructor.
      * @return Mutable reference to the newly constructed event in the pre-allocated slot.
      *         Invalidated by the next event queued into this pipe — same contract as `push()`.
@@ -181,25 +188,43 @@ public:
      * };
      *
      * qb::Pipe pipe = getPipe(processor_id);
-     * std::size_t hint = sizeof(BlobEvent) + blob->size();
-     * auto& ev = pipe.allocated_push<BlobEvent>(hint, blob);
+     * // `size` is the TRAILING bytes only — sizeof(BlobEvent) is added internally.
+     * // Here the blob lives on the heap behind a shared_ptr, so the event's in-pipe
+     * // footprint is just the event: no trailing bytes are needed at all.
+     * auto& ev = pipe.allocated_push<BlobEvent>(0, blob);
      * @endcode
      *
-     * @note If `size` is smaller than `sizeof(_Event)` the framework silently uses
-     *       `sizeof(_Event)` as the minimum allocation.
+     * @note `size == 0` is the normal case and reserves exactly the event
+     *       (`ceil(sizeof(_Event) / QB_LOCKFREE_EVENT_BUCKET_BYTES)` buckets) — the event
+     *       itself is never under-allocated. Only pass a non-zero `size` when you intend to
+     *       write raw bytes into the region immediately following the event object, as
+     *       `qb-core`'s messaging tests do
+     *       (`allocated_push<TestEvent>(32)` + a 32-byte tail).
+     *       The exact bucket arithmetic is pinned by
+     *       `EventHeader.AllocatedPushRoundingMatchesCeilDivide` in
+     *       `source/core/tests/unit/core/event-header.cpp`.
      *
      * @warning **Maximum event size.** An event's total in-pipe footprint must not
      *          exceed the per-core mailbox ring capacity, which is
      *          `(std::numeric_limits<uint16_t>::max() / QB_LOCKFREE_EVENT_BUCKET_BYTES)`
      *          buckets — i.e. **~1023 buckets (≈64 KiB with the default 64-byte,
      *          cache-line bucket)**. A larger event cannot be enqueued into another
-     *          core's mailbox and will never be delivered cross-core (it stays
-     *          stuck in the source pipe). The `bucket_size` header field is also a
-     *          `uint16_t`, so an event spanning ≥ 65536 buckets wraps that field
-     *          (a value of exactly 65536 truncates to 0 and stalls the receiver).
-     *          For large payloads, put the data on the heap (e.g. a
+     *          core's mailbox, so the cross-core flush **drops it**: it is disposed,
+     *          the pipe advances past it, and a `LOG_CRIT` names the source,
+     *          destination and bucket count. Dropping is deliberate — the event is
+     *          undeliverable by construction rather than by timing, so retrying it
+     *          would hold the whole outbound stream to that core hostage
+     *          (head-of-line) and `Main::join()` would never return. The
+     *          `bucket_size` header field is also a `uint16_t`, so an event spanning
+     *          ≥ 65536 buckets wraps it; the value 65536 truncates to 0, and a
+     *          zero-width event cannot be walked past, so the flush logs `LOG_CRIT`
+     *          and **discards the rest of that pipe**. Either way the events are
+     *          lost, not delivered — the engine stays live, but the messages do not
+     *          arrive. For large payloads, put the data on the heap (e.g. a
      *          `std::shared_ptr<std::vector<T>>` member) and keep the event itself
      *          small — do **not** size `allocated_push` to the payload bytes.
+     *          Pinned by `OversizeEvent.OversizedEventDoesNotWedgeTheEngine` in
+     *          `source/core/tests/system/messaging/oversize-event-probe.cpp`.
      */
     template <typename _Event, typename... _Args>
     [[nodiscard]] _Event &allocated_push(std::size_t size, _Args &&...args) const noexcept;

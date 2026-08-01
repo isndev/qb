@@ -56,10 +56,10 @@ At a glance, the five primitives differ along five axes:
 | Primitive | Ordering | Event object | Trivially-destructible required? | Handler must take | Destination |
 |---|---|---|---|---|---|
 | `push` | FIFO per source→dest | new, at pipe **back** | no — dtor runs on the receiving side | — | one `ActorId` (or `BroadcastId(core)`) |
-| `send` | **none** | new, at pipe **front** | **yes** — else heap members leak on the cross-core path | — | one `ActorId` |
+| `send` | **none** | new, at pipe **front** | **yes for `EventQOS0`** — the engine may DROP those on backpressure without destroying them | — | one `ActorId` |
 | `reply` | n/a (redirects one event) | **reuses** the received event | n/a | `on(E&)` non-const | back to `event.source` |
 | `forward` | n/a (redirects one event) | **reuses** the received event | n/a | `on(E&)` non-const | new `ActorId`; `source` preserved |
-| `broadcast` | FIFO per recipient, no global order | new per core (fans out via `send`) | **yes** — same leak risk per remote core | — | every actor on every core |
+| `broadcast` | FIFO per recipient, no global order | new per core (fans out via `send`) | **yes for `EventQOS0`** — same drop risk per remote core | — | every actor on every core |
 
 The subsections below detail each. When unsure, the answer is `push`.
 
@@ -92,7 +92,19 @@ void Producer::on(const TickEvent &) {
 }
 ```
 
-`push` accepts events with non-trivial members and destructors (`std::string`, `std::vector`, smart pointers). The framework runs the event's destructor on the receiving side after the handler returns.
+`push` accepts events with non-trivial members and destructors (`std::vector`, smart pointers, `qb::string<N>`). The framework runs the event's destructor on the receiving side after the handler returns.
+
+> **Members must be trivially relocatable — no pointer into themselves.** The runtime moves an event by raw `memcpy`: it copies the bytes to a new address and abandons the source without running a destructor there. A member that points at its own storage therefore keeps addressing the *old* bytes after the move. A **short `std::string` by value** is exactly that on libstdc++, whose small-string buffer is referenced by an internal pointer: the handler reads reused memory and `~basic_string()` frees an address that never came from the heap. libc++ recomputes `data()` from `this`, so the defect is invisible on macOS and corrupts only on Linux. Use `qb::string<N>` for inline text, or hold the data on the heap behind a `std::shared_ptr` / `std::unique_ptr`. `std::vector`, smart pointers and long (heap-backed) strings are all safe.
+>
+> **This is not a cross-core-only rule.** An event is relocated at three distinct points, and only the last one crosses a core boundary:
+>
+> 1. **Pipe growth and compaction.** The source pipe is a growable buffer: when `allocate_back` outgrows the current capacity it `memcpy`s everything already queued into the new allocation, and `reorder()` can compact a pipe in place with `memmove` once its freed prefix has grown past half the capacity (`qb/system/allocator/pipe.h`). Both move events that are still waiting to be drained — including events whose destination is on the **sending** core, since `push` places those in a pipe too and the core drains that pipe on its next `__receive__` (`qb/source/core/src/VirtualCore.cpp`).
+> 2. **`reply` and `forward`.** Both byte-recycle the received event into a pipe with `memcpy` (`VirtualPipe::recycle`, `qb/system/allocator/pipe.h`), same core or not.
+> 3. **The cross-core hop.** Sender pipe → peer mailbox ring → receive buffer: two more `memcpy`s, after which the event is destroyed at an address it was never constructed at.
+>
+> A same-core `push` is therefore *less likely* to expose the bug — the pipe starts at 4096 buckets (256 KiB at the default bucket size) and relocates only when it must grow — but it is not exempt. Design the event type to be relocatable; do not reason about which core the destination happens to be on.
+>
+> Debug builds help, but only partly. Before handing an event to a peer's mailbox ring the engine scans it for a pointer into its own storage and aborts with a diagnostic rather than corrupting the receiver (`SharedCoreCommunication::send`, `qb/source/core/src/Main.cpp`). Two gaps follow from where that check sits: it **never runs for same-core delivery** (which does not go through the mailbox layer at all), and it looks for a word addressing the event's *current* bytes, so a self-pointer that an earlier pipe growth already left dangling now points at the old buffer and falls outside the scanned range. The scan is compiled out under `NDEBUG`, so release pays nothing. Treat a clean debug run as evidence, not proof.
 
 > Do not retain the returned reference past the current scope. The event's lifetime is owned by the framework once control leaves the handler.
 
@@ -106,7 +118,9 @@ void send(ActorId const &dest, _Args &&...args) const noexcept;
 
 `send` does **not** guarantee ordering relative to other sends or pushes from the same source to the same destination. It constructs the event at the **front** of the pipe (`allocate`, `qb/core/VirtualCore.tpp`); for a cross-core destination it attempts to publish the event into the destination mailbox immediately and, on success, frees the pipe slot with `pipe.free(...)` (`qb/core/VirtualCore.tpp`). That early-publish path is what breaks the FIFO ordering that `push` preserves.
 
-`_Event` **must be trivially destructible**. This is a hard contract, but the enforcement is not uniform: `fill_event` `static_assert`s `std::is_trivially_destructible_v<T>` only for events deriving from `EventQOS0` (`if constexpr (event_qos0_type<T>)`, `qb/core/VirtualCore.tpp`). A plain `qb::Event`-derived type with a `std::string`, `std::vector`, or smart-pointer member therefore *compiles* through `send` — but on the early cross-core publish path the freed pipe slot is reclaimed by pointer arithmetic without running the event destructor (`pipe.free` advances `_begin`/`_end` only, `qb/system/allocator/pipe.h`), so any owned heap memory leaks. Derive fire-and-forget events from `qb::EventQOS0` so the requirement is caught at compile time, or restrict `send` to genuinely trivial events.
+`_Event` **must be trivially destructible**. This is a hard contract, but the enforcement is not uniform: `fill_event` `static_assert`s `std::is_trivially_destructible_v<T>` only for events deriving from `EventQOS0` (`if constexpr (event_qos0_type<T>)`, `qb/core/VirtualCore.tpp`). A plain `qb::Event`-derived type with a `std::vector` or smart-pointer member therefore *compiles* through `send`, and — contrary to a long-standing note here — **does not leak**: on the cross-core publish path the pipe slot is reclaimed by pointer arithmetic without running the destructor (`pipe.free` advances `_begin`/`_end` only, `qb/system/allocator/pipe.h`), but the bytes were already relocated into the destination ring and the *receiver* destroys them exactly once. `SendNonTrivialPayload.{SameCore,CrossCore}DestroysEveryPayloadExactlyOnce` pins a zero live-object balance on every placement path.
+
+What the requirement really protects is the **drop** path: a `qb::EventQOS0` event is best-effort, so `__flush_all__` discards it on backpressure *without* disposing it — hence the `static_assert`, and hence the rule that fire-and-forget events derive from `qb::EventQOS0` and stay trivially destructible. Separately, and for `push` as much as `send`, every event payload must be trivially **relocatable** (no pointer into itself) whatever core it is bound for — see the note under [`push`](#push--ordered-the-default).
 
 ```cpp
 // derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (BasicSendActor)
@@ -176,7 +190,7 @@ void broadcast(_Args &&...args) const noexcept;
 broadcast<SystemShutdownNotice>();
 ```
 
-> Because `broadcast` fans out via `send`, it inherits `send`'s lifetime contract on every remote core: the event **should be trivially destructible**. A non-trivially-destructible event (one carrying `std::string`, `std::vector`, or a smart pointer) is reclaimed on the early cross-core publish path without running its destructor, so its owned heap memory leaks on each remote core (see [`send`](#send--unordered-trivially-destructible-only) above). There is no compile-time guard for this on `broadcast` — the `fill_event` `static_assert` fires only for `EventQOS0`-derived events. Broadcast a trivially-destructible event (ideally derive from `qb::EventQOS0`) and keep bulk data behind a `std::shared_ptr`.
+> Because `broadcast` fans out via `send`, it inherits `send`'s contract on every remote core: the event **should be trivially destructible**, because a `qb::EventQOS0` broadcast is best-effort and may be dropped on backpressure without being disposed. A non-trivially-destructible payload is not leaked on the ordinary delivery path — the receiver destroys it — but it is on a drop, and there is no compile-time guard on `broadcast` (the `fill_event` `static_assert` fires only for `EventQOS0`-derived events). Broadcast a trivially-destructible event (ideally derive from `qb::EventQOS0`) and keep bulk data behind a `std::shared_ptr`.
 
 To target a single core instead of the whole system, push to a `qb::BroadcastId`:
 
@@ -240,23 +254,27 @@ template <typename _Event, typename... _Args>
 ```cpp
 // derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (AllocatedPipePushActor); pattern from qb/include/qb/core/Pipe.h
 qb::Pipe pipe = getPipe(processor_id);
-auto blob = std::make_shared<std::vector<std::byte>>(1024 * 1024); // 1 MB
+auto blob = std::make_shared<std::vector<std::byte>>(1024 * 1024); // 1 MB, on the heap
 // ... fill blob ...
-std::size_t hint = blob->size();   // EXTRA payload bytes only; sizeof(BlobEvent) is added by the framework
-auto &ev = pipe.allocated_push<BlobEvent>(hint, blob);
+// The blob is owned by the shared_ptr, so the event's in-pipe footprint is just the
+// event object: NO trailing bytes are needed. Passing blob->size() here would reserve
+// 1 MB of pipe space and push the event past the cross-core ceiling — see the note below.
+auto &ev = pipe.allocated_push<BlobEvent>(0, blob);
 ```
 
-The `size` argument is the **extra payload bytes beyond the event itself** — `allocated_push` adds `sizeof(_Event)` to it internally (`size += sizeof(T)`, `qb/core/Pipe.tpp`), it does not clamp `size` up to `sizeof(_Event)`. So pass `blob->size()`, not `sizeof(BlobEvent) + blob->size()`; passing the latter double-counts one event's worth of space. A hint of `0` still allocates at least one event's worth (the event always fits).
+The `size` argument is the **extra payload bytes beyond the event itself** — `allocated_push` adds `sizeof(_Event)` to it internally (`size += sizeof(T)`, `qb/core/Pipe.tpp`), it does not clamp `size` up to `sizeof(_Event)`. A hint of `0` still allocates at least one event's worth (the event always fits), and `0` is the right answer whenever the bulk data lives on the heap behind a pointer member.
 
-> **Size the event small, not the payload.** The hint helps the *source pipe* reserve space, but the real ceiling is the destination mailbox. An event's total in-pipe footprint must fit the mailbox ring — about 1023 buckets (≈64 KiB) with the default bucket size. A larger event cannot be enqueued cross-core and will stall, stuck in the source pipe. Put bulk data on the heap behind a `std::shared_ptr` member and keep the event struct itself small; do not size `allocated_push` to the payload bytes. (`qb/core/Pipe.h`.)
+Pass a non-zero `size` only when you deliberately write raw bytes into the region **immediately following** the event object — the way `AllocatedPipePushActor` in `messaging-api.cpp` does with `allocated_push<TestEvent>(32)` plus a 32-byte tail. Never pass `sizeof(BlobEvent) + blob->size()`: that double-counts one event's worth of space on top of a payload that is already too large.
+
+> **Size the event small, not the payload.** The hint helps the *source pipe* reserve space, but the real ceiling is the destination mailbox. An event's total in-pipe footprint must fit the mailbox ring — about 1023 buckets (≈64 KiB) with the default bucket size. A larger event can never be enqueued into a peer's mailbox, however much that peer drains, so `__flush_all__` treats it as permanently unsendable rather than backpressured: it logs at `LOG_CRIT`, disposes the event (its destructor *does* run) and drops it, then keeps flushing the rest of the pipe (`qb/source/core/src/VirtualCore.cpp`). The message is lost, and nothing at the call site says so. Put bulk data on the heap behind a `std::shared_ptr` member and keep the event struct itself small; do not size `allocated_push` to the payload bytes. (`qb/core/Pipe.h`.)
 
 ## Pitfalls
 
-- **`send` ordering and lifetime.** `send` does not preserve order, even same-source to same-destination. Reach for it only when ordering is irrelevant *and* the event is trivially destructible. The compile-time check fires only for `EventQOS0`-derived events, so derive fire-and-forget events from `qb::EventQOS0`; a non-trivial plain-`Event` type compiles but leaks its heap members on the cross-core path. The default answer is `push`.
+- **`send` ordering and lifetime.** `send` does not preserve order, even same-source to same-destination. Reach for it only when ordering is irrelevant *and* the event is trivially destructible. The compile-time check fires only for `EventQOS0`-derived events, so derive fire-and-forget events from `qb::EventQOS0` — those are the ones the engine may drop on backpressure without disposing. A non-trivial plain-`Event` type compiles and is destroyed correctly by the receiver, but it forfeits the drop guarantee. The default answer is `push`.
 - **Non-const handler for `reply`/`forward`.** Both reuse the event object in place, so the handler must declare `void on(MyEvent &event)`. A `const` reference will not compile against `reply(event)` / `forward(dest, event)`.
 - **Using an event after `reply`/`forward`.** The event is consumed once handed back to the runtime. Reading or mutating it afterward is a use-after-consume bug.
 - **Replying to or forwarding a broadcast.** Both are silently dropped (logged at warn) when the destination is a broadcast id. Design request/response flows around unicast events.
-- **Oversized events stall cross-core.** An event larger than the mailbox ring capacity never delivers across cores and sits stuck in the source pipe. Keep events small; move bulk data to the heap.
+- **Oversized events are dropped cross-core.** An event whose in-pipe footprint exceeds the mailbox ring capacity can never be enqueued into a peer's mailbox. The flush recognises that as permanent, not as backpressure: it logs at `LOG_CRIT`, disposes the event and moves on, so the message is silently lost while the rest of the pipe keeps flowing. Keep events small; move bulk data to the heap.
 - **Allocation in an event constructor under OOM aborts the process.** Because the send path is `noexcept`, a throwing event constructor or a failed buffer growth calls `std::terminate()`. Construct events from already-allocated resources.
 - **Returned references are scope-bound.** The reference from `push` / `allocated_push` is valid only until control leaves the current handler. Do not store it.
 

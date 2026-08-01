@@ -211,6 +211,17 @@ make_server_context() {
     return qb::io::ssl::create_server_context(TLS_server_method(), ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"));
 }
 
+
+// The CN=localhost fixture, resolved from THIS file rather than through `ssl_resource_path()`.
+// That helper probes several candidate directories, so which of the two shipped certificates it
+// finds depends on the working directory — and they are not interchangeable: this one is
+// CN=localhost, the other (qb/resources/ssl) carries no CN at all. Hostname verification can only
+// be exercised against the former, so it is addressed directly.
+std::filesystem::path
+localhost_fixture(const char *name) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "resources" / "ssl" / name;
+}
+
 } // namespace
 
 // ===========================================================================
@@ -1879,4 +1890,167 @@ TEST(SSLSocketLoopback, NonBlockingWriteToBackpressuredPeerYieldsWouldBlockAsZer
 
     client_done = true;
     client.disconnect();
+}
+
+// ===========================================================================
+// Hostname verification, isolated from chain verification.
+//
+// `SecureByDefaultHandshakeRejectsSelfSignedServer` above proves the CHAIN half: an untrusted
+// certificate is refused. It cannot say anything about the HOSTNAME half, because the shipped
+// certificate fails the chain check first and the handshake never gets that far.
+//
+// Isolating the two needs no new PKI: make the client TRUST the shipped self-signed certificate as
+// a CA. The chain then verifies (a self-signed root vindicates itself), so the hostname target is
+// the only thing left that can reject — which is exactly what these cases exercise.
+//
+// This matters because `connect(endpoint, hostname)` / `n_connect(endpoint, hostname)` default that
+// hostname to EMPTY, and an empty target makes `apply_hostname_target()` a no-op — leaving chain
+// verification alone, which accepts a valid-chain certificate issued for ANY host. The framework's
+// own paths never hit it (`async::tcp::connector` goes through `n_connect(uri)`, which supplies the
+// URI host), but it is reachable from the public API, so the behaviour is pinned here rather than
+// left to be rediscovered.
+// ===========================================================================
+
+TEST(SSLSocketLoopback, HostnameVerificationRejectsAValidChainIssuedForAnotherHost) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    // Which fixture `ssl_resource_path()` resolves to depends on the working directory (it probes
+    // several candidates), and the two shipped certificates differ: one is CN=localhost, the other
+    // carries no CN at all. Read the subject of the certificate the server is ACTUALLY presenting
+    // instead of assuming — otherwise this case passes from the repo root and fails under ctest,
+    // for a reason that has nothing to do with what it is testing.
+    const std::string cert_cn = [] {
+        std::unique_ptr<BIO, decltype(&BIO_free)> bio{BIO_new_file(localhost_fixture("cert.pem").string().c_str(), "r"), &BIO_free};
+        if (!bio)
+            return std::string{};
+        std::unique_ptr<X509, decltype(&X509_free)> cert{PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr), &X509_free};
+        if (!cert)
+            return std::string{};
+        char buf[256] = {0};
+        const int n = X509_NAME_get_text_by_NID(X509_get_subject_name(cert.get()), NID_commonName, buf, sizeof(buf));
+        return n > 0 ? std::string(buf, static_cast<std::size_t>(n)) : std::string{};
+    }();
+
+    if (cert_cn.empty()) {
+        GTEST_SKIP() << "the resolved fixture has no CN, so hostname verification cannot be exercised against it";
+    }
+
+    qb::io::tcp::ssl::listener listener;
+    // Serve the SAME certificate the client trusts, so the chain is guaranteed to verify and the
+    // hostname target is the only variable left.
+    listener.init(qb::io::ssl::create_server_context(TLS_server_method(), localhost_fixture("cert.pem"), localhost_fixture("key.pem")));
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::atomic<bool> stop{false};
+    std::thread       acceptor([&] {
+        for (int i = 0; i < 3 && !stop.load(); ++i) {
+            qb::io::tcp::ssl::socket server_socket;
+            if (listener.accept(server_socket) != 0)
+                continue;
+            const auto deadline = std::chrono::steady_clock::now() + 2s;
+            while (!server_socket.handshake_complete() && std::chrono::steady_clock::now() < deadline) {
+                if (server_socket.handshake_status() < 0)
+                    break; // the client rejected us
+                std::this_thread::sleep_for(1ms);
+            }
+        }
+    });
+    thread_join_guard acceptor_join(acceptor, [&] {
+        stop = true;
+        listener.disconnect();
+    });
+
+    // A client context that trusts the shipped certificate as a CA, so the chain always verifies
+    // and only the hostname target can decide the outcome.
+    const auto trusting_context = [] {
+        return qb::io::ssl::Context::client().trust(localhost_fixture("cert.pem"));
+    };
+
+    // 1) POSITIVE CONTROL. Without this the two rejections below would pass even if the trust setup
+    //    were broken and everything failed for the wrong reason. It is exactly this assertion that
+    //    caught both shipped certificates having silently expired.
+    {
+        qb::io::tcp::ssl::socket client(trusting_context());
+        const int                ret = client.connect(qb::io::endpoint().as_in("127.0.0.1", port), cert_cn);
+        EXPECT_EQ(ret, 0) << "the trusted-CA setup itself is broken: a certificate whose CN (" << cert_cn
+                          << ") matches the requested hostname was refused, so the rejections below would prove nothing";
+        EXPECT_TRUE(client.handshake_complete());
+        client.disconnect();
+    }
+
+    // 2) THE PROPERTY. Same certificate, same trusted chain, different requested host.
+    {
+        qb::io::tcp::ssl::socket client(trusting_context());
+        const int                ret = client.connect(qb::io::endpoint().as_in("127.0.0.1", port), "wrong.example.com");
+        EXPECT_NE(ret, 0) << "a certificate issued for 'localhost' was accepted for 'wrong.example.com': chain "
+                             "verification passed and nothing checked WHO the certificate was issued to — that is "
+                             "the MITM hole apply_hostname_target() exists to close";
+        EXPECT_FALSE(client.handshake_complete());
+    }
+
+    // 3) THE DOCUMENTED HAZARD, pinned. An empty hostname installs no verification target, so the
+    //    connection succeeds on chain verification alone. This is why the `hostname` parameter is
+    //    documented as the verification target and not merely as SNI: omitting it is a silent
+    //    security downgrade, and any future change to that had better be deliberate.
+    {
+        qb::io::tcp::ssl::socket client(trusting_context());
+        const int                ret = client.connect(qb::io::endpoint().as_in("127.0.0.1", port));
+        EXPECT_EQ(ret, 0) << "behaviour change: an empty hostname now also rejects. If that was intended, this "
+                             "case and the @warning on connect(endpoint, hostname) must be updated together";
+        client.disconnect();
+    }
+}
+
+// ===========================================================================
+// The fixtures themselves must stay valid.
+//
+// Both shipped certificates had silently expired — `system/resources/ssl/cert.pem` roughly three
+// months before this was noticed, and `qb/resources/ssl/cert.pem` (the one QUIC and every qbm-http
+// TLS test use) was three months from expiring.
+//
+// Nothing went red, and that is the problem: every TLS case here either asserts a REJECTION or
+// opts out with `set_insecure()`, so an expired fixture keeps them all green. Worse, it makes them
+// green for the wrong reason — `SecureByDefaultHandshakeRejectsSelfSignedServer` proves the client
+// refuses an UNTRUSTED chain, but against an expired certificate it would pass just as well if the
+// framework had regressed to accepting untrusted certificates outright.
+//
+// This case turns that silent decay into an early, loud failure, with enough margin to regenerate
+// before anything else starts lying.
+// ===========================================================================
+
+TEST(SSLFixtures, ShippedCertificatesAreValidAndNotAboutToExpire) {
+    const std::filesystem::path candidates[] = {
+        ssl_resource_path("cert.pem"),
+        std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path().parent_path()
+            / "resources" / "ssl" / "cert.pem", // qb/resources/ssl — QUIC + qbm-http use this one
+    };
+
+    bool checked_any = false;
+    for (auto const &path : candidates) {
+        if (!std::filesystem::exists(path))
+            continue;
+        checked_any = true;
+
+        std::unique_ptr<BIO, decltype(&BIO_free)> bio{BIO_new_file(path.string().c_str(), "r"), &BIO_free};
+        ASSERT_NE(bio, nullptr) << "cannot open " << path;
+        std::unique_ptr<X509, decltype(&X509_free)> cert{PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr), &X509_free};
+        ASSERT_NE(cert, nullptr) << "cannot parse " << path;
+
+        EXPECT_EQ(X509_cmp_current_time(X509_get_notBefore(cert.get())), -1) << path << " is not valid yet";
+        EXPECT_EQ(X509_cmp_current_time(X509_get_notAfter(cert.get())), 1)
+            << path
+            << " has EXPIRED. Every TLS case in this suite asserts a rejection or opts out with "
+               "set_insecure(), so they all stay green while proving nothing about chain "
+               "verification. Regenerate the fixture.";
+
+        // 30 days of warning, so this fails while there is still time to act.
+        time_t soon = std::time(nullptr) + 30 * 24 * 60 * 60;
+        EXPECT_EQ(X509_cmp_time(X509_get_notAfter(cert.get()), &soon), 1)
+            << path << " expires within 30 days — regenerate it now, before the suite starts passing for the wrong reason.";
+    }
+
+    EXPECT_TRUE(checked_any) << "no shipped certificate was found to check";
 }
