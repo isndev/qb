@@ -228,8 +228,8 @@ TEST(PubSubDeadSubscribers, ALaterSubscribeReclaimsDeadSlots) {
 
     ASSERT_EQ(g_slots_before.load(), kSubscribers)
         << "precondition: all " << kSubscribers << " ids are in the list, and nothing has subscribed since the deaths";
-    EXPECT_EQ(g_slots_after.load(), live + 1)
-        << "after a new subscribe the bus holds " << g_slots_after.load() << " ids instead of " << (live + 1) << " (the " << live
-        << " survivors plus the newcomer): `subscribe()` is not reclaiming the slots of "
-           "subscribers that died, so the list grows without bound as subscribers churn";
+    EXPECT_EQ(g_slots_after.load(), live + 1) << "after a new subscribe the bus holds " << g_slots_after.load() << " ids instead of "
+                                              << (live + 1) << " (the " << live
+                                              << " survivors plus the newcomer): `subscribe()` is not reclaiming the slots of "
+                                                 "subscribers that died, so the list grows without bound as subscribers churn";
 }

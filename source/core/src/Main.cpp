@@ -186,8 +186,9 @@ SharedCoreCommunication::send(CoreId const source_index, Event const &event) con
                              "Use qb::string<N> for inline text, or keep the data on the heap behind a "
                              "shared_ptr/unique_ptr member. A by-value std::string is the usual cause "
                              "(short strings are self-referential on libstdc++).");
-        assert(false && "qb: event payload is not trivially relocatable (holds a pointer into itself) — "
-                        "see the LOG_CRIT above and Actor::push's @warning");
+        assert(false
+               && "qb: event payload is not trivially relocatable (holds a pointer into itself) — "
+                  "see the LOG_CRIT above and Actor::push's @warning");
     }
 #endif
     // `source_index` MUST be the PHYSICAL core whose thread is calling (the

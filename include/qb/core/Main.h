@@ -496,8 +496,8 @@ class Main {
     static void           onSignal(int signal) noexcept;
     static void           start_thread(CoreSpawnerParameter const &params) noexcept;
     /// Install the documented default signal dispositions (SIGINT + SIGTERM) at engine start.
-    static void           install_default_signals() noexcept;
-    static bool           __wait__all__cores__ready(std::size_t nb_core, std::atomic<uint64_t> &sync_start) noexcept;
+    static void install_default_signals() noexcept;
+    static bool __wait__all__cores__ready(std::size_t nb_core, std::atomic<uint64_t> &sync_start) noexcept;
 
 private:
     /**

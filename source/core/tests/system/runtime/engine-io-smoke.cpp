@@ -261,8 +261,8 @@ TEST_F(EngineIoSmoke, ConcurrentLoggingNeverTearsARecord) {
         int  a = 0, b = 0, c = 0;
         char tail[8] = {0};
         // Exactly four fields, the last literal: a truncated or spliced record cannot match.
-        if (std::sscanf(line.c_str(), "NLRACE|%d|%d|%d|%3s", &a, &b, &c, tail) != 4 || std::string(tail) != "END" || a * b != c
-            || a < 1 || a > kProducers || b < 1 || b > kPerThread) {
+        if (std::sscanf(line.c_str(), "NLRACE|%d|%d|%d|%3s", &a, &b, &c, tail) != 4 || std::string(tail) != "END" || a * b != c || a < 1
+            || a > kProducers || b < 1 || b > kPerThread) {
             ++malformed;
             if (malformed <= 3)
                 ADD_FAILURE() << "torn or corrupted log record: <" << line.substr(0, 120) << ">";

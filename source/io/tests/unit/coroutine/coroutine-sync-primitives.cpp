@@ -756,7 +756,7 @@ TEST_F(CoroutineSyncPrimitives, EventWaitIsCancellableViaCheckCancelled) {
         parked.store(true);
         // Named locals of this frame: `task`'s initial_suspend is suspend_always, so each body runs
         // on a later run_ready() — an immediately-invoked temporary closure would already be gone.
-        auto wait_op   = [&ev]() -> task<void> {
+        auto wait_op = [&ev]() -> task<void> {
             co_await ev.wait();
         };
         auto cancel_op = [token]() -> task<void> {

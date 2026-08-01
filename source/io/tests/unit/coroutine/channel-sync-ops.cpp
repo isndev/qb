@@ -483,7 +483,7 @@ TEST_F(ChannelLoopOps, ParkedRecvDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
         // when_any(...) full-expression: `task`'s initial_suspend is suspend_always, so each body
         // starts on a LATER run_ready() — by which point an immediately-invoked temporary closure
         // is gone and every capture read is a dangling access.
-        auto recv_op   = [&ch]() -> task<void> {
+        auto recv_op = [&ch]() -> task<void> {
             (void) co_await ch.recv();
         };
         auto cancel_op = [token]() -> task<void> {
@@ -526,7 +526,7 @@ TEST_F(ChannelLoopOps, ParkedSendDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         // Named locals of this frame — see the note in the recv-side case above.
-        auto send_op   = [&ch]() -> task<void> {
+        auto send_op = [&ch]() -> task<void> {
             try {
                 co_await ch.send(2); // parks on the full buffer
             } catch (const channel_closed &) {

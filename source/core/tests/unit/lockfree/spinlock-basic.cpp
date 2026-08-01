@@ -173,7 +173,7 @@ TEST(SpinLock, MutualExclusionUnderContention) {
 
 TEST(SpinLock, TimedAcquirePathsAreMutuallyExclusiveUnderContention) {
     SpinLock                 sl;
-    std::uint64_t            counter  = 0; // guarded by sl — no atomic, exclusivity must hold
+    std::uint64_t            counter = 0; // guarded by sl — no atomic, exclusivity must hold
     std::atomic<int>         acquired{0};
     constexpr int            kThreads = 8;
     constexpr int            kIters   = 2000;

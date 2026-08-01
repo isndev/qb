@@ -26,7 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include "nanolog.h"
 #include <algorithm>
 #include <atomic>
-#include <new>   // std::align_val_t for the over-aligned ring allocation
+#include <new> // std::align_val_t for the over-aligned ring allocation
 #include <chrono>
 #include <cstring>
 #include <ctime>

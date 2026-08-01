@@ -166,10 +166,9 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std
             // with errno 0 is the clean-close case, and points at a lifetime race in the test rather
             // than at the TLS stack.
             const auto ssl_err = socket.get_last_ssl_error_string();
-            return ::testing::AssertionFailure()
-                   << "SSL read failed after " << received << "/" << size << " bytes"
-                   << "; openssl=\"" << (ssl_err.empty() ? "<none: clean close_notify or EOF>" : ssl_err) << "\""
-                   << ", errno=" << errno;
+            return ::testing::AssertionFailure() << "SSL read failed after " << received << "/" << size << " bytes"
+                                                 << "; openssl=\"" << (ssl_err.empty() ? "<none: clean close_notify or EOF>" : ssl_err) << "\""
+                                                 << ", errno=" << errno;
         }
         std::this_thread::sleep_for(1ms);
     }
@@ -221,7 +220,6 @@ SSL_CTX *
 make_server_context() {
     return qb::io::ssl::create_server_context(TLS_server_method(), ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"));
 }
-
 
 // The CN=localhost fixture, resolved from THIS file rather than through `ssl_resource_path()`.
 // That helper probes several candidate directories, so which of the two shipped certificates it
@@ -940,7 +938,7 @@ TEST(SSLSocketLoopback, PostHandshakeAccessorsAndChannelBinding) {
     auto                    *client_ctx = qb::io::ssl::create_client_context(TLS_client_method());
     ASSERT_NE(client_ctx, nullptr);
     client.init(SSL_new(client_ctx)); // socket owns the SSL; the caller owns the SSL_CTX
-    SSL_CTX_free(client_ctx);          // drop the creator ref — the SSL keeps its own (create_client_context contract)
+    SSL_CTX_free(client_ctx);         // drop the creator ref — the SSL keeps its own (create_client_context contract)
     ASSERT_NE(client.ssl_handle(), nullptr);
     client.set_insecure();
     ASSERT_TRUE(client.request_ocsp_stapling(true));
@@ -1544,9 +1542,9 @@ write_temp_ec_private_key(const std::string &path) {
 // Self-move assignment must be a no-op (the `this == &rhs` guard), leaving the socket
 // intact — the aliasing pointer prevents clang's -Wself-move from firing.
 TEST(SSLSocketLoopback, SelfMoveAssignmentIsANoOp) {
-    qb::io::tcp::ssl::socket sock;
+    qb::io::tcp::ssl::socket  sock;
     qb::io::tcp::ssl::socket *alias = &sock;
-    *alias                         = std::move(sock); // this == &rhs -> early return
+    *alias                          = std::move(sock); // this == &rhs -> early return
     EXPECT_EQ(sock.ssl_handle(), nullptr);
     EXPECT_FALSE(sock.handshake_complete());
     EXPECT_TRUE(sock.verify_peer());
@@ -1834,9 +1832,9 @@ TEST(SSLSocketLoopback, WriteAfterAbortiveCloseReportsTermination) {
         std::this_thread::sleep_for(1ms);
     }
 
-    const auto  deadline    = std::chrono::steady_clock::now() + 5s;
-    int         ret         = 0;
-    const char  payload[64] = {};
+    const auto deadline    = std::chrono::steady_clock::now() + 5s;
+    int        ret         = 0;
+    const char payload[64] = {};
     while (std::chrono::steady_clock::now() < deadline) {
         ret = client.write(payload, sizeof(payload));
         if (ret < 0) {
@@ -1944,8 +1942,8 @@ TEST(SSLSocketLoopback, HostnameVerificationRejectsAValidChainIssuedForAnotherHo
         std::unique_ptr<X509, decltype(&X509_free)> cert{PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr), &X509_free};
         if (!cert)
             return std::string{};
-        char buf[256] = {0};
-        const int n = X509_NAME_get_text_by_NID(X509_get_subject_name(cert.get()), NID_commonName, buf, sizeof(buf));
+        char      buf[256] = {0};
+        const int n        = X509_NAME_get_text_by_NID(X509_get_subject_name(cert.get()), NID_commonName, buf, sizeof(buf));
         return n > 0 ? std::string(buf, static_cast<std::size_t>(n)) : std::string{};
     }();
 
@@ -2042,8 +2040,8 @@ TEST(SSLSocketLoopback, HostnameVerificationRejectsAValidChainIssuedForAnotherHo
 TEST(SSLFixtures, ShippedCertificatesAreValidAndNotAboutToExpire) {
     const std::filesystem::path candidates[] = {
         ssl_resource_path("cert.pem"),
-        std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path().parent_path()
-            / "resources" / "ssl" / "cert.pem", // qb/resources/ssl — QUIC + qbm-http use this one
+        std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path().parent_path() / "resources"
+            / "ssl" / "cert.pem", // qb/resources/ssl — QUIC + qbm-http use this one
     };
 
     bool checked_any = false;

@@ -425,7 +425,8 @@ std::size_t LateDisposeEvent::_count = 0;
 
 TEST(EventRouting, MemhDisposerMemoDoesNotCacheAMiss) {
     qb::router::memh<RawEvent, true, void> router;
-    const auto                             noop = [](auto &) {};
+    const auto                             noop = [](auto &) {
+    };
 
     // Before any disposer exists for this type, the router must find none — and must not remember
     // that. Nothing is registered on the router either, so this takes the `else` branch.
@@ -445,10 +446,9 @@ TEST(EventRouting, MemhDisposerMemoDoesNotCacheAMiss) {
     {
         LateDisposeEvent late;
         router.route(late, noop);
-        EXPECT_EQ(LateDisposeEvent::_count, 1u)
-            << "the router did not pick up a disposer registered after its first lookup missed: a "
-               "negative result was memoised, so every event of this type leaks its payload for the "
-               "life of the process";
+        EXPECT_EQ(LateDisposeEvent::_count, 1u) << "the router did not pick up a disposer registered after its first lookup missed: a "
+                                                   "negative result was memoised, so every event of this type leaks its payload for the "
+                                                   "life of the process";
     }
     EXPECT_EQ(LateDisposeEvent::_count, 2u) << "route() disposed the payload, then the scope destroyed the object";
 }
@@ -457,7 +457,8 @@ TEST(EventRouting, MemhDisposerMemoStaysCorrectAcrossRepeatedRoutes) {
     qb::router::ensure_disposer<RawEvent, TestDestroyEvent>();
 
     qb::router::memh<RawEvent, true, void> router;
-    const auto                             noop = [](auto &) {};
+    const auto                             noop = [](auto &) {
+    };
 
     // Every route must dispose exactly once — the memo must not skip, double-dispose, or go stale
     // once it is warm. Counting destructor runs is the oracle; the objects here are constructed in

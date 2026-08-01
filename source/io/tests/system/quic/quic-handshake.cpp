@@ -461,8 +461,8 @@ TEST(QuicHandshakeNativeBackend, StatelessRetryChallengesBeforeAllocatingConnect
     server->configure(settings);
     client->configure(settings);
 
-    const qb::io::endpoint  server_endpoint{"127.0.0.1", 4433};
-    const qb::io::endpoint  client_endpoint{"127.0.0.1", 54321};
+    const qb::io::endpoint   server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint   client_endpoint{"127.0.0.1", 54321};
     qb::io::quic::tls_config server_tls;
     server_tls.certificate_file = ssl_resource_path("cert.pem");
     server_tls.private_key_file = ssl_resource_path("key.pem");
@@ -496,8 +496,8 @@ TEST(QuicHandshakeNativeBackend, DisabledStatelessRetryAcceptsInitialWithoutChal
     server->configure(settings);
     client->configure(settings);
 
-    const qb::io::endpoint  server_endpoint{"127.0.0.1", 4433};
-    const qb::io::endpoint  client_endpoint{"127.0.0.1", 54321};
+    const qb::io::endpoint   server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint   client_endpoint{"127.0.0.1", 54321};
     qb::io::quic::tls_config server_tls;
     server_tls.certificate_file = ssl_resource_path("cert.pem");
     server_tls.private_key_file = ssl_resource_path("key.pem");

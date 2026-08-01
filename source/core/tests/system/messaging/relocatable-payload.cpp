@@ -82,9 +82,9 @@ std::atomic<int> g_seen{0};
 
 /// Every member here must survive a raw byte relocation.
 struct RelocEvent : public qb::Event {
-    qb::string<32>   inline_str;  ///< the framework's own heap-free string
-    std::vector<int> vec;         ///< heap-owned: no self-pointer
-    std::shared_ptr<std::string> boxed; ///< heap-owned: no self-pointer
+    qb::string<32>               inline_str; ///< the framework's own heap-free string
+    std::vector<int>             vec;        ///< heap-owned: no self-pointer
+    std::shared_ptr<std::string> boxed;      ///< heap-owned: no self-pointer
 
     RelocEvent()
         : inline_str(kShort)
@@ -102,8 +102,8 @@ public:
     void
     on(RelocEvent const &e) {
         g_seen.fetch_add(1, std::memory_order_relaxed);
-        const bool ok = std::strcmp(e.inline_str.c_str(), kShort) == 0 && e.vec.size() == 5u && e.vec[4] == 5 && e.boxed != nullptr &&
-                        *e.boxed == kShort;
+        const bool ok =
+            std::strcmp(e.inline_str.c_str(), kShort) == 0 && e.vec.size() == 5u && e.vec[4] == 5 && e.boxed != nullptr && *e.boxed == kShort;
         (ok ? g_ok : g_bad).fetch_add(1, std::memory_order_relaxed);
         kill();
     }
@@ -184,10 +184,10 @@ is_self_referential(Factory make) {
     // `make()` returns a `T` prvalue, so guaranteed elision builds the object directly in here —
     // no copy constructor runs, hence nothing can drag indeterminate padding back in.
     alignas(T) unsigned char storage[sizeof(T)]{};
-    auto *const       obj  = new (storage) T(make());
-    const auto *const base = reinterpret_cast<const unsigned char *>(obj);
-    const auto        lo   = reinterpret_cast<std::uintptr_t>(base);
-    const auto        hi   = lo + sizeof(T);
+    auto *const              obj  = new (storage) T(make());
+    const auto *const        base = reinterpret_cast<const unsigned char *>(obj);
+    const auto               lo   = reinterpret_cast<std::uintptr_t>(base);
+    const auto               hi   = lo + sizeof(T);
 
     bool found = false;
     // Same stride and same read-into-an-integer as the shipped guard: words are copied into a
@@ -411,5 +411,6 @@ TEST(RelocatablePayload, ShortStdStringEventCrossesCoresWithoutTrippingTheGuard)
 // not trivially copyable — so this says nothing about the other sanctioned payloads; it only pins
 // that qb::string<N> never grows a member that would make a raw byte copy unsound.
 TEST(RelocatablePayload, QbStringStaysTriviallyCopyable) {
-    EXPECT_TRUE(std::is_trivially_copyable_v<qb::string<32>>) << "qb::string<N> must stay memcpy-safe; it is the sanctioned inline string for events";
+    EXPECT_TRUE(std::is_trivially_copyable_v<qb::string<32>>)
+        << "qb::string<N> must stay memcpy-safe; it is the sanctioned inline string for events";
 }

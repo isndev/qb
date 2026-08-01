@@ -749,7 +749,7 @@ TEST_F(CoroutineSchedulerTests, ScheduleResumeAndEnqueueDedup) {
         stage_ptr->fetch_add(1000);
     };
     auto manual = manual_fn();
-    auto h = manual.handle();
+    auto h      = manual.handle();
     ASSERT_TRUE(h);
 
     // First schedule_resume queues it; the second hits the in_flight_ dedup and is a no-op.

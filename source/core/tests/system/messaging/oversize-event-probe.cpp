@@ -120,14 +120,14 @@ extra_for_buckets(std::size_t buckets) noexcept {
 /// Run one cross-core case; returns false if the engine failed to terminate in `budget`.
 [[nodiscard]] bool
 run_case(std::size_t extra, std::chrono::seconds budget) {
-    g_big          = 0;
-    g_tail         = 0;
+    g_big           = 0;
+    g_tail          = 0;
     g_payload_alive = 0;
     // The engine runs on its own thread: a wedged join() must fail this test, not hang the
     // suite. std::async's future would block in its destructor, so use a detached thread
     // plus a promise.
-    auto  done   = std::make_shared<std::promise<void>>();
-    auto  future = done->get_future();
+    auto done   = std::make_shared<std::promise<void>>();
+    auto future = done->get_future();
     std::thread([extra, done] {
         qb::Main main;
         auto     rcv = main.addActor<OvRecv>(1);
@@ -158,8 +158,8 @@ TEST(OversizeEvent, OversizedEventDoesNotWedgeTheEngine) {
         GTEST_SKIP() << "requires-multicore: needs a second core to exercise cross-core delivery";
 
     ASSERT_TRUE(run_case(extra_for_buckets(kMaxBuckets + 1), std::chrono::seconds(30)))
-        << "engine wedged: an event of " << (kMaxBuckets + 1) << " buckets can never be enqueued into the "
-        << kMaxBuckets << "-bucket mailbox ring, so __flush_all__ retries it forever and join() never returns";
+        << "engine wedged: an event of " << (kMaxBuckets + 1) << " buckets can never be enqueued into the " << kMaxBuckets
+        << "-bucket mailbox ring, so __flush_all__ retries it forever and join() never returns";
     EXPECT_EQ(g_big.load(), 0) << "an oversized event cannot be delivered cross-core";
     EXPECT_EQ(g_tail.load(), 1) << "traffic queued behind the undeliverable event must still be delivered "
                                    "(no head-of-line block)";
