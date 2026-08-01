@@ -479,13 +479,17 @@ TEST_F(ChannelLoopOps, ParkedRecvDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
         parked.store(true);
         // recv() parks forever (nobody sends); check_cancelled wins on cancel,
         // and the race teardown destroys the parked recv frame -> dtor de-registers.
-        auto res = co_await when_any(
-            [&ch]() -> task<void> {
-                (void) co_await ch.recv();
-            }(),
-            [token]() -> task<void> {
-                co_await check_cancelled(token);
-            }());
+        // The lambdas are named locals of THIS coroutine frame, not temporaries of the
+        // when_any(...) full-expression: `task`'s initial_suspend is suspend_always, so each body
+        // starts on a LATER run_ready() — by which point an immediately-invoked temporary closure
+        // is gone and every capture read is a dangling access.
+        auto recv_op   = [&ch]() -> task<void> {
+            (void) co_await ch.recv();
+        };
+        auto cancel_op = [token]() -> task<void> {
+            co_await check_cancelled(token);
+        };
+        auto res = co_await when_any(recv_op(), cancel_op());
         winner.store(res.index);
         done.store(true);
     });
@@ -521,16 +525,17 @@ TEST_F(ChannelLoopOps, ParkedSendDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
-        auto res = co_await when_any(
-            [&ch]() -> task<void> {
-                try {
-                    co_await ch.send(2); // parks on the full buffer
-                } catch (const channel_closed &) {
-                }
-            }(),
-            [token]() -> task<void> {
-                co_await check_cancelled(token);
-            }());
+        // Named locals of this frame — see the note in the recv-side case above.
+        auto send_op   = [&ch]() -> task<void> {
+            try {
+                co_await ch.send(2); // parks on the full buffer
+            } catch (const channel_closed &) {
+            }
+        };
+        auto cancel_op = [token]() -> task<void> {
+            co_await check_cancelled(token);
+        };
+        auto res = co_await when_any(send_op(), cancel_op());
         winner.store(res.index);
         done.store(true);
     });

@@ -173,7 +173,18 @@ Actor::on(KillEvent const &) noexcept {
 
 void
 Actor::on(SignalEvent const &event) noexcept {
-    if (event.signum == SIGINT)
+    // Terminal signals only. SIGINT and SIGTERM both mean "stop": SIGTERM is what Docker,
+    // Kubernetes and systemd send first, so swallowing it made a registered SIGTERM a no-op —
+    // the process stayed alive and the supervisor had to escalate to SIGKILL, losing the very
+    // graceful teardown `registerSignal`'s contract promises ("Registered signals will trigger
+    // a graceful shutdown of all actors", core/Main.h).
+    //
+    // Everything else stays NON-terminal on purpose: SIGHUP / SIGUSR1 are the documented
+    // "register your own signal" cases (config reload, stats dump). An actor that wants to act
+    // on them overrides `on(SignalEvent&)`; killing every actor on a reload signal would be a
+    // far worse regression than the bug this closes.
+    // Pinned by `SignalShutdown.*` in system/engine/sigterm-shutdown.cpp.
+    if (event.signum == SIGINT || event.signum == SIGTERM)
         kill();
 }
 
@@ -262,6 +273,11 @@ void
 Actor::__cancel_coro_scope__() const noexcept {
     if (_coro_scope)
         _coro_scope.cancel();
+}
+
+bool
+Actor::is_actor_alive(ActorId const id) const noexcept {
+    return VirtualCore::_handler->isActorAlive(id);
 }
 
 void

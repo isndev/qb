@@ -664,7 +664,15 @@ public:
     /** @brief Key derivation algorithms */
     enum class KdfAlgorithm { PBKDF2, HKDF, Argon2 };
 
-    /** @brief Operation modes for elliptic curve encryption */
+    /**
+     * @brief Operation modes for elliptic curve encryption.
+     * @warning `STANDARD` is AES-256-CBC with **no MAC**: the ciphertext is unauthenticated, so a
+     *          tampered message decrypts without error and the mode is malleable / padding-oracle
+     *          prone. Its name notwithstanding, it is not the safe choice — it exists for
+     *          interoperability with peers that require it. `AES_GCM` (the default for
+     *          `ecies_encrypt`/`ecies_decrypt`) and `CHACHA20` are AEAD and authenticate the
+     *          ciphertext; prefer them unless a peer forces otherwise.
+     */
     enum class ECIESMode { STANDARD, AES_GCM, CHACHA20 };
 
     /** @brief Format for envelope encryption outputs */

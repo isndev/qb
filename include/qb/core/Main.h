@@ -495,6 +495,8 @@ class Main {
     std::atomic<uint64_t> _sync_start;
     static void           onSignal(int signal) noexcept;
     static void           start_thread(CoreSpawnerParameter const &params) noexcept;
+    /// Install the documented default signal dispositions (SIGINT + SIGTERM) at engine start.
+    static void           install_default_signals() noexcept;
     static bool           __wait__all__cores__ready(std::size_t nb_core, std::atomic<uint64_t> &sync_start) noexcept;
 
 private:
@@ -621,8 +623,14 @@ public:
      * @ingroup Engine
      * @param signum The signal number (e.g., `SIGUSR1`, `SIGHUP`).
      * @note
-     * By default, `SIGINT` and `SIGTERM` (on non-Windows platforms) are registered to call `Main::stop()`.\n
-     * Registered signals will trigger a graceful shutdown of all actors.\n
+     * `Main::start()` installs `SIGINT` and `SIGTERM` itself — both are treated as terminal by
+     * `Actor::on(SignalEvent&)`'s default body, so either one unwinds every actor through the
+     * normal `kill()` path. (`SIGTERM` is a standard C signal and is installed on every platform;
+     * Windows simply never delivers it outside `std::raise`.)\n
+     * A signal you register yourself is delivered to actors as a `SignalEvent` but is **not**
+     * terminal — `SIGHUP` / `SIGUSR1` are meant for config reload or a stats dump. Override
+     * `on(SignalEvent&)` (re-registering the handler from your derived type in `onInit()`) to act
+     * on it, and call `kill()` there if you do want it to stop the actor.\n
      * This is a static method and affects all `Main` instances if multiple were to exist (though typically only one exists).
      */
     static void registerSignal(int signum) noexcept;

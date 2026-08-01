@@ -22,6 +22,7 @@
  * @ingroup Core
  */
 
+#include <limits>
 #include <algorithm>
 #include <numeric>
 #include <qb/core/CoreSet.h>
@@ -78,8 +79,13 @@ CoreSet::raw() const noexcept {
 CoreSet
 CoreSet::build(uint32_t const nb_core) noexcept {
     CoreIdSet set;
-    for (CoreId i = 0; i < nb_core; ++i)
-        set.insert(i);
+    // `CoreId` is uint16_t while the parameter is uint32_t: an `nb_core` above 65535 would wrap the
+    // counter back to 0 and spin forever (the set stops growing, so nothing else would ever signal
+    // it). No real machine reaches that, but this takes a uint32_t from the caller, so clamp to what
+    // a CoreId can actually represent rather than rely on the argument being sane.
+    const uint32_t bound = std::min<uint32_t>(nb_core, std::numeric_limits<CoreId>::max() + 1u);
+    for (uint32_t i = 0; i < bound; ++i)
+        set.insert(static_cast<CoreId>(i));
     return CoreSet{set};
 }
 } // namespace qb

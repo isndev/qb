@@ -28,6 +28,7 @@
 
 # --- engine / runtime -------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME main-lifecycle   SOURCES engine/main-lifecycle.cpp   DEPENDS ${PROJECT_NAME} LABELS signal serial requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME sigterm-shutdown SOURCES engine/sigterm-shutdown.cpp DEPENDS ${PROJECT_NAME} LABELS signal serial)
 qb_add_test(MODULE qb-core TIER system NAME engine-io-smoke  SOURCES runtime/engine-io-smoke.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 
 # --- actor ------------------------------------------------------------------
@@ -39,8 +40,10 @@ qb_add_test(MODULE qb-core TIER system NAME actor-callback   SOURCES actor/actor
 qb_add_test(MODULE qb-core TIER system NAME async-callback-ordering SOURCES timer/async-callback-ordering.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
 
 # --- messaging --------------------------------------------------------------
-qb_add_test(MODULE qb-core TIER system NAME messaging-api           SOURCES messaging/messaging-api.cpp           DEPENDS ${PROJECT_NAME})
-qb_add_test(MODULE qb-core TIER system NAME messaging-reply-forward SOURCES messaging/messaging-reply-forward.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER system NAME messaging-api           SOURCES messaging/messaging-api.cpp           DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME messaging-reply-forward SOURCES messaging/messaging-reply-forward.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME messaging-oversize-event SOURCES messaging/oversize-event-probe.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME messaging-relocatable-payload SOURCES messaging/relocatable-payload.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME messaging-send-nontrivial SOURCES messaging/send-nontrivial-payload.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 
 # --- event ------------------------------------------------------------------
@@ -48,14 +51,15 @@ qb_add_test(MODULE qb-core TIER system NAME service-event-ring SOURCES event/ser
 
 # --- coroutine --------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME coroutine-basics   SOURCES coroutine/coroutine-basics.cpp   DEPENDS ${PROJECT_NAME} LABELS coroutine)
-qb_add_test(MODULE qb-core TIER system NAME coroutine-detached SOURCES coroutine/coroutine-detached.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-core TIER system NAME coroutine-detached SOURCES coroutine/coroutine-detached.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME coroutine-scope    SOURCES coroutine/coroutine-scope.cpp    DEPENDS ${PROJECT_NAME} LABELS coroutine)
-qb_add_test(MODULE qb-core TIER system NAME ask-roundtrip      SOURCES coroutine/ask-roundtrip.cpp      DEPENDS ${PROJECT_NAME} LABELS coroutine)
-qb_add_test(MODULE qb-core TIER system NAME ask-patterns       SOURCES coroutine/ask-patterns.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-core TIER system NAME ask-roundtrip      SOURCES coroutine/ask-roundtrip.cpp      DEPENDS ${PROJECT_NAME} LABELS coroutine requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME ask-patterns       SOURCES coroutine/ask-patterns.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME coroutine-resilience SOURCES coroutine/coroutine-resilience.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine patterns)
 
 # --- lifecycle --------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME actor-lifecycle-ordering SOURCES lifecycle/actor-lifecycle-ordering.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER system NAME kill-during-reap SOURCES lifecycle/kill-during-reap.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER system NAME actor-state-roundtrip    SOURCES lifecycle/actor-state-roundtrip.cpp    DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER system NAME actor-resource-cleanup   SOURCES lifecycle/actor-resource-cleanup.cpp   DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER system NAME actor-invalid-reference  SOURCES lifecycle/actor-invalid-reference.cpp  DEPENDS ${PROJECT_NAME})
@@ -89,10 +93,11 @@ qb_add_test(MODULE qb-core TIER system NAME saga-cancel             SOURCES patt
 qb_add_test(MODULE qb-core TIER system NAME discovery-ping-require  SOURCES patterns/discovery-ping-require.cpp  DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
 qb_add_test(MODULE qb-core TIER system NAME routing-dispatch        SOURCES patterns/routing-dispatch.cpp        DEPENDS ${PROJECT_NAME} LABELS patterns)
 qb_add_test(MODULE qb-core TIER system NAME pubsub-fanout           SOURCES patterns/pubsub-fanout.cpp           DEPENDS ${PROJECT_NAME} LABELS patterns)
+qb_add_test(MODULE qb-core TIER system NAME pubsub-dead-subscribers SOURCES patterns/pubsub-dead-subscribers.cpp DEPENDS ${PROJECT_NAME} LABELS patterns)
 
 # --- init (async onInit: state machine / stash / deadline / activation) ------
 qb_add_test(MODULE qb-core TIER system NAME init-lifecycle     SOURCES init/init-lifecycle.cpp     DEPENDS ${PROJECT_NAME} LABELS init coroutine)
-qb_add_test(MODULE qb-core TIER system NAME init-ask-gate      SOURCES init/init-ask-gate.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-ask-gate      SOURCES init/init-ask-gate.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME init-service-actor SOURCES init/init-service-actor.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-stash-lifetime SOURCES init/init-stash-lifetime.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-patterns      SOURCES init/init-patterns.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine)

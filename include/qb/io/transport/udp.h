@@ -393,6 +393,17 @@ public:
      */
     int
     write() noexcept {
+        // Every queued datagram occupies a whole multiple of `alignof(pushed_message)`, so the
+        // buffer offsets that address a header — `begin()` below, after any number of
+        // `free_front(storage_size)` calls have retired earlier datagrams, and
+        // `begin() + _last_pushed_offset` in the ProxyOut append path — stay correctly aligned
+        // for their `reinterpret_cast<pushed_message *>`. That is what lets this function retire
+        // a datagram by advancing the cursor instead of compacting the queue behind it.
+        static_assert(message_storage_size(0) % alignof(pushed_message) == 0
+                          && message_storage_size(1) % alignof(pushed_message) == 0
+                          && message_storage_size(alignof(pushed_message) - 1u) % alignof(pushed_message) == 0,
+                      "pushed_message storage must be a whole multiple of its alignment");
+
         if (!_out_buffer.size())
             return 0;
 
@@ -408,14 +419,19 @@ public:
 
         if (qb::likely(ret >= 0)) {
             // UDP is all-or-nothing: the whole pushed_message is consumed on success.
+            // Only the cursor moves — this call never relocates the datagrams still queued
+            // behind it. `write()` sends exactly one datagram per call, so compacting here
+            // would memmove the whole remaining queue once per queued datagram: draining a
+            // burst of K datagrams would cost O(K x bytes) instead of O(bytes). What this
+            // retires is reclaimed by the next append, on the pipe's own terms
+            // (`allocate_back()` compacts once the retired front passes half the capacity
+            // and grows otherwise, so the queue settles at ~4x the bytes in flight). The
+            // static_assert on message_storage_size guarantees the advanced cursor stays
+            // aligned for the next header's reinterpret_cast.
             _out_buffer.free_front(msg.storage_size);
-            if (_out_buffer.size()) {
-                _out_buffer.reorder();
-                _last_pushed_offset = kNoPendingMessage;
-            } else {
+            if (!_out_buffer.size())
                 _out_buffer.reset();
-                _last_pushed_offset = kNoPendingMessage;
-            }
+            _last_pushed_offset = kNoPendingMessage;
             // Report the number of bytes the kernel actually accepted so the async
             // layer can keep accurate write-throughput statistics.
             return ret;

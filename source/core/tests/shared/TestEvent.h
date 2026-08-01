@@ -29,6 +29,7 @@
 #include <qb/system/time.h>
 #include <random>
 #include <vector>
+#include "PayloadRng.h"
 
 #ifndef QB_TESTEVENT_H
 #define QB_TESTEVENT_H
@@ -75,8 +76,7 @@ struct TestEvent : public qb::Event {
 private:
     void
     __init__() {
-        std::random_device rand_dev;
-        std::mt19937       generator(rand_dev());
+        auto &generator = qb::test::detail::payload_rng();
 
         std::uniform_int_distribution<int> random_number(0, 255);
         std::generate(std::begin(_data), std::end(_data), [&]() {

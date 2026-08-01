@@ -187,10 +187,10 @@ TEST_F(ScopeStructuredConcurrency, JoinAnyReturnsFirstCompletedIndex) {
         coroutine_scope scope;
         scope.spawn([]() -> task<void> {
             co_await sleep(10ms);
-        }()); // index 0, fast
+        }); // index 0, fast
         scope.spawn([]() -> task<void> {
             co_await sleep(100ms);
-        }()); // index 1, slow
+        }); // index 1, slow
 
         index.store(co_await scope.join_any());
         done.store(true);
@@ -208,7 +208,7 @@ TEST_F(ScopeStructuredConcurrency, JoinAllForReturnsFalseOnTimeout) {
         coroutine_scope scope;
         scope.spawn([]() -> task<void> {
             co_await sleep(500ms);
-        }());
+        });
         completed.store(co_await scope.join_all_for(50ms));
         done.store(true);
     });
@@ -249,10 +249,10 @@ TEST_F(ScopeStructuredConcurrency, ActiveCountDecrementsMidFlight) {
         coroutine_scope scope;
         scope.spawn([]() -> task<void> {
             co_await sleep(100ms);
-        }());
+        });
         scope.spawn([]() -> task<void> {
             co_await sleep(10ms);
-        }());
+        });
         active_at_start.store(scope.active_count());
 
         co_await sleep(50ms); // the fast one completes in this window
@@ -277,7 +277,7 @@ TEST_F(ScopeStructuredConcurrency, RethrowIfErrorPropagatesFirstException) {
         scope.spawn([]() -> task<void> {
             co_await sleep(5ms);
             throw std::runtime_error("task failed");
-        }());
+        });
         co_await sleep(40ms);
         try {
             scope.rethrow_if_error();
@@ -411,10 +411,10 @@ TEST_F(ScopeStructuredConcurrency, PruneCompletedRemovesFinishedEntries) {
         coroutine_scope scope;
         scope.spawn([]() -> task<void> {
             co_await sleep(10ms);
-        }());
+        });
         scope.spawn([]() -> task<void> {
             co_await sleep(10ms);
-        }());
+        });
 
         co_await scope.join_all();
         EXPECT_EQ(scope.active_count(), 0u);
@@ -900,7 +900,7 @@ TEST_F(ScopeStructuredConcurrency, JoinAnyFastPathWhenTaskAlreadyDone) {
         coroutine_scope scope;
         scope.spawn([]() -> task<void> {
             co_return;
-        }());                 // completes on first drain, index 0
+        });                 // completes on first drain, index 0
         co_await sleep(20ms); // ensure it is marked completed
         EXPECT_EQ(scope.active_count(), 0u);
         idx.store(co_await scope.join_any()); // await_ready() is already true
@@ -942,7 +942,7 @@ TEST_F(ScopeStructuredConcurrency, JoinAllForFastPathWhenAllAlreadyDone) {
         coroutine_scope scope;
         scope.spawn([]() -> task<void> {
             co_await sleep(5ms);
-        }());
+        });
         co_await sleep(25ms); // let the worker finish first
         EXPECT_EQ(scope.active_count(), 0u);
         completed.store(co_await scope.join_all_for(50ms)); // awaiter await_ready true
@@ -967,7 +967,7 @@ TEST_F(ScopeStructuredConcurrency, JoinAllReclaimedWhileParked) {
         auto scope = std::make_shared<coroutine_scope>(coroutine_scope::cleanup_policy::detach);
         scope->spawn([]() -> task<void> {
             co_await sleep(40ms);
-        }());
+        });
         auto park = [](std::shared_ptr<coroutine_scope> s) -> task<int> {
             volatile char big[8192];
             big[0] = 7;
@@ -987,7 +987,7 @@ TEST_F(ScopeStructuredConcurrency, JoinAllForReclaimedWhileParked) {
         auto scope = std::make_shared<coroutine_scope>(coroutine_scope::cleanup_policy::detach);
         scope->spawn([]() -> task<void> {
             co_await sleep(40ms);
-        }());
+        });
         auto park = [](std::shared_ptr<coroutine_scope> s) -> task<int> {
             volatile char big[8192];
             big[0] = 7;

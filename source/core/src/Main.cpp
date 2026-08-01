@@ -22,7 +22,9 @@
  * @ingroup Core
  */
 
+#include <cassert>
 #include <csignal>
+#include <cstring>
 #include <iostream>
 #include <qb/core/Main.h>
 #include <qb/core/VirtualCore.h>
@@ -130,8 +132,64 @@ SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_
 
 SharedCoreCommunication::~SharedCoreCommunication() noexcept = default;
 
+#ifndef NDEBUG
+namespace {
+/**
+ * @brief Debug guard: refuse to relocate an event that points into its own storage.
+ * @details
+ * Cross-core delivery moves an event by raw `memcpy` — sender pipe → destination mailbox ring →
+ * receive buffer — and never runs the source destructor. That is sound only for a **trivially
+ * relocatable** payload: one holding no pointer into itself. A member that does (a cursor into an
+ * inline array, or a **short `std::string` on libstdc++**, whose `_M_p` addresses its own
+ * `_M_local_buf`) still points at the *sender's* pipe once the bytes land elsewhere, so the
+ * handler reads reused memory and the receiver's destructor frees an address that never came from
+ * the heap.
+ *
+ * There is no way to catch this at compile time: C++20 has no `is_trivially_relocatable`, clang's
+ * builtin also rejects `std::vector` (which is perfectly safe here), and without reflection a
+ * `static_assert` cannot inspect an event's members. So the check is done on the value, at the one
+ * moment it matters, and only in debug builds.
+ *
+ * Crucially this restores visibility on the development platform: libc++ recomputes a short
+ * string's `data()` from `this`, so macOS could never observe the corruption — only Linux could,
+ * and only in production. This guard fires on both.
+ *
+ * Scans the exact byte range that is about to be copied (`bucket_size` buckets, which covers the
+ * event plus any `allocated_push` tail) for a pointer-sized word addressing that same range.
+ * Words are read through `memcpy` into an integer, so no pointer is formed from padding.
+ */
+[[nodiscard]] bool
+event_points_into_itself(Event const &event) noexcept {
+    const auto *const base  = reinterpret_cast<const unsigned char *>(&event);
+    const std::size_t bytes = event.getSize(); // bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES
+    const auto        lo    = reinterpret_cast<std::uintptr_t>(base);
+    const auto        hi    = lo + bytes;
+
+    for (std::size_t off = 0; off + sizeof(std::uintptr_t) <= bytes; off += alignof(std::uintptr_t)) {
+        std::uintptr_t word = 0;
+        std::memcpy(&word, base + off, sizeof(word));
+        if (word >= lo && word < hi)
+            return true;
+    }
+    return false;
+}
+} // namespace
+#endif // !NDEBUG
+
 bool
 SharedCoreCommunication::send(CoreId const source_index, Event const &event) const noexcept {
+#ifndef NDEBUG
+    if (unlikely(event_points_into_itself(event))) {
+        LOG_CRIT("Event[" << event.getID() << "] from " << event.getSource() << " to " << event.getDestination()
+                          << " holds a pointer into its own storage, so it cannot be delivered cross-core: "
+                             "the transport relocates events with memcpy and never runs the source destructor. "
+                             "Use qb::string<N> for inline text, or keep the data on the heap behind a "
+                             "shared_ptr/unique_ptr member. A by-value std::string is the usual cause "
+                             "(short strings are self-referential on libstdc++).");
+        assert(false && "qb: event payload is not trivially relocatable (holds a pointer into itself) — "
+                        "see the LOG_CRIT above and Actor::push's @warning");
+    }
+#endif
     // `source_index` MUST be the PHYSICAL core whose thread is calling (the
     // caller's `_resolved_index`), NOT `_core_set.resolve(event.source.index())`.
     // Each MPSC producer slot is a single-producer ring; deriving it from
@@ -341,7 +399,7 @@ Main::start(bool async) noexcept {
     const auto stop_token = _stop_source.get_token();
     for (auto &it : _core_initializers) {
         if (!async && i == (_core_initializers.size() - 1)) {
-            Main::registerSignal(SIGINT);
+            Main::install_default_signals();
             // Synchronous fallback: the caller becomes the last worker. The
             // stop token is still wired so a `request_stop()` on the source
             // (from destruction or a signal-free stop path) cancels it too.
@@ -364,7 +422,7 @@ Main::start(bool async) noexcept {
             spin_loop_pause();
             ret = _sync_start.load(std::memory_order_acquire);
         } while (ret < _cores.size());
-        Main::registerSignal(SIGINT);
+        Main::install_default_signals();
     }
 
     if (hasError()) {
@@ -445,6 +503,19 @@ install_signal(int signum, void (*handler)(int)) noexcept {
 #endif
 }
 } // namespace
+
+void
+Main::install_default_signals() noexcept {
+    // The documented default set (core/Main.h): both terminal signals route through
+    // Main::onSignal so every VirtualCore synthesises a SignalEvent and every actor unwinds
+    // through the normal kill path. SIGTERM used to be left at its default disposition, which
+    // kills the process outright — no actor teardown, no final cross-core flush — even though
+    // it is exactly what a container runtime or service manager sends to stop a process.
+    // SIGTERM is a standard C signal, so this is portable; on Windows the OS never delivers it
+    // but installing the handler is harmless and keeps behaviour uniform.
+    Main::registerSignal(SIGINT);
+    Main::registerSignal(SIGTERM);
+}
 
 void
 Main::registerSignal(int const signum) noexcept {

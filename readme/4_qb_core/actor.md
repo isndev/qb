@@ -283,7 +283,8 @@ runtime routes the event.
 `push<E>(dest, args...)` constructs an event of type `E`, queues it for ordered delivery, and returns
 a mutable reference to it so you can finish populating it before it is sent. Events pushed from the
 same source to the same destination are delivered in push order. `push` supports events with
-non-trivially-destructible members (for example `std::string`, `std::vector`).
+non-trivially-destructible members (for example `std::vector`, or a payload held behind a
+`std::shared_ptr`).
 
 ```cpp
 push<DataEvent>(target_id, value, label);
@@ -294,6 +295,15 @@ ev.items.push_back(item1);   // mutate the event before it is sent
 
 Do not hold the returned reference beyond the current scope; the framework owns the event after the
 turn ends.
+
+> **Every event member must be trivially relocatable — no pointer into itself.** The runtime moves
+> events with raw `memcpy`: the source pipe relocates whatever it already holds when it grows,
+> `reply`/`forward` byte-recycle the event, and a cross-core hop copies it twice more. This applies
+> to a same-core `push` as much as to a cross-core one. A by-value `std::string` is therefore not
+> valid in an event on any path — a short one points into its own inline buffer on libstdc++. Use
+> `qb::string<N>` for inline text, or box the data behind a `std::shared_ptr` / `std::unique_ptr`.
+> The rule, and the limits of the debug-build check that catches part of it, are detailed in
+> [Event messaging](./messaging.md#push--ordered-the-default).
 
 ### send: unordered, trivially destructible events
 
@@ -310,10 +320,13 @@ send<FireForgetSignal>(monitor_id);
 ### broadcast: every actor on every core
 
 `broadcast<E>(args...)` sends one event to every actor on every core. To target a single core, push
-to a `qb::BroadcastId(core_id)` instead. Because `broadcast` fans out via `send` on every remote
-core, the event **should be trivially destructible**: a non-trivially-destructible event leaks its
-heap members on each remote core (same contract as `send`). Keep bulk data behind a `std::shared_ptr`
-and prefer deriving from `qb::EventQOS0` so the requirement is caught at compile time.
+to a `qb::BroadcastId(core_id)` instead. Because `broadcast` fans out via `send` on every core, the
+event **should be trivially destructible** — not because delivery leaks it (a delivered event is
+destroyed exactly once, by the receiving core), but because the requirement guards the **drop** path:
+a `qb::EventQOS0` broadcast is best-effort, so a full peer mailbox makes the flush discard it
+*without* disposing it, and that is where a heap-owning member leaks. Keep bulk data behind a
+`std::shared_ptr` and prefer deriving from `qb::EventQOS0` so the requirement is caught at compile
+time.
 
 ```cpp
 broadcast<SystemAlertEvent>("disk full");
@@ -360,8 +373,11 @@ the pipe API.
 ```cpp
 auto blob = std::make_shared<std::vector<char>>(256 * 1024);
 qb::Pipe pipe = getPipe(processor_id);
-// The hint is the EXTRA payload bytes; the framework adds sizeof(BlobEvent) itself.
-pipe.allocated_push<BlobEvent>(blob->size(), blob);
+// The hint is the EXTRA bytes reserved AFTER the event; the framework adds
+// sizeof(BlobEvent) itself. The blob is heap-owned, so the event carries only the
+// shared_ptr and needs no trailing bytes at all — pass 0, never blob->size()
+// (that would reserve 256 KiB and blow past the ~64 KiB cross-core ceiling).
+pipe.allocated_push<BlobEvent>(0, blob);
 ```
 
 ## Periodic work: qb::ICallback
@@ -466,8 +482,9 @@ ordering.
 - **Using a received event after `reply()` or `forward()`.** Both consume the event object; touching
   it afterward is a use-after-consume bug. Also: the handler must take the event by non-const
   reference, or `reply`/`forward` will not compile.
-- **`send()` with a non-trivially-destructible event.** `send` requires `std::is_trivially_destructible`;
-  use `push` for events carrying `std::string`, `std::vector`, etc.
+- **`send()` with a non-trivially-destructible event.** `send` requires `std::is_trivially_destructible`
+  (compiler-enforced only for `qb::EventQOS0`); use `push` for events carrying a `std::vector` or a
+  smart pointer. A by-value `std::string` belongs in neither — it is not trivially relocatable.
 - **Treating `time()` as a live clock.** It is cached per loop iteration and is identical across one
   handler invocation. Use `qb::unix_nanos(qb::wall_now())` when you need a fresh reading.
 - **Blocking inside `on(qb::LoopEvent const&)` or any handler.** One actor's handler thread serves every actor on

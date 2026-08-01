@@ -417,14 +417,34 @@ public:
     std::vector<backend_event>
     drain_events() override {
         if (_server_parent) {
+            // Retire each closed connection's CID entries through the keys the child already
+            // records, not by sweeping the whole index looking for its id. The index holds every
+            // live connection's CIDs, so a scan-by-value costs O(active connections) per close —
+            // a permanent tax on a server with connection churn, and a multi-second event-loop
+            // stall when many connections close at once (graceful shutdown, or a partition
+            // expiring every idle timer in the same turn).
+            //
+            // The child's key set is exactly complete: `_server_cid_index` is written in only
+            // three places — `reconcile_server_cids` (which keeps `_indexed_scid_keys` mirroring
+            // precisely what it emplaced) and the accept path's `_local_cid_key` /
+            // `_original_dcid_key`. The `it->second == id` guard is kept so a CID that happens to
+            // collide with another connection's entry is left alone, exactly as before.
             for (auto id : _server_closed_connections) {
-                _server_connections.erase(id);
-                for (auto it = _server_cid_index.begin(); it != _server_cid_index.end();) {
-                    if (it->second == id)
-                        it = _server_cid_index.erase(it);
-                    else
-                        ++it;
-                }
+                auto conn_it = _server_connections.find(id);
+                if (conn_it == _server_connections.end())
+                    continue; // already retired by an earlier duplicate id in this same list
+                auto      *child = conn_it->second.get();
+                const auto drop  = [&](std::string const &key) {
+                    if (key.empty())
+                        return;
+                    if (auto it = _server_cid_index.find(key); it != _server_cid_index.end() && it->second == id)
+                        _server_cid_index.erase(it);
+                };
+                for (auto const &key : child->_indexed_scid_keys)
+                    drop(key);
+                drop(child->_local_cid_key);
+                drop(child->_original_dcid_key);
+                _server_connections.erase(conn_it);
             }
             _server_closed_connections.clear();
 

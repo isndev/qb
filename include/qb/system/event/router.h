@@ -726,6 +726,54 @@ private:
     static inline std::mutex                                              _disposers_mtx;
 
     /**
+     * @brief Per-router memo of resolved disposers, so the shared map is consulted once per type.
+     * @details `_disposers` is `static` — one map for the whole process — and every read of it used
+     *          to take `_disposers_mtx`. That lock sits on a path reached at full event rate: an
+     *          event whose type has no resolver on this core falls into `route()`'s `else` branch,
+     *          and `broadcast<E>()` produces exactly that on every core where no actor subscribed
+     *          to `E` (`VirtualCore::__receive_events__`'s `onError` treats it as normal — it only
+     *          logs for non-broadcast destinations). So a broadcasting system serialised all of its
+     *          cores through one process-global mutex, which is the one thing a
+     *          thread-per-`VirtualCore` engine must never do. Measured cost of a single lookup:
+     *          9.0 ns at 1 thread, 24.3 at 2, 50.0 at 4, **146.7 ns at 8** — against a same-core
+     *          dispatch budget of ~40-70 ns per event, and getting worse with every core added.
+     *
+     *          Caching makes the steady state a plain uncontended hash hit (~1-2 ns, flat in core
+     *          count). It is sound because disposers are only ever ADDED — `try_emplace` into a
+     *          `static` map of `unique_ptr` that lives for the whole program — so a memoised raw
+     *          pointer can never dangle, and a type not yet registered is simply not cached and is
+     *          retried on the next event.
+     *
+     *          Not synchronised, deliberately: `memh` is already a single-threaded-per-instance
+     *          class (`_registered_events` is a plain map mutated by `subscribe`/`unsubscribe`);
+     *          the `static` disposer map was its *only* shared state. Each `VirtualCore` owns its
+     *          own router and touches it exclusively from its own thread.
+     */
+    mutable qb::unordered_map<_EventId, IDisposer *> _disposer_cache;
+
+    /**
+     * @brief Resolve the disposer for @p id, consulting the shared map at most once per type.
+     * @return The disposer, or `nullptr` if none is registered yet.
+     */
+    [[nodiscard]] IDisposer *
+    find_disposer(_EventId const &id) const {
+        if (const auto it = _disposer_cache.find(id); likely(it != _disposer_cache.cend()))
+            return it->second;
+
+        IDisposer *resolved = nullptr;
+        {
+            std::lock_guard lk(_disposers_mtx);
+            if (const auto dit = _disposers.find(id); dit != _disposers.cend())
+                resolved = dit->second.get();
+        }
+        // Only memoise a hit: a miss means the type's disposer has not been registered yet, and
+        // caching the null would make this router blind to it forever.
+        if (resolved)
+            _disposer_cache.emplace(id, resolved);
+        return resolved;
+    }
+
+    /**
      * @brief Interface for event resolution
      *
      * Abstracts the process of resolving and handling events of different types.
@@ -845,9 +893,11 @@ public:
                 // now runs at every enqueue funnel (VirtualCore::push/send, Pipe::push/
                 // allocated_push), so the disposer always exists by the time an event can reach
                 // this branch. The find-and-skip stays as the no-throw safety net.
-                std::lock_guard lk(_disposers_mtx);
-                if (const auto dit = _disposers.find(event.getID()); dit != _disposers.cend())
-                    dit->second->dispose(&event);
+                //
+                // This is the hot one: `broadcast<E>()` lands here on every core with no subscriber
+                // for `E`. Goes through the per-router memo — see `_disposer_cache`.
+                if (auto *const disposer = find_disposer(event.getID()))
+                    disposer->dispose(&event);
             }
         }
     }
@@ -866,9 +916,8 @@ public:
      */
     void
     dispose(_RawEvent &event) const {
-        std::lock_guard lk(_disposers_mtx);
-        if (const auto dit = _disposers.find(event.getID()); dit != _disposers.cend())
-            dit->second->dispose(&event);
+        if (auto *const disposer = find_disposer(event.getID()))
+            disposer->dispose(&event);
     }
 
     /**

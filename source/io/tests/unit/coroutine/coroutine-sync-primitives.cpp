@@ -754,13 +754,15 @@ TEST_F(CoroutineSyncPrimitives, EventWaitIsCancellableViaCheckCancelled) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
-        auto result = co_await when_any(
-            [&ev]() -> task<void> {
-                co_await ev.wait();
-            }(),
-            [token]() -> task<void> {
-                co_await check_cancelled(token);
-            }());
+        // Named locals of this frame: `task`'s initial_suspend is suspend_always, so each body runs
+        // on a later run_ready() — an immediately-invoked temporary closure would already be gone.
+        auto wait_op   = [&ev]() -> task<void> {
+            co_await ev.wait();
+        };
+        auto cancel_op = [token]() -> task<void> {
+            co_await check_cancelled(token);
+        };
+        auto result = co_await when_any(wait_op(), cancel_op());
         winner.store(result.index);
         done.store(true);
     });

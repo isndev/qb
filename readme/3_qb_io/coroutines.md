@@ -559,9 +559,32 @@ The supported integration points are `Actor::spawn` and `Actor::spawn_detached`.
 // src: derived from examples/coroutine/actor_example.cpp
 #include <qb/actor.h>
 #include <qb/io/async/coroutine.h>
+#include <memory>
+#include <string>
 
-struct StartProcessing : qb::Event { int id; std::string data; /* ctor … */ };
-struct ProcessingComplete : qb::Event { int id; std::string result; uint64_t ns; /* ctor … */ };
+// Event payloads must be trivially RELOCATABLE. The runtime moves an event with raw
+// memcpy — the source pipe relocates what it already holds when it grows, reply/forward
+// byte-recycle it, and a cross-core hop copies it twice — and a short std::string points
+// into its own inline buffer on libstdc++, so a by-value one is invalid on every path.
+// Box dynamic text so only the heap pointer travels (or use qb::string<N> when the
+// length has a known bound). Note `request_id`, not `id`: qb::Event already has an
+// `id` member (the event type id), and shadowing it stops the event from compiling.
+struct StartProcessing : qb::Event {
+    int                                request_id;
+    std::shared_ptr<const std::string> data;
+    StartProcessing(int rid, std::string d)
+        : request_id(rid)
+        , data(std::make_shared<const std::string>(std::move(d))) {}
+};
+struct ProcessingComplete : qb::Event {
+    int                                request_id;
+    std::shared_ptr<const std::string> result;
+    uint64_t                           ns;
+    ProcessingComplete(int rid, std::string r, uint64_t n)
+        : request_id(rid)
+        , result(std::make_shared<const std::string>(std::move(r)))
+        , ns(n) {}
+};
 
 class CoroWorker : public qb::Actor {
     int processed_ = 0;
@@ -574,15 +597,16 @@ public:
 
     // Synchronous handler — runs with exclusive access to actor state.
     void on(StartProcessing& req) {
-        int         id    = req.id;         // capture by VALUE only
-        std::string data  = req.data;
-        uint64_t    start = time();
+        int      rid   = req.request_id;    // capture by VALUE only
+        auto     data  = req.data;          // shared_ptr copy — the bytes are not copied
+        uint64_t start = time();
 
-        spawn([id, data, start](auto ctx) -> qb::io::async::task<void> {
+        spawn([rid, data, start](auto ctx) -> qb::io::async::task<void> {
             // Isolated context: NO access to actor members here.
-            std::string result = co_await AsyncService::process_data(data);
+            std::string result = co_await AsyncService::process_data(*data);
             uint64_t    ns     = ctx.time() - start;
-            ctx.push<ProcessingComplete>(id, result, ns);   // back to self via event
+            // `template` is required: ctx's type is dependent inside a generic lambda.
+            ctx.template push<ProcessingComplete>(rid, std::move(result), ns);
         });
     }
 

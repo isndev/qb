@@ -177,11 +177,13 @@ Each source-to-destination channel is a `qb::VirtualPipe` (an alias of `qb::allo
    // src: qb/include/qb/core/Pipe.h (allocated_push doc example)
    // getPipe returns a qb::Pipe by value; hold it by value, not by reference.
    qb::Pipe pipe = getPipe(dest);
-   const std::size_t hint = sizeof(LargeDataEvent) + extra_in_pipe_bytes;
-   auto &ev = pipe.allocated_push<LargeDataEvent>(hint, payload);
+   // `size` is the TRAILING bytes reserved AFTER the event object, not the total:
+   // allocated_push adds sizeof(LargeDataEvent) itself, then rounds up to whole buckets.
+   const std::size_t trailing_bytes = extra_in_pipe_bytes; // 0 when the payload is heap-owned
+   auto &ev = pipe.allocated_push<LargeDataEvent>(trailing_bytes, payload);
    ```
 
-   Size the hint to the event's **effective in-pipe footprint**. When the payload lives behind a smart pointer, the in-pipe size is small — do not size the hint to the payload bytes in that case. The `size` argument is a reservation, not a hard cap.
+   Pass only the bytes you intend to write *past* the event object. Writing `sizeof(LargeDataEvent) + n` double-counts the event, wasting one event's worth of pipe space per message and halving the usable cross-core size ceiling (see below). When the payload lives behind a smart pointer, the in-pipe size is just the event — pass `0`. The `size` argument is a reservation, not a hard cap.
 
 ### Lock-free transport
 

@@ -615,6 +615,13 @@ fill_sa_address(struct sockaddr **sa, struct ifaddrmsg *net_address, void *rta_d
         case AF_INET: {
             struct sockaddr_in *sa4;
             assert(rta_payload_length == 4); /* IPv4 address length */
+            // Same reasoning as the default branch below, which already carries this guard: the
+            // assert above is compiled out under NDEBUG (the release preset defines it), leaving
+            // the memcpy bounded only by what the kernel put in the RTA payload. The kernel always
+            // sends 4 here, so this is defence in depth — but it is exactly the guard this file
+            // decided the class needs, and two of its four sites were missing it.
+            if (rta_payload_length > sizeof(sa4->sin_addr))
+                return -1;
             sa4 = (struct sockaddr_in *) calloc(1, sizeof(*sa4));
             if (!sa4)
                 return -1;
@@ -628,6 +635,8 @@ fill_sa_address(struct sockaddr **sa, struct ifaddrmsg *net_address, void *rta_d
         case AF_INET6: {
             struct sockaddr_in6 *sa6;
             assert(rta_payload_length == 16); /* IPv6 address length */
+            if (rta_payload_length > sizeof(sa6->sin6_addr)) // see the AF_INET branch
+                return -1;
             sa6 = (struct sockaddr_in6 *) calloc(1, sizeof(*sa6));
             if (!sa6)
                 return -1;

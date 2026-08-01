@@ -208,3 +208,70 @@ TEST_F(EngineIoSmoke, MultiCoreLogsEveryActorAndLevelGateHolds) {
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// nanolog's MPSC ring buffer under real concurrency.
+//
+// `qb::io::log` sits on a HAND-ROLLED multi-producer / single-consumer ring (nanolog.cpp:
+// `RingBuffer` + a `SpinLock` over `std::atomic_flag`, drained by a background writer thread), in a
+// module this project has modified across 22 substantive commits. Until now exactly one test file
+// touched it at all, and never from more than one thread — so the sanitizers had nothing to look at
+// on the one structure in the logging path where a race would actually live.
+//
+// The ring is deliberately LOSSY (`NonGuaranteedLogger`): a producer that laps the consumer
+// overwrites an unread slot. So "every line arrives" is NOT the contract and must not be asserted.
+// What IS the contract, and what a torn write would break, is that any line which *does* arrive is
+// whole: the SpinLock plus the `written` flag mean a slot is either fully published or not popped.
+//
+// Each record therefore carries a self-checking payload — `NLRACE|<producer>|<seq>|<producer*seq>`.
+// A torn or interleaved write breaks the arithmetic, so corruption fails loudly instead of hiding
+// in a byte count. Run under TSan this also exercises the flag's acquire/release pairing.
+// ---------------------------------------------------------------------------
+
+TEST_F(EngineIoSmoke, ConcurrentLoggingNeverTearsARecord) {
+    qb::io::log::init(_base.string(), 1);
+    qb::io::log::setLevel(qb::io::log::Level::DEBUG);
+
+    constexpr int kProducers = 8;
+    constexpr int kPerThread = 400;
+
+    std::vector<std::thread> producers;
+    producers.reserve(kProducers);
+    for (int t = 1; t <= kProducers; ++t) {
+        producers.emplace_back([t] {
+            for (int s = 1; s <= kPerThread; ++s) {
+                // The last field is derivable from the first two: any tearing breaks it.
+                LOG_CRIT("NLRACE|" << t << "|" << s << "|" << (t * s) << "|END");
+            }
+        });
+    }
+    for (auto &th : producers)
+        th.join();
+
+    const auto content = read_file(flush_and_first_log());
+
+    std::size_t seen = 0, malformed = 0;
+    std::size_t pos = 0;
+    while ((pos = content.find("NLRACE|", pos)) != std::string::npos) {
+        const auto eol  = content.find('\n', pos);
+        const auto line = content.substr(pos, (eol == std::string::npos ? content.size() : eol) - pos);
+        pos += 7;
+        ++seen;
+
+        int  a = 0, b = 0, c = 0;
+        char tail[8] = {0};
+        // Exactly four fields, the last literal: a truncated or spliced record cannot match.
+        if (std::sscanf(line.c_str(), "NLRACE|%d|%d|%d|%3s", &a, &b, &c, tail) != 4 || std::string(tail) != "END" || a * b != c
+            || a < 1 || a > kProducers || b < 1 || b > kPerThread) {
+            ++malformed;
+            if (malformed <= 3)
+                ADD_FAILURE() << "torn or corrupted log record: <" << line.substr(0, 120) << ">";
+        }
+    }
+
+    EXPECT_EQ(malformed, 0u) << malformed << " of " << seen
+                             << " records were torn: a slot was popped while a producer was still writing it, so the "
+                                "ring's SpinLock / written-flag publication is not actually serialising producers";
+    // Non-vacuity: the ring is lossy, so demand a real sample rather than the full count.
+    EXPECT_GT(seen, static_cast<std::size_t>(kPerThread)) << "almost nothing reached the log file — the test proved nothing about tearing";
+}

@@ -23,6 +23,7 @@
 # -----------------------------------------------------------------------------
 
 qb_add_test(MODULE qb-core TIER unit NAME string         SOURCES container/string.cpp        DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME unordered-map-contract SOURCES container/unordered-map-contract.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME jsonb-wrapper  SOURCES json/jsonb-wrapper.cpp      DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME actor-id                SOURCES core/actor-id.cpp                 DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME coreset-edges           SOURCES core/coreset-edges.cpp            DEPENDS ${PROJECT_NAME})

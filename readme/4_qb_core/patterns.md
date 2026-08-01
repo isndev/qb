@@ -219,15 +219,22 @@ actor state, no synchronization is involved.
 // src: derived from examples/core/example7_pub_sub.cpp
 #include <qb/actor.h>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 
 enum class Topic { Weather, News, Stocks };
 
+// The body is boxed, not held by value. An event must be trivially RELOCATABLE:
+// the runtime moves it with raw memcpy (the source pipe relocates what it already
+// holds when it grows, reply/forward byte-recycle it, a cross-core hop copies it
+// twice), and a short std::string points into its own inline buffer on libstdc++.
+// A shared_ptr member carries only a heap pointer, so it survives relocation --
+// and here it also lets one payload back every Delivery.
 struct Subscribe   : qb::Event { Topic topic; qb::ActorId who; };
 struct Unsubscribe : qb::Event { Topic topic; qb::ActorId who; };
-struct Publish     : qb::Event { Topic topic; std::string body; };
-struct Delivery    : qb::Event { Topic topic; std::string body; };
+struct Publish     : qb::Event { Topic topic; std::shared_ptr<const std::string> body; };
+struct Delivery    : qb::Event { Topic topic; std::shared_ptr<const std::string> body; };
 
 class Broker : public qb::Actor {
     std::map<Topic, std::set<qb::ActorId>> _subscribers;
@@ -271,7 +278,7 @@ public:
         co_return true;
     }
 
-    void on(Delivery const &ev) { /* consume ev.body */ }
+    void on(Delivery const &ev) { /* consume *ev.body */ }
     void on(qb::KillEvent const &) { kill(); }
 };
 ```
@@ -280,11 +287,12 @@ Design notes:
 
 - **A subscriber list is per-topic actor state**, so add and remove are ordinary `std::set`
   operations with no locking.
-- **The broker copies the payload once per subscriber** here. For high fan-out with large,
-  immutable payloads, store the body once and share it across deliveries (for example via a
-  `std::shared_ptr` held in a container that outlives delivery, plus `std::string_view` in the
-  event) to avoid per-recipient copies. The `examples/core_io/message_broker` sample demonstrates
-  this zero-copy variant.
+- **The fan-out is already zero-copy**, because the body is boxed: each `Delivery` copies a
+  `shared_ptr` (one refcount bump), not the bytes. That is the same choice the relocation rule
+  forces on you — a by-value `std::string` is not a valid event member on any path — so the safe
+  shape and the fast shape coincide here. The `examples/core_io/message_broker` sample pushes the
+  same idea further: one shared-ownership `MessageContainer` holds the bytes and the events carry
+  `std::string_view`s into it (a view is a pointer plus a length, so it relocates cleanly too).
 - **Distinguish broker pub/sub from `broadcast<E>()`.** `broadcast` reaches *every* actor on every
   core unconditionally; the broker reaches exactly the actors that opted into a topic. Use
   `broadcast` for system-wide notices (shutdown, alerts), the broker for selective subscription.

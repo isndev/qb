@@ -740,13 +740,36 @@ public:
         _nb_invoked_events += deferred_count;
         _total_events_processed += deferred_count;
 
-        // Process ready coroutines
+        // Process ready coroutines.
+        //
+        // BOUNDED on purpose. `run_ready()` defaults to draining until the ready queue is
+        // empty, and a coroutine resumed from that queue may enqueue another one immediately
+        // (every waker in qb-io defers through `schedule_via_current`, which pushes straight
+        // onto that queue). Two coroutines that resume each other — an ordinary unbuffered
+        // `channel<T>` producer/consumer pipeline with no I/O await in the cycle is enough —
+        // therefore keep the queue non-empty forever and `run()` NEVER RETURNS. That starves
+        // the whole turn: no libev watcher runs again, and a `VirtualCore` driving this
+        // listener never reaches `__flush_all__` / `__receive__` / its actor callbacks, so the
+        // engine deadlocks with a busy CPU. Measured before this bound: a single
+        // `run(EVRUN_NOWAIT)` turn executed 2,000,000 ping-pongs in 162 ms and only came back
+        // because the probe's loops were finite.
+        //
+        // The cap is per TURN, not per coroutine: anything scheduled after it is hit simply
+        // runs on the next turn, so nothing is dropped or reordered — the loop just gets a
+        // chance to breathe. It is set far above any realistic burst (a workload resuming
+        // 64k coroutines in one turn is already pathological), so normal latency is untouched
+        // and only the self-feeding shape is affected. `run_ready()`'s own default stays
+        // unbounded for the teardown drains that genuinely must empty the queue.
         if (_coro_scheduler) {
-            std::size_t coro_count = _coro_scheduler->run_ready();
+            std::size_t coro_count = _coro_scheduler->run_ready(kMaxCoroutineResumesPerTurn);
             _nb_invoked_events += coro_count;
             _total_events_processed += coro_count;
         }
     }
+
+    /// Upper bound on coroutine resumes per `run()` turn — see the `run_ready()` call site in
+    /// `run()` for why an unbounded drain lets two mutually-resuming coroutines wedge the loop.
+    static constexpr std::size_t kMaxCoroutineResumesPerTurn = 65536;
 
     /**
      * @brief Queue `fn` to run once, at the tail of the current `run()` turn.

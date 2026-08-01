@@ -108,6 +108,7 @@ See [The engine](../4_qb_core/engine.md).
 | `kill` | `void kill() const noexcept` | Marks the actor for termination. |
 | `is_alive` | `bool is_alive() const noexcept` | False once `kill()` has taken effect. |
 | `is_active` | `bool is_active() const noexcept` | `is_alive()` **and** activated — false during the brief *Activating* window of a suspended async `onInit()`. The phase oracle used by `findActor` / `ActorHandle::get()`. |
+| `is_actor_alive` | `bool is_actor_alive(ActorId id) const noexcept` | Liveness probe for *another* actor: true iff `id` names an actor on **this** `VirtualCore` that is alive **and** active. One hash lookup, no `dynamic_cast` — the type-erased sibling of `ActorHandle<T>::ready()`. Use it to prune bookkeeping that stores bare `ActorId`s (subscriber lists, routing tables), as `qb::PubSub<Topic>` does: the framework prunes its **own** subscription map when an actor dies, but a user-space mirror has no such hook. **Same-core only** — a `false` for a *remote* id is not evidence the actor is gone; use `co_await qb::ping(...)` for cross-core liveness. |
 
 **Identity and context**
 

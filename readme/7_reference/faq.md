@@ -43,19 +43,22 @@ Use `push()`. It is the default and covers nearly every case.
 
 | Method | Ordering | Event payload constraint |
 |---|---|---|
-| `push<Event>(dest, …)` | Ordered: FIFO per sender→receiver pair | Any event, including members with non-trivial destructors (`std::string`, `std::vector`, `std::shared_ptr`) |
+| `push<Event>(dest, …)` | Ordered: FIFO per sender→receiver pair | Any event, including members with non-trivial destructors (`std::vector`, `std::shared_ptr`, `std::unique_ptr`) |
 | `send<Event>(dest, …)` | **Unordered**, even to the same destination | Event type **must be trivially destructible** (POD members or `qb::string<N>` only) |
 
 `send()` exists for narrow, profiled cases where same-core latency matters and ordering does not; misusing it produces ordering bugs that are hard to trace. Both signatures are in `qb/include/qb/core/Actor.h` (`push` at line 798, `send` at line 821).
+
+Neither row admits a **by-value `std::string`**, and that exclusion is independent of the ordering/destructibility axis above: the runtime relocates events with raw `memcpy`, copying the bytes to a new address and abandoning the source without running a destructor there. A member that points into its own storage — which is exactly what a *short* `std::string` is on libstdc++, whose small-string buffer is addressed by an internal pointer — keeps addressing the old bytes afterwards, so the receiver reads reused memory and `~basic_string()` frees an address that never came from the heap. This is not cross-core-only: the source pipe `memcpy`s what it already holds when it grows, and `reply`/`forward` byte-recycle the event, so a same-core `push` is exposed too. libc++ recomputes `data()` from `this`, which is why the defect corrupts on Linux while passing every macOS test. Use `qb::string<N>` for bounded text, or box the string in a `std::shared_ptr`. See [Messaging](../4_qb_core/messaging.md#push--ordered-the-default) for the full rule.
 
 One contract applies to both, and to `broadcast()`: they are declared `noexcept`. If growing the pipe buffer or running an event constructor throws — for example, an allocation failure under memory pressure — the throw crosses the `noexcept` boundary and calls `std::terminate()` (`qb/include/qb/core/Actor.h:798,821,914`). Keep events small and allocation-light. Full messaging semantics live in [Messaging](../4_qb_core/messaging.md).
 
 ## Why is `qb::string<N>` preferred over `std::string` for event fields?
 
-`qb::string<N>` stores its characters inline. It publicly derives from `std::array<char, N + 1>` (`qb/include/qb/string.h:86`), so an event that uses it has a fixed, self-contained layout with no heap pointer. Two consequences matter for events:
+For event fields *preferred* is too soft on one of the three axes below: on the third, a by-value `std::string` is not a legal event member at all. `qb::string<N>` stores its characters inline. It publicly derives from `std::array<char, N + 1>` (`qb/include/qb/string.h:86`), so an event that uses it has a fixed, self-contained layout with no heap pointer. Three consequences matter for events:
 
 - **No per-event heap allocation** for strings up to `N` characters. Because `push()`/`send()` are `noexcept` and an allocation failure inside them terminates the process, an inline field removes one source of throwing on the messaging hot path.
 - **A predictable layout** that does not depend on a standard library's small-string-optimization details, which keeps event objects stable when they are copied or moved through the engine.
+- **It is trivially relocatable, which `std::string` is not.** The engine moves events by raw `memcpy` and never runs a destructor on the source bytes; a short `std::string` addresses its own inline buffer through an internal pointer on libstdc++, so it dangles after the move. `qb::string<N>` is an inline `char` array plus an integer length (`qb/include/qb/string.h:108`) — nothing inside it points at itself. This is the reason the previous question rules a by-value `std::string` out of `push()` as well as `send()`. When the text has no usable upper bound, box it in a `std::shared_ptr` rather than inlining a `std::string`.
 
 Mind the trade-offs:
 
