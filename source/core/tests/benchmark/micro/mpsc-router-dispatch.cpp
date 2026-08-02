@@ -264,8 +264,13 @@ run_router_mailbox(std::size_t const nb_producers, std::uint64_t const total, st
             // place (the buckets ARE trivially-copyable messages), then route a std::launder'd view —
             // strict-aliasing-clean, same machine work as the engine's in-place reinterpret.
             BenchEvt header{};
-            std::memcpy(&header, buffer + i, sizeof(BenchEvt));
-            std::memcpy(buffer + i, &header, sizeof(BenchEvt));
+            // Explicit `void *` casts: `BenchEvt` derives from `qb::Event`, so it is not
+            // trivially-copyable to the language and GCC reports -Wclass-memaccess. The byte copy is
+            // nonetheless the point — the engine relocates events with exactly this memcpy, and this
+            // benchmark exists to measure that. Casting through `void *` is the documented way to
+            // state the copy is deliberate rather than an oversight.
+            std::memcpy(static_cast<void *>(&header), static_cast<const void *>(buffer + i), sizeof(BenchEvt));
+            std::memcpy(static_cast<void *>(buffer + i), static_cast<const void *>(&header), sizeof(BenchEvt));
             auto *evt = std::launder(reinterpret_cast<BenchEvt *>(buffer + i));
             router.route(*evt, [](BenchEvt &) noexcept {
                 // Mis-routed message: must never happen in this benchmark.
