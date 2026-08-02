@@ -805,7 +805,13 @@ TEST_F(CoroutineAwaiterTests, WaitWritableResumesOnWritableFd) {
     coro_scheduler().spawn([wrote_ptr, write_fd]() -> task<void> {
         co_await wait_writable(write_fd); // pipe write end is writable → resumes promptly
         const char c = 'Q';
-        ::write(write_fd, &c, 1);
+        // Bind the result: glibc marks write() __wur under _FORTIFY_SOURCE (on by default in
+        // Ubuntu's GCC, off in Debian's), and GCC does NOT accept a `(void)` cast as consuming a
+        // warn_unused_result value. The byte either goes into a 64 KiB-capacity pipe or the test's
+        // own assertions catch the missing wakeup, so the value is genuinely not actionable here --
+        // but it must be bound to compile.
+        const auto written = ::write(write_fd, &c, 1);
+        (void) written;
         wrote_ptr->store(true);
         co_return;
     });
@@ -913,14 +919,14 @@ TEST_F(CoroutineAwaiterTests, TimerAwaiterDestructorStopsArmedTimer) {
  *        that the value handed to the callback is what `co_await` yields.
  */
 TEST_F(CoroutineAwaiterTests, AsyncAwaiterBridgesACallbackResult) {
-    std::atomic<int>          got_int{0};
-    std::atomic<bool>         done{false};
-    std::string               got_string;
-    std::function<void(int)>  deferred_cb; // proves the deferred (not-inline) completion path
+    std::atomic<int>         got_int{0};
+    std::atomic<bool>        done{false};
+    std::string              got_string;
+    std::function<void(int)> deferred_cb; // proves the deferred (not-inline) completion path
 
-    auto *got_int_ptr    = &got_int;
-    auto *done_ptr       = &done;
-    auto *got_string_ptr = &got_string;
+    auto *got_int_ptr     = &got_int;
+    auto *done_ptr        = &done;
+    auto *got_string_ptr  = &got_string;
     auto *deferred_cb_ptr = &deferred_cb;
 
     coro_scheduler().spawn([got_int_ptr, done_ptr, got_string_ptr, deferred_cb_ptr]() -> task<void> {
