@@ -121,7 +121,11 @@ endif()
 # -----------------------------------------------------------------------------
 # Build Type Configuration
 # -----------------------------------------------------------------------------
-if(NOT CMAKE_BUILD_TYPE)
+# Default to Release for a STANDALONE build only. An embedded qb must not pick a build type for its
+# parent, and on a multi-config generator (Visual Studio, Ninja Multi-Config) CMAKE_BUILD_TYPE is
+# empty BY DESIGN -- writing it there is meaningless at best and misleading at worst, since the
+# per-config choice is made at build time.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
 endif()
 
@@ -144,15 +148,42 @@ if(NOT QB_CXX_STANDARD IN_LIST _QB_SUPPORTED_CXX_STANDARDS)
     message(FATAL_ERROR "qb supports QB_CXX_STANDARD=20 or 23")
 endif()
 
-set(CMAKE_CXX_STANDARD ${QB_CXX_STANDARD})
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+# Only touch the GLOBAL standard variables when qb is the top-level project.
+#
+# Setting them unconditionally leaks qb's language level into any parent that consumes this
+# framework through add_subdirectory() or FetchContent: the parent's own sources get recompiled at
+# qb's standard, and a toolchain that already set one is silently overridden --
+#   "Warning: Standard CMAKE_CXX_STANDARD value defined in conan_toolchain.cmake to 20
+#    has been modified to 17 by .../qb-src/cmake/qbConfig.cmake"
+# Reported as isndev/qb#9, against the C++17 line; the 2.6 line had the same defect with a
+# different value.
+#
+# Nothing is lost by scoping it. qb's targets get their language level as a USAGE REQUIREMENT --
+# `target_compile_features(<t> PUBLIC cxx_std_${QB_CXX_STANDARD})` in qbFunctions.cmake -- which is
+# both stricter (it applies to qb's own targets whatever the parent sets) and transitive (anything
+# linking qb-core / qb-io / a qbm module is compiled at least at that level). The global variables
+# were only ever a default for the standalone build.
+#
+# `PROJECT_IS_TOP_LEVEL` is not usable here: this file is included BEFORE project(). Comparing the
+# source directories is the equivalent test at this point.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(CMAKE_CXX_STANDARD ${QB_CXX_STANDARD})
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+endif()
 
-# Build every object as position-independent. Required so the bundled static
-# dependencies (ev, llhttp) can be linked into a shared qb-io / qbm-* (or into
-# any consumer's shared library) without "recompile with -fPIC" link errors on
-# Linux. Negligible cost on modern targets even for fully-static builds.
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# Position-independent code. Required so the bundled static dependencies (ev, llhttp) can be linked
+# into a shared qb-io / qbm-* (or into any consumer's shared library) without "recompile with -fPIC"
+# link errors on Linux.
+#
+# qb's OWN targets carry this as a target property (see _qb_apply_target_properties), which is where
+# the requirement actually belongs. The global below is set only for a standalone build, where it
+# also covers the vendored third-party targets qb does not create itself. Setting it unconditionally
+# forced -fPIC onto every target of any project embedding qb -- the same parent-scope pollution as
+# CMAKE_CXX_STANDARD above, and equally unnecessary.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 
 # -----------------------------------------------------------------------------
 # Library Configuration
