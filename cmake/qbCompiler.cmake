@@ -120,6 +120,9 @@ if(QB_COMPILER_MSVC)
         "/wd4324"           # structure padded due to alignas: that IS the point of alignas, and
                             # the framework over-aligns deliberately (EventBucket, mpsc queues,
                             # nanolog Item). No GCC/clang counterpart exists at any -W level.
+        "/wd4702"           # unreachable code -- GCC/clang do not enable -Wunreachable-code. MSVC
+                            # reports it per TEMPLATE INSTANTIATION (io.h's `if constexpr` disposal
+                            # arms), so it fires on code that is live for other instantiations.
     )
     
     # Debug flags

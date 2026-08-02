@@ -702,8 +702,13 @@ public:
         if (pos >= _size)
             return npos;
 
-        const char *result = std::strchr(base_t::data() + pos, ch);
-        return (result && result < base_t::data() + _size) ? static_cast<std::size_t>(result - base_t::data()) : npos;
+        // memchr, not strchr: strchr is UNBOUNDED and needs a NUL terminator, so it could scan
+        // past `_size` into the rest of the fixed buffer and only then get range-checked -- the
+        // over-read has already happened by the time the result is compared. GCC sees this and
+        // reports -Wstringop-overread. memchr is bounded by the bytes that actually belong to the
+        // string, which removes both the over-read and the need for a post-hoc range check.
+        const void *result = std::memchr(base_t::data() + pos, ch, _size - pos);
+        return result ? static_cast<std::size_t>(static_cast<const char *>(result) - base_t::data()) : npos;
     }
 
     /**
