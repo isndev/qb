@@ -83,7 +83,12 @@ qb_status_message("Loading internal modules...")
 set(UUID_BUILD_TESTS OFF)
 set(UUID_SYSTEM_GENERATOR OFF)
 set(UUID_TIME_GENERATOR OFF)
-set(UUID_USING_CXX20_SPAN OFF)
+# ON, not OFF: qb requires C++20 at minimum, so std::span always exists. With OFF, stduuid takes its
+# gsl fallback branch -- which points BUILD_INTERFACE and INSTALL_INTERFACE at a `gsl/` directory
+# that was deleted when qb moved to C++20, and runs `install(DIRECTORY gsl ...)` on it. That made
+# `cmake --install` FAIL outright ("modules/uuid/cmake_install.cmake:41"), breaking the documented
+# find_package(qb) integration mode. Nothing noticed because no CI job ever ran cmake --install.
+set(UUID_USING_CXX20_SPAN ON)
 
 # Load bundled modules (ev, uuid, etc.)
 add_subdirectory("${QB_MODULES_DIR}/uuid")
@@ -278,6 +283,25 @@ if (QB_INSTALL)
             )
         endif ()
     endforeach ()
+
+    # The COMPILED bundled modules' headers, at the SAME relative path qb's public headers use.
+    # qb/io/async/coroutine/scheduler.h does `#include <ev/ev++.h>` and qb/uuid.h does
+    # `#include <uuid/include/uuid.h>`; at build time those resolve through
+    # $<BUILD_INTERFACE:${QB_MODULES_DIR}>, which has no INSTALL_INTERFACE counterpart. Without the
+    # rules below, `find_package(qb)` configured fine and then FAILED TO COMPILE on
+    # "fatal error: 'ev/ev++.h' file not found" -- the include path simply does not exist in an
+    # installed tree. Only the headers are installed; the libraries themselves are already carried
+    # by the export set.
+    install(
+            DIRECTORY "${QB_MODULES_DIR}/ev/"
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ev
+            FILES_MATCHING PATTERN "*.h"
+    )
+    install(
+            DIRECTORY "${QB_MODULES_DIR}/uuid/include/"
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/uuid/include
+            FILES_MATCHING PATTERN "*.h"
+    )
 
     # Version compatibility file
     write_basic_package_version_file(
