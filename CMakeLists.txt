@@ -375,9 +375,13 @@ if (hasParent)
     set(QB_HAS_GTEST ${QB_HAS_GTEST} PARENT_SCOPE)
     set(QB_HAS_BENCHMARK ${QB_HAS_BENCHMARK} PARENT_SCOPE)
 
-    # Export compatibility variables
-    set(OPENSSL_FOUND ${QB_HAS_SSL} PARENT_SCOPE)
-    set(ZLIB_FOUND ${QB_HAS_COMPRESSION} PARENT_SCOPE)
+    # NOT exported: OPENSSL_FOUND / ZLIB_FOUND are the standard result variables of
+    # find_package(OpenSSL) / find_package(ZLIB). Writing them into the parent scope overwrote a
+    # consumer's own find_package results with qb's internal feature flags -- a project that had
+    # already probed for OpenSSL saw its answer replaced. qb's own state is published under the
+    # QB_ prefix, which cannot collide.
+    set(QB_HAS_SSL_FOUND ${QB_HAS_SSL} PARENT_SCOPE)
+    set(QB_HAS_COMPRESSION_FOUND ${QB_HAS_COMPRESSION} PARENT_SCOPE)
     set(QB_IO_WITH_SSL ${QB_HAS_SSL} PARENT_SCOPE)
 
     qb_status_message("Framework variables exported to parent scope")

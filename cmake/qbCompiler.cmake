@@ -138,7 +138,12 @@ if(QB_COMPILER_MSVC)
         "/Ob2"              # Inline function expansion
         "/Ot"               # Favor fast code
         "/Gy"               # Enable function-level linking
-        "/GL"               # Whole program optimization
+        # NOTE: /GL is NOT here. Whole-program optimisation belongs to QB_ENABLE_LTO (below),
+        # which is OFF by default. Having it unconditionally in the Release set meant MSVC found
+        # /GL objects at link time, ABORTED the link and restarted it with /LTCG for every target
+        # -- 211 restarts in one CI run -- while QB_ENABLE_LTO advertised the feature as opt-in.
+        # Consumers also got LTCG they never asked for, and LTO objects are not portable across
+        # compiler versions.
         "/MD"               # Multi-threaded DLL
         "/DNDEBUG"          # Define NDEBUG
     )
@@ -302,7 +307,9 @@ if(QB_ENABLE_LTO)
     qb_debug_message("Enabling Link Time Optimization")
     
     if(QB_COMPILER_MSVC)
-        # MSVC LTO is enabled with /GL flag (already added above)
+        # /GL lives HERE, not in the unconditional Release set: it is what LTO means on MSVC, and
+        # /LTCG below is useless without it. Release-scoped so a Debug build is unaffected.
+        list(APPEND QB_CXX_FLAGS_RELEASE "/GL")
         set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG")
         set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG")
         set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} /LTCG")
