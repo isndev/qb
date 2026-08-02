@@ -1,0 +1,89 @@
+# Proves the two INTEGRATION modes qb documents actually work.
+#
+# Neither was covered by any job before this one, which is why they rotted unnoticed: a CMake audit
+# found find_package(qb) broken after install, and no build had ever tried it. A framework whose
+# README shows `find_package(qb)` must fail its own CI when that stops working.
+name: install-consume
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  install-and-consume:
+    name: install + find_package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: ./scripts/ci-install-linux-dependencies.sh --profile build
+
+      # ── Mode 1: install, then find_package(qb) from a separate project ──────
+      - name: Build and install qb
+        run: |
+          cmake -S . -B build-install -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/_prefix" \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF
+          cmake --build build-install --parallel
+          cmake --install build-install
+
+      - name: Consume via find_package(qb)
+        run: |
+          mkdir -p _consumer && cd _consumer
+          cat > CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.24)
+          project(qb_find_package_consumer LANGUAGES CXX)
+          find_package(qb CONFIG REQUIRED)
+          add_executable(consumer main.cpp)
+          target_link_libraries(consumer PRIVATE qb::core)
+          EOF
+          cat > main.cpp <<'EOF'
+          #include <qb/actor.h>
+          #include <qb/main.h>
+          int main() { qb::Main main; main.core(0); return 0; }
+          EOF
+          cmake -S . -B b -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/_prefix"
+          cmake --build b --parallel
+          ./b/consumer
+
+      # ── Mode 2: FetchContent, and the standard used to compile the CONSUMER ──
+      # Regression guard for isndev/qb#9: embedding qb must not drag the parent's
+      # own sources down to qb's language level, nor pick its build type.
+      - name: Consume via FetchContent, parent standard preserved
+        run: |
+          mkdir -p _fetch && cd _fetch
+          cat > CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.24)
+          project(qb_fetchcontent_consumer LANGUAGES CXX)
+          set(CMAKE_CXX_STANDARD 23)
+          set(CMAKE_CXX_STANDARD_REQUIRED ON)
+          include(FetchContent)
+          FetchContent_Declare(qb SOURCE_DIR "$ENV{GITHUB_WORKSPACE}")
+          FetchContent_MakeAvailable(qb)
+          add_executable(consumer main.cpp)
+          target_link_libraries(consumer PRIVATE qb::core)
+          if(NOT CMAKE_CXX_STANDARD STREQUAL "23")
+            message(FATAL_ERROR "qb overwrote the parent's CMAKE_CXX_STANDARD (got ${CMAKE_CXX_STANDARD}, expected 23)")
+          endif()
+          if(NOT CMAKE_BUILD_TYPE STREQUAL "")
+            message(FATAL_ERROR "qb forced CMAKE_BUILD_TYPE on its parent (got ${CMAKE_BUILD_TYPE})")
+          endif()
+          if(TARGET gtest)
+            message(FATAL_ERROR "embedding qb pulled googletest: QB_BUILD_TESTS must default OFF when embedded")
+          endif()
+          EOF
+          cat > main.cpp <<'EOF'
+          #include <qb/actor.h>
+          #include <qb/main.h>
+          int main() { qb::Main main; main.core(0); return 0; }
+          EOF
+          cmake -S . -B b -G Ninja
+          cmake --build b --parallel
+          ./b/consumer
