@@ -942,6 +942,9 @@ TEST(SSLSocketLoopback, PostHandshakeAccessorsAndChannelBinding) {
     ASSERT_NE(client.ssl_handle(), nullptr);
     client.set_insecure();
     ASSERT_TRUE(client.request_ocsp_stapling(true));
+    // Before the handshake, where SSL_set_session(ssl, nullptr) is the documented usage and the
+    // live-handle branch is still the one taken (init() already minted the SSL).
+    EXPECT_TRUE(client.disable_session_resumption());
     ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
     ASSERT_TRUE(client.handshake_complete());
 
@@ -961,8 +964,14 @@ TEST(SSLSocketLoopback, PostHandshakeAccessorsAndChannelBinding) {
     EXPECT_NE(err_str, "No SSL handle");
     EXPECT_FALSE(err_str.empty());
 
-    // disable_session_resumption succeeds on a live handle and clears the session.
-    EXPECT_TRUE(client.disable_session_resumption());
+    // NOTE: `disable_session_resumption()` is NOT exercised here. It calls
+    // `SSL_set_session(ssl, nullptr)`, which is a *configure-before-handshake* operation: on an
+    // ESTABLISHED TLS 1.3 link the current session carries the key-schedule context, so dropping it
+    // mid-connection desynchronises the peers and the next SSL_write produces records the server
+    // cannot authenticate -- it fails with "decryption failed or bad record mac". Whether it breaks
+    // depends on whether a NewSessionTicket has already been processed and installed as the current
+    // session, which is pure timing: green on a quiet machine, red on a loaded CI runner. It is
+    // covered before connect instead, where it is the documented usage.
 
     // verify depth / callback setters operate on the live SSL object.
     EXPECT_TRUE(client.set_verify_depth(4));
