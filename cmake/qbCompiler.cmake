@@ -100,11 +100,26 @@ if(QB_COMPILER_MSVC)
     # larger .obj files; there is no codegen or runtime effect.
 
     # Warning configuration
+    # /W4 enforces four classes this project deliberately does NOT enforce on GCC/clang, where the
+    # set is `-Wall -Wextra -Wpedantic -Wno-unused-parameter` (see below). Because CI promotes
+    # warnings to errors, leaving them on meant Windows failing the build on rules no other
+    # platform applies -- a policy split, not a code defect. Each suppression below names the
+    # GCC/clang decision it mirrors, so the two sets stay comparable when either is changed.
     list(APPEND QB_CXX_FLAGS_BASE
         "/W4"               # Warning level 4
-        "/wd4251"           # Disable DLL interface warnings
-        "/wd4275"           # Disable non-DLL interface warnings
-        "/wd4996"           # Disable deprecated function warnings
+        "/wd4251"           # DLL interface (no GCC/clang equivalent)
+        "/wd4275"           # non-DLL interface (no GCC/clang equivalent)
+        "/wd4996"           # deprecated functions
+        "/wd4100"           # unreferenced parameter -- mirrors -Wno-unused-parameter
+        "/wd4244"           # narrowing conversion -- GCC/clang do not enable -Wconversion
+        "/wd4267"           # size_t narrowing -- same class as 4244
+        "/wd4456"           # local hides local     -- GCC/clang do not enable -Wshadow
+        "/wd4457"           # local hides parameter -- same class as 4456
+        "/wd4458"           # local hides member    -- same class as 4456
+        "/wd4459"           # local hides global    -- same class as 4456
+        "/wd4324"           # structure padded due to alignas: that IS the point of alignas, and
+                            # the framework over-aligns deliberately (EventBucket, mpsc queues,
+                            # nanolog Item). No GCC/clang counterpart exists at any -W level.
     )
     
     # Debug flags

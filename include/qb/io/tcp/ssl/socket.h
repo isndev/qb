@@ -743,6 +743,13 @@ public:
      *          any pending `resume()` session is dropped, since disabling resumption and resuming are
      *          mutually exclusive (the last of the two calls wins).
      * @return Always true — the request is applied to the existing handle or deferred to connect.
+     * @warning "Call before the SSL handshake" is a REQUIREMENT, not a style preference. On an
+     *          already-established TLS 1.3 link the current session carries the key-schedule
+     *          context, so `SSL_set_session(ssl, NULL)` desynchronises the peers: the next write
+     *          emits records the peer cannot authenticate and it aborts with
+     *          "decryption failed or bad record mac". It only breaks once a NewSessionTicket has
+     *          been processed and installed, so the damage is timing-dependent and a call on a live
+     *          connection can look harmless for a long time before it does not.
      */
     bool disable_session_resumption() noexcept;
 

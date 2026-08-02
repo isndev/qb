@@ -44,6 +44,16 @@
  *        the security-critical part — a naive bracket counter would over-count `"[[[[" and falsely
  *        reject benign payloads.
  */
+namespace {
+/// A byte literal above 0x7F does not fit a signed `char`, so a direct `char(0x91)`
+/// is a truncating cast (MSVC C4310). Rounding through `unsigned char` is the
+/// well-defined spelling and says "this is a byte", which is what these tests mean.
+constexpr char
+byte_c(unsigned v) noexcept {
+    return static_cast<char>(static_cast<unsigned char>(v));
+}
+} // namespace
+
 TEST(JsonDepthGuard, TextScanIsStringAwareAndBoundedExactly) {
     using qb::protocol::detail::json_depth_within;
     constexpr std::size_t kMax = qb::protocol::detail::kJsonMaxNestingDepth;
@@ -86,20 +96,20 @@ TEST(JsonDepthGuard, MsgpackScanIsBoundedExactly) {
     constexpr std::size_t kMax = qb::protocol::detail::kJsonMaxNestingDepth;
 
     // Reasonable nesting passes: [[[42]]].
-    const std::string ok = {char(0x91), char(0x91), char(0x91), char(0x2a)};
+    const std::string ok = {byte_c(0x91), byte_c(0x91), byte_c(0x91), byte_c(0x2a)};
     EXPECT_TRUE(msgpack_depth_within(ok.data(), ok.size(), kMax));
 
     // Pathological nesting beyond the limit is rejected.
-    std::string bomb(kMax + 5, char(0x91));
-    bomb.push_back(char(0xc0));
+    std::string bomb(kMax + 5, byte_c(0x91));
+    bomb.push_back(byte_c(0xc0));
     EXPECT_FALSE(msgpack_depth_within(bomb.data(), bomb.size(), kMax));
 
     // Exactly at the limit is accepted; one level over is not.
-    std::string at_limit(kMax, char(0x91));
-    at_limit.push_back(char(0xc0));
+    std::string at_limit(kMax, byte_c(0x91));
+    at_limit.push_back(byte_c(0xc0));
     EXPECT_TRUE(msgpack_depth_within(at_limit.data(), at_limit.size(), kMax));
-    std::string over(kMax + 1, char(0x91));
-    over.push_back(char(0xc0));
+    std::string over(kMax + 1, byte_c(0x91));
+    over.push_back(byte_c(0xc0));
     EXPECT_FALSE(msgpack_depth_within(over.data(), over.size(), kMax));
 }
 
