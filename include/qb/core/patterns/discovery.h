@@ -167,20 +167,6 @@ register_discovery(std::uint64_t id, discovery_state &st, qb::ActorId owner) noe
     qb::detail::ask_register_type(qb::Event::template type_to_id<qb::RequireEvent>());
 }
 
-/**
- * @brief Send the wildcard liveness `PingEvent` for `ping()`.
- * @details Deliberately not inline in `ping()`. GCC does not emit a function template whose FIRST
- *          point of instantiation is inside a coroutine body, so calling
- *          `ctx.push_to<qb::PingEvent>(...)` directly from `ping()` (a `qb::io::async::task<bool>`)
- *          links clean under clang and fails under GCC with
- *          `undefined reference to qb::CoroContext::push_to<qb::PingEvent, ...>`. Instantiating
- *          from an ordinary function moves that point out of the coroutine.
- */
-inline void
-send_ping(qb::ScopedCoroContext &ctx, qb::ActorId target, std::uint64_t id) {
-    ctx.template push_to<qb::PingEvent>(target, std::uint32_t{0}, id);
-}
-
 } // namespace detail
 
 /**
@@ -202,9 +188,9 @@ ping(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout = std::
     st->token     = ctx.token();
     const auto id = qb::detail::ask_next_id(ctx.id());
     detail::register_discovery(id, *st, ctx.id());
-    qb::detail::ask_slot_guard guard{id}; // deregister if the send throws before the awaiter takes over
-    detail::send_ping(ctx, target, id);   // type 0 = wildcard liveness; see send_ping for why it is not inline here
-    guard.release();                      // the awaiter (its dtor unregisters) owns the slot from here
+    qb::detail::ask_slot_guard guard{id};                              // deregister if the send throws before the awaiter takes over
+    ctx.template push_to<qb::PingEvent>(target, std::uint32_t{0}, id); // type 0 = wildcard liveness
+    guard.release();                                                   // the awaiter (its dtor unregisters) owns the slot from here
     co_await detail::discovery_awaiter{st, timeout, id};
     co_return !st->found.empty();
 }

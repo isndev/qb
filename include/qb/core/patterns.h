@@ -24,6 +24,18 @@
 #ifndef QB_CORE_PATTERNS_H
 #define QB_CORE_PATTERNS_H
 
+// `Actor.h` declares `registerEvent` / `push_to` but leaves their definitions in `Actor.tpp`, so a
+// header that exposes classes calling them must pull the implementation itself. The pattern headers
+// below define inline members that do exactly that (`Supervisor::onInit`, `discovery::ping`), and
+// under `--coverage` GCC EMITS unused inline functions so their lines can be instrumented -- which
+// instantiates those calls in every translation unit that merely INCLUDES this header, whether or
+// not it uses the class. Without the line below that instantiation has no definition and the link
+// fails with `undefined reference to qb::Actor::registerEvent<qb::ChildDown, qb::Supervisor>`,
+// visible only in the coverage build. `qb/patterns.h` already carries the same include for the same
+// reason; this header was the one missed.
+#include "Actor.h"
+#include "Actor.tpp"
+
 #include "patterns/request.h"
 #include "patterns/discovery.h"
 #include "patterns/idempotency.h"
