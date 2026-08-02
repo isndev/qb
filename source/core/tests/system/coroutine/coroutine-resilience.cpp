@@ -76,6 +76,13 @@ namespace {
 /// short enough that an exhausting retry sequence stays well under the ctest timeout.
 constexpr auto kAskTimeout = 40ms;
 
+/// Deadline for an ask that MUST succeed against a healthy dependency (the half-open recovery
+/// trial). Deliberately far larger than @ref kAskTimeout: that one is sized to EXPIRE against a
+/// silent peer, which is the opposite requirement. Reusing it made a success-path assertion depend
+/// on the machine completing an actor round trip within 40ms — a property of the runner, not of the
+/// code under test, and one a loaded Windows CI runner does not hold.
+constexpr auto kRecoveryAskTimeout = 2s;
+
 /// First backoff and growth factor. With multiplier 2 and a 320ms cap, the first few inter-attempt
 /// gaps are ~20ms, ~40ms, ~80ms — comfortably distinguishable by the VirtualCore clock.
 constexpr auto   kBackoff    = 20ms;
@@ -458,7 +465,17 @@ public:
             // close the breaker.
             co_await ctx.sleep(cooldown + 50ms);
             try {
-                auto r = co_await qb::ask_guarded(ctx, b, t, Ping{777}, kAskTimeout);
+                // A GENEROUS deadline here, deliberately unlike phase 1. The two phases want
+                // opposite things from the same constant: phase 1 needs `kAskTimeout` (40ms) to
+                // EXPIRE against a silent dependency, which is what trips the breaker; phase 2 needs
+                // this ask to SUCCEED against a healthy one. Reusing 40ms made phase 2 assert that
+                // the machine completes an actor round trip within 40ms -- a property of the runner,
+                // not of the circuit breaker. On a loaded Windows CI runner it does not, and the
+                // trial timed out with the dependency answering normally (observed:
+                // g_recover_value == -1 instead of 1554). What this phase actually pins is that an
+                // open breaker ADMITS one trial after the cooldown and closes on its success; the
+                // deadline only has to be long enough not to be the thing under test.
+                auto r = co_await qb::ask_guarded(ctx, b, t, Ping{777}, kRecoveryAskTimeout);
                 g_recover_value.store(r.response);
                 g_recover_success.fetch_add(1);
             } catch (const qb::circuit_open_error &) {

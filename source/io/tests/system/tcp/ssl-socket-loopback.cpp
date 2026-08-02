@@ -486,6 +486,15 @@ TEST(SSLSocketLoopback, BlockingUriAndEndpointTimeoutConnectVariantsReachLoopbac
     ASSERT_EQ(endpoint_timeout_client.connect(qb::io::endpoint("127.0.0.1", port), "localhost", 1s), 0);
     exchange_marker(endpoint_timeout_client, 'c');
 
+    // Wait for the count rather than sampling it. `exchange_marker` proves each session handled
+    // data, but `server_count` is incremented on the SERVER thread, and nothing orders that
+    // increment before this line -- reading it immediately assumes a scheduling outcome. On a
+    // loaded runner the last increment had not landed yet (observed on CI: 2 instead of 3). The
+    // assertion means "three connections reached the server", not "…before this instruction".
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (server_count.load() < expected_connections && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
     EXPECT_EQ(server_count.load(), expected_connections);
 }
 
