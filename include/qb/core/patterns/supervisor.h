@@ -134,12 +134,26 @@ public:
         , _max_restarts(max_restarts)
         , _window(restart_window) {}
 
-    qb::io::async::task<bool>
-    onInit() override {
+    /**
+     * @brief Bind this type's event handlers.
+     * @details Deliberately a plain member function rather than inline in `onInit()`. GCC does not
+     *          emit a function template whose FIRST point of instantiation is inside a coroutine
+     *          body, so calling `registerEvent<...>` directly from `onInit()` (a
+     *          `qb::io::async::task<bool>`) links clean under clang and fails under GCC with
+     *          `undefined reference to qb::Actor::registerEvent<qb::ChildDown, qb::Supervisor>`.
+     *          Instantiating from an ordinary function moves that point out of the coroutine.
+     */
+    void
+    register_handlers() {
         registerEvent<qb::ChildDown>(*this);
         // Rebind KillEvent to THIS type so on(KillEvent) (child teardown) runs instead of the
         // base Actor::on(KillEvent) bound at construction.
         registerEvent<qb::KillEvent>(*this);
+    }
+
+    qb::io::async::task<bool>
+    onInit() override {
+        register_handlers();
         _children.assign(_count, qb::ActorId{});
         _gen.assign(_count, 0);
         for (std::size_t i = 0; i < _count; ++i)
