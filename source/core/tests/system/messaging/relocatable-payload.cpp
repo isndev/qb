@@ -193,8 +193,19 @@ is_self_referential(Factory make) {
     // Same stride and same read-into-an-integer as the shipped guard: words are copied into a
     // `uintptr_t`, so no pointer is ever *formed* from padding bytes.
     for (std::size_t off = 0; off + sizeof(std::uintptr_t) <= sizeof(T); off += alignof(std::uintptr_t)) {
+        // Read through `volatile unsigned char` rather than memcpy'ing the word directly. The
+        // placement-new above starts T's lifetime, which makes every byte the constructor does not
+        // write INDETERMINATE again -- the zero-init before it no longer counts. For a
+        // `qb::string<32>` that is the whole unused tail, and gcc-14 rightly reports
+        // `-Wmaybe-uninitialized` on a `uintptr_t` pulled straight out of it. Byte-wise access
+        // through a volatile lvalue of narrow character type is the well-defined way to inspect
+        // such storage, and scanning the padding is the POINT here: the shipped guard in
+        // `SharedCoreCommunication::send` looks at the same bytes.
         std::uintptr_t word = 0;
-        std::memcpy(&word, base + off, sizeof(word));
+        for (std::size_t b = 0; b < sizeof(word); ++b) {
+            const auto byte = static_cast<const volatile unsigned char *>(base)[off + b];
+            word |= static_cast<std::uintptr_t>(byte) << (b * 8u); // little-endian, matching memcpy
+        }
         if (word >= lo && word < hi) {
             found = true;
             break;
