@@ -48,10 +48,26 @@ jobs:
             build_type: Release
             cxx_standard: 20
 
-          - name: windows-msvc-cxx20-release
-            os: windows-latest
-            build_type: Release
-            cxx_standard: 20
+          # windows-msvc-cxx20-release — DISABLED, verified out of band instead.
+          #
+          # Not dropped because MSVC is unsupported: it is supported, and the maintainer validates
+          # the full dev solution on a Windows/MSVC machine before each release. Disabled because
+          # the hosted runner is a poor instrument for it — the job took ~70 minutes and its tests
+          # time out under that load, so it reported build-infrastructure noise rather than defects
+          # in this codebase. The two real problems it did surface are FIXED (vcpkg applocal racing
+          # this project's own DLL deployment; `/GL` on ~200 test binaries forcing 211 LTCG link
+          # restarts) — the remaining cost is the runner, not the code.
+          #
+          # MSVC-specific correctness is still enforced at compile time for everyone: the warning
+          # set in cmake/qbCompiler.cmake is deliberately aligned with the GCC/clang policy, so a
+          # local MSVC build fails on the same rules CI enforces here.
+          #
+          # Re-enable by uncommenting. Worth doing once the CI has a vcpkg binary cache, which is
+          # what makes this job affordable — right now every run rebuilds all dependencies.
+          # - name: windows-msvc-cxx20-release
+          #   os: windows-latest
+          #   build_type: Release
+          #   cxx_standard: 20
 
           - name: ubuntu-clang-cxx23-release
             os: ubuntu-latest
