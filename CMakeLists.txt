@@ -30,6 +30,16 @@
 
 cmake_minimum_required(VERSION 3.24)
 
+# vcpkg's automatic per-target applocal DLL copy is OFF: this project already deploys runtime DLLs
+# itself (deploy_runtime_dlls.cmake, invoked from qb_add_test / qb_add_benchmark). With both active,
+# two mechanisms copy the SAME DLLs into the SAME directory from targets that link in parallel, and
+# one holds a file the other is writing -- MSBuild then fails the build with
+# "The process cannot access the file because it is being used by another process" followed by
+# MSB3073 on `vcpkg z-applocal`. It is a build-infrastructure race, not a compile error, and it
+# aborted the whole Windows job before a single test ran. Setting this before project() so the
+# vcpkg toolchain sees it.
+set(VCPKG_APPLOCAL_DEPS OFF CACHE BOOL "qb deploys runtime DLLs itself; vcpkg's per-target applocal races with it" FORCE)
+
 # -----------------------------------------------------------------------------
 # Early Configuration
 # -----------------------------------------------------------------------------

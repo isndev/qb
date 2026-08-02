@@ -492,6 +492,16 @@ function(qb_add_test)
     #
     # Use CMAKE_CURRENT_FUNCTION_LIST_DIR (CMake 3.17+) which resolves to the
     # directory of THIS file at function-definition time, not the calling directory.
+    # No whole-program optimization on test binaries. `/GL` belongs in QB_CXX_FLAGS_RELEASE for the
+    # SHIPPED library, where users benefit from it, but it is applied globally and so also lands on
+    # every test executable. MSVC then finds /GL objects at link time, ABORTS the link and restarts
+    # it with /LTCG -- "restarting link with /LTCG" appears 211 times in one CI run, each restart
+    # re-running whole-program codegen for a binary nobody ships. That is the bulk of the ~70 minute
+    # Windows job. `/GL-` negates it per target and leaves the library untouched.
+    if(MSVC)
+        target_compile_options(${TEST_NAME} PRIVATE $<$<CONFIG:Release>:/GL->)
+    endif()
+
     # This avoids the scope issue where QB_CMAKE_DIR is undefined when qb_add_test()
     # is called from a qbm subdirectory that was added after qb's own scope closed.
     if(WIN32)
@@ -580,6 +590,11 @@ function(qb_add_benchmark)
     
     # Apply common properties
     _qb_apply_target_properties(${BENCH_NAME})
+    # No whole-program optimization on benchmark binaries -- see the same note on test targets.
+    if(MSVC)
+        target_compile_options(${BENCH_NAME} PRIVATE $<$<CONFIG:Release>:/GL->)
+    endif()
+
     # Deprecations warn but do not fail HERE only. Benchmark targets are the one place that
     # compiles against google-benchmark's headers, and its API name for the registration object
     # differs by version: the pinned FetchContent build (QB_GOOGLEBENCHMARK_GIT_TAG, v1.9.2) knows
