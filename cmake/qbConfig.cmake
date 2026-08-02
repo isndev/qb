@@ -56,8 +56,28 @@ set(QB_SOURCE_DIR "${QB_ROOT_DIR}/source")
 # -----------------------------------------------------------------------------
 # Build Configuration Options
 # -----------------------------------------------------------------------------
-option(QB_BUILD_TESTS "Build qb tests" ON)
-option(QB_BUILD_EXAMPLES "Build qb examples" ON)
+# Defaults differ by role, deliberately. A STANDALONE checkout is the qb repo itself: tests and
+# examples on. An EMBEDDED qb is somebody's dependency: they asked for a library, not for 350 test
+# executables and a googletest download. Before this, a plain FetchContent of qb pulled googletest
+# and built the whole suite by default.
+#
+# `BUILD_TESTING` is CMake's standard switch (CTest module) and is honoured when the consumer sets
+# it, so `-DBUILD_TESTING=ON` still gets qb's tests in a superproject that wants them.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(_qb_default_tests ON)
+    set(_qb_default_examples ON)
+else()
+    if(DEFINED BUILD_TESTING)
+        set(_qb_default_tests ${BUILD_TESTING})
+    else()
+        set(_qb_default_tests OFF)
+    endif()
+    set(_qb_default_examples OFF)
+endif()
+option(QB_BUILD_TESTS "Build qb tests" ${_qb_default_tests})
+option(QB_BUILD_EXAMPLES "Build qb examples" ${_qb_default_examples})
+unset(_qb_default_tests)
+unset(_qb_default_examples)
 option(QB_BUILD_BENCHMARKS "Build qb benchmarks" OFF)
 # Dependency resolution strategy:
 #   QB_DEPS_FETCH_FALLBACK ON (default): each fetchable dependency is first looked up
@@ -80,7 +100,15 @@ option(QB_BUILD_DOCS "Build qb documentation" OFF)
 # Defaults to the standard BUILD_SHARED_LIBS so `cmake -DBUILD_SHARED_LIBS=ON` also
 # switches qb to shared, while still allowing an explicit qb-only override.
 option(QB_BUILD_SHARED_LIBS "Build qb libraries as shared objects instead of static" ${BUILD_SHARED_LIBS})
-option(QB_INSTALL "Install qb framework" ON)
+# Standalone: qb owns the install. Embedded: it does NOT -- an embedded qb adding its own
+# install(TARGETS/DIRECTORY) rules injects qb's headers and CMake package files into the PARENT's
+# `cmake --install`, so a consumer packaging their own app silently ships qb's development tree.
+# A superproject that genuinely wants to install qb sets -DQB_INSTALL=ON.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    option(QB_INSTALL "Install qb framework" ON)
+else()
+    option(QB_INSTALL "Install qb framework" OFF)
+endif()
 
 # Performance options
 option(QB_ENABLE_OPTIMIZATIONS "Enable performance optimizations" ON)
@@ -88,7 +116,10 @@ option(QB_ENABLE_LTO "Enable Link Time Optimization" OFF)
 # ON by default: tune codegen for the build-host CPU (-march=native / -mcpu=native).
 # Gives the best performance on the machine that built it. Turn OFF for portable/
 # distributable binaries that must run on a different (possibly older) CPU.
-option(QB_ENABLE_NATIVE_ARCH "Enable native architecture optimizations (-march=native)" ON)
+# OFF by default: `-march=native` bakes the BUILD machine's instruction set into the artefact, so a
+# binary built on a newer CPU dies with SIGILL on an older one. That is the right default for a
+# library other people consume and ship; a benchmark run turns it on explicitly.
+option(QB_ENABLE_NATIVE_ARCH "Enable native architecture optimizations (-march=native)" OFF)
 option(QB_ENABLE_FAST_MATH "Enable -ffast-math / /fp:fast (breaks IEEE-754 compliance)" OFF)
 
 # Coverage
