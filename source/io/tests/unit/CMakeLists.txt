@@ -52,6 +52,14 @@ qb_add_test(MODULE qb-io TIER unit NAME file-error-paths   SOURCES file/file-err
 qb_add_test(MODULE qb-io TIER unit NAME file-pipe-transfer SOURCES file/file-pipe-transfer.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME self-locate        SOURCES file/self-locate.cpp        DEPENDS ${PROJECT_NAME})
 
+# --- crypto ---
+# NOT ssl-gated on purpose: crypto-nossl-core covers the members of qb::crypto that carry
+# no OpenSSL (hex codec, xor_bytes, constant_time_compare) and that qbm-pgsql's bytea codec
+# needs in a QB_WITH_SSL=OFF build. Every other crypto test below is REQUIRES ssl, i.e. NOT
+# REGISTERED without OpenSSL, so this is the only crypto coverage the feature-gates preset
+# gets. Keep it first and keep it ungated.
+qb_add_test(MODULE qb-io TIER unit NAME crypto-nossl-core SOURCES crypto/crypto-nossl-core.cpp DEPENDS ${PROJECT_NAME})
+
 # --- crypto (OpenSSL link-gated) ---
 qb_add_test(MODULE qb-io TIER unit NAME crypto-primitives SOURCES crypto/crypto-primitives.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME kdf-and-tokens    SOURCES crypto/kdf-and-tokens.cpp    DEPENDS ${PROJECT_NAME} REQUIRES ssl)

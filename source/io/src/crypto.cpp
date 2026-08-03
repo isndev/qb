@@ -91,60 +91,6 @@ crypto::base64::decode(const std::string &base64) noexcept {
     return ascii;
 }
 
-/// Returns hex string from bytes in input string.
-std::string
-crypto::to_hex_string(const std::string &input, std::string_view const &hex_digits) noexcept {
-    std::string output;
-    output.reserve(input.length() * 2);
-    for (unsigned char c : input) {
-        output.push_back(hex_digits[c >> 4]);
-        output.push_back(hex_digits[c & 15]);
-    }
-    return output;
-}
-
-DISABLE_WARNING_PUSH
-DISABLE_WARNING_NARROWING
-/// Returns hex value from byte.
-int
-crypto::hex_value(unsigned char hex_digit) noexcept {
-    static constexpr int hex_values[256] = {
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  -1, -1, -1, -1, -1, -1,
-        -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    };
-
-    return hex_values[hex_digit];
-}
-DISABLE_WARNING_POP
-
-/// Returns formatted hex string from hex bytes in input string.
-std::string
-crypto::hex_to_string(const std::string &input) noexcept {
-    const auto len = input.length();
-    if (len & 1)
-        return "";
-
-    std::string output;
-    output.reserve(len / 2);
-    for (auto it = input.begin(); it != input.end();) {
-        int hi = hex_value(*it++);
-        int lo = hex_value(*it++);
-        // Reject non-hex input instead of emitting garbage bytes: hex_value()
-        // returns -1 for any non-hex digit, and `(-1 << 4) | lo` would push a
-        // bogus byte. A malformed hex string now yields "" (parse failure).
-        if (hi < 0 || lo < 0)
-            return "";
-        output.push_back(static_cast<char>(hi << 4 | lo));
-    }
-    return output;
-}
-
 std::string
 crypto::evp(std::istream &stream, const EVP_MD *md) noexcept {
     EVP_MD_CTX *context = EVP_MD_CTX_new();
@@ -413,19 +359,6 @@ crypto::sha256(const std::vector<unsigned char> &data) {
     return digest;
 }
 
-// xor two vector of same size
-std::vector<unsigned char>
-crypto::xor_bytes(const std::vector<unsigned char> &a, const std::vector<unsigned char> &b) {
-    if (a.size() != b.size()) {
-        throw std::runtime_error("vectors must have the same size to XOR");
-    }
-    std::vector<unsigned char> result(a.size());
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        result[i] = a[i] ^ b[i];
-    }
-    return result;
-}
-
 // Generate cryptographically secure random string using OpenSSL RAND_bytes
 std::string
 crypto::generate_secure_random_string(std::size_t len, std::string_view range) {
@@ -476,26 +409,6 @@ crypto::generate_secure_random_string(std::size_t len, std::string_view range) {
     }
 
     return result;
-}
-
-// Constant-time comparison to prevent timing attacks
-bool
-crypto::constant_time_compare(const std::vector<unsigned char> &a, const std::vector<unsigned char> &b) noexcept {
-    // If sizes differ, we can't compare - but we still need constant time
-    // We compute a dummy comparison to avoid leaking the size difference via timing
-    if (a.size() != b.size()) {
-        return false;
-    }
-
-    // Volatile to prevent compiler optimization that could short-circuit
-    volatile unsigned char result = 0;
-
-    // XOR all bytes together - result will be 0 only if all bytes match
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        result |= a[i] ^ b[i];
-    }
-
-    return result == 0;
 }
 
 } // namespace qb
