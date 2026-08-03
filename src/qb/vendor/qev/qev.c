@@ -3681,7 +3681,22 @@ evtimerfd_init(EV_P) {
 /*****************************************************************************/
 
 #if EV_USE_IOCP
-#include "qev_iocp.c"
+/* Inherited verbatim from upstream libev (ev.c, same position: `#include "ev_iocp.c"`).
+ * Upstream has never shipped ev_iocp.c -- the IOCP backend was started and abandoned, and
+ * the include has dangled there for the life of the library; renaming ev_* -> qev_* in this
+ * fork carried the dangling name across unchanged. qev ships no qev_iocp.c either.
+ *
+ * The branch is unreachable in every qb configuration: EV_USE_IOCP has no
+ * `#cmakedefine01` in config.h.cmakein and is set by nothing in
+ * src/qb/vendor/qev/CMakeLists.txt, so the `#ifndef EV_USE_IOCP / #define EV_USE_IOCP 0`
+ * near the top of this file always wins. Windows uses EV_USE_SELECT over winsockets, or
+ * wepoll. Rather than leave a dangling #include that reports itself as a missing file,
+ * say what is actually wrong -- the backend does not exist.
+ *
+ * Kept, not deleted: if an IOCP backend is ever written, drop qev_iocp.c beside this file
+ * and restore the #include. The surrounding EV_USE_IOCP call sites (see the other
+ * `#if EV_USE_IOCP` blocks in this file) are likewise left in place. */
+#error "EV_USE_IOCP: qev ships no IOCP backend (neither does upstream libev; ev_iocp.c has never existed). Use EV_USE_SELECT (winsockets) or wepoll on Windows."
 #endif
 #if EV_USE_PORT
 #include "qev_port.c"

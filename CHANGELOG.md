@@ -163,6 +163,16 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Fixed
 
+- Three shipped `#include` directives named files that do not exist, on every platform:
+  `<qb/io/async/epoll.h>` (an **installed public header**) included `"../helper.h"`, deleted in
+  `581094a9` -- the header has been uncompilable ever since, and because the missing include was
+  also the only thing defining `__WIN__SYSTEM__`, its `#error "epoll is not available on windows"`
+  guard could never fire. `qb/io/system/sys__socket.h` included `"qb/socket.cpp"` under
+  `QB_HEADER_ONLY`; the implementation has always been the sibling `sys__socket.cpp`, so
+  `-DQB_HEADER_ONLY` failed outright. The vendored `qev.c` carries upstream libev's dangling
+  `#include "ev_iocp.c"` (renamed `qev_iocp.c`): upstream never shipped that file and neither does
+  qev, and `EV_USE_IOCP` is reachable from no qb configuration, so the branch now says so with an
+  `#error` instead of reporting a missing file.
 - `<qb/uuid.h>` included `<qb/vendor/uuid/include/uuid.h>` *above* its own `QB_UUID_H` include guard,
   leaving the vendored include outside the guard it was meant to sit behind.
 

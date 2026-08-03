@@ -30,14 +30,30 @@
 #ifndef QB_IO_EPOLL_H
 #define QB_IO_EPOLL_H
 
+// Must precede the guard below: __WIN__SYSTEM__ is qb's own macro, defined here and
+// nowhere else. It used to arrive through "../helper.h"; while that include was dangling
+// the #error could never fire, so the "not available on windows" guard was inert.
+#include <qb/utility/build_macros.h>
+
 #ifdef __WIN__SYSTEM__
 #error "epoll is not available on windows"
 #endif
 
+// `qb/io/helper.h` was deleted in 581094a9 ("change qb::io lowlevel abstraction") when the
+// socket layer moved to qb/io/system/sys__socket.h; this header kept the include and has
+// been unbuildable ever since -- an installed public header (see install_manifest) that no
+// consumer could compile. It is restored as the exact set of headers it was relied on for:
+// POSIX close() (<unistd.h>), std::cerr (<iostream>), and the build macros above. The
+// enum SocketType/SocketStatus it also carried are NOT used here; qb::io::SocketStatus now
+// lives in qb/io/system/sys__socket.h and is deliberately not pulled in -- this header is
+// standalone by design.
+#include <cstddef>
 #include <exception>
+#include <iostream>
 #include <qb/utility/branch_hints.h>
+#include <stdexcept>
 #include <sys/epoll.h>
-#include "../helper.h"
+#include <unistd.h>
 
 namespace qb {
 namespace io {
