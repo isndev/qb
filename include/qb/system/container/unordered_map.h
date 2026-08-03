@@ -27,7 +27,7 @@
 #define QB_UNORDERED_MAP_H
 #include <algorithm>
 #include <map>
-#include <ska_hash/unordered_map.hpp>
+#include <qb/vendor/ska_hash/unordered_map.hpp>
 #include <string>
 #include <unordered_map>
 

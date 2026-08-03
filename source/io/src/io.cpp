@@ -23,7 +23,7 @@
  */
 
 #ifdef QB_WITH_LOGGING
-#include "nanolog/nanolog.cpp"
+#include <qb/vendor/nanolog/nanolog.cpp>
 #endif
 #include "logger.cpp"
 #include "pipe.cpp"

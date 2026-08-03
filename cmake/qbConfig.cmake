@@ -50,7 +50,15 @@ set(QB_INCLUDE_DIR "${QB_ROOT_DIR}/include")
 # Without CACHE, the variable stays local to qb's subdirectory scope and
 # qb_add_test / qb_add_benchmark cannot find deploy_runtime_dlls.cmake.
 set(QB_CMAKE_DIR  "${QB_ROOT_DIR}/cmake"   CACHE INTERNAL "qb cmake scripts directory")
+# modules/ now holds ONLY genuine third-party upstream code (nlohmann). Everything else that used
+# to live there -- ev, uuid, nanolog, ska_hash -- is a qb FORK, i.e. qb's own source, and moved
+# under include/qb/vendor/ so an installed qb owns every top-level name it drops in the consumer's
+# include root. See QB_VENDOR_DIR below.
 set(QB_MODULES_DIR "${QB_ROOT_DIR}/modules")
+# qb-owned forks. Physically inside QB_INCLUDE_DIR on purpose: the build tree and the installed
+# tree then expose them at the SAME relative path (qb/vendor/<fork>/...) through the SAME single
+# include root, so there is no build-interface/install-interface pair to drift apart.
+set(QB_VENDOR_DIR "${QB_INCLUDE_DIR}/qb/vendor")
 set(QB_SOURCE_DIR "${QB_ROOT_DIR}/source")
 
 # -----------------------------------------------------------------------------

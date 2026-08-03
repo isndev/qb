@@ -26,7 +26,10 @@
 #define QB_IO_PROTOCOL_JSON_H
 #include <utility>
 #include "base.h"
-#include "nlohmann/json.hpp"
+// Angle form, not quote: this is a third-party header that a consumer may legitimately supply
+// themselves (see qbDependencies.cmake, find_package(nlohmann_json)). The quote form would search
+// this file's own directory first, which is neither where it lives nor where it should be found.
+#include <nlohmann/json.hpp>
 
 namespace qb {
 namespace protocol {

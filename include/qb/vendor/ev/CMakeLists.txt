@@ -15,6 +15,26 @@ else ()
 endif ()
 
 # ----------------------------------------------------------------------------
+# Header namespace
+# ----------------------------------------------------------------------------
+# An embedding project sets QB_VENDOR_INCLUDE_PREFIX (qb sets it to "qb/vendor") to declare that
+# this fork's headers are reached through ITS include root under that prefix, i.e.
+# <qb/vendor/ev/ev++.h>. In that mode this project publishes NO include directory of its own for
+# its headers and installs NO loose ev.h / ev++.h / event.h / event_compat.h: dropping those four
+# generic names into a consumer's include root is exactly the shadowing this prefix exists to stop
+# (a consumer with its own event.h had qb's silently win).
+#
+# Unset/empty (standalone libev, or add_subdirectory() by a project that did not opt in) keeps the
+# historical layout byte-for-byte: headers at the include root, reached as <ev.h> / <ev++.h>.
+if (DEFINED QB_VENDOR_INCLUDE_PREFIX AND NOT QB_VENDOR_INCLUDE_PREFIX STREQUAL "")
+    set(QB_EV_HEADER_DIR "${QB_VENDOR_INCLUDE_PREFIX}/ev")
+    set(QB_EV_EMBEDDED ON)
+else ()
+    set(QB_EV_HEADER_DIR "")
+    set(QB_EV_EMBEDDED OFF)
+endif ()
+
+# ----------------------------------------------------------------------------
 # Versioning (keep in sync with ev.h EV_VERSION_MAJOR / EV_VERSION_MINOR)
 # ----------------------------------------------------------------------------
 set(LIBEV_VERSION ${PROJECT_VERSION})
@@ -222,13 +242,41 @@ endif ()
 # ----------------------------------------------------------------------------
 # Generate configuration header (public)
 # ----------------------------------------------------------------------------
+# Generated under a dedicated `include/` root mirroring the header namespace, so the ONE directory
+# this project puts on its consumers' include path contains nothing but ${QB_EV_HEADER_DIR}/.
+#
+# ev.h and ev.c look for this file in three ways (ev.h:24-32, ev.c:23-30):
+#     -DEV_CONFIG_H=<path>  >  HAVE_CONFIG_H + "config.h"  >  __has_include("ev_config.h")
+# The last one is quote-relative to ev.h, i.e. it only works when ev_config.h sits NEXT TO ev.h --
+# true in an installed tree, never true in a build tree (generated file, source-tree header). And
+# because it is guarded by __has_include, a miss is SILENT: ev.h falls back to its own defaults and
+# quietly disagrees with the compiled libev.a (measured: EV_MULTIPLICITY 4 instead of 1). So the
+# define below is what actually carries the configuration, and it is deliberately PUBLIC: it must
+# reach every translation unit that includes ev.h, not just this library's own sources.
+if (QB_EV_EMBEDDED)
+    set(QB_EV_CONFIG_INCLUDE "<${QB_EV_HEADER_DIR}/ev_config.h>")
+    set(QB_EV_CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/include/${QB_EV_HEADER_DIR}/ev_config.h")
+else ()
+    set(QB_EV_CONFIG_INCLUDE "<ev_config.h>")
+    set(QB_EV_CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/include/ev_config.h")
+endif ()
+
 configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmakein
-        ${CMAKE_CURRENT_BINARY_DIR}/ev_config.h
+        ${QB_EV_CONFIG_OUT}
         @ONLY
 )
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ev_config.h DESTINATION include)
+# Embedded: the parent project's install(DIRECTORY include/) does NOT cover this file (it is
+# generated into the build tree), so it still needs its own rule -- at the namespaced destination,
+# next to the ev.h that will look for it.
+include(GNUInstallDirs)
+if (QB_EV_EMBEDDED)
+    install(FILES ${QB_EV_CONFIG_OUT}
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${QB_EV_HEADER_DIR})
+else ()
+    install(FILES ${QB_EV_CONFIG_OUT} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif ()
 
 # ----------------------------------------------------------------------------
 # Build library
@@ -247,11 +295,25 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     #     EV_FEATURES=0x7f
     #   )
 
+    # The generated-config root is PUBLIC in both modes: ev.h needs it wherever it is included.
     target_include_directories(ev
             PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
+    target_compile_definitions(ev PUBLIC EV_CONFIG_H=${QB_EV_CONFIG_INCLUDE})
+
+    if (QB_EV_EMBEDDED)
+        # PRIVATE, not PUBLIC: this directory holds ev.h, ev++.h, event.h, event_compat.h,
+        # ev_vars.h, ev_wrap.h and wepoll.h. Exporting it PUBLIC is what put all seven bare names
+        # on the include path of every target that links ev -- transitively, every consumer of
+        # qb::io. Embedded consumers reach them through the parent's include root instead
+        # (<${QB_EV_HEADER_DIR}/ev++.h>); ev's own .c files use quote-relative includes and need
+        # nothing but this private entry.
+        target_include_directories(ev PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+    else ()
+        target_include_directories(ev PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+    endif ()
 
     if (QB_EV_STRICT_WARNINGS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         # Keep the vendored event loop visible to modern compilers. The baseline is
@@ -326,6 +388,13 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     # --------------------------------------------------------------------------
     # Install + package config — find_package(libev) (and ev::ev compat alias)
     # --------------------------------------------------------------------------
+    # Skipped entirely when embedded: the parent owns the install. It installs the `ev` target in
+    # its OWN export set and ships these headers through its own install(DIRECTORY include/), at
+    # the namespaced path. Running this block as well would (a) re-install ev.h/ev++.h/event.h/
+    # event_compat.h at the include ROOT, undoing the namespacing, and (b) drop a
+    # lib/cmake/libev/ package next to the parent's own, exporting a second, differently-named
+    # imported target for the same static library.
+    if (NOT QB_EV_EMBEDDED)
     include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
 
@@ -369,4 +438,5 @@ endif()
             ${CMAKE_CURRENT_BINARY_DIR}/libevConfigVersion.cmake
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libev
     )
+    endif () # NOT QB_EV_EMBEDDED
 endif ()

@@ -31,8 +31,8 @@ qb resolves dependencies in three ways. Most builds need nothing installed beyon
 
 | Dependency       | How it is obtained                                                   | Needed for                    |
 |------------------|----------------------------------------------------------------------|-------------------------------|
-| libev            | Bundled (`qb/modules/ev`), built automatically                       | Always (the event loop)       |
-| stduuid          | Bundled (`qb/modules/uuid`); falls back to system uuid if absent     | Always (UUIDs)                |
+| libev            | Forked + vendored (`qb/include/qb/vendor/ev`), built automatically   | Always (the event loop)       |
+| stduuid          | Forked + vendored (`qb/include/qb/vendor/uuid`); system uuid if absent | Always (UUIDs)              |
 | GoogleTest       | Fetched at configure time when `QB_BUILD_TESTS=ON`                   | Tests                         |
 | Google Benchmark | Fetched at configure time when `QB_BUILD_BENCHMARKS=ON`              | Benchmarks                    |
 | zlib             | System first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` | `QB_WITH_COMPRESSION`         |
@@ -122,9 +122,9 @@ See [production_checklist.md](./readme/6_guides/production_checklist.md) before 
 ## Troubleshooting
 
 - **`CMake 3.24 or higher is required`** — upgrade CMake; the dependency resolution relies on it.
-- **`libev … not found`** — libev is vendored directly under `qb/modules/ev` (committed files, not a
+- **`libev … not found`** — libev is vendored directly under `qb/include/qb/vendor/ev` (committed files, not a
   submodule), so a normal clone always ships it. If it is missing, restore it from the repo
-  (`git checkout -- modules/ev`) or re-clone; a `git submodule update` will not bring it back.
+  (`git checkout -- include/qb/vendor/ev`) or re-clone; a `git submodule update` will not bring it back.
 - **SSL features missing** — install OpenSSL development headers; without them `QB_WITH_SSL` is auto-disabled.
 - **Host CPU binary fails on another machine** — the default `QB_ENABLE_NATIVE_ARCH=ON` targets the build
   host; rebuild with `-DQB_ENABLE_NATIVE_ARCH=OFF` for portable artifacts.

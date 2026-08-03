@@ -39,8 +39,10 @@ set(IO_SOURCES
         src/quic.cpp
 )
 
-# Collect dependencies
-set(IO_DEPENDENCIES ev stduuid)
+# Collect dependencies. PUBLIC (see _qb_apply_dependencies): qb/json.h exposes nlohmann::json in
+# qb's own API, so every consumer of qb::io -- including qbm/pgsql's type_converter -- needs the
+# same nlohmann include path qb-io was compiled against.
+set(IO_DEPENDENCIES ev stduuid qb-nlohmann)
 
 # Collect definitions
 set(IO_DEFINITIONS)

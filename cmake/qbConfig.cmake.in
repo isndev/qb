@@ -32,10 +32,13 @@ set(QB_VERSION_MAJOR "@QB_FRAMEWORK_VERSION_MAJOR@")
 set(QB_VERSION_MINOR "@QB_FRAMEWORK_VERSION_MINOR@")
 set(QB_VERSION_PATCH "@QB_FRAMEWORK_VERSION_PATCH@")
 
-# Compute the installation prefix relative to this file
-get_filename_component(_IMPORT_PREFIX "${CMAKE_CURRENT_LIST_FILE}" PATH)
-get_filename_component(_IMPORT_PREFIX "${_IMPORT_PREFIX}" PATH)
-get_filename_component(_IMPORT_PREFIX "${_IMPORT_PREFIX}" PATH)
+# Installation prefix. Use the one @PACKAGE_INIT@ already computed correctly above rather than
+# re-deriving it: this file is installed at <prefix>/lib/cmake/qb/, so walking up from
+# CMAKE_CURRENT_LIST_FILE needs FOUR steps (file -> qb -> cmake -> lib -> prefix). It took three,
+# landing on <prefix>/lib, so QB_INCLUDE_DIRS resolved to <prefix>/lib/include -- a directory that
+# has never existed in any installed tree. Harmless for target-based consumers (they inherit the
+# right path from qb::core / qb::io), silently wrong for anyone using the variable.
+set(_IMPORT_PREFIX "${PACKAGE_PREFIX_DIR}")
 
 # ---- Resolve transitive external dependencies ----
 find_dependency(Threads)
@@ -46,6 +49,14 @@ endif()
 
 if(@QB_HAS_COMPRESSION@)
     find_dependency(ZLIB)
+endif()
+
+# qb::io's public headers expose nlohmann::json (qb::json is an alias for it). If qb was built
+# against a system nlohmann_json rather than its bundled fallback, the consumer must resolve the
+# SAME one -- qb did not install a copy, and using a different one would be an ODR violation on
+# the type itself. Failing here at configure time is the loud, correct outcome.
+if(@QB_USES_SYSTEM_NLOHMANN@)
+    find_dependency(nlohmann_json 3.11)
 endif()
 
 if(@QB_HAS_ARGON2@)
@@ -60,8 +71,12 @@ if(@QB_HAS_QUIC@)
     find_dependency(Ngtcp2)
 endif()
 
-# Set include directories
-set(QB_INCLUDE_DIRS "${_IMPORT_PREFIX}/include;${_IMPORT_PREFIX}/include/modules")
+# Set include directories.
+# One entry, because an installed qb has one include root. (The second entry this used to carry,
+# "${_IMPORT_PREFIX}/include/modules", never existed in any installed tree -- no install rule has
+# ever created it.) Consumers should link qb::core / qb::io and inherit this through the imported
+# target; the variable is kept for legacy non-target usage and now actually points at it.
+set(QB_INCLUDE_DIRS "${_IMPORT_PREFIX}/include")
 
 # Available components
 set(_QB_AVAILABLE_COMPONENTS core io)

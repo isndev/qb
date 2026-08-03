@@ -39,7 +39,7 @@ list(APPEND CMAKE_MODULE_PATH "${QB_CMAKE_DIR}")
 qb_status_message("Searching for required dependencies...")
 
 # UUID library (using internal bundled version)
-set(QB_UUID_DIR "${QB_MODULES_DIR}/uuid")
+set(QB_UUID_DIR "${QB_VENDOR_DIR}/uuid")
 
 if(EXISTS "${QB_UUID_DIR}")
     set(UUID_FOUND TRUE)
@@ -98,8 +98,8 @@ endif()
 # -----------------------------------------------------------------------------
 # libev (using internal bundled version)
 # -----------------------------------------------------------------------------
-# qb uses a custom bundled version of libev in modules/ev
-set(QB_EV_DIR "${QB_MODULES_DIR}/ev")
+# qb uses a custom fork of libev, vendored under include/qb/vendor/ev
+set(QB_EV_DIR "${QB_VENDOR_DIR}/ev")
 
 if(EXISTS "${QB_EV_DIR}")
     set(LIBEV_FOUND TRUE)
@@ -300,18 +300,57 @@ elseif(QB_PLATFORM_MACOS)
 endif()
 
 # -----------------------------------------------------------------------------
+# nlohmann/json — the ONE genuine third-party upstream dependency
+# -----------------------------------------------------------------------------
+# ev, uuid, nanolog and ska_hash are qb FORKS: qb's own code, never swappable, so qb owns their
+# include path (qb/vendor/...). nlohmann is the opposite -- it is upstream, widely deployed, and a
+# consumer very plausibly already has it. That asymmetry has a consequence that no amount of
+# path-renaming can fix: nlohmann::json is a TYPE that crosses the API boundary (qb::json is an
+# alias for it, qb/json.h defines to_json/from_json for qb::uuid). If qb compiled against a private
+# copy and the consumer against theirs, the program holds two definitions of the same class -- an
+# ODR violation. Re-prefixing the header path would not change that; it would only make the two
+# copies harder to notice. The only real fix is to use the CONSUMER's copy, so: find_package first.
+#
+# nlohmann does encode SOME of its configuration in an inline namespace (json_abi_v3_12_0, plus
+# _diag / _ldvcmp suffixes, json.hpp:85-115), which turns a version or diagnostics mismatch into a
+# LINK error -- loud, fine. But JSON_NOEXCEPTION and JSON_USE_IMPLICIT_CONVERSIONS change the class
+# and do NOT feed the tag: those still mismatch silently. That residue is inherent to shipping a
+# prebuilt library whose API exposes a header-configurable third-party type; it is only fully
+# closed by building qb in the consumer's own tree (FetchContent / add_subdirectory).
+find_package(nlohmann_json 3.11 QUIET)
+
+add_library(qb-nlohmann INTERFACE)
+set_target_properties(qb-nlohmann PROPERTIES EXPORT_NAME nlohmann)
+include(GNUInstallDirs)
+
+if(nlohmann_json_FOUND)
+    set(QB_USES_SYSTEM_NLOHMANN TRUE)
+    target_link_libraries(qb-nlohmann INTERFACE nlohmann_json::nlohmann_json)
+    qb_status_message("Using system nlohmann_json ${nlohmann_json_VERSION}")
+else()
+    set(QB_USES_SYSTEM_NLOHMANN FALSE)
+    # Fallback: the bundled copy in modules/. SYSTEM so a third party's warnings are not qb's
+    # problem. <nlohmann/json.hpp> stays that library's canonical spelling -- deliberately, because
+    # a consumer who has their own copy SHOULD win the include race here (the opposite of the
+    # forks, where any consumer header winning was the bug).
+    target_include_directories(qb-nlohmann SYSTEM INTERFACE
+        "$<BUILD_INTERFACE:${QB_MODULES_DIR}>"
+        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+    qb_status_message("Using bundled nlohmann_json from: ${QB_MODULES_DIR}/nlohmann")
+endif()
+
+# -----------------------------------------------------------------------------
 # Internal Dependencies (qb modules)
 # -----------------------------------------------------------------------------
 set(QB_INTERNAL_MODULES_PATH "${QB_MODULES_DIR}")
 
-# Header-only internal modules whose include directories must be available
-# to qb-io / qb-core (and transitively to their dependents).
-# We collect them here; _qb_apply_target_properties() propagates them via
-# qb's common usage properties on every qb/qbm target.
-set(QB_HEADER_ONLY_MODULES nanolog nlohmann ska_hash)
+# Third-party header-only trees still shipped from modules/ (installed verbatim at their canonical
+# path by qb/CMakeLists.txt). The qb-owned forks are NOT here: they live under include/qb/vendor/
+# and are covered by qb's ordinary public-header install rule.
+set(QB_HEADER_ONLY_MODULES nlohmann)
 
 # Internal modules list (for logging / diagnostics only)
-set(QB_INTERNAL_MODULES ev uuid ${QB_HEADER_ONLY_MODULES})
+set(QB_INTERNAL_MODULES ev uuid nanolog ska_hash ${QB_HEADER_ONLY_MODULES})
 
 # -----------------------------------------------------------------------------
 # Dependency Resolution Functions

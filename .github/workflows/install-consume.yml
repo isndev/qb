@@ -33,6 +33,21 @@ jobs:
           cmake --build build-install --parallel
           cmake --install build-install
 
+      # qb owns every top-level name it installs. Anything else is a header that can shadow, or be
+      # shadowed by, one the consumer already has -- which is how ev.h / event.h / uuid.h and a
+      # second copy of nlohmann/json.hpp used to land in every consumer's include root.
+      # `nlohmann` is expected ONLY when qb fell back to its bundled copy (no system
+      # nlohmann_json on the runner); `cube.h` is qb's own legacy umbrella header.
+      - name: Installed include root is qb-owned
+        run: |
+          actual="$(ls _prefix/include | sort | tr '\n' ' ')"
+          echo "include root: ${actual}"
+          case "${actual}" in
+            "cube.h nlohmann qb "|"cube.h qb ") ;;
+            *) echo "::error::unexpected top-level names in the installed include root: ${actual}"
+               exit 1 ;;
+          esac
+
       - name: Consume via find_package(qb)
         run: |
           mkdir -p _consumer && cd _consumer
@@ -42,11 +57,47 @@ jobs:
           find_package(qb CONFIG REQUIRED)
           add_executable(consumer main.cpp)
           target_link_libraries(consumer PRIVATE qb::core)
+          # NEGATIVE CONTROL: the consumer's own headers must win the include race, and none of
+          # them may be reachable from qb's public headers. A plain -I outranks the -isystem an
+          # imported target arrives on, so if qb still published any of these names, the #error
+          # inside the decoy fires and this job fails.
+          target_include_directories(consumer BEFORE PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/decoy")
           EOF
+          mkdir -p decoy/ev decoy/uuid/include decoy/nanolog decoy/ska_hash
+          for f in ev.h ev++.h event.h event_compat.h ev_config.h ev_vars.h ev_wrap.h uuid.h \
+                   ev/ev.h ev/ev++.h ev/event.h ev/event_compat.h \
+                   uuid/uuid.h uuid/include/uuid.h nanolog/nanolog.h \
+                   ska_hash/unordered_map.hpp ska_hash/flat_hash_map.hpp; do
+            echo "#error \"a consumer-owned ${f} was picked up instead of qb's vendored header\"" > "decoy/${f}"
+          done
+          # Reaches every vendored fork through qb's public API: ev (base.h), stduuid (uuid.h),
+          # nanolog (io.h), ska_hash (unordered_map.h) and nlohmann (json.h). The original TU
+          # included only actor.h + main.h and touched none of them.
           cat > main.cpp <<'EOF'
           #include <qb/actor.h>
           #include <qb/main.h>
-          int main() { qb::Main main; main.core(0); return 0; }
+          #include <qb/io.h>
+          #include <qb/io/async/event/base.h>
+          #include <qb/uuid.h>
+          #include <qb/json.h>
+          #include <qb/system/container/unordered_map.h>
+          #include <qb/system/container/unordered_set.h>
+          #include <cstdio>
+          // The compiled libev was built with EV_MULTIPLICITY=1. If the generated config header
+          // does not reach this TU, ev.h silently defaults it to 4 and every ev_* prototype
+          // disagrees with libev.a. qb's headers #error on it; assert here too.
+          static_assert(EV_MULTIPLICITY == 1, "libev config header did not reach the consumer");
+          int main() {
+            qb::Main main; (void) main.core(0);
+            qb::unordered_map<int, int> um; um[1] = 2;
+            qb::unordered_set<int> us; us.insert(3);
+            auto id = qb::generate_random_uuid();
+            qb::json j; j["k"] = 42;
+            std::printf("ev=%d.%d map=%d set=%d uuid=%zu json=%d\n",
+                        ev_version_major(), ev_version_minor(), um[1], (int) us.count(3),
+                        uuids::to_string(id).size(), (int) j["k"]);
+            return 0;
+          }
           EOF
           cmake -S . -B b -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/_prefix"
