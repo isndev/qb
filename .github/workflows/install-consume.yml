@@ -9,7 +9,11 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
+
+concurrency:
+  group: install-consume-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   install-and-consume:
