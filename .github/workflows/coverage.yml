@@ -1,5 +1,17 @@
 name: coverage
 
+# The one workflow deliberately NOT extended to `develop` pull requests.
+#
+# Every other workflow renders a verdict a reviewer can act on -- it compiles, the suite passes,
+# ASan/TSan are clean, the install is consumable -- so running it before merge is what makes the
+# PR mean something. This one renders no verdict: it builds instrumented, generates lcov +
+# Cobertura, uploads them as artifacts, and exits 0 regardless of what the numbers say. There is
+# no threshold gate to fail. On a PR that costs the most expensive job in the battery (a full
+# instrumented build plus the whole suite) to produce a report nobody blocks a merge on.
+#
+# Nothing is lost by holding it: `push: [main, develop]` below still runs it on every push to
+# develop, so the coverage trend for the development line is exactly as complete as before.
+# Add `develop` here the day a coverage threshold actually gates the merge.
 on:
   push:
     branches: [ main, develop ]

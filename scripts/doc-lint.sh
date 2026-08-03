@@ -5,6 +5,7 @@
 # Fails (non-zero exit) on:
 #   1. Retired/forbidden tokens in documentation (e.g. qb::Timestamp).
 #   2. Broken internal Markdown links.
+#   2b. Cross-repo URLs naming a dead repository or a non-released git ref.
 #   3. Missing mandatory governance files.
 # Warns (does not fail) on:
 #   4. Narrative pages missing a "Verified-against" front-matter marker.
@@ -120,6 +121,38 @@ if [ -f /tmp/doc-lint-broken.$$ ]; then broken=$(wc -l < /tmp/doc-lint-broken.$$
 if [ "${broken:-0}" -eq 0 ]; then grn "  all internal links resolve"; else fail=1; fi
 
 # ---------------------------------------------------------------------------
+echo "== 2b. Cross-repo URL check (repo name + git ref of absolute isndev links) =="
+# Section 2 deliberately skips http(s) targets, so a link into a SIBLING repo was validated by
+# nothing at all. That blind spot shipped 35 dead URLs across the doc books: they named
+# github.com/isndev/cube -- the repo's old PRIVATE name, since published as isndev/qb -- on
+# branch c++23, which no longer exists. Both halves 404 for a reader of the released docs, and
+# four green doc-lint runs never saw them.
+#
+# The check stays offline (no network, no API rate limit, a few milliseconds): it does not
+# resolve the URL, it validates the only two parts that rot -- the repository name and the git
+# ref. Docs must cite the RELEASED line, so `main` or a 40-hex permalink; a link into a moving
+# development branch is rejected because it silently rots again on the next merge.
+ISNDEV_REPOS='qb qb-dev qb-ev qb-examples qbm-http qbm-pgsql qbm-redis'
+while read -r f; do
+  grep -oE 'https://github\.com/isndev/[A-Za-z0-9_.+-]+(/(blob|tree|raw)/[^/)" ]+)?' "$f" 2>/dev/null \
+    | while IFS= read -r u; do
+    repo="$(printf '%s\n' "$u" | cut -d/ -f5)"; repo="${repo%.git}"
+    ref="$(printf '%s\n' "$u" | cut -d/ -f7)"
+    case " ${ISNDEV_REPOS} " in
+      *" ${repo} "*) ;;
+      *) red "  ${f}: unknown repository 'isndev/${repo}' -> ${u}"; echo X >> /tmp/doc-lint-badurl.$$ ;;
+    esac
+    [ -z "${ref}" ] && continue
+    [ "${ref}" = "main" ] && continue
+    if [ "${#ref}" -eq 40 ]; then
+      case "${ref}" in *[!0-9a-f]*) ;; *) continue ;; esac    # 40-hex commit permalink: pinned, fine
+    fi
+    red "  ${f}: ref '${ref}' is not main or a permalink -> ${u}"; echo X >> /tmp/doc-lint-badurl.$$
+  done
+done < <(doc_files)
+badurl=0; [ -f /tmp/doc-lint-badurl.$$ ] && { badurl=$(wc -l < /tmp/doc-lint-badurl.$$); rm -f /tmp/doc-lint-badurl.$$; }
+[ "${badurl:-0}" -eq 0 ] && grn "  all cross-repo URLs name a live repo on main" || fail=1
+
 echo "== 3. Governance presence =="
 missing=0
 for g in README.md INSTALL.md VERSIONING.md CHANGELOG.md SECURITY.md SUPPORT.md CONTRIBUTING.md CODE_OF_CONDUCT.md LICENSE; do

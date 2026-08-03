@@ -22,7 +22,7 @@ on:
       # silently invalidated 129 markers before.
       - 'cmake/qbConfig.cmake'
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
     paths:
       - 'README.md'
       - 'readme/**'
@@ -38,6 +38,10 @@ on:
       # version-only bump must trigger it -- that is exactly the change that
       # silently invalidated 129 markers before.
       - 'cmake/qbConfig.cmake'
+
+concurrency:
+  group: doc-lint-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   doc-lint:
