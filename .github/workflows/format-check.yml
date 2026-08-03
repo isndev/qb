@@ -56,7 +56,7 @@ jobs:
               '*.h' '*.hh' '*.hpp' '*.hxx' \
               '*.c' '*.cc' '*.cpp' '*.cxx' \
               '*.ipp' '*.tpp' |
-            grep -Ev '^(build|modules|include/qb/vendor)/' || true
+            grep -Ev '^(build|modules|src/qb/vendor)/' || true
           )"
 
           {

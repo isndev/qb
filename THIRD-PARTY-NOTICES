@@ -62,7 +62,7 @@ marked "in-header" and have no separate file — the notice travels with the cod
 
    Upstream    http://software.schmorp.de/pkg/libev.html
    Author      Marc Alexander Lehmann <libev@schmorp.de>
-   Version     fork version qb-ev 5.0.0 (include/qb/vendor/qev/CMakeLists.txt, and
+   Version     fork version qb-ev 5.0.0 (src/qb/vendor/qev/CMakeLists.txt, and
                EV_VERSION_MAJOR/MINOR = 5/0 in qev.h). The upstream libev release
                this was forked from is NOT recorded anywhere in the tree: the
                fork renumbered libev's own EV_VERSION macros to its 5.0, so that
@@ -79,7 +79,7 @@ marked "in-header" and have no separate file — the notice travels with the cod
    event_compat.h additionally derives from libevent,
    Copyright (c) 2000-2004 Niels Provos <provos@citi.umich.edu>.
 
-   Vendored    include/qb/vendor/qev/
+   Vendored    src/qb/vendor/qev/
    Installed   <prefix>/include/qb/vendor/qev/
    License at  <prefix>/share/licenses/qb/third-party/qev/LICENSE
                <prefix>/share/licenses/qb/third-party/qev/THIRD-PARTY-NOTICES
@@ -91,7 +91,7 @@ marked "in-header" and have no separate file — the notice travels with the cod
    Author      Karthik Iyengar
    Version     unversioned upstream snapshot
    License     MIT
-   Vendored    include/qb/vendor/nanolog/{nanolog.h,nanolog.cpp}
+   Vendored    src/qb/vendor/nanolog/{nanolog.h,nanolog.cpp}
    Installed   <prefix>/include/qb/vendor/nanolog/nanolog.h
    License at  in-header — both files open with the complete MIT notice, so the
                permission notice is distributed with the installed header itself.
@@ -102,7 +102,7 @@ marked "in-header" and have no separate file — the notice travels with the cod
    Author      Malte Skarupke
    Version     unversioned upstream snapshot
    License     Boost Software License 1.0
-   Vendored    include/qb/vendor/ska_hash/{flat_hash_map,bytell_hash_map,unordered_map}.hpp
+   Vendored    src/qb/vendor/ska_hash/{flat_hash_map,bytell_hash_map,unordered_map}.hpp
    Installed   <prefix>/include/qb/vendor/ska_hash/
    License at  <prefix>/share/licenses/qb/third-party/ska_hash/LICENSE_1_0.txt
 
@@ -115,10 +115,10 @@ marked "in-header" and have no separate file — the notice travels with the cod
    Upstream    https://github.com/mariusbancila/stduuid
    Author      Marius Bancila
    Version     1.0, as declared by the vendored package version file
-               (include/qb/vendor/uuid/CMakeLists.txt). Upstream publishes no
+               (src/qb/vendor/uuid/CMakeLists.txt). Upstream publishes no
                other version marker inside the header.
    License     MIT
-   Vendored    include/qb/vendor/uuid/
+   Vendored    src/qb/vendor/uuid/
    Installed   <prefix>/include/qb/vendor/uuid/include/uuid.h
    License at  <prefix>/share/licenses/qb/third-party/uuid/LICENSE
 
@@ -134,11 +134,11 @@ marked "in-header" and have no separate file — the notice travels with the cod
    Author      Two Blue Cubes Ltd.
    Version     2.13.3
    License     Boost Software License 1.0
-   Vendored    include/qb/vendor/uuid/catch/
+   Vendored    src/qb/vendor/uuid/catch/
    Installed   NOT INSTALLED — qb's install rule excludes
-               include/qb/vendor/uuid/(catch|test|cmake), so no part of Catch2
+               src/qb/vendor/uuid/(catch|test|cmake), so no part of Catch2
                reaches a consumer's include path or any installed artifact.
-   License at  include/qb/vendor/uuid/catch/LICENSE_1_0.txt (source tree only)
+   License at  src/qb/vendor/uuid/catch/LICENSE_1_0.txt (source tree only)
 
    Catch2 arrived as part of the stduuid checkout and is build-time material for
    that fork's own test suite. It is recorded here because it is present in the

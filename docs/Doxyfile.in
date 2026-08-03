@@ -144,7 +144,7 @@ WARN_LOGFILE           =
 #---------------------------------------------------------------------------
 
 INPUT                  = "@QB_DIRECTORY@/docs/doxygen_groups.h" \
-                         "@QB_DIRECTORY@/include/" \
+                         "@QB_DIRECTORY@/src/" \
                          "@QB_DIRECTORY@/readme" \
                          "@QB_DIRECTORY@/docs/mainpage.h"
 INPUT_ENCODING         = UTF-8
@@ -200,12 +200,12 @@ FILE_PATTERNS          = *.h \
 #                         *.qsf
 
 RECURSIVE              = YES
-# include/qb/vendor/ holds qb's forks of libev, stduuid, nanolog and ska_hash. They are inside
-# include/ so that one include root serves both the build and the installed tree -- but they are
+# src/qb/vendor/ holds qb's forks of libev, stduuid, nanolog and ska_hash. They are inside the
+# include root so that one root serves both the build and the installed tree -- but they are
 # not qb's documented API, and INPUT above is recursive, so without this Doxygen would ingest
 # libev's C headers, stduuid's vendored Catch2, and ska_hash wholesale.
-EXCLUDE                = "@QB_DIRECTORY@/include/qb/io/system" \
-                         "@QB_DIRECTORY@/include/qb/vendor"
+EXCLUDE                = "@QB_DIRECTORY@/src/qb/io/system" \
+                         "@QB_DIRECTORY@/src/qb/vendor"
 EXCLUDE_SYMLINKS       = NO
 EXCLUDE_PATTERNS       =
 EXCLUDE_SYMBOLS        =

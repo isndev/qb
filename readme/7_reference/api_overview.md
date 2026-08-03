@@ -21,7 +21,7 @@ This page is a directory, not a tutorial. Each entry states where a type lives a
 methods are, then links to the page that explains it in depth. Signatures here are the public contract;
 the cited header is ground truth. Public types are reached through umbrella headers — `qb/main.h`,
 `qb/actor.h`, `qb/event.h`, `qb/io.h` — while this page cites the defining header under
-`qb/include/qb/` so you can confirm any signature directly.
+`qb/src/qb/` so you can confirm any signature directly.
 
 A note on naming and time: identifiers use their exact source spelling (`onInit`, `addActor`,
 `getService`). Every timeout, delay, latency, and interval in the public API is a
@@ -219,7 +219,7 @@ dynamically sized data. See [The event system](../2_core_concepts/event_system.m
   Multiply-inherit it alongside `qb::Actor` and enroll with `registerCallback(*this)`.
 
 ```cpp
-// src: include/qb/core/ICallback.h (HeartbeatActor pattern)
+// src: src/qb/core/ICallback.h (HeartbeatActor pattern)
 class PollerActor : public qb::Actor, public qb::ICallback {
 public:
     qb::io::async::task<bool> onInit() final { registerCallback(*this); co_return true; }

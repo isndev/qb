@@ -59,16 +59,16 @@ COPYRIGHT_RE = re.compile(r"copyright|SPDX-FileCopyrightText|SPDX-License-Identi
 # in_header_notice_ok        : unit has no license FILE but every source carries the
 #                              full notice, so the notice travels with the code
 MANIFEST = [
-    dict(path="qb/include/qb/vendor/qev",          notices_in="qb",
-         record_as="include/qb/vendor/qev/"),
-    dict(path="qb/include/qb/vendor/nanolog",      notices_in="qb",
-         record_as="include/qb/vendor/nanolog/",   in_header_notice_ok=True),
-    dict(path="qb/include/qb/vendor/ska_hash",     notices_in="qb",
-         record_as="include/qb/vendor/ska_hash/"),
-    dict(path="qb/include/qb/vendor/uuid",         notices_in="qb",
-         record_as="include/qb/vendor/uuid/"),
-    dict(path="qb/include/qb/vendor/uuid/catch",   notices_in="qb",
-         record_as="include/qb/vendor/uuid/catch/"),
+    dict(path="qb/src/qb/vendor/qev",          notices_in="qb",
+         record_as="src/qb/vendor/qev/"),
+    dict(path="qb/src/qb/vendor/nanolog",      notices_in="qb",
+         record_as="src/qb/vendor/nanolog/",   in_header_notice_ok=True),
+    dict(path="qb/src/qb/vendor/ska_hash",     notices_in="qb",
+         record_as="src/qb/vendor/ska_hash/"),
+    dict(path="qb/src/qb/vendor/uuid",         notices_in="qb",
+         record_as="src/qb/vendor/uuid/"),
+    dict(path="qb/src/qb/vendor/uuid/catch",   notices_in="qb",
+         record_as="src/qb/vendor/uuid/catch/"),
     dict(path="qb/modules/nlohmann",               notices_in="qb",
          record_as="modules/nlohmann/"),
     dict(path="qbm/http/not-qb/llhttp",            notices_in="qbm/http",
@@ -120,7 +120,7 @@ def sources_of(unit: Path) -> list[Path]:
 def discover_units(root: Path) -> set[str]:
     """Vendor-shaped directories on disk, by convention."""
     seen: set[str] = set()
-    conventions = list((root / "qb/include/qb/vendor").glob("*"))
+    conventions = list((root / "qb/src/qb/vendor").glob("*"))
     conventions += list((root / "qb/modules").glob("*"))
     for mod in sorted((root / "qbm").glob("*")):
         conventions += list((mod / "not-qb").glob("*"))

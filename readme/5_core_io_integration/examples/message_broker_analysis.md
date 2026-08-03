@@ -237,7 +237,7 @@ struct SubscribeEvent : public qb::Event {
 };
 ```
 
-The member initialization order matters: `message_data` is constructed before `topic`, so the view points into a payload that already exists. `qb::uuid` is the session identifier type (`include/qb/uuid.h`); it is the same value a `BrokerSession` returns from `id()`.
+The member initialization order matters: `message_data` is constructed before `topic`, so the view points into a payload that already exists. `qb::uuid` is the session identifier type (`src/qb/uuid.h`); it is the same value a `BrokerSession` returns from `id()`.
 
 ## Server walkthrough
 

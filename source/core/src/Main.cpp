@@ -476,7 +476,7 @@ Main::core(CoreId const index) {
         return it->second;
     // Reject `qb::NoAffinity`, overflow values, and anything past the bitset
     // capacity used by `CoreSet` / `CoreIdBitSet`. `qb::MaxCores` is the
-    // single source of truth (see `qb/include/qb/core/ActorId.h`), so no
+    // single source of truth (see `qb/src/qb/core/ActorId.h`), so no
     // magic number ever shows up at a call site (finding 2.12).
     if (index >= static_cast<CoreId>(qb::MaxCores))
         throw std::range_error("Max core id managed by qb is " + std::to_string(qb::MaxCores - 1));

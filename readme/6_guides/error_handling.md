@@ -173,7 +173,7 @@ if (main.hasError()) {
 }
 ```
 
-`Main::hasError()` is `[[nodiscard]] bool hasError() const noexcept`. It reports `true` when the engine's start-barrier word reached any value at or above the first error sentinel, `VirtualCore::Error::BadInit`. The error sentinels, from `qb::VirtualCore::Error` (`include/qb/core/VirtualCore.h`), are bit flags:
+`Main::hasError()` is `[[nodiscard]] bool hasError() const noexcept`. It reports `true` when the engine's start-barrier word reached any value at or above the first error sentinel, `VirtualCore::Error::BadInit`. The error sentinels, from `qb::VirtualCore::Error` (`src/qb/core/VirtualCore.h`), are bit flags:
 
 | Sentinel | Value | Meaning |
 |---|---|---|
@@ -300,7 +300,7 @@ Actors that do network or file I/O through the `qb::io::use<>` helpers receive f
 This is the I/O error notification. It fires for graceful peer shutdown, transport errors (connection reset, host unreachable), protocol violations, DoS-guard trips, and your own explicit `disconnect()` call. The event carries a reason code and optional system error detail:
 
 ```cpp
-// src: derived from qb/include/qb/io/async/event/disconnected.h
+// src: derived from qb/src/qb/io/async/event/disconnected.h
 void on(qb::io::async::event::disconnected &&event) {
     if (event.reason == 0 && !event.error_code) {
         // Clean shutdown by peer or self.
@@ -313,7 +313,7 @@ void on(qb::io::async::event::disconnected &&event) {
 }
 ```
 
-The `reason` field is an `int`, kept ABI-compatible with raw error codes. The framework-emitted values are defined in `qb::io::async::event::disconnect_reason` (`include/qb/io/async/event/disconnected.h`):
+The `reason` field is an `int`, kept ABI-compatible with raw error codes. The framework-emitted values are defined in `qb::io::async::event::disconnect_reason` (`src/qb/io/async/event/disconnected.h`):
 
 | Reason | `disconnect_reason` | Value | Cause |
 |---|---|---|---|
@@ -327,7 +327,7 @@ Negative values are reserved for the framework. Positive values above `1` are av
 
 ### Protocol-level errors
 
-When your `AProtocol` implementation detects malformed input (a bad header, an impossible size field, a framing violation), call `not_ok()` on the protocol. This is a one-way latch — `IProtocol::not_ok()` (`include/qb/io/async/protocol.h`) sets the protocol's status to invalid and it **cannot be cleared**; `reset()` clears parsing buffers but does not restore `ok()`. The I/O component checks `protocol()->ok()` during message processing, and once it reads `false` it disposes the connection and dispatches `on(event::disconnected&&)` with `reason == -1` (`protocol_error`). To resume on the same transport you must install a fresh protocol instance via `switch_protocol`.
+When your `AProtocol` implementation detects malformed input (a bad header, an impossible size field, a framing violation), call `not_ok()` on the protocol. This is a one-way latch — `IProtocol::not_ok()` (`src/qb/io/async/protocol.h`) sets the protocol's status to invalid and it **cannot be cleared**; `reset()` clears parsing buffers but does not restore `ok()`. The I/O component checks `protocol()->ok()` during message processing, and once it reads `false` it disposes the connection and dispatches `on(event::disconnected&&)` with `reason == -1` (`protocol_error`). To resume on the same transport you must install a fresh protocol instance via `switch_protocol`.
 
 ```cpp
 // Inside an AProtocol<MyIO> implementation:
@@ -346,14 +346,14 @@ Errors from the underlying `read`/`write` syscalls are handled inside the transp
 
 ## The `async::callback` lifetime footgun
 
-`qb::io::async::callback` (`include/qb/io/async/io.h`) schedules work on the loop thread. Despite the name it does **not** always defer: `callback(fn)` and `callback(fn, delay <= 0)` run `fn` **inline, right now**; only `callback(fn, delay > 0)` defers, via a heap timer. For "run after the current handler unwinds, on the next loop turn" (no delay), use **`qb::io::async::defer(fn)`** instead (see below). `callback` has two sharp edges that cause use-after-free in practice.
+`qb::io::async::callback` (`src/qb/io/async/io.h`) schedules work on the loop thread. Despite the name it does **not** always defer: `callback(fn)` and `callback(fn, delay <= 0)` run `fn` **inline, right now**; only `callback(fn, delay > 0)` defers, via a heap timer. For "run after the current handler unwinds, on the next loop turn" (no delay), use **`qb::io::async::defer(fn)`** instead (see below). `callback` has two sharp edges that cause use-after-free in practice.
 
 ### Exceptions in callbacks are swallowed
 
 Both the immediate path and the timer path wrap the call in `try { _func(); } catch (...) {}`:
 
 ```cpp
-// src: qb/include/qb/io/async/io.h (Timeout::on, abridged)
+// src: qb/src/qb/io/async/io.h (Timeout::on, abridged)
 void on(event::timer const & /*event*/) {
     if (!_delete_only) {
         try { _func(); } catch (...) {}   // any exception is discarded here
@@ -384,7 +384,7 @@ qb::io::async::callback([this]() {
 **2. Own the timer with `scoped_callback`** so it is cancelled deterministically when the actor dies. `scoped_callback` returns `std::unique_ptr<ScopedTimeout<…>>`; store it as an actor member. When the actor is destroyed, the member's destructor stops the watcher and releases its registration, so the callback can never run after the actor is gone:
 
 ```cpp
-// src: qb/include/qb/io/async/io.h:385-468 (ScopedTimeout / scoped_callback)
+// src: qb/src/qb/io/async/io.h:385-468 (ScopedTimeout / scoped_callback)
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <chrono>
@@ -419,7 +419,7 @@ The correct primitive for "continue **after the current event handler returns**,
 Use it when a handler must do something that is unsafe inline — above all, destroy or replace the very object it is running on:
 
 ```cpp
-// src: qb/include/qb/io/async/listener.h:861 (qb::io::async::defer)
+// src: qb/src/qb/io/async/listener.h:861 (qb::io::async::defer)
 void on(event::disconnected const &) {
     // Reconnect = destroy the current connection and build a new one. Doing it
     // inline here (still inside this handler's dispatch) frees `this` mid-call —

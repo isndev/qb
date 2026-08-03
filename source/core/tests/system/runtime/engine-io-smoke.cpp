@@ -27,7 +27,7 @@
  *     and drains every queued line to disk — making the original file complete and readable.
  *
  * Log-file naming: `qb::io::log::init("<base>")` rolls files as `<base>.1.log`, `<base>.2.log`, …
- * (see qb/include/qb/vendor/nanolog/nanolog.cpp roll_file()). We read `<base>.1.log`.
+ * (see qb/src/qb/vendor/nanolog/nanolog.cpp roll_file()). We read `<base>.1.log`.
  *
  * The actor mirrors its lifecycle into a process-global atom so a never-scheduled actor cannot let
  * the case pass vacuously, and emits a uniquely-tagged CRIT line we then grep out of the log.

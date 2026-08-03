@@ -10,12 +10,12 @@
 
 ## Summary
 
-The engine has two collaborating types, both declared in `qb/include/qb/core/Main.h` and `qb/include/qb/core/VirtualCore.h`:
+The engine has two collaborating types, both declared in `qb/src/qb/core/Main.h` and `qb/src/qb/core/VirtualCore.h`:
 
 - **`qb::Main`** (aliased `qb::engine`) — the single entry point. You construct one instance, register actors against logical core indices, optionally tune each core, then call `start()` and `join()`.
 - **`qb::VirtualCore`** — a worker that owns a disjoint set of actors and runs their event loop on one thread. Application code never instantiates or touches a `VirtualCore` directly; `qb::Main` constructs one per used core inside its own `std::jthread`.
 
-Each `VirtualCore` runs on its own thread and owns its actors exclusively, with no synchronization on the actor maps or the id pool. Thread safety is structural, not lock-based: actors communicate only by passing events between cores, never by touching another core's actor state directly (`qb/include/qb/core/VirtualCore.h`).
+Each `VirtualCore` runs on its own thread and owns its actors exclusively, with no synchronization on the actor maps or the id pool. Thread safety is structural, not lock-based: actors communicate only by passing events between cores, never by touching another core's actor state directly (`qb/src/qb/core/VirtualCore.h`).
 
 ```mermaid
 flowchart TB
@@ -33,7 +33,7 @@ flowchart TB
     end
 ```
 
-`qb::Main` holds a `std::stop_source` and hands a `std::stop_token` to every worker, so it can request cooperative cancellation without relying on OS signals (`qb/include/qb/core/Main.h`).
+`qb::Main` holds a `std::stop_source` and hands a `std::stop_token` to every worker, so it can request cooperative cancellation without relying on OS signals (`qb/src/qb/core/Main.h`).
 
 ```mermaid
 stateDiagram-v2
@@ -66,7 +66,7 @@ stateDiagram-v2
 
 A *core index* is a logical `qb::CoreId`, not a physical CPU. You assign actors to logical cores; the engine maps each used logical core to one `VirtualCore` worker thread. Whether that thread is pinned to a physical CPU is a separate, best-effort decision made through `setAffinity` (see [Latency and affinity tuning](#3-latency-and-affinity-tuning)).
 
-The valid index range is `0` to `qb::MaxCores - 1`. Requesting `core(index)` with `index >= qb::MaxCores` throws `std::range_error`; `qb::NoAffinity` (defined as `std::numeric_limits<CoreId>::max()`) is deliberately greater than `qb::MaxCores`, so it can never be used as a core index (`qb/include/qb/core/Main.h`, `qb/source/core/src/Main.cpp`).
+The valid index range is `0` to `qb::MaxCores - 1`. Requesting `core(index)` with `index >= qb::MaxCores` throws `std::range_error`; `qb::NoAffinity` (defined as `std::numeric_limits<CoreId>::max()`) is deliberately greater than `qb::MaxCores`, so it can never be used as a core index (`qb/src/qb/core/Main.h`, `qb/source/core/src/Main.cpp`).
 
 ### `CoreInitializer` — per-core setup, pre-start only
 
@@ -111,7 +111,7 @@ int main() {
 
 ### 2. Add actors and read placement
 
-`addActor<T>(index, args...)` is a convenience for `core(index).addActor<T>(args...)`. It records the actor's construction against the chosen core and reserves its `qb::ActorId` immediately; the actor object itself is constructed, and its `onInit()` is run, later when `start()` spins up the worker. The returned id is `qb::ActorId::NotFound` only when reservation fails at registration time — a second `ServiceActor` of a type already registered on that core, or the per-core actor count reaching its limit. `NotFound` is the default-constructed, invalid id; test it with `is_valid()` (`qb/include/qb/core/Main.tpp`, `qb/include/qb/core/ActorId.h`).
+`addActor<T>(index, args...)` is a convenience for `core(index).addActor<T>(args...)`. It records the actor's construction against the chosen core and reserves its `qb::ActorId` immediately; the actor object itself is constructed, and its `onInit()` is run, later when `start()` spins up the worker. The returned id is `qb::ActorId::NotFound` only when reservation fails at registration time — a second `ServiceActor` of a type already registered on that core, or the per-core actor count reaching its limit. `NotFound` is the default-constructed, invalid id; test it with `is_valid()` (`qb/src/qb/core/Main.tpp`, `qb/src/qb/core/ActorId.h`).
 
 A returned valid id does not by itself prove the actor's `onInit()` will succeed: an `onInit()` that returns `false` fails the core with `BadActorInit`; an `onInit()` that throws is caught by the engine and surfaced as `ExceptionThrown`. Either way the failure is reported through `hasError()`, not by changing the already-returned id (`qb/source/core/src/Main.cpp`). Always check `hasError()` after `join()` (see [step 5](#5-check-for-errors)).
 
@@ -176,9 +176,9 @@ engine.setLatency(std::chrono::microseconds(500));
 | `qb::duration::zero()` (the default) | Busy-spin; the core polls continuously and never parks | Lowest latency, 100% CPU on that core |
 | `> 0` | When idle, the core may park on a condition variable up to the given duration | Lowers CPU cost; adds up to that duration of worst-case wake latency |
 
-`setLatency` takes a `qb::duration`, so pass a chrono value (`std::chrono::nanoseconds(500'000)`, `std::chrono::microseconds(500)`) or `qb::duration::zero()` — never a bare integer. Calling it more than once on the same core is safe; the last value wins (`qb/include/qb/core/Main.h`, `examples/all/taskmanager/src/main.cpp`).
+`setLatency` takes a `qb::duration`, so pass a chrono value (`std::chrono::nanoseconds(500'000)`, `std::chrono::microseconds(500)`) or `qb::duration::zero()` — never a bare integer. Calling it more than once on the same core is safe; the last value wins (`qb/src/qb/core/Main.h`, `examples/all/taskmanager/src/main.cpp`).
 
-**Affinity** (`setAffinity(CoreIdSet)`) requests that the worker thread run only on the listed physical CPUs. It is best-effort: a logical `CoreId` need not correspond to a physical CPU, and a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` only logs a warning — it never fails core initialization. `CoreId` values `>= qb::MaxCores` (including `qb::NoAffinity`) are filtered out before pinning, so `qb::NoAffinity` is the explicit, well-defined way to request no pinning (`qb/source/core/src/VirtualCore.cpp`, `qb/include/qb/core/Main.h`):
+**Affinity** (`setAffinity(CoreIdSet)`) requests that the worker thread run only on the listed physical CPUs. It is best-effort: a logical `CoreId` need not correspond to a physical CPU, and a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` only logs a warning — it never fails core initialization. `CoreId` values `>= qb::MaxCores` (including `qb::NoAffinity`) are filtered out before pinning, so `qb::NoAffinity` is the explicit, well-defined way to request no pinning (`qb/source/core/src/VirtualCore.cpp`, `qb/src/qb/core/Main.h`):
 
 ```cpp
 engine.core(0).setAffinity(qb::CoreIdSet{qb::NoAffinity});  // let the OS schedule freely
@@ -197,7 +197,7 @@ engine.join();           // blocks until all cores have stopped
 engine.start(false);
 ```
 
-With `start(true)` (the default), every `VirtualCore` runs on its own `std::jthread` and `start()` returns after all cores cross the startup barrier; call `join()` later to wait for shutdown. With `start(false)`, the calling thread is promoted to the last worker, so `start()` itself blocks until shutdown (`qb/include/qb/core/Main.h`, `qb/source/core/src/Main.cpp`).
+With `start(true)` (the default), every `VirtualCore` runs on its own `std::jthread` and `start()` returns after all cores cross the startup barrier; call `join()` later to wait for shutdown. With `start(false)`, the calling thread is promoted to the last worker, so `start()` itself blocks until shutdown (`qb/src/qb/core/Main.h`, `qb/source/core/src/Main.cpp`).
 
 **Trigger a graceful shutdown** from any thread, including a signal handler:
 
@@ -220,7 +220,7 @@ qb::Main::ignoreSignal(SIGPIPE);     // common for network servers
 
 ### 5. Check for errors
 
-After `join()` (or after a synchronous `start(false)` returns), `hasError()` reports whether any core terminated abnormally. The flags are defined on `qb::VirtualCore::Error` (`qb/include/qb/core/VirtualCore.h`):
+After `join()` (or after a synchronous `start(false)` returns), `hasError()` reports whether any core terminated abnormally. The flags are defined on `qb::VirtualCore::Error` (`qb/src/qb/core/VirtualCore.h`):
 
 ```cpp
 enum VirtualCore::Error : uint64_t {
@@ -254,23 +254,23 @@ You never write against `VirtualCore`, but knowing its loop explains the engine'
 3. **Process I/O events** — drive the thread-local `qb::io::async::listener` (timers, sockets, files, coroutine resumptions).
 4. **Flush outgoing pipes** (`__flush_all__`) — transfer locally buffered events to their destination cores' mailboxes.
 5. **Receive events** (`__receive__`) — drain this core's same-core self-pipe, then its inter-core MPSC mailbox, dispatching each event to the destination actor's `on(E&)`.
-6. **Run registered callbacks** — invoke `ICallback::on(qb::LoopEvent const&)` once per registered actor (after flush and receive). Callbacks must be fast and non-blocking; blocking one stalls the whole core (`qb/include/qb/core/ICallback.h`).
+6. **Run registered callbacks** — invoke `ICallback::on(qb::LoopEvent const&)` once per registered actor (after flush and receive). Callbacks must be fast and non-blocking; blocking one stalls the whole core (`qb/src/qb/core/ICallback.h`).
 7. **Remove killed actors** — destroy actors flagged for removal during this iteration; if none remain, the loop exits.
 8. **Idle** — if `latency > 0` and the spin credit is exhausted, park on a condition variable up to the configured latency.
 
 ### Adaptive backoff
 
-The worker keeps an integer `_spin_credit` seeded from the total work observed in the previous iteration. While there is activity, the core stays in a lock-free spin; only when the credit drains to zero is it allowed to park on the mailbox condition variable (and only if `latency > 0`). This avoids parking during traffic bursts while still yielding CPU during genuine idle periods (`qb/include/qb/core/VirtualCore.h`).
+The worker keeps an integer `_spin_credit` seeded from the total work observed in the previous iteration. While there is activity, the core stays in a lock-free spin; only when the credit drains to zero is it allowed to park on the mailbox condition variable (and only if `latency > 0`). This avoids parking during traffic bursts while still yielding CPU during genuine idle periods (`qb/src/qb/core/VirtualCore.h`).
 
 ### Per-core cached time
 
-`VirtualCore::time()` (which backs `Actor::time()`) returns a nanosecond timestamp refreshed once per loop iteration from `qb::unix_nanos(qb::wall_now())`. Every actor on the core observes the same value within a single iteration, which is constant inside one handler or `on(qb::LoopEvent const&)` invocation. For a continuously updating, high-precision clock, read `qb::wall_now()` directly (`qb/include/qb/core/VirtualCore.h`). The canonical time types are covered in [API overview: time vocabulary](../7_reference/api_overview.md).
+`VirtualCore::time()` (which backs `Actor::time()`) returns a nanosecond timestamp refreshed once per loop iteration from `qb::unix_nanos(qb::wall_now())`. Every actor on the core observes the same value within a single iteration, which is constant inside one handler or `on(qb::LoopEvent const&)` invocation. For a continuously updating, high-precision clock, read `qb::wall_now()` directly (`qb/src/qb/core/VirtualCore.h`). The canonical time types are covered in [API overview: time vocabulary](../7_reference/api_overview.md).
 
 ---
 
 ## Inter-core communication
 
-Cross-core delivery is a buffer-then-flush pipeline, not a direct call (`qb/include/qb/core/Main.h`, `qb/include/qb/system/lockfree/mpsc.h`):
+Cross-core delivery is a buffer-then-flush pipeline, not a direct call (`qb/src/qb/core/Main.h`, `qb/src/qb/system/lockfree/mpsc.h`):
 
 ```mermaid
 flowchart LR
@@ -303,7 +303,7 @@ Backpressure handling depends on delivery class: best-effort (QoS-0) events are 
 - **Assuming affinity is guaranteed.** `setAffinity` is best-effort; a failed pin only warns and never aborts the core. Do not depend on a thread being on a specific physical CPU for correctness (`qb/source/core/src/VirtualCore.cpp`).
 - **Treating logical cores as physical CPUs.** Core indices are logical. Use `setAffinity` to influence physical placement, and remember that `qb::MaxCores` (256) bounds the logical index space, not your machine's CPU count.
 - **Blocking a handler or `on(qb::LoopEvent const&)`.** A `VirtualCore` runs handlers sequentially on one thread; a blocking call freezes every actor on that core. Offload blocking work via `qb::io::async::callback` or events (see [The qb-io asynchronous system](../3_qb_io/async_system.md)).
-- **Ignoring `hasError()`.** A core can terminate early (bad actor init, thrown handler). `join()` returning does not imply success — always check `hasError()` (`qb/include/qb/core/VirtualCore.h`).
+- **Ignoring `hasError()`.** A core can terminate early (bad actor init, thrown handler). `join()` returning does not imply success — always check `hasError()` (`qb/src/qb/core/VirtualCore.h`).
 
 ---
 

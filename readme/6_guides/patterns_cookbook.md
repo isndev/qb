@@ -105,7 +105,7 @@ When you must be able to cancel the timer (a deadline that the response may beat
 callback.
 
 ```cpp
-// src: derived from qb/include/qb/io/async/io.h (ScopedTimeout / scoped_callback)
+// src: derived from qb/src/qb/io/async/io.h (ScopedTimeout / scoped_callback)
 #include <qb/actor.h>
 #include <qb/io.h>
 #include <qb/io/async.h>
@@ -857,7 +857,7 @@ every actor; `engine.join()` returns once they have all terminated.
 
 ```cpp
 // src: derived from examples/core/example5_timers.cpp (broadcast<KillEvent>) and
-//      qb/include/qb/core/Main.h (registerSignal)
+//      qb/src/qb/core/Main.h (registerSignal)
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <qb/io.h>

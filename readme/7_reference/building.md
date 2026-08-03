@@ -20,11 +20,11 @@ This page is the contributor-facing build reference. If you only want to *add qb
 
 Architectures: x86_64 and ARM64 (including Apple Silicon). The continuous integration matrix builds and tests every change on Linux (GCC, Clang / libstdc++), macOS (Apple Clang / libc++), and Windows (MSVC / MSVC STL). See [INSTALL.md](../../INSTALL.md#supported-toolchains) for the matrix.
 
-Dependencies are resolved automatically: most builds need nothing installed beyond a compiler and CMake. libev and stduuid are qb forks, vendored and built from `qb/include/qb/vendor/`; OpenSSL, Argon2, and ngtcp2 are system-only and gate optional features when absent. The full policy lives in [cmake_dependencies.md](./cmake_dependencies.md).
+Dependencies are resolved automatically: most builds need nothing installed beyond a compiler and CMake. libev and stduuid are qb forks, vendored and built from `qb/src/qb/vendor/`; OpenSSL, Argon2, and ngtcp2 are system-only and gate optional features when absent. The full policy lives in [cmake_dependencies.md](./cmake_dependencies.md).
 
 ## Quick build
 
-An out-of-source build. libev and stduuid are vendored as committed files under `qb/include/qb/vendor/`, so they arrive with any clone — the `--recursive` flag is not needed for them:
+An out-of-source build. libev and stduuid are vendored as committed files under `qb/src/qb/vendor/`, so they arrive with any clone — the `--recursive` flag is not needed for them:
 
 ```bash
 # src: qb/INSTALL.md
@@ -38,7 +38,7 @@ ctest --test-dir build --output-on-failure
 If the bundled modules are somehow missing from your checkout, restore them from the repo (a `git submodule update` will not bring them back, because they are committed files, not submodules):
 
 ```bash
-git checkout -- include/qb/vendor
+git checkout -- src/qb/vendor
 ```
 
 `-B build` selects (and creates) the build tree; the source tree is left untouched. `cmake --build` drives whichever generator CMake picked, so the same commands work across Make, Ninja, and Visual Studio. `--parallel` builds with all available cores.
@@ -219,7 +219,7 @@ The two supported integration modes — embed via `add_subdirectory(qb)` or cons
 
 ## Pitfalls
 
-- **Bundled deps missing from a checkout.** libev and stduuid are vendored as committed files under `qb/include/qb/vendor/`, not submodules and not fetched; a normal clone always ships them. A `libev … not found` fatal error means they are missing — restore them with `git checkout -- include/qb/vendor` or re-clone. A `git submodule update` will not bring them back.
+- **Bundled deps missing from a checkout.** libev and stduuid are vendored as committed files under `qb/src/qb/vendor/`, not submodules and not fetched; a normal clone always ships them. A `libev … not found` fatal error means they are missing — restore them with `git checkout -- src/qb/vendor` or re-clone. A `git submodule update` will not bring them back.
 - **Host-tuned binary fails on another machine.** The default `QB_ENABLE_NATIVE_ARCH=ON` targets the build host's CPU. Rebuild with `-DQB_ENABLE_NATIVE_ARCH=OFF` (or the `release-portable` preset) for distributable artifacts.
 - **`CMAKE_BUILD_TYPE` ignored.** With multi-config generators (Visual Studio, Ninja Multi-Config), the configuration is chosen at build time via `--config`, not at configure time.
 - **Sanitizers and profiling collide.** `QB_SANITIZE` and `QB_WITH_PROFILING` intercept the same hooks; enabling both emits a warning. Pick one.

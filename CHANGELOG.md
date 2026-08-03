@@ -56,7 +56,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 ### Changed
 
 - **The vendored libev fork is now `qev`: its own directory, header names, CMake target and C symbol
-  space.** `include/qb/vendor/ev/` → `include/qb/vendor/qev/`, `ev.h`/`ev++.h` → `qev.h`/`qev++.h`
+  space.** `qb/vendor/ev/` → `qb/vendor/qev/`, `ev.h`/`ev++.h` → `qev.h`/`qev++.h`
   (likewise `qev.c`, `qev_vars.h`, `qev_wrap.h`, the generated `qev_config.h` and the backend
   sources), so a consumer writes `#include <qb/vendor/qev/qev++.h>`. The CMake target `ev` is `qev`,
   `qb::ev` is `qb::qev`, `ev::ev` is `qev::qev`, and the archive is `libqev.a`. All 58 exported
