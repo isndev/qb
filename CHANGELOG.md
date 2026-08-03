@@ -9,7 +9,75 @@ policy.
 
 Tracks changes on the development branch that are not yet part of a tagged release.
 
-_Nothing yet._
+### Added
+
+- **`find_package(qbm-<name>)` packages for the qbm modules.** `qb_register_module()` now emits the
+  install and export rules that make a module consumable from an installed tree — one package per
+  module (`qbm-http`, `qbm-pgsql`, `qbm-redis`), so a downstream project writes
+  `find_package(qbm-http CONFIG REQUIRED)` → `qbm::http` and gets `find_dependency(qb)` resolved
+  inside. Headers install under `<prefix>/include/qbm/<name>/`, package files under
+  `<prefix>/lib/cmake/qbm-<name>/`, and the target is spelled `qbm::<name>` identically in the build
+  tree and the install tree. New `qb_register_module()` arguments: `EXPORT_EXTRA_TARGETS` (bundled
+  non-imported targets the module links `PUBLIC`, which must travel in the same export set),
+  `CONFIG_DEPENDENCIES` (a template configured into `qbm-<name>Dependencies.cmake` and included
+  before the targets file, where a module re-creates the ad-hoc `IMPORTED` targets its export set
+  names by string), and `INSTALL_CMAKE_FILES` (extra `Find<Pkg>.cmake` modules shipped beside the
+  package config). Because a module ships a prebuilt archive compiled against one specific qb, the
+  generated config hard-fails at configure time on a qb version *or* feature-flag
+  (`QB_HAS_SSL` / `QB_HAS_QUIC`) mismatch rather than deferring the skew to a compile error.
+- `QBM_INSTALL` option (defaults to `QB_INSTALL`) gating the module install/export rules above. The
+  two are never usefully split: an installed `qbm-http` whose `find_dependency(qb)` has nothing to
+  find is not a package.
+- **`qb_add_executable(... REQUIRES <token>...)`** — capability gating for executables, identical in
+  vocabulary (`ssl`, `quic`, `compression`) and resolved by the same helper as `qb_add_test` /
+  `qb_add_benchmark`. **This is a build gate**: a target whose requirement is unmet is not created at
+  all, so callers can test `if(TARGET ...)`, instead of the target being left to fail the build.
+- `qb-io-test-unit-crypto-nossl-core`, covering the OpenSSL-free members of `qb::crypto`.
+  Deliberately ungated — every other crypto test is `REQUIRES ssl` and therefore unregistered without
+  OpenSSL, so this is the only crypto coverage a `QB_WITH_SSL=OFF` build gets.
+
+### Changed
+
+- **`<qb/io/crypto.h>` now compiles without OpenSSL.** It used to open with
+  `#error "missing OpenSSL Library"`, which gated the *entire* file — including members of
+  `qb::crypto` that call no OpenSSL API. The hex codec in particular is what the PostgreSQL `bytea`
+  wire format is built on, so a cleartext (`QB_WITH_SSL=OFF`) build of `qbm-pgsql` could not compile
+  at all. The gate is now per-member: `to_hex_string`, `hex_value`, `hex_to_string`, `xor_bytes` and
+  `constant_time_compare` are always declared, and are defined in the new `crypto_core.cpp` compiled
+  unconditionally; every OpenSSL-backed member is removed from the class in a no-SSL build, so misuse
+  now fails at the **call site** (`no member named 'md5' in 'qb::crypto'`) rather than at this header.
+- `<qb/io/crypto_jwt.h>` carries its own `#ifndef QB_HAS_SSL` → `#error`. JWT is HMAC, RSA and ECDSA
+  all the way down and has no OpenSSL-free subset; the check moved here from `crypto.h`, which used
+  to cover this case only as a side effect of gating everything.
+
+### Removed
+
+- **`<cube.h>`**, the legacy whole-framework umbrella header (guard `QB_QB_H`; just `qb/actor.h`,
+  `qb/io.h` and `qb/main.h`). **This removes a name from the installed public surface.** It was dead —
+  nothing in the tree ever included it — and it was the last generic top-level name in the installed
+  include root, which is now exactly `qb/` (plus `nlohmann/` when qb falls back to its bundled copy);
+  the `install-consume` CI job asserts that root. qb has no whole-framework convenience header:
+  include the entry points directly (`qb/actor.h` + `qb/main.h` for qb-core, `qb/io.h` for qb-io).
+- **`qb/io/system/sys__inet_compat.inl`**, and with it the `#if QB__HAS_NTOP` fallback branch in
+  `qb/io/system/sys__socket.h` that declared `inet_ntop` / `inet_pton` for it. The bundled fallback
+  was dead and unbuildable three times over: its `#include` resolved from no include path, it opened
+  `qb::inet::ip::compat` rather than the `qb::io::inet::ip::compat` that declared the functions, and
+  its only gate (`QB__HAS_NTOP == 0`) is reachable solely on a pre-Vista Windows target that cannot
+  host C++20 — so the declarations could only ever have produced a link error. Every platform qb
+  builds on provides both functions natively, and `qb::io::inet::ip::compat` is now a pure re-export.
+  The file sat in the public header tree but was never shipped (qb's install rule matches `*.h`,
+  `*.hpp` and `*.tpp` only). `QB__HAS_NTOP` itself is kept as a published feature-test macro.
+- `std::to_string(const uuids::uuid &)` from the vendored stduuid header — a local addition, not
+  upstream. Adding a *declaration* to namespace `std` is undefined behaviour ([namespace.std]/2
+  permits only an explicit specialisation for a program-defined type, which is what the neighbouring
+  `std::hash<uuids::uuid>` is), and it was never needed: `uuids::to_string` is found by ADL for an
+  unqualified call, and every call site in the tree already spells it `uuids::to_string`.
+  **Source-incompatible** for code that called `std::to_string(uuid)`.
+
+### Fixed
+
+- `<qb/uuid.h>` included `<qb/vendor/uuid/include/uuid.h>` *above* its own `QB_UUID_H` include guard,
+  leaving the vendored include outside the guard it was meant to sit behind.
 
 ## [2.6.0] - 2026-06-29
 
