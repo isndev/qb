@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/tcp/socket.cpp
+ * @file qb/io/tcp/socket.cpp
  * @brief Implementation of TCP socket functionality
  *
  * This file contains the implementation of TCP socket operations in the QB framework,

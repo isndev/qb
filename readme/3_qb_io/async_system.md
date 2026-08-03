@@ -93,7 +93,7 @@ The delayed path is self-managing: the `Timeout<_Func>` registers with the liste
 > **Exceptions are swallowed.** The delayed `Timeout<_Func>` invokes the callable inside `try { _func(); } catch (...) {}`. An exception escaping your callback is discarded, not propagated. Handle errors inside the callback.
 
 ```cpp
-// src: derived from qb/source/io/tests/system/async/callback-dispatch.cpp
+// src: derived from qb/tests/io/system/async/callback-dispatch.cpp
 #include <qb/io/async.h>
 #include <qb/system/time.h>
 #include <atomic>
@@ -162,7 +162,7 @@ A timeout of zero or less fires the callback inline at construction (matching `c
 `with_timeout<Derived>` (`qb/io/async/io.h`) is a CRTP base that adds an inactivity timer to a class. It is the mechanism behind session idle-timeouts and operation deadlines.
 
 ```cpp
-// src: derived from qb/source/io/tests/system/async/timer-timeout.cpp (CountingTimer)
+// src: derived from qb/tests/io/system/async/timer-timeout.cpp (CountingTimer)
 #include <qb/io/async.h>
 #include <chrono>
 

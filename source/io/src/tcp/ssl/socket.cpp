@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/tcp/ssl/socket.cpp
+ * @file qb/io/tcp/ssl/socket.cpp
  * @brief Implementation of SSL/TLS socket functionality
  *
  * This file contains the implementation of secure socket operations using SSL/TLS

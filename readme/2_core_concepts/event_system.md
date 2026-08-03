@@ -148,7 +148,7 @@ void broadcast(_Args &&...args) const noexcept;
 `broadcast<E>(args...)` delivers a copy of the event to every actor currently running across all `VirtualCore`s, with this actor as the source. It is built on the `send` path (`qb::VirtualCore::broadcast` calls `send` once per core), so it carries the same trivially-destructible expectation: broadcast plain-data or `qb::string<N>` events, not events holding `std::string`/`std::vector`. To target every actor on a single core instead, push to a `qb::BroadcastId`:
 
 ```cpp
-// src: qb/source/core/tests/system/messaging/messaging-api.cpp + ActorId.h (BroadcastId)
+// src: qb/tests/core/system/messaging/messaging-api.cpp + ActorId.h (BroadcastId)
 broadcast<SystemNotice>("shutting down");         // all actors, all cores
 push<SystemNotice>(qb::BroadcastId(core_id), ""); // all actors on one core
 ```
@@ -162,11 +162,11 @@ void forward(ActorId dest, Event &event) const noexcept;
 
 These two recycle the event object you are currently handling instead of constructing a new one, so the handler must take its argument **by non-const reference**.
 
-- `reply(event)` swaps the event's destination and source and re-marks it alive, returning it to whoever sent it (`qb/source/core/src/VirtualCore.cpp`).
-- `forward(dest, event)` sets the destination to `dest`, **preserves the original source**, and re-marks the event alive, so the new recipient still sees the original sender (`qb/source/core/src/Actor.cpp`).
+- `reply(event)` swaps the event's destination and source and re-marks it alive, returning it to whoever sent it (`qb/src/qb/core/VirtualCore.cpp`).
+- `forward(dest, event)` sets the destination to `dest`, **preserves the original source**, and re-marks the event alive, so the new recipient still sees the original sender (`qb/src/qb/core/Actor.cpp`).
 
 ```cpp
-// src: qb/source/core/tests/system/messaging/messaging-reply-forward.cpp (reply/forward handlers)
+// src: qb/tests/core/system/messaging/messaging-reply-forward.cpp (reply/forward handlers)
 void on(WorkItem &event) {       // non-const reference is required
     event.result = compute(event.input);
     reply(event);                // back to event.getSource()
@@ -179,7 +179,7 @@ void on(WorkForward &event) {    // non-const reference is required
 
 Three constraints follow from the implementation:
 
-1. **Broadcast events cannot be replied to or forwarded.** If `event.getDestination()` is a broadcast id, `reply`/`forward` log a warning and drop the call (`qb/source/core/src/Actor.cpp`).
+1. **Broadcast events cannot be replied to or forwarded.** If `event.getDestination()` is a broadcast id, `reply`/`forward` log a warning and drop the call (`qb/src/qb/core/Actor.cpp`).
 2. **Both route through the unordered `send` path,** not `push`. A replied or forwarded event therefore carries no ordering guarantee relative to events you `push` to the same destination.
 3. **Both byte-recycle the existing event** (`qb::VirtualCore::send(Event const&)` calls `VirtualPipe::recycle`, a raw `memcpy` into the pipe — on the same core as much as across cores), so they carry the same trivially-destructible expectation as `send`, and the relocation rule applies to them unconditionally. Reply or forward events whose members are plain data or `qb::string<N>`; copy a heap-backed payload out and `push` a fresh event instead.
 

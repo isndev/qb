@@ -198,7 +198,7 @@ qb::io::tcp::ssl::socket c;
 c.set_insecure();                            // disables MITM protection — use deliberately
 int rc = c.connect_v4("127.0.0.1", 64388);
 ```
-<!-- src: qb/source/io/tests/system/tls/tls-peer-verification.cpp:140-145 -->
+<!-- src: qb/tests/io/system/tls/tls-peer-verification.cpp:140-145 -->
 
 When you supply your own `SSL` handle through `init(SSL*)`, `qb-io` does **not** modify the
 verification policy; your context's settings are used as-is.
@@ -333,7 +333,7 @@ working directory first and then against the running executable's own directory.
 shipped next to its `cert.pem` / `key.pem` therefore loads them regardless of the cwd it is
 launched from.
 
-<!-- src: qb/source/io/src/tcp/ssl/socket.cpp:186-204, 206-300, 414-418 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:186-204, 206-300, 414-418 -->
 
 ## Building an SSL server
 
@@ -351,7 +351,7 @@ file paths, and hand it to the transport's listener before listening. The aliase
 <!-- src: qb/src/qb/io/async.h:114-127 -->
 
 ```cpp
-// src: qb/source/io/tests/system/tls/tls-text-roundtrip.cpp:78-127 (adapted)
+// src: qb/tests/io/system/tls/tls-text-roundtrip.cpp:78-127 (adapted)
 #include <qb/io/async.h>
 #include <qb/io/protocol/text.h>
 #include <qb/io/tcp/ssl/socket.h>   // qb::io::ssl::create_server_context
@@ -409,7 +409,7 @@ The default client verifies the peer. Against a public CA-signed server, a plain
 `set_insecure()` before connecting.
 
 ```cpp
-// src: qb/source/io/tests/system/tls/tls-text-roundtrip.cpp:104-143 (adapted)
+// src: qb/tests/io/system/tls/tls-text-roundtrip.cpp:104-143 (adapted)
 #include <qb/io/async.h>
 #include <qb/io/protocol/text.h>
 
@@ -464,7 +464,7 @@ command (RSA-2048, `CN=localhost`, 365-day validity, with a `subjectAltName` so 
 verification can pass for `localhost`) is:
 
 ```bash
-# src: qb/source/io/tests/system/CMakeLists.txt:99-101
+# src: qb/tests/io/system/CMakeLists.txt:99-101
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
     -days 365 -nodes \
     -subj "/CN=localhost/O=QB Tests/C=US" \
@@ -490,7 +490,7 @@ A self-signed certificate is rejected by a default (verifying) client; pair it w
 - **Timed connect does not bound the handshake.** The timed `connect(ep, hostname, wtimeout)`
   overloads bound only the underlying TCP connect phase; the TLS handshake itself is not
   separately timed.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.h:467-469, 479-481; qb/source/io/src/tcp/ssl/socket.cpp:743-779 -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.h:467-469, 479-481; qb/src/qb/io/tcp/ssl/socket.cpp:743-779 -->
 - **`SSL_CTX` ownership splits by path.** A context from `create_*_context` is caller-owned
   and must be `SSL_CTX_free`d — unless it is passed to `listener::init()`, which then owns
   and frees it. A `Session` from `get_session()` is always caller-owned; release it with

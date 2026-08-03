@@ -59,7 +59,7 @@ set(QB_MODULES_DIR "${QB_ROOT_DIR}/modules")
 # tree then expose them at the SAME relative path (qb/vendor/<fork>/...) through the SAME single
 # include root, so there is no build-interface/install-interface pair to drift apart.
 set(QB_VENDOR_DIR "${QB_INCLUDE_DIR}/qb/vendor")
-set(QB_SOURCE_DIR "${QB_ROOT_DIR}/source")
+set(QB_SOURCE_DIR "${QB_INCLUDE_DIR}/qb")   # by the rule above: implementation beside its header
 
 # -----------------------------------------------------------------------------
 # Build Configuration Options

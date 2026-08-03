@@ -172,8 +172,8 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
                 '${PROJECT_SOURCE_DIR}/modules/.*'
                 '${PROJECT_SOURCE_DIR}/src/qb/vendor/.*'
                 '${PROJECT_SOURCE_DIR}/examples/.*'
-                '${PROJECT_SOURCE_DIR}/source/.*/tests/benchmark/.*'
-                '${PROJECT_SOURCE_DIR}/source/.*/tests/.*'
+                '${PROJECT_SOURCE_DIR}/tests/.*/benchmark/.*'
+                '${PROJECT_SOURCE_DIR}/tests/.*'
                 '.*benchmark.*'
         )
 

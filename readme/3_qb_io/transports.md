@@ -245,7 +245,7 @@ int main() {
 }
 ```
 
-<!-- src: qb/src/qb/io/tcp/socket.h (connect timed overload), qb/source/io/tests/system/async/async-connect-timeout.cpp -->
+<!-- src: qb/src/qb/io/tcp/socket.h (connect timed overload), qb/tests/io/system/async/async-connect-timeout.cpp -->
 
 ### Reading a UDP datagram with a timeout
 

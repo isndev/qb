@@ -1,5 +1,5 @@
 /**
- * @file qb/core/src/CoreSet.cpp
+ * @file qb/core/CoreSet.cpp
  * @brief Implementation of the CoreSet class for managing core IDs
  *
  * This file contains the implementation of the CoreSet class which manages

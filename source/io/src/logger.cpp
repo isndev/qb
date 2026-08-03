@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/logger.cpp
+ * @file qb/io/logger.cpp
  * @brief Implementation of the logging system
  *
  * This file contains the implementation of the logging system for the QB framework.

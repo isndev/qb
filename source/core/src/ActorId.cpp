@@ -1,5 +1,5 @@
 /**
- * @file qb/core/src/ActorId.cpp
+ * @file qb/core/ActorId.cpp
  * @brief Implementation of the ActorId class for the QB framework
  *
  * This file contains the implementation of the ActorId class which provides

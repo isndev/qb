@@ -198,7 +198,7 @@ You normally never name these directly; the secure transports wire them in for y
 Three steps connect a protocol to a session: declare it, install it, and handle its messages.
 
 ```cpp
-// src: qb/source/io/tests/system/session/text-session-loopback.cpp (adapted)
+// src: qb/tests/io/system/session/text-session-loopback.cpp (adapted)
 #include <qb/io/async.h>
 
 class CommandClient : public qb::io::use<CommandClient>::tcp::client<> {
@@ -232,14 +232,14 @@ public:
 The protocol frames inbound bytes; the sender must produce matching framing. For a delimiter protocol, append the delimiter exposed as `Protocol::end`:
 
 ```cpp
-// src: qb/source/io/tests/system/session/text-session-loopback.cpp
+// src: qb/tests/io/system/session/text-session-loopback.cpp
 *this << msg.text << Protocol::end; // command::end is '\n'
 ```
 
 For a length-prefixed binary protocol, write the network-order header followed by the payload:
 
 ```cpp
-// src: qb/source/io/tests/system/session/text-session-loopback.cpp
+// src: qb/tests/io/system/session/text-session-loopback.cpp
 uint16_t len = htons(static_cast<uint16_t>(payload.size()));
 *this << std::string_view(reinterpret_cast<const char *>(&len), sizeof(len))
       << std::string_view(payload.data(), payload.size());

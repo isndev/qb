@@ -183,7 +183,7 @@ def in_scope(rel: str) -> bool:
         return False
     if Path(rel).suffix not in code_suffixes:
         return False
-    return rel.startswith("src/qb/") or rel.startswith("source/core/") or rel.startswith("source/io/")
+    return rel.startswith("src/qb/")
 
 def resolve_include(owner: str, delimiter: str, target: str, tracked: set[str]):
     candidates = []

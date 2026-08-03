@@ -74,7 +74,7 @@ _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 `push` is the primary and recommended primitive. It constructs `_Event` in place at the **back** of the destination pipe (`allocate_back`, `qb/core/VirtualCore.tpp`) and returns a mutable reference to it, so the sender can finish populating the event after construction:
 
 ```cpp
-// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (BasicPushActor)
+// derived from: qb/tests/core/system/messaging/messaging-api.cpp (BasicPushActor)
 #include <qb/actor.h>
 #include <qb/event.h>
 
@@ -98,13 +98,13 @@ void Producer::on(const TickEvent &) {
 >
 > **This is not a cross-core-only rule.** An event is relocated at three distinct points, and only the last one crosses a core boundary:
 >
-> 1. **Pipe growth and compaction.** The source pipe is a growable buffer: when `allocate_back` outgrows the current capacity it `memcpy`s everything already queued into the new allocation, and `reorder()` can compact a pipe in place with `memmove` once its freed prefix has grown past half the capacity (`qb/system/allocator/pipe.h`). Both move events that are still waiting to be drained — including events whose destination is on the **sending** core, since `push` places those in a pipe too and the core drains that pipe on its next `__receive__` (`qb/source/core/src/VirtualCore.cpp`).
+> 1. **Pipe growth and compaction.** The source pipe is a growable buffer: when `allocate_back` outgrows the current capacity it `memcpy`s everything already queued into the new allocation, and `reorder()` can compact a pipe in place with `memmove` once its freed prefix has grown past half the capacity (`qb/system/allocator/pipe.h`). Both move events that are still waiting to be drained — including events whose destination is on the **sending** core, since `push` places those in a pipe too and the core drains that pipe on its next `__receive__` (`qb/src/qb/core/VirtualCore.cpp`).
 > 2. **`reply` and `forward`.** Both byte-recycle the received event into a pipe with `memcpy` (`VirtualPipe::recycle`, `qb/system/allocator/pipe.h`), same core or not.
 > 3. **The cross-core hop.** Sender pipe → peer mailbox ring → receive buffer: two more `memcpy`s, after which the event is destroyed at an address it was never constructed at.
 >
 > A same-core `push` is therefore *less likely* to expose the bug — the pipe starts at 4096 buckets (256 KiB at the default bucket size) and relocates only when it must grow — but it is not exempt. Design the event type to be relocatable; do not reason about which core the destination happens to be on.
 >
-> Debug builds help, but only partly. Before handing an event to a peer's mailbox ring the engine scans it for a pointer into its own storage and aborts with a diagnostic rather than corrupting the receiver (`SharedCoreCommunication::send`, `qb/source/core/src/Main.cpp`). Two gaps follow from where that check sits: it **never runs for same-core delivery** (which does not go through the mailbox layer at all), and it looks for a word addressing the event's *current* bytes, so a self-pointer that an earlier pipe growth already left dangling now points at the old buffer and falls outside the scanned range. The scan is compiled out under `NDEBUG`, so release pays nothing. Treat a clean debug run as evidence, not proof.
+> Debug builds help, but only partly. Before handing an event to a peer's mailbox ring the engine scans it for a pointer into its own storage and aborts with a diagnostic rather than corrupting the receiver (`SharedCoreCommunication::send`, `qb/src/qb/core/Main.cpp`). Two gaps follow from where that check sits: it **never runs for same-core delivery** (which does not go through the mailbox layer at all), and it looks for a word addressing the event's *current* bytes, so a self-pointer that an earlier pipe growth already left dangling now points at the old buffer and falls outside the scanned range. The scan is compiled out under `NDEBUG`, so release pays nothing. Treat a clean debug run as evidence, not proof.
 
 > Do not retain the returned reference past the current scope. The event's lifetime is owned by the framework once control leaves the handler.
 
@@ -123,7 +123,7 @@ void send(ActorId const &dest, _Args &&...args) const noexcept;
 What the requirement really protects is the **drop** path: a `qb::EventQOS0` event is best-effort, so `__flush_all__` discards it on backpressure *without* disposing it — hence the `static_assert`, and hence the rule that fire-and-forget events derive from `qb::EventQOS0` and stay trivially destructible. Separately, and for `push` as much as `send`, every event payload must be trivially **relocatable** (no pointer into itself) whatever core it is bound for — see the note under [`push`](#push--ordered-the-default).
 
 ```cpp
-// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (BasicSendActor)
+// derived from: qb/tests/core/system/messaging/messaging-api.cpp (BasicSendActor)
 #include <qb/actor.h>
 #include <qb/event.h>
 
@@ -145,10 +145,10 @@ void reply(Event &event) const noexcept;
 ```
 <!-- src: qb/src/qb/core/Actor.h -->
 
-`reply` reuses the received event object instead of allocating a new one. The runtime swaps the event's `dest` and `source`, re-marks it alive, and sends it back (`std::swap(event.dest, event.source)`, `qb/source/core/src/VirtualCore.cpp`). The handler must therefore take its event **by non-const reference**, because the object is mutated in place:
+`reply` reuses the received event object instead of allocating a new one. The runtime swaps the event's `dest` and `source`, re-marks it alive, and sends it back (`std::swap(event.dest, event.source)`, `qb/src/qb/core/VirtualCore.cpp`). The handler must therefore take its event **by non-const reference**, because the object is mutated in place:
 
 ```cpp
-// derived from: qb/source/core/tests/system/messaging/messaging-reply-forward.cpp (reply handler)
+// derived from: qb/tests/core/system/messaging/messaging-reply-forward.cpp (reply handler)
 void Responder::on(MyRequest &request) {     // non-const reference
     request.response = compute(request.query);
     reply(request);                          // sent back to request's source
@@ -156,7 +156,7 @@ void Responder::on(MyRequest &request) {     // non-const reference
 }
 ```
 
-A broadcast event cannot be replied to: if `event.dest.is_broadcast()` is true, `reply` logs a warning and drops the call (`qb/source/core/src/Actor.cpp`). After `reply` returns, the event is consumed — do not read or modify it.
+A broadcast event cannot be replied to: if `event.dest.is_broadcast()` is true, `reply` logs a warning and drops the call (`qb/src/qb/core/Actor.cpp`). After `reply` returns, the event is consumed — do not read or modify it.
 
 ### `forward` — redirect an event, preserving its origin
 
@@ -165,10 +165,10 @@ void forward(ActorId dest, Event &event) const noexcept;
 ```
 <!-- src: qb/src/qb/core/Actor.h -->
 
-`forward` re-routes a received event to a new destination without allocating. It overwrites `event.dest` with the new target but **deliberately leaves `event.source` untouched**, so the original sender remains the logical origin and a downstream `reply` returns to the true client rather than to the forwarding actor (`qb/source/core/src/Actor.cpp`, `qb/source/core/src/VirtualCore.cpp`). As with `reply`, the handler must take a non-const reference, broadcast events cannot be forwarded, and the event is consumed after the call.
+`forward` re-routes a received event to a new destination without allocating. It overwrites `event.dest` with the new target but **deliberately leaves `event.source` untouched**, so the original sender remains the logical origin and a downstream `reply` returns to the true client rather than to the forwarding actor (`qb/src/qb/core/Actor.cpp`, `qb/src/qb/core/VirtualCore.cpp`). As with `reply`, the handler must take a non-const reference, broadcast events cannot be forwarded, and the event is consumed after the call.
 
 ```cpp
-// derived from: qb/source/core/tests/system/messaging/messaging-reply-forward.cpp (forward handler)
+// derived from: qb/tests/core/system/messaging/messaging-reply-forward.cpp (forward handler)
 void Router::on(WorkItem &item) {            // non-const reference
     forward(pick_worker(item), item);        // worker sees the original source
 }
@@ -230,7 +230,7 @@ For sending several events to one destination, or for events with large dynamic 
 `to(dest)` returns an `Actor::EventBuilder` bound to the destination's pipe; each `EventBuilder::push` forwards to `Pipe::push` and returns the builder for chaining (`qb/core/Actor.tpp`). The pipe is resolved once, so repeated sends to the same destination skip the per-call lookup. Ordering matches plain `push`.
 
 ```cpp
-// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (EventBuilderPushActor)
+// derived from: qb/tests/core/system/messaging/messaging-api.cpp (EventBuilderPushActor)
 to(stats_id)
     .push<CounterIncrement>("login_attempts")
     .push<TimerStart>("session");
@@ -252,7 +252,7 @@ template <typename _Event, typename... _Args>
 ```
 
 ```cpp
-// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (AllocatedPipePushActor); pattern from qb/src/qb/core/Pipe.h
+// derived from: qb/tests/core/system/messaging/messaging-api.cpp (AllocatedPipePushActor); pattern from qb/src/qb/core/Pipe.h
 qb::Pipe pipe = getPipe(processor_id);
 auto blob = std::make_shared<std::vector<std::byte>>(1024 * 1024); // 1 MB, on the heap
 // ... fill blob ...
@@ -266,7 +266,7 @@ The `size` argument is the **extra payload bytes beyond the event itself** — `
 
 Pass a non-zero `size` only when you deliberately write raw bytes into the region **immediately following** the event object — the way `AllocatedPipePushActor` in `messaging-api.cpp` does with `allocated_push<TestEvent>(32)` plus a 32-byte tail. Never pass `sizeof(BlobEvent) + blob->size()`: that double-counts one event's worth of space on top of a payload that is already too large.
 
-> **Size the event small, not the payload.** The hint helps the *source pipe* reserve space, but the real ceiling is the destination mailbox. An event's total in-pipe footprint must fit the mailbox ring — about 1023 buckets (≈64 KiB) with the default bucket size. A larger event can never be enqueued into a peer's mailbox, however much that peer drains, so `__flush_all__` treats it as permanently unsendable rather than backpressured: it logs at `LOG_CRIT`, disposes the event (its destructor *does* run) and drops it, then keeps flushing the rest of the pipe (`qb/source/core/src/VirtualCore.cpp`). The message is lost, and nothing at the call site says so. Put bulk data on the heap behind a `std::shared_ptr` member and keep the event struct itself small; do not size `allocated_push` to the payload bytes. (`qb/core/Pipe.h`.)
+> **Size the event small, not the payload.** The hint helps the *source pipe* reserve space, but the real ceiling is the destination mailbox. An event's total in-pipe footprint must fit the mailbox ring — about 1023 buckets (≈64 KiB) with the default bucket size. A larger event can never be enqueued into a peer's mailbox, however much that peer drains, so `__flush_all__` treats it as permanently unsendable rather than backpressured: it logs at `LOG_CRIT`, disposes the event (its destructor *does* run) and drops it, then keeps flushing the rest of the pipe (`qb/src/qb/core/VirtualCore.cpp`). The message is lost, and nothing at the call site says so. Put bulk data on the heap behind a `std::shared_ptr` member and keep the event struct itself small; do not size `allocated_push` to the payload bytes. (`qb/core/Pipe.h`.)
 
 ## Pitfalls
 

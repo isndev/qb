@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/stream.cpp
+ * @file qb/io/stream.cpp
  * @brief Implementation of templated stream classes for file, TCP and UDP sockets.
  *
  * @details This file contains explicit template instantiations for stream classes

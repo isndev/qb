@@ -29,7 +29,7 @@ implementation) and `core/patterns.h` (`qb/src/qb/patterns.h:18-20`). The narrow
 `#include <qb/core/patterns.h>` pulls the eleven module headers but assumes the Actor template
 implementation is already visible (`qb/src/qb/core/patterns.h:27-37`); the test suite includes
 `<qb/core/patterns.h>` alongside `<qb/actor.h>`
-(`qb/source/core/tests/shared/ProbeResponders.h:29-30`).
+(`qb/tests/core/shared/ProbeResponders.h:29-30`).
 
 ### The model the library assumes
 
@@ -68,7 +68,7 @@ These behaviours are uniform across the awaitable patterns and are not repeated 
   `qb::io::async::timeout_error`. A `timeout <= 0` waits indefinitely (until reply or kill)
   (`qb/src/qb/core/patterns/request.h:87-90`).
 - **Run all pattern tests under `ASAN_OPTIONS=detect_leaks=0`** — cross-core asks leave a fixed,
-  benign teardown residual (`qb/source/core/tests/system/coroutine/ask-patterns.cpp:37-38`).
+  benign teardown residual (`qb/tests/core/system/coroutine/ask-patterns.cpp:37-38`).
 
 ---
 
@@ -112,7 +112,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
 (`qb/src/qb/core/Actor.h:1173-1189`); one actor can both ask and answer the same event type
 because `answer`/`resolve_ask` disambiguate replies from inbound requests
-(`qb/source/core/tests/system/coroutine/ask-patterns.cpp:22-23`).
+(`qb/tests/core/system/coroutine/ask-patterns.cpp:22-23`).
 
 ### Example — typed round-trip
 
@@ -143,7 +143,7 @@ spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
     ctx.push<PatternsDone>();
 });
 ```
-<!-- src: qb/source/core/tests/shared/AskResponders.h:57-76 (Ping, Echoer); qb/source/core/tests/system/coroutine/ask-patterns.cpp:172-176 (asker) -->
+<!-- src: qb/tests/core/shared/AskResponders.h:57-76 (Ping, Echoer); qb/tests/core/system/coroutine/ask-patterns.cpp:172-176 (asker) -->
 
 ### Example — absolute deadline across a chain
 
@@ -160,7 +160,7 @@ spawn([fast](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
     use(r.response);                                       // seq 5 + 1 == 6
 });
 ```
-<!-- src: qb/source/core/tests/system/patterns/request-deadline.cpp:63-82 -->
+<!-- src: qb/tests/core/system/patterns/request-deadline.cpp:63-82 -->
 
 ### Flow — `ask` → `answer` correlation
 
@@ -234,7 +234,7 @@ spawn([targets, cap](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
     qb::Main::stop();
 });
 ```
-<!-- src: qb/source/core/tests/system/patterns/aggregate-scatter.cpp:105-117 -->
+<!-- src: qb/tests/core/system/patterns/aggregate-scatter.cpp:105-117 -->
 
 ### Example — quorum (first `k` of `n`)
 
@@ -250,7 +250,7 @@ spawn([targets, k, to](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
     }
 });
 ```
-<!-- src: qb/source/core/tests/system/patterns/aggregate-quorum.cpp:87-103 -->
+<!-- src: qb/tests/core/system/patterns/aggregate-quorum.cpp:87-103 -->
 
 ### Flow — `ask_all` bounded sliding window
 
@@ -314,11 +314,11 @@ spawn([target](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
     use(found.size());
 });
 ```
-<!-- src: qb/source/core/tests/system/patterns/discovery-ping-require.cpp:82-87 -->
+<!-- src: qb/tests/core/system/patterns/discovery-ping-require.cpp:82-87 -->
 
 A plain actor answers discovery out of the box — the kernel auto-registers `PingEvent`, so a worker
 needs no special handler to be discoverable
-(`qb/source/core/tests/system/patterns/discovery-ping-require.cpp:54-61`).
+(`qb/tests/core/system/patterns/discovery-ping-require.cpp:54-61`).
 
 ---
 
@@ -360,7 +360,7 @@ co_await qb::run_saga(ctx, [ok, silent](qb::ScopedCoroContext c, qb::SagaScope &
     (void) co_await qb::ask(c, silent, SagaQ{5}, 30ms);           // step 3 TIMES OUT → rollback
 });
 ```
-<!-- src: qb/source/core/tests/system/patterns/saga-cancel.cpp:103-116 -->
+<!-- src: qb/tests/core/system/patterns/saga-cancel.cpp:103-116 -->
 
 ---
 
@@ -427,7 +427,7 @@ spawn([b = breaker, t, n](qb::ScopedCoroContext ctx) -> qb::io::async::task<void
     }
 });
 ```
-<!-- src: qb/source/core/tests/system/coroutine/coroutine-resilience.cpp:135-150 (ask_retry); :346-360,371 (ask_guarded) -->
+<!-- src: qb/tests/core/system/coroutine/coroutine-resilience.cpp:135-150 (ask_retry); :346-360,371 (ask_guarded) -->
 
 ### Example — rate limiter and bulkhead
 
@@ -448,7 +448,7 @@ spawn([bh](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
     co_await c.sleep(15ms);
 });                                              // slot released here
 ```
-<!-- src: qb/source/core/tests/system/patterns/resilience-rate-limiter.cpp:56-64; qb/source/core/tests/system/patterns/resilience-bulkhead.cpp:64-74 -->
+<!-- src: qb/tests/core/system/patterns/resilience-rate-limiter.cpp:56-64; qb/tests/core/system/patterns/resilience-bulkhead.cpp:64-74 -->
 
 ---
 
@@ -502,7 +502,7 @@ spawn([prod, count, to](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
       catch (const qb::io::async::cancelled_error &) { /* killed while parked */ }
 });
 ```
-<!-- src: qb/source/core/tests/system/patterns/streaming-ask-stream.cpp:53-119 -->
+<!-- src: qb/tests/core/system/patterns/streaming-ask-stream.cpp:53-119 -->
 
 ---
 
@@ -542,7 +542,7 @@ for (int i = 1; i <= publications; ++i)
 // Wiring (the bus is added first):
 main.addActor<qb::PubSub<Tick>>(0);
 ```
-<!-- src: qb/source/core/tests/system/patterns/pubsub-fanout.cpp:120-121,186-188,202 -->
+<!-- src: qb/tests/core/system/patterns/pubsub-fanout.cpp:120-121,186-188,202 -->
 
 ---
 
@@ -612,12 +612,12 @@ protected:
     }
 };
 ```
-<!-- src: qb/source/core/tests/system/patterns/supervisor-strategies.cpp:193-246 -->
+<!-- src: qb/tests/core/system/patterns/supervisor-strategies.cpp:193-246 -->
 
 A subclass that overrides `onInit()` must `co_await qb::Supervisor::onInit()` — the base registers
 `ChildDown` and `KillEvent` and spawns the initial children
 (`qb/src/qb/core/patterns/supervisor.h:137-148`,
-`qb/source/core/tests/system/patterns/supervisor-strategies.cpp:227-231`).
+`qb/tests/core/system/patterns/supervisor-strategies.cpp:227-231`).
 
 ---
 
@@ -647,7 +647,7 @@ for (int i = 0; i < kJobs; ++i)
 // Sticky-by-key:
 push<Session>(pool.for_key(userId), s);          // same user → same worker
 ```
-<!-- src: qb/source/core/tests/system/patterns/routing-dispatch.cpp:125-128 + qb/src/qb/core/patterns/routing.h:42-46 -->
+<!-- src: qb/tests/core/system/patterns/routing-dispatch.cpp:125-128 + qb/src/qb/core/patterns/routing.h:42-46 -->
 
 ---
 
@@ -693,7 +693,7 @@ public:
     }
 };
 ```
-<!-- src: qb/source/core/tests/system/patterns/idempotency-answer.cpp:49-71 -->
+<!-- src: qb/tests/core/system/patterns/idempotency-answer.cpp:49-71 -->
 
 ---
 
@@ -734,7 +734,7 @@ public:
     }
 };
 ```
-<!-- src: qb/source/core/tests/system/patterns/aggregate-batcher.cpp:66-81 -->
+<!-- src: qb/tests/core/system/patterns/aggregate-batcher.cpp:66-81 -->
 
 ---
 
@@ -745,7 +745,7 @@ The awaitable patterns work during actor activation: obtain the context with `Ac
 continuation registry (`qb/src/qb/core/Actor.h:1137-1153`,
 `qb/src/qb/core/Event.h:314-319`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
 `ask_any`, `ask_guarded`, `ask_quorum`, `ask_by`, `run_saga` and `rate_limiter` all inside `onInit()`
-(`qb/source/core/tests/system/init/init-patterns.cpp:105-107,166,203,256,289,321,361,451,496`).
+(`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,256,289,321,361,451,496`).
 
 ```cpp
 qb::io::async::task<bool> onInit() override {
@@ -753,7 +753,7 @@ qb::io::async::task<bool> onInit() override {
     co_return true;
 }
 ```
-<!-- src: qb/source/core/tests/system/init/init-patterns.cpp:105-107 -->
+<!-- src: qb/tests/core/system/init/init-patterns.cpp:105-107 -->
 
 ---
 

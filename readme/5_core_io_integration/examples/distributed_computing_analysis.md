@@ -326,7 +326,7 @@ qb::io::async::callback([this]{ /* ... */ }, delay);
 qb::io::async::callback([this]{ /* ... */ }, qb::duration::zero());
 ```
 
-This matches how the framework's own tests schedule delayed work, e.g. the `1ms` chained callbacks in `qb/source/core/tests/system/timer/async-callback-ordering.cpp` (line 81).
+This matches how the framework's own tests schedule delayed work, e.g. the `1ms` chained callbacks in `qb/tests/core/system/timer/async-callback-ordering.cpp` (line 81).
 
 ### The example's `getCurrentTimestamp()` is not the canonical clock
 

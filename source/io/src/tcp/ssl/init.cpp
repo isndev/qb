@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/tcp/ssl/init.cpp
+ * @file qb/io/tcp/ssl/init.cpp
  * @brief SSL/TLS library initialization implementation
  *
  * This file contains the implementation for initializing and configuring the SSL/TLS

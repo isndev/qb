@@ -150,7 +150,7 @@ To find the best backend on a given machine, run the cross-backend stress benchm
 # On a native Linux host (or: docker run --security-opt seccomp=unconfined) io_uring joins the sweep.
 ```
 
-The same `QB_EV_BACKEND` values can be wired into CI test coverage via the opt-in CMake matrix `-DQB_IO_EV_TEST_BACKENDS="select;poll;…"` (see `source/io/tests/system/CMakeLists.txt`).
+The same `QB_EV_BACKEND` values can be wired into CI test coverage via the opt-in CMake matrix `-DQB_IO_EV_TEST_BACKENDS="select;poll;…"` (see `tests/io/system/CMakeLists.txt`).
 
 ### Messaging cost
 

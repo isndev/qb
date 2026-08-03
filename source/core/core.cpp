@@ -23,8 +23,8 @@
  * @ingroup Core
  */
 
-#include "src/ActorId.cpp"
-#include "src/VirtualCore.cpp"
-#include "src/Actor.cpp"
-#include "src/CoreSet.cpp"
-#include "src/Main.cpp"
+#include "ActorId.cpp"
+#include "VirtualCore.cpp"
+#include "Actor.cpp"
+#include "CoreSet.cpp"
+#include "Main.cpp"

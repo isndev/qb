@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/compression.cpp
+ * @file qb/io/compression.cpp
  * @brief Implementation of compression and decompression interfaces
  *
  * @details This file provides implementations for various compression algorithms

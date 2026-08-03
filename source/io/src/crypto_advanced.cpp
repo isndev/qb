@@ -1,5 +1,5 @@
 /**
- * @file qb/source/io/src/crypto_advanced.cpp
+ * @file qb/io/crypto_advanced.cpp
  * @brief Implementation of advanced cryptographic utilities for the QB IO library
  *
  * This file provides implementations of advanced cryptographic operations such as:
