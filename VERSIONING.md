@@ -1,9 +1,13 @@
-<!-- Verified-against: qb 2.6.0 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 2.7.0 (C++20 default, C++23 supported) -->
 
 # Versioning and compatibility
 
-qb follows [Semantic Versioning 2.0.0](https://semver.org/). The current version is **2.6.0**, defined in
-`cmake/qbConfig.cmake` and consumed by `project()` in `CMakeLists.txt`.
+qb follows [Semantic Versioning 2.0.0](https://semver.org/). The version is defined in
+`cmake/qbConfig.cmake` (`QB_FRAMEWORK_VERSION`) and consumed by `project()` in `CMakeLists.txt` — that
+file is the single source of truth, and every other version string in the tree is a copy of it.
+
+The latest **tagged release** is **2.6.0**. The `develop` branch, where the next minor accumulates,
+reports **2.7.0**; a build made from `develop` therefore advertises a version that is not yet tagged.
 
 ## What each release level means
 
