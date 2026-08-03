@@ -114,7 +114,7 @@ registry, or as a member — never relocate them.
 
 > **`run_once()` footgun.** The bundled libev disables timerfd by default — the
 > `QB_EV_USE_TIMERFD` CMake option is `OFF` (`include/qb/vendor/ev/CMakeLists.txt:69`).
-> Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
+> Built with `-DQB_EV_USE_TIMERFD=ON` and with only `qev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
 > `run(EVRUN_NOWAIT)` instead (`include/qb/io/async/listener.h:777`).
@@ -146,14 +146,14 @@ registry, or as a member — never relocate them.
   listener TLS. Do not add a drain step.
 - All timeout, interval, and delay parameters in this layer are
   `qb::duration` (`std::chrono::nanoseconds`); the only raw `double` is libev's
-  `ev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /
+  `qev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /
   `from_ev_seconds` seam (`include/qb/io/async/io.h:118`). The retired
   pre-2.0 capitalized time identifiers appear nowhere in this layer and must
   never be reintroduced; the canonical vocabulary is `qb::duration`,
   `qb::mono_time`, and `qb::wall_time`
   (`include/qb/system/time.h`).
 
-> `callback()` refreshes libev's cached monotonic "now" (`ev_now_update`) before
+> `callback()` refreshes libev's cached monotonic "now" (`qev_now_update`) before
 > arming a timer, so a timer scheduled after the owning thread blocked outside
 > the loop does not expire far earlier than requested
 > (`include/qb/io/async/io.h:380`).
@@ -356,7 +356,7 @@ with I/O lifetime are:
   `source/io/src/udp/socket.cpp:102`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
-  libev's `ev_stat` stores the narrow `const char *` it is given **without
+  qev's `qev_stat` stores the narrow `const char *` it is given **without
   copying** (`include/qb/vendor/ev/ev++.h:696`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
   `_watched_path.c_str()` to the watcher (`include/qb/io/async/io.h:576`, `:740`).

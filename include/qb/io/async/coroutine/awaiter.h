@@ -254,7 +254,7 @@ struct awaiter_base {
  * @brief Timer-based awaiter
  *
  * Suspends the coroutine until a specified duration elapses.
- * Uses libev's ev_timer watcher internally.
+ * Uses qev's qev_timer watcher internally.
  *
  * This implementation is exception-safe and prevents use-after-free
  * by stopping the watcher in await_resume() and the destructor.
@@ -272,7 +272,7 @@ struct timer_awaiter : awaiter_base {
     /**
      * @brief libev timer watcher
      */
-    ev_timer watcher_{};
+    qev_timer watcher_{};
 
     /**
      * @brief Reference to the event loop
@@ -311,7 +311,7 @@ struct timer_awaiter : awaiter_base {
         , yield_only_(duration.count() <= 0) {
         if (!yield_only_) {
             double after = qb::detail::to_ev_seconds(duration);
-            ev_timer_init(&watcher_, timer_callback, after, 0.0);
+            qev_timer_init(&watcher_, timer_callback, after, 0.0);
             watcher_.data = this;
         }
     }
@@ -340,12 +340,12 @@ struct timer_awaiter : awaiter_base {
         // at loop iteration boundaries. If the worker thread has been out of
         // the loop for a while (e.g. a blocking `std::this_thread::sleep_for`
         // from user code, or a synchronous I/O client call), that cache is
-        // stale — a newly started `ev_timer` computes its expiration relative
+        // stale — a newly started `qev_timer` computes its expiration relative
         // to the stale time and may fire immediately. We fix that by forcing
         // a time-cache refresh before starting the watcher, mirroring the
         // same fix we landed in `async::callback` (io.h).
-        ev_now_update(static_cast<struct ev_loop *>(loop_));
-        ev_timer_start(loop_, &watcher_);
+        qev_now_update(static_cast<struct qev_loop *>(loop_));
+        qev_timer_start(loop_, &watcher_);
         started_ = true;
     }
 
@@ -362,10 +362,10 @@ struct timer_awaiter : awaiter_base {
             return;
         }
         // Always stop when armed — see the destructor's note on the one-shot
-        // auto-stop / still-pending window. `ev_timer_stop` clears any pending
+        // auto-stop / still-pending window. `qev_timer_stop` clears any pending
         // event for this watcher first, then no-ops if already inactive.
         if (started_) {
-            ev_timer_stop(loop_, &watcher_);
+            qev_timer_stop(loop_, &watcher_);
             started_ = false;
         }
         // Unregister from suspended set (in case on_event_ready wasn't called)
@@ -385,24 +385,24 @@ struct timer_awaiter : awaiter_base {
         if (yield_only_) {
             return;
         }
-        // CRITICAL — do NOT gate this on `ev_is_active`. A one-shot ev_timer
+        // CRITICAL — do NOT gate this on `qev_is_active`. A one-shot qev_timer
         // (repeat == 0, which `sleep()` always uses) is auto-stopped by libev's
         // `timers_reify()` the instant it expires — BEFORE its callback is
-        // invoked (ev.c: `else ev_timer_stop(w); /* nonrepeating */`). So in the
-        // window between expiry and `ev_invoke_pending()` the watcher is
+        // invoked (ev.c: `else qev_timer_stop(w); /* nonrepeating */`). So in the
+        // window between expiry and `qev_invoke_pending()` the watcher is
         // INACTIVE but still PENDING: it sits in libev's `pendings[]` array with
         // `w->data` pointing at THIS awaiter. If the coroutine frame holding this
         // awaiter is destroyed in that window (e.g. a same-tick cancellation tears
         // down the inner task before the scheduler drains the ready queue), an
-        // `ev_is_active`-gated stop would be skipped, leaving the freed watcher in
-        // `pendings[]`. `ev_invoke_pending()` would then call `timer_callback()`
+        // `qev_is_active`-gated stop would be skipped, leaving the freed watcher in
+        // `pendings[]`. `qev_invoke_pending()` would then call `timer_callback()`
         // on freed memory and `schedule_resume()` a destroyed handle — a
         // use-after-free that surfaces as a wild `handle.resume()` in run_ready().
-        // `ev_timer_stop()` calls `clear_pending()` FIRST, unconditionally (it
+        // `qev_timer_stop()` calls `clear_pending()` FIRST, unconditionally (it
         // evicts the watcher from `pendings[]`), then no-ops if already inactive —
         // so calling it whenever the timer was armed is both necessary and safe.
         if (started_) {
-            ev_timer_stop(loop_, &watcher_);
+            qev_timer_stop(loop_, &watcher_);
             started_ = false;
         }
     }
@@ -413,7 +413,7 @@ struct timer_awaiter : awaiter_base {
      * Static callback invoked by libev. Schedules the coroutine for resumption.
      */
     static void
-    timer_callback(struct ev_loop *, ev_timer *w, int) noexcept {
+    timer_callback(struct qev_loop *, qev_timer *w, int) noexcept {
         auto *self = static_cast<timer_awaiter *>(w->data);
         if (self) {
 #ifdef QB_DEBUG_COROUTINES
@@ -428,7 +428,7 @@ struct timer_awaiter : awaiter_base {
  * @brief Socket I/O awaiter
  *
  * Suspends the coroutine until a socket is ready for reading/writing.
- * Uses libev's ev_io watcher internally.
+ * Uses qev's qev_io watcher internally.
  *
  * This implementation is exception-safe and prevents use-after-free
  * by stopping the watcher in await_resume() and the destructor.
@@ -457,7 +457,7 @@ struct socket_awaiter : awaiter_base {
     /**
      * @brief libev I/O watcher
      */
-    ev_io watcher_{};
+    qev_io watcher_{};
 
     /**
      * @brief Reference to event loop
@@ -479,7 +479,7 @@ struct socket_awaiter : awaiter_base {
         : fd_(fd)
         , events_(events)
         , loop_(loop) {
-        ev_io_init(&watcher_, io_callback, fd, events);
+        qev_io_init(&watcher_, io_callback, fd, events);
         watcher_.data = this;
     }
 
@@ -487,7 +487,7 @@ struct socket_awaiter : awaiter_base {
     socket_awaiter(uintptr_t handle, int events, ev::loop_ref loop = ev::get_default_loop())
         : events_(events)
         , loop_(loop) {
-        ev_io_init_sock(&watcher_, io_callback, handle, events);
+        qev_io_init_sock(&watcher_, io_callback, handle, events);
         watcher_.data = this;
     }
 #endif
@@ -507,7 +507,7 @@ struct socket_awaiter : awaiter_base {
             scheduler_ = &CoroutineScheduler::current();
         }
         register_suspended(); // Track this coroutine as suspended
-        ev_io_start(loop_, &watcher_);
+        qev_io_start(loop_, &watcher_);
         started_ = true;
     }
 
@@ -519,12 +519,12 @@ struct socket_awaiter : awaiter_base {
      */
     void
     await_resume() {
-        // Gate only on `started_`, never on `ev_is_active`: `ev_io_stop` clears
+        // Gate only on `started_`, never on `qev_is_active`: `qev_io_stop` clears
         // any pending event for this watcher first (so a fired-but-not-yet-drained
         // watcher cannot be invoked on a freed frame later), then no-ops if the
         // watcher is already inactive. Mirrors the timer_awaiter teardown note.
         if (started_) {
-            ev_io_stop(loop_, &watcher_);
+            qev_io_stop(loop_, &watcher_);
             started_ = false;
         }
         // Unregister from suspended set (in case on_event_ready wasn't called)
@@ -541,13 +541,13 @@ struct socket_awaiter : awaiter_base {
      */
     ~socket_awaiter() override {
         unschedule(); // full scrub: a fired-but-not-yet-resumed frame must leave ready_queue_/in_flight_ too
-        // Gate only on `started_` (not `ev_is_active`): `ev_io_stop` clears any
+        // Gate only on `started_` (not `qev_is_active`): `qev_io_stop` clears any
         // pending event for this watcher first, then no-ops if already inactive —
         // so a watcher that fired this tick but whose frame is being destroyed
         // before run_ready() drains it can never be invoked on freed memory.
         // See the timer_awaiter destructor for the full one-shot rationale.
         if (started_) {
-            ev_io_stop(loop_, &watcher_);
+            qev_io_stop(loop_, &watcher_);
             started_ = false;
         }
     }
@@ -558,7 +558,7 @@ struct socket_awaiter : awaiter_base {
      * Static callback invoked by libev. Schedules the coroutine for resumption.
      */
     static void
-    io_callback(struct ev_loop *, ev_io *w, int revents) noexcept {
+    io_callback(struct qev_loop *, qev_io *w, int revents) noexcept {
         auto *self = static_cast<socket_awaiter *>(w->data);
         if (self) {
             (void) revents; // Could check which event fired for logging

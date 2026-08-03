@@ -171,7 +171,7 @@ TEST_F(CallbackDispatchTest, DeferFromWithinDeferWaitsForTheNextTurn) {
 TEST_F(CallbackDispatchTest, DeferIsDrainedFromInsideABlockingRun) {
     std::vector<int> order; // 1 = deferred callback, 2 = watchdog timer
 
-    async::callback([] {}, 1h); // a never-firing watcher keeps ev_run parked
+    async::callback([] {}, 1h); // a never-firing watcher keeps qev_run parked
     async::callback(
         [&order] {
             order.push_back(2);

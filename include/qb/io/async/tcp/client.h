@@ -218,7 +218,7 @@ public:
      *          `_Transport` (the socket fd owner) is destroyed BEFORE the
      *          `io<_Derived>` base (which owns the libev watcher). If the watcher
      *          were left active until the `io<_Derived>` base destructor, libev's
-     *          `ev_io_stop` would run against an already-closed fd and corrupt its
+     *          `qev_io_stop` would run against an already-closed fd and corrupt its
      *          per-fd bookkeeping (`anfds[fd]`), an intermittent
      *          use-after-close that surfaces as a later crash in `clear_pending`/
      *          `fd_change`. This destructor body runs *before* any base

@@ -144,7 +144,7 @@ EV_CPP(extern "C" {)
 #ifndef EV_TSTAMP_T
 #define EV_TSTAMP_T double
 #endif
-typedef EV_TSTAMP_T ev_tstamp;
+typedef EV_TSTAMP_T qev_tstamp;
 
 #include <stddef.h> /* for offsetof */
 #include <string.h> /* for memmove */
@@ -164,14 +164,14 @@ typedef EV_TSTAMP_T ev_tstamp;
 
 /* support multiple event loops? */
 #if EV_MULTIPLICITY
-    struct ev_loop;
-#define EV_P struct ev_loop *loop           /* a loop as sole parameter in a declaration */
+    struct qev_loop;
+#define EV_P struct qev_loop *loop           /* a loop as sole parameter in a declaration */
 #define EV_P_ EV_P,                         /* a loop as first of multiple parameters */
 #define EV_A loop                           /* a loop as sole argument to a function call */
 #define EV_A_ EV_A,                         /* a loop as first of multiple arguments */
-#define EV_DEFAULT_UC ev_default_loop_uc_() /* the default loop, if initialised, as sole arg */
+#define EV_DEFAULT_UC qev_default_loop_uc_() /* the default loop, if initialised, as sole arg */
 #define EV_DEFAULT_UC_ EV_DEFAULT_UC,       /* the default loop as first of multiple arguments */
-#define EV_DEFAULT ev_default_loop(0)       /* the default loop as sole arg */
+#define EV_DEFAULT qev_default_loop(0)       /* the default loop as sole arg */
 #define EV_DEFAULT_ EV_DEFAULT,             /* the default loop as first of multiple arguments */
 #else
 #define EV_P void
@@ -212,8 +212,8 @@ typedef EV_TSTAMP_T ev_tstamp;
     enum {
         EV_UNDEF    = (int) 0xFFFFFFFF, /* guaranteed to be invalid */
         EV_NONE     = 0x00,             /* no events */
-        EV_READ     = 0x01,             /* ev_io detected read will not block */
-        EV_WRITE    = 0x02,             /* ev_io detected write will not block */
+        EV_READ     = 0x01,             /* qev_io detected read will not block */
+        EV_WRITE    = 0x02,             /* qev_io detected write will not block */
         EV__IOFDSET = 0x80,             /* internal use only */
         EV_IO       = EV_READ,          /* alias for type-detection */
         EV_TIMER    = 0x00000100,       /* timer timed out */
@@ -248,7 +248,7 @@ typedef EV_TSTAMP_T ev_tstamp;
 #endif
 
 /* not official, do not use */
-#define EV_CB(type, name) void name(EV_P_ struct ev_##type *w, int revents)
+#define EV_CB(type, name) void name(EV_P_ struct qev_##type *w, int revents)
 
     /*
      * struct member types:
@@ -283,224 +283,224 @@ typedef EV_TSTAMP_T ev_tstamp;
 
 #define EV_WATCHER_LIST(type) \
     EV_WATCHER(type)          \
-    struct ev_watcher_list *next; /* private */
+    struct qev_watcher_list *next; /* private */
 
 #define EV_WATCHER_TIME(type) \
     EV_WATCHER(type)          \
-    ev_tstamp at; /* private */
+    qev_tstamp at; /* private */
 
     /* base class, nothing to see here unless you subclass */
-    typedef struct ev_watcher {
-        EV_WATCHER(ev_watcher)
-    } ev_watcher;
+    typedef struct qev_watcher {
+        EV_WATCHER(qev_watcher)
+    } qev_watcher;
 
     /* base class, nothing to see here unless you subclass */
-    typedef struct ev_watcher_list {
-        EV_WATCHER_LIST(ev_watcher_list)
-    } ev_watcher_list;
+    typedef struct qev_watcher_list {
+        EV_WATCHER_LIST(qev_watcher_list)
+    } qev_watcher_list;
 
     /* base class, nothing to see here unless you subclass */
-    typedef struct ev_watcher_time {
-        EV_WATCHER_TIME(ev_watcher_time)
-    } ev_watcher_time;
+    typedef struct qev_watcher_time {
+        EV_WATCHER_TIME(qev_watcher_time)
+    } qev_watcher_time;
 
-    EV_INLINE int *ev_watcher_active_(void *w) EV_NOEXCEPT {
-        return (int *) (void *) ((char *) w + offsetof(ev_watcher, active));
+    EV_INLINE int *qev_watcher_active_(void *w) EV_NOEXCEPT {
+        return (int *) (void *) ((char *) w + offsetof(qev_watcher, active));
     }
 
-    EV_INLINE const int *ev_watcher_active_const_(const void *w) EV_NOEXCEPT {
-        return (const int *) (const void *) ((const char *) w + offsetof(ev_watcher, active));
+    EV_INLINE const int *qev_watcher_active_const_(const void *w) EV_NOEXCEPT {
+        return (const int *) (const void *) ((const char *) w + offsetof(qev_watcher, active));
     }
 
-    EV_INLINE int *ev_watcher_pending_(void *w) EV_NOEXCEPT {
-        return (int *) (void *) ((char *) w + offsetof(ev_watcher, pending));
+    EV_INLINE int *qev_watcher_pending_(void *w) EV_NOEXCEPT {
+        return (int *) (void *) ((char *) w + offsetof(qev_watcher, pending));
     }
 
-    EV_INLINE const int *ev_watcher_pending_const_(const void *w) EV_NOEXCEPT {
-        return (const int *) (const void *) ((const char *) w + offsetof(ev_watcher, pending));
+    EV_INLINE const int *qev_watcher_pending_const_(const void *w) EV_NOEXCEPT {
+        return (const int *) (const void *) ((const char *) w + offsetof(qev_watcher, pending));
     }
 
 #if EV_MINPRI != EV_MAXPRI
-    EV_INLINE int *ev_watcher_priority_(void *w) EV_NOEXCEPT {
-        return (int *) (void *) ((char *) w + offsetof(ev_watcher, priority));
+    EV_INLINE int *qev_watcher_priority_(void *w) EV_NOEXCEPT {
+        return (int *) (void *) ((char *) w + offsetof(qev_watcher, priority));
     }
 
-    EV_INLINE const int *ev_watcher_priority_const_(const void *w) EV_NOEXCEPT {
-        return (const int *) (const void *) ((const char *) w + offsetof(ev_watcher, priority));
+    EV_INLINE const int *qev_watcher_priority_const_(const void *w) EV_NOEXCEPT {
+        return (const int *) (const void *) ((const char *) w + offsetof(qev_watcher, priority));
     }
 #endif
 
     /* invoked when fd is either EV_READable or EV_WRITEable */
     /* revent EV_READ, EV_WRITE */
-    typedef struct ev_io {
-        EV_WATCHER_LIST(ev_io)
+    typedef struct qev_io {
+        EV_WATCHER_LIST(qev_io)
 
         int fd;     /* ro */
         int events; /* ro */
 #if defined _WIN32
         uintptr_t handle; /* ro: native win32 socket/handle for fd mapping */
 #endif
-    } ev_io;
+    } qev_io;
 
     /* invoked after a specific time, repeatable (based on monotonic clock) */
     /* revent EV_TIMEOUT */
-    typedef struct ev_timer {
-        EV_WATCHER_TIME(ev_timer)
+    typedef struct qev_timer {
+        EV_WATCHER_TIME(qev_timer)
 
-        ev_tstamp repeat; /* rw */
-    } ev_timer;
+        qev_tstamp repeat; /* rw */
+    } qev_timer;
 
     /* invoked at some specific time, possibly repeating at regular intervals (based on UTC) */
     /* revent EV_PERIODIC */
-    typedef struct ev_periodic {
-        EV_WATCHER_TIME(ev_periodic)
+    typedef struct qev_periodic {
+        EV_WATCHER_TIME(qev_periodic)
 
-        ev_tstamp offset;                                                             /* rw */
-        ev_tstamp interval;                                                           /* rw */
-        ev_tstamp (*reschedule_cb)(struct ev_periodic *w, ev_tstamp now) EV_NOEXCEPT; /* rw */
-    } ev_periodic;
+        qev_tstamp offset;                                                             /* rw */
+        qev_tstamp interval;                                                           /* rw */
+        qev_tstamp (*reschedule_cb)(struct qev_periodic *w, qev_tstamp now) EV_NOEXCEPT; /* rw */
+    } qev_periodic;
 
     /* invoked when the given signal has been received */
     /* revent EV_SIGNAL */
-    typedef struct ev_signal {
-        EV_WATCHER_LIST(ev_signal)
+    typedef struct qev_signal {
+        EV_WATCHER_LIST(qev_signal)
 
         int signum; /* ro */
-    } ev_signal;
+    } qev_signal;
 
     /* invoked when sigchld is received and waitpid indicates the given pid */
     /* revent EV_CHILD */
     /* does not support priorities */
-    typedef struct ev_child {
-        EV_WATCHER_LIST(ev_child)
+    typedef struct qev_child {
+        EV_WATCHER_LIST(qev_child)
 
         int flags;   /* private */
         int pid;     /* ro */
         int rpid;    /* rw, holds the received pid */
         int rstatus; /* rw, holds the exit status, use the macros from sys/wait.h */
-    } ev_child;
+    } qev_child;
 
 #if EV_STAT_ENABLE
 /* st_nlink = 0 means missing file or other error */
 #ifdef _WIN32
-    typedef struct _stati64 ev_statdata;
+    typedef struct _stati64 qev_statdata;
 #else
-typedef struct stat ev_statdata;
+typedef struct stat qev_statdata;
 #endif
 
     /* invoked each time the stat data changes for a given path */
     /* revent EV_STAT */
-    typedef struct ev_stat {
-        EV_WATCHER_LIST(ev_stat)
+    typedef struct qev_stat {
+        EV_WATCHER_LIST(qev_stat)
 
-        ev_timer    timer;    /* private */
-        ev_tstamp   interval; /* ro */
+        qev_timer    timer;    /* private */
+        qev_tstamp   interval; /* ro */
         const char *path;     /* ro */
-        ev_statdata prev;     /* ro */
-        ev_statdata attr;     /* ro */
+        qev_statdata prev;     /* ro */
+        qev_statdata attr;     /* ro */
 
         int wd; /* wd for inotify, fd for kqueue */
-    } ev_stat;
+    } qev_stat;
 #endif
 
     /* invoked when the nothing else needs to be done, keeps the process from blocking */
     /* revent EV_IDLE */
-    typedef struct ev_idle {
-        EV_WATCHER(ev_idle)
-    } ev_idle;
+    typedef struct qev_idle {
+        EV_WATCHER(qev_idle)
+    } qev_idle;
 
     /* invoked for each run of the mainloop, just before the blocking call */
     /* you can still change events in any way you like */
     /* revent EV_PREPARE */
-    typedef struct ev_prepare {
-        EV_WATCHER(ev_prepare)
-    } ev_prepare;
+    typedef struct qev_prepare {
+        EV_WATCHER(qev_prepare)
+    } qev_prepare;
 
     /* invoked for each run of the mainloop, just after the blocking call */
     /* revent EV_CHECK */
-    typedef struct ev_check {
-        EV_WATCHER(ev_check)
-    } ev_check;
+    typedef struct qev_check {
+        EV_WATCHER(qev_check)
+    } qev_check;
 
     /* the callback gets invoked before check in the child process when a fork was detected */
     /* revent EV_FORK */
-    typedef struct ev_fork {
-        EV_WATCHER(ev_fork)
-    } ev_fork;
+    typedef struct qev_fork {
+        EV_WATCHER(qev_fork)
+    } qev_fork;
 
     /* is invoked just before the loop gets destroyed */
     /* revent EV_CLEANUP */
-    typedef struct ev_cleanup {
-        EV_WATCHER(ev_cleanup)
-    } ev_cleanup;
+    typedef struct qev_cleanup {
+        EV_WATCHER(qev_cleanup)
+    } qev_cleanup;
 
 #if EV_EMBED_ENABLE
     /* used to embed an event loop inside another */
     /* the callback gets invoked when the event loop has handled events, and can be 0 */
-    typedef struct ev_embed {
-        EV_WATCHER(ev_embed)
+    typedef struct qev_embed {
+        EV_WATCHER(qev_embed)
 
-        struct ev_loop *other; /* ro */
+        struct qev_loop *other; /* ro */
 #undef EV_IO_ENABLE
 #define EV_IO_ENABLE 1
-        ev_io io; /* private */
+        qev_io io; /* private */
 #undef EV_PREPARE_ENABLE
 #define EV_PREPARE_ENABLE 1
-        ev_prepare  prepare;  /* private */
-        ev_check    check;    /* unused */
-        ev_timer    timer;    /* unused */
-        ev_periodic periodic; /* unused */
-        ev_idle     idle;     /* unused */
-        ev_fork     fork;     /* private */
-        ev_cleanup  cleanup;  /* unused */
-    } ev_embed;
+        qev_prepare  prepare;  /* private */
+        qev_check    check;    /* unused */
+        qev_timer    timer;    /* unused */
+        qev_periodic periodic; /* unused */
+        qev_idle     idle;     /* unused */
+        qev_fork     fork;     /* private */
+        qev_cleanup  cleanup;  /* unused */
+    } qev_embed;
 #endif
 
 #if EV_ASYNC_ENABLE
-    /* invoked when somebody calls ev_async_send on the watcher */
+    /* invoked when somebody calls qev_async_send on the watcher */
     /* revent EV_ASYNC */
-    typedef struct ev_async {
-        EV_WATCHER(ev_async)
+    typedef struct qev_async {
+        EV_WATCHER(qev_async)
 
         EV_ATOMIC_T sent; /* private */
-    } ev_async;
+    } qev_async;
 
-#define ev_async_pending(w) (+(w)->sent)
+#define qev_async_pending(w) (+(w)->sent)
 #endif
 
     /* the presence of this union forces similar struct layout */
-    union ev_any_watcher {
-        struct ev_watcher      w;
-        struct ev_watcher_list wl;
+    union qev_any_watcher {
+        struct qev_watcher      w;
+        struct qev_watcher_list wl;
 
-        struct ev_io       io;
-        struct ev_timer    timer;
-        struct ev_periodic periodic;
-        struct ev_signal   signal;
-        struct ev_child    child;
+        struct qev_io       io;
+        struct qev_timer    timer;
+        struct qev_periodic periodic;
+        struct qev_signal   signal;
+        struct qev_child    child;
 #if EV_STAT_ENABLE
-        struct ev_stat stat;
+        struct qev_stat stat;
 #endif
 #if EV_IDLE_ENABLE
-        struct ev_idle idle;
+        struct qev_idle idle;
 #endif
-        struct ev_prepare prepare;
-        struct ev_check   check;
+        struct qev_prepare prepare;
+        struct qev_check   check;
 #if EV_FORK_ENABLE
-        struct ev_fork fork;
+        struct qev_fork fork;
 #endif
 #if EV_CLEANUP_ENABLE
-        struct ev_cleanup cleanup;
+        struct qev_cleanup cleanup;
 #endif
 #if EV_EMBED_ENABLE
-        struct ev_embed embed;
+        struct qev_embed embed;
 #endif
 #if EV_ASYNC_ENABLE
-        struct ev_async async;
+        struct qev_async async;
 #endif
     };
 
-    /* flag bits for ev_default_loop and ev_loop_new */
+    /* flag bits for qev_default_loop and qev_loop_new */
     enum {
         /* the default */
         EVFLAG_AUTO = 0x00000000U, /* not quite a mask */
@@ -533,15 +533,15 @@ typedef struct stat ev_statdata;
     };
 
 #if EV_PROTOTYPES
-    EV_API_DECL int ev_version_major(void) EV_NOEXCEPT;
-    EV_API_DECL int ev_version_minor(void) EV_NOEXCEPT;
+    EV_API_DECL int qev_version_major(void) EV_NOEXCEPT;
+    EV_API_DECL int qev_version_minor(void) EV_NOEXCEPT;
 
-    EV_API_DECL unsigned int ev_supported_backends(void) EV_NOEXCEPT;
-    EV_API_DECL unsigned int ev_recommended_backends(void) EV_NOEXCEPT;
-    EV_API_DECL unsigned int ev_embeddable_backends(void) EV_NOEXCEPT;
+    EV_API_DECL unsigned int qev_supported_backends(void) EV_NOEXCEPT;
+    EV_API_DECL unsigned int qev_recommended_backends(void) EV_NOEXCEPT;
+    EV_API_DECL unsigned int qev_embeddable_backends(void) EV_NOEXCEPT;
 
-    EV_API_DECL ev_tstamp ev_time(void) EV_NOEXCEPT;
-    EV_API_DECL void      ev_sleep(ev_tstamp delay) EV_NOEXCEPT; /* sleep for a while */
+    EV_API_DECL qev_tstamp qev_time(void) EV_NOEXCEPT;
+    EV_API_DECL void      qev_sleep(qev_tstamp delay) EV_NOEXCEPT; /* sleep for a while */
 
     /* Sets the allocation function to use, works like realloc.
      * It is used to allocate and free memory.
@@ -549,54 +549,54 @@ typedef struct stat ev_statdata;
      * or take some potentially destructive action.
      * The default is your system realloc function.
      */
-    EV_API_DECL void ev_set_allocator(void *(*cb)(void *ptr, long size) EV_NOEXCEPT) EV_NOEXCEPT;
+    EV_API_DECL void qev_set_allocator(void *(*cb)(void *ptr, long size) EV_NOEXCEPT) EV_NOEXCEPT;
 
     /* set the callback function to call on a
      * retryable syscall error
      * (such as failed select, poll, epoll_wait)
      */
-    EV_API_DECL void ev_set_syserr_cb(void (*cb)(const char *msg) EV_NOEXCEPT) EV_NOEXCEPT;
+    EV_API_DECL void qev_set_syserr_cb(void (*cb)(const char *msg) EV_NOEXCEPT) EV_NOEXCEPT;
 
 #if EV_MULTIPLICITY
 
     /* the default loop is the only one that handles signals and child watchers */
     /* you can call this as often as you like */
-    EV_API_DECL struct ev_loop *ev_default_loop(unsigned int flags EV_CPP(= 0)) EV_NOEXCEPT;
+    EV_API_DECL struct qev_loop *qev_default_loop(unsigned int flags EV_CPP(= 0)) EV_NOEXCEPT;
 
 #ifdef EV_API_STATIC
-    EV_API_DECL struct ev_loop *ev_default_loop_ptr;
+    EV_API_DECL struct qev_loop *qev_default_loop_ptr;
 #endif
 
-    EV_INLINE struct ev_loop *ev_default_loop_uc_(void) EV_NOEXCEPT {
-        extern struct ev_loop *ev_default_loop_ptr;
+    EV_INLINE struct qev_loop *qev_default_loop_uc_(void) EV_NOEXCEPT {
+        extern struct qev_loop *qev_default_loop_ptr;
 
-        return ev_default_loop_ptr;
+        return qev_default_loop_ptr;
     }
 
-    EV_INLINE int ev_is_default_loop(EV_P) EV_NOEXCEPT {
+    EV_INLINE int qev_is_default_loop(EV_P) EV_NOEXCEPT {
         return EV_A == EV_DEFAULT_UC;
     }
 
     /* create and destroy alternative loops that don't handle signals */
-    EV_API_DECL struct ev_loop *ev_loop_new(unsigned int flags EV_CPP(= 0)) EV_NOEXCEPT;
+    EV_API_DECL struct qev_loop *qev_loop_new(unsigned int flags EV_CPP(= 0)) EV_NOEXCEPT;
 
-    EV_API_DECL ev_tstamp ev_now(EV_P) EV_NOEXCEPT; /* time w.r.t. timers and the eventloop, updated after each poll */
+    EV_API_DECL qev_tstamp qev_now(EV_P) EV_NOEXCEPT; /* time w.r.t. timers and the eventloop, updated after each poll */
 
 #else
 
-EV_API_DECL int ev_default_loop (unsigned int flags EV_CPP (= 0)) EV_NOEXCEPT; /* returns true when successful */
+EV_API_DECL int qev_default_loop (unsigned int flags EV_CPP (= 0)) EV_NOEXCEPT; /* returns true when successful */
 
-EV_API_DECL ev_tstamp ev_rt_now;
+EV_API_DECL qev_tstamp qev_rt_now;
 
-EV_INLINE ev_tstamp
-ev_now (void) EV_NOEXCEPT
+EV_INLINE qev_tstamp
+qev_now (void) EV_NOEXCEPT
 {
-  return ev_rt_now;
+  return qev_rt_now;
 }
 
-/* looks weird, but ev_is_default_loop (EV_A) still works if this exists */
+/* looks weird, but qev_is_default_loop (EV_A) still works if this exists */
 EV_INLINE int
-ev_is_default_loop (void) EV_NOEXCEPT
+qev_is_default_loop (void) EV_NOEXCEPT
 {
   return 1;
 }
@@ -604,34 +604,34 @@ ev_is_default_loop (void) EV_NOEXCEPT
 #endif /* multiplicity */
 
     /* destroy event loops, also works for the default loop */
-    EV_API_DECL void ev_loop_destroy(EV_P);
+    EV_API_DECL void qev_loop_destroy(EV_P);
 
     /* this needs to be called after fork, to duplicate the loop */
     /* when you want to re-use it in the child */
     /* you can call it in either the parent or the child */
     /* you can actually call it at any time, anywhere :) */
-    EV_API_DECL void ev_loop_fork(EV_P) EV_NOEXCEPT;
+    EV_API_DECL void qev_loop_fork(EV_P) EV_NOEXCEPT;
 
-    EV_API_DECL unsigned int ev_backend(EV_P) EV_NOEXCEPT; /* backend in use by loop */
+    EV_API_DECL unsigned int qev_backend(EV_P) EV_NOEXCEPT; /* backend in use by loop */
 
-    EV_API_DECL void ev_now_update(EV_P) EV_NOEXCEPT; /* update event loop time */
+    EV_API_DECL void qev_now_update(EV_P) EV_NOEXCEPT; /* update event loop time */
 
 #if EV_WALK_ENABLE
     /* walk (almost) all watchers in the loop of a given type, invoking the */
     /* callback on every such watcher. The callback might stop the watcher, */
     /* but do nothing else with the loop */
-    EV_API_DECL void ev_walk(EV_P_ int types, void (*cb)(EV_P_ int type, void *w)) EV_NOEXCEPT;
+    EV_API_DECL void qev_walk(EV_P_ int types, void (*cb)(EV_P_ int type, void *w)) EV_NOEXCEPT;
 #endif
 
 #endif /* prototypes */
 
-    /* ev_run flags values */
+    /* qev_run flags values */
     enum {
         EVRUN_NOWAIT = 1, /* do not block/wait */
         EVRUN_ONCE   = 2  /* block *once* only */
     };
 
-    /* ev_break how values */
+    /* qev_break how values */
     enum {
         EVBREAK_CANCEL = 0, /* undo unloop */
         EVBREAK_ONE    = 1, /* unloop once */
@@ -639,16 +639,16 @@ ev_is_default_loop (void) EV_NOEXCEPT
     };
 
 #if EV_PROTOTYPES
-    EV_API_DECL int  ev_run(EV_P_ int flags EV_CPP(= 0));
-    EV_API_DECL void ev_break(EV_P_ int how EV_CPP(= EVBREAK_ONE)) EV_NOEXCEPT; /* break out of the loop */
+    EV_API_DECL int  qev_run(EV_P_ int flags EV_CPP(= 0));
+    EV_API_DECL void qev_break(EV_P_ int how EV_CPP(= EVBREAK_ONE)) EV_NOEXCEPT; /* break out of the loop */
 
     /*
      * ref/unref can be used to add or remove a refcount on the mainloop. every watcher
      * keeps one reference. if you have a long-running watcher you never unregister that
-     * should not keep ev_loop from running, unref() after starting, and ref() before stopping.
+     * should not keep qev_loop from running, unref() after starting, and ref() before stopping.
      */
-    EV_API_DECL void ev_ref(EV_P) EV_NOEXCEPT;
-    EV_API_DECL void ev_unref(EV_P) EV_NOEXCEPT;
+    EV_API_DECL void qev_ref(EV_P) EV_NOEXCEPT;
+    EV_API_DECL void qev_unref(EV_P) EV_NOEXCEPT;
 
     /*
      * One-shot: register temporary I/O and/or a timer, invoke cb once, then tear down.
@@ -656,208 +656,208 @@ ev_is_default_loop (void) EV_NOEXCEPT
      * - timeout >= 0.: one-shot timer after that delay; timeout < 0. skips the timer (no "wait forever" here).
      * - If cb is NULL, or both I/O and timer are skipped, the call does nothing.
      */
-    EV_API_DECL void ev_once(EV_P_ int fd, int events, ev_tstamp timeout, void (*cb)(int revents, void *arg), void *arg) EV_NOEXCEPT;
+    EV_API_DECL void qev_once(EV_P_ int fd, int events, qev_tstamp timeout, void (*cb)(int revents, void *arg), void *arg) EV_NOEXCEPT;
 
-    EV_API_DECL void ev_invoke_pending(EV_P); /* invoke all pending watchers */
+    EV_API_DECL void qev_invoke_pending(EV_P); /* invoke all pending watchers */
 
 #if EV_FEATURE_API
-    EV_API_DECL unsigned int ev_iteration(EV_P) EV_NOEXCEPT; /* number of loop iterations */
-    EV_API_DECL unsigned int ev_depth(EV_P) EV_NOEXCEPT;     /* #ev_loop enters - #ev_loop leaves */
-    EV_API_DECL void         ev_verify(EV_P) EV_NOEXCEPT;    /* abort if loop data corrupted */
+    EV_API_DECL unsigned int qev_iteration(EV_P) EV_NOEXCEPT; /* number of loop iterations */
+    EV_API_DECL unsigned int qev_depth(EV_P) EV_NOEXCEPT;     /* #qev_loop enters - #qev_loop leaves */
+    EV_API_DECL void         qev_verify(EV_P) EV_NOEXCEPT;    /* abort if loop data corrupted */
 
-    EV_API_DECL void ev_set_io_collect_interval(EV_P_ ev_tstamp interval) EV_NOEXCEPT;      /* sleep at least this time, default 0 */
-    EV_API_DECL void ev_set_timeout_collect_interval(EV_P_ ev_tstamp interval) EV_NOEXCEPT; /* sleep at least this time, default 0 */
+    EV_API_DECL void qev_set_io_collect_interval(EV_P_ qev_tstamp interval) EV_NOEXCEPT;      /* sleep at least this time, default 0 */
+    EV_API_DECL void qev_set_timeout_collect_interval(EV_P_ qev_tstamp interval) EV_NOEXCEPT; /* sleep at least this time, default 0 */
 
     /* advanced stuff for threading etc. support, see docs */
-    EV_API_DECL void  ev_set_userdata(EV_P_ void *data) EV_NOEXCEPT;
-    EV_API_DECL void *ev_userdata(EV_P) EV_NOEXCEPT;
-    typedef void (*ev_loop_callback)(EV_P);
-    EV_API_DECL void ev_set_invoke_pending_cb(EV_P_ ev_loop_callback invoke_pending_cb) EV_NOEXCEPT;
-    /* C++ doesn't allow the use of the ev_loop_callback typedef here, so we need to spell it out */
-    EV_API_DECL void ev_set_loop_release_cb(EV_P_ void (*release)(EV_P) EV_NOEXCEPT, void (*acquire)(EV_P) EV_NOEXCEPT) EV_NOEXCEPT;
+    EV_API_DECL void  qev_set_userdata(EV_P_ void *data) EV_NOEXCEPT;
+    EV_API_DECL void *qev_userdata(EV_P) EV_NOEXCEPT;
+    typedef void (*qev_loop_callback)(EV_P);
+    EV_API_DECL void qev_set_invoke_pending_cb(EV_P_ qev_loop_callback invoke_pending_cb) EV_NOEXCEPT;
+    /* C++ doesn't allow the use of the qev_loop_callback typedef here, so we need to spell it out */
+    EV_API_DECL void qev_set_loop_release_cb(EV_P_ void (*release)(EV_P) EV_NOEXCEPT, void (*acquire)(EV_P) EV_NOEXCEPT) EV_NOEXCEPT;
 
-    EV_API_DECL unsigned int ev_pending_count(EV_P) EV_NOEXCEPT; /* number of pending events, if any */
+    EV_API_DECL unsigned int qev_pending_count(EV_P) EV_NOEXCEPT; /* number of pending events, if any */
 
     /*
      * stop/start the timer handling.
      */
-    EV_API_DECL void ev_suspend(EV_P) EV_NOEXCEPT;
-    EV_API_DECL void ev_resume(EV_P) EV_NOEXCEPT;
+    EV_API_DECL void qev_suspend(EV_P) EV_NOEXCEPT;
+    EV_API_DECL void qev_resume(EV_P) EV_NOEXCEPT;
 #endif
 
 #endif
 
 /* these may evaluate ev multiple times, and the other arguments at most once */
-/* either use ev_init + ev_TYPE_set, or the ev_TYPE_init macro, below, to first initialise a watcher */
-#define ev_init(ev, cb_)                                        \
+/* either use qev_init + qev_TYPE_set, or the qev_TYPE_init macro, below, to first initialise a watcher */
+#define qev_init(ev, cb_)                                        \
     do {                                                        \
-        *ev_watcher_active_(ev) = *ev_watcher_pending_(ev) = 0; \
-        ev_set_priority((ev), 0);                               \
-        ev_set_cb((ev), cb_);                                   \
+        *qev_watcher_active_(ev) = *qev_watcher_pending_(ev) = 0; \
+        qev_set_priority((ev), 0);                               \
+        qev_set_cb((ev), cb_);                                   \
     } while (0)
 
-/* ev_io_modify() is a real function (see ev.c): it must notify the backend via
+/* qev_io_modify() is a real function (see ev.c): it must notify the backend via
  * fd_change() so the kernel registration is updated in place (EPOLL_CTL_MOD),
  * instead of the old macro that only touched w->events and relied on callers
- * doing a stop/start cycle. Declared with the other ev_io_* prototypes below. */
+ * doing a stop/start cycle. Declared with the other qev_io_* prototypes below. */
 #if defined _WIN32
-    EV_API_DECL int ev_win32_socket_fd(uintptr_t handle) EV_NOEXCEPT;
-#define ev_io_set(ev, fd_, events_)             \
+    EV_API_DECL int qev_win32_socket_fd(uintptr_t handle) EV_NOEXCEPT;
+#define qev_io_set(ev, fd_, events_)             \
     do {                                        \
         (ev)->fd     = (fd_);                   \
         (ev)->events = (events_) | EV__IOFDSET; \
         (ev)->handle = 0;                       \
     } while (0)
-#define ev_io_set_sock(ev, sock_, events_)      \
+#define qev_io_set_sock(ev, sock_, events_)      \
     do {                                        \
         (ev)->fd     = -1;                      \
         (ev)->events = (events_) | EV__IOFDSET; \
         (ev)->handle = (uintptr_t) (sock_);     \
     } while (0)
 #else
-#define ev_io_set(ev, fd_, events_)             \
+#define qev_io_set(ev, fd_, events_)             \
     do {                                        \
         (ev)->fd     = (fd_);                   \
         (ev)->events = (events_) | EV__IOFDSET; \
     } while (0)
 #endif
 #ifdef __cplusplus
-#define ev_timer_set(ev, after_, repeat_) \
+#define qev_timer_set(ev, after_, repeat_) \
     do {                                  \
         (ev)->at     = (after_);          \
         (ev)->repeat = (repeat_);         \
     } while (0)
 #else
-#define ev_timer_set(ev, after_, repeat_) \
+#define qev_timer_set(ev, after_, repeat_) \
     do {                                  \
         (ev)->at     = (after_);          \
         (ev)->repeat = (repeat_);         \
     } while (0)
 #endif
-#define ev_periodic_set(ev, ofs_, ival_, rcb_) \
+#define qev_periodic_set(ev, ofs_, ival_, rcb_) \
     do {                                       \
         (ev)->offset        = (ofs_);          \
         (ev)->interval      = (ival_);         \
         (ev)->reschedule_cb = (rcb_);          \
     } while (0)
-#define ev_signal_set(ev, signum_) \
+#define qev_signal_set(ev, signum_) \
     do {                           \
         (ev)->signum = (signum_);  \
     } while (0)
-#define ev_child_set(ev, pid_, trace_) \
+#define qev_child_set(ev, pid_, trace_) \
     do {                               \
         (ev)->pid   = (pid_);          \
         (ev)->flags = !!(trace_);      \
     } while (0)
-#define ev_stat_set(ev, path_, interval_) \
+#define qev_stat_set(ev, path_, interval_) \
     do {                                  \
         (ev)->path     = (path_);         \
         (ev)->interval = (interval_);     \
         (ev)->wd       = -2;              \
     } while (0)
-#define ev_idle_set(ev)    /* nop, yes, this is a serious in-joke */
-#define ev_prepare_set(ev) /* nop, yes, this is a serious in-joke */
-#define ev_check_set(ev)   /* nop, yes, this is a serious in-joke */
-#define ev_embed_set(ev, other_) \
+#define qev_idle_set(ev)    /* nop, yes, this is a serious in-joke */
+#define qev_prepare_set(ev) /* nop, yes, this is a serious in-joke */
+#define qev_check_set(ev)   /* nop, yes, this is a serious in-joke */
+#define qev_embed_set(ev, other_) \
     do {                         \
         (ev)->other = (other_);  \
     } while (0)
-#define ev_fork_set(ev)    /* nop, yes, this is a serious in-joke */
-#define ev_cleanup_set(ev) /* nop, yes, this is a serious in-joke */
-#define ev_async_set(ev)   /* nop, yes, this is a serious in-joke */
+#define qev_fork_set(ev)    /* nop, yes, this is a serious in-joke */
+#define qev_cleanup_set(ev) /* nop, yes, this is a serious in-joke */
+#define qev_async_set(ev)   /* nop, yes, this is a serious in-joke */
 
-#define ev_io_init(ev, cb, fd, events)   \
+#define qev_io_init(ev, cb, fd, events)   \
     do {                                 \
-        ev_init((ev), (cb));             \
-        ev_io_set((ev), (fd), (events)); \
+        qev_init((ev), (cb));             \
+        qev_io_set((ev), (fd), (events)); \
     } while (0)
 #if defined _WIN32
-#define ev_io_init_sock(ev, cb, sock, events)   \
+#define qev_io_init_sock(ev, cb, sock, events)   \
     do {                                        \
-        ev_init((ev), (cb));                    \
-        ev_io_set_sock((ev), (sock), (events)); \
+        qev_init((ev), (cb));                    \
+        qev_io_set_sock((ev), (sock), (events)); \
     } while (0)
 #endif
-#define ev_timer_init(ev, cb, after, repeat)   \
+#define qev_timer_init(ev, cb, after, repeat)   \
     do {                                       \
-        ev_init((ev), (cb));                   \
-        ev_timer_set((ev), (after), (repeat)); \
+        qev_init((ev), (cb));                   \
+        qev_timer_set((ev), (after), (repeat)); \
     } while (0)
-#define ev_periodic_init(ev, cb, ofs, ival, rcb)     \
+#define qev_periodic_init(ev, cb, ofs, ival, rcb)     \
     do {                                             \
-        ev_init((ev), (cb));                         \
-        ev_periodic_set((ev), (ofs), (ival), (rcb)); \
+        qev_init((ev), (cb));                         \
+        qev_periodic_set((ev), (ofs), (ival), (rcb)); \
     } while (0)
-#define ev_signal_init(ev, cb, signum) \
+#define qev_signal_init(ev, cb, signum) \
     do {                               \
-        ev_init((ev), (cb));           \
-        ev_signal_set((ev), (signum)); \
+        qev_init((ev), (cb));           \
+        qev_signal_set((ev), (signum)); \
     } while (0)
-#define ev_child_init(ev, cb, pid, trace)   \
+#define qev_child_init(ev, cb, pid, trace)   \
     do {                                    \
-        ev_init((ev), (cb));                \
-        ev_child_set((ev), (pid), (trace)); \
+        qev_init((ev), (cb));                \
+        qev_child_set((ev), (pid), (trace)); \
     } while (0)
-#define ev_stat_init(ev, cb, path, interval)   \
+#define qev_stat_init(ev, cb, path, interval)   \
     do {                                       \
-        ev_init((ev), (cb));                   \
-        ev_stat_set((ev), (path), (interval)); \
+        qev_init((ev), (cb));                   \
+        qev_stat_set((ev), (path), (interval)); \
     } while (0)
-#define ev_idle_init(ev, cb) \
+#define qev_idle_init(ev, cb) \
     do {                     \
-        ev_init((ev), (cb)); \
-        ev_idle_set((ev));   \
+        qev_init((ev), (cb)); \
+        qev_idle_set((ev));   \
     } while (0)
-#define ev_prepare_init(ev, cb) \
+#define qev_prepare_init(ev, cb) \
     do {                        \
-        ev_init((ev), (cb));    \
-        ev_prepare_set((ev));   \
+        qev_init((ev), (cb));    \
+        qev_prepare_set((ev));   \
     } while (0)
-#define ev_check_init(ev, cb) \
+#define qev_check_init(ev, cb) \
     do {                      \
-        ev_init((ev), (cb));  \
-        ev_check_set((ev));   \
+        qev_init((ev), (cb));  \
+        qev_check_set((ev));   \
     } while (0)
-#define ev_embed_init(ev, cb, other) \
+#define qev_embed_init(ev, cb, other) \
     do {                             \
-        ev_init((ev), (cb));         \
-        ev_embed_set((ev), (other)); \
+        qev_init((ev), (cb));         \
+        qev_embed_set((ev), (other)); \
     } while (0)
-#define ev_fork_init(ev, cb) \
+#define qev_fork_init(ev, cb) \
     do {                     \
-        ev_init((ev), (cb)); \
-        ev_fork_set((ev));   \
+        qev_init((ev), (cb)); \
+        qev_fork_set((ev));   \
     } while (0)
-#define ev_cleanup_init(ev, cb) \
+#define qev_cleanup_init(ev, cb) \
     do {                        \
-        ev_init((ev), (cb));    \
-        ev_cleanup_set((ev));   \
+        qev_init((ev), (cb));    \
+        qev_cleanup_set((ev));   \
     } while (0)
-#define ev_async_init(ev, cb) \
+#define qev_async_init(ev, cb) \
     do {                      \
-        ev_init((ev), (cb));  \
-        ev_async_set((ev));   \
+        qev_init((ev), (cb));  \
+        qev_async_set((ev));   \
     } while (0)
 
-#define ev_is_pending(ev) (0 + *ev_watcher_pending_const_(ev)) /* ro, true when watcher is waiting for callback invocation */
-#define ev_is_active(ev) (0 + *ev_watcher_active_const_(ev))   /* ro, true when the watcher has been started */
+#define qev_is_pending(ev) (0 + *qev_watcher_pending_const_(ev)) /* ro, true when watcher is waiting for callback invocation */
+#define qev_is_active(ev) (0 + *qev_watcher_active_const_(ev))   /* ro, true when the watcher has been started */
 
-#define ev_cb_(ev) (ev)->cb /* rw */
-#define ev_cb(ev) (memmove(&ev_cb_(ev), (const char *) (const void *) (ev) + offsetof(ev_watcher, cb), sizeof(ev_cb_(ev))), (ev)->cb)
+#define qev_cb_(ev) (ev)->cb /* rw */
+#define qev_cb(ev) (memmove(&qev_cb_(ev), (const char *) (const void *) (ev) + offsetof(qev_watcher, cb), sizeof(qev_cb_(ev))), (ev)->cb)
 
 #if EV_MINPRI == EV_MAXPRI
-#define ev_priority(ev) ((ev), EV_MINPRI)
-#define ev_set_priority(ev, pri) ((ev), (pri))
+#define qev_priority(ev) ((ev), EV_MINPRI)
+#define qev_set_priority(ev, pri) ((ev), (pri))
 #else
-#define ev_priority(ev) (+*ev_watcher_priority_const_(ev))
-#define ev_set_priority(ev, pri) (*ev_watcher_priority_(ev) = (pri))
+#define qev_priority(ev) (+*qev_watcher_priority_const_(ev))
+#define qev_set_priority(ev, pri) (*qev_watcher_priority_(ev) = (pri))
 #endif
 
-#define ev_periodic_at(ev) (+(ev)->at)
+#define qev_periodic_at(ev) (+(ev)->at)
 
-#ifndef ev_set_cb
+#ifndef qev_set_cb
 /* memmove is used here to avoid strict aliasing violations, and hopefully is optimized out by any reasonable compiler */
-#define ev_set_cb(ev, cb_) (ev_cb_(ev) = (cb_), memmove((char *) (void *) (ev) + offsetof(ev_watcher, cb), &ev_cb_(ev), sizeof(ev_cb_(ev))))
+#define qev_set_cb(ev, cb_) (qev_cb_(ev) = (cb_), memmove((char *) (void *) (ev) + offsetof(qev_watcher, cb), &qev_cb_(ev), sizeof(qev_cb_(ev))))
 #endif
 
 /* stopping (enabling, adding) a watcher does nothing if it is already running */
@@ -865,87 +865,87 @@ ev_is_default_loop (void) EV_NOEXCEPT
 #if EV_PROTOTYPES
 
     /* feeds an event into a watcher as if the event actually occurred */
-    /* accepts any ev_watcher type */
-    EV_API_DECL void ev_feed_event(EV_P_ void *w, int revents) EV_NOEXCEPT;
-    EV_API_DECL void ev_feed_fd_event(EV_P_ int fd, int revents) EV_NOEXCEPT;
+    /* accepts any qev_watcher type */
+    EV_API_DECL void qev_feed_event(EV_P_ void *w, int revents) EV_NOEXCEPT;
+    EV_API_DECL void qev_feed_fd_event(EV_P_ int fd, int revents) EV_NOEXCEPT;
 #if EV_SIGNAL_ENABLE
-    EV_API_DECL void ev_feed_signal(int signum) EV_NOEXCEPT;
-    EV_API_DECL void ev_feed_signal_event(EV_P_ int signum) EV_NOEXCEPT;
+    EV_API_DECL void qev_feed_signal(int signum) EV_NOEXCEPT;
+    EV_API_DECL void qev_feed_signal_event(EV_P_ int signum) EV_NOEXCEPT;
 #endif
-    EV_API_DECL void ev_invoke(EV_P_ void *w, int revents);
-    EV_API_DECL int  ev_clear_pending(EV_P_ void *w) EV_NOEXCEPT;
+    EV_API_DECL void qev_invoke(EV_P_ void *w, int revents);
+    EV_API_DECL int  qev_clear_pending(EV_P_ void *w) EV_NOEXCEPT;
 
-    EV_API_DECL void ev_io_start(EV_P_ ev_io * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_io_stop(EV_P_ ev_io * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_io_modify(EV_P_ ev_io * w, int events) EV_NOEXCEPT;
+    EV_API_DECL void qev_io_start(EV_P_ qev_io * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_io_stop(EV_P_ qev_io * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_io_modify(EV_P_ qev_io * w, int events) EV_NOEXCEPT;
 
-    EV_API_DECL void ev_timer_start(EV_P_ ev_timer * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_timer_stop(EV_P_ ev_timer * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_timer_start(EV_P_ qev_timer * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_timer_stop(EV_P_ qev_timer * w) EV_NOEXCEPT;
     /* stops if active and no repeat, restarts if active and repeating, starts if inactive and repeating */
-    EV_API_DECL void ev_timer_again(EV_P_ ev_timer * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_timer_again(EV_P_ qev_timer * w) EV_NOEXCEPT;
     /* return remaining time */
-    EV_API_DECL ev_tstamp ev_timer_remaining(EV_P_ ev_timer * w) EV_NOEXCEPT;
+    EV_API_DECL qev_tstamp qev_timer_remaining(EV_P_ qev_timer * w) EV_NOEXCEPT;
 
 #if EV_PERIODIC_ENABLE
-    EV_API_DECL void ev_periodic_start(EV_P_ ev_periodic * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_periodic_stop(EV_P_ ev_periodic * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_periodic_again(EV_P_ ev_periodic * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_periodic_start(EV_P_ qev_periodic * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_periodic_stop(EV_P_ qev_periodic * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_periodic_again(EV_P_ qev_periodic * w) EV_NOEXCEPT;
 #endif
 
 /* only supported in the default loop */
 #if EV_SIGNAL_ENABLE
-    EV_API_DECL void ev_signal_start(EV_P_ ev_signal * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_signal_stop(EV_P_ ev_signal * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_signal_start(EV_P_ qev_signal * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_signal_stop(EV_P_ qev_signal * w) EV_NOEXCEPT;
 #endif
 
 /* only supported in the default loop */
 #if EV_CHILD_ENABLE
-    EV_API_DECL void ev_child_start(EV_P_ ev_child * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_child_stop(EV_P_ ev_child * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_child_start(EV_P_ qev_child * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_child_stop(EV_P_ qev_child * w) EV_NOEXCEPT;
 #endif
 
 #if EV_STAT_ENABLE
-    EV_API_DECL void ev_stat_start(EV_P_ ev_stat * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_stat_stop(EV_P_ ev_stat * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_stat_stat(EV_P_ ev_stat * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_stat_start(EV_P_ qev_stat * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_stat_stop(EV_P_ qev_stat * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_stat_stat(EV_P_ qev_stat * w) EV_NOEXCEPT;
 #endif
 
 #if EV_IDLE_ENABLE
-    EV_API_DECL void ev_idle_start(EV_P_ ev_idle * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_idle_stop(EV_P_ ev_idle * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_idle_start(EV_P_ qev_idle * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_idle_stop(EV_P_ qev_idle * w) EV_NOEXCEPT;
 #endif
 
 #if EV_PREPARE_ENABLE
-    EV_API_DECL void ev_prepare_start(EV_P_ ev_prepare * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_prepare_stop(EV_P_ ev_prepare * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_prepare_start(EV_P_ qev_prepare * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_prepare_stop(EV_P_ qev_prepare * w) EV_NOEXCEPT;
 #endif
 
 #if EV_CHECK_ENABLE
-    EV_API_DECL void ev_check_start(EV_P_ ev_check * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_check_stop(EV_P_ ev_check * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_check_start(EV_P_ qev_check * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_check_stop(EV_P_ qev_check * w) EV_NOEXCEPT;
 #endif
 
 #if EV_FORK_ENABLE
-    EV_API_DECL void ev_fork_start(EV_P_ ev_fork * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_fork_stop(EV_P_ ev_fork * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_fork_start(EV_P_ qev_fork * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_fork_stop(EV_P_ qev_fork * w) EV_NOEXCEPT;
 #endif
 
 #if EV_CLEANUP_ENABLE
-    EV_API_DECL void ev_cleanup_start(EV_P_ ev_cleanup * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_cleanup_stop(EV_P_ ev_cleanup * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_cleanup_start(EV_P_ qev_cleanup * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_cleanup_stop(EV_P_ qev_cleanup * w) EV_NOEXCEPT;
 #endif
 
 #if EV_EMBED_ENABLE
     /* only supported when loop to be embedded is in fact embeddable */
-    EV_API_DECL void ev_embed_start(EV_P_ ev_embed * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_embed_stop(EV_P_ ev_embed * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_embed_sweep(EV_P_ ev_embed * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_embed_start(EV_P_ qev_embed * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_embed_stop(EV_P_ qev_embed * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_embed_sweep(EV_P_ qev_embed * w) EV_NOEXCEPT;
 #endif
 
 #if EV_ASYNC_ENABLE
-    EV_API_DECL void ev_async_start(EV_P_ ev_async * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_async_stop(EV_P_ ev_async * w) EV_NOEXCEPT;
-    EV_API_DECL void ev_async_send(EV_P_ ev_async * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_async_start(EV_P_ qev_async * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_async_stop(EV_P_ qev_async * w) EV_NOEXCEPT;
+    EV_API_DECL void qev_async_send(EV_P_ qev_async * w) EV_NOEXCEPT;
 #endif
 
 #if EV_COMPAT3
@@ -955,32 +955,32 @@ ev_is_default_loop (void) EV_NOEXCEPT
 #define EVUNLOOP_ONE EVBREAK_ONE
 #define EVUNLOOP_ALL EVBREAK_ALL
 #if EV_PROTOTYPES
-    EV_INLINE void ev_loop(EV_P_ int flags) {
-        ev_run(EV_A_ flags);
+    EV_INLINE void qev_loop(EV_P_ int flags) {
+        qev_run(EV_A_ flags);
     }
-    EV_INLINE void ev_unloop(EV_P_ int how) {
-        ev_break(EV_A_ how);
+    EV_INLINE void qev_unloop(EV_P_ int how) {
+        qev_break(EV_A_ how);
     }
-    EV_INLINE void ev_default_destroy(void) {
-        ev_loop_destroy(EV_DEFAULT);
+    EV_INLINE void qev_default_destroy(void) {
+        qev_loop_destroy(EV_DEFAULT);
     }
-    EV_INLINE void ev_default_fork(void) {
-        ev_loop_fork(EV_DEFAULT);
+    EV_INLINE void qev_default_fork(void) {
+        qev_loop_fork(EV_DEFAULT);
     }
 #if EV_FEATURE_API
-    EV_INLINE unsigned int ev_loop_count(EV_P) {
-        return ev_iteration(EV_A);
+    EV_INLINE unsigned int qev_loop_count(EV_P) {
+        return qev_iteration(EV_A);
     }
-    EV_INLINE unsigned int ev_loop_depth(EV_P) {
-        return ev_depth(EV_A);
+    EV_INLINE unsigned int qev_loop_depth(EV_P) {
+        return qev_depth(EV_A);
     }
-    EV_INLINE void ev_loop_verify(EV_P) {
-        ev_verify(EV_A);
+    EV_INLINE void qev_loop_verify(EV_P) {
+        qev_verify(EV_A);
     }
 #endif
 #endif
 #else
-  typedef struct ev_loop ev_loop;
+  typedef struct qev_loop qev_loop;
 #endif
 
 #endif

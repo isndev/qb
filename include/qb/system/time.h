@@ -795,14 +795,14 @@ private:
 
 namespace detail {
 
-/// Convert a span to libev's `ev_tstamp` (double seconds). Used only by the
+/// Convert a span to qev's `qev_tstamp` (double seconds). Used only by the
 /// async/listener/timer glue around libev.
 [[nodiscard]] inline double
 to_ev_seconds(duration d) noexcept {
     return std::chrono::duration_cast<std::chrono::duration<double>>(d).count();
 }
 
-/// Convert libev's `ev_tstamp` (double seconds) back to a span.
+/// Convert qev's `qev_tstamp` (double seconds) back to a span.
 [[nodiscard]] inline duration
 from_ev_seconds(double seconds) noexcept {
     return std::chrono::duration_cast<duration>(std::chrono::duration<double>(seconds));

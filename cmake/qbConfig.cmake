@@ -51,7 +51,7 @@ set(QB_INCLUDE_DIR "${QB_ROOT_DIR}/include")
 # qb_add_test / qb_add_benchmark cannot find deploy_runtime_dlls.cmake.
 set(QB_CMAKE_DIR  "${QB_ROOT_DIR}/cmake"   CACHE INTERNAL "qb cmake scripts directory")
 # modules/ now holds ONLY genuine third-party upstream code (nlohmann). Everything else that used
-# to live there -- ev, uuid, nanolog, ska_hash -- is a qb FORK, i.e. qb's own source, and moved
+# to live there -- qev, uuid, nanolog, ska_hash -- is a qb FORK, i.e. qb's own source, and moved
 # under include/qb/vendor/ so an installed qb owns every top-level name it drops in the consumer's
 # include root. See QB_VENDOR_DIR below.
 set(QB_MODULES_DIR "${QB_ROOT_DIR}/modules")
@@ -216,7 +216,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
 
-# Position-independent code. Required so the bundled static dependencies (ev, llhttp) can be linked
+# Position-independent code. Required so the bundled static dependencies (qev, llhttp) can be linked
 # into a shared qb-io / qbm-* (or into any consumer's shared library) without "recompile with -fPIC"
 # link errors on Linux.
 #

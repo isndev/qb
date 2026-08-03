@@ -107,7 +107,7 @@ function(_qb_apply_target_properties target)
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF
         # Per target, not via the global CMAKE_POSITION_INDEPENDENT_CODE. qb needs PIC so its
-        # bundled static dependencies (ev, llhttp) can be linked into a shared qb-io / qbm-* or into
+        # bundled static dependencies (qev, llhttp) can be linked into a shared qb-io / qbm-* or into
         # a consumer's shared library without "recompile with -fPIC" on Linux -- but that is qb's
         # requirement, not its parent's. Setting the global forced -fPIC onto every target of any
         # project that embeds qb, including ones that deliberately build non-PIC.

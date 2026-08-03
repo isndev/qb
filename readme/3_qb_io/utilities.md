@@ -102,7 +102,7 @@ void process() {
 
 `ScopedTimer` measures elapsed monotonic time between construction and `stop()`/destruction, invoking the callback with the measured `qb::duration`; `stop()`, `restart()`, and `elapsed()` are available for manual control. It is non-copyable and non-movable. `LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction. _(`qb/include/qb/system/time.h:714-790`.)_
 
-> **Boundary seam.** The only place a raw `double` touches time is `qb::detail::to_ev_seconds` / `from_ev_seconds`, the conversion between `qb::duration` and libev's `ev_tstamp` (double seconds). Application code never needs these. _(`qb/include/qb/system/time.h:796-809`.)_
+> **Boundary seam.** The only place a raw `double` touches time is `qb::detail::to_ev_seconds` / `from_ev_seconds`, the conversion between `qb::duration` and qev's `qev_tstamp` (double seconds). Application code never needs these. _(`qb/include/qb/system/time.h:796-809`.)_
 
 ---
 

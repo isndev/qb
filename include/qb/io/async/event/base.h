@@ -30,8 +30,8 @@
 /* qb builds its vendored libev with EV_MULTIPLICITY=1 (qb/vendor/ev/config.h.cmakein). ev.h only
  * learns that from the generated ev_config.h, and its last-resort lookup for that file is guarded
  * by __has_include (ev.h:28-31) -- so if the file is not reachable, ev.h SILENTLY falls back to its
- * own default of EV_FEATURE_CONFIG == 4. Every ev_* prototype then grows a loop parameter that the
- * compiled libev.a does not have: an ODR/ABI mismatch that links and then misbehaves at runtime.
+ * own default of EV_FEATURE_CONFIG == 4. Every qev_* prototype then grows a loop parameter that the
+ * compiled libqev.a does not have: an ODR/ABI mismatch that links and then misbehaves at runtime.
  * Make the miss a compile error instead. */
 #if !defined(EV_MULTIPLICITY) || (EV_MULTIPLICITY) != 1
 #error "qb: libev configuration header not reached (EV_MULTIPLICITY != 1). qb::io's exported \

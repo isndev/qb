@@ -47,7 +47,7 @@ port_associate_and_check(EV_P_ int fd, int ev) {
             EV_ASSERT_MSG(errno != EBADFD, "libev: port_associate found invalid fd");
             fd_kill(EV_A_ fd);
         } else
-            ev_syserr("(libev) port_associate");
+            qev_syserr("(libev) port_associate");
     }
 }
 
@@ -64,7 +64,7 @@ port_modify(EV_P_ int fd, int oev, int nev) {
 }
 
 static void
-port_poll(EV_P_ ev_tstamp timeout) {
+port_poll(EV_P_ qev_tstamp timeout) {
     int             res, i;
     struct timespec ts;
     uint_t          nget = 1;
@@ -81,7 +81,7 @@ port_poll(EV_P_ ev_tstamp timeout) {
 
     if (ecb_expect_false(res == -1)) {
         if (errno != ETIME && errno != EINTR)
-            ev_syserr("(libev) port_getn (see http://bugs.opensolaris.org/view_bug.do?bug_id=6268715, try LIBEV_FLAGS=3 env variable)");
+            qev_syserr("(libev) port_getn (see http://bugs.opensolaris.org/view_bug.do?bug_id=6268715, try LIBEV_FLAGS=3 env variable)");
         /* nget is undefined on error; do not scan port_events with stale nget. */
         nget = 0;
     }
@@ -98,9 +98,9 @@ port_poll(EV_P_ ev_tstamp timeout) {
     }
 
     if (ecb_expect_false(nget == port_eventmax)) {
-        ev_free(port_events);
+        qev_free(port_events);
         port_eventmax = array_nextsize(sizeof(port_event_t), port_eventmax, port_eventmax + 1);
-        port_events   = (port_event_t *) ev_malloc(sizeof(port_event_t) * port_eventmax);
+        port_events   = (port_event_t *) qev_malloc(sizeof(port_event_t) * port_eventmax);
     }
 }
 
@@ -129,14 +129,14 @@ port_init(EV_P_ int flags) {
     backend_poll    = port_poll;
 
     port_eventmax = 64; /* initial number of events receivable per poll */
-    port_events   = (port_event_t *) ev_malloc(sizeof(port_event_t) * port_eventmax);
+    port_events   = (port_event_t *) qev_malloc(sizeof(port_event_t) * port_eventmax);
 
     return EVBACKEND_PORT;
 }
 
 inline_size void
 port_destroy(EV_P) {
-    ev_free(port_events);
+    qev_free(port_events);
 }
 
 inline_size void
@@ -146,7 +146,7 @@ port_fork(EV_P) {
     close((int) (uintptr_t) backend_fd);
 
     while ((portfd = port_create()) < 0)
-        ev_syserr("(libev) port");
+        qev_syserr("(libev) port");
 
     backend_fd = (uintptr_t) (unsigned) portfd;
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
-project(libev
+project(qev
         VERSION 5.0.0
-        DESCRIPTION "A modernized, cross-platform fork of libev (drop-in ev_* API)"
+        DESCRIPTION "A modernized, cross-platform fork of libev (qev_* API, NOT drop-in)"
         HOMEPAGE_URL "https://github.com/isndev/qb-ev"
         LANGUAGES C)
 
@@ -24,7 +24,7 @@ endif ()
 # generic names into a consumer's include root is exactly the shadowing this prefix exists to stop
 # (a consumer with its own event.h had qb's silently win).
 #
-# Unset/empty (standalone libev, or add_subdirectory() by a project that did not opt in) keeps the
+# Unset/empty (standalone qev, or add_subdirectory() by a project that did not opt in) keeps the
 # historical layout byte-for-byte: headers at the include root, reached as <ev.h> / <ev++.h>.
 if (DEFINED QB_VENDOR_INCLUDE_PREFIX AND NOT QB_VENDOR_INCLUDE_PREFIX STREQUAL "")
     set(QB_EV_HEADER_DIR "${QB_VENDOR_INCLUDE_PREFIX}/ev")
@@ -45,17 +45,17 @@ set(LIBEV_VERSION_REVISION 0)
 # ----------------------------------------------------------------------------
 # Options
 # ----------------------------------------------------------------------------
-option(BUILD_STATIC_LIBS "Build libev as a static library" ON)
-# Default ON: the bundled ev is consumed by qb-io, which may itself be built as a
-# shared library (QB_BUILD_SHARED_LIBS=ON). A non-PIC static ev cannot be linked
+option(BUILD_STATIC_LIBS "Build qev as a static library" ON)
+# Default ON: the bundled qev is consumed by qb-io, which may itself be built as a
+# shared library (QB_BUILD_SHARED_LIBS=ON). A non-PIC static qev cannot be linked
 # into a shared object on Linux. This also keeps the explicit target property
 # below from overriding the project-wide CMAKE_POSITION_INDEPENDENT_CODE.
 option(BUILD_PIC_STATIC_LIBS "Build static lib as PIC" ON)
 
-# Library kind. When embedded (e.g. by qb-io via add_subdirectory) the `ev` target
+# Library kind. When embedded (e.g. by qb-io via add_subdirectory) the `qev` target
 # MUST be static: qb-io DEPENDS on it and links it directly. When built standalone
 # we honour the conventional BUILD_SHARED_LIBS so packagers can produce a shared
-# libev. (BUILD_STATIC_LIBS is retained for backward compatibility.)
+# libqev. (BUILD_STATIC_LIBS is retained for backward compatibility.)
 if (QB_EV_STANDALONE AND BUILD_SHARED_LIBS)
     set(EV_LIBRARY_TYPE SHARED)
 else ()
@@ -64,11 +64,11 @@ else ()
     set(BUILD_STATIC_LIBS ON)
 endif ()
 # Default OFF: matches legacy ev_config.h (#define EV_USE_TIMERFD 0). Enabling makes
-# ev_run use MAX_BLOCKTIME2 when timerfd is active and timercnt==0, which stalls
+# qev_run use MAX_BLOCKTIME2 when timerfd is active and timercnt==0, which stalls
 # epoll_wait (regression #1 on event I/O tests). Opt in with -D QB_EV_USE_TIMERFD=ON.
-option(QB_EV_USE_TIMERFD "Enable libev timerfd (time-jump detection; affects idle waittime)" OFF)
-option(QB_EV_STRICT_WARNINGS "Build bundled libev with strict compiler warnings" ON)
-option(QB_EV_WARNING_AUDIT "Enable extra noisy libev warning diagnostics for modernization audits" OFF)
+option(QB_EV_USE_TIMERFD "Enable qev timerfd (time-jump detection; affects idle waittime)" OFF)
+option(QB_EV_STRICT_WARNINGS "Build bundled qev with strict compiler warnings" ON)
+option(QB_EV_WARNING_AUDIT "Enable extra noisy qev warning diagnostics for modernization audits" OFF)
 
 # The audit diagnostics layer on top of the strict baseline (the strict block
 # below is what applies them). Enabling the audit without the baseline would
@@ -250,7 +250,7 @@ endif ()
 # The last one is quote-relative to ev.h, i.e. it only works when ev_config.h sits NEXT TO ev.h --
 # true in an installed tree, never true in a build tree (generated file, source-tree header). And
 # because it is guarded by __has_include, a miss is SILENT: ev.h falls back to its own defaults and
-# quietly disagrees with the compiled libev.a (measured: EV_MULTIPLICITY 4 instead of 1). So the
+# quietly disagrees with the compiled libqev.a (measured: EV_MULTIPLICITY 4 instead of 1). So the
 # define below is what actually carries the configuration, and it is deliberately PUBLIC: it must
 # reach every translation unit that includes ev.h, not just this library's own sources.
 if (QB_EV_EMBEDDED)
@@ -284,9 +284,9 @@ endif ()
 set(LIBEV_SRCS ev.c event.c)
 
 if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
-    add_library(ev ${EV_LIBRARY_TYPE} ${LIBEV_SRCS})
+    add_library(qev ${EV_LIBRARY_TYPE} ${LIBEV_SRCS})
 
-    #   target_compile_definitions(ev PRIVATE
+    #   target_compile_definitions(qev PRIVATE
     #     EV_USE_EPOLL=${EV_USE_EPOLL}
     #     EV_USE_KQUEUE=${EV_USE_KQUEUE}
     #     EV_USE_IOURING=${EV_USE_IOURING}
@@ -296,30 +296,30 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     #   )
 
     # The generated-config root is PUBLIC in both modes: ev.h needs it wherever it is included.
-    target_include_directories(ev
+    target_include_directories(qev
             PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_compile_definitions(ev PUBLIC EV_CONFIG_H=${QB_EV_CONFIG_INCLUDE})
+    target_compile_definitions(qev PUBLIC EV_CONFIG_H=${QB_EV_CONFIG_INCLUDE})
 
     if (QB_EV_EMBEDDED)
         # PRIVATE, not PUBLIC: this directory holds ev.h, ev++.h, event.h, event_compat.h,
         # ev_vars.h, ev_wrap.h and wepoll.h. Exporting it PUBLIC is what put all seven bare names
-        # on the include path of every target that links ev -- transitively, every consumer of
+        # on the include path of every target that links qev -- transitively, every consumer of
         # qb::io. Embedded consumers reach them through the parent's include root instead
-        # (<${QB_EV_HEADER_DIR}/ev++.h>); ev's own .c files use quote-relative includes and need
+        # (<${QB_EV_HEADER_DIR}/ev++.h>); qev's own .c files use quote-relative includes and need
         # nothing but this private entry.
-        target_include_directories(ev PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+        target_include_directories(qev PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
     else ()
-        target_include_directories(ev PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+        target_include_directories(qev PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
     endif ()
 
     if (QB_EV_STRICT_WARNINGS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         # Keep the vendored event loop visible to modern compilers. The baseline is
         # intentionally warning-clean enough for day-to-day builds; the audit option
         # below enables noisier conversion/cast diagnostics for dedicated cleanups.
-        target_compile_options(ev PRIVATE
+        target_compile_options(qev PRIVATE
                 -Wall
                 -Wextra
                 -Wpedantic
@@ -335,7 +335,7 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
         )
 
         if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-            target_compile_options(ev PRIVATE
+            target_compile_options(qev PRIVATE
                     -Walloc-zero
                     -Wduplicated-branches
                     -Wduplicated-cond
@@ -344,7 +344,7 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
                     -Wstrict-overflow=2
             )
         elseif (CMAKE_C_COMPILER_ID MATCHES "Clang|AppleClang")
-            target_compile_options(ev PRIVATE
+            target_compile_options(qev PRIVATE
                     -Wconditional-uninitialized
                     -Wextra-semi
                     -Wnewline-eof
@@ -353,7 +353,7 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
         endif ()
 
         if (QB_EV_WARNING_AUDIT)
-            target_compile_options(ev PRIVATE
+            target_compile_options(qev PRIVATE
                     -Wcast-qual
                     -Wconversion
                     -Wsign-conversion
@@ -362,44 +362,44 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     endif ()
 
     if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang" AND NOT QB_EV_WARNING_AUDIT)
-        target_compile_options(ev PRIVATE
+        target_compile_options(qev PRIVATE
                 -Wno-unused-parameter
                 -Wno-unused-function
                 -Wno-unused-result
         )
     endif ()
 
-    target_link_libraries(ev PUBLIC ${PLATFORM_LIBS})
+    target_link_libraries(qev PUBLIC ${PLATFORM_LIBS})
 
-    set_target_properties(ev PROPERTIES
-            OUTPUT_NAME ev
+    set_target_properties(qev PROPERTIES
+            OUTPUT_NAME qev
             POSITION_INDEPENDENT_CODE ${BUILD_PIC_STATIC_LIBS}
             VERSION ${LIBEV_VERSION_CURRENT}.${LIBEV_VERSION_AGE}.${LIBEV_VERSION_REVISION}
             SOVERSION ${LIBEV_VERSION_CURRENT}
             WINDOWS_EXPORT_ALL_SYMBOLS ON
     )
 
-    # Namespaced aliases: consumers link `qb::ev` (brand) or `ev::ev` (drop-in).
-    add_library(qb::ev ALIAS ev)
-    if (NOT TARGET ev::ev)
-        add_library(ev::ev ALIAS ev)
+    # Namespaced aliases: consumers link `qb::qev` (brand) or `qev::qev` (standalone).
+    add_library(qb::qev ALIAS qev)
+    if (NOT TARGET qev::qev)
+        add_library(qev::qev ALIAS qev)
     endif ()
 
     # --------------------------------------------------------------------------
-    # Install + package config — find_package(libev) (and ev::ev compat alias)
+    # Install + package config — find_package(qev) (and the qev::qev alias)
     # --------------------------------------------------------------------------
-    # Skipped entirely when embedded: the parent owns the install. It installs the `ev` target in
+    # Skipped entirely when embedded: the parent owns the install. It installs the `qev` target in
     # its OWN export set and ships these headers through its own install(DIRECTORY include/), at
     # the namespaced path. Running this block as well would (a) re-install ev.h/ev++.h/event.h/
     # event_compat.h at the include ROOT, undoing the namespacing, and (b) drop a
-    # lib/cmake/libev/ package next to the parent's own, exporting a second, differently-named
+    # lib/cmake/qev/ package next to the parent's own, exporting a second, differently-named
     # imported target for the same static library.
     if (NOT QB_EV_EMBEDDED)
     include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
 
-    install(TARGETS ev
-            EXPORT libevTargets
+    install(TARGETS qev
+            EXPORT qevTargets
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -409,34 +409,34 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     install(FILES ev.h ev++.h event.h event_compat.h
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-    install(EXPORT libevTargets
-            FILE libevTargets.cmake
+    install(EXPORT qevTargets
+            FILE qevTargets.cmake
             NAMESPACE qb::
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libev
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qev
     )
 
-    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/libevConfig.cmake.in
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qevConfig.cmake.in
             "@PACKAGE_INIT@
-include(\"\${CMAKE_CURRENT_LIST_DIR}/libevTargets.cmake\")
-# Drop-in compatibility alias for projects that expect the ev:: namespace.
-if(NOT TARGET ev::ev)
-  add_library(ev::ev ALIAS qb::ev)
+include(\"\${CMAKE_CURRENT_LIST_DIR}/qevTargets.cmake\")
+# Unprefixed alias for projects that link the fork under its own namespace.
+if(NOT TARGET qev::qev)
+  add_library(qev::qev ALIAS qb::qev)
 endif()
 ")
     configure_package_config_file(
-            ${CMAKE_CURRENT_BINARY_DIR}/libevConfig.cmake.in
-            ${CMAKE_CURRENT_BINARY_DIR}/libevConfig.cmake
-            INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libev
+            ${CMAKE_CURRENT_BINARY_DIR}/qevConfig.cmake.in
+            ${CMAKE_CURRENT_BINARY_DIR}/qevConfig.cmake
+            INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qev
     )
     write_basic_package_version_file(
-            ${CMAKE_CURRENT_BINARY_DIR}/libevConfigVersion.cmake
+            ${CMAKE_CURRENT_BINARY_DIR}/qevConfigVersion.cmake
             VERSION ${PROJECT_VERSION}
             COMPATIBILITY SameMajorVersion
     )
     install(FILES
-            ${CMAKE_CURRENT_BINARY_DIR}/libevConfig.cmake
-            ${CMAKE_CURRENT_BINARY_DIR}/libevConfigVersion.cmake
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libev
+            ${CMAKE_CURRENT_BINARY_DIR}/qevConfig.cmake
+            ${CMAKE_CURRENT_BINARY_DIR}/qevConfigVersion.cmake
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qev
     )
     endif () # NOT QB_EV_EMBEDDED
 endif ()

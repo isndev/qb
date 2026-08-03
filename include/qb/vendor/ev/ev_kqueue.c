@@ -60,15 +60,15 @@ kqueue_modify(EV_P_ int fd, int oev, int nev) {
 }
 
 static void
-kqueue_poll(EV_P_ ev_tstamp timeout) {
+kqueue_poll(EV_P_ qev_tstamp timeout) {
     int             res, i;
     struct timespec ts;
 
     /* need to resize so there is enough space for errors */
     if (kqueue_changecnt > kqueue_eventmax) {
-        ev_free(kqueue_events);
+        qev_free(kqueue_events);
         kqueue_eventmax = array_nextsize(sizeof(struct kevent), kqueue_eventmax, kqueue_changecnt);
-        kqueue_events   = (struct kevent *) ev_malloc((long) ((size_t) sizeof(struct kevent) * (size_t) kqueue_eventmax));
+        kqueue_events   = (struct kevent *) qev_malloc((long) ((size_t) sizeof(struct kevent) * (size_t) kqueue_eventmax));
     }
 
     EV_RELEASE_CB;
@@ -90,7 +90,7 @@ kqueue_poll(EV_P_ ev_tstamp timeout) {
         if (errno == EINTR)
             return;
 
-        ev_syserr("(libev) kqueue kevent");
+        qev_syserr("(libev) kqueue kevent");
     }
 
     kqueue_changecnt = 0;
@@ -130,9 +130,9 @@ kqueue_poll(EV_P_ ev_tstamp timeout) {
     }
 
     if (ecb_expect_false(res == kqueue_eventmax)) {
-        ev_free(kqueue_events);
+        qev_free(kqueue_events);
         kqueue_eventmax = array_nextsize(sizeof(struct kevent), kqueue_eventmax, kqueue_eventmax + 1);
-        kqueue_events   = (struct kevent *) ev_malloc((long) ((size_t) sizeof(struct kevent) * (size_t) kqueue_eventmax));
+        kqueue_events   = (struct kevent *) qev_malloc((long) ((size_t) sizeof(struct kevent) * (size_t) kqueue_eventmax));
     }
 }
 
@@ -155,7 +155,7 @@ kqueue_init(EV_P_ int flags) {
     backend_poll    = kqueue_poll;
 
     kqueue_eventmax = 64; /* initial number of events receivable per poll */
-    kqueue_events   = (struct kevent *) ev_malloc((long) ((size_t) sizeof(struct kevent) * (size_t) kqueue_eventmax));
+    kqueue_events   = (struct kevent *) qev_malloc((long) ((size_t) sizeof(struct kevent) * (size_t) kqueue_eventmax));
 
     kqueue_changes   = 0;
     kqueue_changemax = 0;
@@ -166,8 +166,8 @@ kqueue_init(EV_P_ int flags) {
 
 inline_size void
 kqueue_destroy(EV_P) {
-    ev_free(kqueue_events);
-    ev_free(kqueue_changes);
+    qev_free(kqueue_events);
+    qev_free(kqueue_changes);
 }
 
 inline_size void
@@ -190,7 +190,7 @@ kqueue_fork(EV_P) {
         int kq2;
 
         while ((kq2 = kqueue()) < 0)
-            ev_syserr("(libev) kqueue");
+            qev_syserr("(libev) kqueue");
 
         backend_fd = (uintptr_t) (unsigned) kq2;
     }

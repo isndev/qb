@@ -68,7 +68,7 @@ public:
      *
      * `transport::udp` is a sibling base listed after `io<_Derived>` and is
      * destroyed first (closing the socket). Stopping the event watcher in this
-     * destructor body (which runs before any base) keeps `ev_io_stop` off a
+     * destructor body (which runs before any base) keeps `qev_io_stop` off a
      * closed fd, avoiding libev per-fd bookkeeping corruption.
      */
     ~server() {

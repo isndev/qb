@@ -96,7 +96,7 @@ protected:
     register_io_watcher() {
         if (_io_event)
             return;
-        // Defense-in-depth, symmetric with the io<> watcher-arm guards: never `ev_io_start()` an invalid
+        // Defense-in-depth, symmetric with the io<> watcher-arm guards: never `qev_io_start()` an invalid
         // fd — libev would write OOB into `anfds[-1]`. Every caller binds the socket before this, so this
         // is a no-op today; it just makes the arm robust against a future caller-order refactor.
         if (!_socket.is_open())

@@ -302,7 +302,7 @@ endif()
 # -----------------------------------------------------------------------------
 # nlohmann/json — the ONE genuine third-party upstream dependency
 # -----------------------------------------------------------------------------
-# ev, uuid, nanolog and ska_hash are qb FORKS: qb's own code, never swappable, so qb owns their
+# qev, uuid, nanolog and ska_hash are qb FORKS: qb's own code, never swappable, so qb owns their
 # include path (qb/vendor/...). nlohmann is the opposite -- it is upstream, widely deployed, and a
 # consumer very plausibly already has it. That asymmetry has a consequence that no amount of
 # path-renaming can fix: nlohmann::json is a TYPE that crosses the API boundary (qb::json is an
@@ -350,7 +350,7 @@ set(QB_INTERNAL_MODULES_PATH "${QB_MODULES_DIR}")
 set(QB_HEADER_ONLY_MODULES nlohmann)
 
 # Internal modules list (for logging / diagnostics only)
-set(QB_INTERNAL_MODULES ev uuid nanolog ska_hash ${QB_HEADER_ONLY_MODULES})
+set(QB_INTERNAL_MODULES qev uuid nanolog ska_hash ${QB_HEADER_ONLY_MODULES})
 
 # -----------------------------------------------------------------------------
 # Dependency Resolution Functions

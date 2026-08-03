@@ -62,7 +62,7 @@ namespace qb::io::async::event {
  *       LOG_INFO("File " << this->path() << " modified. New size: " << event.attr.st_size);
  *       // Process file content if needed (e.g., using this->read_all())
  *     }
- *     // Access other stat information through event.attr and event.prev (ev_statdata)
+ *     // Access other stat information through event.attr and event.prev (qev_statdata)
  *   }
  * };
  * @endcode
