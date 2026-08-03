@@ -12,7 +12,10 @@
 #
 # Scope: qb's own Markdown (README.md, readme/**, governance files). It does not
 # scan source code (which is verified by the build) or the parent repo's llm/ and
-# .cursor/ surfaces.
+# .cursor/ surfaces — this script runs INSIDE the submodule and those live at the
+# superproject root, out of reach. llm/ is not unguarded, though: the superproject's
+# dev/agent/llm-guard.py covers it (symbol existence + content-aware citations +
+# retired tokens) and dev/agent/verify.sh runs both. .cursor/skills/ remains unguarded.
 #
 # Usage:  ./scripts/doc-lint.sh        (run from the qb root)
 #
