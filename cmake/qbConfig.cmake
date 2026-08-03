@@ -117,6 +117,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 else()
     option(QB_INSTALL "Install qb framework" OFF)
 endif()
+# Same contract for the qbm modules registered through qb_register_module(): a module's
+# install/export rules run only when the build that owns them asked to be installable.
+# Defaults to QB_INSTALL because the two are never usefully split -- an installed qbm-http
+# whose find_dependency(qb) has nothing to find is not a package.
+option(QBM_INSTALL "Install qbm modules registered via qb_register_module()" ${QB_INSTALL})
 
 # Performance options
 option(QB_ENABLE_OPTIMIZATIONS "Enable performance optimizations" ON)
