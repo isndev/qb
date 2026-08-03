@@ -52,7 +52,7 @@ The helper derives both the executable and the CTest entry name uniformly as `<m
 | `io/tests/unit/core/uri-parse.cpp` | `MODULE qb-io TIER unit NAME uri-parse` | `qb-io-test-unit-uri-parse` |
 | `io/tests/system/coroutine/channel-lifetime.cpp` | `MODULE qb-io TIER system NAME channel-lifetime` | `qb-io-test-system-channel-lifetime` |
 
-<!-- src: qb/cmake/qbFunctions.cmake:395-412, qb/tests/io/unit/CMakeLists.txt:27 -->
+<!-- src: qb/cmake/qbFunctions.cmake:398-415, qb/tests/io/unit/CMakeLists.txt:27 -->
 
 Every test also carries CTest labels — `tier:<tier>` and `module:<module>`, plus any capability tokens from `REQUIRES` (`ssl`, `quic`, `compression`, `network`, `live`) — and a per-tier default timeout (unit 60 s, system 120 s, integration 300 s). To add a test, drop the source into the right tier/topic directory and add one `qb_add_test` line; there are no per-directory naming rules to remember.
 
@@ -68,9 +68,9 @@ cmake --build build --parallel
 
 <!-- src: qb/readme/7_reference/building.md -->
 
-When `QB_BUILD_TESTS` is `OFF`, `qb_add_test` returns early before defining any target, so no test executables and no CTest registrations exist (`qb/cmake/qbFunctions.cmake:417`).
+When `QB_BUILD_TESTS` is `OFF`, `qb_add_test` returns early before defining any target, so no test executables and no CTest registrations exist (`qb/cmake/qbFunctions.cmake:420`).
 
-Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:482`), not alongside the per-module build trees. After a build, list them with:
+Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:485`), not alongside the per-module build trees. After a build, list them with:
 
 ```bash
 ls build/bin/tests/
@@ -78,7 +78,7 @@ ls build/bin/tests/
 
 ### How GoogleTest is resolved
 
-`qb_add_test` links each test against `GTest::gtest_main` (`qb/cmake/qbFunctions.cmake:444-446`), which provides the `main()` entry point — test sources do not declare their own. GoogleTest itself is resolved once, before any test target is defined, by `qb/cmake/qbFetchGoogleDeps.cmake`, only when `QB_BUILD_TESTS` (or `QB_BUILD_BENCHMARKS`) is on. The policy is:
+`qb_add_test` links each test against `GTest::gtest_main` (`qb/cmake/qbFunctions.cmake:447-449`), which provides the `main()` entry point — test sources do not declare their own. GoogleTest itself is resolved once, before any test target is defined, by `qb/cmake/qbFetchGoogleDeps.cmake`, only when `QB_BUILD_TESTS` (or `QB_BUILD_BENCHMARKS`) is on. The policy is:
 
 - **`QB_USE_SYSTEM_GTEST=ON`** (default `OFF`) — require a system package via `find_package(GTest CONFIG REQUIRED)`; never fetch.
 - **`QB_DEPS_FETCH_FALLBACK=ON`** (the default) — use a system GoogleTest if `find_package` locates one, otherwise build the pinned tag from source through FetchContent ("system if present, else git"). The from-source path needs network access on the first configure.
@@ -88,7 +88,7 @@ The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig
 
 ### Test resources
 
-If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:896-928`). SSL-dependent qb-io tests additionally depend on a `generate_ssl_certs` target that produces a self-signed certificate. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:514-516`).
+If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:1070-1093`). SSL-dependent qb-io tests additionally depend on a `generate_ssl_certs` target that produces a self-signed certificate. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:517-519`).
 
 ### Conditional suites
 
@@ -134,7 +134,7 @@ ctest -L tier:unit          # every unit-tier test
 ctest -L module:qb-io       # every qb-io test
 ```
 
-Every test registered by `qb_add_test` carries `tier:<tier>` and `module:<module>` labels (plus any capability tags such as `ssl` or `coroutine`) and a per-tier timeout (unit 60 s, system 120 s, integration 300 s), and runs with its working directory set to `bin/tests` (`qb/cmake/qbFunctions.cmake:514-535`). The `-R` regular expression matches the CTest test name (which equals the target name from the table above); `-L` matches labels.
+Every test registered by `qb_add_test` carries `tier:<tier>` and `module:<module>` labels (plus any capability tags such as `ssl` or `coroutine`) and a per-tier timeout (unit 60 s, system 120 s, integration 300 s), and runs with its working directory set to `bin/tests` (`qb/cmake/qbFunctions.cmake:517-538`). The `-R` regular expression matches the CTest test name (which equals the target name from the table above); `-L` matches labels.
 
 ### Running an executable directly
 

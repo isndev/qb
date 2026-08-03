@@ -231,7 +231,6 @@ endif ()
 # -----------------------------------------------------------------------------
 if (QB_INSTALL)
     include(GNUInstallDirs)
-    include(CMakePackageConfigHelpers)
 
     # Collect the library targets that should be installed.
     # Bundled dependencies (qev, stduuid) MUST be in the same export set so
@@ -256,64 +255,26 @@ if (QB_INSTALL)
         list(APPEND _QB_INSTALL_TARGETS qb-nlohmann)
     endif ()
 
-    # Install library targets with an EXPORT set so CMake can generate
-    # the *Targets.cmake files required by find_package(qb).
-    if (_QB_INSTALL_TARGETS)
-        install(TARGETS ${_QB_INSTALL_TARGETS}
-                EXPORT qbTargets
-                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-                LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        )
-    endif ()
-
-    # Install the export set
-    install(EXPORT qbTargets
-            FILE qbTargets.cmake
-            NAMESPACE qb::
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
-    )
-
-    # Install public headers.
-    #
-    # This ONE rule now also ships the vendored forks (src/qb/vendor/{qev,uuid,nanolog,
-    # ska_hash}), because they physically live under this directory. That is the point of the
-    # layout: the build tree and the installed tree expose qb's headers AND its forks through the
-    # same single root at the same relative paths, so there is no second BUILD_INTERFACE /
-    # INSTALL_INTERFACE pair to drift apart. The previous layout had exactly that drift and it
-    # shipped broken: find_package(qb) configured fine and then failed to compile on
-    # "fatal error: 'ev/ev++.h' file not found", because the build-interface root
-    # ($<BUILD_INTERFACE:${QB_MODULES_DIR}>) had no installed counterpart and no CI job ever ran
-    # cmake --install.
-    #
-    # Excluded: stduuid's vendored Catch2 (~830 KB) and its test sources. They are build-time
-    # material for the fork's own test suite, never part of qb's public surface.
-    install(
-            DIRECTORY "${QB_INCLUDE_DIR}/"
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-            FILES_MATCHING
-            REGEX "/qb/vendor/uuid/(catch|test|cmake)(/|$)" EXCLUDE
-            PATTERN "*.h"
-            PATTERN "*.hpp"
-            PATTERN "*.tpp"
-    )
-
-    # Genuine third-party upstream dependencies still living in modules/ (nlohmann only). Installed
-    # at their canonical path -- <nlohmann/json.hpp> IS that library's public spelling, and unlike
-    # the forks it is a name a consumer may legitimately already own.
+    # Genuine third-party upstream dependencies still living in modules/ (nlohmann only), which
+    # is why they are NOT covered by the one rule below: they sit outside qb's include root on
+    # purpose and install at their own canonical path -- <nlohmann/json.hpp> IS that library's
+    # public spelling, and unlike the forks it is a name a consumer may legitimately already own.
     #
     # Only when qb actually fell back to the bundled copy. If qb was built against a system
     # nlohmann_json, installing ours too would put a SECOND copy on the consumer's include path
     # while qbConfig.cmake resolves the real one via find_dependency -- the exact duplicate-type
-    # situation the find_package branch exists to avoid.
+    # situation the find_package branch exists to avoid. Its notice follows its header for the
+    # same reason, and when the bundled copy is eventually dropped in favour of
+    # find_package(nlohmann_json) both rules stop firing on their own.
     set(_qb_bundled_hdr_mods ${QB_HEADER_ONLY_MODULES})
     if (QB_USES_SYSTEM_NLOHMANN)
         set(_qb_bundled_hdr_mods)
     endif ()
+    set(_qb_bundled_hdr_dirs)
     foreach (_hdr_mod ${_qb_bundled_hdr_mods})
         set(_hdr_mod_dir "${QB_MODULES_DIR}/${_hdr_mod}")
         if (IS_DIRECTORY "${_hdr_mod_dir}")
+            list(APPEND _qb_bundled_hdr_dirs "${_hdr_mod_dir}")
             install(
                     DIRECTORY "${_hdr_mod_dir}/"
                     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${_hdr_mod}
@@ -324,97 +285,37 @@ if (QB_INSTALL)
         endif ()
     endforeach ()
 
-    # Install qb's own license and the third-party notices.
-    #
-    # This is not decoration: Apache-2.0 s.4 requires a copy of the License to reach every
-    # recipient, and the MIT / BSD-2 / BSL-1.0 components qb bundles all require their notice
-    # to be *distributed with* the software. Until this rule existed nothing did -- the two
-    # install(DIRECTORY) rules above use FILES_MATCHING with *.h/*.hpp/*.tpp patterns, and
-    # FILES_MATCHING installs ONLY files matching a pattern, so LICENSE and THIRD-PARTY-NOTICES
-    # sitting right next to the vendored headers were silently skipped. A verified install
-    # produced zero license files of any kind while shipping five vendored upstreams.
-    #
-    # share/licenses/<pkg>/ rather than share/doc: it is the layout distro packaging tools
-    # already look in, and it keeps qb's notices from colliding with a qbm module's.
-    set(_qb_licensedir "${CMAKE_INSTALL_DATAROOTDIR}/licenses/qb")
-    install(FILES
-            "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
-            "${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES"
-            DESTINATION "${_qb_licensedir}"
-    )
+    # CMake exports the Argon2:: / Ngtcp2:: ad-hoc IMPORTED targets that qb::io links
+    # transitively BY NAME, with no recreation; a find_package(qb) consumer has no way to
+    # invent them, so the Find modules qbConfig.cmake.in calls travel with the package.
+    set(_qb_find_modules)
+    if (QB_HAS_ARGON2)
+        list(APPEND _qb_find_modules "${QB_CMAKE_DIR}/FindArgon2.cmake")
+    endif ()
+    if (QB_HAS_QUIC)
+        list(APPEND _qb_find_modules "${QB_CMAKE_DIR}/FindNgtcp2.cmake")
+    endif ()
 
-    # Each vendored unit keeps its license text beside its own code, so glob rather than
-    # hard-code: a unit added later ships its notice without anyone remembering to edit this
-    # list, and scripts/check-vendor-attribution.py fails the guard battery if a unit has no
-    # notice to ship. The installed path mirrors THIRD-PARTY-NOTICES' "License at" entries.
+    # THE install/export rule -- qb_install_package() in cmake/qbPackage.cmake, the same one
+    # call every qbm module makes. Everything above this line is qb-only because it is about
+    # a third-party choice or about which targets exist, not about how a qb-shaped repository
+    # is packaged.
     #
-    # The glob is deliberately one level deep, which is also what keeps uuid/catch out: Catch2
-    # is the stduuid fork's test-only material, the header rule above already excludes it, and
-    # shipping its license would advertise a dependency the consumer never received.
-    file(GLOB _qb_vendor_dirs LIST_DIRECTORIES true "${QB_INCLUDE_DIR}/qb/vendor/*")
-    foreach (_qb_vendor_dir ${_qb_vendor_dirs})
-        if (NOT IS_DIRECTORY "${_qb_vendor_dir}")
-            continue()
-        endif ()
-        get_filename_component(_qb_vendor_name "${_qb_vendor_dir}" NAME)
-        file(GLOB _qb_vendor_notices
-                "${_qb_vendor_dir}/LICENSE" "${_qb_vendor_dir}/LICENSE.*"
-                "${_qb_vendor_dir}/LICENSE_*" "${_qb_vendor_dir}/THIRD-PARTY-NOTICES")
-        if (_qb_vendor_notices)
-            install(FILES ${_qb_vendor_notices}
-                    DESTINATION "${_qb_licensedir}/third-party/${_qb_vendor_name}")
-        endif ()
-    endforeach ()
-
-    # nlohmann's notice follows its header: installed only when qb actually shipped the bundled
-    # copy. If qb resolved a system nlohmann_json, neither the header nor its license is ours to
-    # install -- and when the bundled copy is eventually deleted in favour of
-    # find_package(nlohmann_json), this rule stops firing on its own rather than leaving a
-    # dangling license for a header that is no longer there.
-    foreach (_hdr_mod ${_qb_bundled_hdr_mods})
-        file(GLOB _qb_mod_notices "${QB_MODULES_DIR}/${_hdr_mod}/LICENSE*")
-        if (_qb_mod_notices)
-            install(FILES ${_qb_mod_notices}
-                    DESTINATION "${_qb_licensedir}/third-party/${_hdr_mod}")
-        endif ()
-    endforeach ()
-
-    # Version compatibility file
-    write_basic_package_version_file(
-            "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
+    # HEADER_EXCLUDE is the only exclusion left anywhere in the rule: stduuid's vendored Catch2
+    # (~830 KB) and its test sources are build-time material for that fork's own test suite,
+    # never part of qb's public surface. A module needs no exclusion at all.
+    qb_install_package(
+            PACKAGE qb
+            NAMESPACE qb::
             VERSION ${QB_FRAMEWORK_VERSION}
             COMPATIBILITY SameMajorVersion
+            CONFIG_TEMPLATE "${QB_CMAKE_DIR}/qbConfig.cmake.in"
+            SOURCE_DIR "${QB_ROOT_DIR}"
+            HEADER_EXCLUDE "/qb/vendor/uuid/(catch|test|cmake)(/|$)"
+            TARGETS ${_QB_INSTALL_TARGETS}
+            CMAKE_FILES ${_qb_find_modules}
+            VENDOR_DIRS "${QB_VENDOR_DIR}/*" ${_qb_bundled_hdr_dirs}
     )
-
-    # Package config file (from template, for find_package(qb))
-    configure_package_config_file(
-            "${QB_CMAKE_DIR}/qbConfig.cmake.in"
-            "${CMAKE_CURRENT_BINARY_DIR}/qbInstallConfig.cmake"
-            INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
-    )
-
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/qbInstallConfig.cmake"
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
-            RENAME qbConfig.cmake
-    )
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
-    )
-
-    # Install FindArgon2 module so consumers can resolve the Argon2 dependency
-    if (QB_HAS_ARGON2)
-        install(FILES "${QB_CMAKE_DIR}/FindArgon2.cmake"
-                DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
-        )
-    endif ()
-
-    # Install FindNgtcp2 so find_package(qb) consumers of a QUIC-enabled build can
-    # recreate the Ngtcp2:: imported targets that qb::io links transitively.
-    if (QB_HAS_QUIC)
-        install(FILES "${QB_CMAKE_DIR}/FindNgtcp2.cmake"
-                DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
-        )
-    endif ()
 
     qb_status_message("Installation configured:")
     qb_status_message("  Prefix: ${CMAKE_INSTALL_PREFIX}")

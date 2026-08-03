@@ -27,6 +27,9 @@ if(QB_FUNCTIONS_INCLUDED)
 endif()
 set(QB_FUNCTIONS_INCLUDED TRUE)
 
+# THE install/export rule, shared verbatim by qb/CMakeLists.txt and qb_register_module().
+include("${CMAKE_CURRENT_LIST_DIR}/qbPackage.cmake")
+
 # -----------------------------------------------------------------------------
 # Test strictness toggle
 # -----------------------------------------------------------------------------
@@ -700,216 +703,21 @@ endfunction()
 # Module Functions
 # -----------------------------------------------------------------------------
 
-# Internal: where a module's public headers live, and where they are installed. ONE place
-# decides the layout; qb_register_module() and _qb_module_install_rules() both read it.
-# Call from the module's own CMakeLists.txt scope -- it reads CMAKE_CURRENT_SOURCE_DIR.
-#
-#   out_build     the build-tree include root, for $<BUILD_INTERFACE:>
-#   out_install   the install-tree include root, for $<INSTALL_INTERFACE:> and INCLUDES DESTINATION
-#   out_copy_from the directory install(DIRECTORY) copies the headers OUT of
-#   out_copy_to   the directory install(DIRECTORY) copies them IN to
-#
-# THE RULE (dev/analysis/SOURCE-LAYOUT-3.0.md): a repository's src/ IS its include root -- its
-# contents are exactly what a consumer types after `#include <`. A module holds
-# src/qbm/<name>/..., so <moduledir>/src is the build-tree root and <includedir> is its
-# installed mirror. The two are the SAME directory listing copied verbatim, which is why
-# copy_from/copy_to equal build/install and the consume spelling <qbm/<name>/...> cannot drift
-# between the trees. All four values are returned together so no caller can pair them wrongly.
-#
-# Before 3.0.0 the include root was the module's PARENT directory -- the superproject's qbm/,
-# which does not exist in the module's own git repository -- mirrored by <includedir>/qbm. That
-# is what made the consume spelling <http/...>, <pgsql/...>, <redis/...>, and it is why
-# installing qbm claimed those three maximally generic names in every consumer's include
-# namespace. A hard error if a module still has that shape: silently falling back would install
-# it into the wrong place and only fail at a downstream consumer's first #include.
-function(_qb_module_include_roots mod_name out_build out_install out_copy_from out_copy_to)
-    if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/qbm/${mod_name}")
-        # ONE argument, not four: qb_error_message forwards ${ARGN}, and CMake joins a list
-        # with semicolons -- four strings would print with `;` sprayed through the sentence.
-        string(CONCAT _qbm_layout_err
-            "qbm-${mod_name}: expected the module's public headers under "
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/qbm/${mod_name}/ -- src/ IS the include root, so "
-            "<qbm/${mod_name}/...> is the same string in this tree and in an installed prefix. "
-            "See dev/analysis/SOURCE-LAYOUT-3.0.md.")
-        qb_error_message("${_qbm_layout_err}")
-    endif()
-    set(${out_build}     "${CMAKE_CURRENT_SOURCE_DIR}/src"  PARENT_SCOPE)
-    set(${out_install}   "${CMAKE_INSTALL_INCLUDEDIR}"      PARENT_SCOPE)
-    set(${out_copy_from} "${CMAKE_CURRENT_SOURCE_DIR}/src"  PARENT_SCOPE)
-    set(${out_copy_to}   "${CMAKE_INSTALL_INCLUDEDIR}"      PARENT_SCOPE)
-endfunction()
-
-# Internal: emit the install/export rules that make a qbm module find_package()-able.
-#
-# Called from qb_register_module() when QBM_INSTALL is ON. Deliberate choices:
-#
-#  * ONE PACKAGE PER MODULE (qbm-http, qbm-pgsql, qbm-redis), not
-#    find_package(qbm COMPONENTS http). The unit of shipping here is the repository: the
-#    modules are independent submodules with their own LICENSE, CHANGELOG and version, and a
-#    component-style package would need a top-level qbmConfig.cmake that NO module can own
-#    (each would overwrite the others'). Per-module packages also mean installing http does
-#    not drag in pgsql and redis. qb itself uses COMPONENTS for the opposite reason: core and
-#    io are one repo, one version, one install unit.
-#
-#  * THE HEADER ROOT IS THE MODULE'S OWN src/, MIRRORED VERBATIM UNDER <includedir>. The
-#    consume spelling is <qbm/<name>/...>, identical in the build tree and the installed tree,
-#    because both are the same directory listing. Exactly ONE top-level name -- `qbm` -- lands
-#    on a consumer's include path, and it is not claimed by any single module.
-#    _qb_module_include_roots() computes both halves; see its comment for the legacy shape.
-#
-#  * A GENERATED CONFIG THAT PINS qb. The module ships a prebuilt archive compiled against a
-#    specific qb/include full of inline and template code, with public headers gated on qb's
-#    PUBLIC QB_HAS_SSL / QB_HAS_QUIC. Version alone does not catch either skew, so the
-#    generated config hard-fails at configure time on both. See qbmModuleConfig.cmake.in.
-function(_qb_module_install_rules module_target mod_name mod_version
-                                  extra_targets config_deps_template extra_cmake_files)
-    include(GNUInstallDirs)
-    include(CMakePackageConfigHelpers)
-
-    set(_qbm_pkg "qbm-${mod_name}")
-    set(_qbm_cmakedir "${CMAKE_INSTALL_LIBDIR}/cmake/${_qbm_pkg}")
-    _qb_module_include_roots("${mod_name}"
-        _qbm_incdir_build _qbm_incdir _qbm_hdr_root _qbm_hdr_dest)
-
-    if(NOT mod_version)
-        set(mod_version "${QB_FRAMEWORK_VERSION}")
-    endif()
-
-    # --- targets + export set -------------------------------------------------
-    # install(EXPORT NAMESPACE qbm::) prefixes the EXPORT_NAME, which defaults to the target
-    # name -- so without this the package would define `qbm::qbm-http` while the build tree
-    # defines `qbm::http`, and every consumer's target_link_libraries(qbm::http) would break
-    # the moment it switched from add_subdirectory to find_package. Pin the exported name to
-    # the module name so the two trees spell the target identically.
-    set_target_properties(${module_target} PROPERTIES EXPORT_NAME ${mod_name})
-
-    # extra_targets carries the bundled non-imported libraries the module links PUBLIC (e.g.
-    # llhttp). They MUST be in the same export set: qbm-<name>Targets.cmake names them in
-    # INTERFACE_LINK_LIBRARIES, and install(EXPORT) refuses to generate a file referring to a
-    # target that is in no export set.
-    install(TARGETS ${module_target} ${extra_targets}
-        EXPORT ${_qbm_pkg}Targets
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        INCLUDES DESTINATION ${_qbm_incdir}
-    )
-
-    install(EXPORT ${_qbm_pkg}Targets
-        FILE ${_qbm_pkg}Targets.cmake
-        NAMESPACE qbm::
-        DESTINATION ${_qbm_cmakedir}
-    )
-
-    # --- public headers -------------------------------------------------------
-    # The pattern list carries *.inl on purpose: qb's own install rule ships *.h/*.hpp/*.tpp,
-    # and reusing it verbatim drops qbm-pgsql's three .inl files -- resultset.h then fails
-    # the consumer's FIRST translation unit on "'resultset.inl' file not found". The
-    # directory excludes keep test fixtures (http and redis both have tests/shared/*.h), the
-    # readme books, the maintainer scripts and the vendored fork's build material out of the
-    # package -- moot under the src/ root, which holds none of them, load-bearing under legacy.
-    install(
-        DIRECTORY "${_qbm_hdr_root}/"
-        DESTINATION ${_qbm_hdr_dest}
-        FILES_MATCHING
-        REGEX "/(tests|readme|docs|scripts|cmake|examples|benchmarks|not-qb)$" EXCLUDE
-        PATTERN "*.h"
-        PATTERN "*.hpp"
-        PATTERN "*.tpp"
-        PATTERN "*.inl"
-    )
-
-    # --- license + third-party notices ----------------------------------------
-    # The header rule above uses FILES_MATCHING, which installs ONLY files matching one of its
-    # patterns -- so the module's LICENSE never left the source tree, and neither did the
-    # notices for anything it vendors. Apache-2.0 s.4 requires the License to reach every
-    # recipient, and a bundled MIT/BSD component requires its notice to be distributed with the
-    # software; a static archive with a vendored parser compiled into it is exactly that case.
-    set(_qbm_licensedir "${CMAKE_INSTALL_DATAROOTDIR}/licenses/${_qbm_pkg}")
-    set(_qbm_notices "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
-    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES")
-        list(APPEND _qbm_notices "${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES")
-    endif ()
-    install(FILES ${_qbm_notices} DESTINATION "${_qbm_licensedir}")
-
-    # not-qb/<unit>/ is the convention for a vendored upstream inside a qbm module (today only
-    # qbm-http's llhttp). Globbing it rather than naming llhttp keeps this generic: a module
-    # that vendors something later ships its notice automatically, and
-    # qb/scripts/check-vendor-attribution.py fails the guard battery if a unit has none.
-    file(GLOB _qbm_vendor_dirs LIST_DIRECTORIES true "${CMAKE_CURRENT_SOURCE_DIR}/not-qb/*")
-    foreach (_qbm_vendor_dir ${_qbm_vendor_dirs})
-        if (NOT IS_DIRECTORY "${_qbm_vendor_dir}")
-            continue()
-        endif ()
-        get_filename_component(_qbm_vendor_name "${_qbm_vendor_dir}" NAME)
-        file(GLOB _qbm_vendor_notices
-                "${_qbm_vendor_dir}/LICENSE" "${_qbm_vendor_dir}/LICENSE-*"
-                "${_qbm_vendor_dir}/LICENSE.*" "${_qbm_vendor_dir}/LICENSE_*"
-                "${_qbm_vendor_dir}/THIRD-PARTY-NOTICES")
-        if (_qbm_vendor_notices)
-            install(FILES ${_qbm_vendor_notices}
-                    DESTINATION "${_qbm_licensedir}/third-party/${_qbm_vendor_name}")
-        endif ()
-    endforeach ()
-
-    # --- package config -------------------------------------------------------
-    # SameMinorVersion, not qb's SameMajorVersion: a prebuilt static archive compiled against
-    # header-heavy, inline-heavy qb does not honestly satisfy "any 2.x".
-    write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/${_qbm_pkg}ConfigVersion.cmake"
-        VERSION ${mod_version}
-        COMPATIBILITY SameMinorVersion
-    )
-
-    # Substituted into qbmModuleConfig.cmake.in.
-    set(_QBM_CFG_PKG "${_qbm_pkg}")
-    set(_QBM_CFG_NAME "${mod_name}")
-    set(_QBM_CFG_INCDIR "${_qbm_incdir}")
-    string(TOUPPER "${mod_name}" _QBM_CFG_NAME_UPPER)
-    set(_QBM_CFG_VERSION "${mod_version}")
-
-    configure_package_config_file(
-        "${QB_CMAKE_DIR}/qbmModuleConfig.cmake.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/${_qbm_pkg}InstallConfig.cmake"
-        INSTALL_DESTINATION ${_qbm_cmakedir}
-    )
-
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${_qbm_pkg}InstallConfig.cmake"
-        DESTINATION ${_qbm_cmakedir}
-        RENAME ${_qbm_pkg}Config.cmake
-    )
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${_qbm_pkg}ConfigVersion.cmake"
-        DESTINATION ${_qbm_cmakedir}
-    )
-
-    # Module-supplied dependency recreation (optional) + the Find modules it needs.
-    if(config_deps_template)
-        configure_file(
-            "${CMAKE_CURRENT_SOURCE_DIR}/${config_deps_template}"
-            "${CMAKE_CURRENT_BINARY_DIR}/${_qbm_pkg}Dependencies.cmake"
-            @ONLY
-        )
-        install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${_qbm_pkg}Dependencies.cmake"
-            DESTINATION ${_qbm_cmakedir}
-        )
-    endif()
-
-    foreach(_qbm_extra_cmake ${extra_cmake_files})
-        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_qbm_extra_cmake}"
-            DESTINATION ${_qbm_cmakedir}
-        )
-    endforeach()
-
-    qb_status_message("  install: ${_qbm_pkg} -> find_package(${_qbm_pkg} CONFIG) / qbm::${mod_name}")
-endfunction()
-
 # qb_register_module - Register a qb module
 #
 # Installation (QBM_INSTALL=ON) additionally produces a find_package()-able package per
 # module: qbm-<NAME>Config.cmake + qbm-<NAME>Targets.cmake + qbm-<NAME>ConfigVersion.cmake
 # under <libdir>/cmake/qbm-<NAME>, and the module's public headers under
-# <includedir>/qbm/<NAME>. See _qb_module_install_rules() below for the rationale of each
-# choice (one package per module, the qbm/ header root, the qb version+feature gate).
+# <includedir>/qbm/<NAME>. The rules themselves are qb_install_package() in qbPackage.cmake,
+# byte-for-byte the same call qb makes for itself; only the arguments differ.
+#
+# ONE PACKAGE PER MODULE (qbm-http, qbm-pgsql, qbm-redis), not
+# find_package(qbm COMPONENTS http). The unit of shipping here is the repository: the modules
+# are independent submodules with their own LICENSE, CHANGELOG and version, and a
+# component-style package would need a top-level qbmConfig.cmake that NO module can own (each
+# would overwrite the others'). Per-module packages also mean installing http does not drag in
+# pgsql and redis. qb itself uses COMPONENTS for the opposite reason: core and io are one repo,
+# one version, one install unit.
 #
 #   EXPORT_EXTRA_TARGETS   extra non-imported targets the module links PUBLIC and that must
 #                          therefore travel in the SAME export set (e.g. the bundled llhttp
@@ -1003,20 +811,40 @@ function(qb_register_module)
         endif()
     endif()
     
-    # Expose the module's include root so consumers reach its umbrella header by the shipped
-    # prefix (<qbm/http/http.h>, <qbm/http/ws.h>, <qbm/redis/redis.h>, <qbm/pgsql/pgsql.h>).
-    # The module's own sources include their siblings relatively, but external consumers
-    # (examples, downstream apps) and the module's own test suite include by that prefix.
-    # Marked SYSTEM so a consumer's -Werror does not fire on a qbm header.
+    # THE RULE, module edition: the module's public headers live at src/qbm/<name>/, so
+    # <qbm/<name>/...> is the same string in this tree and in an installed prefix, and exactly
+    # one top-level name -- `qbm` -- lands on a consumer's include path, owned by no single
+    # module. Before 3.0.0 the include root was the module's PARENT directory (the
+    # superproject's qbm/, which does not exist in the module's own git repository), which is
+    # what made the consume spelling <http/...>, <pgsql/...>, <redis/...> and claimed those
+    # three maximally generic names in every consumer's include namespace.
     #
-    # The INSTALL_INTERFACE entry is the installed mirror of that SAME root -- see
-    # _qb_module_include_roots(), which is the one place either is decided. Without the pair
-    # the build interface has no installed counterpart, and find_package() consumers configure
-    # fine and then fail to compile on "'qbm/http/http.h' file not found" -- the drift class
-    # that shipped once already in qb (the missing <qb/vendor/qev/qev++.h> root) and is
-    # invisible to an in-tree test suite.
-    _qb_module_include_roots("${MOD_NAME}"
-        _qb_module_include_root _qb_module_install_root _qb_module_hdr_from _qb_module_hdr_to)
+    # A hard error rather than a fallback: a differently-shaped module would install into the
+    # wrong place and fail only at a downstream consumer's first #include. ONE argument, not
+    # four, because qb_error_message forwards ${ARGN} and CMake joins a list with semicolons.
+    if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/qbm/${MOD_NAME}")
+        string(CONCAT _qbm_layout_err
+            "qbm-${MOD_NAME}: expected the module's public headers under "
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/qbm/${MOD_NAME}/ -- src/ IS the include root, so "
+            "<qbm/${MOD_NAME}/...> is the same string in this tree and in an installed prefix. "
+            "See dev/analysis/SOURCE-LAYOUT-3.0.md.")
+        qb_error_message("${_qbm_layout_err}")
+    endif()
+
+    # Expose that root so consumers reach the umbrella header by the shipped prefix
+    # (<qbm/http/http.h>, <qbm/http/ws.h>, <qbm/redis/redis.h>, <qbm/pgsql/pgsql.h>). The
+    # module's own sources include their siblings relatively, but external consumers (examples,
+    # downstream apps) and the module's own test suite include by that prefix. Marked SYSTEM so
+    # a consumer's -Werror does not fire on a qbm header.
+    #
+    # The INSTALL_INTERFACE entry is the installed mirror of the SAME root, and it comes from
+    # qb_package_include_root() -- the one place either is decided, and the same call
+    # qb_install_package() uses to copy one onto the other. Without the pair the build interface
+    # has no installed counterpart, and find_package() consumers configure fine and then fail to
+    # compile on "'qbm/http/http.h' file not found" -- the drift class that shipped once already
+    # in qb (the missing <qb/vendor/qev/qev++.h> root) and is invisible to an in-tree test suite.
+    qb_package_include_root("${CMAKE_CURRENT_SOURCE_DIR}"
+        _qb_module_include_root _qb_module_install_root)
     _qb_target_usage_scope(${module_target} _qb_module_scope)
     target_include_directories(${module_target}
         SYSTEM ${_qb_module_scope}
@@ -1029,8 +857,51 @@ function(qb_register_module)
 
     # Install / export rules (find_package(qbm-<name>) support)
     if(QBM_INSTALL)
-        _qb_module_install_rules("${module_target}" "${MOD_NAME}" "${MOD_VERSION}"
-            "${MOD_EXPORT_EXTRA_TARGETS}" "${MOD_CONFIG_DEPENDENCIES}" "${MOD_INSTALL_CMAKE_FILES}")
+        # install(EXPORT NAMESPACE qbm::) prefixes the EXPORT_NAME, which defaults to the target
+        # name -- so without this the package would define `qbm::qbm-http` while the build tree
+        # defines `qbm::http`, and every consumer's target_link_libraries(qbm::http) would break
+        # the moment it switched from add_subdirectory to find_package.
+        set_target_properties(${module_target} PROPERTIES EXPORT_NAME ${MOD_NAME})
+
+        # Substituted into qbmModuleConfig.cmake.in by qb_install_package(). Set here because
+        # configure_package_config_file() expands @VARS@ from the calling scope.
+        set(_QBM_CFG_PKG "qbm-${MOD_NAME}")
+        set(_QBM_CFG_NAME "${MOD_NAME}")
+        set(_QBM_CFG_INCDIR "${_qb_module_install_root}")
+        set(_QBM_CFG_VERSION "${MOD_VERSION}")
+        if(NOT _QBM_CFG_VERSION)
+            set(_QBM_CFG_VERSION "${QB_FRAMEWORK_VERSION}")
+        endif()
+        string(TOUPPER "${MOD_NAME}" _QBM_CFG_NAME_UPPER)
+
+        set(_qbm_cmake_files)
+        if(MOD_CONFIG_DEPENDENCIES)
+            configure_file("${CMAKE_CURRENT_SOURCE_DIR}/${MOD_CONFIG_DEPENDENCIES}"
+                "${CMAKE_CURRENT_BINARY_DIR}/qbm-${MOD_NAME}Dependencies.cmake" @ONLY)
+            list(APPEND _qbm_cmake_files
+                "${CMAKE_CURRENT_BINARY_DIR}/qbm-${MOD_NAME}Dependencies.cmake")
+        endif()
+        foreach(_qbm_extra IN LISTS MOD_INSTALL_CMAKE_FILES)
+            list(APPEND _qbm_cmake_files "${CMAKE_CURRENT_SOURCE_DIR}/${_qbm_extra}")
+        endforeach()
+
+        # SameMinorVersion, not qb's SameMajorVersion: a prebuilt static archive compiled
+        # against header-heavy, inline-heavy qb does not honestly satisfy "any 3.x". The
+        # generated config additionally hard-fails on qb feature skew, which a version range
+        # cannot see at all -- see qbmModuleConfig.cmake.in.
+        qb_install_package(
+            PACKAGE "qbm-${MOD_NAME}"
+            NAMESPACE qbm::
+            VERSION ${_QBM_CFG_VERSION}
+            COMPATIBILITY SameMinorVersion
+            CONFIG_TEMPLATE "${QB_CMAKE_DIR}/qbmModuleConfig.cmake.in"
+            TARGETS ${module_target} ${MOD_EXPORT_EXTRA_TARGETS}
+            CMAKE_FILES ${_qbm_cmake_files}
+            # not-qb/<unit>/ is the convention for a vendored upstream inside a qbm module
+            # (today only qbm-http's llhttp). Globbing rather than naming it keeps this
+            # generic: a module that vendors something later ships its notice automatically.
+            VENDOR_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/not-qb/*"
+        )
     endif()
 
     # Add to global module list
