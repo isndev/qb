@@ -25,7 +25,7 @@
 #ifndef QB_UNORDERED_SET_H
 #define QB_UNORDERED_SET_H
 #include <set>
-#include <ska_hash/unordered_map.hpp>
+#include <qb/vendor/ska_hash/unordered_map.hpp>
 #include <unordered_set>
 
 namespace qb {

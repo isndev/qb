@@ -25,4 +25,4 @@ Checks: >
 WarningsAsErrors: ''
 
 HeaderFilterRegex: '(^|.*/)(include/qb|source/(core|io)/src)(/|$).*'
-ExcludeHeaderFilterRegex: '(^|.*/)(build|modules|source/.*/tests)(/|$).*'
+ExcludeHeaderFilterRegex: '(^|.*/)(build|modules|include/qb/vendor|source/.*/tests)(/|$).*'

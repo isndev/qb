@@ -141,7 +141,8 @@ def main() -> int:
         for ext in ("cpp", "h", "hpp", "tpp"):
             files += glob.glob(os.path.join(root, "**", f"*.{ext}"), recursive=True)
         for f in sorted(set(files)):
-            if os.sep + "build" + os.sep in f or os.sep + "modules" + os.sep in f:
+            if (os.sep + "build" + os.sep in f or os.sep + "modules" + os.sep in f
+                    or os.sep + "vendor" + os.sep in f):
                 continue
             for line, message in find_sites(f):
                 failed = True

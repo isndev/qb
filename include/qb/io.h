@@ -32,7 +32,7 @@
 #include <utility>
 
 #ifdef QB_WITH_LOGGING
-#include <nanolog/nanolog.h>
+#include <qb/vendor/nanolog/nanolog.h>
 #endif
 
 namespace qb {

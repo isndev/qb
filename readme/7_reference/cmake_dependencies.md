@@ -3,7 +3,7 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
 
-qb groups every third-party dependency into one of three resolution classes — bundled in-tree, fetched from source on demand, or supplied by the system — and resolves each class with a single, predictable rule driven by `QB_DEPS_FETCH_FALLBACK` and the `QB_USE_SYSTEM_*` switches.
+qb groups its dependencies into resolution classes — vendored forks that are qb's own code, third-party trees bundled in-tree, fetched from source on demand, or supplied by the system — and resolves each class with a single, predictable rule driven by `QB_DEPS_FETCH_FALLBACK` and the `QB_USE_SYSTEM_*` switches.
 
 **Prerequisites:** [Building from source](./building.md) — **See also:** [CMake options](./cmake_options.md), [Testing](./testing.md), [FAQ](./faq.md)
 
@@ -11,9 +11,10 @@ qb groups every third-party dependency into one of three resolution classes — 
 
 | Dependency | Class | Required? | Feature gate | Resolved in |
 |---|---|---|---|---|
-| libev | bundled (`modules/ev`) | required | event loop (core/io) | `qbDependencies.cmake` |
-| stduuid | bundled (`modules/uuid`) | required | UUID generation | `qbDependencies.cmake` |
-| nanolog, nlohmann, ska_hash | bundled, header-only | required | logging / JSON / hashing | `qbDependencies.cmake` |
+| libev | qb fork, vendored (`include/qb/vendor/ev`) | required | event loop (core/io) | `qbDependencies.cmake` |
+| stduuid | qb fork, vendored (`include/qb/vendor/uuid`) | required | UUID generation | `qbDependencies.cmake` |
+| nanolog, ska_hash | qb forks, vendored, header-only (`include/qb/vendor/`) | required | logging / hashing | — (no CMake target) |
+| nlohmann/json | system (`find_package`) with bundled fallback (`modules/nlohmann`) | required | JSON | `qbDependencies.cmake` |
 | GoogleTest | fetched or system | dev-only (`QB_BUILD_TESTS`) | test suite | `qbFetchGoogleDeps.cmake` |
 | Google Benchmark | fetched or system | dev-only (`QB_BUILD_BENCHMARKS`) | benchmarks | `qbFetchGoogleDeps.cmake` |
 | zlib | fetched or system | optional (`QB_WITH_COMPRESSION`) | compression | `qbDependencies.cmake` |
@@ -22,7 +23,7 @@ qb groups every third-party dependency into one of three resolution classes — 
 | libngtcp2 (+ crypto_ossl) | system only | optional (`QB_WITH_QUIC`) | QUIC / HTTP/3 | `qbDependencies.cmake` |
 | gperftools | system only | optional (`QB_WITH_PROFILING`) | profiling | `qbDependencies.cmake` |
 
-All resolution logic lives in two CMake modules: `cmake/qbDependencies.cmake` (bundled, system-only, and zlib) and `cmake/qbFetchGoogleDeps.cmake` (GoogleTest and Google Benchmark).
+All resolution logic lives in two CMake modules: `cmake/qbDependencies.cmake` (vendored forks, nlohmann, system-only, and zlib) and `cmake/qbFetchGoogleDeps.cmake` (GoogleTest and Google Benchmark).
 
 ## CMake version floor
 
@@ -30,15 +31,28 @@ The framework requires **CMake 3.24 or newer** (`qb/CMakeLists.txt:31`). 3.24 is
 
 ## Resolution classes
 
-### Bundled dependencies
+### Vendored forks
 
-Bundled dependencies ship inside the qb source tree under `modules/` and are resolved with the framework — never fetched, never searched on the system in the normal path. Only libev is compiled; the others are header-only or `INTERFACE` targets.
+`ev`, `uuid`, `nanolog` and `ska_hash` are not third-party dependencies that qb happens to bundle — they are **qb forks**: qb's own source, diverged from upstream, never swappable for a system copy. They live under `include/qb/vendor/<fork>/` and are therefore reached by a qb-owned include prefix, `<qb/vendor/ev/ev++.h>`, `<qb/vendor/ska_hash/unordered_map.hpp>`, and so on.
 
-- **libev** — REQUIRED. qb vendors a customized libev in `modules/ev`. `qbDependencies.cmake:104-116` checks that the directory exists and sets `QB_HAS_LIBEV`; if the directory is missing, configuration fails with a fatal error. The bundled tree is compiled by `add_subdirectory("${QB_MODULES_DIR}/ev")` (`qb/CMakeLists.txt:80`), producing the static `ev` target (`modules/ev/CMakeLists.txt:239`). Resolving libev defines `QB_HAS_LIBEV=1` on every qb target (`qbDependencies.cmake:351-353`).
-- **stduuid** — REQUIRED in practice. The bundled UUID library lives in `modules/uuid`; `qbDependencies.cmake:44-47` detects it and sets `QB_HAS_UUID`. It is added by `add_subdirectory("${QB_MODULES_DIR}/uuid")` (`qb/CMakeLists.txt:79`), which declares the header-only `stduuid` `INTERFACE` target (`modules/uuid/CMakeLists.txt:11`). The framework forces its options off before adding it (`qb/CMakeLists.txt:73-76`): `UUID_BUILD_TESTS`, `UUID_SYSTEM_GENERATOR`, `UUID_TIME_GENERATOR`, and `UUID_USING_CXX20_SPAN`. Only when the bundled directory is absent does `qbDependencies.cmake:50-95` fall back to a system UUID (pkg-config `uuid`, then `find_path`/`find_library`); if neither bundled nor system UUID is found, the build emits a warning and clears `QB_HAS_UUID` rather than failing.
-- **nanolog, nlohmann, ska_hash** — header-only bundled modules listed in `QB_HEADER_ONLY_MODULES` (`qbDependencies.cmake:311`). Their include directories are propagated as `PUBLIC` build-interface paths on every qb target, so consumers compiling against `qb::io`/`qb::core` see them transitively.
+That path is not cosmetic. Their headers used to be published by bare name, so an installed qb dropped `ev.h`, `ev++.h`, `event.h`, `event_compat.h`, `ev_config.h`, `uuid.h` and the directories `ev/`, `uuid/`, `nanolog/`, `ska_hash/` straight into the consumer's include root — 12 top-level names, every one of them able to shadow, or be shadowed by, a header the consumer already owned. Living under `qb/vendor/` makes that collision structurally impossible. Being physically inside `include/` also means one include root serves the build tree and the installed tree, with no separate `BUILD_INTERFACE`/`INSTALL_INTERFACE` pair to drift apart.
 
-Bundled targets are part of the install export. When `QB_INSTALL=ON`, `ev` and `stduuid` are added to the `qbTargets` export set so their names are rewritten under the `qb::` namespace in the transitive link list of `qb::io`/`qb::core` (`qb/CMakeLists.txt:222-238`). The header-only modules are installed as plain header trees (`qb/CMakeLists.txt:258-270`).
+- **libev** — REQUIRED. `qbDependencies.cmake:104-116` checks that `include/qb/vendor/ev` exists and sets `QB_HAS_LIBEV`; if it is missing, configuration fails with a fatal error. The tree is compiled by `add_subdirectory("${QB_VENDOR_DIR}/ev")` (`qb/CMakeLists.txt:100`), producing the static `ev` target (`include/qb/vendor/ev/CMakeLists.txt:287`). Resolving libev defines `QB_HAS_LIBEV=1` on every qb target (`qbDependencies.cmake:390-392`).
+  The fork's generated configuration header is reached through `-DEV_CONFIG_H=<qb/vendor/ev/ev_config.h>`, a `PUBLIC` compile definition on the `ev` target, because `ev.h`'s own fallback lookup for `ev_config.h` is `__has_include`-guarded and would fail *silently* — flipping `EV_MULTIPLICITY` from 1 to 4 and desynchronising every `ev_*` prototype from the compiled library. `qb/io/async/event/base.h` and `qb/io/async/coroutine/scheduler.h` carry an `#error` guard on `EV_MULTIPLICITY` so that miss is a compile error rather than a runtime mystery.
+- **stduuid** — REQUIRED in practice. `qbDependencies.cmake:44-47` detects `include/qb/vendor/uuid` and sets `QB_HAS_UUID`. It is added by `add_subdirectory("${QB_VENDOR_DIR}/uuid")` (`qb/CMakeLists.txt:99`), which declares the header-only `stduuid` `INTERFACE` target (`include/qb/vendor/uuid/CMakeLists.txt:22`). The framework pins its options before adding it (`qb/CMakeLists.txt:83-91`): `UUID_BUILD_TESTS`, `UUID_SYSTEM_GENERATOR` and `UUID_TIME_GENERATOR` are forced **off**, while `UUID_USING_CXX20_SPAN` is forced **on**. That last one is load-bearing, not cosmetic: qb requires C++20 so `std::span` always exists, and with it off stduuid takes a `gsl` fallback branch whose directory was deleted in the C++20 migration -- which made `cmake --install` fail outright. Only when the vendored directory is absent does `qbDependencies.cmake:50-95` fall back to a system UUID (pkg-config `uuid`, then `find_path`/`find_library`); if neither is found, the build emits a warning and clears `QB_HAS_UUID` rather than failing.
+- **nanolog, ska_hash** — header-only, no CMake target at all. They are ordinary files under `include/qb/vendor/`, reached through qb's single include root like any other qb header. `source/io/src/io.cpp` compiles `nanolog.cpp` by textual inclusion.
+
+Both compiled forks are part of the install export: `ev` and `stduuid` are added to the `qbTargets` export set so their names are rewritten under the `qb::` namespace in the transitive link list of `qb::io`/`qb::core` (`qb/CMakeLists.txt:235-252`). Their headers need no install rule of their own — qb's ordinary public-header rule (`qb/CMakeLists.txt:287-295`) already covers them, which is precisely why the two trees cannot diverge. When embedded, each fork's own standalone install/package-config block is skipped, so an installed qb ships no `lib/cmake/libev/` or `lib/cmake/stduuid/` alongside its own package.
+
+### Third-party: nlohmann/json
+
+nlohmann is the one genuine upstream dependency, and it is handled the opposite way. `nlohmann::json` crosses qb's API boundary (`qb::json` is an alias for it, and `qb/json.h` defines `to_json`/`from_json` for `qb::uuid`), so a consumer compiling against *their* copy while qb was compiled against a private one is an ODR violation on the type — something no include-path rename can fix. `qbDependencies.cmake:320` therefore does `find_package(nlohmann_json 3.11 QUIET)` first and only falls back to the bundled `modules/nlohmann` copy. Either way the result is the `qb-nlohmann` `INTERFACE` target (`qbDependencies.cmake:322`, exported as `qb::nlohmann`), linked `PUBLIC` by `qb-io`.
+
+Consequences worth knowing:
+
+- If qb was built against a system nlohmann, `qbConfig.cmake` calls `find_dependency(nlohmann_json 3.11)` and qb installs **no** copy of its own — a consumer without the package fails at configure time, loudly.
+- If qb fell back to the bundle, the bundle is installed at `<prefix>/include/nlohmann/` — the library's canonical spelling. Unlike the forks, a consumer's own copy winning the include race here is correct, not a bug.
+- nlohmann encodes its version and a few options in an inline namespace (`json_abi_v3_12_0`), so a version mismatch surfaces as a link error. `JSON_NOEXCEPTION` and `JSON_USE_IMPLICIT_CONVERSIONS` change the class but not that tag, so they can still mismatch silently. Building qb in your own tree (`add_subdirectory` / `FetchContent`) is the only configuration that closes this completely.
 
 ### Fetched dependencies
 
@@ -59,7 +73,7 @@ System-only dependencies have no clean CMake source build, so qb never fetches t
 - **libngtcp2 (+ ngtcp2_crypto_ossl)** — the QUIC transport stack, governed by the tri-state `QB_WITH_QUIC` (`qbDependencies.cmake:198-236`). QUIC **requires SSL**: if `QB_HAS_SSL` is false, QUIC is disabled regardless of the request. When SSL is present, `find_package(Ngtcp2 QUIET)` (bundled `cmake/FindNgtcp2.cmake`) creates the `Ngtcp2::ngtcp2` and `Ngtcp2::crypto_ossl` imported targets (`FindNgtcp2.cmake:79-90`); on success qb links both and defines `QB_HAS_QUIC=1`. Distro packages may also provide `libngtcp2-crypto-gnutls-dev`, but that is not a drop-in replacement for qb's current native backend because `source/io/src/quic.cpp` calls the ngtcp2 OpenSSL helper APIs. See [QUIC tri-state](#quic-tri-state-qb_with_quic) for the AUTO/ON/OFF semantics.
 - **gperftools** — `find_package(Gperftools QUIET)`, only when `QB_WITH_PROFILING` is ON (off by default), at `qbDependencies.cmake:248-268`. The bundled `cmake/FindGperftools.cmake` creates `Gperftools::Profiler` and `Gperftools::TCMalloc` (among other targets); qb links whichever exist and sets `QB_HAS_PROFILING`. If absent, it warns and forces `QB_WITH_PROFILING` off.
 
-The bundled find-modules for Argon2 and ngtcp2 are installed alongside the package config so that `find_package(qb)` consumers of an Argon2- or QUIC-enabled build can recreate the same imported targets (`qb/CMakeLists.txt:294-307`).
+The bundled find-modules for Argon2 and ngtcp2 are installed alongside the package config so that `find_package(qb)` consumers of an Argon2- or QUIC-enabled build can recreate the same imported targets (`qb/CMakeLists.txt:343-356`).
 
 ## QB_HAS_* versus QB_WITH_*
 
@@ -143,7 +157,7 @@ When a fetchable dependency is built from source, `FetchContent` places its tree
 - **`QB_DEPS_FETCH_FALLBACK=OFF` does not mean "never fetch."** For GoogleTest and Google Benchmark it means the opposite — *always* build from source, ignoring the system. To require a system package and never fetch, use `QB_USE_SYSTEM_GTEST` / `QB_USE_SYSTEM_BENCHMARK` instead.
 - **Argon2 is invisible without OpenSSL.** Its `find_package` is nested inside the OpenSSL-found branch, so a non-SSL build silently has `QB_HAS_ARGON2=OFF` even if libargon2 is installed.
 - **QUIC silently disables without SSL.** With `QB_WITH_QUIC=AUTO` and no OpenSSL, QUIC is off with no warning. Use `QB_WITH_QUIC=ON` to make the missing prerequisite surface as a warning.
-- **A missing optional dependency does not fail the build.** SSL, compression, QUIC, and profiling each warn and force their `QB_WITH_*` option off when their dependency is absent. Only **libev** (bundled, `qbDependencies.cmake:113`) and the **Threads** package (`find_package(Threads REQUIRED)`, `qbCompiler.cmake:389`) are hard-required; their absence is fatal.
+- **A missing optional dependency does not fail the build.** SSL, compression, QUIC, and profiling each warn and force their `QB_WITH_*` option off when their dependency is absent. Only **libev** (vendored fork, `qbDependencies.cmake:113`) and the **Threads** package (`find_package(Threads REQUIRED)`, `qbCompiler.cmake:389`) are hard-required; their absence is fatal.
 - **Stale googletest/googlebenchmark submodule folders.** The framework no longer vendors these as Git submodules. Older clones may retain `modules/googletest`/`modules/googlebenchmark` directories; CMake ignores them, and you can delete the folders and any stale `.git/config` submodule entries.
 
 ## See also

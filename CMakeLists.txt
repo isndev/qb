@@ -90,9 +90,14 @@ set(UUID_TIME_GENERATOR OFF)
 # find_package(qb) integration mode. Nothing noticed because no CI job ever ran cmake --install.
 set(UUID_USING_CXX20_SPAN ON)
 
-# Load bundled modules (ev, uuid, etc.)
-add_subdirectory("${QB_MODULES_DIR}/uuid")
-add_subdirectory("${QB_MODULES_DIR}/ev")
+# Tell the vendored forks they are EMBEDDED in qb and must publish their headers under the
+# qb/vendor/<fork>/ prefix instead of dropping bare names (ev.h, uuid.h, event.h ...) into the
+# consumer's include root. Both projects keep working standalone when this is unset.
+set(QB_VENDOR_INCLUDE_PREFIX "qb/vendor")
+
+# Load qb's own vendored forks (ev, uuid). Header-only forks (nanolog, ska_hash) need no build.
+add_subdirectory("${QB_VENDOR_DIR}/uuid")
+add_subdirectory("${QB_VENDOR_DIR}/ev")
 
 # -----------------------------------------------------------------------------
 # Core Libraries
@@ -149,10 +154,14 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
     if (LCOV_PATH AND GCOV_PATH)
         qb_status_message("Code coverage enabled")
 
+        # '*vendor*' alongside '*modules*': the forks (ev, uuid, nanolog, ska_hash) moved under
+        # include/qb/vendor/. Without it they would start counting towards qb's coverage figure --
+        # libev's ev.c alone is several thousand lines of third-party-derived C.
         set(COVERAGE_LCOV_EXCLUDES
                 '/usr/*'
                 '*benchmark*'
                 '*modules*'
+                '*/include/qb/vendor/*'
                 '*examples/*'
                 '*test*'
         )
@@ -161,6 +170,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
                 '/usr/.*'
                 '${PROJECT_BINARY_DIR}/_deps/.*'
                 '${PROJECT_SOURCE_DIR}/modules/.*'
+                '${PROJECT_SOURCE_DIR}/include/qb/vendor/.*'
                 '${PROJECT_SOURCE_DIR}/examples/.*'
                 '${PROJECT_SOURCE_DIR}/source/.*/tests/benchmark/.*'
                 '${PROJECT_SOURCE_DIR}/source/.*/tests/.*'
@@ -240,6 +250,11 @@ if (QB_INSTALL)
     if (TARGET stduuid)
         list(APPEND _QB_INSTALL_TARGETS stduuid)
     endif ()
+    # qb::io links this PUBLIC, so qbTargets.cmake names it in qb::io's INTERFACE_LINK_LIBRARIES.
+    # Leaving it out of the export set makes find_package(qb) fail on an unknown target.
+    if (TARGET qb-nlohmann)
+        list(APPEND _QB_INSTALL_TARGETS qb-nlohmann)
+    endif ()
 
     # Install library targets with an EXPORT set so CMake can generate
     # the *Targets.cmake files required by find_package(qb).
@@ -260,18 +275,43 @@ if (QB_INSTALL)
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
     )
 
-    # Install public headers
+    # Install public headers.
+    #
+    # This ONE rule now also ships the vendored forks (include/qb/vendor/{ev,uuid,nanolog,
+    # ska_hash}), because they physically live under this directory. That is the point of the
+    # layout: the build tree and the installed tree expose qb's headers AND its forks through the
+    # same single root at the same relative paths, so there is no second BUILD_INTERFACE /
+    # INSTALL_INTERFACE pair to drift apart. The previous layout had exactly that drift and it
+    # shipped broken: find_package(qb) configured fine and then failed to compile on
+    # "fatal error: 'ev/ev++.h' file not found", because the build-interface root
+    # ($<BUILD_INTERFACE:${QB_MODULES_DIR}>) had no installed counterpart and no CI job ever ran
+    # cmake --install.
+    #
+    # Excluded: stduuid's vendored Catch2 (~830 KB) and its test sources. They are build-time
+    # material for the fork's own test suite, never part of qb's public surface.
     install(
             DIRECTORY "${QB_INCLUDE_DIR}/"
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
             FILES_MATCHING
+            REGEX "/qb/vendor/uuid/(catch|test|cmake)(/|$)" EXCLUDE
             PATTERN "*.h"
             PATTERN "*.hpp"
             PATTERN "*.tpp"
     )
 
-    # Install header-only internal modules (nlohmann, ska_hash, nanolog)
-    foreach (_hdr_mod ${QB_HEADER_ONLY_MODULES})
+    # Genuine third-party upstream dependencies still living in modules/ (nlohmann only). Installed
+    # at their canonical path -- <nlohmann/json.hpp> IS that library's public spelling, and unlike
+    # the forks it is a name a consumer may legitimately already own.
+    #
+    # Only when qb actually fell back to the bundled copy. If qb was built against a system
+    # nlohmann_json, installing ours too would put a SECOND copy on the consumer's include path
+    # while qbConfig.cmake resolves the real one via find_dependency -- the exact duplicate-type
+    # situation the find_package branch exists to avoid.
+    set(_qb_bundled_hdr_mods ${QB_HEADER_ONLY_MODULES})
+    if (QB_USES_SYSTEM_NLOHMANN)
+        set(_qb_bundled_hdr_mods)
+    endif ()
+    foreach (_hdr_mod ${_qb_bundled_hdr_mods})
         set(_hdr_mod_dir "${QB_MODULES_DIR}/${_hdr_mod}")
         if (IS_DIRECTORY "${_hdr_mod_dir}")
             install(
@@ -283,25 +323,6 @@ if (QB_INSTALL)
             )
         endif ()
     endforeach ()
-
-    # The COMPILED bundled modules' headers, at the SAME relative path qb's public headers use.
-    # qb/io/async/coroutine/scheduler.h does `#include <ev/ev++.h>` and qb/uuid.h does
-    # `#include <uuid/include/uuid.h>`; at build time those resolve through
-    # $<BUILD_INTERFACE:${QB_MODULES_DIR}>, which has no INSTALL_INTERFACE counterpart. Without the
-    # rules below, `find_package(qb)` configured fine and then FAILED TO COMPILE on
-    # "fatal error: 'ev/ev++.h' file not found" -- the include path simply does not exist in an
-    # installed tree. Only the headers are installed; the libraries themselves are already carried
-    # by the export set.
-    install(
-            DIRECTORY "${QB_MODULES_DIR}/ev/"
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ev
-            FILES_MATCHING PATTERN "*.h"
-    )
-    install(
-            DIRECTORY "${QB_MODULES_DIR}/uuid/include/"
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/uuid/include
-            FILES_MATCHING PATTERN "*.h"
-    )
 
     # Version compatibility file
     write_basic_package_version_file(
@@ -353,6 +374,10 @@ endif ()
 # Mark framework as successfully loaded
 set(QB_FOUND TRUE CACHE BOOL "qb framework found and configured")
 set(QB_LIBRARIES ${QB_ALL_LIBRARIES} CACHE STRING "All qb libraries")
+# Two entries in the BUILD tree only: QB_INCLUDE_DIR (qb's headers + its vendored forks under
+# qb/vendor/) and QB_MODULES_DIR (the bundled nlohmann fallback, which is not copied into the
+# source tree). An INSTALLED qb has a single root -- see qbConfig.cmake.in. Legacy variable;
+# prefer linking qb::core / qb::io and inheriting the include paths from the target.
 set(QB_INCLUDE_DIRS "${QB_INCLUDE_DIR};${QB_MODULES_DIR}" CACHE STRING "qb include directories")
 
 # Set target variables for compatibility

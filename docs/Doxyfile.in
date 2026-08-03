@@ -200,7 +200,12 @@ FILE_PATTERNS          = *.h \
 #                         *.qsf
 
 RECURSIVE              = YES
-EXCLUDE                = "@QB_DIRECTORY@/include/qb/io/system"
+# include/qb/vendor/ holds qb's forks of libev, stduuid, nanolog and ska_hash. They are inside
+# include/ so that one include root serves both the build and the installed tree -- but they are
+# not qb's documented API, and INPUT above is recursive, so without this Doxygen would ingest
+# libev's C headers, stduuid's vendored Catch2, and ska_hash wholesale.
+EXCLUDE                = "@QB_DIRECTORY@/include/qb/io/system" \
+                         "@QB_DIRECTORY@/include/qb/vendor"
 EXCLUDE_SYMLINKS       = NO
 EXCLUDE_PATTERNS       =
 EXCLUDE_SYMBOLS        =

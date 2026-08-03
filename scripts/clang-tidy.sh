@@ -36,7 +36,7 @@ Environment:
   QB_CLANG_TIDY_BASE_REF=HEAD             # default diff base for --changed
 
 Options:
-  --all             Run on all qb translation units, excluding modules/tests.
+  --all             Run on all qb translation units, excluding vendor/modules/tests.
   --changed         Run on changed qb files mapped to their owning TU(s).
   --configure       Force-regenerate the clang-tidy build directory first.
   --no-configure    Do not configure; require an existing compile database.
@@ -179,7 +179,7 @@ def in_scope(rel: str) -> bool:
     if not rel:
         return False
     parts = rel.split("/")
-    if "build" in parts or "modules" in parts or "tests" in parts:
+    if "build" in parts or "modules" in parts or "vendor" in parts or "tests" in parts:
         return False
     if Path(rel).suffix not in code_suffixes:
         return False

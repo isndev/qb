@@ -87,10 +87,12 @@ function(_qb_apply_target_usage_properties target)
             "$<BUILD_INTERFACE:${QB_INCLUDE_DIR}>"
             "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
     )
-    target_include_directories(${target}
-        SYSTEM ${_qb_usage_scope}
-            "$<BUILD_INTERFACE:${QB_MODULES_DIR}>"
-    )
+    # No second include root here any more. This used to add $<BUILD_INTERFACE:${QB_MODULES_DIR}>
+    # to EVERY qb and qbm target (485 compile statements in a superproject release build), which is
+    # how <ev/...>, <nanolog/...>, <ska_hash/...> and <nlohmann/...> all became reachable by bare
+    # prefix -- and, having no $<INSTALL_INTERFACE:> counterpart, is why the installed tree needed
+    # bespoke mirror rules that silently drifted. The forks are now under ${QB_INCLUDE_DIR} above;
+    # nlohmann arrives as a usage requirement of the qb-nlohmann target linked by qb-io.
 
     if(QB_COMPILE_DEFINITIONS)
         target_compile_definitions(${target} ${_qb_usage_scope} ${QB_COMPILE_DEFINITIONS})
@@ -759,7 +761,7 @@ function(qb_register_module)
     # the module umbrella header by its prefix (e.g. <http/http.h>, <http/ws.h>,
     # <redis/redis.h>, <pgsql/pgsql.h>). The module's own sources use relative
     # includes ("../http.h"), but external consumers (examples, downstream apps)
-    # include by module prefix. Marked SYSTEM to match QB_MODULES_DIR handling.
+    # include by module prefix. Marked SYSTEM so a consumer's -Werror does not fire on a qbm header.
     get_filename_component(_qb_module_include_root "${CMAKE_CURRENT_SOURCE_DIR}" DIRECTORY)
     _qb_target_usage_scope(${module_target} _qb_module_scope)
     target_include_directories(${module_target}

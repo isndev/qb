@@ -7,11 +7,24 @@ option(UUID_SYSTEM_GENERATOR "Enable operating system uuid generator" OFF)
 option(UUID_TIME_GENERATOR "Enable experimental time-based uuid generator" OFF)
 option(UUID_USING_CXX20_SPAN "Using span from std instead of gsl" OFF)
 
+# An embedding project sets QB_VENDOR_INCLUDE_PREFIX (qb sets it to "qb/vendor") to declare that it
+# reaches this fork's header through ITS OWN include root, as <qb/vendor/uuid/include/uuid.h>. In
+# that mode this project must publish neither an include directory nor an install rule for uuid.h:
+# both put the bare name `uuid.h` at the consumer's include root, where it shadows (and is shadowed
+# by) any other uuid.h on the search path -- including the system libuuid one.
+if (DEFINED QB_VENDOR_INCLUDE_PREFIX AND NOT QB_VENDOR_INCLUDE_PREFIX STREQUAL "")
+    set(QB_UUID_EMBEDDED ON)
+else ()
+    set(QB_UUID_EMBEDDED OFF)
+endif ()
+
 # Library target
 add_library(${PROJECT_NAME} INTERFACE)
-target_include_directories(${PROJECT_NAME} INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>)
+if (NOT QB_UUID_EMBEDDED)
+    target_include_directories(${PROJECT_NAME} INTERFACE
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>)
+endif ()
 
 # Using system uuid generator
 if (UUID_SYSTEM_GENERATOR)
@@ -43,7 +56,12 @@ if (NOT UUID_USING_CXX20_SPAN)
     install(DIRECTORY gsl DESTINATION include)
 endif ()
 
-# Install step and imported target
+# Install step and imported target.
+# Skipped when embedded: the parent installs this target in its own export set and ships uuid.h
+# through its own install(DIRECTORY include/), at the namespaced path. Running it here as well
+# would re-plant a bare `uuid.h` in the include root and a second lib/cmake/stduuid/ package for a
+# library the parent already exports.
+if (NOT QB_UUID_EMBEDDED)
 install(FILES include/uuid.h DESTINATION include)
 install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}-targets)
 install(EXPORT ${PROJECT_NAME}-targets
@@ -65,6 +83,7 @@ install(FILES
         DESTINATION lib/cmake/${PROJECT_NAME})
 export(EXPORT ${PROJECT_NAME}-targets
         FILE "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}-targets.cmake")
+endif () # NOT QB_UUID_EMBEDDED
 
 # Tests
 if (UUID_BUILD_TESTS)
