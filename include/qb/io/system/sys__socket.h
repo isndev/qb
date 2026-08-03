@@ -292,14 +292,16 @@ struct arp_packet {
 };
 #pragma pack(pop)
 
+// Every platform qb builds on provides inet_ntop/inet_pton natively, so `compat` is a
+// pure re-export. It used to carry a `#if QB__HAS_NTOP / #else` pair whose else-branch
+// declared the two functions for a bundled fallback implementation; that fallback was
+// unbuildable three times over (its `#include` did not resolve from any include path, it
+// opened `qb::inet::ip::compat` rather than the `qb::io::inet::ip::compat` declared here,
+// and QB__HAS_NTOP is 0 only for a pre-Vista Windows target that cannot host C++20), so
+// the declarations could only ever have produced a link error. Both are gone.
 namespace compat {
-#if QB__HAS_NTOP
 using ::inet_ntop;
 using ::inet_pton;
-#else
-QB__DECL const char *inet_ntop(int af, const void *src, char *dst, socklen_t);
-QB__DECL int         inet_pton(int af, const char *src, void *dst);
-#endif
 } // namespace compat
 
 /**

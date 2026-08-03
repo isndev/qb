@@ -37,13 +37,15 @@ jobs:
       # shadowed by, one the consumer already has -- which is how ev.h / event.h / uuid.h and a
       # second copy of nlohmann/json.hpp used to land in every consumer's include root.
       # `nlohmann` is expected ONLY when qb fell back to its bundled copy (no system
-      # nlohmann_json on the runner); `cube.h` is qb's own legacy umbrella header.
+      # nlohmann_json on the runner). `qb/` is the only name qb itself publishes: the legacy
+      # `cube.h` umbrella (guard QB_QB_H, just actor.h + io.h + main.h) was the last generic
+      # top-level name and was removed -- nothing in the tree ever included it.
       - name: Installed include root is qb-owned
         run: |
           actual="$(ls _prefix/include | sort | tr '\n' ' ')"
           echo "include root: ${actual}"
           case "${actual}" in
-            "cube.h nlohmann qb "|"cube.h qb ") ;;
+            "nlohmann qb "|"qb ") ;;
             *) echo "::error::unexpected top-level names in the installed include root: ${actual}"
                exit 1 ;;
           esac

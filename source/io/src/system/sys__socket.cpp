@@ -61,20 +61,6 @@ static LPFN_GETACCEPTEXSOCKADDRS __get_accept_ex_sockaddrs = nullptr;
 static LPFN_CONNECTEX            __connect_ex              = nullptr;
 #endif
 
-#if !QB__HAS_NTOP
-namespace qb {
-QB__NS_INLINE
-namespace inet {
-QB__NS_INLINE
-namespace ip {
-namespace compat {
-#include "sys__inet_compat.inl"
-} // namespace compat
-} // namespace ip
-} // namespace inet
-} // namespace qb
-#endif
-
 namespace qb::io {
 QB__NS_INLINE
 namespace inet {
