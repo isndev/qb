@@ -181,6 +181,19 @@ typedef intptr_t ssize_t;
 #endif
 #endif
 
+// Native inet_ntop/inet_pton available.
+//
+// Deliberately has NO in-tree consumer. It is a *published* feature-test macro: this header
+// is installed (qb/CMakeLists.txt install(DIRECTORY "${QB_INCLUDE_DIR}/" ... PATTERN "*.h"))
+// and the flag is documented to downstream users alongside QB__HAS_UDS / QB__HAS_SA_LEN as
+// the supported way to feature-test instead of hand-rolling a platform check. Its three
+// siblings in this block are all consumed in-tree; this one is not, because qb itself has
+// nothing left to branch on — every platform qb builds on provides both functions natively,
+// which is precisely what the macro reports. qb/io/system/sys__socket.h used to carry the
+// `#if QB__HAS_NTOP / #else` pair; its else-branch declared a bundled fallback that was
+// unbuildable and dead, and was removed. Do not "clean up" this macro on a zero-grep result:
+// removing it is a source-breaking change to an installed public surface, detectable only
+// from outside this repo.
 #if !defined(_WIN32) || defined(NTDDI_VISTA)
 #define QB__HAS_NTOP 1
 #else
