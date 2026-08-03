@@ -814,6 +814,12 @@ public:
 #endif
 } // namespace uuids
 
+// Only the hash specialisation belongs here: [namespace.std]/2 permits an explicit
+// specialisation of a std class template for a program-defined type, and nothing else.
+// A `std::to_string(const uuids::uuid&)` overload used to sit alongside it (a local
+// addition, not upstream stduuid) -- adding a *declaration* to namespace std is UB, and
+// it was never needed: `uuids::to_string` is found by ADL for an unqualified call, and
+// every call site in the tree already spells it `uuids::to_string`.
 namespace std {
 template <>
 struct hash<uuids::uuid> {
@@ -826,9 +832,4 @@ struct hash<uuids::uuid> {
         return static_cast<result_type>(hasher(uuids::to_string(uuid)));
     }
 };
-
-inline std::string
-to_string(const uuids::uuid &uuid) {
-    return uuids::to_string(uuid);
-}
 } // namespace std

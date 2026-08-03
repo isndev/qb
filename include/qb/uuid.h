@@ -24,10 +24,10 @@
  * @ingroup MiscUtils
  */
 
-#include <qb/vendor/uuid/include/uuid.h>
-
 #ifndef QB_UUID_H
 #define QB_UUID_H
+
+#include <qb/vendor/uuid/include/uuid.h>
 
 namespace qb {
 /**
