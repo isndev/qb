@@ -17,6 +17,10 @@ on:
       - 'CONTRIBUTING.md'
       - 'CODE_OF_CONDUCT.md'
       - 'scripts/doc-lint.sh'
+      # The lint reads the expected Verified-against version from here, so a
+      # version-only bump must trigger it -- that is exactly the change that
+      # silently invalidated 129 markers before.
+      - 'cmake/qbConfig.cmake'
   pull_request:
     branches: [ main ]
     paths:
@@ -30,6 +34,10 @@ on:
       - 'CONTRIBUTING.md'
       - 'CODE_OF_CONDUCT.md'
       - 'scripts/doc-lint.sh'
+      # The lint reads the expected Verified-against version from here, so a
+      # version-only bump must trigger it -- that is exactly the change that
+      # silently invalidated 129 markers before.
+      - 'cmake/qbConfig.cmake'
 
 jobs:
   doc-lint:
