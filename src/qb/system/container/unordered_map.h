@@ -49,13 +49,35 @@ namespace qb {
 template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<const K, V>>>
 using unordered_flat_map = ska::flat_hash_map<K, V, H, E, A>;
 
-#ifdef NDEBUG
 /**
  * @brief The primary unordered map implementation
  *
- * In release builds, this uses the high-performance ska::unordered_map
- * implementation. In debug builds, it falls back to std::unordered_map
- * for better debugging support.
+ * A node-based hash map with a chained bucket array: the value lives in an
+ * individually allocated `sherwood_v10_entry`, so references and pointers to
+ * elements survive a rehash (only iterators are invalidated) — the same
+ * stability contract `std::unordered_map` offers, with better locality on the
+ * bucket walk. qb relies on that: `VirtualCore::ActorMap`, `Main::_registered_services`
+ * and `router::memh::_registered_events` are all held across insertions.
+ *
+ * @warning **This alias is unconditional, and must stay that way.** Until 3.0.0 it
+ *          resolved to `ska::unordered_map` under `NDEBUG` and to `std::unordered_map`
+ *          otherwise (added 2020-03-30 in 5c94d026, with no recorded rationale beyond
+ *          "better debugging support" — i.e. debugger pretty-printers). That made the
+ *          *identity and layout* of a public type depend on a build macro:
+ *          `sizeof(qb::unordered_map<int,int>)` was 32 with `NDEBUG` and 40 without,
+ *          and the type is a data member of public classes (`qb::VirtualCore`,
+ *          `qb::Main`, `qb::router::*`) and of qbm's public headers. A consumer
+ *          compiled without `NDEBUG` — `CMAKE_BUILD_TYPE=Debug`, or simply *unset*,
+ *          which is the default — against a Release-built libqb therefore read a
+ *          `ska` map through `std` layout and aborted at runtime
+ *          (`std::overflow_error: __next_prime overflow`).
+ *
+ *          A public type must not change identity with a build macro. Debug-time
+ *          diagnostics are a separate, opt-in concern and must not alter the public
+ *          type; nothing in qb consumed the `std::` branch other than the debugger.
+ *          `qbmModuleConfig.cmake.in` carries the matching configure-time tripwire
+ *          (`QB_ABI_UNORDERED_MAP`) so a future reintroduction fails loudly at
+ *          `find_package()` time instead of at runtime.
  *
  * @tparam K The key type
  * @tparam V The value type
@@ -66,24 +88,6 @@ using unordered_flat_map = ska::flat_hash_map<K, V, H, E, A>;
  */
 template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<const K, V>>>
 using unordered_map = ska::unordered_map<K, V, H, E, A>;
-#else
-/**
- * @brief The primary unordered map implementation
- *
- * In release builds, this uses the high-performance ska::unordered_map
- * implementation. In debug builds, it falls back to std::unordered_map
- * for better debugging support.
- *
- * @tparam K The key type
- * @tparam V The value type
- * @tparam H The hash function type (defaults to std::hash<K>)
- * @tparam E The equality function type (defaults to std::equal_to<K>)
- * @tparam A The allocator type
- * @ingroup Container
- */
-template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<const K, V>>>
-using unordered_map = std::unordered_map<K, V, H, E, A>;
-#endif
 
 /**
  * @brief Utility class for case-insensitive string operations
