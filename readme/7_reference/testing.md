@@ -52,13 +52,13 @@ The helper derives both the executable and the CTest entry name uniformly as `<m
 | `io/tests/unit/core/uri-parse.cpp` | `MODULE qb-io TIER unit NAME uri-parse` | `qb-io-test-unit-uri-parse` |
 | `io/tests/system/coroutine/channel-lifetime.cpp` | `MODULE qb-io TIER system NAME channel-lifetime` | `qb-io-test-system-channel-lifetime` |
 
-<!-- src: qb/cmake/qbFunctions.cmake:398-415, qb/tests/io/unit/CMakeLists.txt:27 -->
+<!-- src: qb/cmake/qbFunctions.cmake:435-442, qb/tests/io/unit/CMakeLists.txt:27 -->
 
 Every test also carries CTest labels — `tier:<tier>` and `module:<module>`, plus any capability tokens from `REQUIRES` (`ssl`, `quic`, `compression`, `network`, `live`) — and a per-tier default timeout (unit 60 s, system 120 s, integration 300 s). To add a test, drop the source into the right tier/topic directory and add one `qb_add_test` line; there are no per-directory naming rules to remember.
 
 ## Building the tests
 
-Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:59`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:14`).
+Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:85`, with the default computed at `74-87`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:14`).
 
 ```bash
 # From the repository root
@@ -68,9 +68,9 @@ cmake --build build --parallel
 
 <!-- src: qb/readme/7_reference/building.md -->
 
-When `QB_BUILD_TESTS` is `OFF`, `qb_add_test` returns early before defining any target, so no test executables and no CTest registrations exist (`qb/cmake/qbFunctions.cmake:420`).
+When `QB_BUILD_TESTS` is `OFF`, `qb_add_test` returns early before defining any target, so no test executables and no CTest registrations exist (`qb/cmake/qbFunctions.cmake:444-447`).
 
-Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:485`), not alongside the per-module build trees. After a build, list them with:
+Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:511-514`), not alongside the per-module build trees. After a build, list them with:
 
 ```bash
 ls build/bin/tests/
@@ -78,17 +78,17 @@ ls build/bin/tests/
 
 ### How GoogleTest is resolved
 
-`qb_add_test` links each test against `GTest::gtest_main` (`qb/cmake/qbFunctions.cmake:447-449`), which provides the `main()` entry point — test sources do not declare their own. GoogleTest itself is resolved once, before any test target is defined, by `qb/cmake/qbFetchGoogleDeps.cmake`, only when `QB_BUILD_TESTS` (or `QB_BUILD_BENCHMARKS`) is on. The policy is:
+`qb_add_test` links each test against `GTest::gtest_main` (`qb/cmake/qbFunctions.cmake:473-479`), which provides the `main()` entry point — test sources do not declare their own. GoogleTest itself is resolved once, before any test target is defined, by `qb/cmake/qbFetchGoogleDeps.cmake`, only when `QB_BUILD_TESTS` (or `QB_BUILD_BENCHMARKS`) is on. The policy is:
 
 - **`QB_USE_SYSTEM_GTEST=ON`** (default `OFF`) — require a system package via `find_package(GTest CONFIG REQUIRED)`; never fetch.
 - **`QB_DEPS_FETCH_FALLBACK=ON`** (the default) — use a system GoogleTest if `find_package` locates one, otherwise build the pinned tag from source through FetchContent ("system if present, else git"). The from-source path needs network access on the first configure.
 - **`QB_DEPS_FETCH_FALLBACK=OFF`** — always build the pinned tag from source, ignoring any system copy.
 
-The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig.cmake:75`, marked advanced). FetchContent is configured with `BUILD_GMOCK=ON` and `INSTALL_GTEST=OFF`. See [CMake and dependencies](./cmake_dependencies.md) for the full dependency-resolution model.
+The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig.cmake:103`, marked advanced at `106`). FetchContent is configured with `BUILD_GMOCK=ON` and `INSTALL_GTEST=OFF`. See [CMake and dependencies](./cmake_dependencies.md) for the full dependency-resolution model.
 
 ### Test resources
 
-If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:1070-1093`). SSL-dependent qb-io tests additionally depend on a `generate_ssl_certs` target that produces a self-signed certificate. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:517-519`).
+If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:1070-1093`). SSL-dependent qb-io tests additionally depend on a `generate_ssl_certs` target that produces a self-signed certificate. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:553-555`).
 
 ### Conditional suites
 
@@ -97,9 +97,9 @@ Some qb-io suites exist only when their optional dependency is present:
 - **Crypto tests** (the `unit/crypto/` group — `crypto-primitives`, `crypto-jwt`, `kdf-and-tokens`, `asymmetric-keys`, … — registered with `REQUIRES ssl`) build only under `QB_HAS_SSL` (OpenSSL).
 - **Compression tests** (`unit/compression/compression-codec`, registered with `REQUIRES compression`) build only under `QB_HAS_COMPRESSION` (zlib).
 
-<!-- src: qb/tests/io/unit/CMakeLists.txt:54-62 -->
+<!-- src: qb/tests/io/unit/CMakeLists.txt:64-71 -->
 
-Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC is different: the quic suite is always built (it is registered unconditionally), but its cases are gated on `QB_HAS_QUIC`, so they report as skipped/absent rather than failing when QUIC is not compiled in (`qb/tests/io/system/quic/quic-handshake.cpp:86-92`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases skip when only one core is available (`qb/tests/core/system/engine/main-lifecycle.cpp:159`).
+Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. The QUIC suites are gated the same way, by `REQUIRES quic ssl network` (`qb/tests/io/system/CMakeLists.txt:88-89`), so they too are simply not registered without QUIC; their *cases* additionally carry a `QB_HAS_QUIC` `#ifdef` so the file still asserts the negative contract when it is compiled without it (`qb/tests/io/system/quic/quic-handshake.cpp:86-98`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases skip when only one core is available (`qb/tests/core/system/engine/main-lifecycle.cpp:179-182`).
 
 ### Running under sanitizers
 
@@ -107,7 +107,7 @@ To build and run the suite instrumented, configure with a sanitizer preset rathe
 
 ## Running the tests
 
-`enable_testing()` is invoked once at the repository root (`qb-dev/CMakeLists.txt:20`), not inside qb, so CTest discovers the whole tree. There are two ways to run tests.
+`enable_testing()` is invoked once at the repository root (`qb-dev/CMakeLists.txt:47`), not inside qb, so CTest discovers the whole tree. There are two ways to run tests.
 
 ### With CTest
 
@@ -134,7 +134,7 @@ ctest -L tier:unit          # every unit-tier test
 ctest -L module:qb-io       # every qb-io test
 ```
 
-Every test registered by `qb_add_test` carries `tier:<tier>` and `module:<module>` labels (plus any capability tags such as `ssl` or `coroutine`) and a per-tier timeout (unit 60 s, system 120 s, integration 300 s), and runs with its working directory set to `bin/tests` (`qb/cmake/qbFunctions.cmake:517-538`). The `-R` regular expression matches the CTest test name (which equals the target name from the table above); `-L` matches labels.
+Every test registered by `qb_add_test` carries `tier:<tier>` and `module:<module>` labels (plus any capability tags such as `ssl` or `coroutine`) and a per-tier timeout (unit 60 s, system 120 s, integration 300 s), and runs with its working directory set to `bin/tests` (`qb/cmake/qbFunctions.cmake:553-555` for the working directory, `561-570` for the labels, timeout, resource locks and skip regex). The `-R` regular expression matches the CTest test name (which equals the target name from the table above); `-L` matches labels.
 
 ### Running an executable directly
 
@@ -164,15 +164,16 @@ Test cases use the standard GoogleTest macros. A unit test includes `<gtest/gtes
 #include <gtest/gtest.h>
 #include <qb/system/time.h>
 
-TEST(Duration, DefaultIsZero) {
+TEST(Duration, DefaultAndExplicit) {
     qb::duration d{};
     EXPECT_EQ(d.count(), 0);
+    // ... the same case then checks an explicitly-constructed duration.
 }
 ```
 
 <!-- src: qb/tests/core/unit/system/time.cpp:64-72 -->
 
-A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:523,548`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:523`, `qb/src/qb/core/Main.cpp:288-294`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
+A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:536,561`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:536`, `qb/src/qb/core/Main.cpp:402-407`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
 
 ```cpp
 // A minimal actor system test.
@@ -216,7 +217,7 @@ TEST(WorkerSuite, HandlesPing) {
 
 <!-- src: qb/tests/core/system/event/service-event-ring.cpp:171-174 -->
 
-`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:216,569`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
+`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:217,582`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
 
 ### Registering the test with CMake
 
@@ -234,7 +235,7 @@ That registers the target and CTest entry as `qb-core-test-unit-my-feature`. Opt
 
 ## Coverage
 
-`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:95`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, and `lcov` plus `gcov` are found on the system (`qb/CMakeLists.txt:119-157`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing.
+`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:139`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, and `lcov` plus `gcov` are found on the system (`qb/CMakeLists.txt:146-154`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing.
 
 When enabled, three report targets are registered, each driven by running `ctest`:
 
@@ -244,9 +245,9 @@ When enabled, three report targets are registered, each driven by running `ctest
 | `qb-coverage-xml` | gcovr | Cobertura XML |
 | `qb-coverage-html` | gcovr | HTML report |
 
-<!-- src: qb/CMakeLists.txt:170-191, qb/cmake/CodeCoverage.cmake -->
+<!-- src: qb/CMakeLists.txt:194-216, qb/cmake/CodeCoverage.cmake -->
 
-The exclusion list filters out system headers, benchmarks, modules, examples, and the test sources themselves so the report reflects framework code. A typical run:
+The exclusion list filters out system headers, benchmarks, modules, the vendored forks, examples, and the test sources themselves so the report reflects framework code (`qb/CMakeLists.txt:170-178`). A typical run:
 
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_COVERAGE=ON -B build
@@ -260,9 +261,9 @@ The instrumentation flags (`-g -fprofile-arcs -ftest-coverage`, plus `--coverage
 
 - **No tests in a tests-off build.** With `QB_BUILD_TESTS=OFF`, `qb_add_test` returns before creating anything — there are no executables and nothing for CTest to discover. The repo-root build forces the option on, so this only bites custom configurations.
 - **Run from the right directory.** Tests resolve resources (SSL certs, fixtures) relative to `bin/tests`. CTest sets this automatically; if you launch a binary by hand, `cd build/bin/tests` first or resource-dependent cases fail.
-- **Optional suites are absent or skipped, depending on the dependency.** Crypto and compression suites are not configured without OpenSSL / zlib — those targets do not exist at all, so they cannot pass. QUIC is gated differently: the quic suite is always built, but its cases are gated on `QB_HAS_QUIC` (libngtcp2), so they show as skipped/absent when it was not found. Either way, an absent or skipped suite means a missing dependency, not a passing run. Confirm which features were enabled at configure time before reading a green result as full coverage.
+- **Optional suites are absent or skipped, depending on the dependency.** Crypto and compression suites are not configured without OpenSSL / zlib — those targets do not exist at all, so they cannot pass. The QUIC suites are gated the same way (`REQUIRES quic ssl network`), so they are absent without libngtcp2; the cases inside also carry a `QB_HAS_QUIC` `#ifdef` for the builds where the file is compiled. Either way, an absent or skipped suite means a missing dependency, not a passing run. Confirm which features were enabled at configure time before reading a green result as full coverage.
 - **Coverage is narrow.** `QB_BUILD_COVERAGE` works only on Debug, non-Windows, with lcov + gcov present, and the GCC/gcov toolchain. It is not a general-purpose option across all build types.
-- **Coroutine tests must clean up the per-thread state.** Async coroutine fixtures call `qb::io::async::init()` in `SetUp` and reset state in `TearDown`. The minimum is `qb::io::async::listener::current.clear()` (`qb/tests/io/system/async/callback-dispatch.cpp:58-61`); fixtures that spawn coroutines drain the scheduler first — `run_for(5ms)` then `reset_coro_scheduler()` then `clear()` — to avoid leaking suspended coroutine frames across tests (`qb/tests/io/unit/coroutine/scope-structured-concurrency.cpp:58-63`). Follow the existing fixture pattern in the file you are adding to.
+- **Coroutine tests must clean up the per-thread state.** Async coroutine fixtures call `qb::io::async::init()` in `SetUp` and reset state in `TearDown`. The minimum is `qb::io::async::listener::current.clear()` (`qb/tests/io/system/async/callback-dispatch.cpp:56-63`, whose `reset_async_context()` is an intent-named alias of `qb::io::async::init()`); fixtures that spawn coroutines drain the scheduler first — `run_for(5ms)` then `reset_coro_scheduler()` then `clear()` — to avoid leaking suspended coroutine frames across tests (`qb/tests/io/unit/coroutine/scope-structured-concurrency.cpp:58-63`). Follow the existing fixture pattern in the file you are adding to.
 - **CI coverage is split across workflows.** The cross-platform CMake workflow builds Release. Dedicated Ubuntu workflows run ASan/UBSan, TSan, coverage, and changed-file format checks. Clang-tidy is intentionally script-driven through `scripts/clang-tidy.sh` rather than a CMake workflow. Linux jobs install libngtcp2 through apt and require the OpenSSL crypto helper (`libngtcp2-crypto-ossl-dev`); when it is absent the install does not pull the GnuTLS helper (qb has no GnuTLS backend) and QUIC simply stays auto-disabled (`QB_WITH_QUIC=AUTO`).
 
 ## See also
