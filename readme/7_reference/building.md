@@ -200,7 +200,7 @@ The install (`CMakeLists.txt:232-325`) lays out. Every rule below is emitted by 
 helper `qb_install_package()` (`cmake/qbPackage.cmake:87-208`), which each qbm module calls with
 the same arguments shape:
 
-- **Libraries** under `${CMAKE_INSTALL_LIBDIR}`, **runtime** under `${CMAKE_INSTALL_BINDIR}`, **headers** under `${CMAKE_INSTALL_INCLUDEDIR}` (GNU install dirs). The export set bundles `qb-io`, `qb-core`, and the bundled `ev`/`stduuid` targets so their names are rewritten under the `qb::` namespace in the dependency graph.
+- **Libraries** under `${CMAKE_INSTALL_LIBDIR}`, **runtime** under `${CMAKE_INSTALL_BINDIR}`, **headers** under `${CMAKE_INSTALL_INCLUDEDIR}` (GNU install dirs). The export set bundles `qb-io`, `qb-core`, and the bundled `qev`/`stduuid` targets so their names are rewritten under the `qb::` namespace in the dependency graph.
 - **CMake package files** under `${CMAKE_INSTALL_LIBDIR}/cmake/qb`: `qbTargets.cmake` (namespaced `qb::`), `qbConfig.cmake`, and a `qbConfigVersion.cmake` written with `COMPATIBILITY SameMajorVersion` (`CMakeLists.txt:311`, generated at `cmake/qbPackage.cmake:187-203`).
 - **Find modules for consumers:** `FindArgon2.cmake` is installed when the build resolved Argon2 (`QB_HAS_ARGON2`), and `FindNgtcp2.cmake` when QUIC was enabled (`QB_HAS_QUIC`), so a downstream `find_package(qb)` of a QUIC- or Argon2-enabled build can recreate the imported targets `qb::io` links transitively (`CMakeLists.txt:288-297`).
 

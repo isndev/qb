@@ -578,7 +578,7 @@ public:
      */
     void
     start(const std::filesystem::path &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
-        // qev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
+        // qev_stat keeps the path POINTER (it does not copy — see qev++.h), so the watcher
         // must own the narrow path string for as long as it is active.
         _watched_path = fpath.string();
         this->_async_event.start(_watched_path.c_str(), qb::detail::to_ev_seconds(interval));
@@ -742,7 +742,7 @@ public:
      */
     void
     start(const std::filesystem::path &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
-        // qev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
+        // qev_stat keeps the path POINTER (it does not copy — see qev++.h), so the watcher
         // must own the narrow path string for as long as it is active.
         _watched_path = fpath.string();
         this->_async_event.start(_watched_path.c_str(), qb::detail::to_ev_seconds(interval));

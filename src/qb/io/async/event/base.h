@@ -29,7 +29,7 @@
 
 /* qb builds its vendored libev with EV_MULTIPLICITY=1 (qb/vendor/qev/config.h.cmakein). qev.h only
  * learns that from the generated qev_config.h, and its last-resort lookup for that file is guarded
- * by __has_include (ev.h:28-31) -- so if the file is not reachable, ev.h SILENTLY falls back to its
+ * by __has_include (qev.h:28-31) -- so if the file is not reachable, qev.h SILENTLY falls back to its
  * own default of EV_FEATURE_CONFIG == 4. Every qev_* prototype then grows a loop parameter that the
  * compiled libqev.a does not have: an ODR/ABI mismatch that links and then misbehaves at runtime.
  * Make the miss a compile error instead. */
