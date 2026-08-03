@@ -2,11 +2,9 @@ name: cmake
 
 on:
   push:
-    branches:
-      - 'c\+\+23'
+    branches: [ main, develop ]
   pull_request:
-    branches:
-      - 'c\+\+23'
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
