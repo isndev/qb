@@ -59,7 +59,7 @@
  *   otherwise create.
  * - qev_embeddable_backends() clears EVBACKEND_EPOLL on _WIN32 so qev_embed is not
  *   advertised for wepoll-backed inner loops (HANDLE is not an embeddable int fd).
- * - Build with EV_VERIFY >= 2 (see ev.c) to enable extra epoll_poll asserts; default
+ * - Build with EV_VERIFY >= 2 (see qev.c) to enable extra epoll_poll asserts; default
  *   release paths avoid per-event defensive branches for latency.
  * - wepoll waits inside GetQueuedCompletionStatusEx while the port CRITICAL_SECTION is
  *   released; another thread calling epoll_close / CloseHandle on that IOCP is therefore

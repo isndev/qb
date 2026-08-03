@@ -26,7 +26,7 @@
 #elif defined HAVE_CONFIG_H
 #include "config.h" /* autotools build (AC_CONFIG_HEADERS) */
 #else
-#include "ev_config.h" /* CMake build (configure_file)        */
+#include "qev_config.h" /* CMake build (configure_file)        */
 #endif
 
 #if HAVE_FLOOR
@@ -211,7 +211,7 @@
 #ifdef EV_H
 #include EV_H
 #else
-#include "ev.h"
+#include "qev.h"
 #endif
 
 #define EV_ASSERT_MSG(expr, msg) assert((expr) && msg)
@@ -2552,7 +2552,7 @@ qev_win32_socket_fd(uintptr_t handle) EV_NOEXCEPT {
 #endif
 
 #ifdef _WIN32
-#include "ev_win32.c"
+#include "qev_win32.c"
 #endif
 
 /*****************************************************************************/
@@ -2783,9 +2783,9 @@ typedef WT ANHE;
  * Compile-time ABI contract.
  *
  * Every watcher type begins with the same leading members as qev_watcher (the
- * "common initial sequence" emitted by the EV_WATCHER macro in ev.h). The whole
+ * "common initial sequence" emitted by the EV_WATCHER macro in qev.h). The whole
  * library relies on this: the (W)/(WT) up-casts here, and the offsetof-based
- * field accessors in ev.h (qev_init / qev_is_active / qev_is_pending / qev_priority
+ * field accessors in qev.h (qev_init / qev_is_active / qev_is_pending / qev_priority
  * / qev_set_cb). If a future edit reorders those members the access becomes
  * undefined behaviour, so we assert the invariant and fail the build instead.
  * ------------------------------------------------------------------------- */
@@ -2804,10 +2804,10 @@ struct qev_loop {
     qev_tstamp qev_rt_now;
 #define qev_rt_now ((loop)->qev_rt_now)
 #define VAR(name, decl) decl;
-#include "ev_vars.h"
+#include "qev_vars.h"
 #undef VAR
 };
-#include "ev_wrap.h"
+#include "qev_wrap.h"
 
 static struct qev_loop default_loop_struct;
 #ifdef EV_API_STATIC
@@ -2824,7 +2824,7 @@ EV_API_DECL qev_tstamp qev_rt_now = EV_TS_CONST(0.);
 qev_tstamp qev_rt_now = EV_TS_CONST(0.);
 #endif
 #define VAR(name, decl) static decl;
-#include "ev_vars.h"
+#include "qev_vars.h"
 #undef VAR
 
 static int qev_default_loop_ptr;
@@ -3681,28 +3681,28 @@ evtimerfd_init(EV_P) {
 /*****************************************************************************/
 
 #if EV_USE_IOCP
-#include "ev_iocp.c"
+#include "qev_iocp.c"
 #endif
 #if EV_USE_PORT
-#include "ev_port.c"
+#include "qev_port.c"
 #endif
 #if EV_USE_KQUEUE
-#include "ev_kqueue.c"
+#include "qev_kqueue.c"
 #endif
 #if EV_USE_EPOLL
-#include "ev_epoll.c"
+#include "qev_epoll.c"
 #endif
 #if EV_USE_LINUXAIO
-#include "ev_linuxaio.c"
+#include "qev_linuxaio.c"
 #endif
 #if EV_USE_IOURING
-#include "ev_iouring.c"
+#include "qev_iouring.c"
 #endif
 #if EV_USE_POLL
-#include "ev_poll.c"
+#include "qev_poll.c"
 #endif
 #if EV_USE_SELECT
-#include "ev_select.c"
+#include "qev_select.c"
 #endif
 
 ecb_cold int
@@ -5986,7 +5986,7 @@ once_cb_to(EV_P_ qev_timer *w, int revents) {
     once_cb(EV_A_ once, revents | qev_clear_pending(EV_A_ & once->io));
 }
 
-/* See ev.h: no-op when cb is NULL, or when fd < 0 and timeout < 0. (nothing could fire). */
+/* See qev.h: no-op when cb is NULL, or when fd < 0 and timeout < 0. (nothing could fire). */
 void
 qev_once(EV_P_ int fd, int events, qev_tstamp timeout, void (*cb)(int revents, void *arg), void *arg) EV_NOEXCEPT {
     struct qev_once *once;
@@ -6126,5 +6126,5 @@ qev_walk(EV_P_ int types, void (*cb)(EV_P_ int type, void *w)) EV_NOEXCEPT {
 #endif
 
 #if EV_MULTIPLICITY
-#include "ev_wrap.h"
+#include "qev_wrap.h"
 #endif

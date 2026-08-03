@@ -66,7 +66,7 @@
 // No <atomic>: libev callbacks fire on the same thread as the coroutines
 // (VirtualCore thread). Plain bools are sufficient for single-thread cooperative.
 #include <memory>
-#include <qb/vendor/ev/ev++.h>
+#include <qb/vendor/qev/qev++.h>
 #include <qb/system/time.h> // qb::duration, qb::detail::to_ev_seconds
 
 // scheduler.h must be included before task.h to get schedule_via_current

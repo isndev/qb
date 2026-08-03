@@ -98,8 +98,8 @@ endif()
 # -----------------------------------------------------------------------------
 # libev (using internal bundled version)
 # -----------------------------------------------------------------------------
-# qb uses a custom fork of libev, vendored under include/qb/vendor/ev
-set(QB_EV_DIR "${QB_VENDOR_DIR}/ev")
+# qb uses a custom fork of libev, vendored under include/qb/vendor/qev
+set(QB_EV_DIR "${QB_VENDOR_DIR}/qev")
 
 if(EXISTS "${QB_EV_DIR}")
     set(LIBEV_FOUND TRUE)

@@ -25,17 +25,17 @@
 #ifndef QB_IO_ASYNC_EVENT_BASE_H
 #define QB_IO_ASYNC_EVENT_BASE_H
 
-#include <qb/vendor/ev/ev++.h>
+#include <qb/vendor/qev/qev++.h>
 
-/* qb builds its vendored libev with EV_MULTIPLICITY=1 (qb/vendor/ev/config.h.cmakein). ev.h only
- * learns that from the generated ev_config.h, and its last-resort lookup for that file is guarded
+/* qb builds its vendored libev with EV_MULTIPLICITY=1 (qb/vendor/qev/config.h.cmakein). qev.h only
+ * learns that from the generated qev_config.h, and its last-resort lookup for that file is guarded
  * by __has_include (ev.h:28-31) -- so if the file is not reachable, ev.h SILENTLY falls back to its
  * own default of EV_FEATURE_CONFIG == 4. Every qev_* prototype then grows a loop parameter that the
  * compiled libqev.a does not have: an ODR/ABI mismatch that links and then misbehaves at runtime.
  * Make the miss a compile error instead. */
 #if !defined(EV_MULTIPLICITY) || (EV_MULTIPLICITY) != 1
 #error "qb: libev configuration header not reached (EV_MULTIPLICITY != 1). qb::io's exported \
-EV_CONFIG_H=<qb/vendor/ev/ev_config.h> definition, or the include directory carrying it, is missing."
+EV_CONFIG_H=<qb/vendor/qev/qev_config.h> definition, or the include directory carrying it, is missing."
 #endif
 
 namespace qb::io::async {

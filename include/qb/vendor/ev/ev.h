@@ -16,18 +16,18 @@
 #ifndef EV_H_
 #define EV_H_
 #include <stdint.h>
-/* Pull in the build-time config when present. ev.h is self-contained (every
+/* Pull in the build-time config when present. qev.h is self-contained (every
  * config macro it reads has a built-in default), so a missing config header is
  * fine — this just lets a generated config override the defaults. Works under
- * CMake (ev_config.h), autotools (config.h + -DHAVE_CONFIG_H) and when the header
+ * CMake (qev_config.h), autotools (config.h + -DHAVE_CONFIG_H) and when the header
  * is installed and consumed elsewhere (no config available → defaults). */
 #if defined EV_CONFIG_H
 #include EV_CONFIG_H
 #elif defined HAVE_CONFIG_H
 #include "config.h"
 #elif defined __has_include
-#if __has_include("ev_config.h")
-#include "ev_config.h"
+#if __has_include("qev_config.h")
+#include "qev_config.h"
 #endif
 #endif
 #ifdef __cplusplus
@@ -696,7 +696,7 @@ qev_is_default_loop (void) EV_NOEXCEPT
         qev_set_cb((ev), cb_);                                   \
     } while (0)
 
-/* qev_io_modify() is a real function (see ev.c): it must notify the backend via
+/* qev_io_modify() is a real function (see qev.c): it must notify the backend via
  * fd_change() so the kernel registration is updated in place (EPOLL_CTL_MOD),
  * instead of the old macro that only touched w->events and relied on callers
  * doing a stop/start cycle. Declared with the other qev_io_* prototypes below. */
