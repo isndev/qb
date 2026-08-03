@@ -47,7 +47,7 @@ The `qev` fork renamed every libev-native symbol `ev_*` → `qev_*` and moved it
 worth knowing before you link the two together.
 
 **Include guards collide.** `qev.h` keeps upstream's `EV_H_` guard and `qev++.h` keeps `EVPP_H__`
-(`src/qb/vendor/qev/qev.h:16`, `src/qb/vendor/qev/qev++.h:16`). A single translation unit therefore
+(`src/qb/vendor/qev/qev.h:33`, `src/qb/vendor/qev/qev++.h:16`). A single translation unit therefore
 cannot include both `<qb/vendor/qev/qev.h>` and a system `<ev.h>` — whichever is second is
 swallowed by the guard and its declarations are silently absent. Separate translation units in the
 same program are unaffected; keep the two APIs in different `.cpp` files.
