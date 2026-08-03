@@ -7,7 +7,18 @@ policy.
 
 ## [Unreleased]
 
-Tracks changes on the development branch that are not yet part of a tagged release.
+Tracks changes on the `develop` branch that are not yet part of a tagged release.
+`QB_FRAMEWORK_VERSION` is **2.7.0** on this branch, so a build made from `develop` already reports
+`2.7.0` while this section is still open; it becomes the `[2.7.0]` entry when that release is tagged.
+The latest tag remains `v2.6.0`.
+
+> **Open release question — the version number below is not yet settled.** *Removed* lists two
+> source-incompatible items (`<cube.h>`, which left the installed public surface, and
+> `std::to_string(const uuids::uuid &)`). [VERSIONING.md](./VERSIONING.md) reserves removals that
+> require source edits for a **major** release, so calling this `2.7.0` is a deliberate choice that
+> has to be made rather than inherited: either keep the removals and tag `3.0.0`, or restore the two
+> names for the remainder of the 2.x line. Both were dead *in-tree* — the exposure is entirely to
+> out-of-tree consumers.
 
 ### Added
 
