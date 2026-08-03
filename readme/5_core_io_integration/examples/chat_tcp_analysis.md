@@ -1,6 +1,6 @@
 # TCP chat: an annotated walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
 A line-by-line reading of the `chat_tcp` example: how a multi-actor TCP server accepts connections, frames a custom binary protocol, manages per-client sessions, and centralizes chat state, paired with a reconnecting client.
 

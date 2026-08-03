@@ -1,6 +1,6 @@
 # Event messaging between actors
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
 A deep dive into the qb messaging layer: how `push`, `send`, `reply`, `forward`, and `broadcast` differ in delivery semantics, what ordering the runtime guarantees, and how events move through the per-actor pipe and the per-core mailbox both within a core and across cores.
 

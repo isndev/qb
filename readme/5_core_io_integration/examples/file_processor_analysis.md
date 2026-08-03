@@ -1,6 +1,6 @@
 # File-processor walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
 An annotated reading of `examples/core_io/file_processor/`: a manager-worker topology that confines blocking file I/O to dedicated worker cores so the rest of the actor system stays responsive.
 

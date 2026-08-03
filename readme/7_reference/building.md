@@ -1,7 +1,7 @@
-<!-- Verified-against: qb 2.6.0 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 3.0.0 (C++20 default, C++23 supported) -->
 # Building from source
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
 A reference for configuring, building, testing, and installing the qb framework from source with CMake: requirements, presets, options, generators, and install layout.
 

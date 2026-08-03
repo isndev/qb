@@ -1,6 +1,6 @@
 # qb-core features and capabilities
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
 This page catalogs the capabilities of `qb-core` — the actor runtime built on `qb-io` — and links each one to the page that documents it in depth.
 
