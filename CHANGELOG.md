@@ -8,17 +8,22 @@ policy.
 ## [Unreleased]
 
 Tracks changes on the `develop` branch that are not yet part of a tagged release.
-`QB_FRAMEWORK_VERSION` is **2.7.0** on this branch, so a build made from `develop` already reports
-`2.7.0` while this section is still open; it becomes the `[2.7.0]` entry when that release is tagged.
+`QB_FRAMEWORK_VERSION` is **3.0.0** on this branch, so a build made from `develop` already reports
+`3.0.0` while this section is still open; it becomes the `[3.0.0]` entry when that release is tagged.
 The latest tag remains `v2.6.0`.
 
-> **Open release question — the version number below is not yet settled.** *Removed* lists two
-> source-incompatible items (`<cube.h>`, which left the installed public surface, and
-> `std::to_string(const uuids::uuid &)`). [VERSIONING.md](./VERSIONING.md) reserves removals that
-> require source edits for a **major** release, so calling this `2.7.0` is a deliberate choice that
-> has to be made rather than inherited: either keep the removals and tag `3.0.0`, or restore the two
-> names for the remainder of the 2.x line. Both were dead *in-tree* — the exposure is entirely to
-> out-of-tree consumers.
+**This is a major release.** *Removed* below already lists two source-incompatible items
+(`<cube.h>`, which left the installed public surface, and `std::to_string(const uuids::uuid &)`);
+[VERSIONING.md](./VERSIONING.md) reserves removals that require source edits for a major release.
+Further structural breaks are planned on this line and are **not yet landed**: moving the qbm public
+include prefixes (`<http/...>` → `<qb/http/...>`, `<pgsql/...>` → `<qb/pgsql/...>`,
+`<redis/...>` → `<qb/redis/...>`), renaming the vendored libev C symbols (`ev_*` → `qev_*`), and
+dropping the installed `.tpp` headers. Any one of those requires a major bump on its own.
+
+The qbm modules version in lockstep with the framework: `qbm-http`, `qbm-pgsql` and `qbm-redis` all
+carry `3.0.0`. They are not standalone-configurable (they call `qb_register_module` / `qb_add_test`,
+which an installed qb does not ship), so their version only ever means "the framework this was built
+against" — and the include-prefix move above lands hardest in exactly those modules.
 
 ### Added
 
@@ -49,6 +54,22 @@ The latest tag remains `v2.6.0`.
 
 ### Changed
 
+- **`QB_VERSION_NUM` is computed from the version macros instead of being written out by hand.**
+  `<qb/io/config.h>` had it frozen at `0x020600`, so the documented hex form of the version stayed on
+  2.6.0 while `QB_FRAMEWORK_VERSION` moved. It is now
+  `((QB_VERSION_MAJOR << 16) | (QB_VERSION_MINOR << 8) | QB_VERSION_PATCH)`, sourced from the same
+  `cmake/qbConfig.cmake` values as every other version string.
+- **`scripts/doc-lint.sh` validates the *value* of the `Verified-against:` markers**, not merely that
+  they exist. Existence was all it ever checked, which is how 129 pages across this repo and the three
+  qbm modules sat at `qb 2.6.0` through two version bumps without anything failing. The expected
+  version is read from `cmake/qbConfig.cmake`; a version the script cannot determine is a hard stop
+  (exit 2) rather than a skip, because a lint that quietly passes when it cannot find its expected
+  value is indistinguishable from the unchecked marker it replaced. A missing marker remains a
+  warning; a *wrong* one now fails.
+- **CI workflows target `main` and `develop`.** `cmake`, `coverage`, `doc-lint`, `format-check`,
+  `sanitize` and `sanitize-thread` all filtered on a `c++23` branch that no longer exists, so six of
+  the seven workflows had silently stopped running; only `install-consume` was live. They now use the
+  same `push: [main, develop]` / `pull_request: [main]` triggers it already had.
 - **`<qb/io/crypto.h>` now compiles without OpenSSL.** It used to open with
   `#error "missing OpenSSL Library"`, which gated the *entire* file — including members of
   `qb::crypto` that call no OpenSSL API. The hex codec in particular is what the PostgreSQL `bytea`

@@ -1,4 +1,4 @@
-<!-- Verified-against: qb 2.7.0 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 3.0.0 (C++20 default, C++23 supported) -->
 
 # Versioning and compatibility
 
@@ -6,8 +6,15 @@ qb follows [Semantic Versioning 2.0.0](https://semver.org/). The version is defi
 `cmake/qbConfig.cmake` (`QB_FRAMEWORK_VERSION`) and consumed by `project()` in `CMakeLists.txt` — that
 file is the single source of truth, and every other version string in the tree is a copy of it.
 
-The latest **tagged release** is **2.6.0**. The `develop` branch, where the next minor accumulates,
-reports **2.7.0**; a build made from `develop` therefore advertises a version that is not yet tagged.
+The latest **tagged release** is **2.6.0**. The `develop` branch, where the next release accumulates,
+reports **3.0.0**; a build made from `develop` therefore advertises a version that is not yet tagged.
+That next release is a **major** one — see [CHANGELOG.md](./CHANGELOG.md) for what makes it major.
+
+The qbm modules (`qbm-http`, `qbm-pgsql`, `qbm-redis`) carry the framework version rather than
+versions of their own. They are not standalone-configurable, so a module version can only ever mean
+"the qb this was built against"; `project(qbm-<name> VERSION ...)` is kept in lockstep with
+`QB_FRAMEWORK_VERSION`, and each module's `scripts/doc-lint.sh` fails if the two disagree whenever
+both trees are visible.
 
 ## What each release level means
 

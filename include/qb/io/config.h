@@ -128,10 +128,13 @@
 /**
  * @def QB_VERSION_NUM
  * @brief Defines the QB library version number in hexadecimal format
- * @details Format is 0xMMNNRR where MM=major, NN=minor, RR=revision
+ * @details Format is 0xMMNNRR where MM=major, NN=minor, RR=revision.
+ * Computed from the QB_VERSION_* macros published by qb's CMake usage requirements
+ * (see qb/cmake/qbConfig.cmake, sourced from QB_FRAMEWORK_VERSION) rather than written
+ * out by hand -- the hand-written form was still reporting 0x020600 two releases later.
  * @ingroup IO
  */
-#define QB_VERSION_NUM 0x020600
+#define QB_VERSION_NUM ((QB_VERSION_MAJOR << 16) | (QB_VERSION_MINOR << 8) | QB_VERSION_PATCH)
 
 /**
  * @def QB_DEFAULT_MULTICAST_TTL

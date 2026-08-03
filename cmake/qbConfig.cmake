@@ -36,9 +36,9 @@ include(CMakeParseArguments)
 # -----------------------------------------------------------------------------
 set(QB_FRAMEWORK_NAME "qb")
 set(QB_FRAMEWORK_DESCRIPTION "High-performance C++ Actor Framework")
-set(QB_FRAMEWORK_VERSION "2.7.0")
-set(QB_FRAMEWORK_VERSION_MAJOR 2)
-set(QB_FRAMEWORK_VERSION_MINOR 7)
+set(QB_FRAMEWORK_VERSION "3.0.0")
+set(QB_FRAMEWORK_VERSION_MAJOR 3)
+set(QB_FRAMEWORK_VERSION_MINOR 0)
 set(QB_FRAMEWORK_VERSION_PATCH 0)
 
 # Framework paths
