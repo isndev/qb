@@ -80,7 +80,7 @@ MANIFEST = [
 # consumer as source, so each must carry the notice in-file -- a sibling LICENSE
 # elsewhere in the repo does not travel with a header someone copies out.
 DETACHED_PUBLIC_HEADERS = [
-    "qbm/http/vendor/llhttp.h",
+    "qbm/http/src/qbm/http/vendor/llhttp.h",
 ]
 
 # A nested directory with these names is a unit's own layout, not a second upstream
