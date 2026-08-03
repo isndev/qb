@@ -191,9 +191,9 @@ auto pt = C::decrypt(ct,        key, iv, C::SymmetricAlgorithm::AES_256_GCM, aad
 // pt is EMPTY if the GCM authentication tag fails — treat empty as authentication
 // failure, never as "decrypted to nothing".
 ```
-<!-- src: qb/include/qb/io/crypto.h:507-526 -->
+<!-- src: qb/include/qb/io/crypto.h:527-546 -->
 
-`SymmetricAlgorithm` covers AES-CBC and AES-GCM at 128/192/256-bit, plus `CHACHA20_POLY1305`. For AEAD modes, `encrypt` appends and `decrypt` verifies the authentication tag; a failed tag yields an empty result. _(`qb/include/qb/io/crypto.h:139,507-526`; `docs-overhaul/qb/FACTBOOK.md:484`.)_
+`SymmetricAlgorithm` covers AES-CBC and AES-GCM at 128/192/256-bit, plus `CHACHA20_POLY1305`. For AEAD modes, `encrypt` appends and `decrypt` verifies the authentication tag; a failed tag yields an empty result. _(`qb/include/qb/io/crypto.h:149,527-546`; `docs-overhaul/qb/FACTBOOK.md:484`.)_
 
 ### Key derivation and password hashing
 
@@ -210,9 +210,9 @@ auto salt = C::generate_salt(16);
 auto dk   = C::derive_key("password", salt, /*key_length*/ 32,
                           C::KdfAlgorithm::Argon2);   // or PBKDF2 / HKDF
 ```
-<!-- src: qb/include/qb/io/crypto.h:737-872 -->
+<!-- src: qb/include/qb/io/crypto.h:762-764 -->
 
-`KdfAlgorithm` is `PBKDF2`, `HKDF`, or `Argon2`; `derive_key` defaults to `Argon2` with `iterations = 10000` (used only by PBKDF2) and a default `Argon2Params`. Dedicated entry points exist for each primitive: `pbkdf2`, `hkdf`, `argon2_kdf`. `Argon2Params` defaults to `t_cost = 3`, `m_cost = 1 << 16` KiB, `parallelism = 1`; `Argon2Variant` is `Argon2d`, `Argon2i`, or `Argon2id`. _(`qb/include/qb/io/crypto.h:701-792,926-936`.)_
+`KdfAlgorithm` is `PBKDF2`, `HKDF`, or `Argon2`; `derive_key` defaults to `Argon2` with `iterations = 10000` (used only by PBKDF2) and a default `Argon2Params`. Dedicated entry points exist for each primitive: `pbkdf2`, `hkdf`, `argon2_kdf`. `Argon2Params` defaults to `t_cost = 3`, `m_cost = 1 << 16` KiB, `parallelism = 1`; `Argon2Variant` is `Argon2d`, `Argon2i`, or `Argon2id`. _(`qb/include/qb/io/crypto.h:425,669-690,724,741,762-764`.)_
 
 > **Argon2 is an optional dependency.** The `QB_HAS_ARGON2` macro is set only when the Argon2 library is found, and that probe runs only when OpenSSL is present (`qb/cmake/qbDependencies.cmake:131-140`). When Argon2 is absent, `hash_password` and Argon2-mode `derive_key` **silently fall back to PBKDF2-HMAC-SHA256** (with a different self-describing hash prefix) rather than failing or warning (`qb/source/io/src/crypto_advanced.cpp:165-182,444-456`). The stored-hash format therefore depends on how the framework was built: a build with SSL but without the Argon2 library stores PBKDF2 hashes even though the API defaults read as "Argon2id". `verify_password` is gated the same way, so it only validates the format its own build produces — a hash written by one build configuration will not verify against a binary built the other way. Confirm `QB_HAS_ARGON2` if you require Argon2id, and keep the build configuration consistent across any services that share a hash store.
 
@@ -239,7 +239,7 @@ std::string token = qb::crypto::generate_token("session:abc", key, qb::duration{
 
 std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/expired
 ```
-<!-- src: qb/include/qb/io/crypto.h:812-825 -->
+<!-- src: qb/include/qb/io/crypto.h:777-790 -->
 
 `generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/source/io/src/crypto_advanced.cpp:235,243-244,249-252`; `docs-overhaul/qb/FACTBOOK.md:481-483`.)_
 

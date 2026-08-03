@@ -30,16 +30,25 @@
 #ifndef QB_IO_CRYPTO_H
 #define QB_IO_CRYPTO_H
 
-#ifndef QB_HAS_SSL
-#error "missing OpenSSL Library"
-#endif
-
+// This header used to `#error "missing OpenSSL Library"` when QB_HAS_SSL was not
+// defined. That gated the WHOLE file, including members of `qb::crypto` that are
+// plain C++ and call no OpenSSL API -- the hex codec in particular, which the
+// PostgreSQL bytea wire format depends on. A cleartext (QB_WITH_SSL=OFF) build of
+// qbm-pgsql therefore could not compile at all.
+//
+// The gate is now per-member: without OpenSSL the class still exists and still
+// declares everything that does not need OpenSSL (see crypto_core.cpp for those
+// definitions, compiled unconditionally). Everything that does need OpenSSL is
+// removed from the class, so using it in a no-SSL build fails at the CALL SITE
+// with `no member named 'md5' in 'qb::crypto'` -- pointing at the line that
+// actually wants the feature, instead of at this header.
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
 #include <qb/system/time.h>
 #include <istream>
+#ifdef QB_HAS_SSL
 #include <openssl/aes.h>
 #include <openssl/buffer.h>
 #include <openssl/ec.h>
@@ -50,6 +59,7 @@
 #include <openssl/rand.h>
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
+#endif
 #include <optional>
 #include <random>
 #include <sstream>
@@ -201,6 +211,7 @@ public:
         return generate_random_string(len, std::string_view(range, sizeof(range) - 1));
     }
 
+#ifdef QB_HAS_SSL
     /**
      * @brief Generate a cryptographically secure random string
      *
@@ -249,6 +260,12 @@ public:
          */
         static std::string decode(const std::string &base64) noexcept;
     };
+#endif // QB_HAS_SSL
+
+    // ---- OpenSSL-free members -------------------------------------------------
+    // Defined in qb/source/io/src/crypto_core.cpp, which is compiled whether or
+    // not OpenSSL is present. Do not move OpenSSL-dependent code between here
+    // and the closing marker below.
 
     /**
      * @brief Convert a binary string to a hexadecimal string
@@ -284,6 +301,7 @@ public:
      */
     static std::string hex_to_string(const std::string &input) noexcept;
 
+#ifdef QB_HAS_SSL
     /**
      * @brief Calculate a hash from an input stream using a specified digest algorithm
      *
@@ -448,6 +466,7 @@ public:
      * @return The SHA-256 hash as a vector of unsigned chars
      */
     static std::vector<unsigned char> sha256(const std::vector<unsigned char> &data);
+#endif // QB_HAS_SSL
 
     /**
      * @brief XOR two byte arrays
@@ -461,6 +480,7 @@ public:
      */
     static std::vector<unsigned char> xor_bytes(const std::vector<unsigned char> &a, const std::vector<unsigned char> &b);
 
+#ifdef QB_HAS_SSL
     /**
      * @brief Generate cryptographically secure random bytes
      *
@@ -544,6 +564,7 @@ public:
      */
     static std::vector<unsigned char> hmac(const std::vector<unsigned char> &data, const std::vector<unsigned char> &key,
                                            DigestAlgorithm algorithm);
+#endif // QB_HAS_SSL
 
     /**
      * @brief Compare two byte arrays in constant time to prevent timing attacks
@@ -561,6 +582,9 @@ public:
      */
     static bool constant_time_compare(const std::vector<unsigned char> &a, const std::vector<unsigned char> &b) noexcept;
 
+    // ---- end of the OpenSSL-free members --------------------------------------
+
+#ifdef QB_HAS_SSL
     /**
      * @brief Generate an RSA key pair
      *
@@ -638,6 +662,7 @@ public:
      * @return Pointer to the EVP_MD structure
      */
     static const EVP_MD *get_evp_md(DigestAlgorithm algorithm);
+#endif // QB_HAS_SSL
 
     // New types for added functions
     /** @brief Parameters for the Argon2 algorithm */
@@ -682,6 +707,7 @@ public:
         BASE64 // Base64 format with delimiters
     };
 
+#ifdef QB_HAS_SSL
     /**
      * @brief Key derivation based on Argon2
      *
@@ -972,6 +998,7 @@ public:
                                                     const std::vector<unsigned char> &recipient_private_key,
                                                     const std::vector<unsigned char> &optional_shared_info = {},
                                                     ECIESMode                         mode                 = ECIESMode::AES_GCM);
+#endif // QB_HAS_SSL
 };
 } // namespace qb
 

@@ -25,6 +25,18 @@
 #ifndef QB_IO_CRYPTO_JWT_H
 #define QB_IO_CRYPTO_JWT_H
 
+// JWT signing/verification is HMAC, RSA and ECDSA all the way down; there is no
+// OpenSSL-free subset of this header. crypto_jwt.cpp is only compiled when
+// QB_HAS_SSL is defined (see qb/source/io/src/io.cpp), so without it every
+// declaration below is a symbol that does not exist. Fail here, not with a page
+// of "undefined symbols: qb::jwt::..." at link time.
+//
+// Until crypto.h was made compilable without OpenSSL this was enforced by the
+// #error crypto.h used to carry; the check now lives where it belongs.
+#ifndef QB_HAS_SSL
+#error "qb::jwt requires OpenSSL (build qb with QB_WITH_SSL=ON)"
+#endif
+
 #include <chrono>
 #include <map>
 #include <optional>

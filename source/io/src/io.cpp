@@ -50,6 +50,12 @@ generate_random_uuid() {
 } // namespace qb
 #include "json.cpp"
 
+// The OpenSSL-free members of qb::crypto (hex codec, xor_bytes,
+// constant_time_compare). Compiled unconditionally: qbm-pgsql's bytea codec and
+// the HPACK tests use the hex helpers, and they must link in a QB_WITH_SSL=OFF
+// build. Everything else in qb::crypto stays behind the guard below.
+#include "crypto_core.cpp"
+
 #ifdef QB_HAS_SSL
 #include "crypto.cpp"
 #include "crypto_modern.cpp"
