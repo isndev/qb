@@ -11,9 +11,9 @@
  * - Memory fences on SQ tail, CQ head/tail visibility; POLL_ADD one-shot re-arm via fd_change like linuxaio.
  * - CQEs: ignore -ECANCELED/-EINTR/-ENOENT from poll races; res==0 forces re-arm; mmap offsets sanity-checked.
  * - timerfd: drain expirations with EINTR retry; EAGAIN ignored; other read errors -> qev_syserr.
- * - loop_destroy skips close(backend_fd) before iouring_destroy (see ev.c) to avoid double-close.
+ * - loop_destroy skips close(backend_fd) before iouring_destroy (see qev.c) to avoid double-close.
  *
- * Requires a kernel new enough for IORING_OP_POLL_ADD (libev gates the backend in ev.c).
+ * Requires a kernel new enough for IORING_OP_POLL_ADD (libev gates the backend in qev.c).
  *
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor).

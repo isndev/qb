@@ -113,7 +113,7 @@ registry, or as a member — never relocate them.
   protection, not cross-thread synchronization.
 
 > **`run_once()` footgun.** The bundled libev disables timerfd by default — the
-> `QB_EV_USE_TIMERFD` CMake option is `OFF` (`include/qb/vendor/ev/CMakeLists.txt:69`).
+> `QB_EV_USE_TIMERFD` CMake option is `OFF` (`include/qb/vendor/qev/CMakeLists.txt:69`).
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `qev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
@@ -357,7 +357,7 @@ with I/O lifetime are:
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
   qev's `qev_stat` stores the narrow `const char *` it is given **without
-  copying** (`include/qb/vendor/ev/ev++.h:696`). `start()` therefore stashes
+  copying** (`include/qb/vendor/qev/qev++.h:696`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
   `_watched_path.c_str()` to the watcher (`include/qb/io/async/io.h:576`, `:740`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and

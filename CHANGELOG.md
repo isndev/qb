@@ -15,10 +15,11 @@ The latest tag remains `v2.6.0`.
 **This is a major release.** *Removed* below already lists two source-incompatible items
 (`<cube.h>`, which left the installed public surface, and `std::to_string(const uuids::uuid &)`);
 [VERSIONING.md](./VERSIONING.md) reserves removals that require source edits for a major release.
-Further structural breaks are planned on this line and are **not yet landed**: moving the qbm public
-include prefixes (`<http/...>` → `<qb/http/...>`, `<pgsql/...>` → `<qb/pgsql/...>`,
-`<redis/...>` → `<qb/redis/...>`), renaming the vendored libev C symbols (`ev_*` → `qev_*`), and
-dropping the installed `.tpp` headers. Any one of those requires a major bump on its own.
+The vendored event loop's rename (`ev_*` → `qev_*`, `<qb/vendor/ev/ev++.h>` →
+`<qb/vendor/qev/qev++.h>`) has now landed — see *Changed* below. Further structural breaks are
+planned on this line and are **not yet landed**: moving the qbm public include prefixes
+(`<http/...>` → `<qb/http/...>`, `<pgsql/...>` → `<qb/pgsql/...>`, `<redis/...>` →
+`<qb/redis/...>`) and dropping the installed `.tpp` headers. Either requires a major bump on its own.
 
 The qbm modules version in lockstep with the framework: `qbm-http`, `qbm-pgsql` and `qbm-redis` all
 carry `3.0.0`. They are not standalone-configurable (they call `qb_register_module` / `qb_add_test`,
@@ -54,6 +55,25 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Changed
 
+- **The vendored libev fork is now `qev`: its own directory, header names, CMake target and C symbol
+  space.** `include/qb/vendor/ev/` → `include/qb/vendor/qev/`, `ev.h`/`ev++.h` → `qev.h`/`qev++.h`
+  (likewise `qev.c`, `qev_vars.h`, `qev_wrap.h`, the generated `qev_config.h` and the backend
+  sources), so a consumer writes `#include <qb/vendor/qev/qev++.h>`. The CMake target `ev` is `qev`,
+  `qb::ev` is `qb::qev`, `ev::ev` is `qev::qev`, and the archive is `libqev.a`. All 58 exported
+  `ev_*` symbols — and the types and macros they are built from — are `qev_*`.
+
+  This fixes a **silent** failure: qb's event loop and a system libev define the same 58 names, so
+  linking both into one binary succeeded with **exit 0 and no diagnostic** and the winner was decided
+  by command-line order alone. `-fvisibility=hidden` cannot close it, because `ev++.h`'s inline
+  members put the undefined `ev_*` references in the *consumer's* object file; only renaming does.
+
+  **Not renamed, deliberately:** the 24 `event_*` functions and libevent's `struct event` members
+  (`ev_fd`, `ev_events`, `ev_callback`, …) — those *are* libevent's API, and `event.h`,
+  `event_compat.h`, `event.c` keep their names for the same reason. So `libqev.a` exports 57 owned
+  `qev_*` functions, `qev_default_loop_ptr`, and 24 unowned `event_*`: a chosen exposure that only
+  matters to a binary that also links a real libevent. The `EV_*` macros (`EV_READ`, `EV_WRITE`,
+  `EV_MULTIPLICITY`, the `QB_EV_*` CMake options) are unchanged, as is the `ev::` C++ namespace.
+  Nothing was removed: every file in the fork is still there and still built.
 - **`QB_VERSION_NUM` is computed from the version macros instead of being written out by hand.**
   `<qb/io/config.h>` had it frozen at `0x020600`, so the documented hex form of the version stayed on
   2.6.0 while `QB_FRAMEWORK_VERSION` moved. It is now

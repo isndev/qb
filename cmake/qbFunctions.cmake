@@ -972,7 +972,7 @@ function(qb_register_module)
     # <srcdir>/qbm. One spelling, both trees. Without it the build interface has no installed
     # counterpart and find_package() consumers configure fine and then fail to compile on
     # "'http/http.h' file not found" -- the drift class that shipped once already in qb (the
-    # missing <ev/ev++.h> root) and is invisible to an in-tree test suite.
+    # missing <qb/vendor/qev/qev++.h> root) and is invisible to an in-tree test suite.
     get_filename_component(_qb_module_include_root "${CMAKE_CURRENT_SOURCE_DIR}" DIRECTORY)
     _qb_target_usage_scope(${module_target} _qb_module_scope)
     target_include_directories(${module_target}

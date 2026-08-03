@@ -16,7 +16,7 @@
 /*
  * qb-io: loop_destroy skips close(backend_fd) when this backend is active so
  * linuxaio_destroy can qev_io_stop the internal epoll watcher before closing the
- * epoll fd (see ev.c). io_setup failure after epoll_init closes that fd here.
+ * epoll fd (see qev.c). io_setup failure after epoll_init closes that fd here.
  */
 
 /*

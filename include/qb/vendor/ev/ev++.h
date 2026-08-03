@@ -19,7 +19,7 @@
 #ifdef EV_H
 #include EV_H
 #else
-#include "ev.h"
+#include "qev.h"
 #endif
 
 #ifndef EV_USE_STDEXCEPT

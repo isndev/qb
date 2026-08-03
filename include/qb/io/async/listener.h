@@ -634,7 +634,7 @@ public:
         // Contain user exceptions HERE — the single locus every watcher dispatch flows
         // through. `invoke()` runs arbitrary user code (`on(event::disconnected&&)`,
         // `on(event::pending_read&&)`, `on(event::eos&&)`, a protocol handler, an
-        // `ev::stat` observer, …), and libev is built as C (qb/include/qb/vendor/ev, LANGUAGES C):
+        // `ev::stat` observer, …), and libev is built as C (qb/include/qb/vendor/qev, LANGUAGES C):
         // letting an exception unwind through `qev_invoke_pending`/`qev_run` is UB — it
         // skips libev's own epilogue (`--loop_depth`, the `loop_done = EVBREAK_CANCEL`
         // reset that re-arms a broken loop) and, on toolchains that do not emit unwind

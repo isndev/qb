@@ -91,13 +91,13 @@ set(UUID_TIME_GENERATOR OFF)
 set(UUID_USING_CXX20_SPAN ON)
 
 # Tell the vendored forks they are EMBEDDED in qb and must publish their headers under the
-# qb/vendor/<fork>/ prefix instead of dropping bare names (ev.h, uuid.h, event.h ...) into the
+# qb/vendor/<fork>/ prefix instead of dropping bare names (qev.h, uuid.h, event.h ...) into the
 # consumer's include root. Both projects keep working standalone when this is unset.
 set(QB_VENDOR_INCLUDE_PREFIX "qb/vendor")
 
 # Load qb's own vendored forks (qev, uuid). Header-only forks (nanolog, ska_hash) need no build.
 add_subdirectory("${QB_VENDOR_DIR}/uuid")
-add_subdirectory("${QB_VENDOR_DIR}/ev")
+add_subdirectory("${QB_VENDOR_DIR}/qev")
 
 # -----------------------------------------------------------------------------
 # Core Libraries
@@ -277,7 +277,7 @@ if (QB_INSTALL)
 
     # Install public headers.
     #
-    # This ONE rule now also ships the vendored forks (include/qb/vendor/{ev,uuid,nanolog,
+    # This ONE rule now also ships the vendored forks (include/qb/vendor/{qev,uuid,nanolog,
     # ska_hash}), because they physically live under this directory. That is the point of the
     # layout: the build tree and the installed tree expose qb's headers AND its forks through the
     # same single root at the same relative paths, so there is no second BUILD_INTERFACE /
