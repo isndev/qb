@@ -710,35 +710,33 @@ endfunction()
 #   out_copy_to   the directory install(DIRECTORY) copies them IN to
 #
 # THE RULE (dev/analysis/SOURCE-LAYOUT-3.0.md): a repository's src/ IS its include root -- its
-# contents are exactly what a consumer types after `#include <`. A module laid out that way
-# holds src/qbm/<name>/..., so <moduledir>/src is the build-tree root and <includedir> is its
-# installed mirror. The two are then the SAME directory listing copied verbatim, which is why
-# copy_from/copy_to equal build/install here and the consume spelling <qbm/<name>/...> cannot
-# drift between the trees.
+# contents are exactly what a consumer types after `#include <`. A module holds
+# src/qbm/<name>/..., so <moduledir>/src is the build-tree root and <includedir> is its
+# installed mirror. The two are the SAME directory listing copied verbatim, which is why
+# copy_from/copy_to equal build/install and the consume spelling <qbm/<name>/...> cannot drift
+# between the trees. All four values are returned together so no caller can pair them wrongly.
 #
-# The legacy layout put the module's headers at its repository root and made the include root
-# the module's PARENT directory -- the superproject's qbm/, which does not exist in the module's
-# own git repository -- mirrored by <includedir>/qbm. Its consume spelling was <http/...>,
-# <pgsql/...>, <redis/...>, which is how installing qbm claimed those three maximally generic
-# names in every consumer's include namespace. There the roots and the copy pair necessarily
-# differ: the build root is a directory holding every SIBLING module, so only the module's own
-# subdirectory may be copied, one level down.
-#
-# Both shapes are recognised while the three modules migrate one at a time; the legacy branch
-# goes away with the last of them.
+# Before 3.0.0 the include root was the module's PARENT directory -- the superproject's qbm/,
+# which does not exist in the module's own git repository -- mirrored by <includedir>/qbm. That
+# is what made the consume spelling <http/...>, <pgsql/...>, <redis/...>, and it is why
+# installing qbm claimed those three maximally generic names in every consumer's include
+# namespace. A hard error if a module still has that shape: silently falling back would install
+# it into the wrong place and only fail at a downstream consumer's first #include.
 function(_qb_module_include_roots mod_name out_build out_install out_copy_from out_copy_to)
-    if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/qbm/${mod_name}")
-        set(${out_build}     "${CMAKE_CURRENT_SOURCE_DIR}/src"  PARENT_SCOPE)
-        set(${out_install}   "${CMAKE_INSTALL_INCLUDEDIR}"      PARENT_SCOPE)
-        set(${out_copy_from} "${CMAKE_CURRENT_SOURCE_DIR}/src"  PARENT_SCOPE)
-        set(${out_copy_to}   "${CMAKE_INSTALL_INCLUDEDIR}"      PARENT_SCOPE)
-    else()
-        get_filename_component(_qbm_legacy_root "${CMAKE_CURRENT_SOURCE_DIR}" DIRECTORY)
-        set(${out_build}     "${_qbm_legacy_root}"                    PARENT_SCOPE)
-        set(${out_install}   "${CMAKE_INSTALL_INCLUDEDIR}/qbm"        PARENT_SCOPE)
-        set(${out_copy_from} "${CMAKE_CURRENT_SOURCE_DIR}"            PARENT_SCOPE)
-        set(${out_copy_to} "${CMAKE_INSTALL_INCLUDEDIR}/qbm/${mod_name}" PARENT_SCOPE)
+    if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/qbm/${mod_name}")
+        # ONE argument, not four: qb_error_message forwards ${ARGN}, and CMake joins a list
+        # with semicolons -- four strings would print with `;` sprayed through the sentence.
+        string(CONCAT _qbm_layout_err
+            "qbm-${mod_name}: expected the module's public headers under "
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/qbm/${mod_name}/ -- src/ IS the include root, so "
+            "<qbm/${mod_name}/...> is the same string in this tree and in an installed prefix. "
+            "See dev/analysis/SOURCE-LAYOUT-3.0.md.")
+        qb_error_message("${_qbm_layout_err}")
     endif()
+    set(${out_build}     "${CMAKE_CURRENT_SOURCE_DIR}/src"  PARENT_SCOPE)
+    set(${out_install}   "${CMAKE_INSTALL_INCLUDEDIR}"      PARENT_SCOPE)
+    set(${out_copy_from} "${CMAKE_CURRENT_SOURCE_DIR}/src"  PARENT_SCOPE)
+    set(${out_copy_to}   "${CMAKE_INSTALL_INCLUDEDIR}"      PARENT_SCOPE)
 endfunction()
 
 # Internal: emit the install/export rules that make a qbm module find_package()-able.

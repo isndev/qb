@@ -16,10 +16,13 @@ The latest tag remains `v2.6.0`.
 (`<cube.h>`, which left the installed public surface, and `std::to_string(const uuids::uuid &)`);
 [VERSIONING.md](./VERSIONING.md) reserves removals that require source edits for a major release.
 The vendored event loop's rename (`ev_*` → `qev_*`, `<qb/vendor/ev/ev++.h>` →
-`<qb/vendor/qev/qev++.h>`) has now landed — see *Changed* below. Further structural breaks are
-planned on this line and are **not yet landed**: moving the qbm public include prefixes
-(`<http/...>` → `<qb/http/...>`, `<pgsql/...>` → `<qb/pgsql/...>`, `<redis/...>` →
-`<qb/redis/...>`) and dropping the installed `.tpp` headers. Either requires a major bump on its own.
+`<qb/vendor/qev/qev++.h>`) has now landed, and so has the qbm public include prefix — as
+`<qbm/http/...>`, `<qbm/pgsql/...>`, `<qbm/redis/...>`, not the `<qb/...>` spelling this note
+previously anticipated. Keeping `qbm/` leaves the installed location `include/qbm/<name>/`
+untouched, so every CI assertion holds through the migration, and it keeps the two package
+roots disjoint: `include/qb/` stays qb's alone rather than becoming co-owned by four
+independently-versioned packages. One structural break is still planned and **not yet landed**:
+dropping the installed `.tpp` headers. It requires a major bump on its own.
 
 The qbm modules version in lockstep with the framework: `qbm-http`, `qbm-pgsql` and `qbm-redis` all
 carry `3.0.0`. They are not standalone-configurable (they call `qb_register_module` / `qb_add_test`,
