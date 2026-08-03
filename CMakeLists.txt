@@ -324,6 +324,61 @@ if (QB_INSTALL)
         endif ()
     endforeach ()
 
+    # Install qb's own license and the third-party notices.
+    #
+    # This is not decoration: Apache-2.0 s.4 requires a copy of the License to reach every
+    # recipient, and the MIT / BSD-2 / BSL-1.0 components qb bundles all require their notice
+    # to be *distributed with* the software. Until this rule existed nothing did -- the two
+    # install(DIRECTORY) rules above use FILES_MATCHING with *.h/*.hpp/*.tpp patterns, and
+    # FILES_MATCHING installs ONLY files matching a pattern, so LICENSE and THIRD-PARTY-NOTICES
+    # sitting right next to the vendored headers were silently skipped. A verified install
+    # produced zero license files of any kind while shipping five vendored upstreams.
+    #
+    # share/licenses/<pkg>/ rather than share/doc: it is the layout distro packaging tools
+    # already look in, and it keeps qb's notices from colliding with a qbm module's.
+    set(_qb_licensedir "${CMAKE_INSTALL_DATAROOTDIR}/licenses/qb")
+    install(FILES
+            "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+            "${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES"
+            DESTINATION "${_qb_licensedir}"
+    )
+
+    # Each vendored unit keeps its license text beside its own code, so glob rather than
+    # hard-code: a unit added later ships its notice without anyone remembering to edit this
+    # list, and scripts/check-vendor-attribution.py fails the guard battery if a unit has no
+    # notice to ship. The installed path mirrors THIRD-PARTY-NOTICES' "License at" entries.
+    #
+    # The glob is deliberately one level deep, which is also what keeps uuid/catch out: Catch2
+    # is the stduuid fork's test-only material, the header rule above already excludes it, and
+    # shipping its license would advertise a dependency the consumer never received.
+    file(GLOB _qb_vendor_dirs LIST_DIRECTORIES true "${QB_INCLUDE_DIR}/qb/vendor/*")
+    foreach (_qb_vendor_dir ${_qb_vendor_dirs})
+        if (NOT IS_DIRECTORY "${_qb_vendor_dir}")
+            continue()
+        endif ()
+        get_filename_component(_qb_vendor_name "${_qb_vendor_dir}" NAME)
+        file(GLOB _qb_vendor_notices
+                "${_qb_vendor_dir}/LICENSE" "${_qb_vendor_dir}/LICENSE.*"
+                "${_qb_vendor_dir}/LICENSE_*" "${_qb_vendor_dir}/THIRD-PARTY-NOTICES")
+        if (_qb_vendor_notices)
+            install(FILES ${_qb_vendor_notices}
+                    DESTINATION "${_qb_licensedir}/third-party/${_qb_vendor_name}")
+        endif ()
+    endforeach ()
+
+    # nlohmann's notice follows its header: installed only when qb actually shipped the bundled
+    # copy. If qb resolved a system nlohmann_json, neither the header nor its license is ours to
+    # install -- and when the bundled copy is eventually deleted in favour of
+    # find_package(nlohmann_json), this rule stops firing on its own rather than leaving a
+    # dangling license for a header that is no longer there.
+    foreach (_hdr_mod ${_qb_bundled_hdr_mods})
+        file(GLOB _qb_mod_notices "${QB_MODULES_DIR}/${_hdr_mod}/LICENSE*")
+        if (_qb_mod_notices)
+            install(FILES ${_qb_mod_notices}
+                    DESTINATION "${_qb_licensedir}/third-party/${_hdr_mod}")
+        endif ()
+    endforeach ()
+
     # Version compatibility file
     write_basic_package_version_file(
             "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
