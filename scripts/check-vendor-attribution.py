@@ -59,8 +59,8 @@ COPYRIGHT_RE = re.compile(r"copyright|SPDX-FileCopyrightText|SPDX-License-Identi
 # in_header_notice_ok        : unit has no license FILE but every source carries the
 #                              full notice, so the notice travels with the code
 MANIFEST = [
-    dict(path="qb/include/qb/vendor/ev",           notices_in="qb",
-         record_as="include/qb/vendor/ev/"),
+    dict(path="qb/include/qb/vendor/qev",          notices_in="qb",
+         record_as="include/qb/vendor/qev/"),
     dict(path="qb/include/qb/vendor/nanolog",      notices_in="qb",
          record_as="include/qb/vendor/nanolog/",   in_header_notice_ok=True),
     dict(path="qb/include/qb/vendor/ska_hash",     notices_in="qb",
