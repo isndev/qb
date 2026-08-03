@@ -58,6 +58,25 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Changed
 
+- **One install/export rule for qb and every qbm module: `qb_install_package()`, new in
+  `cmake/qbPackage.cmake`.** The same job used to be implemented twice — hand-rolled in
+  `CMakeLists.txt` for qb, and again as `_qb_module_install_rules()` in `qbFunctions.cmake` for a
+  module — and no single function could have served both, because a module's install root was its
+  whole *repository*, re-rooted onto `<includedir>/qbm/<name>` and filtered by an eight-term
+  blacklist (`tests|readme|docs|scripts|cmake|examples|benchmarks|not-qb`) of everything under it
+  that was not a header. Putting the modules on the same `src/`-is-the-include-root rule as qb
+  deleted the blacklist, the re-rooting and the second implementation together: the header rule is
+  now one directory copied verbatim onto another, byte-identical on both sides, and the only
+  exclusion left anywhere is qb's own (stduuid's vendored Catch2). `_qb_module_install_rules()` and
+  `_qb_module_include_roots()` are gone; `qb_package_include_root()` is now the single place that
+  decides the build-tree/install-tree include pair, so `$<BUILD_INTERFACE:>`,
+  `$<INSTALL_INTERFACE:>` and `install(DIRECTORY)` cannot drift apart.
+  **Nothing a consumer writes changed, and nothing the install produces changed**:
+  `find_package(qb CONFIG)` → `qb::core`/`qb::io`, `find_package(qbm-http CONFIG)` → `qbm::http`
+  resolving qb via `find_dependency(qb)`, and the installed tree is file-for-file identical
+  (verified by installing before and after into two prefixes and diffing: 398 entries, 289 headers,
+  12 licence files, zero difference). The qb-version-and-feature skew gate in
+  `qbmModuleConfig.cmake.in` is untouched.
 - **The source tree is laid out around one rule: `src/` *is* the include root.** `include/` and
   `source/` are gone. What a consumer types after `#include <` is now exactly what is under `src/`,
   with each header's implementation beside it — `src/qb/core/Actor.h` next to `src/qb/core/Actor.cpp`,
