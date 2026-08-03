@@ -1,6 +1,6 @@
 # Secure TCP with SSL/TLS
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.6.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
 `qb-io` layers OpenSSL-backed SSL/TLS over its TCP stack, with secure-by-default client verification, a context-owning listener, and a stream transport that drains OpenSSL's internal buffers.
 

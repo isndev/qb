@@ -38,6 +38,25 @@ doc_files() {
   } | sort -u | while read -r f; do [ -f "$f" ] && echo "$f"; done
 }
 
+# Expected framework version for the "Verified-against" markers.
+#
+# cmake/qbConfig.cmake is the single source of truth (VERSIONING.md says so), so it is read
+# here rather than written out again. Resolving it is the whole point of the check: the
+# markers used to be tested for EXISTENCE only, and 129 of them sat at "qb 2.6.0" across two
+# version bumps without anything noticing.
+#
+# Not being able to determine the version is a HARD STOP, not a skip. A lint that quietly
+# passes when it cannot find its expected value is indistinguishable from the unchecked
+# marker it replaced -- which is exactly the state this closes.
+QB_CONFIG="cmake/qbConfig.cmake"
+EXPECTED_VERSION="$(sed -n 's/^[[:space:]]*set(QB_FRAMEWORK_VERSION[[:space:]]*"\([0-9][0-9.]*\)").*/\1/p' \
+                    "${QB_CONFIG}" 2>/dev/null | head -1)"
+if [ -z "${EXPECTED_VERSION}" ]; then
+  red "doc-lint: cannot read QB_FRAMEWORK_VERSION from ${QB_CONFIG}"
+  red "          refusing to validate Verified-against markers against an unknown version"
+  exit 2
+fi
+
 # ---------------------------------------------------------------------------
 echo "== 1. Forbidden token scan =="
 # Capitalized retired types only; the lowercase qb::duration etc. are valid.
@@ -109,16 +128,35 @@ done
 if [ "$missing" -eq 0 ]; then grn "  all governance files present"; else fail=1; fi
 
 # ---------------------------------------------------------------------------
-echo "== 4. Verified-against marker (warning) =="
+echo "== 4. Verified-against marker (missing: warning · wrong version: error) =="
 nomarker=0
+badmarker=0
 while read -r f; do
   case "$f" in CHANGELOG.md|CODE_OF_CONDUCT.md) continue ;; esac   # external formats
-  if ! grep -q 'Verified-against' "$f" 2>/dev/null; then
+  marker="$(grep -m1 'Verified-against' "$f" 2>/dev/null)"
+  if [ -z "${marker}" ]; then
     ylw "  no Verified-against: ${f}"
     nomarker=$((nomarker + 1))
+    continue
+  fi
+  # Rightmost "qb <x.y.z>" in the marker: the qbm-style form is "qbm-http @ qb 3.0.0", and
+  # "qbm" never matches because the pattern requires the space after "qb".
+  found="$(printf '%s\n' "${marker}" | grep -oE 'qb [0-9]+\.[0-9]+\.[0-9]+' | tail -1 | awk '{print $2}')"
+  if [ -z "${found}" ]; then
+    red "  ${f}: Verified-against names no qb version (expected qb ${EXPECTED_VERSION}): ${marker}"
+    badmarker=$((badmarker + 1))
+  elif [ "${found}" != "${EXPECTED_VERSION}" ]; then
+    red "  ${f}: Verified-against says qb ${found}, but ${QB_CONFIG} says qb ${EXPECTED_VERSION}"
+    badmarker=$((badmarker + 1))
   fi
 done < <(doc_files)
-if [ "$nomarker" -eq 0 ]; then grn "  all pages carry a Verified-against marker"; else warn=1; fi
+if [ "$nomarker" -ne 0 ]; then warn=1; fi
+if [ "$badmarker" -ne 0 ]; then
+  red "  ${badmarker} page(s) verified against a qb version that is not ${EXPECTED_VERSION}"
+  fail=1
+elif [ "$nomarker" -eq 0 ]; then
+  grn "  all pages carry a Verified-against marker naming qb ${EXPECTED_VERSION}"
+fi
 
 # ---------------------------------------------------------------------------
 echo
