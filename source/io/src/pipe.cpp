@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/pipe.cpp
+ * @file qb/io/pipe.cpp
  * @brief Implementation of the pipe class specialized for characters
  *
  * This file contains template specializations for the pipe<char> class

@@ -110,7 +110,7 @@ are decayed and stored by value. See [The engine page](./engine.md) for `addActo
 
 The default `Actor` constructor subscribes the actor to five system events at construction time:
 `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`
-(`source/core/src/Actor.cpp`). For pools of short-lived actors where that bookkeeping is measurable
+(`src/qb/core/Actor.cpp`). For pools of short-lived actors where that bookkeeping is measurable
 overhead, pass `qb::no_default_events` to the base constructor to skip all five.
 
 ```cpp
@@ -429,7 +429,7 @@ type runs on a given core, and any actor on that core can obtain a typed pointer
 `getService<T>()`. The `Tag` is an empty struct that makes the service type unique.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/actor/actor-add.cpp
+// src: derived from qb/tests/core/system/actor/actor-add.cpp
 #include <qb/actor.h>
 
 struct LoggerTag {};  // unique tag for this service type

@@ -1,5 +1,5 @@
 /**
- * @file qb/core/src/Actor.cpp
+ * @file qb/core/Actor.cpp
  * @brief Implementation of the Actor class for the QB framework
  *
  * This file contains the implementation of the Actor class which forms the foundation

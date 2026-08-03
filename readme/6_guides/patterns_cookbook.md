@@ -53,7 +53,7 @@ through an event (rather than doing it directly in the lambda) keeps it on the a
 handler path, where member access is safe.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/timer/async-callback-ordering.cpp
+// src: derived from qb/tests/core/system/timer/async-callback-ordering.cpp
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <qb/io.h>
@@ -154,7 +154,7 @@ carries per-loop context (`now`, `iteration`). It runs on the
 event-loop thread, so it must be fast and non-blocking.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/actor/actor-callback.cpp
+// src: derived from qb/tests/core/system/actor/actor-callback.cpp
 #include <qb/actor.h>
 #include <qb/icallback.h>
 #include <qb/main.h>
@@ -190,7 +190,7 @@ period. For a steady wall-clock interval, chain self-scheduled `callback`s inste
 re-arms the next tick:
 
 ```cpp
-// src: derived from qb/source/core/tests/system/timer/async-callback-ordering.cpp
+// src: derived from qb/tests/core/system/timer/async-callback-ordering.cpp
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <chrono>
@@ -235,7 +235,7 @@ fills in the result, and calls `reply(event)`, which swaps the event's source an
 returns to the requester. No bookkeeping of `ActorId`s is needed.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/messaging/messaging-reply-forward.cpp (reply/forward)
+// src: derived from qb/tests/core/system/messaging/messaging-reply-forward.cpp (reply/forward)
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <qb/io.h>
@@ -306,7 +306,7 @@ original source**, so a worker's eventual `reply` still reaches the first sender
 out of the return path.
 
 ```cpp
-// src: derived from qb/source/core/tests/benchmark/messaging/forward-vs-direct.cpp
+// src: derived from qb/tests/core/benchmark/messaging/forward-vs-direct.cpp
 void on(Query &event) {
     forward(_worker_id, event);     // worker's reply goes back to event.getSource(), not here
 }
@@ -324,7 +324,7 @@ iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly. Capture
 `this`.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/coroutine/coroutine-scope.cpp
+// src: derived from qb/tests/core/system/coroutine/coroutine-scope.cpp
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <qb/io/async.h>
@@ -367,7 +367,7 @@ response fields and `reply()`s it back (preserving the correlation id stamped by
 routes replies by calling `resolve_ask(e)` at the top of its own `on(E&)`.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/coroutine/ask-roundtrip.cpp
+// src: derived from qb/tests/core/system/coroutine/ask-roundtrip.cpp
 #include <qb/patterns.h>   // qb::ask, qb::answer, … (pulls in qb/actor.h)
 #include <qb/main.h>
 #include <qb/io/async/coroutine.h>
@@ -715,7 +715,7 @@ Strategies: `one_for_one` (restart just the failed child), `one_for_all` (restar
 target a single core, `push<E>` to a `qb::BroadcastId(coreId)`.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/messaging/messaging-api.cpp (BroadcastId)
+// src: derived from qb/tests/core/system/messaging/messaging-api.cpp (BroadcastId)
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <qb/io.h>
@@ -777,7 +777,7 @@ actor. Wiring the stages with `to(dest).push<…>()` chains is convenient when o
 ordered events to the same destination.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/messaging/messaging-api.cpp (to().push chaining)
+// src: derived from qb/tests/core/system/messaging/messaging-api.cpp (to().push chaining)
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <qb/io.h>

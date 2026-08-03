@@ -1,5 +1,5 @@
 /**
- * @file qb/core/src/Main.cpp
+ * @file qb/core/Main.cpp
  * @brief Implementation of the Main class for the QB Actor Framework
  *
  * This file contains the implementation of the Main class and related components

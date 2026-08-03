@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/uri.cpp
+ * @file qb/io/uri.cpp
  * @brief Implementation of the URI parser and manipulator
  *
  * This file contains the implementation of the uri class which provides

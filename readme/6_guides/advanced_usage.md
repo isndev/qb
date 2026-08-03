@@ -294,7 +294,7 @@ The result arrives as an ordinary event handler — `on(ProcessingComplete&)` �
 A `qb::ServiceActor<Tag>` is a singleton-style actor: exactly one instance per `VirtualCore` per `Tag`. Other actors on the same core reach it directly with `getService<T>()`, which returns a raw pointer (or `nullptr` if no such service exists on that core) — no `ActorId` lookup, no event round-trip. This is the idiomatic home for per-core shared infrastructure: a connection pool, a config cache, a metrics sink, a logger.
 
 ```cpp
-// <!-- src: qb/source/core/tests/system/actor/actor-add.cpp -->
+// <!-- src: qb/tests/core/system/actor/actor-add.cpp -->
 #include <qb/actor.h>
 
 struct ConfigTag {};   // unique tag identifies the service type

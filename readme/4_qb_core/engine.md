@@ -66,13 +66,13 @@ stateDiagram-v2
 
 A *core index* is a logical `qb::CoreId`, not a physical CPU. You assign actors to logical cores; the engine maps each used logical core to one `VirtualCore` worker thread. Whether that thread is pinned to a physical CPU is a separate, best-effort decision made through `setAffinity` (see [Latency and affinity tuning](#3-latency-and-affinity-tuning)).
 
-The valid index range is `0` to `qb::MaxCores - 1`. Requesting `core(index)` with `index >= qb::MaxCores` throws `std::range_error`; `qb::NoAffinity` (defined as `std::numeric_limits<CoreId>::max()`) is deliberately greater than `qb::MaxCores`, so it can never be used as a core index (`qb/src/qb/core/Main.h`, `qb/source/core/src/Main.cpp`).
+The valid index range is `0` to `qb::MaxCores - 1`. Requesting `core(index)` with `index >= qb::MaxCores` throws `std::range_error`; `qb::NoAffinity` (defined as `std::numeric_limits<CoreId>::max()`) is deliberately greater than `qb::MaxCores`, so it can never be used as a core index (`qb/src/qb/core/Main.h`, `qb/src/qb/core/Main.cpp`).
 
 ### `CoreInitializer` — per-core setup, pre-start only
 
 `qb::Main::core(index)` returns a `qb::CoreInitializer&`, the configuration object for one logical core. The first call for a given index *registers* that core; subsequent calls return the same initializer. A `CoreInitializer` carries the core's affinity, idle latency, and the list of actor factories to instantiate when the worker starts.
 
-Registration is meaningful: a registered core that ends up with zero actors fails startup. Only call `core(index)` for indices that will actually receive at least one actor (`qb/source/core/src/Main.cpp`; see also `examples/all/taskmanager/src/main.cpp`).
+Registration is meaningful: a registered core that ends up with zero actors fails startup. Only call `core(index)` for indices that will actually receive at least one actor (`qb/src/qb/core/Main.cpp`; see also `examples/all/taskmanager/src/main.cpp`).
 
 ### `VirtualCore` — the worker
 
@@ -107,13 +107,13 @@ int main() {
 }
 ```
 
-`qb::Main()` registers no cores by default; cores come into existence only as you call `core(index)` or `addActor(index, ...)`. There is no automatic population based on hardware concurrency (`qb/source/core/src/Main.cpp`).
+`qb::Main()` registers no cores by default; cores come into existence only as you call `core(index)` or `addActor(index, ...)`. There is no automatic population based on hardware concurrency (`qb/src/qb/core/Main.cpp`).
 
 ### 2. Add actors and read placement
 
 `addActor<T>(index, args...)` is a convenience for `core(index).addActor<T>(args...)`. It records the actor's construction against the chosen core and reserves its `qb::ActorId` immediately; the actor object itself is constructed, and its `onInit()` is run, later when `start()` spins up the worker. The returned id is `qb::ActorId::NotFound` only when reservation fails at registration time — a second `ServiceActor` of a type already registered on that core, or the per-core actor count reaching its limit. `NotFound` is the default-constructed, invalid id; test it with `is_valid()` (`qb/src/qb/core/Main.tpp`, `qb/src/qb/core/ActorId.h`).
 
-A returned valid id does not by itself prove the actor's `onInit()` will succeed: an `onInit()` that returns `false` fails the core with `BadActorInit`; an `onInit()` that throws is caught by the engine and surfaced as `ExceptionThrown`. Either way the failure is reported through `hasError()`, not by changing the already-returned id (`qb/source/core/src/Main.cpp`). Always check `hasError()` after `join()` (see [step 5](#5-check-for-errors)).
+A returned valid id does not by itself prove the actor's `onInit()` will succeed: an `onInit()` that returns `false` fails the core with `BadActorInit`; an `onInit()` that throws is caught by the engine and surfaced as `ExceptionThrown`. Either way the failure is reported through `hasError()`, not by changing the already-returned id (`qb/src/qb/core/Main.cpp`). Always check `hasError()` after `join()` (see [step 5](#5-check-for-errors)).
 
 ```cpp
 // Single actor; verify the returned id before relying on it.
@@ -137,7 +137,7 @@ if (!builder.valid()) { /* at least one addActor failed to reserve an id */ }
 const std::vector<qb::ActorId> ids = builder.idList();
 ```
 
-All actors and per-core configuration must be set up *before* `start()`. Once the engine is running, `core(index)` throws `std::runtime_error("Cannot access to CoreInitializers while engine is running")`. To create actors after startup, spawn them from inside a running actor with `addRefActor<T>()` or `addRefHandle<T>()` — see [Reference and service actors](./patterns.md) (`qb/source/core/src/Main.cpp`).
+All actors and per-core configuration must be set up *before* `start()`. Once the engine is running, `core(index)` throws `std::runtime_error("Cannot access to CoreInitializers while engine is running")`. To create actors after startup, spawn them from inside a running actor with `addRefActor<T>()` or `addRefHandle<T>()` — see [Reference and service actors](./patterns.md) (`qb/src/qb/core/Main.cpp`).
 
 ### 3. Latency and affinity tuning
 
@@ -178,7 +178,7 @@ engine.setLatency(std::chrono::microseconds(500));
 
 `setLatency` takes a `qb::duration`, so pass a chrono value (`std::chrono::nanoseconds(500'000)`, `std::chrono::microseconds(500)`) or `qb::duration::zero()` — never a bare integer. Calling it more than once on the same core is safe; the last value wins (`qb/src/qb/core/Main.h`, `examples/all/taskmanager/src/main.cpp`).
 
-**Affinity** (`setAffinity(CoreIdSet)`) requests that the worker thread run only on the listed physical CPUs. It is best-effort: a logical `CoreId` need not correspond to a physical CPU, and a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` only logs a warning — it never fails core initialization. `CoreId` values `>= qb::MaxCores` (including `qb::NoAffinity`) are filtered out before pinning, so `qb::NoAffinity` is the explicit, well-defined way to request no pinning (`qb/source/core/src/VirtualCore.cpp`, `qb/src/qb/core/Main.h`):
+**Affinity** (`setAffinity(CoreIdSet)`) requests that the worker thread run only on the listed physical CPUs. It is best-effort: a logical `CoreId` need not correspond to a physical CPU, and a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` only logs a warning — it never fails core initialization. `CoreId` values `>= qb::MaxCores` (including `qb::NoAffinity`) are filtered out before pinning, so `qb::NoAffinity` is the explicit, well-defined way to request no pinning (`qb/src/qb/core/VirtualCore.cpp`, `qb/src/qb/core/Main.h`):
 
 ```cpp
 engine.core(0).setAffinity(qb::CoreIdSet{qb::NoAffinity});  // let the OS schedule freely
@@ -197,7 +197,7 @@ engine.join();           // blocks until all cores have stopped
 engine.start(false);
 ```
 
-With `start(true)` (the default), every `VirtualCore` runs on its own `std::jthread` and `start()` returns after all cores cross the startup barrier; call `join()` later to wait for shutdown. With `start(false)`, the calling thread is promoted to the last worker, so `start()` itself blocks until shutdown (`qb/src/qb/core/Main.h`, `qb/source/core/src/Main.cpp`).
+With `start(true)` (the default), every `VirtualCore` runs on its own `std::jthread` and `start()` returns after all cores cross the startup barrier; call `join()` later to wait for shutdown. With `start(false)`, the calling thread is promoted to the last worker, so `start()` itself blocks until shutdown (`qb/src/qb/core/Main.h`, `qb/src/qb/core/Main.cpp`).
 
 **Trigger a graceful shutdown** from any thread, including a signal handler:
 
@@ -205,7 +205,7 @@ With `start(true)` (the default), every `VirtualCore` runs on its own `std::jthr
 qb::Main::stop();   // static; same effect as a default-handled SIGINT
 ```
 
-Shutdown converges on one path regardless of trigger. A registered POSIX signal (`SIGINT` by default, plus any signal you register via `sigaction`), `qb::Main::stop()` (which sets the pending-signal flag to `SIGINT`), and the `std::stop_source` (`request_stop()` on `~Main` or programmatically) all cause each worker to synthesize a virtual `SIGINT` and broadcast a `qb::SignalEvent`. The `~Main` destructor requests stop and then joins; because workers are `std::jthread`s, RAII makes shutdown automatic even if you forget to call `stop()` or `join()` (`qb/source/core/src/Main.cpp`).
+Shutdown converges on one path regardless of trigger. A registered POSIX signal (`SIGINT` by default, plus any signal you register via `sigaction`), `qb::Main::stop()` (which sets the pending-signal flag to `SIGINT`), and the `std::stop_source` (`request_stop()` on `~Main` or programmatically) all cause each worker to synthesize a virtual `SIGINT` and broadcast a `qb::SignalEvent`. The `~Main` destructor requests stop and then joins; because workers are `std::jthread`s, RAII makes shutdown automatic even if you forget to call `stop()` or `join()` (`qb/src/qb/core/Main.cpp`).
 
 **Signal management** is static and process-wide:
 
@@ -216,7 +216,7 @@ qb::Main::unregisterSignal(SIGUSR1); // restore default OS behavior for SIGUSR1
 qb::Main::ignoreSignal(SIGPIPE);     // common for network servers
 ```
 
-`start()` registers `SIGINT` through `sigaction` so a `Ctrl-C` triggers a graceful shutdown; it does not register `SIGTERM` for you. To shut down on `SIGTERM` (or any other signal), call `registerSignal()` for it before `start()`, as the worked examples do (`qb/source/core/src/Main.cpp`, `examples/all/taskmanager/src/main.cpp`).
+`start()` registers `SIGINT` through `sigaction` so a `Ctrl-C` triggers a graceful shutdown; it does not register `SIGTERM` for you. To shut down on `SIGTERM` (or any other signal), call `registerSignal()` for it before `start()`, as the worked examples do (`qb/src/qb/core/Main.cpp`, `examples/all/taskmanager/src/main.cpp`).
 
 ### 5. Check for errors
 
@@ -241,13 +241,13 @@ if (engine.hasError()) {
 }
 ```
 
-Two startup conditions are worth calling out explicitly: starting the engine with an empty initializer map (no `core()`/`addActor()` ever called) fails with `BadInit`, and a core that was registered but received no actors fails with `NoActor` (`qb/source/core/src/Main.cpp`).
+Two startup conditions are worth calling out explicitly: starting the engine with an empty initializer map (no `core()`/`addActor()` ever called) fails with `BadInit`, and a core that was registered but received no actors fails with `NoActor` (`qb/src/qb/core/Main.cpp`).
 
 ---
 
 ## The `VirtualCore` event loop
 
-You never write against `VirtualCore`, but knowing its loop explains the engine's latency and ordering guarantees. Each iteration of `__workflow__` does, in order (`qb/source/core/src/VirtualCore.cpp`):
+You never write against `VirtualCore`, but knowing its loop explains the engine's latency and ordering guarantees. Each iteration of `__workflow__` does, in order (`qb/src/qb/core/VirtualCore.cpp`):
 
 1. **Refresh the cached time** — set the per-core `_nanotimer` once from `qb::unix_nanos(qb::wall_now())`; this is the value `Actor::time()` returns for the rest of the iteration.
 2. **Observe cancellation** — read the pending-signal flag and poll the `std::stop_token`; if either fired and has not yet been consumed, synthesize a virtual `SIGINT` and recycle a `SignalEvent` into this core's self-pipe to begin shutdown. This makes signal-free shutdown work uniformly on Linux, macOS, and Windows.
@@ -290,17 +290,17 @@ flowchart LR
 - **`SharedCoreCommunication`** — owns one MPSC mailbox per used `VirtualCore`. Many cores may write concurrently (multi-producer); only the owning core reads (single-consumer).
 - **Mailbox** — a lock-free `ringbuffer<EventBucket>` with the optional condition variable used by the latency parking path.
 
-Backpressure handling depends on delivery class: best-effort (QoS-0) events are dropped after a single failed `try_send`, while guaranteed events use bounded spin-then-yield backoff and partial flushing so the flush always terminates in bounded time, avoiding cross-core deadlock (`qb/source/core/src/VirtualCore.cpp`).
+Backpressure handling depends on delivery class: best-effort (QoS-0) events are dropped after a single failed `try_send`, while guaranteed events use bounded spin-then-yield backoff and partial flushing so the flush always terminates in bounded time, avoiding cross-core deadlock (`qb/src/qb/core/VirtualCore.cpp`).
 
 ---
 
 ## Pitfalls
 
-- **Configuring or adding after start.** `core(index)`, `addActor`, `setLatency`, and `setAffinity` are pre-start operations. `core(index)` throws `std::runtime_error` once the engine is running. Create runtime actors from inside an actor with `addRefActor<T>()` instead (`qb/source/core/src/Main.cpp`).
-- **Registering an empty core.** Calling `core(n)` without giving that core any actor fails startup with `Error::NoActor` (logged as `VirtualCore(n).id(...) Started with 0 Actor`). Register a core only when it will host at least one actor (`qb/source/core/src/Main.cpp`).
+- **Configuring or adding after start.** `core(index)`, `addActor`, `setLatency`, and `setAffinity` are pre-start operations. `core(index)` throws `std::runtime_error` once the engine is running. Create runtime actors from inside an actor with `addRefActor<T>()` instead (`qb/src/qb/core/Main.cpp`).
+- **Registering an empty core.** Calling `core(n)` without giving that core any actor fails startup with `Error::NoActor` (logged as `VirtualCore(n).id(...) Started with 0 Actor`). Register a core only when it will host at least one actor (`qb/src/qb/core/Main.cpp`).
 - **Passing a bare integer to `setLatency`.** It takes a `qb::duration`. Use `std::chrono::nanoseconds(500'000)`, `std::chrono::microseconds(500)`, or `qb::duration::zero()`.
-- **Out-of-range core index.** `core(index)` with `index >= qb::MaxCores` throws `std::range_error`. `qb::NoAffinity` is not a valid core index — it is only meaningful inside a `CoreIdSet` passed to `setAffinity` (`qb/source/core/src/Main.cpp`).
-- **Assuming affinity is guaranteed.** `setAffinity` is best-effort; a failed pin only warns and never aborts the core. Do not depend on a thread being on a specific physical CPU for correctness (`qb/source/core/src/VirtualCore.cpp`).
+- **Out-of-range core index.** `core(index)` with `index >= qb::MaxCores` throws `std::range_error`. `qb::NoAffinity` is not a valid core index — it is only meaningful inside a `CoreIdSet` passed to `setAffinity` (`qb/src/qb/core/Main.cpp`).
+- **Assuming affinity is guaranteed.** `setAffinity` is best-effort; a failed pin only warns and never aborts the core. Do not depend on a thread being on a specific physical CPU for correctness (`qb/src/qb/core/VirtualCore.cpp`).
 - **Treating logical cores as physical CPUs.** Core indices are logical. Use `setAffinity` to influence physical placement, and remember that `qb::MaxCores` (256) bounds the logical index space, not your machine's CPU count.
 - **Blocking a handler or `on(qb::LoopEvent const&)`.** A `VirtualCore` runs handlers sequentially on one thread; a blocking call freezes every actor on that core. Offload blocking work via `qb::io::async::callback` or events (see [The qb-io asynchronous system](../3_qb_io/async_system.md)).
 - **Ignoring `hasError()`.** A core can terminate early (bad actor init, thrown handler). `join()` returning does not imply success — always check `hasError()` (`qb/src/qb/core/VirtualCore.h`).
@@ -357,4 +357,4 @@ int main() {
 - [Event messaging](./messaging.md) — `push`, `broadcast`, and the cross-core pipeline in depth.
 - [Core concepts: concurrency and parallelism](../2_core_concepts/concurrency.md) — the engine's threading model at a higher level.
 - [API overview: time vocabulary](../7_reference/api_overview.md) — `qb::duration`, `qb::mono_time`, `qb::wall_time`.
-- Reference tests: `qb/source/core/tests/system/engine/main-lifecycle.cpp`, `qb/source/core/tests/system/messaging/messaging-api.cpp`.
+- Reference tests: `qb/tests/core/system/engine/main-lifecycle.cpp`, `qb/tests/core/system/messaging/messaging-api.cpp`.

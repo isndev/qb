@@ -81,9 +81,9 @@ Match the conventions of the surrounding code: the framework is CRTP- and templa
 
 Tests use GoogleTest and run under `ctest`.
 
-- **Unit tests** exercise a class or function in isolation — `source/<module>/tests/unit/`.
+- **Unit tests** exercise a class or function in isolation — `tests/<module>/unit/`.
 - **System tests** exercise interactions through the `qb::Main` engine and actors —
-  `source/<module>/tests/system/`.
+  `tests/<module>/system/`.
 
 See the [testing guide](./readme/7_reference/testing.md) for details.
 

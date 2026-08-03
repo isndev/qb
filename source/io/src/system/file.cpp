@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/system/file.cpp
+ * @file qb/io/system/file.cpp
  * @brief Implementation of the file I/O classes
  *
  * This file contains the implementation of classes for file I/O operations,

@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/crypto_modern.cpp
+ * @file qb/io/crypto_modern.cpp
  * @brief Implementation of modern cryptographic utilities
  *
  * This file contains the implementation of modern cryptographic functions

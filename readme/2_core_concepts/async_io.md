@@ -120,7 +120,7 @@ When a read or write fails, or `disconnect()` is requested, the component calls 
 All durations are `qb::duration` (a `std::chrono::nanoseconds` span); the literals from `<chrono>` work directly.
 
 ```cpp
-// src: qb/source/io/tests/system/async/timer-timeout.cpp (adapted from TimerHandler)
+// src: qb/tests/io/system/async/timer-timeout.cpp (adapted from TimerHandler)
 #include <qb/io/async.h>
 #include <chrono>
 
@@ -160,7 +160,7 @@ void callback(_Func &&func, std::chrono::duration<Rep, Period> timeout); // (2)
 The self-deleting timer uses a thread-local freelist, so a steady stream of delayed callbacks reuses storage rather than churning the allocator.
 
 ```cpp
-// src: qb/source/io/tests/system/async/callback-dispatch.cpp (CallbackScheduledExecution)
+// src: qb/tests/io/system/async/callback-dispatch.cpp (CallbackScheduledExecution)
 #include <qb/io/async.h>
 #include <chrono>
 

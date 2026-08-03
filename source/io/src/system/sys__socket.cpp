@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/system/sys__socket.cpp
+ * @file qb/io/system/sys__socket.cpp
  * @brief Implementation of the socket abstraction layer with cross-platform support
  *
  * @details This file provides a comprehensive socket implementation that abstracts

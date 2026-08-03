@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/protocol/base.cpp
+ * @file qb/io/protocol/base.cpp
  * @brief Implementation of base protocol functionality
  *
  * This file contains the implementation of the base protocol classes and interfaces

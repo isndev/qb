@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/protocol/text.cpp
+ * @file qb/io/protocol/text.cpp
  * @brief Implementation of text-based protocol handlers
  *
  * This file contains the implementation of text-based protocol parsing and handling

@@ -353,7 +353,7 @@ with I/O lifetime are:
   the TCP phase (the TLS handshake is unbounded), and `udp::socket::read_timeout`
   returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
   returns `0` (`src/qb/io/tcp/ssl/socket.h:469`,
-  `source/io/src/udp/socket.cpp:102`).
+  `src/qb/io/udp/socket.cpp:102`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
   qev's `qev_stat` stores the narrow `const char *` it is given **without

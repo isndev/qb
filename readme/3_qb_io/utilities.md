@@ -10,7 +10,7 @@ Beyond sockets and the event loop, `qb-io` ships a set of standalone utilities �
 
 ## Summary
 
-These utilities live in headers under `qb/src/qb/`. Several are header-only with no third-party dependency: the time vocabulary, `qb::string<N>`, the flat-map/icase-map containers, `qb::uuid`, JSON, and endian helpers. The crypto/JWT, compression, and URI slices are *declared* in headers but *defined* in compiled translation units that ship inside the `qb::io` library (`source/io/src/{crypto*.cpp,compression.cpp,uri.cpp}`), so using them requires linking `qb::io` (and, for crypto/compression, the OpenSSL/zlib dependency) — there is no header-only inline path for these three. Two slices are additionally gated on optional libraries resolved at configure time:
+These utilities live in headers under `qb/src/qb/`. Several are header-only with no third-party dependency: the time vocabulary, `qb::string<N>`, the flat-map/icase-map containers, `qb::uuid`, JSON, and endian helpers. The crypto/JWT, compression, and URI slices are *declared* in headers but *defined* in compiled translation units that ship inside the `qb::io` library (`src/qb/io/{crypto*.cpp,compression.cpp,uri.cpp}`), so using them requires linking `qb::io` (and, for crypto/compression, the OpenSSL/zlib dependency) — there is no header-only inline path for these three. Two slices are additionally gated on optional libraries resolved at configure time:
 
 | Slice | Header | Namespace | Build gate |
 |---|---|---|---|
@@ -159,7 +159,7 @@ auto        raw    = qb::crypto::base64_decode(b64);
 std::string b64url = qb::crypto::base64url_encode(data);
 std::string hex    = qb::crypto::to_hex_string(std::string(data.begin(), data.end()));
 ```
-<!-- src: qb/source/io/tests/unit/crypto/crypto-primitives.cpp -->
+<!-- src: qb/tests/io/unit/crypto/crypto-primitives.cpp -->
 
 The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a hexadecimal string and take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/src/qb/io/crypto.h:142,309-393`.)_
 
@@ -214,7 +214,7 @@ auto dk   = C::derive_key("password", salt, /*key_length*/ 32,
 
 `KdfAlgorithm` is `PBKDF2`, `HKDF`, or `Argon2`; `derive_key` defaults to `Argon2` with `iterations = 10000` (used only by PBKDF2) and a default `Argon2Params`. Dedicated entry points exist for each primitive: `pbkdf2`, `hkdf`, `argon2_kdf`. `Argon2Params` defaults to `t_cost = 3`, `m_cost = 1 << 16` KiB, `parallelism = 1`; `Argon2Variant` is `Argon2d`, `Argon2i`, or `Argon2id`. _(`qb/src/qb/io/crypto.h:425,669-690,724,741,762-764`.)_
 
-> **Argon2 is an optional dependency.** The `QB_HAS_ARGON2` macro is set only when the Argon2 library is found, and that probe runs only when OpenSSL is present (`qb/cmake/qbDependencies.cmake:131-140`). When Argon2 is absent, `hash_password` and Argon2-mode `derive_key` **silently fall back to PBKDF2-HMAC-SHA256** (with a different self-describing hash prefix) rather than failing or warning (`qb/source/io/src/crypto_advanced.cpp:165-182,444-456`). The stored-hash format therefore depends on how the framework was built: a build with SSL but without the Argon2 library stores PBKDF2 hashes even though the API defaults read as "Argon2id". `verify_password` is gated the same way, so it only validates the format its own build produces — a hash written by one build configuration will not verify against a binary built the other way. Confirm `QB_HAS_ARGON2` if you require Argon2id, and keep the build configuration consistent across any services that share a hash store.
+> **Argon2 is an optional dependency.** The `QB_HAS_ARGON2` macro is set only when the Argon2 library is found, and that probe runs only when OpenSSL is present (`qb/cmake/qbDependencies.cmake:131-140`). When Argon2 is absent, `hash_password` and Argon2-mode `derive_key` **silently fall back to PBKDF2-HMAC-SHA256** (with a different self-describing hash prefix) rather than failing or warning (`qb/src/qb/io/crypto_advanced.cpp:165-182,444-456`). The stored-hash format therefore depends on how the framework was built: a build with SSL but without the Argon2 library stores PBKDF2 hashes even though the API defaults read as "Argon2id". `verify_password` is gated the same way, so it only validates the format its own build produces — a hash written by one build configuration will not verify against a binary built the other way. Confirm `QB_HAS_ARGON2` if you require Argon2id, and keep the build configuration consistent across any services that share a hash store.
 
 ### Asymmetric cryptography
 
@@ -241,7 +241,7 @@ std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/ex
 ```
 <!-- src: qb/src/qb/io/crypto.h:777-790 -->
 
-`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/source/io/src/crypto_advanced.cpp:235,243-244,249-252`; `docs-overhaul/qb/FACTBOOK.md:481-483`.)_
+`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_advanced.cpp:235,243-244,249-252`; `docs-overhaul/qb/FACTBOOK.md:481-483`.)_
 
 ---
 
@@ -284,11 +284,11 @@ if (result.is_valid()) {
     // handle expiry
 }
 ```
-<!-- src: qb/source/io/tests/unit/crypto/crypto-jwt.cpp:91-146 -->
+<!-- src: qb/tests/io/unit/crypto/crypto-jwt.cpp:91-146 -->
 
-`create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/src/qb/io/crypto_jwt.h:67-94,175-192`; `qb/source/io/src/crypto_jwt.cpp:282`.)_
+`create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/src/qb/io/crypto_jwt.h:67-94,175-192`; `qb/src/qb/io/crypto_jwt.cpp:282`.)_
 
-`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/src/qb/io/crypto_jwt.h:138,194-201`; `qb/source/io/src/crypto_jwt.cpp:474,478`; `docs-overhaul/qb/FACTBOOK.md:285,486-487`.)_
+`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/src/qb/io/crypto_jwt.h:138,194-201`; `qb/src/qb/io/crypto_jwt.cpp:474,478`; `docs-overhaul/qb/FACTBOOK.md:285,486-487`.)_
 
 ---
 
@@ -306,9 +306,9 @@ std::string compressed   = qb::gzip::compress(original.c_str(), original.size())
 std::string decompressed = qb::gzip::uncompress(compressed.c_str(), compressed.size());
 // qb::deflate::compress / uncompress are the raw-deflate equivalents.
 ```
-<!-- src: qb/source/io/tests/unit/compression/compression-codec.cpp:140-163 -->
+<!-- src: qb/tests/io/unit/compression/compression-codec.cpp:140-163 -->
 
-`compress(const char* data, size_t size, int level = Z_DEFAULT_COMPRESSION)` and `uncompress(const char* data, size_t size)` return a `std::string`. Generic container overloads, `uncompress(Output&, data, size, max = 0)`, accept a `max` output budget: a non-zero `max` rejects inputs that would inflate beyond it (a decompression-bomb guard), throwing `std::runtime_error`. A truncated or incomplete stream also throws `std::runtime_error`. _(`qb/src/qb/io/compression.h:487-563,662-733,838-909`; `qb/source/io/tests/unit/compression/compression-codec.cpp:182-206`.)_
+`compress(const char* data, size_t size, int level = Z_DEFAULT_COMPRESSION)` and `uncompress(const char* data, size_t size)` return a `std::string`. Generic container overloads, `uncompress(Output&, data, size, max = 0)`, accept a `max` output budget: a non-zero `max` rejects inputs that would inflate beyond it (a decompression-bomb guard), throwing `std::runtime_error`. A truncated or incomplete stream also throws `std::runtime_error`. _(`qb/src/qb/io/compression.h:487-563,662-733,838-909`; `qb/tests/io/unit/compression/compression-codec.cpp:182-206`.)_
 
 `qb::gzip::is_compressed(data, size)` heuristically detects a gzip or zlib header. For streaming over large or chunked data, the lower-level `qb::compression` namespace exposes `compress_provider` / `decompress_provider` interfaces with an `operation_hint` (`is_last` / `has_more`) and provider factories. _(`qb/src/qb/io/compression.h:56-247,744-766`.)_
 
@@ -338,7 +338,7 @@ if (u.is_valid()) {
 std::string enc = qb::io::uri::encode("a b/c");   // "a+b%2Fc"
 std::string dec = qb::io::uri::decode(enc);        // "a b/c"
 ```
-<!-- src: qb/source/io/tests/unit/core/uri-parse.cpp:431-453 -->
+<!-- src: qb/tests/io/unit/core/uri-parse.cpp:431-453 -->
 
 `u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0)` returns a single decoded value as `std::string const&` (a reference to a static empty string on a miss); `query_or(name, fallback, index = 0)` returns the value **by value** with a custom fallback. `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/src/qb/io/uri.h:193,476-573`.)_
 
@@ -368,7 +368,7 @@ std::filesystem::path resolve_resource(const std::filesystem::path &path);
 ```
 <!-- src: qb/src/qb/io/system/file.h:359-388 -->
 
-`resolve_resource` returns an **absolute** path unchanged. A **relative** path is looked up first against the current working directory (preserving the historical behaviour), then against the executable's own directory (`self_dir()`). The first candidate that exists wins; if neither exists the original path is returned unchanged so diagnostics report exactly what was requested. This is the self-locating-binary pattern: place an asset next to the executable and `resolve_resource("assets/config.json")` finds it whether the process is launched from its own directory or anywhere else. _(`qb/source/io/src/system/file.cpp:418-438`.)_
+`resolve_resource` returns an **absolute** path unchanged. A **relative** path is looked up first against the current working directory (preserving the historical behaviour), then against the executable's own directory (`self_dir()`). The first candidate that exists wins; if neither exists the original path is returned unchanged so diagnostics report exactly what was requested. This is the self-locating-binary pattern: place an asset next to the executable and `resolve_resource("assets/config.json")` finds it whether the process is launched from its own directory or anywhere else. _(`qb/src/qb/io/system/file.cpp:418-438`.)_
 
 The framework routes file paths it loads through `resolve_resource` so the same convenience applies transparently — SSL certificate/key/CA/DH paths (`qb::io::ssl` context helpers), the qbm-http `StaticFilesMiddleware` `root_directory`, and similar resource paths all resolve relative-to-cwd-then-relative-to-binary.
 
@@ -401,7 +401,7 @@ if (writer.open("out.dat"))
 ```
 <!-- src: qb/src/qb/io/system/file.h -->
 
-`file::open(std::filesystem::path const&, int flags = O_RDWR, int mode = 0644)`, the `file(std::filesystem::path const&, int flags = O_RDWR)` constructor, and `file_to_pipe::open` / `pipe_to_file::open` all take a `std::filesystem::path`. On Windows the path's native (wide) representation is opened with `CreateFileW`, so non-ANSI paths are no longer truncated; the descriptor is also opened with `FILE_SHARE_DELETE` so a file can be unlinked or renamed while held, matching POSIX. `file` is move-only — copy is deleted to prevent a double-close. _(`qb/source/io/src/system/file.cpp:46-140`.)_
+`file::open(std::filesystem::path const&, int flags = O_RDWR, int mode = 0644)`, the `file(std::filesystem::path const&, int flags = O_RDWR)` constructor, and `file_to_pipe::open` / `pipe_to_file::open` all take a `std::filesystem::path`. On Windows the path's native (wide) representation is opened with `CreateFileW`, so non-ANSI paths are no longer truncated; the descriptor is also opened with `FILE_SHARE_DELETE` so a file can be unlinked or renamed while held, matching POSIX. `file` is move-only — copy is deleted to prevent a double-close. _(`qb/src/qb/io/system/file.cpp:46-140`.)_
 
 ---
 

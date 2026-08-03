@@ -22,10 +22,10 @@ The single most consequential rule: **an uncaught exception does not crash one a
 
 ### The exception policy
 
-qb has no per-event or per-actor `try`/`catch`. The worker loop (`VirtualCore::__workflow__`, `source/core/src/VirtualCore.cpp`) dispatches events and `on(qb::LoopEvent const&)` ticks directly, with no exception barrier around each call. The only `catch` is one level up, in `Main::start_thread` (`source/core/src/Main.cpp`), which wraps the *entire* lifetime of the loop:
+qb has no per-event or per-actor `try`/`catch`. The worker loop (`VirtualCore::__workflow__`, `src/qb/core/VirtualCore.cpp`) dispatches events and `on(qb::LoopEvent const&)` ticks directly, with no exception barrier around each call. The only `catch` is one level up, in `Main::start_thread` (`src/qb/core/Main.cpp`), which wraps the *entire* lifetime of the loop:
 
 ```cpp
-// src: qb/source/core/src/Main.cpp (Main::start_thread, abridged)
+// src: qb/src/qb/core/Main.cpp (Main::start_thread, abridged)
 try {
     // ... initialise the core and its actors ...
     core.__workflow__();                       // runs until all actors die
@@ -91,7 +91,7 @@ Because an escaping exception stops the whole core, keep failure inside the acto
 Wrap any operation that may throw — third-party calls, parsing, allocation you cannot otherwise bound — in a local `try`/`catch`, and turn the failure into a value: log it, reply with a status event, transition to a degraded state, or self-terminate with `kill()`.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/init/init-lifecycle.cpp
+// src: derived from qb/tests/core/system/init/init-lifecycle.cpp
 #include <qb/actor.h>
 #include <qb/io.h>
 #include <qb/string.h>
@@ -160,7 +160,7 @@ If an actor reaches a state from which it cannot safely continue, it calls `this
 When the engine stops, you can ask whether any core failed.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/init/init-lifecycle.cpp
+// src: derived from qb/tests/core/system/init/init-lifecycle.cpp
 #include <qb/main.h>
 
 qb::Main main;

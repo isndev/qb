@@ -17,7 +17,7 @@
 # FIND_PACKAGE_ARGS requires CMake >= 3.24 (the framework's minimum).
 #
 # Include after project(), qbCompiler.cmake, qbDependencies.cmake, and qbFunctions.cmake,
-# and before add_subdirectory(qb/source/io).
+# and before add_subdirectory(qb/src/qb/io).
 # -----------------------------------------------------------------------------
 
 if(QB_FETCH_GOOGLE_DEPS_INCLUDED)

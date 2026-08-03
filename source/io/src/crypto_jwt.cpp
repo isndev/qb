@@ -1,5 +1,5 @@
 /**
- * @file qb/source/io/src/crypto_jwt.cpp
+ * @file qb/io/crypto_jwt.cpp
  * @brief Implementation of JWT (JSON Web Token) functionality
  *
  * This file implements the JWT functions defined in crypto_jwt.h.

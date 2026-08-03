@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/udp/socket.cpp
+ * @file qb/io/udp/socket.cpp
  * @brief Implementation of UDP socket functionality
  *
  * This file contains the implementation of UDP socket operations in the QB framework,

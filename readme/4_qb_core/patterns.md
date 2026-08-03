@@ -153,7 +153,7 @@ shared resource — a logger, a metrics sink, a connection registry — that oth
 core reach by type, and actors on other cores reach by computed id.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/event/service-event-ring.cpp
+// src: derived from qb/tests/core/system/event/service-event-ring.cpp
 #include <qb/actor.h>
 #include <qb/io.h>
 
@@ -410,7 +410,7 @@ return `nullptr` while the child is still *Activating* (async `onInit` in flight
 init, or once it died. The child has its own `ActorId` and receives events normally.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/actor/actor-add.cpp
+// src: derived from qb/tests/core/system/actor/actor-add.cpp
 auto helper = addRefActor<ChildHelper>(id());   // qb::ActorHandle<ChildHelper>
 push<Task>(helper.id(), 2, 3);                    // always safe — stashed if still Activating
 if (helper.ready())                              // sync-init child: ready at once
@@ -423,7 +423,7 @@ child finishes an async `onInit()` (the event is stashed and replayed FIFO once 
 any **direct** method call on `helper.ready()`; never `operator->` a non-ready handle.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/actor/actor-add.cpp
+// src: derived from qb/tests/core/system/actor/actor-add.cpp
 #include <qb/actor.h>
 #include <qb/io.h>
 
@@ -565,7 +565,7 @@ is no status field). The requester overrides `on(RequireEvent&)` and uses `is<T>
 which type answered.
 
 ```cpp
-// src: derived from qb/source/core/tests/system/actor/actor-dependency.cpp
+// src: derived from qb/tests/core/system/actor/actor-dependency.cpp
 #include <qb/actor.h>
 
 class Client : public qb::Actor {

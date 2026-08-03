@@ -116,7 +116,7 @@ After a handshake completes you can introspect the live connection — `get_nego
 
 When a server binds its listening port (`socket::pserve`), the address-reuse option differs by platform. POSIX sets `SO_REUSEADDR` so a restarted listener can rebind a port whose previous connections still linger in `TIME_WAIT`. **Windows does not** — there `SO_REUSEADDR` has hijack semantics (a bind to an in-use port *succeeds* but is silently shadowed by the existing socket, so the new listener never accepts). qb instead sets `SO_EXCLUSIVEADDRUSE` on Windows: an in-use bind fails fast with `WSAEADDRINUSE`, and no other process can hijack the port. Windows already permits rebinding `TIME_WAIT` ports with no option set, so this loses nothing. The behaviour is fully internal and guarded by `#ifdef _WIN32`; no application change is required, but be aware that on Windows a second instance bound to the same port fails at bind rather than starting silently broken.
 
-<!-- src: qb/source/io/src/system/sys__socket.cpp:208-245 (pserve SO_EXCLUSIVEADDRUSE on _WIN32) -->
+<!-- src: qb/src/qb/io/system/sys__socket.cpp:208-245 (pserve SO_EXCLUSIVEADDRUSE on _WIN32) -->
 
 **Checklist**
 
@@ -239,16 +239,16 @@ Two related options affect diagnostics rather than the file logger: `QB_STDOUT_L
 
 `qb::Main::start()` installs a `SIGINT` handler automatically (in both async and synchronous modes). The handler is async-signal-safe: it sets an internal `_signal_pending` flag that each `VirtualCore` polls every loop iteration, so the write is observed within the configured mailbox latency and the engine shuts down gracefully.
 
-<!-- src: qb/source/core/src/Main.cpp:186-189 (onSignal), 290,313 (SIGINT registered) -->
+<!-- src: qb/src/qb/core/Main.cpp:186-189 (onSignal), 290,313 (SIGINT registered) -->
 
 On POSIX the handler is installed with `sigaction` (no `SA_RESETHAND`, with `SA_RESTART`), so a *second* `SIGINT` still triggers the graceful path rather than the historical System-V behavior of resetting to default and terminating the process. On Windows, `std::signal` is used.
 
-<!-- src: qb/source/core/src/Main.cpp:370-389 (install_signal incl. comment + sigaction body) -->
+<!-- src: qb/src/qb/core/Main.cpp:370-389 (install_signal incl. comment + sigaction body) -->
 
 To shut down on additional signals — typically `SIGTERM` under an init system or container orchestrator — register them after constructing the engine:
 
 ```cpp
-// src: derived from qb/source/core/src/Main.cpp (signal API)
+// src: derived from qb/src/qb/core/Main.cpp (signal API)
 #include <qb/main.h>
 #include <csignal>
 
@@ -267,13 +267,13 @@ int main() {
 
 The three signal entry points are static and `noexcept`: `registerSignal(signum)` routes the signal to the graceful-shutdown handler, `unregisterSignal(signum)` restores the OS default disposition (`SIG_DFL`), and `ignoreSignal(signum)` sets `SIG_IGN`.
 
-<!-- src: qb/source/core/src/Main.cpp:392-406 (registerSignal / unregisterSignal / ignoreSignal) -->
+<!-- src: qb/src/qb/core/Main.cpp:392-406 (registerSignal / unregisterSignal / ignoreSignal) -->
 
 > Only `SIGINT` is registered automatically. If your platform delivers `SIGTERM` on shutdown (most container runtimes and service managers do), you must register it yourself or the process is killed without the graceful drain.
 
 `qb::Main::stop()` is itself async-signal-safe and may be called from a signal handler; it sets the same pending flag and leaves the heavier `std::stop_source` broadcast to `~Main()` / `join()` where normal thread synchronization is safe.
 
-<!-- src: qb/source/core/src/Main.cpp:328-334 (stop) -->
+<!-- src: qb/src/qb/core/Main.cpp:328-334 (stop) -->
 
 **Checklist**
 
@@ -335,7 +335,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/source/core/src/Main.cpp:316-320 (LOG_CRIT/stderr), 323-326 (hasError), qb/src/qb/io/async/io.h:1283,2584 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:642,648,661 (introspection), qb/src/qb/io/async/io_handler.h:169 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:316-320 (LOG_CRIT/stderr), 323-326 (hasError), qb/src/qb/io/async/io.h:1283,2584 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:642,648,661 (introspection), qb/src/qb/io/async/io_handler.h:169 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

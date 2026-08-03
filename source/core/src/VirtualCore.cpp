@@ -1,5 +1,5 @@
 /**
- * @file qb/core/src/VirtualCore.cpp
+ * @file qb/core/VirtualCore.cpp
  * @brief Implementation of the VirtualCore class for the QB Actor Framework
  *
  * This file contains the implementation of the VirtualCore class which manages

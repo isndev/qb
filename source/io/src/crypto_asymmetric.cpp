@@ -1,5 +1,5 @@
 /**
- * @file qb/source/io/src/crypto_asymmetric.cpp
+ * @file qb/io/crypto_asymmetric.cpp
  * @brief Implementation of asymmetric cryptographic utilities for the QB IO library
  *
  * This file provides implementations of modern asymmetric cryptographic operations such

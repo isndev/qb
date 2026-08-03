@@ -18,7 +18,7 @@ Three capability groups are compiled conditionally. The CMake option is what you
 | Compression | `QB_WITH_COMPRESSION` (default `ON`) | `QB_HAS_COMPRESSION` | zlib |
 | QUIC / HTTP/3 transport | `QB_WITH_QUIC` (default `AUTO`) | `QB_HAS_QUIC` | ngtcp2 (requires SSL) |
 
-<!-- src: source/io/CMakeLists.txt (QB_HAS_* definitions); README.md (QB_WITH_* options) -->
+<!-- src: src/qb/io/CMakeLists.txt (QB_HAS_* definitions); README.md (QB_WITH_* options) -->
 
 See [Building from source](../7_reference/building.md) for the full option list and the auto-disable rules.
 

@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/io.cpp
+ * @file qb/io/io.cpp
  * @brief Implementation of core I/O functionality for the QB framework
  *
  * This file includes the implementation of various I/O components and serves

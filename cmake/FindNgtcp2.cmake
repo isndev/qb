@@ -38,7 +38,7 @@ find_library(NGTCP2_CRYPTO_OSSL_LIBRARY
     PATH_SUFFIXES lib
 )
 
-# The crypto helper HEADERS that source/io/src/quic.cpp actually includes:
+# The crypto helper HEADERS that src/qb/io/quic.cpp actually includes:
 #   <ngtcp2/ngtcp2_crypto.h>      (generic crypto API)
 #   <ngtcp2/ngtcp2_crypto_ossl.h> (OpenSSL backend)
 # These ship separately from the core dev package and from each other on some

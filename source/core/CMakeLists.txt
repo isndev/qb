@@ -73,5 +73,9 @@ set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME core)
 # -----------------------------------------------------------------------------
 if (QB_BUILD_TESTS)
     qb_status_message("Building qb-core tests")
-    add_subdirectory(tests)
+    # Tests live BESIDE the include root, never inside it: a test header swept into
+    # install(DIRECTORY src/ ...) is the failure mode this layout exists to prevent.
+    # Added from here rather than from the top level so the suite inherits PROJECT_NAME
+    # (= qb-core), which every qb_add_test call in it names as its DEPENDS.
+    add_subdirectory("${QB_ROOT_DIR}/tests/core" "${CMAKE_CURRENT_BINARY_DIR}/tests")
 endif ()

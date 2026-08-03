@@ -14,18 +14,18 @@ This page is for contributors building and running the suite, and for anyone add
 
 ## How the suite is organized
 
-Test sources live under each component's `tests/` directory. The two libraries are laid out as follows.
+Test sources live under `tests/`, beside the `src/` include root rather than inside it, one subtree per library. The two are laid out as follows.
 
 | Path | Contents |
 | --- | --- |
-| `qb/source/core/tests/unit/` | Focused unit tests, grouped by subject (`container/`, `core/`, `json/`, `lockfree/`, `patterns/`, `system/`, `type/`): one class or function in isolation. |
-| `qb/source/core/tests/system/` | End-to-end actor-runtime tests, grouped by concern (`actor/`, `engine/`, `event/`, `messaging/`, `lifecycle/`, `coroutine/`, `concurrency/`, …): a real `qb::Main` across one or more cores. |
-| `qb/source/io/tests/unit/` | qb-io unit tests, grouped by subject (`core/`, `coroutine/`, `crypto/`, `compression/`, `protocol/`, `ssl/`, `stream/`, …). |
-| `qb/source/io/tests/system/` | qb-io integration tests, grouped by transport/feature (`tcp/`, `udp/`, `tls/`, `quic/`, `async/`, `session/`, …). |
-| `qb/source/{core,io}/tests/benchmark/` | Performance benchmarks, built under `QB_BUILD_BENCHMARKS` (not `QB_BUILD_TESTS`). |
-| `qb/source/{core,io}/tests/shared/` | Shared fixtures and helpers — not tests themselves. |
+| `qb/tests/core/unit/` | Focused unit tests, grouped by subject (`container/`, `core/`, `json/`, `lockfree/`, `patterns/`, `system/`, `type/`): one class or function in isolation. |
+| `qb/tests/core/system/` | End-to-end actor-runtime tests, grouped by concern (`actor/`, `engine/`, `event/`, `messaging/`, `lifecycle/`, `coroutine/`, `concurrency/`, …): a real `qb::Main` across one or more cores. |
+| `qb/tests/io/unit/` | qb-io unit tests, grouped by subject (`core/`, `coroutine/`, `crypto/`, `compression/`, `protocol/`, `ssl/`, `stream/`, …). |
+| `qb/tests/io/system/` | qb-io integration tests, grouped by transport/feature (`tcp/`, `udp/`, `tls/`, `quic/`, `async/`, `session/`, …). |
+| `qb/tests/{core,io}/benchmark/` | Performance benchmarks, built under `QB_BUILD_BENCHMARKS` (not `QB_BUILD_TESTS`). |
+| `qb/tests/{core,io}/shared/` | Shared fixtures and helpers — not tests themselves. |
 
-<!-- src: qb/source/core/tests, qb/source/io/tests -->
+<!-- src: qb/tests/core, qb/tests/io -->
 
 The distinction between unit and system is one of scope, not of mechanism — both are GoogleTest executables and both register through the same `qb_add_test` helper.
 
@@ -52,7 +52,7 @@ The helper derives both the executable and the CTest entry name uniformly as `<m
 | `io/tests/unit/core/uri-parse.cpp` | `MODULE qb-io TIER unit NAME uri-parse` | `qb-io-test-unit-uri-parse` |
 | `io/tests/system/coroutine/channel-lifetime.cpp` | `MODULE qb-io TIER system NAME channel-lifetime` | `qb-io-test-system-channel-lifetime` |
 
-<!-- src: qb/cmake/qbFunctions.cmake:395-412, qb/source/io/tests/unit/CMakeLists.txt:27 -->
+<!-- src: qb/cmake/qbFunctions.cmake:395-412, qb/tests/io/unit/CMakeLists.txt:27 -->
 
 Every test also carries CTest labels — `tier:<tier>` and `module:<module>`, plus any capability tokens from `REQUIRES` (`ssl`, `quic`, `compression`, `network`, `live`) — and a per-tier default timeout (unit 60 s, system 120 s, integration 300 s). To add a test, drop the source into the right tier/topic directory and add one `qb_add_test` line; there are no per-directory naming rules to remember.
 
@@ -97,9 +97,9 @@ Some qb-io suites exist only when their optional dependency is present:
 - **Crypto tests** (the `unit/crypto/` group — `crypto-primitives`, `crypto-jwt`, `kdf-and-tokens`, `asymmetric-keys`, … — registered with `REQUIRES ssl`) build only under `QB_HAS_SSL` (OpenSSL).
 - **Compression tests** (`unit/compression/compression-codec`, registered with `REQUIRES compression`) build only under `QB_HAS_COMPRESSION` (zlib).
 
-<!-- src: qb/source/io/tests/unit/CMakeLists.txt:54-62 -->
+<!-- src: qb/tests/io/unit/CMakeLists.txt:54-62 -->
 
-Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC is different: the quic suite is always built (it is registered unconditionally), but its cases are gated on `QB_HAS_QUIC`, so they report as skipped/absent rather than failing when QUIC is not compiled in (`qb/source/io/tests/system/quic/quic-handshake.cpp:86-92`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases skip when only one core is available (`qb/source/core/tests/system/engine/main-lifecycle.cpp:159`).
+Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC is different: the quic suite is always built (it is registered unconditionally), but its cases are gated on `QB_HAS_QUIC`, so they report as skipped/absent rather than failing when QUIC is not compiled in (`qb/tests/io/system/quic/quic-handshake.cpp:86-92`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases skip when only one core is available (`qb/tests/core/system/engine/main-lifecycle.cpp:159`).
 
 ### Running under sanitizers
 
@@ -170,9 +170,9 @@ TEST(Duration, DefaultIsZero) {
 }
 ```
 
-<!-- src: qb/source/core/tests/unit/system/time.cpp:64-72 -->
+<!-- src: qb/tests/core/unit/system/time.cpp:64-72 -->
 
-A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:523,548`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:523`, `qb/source/core/src/Main.cpp:288-294`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
+A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:523,548`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:523`, `qb/src/qb/core/Main.cpp:288-294`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
 
 ```cpp
 // A minimal actor system test.
@@ -214,7 +214,7 @@ TEST(WorkerSuite, HandlesPing) {
 }
 ```
 
-<!-- src: qb/source/core/tests/system/event/service-event-ring.cpp:171-174 -->
+<!-- src: qb/tests/core/system/event/service-event-ring.cpp:171-174 -->
 
 `Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:216,569`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
 
@@ -228,7 +228,7 @@ qb_add_test(MODULE qb-core TIER unit NAME my-feature SOURCES core/my-feature.cpp
 
 That registers the target and CTest entry as `qb-core-test-unit-my-feature`. Optional dependencies gate through `REQUIRES` (for example `REQUIRES ssl` builds the case only under `QB_HAS_SSL`); extra CTest labels go through `LABELS`.
 
-<!-- src: qb/source/core/tests/unit/CMakeLists.txt:25-36 -->
+<!-- src: qb/tests/core/unit/CMakeLists.txt:25-36 -->
 
 `qb_add_test` links `GTest::gtest_main` for you; do not list `gtest_main` under `DEPENDS` as well (the helper strips a duplicate to avoid a linker warning, but listing it is redundant). Reconfigure CMake after editing the file, then rebuild.
 
@@ -262,7 +262,7 @@ The instrumentation flags (`-g -fprofile-arcs -ftest-coverage`, plus `--coverage
 - **Run from the right directory.** Tests resolve resources (SSL certs, fixtures) relative to `bin/tests`. CTest sets this automatically; if you launch a binary by hand, `cd build/bin/tests` first or resource-dependent cases fail.
 - **Optional suites are absent or skipped, depending on the dependency.** Crypto and compression suites are not configured without OpenSSL / zlib — those targets do not exist at all, so they cannot pass. QUIC is gated differently: the quic suite is always built, but its cases are gated on `QB_HAS_QUIC` (libngtcp2), so they show as skipped/absent when it was not found. Either way, an absent or skipped suite means a missing dependency, not a passing run. Confirm which features were enabled at configure time before reading a green result as full coverage.
 - **Coverage is narrow.** `QB_BUILD_COVERAGE` works only on Debug, non-Windows, with lcov + gcov present, and the GCC/gcov toolchain. It is not a general-purpose option across all build types.
-- **Coroutine tests must clean up the per-thread state.** Async coroutine fixtures call `qb::io::async::init()` in `SetUp` and reset state in `TearDown`. The minimum is `qb::io::async::listener::current.clear()` (`qb/source/io/tests/system/async/callback-dispatch.cpp:58-61`); fixtures that spawn coroutines drain the scheduler first — `run_for(5ms)` then `reset_coro_scheduler()` then `clear()` — to avoid leaking suspended coroutine frames across tests (`qb/source/io/tests/unit/coroutine/scope-structured-concurrency.cpp:58-63`). Follow the existing fixture pattern in the file you are adding to.
+- **Coroutine tests must clean up the per-thread state.** Async coroutine fixtures call `qb::io::async::init()` in `SetUp` and reset state in `TearDown`. The minimum is `qb::io::async::listener::current.clear()` (`qb/tests/io/system/async/callback-dispatch.cpp:58-61`); fixtures that spawn coroutines drain the scheduler first — `run_for(5ms)` then `reset_coro_scheduler()` then `clear()` — to avoid leaking suspended coroutine frames across tests (`qb/tests/io/unit/coroutine/scope-structured-concurrency.cpp:58-63`). Follow the existing fixture pattern in the file you are adding to.
 - **CI coverage is split across workflows.** The cross-platform CMake workflow builds Release. Dedicated Ubuntu workflows run ASan/UBSan, TSan, coverage, and changed-file format checks. Clang-tidy is intentionally script-driven through `scripts/clang-tidy.sh` rather than a CMake workflow. Linux jobs install libngtcp2 through apt and require the OpenSSL crypto helper (`libngtcp2-crypto-ossl-dev`); when it is absent the install does not pull the GnuTLS helper (qb has no GnuTLS backend) and QUIC simply stays auto-disabled (`QB_WITH_QUIC=AUTO`).
 
 ## See also

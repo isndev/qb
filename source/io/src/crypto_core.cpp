@@ -1,5 +1,5 @@
 /**
- * @file qb/io/src/crypto_core.cpp
+ * @file qb/io/crypto_core.cpp
  * @brief OpenSSL-free part of the crypto utilities
  *
  * These helpers live in `qb::crypto` for historical reasons but contain no

@@ -34,9 +34,9 @@ project(qb-io
 # -----------------------------------------------------------------------------
 # Define the library using the new qb framework functions
 set(IO_SOURCES
-        src/cpu.cpp
-        src/io.cpp
-        src/quic.cpp
+        cpu.cpp
+        io.cpp
+        quic.cpp
 )
 
 # Collect dependencies. PUBLIC (see _qb_apply_dependencies): qb/json.h exposes nlohmann::json in
@@ -117,5 +117,9 @@ set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME io)
 # -----------------------------------------------------------------------------
 if (QB_BUILD_TESTS)
     qb_status_message("Building qb-io tests")
-    add_subdirectory(tests)
+    # Tests live BESIDE the include root, never inside it: a test header swept into
+    # install(DIRECTORY src/ ...) is the failure mode this layout exists to prevent.
+    # Added from here rather than from the top level so the suite inherits PROJECT_NAME
+    # (= qb-io), which every qb_add_test call in it names as its DEPENDS.
+    add_subdirectory("${QB_ROOT_DIR}/tests/io" "${CMAKE_CURRENT_BINARY_DIR}/tests")
 endif ()

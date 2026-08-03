@@ -55,6 +55,19 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Changed
 
+- **The source tree is laid out around one rule: `src/` *is* the include root.** `include/` and
+  `source/` are gone. What a consumer types after `#include <` is now exactly what is under `src/`,
+  with each header's implementation beside it — `src/qb/core/Actor.h` next to `src/qb/core/Actor.cpp`,
+  `src/qb/io/tcp/socket.h` next to `src/qb/io/tcp/socket.cpp` — and the vendored forks under
+  `src/qb/vendor/`. Tests moved out of the libraries and now sit beside the include root at
+  `tests/core/` and `tests/io/`, so a test header cannot be swept into the install.
+  **No consumer-visible spelling changes**: `<qb/core/Actor.h>` is unchanged, and the installed tree
+  is byte-for-byte what it was — `<prefix>/include/qb/…`. The in-tree path and the installed path are
+  now the same string, which is the point: the build interface and the install interface can no
+  longer drift apart. Affects only somebody who names qb's internal directories directly (a patch, a
+  vendoring script, an `-I` into `qb/include`); `CMAKE_INSTALL_INCLUDEDIR`, `find_package(qb)` and
+  `add_subdirectory(qb)` are unaffected. `QB_INCLUDE_DIR` now points at `<qb>/src` and
+  `QB_SOURCE_DIR` at `<qb>/src/qb`.
 - **The vendored libev fork is now `qev`: its own directory, header names, CMake target and C symbol
   space.** `qb/vendor/ev/` → `qb/vendor/qev/`, `ev.h`/`ev++.h` → `qev.h`/`qev++.h`
   (likewise `qev.c`, `qev_vars.h`, `qev_wrap.h`, the generated `qev_config.h` and the backend
