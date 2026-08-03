@@ -51,7 +51,7 @@ The three stream templates live in `qb/io/stream.h`. Each is parameterized by th
 
 Buffer growth is bounded for denial-of-service protection. `set_max_read_buffer_size(size)` and `set_max_write_buffer_size(size)` adjust the per-stream caps at runtime; the defaults are `QB_MAX_READ_BUFFER_SIZE` and `QB_MAX_WRITE_BUFFER_SIZE` (200 MB each, defined in `qb/io/config.h`). A read that would push the input buffer over its cap returns the error code `qb::io::ErrBufferLimitExceeded` (`-2`); a `publish()` that would push the output buffer over its cap returns `nullptr`. The per-read chunk size is `QB_DEFAULT_READ_BUFFER_SIZE` (65536 bytes). Passing `SIZE_MAX` to either setter disables the cap; that is not recommended for network-facing components.
 
-<!-- src: qb/include/qb/io/stream.h -->
+<!-- src: qb/src/qb/io/stream.h -->
 
 ### TCP socket: `qb::io::tcp::socket`
 
@@ -85,7 +85,7 @@ The Unix-domain-socket entry points (`connect_un`, `n_connect_un`, and `tcp::lis
 
 The timed `connect(endpoint, qb::duration)` overload performs a non-blocking connect and waits up to `wtimeout` for completion. Non-positive durations are clamped to zero, meaning a single poll. On expiry the call fails and the underlying error is read through the static base accessor `qb::io::socket::get_last_errno()` (it is not re-exported as a typed-socket member).
 
-<!-- src: qb/include/qb/io/tcp/socket.h -->
+<!-- src: qb/src/qb/io/tcp/socket.h -->
 
 ### TCP listener: `qb::io::tcp::listener`
 
@@ -105,7 +105,7 @@ A blocking listener blocks in `accept()`; a non-blocking listener (`set_nonblock
 
 The server-side bind sets a platform-correct address-reuse option. On POSIX it sets `SO_REUSEADDR`, so a restarted listener can rebind its port immediately while old connections linger in `TIME_WAIT`. On Windows it instead sets `SO_EXCLUSIVEADDRUSE`: binding a port already in active use fails fast with `WSAEADDRINUSE`, and no other process can hijack (silently shadow) the port — Windows already allows rebinding `TIME_WAIT` ports with no option set, and its `SO_REUSEADDR` has hijack semantics that would let a second bind succeed yet never accept.
 
-<!-- src: qb/include/qb/io/tcp/listener.h -->
+<!-- src: qb/src/qb/io/tcp/listener.h -->
 
 ### UDP socket: `qb::io::udp::socket`
 
@@ -148,7 +148,7 @@ Socket options for broadcast and multicast:
 
 UDP is all-or-nothing: `read_timeout` and `write` succeed for a whole datagram or report an error; there is no partial transfer.
 
-<!-- src: qb/include/qb/io/udp/socket.h -->
+<!-- src: qb/src/qb/io/udp/socket.h -->
 
 ### TCP transport: `qb::io::transport::tcp`
 
@@ -156,7 +156,7 @@ UDP is all-or-nothing: `read_timeout` and `write` succeed for a whole datagram o
 
 This is the transport behind asynchronous TCP clients and server-side sessions exposed through `qb::io::use<...>::tcp::client` and `qb::io::use<...>::tcp::server`, documented in [the asynchronous I/O model](./async_system.md).
 
-<!-- src: qb/include/qb/io/transport/tcp.h -->
+<!-- src: qb/src/qb/io/transport/tcp.h -->
 
 ### UDP transport: `qb::io::transport::udp`
 
@@ -181,13 +181,13 @@ Datagram I/O at the transport level:
 
 These transports back `qb::io::use<...>::udp::client` and `qb::io::use<...>::udp::server`.
 
-<!-- src: qb/include/qb/io/transport/udp.h -->
+<!-- src: qb/src/qb/io/transport/udp.h -->
 
 ### Acceptance transport: `qb::io::transport::accept`
 
 `qb::io::transport::accept` (`qb/io/transport/accept.h`) wraps a `tcp::listener` so an asynchronous acceptor can treat "a new connection is ready" as a readable event. Its `read()` accepts one connection and returns the accepted socket's native handle; `getAccepted()` hands back the `tcp::socket`. It deliberately remaps transient accept failures (`ECONNABORTED`, `EPROTO`, and resource-exhaustion errors such as `EMFILE`/`ENFILE`/`ENOMEM`/`ENOBUFS`) to `EWOULDBLOCK`, so a single aborted handshake or a momentary fd-table exhaustion is retried on the next readiness event instead of taking the whole listener down. The secure counterpart is `transport::saccept`. These are wired automatically by `qb::io::use<...>::tcp::acceptor`; application code rarely touches them directly.
 
-<!-- src: qb/include/qb/io/transport/accept.h -->
+<!-- src: qb/src/qb/io/transport/accept.h -->
 
 ### Where `transport::stcp`, `transport::file`, and QUIC fit
 
@@ -245,7 +245,7 @@ int main() {
 }
 ```
 
-<!-- src: qb/include/qb/io/tcp/socket.h (connect timed overload), qb/source/io/tests/system/async/async-connect-timeout.cpp -->
+<!-- src: qb/src/qb/io/tcp/socket.h (connect timed overload), qb/source/io/tests/system/async/async-connect-timeout.cpp -->
 
 ### Reading a UDP datagram with a timeout
 
@@ -277,7 +277,7 @@ int main() {
 }
 ```
 
-<!-- src: qb/include/qb/io/udp/socket.h -->
+<!-- src: qb/src/qb/io/udp/socket.h -->
 
 ### Asynchronous TCP client and server
 

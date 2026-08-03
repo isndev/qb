@@ -234,9 +234,9 @@ void ServerActor::on(NewSessionEvent& evt) {
 }
 ```
 
-`registerSession()` checks the session cap first, then constructs the `ChatSession`, inserts it into the map keyed by the session's `qb::uuid`, moves the socket into it, calls the session's `start()`, and returns a `ChatSession*`. It returns `nullptr` when a configured session cap is hit (default: unlimited — `QB_DEFAULT_MAX_SESSIONS` is `0`) or on an ID collision, closing the incoming socket in either case; the caller must null-check. <!-- src: qb/include/qb/io/async/io_handler.h:209 -->
+`registerSession()` checks the session cap first, then constructs the `ChatSession`, inserts it into the map keyed by the session's `qb::uuid`, moves the socket into it, calls the session's `start()`, and returns a `ChatSession*`. It returns `nullptr` when a configured session cap is hit (default: unlimited — `QB_DEFAULT_MAX_SESSIONS` is `0`) or on an ID collision, closing the incoming socket in either case; the caller must null-check. <!-- src: qb/src/qb/io/async/io_handler.h:209 -->
 
-> **Always null-check.** The return type is `ChatSession*`, not a reference, so the null-checked pointer form above is the pattern to follow — the checked-in example does exactly this, returning early when `registerSession()` hands back `nullptr`. See `qb/include/qb/io/async/io_handler.h`.
+> **Always null-check.** The return type is `ChatSession*`, not a reference, so the null-checked pointer form above is the pattern to follow — the checked-in example does exactly this, returning early when `registerSession()` hands back `nullptr`. See `qb/src/qb/io/async/io_handler.h`.
 
 `ServerActor` is the bridge between sessions and the room. Sessions call back into it (`server().handleAuth(...)`, `handleChat(...)`, `handleDisconnect(...)`), and it translates those into events for `ChatRoomActor`:
 
@@ -509,7 +509,7 @@ The connect deadline and the reconnect delay are both fixed at five seconds; the
 - **`setTimeout` is on the timeout mixin, not the client.** `updateTimeout()` must be called on every meaningful activity (inbound *and* outbound), or the session drops mid-conversation. The example resets it in both `ChatSession::on(Message)` and `ServerActor::on(SendMessageEvent&)`.
 - **Console input blocks its core.** Keep `std::getline`-style readers off any core that carries network actors. The example isolates `InputActor` on core 0 for exactly this reason.
 - **Bad-frame handling is minimal.** `ChatProtocol::reset()` does not drain the buffer, so a malformed header wedges the parser. Harden framing before reuse.
-- **Timeouts are `qb::duration` now, not `double`.** `qb::io::async::tcp::connect()` takes a `qb::duration`; `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in client uses chrono constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `std::chrono::seconds(5)`), passing a `std::chrono::duration_cast<qb::duration>` to `connect()` and the delay directly to `callback()`. New code should likewise pass a chrono literal such as `std::chrono::seconds(5)`; a bare `double` does not convert to `qb::duration`. See [Async I/O inside actors](../async_in_actors.md). <!-- src: qb/include/qb/system/time.h:90 -->
+- **Timeouts are `qb::duration` now, not `double`.** `qb::io::async::tcp::connect()` takes a `qb::duration`; `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in client uses chrono constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `std::chrono::seconds(5)`), passing a `std::chrono::duration_cast<qb::duration>` to `connect()` and the delay directly to `callback()`. New code should likewise pass a chrono literal such as `std::chrono::seconds(5)`; a bare `double` does not convert to `qb::duration`. See [Async I/O inside actors](../async_in_actors.md). <!-- src: qb/src/qb/system/time.h:90 -->
 
 ## See also
 

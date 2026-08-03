@@ -85,7 +85,7 @@ Verify with the configuration banner the build prints, or check that `QB_WITH_SS
 
 When `qb-io` builds the client `SSL_CTX` itself — the usual `connect()` / `n_connect()` / async-connector path — it is secure by default: it loads the system trust store, enables `SSL_VERIFY_PEER`, and checks the server certificate against the target hostname (or IP). The `_verify_peer` member starts `true`.
 
-<!-- src: qb/include/qb/io/tcp/ssl/socket.h:342 (_verify_peer = true), 766-782 (set_insecure / secure-by-default doc) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:342 (_verify_peer = true), 766-782 (set_insecure / secure-by-default doc) -->
 
 The production hazard is the opt-out. `set_insecure()` clears verification (it is meant for self-signed certs in tests, externally-handled pinning, or trusted private channels) and removes protection against man-in-the-middle attacks. Audit your codebase before shipping:
 
@@ -96,21 +96,21 @@ grep -rn "set_insecure" your_service/ qbm/
 
 Note one asymmetry: when you adopt an externally-created `SSL` handle via `init(SSL*)`, qb-io does **not** touch verification policy — your context's settings are used as-is. If you build the context yourself, you own the verification posture.
 
-<!-- src: qb/include/qb/io/tcp/ssl/socket.h:448-455 (init(SSL*)), 779-780 (verification-untouched note) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:448-455 (init(SSL*)), 779-780 (verification-untouched note) -->
 
 ### Server contexts
 
 Server-side TLS is built explicitly. `qb::io::ssl::create_server_context(method, cert_path, key_path)` constructs a context from a certificate and key; for mutual TLS, `configure_mtls_server_context(ctx, client_ca_file_path, verification_mode = SSL_VERIFY_PEER)` adds client-certificate verification (the default mode is `SSL_VERIFY_PEER`).
 
-<!-- src: qb/include/qb/io/tcp/ssl/socket.h:83-94, 144-154 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:83-94, 144-154 -->
 
 These functions take `std::filesystem::path` arguments (certificate, key, CA file, CA directory, DH parameters, client certificate). Each filesystem path is resolved through `qb::io::sys::resolve_resource()`: an absolute path is used unchanged, while a relative path is looked up first against the current working directory and then against the running executable's own directory. A binary shipped with its certificates next to it therefore finds them from any working directory, while an absolute deploy path is honoured verbatim. (URL/URI and wire paths are unaffected — those remain `std::string`.)
 
-<!-- src: qb/include/qb/io/system/file.h:368-388 (self_path / self_dir / resolve_resource) -->
+<!-- src: qb/src/qb/io/system/file.h:368-388 (self_path / self_dir / resolve_resource) -->
 
 After a handshake completes you can introspect the live connection — `get_negotiated_tls_version()`, `get_negotiated_cipher_suite()`, `get_alpn_selected_protocol()`, `get_peer_certificate_chain()` — to log or assert the negotiated parameters.
 
-<!-- src: qb/include/qb/io/tcp/ssl/socket.h:642 (cipher suite), 648 (tls version), 654 (alpn), 689 (peer cert chain) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:642 (cipher suite), 648 (tls version), 654 (alpn), 689 (peer cert chain) -->
 
 ### Windows server bind: exclusive, not reusable
 
@@ -134,7 +134,7 @@ qb caps inbound work per connection to resist oversized-message denial of servic
 
 Every protocol-driven I/O component carries a `_max_message_size`, initialized to `QB_MAX_MESSAGE_SIZE` (**100 MB** by default — note that a stale doc comment on `max_message_size()` in `qb/io/async/io.h` says 10 MB; the macro definition in `config.h` is the source of truth). A frame larger than the limit marks the protocol invalid and disconnects with reason `-2` ("message too large").
 
-<!-- src: qb/include/qb/io/config.h:163-173, qb/include/qb/io/async/io.h:495,802,1998 (_max_message_size members), 1283,2584 (disconnect reason -2) -->
+<!-- src: qb/src/qb/io/config.h:163-173, qb/src/qb/io/async/io.h:495,802,1998 (_max_message_size members), 1283,2584 (disconnect reason -2) -->
 
 100 MB is generous for most services. Lower it per component to match the largest legitimate message you accept:
 
@@ -145,17 +145,17 @@ this->set_max_message_size(1 * 1024 * 1024);
 
 You can read the active limit back with `max_message_size()`. Setting it too low rejects legitimate traffic; too high re-opens the DoS surface — size it to the workload.
 
-<!-- src: qb/include/qb/io/async/io.h:1048 (max_message_size), 1074 (set_max_message_size) -->
+<!-- src: qb/src/qb/io/async/io.h:1048 (max_message_size), 1074 (set_max_message_size) -->
 
-The framework also defines input/output buffer ceilings in the same header for the same reason; see [config.h](../../include/qb/io/config.h) for `QB_MAX_MESSAGE_SIZE` and the buffer-limit macros, all overridable at compile time with `-D`.
+The framework also defines input/output buffer ceilings in the same header for the same reason; see [config.h](../../src/qb/io/config.h) for `QB_MAX_MESSAGE_SIZE` and the buffer-limit macros, all overridable at compile time with `-D`.
 
-<!-- src: qb/include/qb/io/config.h:163-258 -->
+<!-- src: qb/src/qb/io/config.h:163-258 -->
 
 ### Connection and event-loop ceilings
 
 `qb::io::event::Config` defines compile-time `constexpr` hints — a default poll timeout of 100 ms, a 64-event-per-poll batch, and a `MAX_CONNECTIONS` value of 10000 — but these are **not** wired into the event loop or the accept path; nothing in the framework reads them. The header itself describes `MAX_CONNECTIONS` as "a conceptual maximum ... a soft limit or a hint for sizing internal structures, rather than a hard enforced limit." The real per-handler connection cap is `QB_DEFAULT_MAX_SESSIONS` (default `0`, unlimited), settable at runtime with `set_max_sessions()`; beyond that, OS fd limits apply.
 
-<!-- src: qb/include/qb/io/system/ev_config.h:44-82 (unenforced constants), qb/include/qb/io/config.h:220-233 (QB_DEFAULT_MAX_SESSIONS), qb/include/qb/io/async/io_handler.h:169 (set_max_sessions) -->
+<!-- src: qb/src/qb/io/system/ev_config.h:44-82 (unenforced constants), qb/src/qb/io/config.h:220-233 (QB_DEFAULT_MAX_SESSIONS), qb/src/qb/io/async/io_handler.h:169 (set_max_sessions) -->
 
 ### Idle latency vs. CPU
 
@@ -164,10 +164,10 @@ Each `VirtualCore` runs a busy loop by default. `CoreInitializer::setLatency(qb:
 - `qb::duration::zero()` (the default) — low-latency mode: the core spins, consuming a full CPU on its assigned core.
 - `latency > 0` — the core may sleep up to that duration when idle, cutting CPU use at the cost of worst-case event-handling latency.
 
-<!-- src: qb/include/qb/core/Main.h:242-254 -->
+<!-- src: qb/src/qb/core/Main.h:242-254 -->
 
 ```cpp
-// src: derived from qb/include/qb/core/Main.h (CoreInitializer API)
+// src: derived from qb/src/qb/core/Main.h (CoreInitializer API)
 #include <chrono>
 #include <qb/main.h>
 
@@ -198,12 +198,12 @@ For a busy server every active core at zero latency pins a CPU; on a shared or o
 
 Logging is gated by `QB_WITH_LOGGING` (default **`ON`**), which defines `QB_WITH_LOGGING=1` and compiles in the nanolog-backed `qb::io::log` API. When the option is off, the `qb::io::log` namespace (init/setLevel/Level) is not available. The `LOG_*` macros remain defined — as a `qb::io::cout()` fallback when `QB_STDOUT_LOGGING` is set, otherwise as no-ops.
 
-<!-- src: qb/cmake/qbConfig.cmake:98 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:318-319 (QB_WITH_LOGGING=1 compile def), qb/include/qb/io.h:34-81 -->
+<!-- src: qb/cmake/qbConfig.cmake:98 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:318-319 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:34-81 -->
 
 Initialize logging once at startup, before any logging call. `init` takes the log-file path and a roll size in megabytes (default 128):
 
 ```cpp
-// src: derived from qb/include/qb/io.h (qb::io::log)
+// src: derived from qb/src/qb/io.h (qb::io::log)
 #include <qb/io.h>
 
 int main() {
@@ -217,7 +217,7 @@ int main() {
 
 `setLevel` sets the minimum severity recorded; messages below it are dropped. The level enum, lowest to highest, is `DEBUG, VERBOSE, INFO, WARN, CRIT`.
 
-<!-- src: qb/include/qb/io.h:48-81 -->
+<!-- src: qb/src/qb/io.h:48-81 -->
 
 Two related options affect diagnostics rather than the file logger: `QB_STDOUT_LOGGING` (default **OFF**) enables a stdout fallback, and `QB_DEBUG_ACTOR` (default **OFF**) enables actor debugging output. Leave both off in production unless you are actively debugging.
 
@@ -225,7 +225,7 @@ Two related options affect diagnostics rather than the file logger: `QB_STDOUT_L
 
 `qb::io::cout()` is a thread-safe console wrapper, but the header itself notes that production code should prefer the logging system over direct console output.
 
-<!-- src: qb/include/qb/io.h:84-100 -->
+<!-- src: qb/src/qb/io.h:84-100 -->
 
 **Checklist**
 
@@ -335,7 +335,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/source/core/src/Main.cpp:316-320 (LOG_CRIT/stderr), 323-326 (hasError), qb/include/qb/io/async/io.h:1283,2584 (disconnect reason -2), qb/include/qb/io/tcp/ssl/socket.h:642,648,661 (introspection), qb/include/qb/io/async/io_handler.h:169 (set_max_sessions), qb/include/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/source/core/src/Main.cpp:316-320 (LOG_CRIT/stderr), 323-326 (hasError), qb/src/qb/io/async/io.h:1283,2584 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:642,648,661 (introspection), qb/src/qb/io/async/io_handler.h:169 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

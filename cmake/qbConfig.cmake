@@ -44,16 +44,16 @@ set(QB_FRAMEWORK_VERSION_PATCH 0)
 # Framework paths
 set(QB_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/.." CACHE PATH "qb framework root directory")
 get_filename_component(QB_ROOT_DIR "${QB_ROOT_DIR}" ABSOLUTE)
-set(QB_INCLUDE_DIR "${QB_ROOT_DIR}/include")
+set(QB_INCLUDE_DIR "${QB_ROOT_DIR}/src")
 # CACHE INTERNAL so that QB_CMAKE_DIR is globally visible across all
 # add_subdirectory() scopes (e.g. qbm modules added after the qb subtree).
 # Without CACHE, the variable stays local to qb's subdirectory scope and
 # qb_add_test / qb_add_benchmark cannot find deploy_runtime_dlls.cmake.
 set(QB_CMAKE_DIR  "${QB_ROOT_DIR}/cmake"   CACHE INTERNAL "qb cmake scripts directory")
-# modules/ now holds ONLY genuine third-party upstream code (nlohmann). Everything else that used
-# to live there -- qev, uuid, nanolog, ska_hash -- is a qb FORK, i.e. qb's own source, and moved
-# under include/qb/vendor/ so an installed qb owns every top-level name it drops in the consumer's
-# include root. See QB_VENDOR_DIR below.
+# src/ IS qb's include root: what a consumer types after `#include <` is exactly what lives under
+# it, each header's implementation beside it. modules/ holds ONLY genuine third-party upstream code
+# (nlohmann); the qb FORKS -- qev, uuid, nanolog, ska_hash -- live under src/qb/vendor/ so that an
+# installed qb owns every top-level name it drops in the consumer's include root.
 set(QB_MODULES_DIR "${QB_ROOT_DIR}/modules")
 # qb-owned forks. Physically inside QB_INCLUDE_DIR on purpose: the build tree and the installed
 # tree then expose them at the SAME relative path (qb/vendor/<fork>/...) through the SAME single

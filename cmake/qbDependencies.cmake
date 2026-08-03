@@ -98,7 +98,7 @@ endif()
 # -----------------------------------------------------------------------------
 # libev (using internal bundled version)
 # -----------------------------------------------------------------------------
-# qb uses a custom fork of libev, vendored under include/qb/vendor/qev
+# qb uses a custom fork of libev, vendored under src/qb/vendor/qev
 set(QB_EV_DIR "${QB_VENDOR_DIR}/qev")
 
 if(EXISTS "${QB_EV_DIR}")
@@ -345,7 +345,7 @@ endif()
 set(QB_INTERNAL_MODULES_PATH "${QB_MODULES_DIR}")
 
 # Third-party header-only trees still shipped from modules/ (installed verbatim at their canonical
-# path by qb/CMakeLists.txt). The qb-owned forks are NOT here: they live under include/qb/vendor/
+# path by qb/CMakeLists.txt). The qb-owned forks are NOT here: they live under src/qb/vendor/
 # and are covered by qb's ordinary public-header install rule.
 set(QB_HEADER_ONLY_MODULES nlohmann)
 

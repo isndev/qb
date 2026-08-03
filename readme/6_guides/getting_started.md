@@ -134,7 +134,7 @@ What each call does:
 
 Either way, check `engine.hasError()` after the engine stops to detect a core that terminated on an error.
 
-<!-- src: qb/include/qb/core/Main.h:517-550 -->
+<!-- src: qb/src/qb/core/Main.h:517-550 -->
 
 ## 4. A two-actor program: ping/pong
 
@@ -236,7 +236,7 @@ Notes on the new pieces:
 
 Both actors run on core 0 here. To distribute them across cores, pass a different `CoreId` to `addActor`; messages cross cores over lock-free queues with no code change. See [the threading model](../2_core_concepts/threading_model.md).
 
-<!-- src: examples/core/example1_simple_actor.cpp, qb/source/core/src/Actor.cpp:105-115,159-161, qb/include/qb/core/ActorId.h:401,442, qb/include/qb/core/Main.tpp:38,60 -->
+<!-- src: examples/core/example1_simple_actor.cpp, qb/source/core/src/Actor.cpp:105-115,159-161, qb/src/qb/core/ActorId.h:401,442, qb/src/qb/core/Main.tpp:38,60 -->
 
 ## 5. Add a non-blocking timer
 
@@ -288,7 +288,7 @@ The callback runs on the actor's own core, so capturing `this` and touching memb
 
 For inactivity timeouts, coroutine-based async flows, and the full event-loop surface available to actors, see [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md).
 
-<!-- src: qb/include/qb/io/async/io.h:358-382, examples/core/example5_timers.cpp -->
+<!-- src: qb/src/qb/io/async/io.h:358-382, examples/core/example5_timers.cpp -->
 
 ## 6. Build and run
 
@@ -324,7 +324,7 @@ A non-zero exit code means `engine.hasError()` reported a core that terminated o
 - **Do not block in a handler or callback.** `on(...)` handlers and `qb::io::async::callback` bodies run on the core's event-loop thread; a blocking call stalls every actor on that core. Use the async surface in [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) instead.
 - **Subscribe with `registerEvent<T>` in `onInit()`, not your constructor.** `onInit()` is the documented initialization hook: it runs once the actor is fully appended to its core, and `co_return false` from it aborts creation cleanly. A constructor cannot signal initialization failure that way.
 
-<!-- src: qb/source/core/src/Main.cpp:225,357, qb/source/core/src/Actor.cpp:105-110, qb/include/qb/core/Actor.h:723 -->
+<!-- src: qb/source/core/src/Main.cpp:225,357, qb/source/core/src/Actor.cpp:105-110, qb/src/qb/core/Actor.h:723 -->
 
 ## Where to go next
 

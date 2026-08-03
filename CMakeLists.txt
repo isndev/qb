@@ -155,13 +155,13 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
         qb_status_message("Code coverage enabled")
 
         # '*vendor*' alongside '*modules*': the forks (qev, uuid, nanolog, ska_hash) moved under
-        # include/qb/vendor/. Without it they would start counting towards qb's coverage figure --
+        # src/qb/vendor/. Without it they would start counting towards qb's coverage figure --
         # libev's ev.c alone is several thousand lines of third-party-derived C.
         set(COVERAGE_LCOV_EXCLUDES
                 '/usr/*'
                 '*benchmark*'
                 '*modules*'
-                '*/include/qb/vendor/*'
+                '*/src/qb/vendor/*'
                 '*examples/*'
                 '*test*'
         )
@@ -170,7 +170,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
                 '/usr/.*'
                 '${PROJECT_BINARY_DIR}/_deps/.*'
                 '${PROJECT_SOURCE_DIR}/modules/.*'
-                '${PROJECT_SOURCE_DIR}/include/qb/vendor/.*'
+                '${PROJECT_SOURCE_DIR}/src/qb/vendor/.*'
                 '${PROJECT_SOURCE_DIR}/examples/.*'
                 '${PROJECT_SOURCE_DIR}/source/.*/tests/benchmark/.*'
                 '${PROJECT_SOURCE_DIR}/source/.*/tests/.*'
@@ -277,7 +277,7 @@ if (QB_INSTALL)
 
     # Install public headers.
     #
-    # This ONE rule now also ships the vendored forks (include/qb/vendor/{qev,uuid,nanolog,
+    # This ONE rule now also ships the vendored forks (src/qb/vendor/{qev,uuid,nanolog,
     # ska_hash}), because they physically live under this directory. That is the point of the
     # layout: the build tree and the installed tree expose qb's headers AND its forks through the
     # same single root at the same relative paths, so there is no second BUILD_INTERFACE /

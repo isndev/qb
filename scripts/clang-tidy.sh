@@ -183,14 +183,14 @@ def in_scope(rel: str) -> bool:
         return False
     if Path(rel).suffix not in code_suffixes:
         return False
-    return rel.startswith("include/qb/") or rel.startswith("source/core/") or rel.startswith("source/io/")
+    return rel.startswith("src/qb/") or rel.startswith("source/core/") or rel.startswith("source/io/")
 
 def resolve_include(owner: str, delimiter: str, target: str, tracked: set[str]):
     candidates = []
     if delimiter == '"':
         candidates.append((root / owner).parent / target)
     if target.startswith("qb/"):
-        candidates.append(root / "include" / target)
+        candidates.append(root / "src" / target)
     candidates.append(root / target)
 
     for candidate in candidates:
@@ -249,7 +249,7 @@ def select_for(rel: str):
         return {rel}
     if rel in owners:
         return set(owners[rel])
-    if rel.startswith("include/qb/"):
+    if rel.startswith("src/qb/"):
         return set(project_tus)
     return set()
 

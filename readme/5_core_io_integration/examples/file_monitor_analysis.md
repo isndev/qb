@@ -74,7 +74,7 @@ public:
 };
 ```
 
-`qb::io::async::directory_watcher<_Derived>` is defined in `qb/include/qb/io/async/io.h`. It exposes two control methods and forwards one event:
+`qb::io::async::directory_watcher<_Derived>` is defined in `qb/src/qb/io/async/io.h`. It exposes two control methods and forwards one event:
 
 | Member | Signature | Effect |
 | --- | --- | --- |
@@ -90,7 +90,7 @@ public:
 
 `ev::stat` is poll-based. Every `interval`, libev calls `stat()` on the path and compares the result with the previous reading. When any monitored attribute differs, the loop fires `event::file`. On Linux, libev accelerates the watcher with inotify when `EV_USE_INOTIFY` is compiled in (it is by default), so a change can wake the poll sooner than the next tick; on every other platform — including the BSDs and macOS — `ev::stat` is purely periodic stat polling, with no kernel-notification fast path. Either way, the contract you program against is the stat-diff: you receive the current `struct stat` in `event.attr` and the prior one in `event.prev`. libev also floors very small intervals (`MIN_STAT_INTERVAL`, roughly 0.107 s); the 500 ms used here is well above that floor.
 
-`qb::io::async::event::file` (in `qb/include/qb/io/async/event/file.h`) derives from `qb::io::async::event::base<ev::stat>`, which derives from libev's `ev::stat`. The fields the handler reads come from `qev_stat`:
+`qb::io::async::event::file` (in `qb/src/qb/io/async/event/file.h`) derives from `qb::io::async::event::base<ev::stat>`, which derives from libev's `ev::stat`. The fields the handler reads come from `qev_stat`:
 
 | Field | Type | Meaning |
 | --- | --- | --- |

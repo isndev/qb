@@ -195,7 +195,7 @@ int main() {
 To add several actors to one core fluently, use the builder:
 
 ```cpp
-// <!-- src: qb/include/qb/core/Main.h (CoreInitializer::builder) -->
+// <!-- src: qb/src/qb/core/Main.h (CoreInitializer::builder) -->
 engine.core(0)
     .builder()
     .addActor<Logger>()
@@ -211,7 +211,7 @@ Two per-core knobs affect placement performance, both set on the `CoreInitialize
 - `setLatency(qb::duration)` sets how long an idle core waits before re-checking its mailbox. `qb::duration::zero()` (the default) is the busy, lowest-latency mode; a non-zero value trades latency for lower CPU usage when the core is idle. `Main::setLatency(...)` sets a default for every core that has no explicit value.
 
 ```cpp
-// <!-- src: qb/include/qb/core/Main.h (CoreInitializer::setAffinity / setLatency) -->
+// <!-- src: qb/src/qb/core/Main.h (CoreInitializer::setAffinity / setLatency) -->
 using namespace std::chrono_literals;
 
 engine.core(0).setLatency(qb::duration::zero());   // hot path: no idle wait
@@ -325,7 +325,7 @@ private:
 Register the service on each core before the workers that depend on it (placement order within a core is creation order):
 
 ```cpp
-// <!-- src: qb/include/qb/core/Main.h (CoreInitializer::builder) -->
+// <!-- src: qb/src/qb/core/Main.h (CoreInitializer::builder) -->
 engine.core(0)
     .builder()
     .addActor<ConfigService>()   // service first

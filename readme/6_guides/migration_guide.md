@@ -44,7 +44,7 @@ For the full model see [The actor model](../2_core_concepts/actor_model.md); for
 | Polling loop / `sleep_for` between iterations | `qb::ICallback::on(qb::LoopEvent const&)` or `qb::io::async::callback` | A per-loop tick or a one-shot non-blocking timer on the same core. |
 | Manual `errno` / return-code propagation across threads | An error event, or an unhandled exception caught by the core | See [Error handling](./error_handling.md). |
 
-`push` and `send` differ: `push<_Event>(dest, …)` returns a reference to the queued event and guarantees ordered delivery from one source to one destination; `send<_Event>(dest, …)` is unordered, fire-and-forget, and restricted to trivially-destructible events. Prefer `push`. _(`qb/include/qb/core/Actor.h:798,821`.)_
+`push` and `send` differ: `push<_Event>(dest, …)` returns a reference to the queued event and guarantees ordered delivery from one source to one destination; `send<_Event>(dest, …)` is unordered, fire-and-forget, and restricted to trivially-destructible events. Prefer `push`. _(`qb/src/qb/core/Actor.h:798,821`.)_
 
 ### Before: a hand-rolled worker
 
@@ -188,11 +188,11 @@ Cross-core `push` is delivered over a lock-free queue; the code above is unchang
 
 ### Pitfalls
 
-- **Do not block inside a handler.** A handler holds its core's event-loop thread until it returns; blocking stalls every actor on that core. Wrap blocking or long-running work (synchronous file I/O, a slow library call) in `qb::io::async::callback` so it does not freeze the loop, or restructure it as events. See [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md). _(`qb/include/qb/core/ICallback.h:16`.)_
+- **Do not block inside a handler.** A handler holds its core's event-loop thread until it returns; blocking stalls every actor on that core. Wrap blocking or long-running work (synchronous file I/O, a slow library call) in `qb::io::async::callback` so it does not freeze the loop, or restructure it as events. See [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md). _(`qb/src/qb/core/ICallback.h:16`.)_
 - **Do not share an actor's state with other threads.** The no-lock guarantee holds only because one core touches the state. Reintroducing a raw pointer, a `std::shared_ptr` to mutable data, or a global shared with non-actor code reintroduces the data race. Communicate by sending events.
-- **`addActor` can fail — and *how* depends on the path.** The pre-start `Main::addActor<T>(coreId, …)` overload does **not** run `onInit()`; it returns `qb::ActorId::NotFound` (the default-constructed, invalid ID) only when the per-core ID pool is exhausted or a duplicate service `Tag` is registered. An `onInit()` that returns `false` for a pre-start actor is detected at startup: the engine flags that core `VirtualCore::Error::BadActorInit`, the core fails to start, and you observe it via `hasError()` after the run — not through the returned ID. The runtime `addRefActor` / `addActor(…)` path is the one that *does* run `onInit()` at add time and returns an invalid ID when it returns `false`. Guard every returned ID with `is_valid()`, and gate startup with `hasError()`. _(`qb/include/qb/core/Main.tpp:37-65`; `qb/source/core/src/Main.cpp:226-232`; `qb/include/qb/core/VirtualCore.h:125`; `qb/source/core/src/VirtualCore.cpp:735-753`; `qb/include/qb/core/ActorId.h:403,444`; [Error handling](./error_handling.md).)_
+- **`addActor` can fail — and *how* depends on the path.** The pre-start `Main::addActor<T>(coreId, …)` overload does **not** run `onInit()`; it returns `qb::ActorId::NotFound` (the default-constructed, invalid ID) only when the per-core ID pool is exhausted or a duplicate service `Tag` is registered. An `onInit()` that returns `false` for a pre-start actor is detected at startup: the engine flags that core `VirtualCore::Error::BadActorInit`, the core fails to start, and you observe it via `hasError()` after the run — not through the returned ID. The runtime `addRefActor` / `addActor(…)` path is the one that *does* run `onInit()` at add time and returns an invalid ID when it returns `false`. Guard every returned ID with `is_valid()`, and gate startup with `hasError()`. _(`qb/src/qb/core/Main.tpp:37-65`; `qb/source/core/src/Main.cpp:226-232`; `qb/src/qb/core/VirtualCore.h:125`; `qb/source/core/src/VirtualCore.cpp:735-753`; `qb/src/qb/core/ActorId.h:403,444`; [Error handling](./error_handling.md).)_
 - **Add every actor before `start()`.** Actors are constructed on their worker thread when the engine starts; `addActor` must be called beforehand.
-- **A periodic task is not a `sleep` loop.** Replace a polling thread with `qb::ICallback` (`on(qb::LoopEvent const&)` runs once per loop iteration) or a one-shot `qb::io::async::callback`, both non-blocking. _(`qb/include/qb/core/ICallback.h:16,122`.)_
+- **A periodic task is not a `sleep` loop.** Replace a polling thread with `qb::ICallback` (`on(qb::LoopEvent const&)` runs once per loop iteration) or a one-shot `qb::io::async::callback`, both non-blocking. _(`qb/src/qb/core/ICallback.h:16,122`.)_
 
 ## Part 2 — From the pre-2.0 time types to the chrono model
 
@@ -206,16 +206,16 @@ qb 2.0 replaced the framework-specific time classes with three `std::chrono` ali
 | `qb::mono_time` | `std::chrono::steady_clock::time_point` | Deadlines, timers, the event-loop "now", latency, RTT — immune to NTP/DST. |
 | `qb::wall_time` | `std::chrono::system_clock::time_point` | Dates, expiry, JWT `exp`/`nbf`, TLS validity, logs, wire formats. |
 
-_(`qb/include/qb/system/time.h:82,85,88`.)_
+_(`qb/src/qb/system/time.h:82,85,88`.)_
 
 Two design points drive the migration:
 
-- **A `qb::duration` rejects a bare integer.** It accepts any finer-or-equal `std::chrono` literal implicitly (`30s`, `100ms`, `5us`) but a raw `int` does not convert, so a seconds-versus-milliseconds unit confusion cannot compile. Wherever old code passed a number, pass a chrono literal. _(`qb/include/qb/system/time.h:8-11`.)_
-- **`mono_time` and `wall_time` are distinct types.** Subtracting a wall instant from a monotonic one does not compile. Pick `mono_time` for anything you measure or schedule against (deadlines, elapsed time, RTT) and `wall_time` for anything tied to the calendar (expiry, logs, wire timestamps). _(`qb/include/qb/system/time.h:18-20`.)_
+- **A `qb::duration` rejects a bare integer.** It accepts any finer-or-equal `std::chrono` literal implicitly (`30s`, `100ms`, `5us`) but a raw `int` does not convert, so a seconds-versus-milliseconds unit confusion cannot compile. Wherever old code passed a number, pass a chrono literal. _(`qb/src/qb/system/time.h:8-11`.)_
+- **`mono_time` and `wall_time` are distinct types.** Subtracting a wall instant from a monotonic one does not compile. Pick `mono_time` for anything you measure or schedule against (deadlines, elapsed time, RTT) and `wall_time` for anything tied to the calendar (expiry, logs, wire timestamps). _(`qb/src/qb/system/time.h:18-20`.)_
 
-The literal operators (`30s`, `100ms`, `5us`, …) are pulled into `qb` through `inline namespace qb::time_literals`, so call sites can write them after `#include <qb/system/time.h>` with no extra `using`. _(`qb/include/qb/system/time.h:110-114`.)_
+The literal operators (`30s`, `100ms`, `5us`, …) are pulled into `qb` through `inline namespace qb::time_literals`, so call sites can write them after `#include <qb/system/time.h>` with no extra `using`. _(`qb/src/qb/system/time.h:110-114`.)_
 
-> **Retired tokens — never reintroduce them.** `qb::Timestamp`, `qb::Duration`, and `qb::TimePoint` no longer exist anywhere in the framework; the canonical replacements are defined in `<qb/system/time.h>`. Any reference to them is pre-2.0 code that must be ported. The documentation anti-drift guard rejects these tokens everywhere except the migration, contributing, and changelog surfaces. _(`qb/include/qb/system/time.h:79-88`; `qb/scripts/doc-lint.sh:44-51`.)_
+> **Retired tokens — never reintroduce them.** `qb::Timestamp`, `qb::Duration`, and `qb::TimePoint` no longer exist anywhere in the framework; the canonical replacements are defined in `<qb/system/time.h>`. Any reference to them is pre-2.0 code that must be ported. The documentation anti-drift guard rejects these tokens everywhere except the migration, contributing, and changelog surfaces. _(`qb/src/qb/system/time.h:79-88`; `qb/scripts/doc-lint.sh:44-51`.)_
 
 ### Old-to-new mapping table
 
@@ -256,7 +256,7 @@ qb::Timestamp deadline = start + qb::Duration::seconds(30);
 
 ```cpp
 // after.cpp — canonical chrono model
-// src: qb/include/qb/system/time.h
+// src: qb/src/qb/system/time.h
 #include <qb/system/time.h>   // qb::duration, qb::mono_time, qb::mono_now, literals
 
 qb::duration  timeout  = 500ms;                  // bare-int rejected; literal accepted
@@ -271,7 +271,7 @@ qb::mono_time deadline = start + 30s;            // schedule against monotonic t
 A wall-clock example — formatting an expiry for a log line or a wire field:
 
 ```cpp
-// src: qb/include/qb/system/time.h
+// src: qb/src/qb/system/time.h
 #include <qb/system/time.h>
 
 qb::wall_time expiry = qb::wall_now() + 24h;          // 24h from now, wall clock
@@ -283,17 +283,17 @@ std::int64_t  exp_s  = qb::unix_seconds(expiry);      // for a JWT exp claim, sa
 
 The migration matters because the framework's own surfaces take these types. A few you will meet immediately:
 
-- `CoreInitializer::setLatency(qb::duration latency = qb::duration::zero())` — the maximum the event loop waits when idle; the default `zero()` is the busy-spin, lowest-latency mode (100% CPU on the core), and a positive value lets the idle core park to trade latency for CPU. _(`qb/include/qb/core/Main.h:242-254`.)_
-- Socket and async timeouts take `qb::duration` (for example `tcp::socket::connect(qb::io::endpoint const &ep, qb::duration wtimeout)`); a non-positive value is clamped to a single poll, not "wait forever." _(`qb/include/qb/io/tcp/socket.h:155`; `qb/source/io/src/system/sys__socket.cpp:724`.)_
-- `qb::SpinLock::trylock_for(qb::duration)` and `trylock_until(qb::mono_time)`. _(`qb/include/qb/system/lockfree/spinlock.h:123,147`.)_
+- `CoreInitializer::setLatency(qb::duration latency = qb::duration::zero())` — the maximum the event loop waits when idle; the default `zero()` is the busy-spin, lowest-latency mode (100% CPU on the core), and a positive value lets the idle core park to trade latency for CPU. _(`qb/src/qb/core/Main.h:242-254`.)_
+- Socket and async timeouts take `qb::duration` (for example `tcp::socket::connect(qb::io::endpoint const &ep, qb::duration wtimeout)`); a non-positive value is clamped to a single poll, not "wait forever." _(`qb/src/qb/io/tcp/socket.h:155`; `qb/source/io/src/system/sys__socket.cpp:724`.)_
+- `qb::SpinLock::trylock_for(qb::duration)` and `trylock_until(qb::mono_time)`. _(`qb/src/qb/system/lockfree/spinlock.h:123,147`.)_
 
 ### Pitfalls
 
-- **Do not pass a bare integer to a `qb::duration` parameter.** `setLatency(100)` does not compile by design; write `setLatency(100us)` (or `std::chrono::microseconds(100)`). This is the unit-confusion guard, not a defect. _(`qb/include/qb/system/time.h:8-11`.)_
-- **Do not mix the two instant clocks.** You cannot subtract a `qb::wall_time` from a `qb::mono_time`; the compiler rejects it. Measure and schedule with `mono_time`; record dates and expiry with `wall_time`. Converting between them means going through a Unix-epoch scalar (`unix_seconds` / `wall_from_unix_seconds`) and accepting that the wall clock can step. _(`qb/include/qb/system/time.h:18-20`.)_
-- **`tsc_ticks()` is not a clock.** It is monotonic per core but uncalibrated and not comparable across cores or to either clock. Use it only for single-thread micro-benchmark deltas. _(`qb/include/qb/system/time.h:680-684`.)_
-- **`format_utc`/`parse_utc` are UTC-only.** There is no time-zone database on this toolchain; formatting uses `strftime` and parsing uses `std::get_time` + `timegm`, both in UTC. `format_utc` returns an empty string on failure; `parse_utc` and `from_iso8601` return `std::nullopt`. _(`qb/include/qb/system/time.h:27-30,305-342`.)_
-- **`Actor::time()` returns a raw `uint64_t`, not a chrono type.** It is the core's cached epoch-nanosecond count (sourced from `qb::wall_now()`), constant within one handler or `on(qb::LoopEvent const&)` invocation; it is not a `qb::mono_time` or `qb::wall_time`. For a fresh high-precision wall instant use `qb::unix_nanos(qb::wall_now())`. _(`qb/include/qb/core/Actor.h:560-577`.)_
+- **Do not pass a bare integer to a `qb::duration` parameter.** `setLatency(100)` does not compile by design; write `setLatency(100us)` (or `std::chrono::microseconds(100)`). This is the unit-confusion guard, not a defect. _(`qb/src/qb/system/time.h:8-11`.)_
+- **Do not mix the two instant clocks.** You cannot subtract a `qb::wall_time` from a `qb::mono_time`; the compiler rejects it. Measure and schedule with `mono_time`; record dates and expiry with `wall_time`. Converting between them means going through a Unix-epoch scalar (`unix_seconds` / `wall_from_unix_seconds`) and accepting that the wall clock can step. _(`qb/src/qb/system/time.h:18-20`.)_
+- **`tsc_ticks()` is not a clock.** It is monotonic per core but uncalibrated and not comparable across cores or to either clock. Use it only for single-thread micro-benchmark deltas. _(`qb/src/qb/system/time.h:680-684`.)_
+- **`format_utc`/`parse_utc` are UTC-only.** There is no time-zone database on this toolchain; formatting uses `strftime` and parsing uses `std::get_time` + `timegm`, both in UTC. `format_utc` returns an empty string on failure; `parse_utc` and `from_iso8601` return `std::nullopt`. _(`qb/src/qb/system/time.h:27-30,305-342`.)_
+- **`Actor::time()` returns a raw `uint64_t`, not a chrono type.** It is the core's cached epoch-nanosecond count (sourced from `qb::wall_now()`), constant within one handler or `on(qb::LoopEvent const&)` invocation; it is not a `qb::mono_time` or `qb::wall_time`. For a fresh high-precision wall instant use `qb::unix_nanos(qb::wall_now())`. _(`qb/src/qb/core/Actor.h:560-577`.)_
 
 ## Part 3 — From the synchronous `onInit()` to the async-init APIs
 

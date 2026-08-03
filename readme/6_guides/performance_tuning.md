@@ -71,7 +71,7 @@ Verified semantics:
 - `qb::NoAffinity` (`== std::numeric_limits<CoreId>::max()`) is a sentinel meaning "no pinning." Any `CoreId >= qb::MaxCores` — including `NoAffinity` — is silently filtered out when the set is built, so `qb::CoreIdSet{qb::NoAffinity}` is well-defined and issues no pinning call rather than throwing. `qb::MaxCores` is 256.
 
 ```cpp
-// src: qb/include/qb/core/Main.h (NoAffinity doc examples)
+// src: qb/src/qb/core/Main.h (NoAffinity doc examples)
 #include <qb/main.h>
 
 qb::Main engine;
@@ -174,7 +174,7 @@ Each source-to-destination channel is a `qb::VirtualPipe` (an alias of `qb::allo
    ```
 
    ```cpp
-   // src: qb/include/qb/core/Pipe.h (allocated_push doc example)
+   // src: qb/src/qb/core/Pipe.h (allocated_push doc example)
    // getPipe returns a qb::Pipe by value; hold it by value, not by reference.
    qb::Pipe pipe = getPipe(dest);
    // `size` is the TRAILING bytes reserved AFTER the event object, not the total:

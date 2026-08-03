@@ -232,7 +232,7 @@ TEST(KernelEvents, BasicIO) {
     // run, or simply a clean working directory): `sys::file` reports a failed open as
     // `native_handle() == -1`, and `qev_io_start` indexes its `anfds` array by fd, so a
     // negative fd is an out-of-bounds access. libev guards it with
-    // `EV_ASSERT_MSG(fd >= 0, ...)` (`include/qb/vendor/qev/qev.c`), but assertions are compiled out
+    // `EV_ASSERT_MSG(fd >= 0, ...)` (`src/qb/vendor/qev/qev.c`), but assertions are compiled out
     // under NDEBUG — so Debug asserted while Release crashed with EXC_BAD_ACCESS.
     {
         std::ofstream seed("./test.file", std::ios::binary);

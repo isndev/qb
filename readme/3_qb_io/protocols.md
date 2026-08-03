@@ -24,7 +24,7 @@ The framework owns the buffer, the read loop, and message size limits; the proto
 Every protocol implements `qb::io::async::IProtocol` (in `qb/io/async/protocol.h`). Custom protocols derive from the CRTP helper `qb::io::async::AProtocol<IO_>`, which stores a typed reference to the owning I/O component as the protected member `_io` and forwards the three pure-virtual hooks:
 
 ```cpp
-// src: qb/include/qb/io/async/protocol.h
+// src: qb/src/qb/io/async/protocol.h
 namespace qb::io::async {
 
 class IProtocol {
@@ -133,7 +133,7 @@ A message ends at a known byte or byte sequence. Defined in `qb/io/protocol/base
 The `text::*` aliases build a `message` whose fields are the payload **without** the delimiter:
 
 ```cpp
-// src: qb/include/qb/io/protocol/text.h
+// src: qb/src/qb/io/protocol/text.h
 struct message {
     const std::size_t size; // payload length, delimiter excluded
     const char       *data; // pointer into the input buffer
@@ -157,7 +157,7 @@ Each payload is preceded by an unsigned integer header giving its byte length. D
 `size_as_header` reads the header, converts from network byte order for 2- and 4-byte headers (`ntohs` / `ntohl`), consumes the header bytes from the buffer, then waits for the full payload. A received header of zero is rejected with `not_ok()`. The matching `text::binary*` protocols dispatch a payload-only message:
 
 ```cpp
-// src: qb/include/qb/io/protocol/text.h
+// src: qb/src/qb/io/protocol/text.h
 struct message {
     const std::size_t size; // payload length
     const char       *data; // pointer to the payload in the input buffer
@@ -167,7 +167,7 @@ struct message {
 To **build** the outgoing header, call the static `Header(std::size_t)`:
 
 ```cpp
-// src: qb/include/qb/io/protocol/base.h
+// src: qb/src/qb/io/protocol/base.h
 static _Size Header(std::size_t size); // throws std::runtime_error if size exceeds the header's range
 ```
 

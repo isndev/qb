@@ -368,7 +368,7 @@ TEST_F(EventLoopLifecycleTest, ClearDestroysPendingLoopOwnedCallback) {
 // handler -- `on(event::disconnected&&)`, `on(event::pending_read&&)`, an ev::stat
 // observer, any of them reachable from application code that merely allocates --
 // unwound straight through qev's `qev_invoke_pending`/`qev_run`. libev is built as
-// C (qb/include/qb/vendor/qev, LANGUAGES C), so that is UB: it skips libev's epilogue
+// C (qb/src/qb/vendor/qev, LANGUAGES C), so that is UB: it skips libev's epilogue
 // (`--loop_depth`, the `loop_done` reset that re-arms a broken loop) and has no
 // unwind info at all on MSVC. It also stranded `listener::_dispatch_top` on a
 // destroyed stack frame, corrupting the re-entrancy guard clear() reads. The loop

@@ -69,7 +69,7 @@ The subsections below detail each. When unsure, the answer is `push`.
 template <typename _Event, typename... _Args>
 _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 ```
-<!-- src: qb/include/qb/core/Actor.h -->
+<!-- src: qb/src/qb/core/Actor.h -->
 
 `push` is the primary and recommended primitive. It constructs `_Event` in place at the **back** of the destination pipe (`allocate_back`, `qb/core/VirtualCore.tpp`) and returns a mutable reference to it, so the sender can finish populating the event after construction:
 
@@ -114,7 +114,7 @@ void Producer::on(const TickEvent &) {
 template <typename _Event, typename... _Args>
 void send(ActorId const &dest, _Args &&...args) const noexcept;
 ```
-<!-- src: qb/include/qb/core/Actor.h -->
+<!-- src: qb/src/qb/core/Actor.h -->
 
 `send` does **not** guarantee ordering relative to other sends or pushes from the same source to the same destination. It constructs the event at the **front** of the pipe (`allocate`, `qb/core/VirtualCore.tpp`); for a cross-core destination it attempts to publish the event into the destination mailbox immediately and, on success, frees the pipe slot with `pipe.free(...)` (`qb/core/VirtualCore.tpp`). That early-publish path is what breaks the FIFO ordering that `push` preserves.
 
@@ -143,7 +143,7 @@ Prefer `push` unless you have measured a need and ordering genuinely does not ma
 ```cpp
 void reply(Event &event) const noexcept;
 ```
-<!-- src: qb/include/qb/core/Actor.h -->
+<!-- src: qb/src/qb/core/Actor.h -->
 
 `reply` reuses the received event object instead of allocating a new one. The runtime swaps the event's `dest` and `source`, re-marks it alive, and sends it back (`std::swap(event.dest, event.source)`, `qb/source/core/src/VirtualCore.cpp`). The handler must therefore take its event **by non-const reference**, because the object is mutated in place:
 
@@ -163,7 +163,7 @@ A broadcast event cannot be replied to: if `event.dest.is_broadcast()` is true, 
 ```cpp
 void forward(ActorId dest, Event &event) const noexcept;
 ```
-<!-- src: qb/include/qb/core/Actor.h -->
+<!-- src: qb/src/qb/core/Actor.h -->
 
 `forward` re-routes a received event to a new destination without allocating. It overwrites `event.dest` with the new target but **deliberately leaves `event.source` untouched**, so the original sender remains the logical origin and a downstream `reply` returns to the true client rather than to the forwarding actor (`qb/source/core/src/Actor.cpp`, `qb/source/core/src/VirtualCore.cpp`). As with `reply`, the handler must take a non-const reference, broadcast events cannot be forwarded, and the event is consumed after the call.
 
@@ -182,7 +182,7 @@ The distinction in one line: `reply` swaps `dest` and `source`; `forward` sets a
 template <typename _Event, typename... _Args>
 void broadcast(_Args &&...args) const noexcept;
 ```
-<!-- src: qb/include/qb/core/Actor.h -->
+<!-- src: qb/src/qb/core/Actor.h -->
 
 `broadcast` delivers a copy of the event to every actor on every active core. Internally it iterates the engine's core set and issues one `send` per core with a `BroadcastId` destination (`qb/core/VirtualCore.tpp`):
 
@@ -225,7 +225,7 @@ For sending several events to one destination, or for events with large dynamic 
 ```cpp
 [[nodiscard]] EventBuilder to(ActorId dest) const noexcept;
 ```
-<!-- src: qb/include/qb/core/Actor.h -->
+<!-- src: qb/src/qb/core/Actor.h -->
 
 `to(dest)` returns an `Actor::EventBuilder` bound to the destination's pipe; each `EventBuilder::push` forwards to `Pipe::push` and returns the builder for chaining (`qb/core/Actor.tpp`). The pipe is resolved once, so repeated sends to the same destination skip the per-call lookup. Ordering matches plain `push`.
 
@@ -241,18 +241,18 @@ to(stats_id)
 ```cpp
 [[nodiscard]] Pipe getPipe(ActorId dest) const noexcept;
 ```
-<!-- src: qb/include/qb/core/Actor.h -->
+<!-- src: qb/src/qb/core/Actor.h -->
 
 `getPipe` hands back the `qb::Pipe` to a destination. `Pipe` exposes `push` (identical semantics to `Actor::push`) and `allocated_push`, which takes a byte-size hint so the framework can reserve the right amount of pipe buffer up front and avoid reallocation while constructing a large event:
 
 ```cpp
-// src: qb/include/qb/core/Pipe.h
+// src: qb/src/qb/core/Pipe.h
 template <typename _Event, typename... _Args>
 [[nodiscard]] _Event &allocated_push(std::size_t size, _Args &&...args) const noexcept;
 ```
 
 ```cpp
-// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (AllocatedPipePushActor); pattern from qb/include/qb/core/Pipe.h
+// derived from: qb/source/core/tests/system/messaging/messaging-api.cpp (AllocatedPipePushActor); pattern from qb/src/qb/core/Pipe.h
 qb::Pipe pipe = getPipe(processor_id);
 auto blob = std::make_shared<std::vector<std::byte>>(1024 * 1024); // 1 MB, on the heap
 // ... fill blob ...
