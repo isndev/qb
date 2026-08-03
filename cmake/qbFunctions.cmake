@@ -131,8 +131,9 @@ endfunction()
 #
 # TIER/MODULE/LABELS/REQUIRES/TIMEOUT/RESOURCE_LOCK/WINDOWS_EXCLUDE are the test-suite
 # convention args (see docs/tests-audit/_CONVENTIONS.md §4). They are parsed here for all
-# target kinds but only consumed by qb_add_test / qb_register_module_test / qb_add_benchmark;
-# qb_add_library / qb_add_executable ignore them harmlessly.
+# target kinds. TIER/MODULE/LABELS/TIMEOUT/RESOURCE_LOCK are consumed only by qb_add_test /
+# qb_register_module_test / qb_add_benchmark; REQUIRES is consumed by those AND by
+# qb_add_executable (capability gating). qb_add_library ignores them all harmlessly.
 function(_qb_parse_common_args prefix)
     set(options PRIVATE_LINKAGE WINDOWS_EXCLUDE)
     set(oneValueArgs NAME VERSION DESCRIPTION OUTPUT_NAME TIER MODULE TIMEOUT)
@@ -252,17 +253,34 @@ endfunction()
 # -----------------------------------------------------------------------------
 
 # qb_add_executable - Create an executable with qb framework integration
+#
+# REQUIRES <token>... — optional capability gate, identical in vocabulary and in
+# meaning to qb_add_test / qb_add_benchmark: a target whose ssl/quic/compression
+# requirement is unmet is silently NOT created, rather than left to fail the build.
+# It is resolved by the SAME helper (_qb_test_conventions) so there is exactly one
+# definition of "REQUIRES ssl" in the tree; only its SKIP decision is used here —
+# labels, timeouts and resource locks are CTest concepts an executable has none of.
 function(qb_add_executable)
     _qb_parse_common_args(EXE ${ARGN})
-    
+
     if(NOT EXE_NAME)
         qb_error_message("qb_add_executable: NAME is required")
     endif()
-    
+
     if(NOT EXE_SOURCES)
         qb_error_message("qb_add_executable: SOURCES is required")
     endif()
-    
+
+    # Capability gating — must precede add_executable() so a gated-out target never
+    # exists (callers test with if(TARGET ...), as the example resource staging does).
+    if(EXE_REQUIRES)
+        _qb_test_conventions(_EXE_GATE REQUIRES ${EXE_REQUIRES})
+        if(_EXE_GATE_SKIP_REGISTER)
+            qb_status_message("Skipping executable ${EXE_NAME} (REQUIRES ${EXE_REQUIRES} unavailable)")
+            return()
+        endif()
+    endif()
+
     # Create executable
     add_executable(${EXE_NAME} ${EXE_SOURCES})
     
