@@ -736,19 +736,19 @@ TEST_F(CoroutineAwaiterTests, MixedAwaiterTypes) {
 }
 
 // =============================================================================
-// BUILT-IN socket_awaiter (ev_io path: await_suspend → io_callback → await_resume)
+// BUILT-IN socket_awaiter (qev_io path: await_suspend → io_callback → await_resume)
 // =============================================================================
 //
-// These exercise awaiter.h's socket_awaiter (await_suspend starts ev_io, io_callback fires
+// These exercise awaiter.h's socket_awaiter (await_suspend starts qev_io, io_callback fires
 // on_event_ready, await_resume stops the watcher) and its destructor scrub. They use a POSIX pipe so
 // the fd readiness is fully under test control — no real sockets, still hermetic. Skipped on Windows
 // where the fd model differs (the socket_awaiter there takes a uintptr_t handle).
 #if !defined(_WIN32)
 
 /**
- * @test wait_readable resumes once the fd has data (socket_awaiter ev_io path)
- * @brief Drives socket_awaiter::await_suspend (ev_io_start), io_callback → on_event_ready (schedule), and
- *        await_resume (ev_io_stop + unregister). The coroutine parks on a pipe read end, stays suspended
+ * @test wait_readable resumes once the fd has data (socket_awaiter qev_io path)
+ * @brief Drives socket_awaiter::await_suspend (qev_io_start), io_callback → on_event_ready (schedule), and
+ *        await_resume (qev_io_stop + unregister). The coroutine parks on a pipe read end, stays suspended
  *        until a byte is written, then resumes and reads it — proving the watcher actually fired.
  */
 TEST_F(CoroutineAwaiterTests, WaitReadableResumesWhenDataArrives) {
@@ -764,7 +764,7 @@ TEST_F(CoroutineAwaiterTests, WaitReadableResumesWhenDataArrives) {
     auto byte_ptr  = &byte_seen;
     coro_scheduler().spawn([stage_ptr, byte_ptr, read_fd]() -> task<void> {
         stage_ptr->store(1);             // running, about to park on the read end
-        co_await wait_readable(read_fd); // suspends in socket_awaiter::await_suspend (ev_io armed)
+        co_await wait_readable(read_fd); // suspends in socket_awaiter::await_suspend (qev_io armed)
         char    c = 0;
         ssize_t n = ::read(read_fd, &c, 1);
         byte_ptr->store(n == 1 ? c : 0);
@@ -777,7 +777,7 @@ TEST_F(CoroutineAwaiterTests, WaitReadableResumesWhenDataArrives) {
     ASSERT_EQ(stage.load(), 1);
     EXPECT_EQ(coro_scheduler().active_count(), 1u) << "coroutine should be parked on the fd";
 
-    // Make the fd readable; the ev_io watcher fires, schedules the resume, await_resume stops the watcher.
+    // Make the fd readable; the qev_io watcher fires, schedules the resume, await_resume stops the watcher.
     const char payload = 'Z';
     ASSERT_EQ(::write(write_fd, &payload, 1), 1);
 
@@ -791,7 +791,7 @@ TEST_F(CoroutineAwaiterTests, WaitReadableResumesWhenDataArrives) {
 
 /**
  * @test wait_writable resumes immediately on an already-writable fd
- * @brief A fresh pipe's write end is immediately writable, so socket_awaiter's ev_io fires on the next
+ * @brief A fresh pipe's write end is immediately writable, so socket_awaiter's qev_io fires on the next
  *        loop tick — exercising the EV_WRITE branch of the io watcher through to await_resume.
  */
 TEST_F(CoroutineAwaiterTests, WaitWritableResumesOnWritableFd) {
@@ -825,7 +825,7 @@ TEST_F(CoroutineAwaiterTests, WaitWritableResumesOnWritableFd) {
 
 /**
  * @test A coroutine parked in socket_awaiter is torn down cleanly when the scheduler is reset
- * @brief Exercises socket_awaiter's destructor scrub path (unschedule + ev_io_stop on a still-armed
+ * @brief Exercises socket_awaiter's destructor scrub path (unschedule + qev_io_stop on a still-armed
  *        watcher): the coroutine parks on a never-readable fd, then destroy_all_suspended() unwinds it.
  *        The watcher is stopped by the awaiter destructor — the body after the await never runs and no
  *        frame leaks.
@@ -850,7 +850,7 @@ TEST_F(CoroutineAwaiterTests, SocketAwaiterDestructorStopsArmedWatcher) {
     coro_scheduler().run_ready();
     ASSERT_EQ(coro_scheduler().active_count(), 1u);
 
-    // Tear it down while the ev_io watcher is still armed: destructor must stop the watcher and the
+    // Tear it down while the qev_io watcher is still armed: destructor must stop the watcher and the
     // frame must be reclaimed.
     coro_scheduler().destroy_all_suspended();
     EXPECT_EQ(coro_scheduler().active_count(), 0u) << "parked socket awaiter was not torn down";
@@ -872,8 +872,8 @@ TEST_F(CoroutineAwaiterTests, SocketAwaiterDestructorStopsArmedWatcher) {
 // =============================================================================
 
 /**
- * @test A coroutine parked on sleep() is torn down cleanly, stopping the armed ev_timer
- * @brief Exercises timer_awaiter's destructor (unschedule + ev_timer_stop on a still-active watcher,
+ * @test A coroutine parked on sleep() is torn down cleanly, stopping the armed qev_timer
+ * @brief Exercises timer_awaiter's destructor (unschedule + qev_timer_stop on a still-active watcher,
  *        awaiter.h:361-370): the coroutine parks on a long sleep, then destroy_all_suspended() unwinds it
  *        before the timer fires. The body after the sleep never runs and the frame is reclaimed.
  */
@@ -892,7 +892,7 @@ TEST_F(CoroutineAwaiterTests, TimerAwaiterDestructorStopsArmedTimer) {
     coro_scheduler().run_ready();
     ASSERT_EQ(coro_scheduler().active_count(), 1u);
 
-    // Destroy while the ev_timer is armed: destructor stops the watcher.
+    // Destroy while the qev_timer is armed: destructor stops the watcher.
     coro_scheduler().destroy_all_suspended();
     EXPECT_EQ(coro_scheduler().active_count(), 0u) << "parked timer awaiter was not torn down";
 

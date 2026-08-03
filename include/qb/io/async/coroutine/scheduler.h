@@ -33,7 +33,7 @@
 #include <qb/vendor/ev/ev++.h>
 // Same guard as qb/io/async/event/base.h: ev.h's fallback lookup for the generated ev_config.h is
 // __has_include-guarded, so a missing include path silently flips EV_MULTIPLICITY from 1 to 4 and
-// desynchronises every ev_* prototype from the compiled libev.a. Fail loudly instead.
+// desynchronises every qev_* prototype from the compiled libqev.a. Fail loudly instead.
 #if !defined(EV_MULTIPLICITY) || (EV_MULTIPLICITY) != 1
 #error "qb: libev configuration header not reached (EV_MULTIPLICITY != 1). qb::io's exported \
 EV_CONFIG_H=<qb/vendor/ev/ev_config.h> definition, or the include directory carrying it, is missing."
@@ -135,7 +135,7 @@ public:
      * Drains and destroys all coroutines in the ready queue only. Coroutines
      * that are suspended (waiting on I/O or timers) are NOT destroyed, because
      * their libev watchers are still active; destroying those handles would
-     * run awaiter destructors that call `ev_*_stop()`, which can cause
+     * run awaiter destructors that call `qev_*_stop()`, which can cause
      * use-after-free or double-free if the loop is being torn down or if
      * callbacks are in flight.
      *
@@ -143,7 +143,7 @@ public:
      *   Destroying suspended frames here would be *worse* than leaking
      *   them because:
      *     1. libev watchers registered in the awaiter still reference the
-     *        frame via `ev_watcher::data`. If the loop iterates once more
+     *        frame via `qev_watcher::data`. If the loop iterates once more
      *        (e.g. another listener on this thread), it would dispatch to
      *        freed memory.
      *     2. The frame's awaiter may hold non-trivial RAII (cancellation

@@ -62,10 +62,10 @@ typedef void (*event_callback_fn)(int, short, void *);
 struct event {
     /* libev watchers we map onto */
     union {
-        struct ev_io     io;
-        struct ev_signal sig;
+        struct qev_io     io;
+        struct qev_signal sig;
     } iosig;
-    struct ev_timer to;
+    struct qev_timer to;
 
     /* compatibility slots */
     struct event_base *ev_base;

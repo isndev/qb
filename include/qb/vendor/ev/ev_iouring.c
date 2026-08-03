@@ -10,7 +10,7 @@
  * - mmap: MAP_POPULATE first, fallback without; EINTR retry; total ring size bounds + overflow checks.
  * - Memory fences on SQ tail, CQ head/tail visibility; POLL_ADD one-shot re-arm via fd_change like linuxaio.
  * - CQEs: ignore -ECANCELED/-EINTR/-ENOENT from poll races; res==0 forces re-arm; mmap offsets sanity-checked.
- * - timerfd: drain expirations with EINTR retry; EAGAIN ignored; other read errors -> ev_syserr.
+ * - timerfd: drain expirations with EINTR retry; EAGAIN ignored; other read errors -> qev_syserr.
  * - loop_destroy skips close(backend_fd) before iouring_destroy (see ev.c) to avoid double-close.
  *
  * Requires a kernel new enough for IORING_OP_POLL_ADD (libev gates the backend in ev.c).
@@ -176,11 +176,11 @@ iouring_enter_submit(EV_P_ unsigned to_submit, const char *context) {
             continue;
 
         if (r < 0)
-            ev_syserr(context);
+            qev_syserr(context);
 
         if (ecb_expect_false(r == 0 && to_submit != 0)) {
             errno = EIO;
-            ev_syserr("(libev) io_uring_enter consumed no pending SQEs");
+            qev_syserr("(libev) io_uring_enter consumed no pending SQEs");
         }
 
         iouring_account_consumed(EV_A_(unsigned) r);
@@ -218,7 +218,7 @@ iouring_get_sqe(EV_P) {
             return sqe;
         iouring_sq_flush(EV_A);
     }
-    ev_syserr("(libev) io_uring submission queue saturated");
+    qev_syserr("(libev) io_uring submission queue saturated");
     return 0;
 }
 
@@ -234,7 +234,7 @@ submit_sqe(EV_P_ struct io_uring_sqe *sqe) {
 }
 
 static void
-iouring_tfd_cb(EV_P_ ev_io *w, int revents) {
+iouring_tfd_cb(EV_P_ qev_io *w, int revents) {
     uint64_t val;
     (void) revents;
     for (;;) {
@@ -245,7 +245,7 @@ iouring_tfd_cb(EV_P_ ev_io *w, int revents) {
             continue;
         /* EAGAIN: no expirations to drain; other errors are exceptional for timerfd. */
         if (n < 0 && errno != EAGAIN)
-            ev_syserr("(libev) io_uring timerfd read");
+            qev_syserr("(libev) io_uring timerfd read");
         break;
     }
     iouring_tfd_to = EV_TSTAMP_HUGE;
@@ -323,7 +323,7 @@ iouring_cq_drain(EV_P) {
                 ;
             else {
                 errno = -res;
-                ev_syserr("(libev) io_uring poll error");
+                qev_syserr("(libev) io_uring poll error");
             }
             goto skip;
         }
@@ -359,9 +359,9 @@ iouring_cq_drain(EV_P) {
 }
 
 static void
-iouring_poll(EV_P_ ev_tstamp timeout) {
+iouring_poll(EV_P_ qev_tstamp timeout) {
     if (timeout >= 0.) {
-        ev_tstamp tfd_to = mn_now + timeout;
+        qev_tstamp tfd_to = mn_now + timeout;
 
         if (tfd_to < iouring_tfd_to) {
             struct itimerspec its;
@@ -369,7 +369,7 @@ iouring_poll(EV_P_ ev_tstamp timeout) {
             EV_TS_SET(its.it_interval, 0.);
             EV_TS_SET(its.it_value, tfd_to);
             if (ecb_expect_false(timerfd_settime(iouring_tfd, TFD_TIMER_ABSTIME, &its, 0) < 0))
-                ev_syserr("(libev) io_uring timerfd_settime");
+                qev_syserr("(libev) io_uring timerfd_settime");
         }
     }
 
@@ -426,10 +426,10 @@ iouring_poll(EV_P_ ev_tstamp timeout) {
                     return;
                 }
                 if (ret < 0) {
-                    ev_syserr("(libev) poll (io_uring fd)");
+                    qev_syserr("(libev) poll (io_uring fd)");
                 }
                 if (ecb_expect_false(pfd.revents & (POLLERR | POLLNVAL | POLLHUP))) {
-                    ev_syserr("(libev) io_uring fd poll error");
+                    qev_syserr("(libev) io_uring fd poll error");
                 }
                 break;
             }
@@ -535,10 +535,10 @@ iouring_init(EV_P_ int flags) {
 
     iouring_tfd_to = EV_TSTAMP_HUGE;
 
-    ev_io_init(&iouring_tfd_w, iouring_tfd_cb, iouring_tfd, EV_READ);
-    ev_set_priority(&iouring_tfd_w, EV_MINPRI);
-    ev_io_start(EV_A_ & iouring_tfd_w);
-    ev_unref(EV_A);
+    qev_io_init(&iouring_tfd_w, iouring_tfd_cb, iouring_tfd, EV_READ);
+    qev_set_priority(&iouring_tfd_w, EV_MINPRI);
+    qev_io_start(EV_A_ & iouring_tfd_w);
+    qev_unref(EV_A);
 
     iouring_to_submit = 0;
 
@@ -552,7 +552,7 @@ iouring_init(EV_P_ int flags) {
 
 inline_size void
 iouring_destroy(EV_P) {
-    ev_io_stop(EV_A_ & iouring_tfd_w);
+    qev_io_stop(EV_A_ & iouring_tfd_w);
     if (iouring_sq_ring != MAP_FAILED)
         munmap(iouring_sq_ring, iouring_sq_ring_size);
     if (iouring_cq_ring != MAP_FAILED)
@@ -572,6 +572,6 @@ ecb_cold static void
 iouring_fork(EV_P) {
     iouring_destroy(EV_A);
     while (!iouring_init(EV_A_ 0))
-        ev_syserr("io_uring_setup (fork recovery)");
+        qev_syserr("io_uring_setup (fork recovery)");
     fd_rearm_all(EV_A);
 }

@@ -95,7 +95,7 @@ set(UUID_USING_CXX20_SPAN ON)
 # consumer's include root. Both projects keep working standalone when this is unset.
 set(QB_VENDOR_INCLUDE_PREFIX "qb/vendor")
 
-# Load qb's own vendored forks (ev, uuid). Header-only forks (nanolog, ska_hash) need no build.
+# Load qb's own vendored forks (qev, uuid). Header-only forks (nanolog, ska_hash) need no build.
 add_subdirectory("${QB_VENDOR_DIR}/uuid")
 add_subdirectory("${QB_VENDOR_DIR}/ev")
 
@@ -126,7 +126,7 @@ if (TARGET qb-core)
     set(QB_CORE_FOUND TRUE)
 endif ()
 
-if (TARGET ev)
+if (TARGET qev)
     set(QB_EV_FOUND TRUE)
 endif ()
 
@@ -154,7 +154,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
     if (LCOV_PATH AND GCOV_PATH)
         qb_status_message("Code coverage enabled")
 
-        # '*vendor*' alongside '*modules*': the forks (ev, uuid, nanolog, ska_hash) moved under
+        # '*vendor*' alongside '*modules*': the forks (qev, uuid, nanolog, ska_hash) moved under
         # include/qb/vendor/. Without it they would start counting towards qb's coverage figure --
         # libev's ev.c alone is several thousand lines of third-party-derived C.
         set(COVERAGE_LCOV_EXCLUDES
@@ -234,7 +234,7 @@ if (QB_INSTALL)
     include(CMakePackageConfigHelpers)
 
     # Collect the library targets that should be installed.
-    # Bundled dependencies (ev, stduuid) MUST be in the same export set so
+    # Bundled dependencies (qev, stduuid) MUST be in the same export set so
     # CMake rewrites their names with the qb:: namespace in the transitive
     # dependency list of qb::io / qb::core.
     set(_QB_INSTALL_TARGETS)
@@ -244,8 +244,8 @@ if (QB_INSTALL)
     if (TARGET qb-core)
         list(APPEND _QB_INSTALL_TARGETS qb-core)
     endif ()
-    if (TARGET ev)
-        list(APPEND _QB_INSTALL_TARGETS ev)
+    if (TARGET qev)
+        list(APPEND _QB_INSTALL_TARGETS qev)
     endif ()
     if (TARGET stduuid)
         list(APPEND _QB_INSTALL_TARGETS stduuid)
@@ -438,7 +438,7 @@ set(QB_INCLUDE_DIRS "${QB_INCLUDE_DIR};${QB_MODULES_DIR}" CACHE STRING "qb inclu
 # Set target variables for compatibility
 set(QB_CORE_TARGET qb::core)
 set(QB_IO_TARGET qb::io)
-set(QB_EV_TARGET ev)
+set(QB_EV_TARGET qev)
 
 # -----------------------------------------------------------------------------
 # Parent Scope Export (for add_subdirectory usage)

@@ -22,7 +22,7 @@
 volatile double SIGFPE_REQ = 0.0f;
 
 static SOCKET
-ev_tcp_socket(void) {
+qev_tcp_socket(void) {
 #if EV_USE_WSASOCKET
     return WSASocket(AF_INET, SOCK_STREAM, 0, 0, 0, 0);
 #else
@@ -32,7 +32,7 @@ ev_tcp_socket(void) {
 
 /* oh, the humanity! */
 static int
-ev_pipe(int filedes[2]) {
+qev_pipe(int filedes[2]) {
     struct sockaddr_in addr      = {0};
     int                addr_size = sizeof(addr);
     struct sockaddr_in adr2;
@@ -40,7 +40,7 @@ ev_pipe(int filedes[2]) {
     SOCKET             listener;
     SOCKET             sock[2] = {INVALID_SOCKET, INVALID_SOCKET};
 
-    if ((listener = ev_tcp_socket()) == INVALID_SOCKET)
+    if ((listener = qev_tcp_socket()) == INVALID_SOCKET)
         return -1;
 
     addr.sin_family      = AF_INET;
@@ -56,7 +56,7 @@ ev_pipe(int filedes[2]) {
     if (listen(listener, 1))
         goto fail;
 
-    if ((sock[0] = ev_tcp_socket()) == INVALID_SOCKET)
+    if ((sock[0] = qev_tcp_socket()) == INVALID_SOCKET)
         goto fail;
 
     if (connect(sock[0], (struct sockaddr *) &addr, addr_size))
@@ -115,11 +115,11 @@ fail:
 }
 
 #undef pipe
-#define pipe(filedes) ev_pipe(filedes)
+#define pipe(filedes) qev_pipe(filedes)
 
 #define EV_HAVE_EV_TIME 1
-ev_tstamp
-ev_time(void) {
+qev_tstamp
+qev_time(void) {
     FILETIME       ft;
     ULARGE_INTEGER ui;
 

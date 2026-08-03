@@ -91,12 +91,12 @@ select_modify(EV_P_ int fd, int oev, int nev) {
         if (ecb_expect_false(vec_max <= word)) {
             int new_max = word + 1;
 
-            vec_ri = ev_realloc(vec_ri, new_max * NFDBYTES);
-            vec_ro = ev_realloc(vec_ro, new_max * NFDBYTES); /* could free/malloc */
-            vec_wi = ev_realloc(vec_wi, new_max * NFDBYTES);
-            vec_wo = ev_realloc(vec_wo, new_max * NFDBYTES); /* could free/malloc */
+            vec_ri = qev_realloc(vec_ri, new_max * NFDBYTES);
+            vec_ro = qev_realloc(vec_ro, new_max * NFDBYTES); /* could free/malloc */
+            vec_wi = qev_realloc(vec_wi, new_max * NFDBYTES);
+            vec_wo = qev_realloc(vec_wo, new_max * NFDBYTES); /* could free/malloc */
 #ifdef _WIN32
-            vec_eo = ev_realloc(vec_eo, new_max * NFDBYTES); /* could free/malloc */
+            vec_eo = qev_realloc(vec_eo, new_max * NFDBYTES); /* could free/malloc */
 #endif
 
             for (; vec_max < new_max; ++vec_max)
@@ -115,7 +115,7 @@ select_modify(EV_P_ int fd, int oev, int nev) {
 }
 
 static void
-select_poll(EV_P_ ev_tstamp timeout) {
+select_poll(EV_P_ qev_tstamp timeout) {
     struct timeval tv;
     int            res;
     int            fd_setsize;
@@ -195,7 +195,7 @@ select_poll(EV_P_ ev_tstamp timeout) {
 
             continue;
         } else
-            ev_syserr("(libev) select");
+            qev_syserr("(libev) select");
 
         return;
     }
@@ -265,14 +265,14 @@ select_init(EV_P_ int flags) {
     backend_poll    = select_poll;
 
 #if EV_SELECT_USE_FD_SET
-    vec_ri = ev_malloc(sizeof(fd_set));
+    vec_ri = qev_malloc(sizeof(fd_set));
     FD_ZERO((fd_set *) vec_ri);
-    vec_ro = ev_malloc(sizeof(fd_set));
-    vec_wi = ev_malloc(sizeof(fd_set));
+    vec_ro = qev_malloc(sizeof(fd_set));
+    vec_wi = qev_malloc(sizeof(fd_set));
     FD_ZERO((fd_set *) vec_wi);
-    vec_wo = ev_malloc(sizeof(fd_set));
+    vec_wo = qev_malloc(sizeof(fd_set));
 #ifdef _WIN32
-    vec_eo = ev_malloc(sizeof(fd_set));
+    vec_eo = qev_malloc(sizeof(fd_set));
 #endif
 #else
     vec_max = 0;
@@ -290,11 +290,11 @@ select_init(EV_P_ int flags) {
 
 inline_size void
 select_destroy(EV_P) {
-    ev_free(vec_ri);
-    ev_free(vec_ro);
-    ev_free(vec_wi);
-    ev_free(vec_wo);
+    qev_free(vec_ri);
+    qev_free(vec_ro);
+    qev_free(vec_wi);
+    qev_free(vec_wo);
 #ifdef _WIN32
-    ev_free(vec_eo);
+    qev_free(vec_eo);
 #endif
 }

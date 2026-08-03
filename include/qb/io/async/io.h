@@ -108,8 +108,8 @@ protected:
  */
 template <typename _Derived>
 class with_timeout : public base<with_timeout<_Derived>, event::timer> {
-    ev_tstamp _timeout;       /**< Timeout value in seconds. If 0, timeout is disabled. */
-    ev_tstamp _last_activity; /**< Timestamp of the last recorded activity, used to check against timeout. */
+    qev_tstamp _timeout;       /**< Timeout value in seconds. If 0, timeout is disabled. */
+    qev_tstamp _last_activity; /**< Timestamp of the last recorded activity, used to check against timeout. */
 
 public:
     /**
@@ -121,7 +121,7 @@ public:
         : _timeout(qb::detail::to_ev_seconds(timeout))
         , _last_activity(0) {
         if (_timeout > 0.) {
-            ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
+            qev_now_update(static_cast<struct qev_loop *>(listener::current.loop()));
             this->_async_event.start(_timeout);
         }
     }
@@ -134,7 +134,7 @@ public:
      */
     void
     updateTimeout() noexcept {
-        ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
+        qev_now_update(static_cast<struct qev_loop *>(listener::current.loop()));
         _last_activity = this->_async_event.loop.now();
     }
 
@@ -148,7 +148,7 @@ public:
     setTimeout(qb::duration timeout) noexcept {
         _timeout = qb::detail::to_ev_seconds(timeout);
         if (_timeout > 0.) { // Check against 0, not just if(_timeout)
-            ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
+            qev_now_update(static_cast<struct qev_loop *>(listener::current.loop()));
             _last_activity = this->_async_event.loop.now();
             this->_async_event.set(_timeout);
             this->_async_event.start();
@@ -178,7 +178,7 @@ private:
      */
     void
     on(event::timer &event) noexcept {
-        const ev_tstamp after = _last_activity - event.loop.now() + _timeout;
+        const qev_tstamp after = _last_activity - event.loop.now() + _timeout;
 
         if (after <= 0.)
             Derived.on(event);
@@ -382,9 +382,9 @@ callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
     // `sleep_for`), that cache can be arbitrarily stale, which makes the new
     // timer expire far earlier than requested — `expire = ev_mn_now + timeout`
     // becomes `(t_now - delta) + timeout`, triggering on the very next
-    // `ev_run`. Refreshing the cache here guarantees the requested delay is
+    // `qev_run`. Refreshing the cache here guarantees the requested delay is
     // honoured regardless of how long the owning thread slept outside the loop.
-    ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
+    qev_now_update(static_cast<struct qev_loop *>(listener::current.loop()));
     new Timeout<_Func>(std::forward<_Func>(func), d);
 }
 
@@ -578,7 +578,7 @@ public:
      */
     void
     start(const std::filesystem::path &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
-        // ev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
+        // qev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
         // must own the narrow path string for as long as it is active.
         _watched_path = fpath.string();
         this->_async_event.start(_watched_path.c_str(), qb::detail::to_ev_seconds(interval));
@@ -665,7 +665,7 @@ public:
 private:
     friend class listener::RegisteredKernelEvent<event::file, file_watcher>;
 
-    std::string _watched_path; /**< Owns the narrow path string for ev_stat's lifetime (ev_stat does not copy it). */
+    std::string _watched_path; /**< Owns the narrow path string for qev_stat's lifetime (qev_stat does not copy it). */
 
     /**
      * @brief Internal file event handler, called by the listener when `event::file` (for the watched file) triggers.
@@ -742,7 +742,7 @@ public:
      */
     void
     start(const std::filesystem::path &fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept {
-        // ev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
+        // qev_stat keeps the path POINTER (it does not copy — see ev++.h), so the watcher
         // must own the narrow path string for as long as it is active.
         _watched_path = fpath.string();
         this->_async_event.start(_watched_path.c_str(), qb::detail::to_ev_seconds(interval));
@@ -760,7 +760,7 @@ public:
 private:
     friend class listener::RegisteredKernelEvent<event::file, directory_watcher>;
 
-    std::string _watched_path; /**< Owns the narrow path string for ev_stat's lifetime (ev_stat does not copy it). */
+    std::string _watched_path; /**< Owns the narrow path string for qev_stat's lifetime (qev_stat does not copy it). */
 
     /**
      * @brief Internal directory event handler, called by the listener when `event::file` (for the directory) triggers.
@@ -940,7 +940,7 @@ public:
      */
     void
     start() noexcept {
-        // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into
+        // Never arm a watcher on an invalid fd: on POSIX `qev_io_start(fd<0)` writes into
         // `anfds[-1]` (the debug assert is compiled out in release → OOB, CWE-787). start() is
         // "begin I/O on a connected transport"; if the transport is not open, no-op. Gated on
         // native_handle() (== is_open() here — sys__socket: `fd != invalid_socket`), NOT is_open(),
@@ -2153,7 +2153,7 @@ public:
      */
     void
     start() noexcept {
-        // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into
+        // Never arm a watcher on an invalid fd: on POSIX `qev_io_start(fd<0)` writes into
         // `anfds[-1]` (the debug assert is compiled out in release → OOB, CWE-787). start() is
         // "begin I/O on a connected transport"; if the transport is not open, no-op. Gated on
         // native_handle() (== is_open() here — sys__socket: `fd != invalid_socket`), NOT is_open(),

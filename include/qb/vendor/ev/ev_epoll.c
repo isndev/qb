@@ -51,13 +51,13 @@
 
 /*
  * qb-io / VirtualCore execution model (this tree vendors libev for qb):
- * - One struct ev_loop per OS thread; all ev_* calls and watcher callbacks for
+ * - One struct qev_loop per OS thread; all qev_* calls and watcher callbacks for
  *   that loop run on that thread only (see qb::io::async::listener::current).
  * - On Windows, wepoll is therefore used in the intended single-threaded mode:
  *   no concurrent epoll_wait vs epoll_close on the same handle from different
  *   threads, which sidesteps IOCP lifetime races that multi-threaded misuse could
  *   otherwise create.
- * - ev_embeddable_backends() clears EVBACKEND_EPOLL on _WIN32 so ev_embed is not
+ * - qev_embeddable_backends() clears EVBACKEND_EPOLL on _WIN32 so qev_embed is not
  *   advertised for wepoll-backed inner loops (HANDLE is not an embeddable int fd).
  * - Build with EV_VERIFY >= 2 (see ev.c) to enable extra epoll_poll asserts; default
  *   release paths avoid per-event defensive branches for latency.
@@ -71,7 +71,7 @@
 
 /* On Windows wepoll expects a full SOCKET handle (uintptr_t), whereas libev
  * stores file descriptors as plain int.  The ANFD.handle field (populated in
- * ev_io_start for EV_SELECT_IS_WINSOCKET builds) holds the correct 64-bit
+ * qev_io_start for EV_SELECT_IS_WINSOCKET builds) holds the correct 64-bit
  * value; fall back to zero-extending the int when the slot is unset. */
 #ifdef _WIN32
 #define EV_FD_TO_SOCK(fd) ((anfds[(fd)].handle != 0) ? anfds[(fd)].handle : (SOCKET) (unsigned int) (fd))
@@ -182,7 +182,7 @@ dec_egen:
 }
 
 static void
-epoll_poll(EV_P_ ev_tstamp timeout) {
+epoll_poll(EV_P_ qev_tstamp timeout) {
     int i;
     int eventcnt;
 
@@ -197,7 +197,7 @@ epoll_poll(EV_P_ ev_tstamp timeout) {
 
     if (ecb_expect_false(eventcnt < 0)) {
         if (errno != EINTR)
-            ev_syserr("(libev) epoll_wait");
+            qev_syserr("(libev) epoll_wait");
 
         return;
     }
@@ -261,9 +261,9 @@ epoll_poll(EV_P_ ev_tstamp timeout) {
 
     /* if the receive array was full, increase its size */
     if (ecb_expect_false(eventcnt == epoll_eventmax)) {
-        ev_free(epoll_events);
+        qev_free(epoll_events);
         epoll_eventmax = array_nextsize(sizeof(struct epoll_event), epoll_eventmax, epoll_eventmax + 1);
-        epoll_events   = (struct epoll_event *) ev_malloc(sizeof(struct epoll_event) * epoll_eventmax);
+        epoll_events   = (struct epoll_event *) qev_malloc(sizeof(struct epoll_event) * epoll_eventmax);
     }
 
     /* now synthesize events for all fds where epoll fails, while select works... */
@@ -293,14 +293,14 @@ epoll_init(EV_P_ int flags) {
     backend_poll    = epoll_poll;
 
     epoll_eventmax = 64; /* initial number of events receivable per poll */
-    epoll_events   = (struct epoll_event *) ev_malloc(sizeof(struct epoll_event) * epoll_eventmax);
+    epoll_events   = (struct epoll_event *) qev_malloc(sizeof(struct epoll_event) * epoll_eventmax);
 
     return EVBACKEND_EPOLL;
 }
 
 inline_size void
 epoll_destroy(EV_P) {
-    ev_free(epoll_events);
+    qev_free(epoll_events);
     array_free(epoll_eperm, EMPTY);
 }
 
@@ -313,7 +313,7 @@ epoll_fork(EV_P) {
 #endif
 
     while ((backend_fd = epoll_epoll_create()) == EV_BACKEND_FD_INVALID)
-        ev_syserr("(libev) epoll_create");
+        qev_syserr("(libev) epoll_create");
 
     fd_rearm_all(EV_A);
 }

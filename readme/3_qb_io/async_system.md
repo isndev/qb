@@ -51,7 +51,7 @@ Under `qb-core`, `qb::Main` runs the loop on each `VirtualCore`. Standalone, you
 
 After processing libev events, every `run()` call also drains any ready coroutines through the listener's scheduler.
 
-> **Pitfall — `EVRUN_ONCE` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_EV_USE_TIMERFD=ON`, off by default) and only `ev_io` watchers are active with no heap timers, `EVRUN_ONCE` can block for libev's internal maximum wait time. In pump loops, prefer `run_until` or `run(EVRUN_NOWAIT)`.
+> **Pitfall — `EVRUN_ONCE` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_EV_USE_TIMERFD=ON`, off by default) and only `qev_io` watchers are active with no heap timers, `EVRUN_ONCE` can block for libev's internal maximum wait time. In pump loops, prefer `run_until` or `run(EVRUN_NOWAIT)`.
 
 > **Pitfall — re-entrancy.** `run`, `run_once`, `run_until`, `run_for`, and `run_sync` must not be called from inside a coroutine or actor handler that is itself executing under the coroutine scheduler's ready-drain. Doing so throws `std::logic_error` (and asserts in debug builds).
 
@@ -223,7 +223,7 @@ public:
 
 - **`start(std::filesystem::path const& path, qb::duration interval = std::chrono::milliseconds(100))`** begins watching. `interval` is libev's polling cadence: shorter is more responsive but costs more CPU. The watcher copies the path into a string it owns for the watcher's lifetime: libev's `ev::stat` stores the path *pointer* without copying it, so the watcher keeps the backing storage alive until `disconnect()` or destruction. You may safely pass a temporary `std::filesystem::path`.
 - **`disconnect()`** stops the watcher.
-- The `event::file` payload carries `attr` (current `ev_statdata`) and `prev` (previous snapshot). `attr.st_nlink == 0` indicates deletion.
+- The `event::file` payload carries `attr` (current `qev_statdata`) and `prev` (previous snapshot). `attr.st_nlink == 0` indicates deletion.
 
 `file_watcher` differs from `directory_watcher` in that it also reads and frames file content through a `qb::io::async::IProtocol` (`do_read == true`). When the watched file grows, `file_watcher` calls `read_all()`, which runs the active protocol's `getMessageSize()` / `onMessage()` loop and enforces the configured maximum message size. `directory_watcher` (`do_read == false`) only forwards the `event::file` notification. The `async::file<Derived>` template (`qb/io/async/file.h`) composes `file_watcher` with `transport::file` for non-blocking file consumption; see [Transports](./transports.md).
 
@@ -236,7 +236,7 @@ public:
 | `disconnected` | Connection closed or I/O error | `int reason`, `std::error_code error_code`, `std::string message` |
 | `input_drained` *(alias `eof`)* | Input buffer fully consumed (not an end-of-stream signal) | — |
 | `eos` | Output buffer fully flushed | — |
-| `file` | Watched file/directory attributes changed | `ev_statdata attr`, `ev_statdata prev` |
+| `file` | Watched file/directory attributes changed | `qev_statdata attr`, `qev_statdata prev` |
 | `handshake` | Handshake complete | — |
 | `io` | Raw fd readiness; `_revents` carries `EV_READ`/`EV_WRITE` | (libev `ev::io` base) |
 | `pending_read` | Unprocessed bytes remain in the input buffer | `std::size_t bytes` |

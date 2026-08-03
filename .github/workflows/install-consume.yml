@@ -90,8 +90,8 @@ jobs:
           #include <qb/system/container/unordered_set.h>
           #include <cstdio>
           // The compiled libev was built with EV_MULTIPLICITY=1. If the generated config header
-          // does not reach this TU, ev.h silently defaults it to 4 and every ev_* prototype
-          // disagrees with libev.a. qb's headers #error on it; assert here too.
+          // does not reach this TU, ev.h silently defaults it to 4 and every qev_* prototype
+          // disagrees with libqev.a. qb's headers #error on it; assert here too.
           static_assert(EV_MULTIPLICITY == 1, "libev config header did not reach the consumer");
           int main() {
             qb::Main main; (void) main.core(0);
@@ -100,7 +100,7 @@ jobs:
             auto id = qb::generate_random_uuid();
             qb::json j; j["k"] = 42;
             std::printf("ev=%d.%d map=%d set=%d uuid=%zu json=%d\n",
-                        ev_version_major(), ev_version_minor(), um[1], (int) us.count(3),
+                        qev_version_major(), qev_version_minor(), um[1], (int) us.count(3),
                         uuids::to_string(id).size(), (int) j["k"]);
             return 0;
           }

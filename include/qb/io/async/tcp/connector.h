@@ -131,7 +131,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
     Func_   func_;   /**< Callback function to call when connection completes */
     Socket_ socket_; /**< Socket for the connection */
     uri     remote_; /**< URI of the remote endpoint */
-    /** Absolute libev time `ev_time() + timeout` when `timeout > 0`; else `0` (no deadline). */
+    /** Absolute libev time `qev_time() + timeout` when `timeout > 0`; else `0` (no deadline). */
     const double deadline_;
     /** When false, disable TLS peer verification on a secure socket (opt-out). */
     bool verify_peer_{true};
@@ -248,7 +248,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
         if (deadline_ <= 0. || deadline_armed_)
             return;
         deadline_armed_                 = true;
-        const double             remain = deadline_ - ev_time();
+        const double             remain = deadline_ - qev_time();
         std::weak_ptr<connector> w      = this->shared_from_this();
         qb::io::async::callback(
             [w]() {
@@ -282,13 +282,13 @@ public:
      * @brief Constructs a connector and stores parameters (does not connect yet).
      * @param func Callback invoked exactly once with the connected socket or an empty socket
      * @param remote Remote URI
-     * @param timeout_sec Connection deadline in seconds from construction (`ev_time()`);
+     * @param timeout_sec Connection deadline in seconds from construction (`qev_time()`);
      *                    `0` means no deadline timer (wait indefinitely for writability).
      */
     connector(Func_ &&func, uri remote, double timeout_sec, bool verify_peer = true)
         : func_(std::forward<Func_>(func))
         , remote_(std::move(remote))
-        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , deadline_(timeout_sec > 0. ? qev_time() + timeout_sec : 0.)
         , verify_peer_(verify_peer) {}
 
     /**
@@ -303,7 +303,7 @@ public:
         : func_(std::forward<Func_>(func))
         , socket_(std::move(existing))
         , remote_(std::move(remote))
-        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , deadline_(timeout_sec > 0. ? qev_time() + timeout_sec : 0.)
         , verify_peer_(verify_peer) {}
 
     /**
