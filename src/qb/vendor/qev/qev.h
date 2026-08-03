@@ -13,6 +13,23 @@
  * see THIRD-PARTY-NOTICES.
  */
 
+/* Coexistence with a system libev / libevent -- two deliberate, measured overlaps.
+ *
+ * 1. INCLUDE GUARD. This guard is upstream libev's, kept unrenamed (`ev++.h`'s `EVPP_H__`
+ *    likewise). So ONE translation unit cannot include both <qb/vendor/qev/qev.h> and a
+ *    system <ev.h>: whichever comes second is silently swallowed and its declarations are
+ *    simply absent. Separate translation units in the same program are fine. If you need
+ *    both APIs, keep them in different .cpp files.
+ *
+ * 2. LINK SYMBOLS. libqev.a and a real libev.a each export 82 symbols and share exactly
+ *    24 of them -- the `event_*` libevent-compatibility layer (event_init, event_add,
+ *    event_base_loop, ...). Everything libev-native was renamed ev_* -> qev_*, so those 82
+ *    do not collide. The 24 that do collide are NOT a fork artefact: they are libevent's
+ *    published API, and any libev built with its compat layer exports the same names.
+ *    Linking both archives succeeds silently in either order (the linker takes the first
+ *    definition), so a program that pulls in both gets ONE `event_*` implementation and
+ *    cannot tell which. Do not link both if you use the `event_*` compat API.
+ */
 #ifndef EV_H_
 #define EV_H_
 #include <stdint.h>

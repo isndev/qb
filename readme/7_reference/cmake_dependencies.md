@@ -33,16 +33,37 @@ The framework requires **CMake 3.24 or newer** (`qb/CMakeLists.txt:31`). 3.24 is
 
 ### Vendored forks
 
-`ev`, `uuid`, `nanolog` and `ska_hash` are not third-party dependencies that qb happens to bundle — they are **qb forks**: qb's own source, diverged from upstream, never swappable for a system copy. They live under `src/qb/vendor/<fork>/` and are therefore reached by a qb-owned include prefix, `<qb/vendor/qev/qev++.h>`, `<qb/vendor/ska_hash/unordered_map.hpp>`, and so on.
+`qev`, `uuid`, `nanolog` and `ska_hash` are not third-party dependencies that qb happens to bundle — they are **qb forks**: qb's own source, diverged from upstream, never swappable for a system copy. They live under `src/qb/vendor/<fork>/` and are therefore reached by a qb-owned include prefix, `<qb/vendor/qev/qev++.h>`, `<qb/vendor/ska_hash/unordered_map.hpp>`, and so on.
 
 That path is not cosmetic. Their headers used to be published by bare name, so an installed qb dropped `ev.h`, `ev++.h`, `event.h`, `event_compat.h`, `ev_config.h`, `uuid.h` and the directories `ev/`, `uuid/`, `nanolog/`, `ska_hash/` straight into the consumer's include root — 12 top-level names, every one of them able to shadow, or be shadowed by, a header the consumer already owned. Living under `qb/vendor/` makes that collision structurally impossible. Being physically inside the include root (`src/`) also means one include root serves the build tree and the installed tree, with no separate `BUILD_INTERFACE`/`INSTALL_INTERFACE` pair to drift apart.
 
 - **libev** — REQUIRED. `qbDependencies.cmake:104-116` checks that `src/qb/vendor/qev` exists and sets `QB_HAS_LIBEV`; if it is missing, configuration fails with a fatal error. The tree is compiled by `add_subdirectory("${QB_VENDOR_DIR}/qev")` (`qb/CMakeLists.txt:100`), producing the static `qev` target (`src/qb/vendor/qev/CMakeLists.txt:287`). Resolving libev defines `QB_HAS_LIBEV=1` on every qb target (`qbDependencies.cmake:390-392`).
   The fork's generated configuration header is reached through `-DEV_CONFIG_H=<qb/vendor/qev/qev_config.h>`, a `PUBLIC` compile definition on the `qev` target, because `qev.h`'s own fallback lookup for `qev_config.h` is `__has_include`-guarded and would fail *silently* — flipping `EV_MULTIPLICITY` from 1 to 4 and desynchronising every `qev_*` prototype from the compiled library. `qb/io/async/event/base.h` and `qb/io/async/coroutine/scheduler.h` carry an `#error` guard on `EV_MULTIPLICITY` so that miss is a compile error rather than a runtime mystery.
 - **stduuid** — REQUIRED in practice. `qbDependencies.cmake:44-47` detects `src/qb/vendor/uuid` and sets `QB_HAS_UUID`. It is added by `add_subdirectory("${QB_VENDOR_DIR}/uuid")` (`qb/CMakeLists.txt:99`), which declares the header-only `stduuid` `INTERFACE` target (`src/qb/vendor/uuid/CMakeLists.txt:22`). The framework pins its options before adding it (`qb/CMakeLists.txt:83-91`): `UUID_BUILD_TESTS`, `UUID_SYSTEM_GENERATOR` and `UUID_TIME_GENERATOR` are forced **off**, while `UUID_USING_CXX20_SPAN` is forced **on**. That last one is load-bearing, not cosmetic: qb requires C++20 so `std::span` always exists, and with it off stduuid takes a `gsl` fallback branch whose directory was deleted in the C++20 migration -- which made `cmake --install` fail outright. Only when the vendored directory is absent does `qbDependencies.cmake:50-95` fall back to a system UUID (pkg-config `uuid`, then `find_path`/`find_library`); if neither is found, the build emits a warning and clears `QB_HAS_UUID` rather than failing.
+#### Using qb alongside a system libev or libevent
+
+The `qev` fork renamed every libev-native symbol `ev_*` → `qev_*` and moved its headers under
+`qb/vendor/qev/`, but two overlaps with an upstream libev remain **on purpose**, and both are
+worth knowing before you link the two together.
+
+**Include guards collide.** `qev.h` keeps upstream's `EV_H_` guard and `qev++.h` keeps `EVPP_H__`
+(`src/qb/vendor/qev/qev.h:16`, `src/qb/vendor/qev/qev++.h:16`). A single translation unit therefore
+cannot include both `<qb/vendor/qev/qev.h>` and a system `<ev.h>` — whichever is second is
+swallowed by the guard and its declarations are silently absent. Separate translation units in the
+same program are unaffected; keep the two APIs in different `.cpp` files.
+
+**24 `event_*` symbols collide at link time.** `libqev.a` and a system `libev.a` export 82 symbols
+each and share exactly 24 — `event_init`, `event_add`, `event_base_loop`, `event_del`,
+`event_dispatch`, and the rest of libev's libevent-compatibility layer. That is not a fork
+artefact: those names *are* libevent's published API, and any libev built with its compat layer
+exports them too. Linking both archives succeeds silently in either order — the linker simply takes
+the first definition — so a program that pulls in both ends up with one `event_*` implementation
+and no diagnostic saying which. If you use the `event_*` compat API, link one or the other, not
+both. Everything qb itself uses goes through the renamed `qev_*` surface and is unaffected.
+
 - **nanolog, ska_hash** — header-only, no CMake target at all. They are ordinary files under `src/qb/vendor/`, reached through qb's single include root like any other qb header. `src/qb/io/io.cpp` compiles `nanolog.cpp` by textual inclusion.
 
-Both compiled forks are part of the install export: `ev` and `stduuid` are added to the `qbTargets` export set so their names are rewritten under the `qb::` namespace in the transitive link list of `qb::io`/`qb::core` (`qb/CMakeLists.txt:239-256`). Their headers need no install rule of their own — qb's ordinary public-header rule (`qb/cmake/qbPackage.cmake:132-141`) already covers them, which is precisely why the two trees cannot diverge. When embedded, each fork's own standalone install/package-config block is skipped, so an installed qb ships no `lib/cmake/libev/` or `lib/cmake/stduuid/` alongside its own package.
+Both compiled forks are part of the install export: `qev` and `stduuid` are added to the `qbTargets` export set so their names are rewritten under the `qb::` namespace in the transitive link list of `qb::io`/`qb::core` (`qb/CMakeLists.txt:239-256`). Their headers need no install rule of their own — qb's ordinary public-header rule (`qb/cmake/qbPackage.cmake:132-141`) already covers them, which is precisely why the two trees cannot diverge. When embedded, each fork's own standalone install/package-config block is skipped, so an installed qb ships no `lib/cmake/qev/` (`src/qb/vendor/qev/CMakeLists.txt:415`) or `lib/cmake/stduuid/` alongside its own package.
 
 ### Third-party: nlohmann/json
 

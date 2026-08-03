@@ -50,7 +50,7 @@
 #include <string>
 #include <vector>
 
-#include <qb/io/async/listener.h> /* brings ev.h (C API: qev_loop_new/EVBACKEND_*) + ev++.h (ev::) */
+#include <qb/io/async/listener.h> /* brings qev.h (C API: qev_loop_new/EVBACKEND_*) + qev++.h (ev::) */
 
 #ifndef _WIN32
 #include <fcntl.h>
