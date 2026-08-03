@@ -17,10 +17,30 @@ on:
       - 'CONTRIBUTING.md'
       - 'CODE_OF_CONDUCT.md'
       - 'scripts/doc-lint.sh'
-      # The lint reads the expected Verified-against version from here, so a
-      # version-only bump must trigger it -- that is exactly the change that
-      # silently invalidated 129 markers before.
-      - 'cmake/qbConfig.cmake'
+      # cite-check.py (driven from doc-lint.sh:93 -- this workflow is its only CI
+      # caller) validates every `src:` citation against the SOURCE it names, so a
+      # source-only commit -- a rename, a deletion, an insert that shifts line numbers --
+      # can invalidate hundreds of citations. Without these the guard never fires on it.
+      # The three qbm modules got 'src/**' during their move-prep; qb was left behind,
+      # in the one repo where 470 files moved. Measured over README.md + readme/**,
+      # replicating cite-check.py's own tokenizer: src/ 209 citation tokens,
+      # tests/ 44, cmake/ 22, CMakePresets.json 2, CMakeLists.txt 1, script/ 1 --
+      # every one of them in-project and range-checked, none of them covered before.
+      - 'src/**'
+      - 'tests/**'
+      # Was just 'cmake/qbConfig.cmake' (the lint reads the expected Verified-against
+      # version from it, so a version-only bump must trigger it -- that is exactly the
+      # change that silently invalidated 129 markers before). Widened to the directory:
+      # citations also target qbCompiler.cmake, qbDependencies.cmake, qbFunctions.cmake
+      # and CodeCoverage.cmake, 12 tokens that sat behind an uncovered path.
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'script/**'
+      # Deliberately NOT 'examples/**': the 112 examples/ citation tokens name the
+      # SIBLING examples submodule, so qb has no examples/ of its own for a filter to
+      # match, and resolve_in_project() SKIPs them (cite-check.py:69). Adding it would
+      # guard nothing. Those 112 are validated by no repo -- tracked separately.
   pull_request:
     branches: [ main, develop ]
     paths:
@@ -34,10 +54,30 @@ on:
       - 'CONTRIBUTING.md'
       - 'CODE_OF_CONDUCT.md'
       - 'scripts/doc-lint.sh'
-      # The lint reads the expected Verified-against version from here, so a
-      # version-only bump must trigger it -- that is exactly the change that
-      # silently invalidated 129 markers before.
-      - 'cmake/qbConfig.cmake'
+      # cite-check.py (driven from doc-lint.sh:93 -- this workflow is its only CI
+      # caller) validates every `src:` citation against the SOURCE it names, so a
+      # source-only commit -- a rename, a deletion, an insert that shifts line numbers --
+      # can invalidate hundreds of citations. Without these the guard never fires on it.
+      # The three qbm modules got 'src/**' during their move-prep; qb was left behind,
+      # in the one repo where 470 files moved. Measured over README.md + readme/**,
+      # replicating cite-check.py's own tokenizer: src/ 209 citation tokens,
+      # tests/ 44, cmake/ 22, CMakePresets.json 2, CMakeLists.txt 1, script/ 1 --
+      # every one of them in-project and range-checked, none of them covered before.
+      - 'src/**'
+      - 'tests/**'
+      # Was just 'cmake/qbConfig.cmake' (the lint reads the expected Verified-against
+      # version from it, so a version-only bump must trigger it -- that is exactly the
+      # change that silently invalidated 129 markers before). Widened to the directory:
+      # citations also target qbCompiler.cmake, qbDependencies.cmake, qbFunctions.cmake
+      # and CodeCoverage.cmake, 12 tokens that sat behind an uncovered path.
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'script/**'
+      # Deliberately NOT 'examples/**': the 112 examples/ citation tokens name the
+      # SIBLING examples submodule, so qb has no examples/ of its own for a filter to
+      # match, and resolve_in_project() SKIPs them (cite-check.py:69). Adding it would
+      # guard nothing. Those 112 are validated by no repo -- tracked separately.
 
 concurrency:
   group: doc-lint-${{ github.ref }}
