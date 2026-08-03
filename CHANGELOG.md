@@ -58,6 +58,24 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Changed
 
+- **`qb::unordered_map` and `qb::unordered_set` are now unconditional aliases for
+  `ska::unordered_map` / `ska::unordered_set`.** Since 2020 (`5c94d026`) they resolved to `ska::`
+  under `NDEBUG` and to `std::` otherwise, which made the *identity and layout* of a public type
+  depend on a build macro: `sizeof(qb::unordered_map<int,int>)` measured 32 with `NDEBUG` and 40
+  without, and both templates are data members of public classes (`qb::VirtualCore`, `qb::Main`,
+  `qb::router::*`) and of qbm's public headers. A consumer compiled **without** `NDEBUG` --
+  `CMAKE_BUILD_TYPE=Debug`, or simply *unset*, which is CMake's default -- against a Release-built
+  libqb read a `ska` map through `std` layout and aborted at run time with
+  `std::overflow_error: __next_prime overflow`. Release builds are unaffected (that is the
+  implementation they already used); Debug builds change container implementation, so a debugger's
+  `std::unordered_map` pretty-printer no longer applies to these two aliases. Both are node-based:
+  references and pointers to elements survive a rehash, as before.
+- **New configure-time coherence gate: `QB_ABI_UNORDERED_MAP`.** `cmake/qbConfig.cmake` now
+  publishes a token naming which implementation those aliases resolve to, and a prebuilt qbm module
+  records the value it was compiled against. `find_package(qbm-<mod> CONFIG REQUIRED)` fails, naming
+  both sides, if they disagree -- so a future public type whose identity is picked by a build macro
+  breaks the configure rather than the process. Sits beside the existing version and
+  `QB_HAS_SSL`/`QUIC`/`COMPRESSION` skew checks in `cmake/qbmModuleConfig.cmake.in`.
 - **One install/export rule for qb and every qbm module: `qb_install_package()`, new in
   `cmake/qbPackage.cmake`.** The same job used to be implemented twice — hand-rolled in
   `CMakeLists.txt` for qb, and again as `_qb_module_install_rules()` in `qbFunctions.cmake` for a

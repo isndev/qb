@@ -180,6 +180,12 @@ set(QB_HAS_COMPRESSION @QB_HAS_COMPRESSION@)
 set(QB_HAS_ARGON2 @QB_HAS_ARGON2@)
 set(QB_HAS_QUIC @QB_HAS_QUIC@)
 
+# Public-type ABI token -- which implementation qb::unordered_map / qb::unordered_set resolve
+# to in THIS qb. See the long note in cmake/qbConfig.cmake: it exists so that a public type
+# whose identity is picked by a build macro fails at configure time rather than at run time.
+# qbmModuleConfig.cmake.in compares it against the value a prebuilt module recorded.
+set(QB_ABI_UNORDERED_MAP "@QB_ABI_UNORDERED_MAP@")
+
 # Clean up internal variables
 unset(_IMPORT_PREFIX)
 unset(_QB_AVAILABLE_COMPONENTS)

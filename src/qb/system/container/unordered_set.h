@@ -45,28 +45,20 @@ namespace qb {
 template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<K>>
 using unordered_flat_set = ska::flat_hash_set<K, H, E, A>;
 
-#ifdef NDEBUG
 /**
  * @brief The primary unordered set implementation
  *
- * In release builds, this uses the high-performance ska::unordered_set
- * implementation. In debug builds, it falls back to std::unordered_set
- * for better debugging support.
+ * The set counterpart of qb::unordered_map: node-based with a chained bucket
+ * array, so references and pointers to elements survive a rehash.
  *
- * @tparam K The key type
- * @tparam H The hash function type (defaults to std::hash<K>)
- * @tparam E The equality function type (defaults to std::equal_to<K>)
- * @tparam A The allocator type
- */
-template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<K>>
-using unordered_set = ska::unordered_set<K, H, E, A>;
-#else
-/**
- * @brief The primary unordered set implementation
- *
- * In release builds, this uses the high-performance ska::unordered_set
- * implementation. In debug builds, it falls back to std::unordered_set
- * for better debugging support.
+ * @warning **This alias is unconditional, and must stay that way** — same reason,
+ *          same 2020-03-30 origin (5c94d026) and same measured symptom as
+ *          qb::unordered_map: `sizeof(qb::unordered_set<int>)` was 32 with `NDEBUG`
+ *          and 40 without, while the type is a data member of public classes
+ *          (`qb::Main::_registered_services`, `qb::VirtualCore::RemoveActorList`).
+ *          See the note on qb::unordered_map in
+ *          `qb/system/container/unordered_map.h` for the full account and for the
+ *          configure-time tripwire that guards the invariant.
  *
  * @tparam K The key type
  * @tparam H The hash function type (defaults to std::hash<K>)
@@ -75,8 +67,7 @@ using unordered_set = ska::unordered_set<K, H, E, A>;
  * @ingroup Container
  */
 template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<K>>
-using unordered_set = std::unordered_set<K, H, E, A>;
-#endif
+using unordered_set = ska::unordered_set<K, H, E, A>;
 
 } // namespace qb
 

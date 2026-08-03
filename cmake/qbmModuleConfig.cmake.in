@@ -40,6 +40,7 @@ set(QBM_@_QBM_CFG_NAME_UPPER@_QB_VERSION "@QB_FRAMEWORK_VERSION@")
 set(QBM_@_QBM_CFG_NAME_UPPER@_QB_HAS_SSL "@QB_HAS_SSL@")
 set(QBM_@_QBM_CFG_NAME_UPPER@_QB_HAS_QUIC "@QB_HAS_QUIC@")
 set(QBM_@_QBM_CFG_NAME_UPPER@_QB_HAS_COMPRESSION "@QB_HAS_COMPRESSION@")
+set(QBM_@_QBM_CFG_NAME_UPPER@_QB_ABI_UNORDERED_MAP "@QB_ABI_UNORDERED_MAP@")
 
 # Our own directory goes on the module path for the duration of this file only, so the
 # Find*.cmake modules shipped beside it resolve without leaking a search path into the
@@ -77,6 +78,15 @@ find_dependency(qb @QB_FRAMEWORK_VERSION_MAJOR@.@QB_FRAMEWORK_VERSION_MINOR@)
 #      the archive, the consumer's translation unit parses a DIFFERENT header than the
 #      one that was compiled, and the symptom is an unresolved symbol at link time (or
 #      worse, a silent ABI mismatch).
+#   3. public-type ABI skew -- a qb type whose IDENTITY (and therefore layout) is fixed
+#      when qb is built, not by the consumer. `qb::unordered_map` used to be exactly that:
+#      ska:: under NDEBUG, std:: otherwise, 32 vs 40 bytes, and a data member of
+#      qb::VirtualCore / qb::Main / qb::router::* and of this module's own public headers.
+#      A Debug (or build-type-unset) consumer against a Release-installed qb aborted at run
+#      time with `std::overflow_error: __next_prime overflow`, and NOTHING here said a word --
+#      the two gates above are blind to it. The alias is unconditional as of 3.0.0; the token
+#      below is the tripwire that makes any future reintroduction a configure-time failure
+#      naming both sides, which is the whole point of recording it rather than assuming it.
 #
 # Reported through <pkg>_FOUND + <pkg>_NOT_FOUND_MESSAGE rather than a bare FATAL_ERROR,
 # so a REQUIRED consumer still gets a hard stop naming both sides while an optional
@@ -108,6 +118,27 @@ foreach(_qbm_feat SSL QUIC COMPRESSION)
     unset(_qbm_then)
 endforeach()
 unset(_qbm_feat)
+
+# Public-type ABI tokens. Same shape as the QB_HAS_* loop above -- compare what the archive
+# was compiled against with what the qb found here reports -- but the subject is a TYPE, not
+# a feature. A mismatch means this module's compiled code and the consumer's translation
+# units disagree about the layout of a qb type they both name, which no linker catches.
+# The empty-token case is skew too: an older qb that predates the tripwire reports nothing,
+# and pairing it with a module that recorded a value is exactly the mixed installation this
+# gate exists to stop.
+foreach(_qbm_abi UNORDERED_MAP)
+    set(_qbm_now "${QB_ABI_${_qbm_abi}}")
+    set(_qbm_then "${QBM_@_QBM_CFG_NAME_UPPER@_QB_ABI_${_qbm_abi}}")
+    if(NOT _qbm_now STREQUAL _qbm_then)
+        string(APPEND _qbm_skew
+            " qbm-@_QBM_CFG_NAME@ was built against a qb whose QB_ABI_${_qbm_abi} is "
+            "'${_qbm_then}', but the qb found here reports '${_qbm_now}'; that token names the "
+            "implementation a PUBLIC qb type resolves to, so the two disagree about its layout.")
+    endif()
+    unset(_qbm_now)
+    unset(_qbm_then)
+endforeach()
+unset(_qbm_abi)
 
 if(_qbm_skew)
     set(CMAKE_MODULE_PATH "${_qbm_saved_module_path}")

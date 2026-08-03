@@ -462,3 +462,42 @@ endfunction()
 
 # Mark configuration as loaded
 set(QB_CONFIG_LOADED TRUE CACHE INTERNAL "qb configuration loaded")
+
+# Appended at the END of this file ON PURPOSE, not next to QB_FRAMEWORK_VERSION where it
+# reads more naturally. qb's readme cites this file by line ~30 times, and llm-guard /
+# cite-check treat those citations as a guarded contract. Inserting 26 lines at the top
+# shifted every one of them -- measured: three content-aware citations went red immediately
+# and the rest (bare backticks no guard reads) would have rotted silently. Adding at the end
+# moves nothing. Keep new top-level settings here for the same reason.
+# -----------------------------------------------------------------------------
+# Public-type ABI tokens
+# -----------------------------------------------------------------------------
+# A tripwire for one specific defect class: a PUBLIC TYPE whose identity -- and therefore
+# layout -- is chosen by a build macro rather than by qb's source.
+#
+# Until 3.0.0 `qb::unordered_map` / `qb::unordered_set` aliased ska:: under NDEBUG and std::
+# otherwise. Both are data members of public classes (qb::VirtualCore, qb::Main,
+# qb::router::*) and of qbm's public headers, and the two spellings have different layouts
+# (sizeof(qb::unordered_map<int,int>) measured 32 with NDEBUG, 40 without). A consumer
+# compiled without NDEBUG -- CMAKE_BUILD_TYPE=Debug, or simply UNSET, which is the default --
+# against a Release-built libqb read a ska map through std layout and aborted at run time
+# (`std::overflow_error: __next_prime overflow`). Nothing at configure time said a word:
+# qbmModuleConfig.cmake.in gated version skew and QB_HAS_* skew, and was silent on the one
+# macro that changed a public type.
+#
+# The alias is now unconditional (see the @warning in qb/system/container/unordered_map.h).
+# This token records WHICH implementation that is. It is compared between the qb a prebuilt
+# qbm module was compiled against and the qb a consumer resolves; change the implementation
+# and the token must change with it, so every module built against the old one fails loudly
+# at find_package() instead of at run time.
+#
+# It is deliberately a CONSTANT, not something derived from CMAKE_BUILD_TYPE: the whole point
+# of the fix is that this value no longer depends on how anyone is building.
+#
+# CACHE INTERNAL for the same reason QB_CMAKE_DIR is (see below): qbm modules are added from
+# the SUPERPROJECT root scope (`qb_load_modules()` at qb-dev/CMakeLists.txt:56), not from qb's,
+# so a plain set() here is invisible where qbmModuleConfig.cmake.in is configured -- measured:
+# the generated qbm-httpConfig.cmake came out with `set(QBM_HTTP_QB_ABI_UNORDERED_MAP "")`.
+# An empty token would have made the skew gate below fire on every module, which is how this
+# was caught: the positive control is not optional.
+set(QB_ABI_UNORDERED_MAP "ska" CACHE INTERNAL "qb::unordered_map/set implementation (public-type ABI token)")
