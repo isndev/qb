@@ -778,6 +778,39 @@ function(_qb_module_install_rules module_target mod_name mod_version
         PATTERN "*.inl"
     )
 
+    # --- license + third-party notices ----------------------------------------
+    # The header rule above uses FILES_MATCHING, which installs ONLY files matching one of its
+    # patterns -- so the module's LICENSE never left the source tree, and neither did the
+    # notices for anything it vendors. Apache-2.0 s.4 requires the License to reach every
+    # recipient, and a bundled MIT/BSD component requires its notice to be distributed with the
+    # software; a static archive with a vendored parser compiled into it is exactly that case.
+    set(_qbm_licensedir "${CMAKE_INSTALL_DATAROOTDIR}/licenses/${_qbm_pkg}")
+    set(_qbm_notices "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES")
+        list(APPEND _qbm_notices "${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES")
+    endif ()
+    install(FILES ${_qbm_notices} DESTINATION "${_qbm_licensedir}")
+
+    # not-qb/<unit>/ is the convention for a vendored upstream inside a qbm module (today only
+    # qbm-http's llhttp). Globbing it rather than naming llhttp keeps this generic: a module
+    # that vendors something later ships its notice automatically, and
+    # qb/scripts/check-vendor-attribution.py fails the guard battery if a unit has none.
+    file(GLOB _qbm_vendor_dirs LIST_DIRECTORIES true "${CMAKE_CURRENT_SOURCE_DIR}/not-qb/*")
+    foreach (_qbm_vendor_dir ${_qbm_vendor_dirs})
+        if (NOT IS_DIRECTORY "${_qbm_vendor_dir}")
+            continue()
+        endif ()
+        get_filename_component(_qbm_vendor_name "${_qbm_vendor_dir}" NAME)
+        file(GLOB _qbm_vendor_notices
+                "${_qbm_vendor_dir}/LICENSE" "${_qbm_vendor_dir}/LICENSE-*"
+                "${_qbm_vendor_dir}/LICENSE.*" "${_qbm_vendor_dir}/LICENSE_*"
+                "${_qbm_vendor_dir}/THIRD-PARTY-NOTICES")
+        if (_qbm_vendor_notices)
+            install(FILES ${_qbm_vendor_notices}
+                    DESTINATION "${_qbm_licensedir}/third-party/${_qbm_vendor_name}")
+        endif ()
+    endforeach ()
+
     # --- package config -------------------------------------------------------
     # SameMinorVersion, not qb's SameMajorVersion: a prebuilt static archive compiled against
     # header-heavy, inline-heavy qb does not honestly satisfy "any 2.x".
