@@ -156,3 +156,100 @@ jobs:
       - name: Test
         working-directory: ${{ steps.build.outputs.dir }}
         run: ctest --build-config ${{ matrix.build_type }} --output-on-failure --parallel 4
+
+  # Linux-only, and it has to be: the defect is a libstdc++ ABI-tag divergence between
+  # clang and gcc, and libc++ has no cxx11 tag at all — so the macos-clang job above, and
+  # the maintainer's own machine, are STRUCTURALLY BLIND to it. The matrix above cannot
+  # see it either, however many rows it grows: every row compiles the whole tree with ONE
+  # toolchain, and this class only exists where two of them meet in one binary.
+  #
+  # What it caught (7e2eefdc): clang appends `B5cxx11` to the mangled name of a
+  # function-LOCAL STATIC whose type carries the cxx11 tag and gcc does not, so a
+  # gcc-built consumer linked against a clang-built qb held TWO copies of ska's empty-map
+  # sentinel — and deallocate_data() decides whether to free by comparing against it.
+  # A map created on one side and destroyed on the other freed static storage:
+  # "free(): invalid pointer", no link-time diagnostic, macOS clean.
+  #
+  # Seconds, not minutes: it compiles one probe TU twice and diffs symbol names. No qb
+  # build, no dependencies beyond the two compilers.
+  cross-compiler-statics:
+    name: ubuntu-abi-sentinel-sweep
+    runs-on: ubuntu-latest
+    env:
+      LLVM_VERSION: "22"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          ./scripts/ci-install-linux-dependencies.sh --gcc-14 --llvm-clang
+          gcc-14 --version
+          "clang-${LLVM_VERSION}" --version
+
+      - name: Sweep for divergent function-local statics
+        run: |
+          CLANGXX="clang++-${LLVM_VERSION}" GXX=g++-14 \
+            ./scripts/check-cross-compiler-statics.sh
+
+      # A check that has never failed is not known to work. This reverts the fix in a
+      # SCRATCH COPY of the two vendored headers, asserts the sweep goes red, and puts
+      # them back — so a green result above means "the two compilers agree", never "the
+      # probe stopped instantiating anything".
+      - name: Negative control — the sweep must fail on the pre-fix headers
+        run: |
+          set -euo pipefail
+          um=src/qb/vendor/ska_hash/unordered_map.hpp
+          fm=src/qb/vendor/ska_hash/flat_hash_map.hpp
+          cp "$um" /tmp/um.keep && cp "$fm" /tmp/fm.keep
+          restore() { cp /tmp/um.keep "$um"; cp /tmp/fm.keep "$fm"; }
+          trap restore EXIT
+
+          # sherwood_v10_entry::empty_pointer — the qb::unordered_map sentinel, fixed by
+          # hoisting it to an inline static DATA member. Put it back in the function.
+          python3 - "$um" <<'PY'
+          import sys
+          p = sys.argv[1]; s = open(p).read()
+          s = s.replace("    inline static EntryPointer empty_table[3] = {EntryPointer(1), nullptr, nullptr};\n", "")
+          s = s.replace("        return empty_table + 1;",
+                        "        static EntryPointer result[3] = {EntryPointer(1), nullptr, nullptr};\n        return result + 1;")
+          open(p, "w").write(s)
+          PY
+          # sherwood_v3_entry::empty_default_table — the qb::unordered_flat_map sentinel,
+          # fixed by giving the static tag-free storage. Put the tagged array back.
+          python3 - "$fm" <<'PY'
+          import re, sys
+          p = sys.argv[1]; s = open(p).read()
+          s = re.sub(r"        alignas\(sherwood_v3_entry\) static unsigned char storage.*?return std::launder\(reinterpret_cast<sherwood_v3_entry \*>\(storage\)\);",
+                     "        static sherwood_v3_entry result[min_lookups] = {{}, {}, {}, {special_end_value}};\n        return result;",
+                     s, flags=re.S)
+          open(p, "w").write(s)
+          PY
+
+          for f in "$um" "$fm"; do
+            git diff --quiet -- "$f" && { echo "::error::$f was not modified — the control never armed"; exit 1; }
+          done
+
+          # The exit code has to be EXACTLY 1. Accepting "non-zero" is how this control
+          # gives a false pass: a botched revert that merely breaks the build exits 2,
+          # which reads as failure and would have been scored as "the sweep caught it".
+          # Measured — that is not hypothetical, it happened while writing this job.
+          set +e
+          CLANGXX="clang++-${LLVM_VERSION}" GXX=g++-14 \
+            ./scripts/check-cross-compiler-statics.sh > /tmp/control.log 2>&1
+          rc=$?
+          set -e
+          sed 's/^/    /' /tmp/control.log
+
+          case "$rc" in
+            1) : ;;
+            0) echo "::error::the sweep PASSED on the pre-fix headers — it cannot detect the defect it exists for"; exit 1 ;;
+            *) echo "::error::the sweep could not run (exit $rc). The revert broke the probe instead of arming it — this is NOT a detection."; exit 1 ;;
+          esac
+          grep -q 'DIVERGENT function-local static' /tmp/control.log || {
+            echo "::error::exit 1 with no divergence reported — the sweep failed for some other reason"; exit 1; }
+          echo "negative control fired: exit 1, $(grep -c 'DIVERGENT' /tmp/control.log) divergent statics on the pre-fix sentinels."
+
+      - name: Working tree restored
+        run: git diff --exit-code -- src/qb/vendor/ska_hash/
