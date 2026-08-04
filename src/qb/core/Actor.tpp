@@ -22,8 +22,7 @@
  * @ingroup Core
  */
 
-#include "VirtualCore.h"
-#include "VirtualCore.tpp"
+#include "VirtualCore.h" // also carries VirtualCore's own template bodies since 3.0
 
 #include <cassert>
 

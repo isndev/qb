@@ -68,7 +68,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 | `broadcast<Event>(args...)` | per-core independent | any event type | fan-out to every active core |
 
 - `push<Event>()` guarantees ordered delivery to the same destination from the same source (`src/qb/core/Actor.h:823-824`, mirrored by `qb::Pipe::push`, `src/qb/core/Pipe.h:127-130`). It returns a mutable reference to the event in the pipe buffer; you may set fields on it before it is consumed, but you must not store the reference past the current scope.
-- `send<Event>()` is unordered and **requires trivially-destructible events for the EventQOS0-derived (`QoS < 2`) path** — `VirtualCore::fill_event` enforces this with `static_assert(std::is_trivially_destructible_v<T>, ...)` gated on `event_qos0_type<T>` (`src/qb/core/VirtualCore.tpp:130-132`). Such events holding `std::string`, `std::vector`, and similar non-trivial members are rejected at compile time. `qb::string<N>` and POD payloads are fine. Prefer `push()` unless you have measured a need.
+- `send<Event>()` is unordered and **requires trivially-destructible events for the EventQOS0-derived (`QoS < 2`) path** — `VirtualCore::fill_event` enforces this with `static_assert(std::is_trivially_destructible_v<T>, ...)` gated on `event_qos0_type<T>` (`src/qb/core/VirtualCore.h:766-768`). Such events holding `std::string`, `std::vector`, and similar non-trivial members are rejected at compile time. `qb::string<N>` and POD payloads are fine. Prefer `push()` unless you have measured a need.
 
 > The 16-bit `EventId` keeps an event's metadata (`state`, `bucket_size`, `id`, `dest`, `source`) within one cacheline. This is a deliberate trade-off; do not assume room for a wider id.
 
@@ -143,7 +143,7 @@ There is no `std::mutex` on the message path. The only locks in `qb-core` guard 
 - **Capturing `this` (or any member by reference) into a `spawn_detached` coroutine.** The actor can die while the coroutine is suspended (`src/qb/core/Actor.h:1053`). Capture by value; reach the actor only through `CoroContext`.
 - **Blocking the worker thread.** `std::this_thread::sleep_for`, a heavy syscall, or a long computation in a handler or `on(qb::LoopEvent const&)` stalls every actor on the core (`src/qb/core/ICallback.h:16`). Offload to a coroutine or a dedicated I/O actor.
 - **Letting an event constructor throw under load.** The `noexcept` message path terminates the process on a thrown exception (`src/qb/core/Pipe.h:126`). Keep events small and allocation-light.
-- **Using `send()` for ordered work.** `send()` is unordered and rejects non-trivially-destructible events at compile time on the EventQOS0-derived (`QoS < 2`) path (`src/qb/core/VirtualCore.tpp:130-132`). When ordering matters, use `push()`.
+- **Using `send()` for ordered work.** `send()` is unordered and rejects non-trivially-destructible events at compile time on the EventQOS0-derived (`QoS < 2`) path (`src/qb/core/VirtualCore.h:766-768`). When ordering matters, use `push()`.
 - **Persisting `type_id<T>()`.** It is process-local and not stable across runs.
 
 ## See also

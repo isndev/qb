@@ -136,7 +136,7 @@ void send(ActorId const &dest, _Args &&...args) const noexcept;
 
 `send<E>(dest, args...)` is a fire-and-forget variant. It returns nothing and makes **no ordering guarantee** (even between two sends from the same source to the same destination). `E` **must be trivially destructible**: `send` is the primitive fire-and-forget messages use, and a fire-and-forget message should derive from `qb::EventQOS0` — the one class of event the engine is allowed to **drop** when a peer's mailbox is full, discarding it without running its destructor. Events holding a `std::vector` or another heap-backed member are not valid here; use `qb::string<N>` or plain data members instead. Prefer `push` unless ordering genuinely does not matter for the message.
 
-The trivially-destructible requirement is a usage contract documented on `Actor::send` (`qb/src/qb/core/Actor.h`). It is enforced at compile time only for events that derive from `qb::EventQOS0`, through a `static_assert` in `qb::VirtualCore::fill_event` (`qb/src/qb/core/VirtualCore.tpp`); a plain `qb::Event` subclass with a non-trivial member still compiles, so the constraint is yours to honor.
+The trivially-destructible requirement is a usage contract documented on `Actor::send` (`qb/src/qb/core/Actor.h`). It is enforced at compile time only for events that derive from `qb::EventQOS0`, through a `static_assert` in `qb::VirtualCore::fill_event` (`qb/src/qb/core/VirtualCore.h`); a plain `qb::Event` subclass with a non-trivial member still compiles, so the constraint is yours to honor.
 
 ### `broadcast` — every actor on every core
 
