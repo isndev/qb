@@ -35,10 +35,40 @@ struct sherwood_v10_entry {
         T value;
     };
 
+    // qb local modification: the shared empty sentinel must NOT be a function-local
+    // static.
+    //
+    // Upstream wrote `static EntryPointer result[3]` inside empty_pointer(). Every
+    // empty table points at it, and deallocate_data() decides whether to free by
+    // comparing against it (`entries != Entry::empty_pointer()`), so ALL translation
+    // units in a program must agree on one address. They do not, across compilers:
+    // when T carries libstdc++'s cxx11 ABI tag (any std::string in the key or value),
+    // clang appends `B5cxx11` to the mangled name of the function-LOCAL STATIC and
+    // gcc does not. Measured on Debian 13/aarch64, clang-19 vs gcc-14.2:
+    //
+    //   clang  _ZZN3ska9detailv1018sherwood_v10_entryI...13empty_pointerEvE6resultB5cxx11
+    //   gcc    _ZZN3ska9detailv1018sherwood_v10_entryI...13empty_pointerEvE6result
+    //
+    // The two do not merge at link time, so a program mixing a clang-built qb with a
+    // gcc-built consumer holds two sentinels. An empty map created on one side and
+    // destroyed on the other compares against the wrong one, takes the free branch,
+    // and calls the allocator on static storage -- `free(): invalid size`, SIGABRT.
+    // Silent heap corruption, and no diagnostic at link time.
+    //
+    // Making it a static DATA MEMBER removes the function-local-static mangling from
+    // the picture entirely: a variable's name is mangled from the class template's
+    // own arguments, which both compilers spell identically (verified: byte-identical
+    // symbols). Internal linkage would be the opposite of a fix -- it would give every
+    // translation unit its own sentinel and guarantee the mismatch.
+    //
+    // It stays constant-initialized (no guard variable emitted), so no static
+    // initialization order hazard is introduced: EntryPointer(1) folds to the literal
+    // address 1 exactly as it did inside the function.
+    inline static EntryPointer empty_table[3] = {EntryPointer(1), nullptr, nullptr};
+
     static EntryPointer *
     empty_pointer() {
-        static EntryPointer result[3] = {EntryPointer(1), nullptr, nullptr};
-        return result + 1;
+        return empty_table + 1;
     }
 };
 
