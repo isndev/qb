@@ -14,8 +14,8 @@
  * see THIRD-PARTY-NOTICES.
  */
 
-#ifndef WEPOLL_H_
-#define WEPOLL_H_
+#ifndef QEV_WEPOLL_H_
+#define QEV_WEPOLL_H_
 
 #ifndef WEPOLL_EXPORT
 #define WEPOLL_EXPORT
@@ -76,4 +76,4 @@ WEPOLL_EXPORT int epoll_wait(HANDLE ephnd, struct epoll_event *events, int maxev
 } /* extern "C" */
 #endif
 
-#endif /* WEPOLL_H_ */
+#endif /* QEV_WEPOLL_H_ */

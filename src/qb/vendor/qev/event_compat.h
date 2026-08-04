@@ -13,8 +13,8 @@
  * remain Copyright (c) 2000-2004 Niels Provos, and from libev Copyright (c)
  * Marc Alexander Lehmann, under the BSD-2-Clause license; see THIRD-PARTY-NOTICES.
  */
-#ifndef EVENT_COMPAT_H_
-#define EVENT_COMPAT_H_
+#ifndef QEV_EVENT_COMPAT_H_
+#define QEV_EVENT_COMPAT_H_
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -213,4 +213,4 @@ int evtag_unmarshal_timeval(struct evbuffer *evbuf, uint32_t need_tag, struct ti
 }
 #endif
 
-#endif /* EVENT_COMPAT_H_ */
+#endif /* QEV_EVENT_COMPAT_H_ */

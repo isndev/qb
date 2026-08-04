@@ -1,5 +1,5 @@
-#ifndef EV_CONFIG_H_
-#define EV_CONFIG_H_
+#ifndef QEV_CONFIG_H_
+#define QEV_CONFIG_H_
 
 /* Backend support flags */
 #cmakedefine01 EV_USE_INOTIFY
@@ -61,4 +61,4 @@
 #define EV_PACKAGE "@PROJECT_NAME@"
 #define EV_VERSION "@LIBEV_VERSION@"
 
-#endif /* EV_CONFIG_H_ */
+#endif /* QEV_CONFIG_H_ */

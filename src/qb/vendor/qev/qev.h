@@ -13,25 +13,47 @@
  * see THIRD-PARTY-NOTICES.
  */
 
-/* Coexistence with a system libev / libevent -- two deliberate, measured overlaps.
+/* Coexistence with a system libev / libevent.
  *
- * 1. INCLUDE GUARD. This guard is upstream libev's, kept unrenamed (`ev++.h`'s `EVPP_H__`
- *    likewise). So ONE translation unit cannot include both <qb/vendor/qev/qev.h> and a
- *    system <ev.h>: whichever comes second is silently swallowed and its declarations are
- *    simply absent. Separate translation units in the same program are fine. If you need
- *    both APIs, keep them in different .cpp files.
+ * 1. INCLUDE GUARDS -- resolved. Every header of this fork now carries a guard named
+ *    after the fork, not after upstream: QEV_H_ here, QEVPP_H_ in qev++.h,
+ *    QEV_EVENT_H_ in event.h, QEV_EVENT_COMPAT_H_ in event_compat.h, QEV_WRAP_H in
+ *    qev_wrap.h, QEV_WEPOLL_H_ in wepoll.h, QEV_CONFIG_H_ in the generated
+ *    qev_config.h. So ONE translation unit may include both <qb/vendor/qev/qev.h> and
+ *    a system <ev.h>, in either order, and both sets of declarations are present.
  *
- * 2. LINK SYMBOLS. libqev.a and a real libev.a each export 82 symbols and share exactly
- *    24 of them -- the `event_*` libevent-compatibility layer (event_init, event_add,
- *    event_base_loop, ...). Everything libev-native was renamed ev_* -> qev_*, so those 82
- *    do not collide. The 24 that do collide are NOT a fork artefact: they are libevent's
- *    published API, and any libev built with its compat layer exports the same names.
- *    Linking both archives succeeds silently in either order (the linker takes the first
- *    definition), so a program that pulls in both gets ONE `event_*` implementation and
- *    cannot tell which. Do not link both if you use the `event_*` compat API.
+ *    This was NOT always true. These guards used to keep upstream's spellings (EV_H_,
+ *    EVPP_H__, EVENT_H_, ...), so whichever header came second in a translation unit
+ *    was silently swallowed by the other's guard and its declarations were simply
+ *    absent -- and because <qb/main.h> pulls qev.h in transitively, any consumer that
+ *    also used a real libev hit it. The failure was at least loud (a compile error,
+ *    e.g. `ev_default_loop` undeclared), never silent, but it had no workaround short
+ *    of separating the two APIs into different .cpp files.
+ *
+ *    Note the C symbols were already distinct: everything libev-native is renamed
+ *    ev_* -> qev_*. Only the header-level guards were unfinished.
+ *
+ * 2. LINK SYMBOLS -- NOT resolved, deliberately. libqev.a and a real libev.a each
+ *    export 82 symbols and share exactly 24 of them: the `event_*` libevent-
+ *    compatibility layer (event_init, event_add, event_base_loop, ...). Those 24 are
+ *    not a fork artefact -- they are libevent's published API, and any libev built
+ *    with its compat layer exports the same names. Renaming them would destroy the
+ *    one thing the compat layer exists to provide, which is libevent's spelling.
+ *
+ *    The consequence, measured: linking both archives succeeds silently in either
+ *    order and the linker simply takes the first definition (confirmed with -Wl,-y;
+ *    there is no diagnostic, and -fvisibility=hidden does not close it). A program
+ *    that pulls in both therefore gets ONE `event_*` implementation and cannot tell
+ *    which. If you use the `event_*` compat API, link one or the other, not both.
+ *    Everything else -- the qev_* native API and the C++ ev:: wrappers -- is
+ *    unaffected and safe to mix.
+ *
+ * This comment is the authoritative copy of both caveats for consumers: it ships with
+ * the installed header (<prefix>/include/qb/vendor/qev/qev.h), whereas qb's readme/
+ * tree is not installed. Keep it in sync with readme/7_reference/cmake_dependencies.md.
  */
-#ifndef EV_H_
-#define EV_H_
+#ifndef QEV_H_
+#define QEV_H_
 #include <stdint.h>
 /* Pull in the build-time config when present. qev.h is self-contained (every
  * config macro it reads has a built-in default), so a missing config header is

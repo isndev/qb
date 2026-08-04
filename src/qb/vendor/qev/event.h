@@ -13,8 +13,8 @@
  * see THIRD-PARTY-NOTICES.
  */
 
-#ifndef EVENT_H_
-#define EVENT_H_
+#ifndef QEV_EVENT_H_
+#define QEV_EVENT_H_
 
 #ifdef EV_H
 #include EV_H
