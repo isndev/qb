@@ -58,11 +58,18 @@ project(qb-io
 #     nasty ones -- without <unistd.h> the qualified call binds to the *member* instead of
 #     failing on an unknown name.
 #
-#  3. qb-core's VirtualCore.cpp uses fill_event<SignalEvent> and push<UnregisterCallbackEvent>
-#     while including only VirtualCore.h; the definitions are in VirtualCore.tpp, reached only
-#     because Actor.cpp sits after VirtualCore.cpp in core.cpp. Split, the library builds and
-#     archives cleanly and the CONSUMER's link fails. Fix is one line:
-#     #include <qb/core/VirtualCore.tpp> in VirtualCore.cpp.
+#  3. FIXED IN 3.0, RECORDED BECAUSE IT IS THE ONE THAT WENT AWAY. Through 2.6.0, qb-core's
+#     VirtualCore.cpp used fill_event<SignalEvent> and push<UnregisterCallbackEvent> while
+#     including only VirtualCore.h; the definitions lived in VirtualCore.tpp and were reached
+#     only because Actor.cpp sits after VirtualCore.cpp in core.cpp. Split, the library built
+#     and archived cleanly and the CONSUMER's link failed. Retiring the four .tpp put those
+#     bodies at the tail of VirtualCore.h itself, so the dependency on amalgamation ORDER is
+#     gone. Re-measured on this tree: VirtualCore.cpp compiles standalone (rc=0) and its object
+#     DEFINES both templates rather than referencing them --
+#         __ZN2qb11VirtualCore10fill_eventINS_11SignalEventEEE...          defined
+#         __ZN2qb11VirtualCore4pushINS_23UnregisterCallbackEventEJEEE...   defined
+#     Items 1 and 2 are unchanged and were re-measured the same day: file.cpp still fails
+#     standalone with 13 errors and crypto.cpp with 5 -- the "18 between them" above.
 #
 # Full measurement in dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md §3.2 and §6(a)(b).
 # -----------------------------------------------------------------------------

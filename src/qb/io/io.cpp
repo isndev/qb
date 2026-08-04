@@ -65,6 +65,11 @@ generate_random_uuid() {
 #include "crypto_advanced.cpp"
 #include "crypto_asymmetric.cpp"
 #include "crypto_jwt.cpp"
+// LOAD-BEARING INCLUDE, NOT A CONVENIENCE. tcp/ssl/init.cpp's whole payload is an
+// anonymous-namespace object's CONSTRUCTOR (OpenSSL legacy init + signal(SIGPIPE, SIG_IGN)).
+// Compiled as its own TU it defines no *referenced* external symbol, so the linker never
+// extracts that archive member and the initialiser silently never runs -- measured, SIG_IGN
+// -> SIG_DFL, with no compiler, linker or runtime diagnostic. See the banner in that file.
 #include "tcp/ssl/init.cpp"
 #include "tcp/ssl/listener.cpp"
 #include "tcp/ssl/socket.cpp"
