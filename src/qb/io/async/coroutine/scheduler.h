@@ -64,6 +64,54 @@ EV_CONFIG_H=<qb/vendor/qev/qev_config.h> definition, or the include directory ca
 
 namespace qb::io::async {
 
+class CoroutineScheduler;
+
+namespace detail {
+/**
+ * @brief Deleter for `CoroutineScheduler::owned_current_`. Declared here, defined below the class.
+ *
+ * @details
+ * `owned_current_` is a `static inline thread_local` member of `CoroutineScheduler` whose value
+ * type is `CoroutineScheduler` itself, so its `unique_ptr` is instantiated while the class is
+ * still **incomplete**. With `std::default_delete` that is fatal from C++23 onwards: P2273R3 made
+ * `~unique_ptr` `constexpr`, so libc++ and libstdc++ instantiate its body eagerly at the member's
+ * definition, reaching `default_delete::operator()` and its
+ * `static_assert(sizeof(_Tp) >= 0, "cannot delete an incomplete type")`:
+ *
+ * ```
+ * error: invalid application of 'sizeof' to an incomplete type 'qb::io::async::CoroutineScheduler'
+ *   note: in instantiation of member function 'std::unique_ptr<...>::~unique_ptr' requested here
+ *   note: definition of 'qb::io::async::CoroutineScheduler' is not complete until the closing '}'
+ * ```
+ *
+ * Measured at `-std=c++23` on AppleClang 21/libc++, clang++-19/libstdc++ and clang++-21/libstdc++.
+ * It made **45 of qb's 134** public headers uncompilable on their own — `qb/main.h`, `qb/actor.h`,
+ * `qb/io/async.h` and every coroutine header — while `-std=c++20` stayed green, which is why no
+ * C++20-only gate could see it. `dev-cxx23` is in the gate now for exactly this reason.
+ *
+ * A deleter whose `operator()` is **declared** here and **defined** after the class removes the
+ * eager instantiation at the root: `~unique_ptr` needs only the deleter's declaration, and the one
+ * `delete` is compiled where `CoroutineScheduler` is complete. This is the standard pimpl remedy.
+ *
+ * @warning Do **not** "simplify" this back to `std::unique_ptr<CoroutineScheduler>`, and do not
+ *          move the member out of the class to dodge the same error. Both alternatives were
+ *          measured and both are worse:
+ *          - reverting to an out-of-line definition in `io.cpp` emits a `non-external` TLS
+ *            descriptor, i.e. one scheduler per image instead of one per process — the exact
+ *            split `qb/utility/abi.h` documents;
+ *          - declaring the member non-`inline` in the class and defining it `inline` below makes
+ *            clang emit the **thread-local wrapper** `_ZTWN2qb2io5async18CoroutineScheduler14owned_current_E`
+ *            as a *strong* symbol (`nm -m`: `external` instead of `weak private external`),
+ *            because `current()`'s in-class body uses the member while only the non-`inline`
+ *            declaration is visible. Two translation units then fail to link:
+ *            `duplicate symbol 'thread-local wrapper routine for ...owned_current_'`.
+ *          The shape kept here leaves every symbol byte-identical to what 3.0.0 already ships.
+ */
+struct scheduler_deleter {
+    void operator()(CoroutineScheduler *p) const noexcept;
+};
+} // namespace detail
+
 /**
  * @brief Manages coroutine execution and lifecycle
  *
@@ -577,8 +625,11 @@ public:
     static CoroutineScheduler &
     current() {
         if (!current_) {
-            owned_current_ = std::make_unique<CoroutineScheduler>();
-            current_       = owned_current_.get();
+            // `reset(new ...)`, not `make_unique`: `owned_current_` carries
+            // `detail::scheduler_deleter`, and `make_unique` only ever produces a
+            // `std::default_delete` pointer.
+            owned_current_.reset(new CoroutineScheduler());
+            current_ = owned_current_.get();
         }
         return *current_;
     }
@@ -795,8 +846,22 @@ private:
     // no listener, so it is freed at thread exit rather than leaked. A listener owns
     // its own scheduler (set via set_current()), so this stays empty in that case.
     // Same anchoring rule as current_ above.
-    QB_ABI_ANCHOR static inline thread_local std::unique_ptr<CoroutineScheduler> owned_current_{};
+    //
+    // The deleter is `detail::scheduler_deleter`, not `std::default_delete`, and that is
+    // load-bearing: see the note on that struct above. Every other property of this declaration
+    // -- `QB_ABI_ANCHOR`, `static inline thread_local`, the in-class definition -- is unchanged
+    // and must stay unchanged, because those are what make the TLS descriptor a
+    // **weak external** one the dynamic linker coalesces across images.
+    QB_ABI_ANCHOR static inline thread_local
+        std::unique_ptr<CoroutineScheduler, detail::scheduler_deleter> owned_current_{};
 };
+
+// Defined here, below the class, where `CoroutineScheduler` is complete. Declaring it above and
+// defining it here is the whole point of the custom deleter (see `detail::scheduler_deleter`).
+inline void
+detail::scheduler_deleter::operator()(CoroutineScheduler *const p) const noexcept {
+    delete p;
+}
 
 // Global function for awaiters to get current scheduler
 [[nodiscard]] inline CoroutineScheduler *

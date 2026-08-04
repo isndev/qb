@@ -45,6 +45,27 @@ if(NOT DEFINED QB_CI)
 endif()
 option(QB_TESTS_WERROR "Treat warnings as errors in test/benchmark targets" ${QB_CI})
 
+# Run every GoogleTest binary in a randomised order (`--gtest_shuffle`).
+#
+# This is on by default because a suite whose result depends on execution order is not measuring
+# what it claims to. Measured instance, 3.0.0: `qb-core-test-unit-type-id-identity` reported
+# `9 tests PASSED` in declaration order and `rc=139` (SIGSEGV) on 3 of 6 shuffle seeds — one of
+# its tests published a stack address into a process-wide registry, and the suite only survived
+# because that test happened to be declared last. ASan did not see it either (the reader lives in
+# the un-instrumented archive), so ordering was the *only* thing standing between the tree and a
+# corrupt registry.
+#
+# Shuffling is per-binary — ctest already runs the binaries themselves in an arbitrary,
+# parallel order — so the blast radius of a newly-exposed dependency is one executable.
+#
+# QB_TESTS_SHUFFLE_SEED: 0 (the default, and GoogleTest's own) seeds from the clock and prints
+# `Note: Randomizing tests' orders with a seed of NNNN.` on every run, so any failure is
+# reproducible with `--gtest_random_seed=NNNN`. Set it to a non-zero value to pin one order — use
+# that to bisect a failure, not to make a flaky suite quiet.
+option(QB_TESTS_SHUFFLE "Run GoogleTest binaries in a randomised order (--gtest_shuffle)" ON)
+set(QB_TESTS_SHUFFLE_SEED "0" CACHE STRING
+    "Seed for QB_TESTS_SHUFFLE; 0 = seed from the clock (GoogleTest prints the seed it used)")
+
 # Apply -Werror / /WX to a test or benchmark target, only when QB_TESTS_WERROR is ON.
 # The repo strict-warning *set* is applied separately by qb_apply_compiler_flags(); this
 # only flips the promote-to-error switch.
@@ -550,8 +571,14 @@ function(qb_add_test)
     
     # Register test with CTest
     # Set working directory to where the binary is located so tests can find resources
-    add_test(NAME ${TEST_NAME} 
-             COMMAND ${TEST_NAME}
+    # --gtest_shuffle (QB_TESTS_SHUFFLE, ON by default): see the option's rationale above.
+    set(_TC_RUN_ARGS "")
+    if(QB_TESTS_SHUFFLE)
+        list(APPEND _TC_RUN_ARGS --gtest_shuffle
+                                 "--gtest_random_seed=${QB_TESTS_SHUFFLE_SEED}")
+    endif()
+    add_test(NAME ${TEST_NAME}
+             COMMAND ${TEST_NAME} ${_TC_RUN_ARGS}
              WORKING_DIRECTORY "${TEST_BINARY_DIR}")
 
     set_property(GLOBAL APPEND PROPERTY QB_TEST_TARGETS ${TEST_NAME})

@@ -152,7 +152,15 @@ QB_ABI_ANCHOR inline std::atomic_flag _type_id_registry_lock{};
  *          address* in each image once visibility is tightened, which is the very situation this
  *          exists to survive.
  * @param slot Storage donated by the caller's block-scope static; only touched on a miss.
- * @param name `typeid(T).name()` — a link-time constant address, never a heap string.
+ *             **Static storage duration is a hard precondition, not a preference**: on a miss the
+ *             address of `slot` is linked into `_type_id_registry` permanently, so an automatic
+ *             leaves a dangling node that every later registration walks. It is checked — in
+ *             Debug, on POSIX, `Event.cpp` asserts that `&slot` is outside the calling thread's
+ *             stack before publishing it. The check is compiled out under `NDEBUG` and cannot see
+ *             a heap slot (equally wrong, but no portable predicate distinguishes heap from
+ *             static), so it narrows the contract rather than closing it.
+ * @param name `typeid(T).name()` — a link-time constant address, never a heap string. It is
+ *             stored, not copied, so it must outlive the process too.
  * @return The id of `name`, stable for the lifetime of the process.
  */
 TypeId register_type_id(type_id_slot &slot, char const *name) noexcept;

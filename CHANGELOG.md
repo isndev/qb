@@ -31,6 +31,18 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Added
 
+- **`scripts/check-abi-fingerprint.sh` + the `abi-fingerprint` CI job — coverage for the link-time
+  configuration fingerprint, which shipped with none.** The script arms one mismatch per axis
+  (cache line, exceptions, coroutine debug, jthread source, and the raw `-I`/`-l` version case)
+  and requires each to **fail at link** naming that axis's symbol, requires a matching consumer to
+  link *and run*, and checks that the reference array is still emitted — on ELF that the
+  `abi_fingerprint` section still carries `SHF_GNU_RETAIN` (`readelf -S` → `WAGR`) and that a
+  mismatch still fails under `-Wl,--gc-sections`. It refuses to report success vacuously: an axis
+  this host cannot flip is an explicit SKIP, and a run below the check floor fails. The job runs on
+  **both** Linux and macOS, because the `--gc-sections` defeat that `retain` exists to stop is
+  ELF-only, and carries a negative control that removes `retain` and requires the check to fail
+  (verified on Debian 13 / GNU ld 2.44: section flags `WAGR` → `WAG`, the cache-line mismatch links
+  cleanly again, check exits 1).
 - **`QB_ABI_ANCHOR` (`qb/utility/abi.h`) on every process-wide identity anchor.** The entities that
   must exist exactly once per process — `qb::detail::_type_id_counter`, the router's `_disposers`
   table and its two registration statics, the `ServiceActor` registry (`VirtualCore::getServices`,
@@ -131,6 +143,14 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   is reported `N/A` and counted separately — never as a pass.
 
 ### Changed
+
+- **Every GoogleTest binary now runs with `--gtest_shuffle`** (`QB_TESTS_SHUFFLE`, default `ON`;
+  `QB_TESTS_SHUFFLE_SEED` pins the order, `0` = seed from the clock, and GoogleTest prints the seed
+  it used so any failure is reproducible). A suite whose result depends on declaration order is not
+  measuring what it claims: `qb-core-test-unit-type-id-identity` reported `9 tests PASSED` in
+  declaration order and segfaulted on half of the shuffle seeds. Measured fallout across the whole
+  tree before enabling it: 355 test binaries × 3 seeds, exactly one order-dependent failure — the
+  registry defect above.
 
 - **`listener::current` is defined in the header, not in `listener.cpp`** — and the same for
   `VirtualCore::_handler`, `VirtualCore::_nb_service`, `VirtualCore::activation_deadline_ns` and
@@ -374,6 +394,29 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   **Source-incompatible** for code that called `std::to_string(uuid)`.
 
 ### Fixed
+
+- **qb did not compile at `-std=c++23`.** `CoroutineScheduler::owned_current_` is a
+  `static inline thread_local std::unique_ptr<CoroutineScheduler>` — a `unique_ptr` to the very
+  class it is a member of, so it is instantiated while that class is incomplete. C++23 made
+  `~unique_ptr` `constexpr` (P2273R3), which makes libc++ and libstdc++ instantiate its body
+  eagerly and reach `default_delete`'s `static_assert(sizeof(_Tp) >= 0)`:
+  `invalid application of 'sizeof' to an incomplete type`. **45 of the 134** public headers stopped
+  compiling on their own — `qb/main.h`, `qb/actor.h`, `qb/io/async.h` and every coroutine header —
+  on AppleClang 21/libc++, clang++-19/libstdc++ and clang++-21/libstdc++, while g++-14 and every
+  compiler at `-std=c++20` stayed green. A deleter declared before the class and defined after it
+  (`qb::io::async::detail::scheduler_deleter`) removes the eager instantiation; every symbol,
+  including the weak-external TLS descriptor `QB_ABI_ANCHOR` exists to preserve, is byte-identical
+  to before. The `dev-cxx23` preset is now part of the release gate, which is what makes this
+  class of defect visible at all: `release` and `feature-gates` are both C++20.
+- **`register_type_id` published a stack address into the process-wide type-id registry.** The
+  3.0.0 regression test for the registry passed a `type_id_slot` with **automatic** storage, and
+  `register_type_id` links `&slot` into a list that outlives the call, so every later registration
+  walked a dangling node. It passed only because that test ran last in declaration order:
+  `--gtest_shuffle` gave `rc=139` (SIGSEGV) on 3 of 6 seeds. ASan was silent, because the reader
+  is in the un-instrumented archive. Fixed in the test, and the contract is now **checked** rather
+  than only documented — in Debug on POSIX, `register_type_id` asserts that `&slot` is outside the
+  calling thread's stack before publishing it, with a death test and a matching negative control
+  pinning that the check fires.
 
 - **The event-id space forked under `-fvisibility=hidden`, and two distinct types received the same
   id.** `qb/core/Event.h` already documented that a type-id collision "silently breaks event routing

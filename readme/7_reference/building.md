@@ -235,6 +235,57 @@ defines those symbols with the values *the archive* was compiled with.
 CI-tested. Neither are the feature flags (`QB_HAS_SSL`, `QB_HAS_QUIC`, …) — those arrive through
 the imported target's usage requirements, and the qbm package configs check them separately.
 
+#### Do not mix `NDEBUG` across translation units in one program
+
+This is the one configuration hazard qb does **not** turn into a link error, and the reason is that
+turning it into one would break the supported case above. It is written down here because it is
+live, not theoretical.
+
+qb's public headers contain 39 `assert(` sites and 7 `#if`/`#ifndef NDEBUG` blocks inside `inline`
+and template bodies. An `inline` function has *vague linkage*: every translation unit that uses it
+emits its own copy and the linker keeps exactly one. When two translation units in the same program
+disagree about `NDEBUG`, they emit **two different bodies under one symbol**, and which one survives
+is decided by the order the objects reach the linker. Measured, on macOS/ld-prime and on
+Linux/GNU ld 2.44, with the same two object files both times:
+
+```
+$ c++ main.o tu_dbg.o -o prog && ./prog     # main.o = -DNDEBUG, tu_dbg.o = -UNDEBUG
+returned normally (NO assert fired)                                          exit=0
+
+$ c++ tu_dbg.o main.o -o prog && ./prog     # same objects, order swapped
+Assertion failed: (_locked && "async_mutex::unlock called on an unlocked mutex"),
+function unlock, file sync.h, line 535.                                      exit=134
+```
+
+Both outcomes are wrong in the same way: the program's behaviour is not a property of its source.
+A release build can abort on a check it never compiled, and a debug build can lose a check it
+asked for. This is the standard C++ mixed-`NDEBUG` ODR hazard rather than anything specific to qb,
+but qb's headers are large enough that you will hit it.
+
+**The rule: compile every translation unit in one program with the same `NDEBUG` setting.** With
+CMake that is automatic — `CMAKE_BUILD_TYPE` applies per target and `NDEBUG` comes from the build
+type — so you have to go out of your way to break it: a hand-written `-DNDEBUG` on one file, an
+object copied in from another build, or a prebuilt third-party static library compiled the other
+way and linked into the same executable.
+
+**A Debug application against a Release qb archive is not this case, and remains supported.** The
+archive's own out-of-line code is fixed at build time; only vague-linkage bodies that *both* halves
+emit can collide, and the consumer's uniform setting decides those consistently.
+
+Three remedies were considered and rejected, and the reasoning is recorded here so it is not
+re-litigated from scratch:
+
+| candidate | why not |
+|---|---|
+| Add `NDEBUG` to the fingerprint | Makes a Debug-or-default consumer against a Release archive a hard link failure. An unset `CMAKE_BUILD_TYPE` is CMake's **default**, so this would break the most common consumer configuration to fix a rarer one. |
+| Compile the 39 asserts unconditionally (`if (…) [[unlikely]]`) | Removes the divergence, but puts a branch in `schedule_via_current`, `generator<T>::iterator::operator*` and the mpsc ring buffer — per-resume and per-element paths — and silently changes what `-DNDEBUG` means for every qb user. |
+| An `inline namespace` ABI tag keyed on `NDEBUG` | Correct in isolation, and exactly what makes the two bodies distinct symbols — but it re-mangles every qb symbol per build mode, which is the supported Debug-consumer/Release-archive case broken again, more thoroughly. |
+
+The remaining option — keying the header asserts off the *archive's* build mode via a generated,
+installed configuration header — is the only one that removes the divergence at zero release cost.
+It is not implemented: it adds an installed header and changes what a Debug consumer sees inside
+qb's own inline code, so it is a deliberate design change rather than a patch.
+
 Read the archive's own side with either of:
 
 ```bash
