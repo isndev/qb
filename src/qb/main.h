@@ -17,6 +17,6 @@
 // fails at LINK on qb::Actor::push<E> / qb::Pipe::push<E>. Main.h has already completed
 // qb::Actor by this point (it includes Actor.h for TActorFactory), which is the position these
 // bodies need.
-#include "core/Actor.tpp"
+#include "core/VirtualCore.h" // Actor + VirtualCore template bodies (was core/Actor.tpp)
 // Pipe.h has carried Pipe's own template bodies since 3.0 (was core/Pipe.tpp); Actor.h:50
 // already pulled it, so there is nothing left to add here.

@@ -227,7 +227,7 @@ For sending several events to one destination, or for events with large dynamic 
 ```
 <!-- src: qb/src/qb/core/Actor.h -->
 
-`to(dest)` returns an `Actor::EventBuilder` bound to the destination's pipe; each `EventBuilder::push` forwards to `Pipe::push` and returns the builder for chaining (`qb/core/Actor.tpp`). The pipe is resolved once, so repeated sends to the same destination skip the per-call lookup. Ordering matches plain `push`.
+`to(dest)` returns an `Actor::EventBuilder` bound to the destination's pipe; each `EventBuilder::push` forwards to `Pipe::push` and returns the builder for chaining (`qb/core/VirtualCore.h`). The pipe is resolved once, so repeated sends to the same destination skip the per-call lookup. Ordering matches plain `push`.
 
 ```cpp
 // derived from: qb/tests/core/system/messaging/messaging-api.cpp (EventBuilderPushActor)

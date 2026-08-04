@@ -26,8 +26,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <qb/core/Actor.h>
-#include <qb/core/Actor.tpp>
-#include <qb/core/VirtualCore.h>
+#include <qb/core/VirtualCore.h> // also carries Actor's template bodies (was qb/core/Actor.tpp)
 #include <qb/io/async/listener.h>
 
 namespace qb {

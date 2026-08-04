@@ -28,11 +28,12 @@
 #include <qb/core/Actor.h>
 #include <qb/system/time.h> // qb::duration
 // Actor.h declares Actor::push<E>/CoroContext::push_to<E> and defines neither; the bodies are
-// in Actor.tpp. This header INSTANTIATES them in a non-dependent context, so without this it
+// at the tail of VirtualCore.h (they were Actor.tpp through 2.6.0). This header INSTANTIATES
+// them in a non-dependent context, so without this it
 // compiles clean, warns only under -Wundefined-func-template (which -isystem hides from every
 // find_package consumer), and emits an undefined reference. Free when core/patterns.h got
-// there first -- QB_ACTOR_TPL makes the second inclusion a no-op.
-#include <qb/core/Actor.tpp>
+// there first -- QB_CORE_H makes the second inclusion a no-op.
+#include <qb/core/VirtualCore.h>
 
 namespace qb {
 

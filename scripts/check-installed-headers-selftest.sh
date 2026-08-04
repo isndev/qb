@@ -146,17 +146,19 @@ else
 fi
 
 # ---- C6 a stale exclusion ---------------------------------------------------------------
-# Deliberately Actor.tpp, not epoll.h: epoll.h is excluded only on non-Linux, so using it here
-# would make this control silently vanish on the ONE platform the gate runs on in CI.
+# Deliberately qev_vars.h, not epoll.h: epoll.h is excluded only on non-Linux, so using it here
+# would make this control silently vanish on the ONE platform the gate runs on in CI. This was
+# qb/core/Actor.tpp until 3.0 retired the last .tpp under qb/ -- qev_vars.h is now the only
+# UNCONDITIONALLY excluded header the qb tree still ships, which is the property C6 needs.
 say_control "C6  an exclusion naming a header that no longer exists must be REJECTED"
-V="$P/include/qb/core/Actor.tpp"
+V="$P/include/qb/vendor/qev/qev_vars.h"
 mv "$V" "$V.moved"
 if run_gate "${QB_ARGS[@]}"; then ko "a stale exclusion was accepted -- an excluded name can rot"; else
   { echo "$GATE_OUT" | grep -m1 'stale exclusion' | sed 's/^/      /'; } || true
   ok "stale exclusion detected"
 fi
 mv "$V.moved" "$V"
-[ "$(sha "$V")" = "$(sha "$PREFIX/include/qb/core/Actor.tpp")" ] && ok "restored byte-exact" || ko "restore is NOT byte-exact"
+[ "$(sha "$V")" = "$(sha "$PREFIX/include/qb/vendor/qev/qev_vars.h")" ] && ok "restored byte-exact" || ko "restore is NOT byte-exact"
 
 # ---- C7 an entry point that links nothing ------------------------------------------------
 say_control "C7  an --entry-dir with no TUs must be REJECTED (a vacuous link phase)"

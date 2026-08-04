@@ -16,7 +16,8 @@
 #define QB_PATTERNS_H
 
 #include "core/Actor.h"
-#include "core/Actor.tpp" // Actor.h does not pull the template impl; the umbrella must be self-sufficient.
+#include "core/VirtualCore.h" // Actor.h does not pull the template impl; since 3.0 the bodies
+                              // are at the tail of this header (was core/Actor.tpp).
 #include "core/patterns.h"
 
 #endif // QB_PATTERNS_H

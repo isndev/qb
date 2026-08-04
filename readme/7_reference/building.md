@@ -353,7 +353,8 @@ The distinction that matters is between **umbrellas** and **class headers**:
 
 A class header gives you a complete `qb::Actor` with every member template *declared*, so a TU that
 calls `push<E>()` compiles clean and fails at **link**. That is by design and it is not going to
-change: the bodies live in `Actor.tpp`, which needs a complete `qb::VirtualCore`, and
+change: the bodies live at the tail of `VirtualCore.h` (they were `Actor.tpp` through
+2.6.0), because they need a complete `qb::VirtualCore` — and
 `VirtualCore.h` is what drags `<windows.h>`, `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU. Making
 every actor TU pay that is the worse trade. **Include an umbrella.**
 

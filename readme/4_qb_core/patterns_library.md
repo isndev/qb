@@ -20,12 +20,13 @@ pattern composes only public primitives
 Include the whole library through one umbrella header:
 
 ```cpp
-#include <qb/patterns.h>   // pulls Actor.h + Actor.tpp + core/patterns.h
+#include <qb/patterns.h>   // pulls Actor.h + VirtualCore.h + core/patterns.h
 ```
 <!-- src: qb/src/qb/patterns.h:18-20 -->
 
-`qb/patterns.h` is self-sufficient: it includes `core/Actor.h`, `core/Actor.tpp` (the template
-implementation) and `core/patterns.h` (`qb/src/qb/patterns.h:18-20`). The narrower
+`qb/patterns.h` is self-sufficient: it includes `core/Actor.h`, `core/VirtualCore.h` (which has
+carried the Actor template implementation since 3.0 — it was `core/Actor.tpp` through 2.6.0) and
+`core/patterns.h` (`qb/src/qb/patterns.h:18-20`). The narrower
 `#include <qb/core/patterns.h>` pulls the eleven module headers but assumes the Actor template
 implementation is already visible (`qb/src/qb/core/patterns.h:27-37`); the test suite includes
 `<qb/core/patterns.h>` alongside `<qb/actor.h>`

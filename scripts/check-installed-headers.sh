@@ -69,7 +69,6 @@ BUILD_DIR="${BUILD_DIR:-${TMPDIR:-/tmp}/qb-installed-headers.$$}"
 # leaves the gate's scope after a rename.
 # ---------------------------------------------------------------------------------------
 EXCLUDED_HEADERS="
-qb/core/Actor.tpp        by-design fragment: template bodies for a class completed by Actor.h
 qbm/http/routing/router.tpp        by-design fragment: bodies for Router, completed by router.h
 qbm/pgsql/transaction_coro.inl     by-design fragment: bodies for Transaction, completed by transaction.h
 qbm/pgsql/resultset.inl            by-design fragment: bodies for resultset, completed by resultset.h

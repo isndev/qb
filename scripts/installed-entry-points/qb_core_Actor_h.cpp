@@ -1,10 +1,13 @@
 // <qb/core/Actor.h> ALONE -- the header named after the class, entered directly.
 //
 // DELIBERATE SCOPE. This TU does NOT ODR-use qb::Actor::push<E>, and that is not an oversight:
-// Actor.h by design does not pull Actor.tpp (see the comment at qb/patterns.h:19). It cannot --
-// Actor.tpp needs a COMPLETE qb::VirtualCore, and VirtualCore.h is what drags <windows.h>,
+// Actor.h by design does not pull the template bodies (see the comment at qb/patterns.h:19).
+// It cannot -- they need a COMPLETE qb::VirtualCore, and VirtualCore.h is what drags <windows.h>,
 // WIN32_LEAN_AND_MEAN and NOMINMAX into a TU. Making every actor TU pay that is a worse trade
-// than the umbrella rule. `push<E>` is the umbrella umbrellas' job, and qb_main_h.cpp /
+// than the umbrella rule. That is exactly why 3.0 parked those bodies at the TAIL OF
+// VirtualCore.h rather than at the tail of this header: VirtualCore.h includes Actor.h, so
+// Actor.h can never be the file that completes them. `push<E>` is the umbrellas' job, and
+// qb_core_VirtualCore_h.cpp / qb_main_h.cpp /
 // qb_actor_h.cpp / qb_patterns_h.cpp / qb_core_patterns_h.cpp each hold it to that.
 //
 // What this file DOES hold Actor.h to: entering here must still reach the archive. is_alive(),
