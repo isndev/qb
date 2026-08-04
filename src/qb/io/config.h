@@ -359,9 +359,33 @@ typedef int socklen_t;      // Note: socklen_t is a POSIX type, kept for compati
  */
 #define ioctlsocket ioctl
 #endif
-#if defined(__linux__)
-#define SO_NOSIGPIPE MSG_NOSIGNAL
-#endif
+// SO_NOSIGPIPE is deliberately NOT defined on Linux.
+//
+// This header used to say `#define SO_NOSIGPIPE MSG_NOSIGNAL` there: a socket OPTION
+// name bound to a message FLAG value, in a header that ships in the install tree.
+// Linux has no such option — measured, `setsockopt(SOL_SOCKET, MSG_NOSIGNAL, …)` is
+// `setsockopt(SOL_SOCKET, 0x4000, …)` and returns -1 / ENOPROTOOPT.
+//
+// The failed call was never the damage. The portable idiom is a fork on the name:
+//
+//     #ifdef SO_NOSIGPIPE                               // BSD/macOS: per DESCRIPTOR
+//         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, …);
+//     #else                                             // Linux: per CALL
+//         send(fd, buf, len, MSG_NOSIGNAL);
+//     #endif
+//
+// so defining the name pushed a Linux consumer down the BSD branch and away from the
+// one mechanism that works there — reproducing in the consumer exactly the SIGPIPE hole
+// qb had just closed in its own send/recv defaults. `SO_*` is reserved to
+// <sys/socket.h> besides, so qb has no authority to define it and a future Linux that
+// adds the option would collide with this.
+//
+// Nothing in qb reads it on Linux: both `defined(SO_NOSIGPIPE)` sites in the tree
+// already spell `&& !defined(__linux__)`, so its absence here changes no behaviour.
+// A consumer that names it on Linux now gets a compile error, which is the truth.
+// Use MSG_NOSIGNAL per call — the default of every qb::io::socket send/recv entry
+// point — and let qb apply the BSD option at descriptor acquisition on the platforms
+// that have it (`suppress_sigpipe()` in src/qb/io/system/sys__socket.cpp).
 /**
  * @typedef socket_type
  * @brief Cross-platform socket handle type
