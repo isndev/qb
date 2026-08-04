@@ -22,6 +22,12 @@
 
 #include <cerrno>
 #include <cstdint>
+// The link-time configuration fingerprint. Included from here because this header is the one
+// every other qb header bottoms out in: pulling it in here is what puts the fingerprint
+// references in the translation units that reach qb through qb/config.h, qb/io/config.h,
+// qb/string.h or qb/io/uri.h rather than through qb/utility/prefix.h. Costs <version> and a
+// handful of #defines -- no qb dependency, by construction (see qb/utility/abi.h).
+#include <qb/utility/abi.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 #define __WIN__SYSTEM__

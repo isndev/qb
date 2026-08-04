@@ -213,6 +213,35 @@ target_link_libraries(my_app PRIVATE qb::core qb::io)
 
 The two supported integration modes — embed via `add_subdirectory(qb)` or consume an installed copy via `find_package(qb)` — both expose `qb::core` and `qb::io` (`CMakeLists.txt:24-28`). The embed mode is covered in [INSTALL.md](../../INSTALL.md#embed-the-source-tree).
 
+### Link-time configuration fingerprint
+
+qb ships public headers plus a compiled archive, and a handful of macros change the **layout** of
+public types in those headers. If an application sets one of them and the archive was not built
+with it, `sizeof(qb::Event)` and friends differ between the two halves of the same program — with
+no diagnostic from the compiler and none from the linker. Since 3.0.0 that mismatch is a **link
+error** instead: `qb/src/qb/utility/abi.h` makes every translation unit that parses a qb header
+reference one symbol per axis, named after the value *it* was compiled with, and `libqb-io`
+defines those symbols with the values *the archive* was compiled with.
+
+| axis | symbol | set by |
+|---|---|---|
+| qb version | `qb_abi_version_3_0_0` | `QB_VERSION_*`, published by qb's CMake usage requirements |
+| cache line | `qb_abi_cacheline_64` | `KNOWN_L1_CACHE_LINE_SIZE` |
+| exceptions | `qb_abi_exceptions_1` | `-fno-exceptions` |
+| coroutine tracing | `qb_abi_coroutine_debug_0` | `QB_DEBUG_COROUTINES` |
+| jthread source | `qb_abi_std_jthread_1` | `QB_COMPAT_FORCE_THREAD_FALLBACK`, or a standard library without `__cpp_lib_jthread` |
+
+`NDEBUG` is deliberately **not** an axis: a Debug application against a Release qb is supported and
+CI-tested. Neither are the feature flags (`QB_HAS_SSL`, `QB_HAS_QUIC`, …) — those arrive through
+the imported target's usage requirements, and the qbm package configs check them separately.
+
+Read the archive's own side with either of:
+
+```bash
+nm -g <prefix>/lib/libqb-io.a | grep qb_abi          # one symbol per axis
+strings <prefix>/lib/libqb-io.a | grep '^qb-abi '    # qb-abi qb=3.0.0 cacheline=64 exceptions=1 …
+```
+
 ## Platform notes
 
 - **Linux:** POSIX sockets. Use GCC or Clang with solid C++20 support. Install optional dependency headers when enabling features (`libssl-dev`, `libargon2-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL). Install libngtcp2 packages when QUIC is required. qb links `dl` and `rt` (`qb/cmake/qbDependencies.cmake`).
@@ -223,6 +252,15 @@ The two supported integration modes — embed via `add_subdirectory(qb)` or cons
 
 - **Bundled deps missing from a checkout.** libev and stduuid are vendored as committed files under `qb/src/qb/vendor/`, not submodules and not fetched; a normal clone always ships them. A `libev … not found` fatal error means they are missing — restore them with `git checkout -- src/qb/vendor` or re-clone. A `git submodule update` will not bring them back.
 - **Host-tuned binary fails on another machine.** The default `QB_ENABLE_NATIVE_ARCH=ON` targets the build host's CPU. Rebuild with `-DQB_ENABLE_NATIVE_ARCH=OFF` (or the `release-portable` preset) for distributable artifacts.
+- **`undefined symbol: qb_abi_…` when linking an application.** Not a missing library — the
+  [link-time configuration fingerprint](#link-time-configuration-fingerprint) reporting that the
+  application and the archive were compiled with different ABI-relevant settings. The symbol name
+  is the application's side; `nm -g <prefix>/lib/libqb-io.a | grep qb_abi` is the archive's.
+  Rebuild qb with the same setting (there is no opt-out — the two are unsound together).
+  `qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements` means the application was
+  compiled from a hand-written `-I`/`-l` line, so it is also missing `QB_HAS_SSL` / `QB_HAS_QUIC` /
+  `QB_HAS_COMPRESSION` and its inline feature answers contradict the archive's; use
+  `find_package(qb)` or reproduce the definitions the imported target carries.
 - **`CMAKE_BUILD_TYPE` ignored.** With multi-config generators (Visual Studio, Ninja Multi-Config), the configuration is chosen at build time via `--config`, not at configure time.
 - **Sanitizers and profiling collide.** `QB_SANITIZE` and `QB_WITH_PROFILING` intercept the same hooks; enabling both emits a warning. Pick one.
 - **Network needed on first configure for a from-source fallback.** When a fetchable dependency is absent from the system, the first configure clones it from GitHub. For air-gapped builds, pre-populate `_deps` or force system packages — see [cmake_dependencies.md](./cmake_dependencies.md#offline-and-ci-builds).

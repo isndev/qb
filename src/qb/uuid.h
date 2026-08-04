@@ -28,6 +28,11 @@
 #define QB_UUID_H
 
 #include <qb/vendor/uuid/include/uuid.h>
+// Documented entry point: `qb::generate_random_uuid()` is defined in libqb-io, so a translation
+// unit may reach the archive through this header alone. Carrying the link-time ABI contract here
+// keeps the property "every top-level qb/*.h entry point fingerprints its configuration" true
+// without exceptions to explain.
+#include <qb/utility/abi.h>
 
 namespace qb {
 /**

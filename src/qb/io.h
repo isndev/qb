@@ -30,6 +30,11 @@
 #include <sstream>
 #include <type_traits>
 #include <utility>
+// This umbrella is a documented entry point and reaches nanolog's operator<< templates, whose
+// bodies fork under -fno-exceptions while libqb-io also defines them -- one symbol, two bodies,
+// winner decided by link order. So it states the link-time ABI contract itself rather than
+// relying on the consumer having included some other qb header first.
+#include <qb/utility/abi.h>
 
 #ifdef QB_WITH_LOGGING
 #include <qb/vendor/nanolog/nanolog.h>

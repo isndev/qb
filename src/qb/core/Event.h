@@ -31,6 +31,10 @@
 #include <atomic>
 #include <bitset>
 #include <qb/system/allocator/pipe.h>
+// Explicit, though qb/system/allocator/pipe.h already reaches it: qb::Event is the type whose
+// layout the cache-line axis moves, and every user event derives from it, so the header that
+// declares it states its own link-time ABI contract rather than inheriting it by accident.
+#include <qb/utility/abi.h>
 #include <typeinfo>
 #include <utility>
 // include from qb
