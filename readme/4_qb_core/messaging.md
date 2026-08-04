@@ -12,7 +12,7 @@ Actors in qb communicate only by exchanging typed events. An event is a C++ obje
 
 The event *type* model — how to define events, when to use `qb::string<N>` versus `std::string`, and how handlers are registered and dispatched — is owned by [The event system](../2_core_concepts/event_system.md). This page does not repeat those definitions; it focuses on delivery.
 
-Every signature here is grounded in three headers: `qb/core/Event.h` (the event base class), `qb/core/Actor.h` (the send API), and `qb/core/Pipe.h` (the low-level channel). Routing internals come from `qb/core/VirtualCore.tpp` and `qb/core/Main.h`.
+Every signature here is grounded in three headers: `qb/core/Event.h` (the event base class), `qb/core/Actor.h` (the send API), and `qb/core/Pipe.h` (the low-level channel). Routing internals come from `qb/core/VirtualCore.h` and `qb/core/Main.h`.
 
 ## Concepts
 
@@ -71,7 +71,7 @@ _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 ```
 <!-- src: qb/src/qb/core/Actor.h -->
 
-`push` is the primary and recommended primitive. It constructs `_Event` in place at the **back** of the destination pipe (`allocate_back`, `qb/core/VirtualCore.tpp`) and returns a mutable reference to it, so the sender can finish populating the event after construction:
+`push` is the primary and recommended primitive. It constructs `_Event` in place at the **back** of the destination pipe (`allocate_back`, `qb/core/VirtualCore.h`) and returns a mutable reference to it, so the sender can finish populating the event after construction:
 
 ```cpp
 // derived from: qb/tests/core/system/messaging/messaging-api.cpp (BasicPushActor)
@@ -116,9 +116,9 @@ void send(ActorId const &dest, _Args &&...args) const noexcept;
 ```
 <!-- src: qb/src/qb/core/Actor.h -->
 
-`send` does **not** guarantee ordering relative to other sends or pushes from the same source to the same destination. It constructs the event at the **front** of the pipe (`allocate`, `qb/core/VirtualCore.tpp`); for a cross-core destination it attempts to publish the event into the destination mailbox immediately and, on success, frees the pipe slot with `pipe.free(...)` (`qb/core/VirtualCore.tpp`). That early-publish path is what breaks the FIFO ordering that `push` preserves.
+`send` does **not** guarantee ordering relative to other sends or pushes from the same source to the same destination. It constructs the event at the **front** of the pipe (`allocate`, `qb/core/VirtualCore.h`); for a cross-core destination it attempts to publish the event into the destination mailbox immediately and, on success, frees the pipe slot with `pipe.free(...)` (`qb/core/VirtualCore.h`). That early-publish path is what breaks the FIFO ordering that `push` preserves.
 
-`_Event` **must be trivially destructible**. This is a hard contract, but the enforcement is not uniform: `fill_event` `static_assert`s `std::is_trivially_destructible_v<T>` only for events deriving from `EventQOS0` (`if constexpr (event_qos0_type<T>)`, `qb/core/VirtualCore.tpp`). A plain `qb::Event`-derived type with a `std::vector` or smart-pointer member therefore *compiles* through `send`, and — contrary to a long-standing note here — **does not leak**: on the cross-core publish path the pipe slot is reclaimed by pointer arithmetic without running the destructor (`pipe.free` advances `_begin`/`_end` only, `qb/system/allocator/pipe.h`), but the bytes were already relocated into the destination ring and the *receiver* destroys them exactly once. `SendNonTrivialPayload.{SameCore,CrossCore}DestroysEveryPayloadExactlyOnce` pins a zero live-object balance on every placement path.
+`_Event` **must be trivially destructible**. This is a hard contract, but the enforcement is not uniform: `fill_event` `static_assert`s `std::is_trivially_destructible_v<T>` only for events deriving from `EventQOS0` (`if constexpr (event_qos0_type<T>)`, `qb/core/VirtualCore.h`). A plain `qb::Event`-derived type with a `std::vector` or smart-pointer member therefore *compiles* through `send`, and — contrary to a long-standing note here — **does not leak**: on the cross-core publish path the pipe slot is reclaimed by pointer arithmetic without running the destructor (`pipe.free` advances `_begin`/`_end` only, `qb/system/allocator/pipe.h`), but the bytes were already relocated into the destination ring and the *receiver* destroys them exactly once. `SendNonTrivialPayload.{SameCore,CrossCore}DestroysEveryPayloadExactlyOnce` pins a zero live-object balance on every placement path.
 
 What the requirement really protects is the **drop** path: a `qb::EventQOS0` event is best-effort, so `__flush_all__` discards it on backpressure *without* disposing it — hence the `static_assert`, and hence the rule that fire-and-forget events derive from `qb::EventQOS0` and stay trivially destructible. Separately, and for `push` as much as `send`, every event payload must be trivially **relocatable** (no pointer into itself) whatever core it is bound for — see the note under [`push`](#push--ordered-the-default).
 
@@ -184,7 +184,7 @@ void broadcast(_Args &&...args) const noexcept;
 ```
 <!-- src: qb/src/qb/core/Actor.h -->
 
-`broadcast` delivers a copy of the event to every actor on every active core. Internally it iterates the engine's core set and issues one `send` per core with a `BroadcastId` destination (`qb/core/VirtualCore.tpp`):
+`broadcast` delivers a copy of the event to every actor on every active core. Internally it iterates the engine's core set and issues one `send` per core with a `BroadcastId` destination (`qb/core/VirtualCore.h`):
 
 ```cpp
 broadcast<SystemShutdownNotice>();
