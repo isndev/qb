@@ -608,7 +608,7 @@ int
 socket::set_nonblocking(socket_type s, bool nonblocking) {
 #if defined(_WIN32)
     u_long argp = nonblocking;
-    return ::ioctlsocket(s, FIONBIO, &argp);
+    return ::QB_IOCTLSOCKET(s, FIONBIO, &argp);
 #else
     int flags = ::fcntl(s, F_GETFL, 0);
     if (flags < 0)
@@ -737,7 +737,7 @@ socket::connect_n(socket_type s, const endpoint &ep, const qb::duration &wtimeou
 
     const int connect_errno = socket::get_last_errno();
     if (!connect_syscall_in_progress(connect_errno)) {
-        // set_nonblocking() issues an ioctlsocket() on Windows, which resets
+        // set_nonblocking() issues an QB_IOCTLSOCKET() on Windows, which resets
         // WSAGetLastError() to 0 — wiping the connect error before the caller can
         // read it. Restore it so callers still see the real reason, in particular
         // EISCONN when re-connecting an already-connected socket for a synchronous
@@ -1087,7 +1087,7 @@ socket::close(int shut_how) {
     if (is_open()) {
         if (shut_how >= 0)
             ::shutdown(this->fd, shut_how);
-        ::closesocket(this->fd);
+        ::QB_CLOSESOCKET(this->fd);
         this->fd = invalid_socket;
     }
 }

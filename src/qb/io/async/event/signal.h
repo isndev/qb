@@ -63,7 +63,7 @@ namespace qb::io::async::event {
  *   // This is a simplified libev-style callback, not the qb::io::async::io on() signature
  *   void on_signal_event_cb(ev::sig &watcher, int revents) {
  *     if (watcher.signum == SIGINT) {
- *        LOG_INFO("SIGINT received, shutting down gracefully...");
+ *        QB_LOG_INFO("SIGINT received, shutting down gracefully...");
  *        // application_is_running = false; // Signal main loop to exit
  *        watcher.loop.break_loop(ev::ALL); // Stop the event loop
  *     }
@@ -71,7 +71,7 @@ namespace qb::io::async::event {
  *
  *   // If using qb::io::async::io or similar base, you'd implement:
  *   // void on(qb::io::async::event::signal<SIGINT>& event) {
- *   //   LOG_INFO("SIGINT received via qb event system, signum: " << event.signum);
+ *   //   QB_LOG_INFO("SIGINT received via qb event system, signum: " << event.signum);
  *   //   // application_is_running = false;
  *   //   event.loop.break_loop(ev::ALL);
  *   // }

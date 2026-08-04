@@ -78,7 +78,11 @@ namespace qb {
  * Each VirtualCore typically runs in its own dedicated thread.
  */
 class VirtualCore {
-    thread_local static VirtualCore *_handler;
+    // `inline` + QB_ABI_ANCHOR, NOT an out-of-line definition in VirtualCore.cpp: an out-of-line
+    // thread_local emits a `non-external` TLS descriptor, private to its image, so a host and a
+    // statically-linked plugin each got their own "current VirtualCore" on one thread. See
+    // qb/utility/abi.h for the measurement.
+    QB_ABI_ANCHOR static inline thread_local VirtualCore *_handler = nullptr;
     /**
      * @brief Global, race-free counter of registered service types.
      * @details
@@ -88,7 +92,7 @@ class VirtualCore {
      * (no happens-before needed: writes are published under the magic static
      * acquire edge).
      */
-    static std::atomic<ServiceId> _nb_service;
+    QB_ABI_ANCHOR static inline std::atomic<ServiceId> _nb_service{0};
     /**
      * @brief Access the `Tag → ServiceId` registration map (lazy singleton).
      * @details
@@ -97,7 +101,7 @@ class VirtualCore {
      * inside a magic static, guaranteeing at most one insertion per `Tag`
      * regardless of the number of concurrent TU initialisations.
      */
-    static qb::unordered_map<TypeId, ServiceId> &
+    QB_ABI_ANCHOR static qb::unordered_map<TypeId, ServiceId> &
     getServices() {
         static qb::unordered_map<TypeId, ServiceId> service_ids;
         return service_ids;
@@ -106,7 +110,7 @@ class VirtualCore {
      * @brief Mutex protecting mutating access to `getServices()`.
      * @details Magic static → safe to call from any TU's static initialiser.
      */
-    static std::mutex &
+    QB_ABI_ANCHOR static std::mutex &
     servicesMutex() noexcept {
         static std::mutex mtx;
         return mtx;
@@ -338,7 +342,8 @@ public:
      *          Set it (in ns) **before** `qb::Main::start()` to tune it (e.g. lower in tests).
      *          A `0` value disables the bound — not recommended, it removes the deadlock guard.
      */
-    static std::uint64_t activation_deadline_ns;
+    QB_ABI_ANCHOR static inline std::uint64_t activation_deadline_ns =
+        5ull * 1000u * 1000u * 1000u; // 5 s
 
 private:
     // --- loop

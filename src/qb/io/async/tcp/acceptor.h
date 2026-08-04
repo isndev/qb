@@ -160,7 +160,7 @@ public:
             this->transport().init(
                 qb::io::ssl::Context::server(std::move(cert_file), std::move(key_file)).alpn(std::move(alpn_protocols)));
             if (!this->transport().context().ok()) {
-                LOG_CRIT("Failed to initialize SSL/TLS server context: " << this->transport().context().error());
+                QB_LOG_CRIT("Failed to initialize SSL/TLS server context: " << this->transport().context().error());
                 return false;
             }
         }

@@ -301,7 +301,7 @@ Actor::to(ActorId const dest) const noexcept {
 void
 Actor::reply(Event &event) const noexcept {
     if (unlikely(event.dest.is_broadcast())) {
-        LOG_WARN(*this << " failed to reply broadcast event");
+        QB_LOG_WARN(*this << " failed to reply broadcast event");
         return;
     }
     VirtualCore::_handler->reply(event);
@@ -312,7 +312,7 @@ Actor::forward(ActorId const dest, Event &event) const noexcept {
     // Do not overwrite event.source: reply() routes via swap(dest, source); the
     // original sender must remain the logical client (matches Actor.h contract).
     if (unlikely(event.dest.is_broadcast())) {
-        LOG_WARN(*this << " failed to forward broadcast event");
+        QB_LOG_WARN(*this << " failed to forward broadcast event");
         return;
     }
     VirtualCore::_handler->forward(dest, event);

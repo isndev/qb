@@ -316,7 +316,7 @@ public:
             run_starttls();
             return;
         }
-        LOG_DEBUG("Started async connect to " << remote_.source());
+        QB_LOG_DEBUG("Started async connect to " << remote_.source());
         // Apply the TLS verification policy before the (non-blocking) connect so
         // it is in effect when the handshake starts. No-op for plain sockets.
         if constexpr (requires { socket_.set_insecure(); }) {
@@ -329,7 +329,7 @@ public:
                 case finalize_result::done:
                     if (!mark_completed_once())
                         return;
-                    LOG_DEBUG("Connected directly to " << remote_.source());
+                    QB_LOG_DEBUG("Connected directly to " << remote_.source());
                     deliver(std::move(socket_));
                     break;
                 case finalize_result::pending:
@@ -340,7 +340,7 @@ public:
                     }
                     break;
                 case finalize_result::failed:
-                    LOG_DEBUG("Failed to finalize direct connect to " << remote_.source());
+                    QB_LOG_DEBUG("Failed to finalize direct connect to " << remote_.source());
                     deliver_failure_deferred();
             }
             return;
@@ -350,7 +350,7 @@ public:
             return;
         }
 
-        LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << qb::io::socket::get_last_errno());
+        QB_LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << qb::io::socket::get_last_errno());
         deliver_failure_deferred();
     }
 
@@ -377,7 +377,7 @@ public:
                     io_iface_ = nullptr;
                     if (!mark_completed_once())
                         return;
-                    LOG_DEBUG("Connected async to " << remote_.source());
+                    QB_LOG_DEBUG("Connected async to " << remote_.source());
                     deliver(std::move(socket_));
                     return;
                 case finalize_result::pending:
@@ -394,7 +394,7 @@ public:
         io_iface_ = nullptr;
         if (!mark_completed_once())
             return;
-        LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << err);
+        QB_LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << err);
         deliver(Socket_{});
     }
 
@@ -413,7 +413,7 @@ public:
         if (!mark_completed_once())
             return;
 
-        LOG_DEBUG("Async connect deadline for " << remote_.source());
+        QB_LOG_DEBUG("Async connect deadline for " << remote_.source());
         deliver(Socket_{});
     }
 
@@ -450,7 +450,7 @@ public:
 
     void
     run_starttls() {
-        LOG_DEBUG("Started async STARTTLS connect to " << remote_.source());
+        QB_LOG_DEBUG("Started async STARTTLS connect to " << remote_.source());
         if (!verify_peer_)
             socket_.set_insecure();
         // Connect the underlying TCP layer ONLY. ssl::socket::n_connect() would set
@@ -556,7 +556,7 @@ requires std::invocable<std::remove_reference_t<Func_> &, Socket_ &&>
 void
 connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
     auto op = std::make_shared<connector<Socket_, Func_>>(std::forward<Func_>(func), remote, qb::detail::to_ev_seconds(timeout), verify_peer);
-    LOG_DEBUG("Connector: Initializing for " << remote.source());
+    QB_LOG_DEBUG("Connector: Initializing for " << remote.source());
     op->run();
 }
 
@@ -581,7 +581,7 @@ void
 connect(Socket_ &&existing_socket, uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
     auto op = std::make_shared<connector<Socket_, Func_>>(std::forward<Func_>(func), std::move(existing_socket), remote,
                                                           qb::detail::to_ev_seconds(timeout), verify_peer);
-    LOG_DEBUG("Connector: Initializing with existing socket for " << remote.source());
+    QB_LOG_DEBUG("Connector: Initializing with existing socket for " << remote.source());
     op->run();
 }
 
@@ -605,7 +605,7 @@ void
 starttls_connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
     auto op = std::make_shared<connector<Socket_, Func_, Negotiator_>>(std::forward<Func_>(func), remote, qb::detail::to_ev_seconds(timeout),
                                                                        verify_peer);
-    LOG_DEBUG("Connector: Initializing STARTTLS for " << remote.source());
+    QB_LOG_DEBUG("Connector: Initializing STARTTLS for " << remote.source());
     op->run();
 }
 
@@ -626,7 +626,7 @@ void
 starttls_connect(Socket_ &&existing, uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero()) {
     auto op = std::make_shared<connector<Socket_, Func_, Negotiator_>>(std::forward<Func_>(func), std::move(existing), remote,
                                                                        qb::detail::to_ev_seconds(timeout), /*verify_peer*/ true);
-    LOG_DEBUG("Connector: Initializing STARTTLS (Context socket) for " << remote.source());
+    QB_LOG_DEBUG("Connector: Initializing STARTTLS (Context socket) for " << remote.source());
     op->run();
 }
 

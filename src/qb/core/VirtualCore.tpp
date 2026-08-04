@@ -38,14 +38,14 @@ VirtualCore::registerEvent(_Actor &actor) noexcept {
     // sent to a default/NotFound ActorId.
     if (unlikely(!actor.id().is_valid()))
         return;
-    LOG_INFO("Actor(" << actor.id() << ") subscribed to " << ActorProxy::getName<_Event>());
+    QB_LOG_INFO("Actor(" << actor.id() << ") subscribed to " << ActorProxy::getName<_Event>());
     _router.subscribe<_Event>(actor);
 }
 
 template <typename _Event, typename _Actor>
 void
 VirtualCore::unregisterEvent(_Actor &actor) noexcept {
-    LOG_INFO("Actor(" << actor.id() << ") unsubscribed to " << ActorProxy::getName<_Event>());
+    QB_LOG_INFO("Actor(" << actor.id() << ") unsubscribed to " << ActorProxy::getName<_Event>());
     _router.unsubscribe<_Event>(actor);
 }
 
@@ -91,7 +91,7 @@ _ServiceActor *
 VirtualCore::getService() const noexcept {
     const auto &it = _actors.find(ActorId(_ServiceActor::ServiceIndex, _index));
     if (it == _actors.end()) {
-        LOG_CRIT("Failed to get Service[" << typeid(_ServiceActor).name() << "]"
+        QB_LOG_CRIT("Failed to get Service[" << typeid(_ServiceActor).name() << "]"
                                           << " in Core(" << _index << ")"
                                           << " : does not exist");
         return nullptr;

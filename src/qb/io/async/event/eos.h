@@ -52,7 +52,7 @@ namespace qb::io::async::event {
  *   }
  *
  *   void on(qb::io::async::event::eos &&) {
- *     LOG_INFO("All pending data has been sent.");
+ *     QB_LOG_INFO("All pending data has been sent.");
  *     // Optionally, close the connection if this was the last piece of data,
  *     // or notify another component about the completion.
  *     // if (isLastChunk()) {

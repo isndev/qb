@@ -27,6 +27,7 @@
 #ifndef QB_IO_ASYNC_PROTOCOL_H
 #define QB_IO_ASYNC_PROTOCOL_H
 
+#include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
 #include <qb/utility/type_traits.h>
 
 namespace qb::io::async {
@@ -274,7 +275,7 @@ public:
  * @return A pointer to the single process-wide `NoProtocol`. Never null; never mutated after
  *         construction, so safe to share across threads.
  */
-[[nodiscard]] inline IProtocol *
+[[nodiscard]] QB_ABI_ANCHOR inline IProtocol *
 no_protocol() noexcept {
     static NoProtocol instance;
     return &instance;

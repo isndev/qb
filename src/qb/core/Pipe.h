@@ -210,14 +210,14 @@ public:
      *          buckets — i.e. **~1023 buckets (≈64 KiB with the default 64-byte,
      *          cache-line bucket)**. A larger event cannot be enqueued into another
      *          core's mailbox, so the cross-core flush **drops it**: it is disposed,
-     *          the pipe advances past it, and a `LOG_CRIT` names the source,
+     *          the pipe advances past it, and a `QB_LOG_CRIT` names the source,
      *          destination and bucket count. Dropping is deliberate — the event is
      *          undeliverable by construction rather than by timing, so retrying it
      *          would hold the whole outbound stream to that core hostage
      *          (head-of-line) and `Main::join()` would never return. The
      *          `bucket_size` header field is also a `uint16_t`, so an event spanning
      *          ≥ 65536 buckets wraps it; the value 65536 truncates to 0, and a
-     *          zero-width event cannot be walked past, so the flush logs `LOG_CRIT`
+     *          zero-width event cannot be walked past, so the flush logs `QB_LOG_CRIT`
      *          and **discards the rest of that pipe**. Either way the events are
      *          lost, not delivered — the engine stays live, but the messages do not
      *          arrive. For large payloads, put the data on the heap (e.g. a

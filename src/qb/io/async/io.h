@@ -33,6 +33,7 @@
 #include <memory>
 #include <new>
 #include <qb/system/time.h>
+#include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
 #include <qb/utility/type_traits.h>
 #include "../config.h"
 #include "../system/sys__socket.h"
@@ -229,7 +230,7 @@ class Timeout : public with_timeout<Timeout<_Func>> {
     // the holder was destroyed — exactly the `~listener` reclamation case, the
     // freelist TLS having torn down first — bypass the dead free-list and return
     // straight to the global allocator instead of re-leaking the block.
-    static bool &
+    QB_ABI_ANCHOR static bool &
     _pool_alive() noexcept {
         thread_local bool alive = false;
         return alive;
@@ -252,7 +253,7 @@ class Timeout : public with_timeout<Timeout<_Func>> {
         }
     };
 
-    static FreeList &
+    QB_ABI_ANCHOR static FreeList &
     _freelist() noexcept {
         thread_local FreeList fl;
         return fl;
@@ -980,9 +981,9 @@ public:
      * @note **Example Usage:**
      * @code
      * if (this->is_reading()) {
-     *   LOG_DEBUG("Input component is actively reading");
+     *   QB_LOG_DEBUG("Input component is actively reading");
      * } else {
-     *   LOG_DEBUG("Input component is not reading (may be stopped or disconnected)");
+     *   QB_LOG_DEBUG("Input component is not reading (may be stopped or disconnected)");
      * }
      * @endcode
      */
@@ -1005,7 +1006,7 @@ public:
      *   // Safe to send data or perform operations
      *   this->switch_protocol<MyProtocol>(*this);
      * } else {
-     *   LOG_WARN("Component is disconnected, cannot perform operations");
+     *   QB_LOG_WARN("Component is disconnected, cannot perform operations");
      * }
      * @endcode
      *
@@ -1029,10 +1030,10 @@ public:
      * @note **Example Usage:**
      * @code
      * if (this->has_pending_data()) {
-     *   LOG_DEBUG("Input buffer contains " << this->pendingRead() << " bytes of unprocessed data");
+     *   QB_LOG_DEBUG("Input buffer contains " << this->pendingRead() << " bytes of unprocessed data");
      *   // The protocol may need more data to complete a message, or there may be multiple messages
      * } else {
-     *   LOG_DEBUG("Input buffer is empty or all data has been processed");
+     *   QB_LOG_DEBUG("Input buffer is empty or all data has been processed");
      * }
      * @endcode
      *
@@ -1058,7 +1059,7 @@ public:
      * @note **Example Usage:**
      * @code
      * std::size_t current_limit = this->max_message_size();
-     * LOG_INFO("Current message size limit: " << current_limit << " bytes");
+     * QB_LOG_INFO("Current message size limit: " << current_limit << " bytes");
      * @endcode
      */
     [[nodiscard]] std::size_t
@@ -1108,7 +1109,7 @@ public:
      * @note **Example Usage:**
      * @code
      * if (this->disconnection_reason() != 0) {
-     *   LOG_WARN("Disconnection reason: " << this->disconnection_reason());
+     *   QB_LOG_WARN("Disconnection reason: " << this->disconnection_reason());
      * }
      * @endcode
      */
@@ -1175,7 +1176,7 @@ public:
      * @note **Example Usage:**
      * @code
      * std::size_t total_read = this->bytes_read();
-     * LOG_INFO("Total bytes read: " << total_read);
+     * QB_LOG_INFO("Total bytes read: " << total_read);
      * @endcode
      */
     [[nodiscard]] std::size_t
@@ -1193,7 +1194,7 @@ public:
      * @note **Example Usage:**
      * @code
      * std::size_t msg_count = this->messages_processed();
-     * LOG_INFO("Messages processed: " << msg_count);
+     * QB_LOG_INFO("Messages processed: " << msg_count);
      * @endcode
      */
     [[nodiscard]] std::size_t
@@ -1232,9 +1233,9 @@ public:
      *
      *   void on(qb::io::async::event::disconnected const& event) {
      *     if (event.reason == 0) {
-     *       LOG_INFO("Disconnected normally");
+     *       QB_LOG_INFO("Disconnected normally");
      *     } else {
-     *       LOG_WARN("Disconnected with reason: " << event.reason);
+     *       QB_LOG_WARN("Disconnected with reason: " << event.reason);
      *     }
      *     // Optionally attempt reconnection or call kill()
      *   }
@@ -1631,9 +1632,9 @@ public:
      * @note **Example Usage:**
      * @code
      * if (this->is_writing()) {
-     *   LOG_DEBUG("Output component is actively writing");
+     *   QB_LOG_DEBUG("Output component is actively writing");
      * } else {
-     *   LOG_DEBUG("Output component is not writing (may be stopped or disconnected)");
+     *   QB_LOG_DEBUG("Output component is not writing (may be stopped or disconnected)");
      * }
      * @endcode
      */
@@ -1656,7 +1657,7 @@ public:
      *   // Safe to publish data
      *   *this << "Hello, server!" << Protocol::end;
      * } else {
-     *   LOG_WARN("Component is disconnected, cannot send data");
+     *   QB_LOG_WARN("Component is disconnected, cannot send data");
      * }
      * @endcode
      *
@@ -1683,10 +1684,10 @@ public:
      * *this << "Message 2" << Protocol::end;
      *
      * if (this->has_pending_data()) {
-     *   LOG_DEBUG("Output buffer contains " << this->pendingWrite() << " bytes waiting to be sent");
+     *   QB_LOG_DEBUG("Output buffer contains " << this->pendingWrite() << " bytes waiting to be sent");
      *   // The data will be written automatically when the transport becomes writable
      * } else {
-     *   LOG_DEBUG("All data has been written to the transport");
+     *   QB_LOG_DEBUG("All data has been written to the transport");
      * }
      * @endcode
      */
@@ -1711,7 +1712,7 @@ public:
      * @note **Example Usage:**
      * @code
      * if (this->disconnection_reason() != 0) {
-     *   LOG_WARN("Disconnection reason: " << this->disconnection_reason());
+     *   QB_LOG_WARN("Disconnection reason: " << this->disconnection_reason());
      * }
      * @endcode
      */
@@ -1778,7 +1779,7 @@ public:
      * @note **Example Usage:**
      * @code
      * std::size_t total_written = this->bytes_written();
-     * LOG_INFO("Total bytes written: " << total_written);
+     * QB_LOG_INFO("Total bytes written: " << total_written);
      * @endcode
      */
     [[nodiscard]] std::size_t
@@ -2189,9 +2190,9 @@ public:
      * @note **Example Usage:**
      * @code
      * if (this->is_reading()) {
-     *   LOG_DEBUG("I/O component is actively reading");
+     *   QB_LOG_DEBUG("I/O component is actively reading");
      * } else {
-     *   LOG_DEBUG("I/O component is not reading (may be stopped or disconnected)");
+     *   QB_LOG_DEBUG("I/O component is not reading (may be stopped or disconnected)");
      * }
      * @endcode
      */
@@ -2222,9 +2223,9 @@ public:
      * @note **Example Usage:**
      * @code
      * if (this->is_writing()) {
-     *   LOG_DEBUG("I/O component is actively writing");
+     *   QB_LOG_DEBUG("I/O component is actively writing");
      * } else {
-     *   LOG_DEBUG("I/O component is not writing (may be stopped or disconnected)");
+     *   QB_LOG_DEBUG("I/O component is not writing (may be stopped or disconnected)");
      * }
      * @endcode
      */
@@ -2248,7 +2249,7 @@ public:
      *   this->switch_protocol<MyProtocol>(*this);
      *   *this << "Hello!" << Protocol::end;
      * } else {
-     *   LOG_WARN("Component is disconnected, cannot perform operations");
+     *   QB_LOG_WARN("Component is disconnected, cannot perform operations");
      * }
      * @endcode
      *
@@ -2272,10 +2273,10 @@ public:
      * @note **Example Usage:**
      * @code
      * if (this->has_pending_read()) {
-     *   LOG_DEBUG("Input buffer contains " << this->pendingRead() << " bytes of unprocessed data");
+     *   QB_LOG_DEBUG("Input buffer contains " << this->pendingRead() << " bytes of unprocessed data");
      *   // The protocol may need more data to complete a message, or there may be multiple messages
      * } else {
-     *   LOG_DEBUG("Input buffer is empty or all data has been processed");
+     *   QB_LOG_DEBUG("Input buffer is empty or all data has been processed");
      * }
      * @endcode
      *
@@ -2301,10 +2302,10 @@ public:
      * *this << "Message 2" << Protocol::end;
      *
      * if (this->has_pending_write()) {
-     *   LOG_DEBUG("Output buffer contains " << this->pendingWrite() << " bytes waiting to be sent");
+     *   QB_LOG_DEBUG("Output buffer contains " << this->pendingWrite() << " bytes waiting to be sent");
      *   // The data will be written automatically when the transport becomes writable
      * } else {
-     *   LOG_DEBUG("All data has been written to the transport");
+     *   QB_LOG_DEBUG("All data has been written to the transport");
      * }
      * @endcode
      */
@@ -2327,7 +2328,7 @@ public:
      * @note **Example Usage:**
      * @code
      * std::size_t current_limit = this->max_message_size();
-     * LOG_INFO("Current message size limit: " << current_limit << " bytes");
+     * QB_LOG_INFO("Current message size limit: " << current_limit << " bytes");
      * @endcode
      */
     [[nodiscard]] std::size_t
@@ -2377,7 +2378,7 @@ public:
      * @note **Example Usage:**
      * @code
      * if (this->disconnection_reason() != 0) {
-     *   LOG_WARN("Disconnection reason: " << this->disconnection_reason());
+     *   QB_LOG_WARN("Disconnection reason: " << this->disconnection_reason());
      * }
      * @endcode
      */
@@ -2444,7 +2445,7 @@ public:
      * @note **Example Usage:**
      * @code
      * std::size_t total_read = this->bytes_read();
-     * LOG_INFO("Total bytes read: " << total_read);
+     * QB_LOG_INFO("Total bytes read: " << total_read);
      * @endcode
      */
     [[nodiscard]] std::size_t
@@ -2462,7 +2463,7 @@ public:
      * @note **Example Usage:**
      * @code
      * std::size_t total_written = this->bytes_written();
-     * LOG_INFO("Total bytes written: " << total_written);
+     * QB_LOG_INFO("Total bytes written: " << total_written);
      * @endcode
      */
     [[nodiscard]] std::size_t
@@ -2480,7 +2481,7 @@ public:
      * @note **Example Usage:**
      * @code
      * std::size_t msg_count = this->messages_processed();
-     * LOG_INFO("Messages processed: " << msg_count);
+     * QB_LOG_INFO("Messages processed: " << msg_count);
      * @endcode
      */
     [[nodiscard]] std::size_t

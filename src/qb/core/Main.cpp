@@ -180,7 +180,7 @@ bool
 SharedCoreCommunication::send(CoreId const source_index, Event const &event) const noexcept {
 #ifndef NDEBUG
     if (unlikely(event_points_into_itself(event))) {
-        LOG_CRIT("Event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
+        QB_LOG_CRIT("Event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
                           << event.getDestination()
                           << " holds a pointer into its own storage, so it cannot be delivered cross-core: "
                              "the transport relocates events with memcpy and never runs the source destructor. "
@@ -189,7 +189,7 @@ SharedCoreCommunication::send(CoreId const source_index, Event const &event) con
                              "(short strings are self-referential on libstdc++).");
         assert(false
                && "qb: event payload is not trivially relocatable (holds a pointer into itself) — "
-                  "see the LOG_CRIT above and Actor::push's @warning");
+                  "see the QB_LOG_CRIT above and Actor::push's @warning");
     }
 #endif
     // `source_index` MUST be the PHYSICAL core whose thread is calling (the
@@ -324,17 +324,17 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         // Init VirtualCore
         auto &core_factory = initializer._actor_factories;
         if (!core.__init__(initializer.getAffinity())) {
-            LOG_CRIT(core << " Init Failed");
+            QB_LOG_CRIT(core << " Init Failed");
             params.sync_start.store(VirtualCore::Error::BadInit, std::memory_order_release);
         } else if (core_factory.empty()) {
-            LOG_CRIT(core << " Started with 0 Actor");
+            QB_LOG_CRIT(core << " Started with 0 Actor");
             params.sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
         } else if (std::ranges::any_of(
                        core_factory, [&core](auto const &it) { return !core.appendActor(std::unique_ptr<Actor>(it->create())).is_valid(); })) {
-            LOG_CRIT("Actor at " << core << " failed to init");
+            QB_LOG_CRIT("Actor at " << core << " failed to init");
             params.sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
         } else if (!core.__init__actors__()) {
-            LOG_CRIT("Actor at " << core << " failed to init");
+            QB_LOG_CRIT("Actor at " << core << " failed to init");
             params.sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
         }
         initializer.clear();
@@ -342,13 +342,13 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
             return;
         core.__workflow__();
     } catch (const std::exception &e) {
-        LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
+        QB_LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
         params.sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
         initializer.clear();
     } catch (...) {
         // A non-std::exception throw would otherwise escape this noexcept
         // function and std::terminate — and skip the stopped-flag publish.
-        LOG_CRIT("Non-standard exception thrown on " << core);
+        QB_LOG_CRIT("Non-standard exception thrown on " << core);
         params.sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
         initializer.clear();
     }
@@ -386,7 +386,7 @@ Main::start(bool async) noexcept {
     _sync_start.store(0, std::memory_order_release);
     if (_core_initializers.empty()) {
         _sync_start.store(VirtualCore::Error::BadInit, std::memory_order_release);
-        LOG_CRIT("[Start Sequence] Failed: No Core registered");
+        QB_LOG_CRIT("[Start Sequence] Failed: No Core registered");
         return;
     }
 
@@ -429,7 +429,7 @@ Main::start(bool async) noexcept {
 
     if (hasError()) {
         _is_running = false;
-        LOG_CRIT("[Main] Init Failed");
+        QB_LOG_CRIT("[Main] Init Failed");
         std::cerr << "CRITICAL: Core Init Failed -> show logs to have more details" << std::endl;
     }
 }

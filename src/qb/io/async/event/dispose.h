@@ -58,12 +58,12 @@ namespace qb::io::async::event {
  *   }
  *
  *   void on(qb::io::async::event::disconnected const& event) {
- *     LOG_INFO("Connection lost: " << event.error_code.message());
+ *     QB_LOG_INFO("Connection lost: " << event.error_code.message());
  *     // Optionally attempt reconnection or notify other actors
  *   }
  *
  *   void on(qb::io::async::event::dispose &&) {
- *     LOG_INFO("I/O component disposing: cleaning up custom resources.");
+ *     QB_LOG_INFO("I/O component disposing: cleaning up custom resources.");
  *     // Perform final cleanup operations specific to MyClientActor
  *     // Note: Base class dispose() will handle listener unregistration.
  *   }

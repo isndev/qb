@@ -265,7 +265,7 @@ public:
     /**
      * @brief Disconnect the TCP socket.
      * @return 0 on success, or a non-zero error code on failure.
-     * @details This typically calls `qb::io::socket::shutdown()` with `SD_BOTH` and then `close()`.
+     * @details This typically calls `qb::io::socket::shutdown()` with `QB_SD_BOTH` and then `close()`.
      */
     int disconnect() const noexcept;
 };

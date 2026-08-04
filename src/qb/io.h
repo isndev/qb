@@ -188,67 +188,105 @@ public:
 #ifndef QB_WITH_LOGGING
 #ifdef QB_STDOUT_LOGGING
 /**
- * @brief Debug-level log macro
+ * @brief Debug-level log macro (qb's own spelling; `QB_LOG_DEBUG` aliases it)
  * @param X Message to log
  */
-#define LOG_DEBUG(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_DEBUG(X) qb::io::cout() << X << std::endl;
 /**
  * @brief Verbose-level log macro
  * @param X Message to log
  */
-#define LOG_VERB(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_VERB(X) qb::io::cout() << X << std::endl;
 /**
  * @brief Info-level log macro
  * @param X Message to log
  */
-#define LOG_INFO(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_INFO(X) qb::io::cout() << X << std::endl;
 /**
  * @brief Warning-level log macro
  * @param X Message to log
  */
-#define LOG_WARN(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_WARN(X) qb::io::cout() << X << std::endl;
 /**
  * @brief Critical-level log macro
  * @param X Message to log
  */
-#define LOG_CRIT(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_CRIT(X) qb::io::cout() << X << std::endl;
 #else
 /**
- * @brief Debug-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
+ * @brief Debug-level log macro (qb's own spelling; `QB_LOG_DEBUG` aliases it) (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
-#define LOG_DEBUG(X) \
+#define QB_LOG_DEBUG(X) \
     do {             \
     } while (false)
 /**
  * @brief Verbose-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
-#define LOG_VERB(X) \
+#define QB_LOG_VERB(X) \
     do {            \
     } while (false)
 /**
  * @brief Info-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
-#define LOG_INFO(X) \
+#define QB_LOG_INFO(X) \
     do {            \
     } while (false)
 /**
  * @brief Warning-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
-#define LOG_WARN(X) \
+#define QB_LOG_WARN(X) \
     do {            \
     } while (false)
 /**
  * @brief Critical-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
-#define LOG_CRIT(X) \
+#define QB_LOG_CRIT(X) \
     do {            \
     } while (false)
 #endif
 #endif
+
+/*
+ * Legacy unprefixed spellings.
+ *
+ * qb's public macros are QB_LOG_DEBUG / QB_LOG_VERB / QB_LOG_INFO / QB_LOG_WARN / QB_LOG_CRIT.
+ * The unprefixed names are kept, because they are what every qb program written before 3.0.0
+ * calls -- but they are now *aliases*, and each one is guarded by its own `#ifndef`.
+ *
+ * That guard is the fix. `QB_LOG_INFO`, `QB_LOG_DEBUG` and `QB_LOG_CRIT` are also POSIX <syslog.h> names,
+ * and this header is reached by every consumer of <qb/io.h>, <qb/main.h>, <qb/actor.h> and every
+ * qbm umbrella. Before 3.0.0 qb defined them unconditionally, so a consumer with its own
+ * `QB_LOG_INFO` had it silently REPLACED -- measured with the exact `-isystem` line qb's CMake
+ * package exports, at -Wall -Wextra: **zero warnings**, and the consumer's log line simply
+ * stopped appearing. (With `-I` instead of `-isystem` the same build reports
+ * `warning: 'QB_LOG_INFO' macro redefined`, which is why the real integration never saw it.)
+ * With the guard, a consumer who defined the name first keeps their own definition, and a
+ * consumer who defines it afterwards gets the ordinary -Wmacro-redefined diagnostic.
+ *
+ * Define QB_NO_LEGACY_LOG_MACROS to suppress the aliases entirely and take the five names back.
+ * qb's own headers never use them.
+ */
+#ifndef QB_NO_LEGACY_LOG_MACROS
+#ifndef LOG_DEBUG
+#define LOG_DEBUG(X) QB_LOG_DEBUG(X)
+#endif
+#ifndef LOG_VERB
+#define LOG_VERB(X) QB_LOG_VERB(X)
+#endif
+#ifndef LOG_INFO
+#define LOG_INFO(X) QB_LOG_INFO(X)
+#endif
+#ifndef LOG_WARN
+#define LOG_WARN(X) QB_LOG_WARN(X)
+#endif
+#ifndef LOG_CRIT
+#define LOG_CRIT(X) QB_LOG_CRIT(X)
+#endif
+#endif /* QB_NO_LEGACY_LOG_MACROS */
 
 #endif // QB_TYPES_H

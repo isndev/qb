@@ -63,7 +63,82 @@ namespace detail {
  * (65535) distinct event/service types — several orders of magnitude beyond
  * any realistic codebase.
  */
-inline std::atomic<TypeId> _type_id_counter{0};
+QB_ABI_ANCHOR inline std::atomic<TypeId> _type_id_counter{0};
+
+/**
+ * @brief One entry of the process-wide type-id registry: the storage `type_id_for<T>()` donates.
+ * @details Trivially destructible and constant-initialised, so the block-scope static that
+ *          provides it needs no guard variable and no `__cxa_atexit`, and stays valid through
+ *          static destruction — the same properties the name table in `Event.cpp` relies on.
+ */
+struct type_id_slot {
+    type_id_slot *next; /**< Intrusive link; written by `register_type_id`. */
+    char const   *name; /**< `typeid(T).name()` of the type that owns this slot. */
+    TypeId        id;   /**< The id assigned to that type. */
+};
+
+/**
+ * @brief Head of the process-wide registry of assigned type ids.
+ * @details
+ * **Why identity cannot be a magic static alone.** `type_id_for<T>()`'s `static const TypeId id`
+ * is a *block-scope* static: vague linkage, one definition kept per program — as long as the
+ * copies coalesce. `-fvisibility=hidden` in any consumer stops that, and unlike a namespace-scope
+ * `inline` variable it **cannot be annotated back**: measured on this machine, a plugin compiled
+ * `-fvisibility=hidden` exports **0** of the 8 magic statics its default-visibility twin exports,
+ * and `__attribute__((visibility("default")))` on the variable *or* on the enclosing function is
+ * accepted without a warning and changes nothing (`nm -m` still says `weak external`, the export
+ * trie still says no). The result was two id spaces:
+ *
+ * ```
+ *   plugin default visibility (control)     plugin -fvisibility=hidden
+ *   host: KillEvent=1  SignalEvent=2        host: KillEvent=1  SignalEvent=2
+ *   plug: KillEvent=1  Noop=7               plug: KillEvent=1  Noop=2   <-- COLLISION
+ * ```
+ *
+ * i.e. exactly what this file's `_type_id_counter` comment calls "silently breaks event routing".
+ *
+ * **What this fixes it with.** The magic static stops *being* the identity and becomes a per-image
+ * **cache** of it. The identity lives in this list, a namespace-scope `inline` variable — which
+ * `QB_ABI_ANCHOR` *can* keep exported and coalescing — so a second image whose own magic static
+ * forked still walks the one shared list, finds `T` by name, and returns the id already assigned.
+ * That also covers the case annotation can never reach: two *separate* copies of `libqb-core.a`,
+ * each with its own `Event.cpp` name table.
+ *
+ * **Cost.** `nullptr` is a constant initialiser, so this adds no `__mod_init_func` and nothing to
+ * order (the property `Event.cpp` documents and the audit's SIOF control pins). The walk is
+ * O(registered types) and runs **once per type per image**, from the cold outlined initialiser;
+ * the routing path still reads one already-initialised local static.
+ *
+ * @warning A slot is donated by a block-scope static inside the image that first registered the
+ *          type, so unloading that image (`dlclose`) leaves a dangling link. Unloading an image
+ *          that has used qb is unsupported for this and several older reasons (its watchers live
+ *          in `listener::current`, its actors in the engine's routers).
+ */
+QB_ABI_ANCHOR inline std::atomic<type_id_slot *> _type_id_registry{nullptr};
+
+/**
+ * @brief Serialises registry insertion across every image in the process.
+ * @details Registration is the cold path — once per type per image — so a spin is cheaper than
+ *          anything that would need a constructor. A `std::mutex` could not be used here: it has
+ *          a non-trivial constructor, and a dynamically-initialised anchor would reintroduce the
+ *          static-initialisation-order hazard this registry is careful not to have. Default
+ *          initialisation of `std::atomic_flag` is the clear state since C++20.
+ */
+QB_ABI_ANCHOR inline std::atomic_flag _type_id_registry_lock{};
+
+/**
+ * @brief Assign — or recover — the process-wide id of the type named `name`.
+ * @details Defined out of line in `libqb-core` (`Event.cpp`). If `name` is already in
+ *          `_type_id_registry`, its existing id is returned and `slot` is left untouched;
+ *          otherwise `slot` is filled, published, and the drawn id recorded in the name table.
+ *          Names are compared with `strcmp`, not by pointer: `typeid(T).name()` is a *different
+ *          address* in each image once visibility is tightened, which is the very situation this
+ *          exists to survive.
+ * @param slot Storage donated by the caller's block-scope static; only touched on a miss.
+ * @param name `typeid(T).name()` — a link-time constant address, never a heap string.
+ * @return The id of `name`, stable for the lifetime of the process.
+ */
+TypeId register_type_id(type_id_slot &slot, char const *name) noexcept;
 
 /**
  * @brief Record `name` as the human-readable name of the type that was assigned `id`.
@@ -109,16 +184,21 @@ TypeId register_type_name(TypeId id, char const *name) noexcept;
 /**
  * @brief Per-type, magic-static unique identifier.
  * @details
- * Incrementing the global counter inside the initialiser of a function-local
- * static guarantees (per the C++ standard) that the bump happens exactly once
- * per `T`, even when multiple TUs race on first instantiation.
+ * Running the registration inside the initialiser of a function-local static guarantees (per the
+ * C++ standard) that it happens exactly once per `T` **per image**, even when multiple TUs race
+ * on first instantiation. It is deliberately no longer once per *process*: since 3.0.0 the
+ * initialiser asks `register_type_id` rather than drawing from `_type_id_counter` itself, so a
+ * second image whose copy of this static failed to coalesce — the `-fvisibility=hidden` case
+ * that block-scope statics cannot be annotated out of, see `_type_id_registry` — recovers the id
+ * `T` already has instead of minting a colliding one.
  *
- * The same one-shot initialiser now also records `typeid(T).name()` in the side registry.
- * That is what keeps a human-readable event name available after `Event::id_type` stopped
- * *being* that name — see `qb::event_type_name()`. The static is still a bare `TypeId`, so
- * `id` is at offset 0 of an object whose size is 2: the guard test and the 16-bit load this
- * function compiles to are unchanged, and `typeid` materialises only inside the outlined
- * cold initialiser, reached once per type per process.
+ * The same one-shot initialiser also records `typeid(T).name()` in the side registry. That is
+ * what keeps a human-readable event name available after `Event::id_type` stopped *being* that
+ * name — see `qb::event_type_name()`. The static is still a bare `TypeId`, so `id` is at offset 0
+ * of an object whose size is 2: the guard test and the 16-bit load this function compiles to are
+ * unchanged, and `typeid` materialises only inside the outlined cold initialiser, reached once
+ * per type per image. `slot` is constant-initialised, so it costs zero-fill storage and no second
+ * guard.
  *
  * @warning `T` must be a **complete** type. Before 3.0 this function never touched `typeid` in
  *          *either* build mode, so an incomplete `T` compiled everywhere it was reached through
@@ -128,10 +208,10 @@ TypeId register_type_name(TypeId id, char const *name) noexcept;
  *          it called `typeid(T).name()` directly.) Verified against 2.6 headers, both modes.
  */
 template <typename T>
-[[nodiscard]] inline TypeId
+[[nodiscard]] QB_ABI_ANCHOR inline TypeId
 type_id_for() noexcept {
-    static const TypeId id =
-        register_type_name(static_cast<TypeId>(_type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1), typeid(T).name());
+    static type_id_slot slot{};
+    static const TypeId id = register_type_id(slot, typeid(T).name());
     return id;
 }
 } // namespace detail

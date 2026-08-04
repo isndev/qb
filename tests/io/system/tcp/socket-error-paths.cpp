@@ -301,7 +301,7 @@ TEST(SocketErrorPaths, AcceptObjectFormOnClosedSocketYieldsClosedResult) {
 
 TEST(SocketErrorPaths, ShutdownAndNonblockingFailOnClosedDescriptor) {
     qb::io::socket closed;
-    EXPECT_EQ(closed.shutdown(SD_BOTH), -1) << "shutdown of a closed socket must fail";
+    EXPECT_EQ(closed.shutdown(QB_SD_BOTH), -1) << "shutdown of a closed socket must fail";
     EXPECT_EQ(qb::io::socket::set_nonblocking(closed.native_handle(), true), -1) << "set_nonblocking on an invalid fd must fail";
 }
 

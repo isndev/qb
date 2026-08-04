@@ -170,7 +170,7 @@ public:
     // yet freed. Cheap diagnostic (thread_local — coroutines are mono-thread per
     // VirtualCore, so no cross-core contention). Tests assert it returns to its
     // baseline after coroutines complete, guarding against frame leaks.
-    static inline thread_local long live_frames = 0;
+    QB_ABI_ANCHOR static inline thread_local long live_frames = 0;
 
     [[nodiscard]] static void *
     allocate(std::size_t size) {
@@ -235,7 +235,7 @@ private:
     // it) and so outlives ~BucketPool, which is exactly what lets a post-teardown
     // deallocate() read a valid `false`. Folding it into BucketPool would reintroduce
     // the use-after-teardown this guards against.
-    static bool &
+    QB_ABI_ANCHOR static bool &
     pool_alive() noexcept {
         thread_local bool alive = false;
         return alive;
@@ -266,7 +266,7 @@ private:
         }
     };
 
-    static BucketArray &
+    QB_ABI_ANCHOR static BucketArray &
     buckets() noexcept {
         thread_local BucketPool pool;
         return pool.heads;

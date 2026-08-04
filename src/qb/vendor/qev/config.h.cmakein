@@ -15,7 +15,22 @@
 #cmakedefine01 EV_USE_IOURING
 #cmakedefine01 EV_USE_WSAPOLL
 
-/* Feature presence flags */
+/* Feature presence flags.
+ *
+ * PRIVATE to this library's own translation units. This header is PUBLIC -- qev.h needs the
+ * EV_USE_* half above, and qev.h is reached by every consumer of <qb/io.h> through listener.h --
+ * so before 3.0.0 these 35 unprefixed autoconf names, carrying qb's BUILD HOST's answers
+ * (HAVE_POLL 1, HAVE_KQUEUE 1, HAVE_EPOLL_CTL 0, HAVE_EVENTFD 0, ...), reached every consumer
+ * translation unit as well. A project that runs its own autoconf/CMake feature checks and tests
+ * `#if HAVE_EPOLL_CTL` would read qb's answer instead of its own, silently and for the whole TU.
+ *
+ * Nothing outside qev.c needs them (grep: qev.h references only HAVE_CONFIG_H, the autotools
+ * switch), so they are gated on QEV_BUILDING_LIBRARY, which the qev target sets PRIVATE. The
+ * EV_USE_* half deliberately stays public and ungated: it is what keeps qev.h's view of the
+ * backend identical to the compiled libqev.a's, and a split there is the silent divergence the
+ * CMakeLists comment above the configure_file() call warns about.
+ */
+#ifdef QEV_BUILDING_LIBRARY
 #cmakedefine01 HAVE_CLOCK_GETTIME
 #cmakedefine01 HAVE_CLOCK_SYSCALL
 #cmakedefine01 HAVE_DLFCN_H
@@ -51,6 +66,7 @@
 #cmakedefine01 HAVE_SYS_TYPES_H
 #cmakedefine01 HAVE_UNISTD_H
 #cmakedefine01 HAVE_KERNEL_RWF_T
+#endif /* QEV_BUILDING_LIBRARY */
 /* Used to avoid wrong includes during codegen */
 #cmakedefine01 EV_GENWRAP
 

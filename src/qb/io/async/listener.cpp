@@ -27,6 +27,16 @@
 
 namespace qb::io::async {
 
-thread_local listener listener::current = {};
+// `thread_local listener listener::current = {};` used to live HERE, and that is the whole
+// content this translation unit ever had. It moved to `qb/io/async/listener.h` in 3.0.0, as an
+// `inline` definition annotated `QB_ABI_ANCHOR`, and it must not come back: an out-of-line
+// definition emits a `non-external` TLS descriptor, so a host executable and a plugin that each
+// statically link `libqb-io.a` get *two* `listener::current` on the same thread and everything
+// the plugin registers goes into a loop nobody runs. Measured, both dlopen modes, no diagnostic
+// from any tool. The definition site in the header carries the numbers and the symbol-table
+// evidence.
+//
+// The file itself stays: it is a member of `libqb-io.a` (the amalgamation includes it), and it is
+// where a future non-inline `listener` member belongs.
 
 } // namespace qb::io::async

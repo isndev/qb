@@ -49,7 +49,7 @@ namespace qb::io::async::event {
  * class MyInputHandler : public qb::io::async::input<MyInputHandler> {
  * public:
  *   void on(qb::io::async::event::input_drained &&) {
- *     LOG_INFO("Input buffer drained; waiting for more data.");
+ *     QB_LOG_INFO("Input buffer drained; waiting for more data.");
  *   }
  * };
  * @endcode

@@ -50,14 +50,14 @@ namespace qb::io::async::event {
  *   // ... other methods ...
  *
  *   void on(qb::io::async::event::pending_write &&event) {
- *     LOG_DEBUG("Pending write data: " << event.bytes << " bytes still in output buffer.");
+ *     QB_LOG_DEBUG("Pending write data: " << event.bytes << " bytes still in output buffer.");
  *     if (event.bytes > HIGH_WATER_MARK) {
  *       // pauseProducingData(); // Example of flow control
  *     }
  *   }
  *
  *   void on(qb::io::async::event::eos &&) { // End Of Stream
- *      LOG_DEBUG("All data sent, output buffer empty.");
+ *      QB_LOG_DEBUG("All data sent, output buffer empty.");
  *      // resumeProducingData();
  *   }
  * };

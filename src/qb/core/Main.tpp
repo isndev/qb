@@ -42,14 +42,14 @@ CoreInitializer::addActor(_Args &&...args) noexcept {
             _registered_services.insert(_Actor::ServiceIndex);
             id = ActorId(_Actor::ServiceIndex, _index);
         } else {
-            LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
+            QB_LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
                                                                      << " in Core(" << _index << ")"
                                                                      << " : Already registered");
             return id;
         }
     } else {
         if (unlikely(_next_id == std::numeric_limits<ServiceId>::max())) {
-            LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
+            QB_LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
                                                              << " in Core(" << _index << ")"
                                                              << " : Max number of Actors reached");
             return id;

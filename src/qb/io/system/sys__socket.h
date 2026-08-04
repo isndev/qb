@@ -1301,7 +1301,7 @@ public:
     inline static int
     ioctl(socket_type s, long cmd, const _Ty &value) {
         u_long argp = static_cast<u_long>(value);
-        return ::ioctlsocket(s, cmd, &argp);
+        return ::QB_IOCTLSOCKET(s, cmd, &argp);
     }
 
     /**
@@ -1321,20 +1321,20 @@ public:
     /**
      * @brief Disables sends or receives on this socket
      * @params:
-     *        how: [SD_SEND] or [SD_RECEIVE] or [SD_BOTH]
+     *        how: [QB_SD_SEND] or [QB_SD_RECEIVE] or [QB_SD_BOTH]
      *
      * @returns: [0] succeed, otherwise, a value of SOCKET_ERROR is returned.
      */
-    QB__DECL int shutdown(int how = SD_BOTH) const;
+    QB__DECL int shutdown(int how = QB_SD_BOTH) const;
 
     /**
      * @brief close sends
      * @params:
-     *        shut_how: [SD_SEND] or [SD_RECEIVE] or [SD_BOTH] or [SD_NONE]
+     *        shut_how: [QB_SD_SEND] or [QB_SD_RECEIVE] or [QB_SD_BOTH] or [QB_SD_NONE]
      *
      * @returns: [0] succeed, otherwise, a value of SOCKET_ERROR is returned.
      */
-    QB__DECL void close(int shut_how = SD_BOTH);
+    QB__DECL void close(int shut_how = QB_SD_BOTH);
 
     /**
      * @brief Retrive tcp socket rtt in microseconds

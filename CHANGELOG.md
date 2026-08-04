@@ -31,6 +31,33 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Added
 
+- **`QB_ABI_ANCHOR` (`qb/utility/abi.h`) on every process-wide identity anchor.** The entities that
+  must exist exactly once per process — `qb::detail::_type_id_counter`, the router's `_disposers`
+  table and its two registration statics, the `ServiceActor` registry (`VirtualCore::getServices`,
+  `servicesMutex`, `_nb_service`), `qb::io::async::no_protocol()`, the coroutine frame pool
+  (`live_frames`, `pool_alive`, `buckets`), the two watcher free-lists, `listener::current`,
+  `VirtualCore::_handler`, `CoroutineScheduler::current_` / `owned_current_` and
+  `VirtualCore::activation_deadline_ns` — are annotated `visibility("default")` so they keep
+  coalescing when a consumer compiles `-fvisibility=hidden`. The macro is empty on MSVC: a Windows
+  shared build needs the export-macro work first, and this is not a substitute for it.
+  See [readme/7_reference/building.md](./readme/7_reference/building.md#one-instance-per-process).
+- **A process-wide type-id registry (`qb::detail::_type_id_registry`).** `type_id_for<T>()`'s magic
+  static is now a per-image *cache* of an id owned by a shared intrusive list, instead of being the
+  identity itself. This is what closes the id-space fork below in the one case an annotation
+  cannot: a block-scope static is not exportable. The list head is `nullptr`, i.e. constant
+  initialisation — `Event.cpp` still emits **no** `__mod_init_func`, so nothing about the
+  static-initialisation-order guarantee changes, and the routing path still reads one
+  already-initialised local static.
+- **`QB_LOG_DEBUG` / `QB_LOG_VERB` / `QB_LOG_INFO` / `QB_LOG_WARN` / `QB_LOG_CRIT`** — the prefixed
+  spellings of qb's logging macros, and the only ones qb's own 138 call sites (and qbm's 94) now
+  use. `QB_NO_LEGACY_LOG_MACROS` suppresses the unprefixed aliases.
+- **`QB_CLOSESOCKET` / `QB_IOCTLSOCKET` / `QB_SD_RECEIVE` / `QB_SD_SEND` / `QB_SD_BOTH` /
+  `QB_SD_NONE` / `QB_FD_TO_SOCKET` / `QB_OPEN_FD_FROM_SOCKET`** (`qb/io/config.h`) — the prefixed
+  spellings of the socket-portability macros. `QB_LEGACY_SOCKET_MACROS` brings the unprefixed ones
+  back.
+- **`QB_EV_LIBEVENT_COMPAT`** (default `OFF`) — builds and installs the qev fork's libevent
+  compatibility layer (`event.c`, `event.h`, `event_compat.h`).
+
 - **A link-time configuration fingerprint (`qb/utility/abi.h`).** qb ships headers plus a compiled
   archive, and a handful of macros the *consumer* sets change the layout of public types in those
   headers, or the body of an inline entity the archive also defines. Nothing detected the
@@ -79,6 +106,45 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   OpenSSL, so this is the only crypto coverage a `QB_WITH_SSL=OFF` build gets.
 
 ### Changed
+
+- **`listener::current` is defined in the header, not in `listener.cpp`** — and the same for
+  `VirtualCore::_handler`, `VirtualCore::_nb_service`, `VirtualCore::activation_deadline_ns` and
+  `CoroutineScheduler::current_` / `owned_current_`. A `thread_local` (or `static`) **defined out of
+  line** emits a symbol that is private to its image by construction — on Mach-O,
+  `(__DATA,__thread_vars) non-external`. A host executable and a `dlopen`ed plugin that each
+  statically link qb therefore got **two** `listener::current` on the *same thread*, with **no
+  unusual flags at all**: measured `[HOST] &current=0xc24c28080 size()=2` vs
+  `[PLUGIN] &current=0xc24c29880 size()=0`, in RTLD_LOCAL and RTLD_GLOBAL alike, so everything the
+  plugin registered went into a loop nobody runs — silently. Defined `inline` in the header the same
+  descriptor is *weak-external*, which dyld coalesces: after the change both images report the same
+  address and the plugin's registration lands in the host's loop (`size()` 2 → 3). No API changed;
+  `listener::current`, `VirtualCore::_handler` and the rest are spelled exactly as before.
+- **The unprefixed socket-portability macros are off by default** (source-incompatible, see
+  *Removed*). `qb/io/config.h` no longer defines `closesocket`, `ioctlsocket`, `SD_RECEIVE`,
+  `SD_SEND`, `SD_BOTH`, `SD_NONE`, `FD_TO_SOCKET` or `OPEN_FD_FROM_SOCKET` unless
+  `QB_LEGACY_SOCKET_MACROS` is defined.
+- **The unprefixed `LOG_*` macros are aliases, and each is guarded by `#ifndef`.** A consumer who
+  defines `LOG_INFO` before including qb now keeps their own definition. Before, qb replaced it,
+  and the exact `-isystem` line qb's CMake package exports produced **zero warnings** while the
+  consumer's log line stopped appearing. (With `-I` the same build reports
+  `warning: 'LOG_INFO' macro redefined` — which is why the real integration never saw it.)
+- **The qev fork no longer exports libevent's 24 unprefixed C symbols by default.** `event.c` — the
+  libevent compatibility layer — is compiled and installed only under `QB_EV_LIBEVENT_COMPAT=ON`.
+  `libqev.a` is on every consumer's link line (`qb::io` names `qb::qev` in its
+  `INTERFACE_LINK_LIBRARIES`), so a consumer that also linked the real libevent got whichever
+  `event_base_new` / `event_add` / `event_del` / … the archive order happened to pick, over two
+  unrelated `struct event_base` layouts, with no diagnostic: measured, `-lfakeevent` before
+  `libqev.a` ran the real one and after it ran qb's, both `rc=0`. Nothing in qb calls any of them
+  (`nm -u libqb-io.a | grep -c '^ *_event_'` → 0). With the option off the real libevent now wins in
+  **both** orders.
+- **The qev fork's 35 `HAVE_*` autoconf macros are private to `libqev.a`.** `qev_config.h` is a
+  public header (`qev.h` needs its `EV_USE_*` half, and `qev.h` is reached from `<qb/io.h>`), so it
+  used to push qb's *build-host* answers — `HAVE_POLL 1`, `HAVE_KQUEUE 1`, `HAVE_EPOLL_CTL 0`,
+  `HAVE_EVENTFD 0`, … — into every consumer translation unit, where a project running its own
+  feature checks would read qb's answer instead of its own. The `HAVE_*` half is now gated on
+  `QEV_BUILDING_LIBRARY`, which the `qev` target sets `PRIVATE`; the `EV_USE_*` half stays public
+  and ungated, because a split *there* is the silent header/library divergence the generator's own
+  comment warns about.
 
 - **`qb::unordered_map` and `qb::unordered_set` are now unconditional aliases for
   `ska::unordered_map` / `ska::unordered_set`.** Since 2020 (`5c94d026`) they resolved to `ska::`
@@ -235,6 +301,20 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Removed
 
+- **The unprefixed socket-portability macros, from the default configuration.** `closesocket`,
+  `ioctlsocket`, `SD_RECEIVE`, `SD_SEND`, `SD_BOTH`, `SD_NONE`, `FD_TO_SOCKET` and
+  `OPEN_FD_FROM_SOCKET` are no longer defined by `<qb/io/config.h>` unless
+  `QB_LEGACY_SOCKET_MACROS` is defined; use the `QB_`-prefixed spellings. An `#ifndef` guard was
+  measured to be **insufficient** for this set, which is why the default flipped rather than merely
+  gaining a guard: `closesocket` and `ioctlsocket` are *function* names, so a consumer who writes
+  `static int closesocket(int)` passes `#ifndef closesocket` and then has every one of their calls
+  rewritten to `close` by an object-like macro — their function was never entered. Nothing in qb,
+  qbm or examples used the unprefixed spellings.
+- **`<qb/vendor/qev/event.h>` and `<qb/vendor/qev/event_compat.h>` from the default install.** They
+  declare libevent's API over an incompatible `struct event_base`, and the bodies behind them are
+  only built under `QB_EV_LIBEVENT_COMPAT=ON`, which also reinstates the headers.
+
+
 - **`<cube.h>`**, the legacy whole-framework umbrella header (guard `QB_QB_H`; just `qb/actor.h`,
   `qb/io.h` and `qb/main.h`). **This removes a name from the installed public surface.** It was dead —
   nothing in the tree ever included it — and it was the last generic top-level name in the installed
@@ -269,6 +349,23 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   **Source-incompatible** for code that called `std::to_string(uuid)`.
 
 ### Fixed
+
+- **The event-id space forked under `-fvisibility=hidden`, and two distinct types received the same
+  id.** `qb/core/Event.h` already documented that a type-id collision "silently breaks event routing
+  (two distinct types collapse to the same slot in `router::memh`)"; this is that outcome, reachable
+  without qb doing anything wrong. Measured on a host + `dlopen`ed plugin, plugin compiled
+  `-fvisibility=hidden`: the host held `KillEvent=1, SignalEvent=2` while the plugin drew
+  `KillEvent=1, Noop=2`. Both runs exited 0 with no diagnostic. Two things were needed. `QB_ABI_ANCHOR`
+  restores coalescing for `_type_id_counter`, a namespace-scope `inline` variable — but **not** for
+  the per-type magic static inside `type_id_for<T>()`: a block-scope static cannot be annotated back
+  into the export trie, and measured, the hidden plugin exports **0** of the 8 magic statics its
+  default-visibility twin exports while `__attribute__((visibility("default")))` on the variable *or*
+  the function is accepted without a warning and changes nothing. So the magic static stopped being
+  the identity: it now caches an id owned by `_type_id_registry`, a shared list keyed by
+  `typeid(T).name()`. After the fix the hidden plugin reports `KillEvent=1, Noop=7` — identical to
+  the default-visibility control. This also covers the case no annotation can reach: two separate
+  copies of `libqb-core.a`, each with its own `Event.cpp` name table.
+
 
 - **A gcc-built consumer linked against a clang-built qb corrupted the heap on the first empty
   `qb::unordered_map` it destroyed.** `free(): invalid pointer`, SIGABRT, no link-time diagnostic.

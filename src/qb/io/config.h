@@ -288,8 +288,17 @@
 #endif
 using socket_type = SOCKET; // Modern C++: using alias
 typedef int socklen_t;      // Note: socklen_t is a POSIX type, kept for compatibility
-#define FD_TO_SOCKET(fd) _get_osfhandle(fd)
-#define OPEN_FD_FROM_SOCKET(sock) _open_osfhandle(sock, 0)
+#define QB_FD_TO_SOCKET(fd) _get_osfhandle(fd)
+#define QB_OPEN_FD_FROM_SOCKET(sock) _open_osfhandle(sock, 0)
+#define QB_SD_RECEIVE SD_RECEIVE
+#define QB_SD_SEND SD_SEND
+#define QB_SD_BOTH SD_BOTH
+#define QB_CLOSESOCKET closesocket
+#define QB_IOCTLSOCKET ioctlsocket
+// `poll` -> `WSAPoll` is a *function* name taken from every consumer of this header. It is kept
+// unguarded only because it is Windows-only and no Windows toolchain is reachable from this
+// project's development hosts to verify a rename (see dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md
+// section 7); it is recorded as a known leak, together with the ~40 errno macros redefined below.
 #define poll WSAPoll
 #pragma comment(lib, "ws2_32.lib")
 
@@ -311,54 +320,46 @@ typedef int socklen_t;      // Note: socklen_t is a POSIX type, kept for compati
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#if !defined(SD_RECEIVE)
 /**
- * @def SD_RECEIVE
+ * @def QB_SD_RECEIVE
  * @brief Socket shutdown flag for disabling receive operations
  * @details Cross-platform macro that maps to platform-specific constants
- * (SHUT_RD on Unix, SD_RECEIVE on Windows)
+ * (SHUT_RD on Unix, SD_RECEIVE on Windows). `SD_RECEIVE` remains available as a guarded alias.
  * @ingroup IO
  */
-#define SD_RECEIVE SHUT_RD
-#endif
-#if !defined(SD_SEND)
+#define QB_SD_RECEIVE SHUT_RD
 /**
- * @def SD_SEND
+ * @def QB_SD_SEND
  * @brief Socket shutdown flag for disabling send operations
  * @details Cross-platform macro that maps to platform-specific constants
- * (SHUT_WR on Unix, SD_SEND on Windows)
+ * (SHUT_WR on Unix, SD_SEND on Windows). `SD_SEND` remains available as a guarded alias.
  * @ingroup IO
  */
-#define SD_SEND SHUT_WR
-#endif
-#if !defined(SD_BOTH)
+#define QB_SD_SEND SHUT_WR
 /**
- * @def SD_BOTH
+ * @def QB_SD_BOTH
  * @brief Socket shutdown flag for disabling both send and receive operations
  * @details Cross-platform macro that maps to platform-specific constants
- * (SHUT_RDWR on Unix, SD_BOTH on Windows)
+ * (SHUT_RDWR on Unix, SD_BOTH on Windows). `SD_BOTH` remains available as a guarded alias.
  * @ingroup IO
  */
-#define SD_BOTH SHUT_RDWR
-#endif
-#if !defined(closesocket)
+#define QB_SD_BOTH SHUT_RDWR
 /**
- * @def closesocket
+ * @def QB_CLOSESOCKET
  * @brief Cross-platform macro for closing a socket
- * @details Maps to close() on Unix systems, keeps closesocket() on Windows
+ * @details Maps to close() on Unix systems, closesocket() on Windows. `closesocket` remains
+ *          available as a guarded alias.
  * @ingroup IO
  */
-#define closesocket close
-#endif
-#if !defined(ioctlsocket)
+#define QB_CLOSESOCKET close
 /**
- * @def ioctlsocket
+ * @def QB_IOCTLSOCKET
  * @brief Cross-platform macro for socket I/O control
- * @details Maps to ioctl() on Unix systems, keeps ioctlsocket() on Windows
+ * @details Maps to ioctl() on Unix systems, ioctlsocket() on Windows. `ioctlsocket` remains
+ *          available as a guarded alias.
  * @ingroup IO
  */
-#define ioctlsocket ioctl
-#endif
+#define QB_IOCTLSOCKET ioctl
 // SO_NOSIGPIPE is deliberately NOT defined on Linux.
 //
 // This header used to say `#define SO_NOSIGPIPE MSG_NOSIGNAL` there: a socket OPTION
@@ -394,32 +395,32 @@ typedef int socklen_t;      // Note: socklen_t is a POSIX type, kept for compati
  */
 using socket_type = int; // Modern C++: using alias
 /**
- * @def FD_TO_SOCKET(fd)
+ * @def QB_FD_TO_SOCKET(fd)
  * @brief Converts a file descriptor to a socket handle
  * @details On Unix, returns fd unchanged. On Windows, converts using _get_osfhandle()
  * @param fd File descriptor to convert
  * @return Equivalent socket handle
  * @ingroup IO
  */
-#define FD_TO_SOCKET(fd) fd
+#define QB_FD_TO_SOCKET(fd) fd
 /**
- * @def OPEN_FD_FROM_SOCKET(sock)
+ * @def QB_OPEN_FD_FROM_SOCKET(sock)
  * @brief Converts a socket handle to a file descriptor
  * @details On Unix, returns sock unchanged. On Windows, converts using _open_osfhandle()
  * @param sock Socket handle to convert
  * @return Equivalent file descriptor
  * @ingroup IO
  */
-#define OPEN_FD_FROM_SOCKET(sock) sock
+#define QB_OPEN_FD_FROM_SOCKET(sock) sock
 #undef socket
 #endif
 /**
- * @def SD_NONE
+ * @def QB_SD_NONE
  * @brief Special value indicating no socket shutdown operation
  * @details Used to indicate that no shutdown operation should be performed
  * @ingroup IO
  */
-#define SD_NONE -1
+#define QB_SD_NONE -1
 
 #include <fcntl.h> // common platform header
 
@@ -525,5 +526,62 @@ using socket_type = int; // Modern C++: using alias
  * @ingroup IO
  */
 #define IN_MAX_ADDRSTRLEN INET6_ADDRSTRLEN
+
+/*
+ * Legacy unprefixed spellings of qb's socket-portability macros.
+ *
+ * qb's own 21 call sites use QB_CLOSESOCKET / QB_IOCTLSOCKET / QB_SD_RECEIVE / QB_SD_SEND /
+ * QB_SD_BOTH / QB_SD_NONE / QB_FD_TO_SOCKET / QB_OPEN_FD_FROM_SOCKET, and those eight are the
+ * supported spellings. The unprefixed ones are **off by default since 3.0.0** -- a documented
+ * break -- and come back with `-DQB_LEGACY_SOCKET_MACROS`.
+ *
+ * `closesocket`, `ioctlsocket`, `SD_BOTH` and friends are Winsock's API names, and this header is
+ * reached by every consumer of <qb/io.h>. Taking those names in a public header meant a consumer's
+ * own `closesocket` shim -- a common thing to write in portable network code -- was decided by
+ * include order, with no diagnostic under the `-isystem` line qb's CMake package exports. Three of
+ * the eight were already `#if !defined(...)`-guarded; the other five were not, and none of them
+ * had a prefixed spelling to migrate to.
+ *
+ * An `#ifndef` guard is NOT enough for this set and that is why the default flipped rather than
+ * merely gaining a guard. `closesocket` and `ioctlsocket` are *function* names: a consumer who
+ * writes `static int closesocket(int)` -- not a macro -- sails through `#ifndef closesocket`, and
+ * qb's object-like macro then rewrites every one of their calls to `close`. Measured, with the
+ * guard in place: the consumer's function was never entered and `closesocket(3)` returned `close`'s
+ * 0. Only not defining the name fixes that. Nothing in qb, qbm or examples used the unprefixed
+ * spellings, so this costs the tree nothing.
+ *
+ * KNOWN, NOT FIXED HERE, both Windows-only and both recorded rather than changed blind (no
+ * Windows toolchain is reachable from this project's development hosts -- see
+ * dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md section 7):
+ *   * `#define poll WSAPoll` above takes a POSIX *function* name.
+ *   * the `#ifdef _WIN32` block below redefines ~40 unprefixed `E*` errno constants
+ *     (EWOULDBLOCK, EINPROGRESS, ENOTSOCK, ...) to their WSA equivalents.
+ */
+#ifdef QB_LEGACY_SOCKET_MACROS
+#ifndef SD_RECEIVE
+#define SD_RECEIVE QB_SD_RECEIVE
+#endif
+#ifndef SD_SEND
+#define SD_SEND QB_SD_SEND
+#endif
+#ifndef SD_BOTH
+#define SD_BOTH QB_SD_BOTH
+#endif
+#ifndef SD_NONE
+#define SD_NONE QB_SD_NONE
+#endif
+#ifndef closesocket
+#define closesocket QB_CLOSESOCKET
+#endif
+#ifndef ioctlsocket
+#define ioctlsocket QB_IOCTLSOCKET
+#endif
+#ifndef FD_TO_SOCKET
+#define FD_TO_SOCKET(fd) QB_FD_TO_SOCKET(fd)
+#endif
+#ifndef OPEN_FD_FROM_SOCKET
+#define OPEN_FD_FROM_SOCKET(sock) QB_OPEN_FD_FROM_SOCKET(sock)
+#endif
+#endif /* QB_LEGACY_SOCKET_MACROS */
 
 #endif

@@ -242,6 +242,51 @@ nm -g <prefix>/lib/libqb-io.a | grep qb_abi          # one symbol per axis
 strings <prefix>/lib/libqb-io.a | grep '^qb-abi '    # qb-abi qb=3.0.0 cacheline=64 exceptions=1 …
 ```
 
+### One instance per process
+
+A handful of qb entities must exist **exactly once per process**: the event type-id counter and
+the per-type id drawn from it, the router's disposer table, the `ServiceActor` registry, the
+`no_protocol()` sentinel (compared by *address*), the coroutine frame pool, and the per-thread
+`listener` / `VirtualCore` / coroutine scheduler. All of them are vague-linkage entities, which
+means "N definitions, one kept" — and *who* keeps it matters: the static linker folds copies within
+one image, the dynamic linker coalesces the survivors **across** images.
+
+Two things used to break that, both silently, and both are closed in 3.0.0.
+
+**An out-of-line definition is private to its image.** A `thread_local` defined in a `.cpp` emits
+its TLS descriptor as `non-external` (Mach-O) — it can never be shared. A host executable and a
+`dlopen`ed plugin that each statically link qb therefore held two `listener::current` on the same
+thread, with no unusual flags at all, and everything the plugin registered went into a loop nobody
+runs. Those definitions now live `inline` in their headers, which emits a *weak-external*
+descriptor that the dynamic linker coalesces. Nothing about how you spell them changed.
+
+**`-fvisibility=hidden` in a consumer stops the coalescing.** Every anchor above carries
+`QB_ABI_ANCHOR` (`visibility("default")`) so it keeps merging. One case that annotation cannot
+reach: the per-type magic static inside `type_id_for<T>()` is *block-scope*, and a block-scope
+static cannot be put back in the export trie. So type identity no longer lives there — the magic
+static caches an id owned by `qb::detail::_type_id_registry`, one shared list keyed by
+`typeid(T).name()`. That also covers two separate copies of `libqb-core.a` in one process.
+
+Unloading an image that has used qb (`dlclose`) remains unsupported: its watchers live in
+`listener::current`, its actors in the engine's routers, and its type-id slots in the registry.
+
+### Macro hygiene
+
+A public header must not take an unprefixed common name. Since 3.0.0 qb's own macros are
+`QB_`-prefixed and the unprefixed spellings are either guarded aliases or opt-in:
+
+| what | prefixed spelling | unprefixed spelling |
+|---|---|---|
+| logging | `QB_LOG_DEBUG` `QB_LOG_VERB` `QB_LOG_INFO` `QB_LOG_WARN` `QB_LOG_CRIT` | **on by default**, each behind its own `#ifndef`; suppress with `QB_NO_LEGACY_LOG_MACROS` |
+| sockets | `QB_CLOSESOCKET` `QB_IOCTLSOCKET` `QB_SD_RECEIVE` `QB_SD_SEND` `QB_SD_BOTH` `QB_SD_NONE` `QB_FD_TO_SOCKET` `QB_OPEN_FD_FROM_SOCKET` | **off by default**; restore with `QB_LEGACY_SOCKET_MACROS` |
+| qev feature flags | — | the 35 `HAVE_*` are private to `libqev.a` and no longer reach a consumer |
+| libevent compat | — | the 24 `event_*` C symbols are built only under `QB_EV_LIBEVENT_COMPAT=ON` |
+
+The two defaults differ because the guard works for one set and not the other. `LOG_INFO` is only
+ever a macro, so `#ifndef` fully protects a consumer who defines it first. `closesocket` and
+`ioctlsocket` are *function* names: a consumer who writes `static int closesocket(int)` sails
+through `#ifndef closesocket`, and an object-like macro then rewrites every one of their calls.
+
 ## Platform notes
 
 - **Linux:** POSIX sockets. Use GCC or Clang with solid C++20 support. Install optional dependency headers when enabling features (`libssl-dev`, `libargon2-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL). Install libngtcp2 packages when QUIC is required. qb links `dl` and `rt` (`qb/cmake/qbDependencies.cmake`).
@@ -261,6 +306,13 @@ strings <prefix>/lib/libqb-io.a | grep '^qb-abi '    # qb-abi qb=3.0.0 cacheline
   compiled from a hand-written `-I`/`-l` line, so it is also missing `QB_HAS_SSL` / `QB_HAS_QUIC` /
   `QB_HAS_COMPRESSION` and its inline feature answers contradict the archive's; use
   `find_package(qb)` or reproduce the definitions the imported target carries.
+- **`use of undeclared identifier 'closesocket'` (or `SD_BOTH`, `ioctlsocket`, …).** Those macros
+  are off by default since 3.0.0 — see [Macro hygiene](#macro-hygiene). Use `QB_CLOSESOCKET` and
+  friends, or compile with `-DQB_LEGACY_SOCKET_MACROS`.
+- **A plugin's `qb::io` work never runs, or two event types route to the same handler.** Both are
+  symptoms of qb existing twice in one process; see [One instance per process](#one-instance-per-process).
+  Check that neither image is compiled `-fvisibility=hidden` against a qb older than 3.0.0, and
+  prefer one shared qb over two statically linked copies.
 - **`CMAKE_BUILD_TYPE` ignored.** With multi-config generators (Visual Studio, Ninja Multi-Config), the configuration is chosen at build time via `--config`, not at configure time.
 - **Sanitizers and profiling collide.** `QB_SANITIZE` and `QB_WITH_PROFILING` intercept the same hooks; enabling both emits a warning. Pick one.
 - **Network needed on first configure for a from-source fallback.** When a fetchable dependency is absent from the system, the first configure clones it from GitHub. For air-gapped builds, pre-populate `_deps` or force system packages — see [cmake_dependencies.md](./cmake_dependencies.md#offline-and-ci-builds).
