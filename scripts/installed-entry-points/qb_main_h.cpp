@@ -2,6 +2,9 @@
 // not link `qb::Actor::push<E>` -- the member template is declared by Pipe.h, which Main.h
 // reaches, but defined in Actor.tpp, which only qb/actor.h, qb/patterns.h and
 // qb/core/patterns.h pulled. Compiles clean; the linker is the only thing that ever said so.
+// Since 3.0 those bodies live at the tail of core/VirtualCore.h and this umbrella includes it,
+// but this TU stays exactly as it is: it is the ONLY entry point that catches the failure --
+// the same defect is invisible from <qb/actor.h>.
 #include <qb/main.h>
 
 struct MainOnlyEvent : qb::Event {

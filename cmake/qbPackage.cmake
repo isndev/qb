@@ -125,6 +125,14 @@ function(qb_install_package)
     # without them its resultset.h fails a consumer's FIRST translation unit on
     # "'resultset.inl' file not found" -- a package that configures perfectly and cannot
     # be compiled against.
+    #
+    # *.tpp STAYS, and it is not future-proofing -- it is load-bearing TODAY. 3.0 retired all
+    # four of qb's own .tpp (Actor/VirtualCore/Pipe/Main), so qb itself now installs none, but
+    # this rule is shared verbatim with qb_register_module() and qbm-http still ships
+    # qbm/http/routing/router.tpp, included from router.h:321. Dropping the pattern here would
+    # configure and install cleanly and then fail qbm-http's first consumer TU on
+    # "'./router.tpp' file not found" -- exactly the *.inl failure above. Revisit only when
+    # that last .tpp is retired too; it is the only one left in the tree.
     set(_qb_pkg_hdr_exclude)
     if(P_HEADER_EXCLUDE)
         set(_qb_pkg_hdr_exclude REGEX "${P_HEADER_EXCLUDE}" EXCLUDE)

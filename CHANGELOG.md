@@ -21,8 +21,8 @@ The vendored event loop's rename (`ev_*` → `qev_*`, `<qb/vendor/ev/ev++.h>` �
 previously anticipated. Keeping `qbm/` leaves the installed location `include/qbm/<name>/`
 untouched, so every CI assertion holds through the migration, and it keeps the two package
 roots disjoint: `include/qb/` stays qb's alone rather than becoming co-owned by four
-independently-versioned packages. One structural break is still planned and **not yet landed**:
-dropping the installed `.tpp` headers. It requires a major bump on its own.
+independently-versioned packages. The last structural break has now landed too: the four
+installed `.tpp` headers are gone (see *Removed*), which requires a major bump on its own.
 
 The qbm modules version in lockstep with the framework: `qbm-http`, `qbm-pgsql` and `qbm-redis` all
 carry `3.0.0`. They are not standalone-configurable (they call `qb_register_module` / `qb_add_test`,
@@ -345,6 +345,55 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   to cover this case only as a side effect of gating everything.
 
 ### Removed
+
+- **All four installed `.tpp` headers — `<qb/core/Actor.tpp>`, `<qb/core/VirtualCore.tpp>`,
+  `<qb/core/Pipe.tpp>` and `<qb/core/Main.tpp>`. Source-incompatible for anyone who includes one
+  by name.** `.h` is now the only header extension in qb. Not one line of code was deleted: every
+  template body moved, byte-for-byte, into the `.h` that declares it — `VirtualCore.tpp` and
+  `Main.tpp` to the tails of `VirtualCore.h` and `Main.h`, `Pipe.tpp` to the tail of `Pipe.h`, and
+  `Actor.tpp` to the tail of **`VirtualCore.h`**, not `Actor.h`.
+
+  That last one is the whole point, and it is why a second file never was the fix. Sixteen of
+  `Actor.tpp`'s bodies name `VirtualCore::` in a nested-name-specifier and so need a *complete*
+  `qb::VirtualCore`; `VirtualCore.h` includes `Actor.h`, so an `#include "VirtualCore.h"` at
+  `Actor.h`'s tail is a guard no-op and the class is still incomplete there. What a `.tpp` was
+  reaching for was never a file — it was a **position**, and the position is the tail of the
+  header that closes the cycle. Two supporting moves fall out of the same reasoning:
+  `service_event_type` moved from `Actor.h:141-142` to `Event.h:696` (Pipe.h is included *from*
+  `Actor.h:50`, 91 lines before the concept was declared, so a body in Pipe.h could never see it),
+  and `Pipe.h` gained `<qb/system/event/router.h>`, which `Pipe.tpp` had silently borrowed from
+  its includer — it carried no includes at all.
+
+  **Migration.** A consumer that includes only `<qb/core/Actor.h>` and calls `push<E>()` already
+  failed to link before this change, and still does; what changes is the remedy. `#include
+  <qb/core/Actor.tpp>` becomes `#include <qb/core/VirtualCore.h>` — or, better, include an
+  umbrella (`<qb/actor.h>`, `<qb/main.h>`, `<qb/patterns.h>`), which is the supported entry point
+  and needs no edit at all. Every umbrella was rewired here, so nothing in qb, qbm or examples
+  changed at a call site.
+
+  **There was never a multiple-definition defect to preserve.** All 41 definitions across the four
+  files are templates, i.e. vague linkage: a forced-instantiation probe emitted 136 weak-external
+  and exactly one strong-external symbol per TU, and that one was the probe's own function. Zero
+  hits for "multiple definition" / "duplicate symbol" across 802 commits. What *is* real is
+  latent, and it survives the rename: these bodies are reached by both `libqb-core`'s single
+  amalgamated TU and every consumer TU, and an include guard is per-TU. One non-template,
+  non-`inline` definition added to them is an instant duplicate symbol — measured again on the
+  merged header, two consumer TUs plus the archive: `duplicate symbol 'qb::actor_tpp_helper(int)'`
+  → `ld: 1 duplicate symbols`, where the same two TUs link clean without it. The `.tpp` extension
+  used to be the signal that only templates go there; the banner at each merge site now is.
+  `inline` is not a workaround — it makes the link succeed and leaves N definitions of one entity
+  in the program, the identity-duplication class this release spent a whole step fixing.
+
+  Verified by **linking**, not by `-fsyntax-only` or `-c` (both of which pass on precisely this
+  defect): against an installed prefix, 143 headers each compile alone and all 18 entry points
+  compile *and link* under `-I -Wall -Wextra -Werror -Wundefined-func-template`. The matrix keeps
+  a `<qb/main.h>`-first entry point on purpose — the `Actor` cycle failure is invisible from
+  `<qb/actor.h>` and only appears through `<qb/main.h>`. `qb_core_VirtualCore_h.cpp` now ODR-uses
+  `push<E>` and `registerEvent<E>` so the new contract is asserted by a TU whose only qb include
+  is that header, rather than only through the four umbrellas.
+
+  `install(... PATTERN "*.tpp")` **stays**: the rule is shared with `qb_register_module()` and
+  `qbm-http` still ships `qbm/http/routing/router.tpp`. It is the last `.tpp` in the tree.
 
 - **The unprefixed socket-portability macros, from the default configuration.** `closesocket`,
   `ioctlsocket`, `SD_RECEIVE`, `SD_SEND`, `SD_BOTH`, `SD_NONE`, `FD_TO_SOCKET` and

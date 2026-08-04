@@ -255,7 +255,7 @@ Both return immediately and **share the same safety contract**, because a corout
 
 - **Never access actor members after a `co_await`.** The actor may have been destroyed while the coroutine was suspended; touching `this->_member` afterward is undefined behavior.
 - **Copy everything you need by value before the first `co_await`.** Do not capture `this` or references to actor members into the coroutine.
-- **After suspension, use only the `CoroContext`.** `ctx.push<Event>(...)` (to the spawning actor's own id), `ctx.push_to<Event>(dest, ...)` (to another actor), `ctx.id()`, and `ctx.time()` are safe; events to a dead actor are dropped. <!-- src: qb/src/qb/core/Actor.tpp:173,180 -->
+- **After suspension, use only the `CoroContext`.** `ctx.push<Event>(...)` (to the spawning actor's own id), `ctx.push_to<Event>(dest, ...)` (to another actor), `ctx.id()`, and `ctx.time()` are safe; events to a dead actor are dropped. <!-- src: qb/src/qb/core/VirtualCore.h:1014,1020 -->
 - **Keep coroutines short-lived.** The longer a coroutine runs, the wider the window in which its actor can be destroyed.
 
 ```cpp

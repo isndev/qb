@@ -24,7 +24,8 @@
 #ifndef QB_CORE_PATTERNS_H
 #define QB_CORE_PATTERNS_H
 
-// `Actor.h` declares `registerEvent` / `push_to` but leaves their definitions in `Actor.tpp`, so a
+// `Actor.h` declares `registerEvent` / `push_to` but leaves their definitions at the tail of
+// `VirtualCore.h` (they were `Actor.tpp` through 2.6.0), so a
 // header that exposes classes calling them must pull the implementation itself. The pattern headers
 // below define inline members that do exactly that (`Supervisor::onInit`, `discovery::ping`), and
 // under `--coverage` GCC EMITS unused inline functions so their lines can be instrumented -- which
@@ -34,7 +35,7 @@
 // visible only in the coverage build. `qb/patterns.h` already carries the same include for the same
 // reason; this header was the one missed.
 #include "Actor.h"
-#include "Actor.tpp"
+#include "VirtualCore.h"
 
 #include "patterns/request.h"
 #include "patterns/discovery.h"

@@ -618,7 +618,7 @@ public:
 ```
 
 `CoroContext` exposes exactly four members: `push<Event>(args…)` (send an event to the spawning actor — i.e. to `self`), `push_to<Event>(dest, args…)` (send to a specific `ActorId`), `id()`, and `time()`. Events sent to a now-dead actor are ignored, so the context is safe to use after any suspension. A `spawn` coroutine instead receives a `qb::ScopedCoroContext`, which derives from `CoroContext` and adds cancellation-aware operations (`sleep`, `until_cancelled`, `cancellation_point`, `cancellable`). For request/reply, use the free helper `qb::ask(ctx, target, Event{...}, timeout)` (declared in `qb/core/patterns/request.h`): it sends `Event` to `target` and `co_return`s the same `Event` filled in by the responder's `reply()` — e.g. `auto r = co_await qb::ask(ctx, target, PriceQuery{"BTC"}, 500ms);`. `has_active_coroutines()` reports whether the actor still has spawned coroutines in flight.
-<!-- src: qb/src/qb/core/Actor.h:1281 (CoroContext: push/push_to/id/time), :1570 (ScopedCoroContext), :1135 (spawn), :1098 (spawn_detached); qb/src/qb/core/patterns/request.h:98-105 (ask free helper); Actor.tpp:269,256 (debug-assert a TLS scheduler) -->
+<!-- src: qb/src/qb/core/Actor.h:1281 (CoroContext: push/push_to/id/time), :1570 (ScopedCoroContext), :1135 (spawn), :1098 (spawn_detached); qb/src/qb/core/patterns/request.h:98-105 (ask free helper); qb/src/qb/core/Actor.cpp:241,260 (__resolve_coro_scheduler__ debug-asserts a TLS scheduler) -->
 
 | Rule | Reason | Source |
 |---|---|---|
@@ -629,7 +629,7 @@ public:
 | Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:999` |
 
 `spawn()` and `spawn_detached()` must be called on the actor's own `VirtualCore` thread (each debug-asserts that a thread-local scheduler exists). They are the only supported way to use coroutines inside an actor — never call `run`, `run_for`, or `run_sync` from a handler.
-<!-- src: qb/src/qb/core/Actor.tpp:256; qb/src/qb/io/async/listener.h:546 -->
+<!-- src: qb/src/qb/core/Actor.cpp:260; qb/src/qb/io/async/listener.h:546 -->
 
 ## Lifetime footguns
 
