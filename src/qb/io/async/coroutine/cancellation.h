@@ -26,6 +26,7 @@
 #ifndef QB_IO_ASYNC_COROUTINE_CANCELLATION_H
 #define QB_IO_ASYNC_COROUTINE_CANCELLATION_H
 
+#include "combinators.h" // when_any / timeout_error — with_deadline() below is built on both
 #include "scheduler.h"
 #include "task.h"
 #include "utils.h"

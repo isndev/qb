@@ -32,6 +32,40 @@ project(qb-io
 # -----------------------------------------------------------------------------
 # Library Configuration
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# HAZARD -- THIS AMALGAMATION IS LOAD-BEARING FOR CORRECTNESS, NOT JUST BUILD TIME.
+#
+# io.cpp is an amalgamation: it #includes the real .cpp files rather than compiling them
+# separately. Splitting this list (and qb-core's, which is the same shape) is a THREE-line
+# CMake edit that silently breaks the program. Measured, by rebuilding with only these two
+# SOURCES lists changed -- 32 TUs instead of 4, `diff -r` confirming no source-text change:
+#
+#  1. src/qb/io/tcp/ssl/init.cpp defines an anonymous-namespace object whose CONSTRUCTOR is its
+#     entire payload (SSL_library_init / SSL_load_error_strings / OpenSSL_add_all_algorithms /
+#     signal(SIGPIPE, SIG_IGN)). Split out, that object file defines no *referenced* external
+#     symbol, so the linker never extracts it from the archive:
+#         AMALGAMATED : SIGPIPE at start of main: SIG_IGN  -> the initialiser RAN
+#         SPLIT       : SIGPIPE at start of main: SIG_DFL  -> it DID NOT
+#     Consequence for a consumer: the process dies on SIGPIPE and OpenSSL legacy init never
+#     happens. No compiler warning, no linker warning, no runtime error.
+#     Before splitting: give the unit a referenced external symbol (e.g. an
+#     `qb::io::tcp::ssl::ensure_init()` called from ssl::socket's constructor), or install with
+#     -force_load / --whole-archive / /WHOLEARCHIVE.
+#
+#  2. src/qb/io/system/file.cpp and src/qb/io/crypto.cpp are NOT self-contained (18 errors
+#     between them: FD_INVALID, <unistd.h>, DISABLE_WARNING_PUSH/POP). The amalgamation
+#     supplies those from the lines above the #include. `::write`/`::read`/`::close` are the
+#     nasty ones -- without <unistd.h> the qualified call binds to the *member* instead of
+#     failing on an unknown name.
+#
+#  3. qb-core's VirtualCore.cpp uses fill_event<SignalEvent> and push<UnregisterCallbackEvent>
+#     while including only VirtualCore.h; the definitions are in VirtualCore.tpp, reached only
+#     because Actor.cpp sits after VirtualCore.cpp in core.cpp. Split, the library builds and
+#     archives cleanly and the CONSUMER's link fails. Fix is one line:
+#     #include <qb/core/VirtualCore.tpp> in VirtualCore.cpp.
+#
+# Full measurement in dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md §3.2 and §6(a)(b).
+# -----------------------------------------------------------------------------
 # Define the library using the new qb framework functions
 set(IO_SOURCES
         cpu.cpp

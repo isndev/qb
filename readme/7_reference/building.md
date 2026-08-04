@@ -287,6 +287,27 @@ ever a macro, so `#ifndef` fully protects a consumer who defines it first. `clos
 `ioctlsocket` are *function* names: a consumer who writes `static int closesocket(int)` sails
 through `#ifndef closesocket`, and an object-like macro then rewrites every one of their calls.
 
+### Which header may I include first?
+
+Every installed header compiles **alone**, and every entry point in the table below **links**
+on its own — both are gated in CI (`scripts/check-installed-headers.sh`, run over the `qb` tree by
+`install-consume.yml` and over the `qbm` tree by the superproject's `package-consume.yml`).
+
+The distinction that matters is between **umbrellas** and **class headers**:
+
+| include | complete class | member templates (`push<E>`, `spawn`, …) |
+|---|---|---|
+| `<qb/actor.h>` `<qb/main.h>` `<qb/patterns.h>` `<qb/core/patterns.h>` | yes | **yes** |
+| `<qb/core/Actor.h>` `<qb/core/VirtualCore.h>` | yes | **no** |
+
+A class header gives you a complete `qb::Actor` with every member template *declared*, so a TU that
+calls `push<E>()` compiles clean and fails at **link**. That is by design and it is not going to
+change: the bodies live in `Actor.tpp`, which needs a complete `qb::VirtualCore`, and
+`VirtualCore.h` is what drags `<windows.h>`, `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU. Making
+every actor TU pay that is the worse trade. **Include an umbrella.**
+
+`<qb/main.h>` was on the wrong side of that table until 3.0.0.
+
 ## Platform notes
 
 - **Linux:** POSIX sockets. Use GCC or Clang with solid C++20 support. Install optional dependency headers when enabling features (`libssl-dev`, `libargon2-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL). Install libngtcp2 packages when QUIC is required. qb links `dl` and `rt` (`qb/cmake/qbDependencies.cmake`).
@@ -313,6 +334,12 @@ through `#ifndef closesocket`, and an object-like macro then rewrites every one 
   symptoms of qb existing twice in one process; see [One instance per process](#one-instance-per-process).
   Check that neither image is compiled `-fvisibility=hidden` against a qb older than 3.0.0, and
   prefer one shared qb over two statically linked copies.
+- **`undefined symbol: qb::Actor::push<MyEvent>(qb::ActorId const&) const`.** The TU entered through
+  a class header (`<qb/core/Actor.h>`, `<qb/core/VirtualCore.h>`) rather than an umbrella. Include
+  `<qb/actor.h>`, `<qb/main.h>` or `<qb/patterns.h>` instead — see
+  [Which header may I include first?](#which-header-may-i-include-first). The same source can link at
+  `-O0` and fail at `-O3`, because a sibling TU may emit a weak out-of-line copy at `-O0` and not at
+  `-O3`; a Debug build that links is not evidence.
 - **`CMAKE_BUILD_TYPE` ignored.** With multi-config generators (Visual Studio, Ninja Multi-Config), the configuration is chosen at build time via `--config`, not at configure time.
 - **Sanitizers and profiling collide.** `QB_SANITIZE` and `QB_WITH_PROFILING` intercept the same hooks; enabling both emits a warning. Pick one.
 - **Network needed on first configure for a from-source fallback.** When a fetchable dependency is absent from the system, the first configure clones it from GitHub. For air-gapped builds, pre-populate `_deps` or force system packages — see [cmake_dependencies.md](./cmake_dependencies.md#offline-and-ci-builds).

@@ -38,6 +38,12 @@
 #include <vector>
 #include <qb/core/Actor.h>
 #include <qb/io/async/coroutine.h> // cancellation_token / schedule_via_current
+// Actor.h declares Actor::push<E>/CoroContext::push_to<E> and defines neither; the bodies are
+// in Actor.tpp. This header INSTANTIATES them in a non-dependent context, so without this it
+// compiles clean, warns only under -Wundefined-func-template (which -isystem hides from every
+// find_package consumer), and emits an undefined reference. Free when core/patterns.h got
+// there first -- QB_ACTOR_TPL makes the second inclusion a no-op.
+#include <qb/core/Actor.tpp>
 
 namespace qb {
 

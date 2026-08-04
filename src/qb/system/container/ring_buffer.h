@@ -26,7 +26,12 @@
 #define QB_RINGBUFFER_H
 
 #include <algorithm>
+#include <cstddef> // size_t / ptrdiff_t — the iterator's size_type and difference_type below.
+                   // libc++ drags both in through <algorithm>; libstdc++ does not, so this
+                   // header compiled alone ONLY on macOS until the Linux leg of the
+                   // installed-header gate said "'ptrdiff_t' does not name a type".
 #include <cstring>
+#include <iterator>   // std::forward_iterator_tag — iterator_category below
 #include <type_traits>
 
 namespace qb {

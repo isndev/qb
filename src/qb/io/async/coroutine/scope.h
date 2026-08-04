@@ -26,6 +26,7 @@
 #include "task.h"
 #include "utils.h"
 #include "cancellation.h"
+#include "sync.h" // semaphore — coroutine_scope's concurrency limiter is one
 #include <qb/system/time.h> // qb::duration
 #include <algorithm>
 #include <vector>

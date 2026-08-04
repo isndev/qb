@@ -218,3 +218,77 @@ jobs:
           cmake -S . -B b -G Ninja
           cmake --build b --parallel
           ./b/consumer
+
+  # ── Gate A + Gate B: what the job above structurally cannot see ────────────────────────
+  #
+  # The job above is a GOOD consumer job and it still cannot catch either of the two classes
+  # below, for one reason each:
+  #
+  #  * self-containment. It compiles ONE TU. A header that only ever worked because another
+  #    header came first is invisible to it. 17 installed headers were in that state.
+  #  * entry-point linkage. Its single TU includes <qb/actor.h> AND <qb/main.h>, which is the
+  #    one combination in which both qb::Actor::push<E> and forget_frame_if_current resolve.
+  #    Split them and <qb/main.h> alone could not link push<E>, and
+  #    <qb/io/async/coroutine/task.h> alone could not destroy a task<T>.
+  #
+  # Its own job because the prefix has to be built by CLANG: -Wundefined-func-template is the
+  # flag that names an undefined template AT THE POINT OF USE and gcc does not have it. The
+  # script says so out loud on a non-clang leg rather than reporting a green it did not earn.
+  installed-header-gates:
+    name: installed headers self-contained + entry points link
+    runs-on: ubuntu-latest
+    env:
+      LLVM_VERSION: "22"
+      PFX: ${{ github.workspace }}/_prefix_gates
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      # `--profile build` already sets install_llvm_clang, so clang-${LLVM_VERSION} is present
+      # without any extra flag -- same installer contract as every other job here.
+      - name: Install dependencies
+        run: ./scripts/ci-install-linux-dependencies.sh --profile build
+
+      - name: Build and install qb (clang)
+        run: |
+          cmake -S . -B build-gates -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" \
+            -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" \
+            -DCMAKE_INSTALL_PREFIX="$PFX" \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF
+          cmake --build build-gates --parallel
+          cmake --install build-gates
+
+      # GATE A. Every installed header alone, then every entry point LINKED.
+      - name: Gate A -- self-containment + entry-point link
+        run: |
+          ./scripts/check-installed-headers.sh \
+            --prefix "$PFX" --cxx "clang++-${LLVM_VERSION}" \
+            --tree qb:140 --package qb --link qb::core \
+            --entry-dir scripts/installed-entry-points
+
+      # GATE B. The same surface with -I instead of -isystem and warnings fatal.
+      # -isystem is what CMake puts on an IMPORTED target, and it silences every -W* inside
+      # qb's own headers -- for the one configuration CMake generates automatically. On qb it
+      # is not even CMake's doing: the export carries an explicit
+      # INTERFACE_SYSTEM_INCLUDE_DIRECTORIES for <prefix>/include (via qb::nlohmann), so
+      # IMPORTED_NO_SYSTEM alone changes nothing. The script clears all three and then ASSERTS
+      # the generated line really says -I, because the first version of it did not and went
+      # green anyway.
+      - name: Gate B -- hostile consumer (-I, -Wall -Wextra -Wundefined-func-template -Werror)
+        run: |
+          ./scripts/check-installed-headers.sh --hostile \
+            --prefix "$PFX" --cxx "clang++-${LLVM_VERSION}" \
+            --tree qb:140 --package qb --link qb::core \
+            --entry-dir scripts/installed-entry-points
+
+      # NEGATIVE CONTROLS, same principle as package-consume.yml's skew gate: a gate that has
+      # never been shown to reject anything is indistinguishable from no gate. Plants one
+      # defect at a time in a COPY of the prefix, requires a rejection, restores, and verifies
+      # the restore is byte-exact by sha256.
+      - name: Both gates must be able to FAIL
+        run: |
+          ./scripts/check-installed-headers-selftest.sh \
+            --prefix "$PFX" --cxx "clang++-${LLVM_VERSION}"

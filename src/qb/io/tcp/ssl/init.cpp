@@ -25,6 +25,28 @@
 
 #include <openssl/ssl.h>
 
+// ============================================================================================
+// HAZARD -- THIS FILE ONLY RUNS BECAUSE IT IS AMALGAMATED. DO NOT SPLIT IT OUT.
+//
+// The object below has no name anyone references: its CONSTRUCTOR is the entire payload. An
+// archive member that defines no *referenced* external symbol is never extracted. Today that is
+// hidden because src/qb/io/CMakeLists.txt compiles io.cpp, which #includes this file, and the
+// consumer's link pulls io.cpp.o for other reasons.
+//
+// Measured, by building qb with only the two SOURCES lists changed (32 TUs instead of 4):
+//     AMALGAMATED archive : SIGPIPE at start of main: SIG_IGN  -> this constructor RAN
+//     SPLIT       archive : SIGPIPE at start of main: SIG_DFL  -> it DID NOT
+// `ld -why_load` on the split link lists 9 extracted qb members; tcp/ssl/init.cpp.o is not one.
+// The consequence is silent: the consumer's process dies on SIGPIPE and OpenSSL legacy init
+// never happens. No compiler warning, no linker warning, no runtime error.
+//
+// Before splitting, give this unit a referenced external symbol -- e.g. a
+// `qb::io::tcp::ssl::ensure_init()` called from ssl::socket's constructor -- or install with
+// -force_load / --whole-archive / /WHOLEARCHIVE. Note also that `signal`/`SIGPIPE` below reach
+// this file through the amalgamation, not through any #include here: a split needs <csignal>
+// too. See dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md §3.2.
+// ============================================================================================
+
 namespace {
 
 struct OpenSSLInitializer {
