@@ -54,12 +54,12 @@ namespace qb::io::async::event {
  *
  *   void on(qb::io::async::event::file &&event) {
  *     if (event.attr.st_nlink == 0) {
- *       LOG_INFO("File " << this->path() << " deleted or moved.");
+ *       QB_LOG_INFO("File " << this->path() << " deleted or moved.");
  *       this->disconnect(); // Stop watching
  *       return;
  *     }
  *     if (event.attr.st_mtime != event.prev.st_mtime) {
- *       LOG_INFO("File " << this->path() << " modified. New size: " << event.attr.st_size);
+ *       QB_LOG_INFO("File " << this->path() << " modified. New size: " << event.attr.st_size);
  *       // Process file content if needed (e.g., using this->read_all())
  *     }
  *     // Access other stat information through event.attr and event.prev (qev_statdata)

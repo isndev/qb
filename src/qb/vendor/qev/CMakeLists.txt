@@ -68,6 +68,23 @@ endif ()
 # epoll_wait (regression #1 on event I/O tests). Opt in with -D QB_EV_USE_TIMERFD=ON.
 option(QB_EV_USE_TIMERFD "Enable qev timerfd (time-jump detection; affects idle waittime)" OFF)
 option(QB_EV_STRICT_WARNINGS "Build bundled qev with strict compiler warnings" ON)
+# Default OFF, and that default is a fix, not a taste. event.c is libev's *libevent
+# compatibility* layer, and it exports 24 upstream libevent C symbols under their real,
+# unprefixed names -- event_base_new, event_add, event_del, event_dispatch, event_set, ... The
+# ev->qev rename covered libev's own API (58 qev_*, 0 ev_*) and stopped there, so those 24 were
+# still in the installed libqev.a, which sits on EVERY consumer's link line (qb::io names
+# qb::qev in its INTERFACE_LINK_LIBRARIES). A consumer that also links the real libevent then
+# got whichever implementation the archive order happened to pick, with two unrelated
+# `struct event_base` layouts and no diagnostic from anyone. Measured, against a stand-in for
+# libevent:
+#     ORDER 1  -lfakeevent then libqev.a  -> real libevent ran
+#     ORDER 2  libqev.a then -lfakeevent  -> qb's fork ran,  rc=0, silently
+# Nothing in qb calls any of them (`nm -u libqb-io.a | grep -c '^ *_event_'` -> 0), so OFF costs
+# qb nothing and makes the collision impossible rather than merely unlikely. The layer is kept,
+# not deleted: turn this ON to build and install it, and own the 24 names deliberately.
+option(QB_EV_LIBEVENT_COMPAT
+       "Build and install libev's libevent compatibility layer (exports 24 unprefixed libevent C symbols)"
+       OFF)
 option(QB_EV_WARNING_AUDIT "Enable extra noisy qev warning diagnostics for modernization audits" OFF)
 
 # The audit diagnostics layer on top of the strict baseline (the strict block
@@ -281,7 +298,10 @@ endif ()
 # ----------------------------------------------------------------------------
 # Build library
 # ----------------------------------------------------------------------------
-set(LIBEV_SRCS qev.c event.c)
+set(LIBEV_SRCS qev.c)
+if (QB_EV_LIBEVENT_COMPAT)
+    list(APPEND LIBEV_SRCS event.c)
+endif ()
 
 if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     add_library(qev ${EV_LIBRARY_TYPE} ${LIBEV_SRCS})
@@ -302,6 +322,11 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_compile_definitions(qev PUBLIC EV_CONFIG_H=${QB_EV_CONFIG_INCLUDE})
+    # PRIVATE, and that is the point: it is what unlocks the HAVE_* half of the generated config
+    # for qev.c only. Those 35 unprefixed autoconf names are qb's build-host answers, and the
+    # config header is PUBLIC, so without this gate they reached -- and could silently override --
+    # every consumer translation unit that includes <qb/io.h>. See config.h.cmakein.
+    target_compile_definitions(qev PRIVATE QEV_BUILDING_LIBRARY=1)
 
     if (QB_EV_EMBEDDED)
         # PRIVATE, not PUBLIC: this directory holds qev.h, qev++.h, event.h, event_compat.h,
@@ -406,7 +431,15 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
             INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     )
 
-    install(FILES qev.h qev++.h event.h event_compat.h
+    set(_qev_install_headers qev.h qev++.h)
+    if (QB_EV_LIBEVENT_COMPAT)
+        # Only shipped with the implementation. Installing the declarations without the bodies
+        # would turn a use into an undefined reference -- loud, but pointlessly so; installing
+        # them next to a *real* libevent is worse, because the two declare the same names over
+        # incompatible struct layouts.
+        list(APPEND _qev_install_headers event.h event_compat.h)
+    endif ()
+    install(FILES ${_qev_install_headers}
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
     install(EXPORT qevTargets

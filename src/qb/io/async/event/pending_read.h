@@ -50,7 +50,7 @@ namespace qb::io::async::event {
  *   // ... protocol definition and on(ProtocolMessage&) handler ...
  *
  *   void on(qb::io::async::event::pending_read &&event) {
- *     LOG_DEBUG("Pending read data: " << event.bytes << " bytes remaining in input buffer.");
+ *     QB_LOG_DEBUG("Pending read data: " << event.bytes << " bytes remaining in input buffer.");
  *     // Typically no action is needed here as the data remains for the next read cycle.
  *     // However, one might implement logic for very large partial messages if necessary.
  *   }

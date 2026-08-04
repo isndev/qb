@@ -1526,7 +1526,7 @@ reserve_then_release_tcp_port() {
 }
 
 // Abortively close an ssl::socket's underlying fd: SO_LINGER{on,0} + close() WITHOUT
-// a preceding shutdown() (close(-1) skips the SD_BOTH shutdown) makes the kernel emit
+// a preceding shutdown() (close(-1) skips the QB_SD_BOTH shutdown) makes the kernel emit
 // a RST, so the peer's next SSL_read/SSL_write observes ECONNRESET (SSL_ERROR_SYSCALL),
 // driving the *default* arm of the read/write switches — distinct from a clean FIN.
 void

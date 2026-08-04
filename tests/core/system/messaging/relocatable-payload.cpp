@@ -252,7 +252,7 @@ namespace {
 
 /// Substring of the guard's own `assert` expression (`SharedCoreCommunication::send`, `src/Main.cpp`).
 /// `assert` stringises its argument onto **stderr**, which is exactly what `EXPECT_DEATH` matches;
-/// the guard's companion `LOG_CRIT` cannot serve here — it writes to stdout and compiles to a no-op
+/// the guard's companion `QB_LOG_CRIT` cannot serve here — it writes to stdout and compiles to a no-op
 /// unless logging is enabled. Matching this text instead of `""` is the whole point of the death
 /// test: `""` accepts a death from ANY cause, so it cannot tell the guard firing apart from an
 /// unrelated crash on the same path. If the guard ever stops asserting, or stops saying why, these

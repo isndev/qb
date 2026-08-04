@@ -262,24 +262,85 @@
 #define QB_ABI_RETAIN
 #endif
 
-// If qb ever adopts `-fvisibility=hidden` (the export-macro work these headers still lack), these
-// six must be annotated `__attribute__((visibility("default")))` along with the identity anchors.
-// A static archive would survive -- hidden visibility governs dynamic export, not static link
-// resolution -- but in a shared build they would stop being exported and every consumer would fail
-// to link. Loud rather than silent, but total.
+/**
+ * @def QB_ABI_ANCHOR
+ * @brief Marks an entity that must exist **exactly once per process**, whatever the consumer's
+ *        visibility setting or the number of images qb is linked into.
+ *
+ * @details
+ * ## What it is for
+ *
+ * A handful of qb entities are *identity*: the event type-id counter, the per-type magic static
+ * that draws from it, the router's disposer table, the `ServiceActor` registry, the per-thread
+ * `listener` and `VirtualCore`, the coroutine frame pool, the `no_protocol()` null-object
+ * sentinel (compared by **address**). Every one of them is a vague-linkage entity — an `inline`
+ * variable, a static data member of a class template, or a function-local `static`. Vague
+ * linkage means "N definitions, the linker keeps one", and *which* linker does the keeping
+ * matters: the static linker folds them within one image, and the dynamic linker coalesces the
+ * remaining weak definitions **across** images. That second step is what `-fvisibility=hidden`
+ * turns off.
+ *
+ * ## Measured, in the shape that fails
+ *
+ * Host executable + `dlopen`ed plugin, both statically linking qb, plugin compiled
+ * `-fvisibility=hidden` (RTLD_LOCAL and RTLD_GLOBAL alike):
+ *
+ * ```
+ *  plugin default visibility (control)   plugin -fvisibility=hidden
+ *  &_type_id_counter 0x100e18000 (both)  &_type_id_counter 0x1021b0000 / 0x10744c158
+ *  host: KillEvent=1  SignalEvent=2      host:   KillEvent=1  SignalEvent=2
+ *  plug: KillEvent=1  Noop=7             plug:   KillEvent=1  Noop=2   <-- COLLISION
+ * ```
+ *
+ * Two distinct event types hold id 2, so `router::memh` routes them to the same slot. Both runs
+ * exit 0 and print nothing: this is the failure `qb/core/Event.h` already warns "silently breaks
+ * event routing", made unreachable here rather than documented harder.
+ *
+ * `visibility("default")` on the anchor restores the coalescing — measured on the same harness,
+ * with the same plugin still compiled `-fvisibility=hidden`.
+ *
+ * ## The second job: one instance across images
+ *
+ * The attribute also decides whether an anchor can be shared at all. A `thread_local` **defined
+ * out of line in a .cpp** (as `listener::current` was) emits a `non-external` TLS descriptor —
+ * private to its image by construction, so two images that each link `libqb-io.a` get two
+ * per-thread event loops on the *same* thread and neither dyld nor the linker says a word. The
+ * same entity defined `inline` in the header emits a **weak-external** descriptor that dyld
+ * coalesces. That is why these anchors live in headers, not in `.cpp` files, and why moving one
+ * back would silently reintroduce the split.
+ *
+ * @note Not a substitute for an export macro. qb annotates no symbol for `__declspec(dllimport)`
+ *       today, so `QB_ABI_ANCHOR` is empty on MSVC; a Windows shared build needs the export-macro
+ *       work first. On ELF and Mach-O it is exactly the annotation `-fvisibility=hidden` requires.
+ */
+#if defined(_WIN32) || defined(__CYGWIN__)
+#define QB_ABI_ANCHOR
+#elif defined(__has_attribute)
+#if __has_attribute(visibility)
+#define QB_ABI_ANCHOR __attribute__((visibility("default")))
+#endif
+#endif
+#ifndef QB_ABI_ANCHOR
+#define QB_ABI_ANCHOR
+#endif
+
+// Annotated for the same reason as the identity anchors above: a shared qb built
+// `-fvisibility=hidden` would otherwise stop exporting these six and every consumer would fail to
+// link. Loud rather than silent, but total. A static archive was never at risk -- hidden
+// visibility governs dynamic export, not static-link resolution.
 extern "C" {
 /** @brief Defined by libqb-io, named after the qb version the archive was built from. */
-extern const char QB_ABI_SYM_VERSION;
+QB_ABI_ANCHOR extern const char QB_ABI_SYM_VERSION;
 /** @brief Defined by libqb-io, named after the archive's `QB_LOCKFREE_CACHELINE_BYTES`. */
-extern const char QB_ABI_SYM_CACHELINE;
+QB_ABI_ANCHOR extern const char QB_ABI_SYM_CACHELINE;
 /** @brief Defined by libqb-io, named after the archive's `__cpp_exceptions` state. */
-extern const char QB_ABI_SYM_EXCEPTIONS;
+QB_ABI_ANCHOR extern const char QB_ABI_SYM_EXCEPTIONS;
 /** @brief Defined by libqb-io, named after the archive's `QB_DEBUG_COROUTINES` state. */
-extern const char QB_ABI_SYM_CORO_DEBUG;
+QB_ABI_ANCHOR extern const char QB_ABI_SYM_CORO_DEBUG;
 /** @brief Defined by libqb-io, named after the archive's `QB_ABI_STD_JTHREAD`. */
-extern const char QB_ABI_SYM_STD_JTHREAD;
+QB_ABI_ANCHOR extern const char QB_ABI_SYM_STD_JTHREAD;
 /** @brief Defined by libqb-io: `QB_ABI_FINGERPRINT_TEXT` as the archive spells it. */
-extern const char qb_abi_fingerprint[];
+QB_ABI_ANCHOR extern const char qb_abi_fingerprint[];
 }
 
 namespace qb::detail {

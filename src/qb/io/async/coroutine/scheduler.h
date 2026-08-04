@@ -786,14 +786,16 @@ private:
     // Reference to event loop
     ev::loop_ref loop_;
 
-    // Thread-local current scheduler (defined in qb-io, e.g. io.cpp — one TU only)
-    static thread_local CoroutineScheduler *current_;
+    // Thread-local current scheduler. `inline` + QB_ABI_ANCHOR, NOT a .cpp definition: an
+    // out-of-line thread_local emits a `non-external` TLS descriptor, which gives a host and a
+    // statically-linked plugin two "current schedulers" on one thread. See qb/utility/abi.h.
+    QB_ABI_ANCHOR static inline thread_local CoroutineScheduler *current_ = nullptr;
 
     // Owns the fallback scheduler lazily created by current() on a thread that has
     // no listener, so it is freed at thread exit rather than leaked. A listener owns
     // its own scheduler (set via set_current()), so this stays empty in that case.
-    // Defined in the same single TU as current_ (io.cpp).
-    static thread_local std::unique_ptr<CoroutineScheduler> owned_current_;
+    // Same anchoring rule as current_ above.
+    QB_ABI_ANCHOR static inline thread_local std::unique_ptr<CoroutineScheduler> owned_current_{};
 };
 
 // Global function for awaiters to get current scheduler

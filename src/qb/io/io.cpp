@@ -77,9 +77,10 @@ generate_random_uuid() {
 #include "stream.cpp"
 #include "udp/socket.cpp"
 
-// CoroutineScheduler TLS: must live in exactly one TU (header keeps only the declaration).
+// CoroutineScheduler TLS used to be defined HERE, "in exactly one TU". That is what made it one
+// per *image* instead of one per process: an out-of-line thread_local emits a `non-external` TLS
+// descriptor, so a host executable and a plugin that each statically link libqb-io.a each got
+// their own "current scheduler" on the same thread, silently. Both are now `inline` +
+// QB_ABI_ANCHOR in qb/io/async/coroutine/scheduler.h, which emits a weak-external descriptor that
+// dyld coalesces. Do not move them back.
 #include <qb/io/async/coroutine/scheduler.h>
-namespace qb::io::async {
-thread_local CoroutineScheduler                 *CoroutineScheduler::current_ = nullptr;
-thread_local std::unique_ptr<CoroutineScheduler> CoroutineScheduler::owned_current_;
-} // namespace qb::io::async

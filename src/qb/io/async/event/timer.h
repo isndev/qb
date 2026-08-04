@@ -53,7 +53,7 @@ namespace qb::io::async::event {
  *   }
  *
  *   void on(qb::io::async::event::timer &&event) { // Or const timer& if not modifying it
- *     LOG_INFO("Timeout occurred!");
+ *     QB_LOG_INFO("Timeout occurred!");
  *     // Handle the timeout, e.g., close a connection, retry an operation.
  *     // If it was a one-shot timer, it stops automatically.
  *     // For periodic, call updateTimeout() or set() then start() on the event watcher to re-arm.

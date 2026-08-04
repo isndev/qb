@@ -68,15 +68,15 @@ enum class disconnect_reason : int {
  *   void on(qb::io::async::event::disconnected &&event) {
  *     if (event.reason == 0 && !event.error_code) {
  *       // Normal disconnection by peer or self
- *       LOG_INFO("Connection closed normally.");
+ *       QB_LOG_INFO("Connection closed normally.");
  *     } else {
  *       // Disconnection due to an error
  *       if (event.error_code) {
- *         LOG_WARN("Connection lost: " << event.error_code.message());
+ *         QB_LOG_WARN("Connection lost: " << event.error_code.message());
  *       } else if (!event.message.empty()) {
- *         LOG_WARN("Connection lost: " << event.message);
+ *         QB_LOG_WARN("Connection lost: " << event.message);
  *       } else {
- *         LOG_WARN("Connection lost, reason: " << event.reason);
+ *         QB_LOG_WARN("Connection lost, reason: " << event.reason);
  *       }
  *     }
  *     // Perform cleanup, attempt reconnection, etc.

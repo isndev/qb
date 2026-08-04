@@ -41,6 +41,7 @@
 #include <vector>
 // include from qb
 #include <qb/system/container/unordered_map.h>
+#include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
 #include <qb/utility/nocopy.h>
 #include <qb/utility/type_traits.h>
 #include <qb/io/async/coroutine.h>
@@ -82,7 +83,7 @@ struct no_default_events_t {
 };
 
 /** @brief Inline constexpr tag value; see `qb::no_default_events_t`. @ingroup Actor */
-inline constexpr no_default_events_t no_default_events{};
+QB_ABI_ANCHOR inline constexpr no_default_events_t no_default_events{};
 
 /**
  * @brief Concept for event types that derive from qb::Event
@@ -175,17 +176,17 @@ concept service_event_type = std::is_base_of_v<ServiceEvent, T>;
  *         // Register event handlers (an async onInit may also co_await — see onInit() docs)
  *         registerEvent<IncrementEvent>(*this);
  *         registerEvent<qb::KillEvent>(*this);
- *         LOG_INFO("MyActor initialized with ID: " << id());
+ *         QB_LOG_INFO("MyActor initialized with ID: " << id());
  *         co_return true;
  *     }
  *
  *     void on(const IncrementEvent& event) {
  *         counter += event.amount;
- *         LOG_INFO("Counter updated to: " << counter);
+ *         QB_LOG_INFO("Counter updated to: " << counter);
  *     }
  *
  *     void on(const qb::KillEvent& event) {
- *         LOG_INFO("MyActor shutting down...");
+ *         QB_LOG_INFO("MyActor shutting down...");
  *         kill();
  *     }
  * };
@@ -336,7 +337,7 @@ protected:
      *
      *   _my_resource = std::make_unique<MyResource>();
      *   if (!_my_resource) {
-     *     LOG_CRIT(*this << " failed to allocate MyResource");
+     *     QB_LOG_CRIT(*this << " failed to allocate MyResource");
      *     co_return false;                       // initialization failed
      *   }
      *
@@ -388,7 +389,7 @@ public:
      * Example of overriding:
      * @code
      * void on(qb::KillEvent const &event) override {
-     *   LOG_INFO("Actor " << id() << " cleaning up before termination...");
+     *   QB_LOG_INFO("Actor " << id() << " cleaning up before termination...");
      *   // Perform cleanup: close connections, release resources not handled by RAII, etc.
      *   closeConnections();
      *   releaseResources();
@@ -416,10 +417,10 @@ public:
      * @code
      * void on(qb::SignalEvent const &event) override {
      *   if (event.signum == SIGUSR1) {
-     *     LOG_INFO("Actor " << id() << " received SIGUSR1, reloading configuration.");
+     *     QB_LOG_INFO("Actor " << id() << " received SIGUSR1, reloading configuration.");
      *     reloadConfig(); // stays alive: SIGUSR1 is not terminal
      *   } else {
-     *     LOG_INFO("Actor " << id() << " shutting down on signal " << event.signum);
+     *     QB_LOG_INFO("Actor " << id() << " shutting down on signal " << event.signum);
      *     flushPendingWork();
      *     Actor::on(event); // kills the actor on SIGINT / SIGTERM, no-op otherwise
      *   }

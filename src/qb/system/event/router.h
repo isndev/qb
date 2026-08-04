@@ -33,6 +33,7 @@
 #include <mutex>
 #include <vector>
 #include <qb/system/container/unordered_map.h>
+#include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 
@@ -722,8 +723,8 @@ private:
         }
     };
 
-    static inline qb::unordered_map<_EventId, std::unique_ptr<IDisposer>> _disposers;
-    static inline std::mutex                                              _disposers_mtx;
+    QB_ABI_ANCHOR static inline qb::unordered_map<_EventId, std::unique_ptr<IDisposer>> _disposers;
+    QB_ABI_ANCHOR static inline std::mutex                                              _disposers_mtx;
 
     /**
      * @brief Per-router memo of resolved disposers, so the shared map is consulted once per type.
@@ -928,7 +929,7 @@ public:
      * @param handler The handler to subscribe
      */
     template <typename _Event, typename _Handler>
-    void
+    QB_ABI_ANCHOR void
     subscribe(_Handler &handler) {
         static const SafeDispose<_Event> o{};
 
@@ -996,7 +997,7 @@ public:
  * pays one function-local static guard (a well-predicted relaxed load) per enqueue.
  */
 template <typename _RawEvent, typename _Event>
-inline void
+QB_ABI_ANCHOR inline void
 ensure_disposer() noexcept {
     if constexpr (!std::is_trivially_destructible_v<_Event>) {
         static const typename memh<_RawEvent>::template SafeDispose<_Event> registered{};

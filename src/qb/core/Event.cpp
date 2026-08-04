@@ -46,6 +46,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstring>
 #include <limits>
 #include <type_traits>
 #include <qb/core/Event.h>
@@ -75,6 +76,38 @@ static_assert(std::atomic<char const *>::is_always_lock_free,
               "initialisers that can run during static initialisation, on any thread");
 
 } // namespace
+
+TypeId
+register_type_id(type_id_slot &slot, char const *const name) noexcept {
+    // Cold path: once per type per image, from the outlined magic-static initialiser. The spin is
+    // what makes "one id per type" hold across images too -- the magic static only serialises the
+    // callers inside ITS image, so without this two images could miss the walk simultaneously and
+    // draw two ids for one type, which is the collision this whole registry exists to prevent.
+    while (_type_id_registry_lock.test_and_set(std::memory_order_acquire))
+        ;
+
+    TypeId result = 0;
+    for (type_id_slot *s = _type_id_registry.load(std::memory_order_relaxed); s != nullptr; s = s->next) {
+        // Pointer equality first: within one image `typeid(T).name()` is a single link-time
+        // constant, so the strcmp is only paid across images (where the addresses differ).
+        if (s->name == name || std::strcmp(s->name, name) == 0) {
+            result = s->id;
+            break;
+        }
+    }
+
+    if (result == 0) {
+        slot.name = name;
+        slot.id   = static_cast<TypeId>(_type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1);
+        register_type_name(slot.id, name);
+        slot.next = _type_id_registry.load(std::memory_order_relaxed);
+        _type_id_registry.store(&slot, std::memory_order_release);
+        result = slot.id;
+    }
+
+    _type_id_registry_lock.clear(std::memory_order_release);
+    return result;
+}
 
 TypeId
 register_type_name(TypeId const id, char const *const name) noexcept {

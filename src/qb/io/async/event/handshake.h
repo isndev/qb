@@ -38,7 +38,7 @@ namespace qb::io::async::event {
  *   // ... protocol definition and other methods ...
  *
  *   void on(qb::io::async::event::handshake &&) {
- *     LOG_INFO("Handshake complete.");
+ *     QB_LOG_INFO("Handshake complete.");
  *     // Optionally, close the input stream or take other actions.
  *     // For example, if this is a client, it might decide to disconnect.
  *     // this->disconnect();

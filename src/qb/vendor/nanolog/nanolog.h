@@ -158,11 +158,18 @@ void initialize(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_p
 } // namespace nanolog
 
 #define NANO_LOG(LEVEL) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
+// The macros qb's own 127 call sites use. They are QB_-prefixed since 3.0.0: `LOG_INFO`,
+// `LOG_DEBUG` and `LOG_CRIT` are also POSIX <syslog.h> names, and this header reaches every
+// consumer of <qb/io.h>, <qb/main.h>, <qb/actor.h> and every qbm umbrella -- so the unprefixed
+// spellings used to REPLACE a consumer's own, with zero warnings under the -isystem line qb's
+// CMake package exports (measured: the consumer's LOG_INFO stopped being called, silently).
+// The unprefixed names still work; qb/io.h defines them as aliases, guarded so that a consumer
+// who has their own keeps theirs.
 #ifdef QB_WITH_LOGGING
-#define LOG_DEBUG(X) (void) (nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG) << X)
-#define LOG_VERB(X) (void) (nanolog::is_logged(nanolog::LogLevel::VERBOSE) && NANO_LOG(nanolog::LogLevel::VERBOSE) << X)
-#define LOG_INFO(X) (void) (nanolog::is_logged(nanolog::LogLevel::INFO) && NANO_LOG(nanolog::LogLevel::INFO) << X)
-#define LOG_WARN(X) (void) (nanolog::is_logged(nanolog::LogLevel::WARN) && NANO_LOG(nanolog::LogLevel::WARN) << X)
-#define LOG_CRIT(X) (void) (nanolog::is_logged(nanolog::LogLevel::CRIT) && NANO_LOG(nanolog::LogLevel::CRIT) << X)
+#define QB_LOG_DEBUG(X) (void) (nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG) << X)
+#define QB_LOG_VERB(X) (void) (nanolog::is_logged(nanolog::LogLevel::VERBOSE) && NANO_LOG(nanolog::LogLevel::VERBOSE) << X)
+#define QB_LOG_INFO(X) (void) (nanolog::is_logged(nanolog::LogLevel::INFO) && NANO_LOG(nanolog::LogLevel::INFO) << X)
+#define QB_LOG_WARN(X) (void) (nanolog::is_logged(nanolog::LogLevel::WARN) && NANO_LOG(nanolog::LogLevel::WARN) << X)
+#define QB_LOG_CRIT(X) (void) (nanolog::is_logged(nanolog::LogLevel::CRIT) && NANO_LOG(nanolog::LogLevel::CRIT) << X)
 #endif
 #endif /* NANO_LOG_HEADER_GUARD */

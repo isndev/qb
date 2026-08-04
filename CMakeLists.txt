@@ -301,9 +301,20 @@ if (QB_INSTALL)
     # a third-party choice or about which targets exist, not about how a qb-shaped repository
     # is packaged.
     #
-    # HEADER_EXCLUDE is the only exclusion left anywhere in the rule: stduuid's vendored Catch2
-    # (~830 KB) and its test sources are build-time material for that fork's own test suite,
-    # never part of qb's public surface. A module needs no exclusion at all.
+    # HEADER_EXCLUDE carries two exclusions, both about material that is not qb's public surface:
+    #   * stduuid's vendored Catch2 (~830 KB) and its test sources -- build-time material for
+    #     that fork's own test suite.
+    #   * the qev fork's libevent compatibility headers, unless QB_EV_LIBEVENT_COMPAT is ON. The
+    #     bodies behind them are only compiled into libqev.a in that mode (see the option's
+    #     comment: they are 24 unprefixed upstream libevent C symbols on every consumer's link
+    #     line), and declarations that name the real libevent's API over an incompatible
+    #     `struct event_base` do more harm installed than missing.
+    # A module needs no exclusion at all.
+    set(_qb_header_exclude "/qb/vendor/uuid/(catch|test|cmake)(/|$)")
+    if (NOT QB_EV_LIBEVENT_COMPAT)
+        set(_qb_header_exclude "${_qb_header_exclude}|/qb/vendor/qev/event(_compat)?\\.h$")
+    endif ()
+
     qb_install_package(
             PACKAGE qb
             NAMESPACE qb::
@@ -311,7 +322,7 @@ if (QB_INSTALL)
             COMPATIBILITY SameMajorVersion
             CONFIG_TEMPLATE "${QB_CMAKE_DIR}/qbConfig.cmake.in"
             SOURCE_DIR "${QB_ROOT_DIR}"
-            HEADER_EXCLUDE "/qb/vendor/uuid/(catch|test|cmake)(/|$)"
+            HEADER_EXCLUDE "${_qb_header_exclude}"
             TARGETS ${_QB_INSTALL_TARGETS}
             CMAKE_FILES ${_qb_find_modules}
             VENDOR_DIRS "${QB_VENDOR_DIR}/*" ${_qb_bundled_hdr_dirs}

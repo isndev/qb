@@ -691,7 +691,7 @@ TEST(TCPSocket, LowLevelSocketOptionsReadinessAndBindingHelpers) {
 TEST(TCPSocket, LowLevelNonBlockingAndTimeoutFailuresAreRestored) {
     qb::io::socket closed;
     EXPECT_EQ(qb::io::socket::set_nonblocking(closed.native_handle(), true), -1);
-    EXPECT_EQ(closed.shutdown(SD_BOTH), -1); // SD_BOTH is qb's portable alias (==SHUT_RDWR on POSIX)
+    EXPECT_EQ(closed.shutdown(QB_SD_BOTH), -1); // QB_SD_BOTH is qb's portable alias (==SHUT_RDWR on POSIX)
 
     qb::io::socket client;
     ASSERT_TRUE(client.open(AF_INET, SOCK_STREAM, 0));

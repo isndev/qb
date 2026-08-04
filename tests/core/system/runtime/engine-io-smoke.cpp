@@ -74,7 +74,7 @@ public:
         EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
         g_inits.fetch_add(1, std::memory_order_relaxed);
         // Uniquely-tagged CRIT line — the content oracle greps for this in the flushed log file.
-        LOG_CRIT(kLogTag << " init core=" << static_cast<std::uint32_t>(getIndex()) << " id=" << static_cast<std::uint32_t>(id()));
+        QB_LOG_CRIT(kLogTag << " init core=" << static_cast<std::uint32_t>(getIndex()) << " id=" << static_cast<std::uint32_t>(id()));
         registerEvent<TestEvent>(*this);
         push<TestEvent>(id()); // self-send: drives the handler, then self-kill
         co_return true;
@@ -241,7 +241,7 @@ TEST_F(EngineIoSmoke, ConcurrentLoggingNeverTearsARecord) {
         producers.emplace_back([t] {
             for (int s = 1; s <= kPerThread; ++s) {
                 // The last field is derivable from the first two: any tearing breaks it.
-                LOG_CRIT("NLRACE|" << t << "|" << s << "|" << (t * s) << "|END");
+                QB_LOG_CRIT("NLRACE|" << t << "|" << s << "|" << (t * s) << "|END");
             }
         });
     }

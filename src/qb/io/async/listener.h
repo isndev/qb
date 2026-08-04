@@ -33,7 +33,7 @@
 #include <new>
 #include <stdexcept>
 #include <string>
-#include <qb/io.h> /* LOG_INFO and qb logging conventions */
+#include <qb/io.h> /* QB_LOG_INFO and qb logging conventions */
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 #include <thread>
@@ -90,6 +90,9 @@ public:
      * passing a reference explicitly.
      * @note This is typically initialized automatically when `qb::Main` starts its `VirtualCore` threads,
      *       or by calling `qb::io::async::init()` for standalone `qb-io` usage.
+     * @warning **One per thread, not one per thread per image.** The definition is `inline` and
+     *          `QB_ABI_ANCHOR`-annotated *below this class*, and both parts are load-bearing —
+     *          see the definition site for what regressed when it lived in `listener.cpp`.
      */
     thread_local static listener current;
 
@@ -176,7 +179,7 @@ public:
         // free-list and go straight to the global allocator instead of pushing
         // onto destroyed storage. This is what makes the teardown delete free to
         // the OS rather than re-leak the block.
-        static bool &
+        QB_ABI_ANCHOR static bool &
         _pool_alive() noexcept {
             thread_local bool alive = false;
             return alive;
@@ -199,7 +202,7 @@ public:
             }
         };
 
-        static FreeList &
+        QB_ABI_ANCHOR static FreeList &
         _freelist() noexcept {
             thread_local FreeList fl;
             return fl;
@@ -453,13 +456,13 @@ private:
             }
 
         if (!known) {
-            LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' unknown; using auto");
+            QB_LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' unknown; using auto");
             return EVFLAG_AUTO;
         }
         if (req == EVFLAG_AUTO)
             return EVFLAG_AUTO;
         if (!(qev_supported_backends() & req)) {
-            LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' not built into libev; using auto");
+            QB_LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' not built into libev; using auto");
             return EVFLAG_AUTO;
         }
         /* Probe: a backend can be compiled in yet fail at runtime (io_uring under a
@@ -469,7 +472,7 @@ private:
             qev_loop_destroy(probe);
             return req;
         }
-        LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' unavailable at runtime; using auto");
+        QB_LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' unavailable at runtime; using auto");
         return EVFLAG_AUTO;
     }
 
@@ -646,7 +649,7 @@ public:
         try {
             w._interface->invoke();
         } catch (...) {
-            LOG_WARN("[qb-io] exception escaped an event handler; contained by the event loop");
+            QB_LOG_WARN("[qb-io] exception escaped an event handler; contained by the event loop");
         }
         _dispatch_top = node.prev;
         ++_nb_invoked_events;
@@ -905,6 +908,41 @@ public:
         QB_LISTENER_TRACE("reset_coro_scheduler() end");
     }
 };
+
+/**
+ * @brief The one `listener` per thread — definition site.
+ *
+ * @details
+ * Defined **here, `inline`, and annotated `QB_ABI_ANCHOR`**, rather than out of line in
+ * `listener.cpp` where it lived until 3.0.0. Both properties are load-bearing, and both were
+ * measured on a host executable + `dlopen`ed plugin that each statically link `libqb-io.a`
+ * (the shape a plugin host has), same thread, **no unusual flags at all**:
+ *
+ * ```
+ *   as shipped in 2.6 (defined in listener.cpp)      this definition
+ *   [HOST  ] &listener::current=0xc24c28080 size=2   [HOST  ] 0x...080  size=2
+ *   [PLUGIN] &listener::current=0xc24c29880 size=0   [PLUGIN] 0x...080  size=2
+ * ```
+ *
+ * The mechanism is in the symbol table, not in the C++. A `thread_local` static data member
+ * **defined out of line in a `.cpp`** emits its TLS descriptor as `non-external`
+ * (`nm -m`: `(__DATA,__thread_vars) non-external __ZN2qb2io5async8listener7currentE`), i.e.
+ * private to its image by construction; only the `_ZTW` wrapper is exported, and every
+ * reference inside an image already bound to its own at static-link time. Two images therefore
+ * hold two event loops for one thread, and everything the second one registers goes into a loop
+ * nobody runs — silently, in RTLD_LOCAL and RTLD_GLOBAL alike. Defined `inline` in the header
+ * the same descriptor is **weak-external**, which dyld coalesces across images.
+ *
+ * `QB_ABI_ANCHOR` is what keeps that true once a consumer compiles `-fvisibility=hidden`:
+ * without it the weak definition goes hidden and the coalescing stops (measured, same harness).
+ *
+ * @note Moving this definition back into a `.cpp` reintroduces the split with no diagnostic
+ *       from any tool. The audit that found it proposed exactly that ("an out-of-line accessor
+ *       defined in the archive") as the fix; measured, an archive-defined accessor's
+ *       function-local `thread_local` returns **two different addresses** in the two images, for
+ *       the same reason. Storage that must be unique per process belongs in the header.
+ */
+QB_ABI_ANCHOR inline thread_local listener listener::current = {};
 
 /**
  * @brief Initialize the asynchronous event system for the current thread.

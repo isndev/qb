@@ -152,7 +152,7 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
         // `i += 0` spin forever, re-routing the same event and hanging the
         // core. Stop draining this batch instead of looping indefinitely.
         if (unlikely(event->bucket_size == 0)) {
-            LOG_CRIT(*this << " received event with bucket_size==0 (malformed or "
+            QB_LOG_CRIT(*this << " received event with bucket_size==0 (malformed or "
                               "oversized event); aborting batch");
             break;
         }
@@ -200,7 +200,7 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
         event->state.bits.alive = 0;
         _router.route(*event, [this](auto &event) {
             if (!event.getDestination().is_broadcast())
-                LOG_WARN(*this << " failed to send event[" << qb::event_type_name(event.getID()) << '#' << event.getID()
+                QB_LOG_WARN(*this << " failed to send event[" << qb::event_type_name(event.getID()) << '#' << event.getID()
                                << "] sent from " << event.getSource());
         });
         ++_metrics._nb_event_received;
@@ -323,12 +323,12 @@ VirtualCore::__flush_all__() noexcept {
                 // dispose them. Only reachable by overflowing `bucket_size`'s uint16 via a
                 // >= 65536-bucket `allocated_push`. Discard what is left of this pipe
                 // (`partial` stays false, so the trailing `pipe.reset()` frees it).
-                LOG_CRIT(*this << " outbound pipe to core(" << pipe_idx << ") holds a zero-width event (bucket_size overflowed); "
+                QB_LOG_CRIT(*this << " outbound pipe to core(" << pipe_idx << ") holds a zero-width event (bucket_size overflowed); "
                                << "discarding the rest of the pipe");
                 break;
             }
             if (unlikely(event.bucket_size > kMaxDeliverableBuckets)) {
-                LOG_CRIT(*this << " dropping event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from "
+                QB_LOG_CRIT(*this << " dropping event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from "
                                << event.getSource() << " to " << event.getDestination()
                                << ": " << event.bucket_size << " buckets exceeds the " << kMaxDeliverableBuckets
                                << "-bucket mailbox ring, so it can never be delivered cross-core. Keep events small and move bulk "
@@ -424,7 +424,7 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
         // continue. (Previously the pthread_getaffinity_np clobber masked this by
         // always pinning to CPU 0, which trivially succeeds.)
         if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0)
-            LOG_WARN("set thread affinity failed: " << strerror(errno));
+            QB_LOG_WARN("set thread affinity failed: " << strerror(errno));
 #elif defined(_WIN32) || defined(_WIN64)
 #ifdef _MSC_VER
         constexpr auto kAffinityBits = static_cast<CoreId>(sizeof(DWORD_PTR) * 8u);
@@ -437,7 +437,7 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
         // than failing VirtualCore init for an otherwise legal QB core id.
         // Affinity is best-effort: never fail init on a pin failure (warn only).
         if (mask != 0u && SetThreadAffinityMask(GetCurrentThread(), mask) == 0)
-            LOG_WARN("set thread affinity failed");
+            QB_LOG_WARN("set thread affinity failed");
 #else
 #warning "Cannot set affinity on windows with GNU Compiler"
 #endif
@@ -461,7 +461,7 @@ VirtualCore::__init__actors__() {
             case InitOutcome::ReadyTrue:
                 break; // completed synchronously → already active, frame freed
             case InitOutcome::ReadyFalse:
-                LOG_CRIT(*actor << " failed to init");
+                QB_LOG_CRIT(*actor << " failed to init");
                 return false;
             case InitOutcome::Suspended:
                 // `onInit()` performed a `co_await`; the suspended initial init cannot
@@ -497,9 +497,9 @@ VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexc
             try {
                 std::rethrow_exception(p.exception());
             } catch (const std::exception &e) {
-                LOG_CRIT(actor << " onInit() threw: " << e.what());
+                QB_LOG_CRIT(actor << " onInit() threw: " << e.what());
             } catch (...) {
-                LOG_CRIT(actor << " onInit() threw a non-standard exception");
+                QB_LOG_CRIT(actor << " onInit() threw a non-standard exception");
             }
             return InitOutcome::ReadyFalse;
         }
@@ -522,7 +522,7 @@ VirtualCore::__begin_activation__(Actor &actor, qb::io::async::task<bool> &&init
     act.init        = std::move(init);
     act.deadline_ns = activation_deadline_ns ? now + activation_deadline_ns : 0; // 0 ⇒ no deadline
     _activating.emplace(actor.id(), std::move(act));
-    LOG_INFO(actor << " activating (async onInit in flight)");
+    QB_LOG_INFO(actor << " activating (async onInit in flight)");
 }
 
 bool
@@ -540,7 +540,7 @@ VirtualCore::__stash_event__(ActorId const dest, Event *event) noexcept {
         // A wedged-in-init actor must not OOM the core: drop the overflow and fail the
         // activation on the next pump by forcing its deadline to expire now. Report `false`
         // so the caller disposes the dropped event's payload (it is not taken into the stash).
-        LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid() << "); dropping event["
+        QB_LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid() << "); dropping event["
                        << qb::event_type_name(event->getID()) << '#' << event->getID() << "] and failing activation");
         it->second.deadline_ns = 1; // already in the past ⇒ pump cancels + fails it
         return false;
@@ -572,7 +572,7 @@ VirtualCore::__pump_activations__() noexcept {
             // `done()` on a later pump and is finalized as a failure below.
             act.cancelling = true;
             if (const auto ait = _actors.find(id); ait != _actors.end()) {
-                LOG_WARN(*ait->second << " activation deadline expired — cancelling onInit");
+                QB_LOG_WARN(*ait->second << " activation deadline expired — cancelling onInit");
                 ait->second->__cancel_coro_scope__();
             }
         }
@@ -610,20 +610,20 @@ VirtualCore::__pump_activations__() noexcept {
             }
             if (ait != _actors.end()) {
                 if (!dying && !ok)
-                    LOG_CRIT(*ait->second << " async onInit failed — removing");
+                    QB_LOG_CRIT(*ait->second << " async onInit failed — removing");
                 removeActor(id);
             }
             continue;
         }
         // Success: flip Active, then replay the stashed inbound unicast FIFO.
         ait->second->_activated = true;
-        LOG_INFO(*ait->second << " activated");
+        QB_LOG_INFO(*ait->second << " activated");
         for (auto &buckets : act.stash) {
             auto *ev             = reinterpret_cast<Event *>(buckets.data());
             ev->state.bits.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
             _router.route(*ev, [this](auto &e) {
                 if (!e.getDestination().is_broadcast())
-                    LOG_WARN(*this << " failed to deliver stashed event[" << qb::event_type_name(e.getID()) << '#' << e.getID() << "]");
+                    QB_LOG_WARN(*this << " failed to deliver stashed event[" << qb::event_type_name(e.getID()) << '#' << e.getID() << "]");
             });
         }
     }
@@ -631,7 +631,7 @@ VirtualCore::__pump_activations__() noexcept {
 
 void
 VirtualCore::__workflow__() {
-    LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
+    QB_LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
     while (likely(true)) {
         _metrics._nanotimer = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
         ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent
@@ -783,7 +783,7 @@ VirtualCore::__workflow__() {
     // drains its mailbox, so peers must stop sending to it and dispose anything left for it.
     _engine.mark_core_stopped(_resolved_index);
 
-    LOG_INFO(*this << " Stopped normally");
+    QB_LOG_INFO(*this << " Stopped normally");
 }
 
 bool
@@ -857,12 +857,12 @@ VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) no
     // Reject duplicates *before* driving `onInit()`: a suspended (async) init must never
     // coexist with an append failure, otherwise its still-live frame would be orphaned.
     if (unlikely(_actors.find(id) != _actors.end())) {
-        LOG_CRIT("Error Cannot add Service Actor multiple times" << actor);
+        QB_LOG_CRIT("Error Cannot add Service Actor multiple times" << actor);
         return ActorId::NotFound;
     }
     if (initActor(actor, doInit).is_valid()) {
         _actors.emplace(id, std::move(actor_ptr));
-        LOG_INFO("New " << actor);
+        QB_LOG_INFO("New " << actor);
         return id;
     }
     return ActorId::NotFound;
@@ -898,12 +898,12 @@ VirtualCore::removeActor(ActorId const id) noexcept {
             if (actor->has_coro_scope())
                 // Scoped coroutines were just cancelled — they unwind on the next loop
                 // iteration. A non-zero count here is expected and safe.
-                LOG_INFO(*actor << " destroyed with " << actor->active_coroutine_count() << " scoped coroutine(s) pending cancellation");
+                QB_LOG_INFO(*actor << " destroyed with " << actor->active_coroutine_count() << " scoped coroutine(s) pending cancellation");
             else
-                LOG_WARN(*actor << " destroyed with " << actor->active_coroutine_count()
+                QB_LOG_WARN(*actor << " destroyed with " << actor->active_coroutine_count()
                                 << " active coroutines - coroutines must not access actor state!");
         }
-        LOG_INFO("Delete " << *actor);
+        QB_LOG_INFO("Delete " << *actor);
         _actors.erase(it);
         // Only non-service ids are recycled into the pool: a ServiceActor's
         // id is assigned at static init (see 2.3) and must remain reserved
@@ -1008,9 +1008,11 @@ VirtualCore::time() const noexcept {
     return _metrics._nanotimer;
 }
 
-std::atomic<ServiceId>    VirtualCore::_nb_service{0};
-thread_local VirtualCore *VirtualCore::_handler               = nullptr;
-std::uint64_t             VirtualCore::activation_deadline_ns = 5ull * 1000u * 1000u * 1000u; // 5 s
+// `_nb_service`, `_handler` and `activation_deadline_ns` used to be defined HERE. All three are
+// process-wide state -- the ServiceActor id counter, the per-thread current core, and a public
+// knob a consumer sets before Main::start() -- and an out-of-line definition makes each of them
+// one per *image*: a host and a plugin that each statically link libqb-core.a got two, silently.
+// They are now `inline` + QB_ABI_ANCHOR in VirtualCore.h. See qb/utility/abi.h.
 } // namespace qb
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &

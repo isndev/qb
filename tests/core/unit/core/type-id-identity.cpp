@@ -197,7 +197,7 @@ TEST(TypeId, EventTypeNameIsAvailableInEveryBuildMode) {
     EXPECT_NE(std::string_view{kill}.find("KillEvent"), std::string_view::npos)
         << "name must still identify the type to a human, got: " << kill;
 
-    // Reverse lookup from the runtime routing key — this is what the LOG_WARN sites now do.
+    // Reverse lookup from the runtime routing key — this is what the QB_LOG_WARN sites now do.
     EXPECT_STREQ(qb::event_type_name(qb::Event::type_to_id<qb::KillEvent>()), kill);
     EXPECT_STREQ(qb::event_type_name(qb::Event::type_to_id<qb::SignalEvent>()), signal);
 
@@ -335,4 +335,46 @@ TEST(TypeId, EventLayoutIsIndependentOfBuildMode) {
     EXPECT_EQ(member - base, 16) << "Event header must occupy exactly 16 bytes "
                                     "(state 4 + bucket_size 2 + id 2 + dest 4 + source 4)";
     EXPECT_EQ(probe.payload, word_at(16)) << "first user word must start at byte 16";
+}
+
+// -------------------------------------------------------------------------------------------
+// The process-wide type-id registry (qb/core/Event.h). Since 3.0.0 `type_id_for<T>()`'s magic
+// static is a per-image CACHE of an id owned by `qb::detail::_type_id_registry`, not the identity
+// itself -- because a block-scope static cannot be kept in the export trie under
+// `-fvisibility=hidden`, and a second image whose copy forked used to mint a colliding id for a
+// type that already had one (measured: host `KillEvent=1, SignalEvent=2` vs plugin
+// `KillEvent=1, Noop=2`, both exit 0, no diagnostic).
+//
+// The multi-image half needs a plugin and cannot run inside one ctest binary. What CAN be pinned
+// here is the property the fix rests on: a SECOND, independent slot asking for a name that is
+// already registered gets the id that name already has, and does not draw a new one. That is
+// exactly what a forked magic static does when it re-enters `register_type_id`.
+// -------------------------------------------------------------------------------------------
+TEST(TypeIdIdentity, RegistryRecoversAnIdInsteadOfMintingASecond) {
+    struct RegistryProbeEvent : qb::Event {};
+
+    const auto first = qb::type_id<RegistryProbeEvent>();
+    EXPECT_NE(first, 0u) << "ids are 1-based; 0 is the registry's 'not found' sentinel";
+
+    const auto counter_before = qb::detail::_type_id_counter.load(std::memory_order_relaxed);
+
+    // Stand in for the forked magic static in a second image: fresh storage, same type name.
+    qb::detail::type_id_slot second_image_slot{};
+    const auto               recovered =
+        qb::detail::register_type_id(second_image_slot, typeid(RegistryProbeEvent).name());
+
+    EXPECT_EQ(recovered, first) << "a second slot must recover the id, not mint a colliding one";
+    EXPECT_EQ(qb::detail::_type_id_counter.load(std::memory_order_relaxed), counter_before)
+        << "recovering an id must not consume one";
+    EXPECT_EQ(second_image_slot.name, nullptr) << "a recovered id must leave the caller's slot unused";
+
+    // Positive control for the check above: an unregistered name DOES consume an id and DOES fill
+    // the slot, so the three assertions can tell the two outcomes apart.
+    qb::detail::type_id_slot fresh_slot{};
+    const auto               minted = qb::detail::register_type_id(fresh_slot, "qb::test::NeverRegisteredBefore");
+    EXPECT_EQ(minted, static_cast<qb::TypeId>(counter_before + 1));
+    EXPECT_EQ(fresh_slot.id, minted);
+    EXPECT_STREQ(fresh_slot.name, "qb::test::NeverRegisteredBefore");
+    EXPECT_EQ(qb::detail::_type_id_counter.load(std::memory_order_relaxed),
+              static_cast<qb::TypeId>(counter_before + 1));
 }

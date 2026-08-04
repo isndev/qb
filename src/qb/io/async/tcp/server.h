@@ -75,7 +75,7 @@ public:
      * Forwarded to @p _Derived only when it genuinely overrides
      * `on(event::disconnected ...)` (detected via `qb::has_own_on`, which
      * distinguishes a true user override from the handler inherited from this
-     * server through CRTP). Otherwise the event is logged at `LOG_CRIT`
+     * server through CRTP). Otherwise the event is logged at `QB_LOG_CRIT`
      * severity as a terminal notice — the plain `qb::has_on` was causing
      * infinite recursion because the inherited overload was always visible.
      *
@@ -86,7 +86,7 @@ public:
         if constexpr (qb::has_own_on<_Derived, server, event::disconnected>)
             static_cast<_Derived &>(*this).on(std::move(e));
         else
-            LOG_CRIT("Server acceptor disconnected (reason=" << e.reason << ")");
+            QB_LOG_CRIT("Server acceptor disconnected (reason=" << e.reason << ")");
     }
 };
 

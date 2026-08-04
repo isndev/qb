@@ -159,10 +159,10 @@ make_loopback_pair(int &a, int &b) {
                 }
             }
             if (!ok)
-                ::closesocket(cli);
+                ::QB_CLOSESOCKET(cli);
         }
     }
-    ::closesocket(lst);
+    ::QB_CLOSESOCKET(lst);
     return ok;
 }
 #endif
@@ -292,11 +292,11 @@ public:
         ++_state->disconnect_calls;
 #ifdef _WIN32
         if (_state->fd >= 0) {
-            ::closesocket(static_cast<SOCKET>(_state->fd));
+            ::QB_CLOSESOCKET(static_cast<SOCKET>(_state->fd));
             _state->fd = -1;
         }
         if (_state->peer_fd >= 0) {
-            ::closesocket(static_cast<SOCKET>(_state->peer_fd));
+            ::QB_CLOSESOCKET(static_cast<SOCKET>(_state->peer_fd));
             _state->peer_fd = -1;
         }
 #else
