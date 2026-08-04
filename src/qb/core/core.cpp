@@ -24,6 +24,7 @@
  */
 
 #include "ActorId.cpp"
+#include "Event.cpp"
 #include "VirtualCore.cpp"
 #include "Actor.cpp"
 #include "CoreSet.cpp"

@@ -36,6 +36,17 @@ Given a version `MAJOR.MINOR.PATCH`:
   (`QB_ENABLE_NATIVE_ARCH`, `QB_ENABLE_LTO`, `QB_ENABLE_FAST_MATH`, sanitizers). Link only translation
   units built with the same qb version, the same standard library, and compatible flags. Do not ship a
   prebuilt qb binary expected to link against differently-configured consumers.
+- **`NDEBUG` is the one exception, and it is qb's obligation, not yours.** A consumer's `NDEBUG` comes
+  from its own `CMAKE_BUILD_TYPE` — including the *unset* default, which defines no `NDEBUG` — and
+  nothing makes it agree with the build qb was installed from. No public type, member declaration or
+  alignment in a shipped header may therefore be selected by `NDEBUG` (or `_DEBUG`/`DEBUG`): the
+  disagreement is invisible to the linker and to `find_package`, so it surfaces as silent memory
+  corruption rather than an error. Two such splits existed and were removed in 3.0 —
+  `qb::unordered_map`/`unordered_set`, and `qb::Event::id_type` — and
+  [`scripts/check-abi-macro-split.py`](./scripts/check-abi-macro-split.py) fails CI on a new one.
+  `NDEBUG` may still change *behaviour* (`assert`, diagnostics); note that this leaves a formal ODR
+  difference on inline functions containing `assert()`, where a mismatched consumer silently loses
+  the assertion.
 
 The installed CMake package version file is generated with `COMPATIBILITY SameMajorVersion`, so
 `find_package(qb 2.0)` accepts any installed `2.x` but rejects a different major.

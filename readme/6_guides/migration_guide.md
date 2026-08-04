@@ -8,13 +8,17 @@ Move an existing codebase to qb: from hand-rolled `std::thread` + locked queues 
 
 ## Summary
 
-This guide covers two migrations that adopters hit most often.
+This guide covers the migrations that adopters hit most often.
 
 1. **Threads to actors.** You have shared state guarded by a mutex, one or more worker threads, and a `std::queue` (plus condition variable) carrying work between them. The actor model replaces all three: state is owned by one actor, work is an event, and the queue and locks disappear. This section maps each primitive to its actor-model equivalent and walks one worker-pool example through the rewrite.
 
 2. **The pre-2.0 time types to the canonical chrono model.** qb 2.0 retired `qb::Timestamp`, `qb::Duration`, and `qb::TimePoint` in favor of three `std::chrono` aliases: `qb::duration`, `qb::mono_time`, and `qb::wall_time`. This section gives a concrete old-to-new mapping so call sites compile against the current API.
 
-Neither migration is all-or-nothing. An actor can call into existing synchronous code, and the time aliases are plain `std::chrono` types, so a partial port still compiles and runs.
+3. **The synchronous `onInit()` to the async-init APIs.** `onInit()` is a coroutine, and `addRefActor<T>()` returns a phase-aware `ActorHandle<T>` instead of a raw pointer.
+
+4. **`Event::id_type` in 3.0.** It stopped depending on `NDEBUG`, so a Debug consumer and a Release `libqb-core` finally agree on the event header. Two breaks, with different blast radii: the `id_type` return type changes **in Debug only** (a Release-only CI stays green), while `qb::type_id<T>()` now requires a complete type **in every build mode**, which breaks the common `ServiceActor<struct MyTag>` spelling everywhere. Read this one even if you never named `id_type`.
+
+The first three are not all-or-nothing. An actor can call into existing synchronous code, and the time aliases are plain `std::chrono` types, so a partial port still compiles and runs. The fourth is a hard 3.0 break; it is small, and it is a compile error rather than a silent one.
 
 ## Part 1 — From threads and locked queues to actors
 
@@ -362,6 +366,103 @@ if (child.ready()) child->doWork();                    // direct call only when 
 The handle never dangles: `get()` / `operator->` resolve the live actor on demand and return
 `nullptr` while it is Activating, after a failed init, or once it died. Code that already used
 `addRefHandle<T>()` + `RefActorHandle<T>` keeps compiling unchanged.
+
+## Part 4 — `Event::id_type` is now one type in every build mode
+
+**Who is affected:** two disjoint groups, and they break differently — measured, not assumed:
+
+| what you wrote | 2.6 Release | 2.6 Debug | **3.0, both modes** |
+|---|---|---|---|
+| `Event::id_type` / `type_to_id<T>()` used as a `const char *` | already broken | compiled | **compile error** |
+| `qb::type_id<Tag>()`, `ServiceActor<Tag>`, `getServiceId<Tag>()` with an **incomplete** `Tag` | compiled | compiled | **compile error** |
+
+The first row is **Debug-only, and a Release-only CI stays green** — that is why it is written down
+here rather than left to a build to find. The second row breaks in *every* mode, so any build will
+catch it.
+
+### What changed
+
+`qb::Event::id_type` used to be selected by `NDEBUG`:
+
+| | 2.6 Release (`NDEBUG`) | 2.6 Debug | **3.0, both modes** |
+|---|---|---|---|
+| `Event::id_type` | `qb::EventId` (`uint16_t`) | `const char *` | **`qb::EventId`** |
+| `Event::type_to_id<T>()` returns | `EventId` | `const char *` (`typeid(T).name()`) | **`EventId`** |
+| `id` at byte | 6 | 8 | **6** |
+| `dest` / `source` at bytes | 8 / 12 | 16 / 20 | **8 / 12** |
+| `sizeof(qb::Event)` | 64 | 64 | 64 |
+
+`sizeof(qb::Event)` never moved — `Event` is cache-line aligned — but the *header* did, and events
+are relocated across cores with `memcpy`. A consumer whose `NDEBUG` disagreed with the installed
+`libqb-core` therefore read `dest` out of the payload and routed to a garbage `ActorId`, with no
+diagnostic: it compiled, linked, agreed on `sizeof`, did not crash, and delivered nothing.
+`CMAKE_BUILD_TYPE` unset — CMake's default — is one of the configurations that produced this.
+
+### Fixing your code
+
+**1. An id held or printed as a string.**
+
+```cpp
+// Before — compiles in Debug only, where id_type was const char *
+const char *id = event.getID();
+LOG_INFO("event " << id);
+
+// After — the id is a 16-bit integer in every mode; ask for the name separately
+const qb::Event::id_type id = event.getID();
+LOG_INFO("event " << qb::event_type_name(id) << '#' << id);
+```
+
+`qb::event_type_name(id)` reverse-resolves a runtime id, and `qb::Event::type_to_name<T>()` gives
+the same string from the type. Both work in every build mode and return the Itanium-mangled
+`typeid(T).name()` — exactly what Debug printed before. An id no type owns yields
+`"<unregistered>"`. Neither is on a routing path; they are for log lines and assertions.
+
+**2. Your own `#ifdef NDEBUG` mirroring the old split.** Delete it. There is one representation
+now, so a branch on `NDEBUG` can only reintroduce the defect:
+
+```cpp
+// Before
+struct MyKey {
+#ifdef NDEBUG
+    using id_type = qb::EventId;
+#else
+    using id_type = const char *;
+#endif
+};
+
+// After
+struct MyKey { using id_type = qb::EventId; };
+```
+
+**3. A forward-declared service tag.** `qb::type_id<T>()` now reaches `typeid(T)` in every mode, so
+`T` must be **complete**. This one compiled in *both* modes before 3.0 — the Release *and* the Debug
+path of the tag lookup went through the counter and never touched `typeid` — so it is a new error
+everywhere, not a Debug surprise. The commonly-copied one-liner declares the tag without defining
+it and stops compiling with `'typeid' of incomplete type`:
+
+```cpp
+// Before — `struct MyTag` here DECLARES MyTag; it is never defined
+class Registry : public qb::ServiceActor<struct MyTag> { … };
+
+// After
+struct MyTag {};
+class Registry : public qb::ServiceActor<MyTag> { … };
+```
+
+The same applies to `Actor::getServiceId<Tag>()`, `Actor::registerIndex<Tag>()`,
+`Actor::require<T>()`, `Actor::is<T>()`, `qb::require<T>()`, `ActorProxy::getType<T>()` and
+`router::*::unsubscribe<T>()` — the paths that only ever *name* a type without constructing or
+sizing it. Everything that already constructed `T` (`push`, `send`, `broadcast`, `registerEvent`)
+required a complete type before and is unchanged.
+
+### What you get back
+
+Debug builds get *faster*, not slower: the router key stops being a pointer, so
+`std::hash<const char *>` — a real call chain at `-O0` — becomes identity hashing. Measured on the
+dispatch lookup itself over a 211-type table, the 16-bit key wins 9 rounds out of 9 (median −51 %);
+at engine level that was −11 % ns/event on `messaging-api-oneway`. A Debug event also regains the
+48 bytes of first-bucket payload capacity that Release always had (it was 40), and Release log
+lines gain an event-type name they never had.
 
 ## See also
 

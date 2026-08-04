@@ -200,7 +200,8 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
         event->state.bits.alive = 0;
         _router.route(*event, [this](auto &event) {
             if (!event.getDestination().is_broadcast())
-                LOG_WARN(*this << " failed to send event[" << event.getID() << "] sent from " << event.getSource());
+                LOG_WARN(*this << " failed to send event[" << qb::event_type_name(event.getID()) << '#' << event.getID()
+                               << "] sent from " << event.getSource());
         });
         ++_metrics._nb_event_received;
         _metrics._nb_bucket_received += event->bucket_size;
@@ -327,7 +328,8 @@ VirtualCore::__flush_all__() noexcept {
                 break;
             }
             if (unlikely(event.bucket_size > kMaxDeliverableBuckets)) {
-                LOG_CRIT(*this << " dropping event[" << event.getID() << "] from " << event.getSource() << " to " << event.getDestination()
+                LOG_CRIT(*this << " dropping event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from "
+                               << event.getSource() << " to " << event.getDestination()
                                << ": " << event.bucket_size << " buckets exceeds the " << kMaxDeliverableBuckets
                                << "-bucket mailbox ring, so it can never be delivered cross-core. Keep events small and move bulk "
                                   "data behind a pointer member (see Pipe::allocated_push).");
@@ -538,8 +540,8 @@ VirtualCore::__stash_event__(ActorId const dest, Event *event) noexcept {
         // A wedged-in-init actor must not OOM the core: drop the overflow and fail the
         // activation on the next pump by forcing its deadline to expire now. Report `false`
         // so the caller disposes the dropped event's payload (it is not taken into the stash).
-        LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid() << "); dropping event[" << event->getID()
-                       << "] and failing activation");
+        LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid() << "); dropping event["
+                       << qb::event_type_name(event->getID()) << '#' << event->getID() << "] and failing activation");
         it->second.deadline_ns = 1; // already in the past ⇒ pump cancels + fails it
         return false;
     }
@@ -621,7 +623,7 @@ VirtualCore::__pump_activations__() noexcept {
             ev->state.bits.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
             _router.route(*ev, [this](auto &e) {
                 if (!e.getDestination().is_broadcast())
-                    LOG_WARN(*this << " failed to deliver stashed event[" << e.getID() << "]");
+                    LOG_WARN(*this << " failed to deliver stashed event[" << qb::event_type_name(e.getID()) << '#' << e.getID() << "]");
             });
         }
     }
