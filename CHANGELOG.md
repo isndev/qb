@@ -184,6 +184,17 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   (exit 2) rather than a skip, because a lint that quietly passes when it cannot find its expected
   value is indistinguishable from the unchecked marker it replaced. A missing marker remains a
   warning; a *wrong* one now fails.
+- **New CI job `ubuntu-abi-sentinel-sweep`** (in `cmake.yml`), driving the new
+  [`scripts/check-cross-compiler-statics.sh`](./scripts/check-cross-compiler-statics.sh). It compiles
+  one probe translation unit with **both** `clang++` and `g++`, lists every function-local entity out
+  of each object file (`_ZZ…`, `_ZGVZ…`), and fails when a symbol present in one is the other's symbol
+  plus an ABI-tag suffix. That is the only check that can see the `B5cxx11` class fixed above: the
+  matrix cannot, however many rows it grows, because every row compiles the tree with ONE toolchain
+  and the defect only exists where two meet in one binary — and macOS/libc++ has no cxx11 tag at all.
+  The job carries its own negative control: it reverts both sentinels in a scratch copy, requires the
+  sweep to exit **exactly 1** with a divergence reported, and restores. Requiring 1 rather than
+  "non-zero" is deliberate — a botched revert that merely breaks the probe exits 2, and scoring that
+  as a detection is a false pass that was measured while writing the job. Seconds, no qb build.
 - **CI workflows target `main` and `develop`.** `cmake`, `coverage`, `doc-lint`, `format-check`,
   `sanitize` and `sanitize-thread` all filtered on a `c++23` branch that no longer exists, so six of
   the seven workflows had silently stopped running; only `install-consume` was live. They now use the
@@ -217,6 +228,17 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   builds on provides both functions natively, and `qb::io::inet::ip::compat` is now a pure re-export.
   The file sat in the public header tree but was never shipped (qb's install rule matches `*.h`,
   `*.hpp` and `*.tpp` only). `QB__HAS_NTOP` itself is kept as a published feature-test macro.
+- **`SO_NOSIGPIPE` is no longer defined on Linux.** `<qb/io/config.h>` — an **installed public
+  header** — carried `#if defined(__linux__)` / `#define SO_NOSIGPIPE MSG_NOSIGNAL`: a socket
+  *option* name bound to a message *flag* value. Linux has no such option; measured, the resulting
+  `setsockopt(SOL_SOCKET, 0x4000, …)` returns `-1` / `ENOPROTOOPT`. The failed call was never the
+  damage. The portable idiom forks on the name — `#ifdef SO_NOSIGPIPE` → `setsockopt` per descriptor,
+  `#else` → `MSG_NOSIGNAL` per call — so defining it sent a Linux consumer down the BSD branch and
+  away from the one mechanism that works there, reproducing in the consumer exactly the SIGPIPE hole
+  fixed above. `SO_*` is reserved to `<sys/socket.h>` besides. **Source-incompatible** for code that
+  names `SO_NOSIGPIPE` on Linux, which now fails to compile — the truthful outcome, since the option
+  does not exist. Nothing in qb read it there (both `defined(SO_NOSIGPIPE)` sites in the tree already
+  spell `&& !defined(__linux__)`), so no behaviour changes on any platform.
 - `std::to_string(const uuids::uuid &)` from the vendored stduuid header — a local addition, not
   upstream. Adding a *declaration* to namespace `std` is undefined behaviour ([namespace.std]/2
   permits only an explicit specialisation for a program-defined type, which is what the neighbouring
@@ -226,6 +248,56 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Fixed
 
+- **A gcc-built consumer linked against a clang-built qb corrupted the heap on the first empty
+  `qb::unordered_map` it destroyed.** `free(): invalid pointer`, SIGABRT, no link-time diagnostic.
+  When the key or value carries libstdc++'s cxx11 ABI tag (any `std::string`), clang appends
+  `B5cxx11` to the mangled name of a function-**local static** and gcc does not, so ska's empty-table
+  sentinel — `sherwood_v10_entry::empty_pointer()`, plus `sherwood_v3_entry::empty_default_table()`
+  behind `qb::unordered_flat_map` — did not merge across the two objects. Every empty table points at
+  that sentinel and `deallocate_data()` decides whether to free by comparing against it, so a table
+  created on one side of the boundary and destroyed on the other took the free branch and handed the
+  allocator static storage. Both sentinels now keep the tagged type out of the static: the v10 one is
+  an `inline static` data member (mangled from the class template's arguments, which both compilers
+  spell identically, and still constant-initialized), the v3 one keeps its function-local static but
+  gets tag-free storage — raw bytes plus placement new — because hoisting *it* would have cost
+  constant initialization and traded a cross-compiler bug for a static-initialization-order one.
+  **macOS/libc++ has no cxx11 tag and is structurally blind to this**, which is why it survived; the
+  new `ubuntu-abi-sentinel-sweep` CI job below is the only check that can see the class.
+- **`send_n()` / `recv_n()` re-introduced the SIGPIPE that `send()` guards against.** They declared
+  `flags = 0` while `send()`, `recv()`, `sendto()` and `recvfrom()` all default it to `MSG_NOSIGNAL`,
+  and `send_n` forwards its flags straight into `socket::send()` — so the wrapper's `0` *overrode* the
+  primitive's own default. A single write to a peer that had closed raised `SIGPIPE`, whose default
+  disposition terminates the process. Not Linux-only, contrary to the folklore: current Darwin defines
+  and honours `MSG_NOSIGNAL` (`0x80000`) too. It read as benign because `io/tcp/ssl/init.cpp` installs
+  a process-wide `signal(SIGPIPE, SIG_IGN)` — with `QB_WITH_SSL=OFF` nothing catches it, so the new
+  cases reset `SIGPIPE` to `SIG_DFL` in a forked child rather than trusting that initialiser.
+  The same shape was then found in the descriptor **acquisition** paths: `open()` and `accept_n()` set
+  the BSD/macOS socket-level `SO_NOSIGPIPE` backstop, but `socket(socket_type)` and
+  `operator=(socket_type)` — how `socket::accept()` and `tcp::listener::accept()` produce their socket
+  — did not. The three `setsockopt` sites are now one `suppress_sigpipe()` helper, so a new
+  descriptor-producing path cannot silently skip it. The two guards are not interchangeable and both
+  are needed: `setsockopt(SO_NOSIGPIPE)` on a socket whose peer has already closed fails with
+  `EINVAL`, so the backstop alone does not rescue `send_n`.
+- **The vendored `qev` fork kept upstream libev's include guards, so a consumer could not use both.**
+  `qev.h` still said `EV_H_`, `qev++.h` `EVPP_H__`, the libevent-compat `event.h` `EVENT_H_`. `qev.h`
+  is installed and `<qb/main.h>` pulls it in transitively (`core/Actor.h` → `io/async/coroutine.h` →
+  `coroutine/scheduler.h` → `qev++.h`), so any binary that also used a real libev broke in **both**
+  include orders — with qb first `ev_default_loop` is undeclared, with libev first the errors land
+  inside qb's own `qev++.h` — and there was no workaround short of splitting the two APIs across
+  different `.cpp` files. Every guard is now named after the fork: `QEV_H_`, `QEVPP_H_`,
+  `QEV_EVENT_H_`, `QEV_EVENT_COMPAT_H_`, `QEV_WRAP_H`, `QEV_WEPOLL_H_`, `QEV_CONFIG_H_`. No
+  conditional anywhere reads any of those names, so the rename is inert beyond the guards. The
+  path-redirect macros `EV_H`, `EV_EVENT_H` and `EV_CONFIG_H` — no trailing underscore, set by CMake
+  as `PUBLIC` compile definitions — are deliberately untouched. This completes the `ev_*` → `qev_*`
+  rename recorded under *Changed*: the C symbols moved first, the header-level coexistence was left
+  unfinished. The 24 `event_*` libevent-compat symbols still collide at link time, still deliberately.
+- The documented return convention for the TLS `connect*` / `n_connect*` family said a failed peer
+  verification "surfaces as `qb::io::SocketStatus::CertificateError` (value 1)". It does not, and
+  never did: verification failure fails the handshake inside `handCheck()`, which disconnects and
+  returns `-1`, indistinguishable at this level from any other handshake error. `CertificateError` is
+  declared in the enum and returned by nothing in the tree. The enumerator stays (it is public
+  surface); `readme/3_qb_io/ssl_transport.md` now states what actually happens and points at
+  `SSL_get_verify_result()` for callers who need to tell the cases apart.
 - Three shipped `#include` directives named files that do not exist, on every platform:
   `<qb/io/async/epoll.h>` (an **installed public header**) included `"../helper.h"`, deleted in
   `581094a9` -- the header has been uncompilable ever since, and because the missing include was

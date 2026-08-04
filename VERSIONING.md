@@ -36,6 +36,15 @@ Given a version `MAJOR.MINOR.PATCH`:
   (`QB_ENABLE_NATIVE_ARCH`, `QB_ENABLE_LTO`, `QB_ENABLE_FAST_MATH`, sanitizers). Link only translation
   units built with the same qb version, the same standard library, and compatible flags. Do not ship a
   prebuilt qb binary expected to link against differently-configured consumers.
+- **The *compiler* is part of that list, not just the standard library.** clang and gcc over the same
+  libstdc++ still disagree on one thing qb depends on: clang appends the cxx11 ABI tag (`B5cxx11`) to
+  the mangled name of a function-**local static** whose type carries it, and gcc does not. A local
+  static that the code treats as one shared object — a sentinel compared by address, a cache whose
+  identity matters — then exists twice in a mixed binary, with no link-time diagnostic. That is a real
+  3.0 fix, not a hypothetical (see *Fixed* in [CHANGELOG.md](./CHANGELOG.md): an empty
+  `qb::unordered_map` destroyed across the boundary freed static storage). qb's own headers are now
+  clean of it and the `ubuntu-abi-sentinel-sweep` CI job keeps them that way, but the guarantee stops
+  at qb's surface: prefer one compiler for the whole program.
 - **`NDEBUG` is the one exception, and it is qb's obligation, not yours.** A consumer's `NDEBUG` comes
   from its own `CMAKE_BUILD_TYPE` — including the *unset* default, which defines no `NDEBUG` — and
   nothing makes it agree with the build qb was installed from. No public type, member declaration or
