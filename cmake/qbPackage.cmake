@@ -121,17 +121,19 @@ function(qb_install_package)
     # root (qb's src/qb/vendor/*, qbm-http's src/qbm/http/vendor/llhttp.h): there is no
     # second root to mirror and therefore no second rule to forget.
     #
-    # *.inl is in the pattern list on purpose. qb has none today; qbm-pgsql has three, and
-    # without them its resultset.h fails a consumer's FIRST translation unit on
-    # "'resultset.inl' file not found" -- a package that configures perfectly and cannot
-    # be compiled against.
+    # *.tpp and *.inl are NETS, not dependencies -- as of 3.0 they match nothing. Both notes
+    # that used to stand here recorded them as load-bearing, and both were true when written:
+    # qbm-http shipped routing/router.tpp and qbm-pgsql shipped three .inl, and dropping either
+    # pattern failed a consumer's FIRST translation unit on "file not found" while configuring
+    # and installing perfectly. 3.0 merged all four into the headers that include them, so the
+    # tree now holds zero of either.
     #
-    # *.tpp is now a NET, not a dependency. The previous note here recorded it as load-bearing
-    # because qbm-http shipped routing/router.tpp; 3.0 merged that file into router.h, so the
-    # tree contains zero .tpp and this pattern currently matches nothing. It stays because the
-    # rule is shared verbatim with qb_register_module(): the failure mode it prevents is silent
-    # at configure AND at install time and only surfaces in a downstream consumer's first TU,
-    # which no gate in this repo would catch on the day the file is added.
+    # They stay because the rule is shared verbatim with qb_register_module() and the failure
+    # they prevent is silent at configure AND at install time, surfacing only in a downstream
+    # consumer's first TU -- no gate in this repo would catch it on the day such a file is
+    # added. The measured cost of keeping them is nothing: FILES_MATCHING patterns that match
+    # no file install no file. Do not "clean these up"; deleting them is a change whose only
+    # effect is to remove a net.
     set(_qb_pkg_hdr_exclude)
     if(P_HEADER_EXCLUDE)
         set(_qb_pkg_hdr_exclude REGEX "${P_HEADER_EXCLUDE}" EXCLUDE)
