@@ -262,7 +262,7 @@ auto blob = std::make_shared<std::vector<std::byte>>(1024 * 1024); // 1 MB, on t
 auto &ev = pipe.allocated_push<BlobEvent>(0, blob);
 ```
 
-The `size` argument is the **extra payload bytes beyond the event itself** — `allocated_push` adds `sizeof(_Event)` to it internally (`size += sizeof(T)`, `qb/core/Pipe.tpp`), it does not clamp `size` up to `sizeof(_Event)`. A hint of `0` still allocates at least one event's worth (the event always fits), and `0` is the right answer whenever the bulk data lives on the heap behind a pointer member.
+The `size` argument is the **extra payload bytes beyond the event itself** — `allocated_push` adds `sizeof(_Event)` to it internally (`size += sizeof(T)`, `qb/core/Pipe.h`), it does not clamp `size` up to `sizeof(_Event)`. A hint of `0` still allocates at least one event's worth (the event always fits), and `0` is the right answer whenever the bulk data lives on the heap behind a pointer member.
 
 Pass a non-zero `size` only when you deliberately write raw bytes into the region **immediately following** the event object — the way `AllocatedPipePushActor` in `messaging-api.cpp` does with `allocated_push<TestEvent>(32)` plus a 32-byte tail. Never pass `sizeof(BlobEvent) + blob->size()`: that double-counts one event's worth of space on top of a payload that is already too large.
 

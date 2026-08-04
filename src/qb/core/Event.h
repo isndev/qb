@@ -666,4 +666,35 @@ using service_event = ServiceEvent;
 
 } // namespace qb
 
+// ============================================================================================
+// Concepts over the event hierarchy declared above.
+//
+// `service_event_type` lived at Actor.h:141-142 through 2.6.0. It moved here in 3.0 because
+// Pipe.h needs it: Pipe's template bodies now sit at the tail of Pipe.h (they shipped as
+// Pipe.tpp), and Pipe.h is included FROM Actor.h:50 -- 91 lines before Actor.h declared the
+// concept. It cannot be reached from there. Event.h is where it belongs anyway: the concept
+// constrains `ServiceEvent`, which is declared above at :487, and it needs nothing from
+// `qb::Actor`. Every consumer keeps seeing it, since Actor.h includes this header.
+//
+// `event_qos0_type` deliberately stays at Actor.h:134. Only VirtualCore's bodies use it, and
+// they sit in VirtualCore.h, which has a complete Actor.h. Moving it too would be churn.
+//
+// The declaration is placed after the closing brace above, not spliced into the namespace
+// block, so no line of this header moves: Event.h carries cited anchors at :61, :314, :321,
+// :344 and :376, and an insertion higher up would shift all of them.
+// ============================================================================================
+#include <type_traits>
+
+namespace qb {
+
+/**
+ * @brief Concept for service event types (forwardable events)
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept service_event_type = std::is_base_of_v<ServiceEvent, T>;
+
+} // namespace qb
+
 #endif // QB_EVENT_H

@@ -133,13 +133,13 @@ concept trivial_event = event_type<T> && std::is_trivially_destructible_v<T>;
 template <typename T>
 concept event_qos0_type = std::is_base_of_v<EventQOS0, T>;
 
-/**
- * @brief Concept for service event types (forwardable events)
- * @ingroup Concepts
- * @tparam T Type to check
- */
-template <typename T>
-concept service_event_type = std::is_base_of_v<ServiceEvent, T>;
+// `service_event_type` was declared HERE through 2.6.0; in 3.0 it moved to Event.h (see the
+// banner at the tail of that header). Pipe.h, which this header includes at :50 -- long
+// before this point -- needs the concept for its own template bodies and cannot reach a
+// declaration made down here. It still arrives through the `#include "Event.h"` at :48,
+// unchanged, so no consumer has to write anything differently. `event_qos0_type` above stays
+// put: only VirtualCore's bodies use it, and they see a complete Actor.h. This block holds the
+// LINE COUNT -- 87 `Actor.h:NNN` citations anchor below it and a plain deletion moves them all.
 
 /**
  * @class Actor
