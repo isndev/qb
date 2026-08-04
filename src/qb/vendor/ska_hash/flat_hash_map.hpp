@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <new> // qb local modification: placement new + std::launder in empty_default_table()
 #include <type_traits>
 #include <utility>
 #include <stdexcept>
@@ -161,10 +162,49 @@ struct sherwood_v3_entry {
     sherwood_v3_entry(int8_t distance_from_desired)
         : distance_from_desired(distance_from_desired) {}
     ~sherwood_v3_entry() {}
+    // qb local modification: same ABI defect as sherwood_v10_entry::empty_pointer()
+    // in unordered_map.hpp -- read the long note there first; this is the short version.
+    //
+    // Upstream wrote `static sherwood_v3_entry result[min_lookups]`. When T carries
+    // libstdc++'s cxx11 ABI tag (any std::string in the key or value), clang appends
+    // `B5cxx11` to the mangled name of that function-local static and gcc does not, so
+    // the sentinel does not merge across a clang-built library and a gcc-built
+    // consumer. An empty table created on one side and destroyed on the other then
+    // fails the `begin != empty_default_table()` test in deallocate_data(), takes the
+    // free branch, and calls the allocator on static storage.
+    //
+    // The tag clang appends comes from the STATIC'S OWN TYPE, so the cure is to give
+    // the static a type that carries no tag. Raw bytes plus placement new does that:
+    // `unsigned char[N]` and `const bool` are tag-free, and both compilers then emit
+    // byte-identical symbols (verified, clang-19 vs gcc-14.2 on Debian 13/aarch64).
+    //
+    // Why not the simpler cure used for v10 -- hoisting it to a static data member?
+    // Because that one is constant-initialized there and this one is NOT: sherwood_v3_entry
+    // has user-provided constructors, so as a static data member the array lands in
+    // .bss with an .init_array entry (measured on both compilers), i.e. UNORDERED
+    // dynamic initialization. A static-duration table read during another translation
+    // unit's dynamic initialization would then see a zeroed sentinel, where
+    // distance_from_desired == 0 makes has_value() true for all four slots. That would
+    // trade a cross-compiler bug for a static-initialization-order bug. A function-local
+    // static is initialized on first use and has no such window, so it is kept.
+    //
+    // Behaviour is identical to upstream: the first three slots get the default
+    // constructor (distance_from_desired = -1, union left alone) and the last gets
+    // special_end_value, exactly as `{{}, {}, {}, {special_end_value}}` did. The array's
+    // destructor is not registered at exit, which is not a change in effect either --
+    // ~sherwood_v3_entry() is empty and deliberately does not touch the union.
     static sherwood_v3_entry *
     empty_default_table() {
-        static sherwood_v3_entry result[min_lookups] = {{}, {}, {}, {special_end_value}};
-        return result;
+        alignas(sherwood_v3_entry) static unsigned char storage[sizeof(sherwood_v3_entry) * min_lookups];
+        static const bool                               initialized = [] {
+            auto *table = reinterpret_cast<sherwood_v3_entry *>(storage);
+            for (int8_t i = 0; i < min_lookups - 1; ++i)
+                ::new (static_cast<void *>(table + i)) sherwood_v3_entry();
+            ::new (static_cast<void *>(table + min_lookups - 1)) sherwood_v3_entry(special_end_value);
+            return true;
+        }();
+        (void) initialized;
+        return std::launder(reinterpret_cast<sherwood_v3_entry *>(storage));
     }
 
     bool
