@@ -804,7 +804,7 @@ template <typename T, typename... _Init>
 T &
 VirtualCore::push(ActorId const dest, ActorId const source, _Init &&...init) noexcept {
     // THE enqueue funnel for Actor::push / to().push / reply / forward: guarantee this type can
-    // be freed on any drop path even if no actor ever subscribes to it. See Pipe.tpp.
+    // be freed on any drop path even if no actor ever subscribes to it. See Pipe.h.
     router::ensure_disposer<Event, T>();
     auto &pipe = __getPipe__(dest._core_id);
     auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);

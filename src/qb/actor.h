@@ -13,4 +13,5 @@
 
 #include "core/Actor.h"
 #include "core/Actor.tpp"
-#include "core/Pipe.tpp"
+// Pipe.h has carried Pipe's own template bodies since 3.0 (was core/Pipe.tpp); Actor.h:50
+// already pulled it, so there is nothing left to add here.

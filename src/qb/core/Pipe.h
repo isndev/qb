@@ -156,7 +156,7 @@ public:
      * @tparam _Args   Types of constructor arguments forwarded to `_Event`.
      * @param  size    **Extra** bytes to reserve *after* the event object — NOT the total
      *                 footprint. The implementation adds `sizeof(_Event)` itself
-     *                 (`Pipe.tpp`: `size += sizeof(T)`) and then rounds the sum up to whole
+     *                 (below: `size += sizeof(T)`) and then rounds the sum up to whole
      *                 `QB_LOCKFREE_EVENT_BUCKET_BYTES` buckets. So pass only the trailing
      *                 payload bytes: `allocated_push<E>(0)` reserves exactly one event, and
      *                 `allocated_push<E>(n)` reserves `ceil((sizeof(E) + n) / bucket)` buckets.
@@ -255,6 +255,83 @@ public:
  * @ingroup PipeCore
  */
 using pipe = Pipe;
+
+} // namespace qb
+
+// ============================================================================================
+// Pipe -- TEMPLATE BODIES.  TEMPLATES ONLY BELOW THIS LINE.
+//
+// Event construction and pushing through the channel: the definitions of `Pipe::push` and
+// `Pipe::allocated_push` declared above. They shipped as `core/Pipe.tpp` through 2.6.0 and
+// moved here in 3.0 -- `.h` is now the only header extension in qb.
+//
+// Pipe.tpp had NO includes of its own; it relied entirely on whatever its includer had already
+// pulled, which is why it could never have been compiled alone. Standing on its own needs two
+// things, and both are handled here rather than at the top of the file:
+//   * `<qb/system/event/router.h>` for `router::ensure_disposer`. `router` appears nowhere in
+//     Pipe's declarations -- it is a body-only dependency, so the include belongs next to the
+//     bodies. router.h pulls nothing from qb/core, so there is no cycle either way.
+//   * the `service_event_type` concept, which lived at Actor.h:141-142 and was unreachable
+//     from here: Actor.h includes THIS header at its line 50, 91 lines before it declared the
+//     concept. It now lives at Event.h:696, which Pipe.h already includes at :41.
+// Both are position problems, not file-extension problems -- which is the whole reason a `.tpp`
+// was never the fix.
+//
+// The include and the bodies are appended after the namespace closes so that no line of the
+// declarations above moves: Pipe.h carries cited anchors at :118, :126, :127 and :135.
+//
+// TEMPLATES ONLY, and the reason outlives the extension: this header is reached both by
+// libqb-core's single amalgamated TU (via Actor.cpp) and by every consumer TU, and the include
+// guard stops double inclusion only WITHIN one TU. Every definition below is a template, which
+// gives it vague linkage; one non-template, non-`inline` definition added here is an instant
+// duplicate symbol between the archive and any consumer object. `inline` is not the workaround
+// -- it leaves N definitions of one entity in the program. Anything non-template belongs in a
+// .cpp.
+// ============================================================================================
+#include <qb/system/event/router.h>
+
+namespace qb {
+
+
+template <typename T, typename... _Args>
+T &
+Pipe::push(_Args &&...args) const noexcept {
+    router::ensure_disposer<Event, T>();
+    constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
+    auto                 &data        = pipe->template allocate_back<T>(std::forward<_Args>(args)...);
+    data.id                           = data.template type_to_id<T>();
+    data.dest                         = dest;
+    data.source                       = source;
+    // C++20: use service_event_type concept
+    if constexpr (service_event_type<T>) {
+        data.forward = source;
+        std::swap(data.id, data.service_event_id);
+    }
+
+    data.bucket_size = BUCKET_SIZE;
+    return data;
+}
+
+template <typename T, typename... _Args>
+T &
+Pipe::allocated_push(std::size_t size, _Args &&...args) const noexcept {
+    router::ensure_disposer<Event, T>();
+    size += sizeof(T);
+    size       = size / sizeof(EventBucket) + static_cast<bool>(size % sizeof(EventBucket));
+    auto &data = *(new (reinterpret_cast<T *>(pipe->allocate_back(size))) T(std::forward<_Args>(args)...));
+
+    data.id     = data.template type_to_id<T>();
+    data.dest   = dest;
+    data.source = source;
+    // C++20: use service_event_type concept
+    if constexpr (service_event_type<T>) {
+        data.forward = source;
+        std::swap(data.id, data.service_event_id);
+    }
+
+    data.bucket_size = static_cast<uint16_t>(size);
+    return data;
+}
 
 } // namespace qb
 #endif // QB_PROXYPIPE_H
