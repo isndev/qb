@@ -65,6 +65,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <vector>
@@ -72,6 +73,15 @@
 #include <gtest/gtest.h>
 
 #include <qb/io/system/sys__socket.h>
+
+#if !defined(_WIN32)
+// For the SIGPIPE-containment cases at the bottom of this file: they fork a child,
+// reset the signal disposition and observe the wait status.
+#include <csignal>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 using namespace std::chrono_literals;
 
@@ -501,3 +511,220 @@ TEST(SocketErrorPaths, HandleReadReadyClampsANegativeTimeout) {
     EXPECT_LT(elapsed, 1s) << "a clamped (zero) timeout must poll once and return, never block";
     sock.close();
 }
+
+// ===========================================================================
+// SIGPIPE containment.
+//
+// Writing to a socket whose peer has closed raises SIGPIPE, whose DEFAULT
+// disposition terminates the process. A library must not let that happen: the
+// write has to come back as an error the caller can handle.
+//
+// qb guards it twice, and BOTH guards had a hole:
+//
+//   1. Per call -- MSG_NOSIGNAL in `flags`. Every send/recv wrapper in
+//      sys__socket.h defaults `flags` to MSG_NOSIGNAL; send_n()/recv_n() defaulted
+//      theirs to 0 and so OVERRODE send()'s own default on the way through. One
+//      write to a closed peer then killed the process. Measured on Linux AND on
+//      macOS: contrary to folklore, current Darwin DOES define and honour
+//      MSG_NOSIGNAL (0x80000, "do not generate SIGPIPE on EOF"), so the hole is
+//      not Linux-only and sys__socket.h's `#define MSG_NOSIGNAL 0` fallback only
+//      ever fires on an SDK that lacks it (Windows, ancient BSDs).
+//   2. Per descriptor -- SO_NOSIGPIPE, which BSD/macOS offer and Linux does not.
+//      open() and accept_n() set it; the descriptor ADOPTION paths --
+//      socket(socket_type) and operator=(socket_type), which is how
+//      socket::accept() and tcp::listener::accept() produce their socket -- did
+//      not, so the backstop was absent exactly where guard 1 had its hole.
+//
+// Windows has no SIGPIPE; nothing to test there.
+//
+// The two guards are NOT interchangeable and the cases below prove it, measured on
+// macOS 26 (each row is a real build of the four combinations):
+//
+//   fix applied              SendN case   send case   guard case
+//   ----------------------   ----------   ---------   ----------
+//   neither                  SIGPIPE      pass        FAIL
+//   SO_NOSIGPIPE only        SIGPIPE      pass        pass
+//   flags default only       pass         pass        FAIL
+//   both                     pass         pass        pass
+//
+// SO_NOSIGPIPE alone does NOT rescue send_n, because setsockopt(SO_NOSIGPIPE) on a
+// socket whose peer already closed fails with EINVAL -- the backstop can only be
+// armed while the connection is live. So each half of the fix is independently
+// necessary, and each is pinned by a different case here. The `send` case passes in
+// all four rows on purpose: it is the positive control.
+//
+// It has to run in a CHILD process for two reasons: the assertion is "was not
+// killed by a signal", which cannot be observed from inside the victim; and the
+// child must first restore SIGPIPE to SIG_DFL, because when qb is built WITH SSL
+// the OpenSSL initialiser (io/tcp/ssl/init.cpp) installs a process-wide
+// signal(SIGPIPE, SIG_IGN) that masks the whole class. That mask is why this first
+// surfaced under the `feature-gates` preset (QB_WITH_SSL=OFF) -- the test removes
+// it so the coverage does not depend on a build option.
+// ===========================================================================
+
+#if !defined(_WIN32)
+
+namespace {
+
+// Exit codes the child uses to report what happened, all distinct from a signal death.
+enum : int {
+    kChildSurvivedWithError = 0, // the write returned an error: correct
+    kChildSetupFailed       = 3, // could not build the fixture; inconclusive
+    kChildWriteClaimedOk    = 4  // the write to a dead peer reported full success
+};
+
+// Run `body` in a forked child and return its wait(2) status.
+//
+// Every failure of the harness ITSELF must land on kChildSetupFailed rather than on
+// the all-zero status, because a zero status decodes as "exited 0" == the success
+// code. A failed fork() that fell through to waitpid(-1) would otherwise leave
+// status untouched at 0 and the case would pass without ever running.
+template <typename F>
+int
+run_in_child(F &&body) {
+    // WEXITSTATUS is the second byte of the status word on every POSIX platform, so
+    // this is the wait-status encoding of "the child exited with kChildSetupFailed".
+    const int setup_failed_status = kChildSetupFailed << 8;
+
+    const pid_t pid = ::fork();
+    if (pid == 0) {
+        // Undo any inherited SIGPIPE masking (OpenSSL's SIG_IGN, a test harness, a
+        // shell) so the child faces the DEFAULT disposition and the guard under test
+        // is the only thing standing between it and death.
+        ::signal(SIGPIPE, SIG_DFL);
+        ::_exit(body());
+    }
+    if (pid < 0) {
+        ADD_FAILURE() << "fork() failed: " << std::strerror(errno);
+        return setup_failed_status;
+    }
+
+    int   status = 0;
+    pid_t reaped = -1;
+    while ((reaped = ::waitpid(pid, &status, 0)) < 0 && errno == EINTR) {
+    }
+    if (reaped != pid) {
+        ADD_FAILURE() << "waitpid() failed: " << std::strerror(errno);
+        return setup_failed_status;
+    }
+    return status;
+}
+
+// Describe a wait status for the failure message.
+std::string
+describe_status(int status) {
+    if (WIFSIGNALED(status)) {
+        return "killed by signal " + std::to_string(WTERMSIG(status)) + (WTERMSIG(status) == SIGPIPE ? " (SIGPIPE)" : "");
+    }
+    if (WIFEXITED(status)) {
+        return "exited " + std::to_string(WEXITSTATUS(status));
+    }
+    return "did not terminate normally";
+}
+
+// A connected AF_UNIX stream pair, one end closed: the shortest deterministic way to
+// get a "peer has gone" socket with no port, no listener and no timing window. The
+// pair is created by ::socketpair, so the surviving end reaches qb through the
+// descriptor-ADOPTION path -- exactly the path that lacked the guard.
+constexpr int kPeerClosedPayload = 4096;
+
+} // namespace
+
+TEST(SocketErrorPaths, SendNToAClosedPeerReportsAnErrorInsteadOfKillingTheProcess) {
+    const int status = run_in_child([] {
+        int sv[2];
+        if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+            return kChildSetupFailed;
+        }
+        ::close(sv[1]); // the peer is gone
+
+        qb::io::socket sock;
+        sock = sv[0]; // qb takes ownership -> qb owns the guard
+
+        std::vector<char> payload(kPeerClosedPayload, 'x');
+        // Two writes: the first may be absorbed by the send buffer before the FIN is
+        // processed, the second cannot be. Either raises SIGPIPE if unguarded.
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            const int sent = sock.send_n(payload.data(), static_cast<int>(payload.size()), 200ms);
+            if (sent < static_cast<int>(payload.size())) {
+                return kChildSurvivedWithError;
+            }
+        }
+        return kChildWriteClaimedOk;
+    });
+
+    ASSERT_FALSE(WIFSIGNALED(status)) << "send_n() to a peer that closed must return an error, not kill the process "
+                                         "(child "
+                                      << describe_status(status) << ")";
+    EXPECT_NE(WEXITSTATUS(status), kChildSetupFailed) << "socketpair fixture could not be built";
+    EXPECT_EQ(WEXITSTATUS(status), kChildSurvivedWithError)
+        << "send_n() reported full success writing to a closed peer (child " << describe_status(status) << ")";
+}
+
+TEST(SocketErrorPaths, SendToAClosedPeerReportsAnErrorInsteadOfKillingTheProcess) {
+    // The same contract for the single-shot send(), which already defaulted its flags
+    // to MSG_NOSIGNAL. This one passed before the fix as well as after -- it is the
+    // POSITIVE CONTROL that proves the fixture really does produce a closed peer and
+    // that the harness can tell "survived with an error" from "killed": if send() and
+    // send_n() had both died, the fixture would be indicting itself rather than the
+    // default. Keep it: it is what makes the send_n failure attributable.
+    const int status = run_in_child([] {
+        int sv[2];
+        if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+            return kChildSetupFailed;
+        }
+        ::close(sv[1]);
+
+        qb::io::socket sock;
+        sock = sv[0];
+
+        std::vector<char> payload(kPeerClosedPayload, 'x');
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            if (sock.send(payload.data(), static_cast<int>(payload.size())) < 0) {
+                return kChildSurvivedWithError;
+            }
+        }
+        return kChildWriteClaimedOk;
+    });
+
+    ASSERT_FALSE(WIFSIGNALED(status)) << "send() to a peer that closed must return an error, not kill the process "
+                                         "(child "
+                                      << describe_status(status) << ")";
+    EXPECT_NE(WEXITSTATUS(status), kChildSetupFailed) << "socketpair fixture could not be built";
+    EXPECT_EQ(WEXITSTATUS(status), kChildSurvivedWithError)
+        << "send() reported full success writing to a closed peer (child " << describe_status(status) << ")";
+}
+
+#endif // !_WIN32
+
+// Every descriptor-producing path of qb::io::socket must hand back a descriptor that
+// carries the platform guard, not just the ones ::socket() created. On BSD/macOS that
+// guard is observable directly, so assert it on each path rather than only through the
+// behavioural test above -- a missing one is then named, not merely fatal.
+#if defined(SO_NOSIGPIPE) && !defined(__linux__) && !defined(_WIN32)
+TEST(SocketErrorPaths, EveryDescriptorAcquisitionPathCarriesTheSigpipeGuard) {
+    const auto is_guarded = [](const qb::io::socket &s) {
+        int on = 0;
+        return s.get_optval(SOL_SOCKET, SO_NOSIGPIPE, on) == 0 && on != 0;
+    };
+
+    // 1. open() -- always had it.
+    qb::io::socket opened;
+    ASSERT_TRUE(opened.open(AF_INET, SOCK_STREAM, 0));
+    EXPECT_TRUE(is_guarded(opened)) << "open() must set SO_NOSIGPIPE";
+    opened.close();
+
+    // 2. socket(socket_type) -- adoption by construction, e.g. socket::accept().
+    int sv[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
+    {
+        qb::io::socket adopted_by_ctor(sv[0]);
+        EXPECT_TRUE(is_guarded(adopted_by_ctor)) << "socket(socket_type) must set SO_NOSIGPIPE on the adopted fd";
+
+        // 3. operator=(socket_type) -- adoption by assignment, e.g. release_handle() transfer.
+        qb::io::socket adopted_by_assign;
+        adopted_by_assign = sv[1];
+        EXPECT_TRUE(is_guarded(adopted_by_assign)) << "operator=(socket_type) must set SO_NOSIGPIPE on the adopted fd";
+    }
+}
+#endif

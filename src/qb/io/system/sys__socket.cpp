@@ -76,6 +76,49 @@ connect_syscall_in_progress(int err) {
 #endif
 }
 
+// Suppress SIGPIPE for a descriptor this class owns.
+//
+// Writing to a socket whose peer has closed raises SIGPIPE, whose default
+// disposition terminates the process. qb guards that TWICE, deliberately:
+//
+//   1. Per call, via MSG_NOSIGNAL in `flags`. This is the primary guard and the
+//      only one Linux offers, which is why every send/recv wrapper in
+//      sys__socket.h defaults `flags` to MSG_NOSIGNAL. It covers any descriptor,
+//      however acquired -- but only for calls that actually pass the flag, so a
+//      wrapper that defaults `flags` to something else silently disarms it.
+//   2. Per descriptor, via the socket-level SO_NOSIGPIPE, which BSD/macOS offer
+//      and Linux does not. It covers the descriptor whichever call touches it, so
+//      it is the backstop for anything reached outside the wrappers, and the only
+//      guard on an SDK too old to define MSG_NOSIGNAL (where sys__socket.h falls
+//      back to defining it as 0 and guard 1 is inert). It therefore has to be
+//      applied to EVERY descriptor this class takes ownership of, not only the
+//      ones ::socket() produced.
+//
+// Guard 2 is strictly a BACKSTOP and cannot replace guard 1, for a reason that is
+// measured rather than assumed: on macOS, setsockopt(SO_NOSIGPIPE) on a socket
+// whose peer has ALREADY closed fails with EINVAL and the option reads back 0.
+// The option can only be armed while the connection is live, so a descriptor
+// adopted after the fact is beyond its help — whereas MSG_NOSIGNAL, being a
+// property of the call and not the socket, always works. Hence the return value
+// here is deliberately ignored: best effort, on a path where failure is expected
+// and harmless. Do not "improve" this into an error.
+//
+// Windows has no SIGPIPE and neither guard exists there; both collapse to no-ops.
+//
+// This helper is the single place that knows rule 2, so a new descriptor-producing
+// path cannot silently acquire a descriptor without the backstop.
+void
+suppress_sigpipe(socket_type s) {
+#if defined(SO_NOSIGPIPE) && !defined(__linux__) && !defined(_WIN32)
+    if (s != invalid_socket) {
+        int on = 1;
+        ::setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, reinterpret_cast<const char *>(&on), sizeof(on));
+    }
+#else
+    (void) s;
+#endif
+}
+
 } // namespace
 
 int
@@ -402,7 +445,14 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
 socket::socket(void)
     : fd(invalid_socket) {}
 socket::socket(socket_type h)
-    : fd(h) {}
+    : fd(h) {
+    // Adopting a descriptor this class did not create with open(): it still has to
+    // carry the SIGPIPE guard, or a write to a peer that closed kills the process on
+    // BSD/macOS. This is the path socket::accept() and tcp::listener::accept() take
+    // (accept_n() guards its own descriptor); before this, only open()ed and
+    // accept_n()ed sockets were protected and the plain accept() ones were not.
+    suppress_sigpipe(this->fd);
+}
 socket::socket(socket &&right)
     : fd(invalid_socket) {
     swap(right);
@@ -429,6 +479,9 @@ socket::operator=(socket_type handle) {
         // New (externally created) handle: assume the OS default (blocking).
         this->_nonblocking = 0;
 #endif
+        // Same reasoning as the socket(socket_type) constructor: taking ownership
+        // means taking responsibility for the SIGPIPE guard.
+        suppress_sigpipe(this->fd);
     }
     return *this;
 }
@@ -454,16 +507,7 @@ socket::open(int af, int type, int protocol) {
         // A freshly created socket is in blocking mode on Windows.
         this->_nonblocking = 0;
 #endif
-#if defined(SO_NOSIGPIPE) && !defined(__linux__) && !defined(_WIN32)
-        // BSD/macOS: writing to a socket whose peer has closed raises SIGPIPE,
-        // which by default terminates the process. MSG_NOSIGNAL is a no-op there
-        // (defined to 0), so set the socket-level SO_NOSIGPIPE instead. Linux uses
-        // MSG_NOSIGNAL on send(); Windows has no SIGPIPE.
-        if (this->fd != invalid_socket) {
-            int on = 1;
-            ::setsockopt(this->fd, SOL_SOCKET, SO_NOSIGPIPE, reinterpret_cast<const char *>(&on), sizeof(on));
-        }
-#endif
+        suppress_sigpipe(this->fd);
     }
     return is_open();
 }
@@ -621,6 +665,8 @@ socket::listen(int backlog) const {
 
 socket
 socket::accept() const {
+    // The raw descriptor is adopted by socket(socket_type), which applies the
+    // SIGPIPE guard — the same one accept_n() applies to its out-parameter.
     return ::accept(this->fd, nullptr, nullptr);
 }
 int
@@ -632,12 +678,8 @@ socket::accept_n(socket_type &new_sock) const {
         // Check if operation succeeded.
         if (new_sock != invalid_socket) {
             socket::set_nonblocking(new_sock, true);
-#if defined(SO_NOSIGPIPE) && !defined(__linux__) && !defined(_WIN32)
-            // Accepted sockets are created by ::accept (not open()), so apply the
-            // BSD/macOS SIGPIPE suppression here too.
-            int on = 1;
-            ::setsockopt(new_sock, SOL_SOCKET, SO_NOSIGPIPE, reinterpret_cast<const char *>(&on), sizeof(on));
-#endif
+            // Accepted sockets are created by ::accept, not open().
+            suppress_sigpipe(new_sock);
             return 0;
         }
 

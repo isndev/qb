@@ -1082,9 +1082,17 @@ public:
      *         If no error occurs, retval == len,
      *         Oterwise, If retval < len && not_recv_error(get_last_errno()), should
      *close socket.
+     * @remark: `flags` defaults to MSG_NOSIGNAL exactly like send()/sendto(), which
+     *          this forwards to. Defaulting it to 0 instead OVERRODE send()'s own
+     *          default on the way through, so a write to a peer that had closed
+     *          raised SIGPIPE and killed the process -- measured on both Linux and
+     *          macOS. A wrapper must never weaken the default of the primitive it
+     *          forwards to. (On an SDK with no MSG_NOSIGNAL the fallback above makes
+     *          it 0; the socket-level SO_NOSIGPIPE applied at descriptor acquisition
+     *          is the backstop there.)
      */
-    QB__DECL int        send_n(const void *buf, int len, const qb::duration &wtimeout, int flags = 0);
-    QB__DECL static int send_n(socket_type s, const void *buf, int len, qb::duration wtimeout, int flags = 0);
+    QB__DECL int        send_n(const void *buf, int len, const qb::duration &wtimeout, int flags = MSG_NOSIGNAL);
+    QB__DECL static int send_n(socket_type s, const void *buf, int len, qb::duration wtimeout, int flags = MSG_NOSIGNAL);
 
     /**
      * @brief nonblock recv
@@ -1094,9 +1102,11 @@ public:
      *         If no error occurs, retval == len,
      *         Oterwise, If retval < len && not_recv_error(get_last_errno()), should
      *close socket.
+     * @remark: `flags` defaults to MSG_NOSIGNAL to match recv()/recvfrom(), which this
+     *          forwards to. See send_n() for why the default has to agree.
      */
-    QB__DECL int        recv_n(void *buf, int len, const qb::duration &wtimeout, int flags = 0) const;
-    QB__DECL static int recv_n(socket_type s, void *buf, int len, qb::duration wtimeout, int flags = 0);
+    QB__DECL int        recv_n(void *buf, int len, const qb::duration &wtimeout, int flags = MSG_NOSIGNAL) const;
+    QB__DECL static int recv_n(socket_type s, void *buf, int len, qb::duration wtimeout, int flags = MSG_NOSIGNAL);
 
     /**
      * @brief Sends data on this connected socket
