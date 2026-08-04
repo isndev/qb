@@ -116,7 +116,7 @@ After a handshake completes you can introspect the live connection — `get_nego
 
 When a server binds its listening port (`socket::pserve`), the address-reuse option differs by platform. POSIX sets `SO_REUSEADDR` so a restarted listener can rebind a port whose previous connections still linger in `TIME_WAIT`. **Windows does not** — there `SO_REUSEADDR` has hijack semantics (a bind to an in-use port *succeeds* but is silently shadowed by the existing socket, so the new listener never accepts). qb instead sets `SO_EXCLUSIVEADDRUSE` on Windows: an in-use bind fails fast with `WSAEADDRINUSE`, and no other process can hijack the port. Windows already permits rebinding `TIME_WAIT` ports with no option set, so this loses nothing. The behaviour is fully internal and guarded by `#ifdef _WIN32`; no application change is required, but be aware that on Windows a second instance bound to the same port fails at bind rather than starting silently broken.
 
-<!-- src: qb/src/qb/io/system/sys__socket.cpp:208-245 (pserve SO_EXCLUSIVEADDRUSE on _WIN32) -->
+<!-- src: qb/src/qb/io/system/sys__socket.cpp:251-288 (pserve SO_EXCLUSIVEADDRUSE on _WIN32) -->
 
 **Checklist**
 
