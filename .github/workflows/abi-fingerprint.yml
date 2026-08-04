@@ -1,0 +1,115 @@
+# Proves the link-time configuration fingerprint (qb/utility/abi.h) is armed.
+#
+# The fingerprint shipped in 3.0.0 with no automated coverage at all -- `grep -rn
+# 'qb_abi|abi_fingerprint|QB_ABI' tests/ .github/ scripts/` returned nothing -- while being one
+# edit away from doing nothing, silently. It nearly shipped broken exactly that way: on ELF,
+# `__attribute__((used))` alone was defeated by GNU ld's `--gc-sections`, which discards the
+# unreferenced `.data.rel.ro._ZN2qb6detail15abi_fingerprintE` section before it resolves the
+# relocations inside, so every mismatched configuration linked cleanly. Only `retain`
+# (SHF_GNU_RETAIN) restores the failure.
+#
+# That defeat is ELF-only, which is why this job runs on BOTH ubuntu and macos. A macOS-only job
+# would have reported green through the entire near-miss.
+name: abi-fingerprint
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: abi-fingerprint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fingerprint:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ELF. The only platform where --gc-sections can defeat the check, and therefore the
+          # only platform where the SHF_GNU_RETAIN assertion means anything.
+          - name: linux-gcc
+            os: ubuntu-latest
+            cc: gcc-14
+            cxx: g++-14
+          - name: linux-clang
+            os: ubuntu-latest
+            cc: clang
+            cxx: clang++
+          # Mach-O. `used` already implies no_dead_strip here; the assertion is that the
+          # references survive -O2 and -Wl,-dead_strip.
+          - name: macos-clang
+            os: macos-latest
+            cc: clang
+            cxx: clang++
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: ./scripts/ci-install-linux-dependencies.sh --profile build
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: ./scripts/ci-install-macos-dependencies.sh --profile build
+
+      - name: Check the fingerprint is armed on every axis
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: ./scripts/check-abi-fingerprint.sh --jobs 4
+
+      # ── NEGATIVE CONTROL ──────────────────────────────────────────────────────────────────
+      # A gate that has never been seen to fail is not known to be a gate. This plants the exact
+      # defect the check exists to catch -- dropping `retain` from QB_ABI_RETAIN -- and requires
+      # the step above to REJECT it. On ELF the effect is real (--gc-sections discards the
+      # reference array and the mismatch links); on Mach-O `retain` was never load-bearing, so
+      # the control is asserted only where it applies, and the source is restored byte-exact
+      # either way.
+      - name: Negative control - dropping `retain` must fail the check (Linux)
+        if: runner.os == 'Linux'
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cp src/qb/utility/abi.h /tmp/abi.h.orig
+          # Neutralise ONLY the retain attribute; `used` stays, which is precisely the state the
+          # audit measured as silently defeated.
+          perl -0pi -e 's/#define QB_ABI_RETAIN __attribute__\(\(retain\)\)/#define QB_ABI_RETAIN \/* control: retain dropped *\//' src/qb/utility/abi.h
+          if diff -q /tmp/abi.h.orig src/qb/utility/abi.h >/dev/null; then
+            echo "::error::negative control did not modify abi.h - the patch no longer matches"
+            exit 1
+          fi
+          set +e
+          ./scripts/check-abi-fingerprint.sh --jobs 4 > /tmp/control.log 2>&1
+          rc=$?
+          set -e
+          echo "--- control run output (tail) ---"
+          tail -25 /tmp/control.log
+          cp /tmp/abi.h.orig src/qb/utility/abi.h
+          if ! git diff --quiet -- src/qb/utility/abi.h; then
+            echo "::error::failed to restore abi.h byte-exact after the control"
+            git diff -- src/qb/utility/abi.h
+            exit 1
+          fi
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::the ABI fingerprint check PASSED with \`retain\` removed."
+            echo "::error::It is therefore not testing what it claims, on the one platform where"
+            echo "::error::--gc-sections can defeat the fingerprint. Fix the check, not this control."
+            exit 1
+          fi
+          echo "control fired as required: check exited ${rc} with \`retain\` removed, abi.h restored byte-exact"
+
+      - name: Confirm the tree is unmodified
+        run: git diff --exit-code

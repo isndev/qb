@@ -81,9 +81,24 @@
  *   *supported, CI-tested* configuration (`.github/workflows/install-consume.yml` builds
  *   Release, Debug **and** an unset `CMAKE_BUILD_TYPE` against one Release install), and an
  *   unset `CMAKE_BUILD_TYPE` is CMake's **default**. Putting `NDEBUG` in the fingerprint would
- *   turn the default consumer configuration into a hard link failure. The residual defect —
- *   inline bodies that differ only by an `assert()` — is fixed by hoisting those asserts out of
- *   `NDEBUG`, not by breaking the default build.
+ *   turn the default consumer configuration into a hard link failure.
+ *
+ *   The residual is **open, not fixed** — say so here rather than describing a remedy as though it
+ *   had been applied. 39 `assert(` sites and 7 `#if*NDEBUG` blocks still sit inside `inline` and
+ *   template bodies in shipped headers, so two translation units that disagree about `NDEBUG` emit
+ *   two bodies under one vague-linkage symbol and **object order alone** decides which survives.
+ *   Measured with the same two objects on macOS/ld-prime and Linux/GNU ld 2.44:
+ *   `main.o tu_dbg.o` -> `exit=0` (no assert), `tu_dbg.o main.o` -> `exit=134`
+ *   (`async_mutex::unlock`, `sync.h:535`).
+ *
+ *   It stays open because every candidate fix costs more than it saves: compiling the asserts
+ *   unconditionally puts a branch on `schedule_via_current` and `generator<T>::iterator::operator*`
+ *   and redefines what `-DNDEBUG` means for users; an `inline namespace` ABI tag keyed on `NDEBUG`
+ *   re-mangles every symbol per build mode and breaks the very configuration this exclusion exists
+ *   to protect. The one remedy with no release cost — keying the header asserts off the *archive's*
+ *   build mode through a generated installed header — is a design change, not a patch.
+ *   The constraint a user can act on is documented where a user will see it:
+ *   `qb/readme/7_reference/building.md`, "Do not mix `NDEBUG` across translation units".
  * - **`__cpp_rtti`** — `-fno-rtti` cannot compile qb at all (`Event.h` uses `typeid`). Already
  *   loud, at the first translation unit.
  * - **`-std=c++20` vs `-std=c++23`** — measured: identical layout for every public type,

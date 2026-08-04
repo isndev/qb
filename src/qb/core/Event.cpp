@@ -46,13 +46,97 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <type_traits>
 #include <qb/core/Event.h>
 
+#ifndef NDEBUG
+#include <cassert>
+#if defined(__APPLE__) || defined(__linux__) || defined(__unix__)
+#define QB_TYPE_ID_SLOT_STACK_CHECK 1
+#include <pthread.h>
+// Under AddressSanitizer with `detect_stack_use_after_return=1` -- which qb's own `sanitize` test
+// preset sets -- locals do NOT live on the real thread stack. ASan moves them to a heap-allocated
+// "fake stack", so a bounds test against `pthread_get_stackaddr_np` says false for an address that
+// is very much an automatic, and the check below silently stops checking. That was measured, not
+// anticipated: the death test pinning this went from OK to "failed to die" under the sanitize
+// preset alone. ASan exposes the mapping, so ask it rather than guess.
+#if defined(__SANITIZE_ADDRESS__)
+#define QB_TYPE_ID_SLOT_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define QB_TYPE_ID_SLOT_ASAN 1
+#endif
+#endif
+#ifdef QB_TYPE_ID_SLOT_ASAN
+extern "C" void *__asan_get_current_fake_stack(void);
+extern "C" void *__asan_addr_is_in_fake_stack(void *fake_stack, void *addr, void **beg,
+                                              void **end);
+#endif
+#endif
+#endif
+
 namespace qb::detail {
 namespace {
+
+#ifdef QB_TYPE_ID_SLOT_STACK_CHECK
+/// @brief True when @p p lies inside the *calling thread's* stack.
+/// @details Enforcement for the one contract `register_type_id` cannot express in its signature:
+///          the slot it publishes must outlive the process, so it has to come from static
+///          storage. That is documented in `Event.h` ("Storage donated by the caller's
+///          block-scope static") and was still got wrong on the first try — a regression test
+///          added in 3.0.0 passed an automatic and left a dangling node in the registry, which
+///          `--gtest_shuffle` turned into `rc=139` on 3 of 6 seeds while **ASan stayed silent**
+///          (the reader is in the un-instrumented archive, so `stack-use-after-return` never
+///          armed). A signature cannot reject an automatic — there is no storage-duration trait,
+///          and taking the address is the whole point of the API — so the next best thing is to
+///          detect the measured shape at the moment of publication and abort loudly in Debug.
+///
+///          Heap and static storage are both outside the stack range, so this never fires on
+///          them; a heap slot is also wrong but is not the shape that has actually occurred, and
+///          no portable predicate distinguishes heap from static. Compiled out entirely under
+///          `NDEBUG`, and reached only on the cold once-per-type minting path, so it costs the
+///          shipped build nothing. Windows has no `pthread_*` equivalent wired up here (MSVC is
+///          deferred), so the check is simply absent there rather than wrong.
+bool
+address_is_on_this_thread_stack(void const *const p) noexcept {
+#ifdef QB_TYPE_ID_SLOT_ASAN
+    // Ask ASan first: with a fake stack active this is the ONLY thing that can answer, because the
+    // address is in the heap as far as pthread is concerned.
+    if (void *const fake = __asan_get_current_fake_stack())
+        if (__asan_addr_is_in_fake_stack(fake, const_cast<void *>(p), nullptr, nullptr) != nullptr)
+            return true;
+#endif
+    pthread_t const self = pthread_self();
+#if defined(__APPLE__)
+    // Darwin hands back the stack BASE (highest address); the stack is [base - size, base).
+    void *const       base = pthread_get_stackaddr_np(self);
+    std::size_t const size = pthread_get_stacksize_np(self);
+    if (base == nullptr || size == 0)
+        return false;
+    auto const hi = reinterpret_cast<std::uintptr_t>(base);
+    auto const lo = hi - static_cast<std::uintptr_t>(size);
+#else
+    pthread_attr_t attr;
+    if (pthread_getattr_np(self, &attr) != 0)
+        return false;
+    void       *low  = nullptr;
+    std::size_t size = 0;
+    // glibc hands back the LOWEST address; the stack is [low, low + size).
+    int const   rc   = pthread_attr_getstack(&attr, &low, &size);
+    pthread_attr_destroy(&attr);
+    if (rc != 0 || low == nullptr || size == 0)
+        return false;
+    auto const lo = reinterpret_cast<std::uintptr_t>(low);
+    auto const hi = lo + static_cast<std::uintptr_t>(size);
+#endif
+    auto const addr = reinterpret_cast<std::uintptr_t>(p);
+    return addr >= lo && addr < hi;
+}
+#endif /* QB_TYPE_ID_SLOT_STACK_CHECK */
+
 
 /// One slot per representable `TypeId`, so every id a program can hand out has a home and
 /// `_type_names[id]` can never be out of range.
@@ -97,6 +181,14 @@ register_type_id(type_id_slot &slot, char const *const name) noexcept {
     }
 
     if (result == 0) {
+#ifdef QB_TYPE_ID_SLOT_STACK_CHECK
+        // About to publish `&slot` permanently. A slot with automatic storage becomes a dangling
+        // node the moment the caller returns, and every later registration walks it.
+        assert(!address_is_on_this_thread_stack(&slot) &&
+               "qb::detail::register_type_id: the slot is published into a process-wide list and "
+               "must therefore have static storage duration -- this one is on the stack. Use a "
+               "block-scope `static type_id_slot`, as qb::detail::type_id_for<T>() does.");
+#endif
         slot.name = name;
         slot.id   = static_cast<TypeId>(_type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1);
         register_type_name(slot.id, name);

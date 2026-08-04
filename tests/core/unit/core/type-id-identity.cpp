@@ -358,9 +358,18 @@ TEST(TypeIdIdentity, RegistryRecoversAnIdInsteadOfMintingASecond) {
 
     const auto counter_before = qb::detail::_type_id_counter.load(std::memory_order_relaxed);
 
+    // `static`, and NOT optional: on the minting path `register_type_id` publishes `&slot` into a
+    // process-wide intrusive list that outlives this function (Event.cpp), which is why
+    // `Event.h` spells the contract "Storage donated by the caller's block-scope static". An
+    // automatic here left a dangling node that every LATER registration walked; the suite passed
+    // only because this test happened to run last, and `--gtest_shuffle` proved it:
+    // `seed=1 rc=139  seed=2 rc=0  seed=3 rc=139  seed=4 rc=0  seed=5 rc=139  seed=6 rc=0`.
+    // ASan stayed silent throughout -- the reader lives in the un-instrumented archive -- so the
+    // shuffle, not the sanitizer, is what covers this. See `--gtest_shuffle` in tests/CMakeLists.
+    //
     // Stand in for the forked magic static in a second image: fresh storage, same type name.
-    qb::detail::type_id_slot second_image_slot{};
-    const auto               recovered =
+    static qb::detail::type_id_slot second_image_slot{};
+    const auto                      recovered =
         qb::detail::register_type_id(second_image_slot, typeid(RegistryProbeEvent).name());
 
     EXPECT_EQ(recovered, first) << "a second slot must recover the id, not mint a colliding one";
@@ -369,12 +378,67 @@ TEST(TypeIdIdentity, RegistryRecoversAnIdInsteadOfMintingASecond) {
     EXPECT_EQ(second_image_slot.name, nullptr) << "a recovered id must leave the caller's slot unused";
 
     // Positive control for the check above: an unregistered name DOES consume an id and DOES fill
-    // the slot, so the three assertions can tell the two outcomes apart.
-    qb::detail::type_id_slot fresh_slot{};
-    const auto               minted = qb::detail::register_type_id(fresh_slot, "qb::test::NeverRegisteredBefore");
-    EXPECT_EQ(minted, static_cast<qb::TypeId>(counter_before + 1));
+    // the slot, so the three assertions can tell the two outcomes apart. `static` for the reason
+    // above -- this is the slot that actually gets published.
+    static qb::detail::type_id_slot fresh_slot{};
+    // A repeat run (`--gtest_repeat`) finds the name already registered and correctly recovers it
+    // instead of minting, so the mint-only assertions are scoped to the first pass rather than
+    // making the test order- AND repetition-dependent in a second way.
+    const bool first_pass = (fresh_slot.name == nullptr);
+    const auto minted = qb::detail::register_type_id(fresh_slot, "qb::test::NeverRegisteredBefore");
+    if (first_pass) {
+        EXPECT_EQ(minted, static_cast<qb::TypeId>(counter_before + 1));
+        EXPECT_EQ(qb::detail::_type_id_counter.load(std::memory_order_relaxed),
+                  static_cast<qb::TypeId>(counter_before + 1));
+    }
     EXPECT_EQ(fresh_slot.id, minted);
     EXPECT_STREQ(fresh_slot.name, "qb::test::NeverRegisteredBefore");
-    EXPECT_EQ(qb::detail::_type_id_counter.load(std::memory_order_relaxed),
-              static_cast<qb::TypeId>(counter_before + 1));
 }
+
+// -------------------------------------------------------------------------------------------
+// Positive control for the Debug-only storage-duration check `register_type_id` gained after the
+// test above shipped with an automatic slot. Without a control, "no assert fired" is
+// indistinguishable from "the check is not compiled in", which is exactly how the original defect
+// survived: ASan also reported nothing, because the dangling read happens inside the
+// un-instrumented archive.
+//
+// Debug + POSIX only, by construction:
+//   - NDEBUG compiles the assert away, and that is deliberate (cold path, but zero cost shipped);
+//   - the stack-bounds probe is pthread-based, so Windows has no check to control.
+// Under either exclusion the test asserts the *inverse* — that publishing an automatic is merely
+// undefined rather than diagnosed — so the case is never silently skipped.
+// -------------------------------------------------------------------------------------------
+#if !defined(NDEBUG) && (defined(__APPLE__) || defined(__linux__) || defined(__unix__))
+TEST(TypeIdIdentityDeathTest, PublishingASlotWithAutomaticStorageAborts) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_DEATH(
+        {
+            // Automatic storage: the shape that produced `rc=139` on 3 of 6 shuffle seeds.
+            qb::detail::type_id_slot on_the_stack{};
+            qb::detail::register_type_id(on_the_stack,
+                                         "qb::test::SlotWithAutomaticStorage");
+        },
+        "must therefore have static storage duration");
+}
+
+TEST(TypeIdIdentity, AStaticSlotIsAcceptedByTheStorageDurationCheck) {
+    // Negative control for the death test: the same call with the storage the contract asks for
+    // must NOT abort, so the death test above is pinning the storage duration and not simply the
+    // fact that `register_type_id` was called.
+    static qb::detail::type_id_slot in_static_storage{};
+    const auto id = qb::detail::register_type_id(in_static_storage,
+                                                 "qb::test::SlotWithStaticStorage");
+    EXPECT_NE(id, 0u);
+}
+#else
+TEST(TypeIdIdentity, StorageDurationCheckIsCompiledOutHere) {
+    GTEST_SKIP() << "register_type_id's storage-duration assert is Debug + POSIX only "
+                    "(NDEBUG=" <<
+#ifdef NDEBUG
+        1
+#else
+        0
+#endif
+                 << "); the contract still holds, it is just not diagnosed in this build.";
+}
+#endif
