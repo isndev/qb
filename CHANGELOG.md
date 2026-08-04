@@ -70,6 +70,51 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   implementation they already used); Debug builds change container implementation, so a debugger's
   `std::unordered_map` pretty-printer no longer applies to these two aliases. Both are node-based:
   references and pointers to elements survive a rehash, as before.
+- **BREAKING — `qb::Event::id_type` is now `qb::EventId` (a `uint16_t`) in *every* build mode.**
+  It used to be `EventId` under `NDEBUG` and `const char *` otherwise, and `Event::type_to_id<T>()`
+  changed return type with it. That is the same defect as the `qb::unordered_map` entry above, on
+  the type that keys event routing: the header put `id` at offset 6 (2 bytes) in Release and offset
+  8 (8 bytes, 8-aligned) in Debug, so `dest`/`source` sat at bytes 8/12 versus 16/20. Cross-core
+  events are **memcpy-relocated** — `VirtualCore` reinterprets the wire buffer straight to
+  `Event *` — so a consumer compiled with the other `NDEBUG` than the installed `libqb-core` read
+  `dest` out of the payload and routed to a garbage `ActorId`. It did not crash: measured
+  end-to-end, a Debug consumer against a Release libqb-core compiled, linked, reported the same
+  `sizeof(qb::Event)` (64, unchanged in every mode) and delivered **0 of 10** events, silently.
+  Release builds are byte-for-byte unaffected: the enqueue site `Pipe::push<T>()` and the
+  steady-state dispatch loop of `VirtualCore::__receive_events__` are instruction-for-instruction
+  identical to 2.6. Debug gets *faster*, not slower: the router key stops being a `const char *`,
+  so `std::hash<const char *>` — a real call chain at `-O0` — becomes identity hashing. Measured
+  directly on the dispatch lookup at `-O0` over a 211-type table (the real event-type count in this
+  repo), 9 interleaved rounds: the 16-bit key is faster in **9 of 9**, median −51 %. At engine level
+  that is −11 % ns/event on `messaging-api-oneway`, measured during the evaluation that recommended
+  this change (`dev/analysis/EVENT-ID-ABI-3.0.md` §1) rather than re-derived here. Debug also
+  regains 48 bytes of first-bucket payload capacity where it had 40.
+
+  **What breaks, and only in Debug**, while a Release-only CI stays green: code that stored an
+  `Event::id_type` in a `const char *`, printed it as a string, or wrapped it in its own
+  `#ifdef NDEBUG`. Fix by using the id as the 16-bit integer it now is, and by taking the name from
+  the new API below. See [the migration guide](./readme/6_guides/migration_guide.md#part-4--eventid_type-is-now-one-type-in-every-build-mode).
+- **`qb::Event::type_to_name<T>()` and `qb::event_type_name(id)`** replace the readable name that
+  the Debug-only `const char *` id used to provide by *being* the name. `type_to_name<T>()` returns
+  `typeid(T).name()` (a link-time constant, Itanium-mangled — exactly what Debug printed before);
+  `event_type_name(id)` reverse-resolves a runtime `Event::getID()` through a side registry filled
+  when the id is assigned, returning `"<unregistered>"` for an id no type owns. Both are available
+  in **every** build mode, so Release log lines gain a name they never had:
+  `event[41]` → `event[N2qb9KillEventE#41]`. The registry is a direct-indexed table with one slot
+  per `TypeId`: O(1), no allocation, no mutex, and nothing on a routing path reads it.
+- **BREAKING — `qb::type_id<T>()`, `qb::Event::type_to_id<T>()` and `qb::detail::type_id_for<T>()`
+  now require `T` to be a complete type in every build mode.** They reach `typeid(T)`
+  unconditionally (that is what fills the name registry). Compiled against the 2.6 headers, both
+  `NDEBUG` settings: `qb::type_id<T>()` — the path `ServiceActor<Tag>` and `getServiceId<Tag>()` go
+  through — accepted an incomplete `T` in **both** modes, so this is a new error everywhere, not a
+  Debug-only surprise. (`Event::type_to_id<T>()` already rejected one, but only in Debug, where it
+  called `typeid(T).name()` directly.) Nothing in qb, qbm or the examples breaks — every
+  `ServiceActor` tag here is defined — but the documented spelling
+  `class S : public qb::ServiceActor<struct MyTag>` **stops compiling**: an elaborated-type-specifier
+  declares `MyTag` without defining it. Write `struct MyTag {};` first. The paths that newly require
+  completeness are the ones that never construct or size `T`: `ServiceActor<Tag>`,
+  `Actor::registerIndex<Tag>` / `getServiceId<Tag>`, `Actor::require<T>` / `is<T>`,
+  `qb::require<T>`, `ActorProxy::getType<T>`, and `router::*::unsubscribe<T>`.
 - **New configure-time coherence gate: `QB_ABI_UNORDERED_MAP`.** `cmake/qbConfig.cmake` now
   publishes a token naming which implementation those aliases resolve to, and a prebuilt qbm module
   records the value it was compiled against. `find_package(qbm-<mod> CONFIG REQUIRED)` fails, naming

@@ -93,13 +93,60 @@ jobs:
           #include <qb/json.h>
           #include <qb/system/container/unordered_map.h>
           #include <qb/system/container/unordered_set.h>
+          #include <atomic>
+          #include <cstddef>
+          #include <cstdint>
           #include <cstdio>
+          #include <cstring>
           // The compiled libqev was built with EV_MULTIPLICITY=1. If the generated config header
           // does not reach this TU, qev.h silently defaults it to 4 and every qev_* prototype
           // disagrees with libqev.a. qb's headers #error on it; assert here too.
           static_assert(EV_MULTIPLICITY == 1, "qev config header did not reach the consumer");
+          // Cross-core delivery across the ABI boundary. Events are memcpy-relocated between
+          // cores, so if the consumer's view of the qb::Event header disagrees with the one
+          // libqb-core was compiled with, `dest` is read out of the payload and delivery
+          // silently stops -- no crash, no diagnostic, same sizeof(qb::Event). That is exactly
+          // what NDEBUG-dependent public types used to cause, twice, and neither was visible to
+          // a job that built the consumer with the same build type as the library.
+          static constexpr int kMessages = 10;
+          static std::atomic<int> g_received{0};
+          struct Ping : qb::Event { std::uint32_t seq; explicit Ping(std::uint32_t s) : seq(s) {} };
+          class Receiver : public qb::Actor {
+          public:
+            qb::io::async::task<bool> onInit() override { registerEvent<Ping>(*this); co_return true; }
+            void on(const Ping &e) {
+              if (e.seq < (std::uint32_t) kMessages) g_received.fetch_add(1, std::memory_order_relaxed);
+              if (e.seq + 1 == (std::uint32_t) kMessages) broadcast<qb::KillEvent>();
+            }
+          };
+          class Sender : public qb::Actor {
+            qb::ActorId _peer;
+          public:
+            explicit Sender(qb::ActorId peer) : _peer(peer) {}
+            qb::io::async::task<bool> onInit() override {
+              for (int i = 0; i < kMessages; ++i) push<Ping>(_peer, (std::uint32_t) i);
+              co_return true;
+            }
+          };
+          // The header offsets a mismatched consumer got wrong, read back through the PUBLIC
+          // accessors out of a known byte pattern -- the same thing the transport does.
+          static int abi_probe() {
+            struct Probe : qb::Event { std::uint32_t payload; };
+            Probe probe{}; unsigned char wire[sizeof(Probe)];
+            for (std::size_t i = 0; i < sizeof(wire); ++i) wire[i] = (unsigned char) i;
+            std::memcpy((void *) &probe, wire, sizeof(Probe));
+            std::uint32_t dest{}, src{}, first{}; std::uint16_t id{};
+            std::memcpy(&dest, wire + 8, 4); std::memcpy(&src, wire + 12, 4);
+            std::memcpy(&first, wire + 16, 4); std::memcpy(&id, wire + 6, 2);
+            const bool ok = (std::uint32_t) probe.getDestination() == dest
+                         && (std::uint32_t) probe.getSource() == src
+                         && (std::uint32_t) probe.getID() == id
+                         && probe.payload == first;
+            std::printf("abi: sizeof(Event)=%zu sizeof(id_type)=%zu %s\n",
+                        sizeof(qb::Event), sizeof(qb::Event::id_type), ok ? "OK" : "MISMATCH");
+            return ok ? 0 : 1;
+          }
           int main() {
-            qb::Main main; (void) main.core(0);
             qb::unordered_map<int, int> um; um[1] = 2;
             qb::unordered_set<int> us; us.insert(3);
             auto id = qb::generate_random_uuid();
@@ -107,13 +154,35 @@ jobs:
             std::printf("ev=%d.%d map=%d set=%d uuid=%zu json=%d\n",
                         qev_version_major(), qev_version_minor(), um[1], (int) us.count(3),
                         uuids::to_string(id).size(), (int) j["k"]);
+            const int abi = abi_probe();
+            qb::Main engine;
+            auto rid = engine.addActor<Receiver>(1);
+            engine.addActor<Sender>(0, rid);
+            engine.start(); engine.join();
+            const int got = g_received.load(std::memory_order_relaxed);
+            std::printf("cross-core delivery: %d/%d  event=%s\n", got, kMessages,
+                        qb::event_type_name(qb::Event::type_to_id<Ping>()));
+            if (abi != 0 || got != kMessages) { std::printf("FAIL\n"); return 1; }
+            std::printf("PASS\n");
             return 0;
           }
           EOF
-          cmake -S . -B b -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/_prefix"
-          cmake --build b --parallel
-          ./b/consumer
+          # THE point of the matrix: one installed (Release) qb, three consumer build types.
+          # `unset` is CMake's DEFAULT and defines no NDEBUG -- it is the configuration the
+          # single Release-consumer version of this job could never have exercised, and the one
+          # that caught the qb::unordered_map layout split.
+          for bt in Release Debug unset; do
+            echo "::group::consumer CMAKE_BUILD_TYPE=${bt}"
+            args=""
+            [ "${bt}" = "unset" ] || args="-DCMAKE_BUILD_TYPE=${bt}"
+            rm -rf "b-${bt}"
+            # shellcheck disable=SC2086
+            cmake -S . -B "b-${bt}" -G Ninja ${args} \
+              -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/_prefix"
+            cmake --build "b-${bt}" --parallel
+            "./b-${bt}/consumer" || { echo "::error::consumer failed with CMAKE_BUILD_TYPE=${bt} against a Release-installed qb"; exit 1; }
+            echo "::endgroup::"
+          done
 
       # ── Mode 2: FetchContent, and the standard used to compile the CONSUMER ──
       # Regression guard for isndev/qb#9: embedding qb must not drag the parent's

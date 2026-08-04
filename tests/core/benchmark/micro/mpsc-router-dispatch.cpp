@@ -60,12 +60,11 @@ namespace {
 using ::EventBucket; // EventBucket is declared in the GLOBAL namespace (qb/utility/prefix.h), not qb::
 
 // Minimal routable event (the engine event ABI surface `qb::router::memh` consults: id + dest).
+// The routing key mirrors `qb::Event::id_type`, which is `qb::EventId` in EVERY build mode since
+// 3.0 — this struct used to carry its own `#ifdef NDEBUG` copy of the old split, which would now
+// have it benchmarking a representation the framework no longer uses.
 struct BenchEvt {
-#ifdef NDEBUG
-    using id_type = qb::EventId;
-#else
-    using id_type = const char *;
-#endif
+    using id_type         = qb::EventId;
     using id_handler_type = qb::ActorId;
 
     std::uint16_t bucket_size = 1;
@@ -76,11 +75,7 @@ struct BenchEvt {
     template <typename T>
     [[nodiscard]] static id_type
     type_to_id() noexcept {
-#ifndef NDEBUG
-        return typeid(T).name();
-#else
         return qb::detail::type_id_for<T>();
-#endif
     }
 
     [[nodiscard]] id_type

@@ -264,7 +264,7 @@ protected:
     /**
      * @brief Register a service index
      *
-     * @tparam Tag Type tag for the service
+     * @tparam Tag Type tag for the service; must be a **complete** type (reaches `typeid(Tag)`)
      * @return ServiceId The service ID
      * @private
      */
@@ -1727,7 +1727,10 @@ public:
  * @class ServiceActor
  * @ingroup Actor
  * @brief SingletonActor base class, ensuring one instance per VirtualCore per Tag.
- * @tparam Tag A unique struct Tag to identify the service type.
+ * @tparam Tag A unique, **complete** struct Tag identifying the service type. Write
+ *             `struct MyTag {};` first: `ServiceActor<struct MyTag>` only *declares* the tag,
+ *             and since 3.0 the service index reaches `typeid(Tag)`, so an incomplete tag is a
+ *             compile error in every build mode.
  * @details
  * ServiceActor is a special actor where DerivedActor
  * must define a unique service index by Tag.\n
@@ -2136,7 +2139,7 @@ using actor = Actor;
  * @typedef service_actor
  * @brief Alias for the ServiceActor template class
  * @details Provided for naming consistency with other lowercase aliases in the framework
- * @tparam Tag A unique struct Tag to identify the service type
+ * @tparam Tag A unique, **complete** struct Tag identifying the service type (see `ServiceActor`)
  * @ingroup Actor
  */
 template <typename Tag>

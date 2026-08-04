@@ -180,7 +180,8 @@ bool
 SharedCoreCommunication::send(CoreId const source_index, Event const &event) const noexcept {
 #ifndef NDEBUG
     if (unlikely(event_points_into_itself(event))) {
-        LOG_CRIT("Event[" << event.getID() << "] from " << event.getSource() << " to " << event.getDestination()
+        LOG_CRIT("Event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
+                          << event.getDestination()
                           << " holds a pointer into its own storage, so it cannot be delivered cross-core: "
                              "the transport relocates events with memcpy and never runs the source destructor. "
                              "Use qb::string<N> for inline text, or keep the data on the heap behind a "

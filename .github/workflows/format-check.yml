@@ -25,6 +25,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Runs before the LLVM install so it reports first and needs no toolchain: it is a pure
+      # Python read of the shipped headers. Scans the WHOLE tree rather than the diff -- the
+      # defect it guards (a build-mode macro selecting a public type, member or alignment) can
+      # be introduced by a header this PR does not touch but re-includes.
+      - name: ABI - no build-mode macro may select a type, member or alignment
+        run: ./scripts/check-abi-macro-split.py src
+
       - name: Install LLVM tools
         run: |
           ./scripts/ci-install-linux-dependencies.sh --profile format-check
