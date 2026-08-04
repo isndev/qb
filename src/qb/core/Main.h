@@ -664,4 +664,86 @@ public:
 using engine = Main;
 
 } // namespace qb
+
+// ============================================================================================
+// Main -- TEMPLATE BODIES.  TEMPLATES ONLY BELOW THIS LINE.
+//
+// Actor creation, core initialization and system configuration: the definitions of the member
+// templates declared by `CoreInitializer`, `CoreInitializer::ActorBuilder` and `Main` above.
+// They shipped as `core/Main.tpp` through 2.6.0 and moved here in 3.0 -- `.h` is now the only
+// header extension in qb.
+//
+// The `#include "Actor.h"` below is deliberate in BOTH its presence and its position.
+//   * Presence: the bodies need `TActorFactory` (Actor.h:2095), the `service_type` concept
+//     (Actor.h:110) and `Service` (Actor.h:1722). Main.h's own DECLARATIONS need none of
+//     them -- `IActorFactory` is forward-declared at Main.h:49 -- which is why this header
+//     still compiles alone and why the include was never needed above.
+//   * Position: at the tail, not in the include block at the top. Main.h is one of the most
+//     densely cited headers in the readme book (~18 `Main.h:NNN` citations across five
+//     pages); hoisting one line into the include block would shift every one of them and
+//     force a re-point-by-offset, which is exactly how a wrong citation gets propagated.
+//     Appending shifts nothing.
+//   * NOT VirtualCore.h. Main.tpp used to pull it, and nothing here needs it: `Main::addActor`
+//     goes through `core(cid)`, a `CoreInitializer` declared above. Adding it would also make
+//     `<qb/core/Main.h>` alone drag <windows.h>/WIN32_LEAN_AND_MEAN/NOMINMAX into every TU,
+//     and it would close a cycle (VirtualCore.h:64 includes this header).
+//
+// TEMPLATES ONLY, and the reason outlives the extension: this header is reached both by
+// libqb-core's single amalgamated TU and by every consumer TU, and the include guard stops
+// double inclusion only WITHIN one TU. Every definition below is a template, which gives it
+// vague linkage; one non-template, non-`inline` definition added here is an instant duplicate
+// symbol between the archive and any consumer object. `inline` is not the workaround -- it
+// leaves N definitions of one entity in the program. Anything non-template belongs in Main.cpp.
+// ============================================================================================
+#include "Actor.h"
+
+namespace qb {
+class Main;
+
+template <typename _Actor, typename... _Args>
+ActorId
+CoreInitializer::addActor(_Args &&...args) noexcept {
+    ActorId id = ActorId::NotFound;
+    // C++20: use service_type concept instead of std::is_base_of_v
+    if constexpr (service_type<_Actor>) {
+        if (_registered_services.find(_Actor::ServiceIndex) == _registered_services.end()) {
+            _registered_services.insert(_Actor::ServiceIndex);
+            id = ActorId(_Actor::ServiceIndex, _index);
+        } else {
+            QB_LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
+                                                                     << " in Core(" << _index << ")"
+                                                                     << " : Already registered");
+            return id;
+        }
+    } else {
+        if (unlikely(_next_id == std::numeric_limits<ServiceId>::max())) {
+            QB_LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
+                                                             << " in Core(" << _index << ")"
+                                                             << " : Max number of Actors reached");
+            return id;
+        }
+        id = ActorId(_next_id++, _index);
+    }
+    _actor_factories.push_back(std::make_unique<TActorFactory<_Actor, _Args...>>(id, std::forward<_Args>(args)...));
+    return id;
+}
+
+template <typename _Actor, typename... _Args>
+CoreInitializer::ActorBuilder &
+CoreInitializer::ActorBuilder::addActor(_Args &&...args) noexcept {
+    auto id = _initializer.template addActor<_Actor, _Args...>(std::forward<_Args>(args)...);
+    if (!id.is_valid())
+        _valid = false;
+
+    _ret_ids.push_back(id);
+    return *this;
+}
+
+template <typename _Actor, typename... _Args>
+ActorId
+Main::addActor(CoreId const cid, _Args &&...args) {
+    return core(cid).addActor<_Actor>(std::forward<_Args>(args)...);
+}
+
+} // namespace qb
 #endif // QB_MAIN_H
