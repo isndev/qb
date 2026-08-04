@@ -68,14 +68,17 @@ BUILD_DIR="${BUILD_DIR:-${TMPDIR:-/tmp}/qb-installed-headers.$$}"
 # run fails. An exclusion that outlives the file it names is how a real header quietly
 # leaves the gate's scope after a rename.
 # ---------------------------------------------------------------------------------------
+# 3.0 emptied the "by-design fragment" category: qbm-http's router.tpp and qbm-pgsql's
+# resultset.inl / transaction_coro.inl were each a set of bodies that could not compile alone,
+# and all three were merged into the header that completes them. Nothing shipped is a fragment
+# any more, which is why only a vendored table and one dead file remain below.
 EXCLUDED_HEADERS="
-qbm/pgsql/transaction_coro.inl     by-design fragment: bodies for Transaction, completed by transaction.h
-qbm/pgsql/resultset.inl            by-design fragment: bodies for resultset, completed by resultset.h
 qb/vendor/qev/qev_vars.h vendored fragment: libev's X-macro variable table, has no standalone meaning
 qbm/pgsql/field_handler.h DEAD AND BROKEN, NOT a missing include -- it redefines resultset::row::to,
-                          which resultset.inl already defines, and calls a ParamUnserializer API that
-                          does not exist. Nothing includes it. Needs a maintainer decision (reconcile
-                          with resultset.inl, or retire), not an #include. See TEMPLATE-LINKAGE-AUDIT.
+                          which the merged tail of resultset.h already defines, and calls a
+                          ParamUnserializer API that does not exist. Nothing includes it. Needs a
+                          maintainer decision (reconcile with resultset.h, or retire), not an
+                          #include. See TEMPLATE-LINKAGE-AUDIT.
 "
 
 # qb/io/async/epoll.h is installed unconditionally but needs <sys/epoll.h>. Excluding it
