@@ -392,8 +392,11 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `push<E>` and `registerEvent<E>` so the new contract is asserted by a TU whose only qb include
   is that header, rather than only through the four umbrellas.
 
-  `install(... PATTERN "*.tpp")` **stays**: the rule is shared with `qb_register_module()` and
-  `qbm-http` still ships `qbm/http/routing/router.tpp`. It is the last `.tpp` in the tree.
+  `install(... PATTERN "*.tpp")` **stays**, but as a net rather than a dependency: `qbm-http`'s
+  `routing/router.tpp` — the last `.tpp` in the tree — was merged into `router.h` in the same
+  release, so the pattern now matches nothing. It is kept because the rule is shared with
+  `qb_register_module()` and the failure it prevents is silent at configure *and* install time,
+  surfacing only in a downstream consumer's first translation unit.
 
 - **The unprefixed socket-portability macros, from the default configuration.** `closesocket`,
   `ioctlsocket`, `SD_RECEIVE`, `SD_SEND`, `SD_BOTH`, `SD_NONE`, `FD_TO_SOCKET` and
