@@ -37,6 +37,7 @@
 #include <vector>
 #include "task.h"
 #include "scheduler.h"
+#include "utils.h" // coro_scheduler() — make_shared_task() below spawns through it
 
 namespace qb::io::async {
 

@@ -27,6 +27,7 @@
 
 #include <vector>
 #include <qb/system/container/unordered_map.h>
+#include <qb/utility/type_traits.h> // qb::has_on — the two dispatch if-constexpr below test it
 #include <qb/uuid.h>
 #include <qb/io/async/event/extracted.h>
 #include <qb/io/config.h>

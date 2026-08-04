@@ -104,6 +104,31 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 - `qb-io-test-unit-crypto-nossl-core`, covering the OpenSSL-free members of `qb::crypto`.
   Deliberately ungated — every other crypto test is `REQUIRES ssl` and therefore unregistered without
   OpenSSL, so this is the only crypto coverage a `QB_WITH_SSL=OFF` build gets.
+- **`scripts/check-installed-headers.sh` — installed-header self-containment + entry-point LINK
+  gate**, wired into `install-consume.yml` (the `qb` tree, under clang) and into the superproject's
+  `package-consume.yml` (the `qbm` tree). Two phases against an **installed prefix**:
+  *(1)* every installed header compiled **alone**, one TU whose entire content is
+  `#include <that/header.h>`; *(2)* every public entry point **linked** into an executable that
+  ODR-uses its headline API (`scripts/installed-entry-points/`, one header per file). Phase 2 exists
+  because `-c` and `-fsyntax-only` both pass on a header that declares a member template no reachable
+  TU defines — only the linker says so. The job that existed before this could see neither class: it
+  compiles one TU, and that TU includes `<qb/actor.h>` **and** `<qb/main.h>`, the one combination in
+  which both `qb::Actor::push<E>` and `forget_frame_if_current` resolve. It found 18 headers and
+  4 entry points, all fixed below.
+  `--hostile` adds the consumer-side half: `-I` instead of the `-isystem` CMake puts on an IMPORTED
+  target, plus `-Wall -Wextra -Werror` and, on clang, `-Wundefined-func-template`. On qb the
+  `-isystem` is not CMake's automatic behaviour but an explicit
+  `INTERFACE_SYSTEM_INCLUDE_DIRECTORIES` in the export (`qb::nlohmann`, whose include dir *is* qb's
+  whole public include root), so `IMPORTED_NO_SYSTEM` alone changes nothing — the script clears all
+  three and then **asserts** the generated command line really says `-I`.
+  Every `--tree` carries an anti-vacuous floor, and the excluded-header list is checked against the
+  prefix so an exclusion cannot outlive the file it names.
+- **`scripts/check-installed-headers-selftest.sh`** — negative controls for the above, run by CI.
+  Plants one defect at a time in a **copy** of the prefix (missing include; undefined function
+  template; a link-only failure that leaves phase 1 at 0 failures; a `-Wall` finding only `-I` can
+  see; an impossible floor; a stale exclusion; an empty entry dir), requires a rejection, restores,
+  and verifies the restore is byte-exact by sha256. A control the compiler structurally cannot run
+  is reported `N/A` and counted separately — never as a pass.
 
 ### Changed
 
@@ -429,6 +454,36 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `#error` instead of reporting a missing file.
 - `<qb/uuid.h>` included `<qb/vendor/uuid/include/uuid.h>` *above* its own `QB_UUID_H` include guard,
   leaving the vendored include outside the guard it was meant to sit behind.
+- **`<qb/main.h>` alone could not link `qb::Actor::push<E>` / `qb::Pipe::push<E>`.** `Main.tpp` reaches
+  a complete `qb::Actor` with every member template *declared*, and the bodies live in `Actor.tpp`,
+  which only `qb/actor.h`, `qb/patterns.h` and `qb/core/patterns.h` pulled. A TU whose only qb include
+  was the engine umbrella compiled clean and failed at link. `qb/main.h` now pulls `core/Actor.tpp` +
+  `core/Pipe.tpp`, the same position and for the same reason as `qb/actor.h:15`.
+  `<qb/core/Actor.h>` and `<qb/core/VirtualCore.h>` still do **not** carry the template bodies, and
+  that stays deliberate: `Actor.tpp` needs a complete `qb::VirtualCore`, and `VirtualCore.h` is what
+  drags `<windows.h>`, `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU. The umbrellas are the entry
+  points; the class headers are not.
+- **`<qb/io/async/coroutine/task.h>` alone could not destroy a `task<T>`.**
+  `defer_frame_destruction` / `forget_frame_if_current` were declared here **without `inline`** and
+  defined `inline` in `scheduler.h`: a formal ODR mismatch between TUs that see one declaration and
+  TUs that see both, and it silenced the `-Wundefined-inline` that would have said so. Both are now
+  `inline`, and task.h pulls `scheduler.h` from its **tail** — after `task<T>` is complete, inside the
+  guard, which is the one position that works in both include orders. `inline` alone was necessary but
+  **not** sufficient: an inline function must be *defined* in every TU that uses it. `~task<T>` is
+  called by every consumer that owns a task, and `generator.h` hit the same wall.
+- **18 installed headers were not self-contained** — each compiled only because something else came
+  first, and each now carries the one include it needs, named in a comment:
+  `coroutine/cancellation.h` (`combinators.h` — `when_any` / `timeout_error`),
+  `coroutine/channel.h` (`<any>`), `coroutine/generator.h` (`task.h`, `<vector>`, `<memory>`),
+  `coroutine/shared_task.h` (`utils.h` — `coro_scheduler()`), `coroutine/scope.h` and
+  `coroutine/stream.h` (`sync.h` — `semaphore`), `coroutine/sync.h` and `async/tcp/server.h`
+  (transitively), `async/io_handler.h` (`<qb/utility/type_traits.h>` — `qb::has_on`),
+  `system/container/ring_buffer.h` (`<cstddef>`, `<iterator>`), and
+  `core/patterns/{discovery,supervisor}.h` (`Actor.tpp` — both instantiate `push<E>` / `push_to<E>` in
+  a non-dependent context).
+  `ring_buffer.h` and `generator.h` are **libstdc++-only**: libc++ supplies `ptrdiff_t` and
+  `std::shared_ptr` transitively and libstdc++ does not, so no amount of macOS testing could have
+  found them. Both came out of the Linux leg.
 
 ## [2.6.0] - 2026-06-29
 

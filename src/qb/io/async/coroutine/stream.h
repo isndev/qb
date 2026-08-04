@@ -25,6 +25,7 @@
 
 #include "task.h"
 #include "channel.h"
+#include "sync.h" // semaphore — the bounded stream operators below throttle through one
 #include <qb/system/time.h> // qb::duration
 #include <chrono>
 #include <cstddef>

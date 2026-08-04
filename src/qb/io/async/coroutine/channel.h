@@ -30,6 +30,7 @@
 // thread under the cooperative scheduler. "Multi-Producer" here means multiple
 // coroutines; they are all on the same thread and never run concurrently.
 #include <qb/system/time.h> // qb::duration
+#include <any>              // std::any / std::any_cast — the type-erased slot in every waiter
 #include <chrono>
 #include <deque>
 #include <exception>

@@ -62,6 +62,23 @@ namespace detail {
  * application registers strictly more than `std::numeric_limits<TypeId>::max()`
  * (65535) distinct event/service types — several orders of magnitude beyond
  * any realistic codebase.
+ *
+ * @warning HAZARD, UNGUARDED: that boundary is enforced by THIS COMMENT and nothing else.
+ *          `TypeId` is `uint16_t` (ActorId.h:67), so `fetch_add` wraps *inside* the atomic —
+ *          no assert, no saturation, no diagnostic, and the wrap lands on the framework's own
+ *          reserved ids. Measured, by forcing the counter to 65534:
+ *
+ *              type_id<TA1> = 65535
+ *              type_id<TA2> = 0      <- 65536 narrowed onto the 'unregistered' sentinel
+ *              type_id<TA3> = 1      <- 65537 narrowed onto qb::KillEvent
+ *              COLLIDES(TA3, KillEvent)? *** YES ***
+ *              event_type_name(1) now reports 3TA3 (was N2qb9KillEventE)
+ *
+ *          A user event aliased onto `KillEvent` is delivered to the kill handler. The fix is
+ *          one line in `type_id_for<T>` — `assert(raw < std::numeric_limits<TypeId>::max())` —
+ *          or widen the counter to `uint32_t` and saturate. Both change a public type's width
+ *          or add a debug-only check to a hot path, so it is a maintainer call, not a drive-by.
+ *          See dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md §3.6.
  */
 QB_ABI_ANCHOR inline std::atomic<TypeId> _type_id_counter{0};
 

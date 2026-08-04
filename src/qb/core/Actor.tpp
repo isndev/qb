@@ -27,6 +27,37 @@
 
 #include <cassert>
 
+// ============================================================================================
+// HAZARD -- READ BEFORE ADDING ANYTHING BELOW THIS LINE.
+//
+// TEMPLATES ONLY. Every one of the 41 definitions in this file is a template, and that is the
+// only thing keeping the program linkable.
+//
+// This file is included by TWO disjoint populations:
+//   * Actor.cpp:29                          -> compiled once, into libqb-core.a
+//   * qb/actor.h, qb/main.h, qb/patterns.h,
+//     qb/core/patterns.h, and (since 3.0)
+//     core/patterns/{discovery,supervisor}.h -> compiled in EVERY consumer TU
+// The QB_ACTOR_TPL guard below stops the double inclusion *within one TU*. It does nothing
+// across TUs, and nothing at all between a consumer TU and the archive.
+//
+// Add ONE non-template function here and every consumer that includes an umbrella from two of
+// its own TUs fails to link. Measured, on the shipped file, with two consumer TUs + the
+// archive:
+//
+//     namespace qb { int actor_tpp_helper(int x) { return x + 1; } }
+//     ->  duplicate symbol 'qb::actor_tpp_helper(int)' in: t2.o / t1.o
+//         ld: 1 duplicate symbols
+//
+// The structure has existed since 2019-02-26 and has never fired, purely because nobody has
+// added a non-template. The `.tpp` extension is the only guard, and it is a social one -- and
+// the 3.0 restructure is scheduled to remove it (see dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0
+// §3.1 and §5). Anything that must be non-template belongs in Actor.cpp.
+//
+// `inline` is NOT a workaround. It makes the link succeed and leaves N definitions of one
+// entity in the program, which is the identity-duplication class this release spent a whole
+// step fixing (see qb/utility/abi.h).
+// ============================================================================================
 #ifndef QB_ACTOR_TPL
 #define QB_ACTOR_TPL
 

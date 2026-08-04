@@ -105,7 +105,12 @@ class CoroutineScheduler;
 // DETACHED (spawned) coroutine frame to the current scheduler for destruction:
 // final_suspend cannot destroy its own frame (it is suspended in it), and a
 // spawned frame has no continuation/owner to free it otherwise.
-void defer_frame_destruction(std::coroutine_handle<>) noexcept;
+// `inline` is LOAD-BEARING, not decoration: scheduler.h defines this `inline`, so the only
+// definition in the program is the one that TU emits. A non-inline first declaration makes every
+// TU that sees task.h WITHOUT scheduler.h (i.e. entering through <qb/io.h>, or through this
+// header directly) emit an undefined reference no archive can satisfy — and it silences the
+// -Wundefined-inline that would otherwise say so. Do not drop it. See check-installed-headers.sh.
+inline void defer_frame_destruction(std::coroutine_handle<>) noexcept;
 
 // Defined in scheduler.h. Scrubs a coroutine handle from the current scheduler's ready /
 // in-flight / suspended bookkeeping. Called from task<T>::~task (and move-assignment) just
@@ -115,7 +120,10 @@ void defer_frame_destruction(std::coroutine_handle<>) noexcept;
 // would dangle in the ready queue for run_ready() to resume → heap-use-after-free. Mirrors the
 // libev awaiter_base::unschedule() teardown for the parked-handle (wait-list) awaiters, applied
 // centrally at every depth. CoroutineScheduler is incomplete here, hence the free-function hop.
-void forget_frame_if_current(std::coroutine_handle<>) noexcept;
+// `inline` is LOAD-BEARING — see defer_frame_destruction above. This one is called from
+// task<T>::~task, i.e. from destroying ANY task, so without it <qb/io.h> alone cannot link a
+// program that owns a task<T>.
+inline void forget_frame_if_current(std::coroutine_handle<>) noexcept;
 
 // ============================================================================
 // Coroutine frame freelist allocator (Finding 2.A.9)
@@ -969,5 +977,20 @@ private:
 };
 
 } // namespace qb::io::async
+
+// The two free functions declared near the top of this file (defer_frame_destruction,
+// forget_frame_if_current) are DEFINED in scheduler.h, which cannot be included above because it
+// needs a complete task<T>. Pulling it here -- after task<T> is complete, still inside the guard
+// -- is the position that works in BOTH orders: entering through task.h completes task<T> and
+// then scheduler.h; entering through scheduler.h reaches task.h at its line 63, and this include
+// is a no-op because scheduler.h's own guard is already set.
+//
+// Without it, task.h ALONE (and generator.h, which calls forget_frame_if_current and includes
+// only task.h) compiles clean and cannot link ~task<T> -- i.e. cannot destroy the very type the
+// header exists to provide. `-c` and `-fsyntax-only` both pass; only a link says so. Adding
+// `inline` to the declarations is necessary (it is the ODR fix and it re-arms
+// -Wundefined-inline) but NOT sufficient: an inline function must be defined in every TU that
+// uses it, and that is what this include guarantees.
+#include "scheduler.h"
 
 #endif // QB_IO_ASYNC_COROUTINE_TASK_H
