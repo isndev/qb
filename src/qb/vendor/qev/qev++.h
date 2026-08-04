@@ -13,8 +13,8 @@
  * see THIRD-PARTY-NOTICES.
  */
 
-#ifndef EVPP_H__
-#define EVPP_H__
+#ifndef QEVPP_H_
+#define QEVPP_H_
 
 #ifdef EV_H
 #include EV_H

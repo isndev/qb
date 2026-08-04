@@ -47,23 +47,39 @@ Both compiled forks are part of the install export: `qev` and `stduuid` are adde
 #### Using qb alongside a system libev or libevent
 
 The `qev` fork renamed every libev-native symbol `ev_*` → `qev_*` and moved its headers under
-`qb/vendor/qev/`, but two overlaps with an upstream libev remain **on purpose**, and both are
-worth knowing before you link the two together.
+`qb/vendor/qev/`. One overlap with an upstream libev remains **on purpose**; a second one used to
+exist and has been closed.
 
-**Include guards collide.** `qev.h` keeps upstream's `EV_H_` guard and `qev++.h` keeps `EVPP_H__`
-(`src/qb/vendor/qev/qev.h:33`, `src/qb/vendor/qev/qev++.h:16`). A single translation unit therefore
-cannot include both `<qb/vendor/qev/qev.h>` and a system `<ev.h>` — whichever is second is
-swallowed by the guard and its declarations are silently absent. Separate translation units in the
-same program are unaffected; keep the two APIs in different `.cpp` files.
+**Include guards — no longer collide.** Every header of the fork carries a guard named after the
+fork rather than after upstream: `QEV_H_` (`src/qb/vendor/qev/qev.h`), `QEVPP_H_` (`qev++.h`),
+`QEV_EVENT_H_` (`event.h`), `QEV_EVENT_COMPAT_H_` (`event_compat.h`), `QEV_WRAP_H` (`qev_wrap.h`),
+`QEV_WEPOLL_H_` (`wepoll.h`) and `QEV_CONFIG_H_` (the generated `qev_config.h`). A single
+translation unit may include both `<qb/vendor/qev/qev.h>` and a system `<ev.h>`, in either order,
+and get both sets of declarations.
 
-**24 `event_*` symbols collide at link time.** `libqev.a` and a system `libev.a` export 82 symbols
-each and share exactly 24 — `event_init`, `event_add`, `event_base_loop`, `event_del`,
+> Previously these guards kept upstream's spellings (`EV_H_`, `EVPP_H__`, `EVENT_H_`, …), so
+> whichever header came second in a translation unit was swallowed by the other's guard and its
+> declarations were silently absent. Because `<qb/main.h>` pulls `qev.h` in transitively
+> (`core/Actor.h` → `io/async/coroutine.h` → `coroutine/scheduler.h` → `qev++.h`), any consumer
+> that also used a real libev hit it — as a compile error (`ev_default_loop` undeclared with qb
+> first, errors inside qb's own `qev++.h` with libev first), never as silent misbehaviour. The
+> only workaround was to keep the two APIs in separate `.cpp` files. That is no longer necessary.
+
+**24 `event_*` symbols still collide at link time.** `libqev.a` and a system `libev.a` export 82
+symbols each and share exactly 24 — `event_init`, `event_add`, `event_base_loop`, `event_del`,
 `event_dispatch`, and the rest of libev's libevent-compatibility layer. That is not a fork
 artefact: those names *are* libevent's published API, and any libev built with its compat layer
-exports them too. Linking both archives succeeds silently in either order — the linker simply takes
-the first definition — so a program that pulls in both ends up with one `event_*` implementation
-and no diagnostic saying which. If you use the `event_*` compat API, link one or the other, not
-both. Everything qb itself uses goes through the renamed `qev_*` surface and is unaffected.
+exports them too. Renaming them would destroy the one thing the compat layer exists to provide,
+which is libevent's spelling — so they stay. Linking both archives succeeds silently in either
+order — the linker simply takes the first definition, confirmed with `-Wl,-y`, and
+`-fvisibility=hidden` does not close it — so a program that pulls in both ends up with one
+`event_*` implementation and no diagnostic saying which. If you use the `event_*` compat API, link
+one or the other, not both. Everything qb itself uses goes through the renamed `qev_*` surface and
+is unaffected.
+
+Note that `qb/readme/` is **not** installed, so for a `find_package(qb)` consumer the authoritative
+copy of both caveats is the comment block at the top of the installed header itself
+(`<prefix>/include/qb/vendor/qev/qev.h`). Keep the two in sync.
 
 ### Third-party: nlohmann/json
 
