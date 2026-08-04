@@ -49,11 +49,15 @@
 #define QB_COMPAT_HAS_STD_EXPECTED 0
 #endif
 
-#if !defined(QB_COMPAT_FORCE_THREAD_FALLBACK) && defined(__cpp_lib_jthread) && __cpp_lib_jthread >= 201911L
-#define QB_COMPAT_HAS_STD_JTHREAD 1
-#else
-#define QB_COMPAT_HAS_STD_JTHREAD 0
-#endif
+// Aliased, not re-derived. Switching between std::jthread and qb's fallback changes
+// sizeof(qb::jthread) 16 -> 24 and therefore the layout of qb::Main (88 -> 96) and
+// qb::VirtualCore (8648 -> 8656) -- a silent, unsound disagreement if the archive and a consumer
+// resolve it differently, whether through the QB_COMPAT_FORCE_THREAD_FALLBACK knob or through a
+// standard library that does not advertise __cpp_lib_jthread. qb/utility/abi.h owns the single
+// derivation and fingerprints it into a link-time symbol; this alias keeps the name every caller
+// already uses while guaranteeing the guard and the guarded value cannot diverge.
+#include <qb/utility/abi.h>
+#define QB_COMPAT_HAS_STD_JTHREAD QB_ABI_STD_JTHREAD
 
 namespace qb {
 

@@ -25,6 +25,9 @@
 #ifdef QB_WITH_LOGGING
 #include <qb/vendor/nanolog/nanolog.cpp>
 #endif
+// First in the amalgamation on purpose: the fingerprint symbols must be defined by this
+// archive member, and this member is the one every consumer already pulls in.
+#include "abi.cpp"
 #include "logger.cpp"
 #include "pipe.cpp"
 #include "uri.cpp"

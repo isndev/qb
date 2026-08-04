@@ -33,6 +33,11 @@
 #define QB_UTILS_PREFIX_H
 
 #include <cstdint> // uint32_t used by CacheLine / EventBucket below
+// QB_ABI_CACHELINE_BYTES, and the link-time fingerprint that makes a consumer/archive
+// disagreement about it an undefined symbol instead of a heap overflow. The derivation from
+// KNOWN_L1_CACHE_LINE_SIZE lives there, not here, so the value guarded and the value used are
+// the same one expression -- see qb/utility/abi.h.
+#include <qb/utility/abi.h>
 
 /* this file defines the following macros:
    QB_LOCKFREE_CACHELINE_BYTES: size of a cache line
@@ -50,12 +55,15 @@
  *          platforms (x86_64, ARM64, etc.). Can be overridden by defining KNOWN_L1_CACHE_LINE_SIZE.
  *          This constant is used for alignas() and static array sizing, requiring
  *          a compile-time constant rather than a runtime function.
+ * @note    The override is a **public ABI axis**: it changes `sizeof(qb::Event)`,
+ *          `sizeof(EventBucket)` and `CoroutineFrameAllocator::kAlign`, so an application that
+ *          sets it must be linked against a qb built with the same setting. That is enforced --
+ *          the value is derived in `qb/utility/abi.h` (as `QB_ABI_CACHELINE_BYTES`) and
+ *          fingerprinted into a link-time symbol, so a mismatch is an undefined symbol rather
+ *          than the silent heap overflow it used to be. This alias exists so the two can never
+ *          be derived twice and drift.
  */
-#ifdef KNOWN_L1_CACHE_LINE_SIZE
-#define QB_LOCKFREE_CACHELINE_BYTES KNOWN_L1_CACHE_LINE_SIZE
-#else
-#define QB_LOCKFREE_CACHELINE_BYTES 64
-#endif
+#define QB_LOCKFREE_CACHELINE_BYTES QB_ABI_CACHELINE_BYTES
 
 #define QB_LOCKFREE_EVENT_BUCKET_BYTES QB_LOCKFREE_CACHELINE_BYTES
 

@@ -31,6 +31,28 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Added
 
+- **A link-time configuration fingerprint (`qb/utility/abi.h`).** qb ships headers plus a compiled
+  archive, and a handful of macros the *consumer* sets change the layout of public types in those
+  headers, or the body of an inline entity the archive also defines. Nothing detected the
+  disagreement — not the compiler (each translation unit is internally consistent), not the linker
+  (vague-linkage bodies merge silently, winner by link order). Measured consequence of the worst
+  one: an application built with `-DKNOWN_L1_CACHE_LINE_SIZE=128` (a **documented** public knob, and
+  the true `hw.cachelinesize` on Apple Silicon) against a stock qb gets `sizeof(qb::Event)` 64 in
+  one half and 128 in the other, and the coroutine frame pool overruns its block —
+  `AddressSanitizer: heap-buffer-overflow`, after linking and running clean.
+  Now the archive *defines* one symbol per ABI axis, named after the value it was built with
+  (`qb_abi_cacheline_64`, …), and every translation unit that parses a qb header *references* the
+  symbol named after its own value, so a mismatch is an **undefined symbol at link** naming the axis
+  and the application's value. Unlike a CMake-side check it survives `add_compile_options()` and
+  generator expressions added after `find_package()`, because it is in the header the compiler
+  actually reads. Five axes, each with a measured layout or shared-body divergence: qb version,
+  `KNOWN_L1_CACHE_LINE_SIZE`, `-fno-exceptions`, `QB_DEBUG_COROUTINES`,
+  `QB_COMPAT_FORCE_THREAD_FALLBACK`. `NDEBUG` is deliberately **excluded** — it changes no layout
+  (and `scripts/check-abi-macro-split.py` keeps it that way), and a Debug consumer against a Release
+  archive is a supported, CI-tested configuration that an `NDEBUG` axis would break by default. The
+  archive also carries its configuration as readable text (`strings libqb-io.a | grep '^qb-abi '`),
+  which is the first time an installed qb records how it was built. See
+  [readme/7_reference/building.md](./readme/7_reference/building.md#link-time-configuration-fingerprint).
 - **`find_package(qbm-<name>)` packages for the qbm modules.** `qb_register_module()` now emits the
   install and export rules that make a module consumable from an installed tree — one package per
   module (`qbm-http`, `qbm-pgsql`, `qbm-redis`), so a downstream project writes

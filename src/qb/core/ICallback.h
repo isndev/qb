@@ -38,6 +38,11 @@
 #define QB_ICALLBACK_H
 
 #include <cstdint>
+// Documented entry point (<qb/icallback.h>): ICallback is a public base of user actors, so a
+// translation unit can reach qb through this header alone. Carrying the link-time ABI contract
+// here keeps the property "every top-level qb/*.h entry point fingerprints its configuration"
+// true without exceptions to explain.
+#include <qb/utility/abi.h>
 
 namespace qb {
 
