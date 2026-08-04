@@ -163,10 +163,18 @@ Key behaviors verified in the header:
   `starttls_connect(socket, uri, cb)` for PostgreSQL `SSLRequest` / SMTP·IMAP `STARTTLS`. The `qbm`
   PostgreSQL (`ssl_root_cert`/`ssl_cert`/`ssl_key`) and Redis (`set_ssl_root_cert` /
   `set_ssl_client_certificate`) clients drive exactly this path.
-- **Return convention.** `connect*` and `n_connect*` return `int`: `0` on success (the
-  value of `qb::io::SocketStatus::Done`), non-zero on failure. A failed peer-verification
-  surfaces as `qb::io::SocketStatus::CertificateError` (value `1`).
-  <!-- src: qb/src/qb/io/system/sys__socket.h:1525-1529 -->
+- **Return convention.** `connect*` and `n_connect*` return `int`: `0` on success — the
+  value of `qb::io::SocketStatus::Done` — and non-zero on failure, generically
+  `SocketStatus::Error` (`-1`). `n_connect*` returns the underlying non-blocking TCP
+  result, so a connect still in progress is not an error.
+  A **failed peer verification is not a distinct return value.** It fails the TLS
+  handshake in `handCheck()`, which disconnects and returns `-1`, so `connect()` reports
+  `-1` exactly as any other handshake error does. The enum's third enumerator,
+  `SocketStatus::CertificateError` (`1`), is part of the public surface but is returned by
+  nothing in qb; to tell a verification failure apart, read `SSL_get_verify_result()` or
+  the OpenSSL error queue.
+  <!-- src: qb/src/qb/io/system/sys__socket.h:1567-1571 (SocketStatus enumerators) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:788-799 (connect return gate), 904-912 (n_connect), 724-750 (handCheck) -->
 - **Handshake progress.** `handshake_status()` returns `1` when the TLS handshake is
   complete, `0` when OpenSSL needs more socket readiness (`WANT_READ`/`WANT_WRITE`), and
   `-1` on a fatal error. `handshake_complete()` reports whether it finished successfully.
