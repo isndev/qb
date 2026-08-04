@@ -190,6 +190,17 @@ register_type_id(type_id_slot &slot, char const *const name) noexcept {
                "block-scope `static type_id_slot`, as qb::detail::type_id_for<T>() does.");
 #endif
         slot.name = name;
+        // HAZARD, UNGUARDED -- THIS IS THE LINE THAT WRAPS. `TypeId` is `uint16_t`
+        // (ActorId.h:67), so the `fetch_add` wraps INSIDE the atomic: no assert, no
+        // saturation, no diagnostic, and the wrap lands on the framework's own reserved ids.
+        // Measured there by forcing the counter to 65534: the next three registrations came out
+        // 65535, then 0 (the 'unregistered' sentinel), then 1 -- and 1 is `qb::KillEvent`, so a
+        // user event aliased onto it is delivered to the kill handler. 65535 distinct
+        // event/service types is orders of magnitude beyond any realistic application, which is
+        // why this ships as a documented boundary rather than a check: both candidate fixes (an
+        // `assert` on a registration path, or widening a PUBLIC type to uint32_t) are maintainer
+        // calls, not drive-bys. Full measurement at the `_type_id_counter` declaration,
+        // Event.h:66-83.
         slot.id   = static_cast<TypeId>(_type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1);
         register_type_name(slot.id, name);
         slot.next = _type_id_registry.load(std::memory_order_relaxed);

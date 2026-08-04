@@ -31,6 +31,29 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Added
 
+- **`scripts/check-header-extensions.py` and `scripts/check-header-linkage.py` — the two header
+  rules 3.0 relies on, made enforceable instead of remembered.** Both run in the `format-check` CI
+  job (pure Python, no toolchain) and in the superproject's `dev/agent/verify.sh`.
+  - The first fails if a `.tpp` or `.inl` reappears anywhere, or if anything `#include`s one. That
+    rule had no check at all: `.cursor/rules/cpp.mdc` used to *instruct* agents to put template
+    definitions in `.tpp` files, which is a standing instruction to reintroduce exactly what this
+    release removed.
+  - The second fails if a shipped header defines a **strong external symbol** — a non-template,
+    non-`inline` function or variable at namespace scope, an explicit *specialization* definition
+    (which is not implicitly inline), or an out-of-line member definition. This is the hazard that
+    outlived the extension: `qb-core` is one TU, so `Actor.h`/`VirtualCore.h` reach both the
+    archive and every consumer TU, and one such definition links green here and fails at the
+    *consumer's* link. The rule covers all 267 shipped headers, not just the six merge sites,
+    because the audit had already measured every namespace-scope definition in them to be a
+    template or `inline`, and that is the invariant worth freezing. Escape hatch:
+    `// header-linkage: allow <reason>`, reason mandatory.
+  - Each rule was validated against a real **2-TU + archive link** before being written down, and
+    the guard's verdict matched `ld64` on all seven shapes tried. One candidate rule was deleted
+    for failing that comparison: an explicit *instantiation* definition (`template int f<int>(int);`)
+    is emitted COMDAT/weak — `nm -m` shows `weak external` against `external` for a plain function —
+    and links clean, so it is not a violation. `dev/agent/header-rules-negative-control.sh` replants
+    all thirteen cases (including a resurrected `Actor.tpp`, both anti-vacuous floors, and a bare
+    escape hatch with no reason) and asserts each is rejected, on a copy under `$TMPDIR`.
 - **`scripts/check-abi-fingerprint.sh` + the `abi-fingerprint` CI job — coverage for the link-time
   configuration fingerprint, which shipped with none.** The script arms one mismatch per axis
   (cache line, exceptions, coroutine debug, jthread source, and the raw `-I`/`-l` version case)
@@ -380,9 +403,11 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   non-`inline` definition added to them is an instant duplicate symbol — measured again on the
   merged header, two consumer TUs plus the archive: `duplicate symbol 'qb::actor_tpp_helper(int)'`
   → `ld: 1 duplicate symbols`, where the same two TUs link clean without it. The `.tpp` extension
-  used to be the signal that only templates go there; the banner at each merge site now is.
-  `inline` is not a workaround — it makes the link succeed and leaves N definitions of one entity
-  in the program, the identity-duplication class this release spent a whole step fixing.
+  used to be the signal that only templates go there; a banner at each merge site says so now, and
+  because a comment is not a guard, **`scripts/check-header-linkage.py`** enforces it: no shipped
+  header may define a strong external symbol, over all 267 headers rather than only the six merge
+  sites. `inline` is not a workaround — it makes the link succeed and leaves N definitions of one
+  entity in the program, the identity-duplication class this release spent a whole step fixing.
 
   Verified by **linking**, not by `-fsyntax-only` or `-c` (both of which pass on precisely this
   defect): against an installed prefix, 143 headers each compile alone and all 18 entry points

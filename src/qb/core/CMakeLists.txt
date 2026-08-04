@@ -32,6 +32,22 @@ project(qb-core
 # -----------------------------------------------------------------------------
 # Library Configuration
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# HAZARD -- ONE SOURCE FILE IS NOT A TYPO. THIS AMALGAMATION IS LOAD-BEARING.
+#
+# core.cpp #includes ActorId.cpp, Event.cpp, VirtualCore.cpp, Actor.cpp, CoreSet.cpp and
+# Main.cpp rather than compiling them separately, so qb-core is ONE translation unit. Listing
+# those six here instead is a one-line edit that changes behaviour, and it is the SAME SHAPE as
+# qb-io's list -- the measurement, and the three defects a split arms (one of which 3.0 has
+# since removed), is in the HAZARD block at src/qb/io/CMakeLists.txt:36. Read it before
+# touching this.
+#
+# One TU is also why a two-TU defect INSIDE this library is invisible here while staying fully
+# live against qb's 217 test translation units and every consumer TU: a non-template definition
+# added to a header on both paths (Actor.h / VirtualCore.h reach both libqb-core.a and every
+# consumer) builds green and fails at the CONSUMER's link. scripts/check-header-linkage.py is
+# the guard for that, because a comment is not one.
+# -----------------------------------------------------------------------------
 set(CORE_SOURCES
         core.cpp
 )

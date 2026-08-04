@@ -32,6 +32,18 @@ jobs:
       - name: ABI - no build-mode macro may select a type, member or alignment
         run: ./scripts/check-abi-macro-split.py src
 
+      # Same reasoning, same phase: pure Python, no toolchain, whole tree rather than the diff.
+      # 3.0 retired every .tpp/.inl and made `.h` the only header extension; these two keep that
+      # true. The second is the one that matters after the merge -- qb-core is ONE TU, so a
+      # non-template definition in a header reached both by the archive and by a consumer TU
+      # builds green here and fails at the CONSUMER's link (measured: `ld: 1 duplicate symbols`).
+      # This job only covers qb; qbm's copies run from the superproject's dev/agent/verify.sh.
+      - name: Headers - `.h` is the only header extension
+        run: ./scripts/check-header-extensions.py
+
+      - name: Headers - no shipped header defines a strong external symbol
+        run: ./scripts/check-header-linkage.py --min-constructs 800
+
       - name: Install LLVM tools
         run: |
           ./scripts/ci-install-linux-dependencies.sh --profile format-check
