@@ -41,7 +41,7 @@ flowchart TB
 |---|---|---|
 | Schedulers per thread | one (`thread_local`, owned by the listener) | `scheduler.h:153-157`, `utils.h:204` |
 | Concurrency model | cooperative, single-threaded | `scheduler.h:153-157` |
-| Interleaving point | `co_await` only | `scheduler.h:255` (Factbook) |
+| Interleaving point | `co_await` only | `scheduler.h:543-554` (Factbook) |
 | OS mutexes / atomics on the hot path | none, within one thread | `scheduler.h:33`, `sync.h:30` |
 | Cross-thread wake-up | route through the `qb-core` actor mailbox | `scheduler.h:153-157` |
 
@@ -690,9 +690,9 @@ Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it e
 | Macro | What it traces | Source |
 |---|---|---|
 | `QB_DEBUG_COROUTINES` | `task<T>` promise lifecycle, awaiter `on_event_ready`, timer fire | `task.h:91`, `awaiter.h:165` |
-| `QB_DEBUG_SCOPE` | `coroutine_scope` spawn / join / completion | `scope.h:41` |
+| `QB_DEBUG_SCOPE` | `coroutine_scope` spawn / join / completion | `scope.h:42` |
 | `QB_DEBUG_CORO_LIFECYCLE` | `CoroutineScheduler` teardown, suspended-count traces | `scheduler.h:51-52` |
-| `QB_DEBUG_AGEN` | `async_generator` yield / next / suspend flow | `generator.h:34` |
+| `QB_DEBUG_AGEN` | `async_generator` yield / next / suspend flow | `generator.h:35-37` |
 
 `QB_DEBUG_SCOPE` and `QB_DEBUG_CORO_LIFECYCLE` share the scheduler trace channel.
 <!-- src: qb/src/qb/io/async/coroutine/{task.h:91, awaiter.h:165, scope.h:41, scheduler.h:51-52, generator.h:34} -->

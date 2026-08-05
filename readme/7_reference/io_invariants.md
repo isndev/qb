@@ -78,7 +78,7 @@ registry, or as a member — never relocate them.
 - To reset event-loop state (for example in a unit-test teardown), call
   `listener::current.clear()` directly — never via `init()`.
 - `listener::clear()` (and the destructor) **detach** watchers without
-  **deleting** them (`src/qb/io/async/listener.h:448`). Each `async::base`
+  **deleting** them (`src/qb/io/async/listener.h:543,573-574,606-608`). Each `async::base`
   still holds a reference to its embedded event, so the owning object's
   destructor performs the final unregister and delete. Deleting in `clear()`
   would leave a dangling `_async_event`.
@@ -256,7 +256,7 @@ The protocol base class `IProtocol` / `AProtocol<_IO_>` lives in
   from the start.
 - It returns `IProtocol::kNoMessage` (`== 0`) when more input is needed, or the
   exact byte count of the next complete frame otherwise
-  (`src/qb/io/async/protocol.h:48`, `:72`). Consumption happens when
+  (`src/qb/io/async/protocol.h:58`, `:105`). Consumption happens when
   `onMessage(size)` is called with that size.
 - A protocol signals an unrecoverable framing or parse error by calling
   `not_ok()`; the I/O component then closes the connection, and the protocol
