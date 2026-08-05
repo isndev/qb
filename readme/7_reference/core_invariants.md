@@ -25,7 +25,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 
 ### Construction
 
-- An actor must be constructed from inside a `VirtualCore` worker thread, never from the main thread or an arbitrary user thread. Every `Actor` constructor asserts `VirtualCore::_handler != nullptr` (`src/qb/core/Actor.cpp:106`). Construct actors only through `Main::core(idx).addActor<T>(...)`, `CoreInitializer::addActor<T>(...)`, or `addRefActor<T>(...)` / `addRefHandle<T>(...)` from within another actor on the same core.
+- An actor must be constructed from inside a `VirtualCore` worker thread, never from the main thread or an arbitrary user thread. Every `Actor` constructor asserts `VirtualCore::_handler != nullptr` (`src/qb/core/Actor.cpp:115`). Construct actors only through `Main::core(idx).addActor<T>(...)`, `CoreInitializer::addActor<T>(...)`, or `addRefActor<T>(...)` / `addRefHandle<T>(...)` from within another actor on the same core.
 - Default event registrations (`KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, `RequireEvent`) can be opted out by passing `qb::no_default_events` to the protected constructor (`src/qb/core/Actor.h:300`). Use this for ephemeral, pool-reused actors that never receive those control events.
 
 ### Initialization
@@ -41,7 +41,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 
 ### Destruction
 
-- `Actor::kill()` sets `_alive = false` and calls `VirtualCore::killActor(id())` (`src/qb/core/Actor.cpp:258`). It only *flags* the actor: the actor stops receiving new events but may still drain events already queued, and `~Actor()` runs later under `VirtualCore` control, at the end of the workflow iteration.
+- `Actor::kill()` sets `_alive = false` and calls `VirtualCore::killActor(id())` (`src/qb/core/Actor.cpp:282-290`). It only *flags* the actor: the actor stops receiving new events but may still drain events already queued, and `~Actor()` runs later under `VirtualCore` control, at the end of the workflow iteration.
 - `Actor::is_alive()` reports `true` until `kill()` has been called *and* the `VirtualCore` has processed the removal. `Actor::is_active()` is stricter — `is_alive()` **and** the actor's `onInit()` has completed — so it is `false` during the brief *Activating* window of a suspended async `onInit()`; it is the phase oracle behind `findActor` / `ActorHandle::get()`.
 - A referenced actor obtained with `addRefActor<T>()` returns a phase-aware **`qb::ActorHandle<T>`** (alias `RefActorHandle<T>`), **not** a raw pointer. The handle never dangles: it caches the `ActorId` and resolves the live pointer on demand via `findActor<T>()`, so `get()` / `operator->()` return `nullptr` while the child is Activating, after a failed init, or once it has called `kill()`. Send to `handle.id()` at any time (events to a still-Activating child are stashed and replayed FIFO once active); gate direct method calls on `handle.ready()` (or `co_await handle.ready_async(context())` for an async-init child).
 - An `ActorHandle<T>` may only be dereferenced from the owning `VirtualCore`'s worker thread — the thread that created the referenced actor. Cross-thread or cross-core dereference is undefined behavior, *not* a diagnosed one: `get()` (`src/qb/core/VirtualCore.h:916`) is `noexcept` and simply returns `nullptr` when the handle cannot be resolved on the current core (it reads the thread-local `VirtualCore::_handler`, which is null off any worker thread, and `findActor` misses on the wrong core). `operator->()` / `operator*()` then `assert` only that the resolved pointer is non-null — a generic "actor not resolvable on this core" check that also fires after the actor dies — and there is no dedicated thread-identity assertion. Release builds perform no check at all, so cross-thread misuse is a silent null dereference (`src/qb/core/Actor.h:1800`, `:1808`).
@@ -74,9 +74,9 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 
 ### reply and forward
 
-- `reply(event)` returns a received event to its source by swapping `dest` and `source` (`src/qb/core/Actor.cpp:276`). `forward(dest, event)` re-routes it to a new destination while **preserving the original source** (`src/qb/core/Actor.cpp:285`).
+- `reply(event)` returns a received event to its source by swapping `dest` and `source` (`src/qb/core/Actor.cpp:300-307`). `forward(dest, event)` re-routes it to a new destination while **preserving the original source** (`src/qb/core/Actor.cpp:309-318`).
 - Both reuse the received event object, so the `on()` handler must take the event by non-const reference. After the call the event is consumed and must not be touched again.
-- Broadcast events cannot be replied to or forwarded; the attempt is logged and dropped (`src/qb/core/Actor.cpp:278`, `src/qb/core/Actor.cpp:289`).
+- Broadcast events cannot be replied to or forwarded; the attempt is logged and dropped (`src/qb/core/Actor.cpp:302-305`, `src/qb/core/Actor.cpp:313-316`).
 
 ### Events must be trivially relocatable
 
@@ -109,7 +109,7 @@ Termination is guaranteed in bounded time: after a partial flush the workflow dr
 
 ## Coroutines inside actors
 
-- Two entry points run a C++20 coroutine inside an actor: `Actor::spawn(func)` (recommended — *scoped*, detailed below) and `Actor::spawn_detached(func)` (*detached*) (`src/qb/core/Actor.h:1135` and `:1098`). Both must be called from the actor's worker thread; a debug assertion checks that a thread-local coroutine scheduler exists on the calling thread (`src/qb/core/Actor.cpp:240`).
+- Two entry points run a C++20 coroutine inside an actor: `Actor::spawn(func)` (recommended — *scoped*, detailed below) and `Actor::spawn_detached(func)` (*detached*) (`src/qb/core/Actor.h:1135` and `:1098`). Both must be called from the actor's worker thread; a debug assertion checks that a thread-local coroutine scheduler exists on the calling thread (`src/qb/core/Actor.cpp:260-262`).
 - A coroutine spawned this way runs in an **isolated context** and **must not access actor members after any `co_await`** — the actor may be destroyed while the coroutine is suspended, which is undefined behavior (`src/qb/core/Actor.h:1053`). Capture everything you need by value before the first suspension point, and communicate back only through the `qb::CoroContext` handed to the lambda: `ctx.push<Event>(...)`, `ctx.id()`, `ctx.time()`. The context carries the actor's `ActorId` by value, never a raw `this`.
 - The active-coroutine counter is an eagerly allocated `shared_ptr<atomic<size_t>>` (`src/qb/core/Actor.h:1240`), so each `spawn`/`spawn_detached` is a single `fetch_add` plus a spawn on the hot path. Query it with `has_active_coroutines()` (`src/qb/core/Actor.h:1160`) or `active_coroutine_count()` (`src/qb/core/Actor.h:1196`).
 - `Actor::spawn(func)` is the **recommended** variant: the coroutine is bound to a per-actor cancellation scope (`src/qb/core/Actor.h`). When the actor is killed/destroyed, the scope is cancelled (cooperatively) by `kill()` and, as a catch-all, by `VirtualCore::removeActor`. The lambda receives a `qb::ScopedCoroContext` (a superset of `CoroContext`) whose `ctx.sleep(...)`, `ctx.until_cancelled()`, `ctx.cancellation_point()` and `ctx.cancellable(task)` helpers are cancellation-aware: a scoped coroutine awaiting one of them **wakes within the next loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly** (RAII + `catch` run) instead of blocking on a long timeout/I/O. This makes actor coroutines safe and bounded by construction.

@@ -46,9 +46,9 @@ qb adds owners for the resources it introduces. The key invariant for every one 
 
 For an actor, RAII works because the runtime gives you a precise destruction contract. Three points define it:
 
-- **Construction is thread-affine.** An actor is constructed on the `VirtualCore` worker thread that will host it, never on the main thread. Use `Main::core(idx).addActor<T>(...)` or `addRefActor<T>(...)`; constructing an actor from an arbitrary thread asserts (the constructor checks `VirtualCore::_handler != nullptr`). (`src/qb/core/Actor.cpp:106`)
+- **Construction is thread-affine.** An actor is constructed on the `VirtualCore` worker thread that will host it, never on the main thread. Use `Main::core(idx).addActor<T>(...)` or `addRefActor<T>(...)`; constructing an actor from an arbitrary thread asserts (the constructor checks `VirtualCore::_handler != nullptr`). (`src/qb/core/Actor.cpp:115`)
 - **`onInit()` runs once, before any business event.** It runs after construction and ID assignment and is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; while suspended the actor is *Activating* (inbound unicast stashed + replayed FIFO once active, bounded by the activation deadline). `co_return false` (or an uncaught exception) aborts registration and **immediately destroys the actor** — so any resource you acquired in the constructor is released right away. What you observe depends on the creation path: a runtime `addRefActor<T>()`/`addRefHandle<T>()` hands you back an **empty handle** (`!valid()`), whereas a pre-start `addActor<T>()` whose `onInit()` fails *synchronously* at startup flags the core `BadActorInit` and the core fails to start (`Main::hasError()` is true). See [Error handling](./error_handling.md) for the full failure table. (`src/qb/core/Actor.h:317`, `src/qb/core/VirtualCore.cpp:469`, `src/qb/core/Main.cpp:210`)
-- **`kill()` flags, it does not destroy.** `kill()` sets `_alive = false` and asks the `VirtualCore` to retire the actor. The actor stops receiving *new* events but may still drain events already queued; **`~Actor()` runs later, under `VirtualCore` control**, on the same worker thread. (`src/qb/core/Actor.cpp:258`)
+- **`kill()` flags, it does not destroy.** `kill()` sets `_alive = false` and asks the `VirtualCore` to retire the actor. The actor stops receiving *new* events but may still drain events already queued; **`~Actor()` runs later, under `VirtualCore` control**, on the same worker thread. (`src/qb/core/Actor.cpp:282-290`)
 
 Because destruction is single-threaded and deterministic, member subobjects are destroyed in reverse declaration order after your `~MyActor()` body returns. Declare your RAII members and let the compiler-generated cleanup do the rest.
 
@@ -90,7 +90,7 @@ Write an explicit `~MyActor()` only when you need an *action* (flush a buffer, e
 
 RAII releases resources, but it cannot perform side effects that must reach *other* actors or external systems while they are still operational. Sending an event, unregistering from a manager, or notifying a peer must happen during the shutdown sequence — before `~Actor()`. The hook for that is `on(const qb::KillEvent&)`.
 
-Every actor is, by default, subscribed to `KillEvent` (along with `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`) at construction. (`src/qb/core/Actor.cpp:111-115`) Constructing with `qb::no_default_events` skips all five, in which case the derived class must register at least `KillEvent` in `onInit()` to shut down gracefully. (`src/qb/core/Actor.h:75`)
+Every actor is, by default, subscribed to `KillEvent` (along with `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`) at construction. (`src/qb/core/Actor.cpp:120-124`) Constructing with `qb::no_default_events` skips all five, in which case the derived class must register at least `KillEvent` in `onInit()` to shut down gracefully. (`src/qb/core/Actor.h:75`)
 
 Override `on(const qb::KillEvent&)`, perform the side effects, then **call `kill()`** to let the runtime proceed to destruction:
 

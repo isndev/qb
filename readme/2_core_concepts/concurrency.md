@@ -33,7 +33,7 @@ Three structural invariants make this hold:
 
 2. **A core owns its actors exclusively.** A `VirtualCore` owns its set of actors in a single thread; its internal actor maps and id pool perform no synchronization, because no other thread reaches them. Actors communicate only via events and pipes, never by touching another core's actor state. (`src/qb/core/VirtualCore.h:172`)
 
-3. **Construction is core-thread-only.** An actor must be created from within a worker thread, through [`Main::core(idx).addActor<T>(...)`](../4_qb_core/engine.md) or `addRefActor<T>()`. Constructing one from the main thread or an arbitrary user thread is a programming error. (`src/qb/core/Actor.cpp:107`)
+3. **Construction is core-thread-only.** An actor must be created from within a worker thread, through [`Main::core(idx).addActor<T>(...)`](../4_qb_core/engine.md) or `addRefActor<T>()`. Constructing one from the main thread or an arbitrary user thread is a programming error. (`src/qb/core/Actor.cpp:115-118`)
 
 The payoff is in the framework's own code: the actor's `_alive` flag needs no atomic, lock, or fence, because it has a single writer and a single reader, both on the same thread. (`src/qb/core/Actor.h:198`) Your actor members get the same treatment for free — a plain `int` counter or `std::vector` buffer is race-free without any annotation, as long as it lives inside the actor.
 
