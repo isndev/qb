@@ -45,6 +45,16 @@
 // -force_load / --whole-archive / /WHOLEARCHIVE. Note also that `signal`/`SIGPIPE` below reach
 // this file through the amalgamation, not through any #include here: a split needs <csignal>
 // too. See dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md §3.2.
+//
+// SCOPE, so the SIG_IGN measurement above is not read as more than it is: io.cpp includes this
+// file inside `#ifdef QB_HAS_SSL`. In an SSL-OFF build (the `feature-gates` preset) this
+// constructor is not compiled at all, so the process-wide SIGPIPE disposition is never touched,
+// split or amalgamated. Sockets are still safe there, by a different and unrelated mechanism:
+// every write wrapper passes MSG_NOSIGNAL and suppress_sigpipe() sets SO_NOSIGPIPE per
+// descriptor at acquisition -- see src/qb/io/system/sys__socket.cpp:79-120. That pair is what
+// actually protects qb's own sockets in EVERY configuration; the SIG_IGN here is a process-wide
+// backstop for an SSL build, and it is what the split measurement detects because it is the one
+// observable the test could read.
 // ============================================================================================
 
 namespace {

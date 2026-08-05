@@ -48,6 +48,11 @@ project(qb-io
 #         SPLIT       : SIGPIPE at start of main: SIG_DFL  -> it DID NOT
 #     Consequence for a consumer: the process dies on SIGPIPE and OpenSSL legacy init never
 #     happens. No compiler warning, no linker warning, no runtime error.
+#     SCOPE: io.cpp includes that file inside `#ifdef QB_HAS_SSL`, so in an SSL-OFF build (the
+#     `feature-gates` preset) the initialiser is not compiled at all and the process-wide SIGPIPE
+#     disposition is never set, split or not. qb's own sockets are still safe there via
+#     MSG_NOSIGNAL on every write plus SO_NOSIGPIPE per descriptor (system/sys__socket.cpp:79-120);
+#     the SIG_IGN above is an SSL-build backstop, and it is simply the observable this test reads.
 #     Before splitting: give the unit a referenced external symbol (e.g. an
 #     `qb::io::tcp::ssl::ensure_init()` called from ssl::socket's constructor), or install with
 #     -force_load / --whole-archive / /WHOLEARCHIVE.

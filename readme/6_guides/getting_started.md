@@ -49,7 +49,9 @@ cmake --build build --parallel
 
 The result is a buildable CMake project with qb wired in and ready to extend. Build it with the commands above, then run the executable named in the generated `CMakeLists.txt`. Skip to [section 3](#3-your-first-actor) and edit the generated source to add your own actors.
 
-<!-- src: qb/script/qb-new-project.sh:16-31 -->
+The script refuses to run if `MyProject/` or `qb-sample-project/` already exists in the current directory, and aborts on the first failed step rather than continuing — worth knowing because the recommended invocation above pipes it into `bash` in whatever directory you happen to be standing in.
+
+<!-- src: qb/script/qb-new-project.sh:48-65 -->
 
 ### Option B — embed qb in an existing CMake project
 

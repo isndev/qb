@@ -472,6 +472,34 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Fixed
 
+- **`script/qb-new-module.sh` cloned a repository that does not exist, and then destroyed the
+  user's working directory.** Two defects, one of which is the reason the other went unnoticed.
+  The clone URL was `isndev/qbm-sample` (`gh repo view` → *Could not resolve to a Repository*) while
+  the `cd` two lines later named `qb-sample-module`, which is the repository that actually exists —
+  a typo that survived because the two were separate string literals. And neither scaffolding script
+  had `set -e`: with the clone failed, the `cd` failed, `cd ../${NAME}` failed, and `mkdir .git;
+  mv * .git` then ran against the **invocation** directory, moving everything the user had there
+  into a `.git` folder — exiting **0**, so a caller saw success. Reproduced end to end before the
+  fix, and re-run after it: the directory and its contents survive, and the script stops at the
+  failed clone. Both scripts now `set -euo pipefail`, derive the clone / `cd` / cleanup paths from a
+  single `TEMPLATE` variable so they cannot drift apart again, refuse to run when the target or the
+  template directory already exists, and exit non-zero (2) when the name argument is missing instead
+  of `0`. This matters most for `qb-new-project.sh`, which `README.md` documents as
+  `curl … | bash /dev/stdin MyProject` — i.e. it runs in whatever directory the user is standing in,
+  and it took the identical path any time its own clone failed.
+- **The documented crypto surface described three functions that have never existed, and gave
+  `ecies_encrypt`'s return pair in the wrong order.** `readme/3_qb_io/utilities.md` listed
+  `ecdh_derive_secret` under *Key agreement* and `envelope_encrypt`/`envelope_decrypt` under
+  *Hybrid encryption*; none is declared in `crypto.h` in any version, so a caller got a compile
+  error against documentation. (`EnvelopeFormat` is real, and is consumed by nothing — which is how
+  the invention looked plausible.) The real key agreement is `x25519_key_exchange`; the AEAD-with-
+  metadata pair is `encrypt_with_metadata`/`decrypt_with_metadata`, now documented with a citation
+  and a worked example. Separately, `ecies_encrypt` returns `{ephemeral_public_key, ciphertext}`
+  (`crypto_asymmetric.cpp:718`) while `ecies_decrypt` takes the ciphertext **first**, so the pair is
+  deliberately not in call order — the reference said the opposite, and following it throws
+  `Failed to create public key from raw bytes` at run time. Found by compiling and running the
+  documented snippet rather than by reading it; every corrected snippet on that page now round-trips
+  against an installed prefix. No library code changed.
 - **qb did not compile at `-std=c++23`.** `CoroutineScheduler::owned_current_` is a
   `static inline thread_local std::unique_ptr<CoroutineScheduler>` — a `unique_ptr` to the very
   class it is a member of, so it is instantiated while that class is incomplete. C++23 made
