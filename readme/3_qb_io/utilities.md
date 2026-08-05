@@ -225,7 +225,7 @@ auto dk   = C::derive_key("password", salt, /*key_length*/ 32,
 - **Key agreement:** `ecdh_derive_secret`, `x25519_key_exchange`.
 - **Hybrid encryption:** `ecies_encrypt`/`ecies_decrypt` (`ECIESMode::STANDARD | AES_GCM | CHACHA20`), and `envelope_encrypt`/`envelope_decrypt` (`EnvelopeFormat::RAW | JSON | BASE64`) for large payloads.
 
-_(`qb/src/qb/io/crypto.h:603-681,807-860,938-1052`.)_
+_(`qb/src/qb/io/crypto.h:594-648,846-901,910-1000`.)_
 
 ### Constant-time comparison and secure tokens
 
@@ -441,7 +441,7 @@ int v = headers["content-length"];  // 42 — same entry
 ```
 <!-- src: qb/src/qb/system/container/unordered_map.h -->
 
-`qb::icase_unordered_map<Value>` and the ordered `qb::icase_map<Value>` wrap an underlying map and ASCII-lowercase string keys (via the default `qb::string_to_lower` trait) before every operation — useful for HTTP headers and other case-insensitive lookups. This is exactly the type the URI parser uses for query parameters. _(`qb/src/qb/system/container/unordered_map.h:100-420`.)_
+`qb::icase_unordered_map<Value>` and the ordered `qb::icase_map<Value>` wrap an underlying map and ASCII-lowercase string keys (via the default `qb::string_to_lower` trait) before every operation — useful for HTTP headers and other case-insensitive lookups. This is exactly the type the URI parser uses for query parameters. _(`qb/src/qb/system/container/unordered_map.h:98-413`.)_
 
 > In a debug build (`NDEBUG` undefined), `qb::unordered_map` falls back to `std::unordered_map` to keep iterator-debugging and sanitizers happy; release builds use the `ska` implementation. _(`qb/src/qb/system/container/unordered_map.h:58-91`.)_
 

@@ -11,7 +11,7 @@ The benchmarks are micro-benchmarks of the actor engine and the qb-io stack. The
 
 ## Concepts
 
-The suite uses [Google Benchmark](https://github.com/google/benchmark) (pinned to tag `v1.9.2` by default via `QB_GOOGLEBENCHMARK_GIT_TAG`; `qb/cmake/qbConfig.cmake:76`). Each benchmark source is a separate executable with its own `BENCHMARK_MAIN()` entry point, so there is no aggregate runner — you run one binary per pattern.
+The suite uses [Google Benchmark](https://github.com/google/benchmark) (pinned to tag `v1.9.2` by default via `QB_GOOGLEBENCHMARK_GIT_TAG`; `qb/cmake/qbConfig.cmake:104`). Each benchmark source is a separate executable with its own `BENCHMARK_MAIN()` entry point, so there is no aggregate runner — you run one binary per pattern.
 
 Two properties distinguish the benchmark targets from the test targets:
 

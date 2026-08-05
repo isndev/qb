@@ -22,13 +22,13 @@ Include the whole library through one umbrella header:
 ```cpp
 #include <qb/patterns.h>   // pulls Actor.h + VirtualCore.h + core/patterns.h
 ```
-<!-- src: qb/src/qb/patterns.h:18-20 -->
+<!-- src: qb/src/qb/patterns.h:18-21 -->
 
 `qb/patterns.h` is self-sufficient: it includes `core/Actor.h`, `core/VirtualCore.h` (which has
 carried the Actor template implementation since 3.0 — it was `core/Actor.tpp` through 2.6.0) and
-`core/patterns.h` (`qb/src/qb/patterns.h:18-20`). The narrower
+`core/patterns.h` (`qb/src/qb/patterns.h:18-21`). The narrower
 `#include <qb/core/patterns.h>` pulls the eleven module headers but assumes the Actor template
-implementation is already visible (`qb/src/qb/core/patterns.h:27-37`); the test suite includes
+implementation is already visible (`qb/src/qb/core/patterns.h:27-38`); the test suite includes
 `<qb/core/patterns.h>` alongside `<qb/actor.h>`
 (`qb/tests/core/shared/ProbeResponders.h:29-30`).
 
@@ -290,20 +290,20 @@ of a type within a time window.
 
 | Symbol | Signature | Source |
 |---|---|---|
-| `qb::ping` | `task<bool> ping(ScopedCoroContext ctx, ActorId target, qb::duration timeout = std::chrono::seconds{1})` | `discovery.h:184-196` |
-| `qb::require<_Actor>` | `task<std::vector<ActorId>> require(ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseconds{200})` | `discovery.h:216-235` |
+| `qb::ping` | `task<bool> ping(ScopedCoroContext ctx, ActorId target, qb::duration timeout = std::chrono::seconds{1})` | `discovery.h:191-203` |
+| `qb::require<_Actor>` | `task<std::vector<ActorId>> require(ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseconds{200})` | `discovery.h:223-242` |
 
 - **`ping`** sends a wildcard `PingEvent` (`type == 0`); any live actor replies. Returns `true` if
-  `target` replied within `timeout`, else `false` (`discovery.h:172-196`).
+  `target` replied within `timeout`, else `false` (`discovery.h:179-203`).
 - **`require<_Actor>`** broadcasts a typed `PingEvent` to every core and collects the `RequireEvent`
   replies for the whole window, returning the responders' ids (empty if none)
-  (`discovery.h:198-235`).
+  (`discovery.h:205-242`).
 - Replies are routed automatically by `Actor`'s default `on(RequireEvent&)` (which calls
   `resolve_require`) — **no handler boilerplate** (`qb/src/qb/core/Actor.h:455-470`). Both work
   inside `onInit()` because replies reach an *Activating* asker through the continuation registry
-  (`discovery.h:181-183`, `:206-210`). Throws `cancelled_error` on kill; never throws on timeout
+  (`discovery.h:187-189`, `:213-217`). Throws `cancelled_error` on kill; never throws on timeout
   (a timed-out `ping` returns `false`, a timed-out `require` returns the partial set)
-  (`discovery.h:130-140`).
+  (`discovery.h:137-147`).
 
 ### Example
 
@@ -556,30 +556,30 @@ optional restart-intensity cap — no coroutine required.
 
 | Symbol | Signature | Source |
 |---|---|---|
-| `qb::restart_strategy` | `enum class { one_for_one, one_for_all, rest_for_one }` | `supervisor.h:38-42` |
-| `qb::ChildDown` | `struct ChildDown : qb::Event { std::size_t slot; std::uint64_t generation; ChildDown(std::size_t,std::uint64_t); }` | `supervisor.h:51-57` |
-| `qb::SupervisedActor` | `class SupervisedActor : public qb::Actor { SupervisedActor(ActorId,std::size_t,std::uint64_t); ActorId supervisor() const; void notify_supervisor_down() const; void stop(); }` | `supervisor.h:70-99` |
-| `qb::Supervisor` | `class Supervisor : public qb::Actor` | `supervisor.h:121-266` |
-| `Supervisor` ctor | `Supervisor(restart_strategy, std::size_t child_count, unsigned max_restarts = 0, qb::duration restart_window = qb::duration::zero())` | `supervisor.h:130-135` |
-| `Supervisor::spawn_child` | `virtual ActorId spawn_child(std::size_t slot, std::uint64_t generation) = 0` | `supervisor.h:206-212` |
-| `Supervisor::on_escalate` | `virtual void on_escalate()` (default no-op) | `supervisor.h:214-216` |
-| `Supervisor::child` / `restarts` / `child_count` | `ActorId child(std::size_t) const · unsigned restarts() const · std::size_t child_count() const` | `supervisor.h:190-204` |
+| `qb::restart_strategy` | `enum class { one_for_one, one_for_all, rest_for_one }` | `supervisor.h:45-49` |
+| `qb::ChildDown` | `struct ChildDown : qb::Event { std::size_t slot; std::uint64_t generation; ChildDown(std::size_t,std::uint64_t); }` | `supervisor.h:58-64` |
+| `qb::SupervisedActor` | `class SupervisedActor : public qb::Actor { SupervisedActor(ActorId,std::size_t,std::uint64_t); ActorId supervisor() const; void notify_supervisor_down() const; void stop(); }` | `supervisor.h:77-106` |
+| `qb::Supervisor` | `class Supervisor : public qb::Actor` | `supervisor.h:128-273` |
+| `Supervisor` ctor | `Supervisor(restart_strategy, std::size_t child_count, unsigned max_restarts = 0, qb::duration restart_window = qb::duration::zero())` | `supervisor.h:137-142` |
+| `Supervisor::spawn_child` | `virtual ActorId spawn_child(std::size_t slot, std::uint64_t generation) = 0` | `supervisor.h:214-219` |
+| `Supervisor::on_escalate` | `virtual void on_escalate()` (default no-op) | `supervisor.h:221-223` |
+| `Supervisor::child` / `restarts` / `child_count` | `ActorId child(std::size_t) const · unsigned restarts() const · std::size_t child_count() const` | `supervisor.h:197-211` |
 
 - Override `spawn_child(slot, generation)` to create child `slot` with
   `addRefActor<Child>(id(), slot, generation, …)` where `Child` derives from `SupervisedActor`. A
   child calls `stop()` to terminate cooperatively (it sends `ChildDown`, then `kill()`s itself); the
   supervisor restarts it per the strategy, bumping each restarted slot's **generation** so stale
-  `ChildDown`s are ignored (`supervisor.h:104-120`, `:150-171`).
+  `ChildDown`s are ignored (`supervisor.h:111-127`, `:157-178`).
 - `one_for_one` restarts only the dead child; `one_for_all` restarts every child; `rest_for_one`
-  restarts the dead child and every child started after it (`supervisor.h:38-42`, `:159-170`).
+  restarts the dead child and every child started after it (`supervisor.h:45-49`, `:166-177`).
 - `max_restarts` (0 = unlimited) caps restart intensity and calls `on_escalate()` past the cap —
   cumulative, or, with a non-zero `restart_window`, as a sliding-window "N restarts within T" rule
-  (`supervisor.h:104-120`, `:224-244`).
+  (`supervisor.h:111-127`, `:231-251`).
 - Killing the supervisor tears down its children first (sending each a `KillEvent`, then `kill()`ing
   itself), so children are never orphaned; `Main::stop()` / `SIGINT` already broadcast to every actor
-  (`supervisor.h:173-188`).
+  (`supervisor.h:180-195`).
 - **Cooperative:** a child that dies *without* calling `stop()` (e.g. a failed `onInit`) is not
-  auto-detected — supervision keys off the `ChildDown` notification (`supervisor.h:118-120`).
+  auto-detected — supervision keys off the `ChildDown` notification (`supervisor.h:125-127`).
 
 ### Example
 
@@ -617,7 +617,7 @@ protected:
 
 A subclass that overrides `onInit()` must `co_await qb::Supervisor::onInit()` — the base registers
 `ChildDown` and `KillEvent` and spawns the initial children
-(`qb/src/qb/core/patterns/supervisor.h:137-148`,
+(`qb/src/qb/core/patterns/supervisor.h:144-155`,
 `qb/tests/core/system/patterns/supervisor-strategies.cpp:227-231`).
 
 ---
@@ -768,8 +768,8 @@ qb::io::async::task<bool> onInit() override {
 | Ask many, fan out without overwhelming a downstream | scatter-gather | `qb::ask_all(…, max_in_flight)` (`scatter.h:109`) |
 | Ask many, fastest reply wins (hedged) | scatter-gather | `qb::ask_any` (`scatter.h:138`) |
 | Ask many, need a majority / first `k` | scatter-gather | `qb::ask_quorum` (`scatter.h:242`) |
-| Is an actor alive? | discovery | `qb::ping` (`discovery.h:184`) |
-| Find all live actors of a type | discovery | `qb::require<T>` (`discovery.h:216`) |
+| Is an actor alive? | discovery | `qb::ping` (`discovery.h:192`) |
+| Find all live actors of a type | discovery | `qb::require<T>` (`discovery.h:225`) |
 | Multi-step workflow with rollback | saga | `qb::run_saga` + `qb::SagaScope` (`saga.h:115,44`) |
 | Survive transient timeouts | resilience | `qb::ask_retry` (`resilience.h:425`) |
 | Fail fast when a dependency is down | resilience | `qb::ask_guarded` + `qb::CircuitBreaker` (`resilience.h:463,120`) |
@@ -777,7 +777,7 @@ qb::io::async::task<bool> onInit() override {
 | Cap concurrent calls to a resource | resilience | `qb::bulkhead` (`resilience.h:331`) |
 | One request, many replies | streaming | `qb::ask_stream` + `qb::yield_answer` / `qb::end_stream` (`streaming.h:322,352,368`) |
 | Fan an event to many subscribers (per core) | pub/sub | `qb::PubSub<Topic>` (`pubsub.h:62`) |
-| Restart child actors on failure | supervision | `qb::Supervisor` + `qb::SupervisedActor` (`supervisor.h:121,70`) |
+| Restart child actors on failure | supervision | `qb::Supervisor` + `qb::SupervisedActor` (`supervisor.h:128,77`) |
 | Distribute work across workers | routing | `qb::WorkerPool` (`routing.h:48`) |
 | Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:158,64`) |
 | Batch small items into one costly action | aggregation | `qb::batcher` (`aggregate.h:65`) |
@@ -799,7 +799,7 @@ qb::io::async::task<bool> onInit() override {
 - **Pub/sub is per core.** A publication reaches only subscribers on the bus's own `VirtualCore`; add
   a bus per core for cross-core topics (`pubsub.h:39-41`).
 - **Supervision is cooperative.** A child must call `stop()` (or `notify_supervisor_down()`); a child
-  that dies silently is not auto-restarted (`supervisor.h:118-120`).
+  that dies silently is not auto-restarted (`supervisor.h:125-127`).
 - **A bounded `ask_stream` buffer fails loudly.** If the responder outruns `capacity`, `next()`
   throws `stream_overflow_error` rather than silently dropping chunks (`streaming.h:88-93`,
   `:124-135`).

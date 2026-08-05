@@ -42,7 +42,7 @@ That path is not cosmetic. Their headers used to be published by bare name, so a
 - **stduuid** — REQUIRED in practice. `qbDependencies.cmake:44-47` detects `src/qb/vendor/uuid` and sets `QB_HAS_UUID`. It is added by `add_subdirectory("${QB_VENDOR_DIR}/uuid")` (`qb/CMakeLists.txt:99`), which declares the header-only `stduuid` `INTERFACE` target (`src/qb/vendor/uuid/CMakeLists.txt:22`). The framework pins its options before adding it (`qb/CMakeLists.txt:83-91`): `UUID_BUILD_TESTS`, `UUID_SYSTEM_GENERATOR` and `UUID_TIME_GENERATOR` are forced **off**, while `UUID_USING_CXX20_SPAN` is forced **on**. That last one is load-bearing, not cosmetic: qb requires C++20 so `std::span` always exists, and with it off stduuid takes a `gsl` fallback branch whose directory was deleted in the C++20 migration -- which made `cmake --install` fail outright. Only when the vendored directory is absent does `qbDependencies.cmake:50-95` fall back to a system UUID (pkg-config `uuid`, then `find_path`/`find_library`); if neither is found, the build emits a warning and clears `QB_HAS_UUID` rather than failing.
 - **nanolog, ska_hash** — header-only, no CMake target at all. They are ordinary files under `src/qb/vendor/`, reached through qb's single include root like any other qb header. `src/qb/io/io.cpp` compiles `nanolog.cpp` by textual inclusion.
 
-Both compiled forks are part of the install export: `qev` and `stduuid` are added to the `qbTargets` export set so their names are rewritten under the `qb::` namespace in the transitive link list of `qb::io`/`qb::core` (`qb/CMakeLists.txt:239-256`). Their headers need no install rule of their own — qb's ordinary public-header rule (`qb/cmake/qbPackage.cmake:132-141`) already covers them, which is precisely why the two trees cannot diverge. When embedded, each fork's own standalone install/package-config block is skipped, so an installed qb ships no `lib/cmake/qev/` (`src/qb/vendor/qev/CMakeLists.txt:415`) or `lib/cmake/stduuid/` alongside its own package.
+Both compiled forks are part of the install export: `qev` and `stduuid` are added to the `qbTargets` export set so their names are rewritten under the `qb::` namespace in the transitive link list of `qb::io`/`qb::core` (`qb/CMakeLists.txt:239-256`). Their headers need no install rule of their own — qb's ordinary public-header rule (`qb/cmake/qbPackage.cmake:152-161`) already covers them, which is precisely why the two trees cannot diverge. When embedded, each fork's own standalone install/package-config block is skipped, so an installed qb ships no `lib/cmake/qev/` (`src/qb/vendor/qev/CMakeLists.txt:415`) or `lib/cmake/stduuid/` alongside its own package.
 
 #### Using qb alongside a system libev or libevent
 
@@ -123,7 +123,7 @@ A `QB_HAS_*` flag drives the corresponding `QB_HAS_*=1` compile definition on qb
 
 ## Resolution policy: QB_DEPS_FETCH_FALLBACK
 
-`QB_DEPS_FETCH_FALLBACK` (default **ON**, `qbConfig.cmake:70`) selects how the fetchable dependencies behave. The fetched-via-`FIND_PACKAGE_ARGS` dependencies (GoogleTest, Google Benchmark) and zlib differ at the OFF setting.
+`QB_DEPS_FETCH_FALLBACK` (default **ON**, `qbConfig.cmake:98`) selects how the fetchable dependencies behave. The fetched-via-`FIND_PACKAGE_ARGS` dependencies (GoogleTest, Google Benchmark) and zlib differ at the OFF setting.
 
 | Setting | GoogleTest / Google Benchmark | zlib |
 |---|---|---|
@@ -137,7 +137,7 @@ System-only dependencies (OpenSSL, Argon2, libngtcp2, gperftools) are unaffected
 
 ## Pinning fetched versions
 
-Three advanced cache variables pin the Git tag (or SHA) used for source builds (`qbConfig.cmake:75-78`; `mark_as_advanced`):
+Three advanced cache variables pin the Git tag (or SHA) used for source builds (`qbConfig.cmake:103-106`; `mark_as_advanced`):
 
 | Variable | Default | Applies to |
 |---|---|---|
@@ -167,7 +167,7 @@ This issues `find_package(GTest CONFIG REQUIRED)` and `find_package(benchmark CO
 
 ## QUIC tri-state: QB_WITH_QUIC
 
-`QB_WITH_QUIC` is a three-valued cache string with default **AUTO** (`qbConfig.cmake:103-104`), resolved at `qbDependencies.cmake:202-236`:
+`QB_WITH_QUIC` is a three-valued cache string with default **AUTO** (`qbConfig.cmake:147`), resolved at `qbDependencies.cmake:202-236`:
 
 The value is matched case-insensitively (`qbDependencies.cmake:202`). The OFF set is matched explicitly; AUTO is matched explicitly; any other value is treated as a required ON.
 
