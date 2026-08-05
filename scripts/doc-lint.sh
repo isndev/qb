@@ -92,7 +92,15 @@ echo "== 1b. Citation integrity (src: file + line ranges) =="
 if command -v python3 >/dev/null 2>&1; then
   python3 "${SCRIPT_DIR}/cite-check.py" || fail=1
 else
-  ylw "  python3 not found — skipping citation check"
+  # HARD FAILURE, not a skip. This used to print a yellow "skipping citation check" and
+  # carry on, which meant a run with no python3 checked the forbidden-token scan, the
+  # links and the governance files, printed no red, and exited 0 -- while every citation
+  # in the book went unverified. That is the exact shape of defect this whole battery
+  # exists to catch: a guard that degrades into a pass. cite-check.py is not optional
+  # here, so its interpreter is not optional either.
+  red "  python3 not found — cite-check.py cannot run, and this lint does not pass without it"
+  red "  install python3 (>= 3.8) and re-run; do NOT treat a skipped citation check as green"
+  fail=1
 fi
 
 # ---------------------------------------------------------------------------
