@@ -22,15 +22,15 @@ A `VirtualCore` is a worker thread that owns a set of actors and runs the event 
 
 A `VirtualCore` is identified by a logical [`CoreId`](../7_reference/glossary.md) — `using CoreId = uint16_t` (`src/qb/core/ActorId.h:51`). Logical core ids are an engine-internal numbering chosen by you when you call `engine.core(id)`; they are *not* required to equal physical CPU numbers. The upper bound is `qb::MaxCores == 256` (`src/qb/core/ActorId.h:80`); `engine.core(index)` throws `std::range_error` for `index >= MaxCores` (`src/qb/core/Main.cpp:366`).
 
-An actor is strictly thread-affine to the `VirtualCore` that created it: it never migrates to another thread for its entire lifetime. This is the invariant that lets actor state be lock-free (`src/qb/core/VirtualCore.h:172`). The full set of consequences — single-writer state, sequential event handling, no mutexes — is covered in [Concurrency in qb](./concurrency.md).
+An actor is strictly thread-affine to the `VirtualCore` that created it: it never migrates to another thread for its entire lifetime. This is the invariant that lets actor state be lock-free (`src/qb/core/VirtualCore.h:177-178`). The full set of consequences — single-writer state, sequential event handling, no mutexes — is covered in [Concurrency in qb](./concurrency.md).
 
 ### CPU affinity: a best-effort pin
 
 `CoreInitializer::setAffinity(CoreIdSet const &)` requests that the `VirtualCore` thread be pinned to a set of physical CPU cores (`src/qb/core/Main.h:241`). The pin is applied when the engine starts, inside `VirtualCore::__init__` (`src/qb/core/VirtualCore.cpp:331`), using `pthread_setaffinity_np` on POSIX/macOS and `SetThreadAffinityMask` on MSVC Windows.
 
-Affinity is best-effort by design. A logical `CoreId` need not map to a physical CPU (for example, core 255 on an 8-core host), so a failed pin only logs a warning and never fails core initialization (`src/qb/core/VirtualCore.cpp:361`). Two filtering rules apply before any OS call:
+Affinity is best-effort by design. A logical `CoreId` need not map to a physical CPU (for example, core 255 on an 8-core host), so a failed pin only logs a warning and never fails core initialization (`src/qb/core/VirtualCore.cpp:421-427`). Two filtering rules apply before any OS call:
 
-- Any `CoreId >= qb::MaxCores` is filtered out of the affinity set, including the `qb::NoAffinity` sentinel (`src/qb/core/VirtualCore.cpp:336`). `qb::NoAffinity == std::numeric_limits<CoreId>::max()` (`src/qb/core/Main.h:78`), so passing `CoreIdSet{qb::NoAffinity}` is a well-defined "let the OS schedule this thread" with no pinning performed.
+- Any `CoreId >= qb::MaxCores` is filtered out of the affinity set, including the `qb::NoAffinity` sentinel (`src/qb/core/VirtualCore.cpp:398-403`). `qb::NoAffinity == std::numeric_limits<CoreId>::max()` (`src/qb/core/Main.h:78`), so passing `CoreIdSet{qb::NoAffinity}` is a well-defined "let the OS schedule this thread" with no pinning performed.
 - If the filtered set contains zero real core ids — including an empty set — no affinity call is issued at all (`src/qb/core/VirtualCore.cpp:339`).
 
 On Windows built with a GNU compiler, affinity is not applied (`#warning` at `src/qb/core/VirtualCore.cpp:377`).
@@ -47,8 +47,8 @@ Within one iteration, a `VirtualCore` flushes its outbound events to peer mailbo
 
 The idle latency of a core is a `qb::duration` (`std::chrono::nanoseconds`; see [the time vocabulary](../7_reference/api_overview.md)). It controls what a `VirtualCore` does when its event loop finds no work.
 
-- `setLatency(qb::duration::zero())` — the default — puts the core in busy-spin low-latency mode: the loop never blocks and the thread holds its CPU at 100% to react with minimal delay (`src/qb/core/Main.h:248`).
-- `setLatency(d)` with `d > 0` lets the core park on a `std::condition_variable` for up to `d` when idle (`src/qb/core/Main.h:250`, mailbox `wait()` at `src/qb/core/Main.h:320`). A peer enqueuing an event calls `notify()` to wake it. This trades worst-case wake-up latency for lower CPU.
+- `setLatency(qb::duration::zero())` — the default — puts the core in busy-spin low-latency mode: the loop never blocks and the thread holds its CPU at 100% to react with minimal delay (`src/qb/core/Main.h:249-250`).
+- `setLatency(d)` with `d > 0` lets the core park on a `std::condition_variable` for up to `d` when idle (`src/qb/core/Main.h:251-252`, mailbox `wait()` at `src/qb/core/Main.h:320`). A peer enqueuing an event calls `notify()` to wake it. This trades worst-case wake-up latency for lower CPU.
 
 ```mermaid
 flowchart TB
@@ -61,14 +61,14 @@ flowchart TB
     L -- "no · d > 0" --> Park["park on condition_variable up to d<br/>peer notify() wakes it"] --> Loop
 ```
 
-The loop does not park the instant it goes idle. A per-core adaptive backoff seeds a spin credit from the work done in the previous iteration; the core burns through that credit on the lock-free fast path before it is allowed to block on `_mail_box.wait()` (`src/qb/core/VirtualCore.cpp:653`). When latency is zero, that branch is skipped entirely and the loop spins.
+The loop does not park the instant it goes idle. A per-core adaptive backoff seeds a spin credit from the work done in the previous iteration; the core burns through that credit on the lock-free fast path before it is allowed to block on `_mail_box.wait()` (`src/qb/core/VirtualCore.cpp:747-754`). When latency is zero, that branch is skipped entirely and the loop spins.
 
 Two scopes set latency:
 
 | Call | Scope | Signature |
 | --- | --- | --- |
 | [`CoreInitializer::setLatency`](../4_qb_core/engine.md) | One core | `CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept` (`src/qb/core/Main.h:254`) |
-| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:561`) |
+| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:610`) |
 
 `Main::getLatency()` does not exist; read a single core's configured value with `engine.core(id).getLatency()`, which returns the `qb::duration` last set (`src/qb/core/Main.h:270`).
 
@@ -77,7 +77,7 @@ Two scopes set latency:
 This is the line the model draws:
 
 - **Genuinely multi-threaded:** the inter-core mailbox layer. Multiple `VirtualCore` threads concurrently enqueue events into another core's MPSC mailbox; the lock-free ring buffer and the `condition_variable` wake-up are the only places where threads touch shared, concurrently-mutated memory. This surface is the framework's job, not yours.
-- **Single-thread-per-core (no synchronization):** everything an actor sees. A `VirtualCore` owns its actors, its `ServiceIdPool`, and its actor maps exclusively on one thread and performs no synchronization on them (`src/qb/core/VirtualCore.h:172`). The per-thread async I/O layer is the same: each thread has its own `thread_local` `listener::current` event loop, and I/O objects must never be shared across threads — safety comes from isolation, not locks (`src/qb/io/async/listener.h:88`). The coroutine scheduler is likewise mono-thread per `VirtualCore` (`src/qb/io/async/coroutine/scheduler.h:98`).
+- **Single-thread-per-core (no synchronization):** everything an actor sees. A `VirtualCore` owns its actors, its `ServiceIdPool`, and its actor maps exclusively on one thread and performs no synchronization on them (`src/qb/core/VirtualCore.h:177-178`). The per-thread async I/O layer is the same: each thread has its own `thread_local` `listener::current` event loop, and I/O objects must never be shared across threads — safety comes from isolation, not locks (`src/qb/io/async/listener.h:88`). The coroutine scheduler is likewise mono-thread per `VirtualCore` (`src/qb/io/async/coroutine/scheduler.h:98`).
 
 The practical rule: never touch another core's actor state directly, and never share an I/O object, coroutine, or `RefActorHandle` across threads. All cross-core communication goes through events into the destination core's mailbox.
 
@@ -146,13 +146,13 @@ A per-core `setLatency` is idempotent — calling it more than once on the same 
 
 ## Pitfalls
 
-- **Affinity never fails loudly.** A `CoreId` with no matching physical CPU, or a Windows GNU build, drops the pin and only logs a warning (`src/qb/core/VirtualCore.cpp:361`). Do not assume a thread is pinned because `setAffinity` returned; verify with `LOG_WARN` output or OS tooling if placement is load-bearing.
+- **Affinity never fails loudly.** A `CoreId` with no matching physical CPU, or a Windows GNU build, drops the pin and only logs a warning (`src/qb/core/VirtualCore.cpp:421-427`). Do not assume a thread is pinned because `setAffinity` returned; verify with `LOG_WARN` output or OS tooling if placement is load-bearing.
 - **Logical core ids are not CPU numbers.** `engine.core(7)` registers logical core 7, which is pinned to physical CPU 7 only if you also call `setAffinity(qb::CoreIdSet{7})`. Without an affinity set, the OS schedules the thread freely.
 - **Configuration after `start()` throws.** Affinity, latency, and actor registration are start-time only. `engine.core(id)` after start throws `std::runtime_error` (`src/qb/core/Main.cpp:357`); read-only `usedCoreSet()` remains safe.
 - **Empty cores abort startup.** Registering a core with no actors logs `VirtualCore(<id>).id(<thread>) Started with 0 Actor` and fails the start (`src/qb/core/Main.cpp:224`). Only configure cores you will populate.
 - **`async = false` consumes the calling thread.** `start(false)` runs the last core's event loop on the caller (`src/qb/core/Main.cpp:289`) and blocks until shutdown, so `join()` is neither needed nor reached afterward. Use the default `start()` plus `join()` when the calling thread must keep doing other work.
 - **Non-zero latency caps responsiveness, not throughput.** A parked core wakes on `notify()` from a sender, but the worst case before a self-initiated wake is the configured `qb::duration`. Keep latency at zero on any core that drives time-critical I/O.
-- **Never reach across a core boundary.** A `VirtualCore`'s actor maps, service-id pool, `listener::current`, and coroutine scheduler are single-thread state with no locks (`src/qb/core/VirtualCore.h:172`, `src/qb/io/async/listener.h:88`). Cross-thread access is undefined behavior; route everything through events into the destination mailbox.
+- **Never reach across a core boundary.** A `VirtualCore`'s actor maps, service-id pool, `listener::current`, and coroutine scheduler are single-thread state with no locks (`src/qb/core/VirtualCore.h:177-178`, `src/qb/io/async/listener.h:88`). Cross-thread access is undefined behavior; route everything through events into the destination mailbox.
 
 ## See also
 

@@ -39,11 +39,11 @@ flowchart TB
 
 | Property | Value | Source |
 |---|---|---|
-| Schedulers per thread | one (`thread_local`, owned by the listener) | `scheduler.h:96`, `utils.h:204` |
-| Concurrency model | cooperative, single-threaded | `scheduler.h:96` |
+| Schedulers per thread | one (`thread_local`, owned by the listener) | `scheduler.h:153-157`, `utils.h:204` |
+| Concurrency model | cooperative, single-threaded | `scheduler.h:153-157` |
 | Interleaving point | `co_await` only | `scheduler.h:255` (Factbook) |
 | OS mutexes / atomics on the hot path | none, within one thread | `scheduler.h:33`, `sync.h:30` |
-| Cross-thread wake-up | route through the `qb-core` actor mailbox | `scheduler.h:96` |
+| Cross-thread wake-up | route through the `qb-core` actor mailbox | `scheduler.h:153-157` |
 
 Because all coroutines on a thread share one scheduler and one event loop, only one runs at a time and another can start only at a suspension point. Mutual exclusion between two coroutines on the same thread is therefore a property of the model, not something you lock for. Pushing or resuming a coroutine from a *different* thread is undefined behavior — the scheduler holds no mutex; cross-thread signaling must go through the actor mailbox (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)).
 <!-- src: qb/src/qb/io/async/coroutine/scheduler.h:96-112 -->
@@ -106,11 +106,11 @@ task<void> caller() {
 | Property | Detail | Source |
 |---|---|---|
 | Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:361`, `:716` |
-| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:433` |
+| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:471-472` |
 | Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:581`, `:601` |
 | Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:483`, `:656` |
-| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:628` |
-| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:156` |
+| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:665-666` |
+| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:164` |
 
 `await_resume()` always checks for a stored exception first and re-throws it; if the task is somehow not ready it throws `std::logic_error` rather than returning an uninitialized value. You generally never see these paths — you `co_await` the task and the result (or exception) is delivered.
 <!-- src: qb/src/qb/io/async/coroutine/task.h:648-665 -->
@@ -217,7 +217,7 @@ task<void> connect_to(qb::io::uri remote) {
 ```
 
 `connect<Transport>(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` defaults to `transport::tcp`. A zero timeout means no deadline.
-<!-- src: qb/src/qb/io/async/tcp/connector.h:706-710 (connect factory), :685 (await_resume std::optional<Socket_>) -->
+<!-- src: qb/src/qb/io/async/tcp/connector.h:750-754 (connect factory), :728-729 (await_resume std::optional<Socket_>) -->
 
 ## Combinators
 
@@ -623,9 +623,9 @@ public:
 | Rule | Reason | Source |
 |---|---|---|
 | Event handlers stay `void on(Event&)` | a `task<void> on(Event&)` handler breaks actor dispatch | `Actor.h:987` |
-| Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1080`, `:1043` |
+| Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1186-1187`, `:1043` |
 | Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:988`; examples/coroutine/actor_example.cpp:75 |
-| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; dead-actor events are dropped | `Actor.h:1123-1134` |
+| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; dead-actor events are dropped | `Actor.h:1350-1351` |
 | Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:999` |
 
 `spawn()` and `spawn_detached()` must be called on the actor's own `VirtualCore` thread (each debug-asserts that a thread-local scheduler exists). They are the only supported way to use coroutines inside an actor — never call `run`, `run_for`, or `run_sync` from a handler.
@@ -691,11 +691,11 @@ Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it e
 |---|---|---|
 | `QB_DEBUG_COROUTINES` | `task<T>` promise lifecycle, awaiter `on_event_ready`, timer fire | `task.h:91`, `awaiter.h:165` |
 | `QB_DEBUG_SCOPE` | `coroutine_scope` spawn / join / completion | `scope.h:41` |
-| `QB_DEBUG_CORO_LIFECYCLE` | `CoroutineScheduler` teardown, suspended-count traces | `scheduler.h:46` |
+| `QB_DEBUG_CORO_LIFECYCLE` | `CoroutineScheduler` teardown, suspended-count traces | `scheduler.h:51-52` |
 | `QB_DEBUG_AGEN` | `async_generator` yield / next / suspend flow | `generator.h:34` |
 
 `QB_DEBUG_SCOPE` and `QB_DEBUG_CORO_LIFECYCLE` share the scheduler trace channel.
-<!-- src: qb/src/qb/io/async/coroutine/{task.h:91, awaiter.h:165, scope.h:41, scheduler.h:46, generator.h:34} -->
+<!-- src: qb/src/qb/io/async/coroutine/{task.h:91, awaiter.h:165, scope.h:41, scheduler.h:51-52, generator.h:34} -->
 
 ## Header reference
 

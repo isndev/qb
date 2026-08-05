@@ -155,7 +155,7 @@ Refer to the Google Benchmark documentation for the full flag set (`--help` on a
 
 ### Reading the output
 
-Targets that report rates expose Google Benchmark counters. For example, `messaging/ping-pong-throughput.cpp` records `round_trips_per_s` and `messages_per_s` as iteration-invariant rate counters, alongside the actual actor counts for the run. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:185-186`.) A counter declared with `benchmark::Counter::kIsIterationInvariantRate` is multiplied by the total iteration count and divided by the elapsed time, so it reports throughput regardless of how many iterations Google Benchmark chose.
+Targets that report rates expose Google Benchmark counters. For example, `messaging/ping-pong-throughput.cpp` records `round_trips_per_s` and `messages_per_s` as iteration-invariant rate counters, alongside the actual actor counts for the run. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:188-189`.) A counter declared with `benchmark::Counter::kIsIterationInvariantRate` is multiplied by the total iteration count and divided by the elapsed time, so it reports throughput regardless of how many iterations Google Benchmark chose.
 
 <!-- TODO(verify): this page deliberately quotes no measured throughput, latency, or speedup figures. Add numbers only from a reproducible run on named hardware, with the build type, core count, and Google Benchmark version recorded. -->
 

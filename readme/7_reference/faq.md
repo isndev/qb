@@ -99,12 +99,12 @@ To signal a *local* failure, return `false` from `onInit()` to abort an actor's 
 
 ## Can I use coroutines inside an actor?
 
-Yes — through two entry points, `spawn()` (recommended) and `spawn_detached()`, under strict lifetime rules. They are the only supported way to run a coroutine from within an actor (`qb/src/qb/core/Actor.h:1135` and `:1098`). `spawn()` *scopes* the coroutine to the actor — it is cancelled when the actor is killed — and hands it a `qb::ScopedCoroContext` with cancellation-aware operations and the native `ask()` request/response helper; `spawn_detached()` runs the coroutine detached, so it outlives the actor and receives a plain `qb::CoroContext`. Prefer `spawn()` unless the work must deliberately outlive its actor.
+Yes — through two entry points, `spawn()` (recommended) and `spawn_detached()`, under strict lifetime rules. They are the only supported way to run a coroutine from within an actor (`qb/src/qb/core/Actor.h:1186-1187` and `:1098`). `spawn()` *scopes* the coroutine to the actor — it is cancelled when the actor is killed — and hands it a `qb::ScopedCoroContext` with cancellation-aware operations and the native `ask()` request/response helper; `spawn_detached()` runs the coroutine detached, so it outlives the actor and receives a plain `qb::CoroContext`. Prefer `spawn()` unless the work must deliberately outlive its actor.
 
 A spawned coroutine runs in an isolated context and **must not touch actor state after a `co_await`**: the actor may be destroyed while the coroutine is suspended, so dereferencing `this` or an actor member after suspension is undefined behavior. The rules:
 
 - Copy every value you need **by value before the first `co_await`**. Never capture `this` or a reference to an actor member.
-- After suspension, communicate only through the `CoroContext` argument. `ctx.push<Event>(args…)` posts an event back to the spawning actor itself; `ctx.push_to<Event>(dest, args…)` posts to another actor by id (`qb/src/qb/core/Actor.h:1299` and `:1309`). Both are safe even after the spawning actor has died — events addressed to a dead actor are dropped by the router. `ctx.id()` and `ctx.time()` are also safe (`qb/src/qb/core/Actor.h:1325` and `:1333`).
+- After suspension, communicate only through the `CoroContext` argument. `ctx.push<Event>(args…)` posts an event back to the spawning actor itself; `ctx.push_to<Event>(dest, args…)` posts to another actor by id (`qb/src/qb/core/Actor.h:1345-1351` and `:1309`). Both are safe even after the spawning actor has died — events addressed to a dead actor are dropped by the router. `ctx.id()` and `ctx.time()` are also safe (`qb/src/qb/core/Actor.h:1325` and `:1333`).
 - Keep coroutines short-lived; a long-running coroutine widens the window in which the actor can die underneath it.
 
 ```cpp
@@ -145,7 +145,7 @@ Through `ActorId` values, obtained in one of several ways:
 - **At creation.** Capture the `ActorId` returned (or the handle) when you add an actor, and pass it to the actors that need to reach it.
 - **In event payloads.** Include `id()` in an event so the receiver can reply.
 - **Service actors.** A `ServiceActor<Tag>` is a per-core singleton. Same-core actors fetch a typed pointer with `getService<T>()`; any core resolves its id with `getServiceId<Tag>(core_id)`.
-- **`require<T...>()`.** Ask the framework to locate live instances of given actor types; matching actors reply with `qb::RequireEvent` carrying their `ActorId` (`qb/src/qb/core/Actor.h:896`).
+- **`require<T...>()`.** Ask the framework to locate live instances of given actor types; matching actors reply with `qb::RequireEvent` carrying their `ActorId` (`qb/src/qb/core/Actor.h:945-946`).
 - **A custom registry actor** you write, acting as a naming service.
 
 Patterns are detailed in [Actor patterns](../4_qb_core/patterns.md).

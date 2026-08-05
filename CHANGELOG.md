@@ -472,6 +472,34 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Fixed
 
+- **`io/async/tcp/connector.h` ran three `#include` directives inside `namespace
+  qb::io::async::tcp`.** `<coroutine>`, `<optional>` and `<chrono>` sat at `:640-642`, under
+  `#ifdef __cpp_impl_coroutine`, between the braces of the namespace opened at `:69` — measured
+  brace depth 1. An `#include` is a textual splice, so those directives declared
+  `qb::io::async::tcp::std`, not `::std`. They were harmless only because an earlier header had
+  already pulled the same three in, so each include guard fired and the misplaced directive was a
+  no-op: an ordering accident, not a guarantee. Compiler-confirmed latent rather than live in both
+  states — `qb::io::async::tcp::std::coroutine_handle<>` is rejected (`no member named 'std' in
+  namespace 'qb::io::async::tcp'`, with clang's note pointing at the *global* `std` that
+  `<unordered_set>` had already opened) while `::std::coroutine_handle<>` compiles. This is the same
+  defect qbm-pgsql's `transaction_coro.inl` carried, where deleting the sibling `<fstream>` was
+  measured to reparse it inside the namespace and emit 20 errors led by *did you mean
+  `::std::basic_streambuf`?* — the `.tpp`/`.inl` elimination fixed that one as a side effect and
+  left this one, which is the argument for a check rather than a merge.
+
+  The three move to the top include block outside the namespace, `<coroutine>` keeping its
+  `#ifdef` guard. Confirmed free: the preprocessed token stream is **identical** (351 693 tokens
+  before and after), and every one of the 22 differing tokens is a bare integer — `__LINE__`
+  expansions moving with the file, zero non-numeric differences. The instrument was controlled
+  first by deleting `<chrono>` from the top block (299 260 token lines changed) and restoring
+  byte-exact.
+
+  `scripts/check-namespace-scoped-includes.py` now enforces this across qb, all three qbm modules
+  and `examples/` (942 files, 6 832 directives), with `extern "C"` blocks and global-scope class-body
+  X-macro splices deliberately allowed, vendored trees deliberately out of scope, per-surface
+  anti-vacuous floors, and a brace-depth confidence check. It runs in `format-check.yml` and in the
+  superproject's `dev/agent/verify.sh`, with negative controls that replant both real defects.
+
 - **`script/qb-new-module.sh` cloned a repository that does not exist, and then destroyed the
   user's working directory.** Two defects, one of which is the reason the other went unnoticed.
   The clone URL was `isndev/qbm-sample` (`gh repo view` → *Could not resolve to a Repository*) while

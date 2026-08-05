@@ -129,7 +129,7 @@ Two rules follow from the lifecycle:
 
 Two safe patterns:
 
-- **Send events, not pointer calls.** Capture the child's `id()` and `push<Event>(child_id)`. Events to a dead actor are dropped by the router, so this never dereferences freed memory. (`src/qb/core/Actor.h:798`)
+- **Send events, not pointer calls.** Capture the child's `id()` and `push<Event>(child_id)`. Events to a dead actor are dropped by the router, so this never dereferences freed memory. (`src/qb/core/Actor.h:1767-1769`)
 - **Hold the phase-aware handle.** `addRefActor<T>()` (and its alias `addRefHandle<T>()`) returns a `qb::ActorHandle<T>` you can keep across event-handler boundaries. Its `get()` re-queries the owning `VirtualCore` (via `findActor`) and returns `nullptr` if the child is still Activating, failed init, or has died — never a dangling pointer; `operator->()` / `operator*()` call `get()` and assert non-null in debug builds. (`src/qb/core/VirtualCore.h:916`)
 
 ```cpp
@@ -166,7 +166,7 @@ If the parent needs its referenced children gone when it stops, it must send eac
 `SSL_CTX` is the one place where ownership splits, so it deserves explicit attention.
 
 - **Helper-created contexts are caller-owned.** `qb::io::ssl::create_client_context(method)` and `qb::io::ssl::create_server_context(method, cert_path, key_path)` each return a raw `SSL_CTX*` (or `nullptr` on failure) that **you must free with `SSL_CTX_free()`** unless you hand the context off (see below). (`src/qb/io/tcp/ssl/socket.h:81`, `:92`)
-- **A listener you hand it to takes ownership.** `qb::io::tcp::ssl::listener::init(SSL_CTX*)` stores the context in a `std::unique_ptr` and frees it on destruction. Once you call `init()`, do **not** call `SSL_CTX_free()` yourself — that is a double-free. Call `init()` before `listen()`. (`src/qb/io/tcp/ssl/listener.h:90`)
+- **A listener you hand it to takes ownership.** `qb::io::tcp::ssl::listener::init(SSL_CTX*)` stores the context in a `std::unique_ptr` and frees it on destruction. Once you call `init()`, do **not** call `SSL_CTX_free()` yourself — that is a double-free. Call `init()` before `listen()`. (`src/qb/io/tcp/ssl/listener.h:102-107`)
 
 The transport-based server pattern below is the common case: the freshly created context is passed straight into the transport's listener, which then owns it for the transport's lifetime.
 
@@ -190,12 +190,12 @@ client.transport().set_insecure();
 
 Two further facts shape correct TLS lifetime management:
 
-- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. When you supply your own `SSL*` via `init(SSL*)`, qb-io does not change your verification policy. (`src/qb/io/tcp/ssl/socket.h:782`)
-- **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`src/qb/io/tcp/ssl/socket.h:701`)
+- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. When you supply your own `SSL*` via `init(SSL*)`, qb-io does not change your verification policy. (`src/qb/io/tcp/ssl/socket.h:857-864`)
+- **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`src/qb/io/tcp/ssl/socket.h:780-781`)
 
 ### `qb::io::use<>` ties transport lifetime to the actor
 
-When an actor inherits from a `qb::io::use<>` base (for example `qb::io::use<MyClient>::tcp::client<>`), the networking transport — which owns the socket — is a subobject of that base. Its lifetime is therefore the actor's lifetime: when the actor is destroyed, the base subobject is destroyed, the transport's socket destructor runs, and the descriptor is closed. You do not manage the socket directly. If you need the connection torn down *before* the rest of teardown (for instance, to flush an application-level goodbye), call `this->disconnect()` — the method the `tcp::client` base exposes — from your `on(KillEvent&)` handler; RAII still handles the final close either way. (`src/qb/io/async.h:77`, `src/qb/io/async/io.h:1238`)
+When an actor inherits from a `qb::io::use<>` base (for example `qb::io::use<MyClient>::tcp::client<>`), the networking transport — which owns the socket — is a subobject of that base. Its lifetime is therefore the actor's lifetime: when the actor is destroyed, the base subobject is destroyed, the transport's socket destructor runs, and the descriptor is closed. You do not manage the socket directly. If you need the connection torn down *before* the rest of teardown (for instance, to flush an application-level goodbye), call `this->disconnect()` — the method the `tcp::client` base exposes — from your `on(KillEvent&)` handler; RAII still handles the final close either way. (`src/qb/io/async.h:77`, `src/qb/io/async/io.h:1255-1256`)
 
 See [Networking with qb-io](../3_qb_io/README.md) for the transport hierarchy.
 

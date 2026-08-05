@@ -117,7 +117,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `qev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:777`).
+> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1030-1033`).
 
 ---
 
@@ -125,7 +125,7 @@ registry, or as a member — never relocate them.
 
 - `async::callback(func)` with no duration, or with a non-positive duration,
   runs `func()` **inline immediately** — not on the next loop iteration
-  (`src/qb/io/async/io.h:360`, `:366`). `Timeout<F>` and `ScopedTimeout<F>`
+  (`src/qb/io/async/io.h:376-378`, `:366`). `Timeout<F>` and `ScopedTimeout<F>`
   mirror this fire-immediately semantics in their constructors.
 - `async::callback(func, timeout)` with a positive duration creates a
   self-deleting `Timeout<F>` on the heap, which registers a libev timer.
@@ -147,7 +147,7 @@ registry, or as a member — never relocate them.
 - All timeout, interval, and delay parameters in this layer are
   `qb::duration` (`std::chrono::nanoseconds`); the only raw `double` is libev's
   `qev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /
-  `from_ev_seconds` seam (`src/qb/io/async/io.h:118`). The retired
+  `from_ev_seconds` seam (`src/qb/io/async/io.h:166`). The retired
   pre-2.0 capitalized time identifiers appear nowhere in this layer and must
   never be reintroduced; the canonical vocabulary is `qb::duration`,
   `qb::mono_time`, and `qb::wall_time`
@@ -227,7 +227,7 @@ registry, or as a member — never relocate them.
 ## 7. Sessions in `io_handler<Session>`
 
 - `io_handler::registerSession` enforces the session cap **before** allocation
-  (`src/qb/io/async/io_handler.h:211`). If `_max_sessions > 0` and the
+  (`src/qb/io/async/io_handler.h:216-219`). If `_max_sessions > 0` and the
   registry is full, it closes the incoming I/O (which already owns an open fd,
   and possibly an `SSL*`) and returns `nullptr` — no `Session` is allocated. This
   prevents a connection flood from amplifying into heap pressure.
@@ -359,7 +359,7 @@ with I/O lifetime are:
   qev's `qev_stat` stores the narrow `const char *` it is given **without
   copying** (`src/qb/vendor/qev/qev++.h:696`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
-  `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:576`, `:740`).
+  `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:584-585`, `:740`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and
   do not reassign or shrink `_watched_path` while the watcher is armed — the
   pointer libev holds would dangle and the next stat poll would read freed memory.

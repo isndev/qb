@@ -47,11 +47,9 @@
  *         registerEvent<MyEvent>(*this);
  *         co_return true;
  *     }
- *     void on(MyEvent const& e) { /* handle */ }
-*
-}
-;
- * ` ` `
+ *     void on(MyEvent const& e) {} // handle
+ * };
+ * ```
  */
 
 /**
@@ -107,10 +105,11 @@
  * ### Minimal engine bootstrap
  * ```cpp
  * qb::Main engine;
- * engine.addActor<MyActor>(0 /* core id */);
- *engine.start(); // async by default
- *engine.join();
- * ` ` ` * /
+ * engine.addActor<MyActor>(0); // core id
+ * engine.start();              // async by default
+ * engine.join();
+ * ```
+ */
 
      /**
       * @defgroup Callback Callback System

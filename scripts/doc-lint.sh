@@ -135,7 +135,13 @@ echo "== 2b. Cross-repo URL check (repo name + git ref of absolute isndev links)
 # resolve the URL, it validates the only two parts that rot -- the repository name and the git
 # ref. Docs must cite the RELEASED line, so `main` or a 40-hex permalink; a link into a moving
 # development branch is rejected because it silently rots again on the next merge.
-ISNDEV_REPOS='qb qb-dev qb-ev qb-examples qbm-http qbm-pgsql qbm-redis'
+# The two scaffolding templates joined this list when the scripts that clone them were finally
+# documented. Both verified present and public with `gh repo view` (default branch `master`, which
+# is what the scripts' `+master:master` push targets) — and `isndev/qbm-sample`, the 404 that
+# `qb-new-module.sh` cloned through 2.6.0, still resolves to "Could not resolve to a Repository".
+# That is the whole point of this check: the name a script clones and the name a doc links must
+# both be real, and neither was validated by anything before.
+ISNDEV_REPOS='qb qb-dev qb-ev qb-examples qbm-http qbm-pgsql qbm-redis qb-sample-project qb-sample-module'
 while read -r f; do
   grep -oE 'https://github\.com/isndev/[A-Za-z0-9_.+-]+(/(blob|tree|raw)/[^/)" ]+)?' "$f" 2>/dev/null \
     | while IFS= read -r u; do

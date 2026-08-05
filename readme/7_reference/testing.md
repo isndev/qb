@@ -70,7 +70,7 @@ cmake --build build --parallel
 
 When `QB_BUILD_TESTS` is `OFF`, `qb_add_test` returns early before defining any target, so no test executables and no CTest registrations exist (`qb/cmake/qbFunctions.cmake:444-447`).
 
-Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:511-514`), not alongside the per-module build trees. After a build, list them with:
+Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:532-534`), not alongside the per-module build trees. After a build, list them with:
 
 ```bash
 ls build/bin/tests/
