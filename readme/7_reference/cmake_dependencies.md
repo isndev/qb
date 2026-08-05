@@ -65,17 +65,26 @@ and get both sets of declarations.
 > first, errors inside qb's own `qev++.h` with libev first), never as silent misbehaviour. The
 > only workaround was to keep the two APIs in separate `.cpp` files. That is no longer necessary.
 
-**24 `event_*` symbols still collide at link time.** `libqev.a` and a system `libev.a` export 82
-symbols each and share exactly 24 — `event_init`, `event_add`, `event_base_loop`, `event_del`,
-`event_dispatch`, and the rest of libev's libevent-compatibility layer. That is not a fork
-artefact: those names *are* libevent's published API, and any libev built with its compat layer
-exports them too. Renaming them would destroy the one thing the compat layer exists to provide,
-which is libevent's spelling — so they stay. Linking both archives succeeds silently in either
-order — the linker simply takes the first definition, confirmed with `-Wl,-y`, and
-`-fvisibility=hidden` does not close it — so a program that pulls in both ends up with one
-`event_*` implementation and no diagnostic saying which. If you use the `event_*` compat API, link
-one or the other, not both. Everything qb itself uses goes through the renamed `qev_*` surface and
-is unaffected.
+**The 24 `event_*` symbols no longer ship.** They used to, and the collision was real: `libqev.a`
+carried libev's libevent-compatibility layer (`event_init`, `event_add`, `event_base_loop`,
+`event_del`, `event_dispatch`, …) under libevent's own unprefixed names, on every consumer's link
+line — `qb::io` names `qb::qev` in its `INTERFACE_LINK_LIBRARIES`. A consumer that also linked the
+real libevent got whichever implementation the archive order picked, with two unrelated
+`struct event_base` layouts and no diagnostic. Measured against a stand-in: `-lfakeevent` first ran
+real libevent, `libqev.a` first ran qb's fork, `rc=0`, silently.
+
+Those names are not a fork artefact — they *are* libevent's published API, and any libev built with
+its compat layer exports them too, so renaming them would destroy the one thing the layer exists to
+provide. The fix was therefore to stop building it rather than to rename it: **`QB_EV_LIBEVENT_COMPAT`
+defaults to `OFF`**, `event.c` is left out of the archive, and `event.h`/`event_compat.h` are excluded
+from the install. Nothing in qb calls any of them (`nm -u libqb-io.a | grep -c '^ *_event_'` → 0), so
+the default costs qb nothing and makes the collision impossible rather than merely unlikely. Confirm
+on any build with `nm -g <prefix>/lib/libqev.a | grep -c '_event_'` → `0`.
+
+Turn the option `ON` only if you need libevent's spelling from qb's fork — and then the paragraph
+above applies again: link qb's fork or a real libevent, not both. Everything qb itself uses goes
+through the renamed `qev_*` surface and is unaffected either way.
+`QB_EV_LIBEVENT_COMPAT` is declared at `qb/src/qb/vendor/qev/CMakeLists.txt:85-87`.
 
 Note that `qb/readme/` is **not** installed, so for a `find_package(qb)` consumer the authoritative
 copy of both caveats is the comment block at the top of the installed header itself

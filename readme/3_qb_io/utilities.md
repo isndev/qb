@@ -222,10 +222,31 @@ auto dk   = C::derive_key("password", salt, /*key_length*/ 32,
 
 - **Key generation:** `generate_rsa_keypair(bits = 2048)`, `generate_ec_keypair(curve = "prime256v1")`, `generate_ed25519_keypair()`, `generate_x25519_keypair()` — each returns a `std::pair<std::string, std::string>` of `{private_pem, public_pem}`.
 - **Sign / verify:** `rsa_sign`/`rsa_verify`, `ec_sign`/`ec_verify` (default `DigestAlgorithm::SHA256`), `ed25519_sign`/`ed25519_verify`.
-- **Key agreement:** `ecdh_derive_secret`, `x25519_key_exchange`.
-- **Hybrid encryption:** `ecies_encrypt`/`ecies_decrypt` (`ECIESMode::STANDARD | AES_GCM | CHACHA20`), and `envelope_encrypt`/`envelope_decrypt` (`EnvelopeFormat::RAW | JSON | BASE64`) for large payloads.
+- **Key agreement:** `x25519_key_exchange` — two overloads, one taking raw-byte keys and one taking PEM strings, both returning the shared secret as `std::vector<unsigned char>`. There is **no** `ecdh_derive_secret`: X25519 is the only key agreement qb implements, and an ECDH over a `generate_ec_keypair` curve is not exposed.
+- **Hybrid encryption:** `ecies_encrypt`/`ecies_decrypt` (`ECIESMode::STANDARD | AES_GCM | CHACHA20`, default `AES_GCM`). These take **raw-byte keys only** — there is no PEM/`std::string` overload and no `DigestAlgorithm` parameter, so a `generate_ec_keypair` PEM will not fit; use `generate_x25519_keypair_bytes()`. `ecies_encrypt` returns `{ephemeral_public_key, ciphertext}` **in that order**, while `ecies_decrypt(ciphertext, ephemeral_public_key, recipient_private_key, …)` takes them the other way round — passing the pair straight through throws `Failed to create public key from raw bytes`. Prefer the AEAD modes: `STANDARD` is AES-256-CBC with no MAC (see the warning on `ECIESMode`).
 
 _(`qb/src/qb/io/crypto.h:594-648,846-901,910-1000`.)_
+
+> **`envelope_encrypt` / `envelope_decrypt` do not exist.** This page used to list them, and so did
+> `llm/qb.llm.api.md`, complete with default arguments. Nothing of the sort was ever declared in
+> `crypto.h` — a caller gets a compile error, not a link error. What is real is the `EnvelopeFormat`
+> enum (`RAW | JSON | BASE64`), which **no function in the tree consumes**; it is a leftover of a
+> feature that was never written. For authenticated encryption that binds unencrypted metadata to
+> the ciphertext — the job the name suggests — use the pair below instead.
+
+**Authenticated encryption with associated metadata.** `encrypt_with_metadata(plaintext, key, metadata, algorithm = SymmetricAlgorithm::AES_256_GCM)` returns a structured `std::string` carrying IV, AAD and tag; the `metadata` travels in the clear but is authenticated, so tampering with it fails decryption. `decrypt_with_metadata(ciphertext, key, algorithm = SymmetricAlgorithm::AES_256_GCM)` returns `std::optional<std::pair<std::vector<unsigned char>, std::string>>` — `{plaintext, metadata}` on success, and an **empty optional** on any authentication failure, so check it before using either half.
+
+<!-- src: qb/src/qb/io/crypto.h:969-987 -->
+
+```cpp
+auto key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+std::vector<unsigned char> plain{'h', 'i'};
+
+std::string sealed = qb::crypto::encrypt_with_metadata(plain, key, "user=42");
+if (auto opened = qb::crypto::decrypt_with_metadata(sealed, key)) {
+    auto &[data, metadata] = *opened;   // metadata == "user=42", authenticated
+}
+```
 
 ### Constant-time comparison and secure tokens
 
