@@ -51,7 +51,11 @@ The result is a buildable CMake project with qb wired in and ready to extend. Bu
 
 The script refuses to run if `MyProject/` or `qb-sample-project/` already exists in the current directory, and aborts on the first failed step rather than continuing — worth knowing because the recommended invocation above pipes it into `bash` in whatever directory you happen to be standing in.
 
-<!-- src: qb/script/qb-new-project.sh:48-65 -->
+`qb-new-module.sh`, in the same directory, is its module-side counterpart: it scaffolds a qbm module from the `qb-sample-module` template, in the layout `qb_load_modules` expects. Run it from your project's `qbm/` directory. See [Composing qbm modules](advanced_usage.md#composing-qbm-modules).
+
+> **Both scripts are bash.** They declare `#!/usr/bin/env bash`, use `set -euo pipefail`, and shell out to `git`, `mkdir` and `mv` — so neither runs in `cmd.exe` or PowerShell. On Windows, invoke them from **WSL** or **Git Bash**. This is the only part of qb that needs a POSIX shell: once the project exists, the MSVC build path is unaffected (see [Platform notes](../7_reference/building.md#platform-notes)).
+
+<!-- src: qb/script/qb-new-project.sh:1,48-65, qb/script/qb-new-module.sh:1,14,33-40 -->
 
 ### Option B — embed qb in an existing CMake project
 

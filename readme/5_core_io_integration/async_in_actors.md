@@ -167,7 +167,7 @@ public:
 };
 ```
 
-`ScopedTimeout` exposes `cancel()` and `fired()`. As with `callback`, a non-positive duration fires inline at construction. The trade-off versus `callback`: `scoped_callback` is cancellable and owned by you; `callback` is fire-and-forget and self-cleaning. <!-- src: qb/src/qb/io/async/io.h:421,427; qb/src/qb/io/async/io.h:410 -->
+`ScopedTimeout` exposes `cancel()` and `fired()`. As with `callback`, a non-positive duration fires inline at construction. The trade-off versus `callback`: `scoped_callback` is cancellable and owned by you; `callback` is fire-and-forget and self-cleaning. <!-- src: qb/src/qb/io/async/io.h:433-437,427; qb/src/qb/io/async/io.h:410 -->
 
 ## `qb::io::async::with_timeout<T>` — inactivity timers
 
@@ -281,7 +281,7 @@ spawn([this](auto ctx) -> qb::io::async::task<void> {
 });
 ```
 
-`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is shared per `VirtualCore` and established when the core's listener is created, so both `spawn` and `spawn_detached` require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1160,1196; qb/src/qb/io/async/listener.h:293; qb/src/qb/core/Actor.cpp:240-263 -->
+`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is shared per `VirtualCore` and established when the core's listener is created, so both `spawn` and `spawn_detached` require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1211-1213,1196; qb/src/qb/io/async/listener.h:293; qb/src/qb/core/Actor.cpp:240-263 -->
 
 For the scoped-cancellation operations and the native `ask()` request/response pattern, see the [scoped-coroutine and ask recipes](../6_guides/patterns_cookbook.md). For the awaitables themselves (`sleep`, timeouts, channels, `when_all`/`when_any`/`race`), see [Reference: C++20 coroutines](../3_qb_io/coroutines.md).
 

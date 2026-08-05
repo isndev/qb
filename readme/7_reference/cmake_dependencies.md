@@ -128,7 +128,7 @@ The two prefixes are not interchangeable.
 - `QB_WITH_*` are **user-facing requests** — options you set on the command line (`QB_WITH_SSL`, `QB_WITH_COMPRESSION`, `QB_WITH_QUIC`, `QB_WITH_PROFILING`).
 - `QB_HAS_*` are **resolved results** — what qb actually found after probing (`QB_HAS_SSL`, `QB_HAS_COMPRESSION`, `QB_HAS_QUIC`, `QB_HAS_ARGON2`, `QB_HAS_PROFILING`, `QB_HAS_UUID`, `QB_HAS_LIBEV`).
 
-A `QB_HAS_*` flag drives the corresponding `QB_HAS_*=1` compile definition on qb targets (`qbDependencies.cmake:331-353`). When a requested feature's dependency is missing, qb forces the `QB_WITH_*` option back off so the recorded request matches reality.
+A `QB_HAS_*` flag drives the corresponding `QB_HAS_*=1` compile definition on qb targets (`qbDependencies.cmake:370-372`). When a requested feature's dependency is missing, qb forces the `QB_WITH_*` option back off so the recorded request matches reality.
 
 ## Resolution policy: QB_DEPS_FETCH_FALLBACK
 

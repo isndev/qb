@@ -44,6 +44,15 @@ jobs:
       - name: Headers - no shipped header defines a strong external symbol
         run: ./scripts/check-header-linkage.py --min-constructs 800
 
+      # An `#include` between the braces of a namespace declares `<that-ns>::std`, and stays a
+      # no-op for exactly as long as some earlier header keeps pulling the same header in first.
+      # qb shipped one at io/async/tcp/connector.h:640 through 2.6.0. Same phase as the two
+      # above and for the same reason: pure Python, no toolchain, whole tree rather than the
+      # diff (the directive can be in a header this PR does not touch but re-includes).
+      # qb only; qbm's copies run from the superproject's dev/agent/verify.sh.
+      - name: Headers - no #include is processed inside a namespace
+        run: ./scripts/check-namespace-scoped-includes.py --min-includes 2900
+
       - name: Install LLVM tools
         run: |
           ./scripts/ci-install-linux-dependencies.sh --profile format-check

@@ -358,6 +358,15 @@ target_link_libraries(my_app
 )
 ```
 
+To start a module of your own, `script/qb-new-module.sh` scaffolds one from the `qb-sample-module` template — the same directory layout `qb_load_modules` discovers, with the `qb_register_module` call already wired:
+
+```bash
+# <!-- src: qb/script/qb-new-module.sh:16-17,32-39 -->
+curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-module.sh | bash /dev/stdin mymodule
+```
+
+Run it from your project's `qbm/` directory and the result is picked up by the `qb_load_modules` call above as `qbm::mymodule`. It refuses to overwrite an existing `mymodule/` or `qb-sample-module/` and aborts on the first failed step. Like `qb-new-project.sh` it is **bash**, so on Windows it needs WSL or Git Bash; nothing else in the module build path does.
+
 Each qbm module is a compiled library (`qb_register_module` with a `SOURCES` list), not header-only. Linking `qbm::<mod>` is `PUBLIC`-transitive: it pulls in `qb::core` and `qb::io`, and `qb_register_module` propagates the selected qb standard to the consumer through `target_compile_features(... PUBLIC cxx_std_${QB_CXX_STANDARD})`, so your target compiles at the framework-required language level automatically.
 
 ### Runtime composition pattern

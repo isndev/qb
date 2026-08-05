@@ -42,7 +42,7 @@ this page only states what the patterns depend on.
   hold (quorum tallies, dedup caches, breaker state) needs no locking
   (`qb/src/qb/core/patterns/scatter.h:151-153`, `qb/src/qb/core/patterns/idempotency.h:60-62`).
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
-  `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1134-1135`);
+  `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1163-1165`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
   (`qb/src/qb/core/Actor.h:1153`, `:1658-1662`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
@@ -52,7 +52,7 @@ this page only states what the patterns depend on.
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
   (`qb/src/qb/core/Event.h:321-323`); `qb::AskEvent` derives from it for the request/response API
-  (`qb/src/qb/core/Actor.h:1347-1350`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
+  (`qb/src/qb/core/Actor.h:1399`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
   discovery (`qb/src/qb/core/Event.h:344-372`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
   (inside `onInit()`), so the whole library works during init
@@ -64,7 +64,7 @@ These behaviours are uniform across the awaitable patterns and are not repeated 
 
 - **Cancel-on-kill.** When an actor is killed/destroyed its scope token is cancelled; any pattern
   parked on a cancellation-aware wait wakes within the next loop iteration and throws
-  `qb::io::async::cancelled_error` (`qb/src/qb/core/Actor.h:1561-1564`).
+  `qb::io::async::cancelled_error` (`qb/src/qb/core/Actor.h:1156-1160`).
 - **Timeouts throw.** A relative `qb::duration` timeout that elapses throws
   `qb::io::async::timeout_error`. A `timeout <= 0` waits indefinitely (until reply or kill)
   (`qb/src/qb/core/patterns/request.h:87-90`).

@@ -161,7 +161,7 @@ std::string hex    = qb::crypto::to_hex_string(std::string(data.begin(), data.en
 ```
 <!-- src: qb/tests/io/unit/crypto/crypto-primitives.cpp -->
 
-The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a hexadecimal string and take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/src/qb/io/crypto.h:142,309-393`.)_
+The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a hexadecimal string and take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/src/qb/io/crypto.h:152,309-393`.)_
 
 ### Random data
 
@@ -250,7 +250,7 @@ if (auto opened = qb::crypto::decrypt_with_metadata(sealed, key)) {
 
 ### Constant-time comparison and secure tokens
 
-`constant_time_compare(a, b)` compares two byte vectors without short-circuiting (use it for HMACs and password hashes). `generate_token(payload, key, ttl)` produces an encrypted, authenticated token; `verify_token(token, key)` returns the payload or an empty string on any failure (tampering, malformed input, or expiry). _(`qb/src/qb/io/crypto.h:562,812-825`.)_
+`constant_time_compare(a, b)` compares two byte vectors without short-circuiting (use it for HMACs and password hashes). `generate_token(payload, key, ttl)` produces an encrypted, authenticated token; `verify_token(token, key)` returns the payload or an empty string on any failure (tampering, malformed input, or expiry). _(`qb/src/qb/io/crypto.h:583,812-825`.)_
 
 ```cpp
 auto key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
@@ -309,13 +309,13 @@ if (result.is_valid()) {
 
 `create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/src/qb/io/crypto_jwt.h:67-94,175-192`; `qb/src/qb/io/crypto_jwt.cpp:282`.)_
 
-`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/src/qb/io/crypto_jwt.h:138,194-201`; `qb/src/qb/io/crypto_jwt.cpp:474,478`; `docs-overhaul/qb/FACTBOOK.md:285,486-487`.)_
+`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/src/qb/io/crypto_jwt.h:158,194-201`; `qb/src/qb/io/crypto_jwt.cpp:474,478`; `docs-overhaul/qb/FACTBOOK.md:285,486-487`.)_
 
 ---
 
 ## Compression (`qb::gzip`, `qb::deflate`)
 
-zlib-backed gzip and deflate. Requires `QB_WITH_COMPRESSION` → `QB_HAS_COMPRESSION`. The convenience namespaces `qb::gzip` and `qb::deflate` are `using`-aliases of `qb::compression::gzip` / `qb::compression::deflate`. _(`qb/src/qb/io/compression.h:949-962`.)_
+zlib-backed gzip and deflate. Requires `QB_WITH_COMPRESSION` → `QB_HAS_COMPRESSION`. The convenience namespaces `qb::gzip` and `qb::deflate` are `using`-aliases of `qb::compression::gzip` / `qb::compression::deflate`. _(`qb/src/qb/io/compression.h:962-964`.)_
 
 ```cpp
 #include <qb/io/compression.h>
@@ -441,7 +441,7 @@ std::size_t cap = name.capacity();  // == 32 (compile-time max)
 ```
 <!-- src: qb/src/qb/string.h -->
 
-`size()` (alias `length()`) is the current length; `capacity()` and `max_size()` both return the compile-time `N`. Assigning or appending past `N` truncates to `N` rather than reallocating. The internal length field uses the smallest unsigned integer type that can hold `N + 1` (`uint8_t`/`uint16_t`/`size_t`), so small fixed strings stay compact. `qb::string<N>` converts implicitly to both `std::string` and `std::string_view`. _(`qb/src/qb/string.h:53-105,310-323,509-560`.)_
+`size()` (alias `length()`) is the current length; `capacity()` and `max_size()` both return the compile-time `N`. Assigning or appending past `N` truncates to `N` rather than reallocating. The internal length field uses the smallest unsigned integer type that can hold `N + 1` (`uint8_t`/`uint16_t`/`size_t`), so small fixed strings stay compact. `qb::string<N>` converts implicitly to both `std::string` and `std::string_view`. _(`qb/src/qb/string.h:90,310-323,509-560`.)_
 
 ---
 

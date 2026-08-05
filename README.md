@@ -33,7 +33,8 @@ Higher-level protocols (HTTP/1.1, HTTP/2, and HTTP/3, WebSocket, PostgreSQL, Red
 
 ### Generate a project
 
-The `qb-new-project.sh` helper scaffolds a buildable project:
+The `qb-new-project.sh` helper scaffolds a buildable project from the
+[`qb-sample-project`](https://github.com/isndev/qb-sample-project) template:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-project.sh | bash /dev/stdin MyProject
@@ -42,6 +43,16 @@ cmake -DCMAKE_BUILD_TYPE=Release -B build
 cmake --build build --parallel
 ./build/qb-sample-project
 ```
+
+It clones the template, re-initializes it as a fresh Git repository under the name you pass, and
+pulls qb in as a submodule. It refuses to run if `MyProject/` or `qb-sample-project/` already
+exists in the current directory, and aborts on the first failed step — worth knowing, because the
+invocation above pipes it into `bash` in whatever directory you happen to be standing in.
+
+> **Both scaffolding scripts are bash** (`#!/usr/bin/env bash`, `set -euo pipefail`) and use `git`,
+> `mkdir` and `mv`. They do **not** run in `cmd.exe` or PowerShell. On Windows, run them from
+> **WSL** or **Git Bash**. Nothing else in qb's build requires a shell — MSVC builds work normally
+> once the project exists; this constraint applies only to the two generators.
 
 ### Your first actor
 
@@ -132,6 +143,22 @@ git submodule add https://github.com/isndev/qbm-http qbm/http
 qb_load_modules("${CMAKE_CURRENT_SOURCE_DIR}/qbm")
 target_link_libraries(my_app PRIVATE qbm::http)
 ```
+
+### Scaffold your own module
+
+`qb-new-module.sh` is the module-side counterpart of `qb-new-project.sh`. It scaffolds a qbm module
+from the [`qb-sample-module`](https://github.com/isndev/qb-sample-module) template — the layout
+`qb_load_modules` expects, with the `qb_register_module` call already wired:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-module.sh | bash /dev/stdin mymodule
+```
+
+Run it from your project's `qbm/` directory; the result is picked up by the
+`qb_load_modules("${CMAKE_CURRENT_SOURCE_DIR}/qbm")` call above and exposed as `qbm::mymodule`. The
+same guards apply as for `qb-new-project.sh`: it refuses to overwrite an existing `mymodule/` or
+`qb-sample-module/`, aborts on the first failed step, and — being bash — needs WSL or Git Bash on
+Windows.
 
 ## Building
 

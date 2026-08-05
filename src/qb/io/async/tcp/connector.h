@@ -56,7 +56,18 @@
 #include <chrono>
 #include <concepts>
 #include <memory>
+#include <optional>
 #include <type_traits>
+
+// <coroutine> belongs here, not beside the coroutine section further down: an #include
+// processed inside `namespace qb::io::async::tcp` would declare
+// `qb::io::async::tcp::std` rather than `::std`. It is harmless today only because
+// something earlier already pulled these in -- an ordering accident, not a guarantee.
+// See qbm/pgsql/src/qbm/pgsql/commands.h for the same defect caught live.
+// qb/scripts/check-namespace-scoped-includes.py enforces this.
+#ifdef __cpp_impl_coroutine
+#include <coroutine>
+#endif
 
 #include <qb/io.h>
 #include <qb/io/system/sys__socket.h>
@@ -635,11 +646,9 @@ starttls_connect(Socket_ &&existing, uri const &remote, Func_ &&func, qb::durati
 // =============================================================================
 
 #ifdef __cpp_impl_coroutine
-// Coroutines are available (C++20/23)
-
-#include <coroutine>
-#include <optional>
-#include <chrono>
+// Coroutines are available (C++20/23).
+// <coroutine>, <optional> and <chrono> are included at the top of this file, outside
+// `namespace qb::io::async::tcp` -- see the note there.
 
 /**
  * @defgroup CoroutineTCP Coroutine TCP Connectors
