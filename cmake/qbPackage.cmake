@@ -73,8 +73,13 @@ endfunction()
 #   SOURCE_DIR       the repository root. Defaults to CMAKE_CURRENT_SOURCE_DIR. Its src/ is
 #                    the include root and its LICENSE ships; nothing else about it is read.
 #   HEADER_EXCLUDE   optional regex passed to install(DIRECTORY) as REGEX ... EXCLUDE. qb
-#                    needs exactly one (stduuid's vendored Catch2); a module needs none, and
-#                    that a module needs none is the whole point of the layout.
+#                    needs two (stduuid's vendored Catch2; the qev libevent compat headers
+#                    unless QB_EV_LIBEVENT_COMPAT). That a module needs one at all is a
+#                    finding, not a feature: the src/ layout means everything under
+#                    src/qbm/<name>/ IS the public surface, so an exclusion here says a file
+#                    living in the public tree is not public. qbm-pgsql has exactly one
+#                    (field_handler.h, dead and non-compiling) and it is forwarded by
+#                    qb_register_module(HEADER_EXCLUDE) -- see that function's header.
 #   TARGETS          every target that travels in the export set. A bundled non-imported
 #                    library that a public target links PUBLIC MUST be listed: its name lands
 #                    in INTERFACE_LINK_LIBRARIES, and install(EXPORT) is a hard error on a

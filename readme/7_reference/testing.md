@@ -88,7 +88,7 @@ The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig
 
 ### Test resources
 
-If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:1070-1093`). SSL-dependent qb-io tests additionally depend on a `generate_ssl_certs` target that produces a self-signed certificate. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:553-555`).
+If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:1108-1131`). SSL-dependent qb-io tests additionally depend on a `generate_ssl_certs` target that produces a self-signed certificate. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:553-555`).
 
 ### Conditional suites
 

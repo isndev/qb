@@ -757,9 +757,30 @@ endfunction()
 #                          consumer has no way to invent them.
 #   INSTALL_CMAKE_FILES    extra module-relative files copied next to the package config
 #                          (typically the Find<Pkg>.cmake modules CONFIG_DEPENDENCIES uses).
+#   HEADER_EXCLUDE         optional regex forwarded verbatim to qb_install_package(), which
+#                          hands it to install(DIRECTORY) as REGEX ... EXCLUDE. Reaching for
+#                          it should feel wrong: under the src/ layout every file beneath
+#                          src/qbm/<name>/ ships, which is exactly what makes the layout
+#                          checkable, so an exclusion asserts that a file sitting in the
+#                          public tree is not part of the public surface. Use it only for a
+#                          file that is DEAD -- included by nothing in its own module -- and
+#                          say so at the call site. A file that is merely awkward to compile
+#                          alone is a self-containment bug, not an exclusion.
+#
+#                          It exists because qbm-pgsql shipped field_handler.h to every
+#                          consumer for years: 371 lines that no TU in the tree includes and
+#                          that cannot compile at all (it redefines resultset::row::to, which
+#                          the merged tail of resultset.h already defines, and calls a
+#                          ParamUnserializer::deserialize that does not exist). It was carried
+#                          as a permanent named exclusion in scripts/check-installed-headers.sh
+#                          instead -- which kept the gate green by taking the file OUT of the
+#                          gate's scope, on the one surface where scope is the whole point.
+#                          Not installing it is the smaller lie: the file stays in the tree
+#                          for the maintainer decision it is waiting on, and the
+#                          self-containment gate goes back to covering everything shipped.
 function(qb_register_module)
     set(options HEADER_ONLY)
-    set(oneValueArgs NAME VERSION DESCRIPTION CONFIG_DEPENDENCIES)
+    set(oneValueArgs NAME VERSION DESCRIPTION CONFIG_DEPENDENCIES HEADER_EXCLUDE)
     set(multiValueArgs SOURCES DEPENDS INCLUDES DEFINES EXPORT_EXTRA_TARGETS INSTALL_CMAKE_FILES)
 
     cmake_parse_arguments(MOD "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
@@ -924,6 +945,7 @@ function(qb_register_module)
             CONFIG_TEMPLATE "${QB_CMAKE_DIR}/qbmModuleConfig.cmake.in"
             TARGETS ${module_target} ${MOD_EXPORT_EXTRA_TARGETS}
             CMAKE_FILES ${_qbm_cmake_files}
+            HEADER_EXCLUDE "${MOD_HEADER_EXCLUDE}"
             # not-qb/<unit>/ is the convention for a vendored upstream inside a qbm module
             # (today only qbm-http's llhttp). Globbing rather than naming it keeps this
             # generic: a module that vendors something later ships its notice automatically.
