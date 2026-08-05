@@ -102,7 +102,7 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | Option | Type / default | Effect |
 |---|---|---|
 | `CMAKE_BUILD_TYPE` | `Debug` \| `Release` \| `RelWithDebInfo` \| `MinSizeRel`; default `Release` | Standard CMake build configuration (`qbConfig.cmake:172-177`). |
-| `BUILD_SHARED_LIBS` / `QB_BUILD_SHARED_LIBS` | bool; `QB_BUILD_SHARED_LIBS` defaults to the value of `BUILD_SHARED_LIBS` (itself `OFF` unless set) | Build `qb-io`/`qb-core` (and modules) as shared objects instead of static. Setting `BUILD_SHARED_LIBS=ON` switches qb to shared; `QB_BUILD_SHARED_LIBS` is an explicit qb-only override (`qbConfig.cmake:82`). The whole tree is built position-independent regardless (`CMAKE_POSITION_INDEPENDENT_CODE ON`, `qbConfig.cmake:155`). |
+| `BUILD_SHARED_LIBS` / `QB_BUILD_SHARED_LIBS` | bool; `QB_BUILD_SHARED_LIBS` defaults to the value of `BUILD_SHARED_LIBS` (itself `OFF` unless set) | Build `qb-io`/`qb-core` (and modules) as shared objects instead of static. Setting `BUILD_SHARED_LIBS=ON` switches qb to shared; `QB_BUILD_SHARED_LIBS` is an explicit qb-only override (`qbConfig.cmake:82`). The whole tree is built position-independent regardless (`CMAKE_POSITION_INDEPENDENT_CODE ON`, `qbConfig.cmake:229`). |
 | `QB_BUILD_TESTS` | bool; `ON` | Build the unit and system tests (GoogleTest). Gates GoogleTest resolution (`qbConfig.cmake:85`). |
 | `QB_BUILD_BENCHMARKS` | bool; `OFF` | Build performance benchmarks (Google Benchmark) (`qbConfig.cmake:89`). |
 | `QB_BUILD_EXAMPLES` | bool; `ON` | Build the example applications (`qbConfig.cmake:86`). |

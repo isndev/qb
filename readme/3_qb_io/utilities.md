@@ -262,13 +262,13 @@ std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/ex
 ```
 <!-- src: qb/src/qb/io/crypto.h:777-790 -->
 
-`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_advanced.cpp:235,243-244,249-252`; `docs-overhaul/qb/FACTBOOK.md:481-483`.)_
+`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_advanced.cpp:232,237,243-244,249-252`; `docs-overhaul/qb/FACTBOOK.md:481-483`.)_
 
 ---
 
 ## JSON Web Tokens (`qb::jwt`)
 
-`qb::jwt` implements RFC 7519 over `qb::crypto`, in the same OpenSSL-gated slice. Every entry point is a static member of `class jwt`. _(`qb/src/qb/io/crypto_jwt.h:46`.)_
+`qb::jwt` implements RFC 7519 over `qb::crypto`, in the same OpenSSL-gated slice. Every entry point is a static member of `class jwt`. _(`qb/src/qb/io/crypto_jwt.h:58`.)_
 
 Supported `Algorithm` values: `HS256/384/512` (HMAC), `RS256/384/512` (RSASSA-PKCS1-v1_5), `ES256/384/512` (ECDSA on P-256/P-384/P-521), and `EdDSA` (Ed25519). _(`qb/src/qb/io/crypto_jwt.h:51-62`.)_
 
@@ -361,7 +361,7 @@ std::string dec = qb::io::uri::decode(enc);        // "a b/c"
 ```
 <!-- src: qb/tests/io/unit/core/uri-parse.cpp:431-453 -->
 
-`u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0)` returns a single decoded value as `std::string const&` (a reference to a static empty string on a miss); `query_or(name, fallback, index = 0)` returns the value **by value** with a custom fallback. `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/src/qb/io/uri.h:193,476-573`.)_
+`u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0)` returns a single decoded value as `std::string const&` (a reference to a static empty string on a miss); `query_or(name, fallback, index = 0)` returns the value **by value** with a custom fallback. `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/src/qb/io/uri.h:474,476-573`.)_
 
 ---
 

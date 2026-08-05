@@ -25,7 +25,7 @@ These primitives are correct only under tightly scoped threading contracts. Each
 | `mpsc::ringbuffer`, round-robin enqueue | many | exactly one | per-producer `SpinLock` |
 | `mpsc_unbounded_queue` | many | exactly one | lock-free (Michael-Scott) |
 
-"Exactly one consumer" is not advisory. In the SPSC buffer, `write_index_` is written only from the enqueue side and `read_index_` only from the dequeue side; a second producer or a second consumer races those stores and the result is undefined (`src/qb/system/lockfree/spsc.h:153`). The MPSC `dequeue` and `consume_all` overloads are likewise single-consumer only (`src/qb/system/lockfree/mpsc.h:171`).
+"Exactly one consumer" is not advisory. In the SPSC buffer, `write_index_` is written only from the enqueue side and `read_index_` only from the dequeue side; a second producer or a second consumer races those stores and the result is undefined (`src/qb/system/lockfree/spsc.h:151`). The MPSC `dequeue` and `consume_all` overloads are likewise single-consumer only (`src/qb/system/lockfree/mpsc.h:171`).
 
 These types live in `qb` (the foundation shared by `qb-io` and `qb-core`), not in either library exclusively. They depend on the canonical time model (`qb::duration`, `qb::mono_time`; see [API overview](./api_overview.md)) and on cache-line constants from `qb/utility/prefix.h`.
 
@@ -233,11 +233,11 @@ public:
 
 ### Contract and behavior
 
-- **`push()` is lock-free and multi-producer-safe.** Any number of threads may push concurrently. A push allocates one heap node and links it via an atomic `exchange` on the tail (`src/qb/system/lockfree/mpsc_unbounded_queue.h:78`).
+- **`push()` is lock-free and multi-producer-safe.** Any number of threads may push concurrently. A push allocates one heap node and links it via an atomic `exchange` on the tail (`src/qb/system/lockfree/mpsc_unbounded_queue.h:80-84`).
 - **`pop()` is single-consumer only.** Only the one designated consumer thread may call `pop()`; it moves the value into `out` and returns `false` when the queue is empty (`src/qb/system/lockfree/mpsc_unbounded_queue.h:91`).
 - **`T` must be movable.** `push` takes `T` by value and moves it into the node; `pop` moves the node's value into `out` (`src/qb/system/lockfree/mpsc_unbounded_queue.h:43`).
 - **`size()` and `empty()` are approximate.** They reflect a momentary snapshot a producer can invalidate immediately; only the consumer should consult them, and only as a hint (`src/qb/system/lockfree/mpsc_unbounded_queue.h:117`).
-- **A sentinel node always remains.** The constructor allocates one sentinel and points both `head_` and `tail_` at it; the destructor walks from `head_` deleting every remaining node (`src/qb/system/lockfree/mpsc_unbounded_queue.h:62`). Each `push` adds a heap node; each `pop` frees the consumed one. This trades the ring buffer's zero-allocation steady state for unbounded capacity.
+- **A sentinel node always remains.** The constructor allocates one sentinel and points both `head_` and `tail_` at it; the destructor walks from `head_` deleting every remaining node (`src/qb/system/lockfree/mpsc_unbounded_queue.h:64-68,70-77`). Each `push` adds a heap node; each `pop` frees the consumed one. This trades the ring buffer's zero-allocation steady state for unbounded capacity.
 
 ## Pitfalls
 

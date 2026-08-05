@@ -56,7 +56,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 
 ### Identifiers
 
-- `qb::ActorId` is a 32-bit compound of a `ServiceId` (the actor's slot within its core) and a `CoreId` (which `VirtualCore` hosts it). Default-construction yields `ActorId::NotFound` (`== 0`, invalid); `is_valid()` checks the value against `NotFound` (`src/qb/core/ActorId.h:403`).
+- `qb::ActorId` is a 32-bit compound of a `ServiceId` (the actor's slot within its core) and a `CoreId` (which `VirtualCore` hosts it). Default-construction yields `ActorId::NotFound` (`== 0`, invalid); `is_valid()` checks the value against `NotFound` (`src/qb/core/ActorId.h:401,442`).
 - `ActorId::BroadcastSid` (`ServiceId` max) marks an id as a broadcast target. A `qb::BroadcastId(core)` used with `push<>()` delivers to every actor on one core; `Actor::broadcast<Event>()` fans out to every active core (`src/qb/core/Actor.h:949-956`).
 
 ### Sending: push vs send
