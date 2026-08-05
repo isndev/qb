@@ -128,12 +128,23 @@ function(qb_install_package)
     # and installing perfectly. 3.0 merged all four into the headers that include them, so the
     # tree now holds zero of either.
     #
-    # They stay because the rule is shared verbatim with qb_register_module() and the failure
-    # they prevent is silent at configure AND at install time, surfacing only in a downstream
-    # consumer's first TU -- no gate in this repo would catch it on the day such a file is
-    # added. The measured cost of keeping them is nothing: FILES_MATCHING patterns that match
-    # no file install no file. Do not "clean these up"; deleting them is a change whose only
-    # effect is to remove a net.
+    # The reason they stayed has since EXPIRED IN PART, so record what is actually true rather
+    # than leave a justification that reads better than it is. The note used to say "no gate in
+    # this repo would catch it on the day such a file is added". That is now wrong for qb:
+    # scripts/check-header-extensions.py fails on any .tpp/.inl and runs in qb's own CI
+    # (.github/workflows/format-check.yml) as well as from the superproject's
+    # dev/agent/verify.sh, where dev/agent/header-rules-negative-control.sh resurrects a .tpp
+    # every run to prove it still fires. For a .tpp under qb/, these two patterns are now
+    # genuinely vestigial.
+    #
+    # They stay anyway, on the one leg of the argument that still holds. This rule is shared
+    # VERBATIM with qb_register_module(), so it is also every qbm module's header install --
+    # and no qbm module runs the extension check in its own CI (each ships only doc-lint.yml).
+    # A .inl added to qbm-pgsql is caught by verify.sh at the superproject, and by nothing at
+    # all in the module's own pipeline; the failure it would cause is silent at configure AND
+    # at install time and surfaces only in a downstream consumer's first TU. The measured cost
+    # of keeping the patterns is nothing: FILES_MATCHING patterns that match no file install no
+    # file. Do not "clean these up" -- deleting them removes a net and fixes nothing.
     set(_qb_pkg_hdr_exclude)
     if(P_HEADER_EXCLUDE)
         set(_qb_pkg_hdr_exclude REGEX "${P_HEADER_EXCLUDE}" EXCLUDE)
