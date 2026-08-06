@@ -1930,13 +1930,52 @@ public:
     getType() {
         return type_id<_Type>();
     }
+    /**
+     * @brief Demangled type name for `_Type`, valid for the whole program.
+     * @tparam _Type The type to name.
+     * @return A NUL-terminated string that is never freed — safe to store in a bare
+     *         `const char *` and to read at any time, from any thread, including during
+     *         static destruction.
+     * @details
+     * The returned pointer is what `setName`/`setTypeInfo` park in `Actor::name`, and
+     * `Actor::getName()` builds a `std::string_view` straight from it. Both
+     * `operator<<(…, Actor const&)` overloads read it — including the one
+     * `VirtualCore::removeActor()` streams (`QB_LOG_INFO("Delete " << *actor)`), which is
+     * live whenever logging is compiled in.
+     *
+     * That pointer therefore has to outlive every reader, and the engine offers no
+     * guarantee that it does the reverse: `qb::Main` joins its workers in `~Main`, but a
+     * `Main` that outlives `main()` — or one parked on a detached thread, the shape four
+     * tests in this suite use — is still turning when the `__cxa_atexit` chain fires.
+     *
+     * So the cache is **deliberately immortal**: `abi::__cxa_demangle` returns heap, and
+     * that heap is handed to a `static const char *const` that has no destructor, hence no
+     * `__cxa_atexit` registration and no release at static-destruction time. Holding it in
+     * a `static std::unique_ptr<char, void(*)(void*)>` instead — as this did before 3.0 —
+     * registered a `free()` that ran on the main thread, at an exit-time position nothing
+     * about the engine controls, turning every still-live reader into a use-after-free
+     * (proven in `unit/core/actor-name-lifetime.cpp`). A mutex would not help: the storage
+     * has to be there, not merely be accessed under a lock.
+     *
+     * Cost: one allocation per *type*, bounded by the number of actor types in the program
+     * and never repeated. It is not a leak LeakSanitizer reports either — `res` is a static
+     * root holding the block, so the block stays reachable. This is exactly the contract the
+     * non-`__GNUC__` branch below has always had (`typeid(T).name()` is a link-time constant
+     * address), and the one `Event.h` documents for its own type-name registry.
+     */
     template <typename _Type>
     static const char *
     getName() {
 #ifdef __GNUC__
-        static std::unique_ptr<char, void (*)(void *)> res{abi::__cxa_demangle(typeid(_Type).name(), nullptr, nullptr, nullptr), std::free};
+        static const char *const res = [] {
+            char *const demangled = abi::__cxa_demangle(typeid(_Type).name(), nullptr, nullptr, nullptr);
+            // A demangle failure used to hand back nullptr, which `Actor::getName()` then
+            // fed to a std::string_view (UB). The mangled name is a poorer label but a
+            // valid, equally immortal one.
+            return demangled ? static_cast<const char *>(demangled) : typeid(_Type).name();
+        }();
 
-        return res.get();
+        return res;
 #else
         return typeid(_Type).name();
 #endif
