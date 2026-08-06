@@ -107,6 +107,11 @@ export_env() {
 packages=(
   argon2
   ninja
+  # qb::json IS nlohmann::json, and since 3.0 qb no longer vendors a fallback copy. A build without
+  # it FetchContent's the pinned tag, which works but clones on every run; an INSTALLABLE build
+  # hard-stops, because a fetched nlohmann is in no export set and shipping its headers would put
+  # nlohmann/ back in the consumer's include root. Provide the real package on both platforms.
+  nlohmann-json
   openssl@3
   zlib
 )

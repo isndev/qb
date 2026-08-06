@@ -180,6 +180,12 @@ packages=(
   lsb-release
   libssl-dev
   ninja-build
+  # qb::json IS nlohmann::json, so this is not optional -- and since 3.0 qb no longer vendors a
+  # fallback copy. Without it a build FetchContent's the pinned tag (fine for build+test) but an
+  # INSTALLABLE build hard-stops, because a fetched nlohmann cannot be exported and shipping its
+  # headers would put nlohmann/ back in the consumer's include root. install-consume and
+  # package-consume both install, so both need the real package here.
+  nlohmann-json3-dev
   openssl
   pkg-config
   software-properties-common

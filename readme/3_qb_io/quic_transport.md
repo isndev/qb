@@ -22,7 +22,7 @@ QUIC is controlled by the tri-state CMake cache variable `QB_WITH_QUIC`, which d
 | `ON`            | Require libngtcp2; warn and disable QUIC if it (or SSL) is missing.            |
 | `OFF`           | Disable QUIC outright.                                                          |
 
-<!-- src: qb/cmake/qbConfig.cmake:103-106 -->
+<!-- src: qb/cmake/qbConfig.cmake:104-109 -->
 <!-- src: qb/cmake/qbDependencies.cmake:225-263 -->
 
 ```sh

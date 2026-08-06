@@ -44,14 +44,11 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `SharedCoreCommunication::send`'s self-pointer guard sound rather than merely suggestive.
 - **`QB_USE_SYSTEM_NLOHMANN` — a tri-state (`AUTO` / `ON` / `OFF`) for the nlohmann/json source,
   and the first of the three things a distribution packager was missing.** `AUTO` (the default)
-  keeps the historical probe-then-fall-back behaviour; `ON` *requires* a system `nlohmann_json`
-  and hard-fails at configure time if it is absent; `OFF` always uses the bundled copy. AUTO alone
-  made a package host-dependent in two ways a packager cannot control: `<prefix>/include` gains an
-  `nlohmann/` directory or it does not (which collides with a distro's own `nlohmann-json` package
-  under `brew link` / dpkg), and the bundled copy is an untagged post-3.12.0 snapshot declaring the
-  *same* inline namespace (`nlohmann::json_abi_v3_12_0`) as a genuine 3.12.0 while diverging from
-  it — so a program linking both gets one namespace spanning two definition sets, with no linker
-  diagnostic. See [THIRD-PARTY-NOTICES](./THIRD-PARTY-NOTICES) for the divergence.
+  probes for a system `nlohmann_json` and otherwise fetches the pinned `QB_NLOHMANN_GIT_TAG`
+  (`v3.12.0`) via `FetchContent`, subject to `QB_DEPS_FETCH_FALLBACK` — the same system-first /
+  git-fallback policy zlib, GoogleTest and Google Benchmark already follow. `ON` *requires* a
+  system copy and hard-fails at configure time if it is absent; `OFF` always fetches. See
+  *Removed* for why the bundled copy this option originally selected no longer exists.
 - **`QB_REQUIRE_FEATURES` — make a silent feature downgrade a configure-time error.** Default `OFF`
   keeps the developer-friendly behaviour (warn, set `QB_HAS_<x>=FALSE`, carry on). `ON` turns every
   such downgrade into `FATAL_ERROR`. This exists because a hermetic packaging environment (vcpkg, a
@@ -207,7 +204,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 - **`QB_ENABLE_NATIVE_ARCH`'s documented default was the inverse of the code, across the readme
   books, `INSTALL.md`, `README.md` and the `.cursor/` rules and skills.** The option is
-  `option(... OFF)` (`qbConfig.cmake:137`) and has been — verified by running a bare
+  `option(... OFF)` (`qbConfig.cmake:140`) and has been — verified by running a bare
   `cmake -S qb -B tmp -DCMAKE_BUILD_TYPE=Release` with no preset, which yields `OFF`. There is no
   configuration in which `ON` is the default. Two files contradicted themselves within a few lines,
   and one stated the narrowest wrong version ("the `ON` default applies only to a raw `cmake -D...`
@@ -435,6 +432,52 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   to cover this case only as a side effect of gating everything.
 
 ### Removed
+
+- **BREAKING — the vendored `modules/nlohmann/json.hpp` (25,712 lines). qb no longer ships a copy
+  of nlohmann/json, and a consumer must now provide one.** This is a public-contract change,
+  because `qb::json` **is** `nlohmann::json`: the type crosses qb's API (`qb/json.h` also defines
+  `to_json`/`from_json` for `qb::uuid`), so the dependency was always the consumer's too — it was
+  merely hidden while qb happened to install a header for them.
+
+  *Why.* The vendored file declared `NLOHMANN_JSON_VERSION_MAJOR/MINOR/PATCH = 3/12/0` but was an
+  untagged post-3.12.0 `develop` snapshot: **450 added / 264 removed lines** against the `v3.12.0`
+  tag (`git diff --numstat` against `single_include/nlohmann/json.hpp` at that tag). nlohmann
+  guards against version mixing with an inline namespace whose name encodes the version, and that
+  machinery was **byte-identical** to the real 3.12.0's — so our copy emitted the *same*
+  `nlohmann::json_abi_v3_12_0` tag over a *different* set of definitions. A program linking qb and
+  a genuine 3.12.0 therefore got one inline namespace spanning two definition sets: an ODR
+  violation no linker diagnoses, because the guard that exists to turn version mixing into a link
+  error instead certified the two as identical. The label lied, so the protection did not protect.
+  Deleting the copy removes the lie; a `FetchContent`ed one is by construction the version its
+  macros claim.
+
+  *And the include root.* `<prefix>/include` is now exactly **`qb`** (`qb qbm` for the workspace
+  package) on every host. It previously gained an `nlohmann/` directory or not depending on whether
+  the *build* machine happened to have a system `nlohmann_json` — a host-dependent installed
+  surface a packager cannot control, and the collision that made `brew link` fail against a
+  distro's own `nlohmann-json` package. `nlohmann` is a name qb has no business claiming in a
+  consumer's include namespace.
+
+  *Migration.* Install nlohmann/json (`brew install nlohmann-json`,
+  `apt install nlohmann-json3-dev`, `vcpkg install nlohmann-json`, …) before configuring qb, and —
+  if you consume an installed qb — make it resolvable to `find_package(qb)`, whose generated config
+  now calls `find_dependency(nlohmann_json 3.11)` **unconditionally**. No source change is required:
+  `qb::json` and every alias in `qb/json.h` are unchanged, and `#include <nlohmann/json.hpp>` still
+  resolves — from the real package rather than from qb's prefix. Builds that only compile and test
+  need do nothing: with no system copy, `AUTO` fetches the pinned `v3.12.0`
+  (`QB_NLOHMANN_GIT_TAG`). Producing an *installable* qb does require a real system package, and
+  says so at configure time rather than failing later: a fetched nlohmann belongs to no export set,
+  so `install(EXPORT qbTargets)` would abort with `requires target "nlohmann_json" that is not in
+  any export set`, and installing its headers would simply put `nlohmann/` back in the include
+  root. The same reasoning zlib already carried in `qbDependencies.cmake`.
+
+  Two consequences worth noting for packagers: `share/licenses/qb/third-party/nlohmann/LICENSE.MIT`
+  is gone (qb no longer redistributes the header, so it has no notice obligation to discharge —
+  the [THIRD-PARTY-NOTICES](./THIRD-PARTY-NOTICES) entry went with it, and the vendored-unit count
+  in `scripts/check-vendor-attribution.py` drops from 8 to 7), and the
+  `share/qb/abi-fingerprint.txt` field `system_nlohmann=<bool>` is replaced by
+  `nlohmann=<version>` — the boolean could no longer vary, while the version both varies and is
+  what a packager needs, since nlohmann encodes it in that inline namespace.
 
 - **All four installed `.tpp` headers — `<qb/core/Actor.tpp>`, `<qb/core/VirtualCore.tpp>`,
   `<qb/core/Pipe.tpp>` and `<qb/core/Main.tpp>`. Source-incompatible for anyone who includes one

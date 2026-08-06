@@ -344,17 +344,40 @@ endif()
 # and do NOT feed the tag: those still mismatch silently. That residue is inherent to shipping a
 # prebuilt library whose API exposes a header-configurable third-party type; it is only fully
 # closed by building qb in the consumer's own tree (FetchContent / add_subdirectory).
-# QB_USE_SYSTEM_NLOHMANN (qbConfig.cmake) selects the source: AUTO probes, ON requires, OFF
-# forces the bundled copy. A packager building a distributable bottle sets ON so that a missing
-# system nlohmann_json is a configure-time error rather than a silent switch to the bundled
-# snapshot -- which would put a SECOND <nlohmann/json.hpp> in the prefix and, because both declare
-# the inline namespace json_abi_v3_12_0 while differing in content, collide silently at link.
+#
+# UNTIL 3.0 the fallback was a VENDORED copy, modules/nlohmann/json.hpp, and that made the inline
+# namespace actively harmful rather than merely incomplete. The vendored file was an untagged
+# post-3.12.0 develop snapshot -- 450 added / 264 removed lines against the v3.12.0 tag -- that
+# still declared NLOHMANN_JSON_VERSION_* = 3/12/0, so it emitted the SAME json_abi_v3_12_0 tag as a
+# genuine 3.12.0 over a DIFFERENT set of definitions. The guard that is supposed to turn version
+# mixing into a link error instead certified two incompatible copies as the same one. The label
+# lied, so the protection did not protect. It is deleted; the fallback is now FetchContent at a
+# pinned tag, which is by construction the thing its version macros claim to be.
+#
+# QB_USE_SYSTEM_NLOHMANN (qbConfig.cmake) selects the source: AUTO probes then fetches, ON requires
+# the system copy, OFF always fetches. A packager building a distributable bottle sets ON so that a
+# missing system nlohmann_json is a configure-time error rather than a silent switch to a fetched
+# copy the distro does not manage.
 if(QB_USE_SYSTEM_NLOHMANN STREQUAL "OFF")
     set(nlohmann_json_FOUND FALSE)
-elseif(QB_USE_SYSTEM_NLOHMANN STREQUAL "ON")
-    find_package(nlohmann_json 3.11 REQUIRED)
 else()
     find_package(nlohmann_json 3.11 QUIET)
+    # QUIET + an explicit error rather than REQUIRED. REQUIRED reports CMake's generic
+    # "did not find a package configuration file provided by nlohmann_json ... nlohmann_jsonConfig.cmake",
+    # which is accurate but names neither qb, nor the option the builder set to get here, nor the
+    # package to install. The builder ASKED for the system copy, so the actionable fact is that the
+    # request cannot be honoured -- and how to relax it.
+    if(QB_USE_SYSTEM_NLOHMANN STREQUAL "ON" AND NOT nlohmann_json_FOUND)
+        string(CONCAT _qb_nl_req_msg
+            "QB_USE_SYSTEM_NLOHMANN is ON, but no system nlohmann_json (>= 3.11) was found.\n"
+            "     Pick one:\n"
+            "       * install nlohmann-json  (brew install nlohmann-json /\n"
+            "                                 apt install nlohmann-json3-dev), or\n"
+            "       * point CMAKE_PREFIX_PATH at a prefix that already contains one, or\n"
+            "       * -DQB_USE_SYSTEM_NLOHMANN=AUTO  (fetch ${QB_NLOHMANN_GIT_TAG} when absent;\n"
+            "                                         note this cannot produce an installable qb)")
+        qb_error_message("${_qb_nl_req_msg}")
+    endif()
 endif()
 
 add_library(qb-nlohmann INTERFACE)
@@ -367,28 +390,101 @@ if(nlohmann_json_FOUND)
     qb_status_message("Using system nlohmann_json ${nlohmann_json_VERSION}")
 else()
     set(QB_USES_SYSTEM_NLOHMANN FALSE)
-    # Fallback: the bundled copy in modules/. SYSTEM so a third party's warnings are not qb's
-    # problem. <nlohmann/json.hpp> stays that library's canonical spelling -- deliberately, because
-    # a consumer who has their own copy SHOULD win the include race here (the opposite of the
-    # forks, where any consumer header winning was the bug).
-    target_include_directories(qb-nlohmann SYSTEM INTERFACE
-        "$<BUILD_INTERFACE:${QB_MODULES_DIR}>"
-        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
-    qb_status_message("Using bundled nlohmann_json from: ${QB_MODULES_DIR}/nlohmann (set QB_USE_SYSTEM_NLOHMANN=ON to require the system copy instead)")
+    # No system copy. Same system-first / git-fallback policy as zlib above, gated on the same
+    # QB_DEPS_FETCH_FALLBACK switch -- and, like zlib, refusing to fetch is a hard stop rather than
+    # a silent downgrade, because qb::json IS nlohmann::json and there is nothing to degrade to.
+    if(NOT QB_DEPS_FETCH_FALLBACK)
+        string(CONCAT _qb_nl_msg
+            "nlohmann_json was not found on the system and QB_DEPS_FETCH_FALLBACK is OFF.\n"
+            "     qb::json IS nlohmann::json -- the type crosses qb's public API, so there is no\n"
+            "     build without it. qb no longer vendors a copy (the one it used to carry claimed\n"
+            "     to be 3.12.0 while differing from it, which silently broke nlohmann's own\n"
+            "     version guard). Pick one:\n"
+            "       * install nlohmann-json  (brew install nlohmann-json /\n"
+            "                                 apt install nlohmann-json3-dev), or\n"
+            "       * -DQB_DEPS_FETCH_FALLBACK=ON  (fetch ${QB_NLOHMANN_GIT_TAG} from git), or\n"
+            "       * point CMAKE_PREFIX_PATH at a prefix that already contains one")
+        qb_error_message("${_qb_nl_msg}")
+    endif()
+
+    # Exactly the zlib situation twenty lines up, and it would fail the same unreadable way. qb-io
+    # links qb-nlohmann PUBLIC and qb-nlohmann is in qb's export set, so install(EXPORT qbTargets)
+    # aborts at GENERATE time with
+    #     CMake Error in CMakeLists.txt:
+    #       install(EXPORT "qbTargets" ...) includes target "qb-nlohmann" which
+    #       requires target "nlohmann_json" that is not in any export set.
+    # which names neither nlohmann, nor qb, nor a way out. (Verified: that is the verbatim error.)
+    # Shipping the fetched headers instead is not an option -- that is the `nlohmann/` include-root
+    # entry this change exists to remove, and it would put a second <nlohmann/json.hpp> in a prefix
+    # a distro also manages. Flipping nlohmann's own JSON_Install ON has exactly that effect and is
+    # therefore not the fix either.
+    #
+    # BEFORE the fetch, not after: this outcome is decided by two variables already in hand, so
+    # cloning first would spend a network round-trip to reach a conclusion that was already known --
+    # and would make the diagnosis depend on the clone succeeding. An offline builder in this
+    # configuration should be told what is actually wrong, not handed a git error.
+    if(QB_INSTALL)
+        # Two ways to get here and they are not the same fact: AUTO probed and found nothing, or
+        # OFF said "never probe". Saying "not found on the system" in the OFF case would be untrue
+        # -- there may well be one -- and would send the reader looking for a package they already
+        # have. Name the actual reason.
+        if(QB_USE_SYSTEM_NLOHMANN STREQUAL "OFF")
+            set(_qb_nl_why "QB_USE_SYSTEM_NLOHMANN is OFF, so nlohmann_json would be fetched")
+            # Telling this reader to install the package would be useless advice: OFF means the
+            # probe never runs, so a system copy they already have would still be ignored.
+            set(_qb_nl_fix
+                "       * -DQB_USE_SYSTEM_NLOHMANN=AUTO  (use a system copy when there is one), or\n"
+                "       * -DQB_USE_SYSTEM_NLOHMANN=ON    (require one -- fail early if absent), or\n"
+                "       * -DQB_INSTALL=OFF               (build and test, but produce no installable qb)")
+        else()
+            set(_qb_nl_why "nlohmann_json was not found on the system, so it would be fetched")
+            set(_qb_nl_fix
+                "       * install nlohmann-json  (brew install nlohmann-json /\n"
+                "                                 apt install nlohmann-json3-dev), then reconfigure, or\n"
+                "       * point CMAKE_PREFIX_PATH at a prefix that already contains one, or\n"
+                "       * -DQB_INSTALL=OFF       (build and test, but produce no installable qb)")
+        endif()
+        string(CONCAT _qb_nl_inst_msg
+            "${_qb_nl_why}, but QB_INSTALL is ON.\n"
+            "     An installable qb cannot carry a fetched nlohmann: its target belongs to no\n"
+            "     export set, and installing its headers would put <nlohmann/json.hpp> back in\n"
+            "     the consumer's include root -- the collision that dropping the vendored copy\n"
+            "     removed. An installed qb resolves nlohmann through find_dependency instead, so\n"
+            "     the build that produces it must use a real system package. Pick one:\n"
+            ${_qb_nl_fix})
+        qb_error_message("${_qb_nl_inst_msg}")
+    endif()
+
+    # An OFFLINE builder reaches FetchContent and gets a git failure that names neither qb nor a
+    # way out. Say it here first, with the option and the pinned tag in the text, so the raw
+    # FetchContent error below is a detail rather than the whole diagnosis.
+    qb_status_message("nlohmann_json not found on the system - fetching ${QB_NLOHMANN_GIT_TAG} from git")
+    qb_status_message("  (offline? install nlohmann-json and re-run, or set QB_USE_SYSTEM_NLOHMANN=ON to stop here with a named error instead of a git failure)")
+
+    include(FetchContent)
+    # JSON_Install defaults to nlohmann's own MAIN_PROJECT, which is FALSE under FetchContent, so
+    # the fetched target lands in no export set -- harmless here precisely because the block above
+    # already refused every configuration that would try to export it.
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG ${QB_NLOHMANN_GIT_TAG}
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+    target_link_libraries(qb-nlohmann INTERFACE nlohmann_json::nlohmann_json)
 endif()
 
 # -----------------------------------------------------------------------------
 # Internal Dependencies (qb modules)
 # -----------------------------------------------------------------------------
-set(QB_INTERNAL_MODULES_PATH "${QB_MODULES_DIR}")
-
-# Third-party header-only trees still shipped from modules/ (installed verbatim at their canonical
-# path by qb/CMakeLists.txt). The qb-owned forks are NOT here: they live under src/qb/vendor/
-# and are covered by qb's ordinary public-header install rule.
-set(QB_HEADER_ONLY_MODULES nlohmann)
-
+# There is no modules/ tree any more. nlohmann was its only occupant and is now resolved by
+# find_package / FetchContent, so every remaining unit is a qb-owned fork under src/qb/vendor/,
+# covered by qb's ordinary public-header install rule. That is what makes the installed include
+# root exactly `qb`.
+#
 # Internal modules list (for logging / diagnostics only)
-set(QB_INTERNAL_MODULES qev uuid nanolog ska_hash ${QB_HEADER_ONLY_MODULES})
+set(QB_INTERNAL_MODULES qev uuid nanolog ska_hash)
 
 # -----------------------------------------------------------------------------
 # Dependency Resolution Functions
