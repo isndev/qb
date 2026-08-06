@@ -229,7 +229,7 @@ qb_add_test(MODULE qb-core TIER unit NAME my-feature SOURCES core/my-feature.cpp
 
 That registers the target and CTest entry as `qb-core-test-unit-my-feature`. Optional dependencies gate through `REQUIRES` (for example `REQUIRES ssl` builds the case only under `QB_HAS_SSL`); extra CTest labels go through `LABELS`.
 
-<!-- src: qb/tests/core/unit/CMakeLists.txt:25-36 -->
+<!-- src: qb/tests/core/unit/CMakeLists.txt:25-37 -->
 
 `qb_add_test` links `GTest::gtest_main` for you; do not list `gtest_main` under `DEPENDS` as well (the helper strips a duplicate to avoid a linker warning, but listing it is redundant). Reconfigure CMake after editing the file, then rebuild.
 
