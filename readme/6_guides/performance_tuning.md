@@ -200,10 +200,10 @@ Both flags are CMake configure-time options, owned by [CMake options](./../7_ref
 
 | Option | Default | Effect |
 | --- | --- | --- |
-| `QB_ENABLE_NATIVE_ARCH` | `ON` | Tunes codegen for the build-host CPU: tries `-march=native`, falls back to `-mcpu=native` (older Apple Clang on arm64), then to the compiler default; `/arch:AVX2` on MSVC. |
+| `QB_ENABLE_NATIVE_ARCH` | `OFF` | Tunes codegen for the build-host CPU: tries `-march=native`, falls back to `-mcpu=native` (older Apple Clang on arm64), then to the compiler default; `/arch:AVX2` on MSVC. |
 | `QB_ENABLE_LTO` | `OFF` | Link-Time Optimization: `-flto` on GCC/Clang, `/GL` + `/LTCG` on MSVC. Enables cross-translation-unit inlining at the cost of longer link times. |
 
-`QB_ENABLE_NATIVE_ARCH=ON` (the default) produces a **non-portable binary** tuned for the machine that built it. The binary may use instructions absent on an older CPU and fault there. **Turn it OFF for any binary you distribute or run on a different (possibly older) CPU.** With it off, qb selects a conservative baseline target (`-march=x86-64` on x86-64, generic `armv8-a` on non-Apple ARM64; Apple Silicon keeps its native target either way).
+`QB_ENABLE_NATIVE_ARCH=ON` produces a **non-portable binary** tuned for the machine that built it. The binary may use instructions absent on an older CPU and fault there. It is **`OFF` by default** precisely for that reason, so you have to ask for it: `-DQB_ENABLE_NATIVE_ARCH=ON`, or the `release-native` / `benchmarks` presets. With it off (the default), qb selects a conservative baseline target (`-march=x86-64` on x86-64, generic `armv8-a` on non-Apple ARM64; Apple Silicon keeps its native target either way).
 
 `QB_ENABLE_LTO=OFF` by default. Enabling it can improve runtime performance through whole-program inlining; verify the gain against your own benchmark, because it lengthens builds and the benefit is workload-dependent.
 
@@ -223,7 +223,7 @@ Both flags apply to the Release configuration. A Debug build is not a meaningful
 - **Touching a core you do not populate.** `Main::core(n)` registers core `n`; if no actor lands there, that worker fails to start, logging `... Started with 0 Actor` and reporting `VirtualCore::Error::NoActor`. Configure latency and affinity inside the same loop that places actors.
 - **Reaching for `send` before `push`.** The ordering guarantee `push` gives is cheap; the bugs `send` introduces are not. Use `send` only when the event is `qb::trivial_event` and order is provably irrelevant.
 - **Sizing `allocated_push` to the payload, not the in-pipe footprint.** When the payload is behind a smart pointer, the pipe holds only the pointer — a large hint wastes the reservation it was meant to save.
-- **Shipping a `QB_ENABLE_NATIVE_ARCH=ON` binary to other machines.** The default build is host-tuned and non-portable; it can fault on an older CPU. Build distributables with the flag off.
+- **Shipping a `QB_ENABLE_NATIVE_ARCH=ON` binary to other machines.** A host-tuned build can fault with an illegal instruction on an older CPU. The default is off, so this only bites when you (or a `release-native` / `benchmarks` preset) turned it on and then shipped the result.
 - **Quoting numbers you did not measure.** qb publishes no throughput or latency figures. Every tuning decision here is directional; the magnitude is yours to benchmark, in Release, on your target hardware, under realistic load. Use a system profiler (`perf`, Instruments, VTune) to find the hot core or actor, and `qb::ScopedTimer` / `qb::LogTimer` (`qb/system/time.h`) to time critical sections.
 
 ## See also

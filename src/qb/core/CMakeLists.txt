@@ -87,8 +87,15 @@ set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME core)
 # -----------------------------------------------------------------------------
 # Tests configuration
 # -----------------------------------------------------------------------------
-if (QB_BUILD_TESTS)
-    qb_status_message("Building qb-core tests")
+# QB_BUILD_BENCHMARKS is in the condition because the benchmarks live UNDER tests/core/ (in
+# tests/core/benchmark/, added from tests/core/CMakeLists.txt). See the sibling note in
+# src/qb/io/CMakeLists.txt: gating on QB_BUILD_TESTS alone made
+# `-DQB_BUILD_TESTS=OFF -DQB_BUILD_BENCHMARKS=ON` a silent no-op that still reported
+# "- Benchmarks: ON". tests/core/CMakeLists.txt gates unit/ and system/ on QB_BUILD_TESTS.
+if (QB_BUILD_TESTS OR QB_BUILD_BENCHMARKS)
+    if (QB_BUILD_TESTS)
+        qb_status_message("Building qb-core tests")
+    endif ()
     # Tests live BESIDE the include root, never inside it: a test header swept into
     # install(DIRECTORY src/ ...) is the failure mode this layout exists to prevent.
     # Added from here rather than from the top level so the suite inherits PROJECT_NAME

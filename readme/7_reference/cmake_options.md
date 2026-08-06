@@ -88,11 +88,12 @@ when absent their features degrade silently (see [CMake and dependencies](./cmak
 |---|---|---|
 | `QB_ENABLE_OPTIMIZATIONS` | `ON` | Enable the high-performance optimization flags (GCC/Clang: `-funroll-loops`, `-ftree-vectorize`; MSVC: `/Ot`). |
 | `QB_ENABLE_LTO` | `OFF` | Enable Link Time Optimization (GCC/Clang: `-flto`; MSVC: `/GL` + `/LTCG`). |
-| `QB_ENABLE_NATIVE_ARCH` | `ON` | Tune codegen for the build-host CPU (`-march=native`, falling back to `-mcpu=native`; `/arch:AVX2` on MSVC). Turn **off** for portable, distributable binaries that must run on a different CPU. |
+| `QB_ENABLE_NATIVE_ARCH` | `OFF` | Tune codegen for the build-host CPU (`-march=native`, falling back to `-mcpu=native`; `/arch:AVX2` on MSVC). Off by default so the artefact stays portable; turn it **on** only for a binary that will run on the machine that built it. |
 | `QB_ENABLE_FAST_MATH` | `OFF` | Enable `-ffast-math` / `/fp:fast`. Breaks IEEE-754 compliance; off by default. |
 
-Because `QB_ENABLE_NATIVE_ARCH` defaults to `ON`, a binary built with the defaults is tuned for the
-machine that built it. Set `-DQB_ENABLE_NATIVE_ARCH=OFF` (or use the `release-portable` preset) when the
+Because `QB_ENABLE_NATIVE_ARCH` defaults to `OFF`, a binary built with the defaults is portable: qb
+targets a conservative baseline and no host-specific instruction set is baked in. Set
+`-DQB_ENABLE_NATIVE_ARCH=ON` (or use the `release-native` preset) only when the
 artifact will run on other hosts.
 
 ## Coverage, sanitizers, and debug
@@ -119,8 +120,10 @@ error), and `-g`. The `sanitize` and `sanitize-thread` presets provide ready-mad
   `QB_WITH_COMPRESSION`/`QB_HAS_COMPRESSION` and `QB_WITH_QUIC`/`QB_HAS_QUIC`.
 - **`QB_WITH_QUIC` requires SSL.** QUIC builds on the OpenSSL crypto path; with SSL absent, QUIC cannot
   enable even when set to `ON`.
-- **`QB_ENABLE_NATIVE_ARCH=ON` is not portable.** The default optimizes for the build host. Distributable
-  artifacts need `QB_ENABLE_NATIVE_ARCH=OFF`.
+- **`QB_ENABLE_NATIVE_ARCH=ON` is not portable.** It bakes the build host's instruction set into the
+  artifact, so a binary built on a newer CPU dies with SIGILL on an older one. It is `OFF` by default
+  and every preset except `release-native` / `benchmarks` keeps it off — turn it on deliberately, and
+  never for something you distribute.
 - **`QB_ENABLE_FAST_MATH` changes numeric results.** It relaxes IEEE-754 guarantees; leave it off unless
   the workload tolerates that.
 - **`QB_BUILD_COVERAGE` is Debug-only and non-Windows.** Coverage instrumentation and its targets are set

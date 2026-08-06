@@ -953,9 +953,18 @@ function(qb_register_module)
         )
     endif()
 
-    # Add to global module list
+    # Add to global module list.
+    #
+    # A GLOBAL property, because PARENT_SCOPE cannot work from here. qb_load_modules() calls
+    # add_subdirectory() from INSIDE A FUNCTION, so this function's "parent scope" is that
+    # function's frame -- which evaporates when qb_load_modules() returns. The variable therefore
+    # never reached the caller: with all three qbm modules loaded, the configuration summary still
+    # printed "Available libraries: qb-io;qb-core". The PARENT_SCOPE write below is kept for a
+    # direct add_subdirectory() caller (where it does propagate one level); the property is what
+    # actually survives.
     list(APPEND QB_MODULE_LIBRARIES ${module_target})
     set(QB_MODULE_LIBRARIES ${QB_MODULE_LIBRARIES} PARENT_SCOPE)
+    set_property(GLOBAL APPEND PROPERTY QB_MODULE_LIBRARIES ${module_target})
 
     qb_status_message("Registered module: ${MOD_NAME}")
 endfunction()
@@ -992,7 +1001,16 @@ function(qb_load_modules modules_dir)
             endif()
         endif()
     endforeach()
-    
+
+    # Hand the accumulated list back to the CALLER (the superproject root), and report it here --
+    # this is the only scope that knows which modules were actually registered. qb's own
+    # configuration summary cannot: it runs during add_subdirectory(qb), which finishes before
+    # qb_load_modules() is called, so "Available libraries" there is qb-core/qb-io by construction.
+    get_property(_qb_loaded GLOBAL PROPERTY QB_MODULE_LIBRARIES)
+    if(_qb_loaded)
+        set(QB_MODULE_LIBRARIES ${_qb_loaded} PARENT_SCOPE)
+        qb_status_message("Registered modules: ${_qb_loaded}")
+    endif()
 endfunction()
 
 # -----------------------------------------------------------------------------

@@ -31,6 +31,33 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Added
 
+- **`QB_USE_SYSTEM_NLOHMANN` — a tri-state (`AUTO` / `ON` / `OFF`) for the nlohmann/json source,
+  and the first of the three things a distribution packager was missing.** `AUTO` (the default)
+  keeps the historical probe-then-fall-back behaviour; `ON` *requires* a system `nlohmann_json`
+  and hard-fails at configure time if it is absent; `OFF` always uses the bundled copy. AUTO alone
+  made a package host-dependent in two ways a packager cannot control: `<prefix>/include` gains an
+  `nlohmann/` directory or it does not (which collides with a distro's own `nlohmann-json` package
+  under `brew link` / dpkg), and the bundled copy is an untagged post-3.12.0 snapshot declaring the
+  *same* inline namespace (`nlohmann::json_abi_v3_12_0`) as a genuine 3.12.0 while diverging from
+  it — so a program linking both gets one namespace spanning two definition sets, with no linker
+  diagnostic. See [THIRD-PARTY-NOTICES](./THIRD-PARTY-NOTICES) for the divergence.
+- **`QB_REQUIRE_FEATURES` — make a silent feature downgrade a configure-time error.** Default `OFF`
+  keeps the developer-friendly behaviour (warn, set `QB_HAS_<x>=FALSE`, carry on). `ON` turns every
+  such downgrade into `FATAL_ERROR`. This exists because a hermetic packaging environment (vcpkg, a
+  buildd chroot, a brew sandbox with no network) that cannot see OpenSSL or zlib produced a
+  **quietly reduced** package at exit 0, and the packager's only way to notice was to inspect the
+  artefact afterwards. Reached through the new `qb_feature_degraded()` helper, which is only called
+  on a genuine degradation — an `AUTO`/`OFF` resolution is not one and does not go through it.
+- **`share/qb/abi-fingerprint.txt` — a prebuilt prefix now records what it was built with.** Until
+  now the only answer to "what is in this bottle?" was
+  `strings lib/libqb-io.a | grep '^qb-abi '`, which needs the archive, the right grep, and prior
+  knowledge that the string exists — and it covers only the five link-enforced ABI axes, not the
+  feature flags that silently downgrade at configure time. The `qb-abi` line is **read back out of
+  the built archive**, not re-derived from CMake variables, so it cannot drift from the artefact
+  the way every other hand-maintained version string in this tree already has; if the archive does
+  not contain it, the file says so and the install warns, rather than emitting a plausible-looking
+  line. Documented in [INSTALL.md](./INSTALL.md).
+
 - **`scripts/check-header-extensions.py` and `scripts/check-header-linkage.py` — the two header
   rules 3.0 relies on, made enforceable instead of remembered.** Both run in the `format-check` CI
   job (pure Python, no toolchain) and in the superproject's `dev/agent/verify.sh`.
@@ -166,6 +193,34 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   is reported `N/A` and counted separately — never as a pass.
 
 ### Changed
+
+- **`QB_ENABLE_NATIVE_ARCH`'s documented default was the inverse of the code, at 16 sites across 7
+  files.** The option is `option(... OFF)` and has been — verified by running a bare
+  `cmake -S qb -B tmp -DCMAKE_BUILD_TYPE=Release` with no preset, which yields `OFF`. There is no
+  configuration in which `ON` is the default. Two files contradicted themselves within a few lines,
+  and one stated the narrowest wrong version ("the `ON` default applies only to a raw `cmake -D...`
+  build with no preset"), which is exactly the case that disproves it. The failure was silent in
+  the way that matters: a reader wanting host tuning believed `release` already passed
+  `-march=native`, a performance claim that was false with no diagnostic — and one troubleshooting
+  entry mis-diagnosed "binary crashes on another machine" as native-arch, sending a SIGILL
+  investigation down a dead end where the suggested fix is a no-op. `qbConfig.cmake` also carried
+  two contradictory comment blocks on the same option; only one survives.
+- **[INSTALL.md](./INSTALL.md) corrected in four places and extended in one.** The CI matrix
+  advertised a Windows/MSVC row that is commented out in `.github/workflows/cmake.yml` (it would
+  rebuild every dependency from source on each run); the table now marks it disabled and says why.
+  The `QB_ENABLE_NATIVE_ARCH` default was wrong in the troubleshooting entry and implied a second
+  time by the "common production configuration" example. The install was described as exporting the
+  bundled `FindArgon2` / `FindNgtcp2` modules unconditionally — they ship only when the
+  corresponding feature was enabled. And there is now a section on `share/qb/abi-fingerprint.txt`,
+  which the page did not mention at all.
+- **Citations re-pointed after the source moves in this release.** The `qbConfig.cmake`,
+  `qbCompiler.cmake`, `qbDependencies.cmake`, `qbFunctions.cmake` and `VirtualCore.cpp` edits above
+  shifted line numbers under ~150 `src:` citations across the readme books, `llm/` and
+  `.cursor/`. Each was re-pointed and then *proved* by the digest baseline: the first cited line at
+  the new coordinates must match the excerpt recorded when the citation was last hand-verified.
+  138 verified that way, 0 mismatches; the handful that could not be proved mechanically (a range
+  whose content genuinely changed, or a citation that had drifted before this release) were
+  resolved by hand. Three of them were off-by-one, and two named the wrong subject entirely.
 
 - **Every GoogleTest binary now runs with `--gtest_shuffle`** (`QB_TESTS_SHUFFLE`, default `ON`;
   `QB_TESTS_SHUFFLE_SEED` pins the order, `0` = seed from the clock, and GoogleTest prints the seed
@@ -471,6 +526,100 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   **Source-incompatible** for code that called `std::to_string(uuid)`.
 
 ### Fixed
+
+- **`QB_BUILD_BENCHMARKS=ON` with `QB_BUILD_TESTS=OFF` built zero benchmarks and reported success.**
+  The benchmarks live *under* `tests/core/benchmark` and `tests/io/benchmark`, and those trees were
+  `add_subdirectory`'d only inside `if (QB_BUILD_TESTS)`, so `qb_add_benchmark` was never reached.
+  The configure summary still printed `- Benchmarks: ON` and `Google Benchmark: TRUE`, and the
+  dependency was still fetched and linked — the build paid for it and produced nothing. No preset
+  could see it, because the one preset that enables benchmarks (`benchmarks`) also has tests on.
+  The gate is now `QB_BUILD_TESTS OR QB_BUILD_BENCHMARKS`, with the unit/system trees carrying their
+  own `QB_BUILD_TESTS` gate. Measured: 0 executable targets before, **45** after.
+- **A `QB_INSTALL=OFF` build still installed one qb header into the consumer's prefix.**
+  `src/qb/vendor/qev/CMakeLists.txt` emitted `install(FILES ${QB_EV_CONFIG_OUT} ...)` for the
+  generated `qev_config.h` outside any `QB_INSTALL` guard — the only `install()` in the whole
+  embedded-qb subtree that sat outside it. So `cmake --install` of a `QB_INSTALL=OFF` build (every
+  dev preset, and every parent reaching qb via `add_subdirectory()`/`FetchContent`) silently
+  deposited `include/qb/vendor/qev/qev_config.h`, exit 0, no diagnostic — precisely the leak the
+  option exists to prevent, and the host-probed generated header is the worst single file to leak.
+  Measured: 1 file installed before, **0** after.
+- **`find_package(qb)` permanently polluted the consumer's `CMAKE_MODULE_PATH`.**
+  `qbConfig.cmake.in` appended its own directory for the Argon2 and QUIC `Find` modules and never
+  restored it (twice, when both features were on), with no dedup. Because the append ran *during*
+  `find_package(qb)`, qb's entry sat **ahead of** any module dir the consumer appended afterwards —
+  so a consumer's own `FindArgon2.cmake` / `FindNgtcp2.cmake` was silently shadowed by qb's for the
+  rest of their configure. Exit 0, no diagnostic. This is the same defect `qbmModuleConfig.cmake.in`
+  was written to prevent and which CI already gated — but that gate covered `qbm-httpConfig.cmake`
+  only, and this one leaks on the **success** path. `package-consume.yml` now gates
+  `qbConfig.cmake` too, with the same negative control (delete the guard, require the probe to
+  catch it).
+- **`qb_check_cpp_features()` probed at the compiler's default standard, and one wrong answer
+  shipped in the package's public interface.** `CMAKE_CXX_STANDARD` is only set globally when qb is
+  top-level, and nothing set `CMAKE_REQUIRED_*`, so in every embedded build — which includes this
+  superproject and every `FetchContent` consumer — the seven `check_cxx_source_compiles` probes
+  compiled with no `-std=` at all, i.e. C++14 on Apple Clang and GCC. Six of the seven failed for
+  want of a flag rather than a feature (`error: no member named 'optional' in namespace 'std'`);
+  the survivor, `QB_HAS_STRING_VIEW` (libc++ exposes `<string_view>` pre-C++17), then reached
+  consumers inside `qbTargets.cmake`'s `INTERFACE_COMPILE_DEFINITIONS`. Two hosts with different
+  default standards therefore produced packages with different public compile definitions. The
+  probes now run at `QB_CXX_STANDARD`, set in function scope so nothing leaks.
+- **Multi-config generators: a hard error in the superproject, a silent bogus cache standalone.**
+  `set_property(CACHE CMAKE_BUILD_TYPE ...)` is a hard error when the cache entry does not exist,
+  which killed every `Ninja Multi-Config` / `Xcode` configure of the superproject outright. In
+  *standalone* qb the same missing guard was silent instead: the multi-config test used
+  `CMAKE_CONFIGURATION_TYPES`, which the generator does not populate until `project()` runs — and
+  this file is `include()`d before it — so the guard was always true and qb wrote
+  `CMAKE_BUILD_TYPE=Release` into a cache that also carried
+  `CMAKE_CONFIGURATION_TYPES=Debug;Release;RelWithDebInfo`, exactly the state its own comment says
+  must never happen. Both now test the `GENERATOR_IS_MULTI_CONFIG` global property, which *is* set
+  pre-`project()`. The per-config output-directory loop, dead for the same reason, works again.
+- **`QB_WITH_LOGGING=OFF` with `QB_STDOUT_LOGGING=ON` did not compile.** Each macro in the
+  `QB_STDOUT_LOGGING` branch of `io.h` was defined with a trailing semicolon, so
+  `if (…) QB_LOG_INFO(x); else` expanded to `if (…) stmt;; else` and orphaned the `else`:
+  `VirtualCore.cpp: error: expected expression`. The sibling no-op branch already used
+  `do {} while (false)`, which is why plain `QB_WITH_LOGGING=OFF` built. All five macros now use the
+  same `do/while` form. Blast radius measured, not assumed: exactly one call site across qb, all
+  three qbm modules and `examples/`. `QB_WITH_LOGGING=OFF` alone also emitted two
+  `-Wunused-lambda-capture` warnings on Apple Clang, where the captured `this` is read only by a
+  log statement that compiles to nothing; both are gone.
+- **`cmake/FindArgon2.cmake` could never satisfy a version request, and searched hard-coded host
+  prefixes with no hints.** Upstream declares the version as an *enum member*
+  (`ARGON2_VERSION_NUMBER = ARGON2_VERSION_13`), not a `#define`, so the old regex matched nothing
+  on any real installation, `ARGON2_VERSION_STRING` was always empty, and `-- Found Argon2: `
+  printed a blank version. An empty `VERSION_VAR` is not benign:
+  `find_package_handle_standard_args` treats it as unsuitable for *any* version request. Note the
+  header value is the argon2 **hash-format** version (0x13 = format v1.3) and says nothing about
+  which release is installed — decoding it through the packed-hex major/minor/patch arithmetic
+  yields `0.0.19`, a triple that corresponds to nothing. The module now takes the real library
+  version from **pkg-config** (`libargon2.pc` → e.g. `20190702`), which is the only place it
+  exists, and exposes the format version separately as `ARGON2_FORMAT_VERSION`. pkg-config also
+  supplies `HINTS`, so a sandboxed package build binds the argon2 it actually declared instead of
+  whatever sits in `/opt/homebrew`; the hard-coded `PATHS` remain as a last resort for hosts
+  without pkg-config, where the release version is honestly reported as unknown rather than
+  guessed. `FindNgtcp2.cmake` and `FindNghttp3.cmake` already resolved this way — this module was
+  the holdout.
+- **`scripts/check-abi-fingerprint.sh` failed on Linux + GCC, on a defect that does not exist.**
+  The `exceptions` axis cannot be flipped under g++, which rejects `throw` under `-fno-exceptions`
+  even in code it will not instantiate, so the mismatch build dies in `vendor/qev/qev++.h` *before
+  the link the check is about*; clang accepts the unreached `throw` and proceeds. That shape landed
+  in the "failed, but not with the symbol" arm and reported FAIL, so the whole script exited 1 and
+  the `linux-gcc` lane was red. It is now an explicit SKIP with the reason named — which is what
+  this script's own contract already promised — and the axis remains required and armed: a
+  `-fno-exceptions` consumer that does not reach `qev++.h` compiles fine and then depends on the
+  link symbol. Measured: 8 PASS on clang, 7 PASS + 1 SKIP on g++-14.
+- **Standalone qb with default options could not configure on a host without a system zlib.**
+  Standalone defaults `QB_INSTALL=ON` and `QB_DEPS_FETCH_FALLBACK=ON`, so zlib was built from
+  source — and a source-built `zlibstatic` belongs to no export set, so `install(EXPORT qbTargets)`
+  aborted at generate time with `target "zlibstatic" that is not in any export set`, naming neither
+  zlib, nor qb, nor a way out. That is the documented `cmake --install` → `find_package(qb)` route
+  failing on a bare machine. The condition is now detected where it happens and reported with the
+  three ways out (install a system zlib, `-DQB_WITH_COMPRESSION=OFF`, or `-DQB_DEPS_FETCH_FALLBACK=OFF`).
+- **`QB_MODULE_LIBRARIES` never reached the caller.** `qb_register_module()` wrote it with
+  `PARENT_SCOPE`, but `qb_load_modules()` calls `add_subdirectory()` from *inside a function*, so
+  the write landed in that function's frame and evaporated on return: with all three qbm modules
+  loaded, the configuration summary still printed `Available libraries: qb-io;qb-core`. It now
+  accumulates in a `GLOBAL` property and `qb_load_modules()` hands the list back and reports it —
+  `Registered modules: qbm-http;qbm-pgsql;qbm-redis`.
 
 - **`io/async/tcp/connector.h` ran three `#include` directives inside `namespace
   qb::io::async::tcp`.** `<coroutine>`, `<optional>` and `<chrono>` sat at `:640-642`, under

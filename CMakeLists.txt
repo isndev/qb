@@ -328,6 +328,58 @@ if (QB_INSTALL)
             VENDOR_DIRS "${QB_VENDOR_DIR}/*" ${_qb_bundled_hdr_dirs}
     )
 
+    # ---- share/qb/abi-fingerprint.txt --------------------------------------------------------
+    # What a packager (brew, vcpkg, dpkg) has to be able to answer about a PREBUILT prefix:
+    # "what was this compiled with?". Until 3.0 the only answer was
+    # `strings lib/libqb-io.a | grep '^qb-abi '`, which needs the archive, the right grep, and
+    # prior knowledge that the string exists -- and it covers only the five link-enforced ABI
+    # axes, not the feature flags (SSL / compression / QUIC) that silently downgrade at configure
+    # time when a dependency is missing in a hermetic build environment.
+    #
+    # The `qb-abi ...` line is READ BACK OUT OF THE BUILT ARCHIVE rather than re-derived from
+    # CMake variables. That is the whole point: a re-derived copy is a second source of truth and
+    # would drift from the artefact exactly the way every other hand-maintained version string in
+    # this tree already has. If the archive does not contain the string, that is itself the
+    # finding, and the file says so instead of quietly emitting a plausible-looking line.
+    install(CODE "set(_qb_abi_archive [[$<TARGET_FILE:qb-io>]])")
+    # BUILD_SHARED_LIBS is routinely UNDEFINED rather than OFF, and an empty `shared_libs=` reads
+    # as "the field is broken" rather than "static". Normalise it, so every field on the line
+    # always carries a value a packager can compare.
+    if (BUILD_SHARED_LIBS)
+        set(_qb_abi_shared ON)
+    else ()
+        set(_qb_abi_shared OFF)
+    endif ()
+    install(CODE "set(_qb_abi_cfg [[cxx_standard=${QB_CXX_STANDARD} compiler=${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION} build_type=${CMAKE_BUILD_TYPE} shared_libs=${_qb_abi_shared}
+ssl=${QB_HAS_SSL} openssl=${OPENSSL_VERSION} compression=${QB_HAS_COMPRESSION} quic=${QB_HAS_QUIC} argon2=${QB_HAS_ARGON2}
+unordered_map=${QB_ABI_UNORDERED_MAP} system_nlohmann=${QB_USES_SYSTEM_NLOHMANN}]])")
+    install(CODE [[
+        set(_qb_abi_line "")
+        if(EXISTS "${_qb_abi_archive}")
+            file(STRINGS "${_qb_abi_archive}" _qb_abi_hits REGEX "^qb-abi ")
+            if(_qb_abi_hits)
+                list(GET _qb_abi_hits 0 _qb_abi_line)
+            endif()
+        endif()
+        if(NOT _qb_abi_line)
+            set(_qb_abi_line "UNKNOWN - no 'qb-abi ' string found in ${_qb_abi_archive}")
+            message(WARNING
+                "[qb] abi-fingerprint.txt: could not read the fingerprint out of the archive. "
+                "The qb_abi_fingerprint symbol should be present in every qb build; if it is "
+                "genuinely absent, the link-time ABI check is not armed in this package.")
+        endif()
+        file(WRITE "${CMAKE_INSTALL_PREFIX}/share/qb/abi-fingerprint.txt"
+"# qb ABI + configuration fingerprint of THIS installed prefix.
+# The qb-abi line is read out of the installed archive itself, not re-derived. The five axes it
+# names are enforced AT LINK TIME: a consumer compiled with a different value references a symbol
+# this archive does not define, and the link fails naming the axis (see qb/utility/abi.h).
+# The configuration lines below are NOT link-enforced -- they record what configure resolved.
+${_qb_abi_line}
+${_qb_abi_cfg}
+")
+        message(STATUS "[qb] wrote ${CMAKE_INSTALL_PREFIX}/share/qb/abi-fingerprint.txt")
+    ]])
+
     qb_status_message("Installation configured:")
     qb_status_message("  Prefix: ${CMAKE_INSTALL_PREFIX}")
     qb_status_message("  Libraries: ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")

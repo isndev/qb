@@ -45,6 +45,38 @@ find_dependency(Threads)
 
 if(@QB_HAS_SSL@)
     find_dependency(OpenSSL)
+    # OpenSSL crosses qb's PUBLIC API, so a major-version mismatch between the build and the
+    # consumer is an ABI question, not a detail. Four installed headers include <openssl/...>
+    # (io/crypto.h, io/tcp/ssl/context.h, io/tcp/ssl/socket.h, and qbm-http's 3/protocol/
+    # connection.h) and SSL_CTX* appears in the signature set -- Context::adopt(SSL_CTX*),
+    # share(SSL_CTX*), native().
+    #
+    # Neither side carries a version constraint (find_package(OpenSSL) here and in
+    # qbDependencies.cmake are both unversioned), and OpenSSL's major is NOT one of the five
+    # link-enforced ABI axes, so nothing catches it: a prebuilt bottle or .deb built against
+    # openssl@3 and consumed against a different major fails at link or at load, loudly, but with
+    # no diagnostic naming the cause. Warn at configure time instead, where it is cheap to act on.
+    #
+    # A WARNING rather than an error on purpose: distributions ship a wide range of OpenSSL
+    # patch/minor levels and only the MAJOR is an ABI boundary, so a hard failure here would break
+    # legitimate consumers. Compare majors only, and say nothing when they agree.
+    set(_qb_ssl_built "@OPENSSL_VERSION@")
+    if(_qb_ssl_built AND OPENSSL_VERSION)
+        string(REGEX REPLACE "^([0-9]+).*" "\\1" _qb_ssl_built_major "${_qb_ssl_built}")
+        string(REGEX REPLACE "^([0-9]+).*" "\\1" _qb_ssl_have_major "${OPENSSL_VERSION}")
+        if(NOT _qb_ssl_built_major STREQUAL _qb_ssl_have_major)
+            message(WARNING
+                "[qb] OpenSSL MAJOR version mismatch: this qb was built against "
+                "${_qb_ssl_built}, you are building against ${OPENSSL_VERSION}. OpenSSL types "
+                "cross qb's public API (SSL_CTX* is in the signature set), so this is an ABI "
+                "boundary -- expect an unresolved symbol at link, or a loader failure at run "
+                "time. Rebuild qb against ${OPENSSL_VERSION}, or point CMAKE_PREFIX_PATH at an "
+                "OpenSSL ${_qb_ssl_built_major}.x.")
+        endif()
+        unset(_qb_ssl_built_major)
+        unset(_qb_ssl_have_major)
+    endif()
+    unset(_qb_ssl_built)
 endif()
 
 if(@QB_HAS_COMPRESSION@)
@@ -59,17 +91,47 @@ if(@QB_USES_SYSTEM_NLOHMANN@)
     find_dependency(nlohmann_json 3.11)
 endif()
 
-if(@QB_HAS_ARGON2@)
+# Our own directory goes on the module path for the duration of the two find_dependency calls
+# below only, so the Find*.cmake modules shipped beside this file resolve without leaking a
+# search path into the consumer's project for the rest of the configure run. This used to be
+# two bare list(APPEND)s with no restore and no dedup, so find_package(qb) left
+# <prefix>/lib/cmake/qb on CMAKE_MODULE_PATH permanently -- TWICE when both features were on --
+# and, because the append ran DURING find_package(qb), ahead of any module dir the consumer
+# appends afterwards. A consumer's own FindArgon2.cmake / FindNgtcp2.cmake was therefore
+# silently shadowed by ours for the rest of their configure. Exit 0, no diagnostic.
+# qbmModuleConfig.cmake.in carries the same save/restore for the same reason.
+set(_qb_saved_module_path "${CMAKE_MODULE_PATH}")
+if(@QB_HAS_ARGON2@ OR @QB_HAS_QUIC@)
     list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+endif()
+
+# find_dependency() RETURNS from this file when the package is absent -- the loud early failure
+# we want, but it also skips the restore below. Probe with a non-fatal find_package first so the
+# module path is restored on that path too, then let find_dependency() do the actual reporting.
+if(@QB_HAS_ARGON2@)
+    if(NOT Argon2_FOUND)
+        find_package(Argon2 QUIET)
+        if(NOT Argon2_FOUND)
+            set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
+        endif()
+    endif()
     find_dependency(Argon2)
 endif()
 
 if(@QB_HAS_QUIC@)
     # qb::io was built against libngtcp2; recreate its imported targets so the
     # transitive (LINK_ONLY) link of qb::io resolves for find_package() consumers.
-    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+    if(NOT Ngtcp2_FOUND)
+        find_package(Ngtcp2 QUIET)
+        if(NOT Ngtcp2_FOUND)
+            set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
+        endif()
+    endif()
     find_dependency(Ngtcp2)
 endif()
+
+set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
+unset(_qb_saved_module_path)
 
 # Set include directories.
 # One entry, because an installed qb has one include root. (The second entry this used to carry,

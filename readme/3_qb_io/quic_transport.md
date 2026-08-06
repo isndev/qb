@@ -23,7 +23,7 @@ QUIC is controlled by the tri-state CMake cache variable `QB_WITH_QUIC`, which d
 | `OFF`           | Disable QUIC outright.                                                          |
 
 <!-- src: qb/cmake/qbConfig.cmake:103-106 -->
-<!-- src: qb/cmake/qbDependencies.cmake:198-236 -->
+<!-- src: qb/cmake/qbDependencies.cmake:225-263 -->
 
 ```sh
 cmake -DQB_WITH_QUIC=ON ...
