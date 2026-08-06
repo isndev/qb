@@ -546,9 +546,20 @@ public:
         // torn down (they may touch registrations we are about to destroy). Each
         // std::function's destructor releases its captured state (e.g. a shared_ptr
         // held only to keep a target alive across the defer) cleanly — no leak, no
-        // execution. Watchers are detached below before the flush runs(), so nothing
-        // new is enqueued here.
-        _deferred.clear();
+        // execution. Watchers are detached below before the flush runs(), so no WATCHER
+        // can post anything here; a released closure's destructor still can (see below).
+        //
+        // Drain by SWAPPING the queue out, never `_deferred.clear()` in place. Releasing a
+        // closure's captured state runs arbitrary destructors — a captured shared_ptr can be
+        // the last reference to an object whose teardown calls `defer()` again — and a
+        // push_back into a deque that is halfway through its own clear() is undefined. After
+        // the swap the member is empty, so any such re-entrant defer lands in a fresh queue
+        // and is picked up by the next turn of this loop (in practice one extra pass).
+        while (!_deferred.empty()) {
+            std::deque<std::function<void()>> dropped;
+            dropped.swap(_deferred);
+            dropped.clear();
+        }
         _defer_wake.stop(); // also clears a pending feed; nothing is left to drain
         if (_registered_head) {
             // Detach every handler but do not delete it here: async::base stores
