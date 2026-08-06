@@ -255,36 +255,13 @@ if (QB_INSTALL)
         list(APPEND _QB_INSTALL_TARGETS qb-nlohmann)
     endif ()
 
-    # Genuine third-party upstream dependencies still living in modules/ (nlohmann only), which
-    # is why they are NOT covered by the one rule below: they sit outside qb's include root on
-    # purpose and install at their own canonical path -- <nlohmann/json.hpp> IS that library's
-    # public spelling, and unlike the forks it is a name a consumer may legitimately already own.
+    # No third-party header tree is installed any more. nlohmann was the only one -- it sat outside
+    # qb's include root and installed at its own canonical path, because <nlohmann/json.hpp> IS that
+    # library's public spelling. 3.0 stopped vendoring it (see QB_USE_SYSTEM_NLOHMANN): an installed
+    # qb now names it through find_dependency(nlohmann_json) instead of shipping a second copy into
+    # a consumer's include root. The rule that used to do this is gone rather than disabled, which
+    # is what makes the installed include root exactly `qb` on every host instead of host-dependent.
     #
-    # Only when qb actually fell back to the bundled copy. If qb was built against a system
-    # nlohmann_json, installing ours too would put a SECOND copy on the consumer's include path
-    # while qbConfig.cmake resolves the real one via find_dependency -- the exact duplicate-type
-    # situation the find_package branch exists to avoid. Its notice follows its header for the
-    # same reason, and when the bundled copy is eventually dropped in favour of
-    # find_package(nlohmann_json) both rules stop firing on their own.
-    set(_qb_bundled_hdr_mods ${QB_HEADER_ONLY_MODULES})
-    if (QB_USES_SYSTEM_NLOHMANN)
-        set(_qb_bundled_hdr_mods)
-    endif ()
-    set(_qb_bundled_hdr_dirs)
-    foreach (_hdr_mod ${_qb_bundled_hdr_mods})
-        set(_hdr_mod_dir "${QB_MODULES_DIR}/${_hdr_mod}")
-        if (IS_DIRECTORY "${_hdr_mod_dir}")
-            list(APPEND _qb_bundled_hdr_dirs "${_hdr_mod_dir}")
-            install(
-                    DIRECTORY "${_hdr_mod_dir}/"
-                    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${_hdr_mod}
-                    FILES_MATCHING
-                    PATTERN "*.h"
-                    PATTERN "*.hpp"
-            )
-        endif ()
-    endforeach ()
-
     # CMake exports the Argon2:: / Ngtcp2:: ad-hoc IMPORTED targets that qb::io links
     # transitively BY NAME, with no recreation; a find_package(qb) consumer has no way to
     # invent them, so the Find modules qbConfig.cmake.in calls travel with the package.
@@ -325,7 +302,7 @@ if (QB_INSTALL)
             HEADER_EXCLUDE "${_qb_header_exclude}"
             TARGETS ${_QB_INSTALL_TARGETS}
             CMAKE_FILES ${_qb_find_modules}
-            VENDOR_DIRS "${QB_VENDOR_DIR}/*" ${_qb_bundled_hdr_dirs}
+            VENDOR_DIRS "${QB_VENDOR_DIR}/*"
     )
 
     # ---- share/qb/abi-fingerprint.txt --------------------------------------------------------
@@ -350,9 +327,21 @@ if (QB_INSTALL)
     else ()
         set(_qb_abi_shared OFF)
     endif ()
+    # `nlohmann=<version>` REPLACED `system_nlohmann=<bool>` in 3.0, because that boolean stopped
+    # being able to vary: this file is written only by an install, and an installable qb is now
+    # always built against a system nlohmann (qbDependencies.cmake refuses fetched-nlohmann +
+    # QB_INSTALL). A field with one reachable value tells a packager nothing and implies a choice
+    # that no longer exists. The VERSION does vary, and it is the actionable fact -- nlohmann
+    # encodes it in an inline namespace (nlohmann::json_abi_v3_12_0), so a consumer resolving a
+    # different one gets a link error, and this line is how a packager knows which to require.
+    # No corresponding axis was added to the link-enforced set in src/qb/utility/abi.h, and none
+    # should be: nlohmann's own inline namespace already turns a version mismatch into a link
+    # failure, so a qb axis would duplicate a working mechanism. (It duplicated nothing before this
+    # change only because the vendored copy MISDECLARED its version, which is what defeated that
+    # mechanism -- the defect being removed here, not one to re-implement in qb.)
     install(CODE "set(_qb_abi_cfg [[cxx_standard=${QB_CXX_STANDARD} compiler=${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION} build_type=${CMAKE_BUILD_TYPE} shared_libs=${_qb_abi_shared}
 ssl=${QB_HAS_SSL} openssl=${OPENSSL_VERSION} compression=${QB_HAS_COMPRESSION} quic=${QB_HAS_QUIC} argon2=${QB_HAS_ARGON2}
-unordered_map=${QB_ABI_UNORDERED_MAP} system_nlohmann=${QB_USES_SYSTEM_NLOHMANN}]])")
+unordered_map=${QB_ABI_UNORDERED_MAP} nlohmann=${nlohmann_json_VERSION}]])")
     install(CODE [[
         set(_qb_abi_line "")
         if(EXISTS "${_qb_abi_archive}")
@@ -393,11 +382,12 @@ endif ()
 # Mark framework as successfully loaded
 set(QB_FOUND TRUE CACHE BOOL "qb framework found and configured")
 set(QB_LIBRARIES ${QB_ALL_LIBRARIES} CACHE STRING "All qb libraries")
-# Two entries in the BUILD tree only: QB_INCLUDE_DIR (qb's headers + its vendored forks under
-# qb/vendor/) and QB_MODULES_DIR (the bundled nlohmann fallback, which is not copied into the
-# source tree). An INSTALLED qb has a single root -- see qbConfig.cmake.in. Legacy variable;
-# prefer linking qb::core / qb::io and inheriting the include paths from the target.
-set(QB_INCLUDE_DIRS "${QB_INCLUDE_DIR};${QB_MODULES_DIR}" CACHE STRING "qb include directories")
+# One entry: QB_INCLUDE_DIR (qb's headers + its vendored forks under qb/vendor/). It used to carry
+# a second, QB_MODULES_DIR, for the bundled nlohmann fallback; 3.0 deleted that copy, so the build
+# tree and the installed tree now agree on having a single root. nlohmann's own include path
+# arrives as a usage requirement of qb-nlohmann, from find_package or FetchContent. Legacy
+# variable; prefer linking qb::core / qb::io and inheriting the include paths from the target.
+set(QB_INCLUDE_DIRS "${QB_INCLUDE_DIR}" CACHE STRING "qb include directories")
 
 # Set target variables for compatibility
 set(QB_CORE_TARGET qb::core)
@@ -423,7 +413,7 @@ if (hasParent)
     # Export library lists
     set(QB_LIBRARIES ${QB_LIBRARIES} PARENT_SCOPE)
     set(QB_ALL_LIBRARIES ${QB_ALL_LIBRARIES} PARENT_SCOPE)
-    set(QB_INCLUDE_DIRS "${QB_INCLUDE_DIR};${QB_MODULES_DIR}" PARENT_SCOPE)
+    set(QB_INCLUDE_DIRS "${QB_INCLUDE_DIR}" PARENT_SCOPE)
 
     # Export configuration
     set(QB_FRAMEWORK_VERSION ${QB_FRAMEWORK_VERSION} PARENT_SCOPE)

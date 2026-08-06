@@ -40,16 +40,18 @@ jobs:
       # qb owns every top-level name it installs. Anything else is a header that can shadow, or be
       # shadowed by, one the consumer already has -- which is how ev.h / event.h / uuid.h and a
       # second copy of nlohmann/json.hpp used to land in every consumer's include root.
-      # `nlohmann` is expected ONLY when qb fell back to its bundled copy (no system
-      # nlohmann_json on the runner). `qb/` is the only name qb itself publishes: the legacy
-      # `cube.h` umbrella (guard QB_QB_H, just actor.h + io.h + main.h) was the last generic
-      # top-level name and was removed -- nothing in the tree ever included it.
+      # EXACTLY `qb` since 3.0, with no alternative accepted. This assertion used to also allow
+      # "nlohmann qb", because a runner without a system nlohmann_json made qb install its bundled
+      # copy -- which meant the installed surface depended on what happened to be on the build host,
+      # and the tolerance hid that. qb no longer vendors nlohmann at all: an installable qb is built
+      # against a real system package and names it through find_dependency. One accepted value is
+      # the point -- a second one is how the drift got in.
       - name: Installed include root is qb-owned
         run: |
           actual="$(ls _prefix/include | sort | tr '\n' ' ')"
           echo "include root: ${actual}"
           case "${actual}" in
-            "nlohmann qb "|"qb ") ;;
+            "qb ") ;;
             *) echo "::error::unexpected top-level names in the installed include root: ${actual}"
                exit 1 ;;
           esac
@@ -337,14 +339,40 @@ jobs:
           grep -q "QB_REQUIRE_FEATURES=ON, so this downgrade is an error" /tmp/require.log \
             || { echo "::error::configure failed, but not for the reason under test"; cat /tmp/require.log; exit 1; }
 
-      - name: QB_USE_SYSTEM_NLOHMANN — OFF uses the bundled copy, a bad value is rejected
+      # 3.0 deleted the bundled copy: OFF now means "always FETCH the pinned tag", not "use the
+      # copy in modules/". The runner HAS a system nlohmann_json (the dependency script installs
+      # nlohmann-json3-dev), which is what makes this a real test of OFF rather than of the
+      # default — AUTO would have found the system one, so seeing a fetch proves OFF overrode it.
+      - name: QB_USE_SYSTEM_NLOHMANN — OFF fetches the pinned tag, a bad value is rejected
         run: |
           set -euo pipefail
           cmake -S . -B b-nl-off -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF -DQB_INSTALL=OFF \
             -DQB_USE_SYSTEM_NLOHMANN=OFF > /tmp/nl-off.log 2>&1
-          grep -q "Using bundled nlohmann_json" /tmp/nl-off.log \
-            || { echo "::error::QB_USE_SYSTEM_NLOHMANN=OFF did not select the bundled copy"; cat /tmp/nl-off.log; exit 1; }
+          grep -q "fetching v3.12.0 from git" /tmp/nl-off.log \
+            || { echo "::error::QB_USE_SYSTEM_NLOHMANN=OFF did not fetch the pinned tag"; cat /tmp/nl-off.log; exit 1; }
+          grep -q "Using system nlohmann_json" /tmp/nl-off.log \
+            && { echo "::error::QB_USE_SYSTEM_NLOHMANN=OFF still used the system copy"; cat /tmp/nl-off.log; exit 1; }
+
+          # ...and the AUTO control, so the check above cannot pass on a runner that simply has no
+          # system copy: with a system nlohmann present, AUTO must pick it and fetch nothing.
+          cmake -S . -B b-nl-auto -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
+            -DQB_USE_SYSTEM_NLOHMANN=AUTO > /tmp/nl-auto.log 2>&1
+          grep -q "Using system nlohmann_json" /tmp/nl-auto.log \
+            || { echo "::error::AUTO did not find the system nlohmann_json — the OFF check above proves nothing"; cat /tmp/nl-auto.log; exit 1; }
+
+          # A fetched nlohmann cannot be exported, so an installable build must refuse rather than
+          # emit an install(EXPORT) that aborts at generate time naming a target nobody recognises.
+          set +e
+          cmake -S . -B b-nl-inst -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF -DQB_INSTALL=ON \
+            -DQB_USE_SYSTEM_NLOHMANN=OFF > /tmp/nl-inst.log 2>&1
+          rc=$?
+          set -e
+          [ "$rc" -ne 0 ] || { echo "::error::a fetched nlohmann produced an installable qb"; exit 1; }
+          grep -q "but QB_INSTALL is ON" /tmp/nl-inst.log \
+            || { echo "::error::configure failed, but not for the reason under test"; cat /tmp/nl-inst.log; exit 1; }
 
           set +e
           cmake -S . -B b-nl-bad -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -382,7 +410,7 @@ jobs:
           # The configuration block is not link-enforced, so at minimum it must be PRESENT and
           # carry a value on every field — an empty `shared_libs=` is the failure mode the
           # normalisation in CMakeLists.txt exists to prevent.
-          for field in cxx_standard compiler build_type shared_libs ssl compression quic argon2 unordered_map system_nlohmann; do
+          for field in cxx_standard compiler build_type shared_libs ssl compression quic argon2 unordered_map nlohmann; do
             grep -Eq "(^|[[:space:]])${field}=[^[:space:]]" "$fp" \
               || { echo "::error::abi-fingerprint.txt field '${field}' is missing or empty"; exit 1; }
           done

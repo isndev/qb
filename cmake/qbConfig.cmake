@@ -50,11 +50,12 @@ set(QB_INCLUDE_DIR "${QB_ROOT_DIR}/src")
 # Without CACHE, the variable stays local to qb's subdirectory scope and
 # qb_add_test / qb_add_benchmark cannot find deploy_runtime_dlls.cmake.
 set(QB_CMAKE_DIR  "${QB_ROOT_DIR}/cmake"   CACHE INTERNAL "qb cmake scripts directory")
-# src/ IS qb's include root: what a consumer types after `#include <` is exactly what lives under
-# it, each header's implementation beside it. modules/ holds ONLY genuine third-party upstream code
-# (nlohmann); the qb FORKS -- qev, uuid, nanolog, ska_hash -- live under src/qb/vendor/ so that an
-# installed qb owns every top-level name it drops in the consumer's include root.
-set(QB_MODULES_DIR "${QB_ROOT_DIR}/modules")
+# src/ IS qb's include root -- the ONLY one, since 3.0 stopped vendoring nlohmann and deleted
+# modules/ with it. What a consumer types after `#include <` is exactly what lives under src/, each
+# header's implementation beside it. The qb FORKS -- qev, uuid, nanolog, ska_hash -- live under
+# src/qb/vendor/ so that an installed qb owns every top-level name it drops in the consumer's
+# include root; that root is now exactly `qb`. nlohmann was the one genuine third-party upstream
+# and is now resolved by find_package / FetchContent instead (see QB_USE_SYSTEM_NLOHMANN below).
 # qb-owned forks. Physically inside QB_INCLUDE_DIR on purpose: the build tree and the installed
 # tree then expose them at the SAME relative path (qb/vendor/<fork>/...) through the SAME single
 # include root, so there is no build-interface/install-interface pair to drift apart.
@@ -103,7 +104,9 @@ option(QB_USE_SYSTEM_BENCHMARK "Require a system Google Benchmark (find_package 
 set(QB_GOOGLETEST_GIT_TAG "v1.15.2" CACHE STRING "Git tag (or SHA) for FetchContent googletest")
 set(QB_GOOGLEBENCHMARK_GIT_TAG "v1.9.2" CACHE STRING "Git tag (or SHA) for FetchContent googlebenchmark")
 set(QB_ZLIB_GIT_TAG "v1.3.1" CACHE STRING "Git tag (or SHA) for the FetchContent zlib fallback build")
-mark_as_advanced(QB_GOOGLETEST_GIT_TAG QB_GOOGLEBENCHMARK_GIT_TAG QB_ZLIB_GIT_TAG)
+set(QB_NLOHMANN_GIT_TAG "v3.12.0" CACHE STRING "Git tag (or SHA) for the FetchContent nlohmann_json fallback")
+mark_as_advanced(QB_GOOGLETEST_GIT_TAG QB_GOOGLEBENCHMARK_GIT_TAG QB_ZLIB_GIT_TAG
+                 QB_NLOHMANN_GIT_TAG)
 option(QB_BUILD_DOCS "Build qb documentation" OFF)
 # Defaults to the standard BUILD_SHARED_LIBS so `cmake -DBUILD_SHARED_LIBS=ON` also
 # switches qb to shared, while still allowing an explicit qb-only override.
@@ -149,18 +152,25 @@ option(QB_WITH_COMPRESSION "Enable compression support" ON)
 set(QB_WITH_QUIC "AUTO" CACHE STRING "QUIC transport via libngtcp2: AUTO, ON, or OFF")
 set_property(CACHE QB_WITH_QUIC PROPERTY STRINGS AUTO ON OFF)
 # nlohmann/json source selection. Tri-state, same shape as QB_WITH_QUIC:
-#   AUTO (default) -- use the system nlohmann_json if find_package finds one, else the bundled copy.
+#   AUTO (default) -- use the system nlohmann_json if find_package finds one; otherwise FetchContent
+#                     it from the pinned tag ${QB_NLOHMANN_GIT_TAG}, subject to
+#                     QB_DEPS_FETCH_FALLBACK (the same system-first/git-fallback policy zlib,
+#                     GoogleTest and Google Benchmark already follow).
 #   ON             -- REQUIRE the system one; hard-fail at configure time if it is absent.
-#   OFF            -- always use the bundled copy, even when a system one is installed.
-# This exists for DISTRIBUTION packagers. AUTO makes the resulting package host-dependent in two
-# ways a packager cannot control: <prefix>/include gains an nlohmann/ directory or not (which
-# collides with a distro's own nlohmann-json package under `brew link` / dpkg), and the bundled
-# copy is an untagged post-3.12.0 snapshot that declares the SAME inline namespace
-# (nlohmann::json_abi_v3_12_0) as a genuine 3.12.0 while diverging from it -- so a program that
-# links both gets one namespace spanning two definition sets, with no linker diagnostic.
-# See qb/THIRD-PARTY-NOTICES for the divergence, and the long note in qbDependencies.cmake for
-# why nlohmann (unlike qev/uuid/nanolog/ska_hash) cannot simply be re-prefixed out of the way.
-set(QB_USE_SYSTEM_NLOHMANN "AUTO" CACHE STRING "nlohmann/json source: AUTO (system if found), ON (require system), OFF (always bundled)")
+#   OFF            -- never probe the system; always FetchContent the pinned tag.
+# 3.0 STOPPED VENDORING nlohmann. qb used to carry modules/nlohmann/json.hpp as the fallback, and
+# that copy was an untagged post-3.12.0 develop snapshot (450 added / 264 removed lines against the
+# v3.12.0 tag) which nonetheless declared NLOHMANN_JSON_VERSION_* = 3/12/0. nlohmann guards against
+# version mixing with an inline namespace whose name encodes the version (nlohmann::json_abi_v3_12_0),
+# so a program linking that copy together with a genuine 3.12.0 got ONE inline namespace spanning two
+# different definition sets -- an ODR violation no linker diagnoses, because the label lied. Deleting
+# it removes the lie; a FetchContent'd copy is the real tag, and the namespace tag means what it says.
+# Dropping it also removes `nlohmann/` from qb's installed include root (now exactly `qb`), a name qb
+# has no business claiming in a consumer's include namespace and the reason `brew link` collided with
+# a distro's own nlohmann-json package.
+# See the long note in qbDependencies.cmake for why nlohmann (unlike the qev/uuid/nanolog/ska_hash
+# forks) could never simply be re-prefixed out of the way.
+set(QB_USE_SYSTEM_NLOHMANN "AUTO" CACHE STRING "nlohmann/json source: AUTO (system if found, else fetch), ON (require system), OFF (always fetch)")
 set_property(CACHE QB_USE_SYSTEM_NLOHMANN PROPERTY STRINGS AUTO ON OFF)
 if(NOT QB_USE_SYSTEM_NLOHMANN MATCHES "^(AUTO|ON|OFF)$")
     message(FATAL_ERROR "[qb] QB_USE_SYSTEM_NLOHMANN must be AUTO, ON or OFF (got '${QB_USE_SYSTEM_NLOHMANN}')")

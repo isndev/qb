@@ -23,35 +23,7 @@ Components whose license text is carried inside the installed header itself are
 marked "in-header" and have no separate file — the notice travels with the code.
 
 
-1. nlohmann/json
-   -------------
-   Upstream    https://github.com/nlohmann/json
-   Author      Niels Lohmann <https://nlohmann.me>
-   Version     3.12.0 as declared by NLOHMANN_JSON_VERSION_* — see the NOTE below
-   License     MIT
-   Vendored    modules/nlohmann/json.hpp
-   Installed   <prefix>/include/nlohmann/json.hpp
-   License at  <prefix>/share/licenses/qb/third-party/nlohmann/LICENSE.MIT
-
-   The single-header amalgamation carries an SPDX-License-Identifier line but not
-   the MIT permission notice, so the accompanying LICENSE.MIT is what satisfies
-   MIT's requirement that the permission notice ship with the software.
-
-   NOTE — the vendored copy is NOT the released 3.12.0 artifact. It declares
-   NLOHMANN_JSON_VERSION_MAJOR/MINOR/PATCH = 3/12/0 but diverges from the v3.12.0
-   tag (452 added / 266 removed lines) and carries changes that exist only on
-   upstream's develop branch after that tag — among them the
-   `#if defined(__cpp_lib_byte)` guard around the std::byte char_traits
-   specialization. It is an untagged post-3.12.0 develop snapshot.
-
-   Consequence for consumers: nlohmann/json puts the version into its inline
-   namespace (nlohmann::json_abi_v3_12_0). A program that links this copy together
-   with a genuine 3.12.0 gets one inline namespace spanning two different sets of
-   definitions — an ODR violation the linker will not diagnose. Consumers who
-   already own nlohmann/json should build qb against theirs; qb detects a system
-   nlohmann_json and then installs neither this header nor its license.
-
-2. libev (via qb-ev) and wepoll
+1. libev (via qb-ev) and wepoll
    ----------------------------
    qb bundles qb-ev, a modernized cross-platform fork of libev that itself bundles
    a patched copy of wepoll. The fork is redistributed under the MIT License; the
@@ -85,7 +57,7 @@ marked "in-header" and have no separate file — the notice travels with the cod
                <prefix>/share/licenses/qb/third-party/qev/THIRD-PARTY-NOTICES
                  (the per-file derivation map and the full BSD-2-Clause text)
 
-3. nanolog
+2. nanolog
    -------
    Upstream    https://github.com/Iyengar111/NanoLog
    Author      Karthik Iyengar
@@ -96,7 +68,7 @@ marked "in-header" and have no separate file — the notice travels with the cod
    License at  in-header — both files open with the complete MIT notice, so the
                permission notice is distributed with the installed header itself.
 
-4. ska_hash (flat_hash_map)
+3. ska_hash (flat_hash_map)
    ------------------------
    Upstream    https://github.com/skarupke/flat_hash_map
    Author      Malte Skarupke
@@ -110,7 +82,7 @@ marked "in-header" and have no separate file — the notice travels with the cod
    by URL. BSL-1.0 asks for the entire statement to accompany copies, so the full
    text is vendored alongside rather than left as a link.
 
-5. stduuid
+4. stduuid
    -------
    Upstream    https://github.com/mariusbancila/stduuid
    Author      Marius Bancila
@@ -128,7 +100,7 @@ marked "in-header" and have no separate file — the notice travels with the cod
    copyright holder ("Copyright (c) 2017" with the name left blank) and is
    reproduced verbatim rather than corrected — see LEGAL QUESTIONS below.
 
-6. Catch2
+5. Catch2
    ------
    Upstream    https://github.com/catchorg/Catch2
    Author      Two Blue Cubes Ltd.

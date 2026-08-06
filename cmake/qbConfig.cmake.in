@@ -83,13 +83,15 @@ if(@QB_HAS_COMPRESSION@)
     find_dependency(ZLIB)
 endif()
 
-# qb::io's public headers expose nlohmann::json (qb::json is an alias for it). If qb was built
-# against a system nlohmann_json rather than its bundled fallback, the consumer must resolve the
-# SAME one -- qb did not install a copy, and using a different one would be an ODR violation on
-# the type itself. Failing here at configure time is the loud, correct outcome.
-if(@QB_USES_SYSTEM_NLOHMANN@)
-    find_dependency(nlohmann_json 3.11)
-endif()
+# qb::io's public headers expose nlohmann::json (qb::json is an alias for it), so the consumer MUST
+# resolve one -- and, since the type crosses the API boundary, the SAME one qb was built against.
+# UNCONDITIONAL since 3.0: qb no longer ships a bundled copy, so there is no configuration in which
+# an installed qb carries its own nlohmann and this can be skipped. (It used to be guarded on
+# QB_USES_SYSTEM_NLOHMANN, because a bundled-fallback build installed the header itself.) An
+# installable qb is only ever produced against a real system nlohmann -- qbDependencies.cmake makes
+# fetched-nlohmann + QB_INSTALL a configure-time error -- so this always has something to find on a
+# correctly provisioned host. Failing here at configure time is the loud, correct outcome.
+find_dependency(nlohmann_json 3.11)
 
 # Our own directory goes on the module path for the duration of the two find_dependency calls
 # below only, so the Find*.cmake modules shipped beside this file resolve without leaking a

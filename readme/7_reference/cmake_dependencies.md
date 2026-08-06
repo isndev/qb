@@ -14,7 +14,7 @@ qb groups its dependencies into resolution classes — vendored forks that are q
 | libev | qb fork, vendored (`src/qb/vendor/qev`) | required | event loop (core/io) | `qbDependencies.cmake` |
 | stduuid | qb fork, vendored (`src/qb/vendor/uuid`) | required | UUID generation | `qbDependencies.cmake` |
 | nanolog, ska_hash | qb forks, vendored, header-only (`src/qb/vendor/`) | required | logging / hashing | — (no CMake target) |
-| nlohmann/json | system (`find_package`) with bundled fallback (`modules/nlohmann`) | required | JSON | `qbDependencies.cmake` |
+| nlohmann/json | system (`find_package`) with pinned `FetchContent` fallback | required | JSON | `qbDependencies.cmake` |
 | GoogleTest | fetched or system | dev-only (`QB_BUILD_TESTS`) | test suite | `qbFetchGoogleDeps.cmake` |
 | Google Benchmark | fetched or system | dev-only (`QB_BUILD_BENCHMARKS`) | benchmarks | `qbFetchGoogleDeps.cmake` |
 | zlib | fetched or system | optional (`QB_WITH_COMPRESSION`) | compression | `qbDependencies.cmake` |
@@ -37,7 +37,7 @@ The framework requires **CMake 3.24 or newer** (`qb/CMakeLists.txt:31`). 3.24 is
 
 That path is not cosmetic. Their headers used to be published by bare name, so an installed qb dropped `ev.h`, `ev++.h`, `event.h`, `event_compat.h`, `ev_config.h`, `uuid.h` and the directories `ev/`, `uuid/`, `nanolog/`, `ska_hash/` straight into the consumer's include root — 12 top-level names, every one of them able to shadow, or be shadowed by, a header the consumer already owned. Living under `qb/vendor/` makes that collision structurally impossible. Being physically inside the include root (`src/`) also means one include root serves the build tree and the installed tree, with no separate `BUILD_INTERFACE`/`INSTALL_INTERFACE` pair to drift apart.
 
-- **libev** — REQUIRED. `qbDependencies.cmake:104-116` checks that `src/qb/vendor/qev` exists and sets `QB_HAS_LIBEV`; if it is missing, configuration fails with a fatal error. The tree is compiled by `add_subdirectory("${QB_VENDOR_DIR}/qev")` (`qb/CMakeLists.txt:100`), producing the static `qev` target (`src/qb/vendor/qev/CMakeLists.txt:287`). Resolving libev defines `QB_HAS_LIBEV=1` on every qb target (`qbDependencies.cmake:428-430`).
+- **libev** — REQUIRED. `qbDependencies.cmake:104-116` checks that `src/qb/vendor/qev` exists and sets `QB_HAS_LIBEV`; if it is missing, configuration fails with a fatal error. The tree is compiled by `add_subdirectory("${QB_VENDOR_DIR}/qev")` (`qb/CMakeLists.txt:100`), producing the static `qev` target (`src/qb/vendor/qev/CMakeLists.txt:287`). Resolving libev defines `QB_HAS_LIBEV=1` on every qb target (`qbDependencies.cmake:524-526`).
   The fork's generated configuration header is reached through `-DEV_CONFIG_H=<qb/vendor/qev/qev_config.h>`, a `PUBLIC` compile definition on the `qev` target, because `qev.h`'s own fallback lookup for `qev_config.h` is `__has_include`-guarded and would fail *silently* — flipping `EV_MULTIPLICITY` from 1 to 4 and desynchronising every `qev_*` prototype from the compiled library. `qb/io/async/event/base.h` and `qb/io/async/coroutine/scheduler.h` carry an `#error` guard on `EV_MULTIPLICITY` so that miss is a compile error rather than a runtime mystery.
 - **stduuid** — REQUIRED in practice. `qbDependencies.cmake:44-47` detects `src/qb/vendor/uuid` and sets `QB_HAS_UUID`. It is added by `add_subdirectory("${QB_VENDOR_DIR}/uuid")` (`qb/CMakeLists.txt:99`), which declares the header-only `stduuid` `INTERFACE` target (`src/qb/vendor/uuid/CMakeLists.txt:22`). The framework pins its options before adding it (`qb/CMakeLists.txt:83-91`): `UUID_BUILD_TESTS`, `UUID_SYSTEM_GENERATOR` and `UUID_TIME_GENERATOR` are forced **off**, while `UUID_USING_CXX20_SPAN` is forced **on**. That last one is load-bearing, not cosmetic: qb requires C++20 so `std::span` always exists, and with it off stduuid takes a `gsl` fallback branch whose directory was deleted in the C++20 migration -- which made `cmake --install` fail outright. Only when the vendored directory is absent does `qbDependencies.cmake:50-95` fall back to a system UUID (pkg-config `uuid`, then `find_path`/`find_library`); if neither is found, the build emits a warning and clears `QB_HAS_UUID` rather than failing.
 - **nanolog, ska_hash** — header-only, no CMake target at all. They are ordinary files under `src/qb/vendor/`, reached through qb's single include root like any other qb header. `src/qb/io/io.cpp` compiles `nanolog.cpp` by textual inclusion.
@@ -92,12 +92,15 @@ copy of both caveats is the comment block at the top of the installed header its
 
 ### Third-party: nlohmann/json
 
-nlohmann is the one genuine upstream dependency, and it is handled the opposite way. `nlohmann::json` crosses qb's API boundary (`qb::json` is an alias for it, and `qb/json.h` defines `to_json`/`from_json` for `qb::uuid`), so a consumer compiling against *their* copy while qb was compiled against a private one is an ODR violation on the type — something no include-path rename can fix. `qbDependencies.cmake:352-358` therefore does `find_package(nlohmann_json 3.11 QUIET)` first and only falls back to the bundled `modules/nlohmann` copy. Either way the result is the `qb-nlohmann` `INTERFACE` target (`qbDependencies.cmake:360-362`, exported as `qb::nlohmann`), linked `PUBLIC` by `qb-io`.
+nlohmann is the one genuine upstream dependency, and it is handled the opposite way. `nlohmann::json` crosses qb's API boundary (`qb::json` is an alias for it, and `qb/json.h` defines `to_json`/`from_json` for `qb::uuid`), so a consumer compiling against *their* copy while qb was compiled against a private one is an ODR violation on the type — something no include-path rename can fix. `qbDependencies.cmake:364` therefore does `find_package(nlohmann_json 3.11 QUIET)` first, and falls back to `FetchContent` at the pinned `QB_NLOHMANN_GIT_TAG` (`qbDependencies.cmake:470`). Either way the result is the `qb-nlohmann` `INTERFACE` target (`qbDependencies.cmake:383-384`, exported as `qb::nlohmann`), linked `PUBLIC` by `qb-io`.
+
+**qb does not vendor nlohmann.** It did until 3.0 — `modules/nlohmann/json.hpp`, an untagged post-3.12.0 snapshot that nonetheless declared `NLOHMANN_JSON_VERSION_* = 3/12/0`. Because nlohmann encodes the version in an inline namespace (`nlohmann::json_abi_v3_12_0`), that copy presented the *same* namespace tag as a genuine 3.12.0 over a *different* set of definitions, so a program linking both got one namespace spanning two definition sets with no linker diagnostic. It is deleted; see the qb [CHANGELOG](../../CHANGELOG.md) for the migration.
 
 Consequences worth knowing:
 
-- If qb was built against a system nlohmann, `qbConfig.cmake` calls `find_dependency(nlohmann_json 3.11)` and qb installs **no** copy of its own — a consumer without the package fails at configure time, loudly.
-- If qb fell back to the bundle, the bundle is installed at `<prefix>/include/nlohmann/` — the library's canonical spelling. Unlike the forks, a consumer's own copy winning the include race here is correct, not a bug.
+- A consumer must have nlohmann/json. `qbConfig.cmake` calls `find_dependency(nlohmann_json 3.11)` **unconditionally**, and qb installs no copy of its own — a consumer without the package fails at configure time, loudly.
+- `<prefix>/include` is exactly `qb` on every host (`qb qbm` for the workspace package). It no longer gains an `nlohmann/` directory depending on what the *build* machine had installed.
+- An **installable** qb requires a real system nlohmann. A fetched one belongs to no export set, so `install(EXPORT qbTargets)` cannot name it, and installing its headers would restore the `nlohmann/` include-root entry; `QB_INSTALL` with no system copy is therefore a configure-time error naming both ways out. Builds that only compile and test are unaffected — they fetch.
 - nlohmann encodes its version and a few options in an inline namespace (`json_abi_v3_12_0`), so a version mismatch surfaces as a link error. `JSON_NOEXCEPTION` and `JSON_USE_IMPLICIT_CONVERSIONS` change the class but not that tag, so they can still mismatch silently. Building qb in your own tree (`add_subdirectory` / `FetchContent`) is the only configuration that closes this completely.
 
 ### Fetched dependencies
@@ -119,7 +122,7 @@ System-only dependencies have no clean CMake source build, so qb never fetches t
 - **libngtcp2 (+ ngtcp2_crypto_ossl)** — the QUIC transport stack, governed by the tri-state `QB_WITH_QUIC` (`qbDependencies.cmake:225-263`). QUIC **requires SSL**: if `QB_HAS_SSL` is false, QUIC is disabled regardless of the request. When SSL is present, `find_package(Ngtcp2 QUIET)` (bundled `cmake/FindNgtcp2.cmake`) creates the `Ngtcp2::ngtcp2` and `Ngtcp2::crypto_ossl` imported targets (`FindNgtcp2.cmake:79-90`); on success qb links both and defines `QB_HAS_QUIC=1`. Distro packages may also provide `libngtcp2-crypto-gnutls-dev`, but that is not a drop-in replacement for qb's current native backend because `src/qb/io/quic.cpp` calls the ngtcp2 OpenSSL helper APIs. See [QUIC tri-state](#quic-tri-state-qb_with_quic) for the AUTO/ON/OFF semantics.
 - **gperftools** — `find_package(Gperftools QUIET)`, only when `QB_WITH_PROFILING` is ON (off by default), at `qbDependencies.cmake:274-295`. The bundled `cmake/FindGperftools.cmake` creates `Gperftools::Profiler` and `Gperftools::TCMalloc` (among other targets); qb links whichever exist and sets `QB_HAS_PROFILING`. If absent, it warns and forces `QB_WITH_PROFILING` off.
 
-The bundled find-modules for Argon2 and ngtcp2 are installed alongside the package config so that `find_package(qb)` consumers of an Argon2- or QUIC-enabled build can recreate the same imported targets (`qb/CMakeLists.txt:288-297`).
+The bundled find-modules for Argon2 and ngtcp2 are installed alongside the package config so that `find_package(qb)` consumers of an Argon2- or QUIC-enabled build can recreate the same imported targets (`qb/CMakeLists.txt:265-274`).
 
 ## QB_HAS_* versus QB_WITH_*
 
@@ -128,11 +131,11 @@ The two prefixes are not interchangeable.
 - `QB_WITH_*` are **user-facing requests** — options you set on the command line (`QB_WITH_SSL`, `QB_WITH_COMPRESSION`, `QB_WITH_QUIC`, `QB_WITH_PROFILING`).
 - `QB_HAS_*` are **resolved results** — what qb actually found after probing (`QB_HAS_SSL`, `QB_HAS_COMPRESSION`, `QB_HAS_QUIC`, `QB_HAS_ARGON2`, `QB_HAS_PROFILING`, `QB_HAS_UUID`, `QB_HAS_LIBEV`).
 
-A `QB_HAS_*` flag drives the corresponding `QB_HAS_*=1` compile definition on qb targets (`qbDependencies.cmake:412-430`). When a requested feature's dependency is missing, qb forces the `QB_WITH_*` option back off so the recorded request matches reality.
+A `QB_HAS_*` flag drives the corresponding `QB_HAS_*=1` compile definition on qb targets (`qbDependencies.cmake:508-526`). When a requested feature's dependency is missing, qb forces the `QB_WITH_*` option back off so the recorded request matches reality.
 
 ## Resolution policy: QB_DEPS_FETCH_FALLBACK
 
-`QB_DEPS_FETCH_FALLBACK` (default **ON**, `qbConfig.cmake:98`) selects how the fetchable dependencies behave. The fetched-via-`FIND_PACKAGE_ARGS` dependencies (GoogleTest, Google Benchmark) and zlib differ at the OFF setting.
+`QB_DEPS_FETCH_FALLBACK` (default **ON**, `qbConfig.cmake:99`) selects how the fetchable dependencies behave. The fetched-via-`FIND_PACKAGE_ARGS` dependencies (GoogleTest, Google Benchmark) and zlib differ at the OFF setting.
 
 | Setting | GoogleTest / Google Benchmark | zlib |
 |---|---|---|
@@ -146,7 +149,7 @@ System-only dependencies (OpenSSL, Argon2, libngtcp2, gperftools) are unaffected
 
 ## Pinning fetched versions
 
-Three advanced cache variables pin the Git tag (or SHA) used for source builds (`qbConfig.cmake:103-106`; `mark_as_advanced`):
+Four advanced cache variables pin the Git tag (or SHA) used for source builds (`qbConfig.cmake:104-109`; `mark_as_advanced`):
 
 | Variable | Default | Applies to |
 |---|---|---|
@@ -157,7 +160,7 @@ Three advanced cache variables pin the Git tag (or SHA) used for source builds (
 Override at configure time:
 
 ```bash
-# src: derived from qb/cmake/qbConfig.cmake:75-78 + qbFetchGoogleDeps.cmake:57-63
+# src: derived from qb/cmake/qbConfig.cmake:76-79 + qbFetchGoogleDeps.cmake:57-63
 cmake -B build -S . -DQB_GOOGLETEST_GIT_TAG=v1.14.0
 ```
 
@@ -176,7 +179,7 @@ This issues `find_package(GTest CONFIG REQUIRED)` and `find_package(benchmark CO
 
 ## QUIC tri-state: QB_WITH_QUIC
 
-`QB_WITH_QUIC` is a three-valued cache string with default **AUTO** (`qbConfig.cmake:149`), resolved at `qbDependencies.cmake:229-236`:
+`QB_WITH_QUIC` is a three-valued cache string with default **AUTO** (`qbConfig.cmake:152`), resolved at `qbDependencies.cmake:229-236`:
 
 The value is matched case-insensitively (`qbDependencies.cmake:229`). The OFF set is matched explicitly; AUTO is matched explicitly; any other value is treated as a required ON.
 

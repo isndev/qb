@@ -40,6 +40,7 @@ qb resolves dependencies in three ways. Most builds need nothing installed beyon
 |------------------|----------------------------------------------------------------------|-------------------------------|
 | libev            | Forked + vendored (`qb/src/qb/vendor/qev`), built automatically      | Always (the event loop)       |
 | stduuid          | Forked + vendored (`qb/src/qb/vendor/uuid`); system uuid if absent   | Always (UUIDs)                |
+| nlohmann/json    | System first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` | Always (`qb::json`)           |
 | GoogleTest       | Fetched at configure time when `QB_BUILD_TESTS=ON`                   | Tests                         |
 | Google Benchmark | Fetched at configure time when `QB_BUILD_BENCHMARKS=ON`              | Benchmarks                    |
 | zlib             | System first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` | `QB_WITH_COMPRESSION`         |
@@ -48,17 +49,20 @@ qb resolves dependencies in three ways. Most builds need nothing installed beyon
 | ngtcp2           | System only                                                          | `QB_WITH_QUIC` (requires SSL) |
 | gperftools       | System only                                                          | `QB_WITH_PROFILING`           |
 
-Optional system packages, by platform:
+System packages, by platform. **nlohmann/json is the one that is not optional** — `qb::json` *is*
+`nlohmann::json`, and qb stopped vendoring a copy in 3.0. A build without it still works (the pinned
+`v3.12.0` is fetched), but producing an **installable** qb requires the real package; see
+[Consume an installed copy](#consume-an-installed-copy).
 
 ```bash
 # Debian / Ubuntu
-sudo apt-get install libssl-dev libargon2-dev zlib1g-dev
+sudo apt-get install nlohmann-json3-dev libssl-dev libargon2-dev zlib1g-dev
 
 # macOS (Homebrew)
-brew install openssl argon2 zlib
+brew install nlohmann-json openssl argon2 zlib
 
 # Windows (vcpkg) — as used in CI
-vcpkg install openssl:x64-windows argon2:x64-windows zlib:x64-windows
+vcpkg install nlohmann-json:x64-windows openssl:x64-windows argon2:x64-windows zlib:x64-windows
 ```
 
 Install `libngtcp2` as well when you want QUIC/HTTP3 auto-detection to enable that transport. On
@@ -100,6 +104,14 @@ find_package(qb CONFIG REQUIRED)   # provides qb::core and qb::io
 target_link_libraries(my_app PRIVATE qb::core qb::io)
 ```
 
+`qbConfig.cmake` calls `find_dependency(nlohmann_json 3.11)`, so **the consumer must have
+nlohmann/json too** — `qb::json` is an alias for `nlohmann::json`, and the type crosses qb's API, so
+both sides must resolve the same one. An absent package fails at `find_package(qb)` time, loudly.
+For the same reason the build that *produces* the prefix must use a system nlohmann rather than the
+fetched fallback: a fetched copy belongs to no export set, and installing its headers would put
+`nlohmann/` into the consumer's include root. That combination is a configure-time error naming both
+ways out. `<prefix>/include` therefore contains exactly `qb` on every host.
+
 The install exports `qbConfig.cmake` and a `SameMajorVersion` version file. It also exports the
 bundled `FindArgon2` / `FindNgtcp2` modules **when, and only when, the corresponding feature was
 actually enabled in this build** — `FindArgon2.cmake` if `QB_HAS_ARGON2`, `FindNgtcp2.cmake` if
@@ -118,7 +130,7 @@ $ cat /your/prefix/share/qb/abi-fingerprint.txt
 qb-abi qb=3.0.0 cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1
 cxx_standard=20 compiler=AppleClang-21.0.0.21000101 build_type=Release shared_libs=OFF
 ssl=TRUE compression=TRUE quic=TRUE argon2=TRUE
-unordered_map=ska system_nlohmann=FALSE
+unordered_map=ska nlohmann=3.12.0
 ```
 
 The `qb-abi` line is read back **out of the installed archive**, not re-derived from CMake
@@ -161,7 +173,7 @@ See [production_checklist.md](./readme/6_guides/production_checklist.md) before 
   (`git checkout -- src/qb/vendor/qev`) or re-clone; a `git submodule update` will not bring it back.
 - **SSL features missing** — install OpenSSL development headers; without them `QB_WITH_SSL` is auto-disabled.
 - **Host CPU binary fails on another machine** — check whether `QB_ENABLE_NATIVE_ARCH` was turned on.
-  It is **`OFF` by default** (`cmake/qbConfig.cmake:137`) and every preset except `release-native` /
+  It is **`OFF` by default** (`cmake/qbConfig.cmake:140`) and every preset except `release-native` /
   `benchmarks` keeps it off, so a default build is already portable; if the cache says `ON`, rebuild
   with `-DQB_ENABLE_NATIVE_ARCH=OFF`. If it was already off, the illegal instruction is coming from
   somewhere else — look at your own flags before this one.

@@ -58,7 +58,7 @@ Every test also carries CTest labels — `tier:<tier>` and `module:<module>`, pl
 
 ## Building the tests
 
-Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:85`, with the default computed at `74-87`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:14`).
+Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:86`, with the default computed at `74-87`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:14`).
 
 ```bash
 # From the repository root
@@ -84,7 +84,7 @@ ls build/bin/tests/
 - **`QB_DEPS_FETCH_FALLBACK=ON`** (the default) — use a system GoogleTest if `find_package` locates one, otherwise build the pinned tag from source through FetchContent ("system if present, else git"). The from-source path needs network access on the first configure.
 - **`QB_DEPS_FETCH_FALLBACK=OFF`** — always build the pinned tag from source, ignoring any system copy.
 
-The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig.cmake:103`, marked advanced at `106`). FetchContent is configured with `BUILD_GMOCK=ON` and `INSTALL_GTEST=OFF`. See [CMake and dependencies](./cmake_dependencies.md) for the full dependency-resolution model.
+The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig.cmake:105`, marked advanced at `108`). FetchContent is configured with `BUILD_GMOCK=ON` and `INSTALL_GTEST=OFF`. See [CMake and dependencies](./cmake_dependencies.md) for the full dependency-resolution model.
 
 ### Test resources
 
@@ -235,7 +235,7 @@ That registers the target and CTest entry as `qb-core-test-unit-my-feature`. Opt
 
 ## Coverage
 
-`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:141`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, and `lcov` plus `gcov` are found on the system (`qb/CMakeLists.txt:146-154`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing.
+`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:144`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, and `lcov` plus `gcov` are found on the system (`qb/CMakeLists.txt:146-154`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing.
 
 When enabled, three report targets are registered, each driven by running `ctest`:
 

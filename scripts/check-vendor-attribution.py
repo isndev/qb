@@ -69,8 +69,10 @@ MANIFEST = [
          record_as="src/qb/vendor/uuid/"),
     dict(path="qb/src/qb/vendor/uuid/catch",   notices_in="qb",
          record_as="src/qb/vendor/uuid/catch/"),
-    dict(path="qb/modules/nlohmann",               notices_in="qb",
-         record_as="modules/nlohmann/"),
+    # nlohmann/json was here until 3.0 (qb/modules/nlohmann). It is NOT vendored any more -- it is
+    # resolved by find_package(nlohmann_json), with a pinned FetchContent fallback -- so it is not a
+    # vendored unit and must not be recorded as one. Re-adding a copy of it under any path would be
+    # caught by the discovery sweep below, which is the intended behaviour.
     dict(path="qbm/http/not-qb/llhttp",            notices_in="qbm/http",
          record_as="not-qb/llhttp/"),
 ]
