@@ -140,7 +140,7 @@ if(QB_WITH_SSL)
             set(QB_HAS_ARGON2 FALSE)
         endif()
     else()
-        qb_warning_message("OpenSSL not found - SSL/TLS support disabled")
+        qb_feature_degraded("OpenSSL not found - SSL/TLS support disabled")
         set(QB_HAS_SSL FALSE)
         set(QB_WITH_SSL OFF)
     endif()
@@ -180,13 +180,40 @@ if(QB_WITH_COMPRESSION)
         if(TARGET ZLIB::ZLIB)
             set(ZLIB_FOUND TRUE)
         endif()
+
+        # A source-built zlib cannot be exported, and the failure it produced was unreadable.
+        # qb-io links ZLIB::ZLIB, which here aliases madler/zlib's own `zlibstatic` target --
+        # a target in NO export set. install(EXPORT qbTargets) then aborts at GENERATE time with
+        #     CMake Error in CMakeLists.txt:
+        #       target "zlibstatic" that is not in any export set.
+        # which names neither zlib, nor qb, nor a way out. It fires on a STANDALONE qb with
+        # DEFAULT options on any host without a system zlib, because standalone defaults
+        # QB_INSTALL=ON and QB_DEPS_FETCH_FALLBACK=ON -- i.e. the documented
+        # `cmake --install` -> find_package(qb) route is what breaks. Say so here instead.
+        # (This branch is only reached when find_package(ZLIB) already failed, so no extra
+        # "was it the system one?" test is needed -- reaching here means it was fetched.)
+        if(QB_INSTALL)
+            # One string, not several: qb_error_message() interpolates ${ARGN}, and a
+            # multi-argument call would come back out with ";" between every line.
+            string(CONCAT _qb_zlib_msg
+                "zlib was built from source (no system zlib found), but QB_INSTALL is ON.\n"
+                "     A source-built zlib target (zlibstatic) belongs to no export set, so\n"
+                "     install(EXPORT qbTargets) cannot generate -- the error you would otherwise\n"
+                "     get is \"target zlibstatic that is not in any export set\".\n"
+                "     Pick one:\n"
+                "       * install a system zlib (brew install zlib / apt install zlib1g-dev), or\n"
+                "       * -DQB_WITH_COMPRESSION=OFF    (build without compression), or\n"
+                "       * -DQB_DEPS_FETCH_FALLBACK=OFF (fail on the missing dependency instead), or\n"
+                "       * -DQB_INSTALL=OFF             (build, but do not produce an installable qb)")
+            qb_error_message("${_qb_zlib_msg}")
+        endif()
     endif()
 
     if(ZLIB_FOUND OR TARGET ZLIB::ZLIB)
         list(APPEND QB_EXTERNAL_LIBRARIES ZLIB::ZLIB)
         set(QB_HAS_COMPRESSION TRUE)
     else()
-        qb_warning_message("ZLIB not found - compression support disabled")
+        qb_feature_degraded("ZLIB not found - compression support disabled")
         set(QB_HAS_COMPRESSION FALSE)
         set(QB_WITH_COMPRESSION OFF)
     endif()
@@ -213,7 +240,7 @@ else()
     endif()
     if(NOT QB_HAS_SSL)
         if(_qb_quic_required)
-            qb_warning_message("QUIC requested but SSL/TLS support is disabled - QUIC support disabled")
+            qb_feature_degraded("QUIC requested but SSL/TLS support is disabled - QUIC support disabled")
         endif()
         set(QB_HAS_QUIC FALSE)
     else()
@@ -226,7 +253,7 @@ else()
             )
             set(QB_HAS_QUIC TRUE)
         elseif(_qb_quic_required)
-            qb_warning_message("libngtcp2 not found - QUIC support disabled")
+            qb_feature_degraded("libngtcp2 not found - QUIC support disabled")
             set(QB_HAS_QUIC FALSE)
         else()
             qb_status_message("libngtcp2 not found - QUIC transport auto-disabled")
@@ -317,7 +344,18 @@ endif()
 # and do NOT feed the tag: those still mismatch silently. That residue is inherent to shipping a
 # prebuilt library whose API exposes a header-configurable third-party type; it is only fully
 # closed by building qb in the consumer's own tree (FetchContent / add_subdirectory).
-find_package(nlohmann_json 3.11 QUIET)
+# QB_USE_SYSTEM_NLOHMANN (qbConfig.cmake) selects the source: AUTO probes, ON requires, OFF
+# forces the bundled copy. A packager building a distributable bottle sets ON so that a missing
+# system nlohmann_json is a configure-time error rather than a silent switch to the bundled
+# snapshot -- which would put a SECOND <nlohmann/json.hpp> in the prefix and, because both declare
+# the inline namespace json_abi_v3_12_0 while differing in content, collide silently at link.
+if(QB_USE_SYSTEM_NLOHMANN STREQUAL "OFF")
+    set(nlohmann_json_FOUND FALSE)
+elseif(QB_USE_SYSTEM_NLOHMANN STREQUAL "ON")
+    find_package(nlohmann_json 3.11 REQUIRED)
+else()
+    find_package(nlohmann_json 3.11 QUIET)
+endif()
 
 add_library(qb-nlohmann INTERFACE)
 set_target_properties(qb-nlohmann PROPERTIES EXPORT_NAME nlohmann)
@@ -336,7 +374,7 @@ else()
     target_include_directories(qb-nlohmann SYSTEM INTERFACE
         "$<BUILD_INTERFACE:${QB_MODULES_DIR}>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
-    qb_status_message("Using bundled nlohmann_json from: ${QB_MODULES_DIR}/nlohmann")
+    qb_status_message("Using bundled nlohmann_json from: ${QB_MODULES_DIR}/nlohmann (set QB_USE_SYSTEM_NLOHMANN=ON to require the system copy instead)")
 endif()
 
 # -----------------------------------------------------------------------------

@@ -23,11 +23,15 @@
 # benchmark tests if benchmarking is enabled in the parent project.
 # -----------------------------------------------------------------------------
 
-# Add system tests for core functionality
-add_subdirectory(system)
+# This directory is now also entered when only QB_BUILD_BENCHMARKS is on (the benchmarks live
+# below it), so the test trees carry their own gate rather than relying on the caller's.
+if (QB_BUILD_TESTS)
+    # Add system tests for core functionality
+    add_subdirectory(system)
 
-# Add unit tests for specific components
-add_subdirectory(unit)
+    # Add unit tests for specific components
+    add_subdirectory(unit)
+endif ()
 
 # Add performance benchmarks if benchmarking is enabled
 if (QB_BUILD_BENCHMARKS)

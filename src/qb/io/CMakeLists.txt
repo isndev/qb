@@ -161,8 +161,17 @@ set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME io)
 # -----------------------------------------------------------------------------
 # Tests configuration
 # -----------------------------------------------------------------------------
-if (QB_BUILD_TESTS)
-    qb_status_message("Building qb-io tests")
+# QB_BUILD_BENCHMARKS is in the condition because the benchmarks live UNDER tests/io/ (in
+# tests/io/benchmark/, added from tests/io/CMakeLists.txt). With the gate on QB_BUILD_TESTS alone,
+# `-DQB_BUILD_TESTS=OFF -DQB_BUILD_BENCHMARKS=ON` never reached qb_add_benchmark at all: it
+# configured cleanly, printed "- Benchmarks: ON" and "Google Benchmark: TRUE", fetched/linked the
+# dependency, and produced ZERO benchmark executables. No preset could see it because the one
+# preset that enables benchmarks (`benchmarks`) also has tests on. tests/io/CMakeLists.txt gates
+# unit/ and system/ on QB_BUILD_TESTS, so entering here with tests off adds only the benchmarks.
+if (QB_BUILD_TESTS OR QB_BUILD_BENCHMARKS)
+    if (QB_BUILD_TESTS)
+        qb_status_message("Building qb-io tests")
+    endif ()
     # Tests live BESIDE the include root, never inside it: a test header swept into
     # install(DIRECTORY src/ ...) is the failure mode this layout exists to prevent.
     # Added from here rather than from the top level so the suite inherits PROJECT_NAME

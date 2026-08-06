@@ -15,7 +15,7 @@ The suite uses [Google Benchmark](https://github.com/google/benchmark) (pinned t
 
 Two properties distinguish the benchmark targets from the test targets:
 
-- **They are not CTest targets.** `ctest` never runs them. They build only when `QB_BUILD_BENCHMARKS=ON` and must be launched manually. (`qb/tests/core/CMakeLists.txt:33-34`; `qb/cmake/qbFunctions.cmake:563-566`.)
+- **They are not CTest targets.** `ctest` never runs them. They build only when `QB_BUILD_BENCHMARKS=ON` and must be launched manually. (`qb/tests/core/CMakeLists.txt:37-38`; `qb/cmake/qbFunctions.cmake:563-566`.)
 - **They live in their own output directory.** Every benchmark executable is written to `<build>/bin/benchmarks/`, not next to the test binaries. (`qb/cmake/qbFunctions.cmake:622-624`.)
 
 The sources are organized into topic subgroups under each library's `tests/benchmark/` directory, with the source named for the subject it measures (`<subgroup>/<name>.cpp`). The build derives each target name by prepending `<module>-bench-`, so `messaging/ping-pong-throughput.cpp` produces the executable `qb-core-bench-ping-pong-throughput`. (`qb/tests/core/benchmark/CMakeLists.txt:31-43`.)
@@ -161,7 +161,7 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 
 ## The qb-io benchmark suite
 
-`qb-io` ships its own Google Benchmark suite under `qb/tests/io/benchmark/`, following the same conventions as the core suite: each `<subgroup>/<name>.cpp` source is a standalone Google Benchmark program (`#include <benchmark/benchmark.h>`, `BENCHMARK(...)` registrations, `BENCHMARK_MAIN()`), built by `qb_add_benchmark` into a `qb-io-bench-<name>` target under `<build>/bin/benchmarks/`. The directory is gated by `QB_BUILD_BENCHMARKS` exactly like the core suite — the parent `CMakeLists.txt` wraps `add_subdirectory(benchmark)` in `if (QB_BUILD_BENCHMARKS)`, so nothing builds when the switch is off. Like the core benchmarks, these are not CTest targets and must be launched manually. Three subgroups carry a `REQUIRES ssl` / `REQUIRES compression` compile-gate, so they register only when `QB_HAS_SSL` / `QB_HAS_COMPRESSION` is set. (`qb/tests/io/CMakeLists.txt:33-34`; `qb/tests/io/benchmark/CMakeLists.txt:24-34`; `qb/cmake/qbFunctions.cmake:552-648`.)
+`qb-io` ships its own Google Benchmark suite under `qb/tests/io/benchmark/`, following the same conventions as the core suite: each `<subgroup>/<name>.cpp` source is a standalone Google Benchmark program (`#include <benchmark/benchmark.h>`, `BENCHMARK(...)` registrations, `BENCHMARK_MAIN()`), built by `qb_add_benchmark` into a `qb-io-bench-<name>` target under `<build>/bin/benchmarks/`. The directory is gated by `QB_BUILD_BENCHMARKS` exactly like the core suite — the parent `CMakeLists.txt` wraps `add_subdirectory(benchmark)` in `if (QB_BUILD_BENCHMARKS)`, so nothing builds when the switch is off. Like the core benchmarks, these are not CTest targets and must be launched manually. Three subgroups carry a `REQUIRES ssl` / `REQUIRES compression` compile-gate, so they register only when `QB_HAS_SSL` / `QB_HAS_COMPRESSION` is set. (`qb/tests/io/CMakeLists.txt:37-38`; `qb/tests/io/benchmark/CMakeLists.txt:24-34`; `qb/cmake/qbFunctions.cmake:552-648`.)
 
 | Source | Executable suffix | Measures |
 |---|---|---|
@@ -193,7 +193,7 @@ Build and run them the same way as the core benchmarks — each is a standard Go
 ## Pitfalls
 
 - **Benchmark numbers from a `Debug` build are not baselines.** Several benchmarks shrink their iteration counts and event sizes when `NDEBUG` is not defined. Configure `Release` (or `RelWithDebInfo`) before measuring. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:48-53`.)
-- **`ctest` will not run these.** The benchmark targets are intentionally excluded from CTest. Launch the executables in `<build>/bin/benchmarks/` directly. (`qb/tests/core/CMakeLists.txt:33-34`.)
+- **`ctest` will not run these.** The benchmark targets are intentionally excluded from CTest. Launch the executables in `<build>/bin/benchmarks/` directly. (`qb/tests/core/CMakeLists.txt:37-38`.)
 - **The worker-core sweep tops out at eight.** `cappedBenchmarkCores()` clamps the swept core count to `min(effectiveHardwareCores(), kMaxBenchmarkCores)` with `kMaxBenchmarkCores == 8`; a benchmark will not exercise more than eight scheduler cores even on a larger machine. (`qb/tests/core/shared/BenchmarkCores.h:39,48-49`.)
 - **Do not compare across timing regions.** Benchmarks that time the blocking `start(true)` plus the drain and benchmarks (such as `messaging/ping-pong-throughput.cpp`) that time only the drain (`join()`) measure different regions; their absolute numbers are not interchangeable. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:174-179`; `qb/tests/core/benchmark/messaging/fan-in-contention.cpp:100-106`.)
 - **Google Benchmark must be resolvable.** When `QB_USE_SYSTEM_BENCHMARK=ON` and no system package exists, configuration fails with a `find_package(benchmark CONFIG REQUIRED)` error; with the default fetch fallback, the first configure needs network access to clone the pinned tag. See [cmake_dependencies.md](./cmake_dependencies.md).

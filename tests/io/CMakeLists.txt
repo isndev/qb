@@ -26,8 +26,12 @@
 # Tiered test tree (docs/tests-audit/_spec-qb-io.md): unit/ (pure logic, daemon-free) +
 # system/ (event loop on kernel objects / loopback). The legacy flat coroutine/ dir is kept
 # transitionally for the monoliths still being decomposed by the split wave.
-add_subdirectory(unit)
-add_subdirectory(system)
+# This directory is now also entered when only QB_BUILD_BENCHMARKS is on (the benchmarks live
+# below it), so the test trees carry their own gate rather than relying on the caller's.
+if (QB_BUILD_TESTS)
+    add_subdirectory(unit)
+    add_subdirectory(system)
+endif ()
 
 # Add performance benchmarks if benchmarking is enabled
 if (QB_BUILD_BENCHMARKS)

@@ -29,7 +29,17 @@
 # --- engine / runtime -------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME main-lifecycle   SOURCES engine/main-lifecycle.cpp   DEPENDS ${PROJECT_NAME} LABELS signal serial requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME sigterm-shutdown SOURCES engine/sigterm-shutdown.cpp DEPENDS ${PROJECT_NAME} LABELS signal serial)
-qb_add_test(MODULE qb-core TIER system NAME engine-io-smoke  SOURCES runtime/engine-io-smoke.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+# engine-io-smoke drives the LOGGING BACKEND itself -- it points the global logger at a throwaway
+# temp path with qb::io::log::init() and reads the rolled files back. That namespace, and nanolog
+# behind it, only exist when QB_WITH_LOGGING is ON, and the test uses them unguarded, so with
+# logging off it does not compile: 14 x "'log' is not a class, namespace, or enumeration" plus
+# 3 x "use of undeclared identifier 'nanolog'". Nothing caught that, because no preset and no CI
+# lane builds with QB_WITH_LOGGING=OFF -- the libraries and all three qbm modules DO build in that
+# configuration; only this test does not. Registering it conditionally is the honest fix: with the
+# backend compiled out there is nothing here to smoke-test.
+if (QB_WITH_LOGGING)
+    qb_add_test(MODULE qb-core TIER system NAME engine-io-smoke  SOURCES runtime/engine-io-smoke.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+endif ()
 
 # --- actor ------------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME actor-add        SOURCES actor/actor-add.cpp         DEPENDS ${PROJECT_NAME})

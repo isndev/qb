@@ -199,6 +199,11 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
         }
         event->state.bits.alive = 0;
         _router.route(*event, [this](auto &event) {
+            // `this` is read only by the log statement below, which compiles to nothing when
+            // QB_WITH_LOGGING=OFF -- and an explicit capture that ends up unused is
+            // -Wunused-lambda-capture on Apple clang. Keep the capture (the ON build needs it)
+            // and mark it used, rather than warning in every logging-off build.
+            static_cast<void>(this);
             if (!event.getDestination().is_broadcast())
                 QB_LOG_WARN(*this << " failed to send event[" << qb::event_type_name(event.getID()) << '#' << event.getID()
                                << "] sent from " << event.getSource());
@@ -622,6 +627,9 @@ VirtualCore::__pump_activations__() noexcept {
             auto *ev             = reinterpret_cast<Event *>(buckets.data());
             ev->state.bits.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
             _router.route(*ev, [this](auto &e) {
+                // See the note on the sibling handler in __receive_events__: `this` is used only
+                // by the log statement, so mark it used for the QB_WITH_LOGGING=OFF build.
+                static_cast<void>(this);
                 if (!e.getDestination().is_broadcast())
                     QB_LOG_WARN(*this << " failed to deliver stashed event[" << qb::event_type_name(e.getID()) << '#' << e.getID() << "]");
             });

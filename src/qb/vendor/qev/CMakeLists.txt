@@ -287,12 +287,27 @@ configure_file(
 # Embedded: the parent project's install(DIRECTORY include/) does NOT cover this file (it is
 # generated into the build tree), so it still needs its own rule -- at the namespaced destination,
 # next to the qev.h that will look for it.
+#
+# Gated on QB_INSTALL when qb is the embedder, because this rule was the ONE hole in that gate.
+# It is the only install() in the entire embedded-qb subtree that sat outside the guard, so a
+# `cmake --install` of a QB_INSTALL=OFF build -- which is every dev preset, and every parent that
+# reaches qb via add_subdirectory()/FetchContent -- silently deposited exactly one qb header,
+# include/qb/vendor/qev/qev_config.h, into the CONSUMER's prefix. Exit 0, no diagnostic. That is
+# precisely the leak the QB_INSTALL option exists to prevent (see cmake/qbConfig.cmake), and this
+# file is the host-probed generated header, so it is also the worst single file to leak.
+# QB_INSTALL is undefined for a standalone qev build; default it ON there so the fork keeps
+# behaving on its own.
 include(GNUInstallDirs)
-if (QB_EV_EMBEDDED)
-    install(FILES ${QB_EV_CONFIG_OUT}
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${QB_EV_HEADER_DIR})
-else ()
-    install(FILES ${QB_EV_CONFIG_OUT} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if (NOT DEFINED QB_INSTALL)
+    set(QB_INSTALL ON)
+endif ()
+if (QB_INSTALL)
+    if (QB_EV_EMBEDDED)
+        install(FILES ${QB_EV_CONFIG_OUT}
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${QB_EV_HEADER_DIR})
+    else ()
+        install(FILES ${QB_EV_CONFIG_OUT} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    endif ()
 endif ()
 
 # ----------------------------------------------------------------------------

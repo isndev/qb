@@ -10,11 +10,11 @@ A pre-deployment checklist for qb services: how to build a portable binary, conf
 
 A qb deployment is configured at three layers: the **build** (CMake options bake in CPU targeting, link-time optimization, and which features compile in), the **runtime** (TLS verification, per-connection message limits, idle latency, signal handling), and the **operations** (logging, tests, what to watch in production). This page walks each layer in checklist form. Every option, default, and invariant cited here is grounded in the framework's CMake files and headers; the inline `<!-- src -->` comments point at the source of truth so you can re-verify against your checkout.
 
-Defaults are tuned for *development on the build host*. Two of them — `QB_ENABLE_NATIVE_ARCH=ON` and TLS verification overrides — are the most common production footguns and are called out explicitly below.
+Defaults are tuned for *development on the build host*. The most common production footguns — host-specific codegen (`QB_ENABLE_NATIVE_ARCH`) and TLS verification overrides — are called out explicitly below.
 
 ## 1. Build a portable binary
 
-By default qb tunes code generation for the CPU that runs the build. `QB_ENABLE_NATIVE_ARCH` is **`ON`**, which adds `-march=native` (or `-mcpu=native` where `-march=native` is unsupported, e.g. older Apple Clang on arm64; MSVC uses `/arch:AVX2`). A binary built this way may execute illegal instructions on an older or different CPU.
+`QB_ENABLE_NATIVE_ARCH` is **`OFF`** by default, so a default build is already portable. Turning it **on** adds `-march=native` (or `-mcpu=native` where `-march=native` is unsupported, e.g. older Apple Clang on arm64; MSVC uses `/arch:AVX2`), and a binary built that way may execute illegal instructions on an older or different CPU. Check it explicitly before shipping: the `release-native` and `benchmarks` presets turn it on.
 
 <!-- src: qb/cmake/qbConfig.cmake:88-94, qb/cmake/qbCompiler.cmake:233-260 -->
 
@@ -36,7 +36,7 @@ A ready-made preset wraps the same configuration:
 cmake --preset release-portable   # Release + QB_ENABLE_NATIVE_ARCH=OFF
 ```
 
-All shipped presets (including `release` and `release-lto`) inherit the hidden `base` preset, which sets `QB_ENABLE_NATIVE_ARCH=OFF` — so `cmake --preset release` is already portable. The `ON` default applies only to a raw `cmake -D...` build with no preset. Use `release-native` to opt back into host-tuned codegen.
+All shipped presets (including `release` and `release-lto`) inherit the hidden `base` preset, which sets `QB_ENABLE_NATIVE_ARCH=OFF` — so `cmake --preset release` is portable. So is a raw `cmake -D...` build with no preset: the option itself is declared `OFF` (`qb/cmake/qbConfig.cmake:137`). Use `release-native` to opt into host-tuned codegen.
 
 <!-- src: qb/CMakePresets.json (release-portable, release-native, release) -->
 
@@ -79,7 +79,7 @@ TLS lives in `qb-io` and is gated by `QB_WITH_SSL` (default **`ON`**, backed by 
 
 Verify with the configuration banner the build prints, or check that `QB_WITH_SSL=1` is in the compile definitions.
 
-<!-- src: qb/cmake/qbConfig.cmake:321-322 (QB_WITH_SSL=1 compile def), 366-385 (configuration banner) -->
+<!-- src: qb/cmake/qbConfig.cmake:367-368 (QB_WITH_SSL=1 compile def), 366-385 (configuration banner) -->
 
 ### Client connections are secure by default
 
@@ -198,7 +198,7 @@ For a busy server every active core at zero latency pins a CPU; on a shared or o
 
 Logging is gated by `QB_WITH_LOGGING` (default **`ON`**), which defines `QB_WITH_LOGGING=1` and compiles in the nanolog-backed `qb::io::log` API. When the option is off, the `qb::io::log` namespace (init/setLevel/Level) is not available. The `LOG_*` macros remain defined — as a `qb::io::cout()` fallback when `QB_STDOUT_LOGGING` is set, otherwise as no-ops.
 
-<!-- src: qb/cmake/qbConfig.cmake:98 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:318-319 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:34-81 -->
+<!-- src: qb/cmake/qbConfig.cmake:98 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:364-365 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:34-81 -->
 
 Initialize logging once at startup, before any logging call. `init` takes the log-file path and a roll size in megabytes (default 128):
 
@@ -310,7 +310,7 @@ ctest --test-dir build/sanitize-thread --output-on-failure
 
 `QB_SANITIZE` adds `-fno-sanitize-recover=all`, so the first error aborts — CI-friendly. Note that sanitizers are incompatible with `QB_WITH_PROFILING`: enabling both warns at configure time because tcmalloc/gperftools intercept the same hooks.
 
-<!-- src: qb/cmake/qbCompiler.cmake:316-325 (-fno-sanitize-recover=all + profiling-incompatibility warning) -->
+<!-- src: qb/cmake/qbCompiler.cmake:317-326 (-fno-sanitize-recover=all + profiling-incompatibility warning) -->
 
 See [Testing](../7_reference/testing.md) for the full reference, including running a single test by name.
 
@@ -346,7 +346,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 
 ## Pitfalls
 
-- **Shipping a native binary.** The single most common production failure: `QB_ENABLE_NATIVE_ARCH` defaults to `ON`, so a binary built on a newer CPU can crash with an illegal instruction elsewhere. Use `QB_ENABLE_NATIVE_ARCH=OFF` for anything distributable. (§1)
+- **Shipping a native binary.** A binary built with `QB_ENABLE_NATIVE_ARCH=ON` on a newer CPU can crash with an illegal instruction elsewhere. The option is `OFF` by default and every preset but `release-native` / `benchmarks` keeps it off, so this bites only when it was turned on deliberately — verify before you distribute. (§1)
 - **`set_insecure()` reaching production.** It disables TLS peer verification and removes MITM protection. Grep for it before release. (§3)
 - **Assuming `QB_WITH_SSL` is on.** If OpenSSL is absent at configure time, SSL is silently forced off and the transports compile out. Confirm `QB_WITH_SSL=1` in the actual build. (§3)
 - **Relying on the 10 MB message limit.** The real default is 100 MB (`QB_MAX_MESSAGE_SIZE` in `config.h`); a doc comment in `qb/io/async/io.h` is stale. Set the limit explicitly per protocol. (§4)

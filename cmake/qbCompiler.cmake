@@ -578,6 +578,26 @@ endfunction()
 # Feature Detection
 # -----------------------------------------------------------------------------
 function(qb_check_cpp_features)
+    # Probe AT qb's language level, not at the compiler's default one.
+    #
+    # qbConfig.cmake only writes the global CMAKE_CXX_STANDARD when qb is top-level (deliberately
+    # -- see the long note there about leaking qb's standard into a parent). Nothing else set it,
+    # and check_cxx_source_compiles() with no -std= compiles at the COMPILER's default: C++14 on
+    # Apple clang / GCC. So in every embedded build -- which includes this superproject and every
+    # FetchContent consumer -- six of the seven probes below failed for want of an -std= flag, not
+    # for want of the feature:
+    #     src.cxx:2:28: error: no member named 'optional' in namespace 'std'
+    # The one survivor, QB_HAS_STRING_VIEW (libc++ exposes <string_view> pre-C++17), then reached
+    # consumers inside qbTargets.cmake's INTERFACE_COMPILE_DEFINITIONS. Two hosts with different
+    # default standards therefore produced packages with different public compile definitions --
+    # package nondeterminism, exit 0, and the only trace is an ordinary
+    # "-- Performing Test QB_HAS_OPTIONAL - Failed" status line.
+    #
+    # Function scope, so this does not leak: CMP0067 (NEW under cmake_minimum_required(3.24))
+    # makes try_compile honour these.
+    set(CMAKE_CXX_STANDARD ${QB_CXX_STANDARD})
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
     # Check for C++17 features (guaranteed by the C++20 baseline)
     check_cxx_source_compiles(
         "#include <optional>

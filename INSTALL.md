@@ -10,11 +10,18 @@ How to add qb to a project and build it from source. For the day-to-day build-co
 
 Continuous integration builds and tests every change on the following matrix:
 
-| OS                         | Compilers   | Standard library |
-|----------------------------|-------------|------------------|
-| Linux (`ubuntu-latest`)    | GCC, Clang  | libstdc++        |
-| macOS (`macos-latest`)     | Apple Clang | libc++           |
-| Windows (`windows-latest`) | MSVC        | MSVC STL         |
+| OS                         | Compilers   | Standard library | CI status |
+|----------------------------|-------------|------------------|-----------|
+| Linux (`ubuntu-latest`)    | GCC, Clang  | libstdc++        | enabled |
+| macOS (`macos-latest`)     | Apple Clang | libc++           | enabled |
+| Windows (`windows-latest`) | MSVC        | MSVC STL         | **currently disabled** |
+
+> **Windows/MSVC is supported source, but is not exercised by CI right now.** The
+> `windows-msvc-cxx20-release` matrix entry is commented out in
+> [`.github/workflows/cmake.yml`](.github/workflows/cmake.yml) — every run would rebuild all
+> dependencies from source, which is what makes it unaffordable until the CI has a vcpkg binary
+> cache. Treat a Windows build as verified by you, not by this project's CI, until that entry is
+> uncommented.
 
 Requirements:
 
@@ -93,8 +100,34 @@ find_package(qb CONFIG REQUIRED)   # provides qb::core and qb::io
 target_link_libraries(my_app PRIVATE qb::core qb::io)
 ```
 
-The install exports `qbConfig.cmake`, a `SameMajorVersion` version file, and the bundled `FindArgon2` /
-`FindNgtcp2` modules so downstream `find_package` works without extra setup.
+The install exports `qbConfig.cmake` and a `SameMajorVersion` version file. It also exports the
+bundled `FindArgon2` / `FindNgtcp2` modules **when, and only when, the corresponding feature was
+actually enabled in this build** — `FindArgon2.cmake` if `QB_HAS_ARGON2`, `FindNgtcp2.cmake` if
+`QB_HAS_QUIC` (`CMakeLists.txt:292-297`). They travel with the package because `qbConfig.cmake`
+calls `find_dependency(Argon2)` / `find_dependency(Ngtcp2)` by name and a consumer has no way to
+invent them; a build with those features off needs neither.
+
+### What was this prefix built with?
+
+A prebuilt prefix records its own configuration in **`share/qb/abi-fingerprint.txt`**:
+
+```
+$ cat /your/prefix/share/qb/abi-fingerprint.txt
+# qb ABI + configuration fingerprint of THIS installed prefix.
+# ...
+qb-abi qb=3.0.0 cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1
+cxx_standard=20 compiler=AppleClang-21.0.0.21000101 build_type=Release shared_libs=OFF
+ssl=TRUE compression=TRUE quic=TRUE argon2=TRUE
+unordered_map=ska system_nlohmann=FALSE
+```
+
+The `qb-abi` line is read back **out of the installed archive**, not re-derived from CMake
+variables, so it cannot drift from the artefact. Its five axes are enforced **at link time**: a
+consumer compiled with a different value references a symbol this archive does not define and the
+link fails naming the axis (see `src/qb/utility/abi.h`). The lines below it are *not* link-enforced
+— they record what configure resolved, which is what a packager needs to check that a hermetic
+build environment did not silently drop OpenSSL or zlib. Set **`-DQB_REQUIRE_FEATURES=ON`** to turn
+any such silent downgrade into a configure-time error.
 
 ## Build from source
 
@@ -106,8 +139,9 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-A common production configuration disables host-specific codegen for portable binaries and enables
-link-time optimization:
+A common production configuration keeps host-specific codegen off (which is already the default —
+`QB_ENABLE_NATIVE_ARCH` is `OFF`, so the line below is a belt-and-braces assertion rather than a
+change) and enables link-time optimization:
 
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Release \
@@ -126,5 +160,8 @@ See [production_checklist.md](./readme/6_guides/production_checklist.md) before 
   submodule), so a normal clone always ships it. If it is missing, restore it from the repo
   (`git checkout -- src/qb/vendor/qev`) or re-clone; a `git submodule update` will not bring it back.
 - **SSL features missing** — install OpenSSL development headers; without them `QB_WITH_SSL` is auto-disabled.
-- **Host CPU binary fails on another machine** — the default `QB_ENABLE_NATIVE_ARCH=ON` targets the build
-  host; rebuild with `-DQB_ENABLE_NATIVE_ARCH=OFF` for portable artifacts.
+- **Host CPU binary fails on another machine** — check whether `QB_ENABLE_NATIVE_ARCH` was turned on.
+  It is **`OFF` by default** (`cmake/qbConfig.cmake:137`) and every preset except `release-native` /
+  `benchmarks` keeps it off, so a default build is already portable; if the cache says `ON`, rebuild
+  with `-DQB_ENABLE_NATIVE_ARCH=OFF`. If it was already off, the illegal instruction is coming from
+  somewhere else — look at your own flags before this one.

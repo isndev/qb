@@ -202,14 +202,32 @@ fi
 # ---------------------------------------------------------------------------------------------
 # 4. One mismatch per axis: must FAIL to link, naming that axis's symbol.
 # ---------------------------------------------------------------------------------------------
-# expect_link_failure <tag> <symbol> <defs> <opts> <gc> <what>
+# expect_link_failure <tag> <symbol> <defs> <opts> <gc> <what> [compile-refusal-regex]
+#
+# The optional 7th argument names a COMPILE-time refusal that is a property of the toolchain, not
+# a hole in the fingerprint. Some axes cannot be flipped on some compilers because the mismatch
+# build never reaches the linker: g++-14 rejects `throw` under -fno-exceptions even in code it
+# will not instantiate, so the -fno-exceptions consumer dies in qb/vendor/qev/qev++.h:318 --
+#     error: exception handling disabled, use '-fexceptions' to enable
+# while clang accepts the unreached throw and proceeds to the link this check is about. Without
+# this branch that landed in the "failed, but not with the symbol" arm and reported FAIL, so the
+# whole script exited 1 on Linux + GCC and the abi-fingerprint.yml linux-gcc lane was red on a
+# defect that does not exist. SKIP is the honest verdict: the axis is still REQUIRED (a
+# -fno-exceptions consumer that does not reach qev++.h compiles fine and then depends on the link
+# symbol) -- this host simply cannot demonstrate it.
 expect_link_failure() {
-    local tag="$1" sym="$2" defs="$3" opts="$4" gc="$5" what="$6"
+    local tag="$1" sym="$2" defs="$3" opts="$4" gc="$5" what="$6" refuse="${7:-}"
     if build_consumer "$tag" "$defs" "$opts" "$gc" ""; then
         fail "$tag"
         say "      $what LINKED. A mismatched configuration is silent again."
     elif grep -q "$sym" "$WORK/$tag.log"; then
         pass "$what -> link fails naming $sym"
+    elif [ -n "$refuse" ] && grep -qE "$refuse" "$WORK/$tag.log"; then
+        skip "$what -> this toolchain refuses the flag at COMPILE time, before any link"
+        say "      matched: $(grep -oE "$refuse" "$WORK/$tag.log" | head -1)"
+        say "      The axis is still needed and still armed -- a consumer that does not reach the"
+        say "      offending header compiles and then depends on the link symbol. This host just"
+        say "      cannot produce the mismatch to demonstrate it."
     else
         fail "$tag"
         say "      $what failed to build, but NOT with an undefined $sym --"
@@ -230,7 +248,8 @@ expect_link_failure "cacheline" "qb_abi_cacheline_${OTHER_CL}" \
 # -- exceptions -----------------------------------------------------------------------------
 if [ "$A_EXCEPTIONS" = "1" ]; then
     expect_link_failure "exceptions" "qb_abi_exceptions_0" "" "-fno-exceptions" "" \
-        "exceptions: consumer -fno-exceptions vs archive ${A_EXCEPTIONS}"
+        "exceptions: consumer -fno-exceptions vs archive ${A_EXCEPTIONS}" \
+        "exception handling disabled|cannot use '?throw'? with -fno-exceptions|error: (exception|throw)[^\n]*-fexceptions"
 else
     skip "exceptions: archive is already exceptions=0; no knob turns a consumer back ON"
 fi
@@ -346,8 +365,11 @@ if [ "$FAIL" -gt 0 ]; then
 fi
 say "================================================================"
 
-# Floor: control + 3 mismatch axes are reachable on every supported host (cacheline, exceptions,
+# Floor: control + 2 mismatch axes are reachable on every supported host (cacheline,
 # coroutine_debug) plus the emission checks. Anything less means the script stopped testing.
+# `exceptions` used to be counted here as universally reachable; it is not -- g++ refuses
+# -fno-exceptions at compile time on qb's headers, so that axis SKIPs on GCC (see
+# expect_link_failure's refusal branch). Measured: 8 PASS on clang, 7 PASS + 1 SKIP on g++-14.
 MIN_PASS=6
 if [ "$FAIL" -gt 0 ]; then
     say "::error::the ABI configuration fingerprint is not doing its job"

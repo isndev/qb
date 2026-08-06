@@ -126,12 +126,14 @@ option(QBM_INSTALL "Install qbm modules registered via qb_register_module()" ${Q
 # Performance options
 option(QB_ENABLE_OPTIMIZATIONS "Enable performance optimizations" ON)
 option(QB_ENABLE_LTO "Enable Link Time Optimization" OFF)
-# ON by default: tune codegen for the build-host CPU (-march=native / -mcpu=native).
-# Gives the best performance on the machine that built it. Turn OFF for portable/
-# distributable binaries that must run on a different (possibly older) CPU.
 # OFF by default: `-march=native` bakes the BUILD machine's instruction set into the artefact, so a
 # binary built on a newer CPU dies with SIGILL on an older one. That is the right default for a
-# library other people consume and ship; a benchmark run turns it on explicitly.
+# library other people consume and ship; turn it ON explicitly (or use the `release-native` /
+# `benchmarks` presets) to tune codegen for the build host. There is no configuration in which ON
+# is the default -- `base` is OFF in both preset files, and a bare `cmake -D...` with no preset
+# reads this line. (A second comment block here used to open "ON by default", left over from when
+# it was; seven doc files copied that claim. The option has been OFF, and the two blocks
+# contradicted each other in the same six lines.)
 option(QB_ENABLE_NATIVE_ARCH "Enable native architecture optimizations (-march=native)" OFF)
 option(QB_ENABLE_FAST_MATH "Enable -ffast-math / /fp:fast (breaks IEEE-754 compliance)" OFF)
 
@@ -146,6 +148,23 @@ option(QB_WITH_COMPRESSION "Enable compression support" ON)
 # it, warn if missing), OFF (disabled). AUTO mirrors how SSL/compression behave.
 set(QB_WITH_QUIC "AUTO" CACHE STRING "QUIC transport via libngtcp2: AUTO, ON, or OFF")
 set_property(CACHE QB_WITH_QUIC PROPERTY STRINGS AUTO ON OFF)
+# nlohmann/json source selection. Tri-state, same shape as QB_WITH_QUIC:
+#   AUTO (default) -- use the system nlohmann_json if find_package finds one, else the bundled copy.
+#   ON             -- REQUIRE the system one; hard-fail at configure time if it is absent.
+#   OFF            -- always use the bundled copy, even when a system one is installed.
+# This exists for DISTRIBUTION packagers. AUTO makes the resulting package host-dependent in two
+# ways a packager cannot control: <prefix>/include gains an nlohmann/ directory or not (which
+# collides with a distro's own nlohmann-json package under `brew link` / dpkg), and the bundled
+# copy is an untagged post-3.12.0 snapshot that declares the SAME inline namespace
+# (nlohmann::json_abi_v3_12_0) as a genuine 3.12.0 while diverging from it -- so a program that
+# links both gets one namespace spanning two definition sets, with no linker diagnostic.
+# See qb/THIRD-PARTY-NOTICES for the divergence, and the long note in qbDependencies.cmake for
+# why nlohmann (unlike qev/uuid/nanolog/ska_hash) cannot simply be re-prefixed out of the way.
+set(QB_USE_SYSTEM_NLOHMANN "AUTO" CACHE STRING "nlohmann/json source: AUTO (system if found), ON (require system), OFF (always bundled)")
+set_property(CACHE QB_USE_SYSTEM_NLOHMANN PROPERTY STRINGS AUTO ON OFF)
+if(NOT QB_USE_SYSTEM_NLOHMANN MATCHES "^(AUTO|ON|OFF)$")
+    message(FATAL_ERROR "[qb] QB_USE_SYSTEM_NLOHMANN must be AUTO, ON or OFF (got '${QB_USE_SYSTEM_NLOHMANN}')")
+endif()
 option(QB_WITH_PROFILING "Enable profiling support" OFF)
 
 # Debug options
@@ -166,15 +185,32 @@ endif()
 # Build Type Configuration
 # -----------------------------------------------------------------------------
 # Default to Release for a STANDALONE build only. An embedded qb must not pick a build type for its
-# parent, and on a multi-config generator (Visual Studio, Ninja Multi-Config) CMAKE_BUILD_TYPE is
-# empty BY DESIGN -- writing it there is meaningless at best and misleading at worst, since the
-# per-config choice is made at build time.
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+# parent, and on a multi-config generator (Visual Studio, Ninja Multi-Config, Xcode)
+# CMAKE_BUILD_TYPE is empty BY DESIGN -- writing it there is meaningless at best and misleading at
+# worst, since the per-config choice is made at build time.
+#
+# The multi-config test is the GLOBAL PROPERTY, not CMAKE_CONFIGURATION_TYPES. This file is
+# include()d from qb/CMakeLists.txt BEFORE project() (line 47 vs 50), and the generator does not
+# populate CMAKE_CONFIGURATION_TYPES until project() runs -- so `NOT CMAKE_CONFIGURATION_TYPES`
+# was ALWAYS true here and guarded nothing. `cmake -S qb -G "Ninja Multi-Config"` therefore wrote
+# CMAKE_BUILD_TYPE=Release into a cache that also had CMAKE_CONFIGURATION_TYPES=Debug;Release;...,
+# exactly the state the paragraph above says must never happen, with no diagnostic.
+# GENERATOR_IS_MULTI_CONFIG *is* set pre-project() (verified: 1 for Ninja Multi-Config and Xcode,
+# 0 for Ninja), because it is a property of the generator the driver already selected.
+get_property(_qb_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND NOT CMAKE_BUILD_TYPE AND NOT _qb_multi_config)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
 endif()
 
-# Define available build types
-set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+# Define available build types -- for the cmake-gui / ccmake drop-down only.
+# Guarded on the cache entry EXISTING: set_property(CACHE ...) is a hard error when it does not,
+# and on a multi-config generator nothing above creates it. That killed every multi-config
+# configure of the SUPERPROJECT outright ("set_property could not find CACHE variable
+# CMAKE_BUILD_TYPE"), because there the standalone branch above does not fire either -- so the
+# same missing-guard bug was silent in one tree and fatal in the other.
+if(DEFINED CACHE{CMAKE_BUILD_TYPE})
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+endif()
 
 # Emit compile_commands.json for clangd / CLion / tooling. Polite: only set a default,
 # so a parent project embedding qb can still override it.
@@ -263,8 +299,17 @@ if(NOT DEFINED CMAKE_ARCHIVE_OUTPUT_DIRECTORY)
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${QB_ARCHIVE_DIR}")
 endif()
 
-# Per-configuration output directories (multi-config generators)
-foreach(config ${CMAKE_CONFIGURATION_TYPES})
+# Per-configuration output directories (multi-config generators).
+# Same pre-project() problem as the build-type block above: CMAKE_CONFIGURATION_TYPES is empty
+# here unless the user passed it on the command line, so this loop ran zero times on every
+# multi-config generator -- a multi-config cache carried 0 CMAKE_RUNTIME_OUTPUT_DIRECTORY_<CONFIG>
+# entries. Fall back to the same four names the STRINGS property offers when the generator is
+# multi-config but has not told us its list yet.
+set(_qb_config_types ${CMAKE_CONFIGURATION_TYPES})
+if(_qb_multi_config AND NOT _qb_config_types)
+    set(_qb_config_types Debug Release RelWithDebInfo MinSizeRel)
+endif()
+foreach(config ${_qb_config_types})
     string(TOUPPER ${config} config_upper)
     if(NOT DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper})
         set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${QB_OUTPUT_DIR}")
@@ -276,6 +321,7 @@ foreach(config ${CMAKE_CONFIGURATION_TYPES})
         set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${config_upper} "${QB_ARCHIVE_DIR}")
     endif()
 endforeach()
+unset(_qb_config_types)
 
 # -----------------------------------------------------------------------------
 # Post-project Configuration
@@ -437,6 +483,31 @@ function(qb_error_message)
     message(FATAL_ERROR "[qb] ${ARGN}")
 endfunction()
 
+# qb_feature_degraded(<what>) - report an optional feature that was REQUESTED but could not be
+# enabled because its dependency was missing.
+#
+# Default (QB_REQUIRE_FEATURES=OFF) is the historical behaviour: warn, set QB_HAS_<x>=FALSE, and
+# carry on. That is right for a developer build and wrong for a distribution build -- a hermetic
+# packaging environment (vcpkg, buildd, a brew sandbox with no network) that cannot see OpenSSL or
+# zlib produced a QUIETLY REDUCED package at exit 0, and the packager's only way to notice was to
+# inspect the artefact afterwards. QB_REQUIRE_FEATURES=ON turns every such downgrade into a
+# configure-time failure, which is what a package recipe wants.
+#
+# Only reachable when the feature was asked for: an AUTO/OFF resolution is not a degradation and
+# does not come through here.
+option(QB_REQUIRE_FEATURES "Fail configure when a requested optional feature cannot be enabled (for distribution builds)" OFF)
+function(qb_feature_degraded)
+    if(QB_REQUIRE_FEATURES)
+        message(FATAL_ERROR
+            "[qb] ${ARGN}\n"
+            "     QB_REQUIRE_FEATURES=ON, so this downgrade is an error rather than a warning.\n"
+            "     Install the missing dependency, or turn the feature off explicitly "
+            "(e.g. -DQB_WITH_COMPRESSION=OFF) to accept a reduced build.")
+    else()
+        message(WARNING "[qb] ${ARGN}")
+    endif()
+endfunction()
+
 # -----------------------------------------------------------------------------
 # Configuration Summary
 # -----------------------------------------------------------------------------
@@ -451,7 +522,16 @@ function(qb_print_configuration)
     qb_status_message("Root Directory: ${QB_ROOT_DIR}")
     qb_status_message("Features:")
     qb_status_message("  - Tests: ${QB_BUILD_TESTS}")
-    qb_status_message("  - Examples: ${QB_BUILD_EXAMPLES}")
+    # Say so when the switch cannot do anything here. The qb repository ships no examples/ tree --
+    # the examples are a SEPARATE submodule owned by the qb-dev superproject, and only its
+    # examples/CMakeLists.txt reads this option. A standalone `cmake -S qb -DQB_BUILD_EXAMPLES=ON`
+    # therefore builds nothing extra (measured: 0 executable targets, byte-identical to OFF) while
+    # this line printed a bare "ON" and looked like it had.
+    if(EXISTS "${QB_ROOT_DIR}/examples/CMakeLists.txt")
+        qb_status_message("  - Examples: ${QB_BUILD_EXAMPLES}")
+    else()
+        qb_status_message("  - Examples: ${QB_BUILD_EXAMPLES} (not built by qb itself - this repository ships no examples/ tree; the switch is read by the qb-dev superproject's examples/ submodule)")
+    endif()
     qb_status_message("  - Benchmarks: ${QB_BUILD_BENCHMARKS}")
     qb_status_message("  - Logging: ${QB_WITH_LOGGING}")
     qb_status_message("  - SSL: ${QB_WITH_SSL}")

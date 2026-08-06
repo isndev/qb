@@ -8,7 +8,7 @@ Five techniques for non-trivial systems: defining a custom wire protocol, scalin
 
 ## Summary
 
-Each technique below builds on a primitive that another page owns. This guide does not re-teach those primitives; it shows how to combine them in production-shaped designs and points to the page that defines each one. Every code sample is grounded in a header under `qb/include` or an example under `examples/`, cited with a `<!-- src: -->` comment. Where the framework has a sharp edge — a `noexcept` boundary that calls `std::terminate`, a pointer that dangles after `kill()`, a coroutine that must not touch actor state — the pitfall is called out inline rather than left for you to discover at runtime.
+Each technique below builds on a primitive that another page owns. This guide does not re-teach those primitives; it shows how to combine them in production-shaped designs and points to the page that defines each one. Every code sample is grounded in a header under `qb/src` or an example under `examples/`, cited with a `<!-- src: -->` comment. Where the framework has a sharp edge — a `noexcept` boundary that calls `std::terminate`, a pointer that dangles after `kill()`, a coroutine that must not touch actor state — the pitfall is called out inline rather than left for you to discover at runtime.
 
 The five sections are independent. Read the one you need.
 

@@ -191,27 +191,42 @@ public:
  * @brief Debug-level log macro (qb's own spelling; `QB_LOG_DEBUG` aliases it)
  * @param X Message to log
  */
-#define QB_LOG_DEBUG(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_DEBUG(X)                   \
+    do {                                  \
+        qb::io::cout() << X << std::endl; \
+    } while (false)
 /**
  * @brief Verbose-level log macro
  * @param X Message to log
  */
-#define QB_LOG_VERB(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_VERB(X)                   \
+    do {                                  \
+        qb::io::cout() << X << std::endl; \
+    } while (false)
 /**
  * @brief Info-level log macro
  * @param X Message to log
  */
-#define QB_LOG_INFO(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_INFO(X)                   \
+    do {                                  \
+        qb::io::cout() << X << std::endl; \
+    } while (false)
 /**
  * @brief Warning-level log macro
  * @param X Message to log
  */
-#define QB_LOG_WARN(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_WARN(X)                   \
+    do {                                  \
+        qb::io::cout() << X << std::endl; \
+    } while (false)
 /**
  * @brief Critical-level log macro
  * @param X Message to log
  */
-#define QB_LOG_CRIT(X) qb::io::cout() << X << std::endl;
+#define QB_LOG_CRIT(X)                   \
+    do {                                  \
+        qb::io::cout() << X << std::endl; \
+    } while (false)
 #else
 /**
  * @brief Debug-level log macro (qb's own spelling; `QB_LOG_DEBUG` aliases it) (no-op if QB_STDOUT_LOGGING is not defined)
