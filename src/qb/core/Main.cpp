@@ -157,6 +157,18 @@ namespace {
  * Scans the exact byte range that is about to be copied (`bucket_size` buckets, which covers the
  * event plus any `allocated_push` tail) for a pointer-sized word addressing that same range.
  * Words are read through `memcpy` into an integer, so no pointer is formed from padding.
+ *
+ * @warning This is only sound because every event-construction site prepares the bucket range
+ *          first — `qb::detail::prepare_event_storage`, called by `Pipe::push`,
+ *          `Pipe::allocated_push`, `VirtualCore::push<T>` and `VirtualCore::send<T>`. An event's
+ *          range is NOT fully written by its payload (dead bytes inside `sizeof(T)`, such as the
+ *          tail of a heap-backed `std::string`'s SSO buffer on libstdc++; tail padding; the
+ *          `allocated_push` tail), and those bytes come out of a reused, heap-recycled pipe
+ *          buffer. Without the prepare step a stale value that happens to address the range makes
+ *          this fire on a perfectly relocatable payload — measured at 2/30 on
+ *          `qb-core-test-system-shutdown-saturation` (Linux, libstdc++), with the offending word
+ *          at offsets 40 and 56 of a 64-byte event whose live members end at 52. Do not remove the
+ *          prepare calls without also removing this guard.
  */
 [[nodiscard]] bool
 event_points_into_itself(Event const &event) noexcept {

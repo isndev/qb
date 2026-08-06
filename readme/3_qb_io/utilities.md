@@ -20,7 +20,7 @@ These utilities live in headers under `qb/src/qb/`. Several are header-only with
 | Compression | `qb/io/compression.h` | `qb::compression`, `qb::gzip`, `qb::deflate` | zlib (`QB_WITH_COMPRESSION`) |
 | URI | `qb/io/uri.h` | `qb::io` | always |
 | Fixed string | `qb/string.h` | `qb` | always |
-| Flat maps/sets | `qb/system/container/unordered_map.h`, `unordered_set.h` | `qb` | always |
+| Hash maps/sets | `qb/system/container/unordered_map.h`, `unordered_set.h` | `qb` | always |
 | UUID | `qb/uuid.h` | `qb`, `uuids` | always (vendored `stduuid`) |
 | JSON | `qb/json.h` | `qb` (via `nlohmann`) | always (vendored `nlohmann/json`) |
 | Endian | `qb/system/endian.h` | `qb::endian` | always |
@@ -445,9 +445,9 @@ std::size_t cap = name.capacity();  // == 32 (compile-time max)
 
 ---
 
-## Flat hash maps and case-insensitive maps
+## Hash maps and case-insensitive maps
 
-`qb::unordered_map` / `qb::unordered_set` are aliases to high-performance flat hash tables (the `ska` open-addressing implementation), which favor cache locality over the node-based `std::unordered_map`. `qb::unordered_flat_map` / `qb::unordered_flat_set` name the `ska::flat_hash_map` / `ska::flat_hash_set` variant directly. _(`qb/src/qb/system/container/unordered_map.h:39-91`.)_
+`qb::unordered_map` / `qb::unordered_set` are unconditional aliases for `ska::unordered_map` / `ska::unordered_set` — **node-based**, with a chained bucket array, so references and pointers to elements survive a rehash exactly as `std::unordered_map` guarantees (only iterators are invalidated). qb depends on that stability. `qb::unordered_flat_map` / `qb::unordered_flat_set` name the open-addressing `ska::flat_hash_map` / `ska::flat_hash_set` variant directly, which trades that stability for locality. _(`qb/src/qb/system/container/unordered_map.h:49-50`, `:89-90`.)_
 
 ```cpp
 #include <qb/system/container/unordered_map.h>
@@ -464,7 +464,7 @@ int v = headers["content-length"];  // 42 — same entry
 
 `qb::icase_unordered_map<Value>` and the ordered `qb::icase_map<Value>` wrap an underlying map and ASCII-lowercase string keys (via the default `qb::string_to_lower` trait) before every operation — useful for HTTP headers and other case-insensitive lookups. This is exactly the type the URI parser uses for query parameters. _(`qb/src/qb/system/container/unordered_map.h:98-413`.)_
 
-> In a debug build (`NDEBUG` undefined), `qb::unordered_map` falls back to `std::unordered_map` to keep iterator-debugging and sanitizers happy; release builds use the `ska` implementation. _(`qb/src/qb/system/container/unordered_map.h:58-91`.)_
+> The alias does **not** depend on `NDEBUG`. Through 2.6.0 `qb::unordered_map` fell back to `std::unordered_map` in debug builds, which made a public type's identity differ between build modes; 3.0 made it `ska::unordered_map` in every mode. _(`qb/src/qb/system/container/unordered_map.h:89-90`.)_
 
 ---
 

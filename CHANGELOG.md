@@ -31,6 +31,17 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Added
 
+- **A CI job for the three packaging mechanisms this release added, which shipped with none.**
+  `install-consume.yml`'s `packaging-switches` covers `QB_REQUIRE_FEATURES` (a degraded feature must
+  become a configure error, with the default-warn path as its control so the check cannot go
+  vacuous on a runner where the feature happens to be satisfiable), `QB_USE_SYSTEM_NLOHMANN`
+  (`OFF` selects the bundled copy; an out-of-range value is rejected), and
+  `share/qb/abi-fingerprint.txt` (the installed `qb-abi` line must be byte-identical to the string
+  inside the archive it describes — that non-drift is the file's whole contract — and every
+  configuration field must carry a value).
+- **`qb::detail::prepare_event_storage`** (`core/Event.h`) — debug-only preparation of an event's
+  bucket range before its payload is constructed into it. See *Fixed*: it is what makes
+  `SharedCoreCommunication::send`'s self-pointer guard sound rather than merely suggestive.
 - **`QB_USE_SYSTEM_NLOHMANN` — a tri-state (`AUTO` / `ON` / `OFF`) for the nlohmann/json source,
   and the first of the three things a distribution packager was missing.** `AUTO` (the default)
   keeps the historical probe-then-fall-back behaviour; `ON` *requires* a system `nlohmann_json`
@@ -194,8 +205,9 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Changed
 
-- **`QB_ENABLE_NATIVE_ARCH`'s documented default was the inverse of the code, at 16 sites across 7
-  files.** The option is `option(... OFF)` and has been — verified by running a bare
+- **`QB_ENABLE_NATIVE_ARCH`'s documented default was the inverse of the code, across the readme
+  books, `INSTALL.md`, `README.md` and the `.cursor/` rules and skills.** The option is
+  `option(... OFF)` (`qbConfig.cmake:137`) and has been — verified by running a bare
   `cmake -S qb -B tmp -DCMAKE_BUILD_TYPE=Release` with no preset, which yields `OFF`. There is no
   configuration in which `ON` is the default. Two files contradicted themselves within a few lines,
   and one stated the narrowest wrong version ("the `ON` default applies only to a raw `cmake -D...`
@@ -506,7 +518,9 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   host C++20 — so the declarations could only ever have produced a link error. Every platform qb
   builds on provides both functions natively, and `qb::io::inet::ip::compat` is now a pure re-export.
   The file sat in the public header tree but was never shipped (qb's install rule matches `*.h`,
-  `*.hpp` and `*.tpp` only). `QB__HAS_NTOP` itself is kept as a published feature-test macro.
+  `*.hpp`, `*.tpp` and `*.inl` — `qbPackage.cmake:161-165`; the last two now match nothing, this
+  release having retired both extensions). `QB__HAS_NTOP` itself is kept as a published
+  feature-test macro.
 - **`SO_NOSIGPIPE` is no longer defined on Linux.** `<qb/io/config.h>` — an **installed public
   header** — carried `#if defined(__linux__)` / `#define SO_NOSIGPIPE MSG_NOSIGNAL`: a socket
   *option* name bound to a message *flag* value. Linux has no such option; measured, the resulting
@@ -527,6 +541,38 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 ### Fixed
 
+- **The cross-core relocation guard aborted intermittently on payloads that are perfectly
+  relocatable.** `qb-core-test-system-shutdown-saturation` aborted **2/30** standalone on Linux
+  (Debug, libstdc++, no sanitizer) with
+  `assert(false && "qb: event payload is not trivially relocatable")`. It was the guard, not the
+  payload. `SharedCoreCommunication::send`'s `event_points_into_itself` has to scan the whole
+  `bucket_size * 64` range — that is what cross-core delivery `memcpy`s — but an event's payload
+  does not WRITE that whole range, and the unwritten bytes come out of an outbound pipe that is
+  rewound and reused event after event over heap memory the allocator recycles. Instrumented and
+  measured on the aborting runs: a 64-byte `HeavyEvent` whose live members end at offset 52, with
+  the offending word at **offset 40** (the dead tail of a heap-backed `std::string`'s inline SSO
+  buffer, `[40,48)`) and at **offset 56** (tail padding after the last member, `[52,64)`), while the
+  payload's only pointer — the string's `data()` at offset 16 — correctly addressed the heap.
+  Every event-construction site (`Pipe::push`, `Pipe::allocated_push`, `VirtualCore::push<T>`,
+  `VirtualCore::send<T>`) now prepares the bucket range through `qb::detail::prepare_event_storage`
+  before the payload is constructed into it, so the only way a word inside the range can address the
+  range is if the payload wrote it — which is exactly the hazard. Debug-only: the guard is
+  `#ifndef NDEBUG`, and release must not pay a per-event `memset` for a check it does not compile
+  in. Pinned by `RelocatablePayload.EventStorageIsPreparedSoDeadBytesCannotTripTheGuard`, which
+  poisons a pipe slot, asserts the next event lands in the *same* slot, and requires its dead bytes
+  to read zero — 12/12 poison bytes before the fix, 0 after. Soak after the fix: **0/30** standalone
+  and **0/20** under load on both `dev-cxx23` and `feature-gates`. Why nothing else saw it: `release`
+  compiles the guard out, ASan's deterministic allocation fill masks the stale bytes, and macOS
+  libc++ recomputes a short string's `data()` from `this`, so the whole class is structurally
+  invisible there.
+- **`listener::clear()`'s deferred-queue drain had no covering test.** The swap-before-drop fix was
+  right by construction — releasing a deferred closure runs arbitrary destructors, and a captured
+  `shared_ptr` whose teardown calls `defer()` again is a `push_back` into the `std::deque` that
+  `clear()` is halfway through destroying — but reverting it left the whole macOS `sanitize` suite
+  green, so a future revert would have landed silently. `qb-io-test-unit-listener-clear-reentrant-defer`
+  counts captured state instead of waiting for a crash: on libstdc++ the re-entrant closure is
+  constructed into storage the same `clear()` then deallocates without destroying it, so it leaks
+  with no diagnostic.
 - **`QB_BUILD_BENCHMARKS=ON` with `QB_BUILD_TESTS=OFF` built zero benchmarks and reported success.**
   The benchmarks live *under* `tests/core/benchmark` and `tests/io/benchmark`, and those trees were
   `add_subdirectory`'d only inside `if (QB_BUILD_TESTS)`, so `qb_add_benchmark` was never reached.
@@ -779,15 +825,16 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `#error` instead of reporting a missing file.
 - `<qb/uuid.h>` included `<qb/vendor/uuid/include/uuid.h>` *above* its own `QB_UUID_H` include guard,
   leaving the vendored include outside the guard it was meant to sit behind.
-- **`<qb/main.h>` alone could not link `qb::Actor::push<E>` / `qb::Pipe::push<E>`.** `Main.tpp` reaches
-  a complete `qb::Actor` with every member template *declared*, and the bodies live in `Actor.tpp`,
-  which only `qb/actor.h`, `qb/patterns.h` and `qb/core/patterns.h` pulled. A TU whose only qb include
-  was the engine umbrella compiled clean and failed at link. `qb/main.h` now pulls `core/Actor.tpp` +
-  `core/Pipe.tpp`, the same position and for the same reason as `qb/actor.h:15`.
-  `<qb/core/Actor.h>` and `<qb/core/VirtualCore.h>` still do **not** carry the template bodies, and
-  that stays deliberate: `Actor.tpp` needs a complete `qb::VirtualCore`, and `VirtualCore.h` is what
-  drags `<windows.h>`, `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU. The umbrellas are the entry
-  points; the class headers are not.
+- **`<qb/main.h>` alone could not link `qb::Actor::push<E>` / `qb::Pipe::push<E>`.** `Main`'s own
+  bodies reach a complete `qb::Actor` with every member template *declared*, while Actor's bodies were
+  reached only by `qb/actor.h`, `qb/patterns.h` and `qb/core/patterns.h`. A TU whose only qb include
+  was the engine umbrella compiled clean and failed at link. `qb/main.h` now pulls
+  `core/VirtualCore.h`, the same position and for the same reason as `qb/actor.h:18`.
+  `<qb/core/Actor.h>` alone still does **not** carry the template bodies, and that stays deliberate:
+  they need a complete `qb::VirtualCore`, and `VirtualCore.h` is what drags `<windows.h>`,
+  `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU. The umbrellas are the entry points; the class
+  headers are not. (Stated in terms of the `.tpp` files through the release drafts; those are gone —
+  see *Removed* — and the bodies now sit at the tail of `VirtualCore.h`.)
 - **`<qb/io/async/coroutine/task.h>` alone could not destroy a `task<T>`.**
   `defer_frame_destruction` / `forget_frame_if_current` were declared here **without `inline`** and
   defined `inline` in `scheduler.h`: a formal ODR mismatch between TUs that see one declaration and
@@ -804,8 +851,8 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `coroutine/stream.h` (`sync.h` — `semaphore`), `coroutine/sync.h` and `async/tcp/server.h`
   (transitively), `async/io_handler.h` (`<qb/utility/type_traits.h>` — `qb::has_on`),
   `system/container/ring_buffer.h` (`<cstddef>`, `<iterator>`), and
-  `core/patterns/{discovery,supervisor}.h` (`Actor.tpp` — both instantiate `push<E>` / `push_to<E>` in
-  a non-dependent context).
+  `core/patterns/{discovery,supervisor}.h` (`VirtualCore.h`, which carries Actor's template bodies —
+  both instantiate `push<E>` / `push_to<E>` in a non-dependent context).
   `ring_buffer.h` and `generator.h` are **libstdc++-only**: libc++ supplies `ptrdiff_t` and
   `std::shared_ptr` transitively and libstdc++ does not, so no amount of macOS testing could have
   found them. Both came out of the Linux leg.

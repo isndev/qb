@@ -298,10 +298,16 @@ T &
 Pipe::push(_Args &&...args) const noexcept {
     router::ensure_disposer<Event, T>();
     constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
-    auto                 &data        = pipe->template allocate_back<T>(std::forward<_Args>(args)...);
-    data.id                           = data.template type_to_id<T>();
-    data.dest                         = dest;
-    data.source                       = source;
+    // Raw + prepare + placement-new, not pipe->allocate_back<T>(...) — see
+    // detail::prepare_event_storage (Event.h): SharedCoreCommunication::send's self-pointer guard
+    // scans this whole bucket range, so the bytes the payload leaves untouched must be zero and
+    // not whatever the recycled pipe buffer happened to hold.
+    auto *const raw = pipe->allocate_back(BUCKET_SIZE);
+    detail::prepare_event_storage(raw, BUCKET_SIZE * sizeof(EventBucket));
+    auto &data  = *(new (reinterpret_cast<T *>(raw)) T(std::forward<_Args>(args)...));
+    data.id     = data.template type_to_id<T>();
+    data.dest   = dest;
+    data.source = source;
     // C++20: use service_event_type concept
     if constexpr (service_event_type<T>) {
         data.forward = source;
@@ -317,8 +323,13 @@ T &
 Pipe::allocated_push(std::size_t size, _Args &&...args) const noexcept {
     router::ensure_disposer<Event, T>();
     size += sizeof(T);
-    size       = size / sizeof(EventBucket) + static_cast<bool>(size % sizeof(EventBucket));
-    auto &data = *(new (reinterpret_cast<T *>(pipe->allocate_back(size))) T(std::forward<_Args>(args)...));
+    size = size / sizeof(EventBucket) + static_cast<bool>(size % sizeof(EventBucket));
+    // The trailing buckets an allocated_push reserves are legitimately uninitialised, and they are
+    // inside the range the cross-core guard scans — prepare them too. See
+    // detail::prepare_event_storage (Event.h).
+    auto *const raw = pipe->allocate_back(size);
+    detail::prepare_event_storage(raw, size * sizeof(EventBucket));
+    auto &data = *(new (reinterpret_cast<T *>(raw)) T(std::forward<_Args>(args)...));
 
     data.id     = data.template type_to_id<T>();
     data.dest   = dest;

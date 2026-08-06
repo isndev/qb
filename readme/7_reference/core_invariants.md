@@ -14,12 +14,12 @@ This page consolidates the invariants you must respect (the contract you owe the
 
 ## Thread model: one VirtualCore, one worker thread
 
-- Every `qb::VirtualCore` runs on its own `qb::jthread` for the life of the engine. `qb::jthread` aliases `std::jthread` when available and falls back to qb's C++20 implementation otherwise. `qb::Main::start(bool async = true)` spawns one worker per registered core (`src/qb/core/Main.cpp:301`); the threads are joined by `Main::join()` or by `~Main()`, whose `qb::jthread` members auto-join (`src/qb/core/Main.cpp:196`).
-- The active worker is identified by a `thread_local` pointer, `VirtualCore::_handler`, installed by `Main::start_thread` before any actor is instantiated on that worker and never reassigned for the worker's lifetime (`src/qb/core/Main.cpp:300`).
+- Every `qb::VirtualCore` runs on its own `qb::jthread` for the life of the engine. `qb::jthread` aliases `std::jthread` when available and falls back to qb's C++20 implementation otherwise. `qb::Main::start(bool async = true)` spawns one worker per registered core (`src/qb/core/Main.cpp:313`); the threads are joined by `Main::join()` or by `~Main()`, whose `qb::jthread` members auto-join (`src/qb/core/Main.cpp:208`).
+- The active worker is identified by a `thread_local` pointer, `VirtualCore::_handler`, installed by `Main::start_thread` before any actor is instantiated on that worker and never reassigned for the worker's lifetime (`src/qb/core/Main.cpp:312`).
 - **Actors never migrate between cores.** An actor created on core *N* lives, receives events, and is destroyed on core *N*. Its `this` pointer is only dereferenceable on that one thread. A `VirtualCore` owns its actors exclusively; the actor maps and the service-id pool perform no synchronization (`src/qb/core/VirtualCore.h:172`).
 - Cross-actor APIs (`to()`, `push<>()`, `send<>()`, `broadcast<>()`, `qb::Pipe`) never touch the destination actor directly. They enqueue an event into the destination core's mailbox; that core's worker dequeues and dispatches it **on its own thread**.
 
-The consequence is that `qb-core` carries no `std::mutex` on the message path. The atomics that exist are confined to cross-thread service-id registration and the engine-wide `qb::stop_source` used for shutdown (`src/qb/core/Main.cpp:288`). See [Memory ordering](#memory-ordering-cheat-sheet) for the full accounting.
+The consequence is that `qb-core` carries no `std::mutex` on the message path. The atomics that exist are confined to cross-thread service-id registration and the engine-wide `qb::stop_source` used for shutdown (`src/qb/core/Main.cpp:300`). See [Memory ordering](#memory-ordering-cheat-sheet) for the full accounting.
 
 ## Actor lifecycle
 
@@ -44,14 +44,14 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 - `Actor::kill()` sets `_alive = false` and calls `VirtualCore::killActor(id())` (`src/qb/core/Actor.cpp:282-290`). It only *flags* the actor: the actor stops receiving new events but may still drain events already queued, and `~Actor()` runs later under `VirtualCore` control, at the end of the workflow iteration.
 - `Actor::is_alive()` reports `true` until `kill()` has been called *and* the `VirtualCore` has processed the removal. `Actor::is_active()` is stricter — `is_alive()` **and** the actor's `onInit()` has completed — so it is `false` during the brief *Activating* window of a suspended async `onInit()`; it is the phase oracle behind `findActor` / `ActorHandle::get()`.
 - A referenced actor obtained with `addRefActor<T>()` returns a phase-aware **`qb::ActorHandle<T>`** (alias `RefActorHandle<T>`), **not** a raw pointer. The handle never dangles: it caches the `ActorId` and resolves the live pointer on demand via `findActor<T>()`, so `get()` / `operator->()` return `nullptr` while the child is Activating, after a failed init, or once it has called `kill()`. Send to `handle.id()` at any time (events to a still-Activating child are stashed and replayed FIFO once active); gate direct method calls on `handle.ready()` (or `co_await handle.ready_async(context())` for an async-init child).
-- An `ActorHandle<T>` may only be dereferenced from the owning `VirtualCore`'s worker thread — the thread that created the referenced actor. Cross-thread or cross-core dereference is undefined behavior, *not* a diagnosed one: `get()` (`src/qb/core/VirtualCore.h:916`) is `noexcept` and simply returns `nullptr` when the handle cannot be resolved on the current core (it reads the thread-local `VirtualCore::_handler`, which is null off any worker thread, and `findActor` misses on the wrong core). `operator->()` / `operator*()` then `assert` only that the resolved pointer is non-null — a generic "actor not resolvable on this core" check that also fires after the actor dies — and there is no dedicated thread-identity assertion. Release builds perform no check at all, so cross-thread misuse is a silent null dereference (`src/qb/core/Actor.h:1800`, `:1808`).
+- An `ActorHandle<T>` may only be dereferenced from the owning `VirtualCore`'s worker thread — the thread that created the referenced actor. Cross-thread or cross-core dereference is undefined behavior, *not* a diagnosed one: `get()` (`src/qb/core/VirtualCore.h:927`) is `noexcept` and simply returns `nullptr` when the handle cannot be resolved on the current core (it reads the thread-local `VirtualCore::_handler`, which is null off any worker thread, and `findActor` misses on the wrong core). `operator->()` / `operator*()` then `assert` only that the resolved pointer is non-null — a generic "actor not resolvable on this core" check that also fires after the actor dies — and there is no dedicated thread-identity assertion. Release builds perform no check at all, so cross-thread misuse is a silent null dereference (`src/qb/core/Actor.h:1800`, `:1808`).
 - Service-actor ids are reserved for the lifetime of the process. `VirtualCore::removeActor` recycles only non-service ids back into the pool, keeping each `ServiceIndex` stable (`src/qb/core/VirtualCore.cpp:916-920`).
 
 ## Event system
 
 ### Identity
 
-- Each event type has a stable 16-bit `qb::TypeId` assigned at first use through a magic-static, atomically incremented counter (`qb::type_id<T>()`, `src/qb/core/Event.h:61`). `ServiceActor<Tag>` indices are allocated once under that same magic-static guarantee, with a mutex guarding the shared service-id map insertion, so the id is unique and valid even under concurrent first use (`src/qb/core/VirtualCore.h:996-1006`).
+- Each event type has a stable 16-bit `qb::TypeId` assigned at first use through a magic-static, atomically incremented counter (`qb::type_id<T>()`, `src/qb/core/Event.h:62`). `ServiceActor<Tag>` indices are allocated once under that same magic-static guarantee, with a mutex guarding the shared service-id map insertion, so the id is unique and valid even under concurrent first use (`src/qb/core/VirtualCore.h:1007-1017`).
 - A `type_id<T>()` value is stable within a single process run but is **not** stable across runs. Do not persist it.
 
 ### Identifiers
@@ -88,7 +88,7 @@ The requirement is **not** scoped to cross-core delivery. Three independent relo
 - `reply`/`forward` byte-recycle the received event through the pipe's `recycle` (`src/qb/system/allocator/pipe.h:509-513`), same core or not;
 - the cross-core hop copies the event twice more (sender pipe → peer mailbox ring → receive buffer).
 
-The debug-only scan in `SharedCoreCommunication::send` (`src/qb/core/Main.cpp:161-192`) catches the common case but is not a proof of absence: it runs **only** on the cross-core hop, and it searches for a word addressing the event's *current* bytes, so a self-pointer that an earlier pipe growth already left dangling now points at the old buffer and is outside the scanned range. It is compiled out under `NDEBUG`.
+The debug-only scan in `SharedCoreCommunication::send` (`src/qb/core/Main.cpp:173-204`) catches the common case but is not a proof of absence: it runs **only** on the cross-core hop, and it searches for a word addressing the event's *current* bytes, so a self-pointer that an earlier pipe growth already left dangling now points at the old buffer and is outside the scanned range. It is compiled out under `NDEBUG`.
 
 ### noexcept on the message path
 
@@ -120,7 +120,7 @@ Termination is guaranteed in bounded time: after a partial flush the workflow dr
 ## CPU affinity and shutdown
 
 - `qb::CoreInitializer::setAffinity(CoreIdSet)` pins a worker's thread, best-effort. A logical `CoreId` need not map to a physical CPU, so a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` only warns and never fails `VirtualCore` init (`src/qb/core/VirtualCore.cpp:431-432`). Core ids `>= qb::MaxCores`, including the `qb::NoAffinity` sentinel, are filtered out before pinning — pass a set containing only `qb::NoAffinity` to opt out of pinning explicitly.
-- Shutdown has three triggers wired to the same plumbing (`src/qb/core/Main.cpp:443-450`): a POSIX signal (`SIGINT` / `SIGTERM` via `sigaction`), `Main::stop()` setting a `std::atomic<std::sig_atomic_t>` that the workflow polls, and the C++20 `qb::stop_source` (`request_stop()` on `~Main` or programmatically). A worker that observes any of them synthesizes a virtual `SIGINT` and broadcasts a `SignalEvent`, so existing shutdown handlers keep working on platforms with or without POSIX signals.
+- Shutdown has three triggers wired to the same plumbing (`src/qb/core/Main.cpp:455-462`): a POSIX signal (`SIGINT` / `SIGTERM` via `sigaction`), `Main::stop()` setting a `std::atomic<std::sig_atomic_t>` that the workflow polls, and the C++20 `qb::stop_source` (`request_stop()` on `~Main` or programmatically). A worker that observes any of them synthesizes a virtual `SIGINT` and broadcasts a `SignalEvent`, so existing shutdown handlers keep working on platforms with or without POSIX signals.
 
 ## Memory ordering cheat-sheet
 
@@ -131,7 +131,7 @@ Termination is guaranteed in bounded time: after a partial flush the workflow dr
 | `VirtualCore` actor maps / callback list | plain read/write | mutated only on the owning worker thread (`src/qb/core/VirtualCore.h:172`) |
 | `Main` signal flag | `std::atomic<std::sig_atomic_t>` | async-signal-safe poll in the worker loop |
 | `Main::_stop_source` / `_stop_token` | `qb::stop_*` | standard library ordering when backed by `std::stop_*`; acquire/release atomic ordering in qb's fallback |
-| Service-id registration | atomic + magic-static + mutex | one-time cross-thread publish (`src/qb/core/VirtualCore.h:996-1006`) |
+| Service-id registration | atomic + magic-static + mutex | one-time cross-thread publish (`src/qb/core/VirtualCore.h:1007-1017`) |
 | Inter-core mailbox | lock-free MPSC ring buffer | own internal acquire/release (see [lock-free primitives](./lockfree_primitives.md)) |
 
 There is no `std::mutex` on the message path. The only locks in `qb-core` guard the one-time service-id map (static-init only) and the mailbox condition variable used when a core parks while truly idle at non-zero latency.
