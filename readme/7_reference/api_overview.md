@@ -200,7 +200,7 @@ class CacheService : public qb::ServiceActor<CacheTag> { /* ... */ };
 | `getSize` | `std::size_t getSize() const noexcept` |
 | `is_alive` | `bool is_alive() const noexcept` |
 
-`Event::id_type` is `qb::EventId` in release builds (`NDEBUG`) and `const char *` in debug builds, so
+`Event::id_type` is `qb::EventId` (a `uint16_t`) in **every** build mode as of 3.0 — it no longer depends on `NDEBUG`, so
 route on the event's runtime type rather than storing a raw `getID()` value across build configurations.
 
 Quality-of-service variants are `EventQOS2`/`EventQOS1` (both plain aliases of `Event`, which carries

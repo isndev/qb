@@ -779,8 +779,13 @@ template <typename T, typename... _Init>
 void
 VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) noexcept {
     router::ensure_disposer<Event, T>(); // no-op for the trivially-destructible events send requires
-    auto &pipe = __getPipe__(dest._core_id);
-    auto &data = pipe.template allocate<T>(std::forward<_Init>(init)...);
+    auto                 &pipe        = __getPipe__(dest._core_id);
+    constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
+    // Allocate raw + prepare + placement-new rather than pipe.allocate<T>(...): the bucket range
+    // must be deterministic BEFORE the payload runs. See detail::prepare_event_storage.
+    auto *const raw = pipe.allocate(BUCKET_SIZE);
+    detail::prepare_event_storage(raw, BUCKET_SIZE * sizeof(EventBucket));
+    auto &data = *(new (reinterpret_cast<T *>(raw)) T(std::forward<_Init>(init)...));
 
     fill_event(data, dest, source);
 
@@ -806,8 +811,14 @@ VirtualCore::push(ActorId const dest, ActorId const source, _Init &&...init) noe
     // THE enqueue funnel for Actor::push / to().push / reply / forward: guarantee this type can
     // be freed on any drop path even if no actor ever subscribes to it. See Pipe.h.
     router::ensure_disposer<Event, T>();
-    auto &pipe = __getPipe__(dest._core_id);
-    auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
+    auto                 &pipe        = __getPipe__(dest._core_id);
+    constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
+    // Raw + prepare + placement-new, not pipe.allocate_back<T>(...) — see
+    // detail::prepare_event_storage: the guard in SharedCoreCommunication::send scans this whole
+    // range, so every byte the payload does not write must be deterministic.
+    auto *const raw = pipe.allocate_back(BUCKET_SIZE);
+    detail::prepare_event_storage(raw, BUCKET_SIZE * sizeof(EventBucket));
+    auto &data = *(new (reinterpret_cast<T *>(raw)) T(std::forward<_Init>(init)...));
 
     fill_event(data, dest, source);
 

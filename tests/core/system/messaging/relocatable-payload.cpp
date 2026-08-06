@@ -415,6 +415,154 @@ TEST(RelocatablePayload, ShortStdStringEventCrossesCoresWithoutTrippingTheGuard)
     EXPECT_TRUE(run_engine(&push_short_std_string_cross_core, std::chrono::seconds(30)))
         << "the engine never finished: a short std::string event did not complete its cross-core hop";
 }
+
+// --- The guard's OTHER precondition: deterministic bucket bytes ---------------------------------
+//
+// The guard scans the whole bucket range, because that is what gets memcpy'd. But a payload does
+// not write that whole range: a heap-backed `std::string` on libstdc++ leaves the tail of its
+// inline SSO buffer untouched, the last member leaves tail padding behind it, and an
+// `allocated_push` tail is uninitialised by construction. Those bytes come out of an outbound pipe
+// that is rewound and reused event after event, over heap memory the allocator recycles — so they
+// hold stale values, and a stale value that happens to address the event's own 64 bytes makes the
+// guard abort on a payload that is perfectly relocatable.
+//
+// That is not hypothetical: `qb-core-test-system-shutdown-saturation` aborted 2/30 on Linux
+// (Debug, no sanitizer, libstdc++) with the offending word at offset 40 — the dead tail of a
+// string's SSO buffer — and at offset 56 — tail padding after the last member — on a 64-byte event
+// whose live members end at 52, while the payload's only pointer correctly addressed the heap.
+// `qb::detail::prepare_event_storage` closes it by zeroing the range before the payload runs.
+//
+// This test pins that, deterministically and without relying on the race: poison a pipe slot with
+// a fully-written event, let the flush rewind the pipe, then push a padded event into the SAME
+// slot and require its dead bytes to read zero rather than the poison. The address equality is
+// asserted, not assumed — without it the test could pass on a fresh, already-zero slot and prove
+// nothing.
+namespace {
+
+/// Writes EVERY byte after `qb::Event`'s header, so it leaves a recognisable pattern behind in the
+/// sender's outbound pipe once flushed. All-`0xAB` is not a mappable address, so it crosses the
+/// guard cleanly; the payload is trivially destructible and holds no pointer at all.
+struct FillerEvent : public qb::Event {
+    std::uint8_t fill[QB_LOCKFREE_EVENT_BUCKET_BYTES - 16];
+    FillerEvent() {
+        std::memset(fill, 0xAB, sizeof(fill));
+    }
+};
+static_assert(sizeof(FillerEvent) == QB_LOCKFREE_EVENT_BUCKET_BYTES,
+              "FillerEvent must be exactly one bucket and must start immediately after Event's 16 header "
+              "bytes — if the header changed size, resize `fill`; do not delete this assert, it is what "
+              "keeps the poison covering the padded event's dead bytes");
+
+/// The shape of a real payload: live members that stop short of the end of the bucket. The string
+/// is long, so it is heap-backed on every stdlib (never self-referential) and, on libstdc++, leaves
+/// the tail of its inline SSO buffer dead; `seq` then leaves tail padding behind it.
+struct PaddedEvent : public qb::Event {
+    std::string   text;
+    std::uint32_t seq; ///< last member — everything after it is tail padding
+    explicit PaddedEvent(std::uint32_t s)
+        : text(48, 'p')
+        , seq(s) {}
+};
+
+std::atomic<const void *> g_poisoned_slot{nullptr};
+std::atomic<const void *> g_padded_slot{nullptr};
+std::atomic<std::size_t>  g_tail_begin{0};
+std::atomic<std::size_t>  g_tail_end{0};
+std::atomic<int>          g_tail_nonzero{-1};
+
+class SlotRecv final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<FillerEvent>(*this);
+        registerEvent<PaddedEvent>(*this);
+        co_return true;
+    }
+    void
+    on(FillerEvent const &) {}
+    void
+    on(PaddedEvent const &) {
+        kill();
+    }
+};
+
+class SlotSend final
+    : public qb::Actor
+    , public qb::ICallback {
+    const qb::ActorId _to;
+    int               _turn = 0;
+
+public:
+    explicit SlotSend(qb::ActorId to)
+        : _to(to) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerCallback(*this);
+        // Poison the slot. This core's outbound pipe to `_to`'s core carries nothing else, so the
+        // next event queued after the flush lands on exactly these bytes.
+        g_poisoned_slot.store(&getPipe(_to).push<FillerEvent>(), std::memory_order_relaxed);
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        // __flush_all__ runs once per loop turn and then `pipe.reset()`s the drained pipe, so by
+        // the third callback the poison is on the wire and the pipe cursor is back at 0.
+        if (_turn++ < 2)
+            return;
+
+        auto       &ev   = getPipe(_to).push<PaddedEvent>(7u);
+        const auto *base = reinterpret_cast<const std::uint8_t *>(&ev);
+        const auto  from = static_cast<std::size_t>(reinterpret_cast<const std::uint8_t *>(&ev.seq) - base) + sizeof(ev.seq);
+
+        int nonzero = 0;
+        for (std::size_t i = from; i < sizeof(PaddedEvent); ++i)
+            nonzero += (base[i] != 0u);
+
+        g_padded_slot.store(base, std::memory_order_relaxed);
+        g_tail_begin.store(from, std::memory_order_relaxed);
+        g_tail_end.store(sizeof(PaddedEvent), std::memory_order_relaxed);
+        g_tail_nonzero.store(nonzero, std::memory_order_relaxed);
+
+        unregisterCallback();
+        kill();
+    }
+};
+
+void
+run_prepared_storage_probe() {
+    qb::Main main;
+    auto     rcv = main.addActor<SlotRecv>(1);
+    main.addActor<SlotSend>(0, rcv);
+    main.start();
+    main.join();
+}
+
+} // namespace
+
+TEST(RelocatablePayload, EventStorageIsPreparedSoDeadBytesCannotTripTheGuard) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the outbound pipe only exists on the cross-core path";
+
+    ASSERT_TRUE(run_engine(&run_prepared_storage_probe, std::chrono::seconds(30)))
+        << "the engine never finished: the prepared-storage probe did not complete its hop";
+
+    ASSERT_NE(g_padded_slot.load(), nullptr) << "the probe never queued its padded event";
+    // Non-vacuity: these bytes must be the ones the filler wrote, otherwise finding them zero says
+    // nothing about the prepare step.
+    ASSERT_EQ(g_poisoned_slot.load(), g_padded_slot.load())
+        << "the padded event did not land in the slot the filler poisoned, so this test would prove "
+           "nothing — something else queued into this core's outbound pipe";
+    ASSERT_GT(g_tail_end.load(), g_tail_begin.load())
+        << "PaddedEvent has no tail padding on this ABI, so there is no dead region left to check";
+
+    EXPECT_EQ(g_tail_nonzero.load(), 0) << g_tail_nonzero.load() << " of the " << (g_tail_end.load() - g_tail_begin.load())
+                                        << " tail-padding bytes at [" << g_tail_begin.load() << ',' << g_tail_end.load()
+                                        << ") still carry the previous event's contents. qb::detail::prepare_event_storage did not run "
+                                           "on this path, so SharedCoreCommunication::send's guard is scanning stale bytes and will "
+                                           "abort intermittently on payloads that are perfectly relocatable";
+}
 #endif // !NDEBUG
 
 // A type-level backstop for the ONE sanctioned type that carries its text inline. Trivial

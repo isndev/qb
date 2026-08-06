@@ -369,7 +369,7 @@ every actor TU pay that is the worse trade. **Include an umbrella.**
 ## Pitfalls
 
 - **Bundled deps missing from a checkout.** libev and stduuid are vendored as committed files under `qb/src/qb/vendor/`, not submodules and not fetched; a normal clone always ships them. A `libev … not found` fatal error means they are missing — restore them with `git checkout -- src/qb/vendor` or re-clone. A `git submodule update` will not bring them back.
-- **Host-tuned binary fails on another machine.** The default `QB_ENABLE_NATIVE_ARCH=ON` targets the build host's CPU. Rebuild with `-DQB_ENABLE_NATIVE_ARCH=OFF` (or the `release-portable` preset) for distributable artifacts.
+- **Host-tuned binary fails on another machine.** Only if the build asked for it: `QB_ENABLE_NATIVE_ARCH` defaults to `OFF`, and the only presets that turn it on are `release-native` and `benchmarks`. Check the cache (`cmake -L build/... | grep NATIVE_ARCH`) before blaming codegen — if it reads `OFF`, a SIGILL on another machine is not native-arch and `-DQB_ENABLE_NATIVE_ARCH=OFF` will change nothing.
 - **`undefined symbol: qb_abi_…` when linking an application.** Not a missing library — the
   [link-time configuration fingerprint](#link-time-configuration-fingerprint) reporting that the
   application and the archive were compiled with different ABI-relevant settings. The symbol name

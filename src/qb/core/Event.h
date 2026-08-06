@@ -30,6 +30,7 @@
 #define QB_EVENT_H
 #include <atomic>
 #include <bitset>
+#include <cstring> // detail::prepare_event_storage
 #include <qb/system/allocator/pipe.h>
 // Explicit, though qb/system/allocator/pipe.h already reaches it: qb::Event is the type whose
 // layout the cache-line axis moves, and every user event derives from it, so the header that
@@ -238,6 +239,49 @@ type_id_for() noexcept {
     static type_id_slot slot{};
     static const TypeId id = register_type_id(slot, typeid(T).name());
     return id;
+}
+
+/**
+ * @brief Debug-only: give an event's bucket range a deterministic value before the payload is
+ *        constructed into it.
+ * @param raw   First byte of the bucket range about to receive a placement-new'd event.
+ * @param bytes `bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES` — the exact range that cross-core
+ *              delivery will `memcpy`, i.e. the range the guard scans.
+ *
+ * @details
+ * This exists for `SharedCoreCommunication::send`'s self-pointer guard (`src/Main.cpp`), and it
+ * is what makes that guard sound rather than merely suggestive.
+ *
+ * The guard scans the whole bucket range for a pointer-sized word addressing that same range.
+ * It has to: cross-core delivery relocates the *whole* range with `memcpy`, and there is no way
+ * to ask C++ which bytes a payload actually wrote. But an event's bucket range is normally NOT
+ * fully written, in two ways that have nothing to do with the payload being self-referential:
+ *
+ *   - **dead bytes inside `sizeof(T)`** — e.g. a heap-backed `std::string` on libstdc++ leaves
+ *     the tail of its 16-byte SSO buffer untouched; and
+ *   - **tail padding / the `allocated_push` tail** beyond the last member.
+ *
+ * Those bytes come out of a pipe buffer that is reused across events and recycled by the heap
+ * allocator, so they hold stale values — and a stale value that happens to address the range
+ * makes the guard abort on a payload that is perfectly relocatable. Measured on Linux/libstdc++:
+ * `qb-core-test-system-shutdown-saturation` aborted 2/30 with the offending word at offset 40
+ * (dead tail of the string's SSO buffer) and at offset 56 (tail padding after the last member),
+ * while the payload's only pointer — the string's `data()` at offset 16 — correctly addressed the
+ * heap. ASan hid it by filling fresh allocations deterministically; macOS hid it because libc++
+ * recomputes a short string's `data()` from `this`.
+ *
+ * Zeroing first removes the whole class: after this, the only way a word inside the range can
+ * address the range is if the payload itself wrote it, which is exactly the hazard. It also makes
+ * an uninitialised pointer member read as `nullptr` instead of stack/heap garbage.
+ *
+ * Debug-only on purpose. The guard is `#ifndef NDEBUG`, so release would pay a per-event `memset`
+ * on the hot enqueue path for a check it does not compile in.
+ */
+inline void
+prepare_event_storage([[maybe_unused]] void *const raw, [[maybe_unused]] std::size_t const bytes) noexcept {
+#ifndef NDEBUG
+    std::memset(raw, 0, bytes);
+#endif
 }
 } // namespace detail
 

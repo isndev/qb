@@ -151,7 +151,7 @@ flowchart LR
     RN --> DC
 ```
 
-The producer index is the **sender's** resolved core id, so each producer is permanently bound to one slot and rides the lock-free indexed path — no `SpinLock`, no cross-producer contention (`src/qb/core/Main.cpp:203`). The single consumer appends each slot's items into one output buffer rather than overwriting (`src/qb/system/lockfree/mpsc.h:173-177`).
+The producer index is the **sender's** resolved core id, so each producer is permanently bound to one slot and rides the lock-free indexed path — no `SpinLock`, no cross-producer contention (`src/qb/core/Main.cpp:215`). The single consumer appends each slot's items into one output buffer rather than overwriting (`src/qb/system/lockfree/mpsc.h:173-177`).
 
 ### Two enqueue families — read this before using
 
@@ -204,7 +204,7 @@ Each `VirtualCore` consumes from exactly one inbound mailbox. A `Mailbox` is a `
 
 - **`EventBucket`** is a cache-line-aligned padding unit (`QB_LOCKFREE_EVENT_BUCKET_BYTES`, equal to `QB_LOCKFREE_CACHELINE_BYTES`, default 64) so event payloads stay cache-aligned in the ring (`src/qb/utility/prefix.h:131`).
 - **`MaxRingEvents`** is `uint16_t::max() / QB_LOCKFREE_EVENT_BUCKET_BYTES` — the per-producer ring capacity, derived so a bucket count fits a 16-bit field (`src/qb/core/Main.h:296`).
-- **Producers are core-bound.** `SharedCoreCommunication::send` enqueues into the destination mailbox with the *sender's* resolved core id as the producer index — `_mail_boxes[dest_index]->enqueue(source_index, …)` — so the engine rides the lock-free runtime-indexed path, not the spinlock-guarded round-robin path (`src/qb/core/Main.cpp:203`).
+- **Producers are core-bound.** `SharedCoreCommunication::send` enqueues into the destination mailbox with the *sender's* resolved core id as the producer index — `_mail_boxes[dest_index]->enqueue(source_index, …)` — so the engine rides the lock-free runtime-indexed path, not the spinlock-guarded round-robin path (`src/qb/core/Main.cpp:215`).
 - **The single consumer drains via the functor `dequeue` overload.** `VirtualCore::__receive__` calls `_mail_box.dequeue(func, _event_buffer->data(), MaxRingEvents)`, which copies each producer ring's pending `EventBucket`s into the core's event buffer and then invokes the functor over that buffer to dispatch them to the event router (`src/qb/core/VirtualCore.cpp:224-226`). This is the copying `dequeue` path, not the zero-copy `consume_all` path described above.
 - **Idle parking is a `condition_variable`, not the ring.** A `Mailbox` wraps the ring with a `std::mutex`/`std::condition_variable` pair used only when a core parks at non-zero latency: a busy producer calls `notify()` to wake an idle consumer (`src/qb/core/Main.h:319`, `src/qb/core/VirtualCore.cpp:319`). At zero latency the consumer spins and `notify()` is a no-op. This parking lock is off the message path — the ring itself stays lock-free.
 

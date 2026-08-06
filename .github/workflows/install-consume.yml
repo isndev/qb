@@ -292,3 +292,97 @@ jobs:
         run: |
           ./scripts/check-installed-headers-selftest.sh \
             --prefix "$PFX" --cxx "clang++-${LLVM_VERSION}"
+
+  # ── Packaging switches added in 3.0, none of which had a job ───────────────────────────────
+  #
+  # `QB_REQUIRE_FEATURES`, `QB_USE_SYSTEM_NLOHMANN` and `share/qb/abi-fingerprint.txt` exist for
+  # distribution builds and shipped with zero automated coverage. All three are configure/install
+  # behaviour, so they cost one extra configure each — there is no reason for them to be untested.
+  #
+  # Every check here carries its own control: a switch that cannot be shown to CHANGE anything is
+  # indistinguishable from a switch that is not wired up.
+  packaging-switches:
+    name: QB_REQUIRE_FEATURES + QB_USE_SYSTEM_NLOHMANN + abi-fingerprint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: ./scripts/ci-install-linux-dependencies.sh --profile build
+
+      # QUIC needs libngtcp2, which the build profile does not install. Requesting it therefore
+      # DEGRADES — the exact silent-downgrade shape QB_REQUIRE_FEATURES exists to stop.
+      - name: Control — the degradation is only a warning by default
+        run: |
+          set -euo pipefail
+          cmake -S . -B b-warn -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
+            -DQB_WITH_QUIC=ON > /tmp/warn.log 2>&1
+          grep -q "QUIC support disabled" /tmp/warn.log \
+            || { echo "::error::QUIC did not degrade on this runner — the QB_REQUIRE_FEATURES check below would be vacuous"; cat /tmp/warn.log; exit 1; }
+          echo "configure succeeded with a degraded feature, as designed"
+
+      - name: QB_REQUIRE_FEATURES=ON turns the same downgrade into a configure error
+        run: |
+          set -euo pipefail
+          set +e
+          cmake -S . -B b-require -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
+            -DQB_WITH_QUIC=ON -DQB_REQUIRE_FEATURES=ON > /tmp/require.log 2>&1
+          rc=$?
+          set -e
+          [ "$rc" -ne 0 ] || { echo "::error::configure SUCCEEDED with QB_REQUIRE_FEATURES=ON and an unsatisfiable feature"; cat /tmp/require.log; exit 1; }
+          grep -q "QB_REQUIRE_FEATURES=ON, so this downgrade is an error" /tmp/require.log \
+            || { echo "::error::configure failed, but not for the reason under test"; cat /tmp/require.log; exit 1; }
+
+      - name: QB_USE_SYSTEM_NLOHMANN — OFF uses the bundled copy, a bad value is rejected
+        run: |
+          set -euo pipefail
+          cmake -S . -B b-nl-off -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
+            -DQB_USE_SYSTEM_NLOHMANN=OFF > /tmp/nl-off.log 2>&1
+          grep -q "Using bundled nlohmann_json" /tmp/nl-off.log \
+            || { echo "::error::QB_USE_SYSTEM_NLOHMANN=OFF did not select the bundled copy"; cat /tmp/nl-off.log; exit 1; }
+
+          set +e
+          cmake -S . -B b-nl-bad -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
+            -DQB_USE_SYSTEM_NLOHMANN=MAYBE > /tmp/nl-bad.log 2>&1
+          rc=$?
+          set -e
+          [ "$rc" -ne 0 ] || { echo "::error::QB_USE_SYSTEM_NLOHMANN accepted an out-of-range value"; exit 1; }
+          grep -q "must be AUTO, ON or OFF" /tmp/nl-bad.log \
+            || { echo "::error::the tri-state validation did not fire"; cat /tmp/nl-bad.log; exit 1; }
+
+      # The file's whole contract is that the `qb-abi` line is READ OUT OF THE INSTALLED ARCHIVE
+      # rather than re-derived, so it cannot drift from the artefact. Check exactly that: the
+      # installed line must be byte-identical to the string inside the archive.
+      - name: share/qb/abi-fingerprint.txt matches the archive it describes
+        run: |
+          set -euo pipefail
+          cmake -S . -B b-fp -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/_fp" \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF
+          cmake --build b-fp --parallel
+          cmake --install b-fp
+
+          fp=_fp/share/qb/abi-fingerprint.txt
+          [ -f "$fp" ] || { echo "::error::the install did not write $fp"; exit 1; }
+          cat "$fp"
+
+          installed="$(grep '^qb-abi ' "$fp" || true)"
+          [ -n "$installed" ] || { echo "::error::no qb-abi line in $fp (the install could not read it out of the archive)"; exit 1; }
+          archive="$(strings _fp/lib/libqb-io.a | grep '^qb-abi ' | head -1)"
+          [ -n "$archive" ] || { echo "::error::no qb-abi string in the installed archive"; exit 1; }
+          [ "$installed" = "$archive" ] \
+            || { echo "::error::fingerprint drift — file says [$installed], archive says [$archive]"; exit 1; }
+
+          # The configuration block is not link-enforced, so at minimum it must be PRESENT and
+          # carry a value on every field — an empty `shared_libs=` is the failure mode the
+          # normalisation in CMakeLists.txt exists to prevent.
+          for field in cxx_standard compiler build_type shared_libs ssl compression quic argon2 unordered_map system_nlohmann; do
+            grep -Eq "(^|[[:space:]])${field}=[^[:space:]]" "$fp" \
+              || { echo "::error::abi-fingerprint.txt field '${field}' is missing or empty"; exit 1; }
+          done

@@ -201,7 +201,7 @@ ctest --test-dir build --output-on-failure
 | `QB_WITH_LOGGING`       | `ON`    | Logging support                                                                       |
 | `QB_BUILD_TESTS`        | `ON`    | Build the test suite                                                                  |
 | `QB_BUILD_BENCHMARKS`   | `OFF`   | Build benchmarks (Google Benchmark)                                                   |
-| `QB_ENABLE_NATIVE_ARCH` | `ON`    | Tune codegen for the build host (`-march=native`); turn **off** for portable binaries |
+| `QB_ENABLE_NATIVE_ARCH` | `OFF`   | Tune codegen for the build host (`-march=native`); turn **on** only for host-local builds |
 
 The complete option list is in [CMake options](./readme/7_reference/cmake_options.md); installation details
 are in [INSTALL.md](./INSTALL.md).
