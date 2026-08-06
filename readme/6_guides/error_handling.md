@@ -419,7 +419,7 @@ The correct primitive for "continue **after the current event handler returns**,
 Use it when a handler must do something that is unsafe inline — above all, destroy or replace the very object it is running on:
 
 ```cpp
-// src: qb/src/qb/io/async/listener.h:861 (qb::io::async::defer)
+// src: qb/src/qb/io/async/listener.h:872 (qb::io::async::defer)
 void on(event::disconnected const &) {
     // Reconnect = destroy the current connection and build a new one. Doing it
     // inline here (still inside this handler's dispatch) frees `this` mid-call —
