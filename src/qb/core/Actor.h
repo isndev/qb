@@ -236,8 +236,13 @@ class Actor : nocopy {
      *          `false` by the owning core only when an `onInit()` actually suspends, and
      *          back `true` when it resumes to completion. Same single-writer /
      *          single-reader thread-affinity contract as `_alive`. `is_active()` ==
-     *          `_alive && _activated` is the phase oracle used by `findActor` /
-     *          `getService` and the inbound-event dispatch gate.
+     *          `_alive && _activated` is the phase oracle, and it has exactly TWO
+     *          consumers: `VirtualCore::findActor<T>()` (hence every `ActorHandle`
+     *          accessor) and `VirtualCore::isActorAlive()` (hence `is_actor_alive()`).
+     *          `getService<T>()` is deliberately NOT one of them, and the inbound-event
+     *          dispatch gate keys off `VirtualCore::_activating` membership rather than
+     *          this flag. The full inventory — who is withheld during the Activating
+     *          window, who is not, and why — is the table on `is_active()` below.
      */
     mutable bool  _activated = true;
     std::uint32_t id_type    = 0u;
@@ -592,8 +597,20 @@ public:
     [[nodiscard]] static ActorId getServiceId(CoreId index) noexcept;
 
     /**
-     * @brief Get direct access to ServiceActor* in same core
-     * @return ptr to _ServiceActor else nullptr if not registered in core
+     * @brief Get direct access to a `ServiceActor` on the **same** core.
+     * @return Pointer to the service, or `nullptr` if no service of that type is registered
+     *         on this core.
+     * @details **Not phase-gated, and that is deliberate.** Unlike `ActorHandle::get()` /
+     *          `VirtualCore::findActor()`, this hands back the pointer even while the
+     *          service's own async `onInit()` is still in flight (*Activating*), and even
+     *          after it has been `kill()`ed but not yet reaped — it consults neither
+     *          `is_active()` nor `is_alive()`. That is what makes the common bootstrap
+     *          pattern work: a service legitimately looks itself, or a peer service, up
+     *          from inside its own `onInit()`, where it is mid-init by definition.
+     *          The cost is on you: the service you get back may not have finished
+     *          initializing. If you need that guarantee, ask it (`push` an event, or
+     *          `co_await qb::ask(...)`) instead of touching its state. See the inventory
+     *          table on `is_active()`.
      */
     template <typename _ServiceActor>
     [[nodiscard]] _ServiceActor *getService() const noexcept;
@@ -614,9 +631,44 @@ public:
      * @return `true` iff the actor is alive and its `onInit()` has completed successfully.
      * @details Equivalent to `is_alive() && ` *activated*. Differs from `is_alive()` only
      *          during the brief window in which an `onInit()` that performed a `co_await`
-     *          is still suspended (the *Activating* phase). External code resolving a
-     *          handle via `qb::ActorHandle` / `findActor` observes the actor only once it
-     *          `is_active()`, so it never sees a half-initialized actor.
+     *          is still suspended (the *Activating* phase).
+     *
+     * ### The Activating window — who is withheld, and who is not
+     *
+     * One mechanism, several surfaces, and they deliberately do **not** all behave the same.
+     * This table is the inventory; read it before assuming a lookup is phase-aware.
+     *
+     * | Surface | Consults | Behaviour while the target is *Activating* |
+     * |---|---|---|
+     * | `VirtualCore::findActor<T>(id)` | `is_active()` | **withheld** — `nullptr` |
+     * | `ActorHandle<T>::get()` / `operator->` / `operator*` / `ready()` / `operator bool` | `findActor` | **withheld** — `nullptr` / `false` |
+     * | `is_actor_alive(id)` (→ `VirtualCore::isActorAlive`) | `is_active()` | **withheld** — `false` |
+     * | `is_active()` | `_alive && _activated` | `false` |
+     * | `is_alive()` | `_alive` only | `true` — it is not a phase check |
+     * | `getService<T>()` (→ `VirtualCore::getService`) | *nothing* | **handed out**, by design |
+     * | inbound-event dispatch gate (`VirtualCore::__receive_events__`) | `VirtualCore::_activating` membership | **deferred**, not withheld |
+     * | `ActorHandle<T>::id()`, `push` / `send` / `broadcast` / `to()` | *nothing* | usable immediately |
+     *
+     * Three consequences worth stating outright:
+     *
+     * - **"Can I look this up from inside `onInit()`?"** `getService<T>()` — yes; that
+     *   bootstrap pattern is exactly why it is not gated. `ActorHandle::get()` — no: it
+     *   returns `nullptr` for a child that is itself still Activating. Either wait, with
+     *   `co_await handle.ready_async(context())`, or just `push` to `handle.id()` and let
+     *   the dispatch gate hold the event for you.
+     * - **`getService<T>()` is not gated on `is_alive()` either**, so it can hand back a
+     *   service that has been `kill()`ed but not yet reaped. `findActor` / `isActorAlive`
+     *   are the only lookups that filter either condition, and they filter on `is_active()`
+     *   — never on `is_alive()` alone.
+     * - **The dispatch gate defers; it does not drop.** A unicast business event addressed
+     *   to an Activating actor is byte-copied into that actor's FIFO stash and replayed in
+     *   order once it activates. Three things bypass the gate: broadcasts, any `KillEvent`
+     *   (so an Activating actor stays killable), and the reply to a `qb::ask` the actor
+     *   itself issued from inside `onInit()` — stashing that would deadlock the init on its
+     *   own reply.
+     *
+     * A `false` from any of these is therefore not, on its own, evidence that the actor is
+     * gone; over a `co_await` in a peer's `onInit()` it may simply be early.
      */
     [[nodiscard]] bool is_active() const noexcept;
 
@@ -1770,6 +1822,10 @@ public:
  * - Safely dereference via `get()` / `operator->()` / `operator*()`, which re-query
  *   `VirtualCore::_handler` and return the pointer only for an **active** actor (`is_active()`).
  * - Wait for an async-init child with `ready()` (sync) or `co_await ready_async(ctx)` (async).
+ *
+ * This is the *gated* side of the lookup surface; `Actor::getService<T>()` is the ungated one
+ * (it hands out an Activating service on purpose). The table on `qb::Actor::is_active()` is the
+ * inventory of which is which.
  *
  * Thread-model: must only be dereferenced from the owning VirtualCore's worker
  * thread (the same thread that created the referenced actor). Cross-thread use

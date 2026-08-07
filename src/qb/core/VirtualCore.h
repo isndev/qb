@@ -318,6 +318,14 @@ private:
     //   - inbound unicast *business* events are byte-copied into `stash` and replayed
     //     FIFO once it becomes active (the dispatch gate in `__receive_events__`),
     //   - an activation deadline bounds the window (mutual-init deadlock-proof).
+    //
+    // The dispatch gate's oracle is membership in THIS map (`__is_activating__`), NOT
+    // `Actor::is_active()` — the two agree on `_activated` but the gate never reads
+    // `_alive`, and it DEFERS rather than withholds. `is_active()` gates the two lookups
+    // (`findActor`, `isActorAlive`); `getService` gates on nothing at all. Three things
+    // bypass the gate: broadcasts, any `KillEvent` (an Activating actor stays killable),
+    // and the reply to a `qb::ask` this actor issued from its own `onInit()` (stashing it
+    // would deadlock the init on its own reply). Full inventory: `qb::Actor::is_active()`.
     // The common case — `onInit()` completes synchronously (no `co_await`) — never
     // enters this map: it is the `empty()`-guarded slow path, mirroring the
     // `_actor_to_remove` fast-path discipline so non-async actors pay nothing.
@@ -524,17 +532,30 @@ private:
      * @brief Get a service actor of specified type
      * @tparam _ServiceActor Type of service actor to get
      * @return Pointer to the service actor or nullptr if not found
+     * @details **The one lookup on this core that is NOT phase-gated**, deliberately: it
+     *          consults neither `is_active()` nor `is_alive()`, so it resolves a service
+     *          whose async `onInit()` is still in flight (*Activating*) and one that has
+     *          been killed but not yet reaped. That is what lets a service look itself or
+     *          a peer up from inside its own `onInit()`. Contrast `findActor()` below,
+     *          which withholds both. Rationale at the definition; inventory of every
+     *          phase-gated and non-gated surface in the table on `qb::Actor::is_active()`.
+     *          Backs `qb::Actor::getService<T>()`.
      */
     template <typename _ServiceActor>
     [[nodiscard]] _ServiceActor *getService() const noexcept;
 
     /*!
-     * @brief Safely resolve an `ActorId` to a live actor pointer on this core.
+     * @brief Safely resolve an `ActorId` to an **active** actor pointer on this core.
      * @tparam _Actor Expected dynamic type of the resolved actor.
      * @param id The actor identifier to look up.
-     * @return Pointer to the live actor if `id` matches an alive actor of the
-     *         expected type on this core, `nullptr` otherwise.
-     * @details Backs `qb::RefActorHandle<T>::get()` (finding 2.9).
+     * @return Pointer to the actor if `id` matches an `is_active()` actor of the expected
+     *         type on this core, `nullptr` otherwise.
+     * @details Phase-gated on `is_active()`, not merely on `is_alive()`: `nullptr` while the
+     *          target's async `onInit()` is still in flight (*Activating*), after a failed
+     *          init, and once it has been killed — so a caller never observes a
+     *          half-initialized actor. For the sync-init majority `is_active() ==
+     *          is_alive()` and this is indistinguishable from a plain liveness check.
+     *          Backs `qb::ActorHandle<T>::get()` (alias `RefActorHandle`, finding 2.9).
      */
     template <typename _Actor>
     [[nodiscard]] _Actor *findActor(ActorId id) const noexcept;
@@ -736,6 +757,14 @@ VirtualCore::getService() const noexcept {
     // itself (or a peer) up from inside its own `onInit()` (a common bootstrap pattern),
     // where the actor is mid-init by definition. The phase-aware handle path (`ActorHandle`
     // via `findActor`) is where Activating actors are withheld from external callers.
+    //
+    // Read that literally: the `return` below is the whole gate, and it gates nothing — no
+    // `is_active()` (so an Activating service is handed out) and no `is_alive()` either (so
+    // a service killed but not yet reaped is handed out too, until `removeActor` erases it
+    // from `_actors`). Both are load-bearing for the bootstrap pattern — a service that
+    // kills itself from a handler stays reachable for the rest of that turn — and both are
+    // the caller's problem: what you get back may be mid-init or dying. Ask it (an event, or
+    // `co_await qb::ask(...)`) rather than reading its state if that matters.
     return dynamic_cast<_ServiceActor *>(it->second.get());
 }
 

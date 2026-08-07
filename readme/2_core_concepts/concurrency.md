@@ -64,9 +64,9 @@ Delivery ordering between two specific actors depends on which send primitive yo
 | `push<Event>(dest, …)` | FIFO from the same source to the same destination, including cross-core | any event (supports non-trivially-destructible members) | `noexcept`; throw across the boundary calls `std::terminate()` |
 | `send<Event>(dest, …)` | none, even same-core same-destination | must be trivially destructible | `noexcept`; throw across the boundary calls `std::terminate()` |
 
-`push()` is the primary, recommended primitive. Events pushed from a given source actor to a given destination actor are processed in the order they were pushed, even when the two actors live on different cores. (`src/qb/core/Actor.h:798`, `src/qb/core/Pipe.h:118`) `send()` trades that ordering for a narrower contract and is reserved for fire-and-forget, order-independent notifications of trivially-destructible event types. (`src/qb/core/Actor.h:821`)
+`push()` is the primary, recommended primitive. Events pushed from a given source actor to a given destination actor are processed in the order they were pushed, even when the two actors live on different cores. (`src/qb/core/Actor.h:850`, `src/qb/core/Pipe.h:118`) `send()` trades that ordering for a narrower contract and is reserved for fire-and-forget, order-independent notifications of trivially-destructible event types. (`src/qb/core/Actor.h:873`)
 
-Both `push()` and `send()` are `noexcept`. The messaging hot path may grow a buffer or run an event constructor that throws (for example under out-of-memory); a throw across that `noexcept` boundary calls `std::terminate()` and aborts the process. Keep events small and allocation-light. This is intentional. (`src/qb/core/Actor.h:819-822`, `src/qb/core/Pipe.h:126`)
+Both `push()` and `send()` are `noexcept`. The messaging hot path may grow a buffer or run an event constructor that throws (for example under out-of-memory); a throw across that `noexcept` boundary calls `std::terminate()` and aborts the process. Keep events small and allocation-light. This is intentional. (`src/qb/core/Actor.h:871-874`, `src/qb/core/Pipe.h:126`)
 
 Ordering is *pairwise*. `push()` orders messages along one source→destination pipe. It does not impose a global order across different sources or different destinations: if actors A and B both push to C, C sees A's messages in order and B's messages in order, but the two streams may interleave arbitrarily.
 
@@ -181,7 +181,7 @@ Both calls return the `CoreInitializer` for chaining and must run before `start(
 - **Assuming a global event order.** `push()` orders one source→destination pair, not the whole system. Do not rely on messages from different senders, or to different recipients, arriving in any particular interleaving.
 - **Letting an event constructor throw or allocate heavily.** `push()`/`send()` are `noexcept`; a throw across that boundary calls `std::terminate()`. Keep events small and allocation-light. (`src/qb/core/Pipe.h:126`)
 - **Blocking inside a handler or `on(qb::LoopEvent const&)`.** Both run on the `VirtualCore` event-loop thread. A blocking call (a synchronous syscall, a sleep, a long computation) stalls that core and every actor on it. Use [`qb-io`](./async_io.md)'s non-blocking operations instead. (`src/qb/core/ICallback.h:16`)
-- **Using `send()` where order matters.** `send()` gives no ordering guarantee even same-core, same-destination, and rejects non-trivially-destructible events. Default to `push()`. (`src/qb/core/Actor.h:821`)
+- **Using `send()` where order matters.** `send()` gives no ordering guarantee even same-core, same-destination, and rejects non-trivially-destructible events. Default to `push()`. (`src/qb/core/Actor.h:873`)
 - **Touching another core's actor state directly.** Holding a raw pointer to an actor on another core and calling its methods bypasses the model and races. Address it by `ActorId` and `push()`. (`src/qb/core/VirtualCore.h:177-178`)
 - **Configuring cores after `start()`.** Affinity, latency, and actor placement must be set before the engine runs; `Main::core()` throws once started. (`src/qb/core/Main.cpp:369`)
 

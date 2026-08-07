@@ -50,7 +50,7 @@ Use `push()`. It is the default and covers nearly every case.
 
 Neither row admits a **by-value `std::string`**, and that exclusion is independent of the ordering/destructibility axis above: the runtime relocates events with raw `memcpy`, copying the bytes to a new address and abandoning the source without running a destructor there. A member that points into its own storage — which is exactly what a *short* `std::string` is on libstdc++, whose small-string buffer is addressed by an internal pointer — keeps addressing the old bytes afterwards, so the receiver reads reused memory and `~basic_string()` frees an address that never came from the heap. This is not cross-core-only: the source pipe `memcpy`s what it already holds when it grows, and `reply`/`forward` byte-recycle the event, so a same-core `push` is exposed too. libc++ recomputes `data()` from `this`, which is why the defect corrupts on Linux while passing every macOS test. Use `qb::string<N>` for bounded text, or box the string in a `std::shared_ptr`. See [Messaging](../4_qb_core/messaging.md#push--ordered-the-default) for the full rule.
 
-One contract applies to both, and to `broadcast()`: they are declared `noexcept`. If growing the pipe buffer or running an event constructor throws — for example, an allocation failure under memory pressure — the throw crosses the `noexcept` boundary and calls `std::terminate()` (`qb/src/qb/core/Actor.h:798,821,914`). Keep events small and allocation-light. Full messaging semantics live in [Messaging](../4_qb_core/messaging.md).
+One contract applies to both, and to `broadcast()`: they are declared `noexcept`. If growing the pipe buffer or running an event constructor throws — for example, an allocation failure under memory pressure — the throw crosses the `noexcept` boundary and calls `std::terminate()` (`qb/src/qb/core/Actor.h:850,873,966`). Keep events small and allocation-light. Full messaging semantics live in [Messaging](../4_qb_core/messaging.md).
 
 ## Why is `qb::string<N>` preferred over `std::string` for event fields?
 
@@ -95,20 +95,20 @@ qb does not implement an Erlang-style supervision tree, and it does not catch ex
 2. **A fail-stop boundary.** An exception that escapes an actor handler is *not* caught per-actor — it unwinds the worker thread and stops every actor on that `VirtualCore`. Design handlers so a throw is either impossible or caught locally.
 3. **Typed I/O error events.** Network and protocol failures arrive as events (for example `qb::io::async::event::disconnected`), not as exceptions, so you handle them in an `on()` overload like any other message.
 
-To signal a *local* failure, return `false` from `onInit()` to abort an actor's startup, or call `kill()` to terminate an actor cleanly (`qb/src/qb/core/Actor.h:317` and `:367`). Supervision strategies — health checks, restart, escalation — are application code you build on top of the boundary. The full treatment, including the `qb::Main` failure-reporting API, is in [Error handling and resilience](../6_guides/error_handling.md).
+To signal a *local* failure, return `false` from `onInit()` to abort an actor's startup, or call `kill()` to terminate an actor cleanly (`qb/src/qb/core/Actor.h:322` and `:372`). Supervision strategies — health checks, restart, escalation — are application code you build on top of the boundary. The full treatment, including the `qb::Main` failure-reporting API, is in [Error handling and resilience](../6_guides/error_handling.md).
 
 ## Can I use coroutines inside an actor?
 
-Yes — through two entry points, `spawn()` (recommended) and `spawn_detached()`, under strict lifetime rules. They are the only supported way to run a coroutine from within an actor (`qb/src/qb/core/Actor.h:1186-1187` and `:1098`). `spawn()` *scopes* the coroutine to the actor — it is cancelled when the actor is killed — and hands it a `qb::ScopedCoroContext` with cancellation-aware operations and the native `ask()` request/response helper; `spawn_detached()` runs the coroutine detached, so it outlives the actor and receives a plain `qb::CoroContext`. Prefer `spawn()` unless the work must deliberately outlive its actor.
+Yes — through two entry points, `spawn()` (recommended) and `spawn_detached()`, under strict lifetime rules. They are the only supported way to run a coroutine from within an actor (`qb/src/qb/core/Actor.h:1238-1239` and `:1150`). `spawn()` *scopes* the coroutine to the actor — it is cancelled when the actor is killed — and hands it a `qb::ScopedCoroContext` with cancellation-aware operations and the native `ask()` request/response helper; `spawn_detached()` runs the coroutine detached, so it outlives the actor and receives a plain `qb::CoroContext`. Prefer `spawn()` unless the work must deliberately outlive its actor.
 
 A spawned coroutine runs in an isolated context and **must not touch actor state after a `co_await`**: the actor may be destroyed while the coroutine is suspended, so dereferencing `this` or an actor member after suspension is undefined behavior. The rules:
 
 - Copy every value you need **by value before the first `co_await`**. Never capture `this` or a reference to an actor member.
-- After suspension, communicate only through the `CoroContext` argument. `ctx.push<Event>(args…)` posts an event back to the spawning actor itself; `ctx.push_to<Event>(dest, args…)` posts to another actor by id (`qb/src/qb/core/Actor.h:1345-1351` and `:1309`). Both are safe even after the spawning actor has died — events addressed to a dead actor are dropped by the router. `ctx.id()` and `ctx.time()` are also safe (`qb/src/qb/core/Actor.h:1325` and `:1333`).
+- After suspension, communicate only through the `CoroContext` argument. `ctx.push<Event>(args…)` posts an event back to the spawning actor itself; `ctx.push_to<Event>(dest, args…)` posts to another actor by id (`qb/src/qb/core/Actor.h:1397-1403` and `:1361`). Both are safe even after the spawning actor has died — events addressed to a dead actor are dropped by the router. `ctx.id()` and `ctx.time()` are also safe (`qb/src/qb/core/Actor.h:1377` and `:1385`).
 - Keep coroutines short-lived; a long-running coroutine widens the window in which the actor can die underneath it.
 
 ```cpp
-// src: derived from qb/src/qb/core/Actor.h spawn contract (Actor.h:1135)
+// src: derived from qb/src/qb/core/Actor.h spawn contract (Actor.h:1187)
 #include <qb/actor.h>          // qb::Actor, CoroContext
 #include <qb/io/async.h>       // qb::io::async::task
 
@@ -145,7 +145,7 @@ Through `ActorId` values, obtained in one of several ways:
 - **At creation.** Capture the `ActorId` returned (or the handle) when you add an actor, and pass it to the actors that need to reach it.
 - **In event payloads.** Include `id()` in an event so the receiver can reply.
 - **Service actors.** A `ServiceActor<Tag>` is a per-core singleton. Same-core actors fetch a typed pointer with `getService<T>()`; any core resolves its id with `getServiceId<Tag>(core_id)`.
-- **`require<T...>()`.** Ask the framework to locate live instances of given actor types; matching actors reply with `qb::RequireEvent` carrying their `ActorId` (`qb/src/qb/core/Actor.h:945-946`).
+- **`require<T...>()`.** Ask the framework to locate live instances of given actor types; matching actors reply with `qb::RequireEvent` carrying their `ActorId` (`qb/src/qb/core/Actor.h:997-998`).
 - **A custom registry actor** you write, acting as a naming service.
 
 Patterns are detailed in [Actor patterns](../4_qb_core/patterns.md).
