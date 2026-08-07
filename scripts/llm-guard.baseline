@@ -1,0 +1,28 @@
+# llm-guard.baseline — exceptions for scripts/llm-guard.py, each VERIFIED BY HAND.
+#
+# Format:  <doc>  TAB  <key>  TAB  <why this finding is not a defect>
+#   key = <cited-path>:<lo>-<hi>   for a `citations` finding
+#         symbol:<name>            for a `symbols` finding whose name belongs to another repo
+#
+# Only `citations` and cross-repo `symbols` findings can be listed here. `paths`, `forbidden`,
+# `phantom`, `version`, out-of-bounds and `vacuous` are deterministic and always fail.
+#
+# The key carries the CITED coordinates (or the symbol name) on purpose: a citation that later
+# drifts to a different line stops matching its entry and the gate fires. It deliberately does
+# NOT carry the doc-side line number, so editing prose above a citation does not re-key it.
+# An entry matching nothing is reported as `baseline-stale` and FAILS, so this file cannot rot
+# into a blanket exemption.  Re-derive with: python3 scripts/llm-guard.py --no-baseline
+#
+# KNOWN LIMIT, stated because it has already cost something.  A key pins the citation against
+# the CITATION moving; it does not pin it against the SOURCE moving underneath a citation that
+# stays put.  Rule 2b (the digest) is what covers that — and it cannot key a citation whose
+# basename is ambiguous inside this repo, which is 8 of qb's 77 resolvable cited ranges.
+# `llm/qb.llm.md` cited `listener.h:936-942` for the run/run_once/run_until logic_error; the
+# throw had moved to :989 and the cited lines had become an unrelated comment about
+# thread_local symbol tables, while the entry here still asserted ":940" and absorbed the
+# finding.  Corrected to :980-993 when the docs moved into this repo.  When re-verifying an
+# entry, read the cited lines — do not trust the note.
+
+llm/qb.llm.md	listener.h:980-993	correct: `ensure_not_inside_ready_drain` is qb/src/qb/io/async/listener.h:980-993 and the std::logic_error for async::run/run_once/run_until inside a handler is thrown at :989. The rule's inferred subject `run_sync` is only named in a neighbouring @note at :805.
+llm/qb.llm.md	config.h:251-251	correct: QB_MAX_READ_BUFFER_SIZE is qb/src/qb/io/config.h:251. The rule's inferred subject `not_ok` belongs to the sibling target base.h:276, not to this one.
+llm/qb.llm.md	ssl/context.h:127-127	correct: `class QB_API Context` is qb/src/qb/io/tcp/ssl/context.h:127. `SSL_CTX_free` is named in passing as the thing you must NOT call.

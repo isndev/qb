@@ -1,0 +1,900 @@
+<!-- Verified-against: qb 3.0.0 (C++20 default, C++23 supported). Source of truth: the headers under qb/src. -->
+# QB Core & QB IO — API Reference for LLMs
+
+Deterministic public-API reference for the `qb-core` and `qb-io` libraries of the
+**qb C++20-first actor framework with optional C++23 support**. Every signature below was verified against the
+headers under `qb/src`. Entries are grouped by namespace, then by class /
+free function. Private and `detail::` symbols are excluded.
+
+**Canonical time model** (`<qb/system/time.h>`): all timeouts / TTLs /
+intervals / delays / latencies are `qb::duration` (a `std::chrono::nanoseconds`
+span; accepts any finer-or-equal chrono literal implicitly, rejects bare
+integers). Monotonic instants are `qb::mono_time` (`steady_clock::time_point`);
+wall-clock instants are `qb::wall_time` (`system_clock::time_point`). The retired
+tokens `qb::Timestamp`, `qb::Duration`, `qb::TimePoint`, `to_timestamp(`,
+`to_time_point(` are forbidden and never appear in the current API.
+
+Conventions: signatures are shown verbatim; `[T]` = template; "→" = returns;
+"throws" lists exceptions; "use:" gives one minimal call line. Methods marked
+`noexcept` that allocate may call `std::terminate` under OOM.
+
+---
+
+# Part 1 — `qb-core`
+
+## Namespace `qb`
+
+### Identifiers & type aliases (`<qb/core/ActorId.h>`)
+
+| Alias | Definition | Purpose |
+|---|---|---|
+| `qb::CoreId` | `uint16_t` | Logical core index. |
+| `qb::ServiceId` | `uint16_t` | Service slot within a core. |
+| `qb::TypeId` | `uint16_t` | Per-type id. |
+| `qb::EventId` | `TypeId` | Event type id. |
+| `qb::ActorIdList` | `std::vector<ActorId>` | Ordered actor ids. |
+| `qb::ActorIdSet` | `std::unordered_set<ActorId>` | Unordered actor ids. |
+| `qb::CoreIdSet` | `CoreIdBitSet` | Bitset of core ids. |
+| `qb::actor` / `qb::service_actor<Tag>` | `Actor` / `ServiceActor<Tag>` | Lowercase aliases. |
+| `qb::core_id` / `service_id` / `actor_id` / `broadcast_id` | resp. types | Lowercase aliases. |
+
+Constants: `qb::MaxCores = 256` (ActorId.h). `qb::NoAffinity = numeric_limits<CoreId>::max()` (Main.h) — sentinel "no CPU affinity"; any `CoreId >= MaxCores` is silently ignored.
+
+### `class qb::ActorId`
+Compound unique actor address = `ServiceId` + `CoreId`, bit-castable to/from `uint32_t`.
+*   `ActorId() noexcept` — equals `NotFound` (invalid).
+*   `ActorId(uint32_t id) noexcept` — construct from raw value.
+*   `static constexpr uint32_t NotFound = 0;`
+*   `static constexpr ServiceId BroadcastSid = (numeric_limits<ServiceId>::max)();`
+*   `[[nodiscard]] ServiceId sid() const noexcept` — service id.
+*   `[[nodiscard]] CoreId index() const noexcept` — core index.
+*   `[[nodiscard]] bool is_broadcast() const noexcept` — true when `sid() == BroadcastSid`.
+*   `[[nodiscard]] bool is_valid() const noexcept` — true when raw value `!= NotFound`.
+*   `operator uint32_t() const noexcept` — raw value.
+*   `std::hash<qb::ActorId>` specialization exists (hash = the uint32 value).
+*   use: `qb::ActorId dst = actor.id();`
+
+### `class qb::BroadcastId : public ActorId`
+Targets all actors on one core (uses `BroadcastSid`). Default ctor deleted.
+*   `explicit BroadcastId(uint32_t core_id) noexcept`
+*   use: `push<MyEvent>(qb::BroadcastId(core_index), args...);`
+
+### `class qb::CoreIdBitSet` (alias `qb::CoreIdSet`)
+`std::bitset<MaxCores>`-backed set of `CoreId`. Out-of-range ids (e.g. `NoAffinity`) are silently skipped.
+*   `CoreIdBitSet()`, `explicit CoreIdBitSet(const qb::unordered_set<CoreId>&)`, `CoreIdBitSet(std::initializer_list<CoreId>)`
+*   `bool contains(CoreId) const noexcept`, `void insert/emplace/remove(CoreId) noexcept`
+*   `void clear() noexcept`, `bool empty() const noexcept`, `size_t size() const noexcept`
+*   `std::vector<CoreId> to_vector() const`, `qb::unordered_set<CoreId> to_unordered_set() const`, `raw()`
+*   `iterator begin() const`, `iterator end() const` (forward iterator)
+*   use: `qb::CoreIdSet cores{0, 1, 2};`
+
+### `class qb::CoreInitializer : nocopy` (`<qb/core/Main.h>`)
+Per-core pre-start config (affinity, latency, initial actors). Obtain via `Main::core(id)`. Pre-start only.
+*   `[T<_Actor,_Args...>] ActorId addActor(_Args&&... args) noexcept` — schedule an actor; → `ActorId::NotFound` on failure (duplicate ServiceActor or max reached).
+*   `[[nodiscard]] ActorBuilder builder() noexcept` — fresh builder for fluent chaining.
+*   `CoreInitializer& setAffinity(const CoreIdSet& cores = {}) noexcept` — CPU pinning; empty = OS default. Chainable.
+*   `CoreInitializer& setLatency(qb::duration latency = qb::duration::zero()) noexcept` — idle event-loop latency; `0` = busy-spin. Chainable.
+*   `[[nodiscard]] CoreId getIndex() const noexcept`
+*   `[[nodiscard]] const CoreIdSet& getAffinity() const noexcept` — default is `{index}`.
+*   `[[nodiscard]] qb::duration getLatency() const noexcept`
+*   `void clear() noexcept` — drop pending factories/services/affinity.
+*   use: `main.core(0).setLatency(100us).addActor<MyActor>(cfg);`
+
+#### `class qb::CoreInitializer::ActorBuilder`
+Fluent multi-actor helper. Copyable; not default-constructible.
+*   `[T<_Actor,_Args...>] ActorBuilder& addActor(_Args&&... args) noexcept` — chainable; failures flip `valid()`.
+*   `[[nodiscard]] bool valid() const noexcept`, `explicit operator bool() const noexcept`
+*   `[[nodiscard]] ActorIdList idList() const noexcept` — ids in creation order.
+*   use: `auto ids = main.core(0).builder().addActor<A>().addActor<B>().idList();`
+
+Alias: `qb::CoreInitializerMap = qb::unordered_map<CoreId, CoreInitializer>`.
+
+### `class qb::Main` (alias `qb::engine`) (`<qb/core/Main.h>`)
+Engine controller: configures cores, spawns worker threads, runs the actor system. Configure all actors/cores **before** `start()`.
+*   `Main() noexcept` — no cores spawned yet.
+*   `void start(bool async = true) noexcept` — start all VirtualCore threads; `async=true` returns immediately (then `join()`), `async=false` blocks the calling thread until stopped.
+*   `[[nodiscard]] bool hasError() const noexcept` — true if any core failed to start / died early; check after `join()`.
+*   `static void stop() noexcept` — async-signal-safe graceful shutdown (sets pending SIGINT); callable from any thread / signal handler.
+*   `void join()` — block until all worker threads terminate (after async `start`).
+*   `[T<_Actor,_Args...>] ActorId addActor(CoreId index, _Args&&... args)` — shorthand for `core(index).addActor<_Actor>(args...)`; → `NotFound` on failure.
+*   `[[nodiscard]] CoreInitializer& core(CoreId index)` — per-core config; throws `std::runtime_error` if running, `std::range_error` if `index >= MaxCores`.
+*   `void setLatency(qb::duration latency = qb::duration::zero())` — default idle latency for all cores; pre-start only.
+*   `[[nodiscard]] qb::CoreIdSet usedCoreSet() const` — cores that will be launched.
+*   `static void registerSignal(int signum) noexcept` — route `signum` to a `SignalEvent` on every actor. SIGINT **and** SIGTERM are auto-registered by `start()` (`install_default_signals`); only those two shut the engine down by default — any other signal you register is delivered but non-terminal until you override `Actor::on(SignalEvent const&)`.
+*   `static void unregisterSignal(int signum) noexcept` — restore `SIG_DFL`.
+*   `static void ignoreSignal(int signum) noexcept` — set `SIG_IGN` (e.g. SIGPIPE).
+*   `using ActorIdList = CoreInitializer::ActorBuilder::ActorIdList;`
+*   use: `qb::Main m; m.addActor<MyActor>(0); m.start(); m.join();`
+
+### `class qb::Actor : nocopy` (`<qb/core/Actor.h>`)
+Base class for all actors. Communicate **exclusively via events**. Non-copyable. Each actor has a unique `ActorId`. Must be constructed from within a VirtualCore worker thread.
+*   `Actor() noexcept` (protected) — generates id, registers the 5 default system handlers (Kill/Signal/UnregisterCallback/Ping/Require).
+*   `explicit Actor(no_default_events_t) noexcept` (protected) — registers NO default events; derived must register at least `KillEvent` in `onInit()`.
+*   `virtual ~Actor() noexcept = default` (protected).
+*   `virtual qb::io::async::task<bool> onInit()` (protected; default `co_return true`) — async coroutine for one-time init after id assignment, before event processing; may `co_await`. `co_return true` activates the actor; `co_return false` or throwing aborts & destroys it. While suspended the actor is *Activating*. Register event handlers here.
+*   `void kill() const noexcept` — flag for removal; stops new events, drains queued, destroyed later by VirtualCore.
+*   Default system event handlers (overridable): `void on(const KillEvent&) noexcept` (calls `kill()`), `void on(const SignalEvent&) noexcept` (kills on **SIGINT or SIGTERM** — the two terminal signals; every *other* registered signal is deliberately non-terminal, so override this handler to act on e.g. SIGHUP/SIGUSR1), `void on(const UnregisterCallbackEvent&) noexcept`, `void on(const PingEvent&) noexcept`.
+
+Accessors:
+*   `[[nodiscard]] ActorId id() const noexcept`
+*   `[[nodiscard]] CoreId getIndex() const noexcept`
+*   `[[nodiscard]] std::string_view getName() const noexcept` — demangled type name.
+*   `[[nodiscard]] const CoreIdSet& getCoreSet() const noexcept`
+*   `[[nodiscard]] uint64_t time() const noexcept` — VirtualCore cached timestamp, **nanoseconds since epoch** (constant within one handler/`on(qb::LoopEvent const&)` tick). For continuous high-precision time use `qb::unix_nanos(qb::wall_now())`.
+*   `[T<_ServiceActor>] [[nodiscard]] _ServiceActor* getService() const noexcept` — same-core service pointer, or `nullptr`.
+*   `[[nodiscard]] bool is_alive() const noexcept` — true until `kill()` processed.
+*   `[[nodiscard]] bool is_actor_alive(ActorId id) const noexcept` — untyped liveness probe for *another* actor: true iff `id` names an actor on **this** VirtualCore that is alive and whose `onInit()` has completed. One hash lookup, no `dynamic_cast` (the type-erased sibling of `ActorHandle<T>::ready()`). Use it to prune bookkeeping that stores bare `ActorId`s — subscriber lists, routing tables — as `qb::PubSub<Topic>` does; the framework prunes only its *own* subscription map when an actor dies. **Same-core only**: `false` for a remote id proves nothing, so use `co_await qb::ping(...)` for cross-core liveness.
+
+Callback management (requires deriving `ICallback`):
+*   `[T<_Actor>] void registerCallback(_Actor& actor) const noexcept` — per-loop `on(qb::LoopEvent const&)` ticks.
+*   `[T<_Actor>] void unregisterCallback(_Actor& actor) const noexcept`
+*   `void unregisterCallback() const noexcept` — untyped; callable from inside `on(qb::LoopEvent const&)`.
+
+Event subscription:
+*   `[T<_Event,_Actor>] void registerEvent(_Actor& actor) const noexcept` — subscribe; actor must define `on(const _Event&)`. Call in `onInit()`.
+*   `[T<_Event,_Actor>] void unregisterEvent(_Actor& actor) const noexcept`
+*   `[T<_Event>] void unregisterEvent() const noexcept`
+
+Event sending:
+*   `[[nodiscard]] EventBuilder to(ActorId dest) const noexcept` — fluent ordered-push builder.
+*   `[T<_Event,_Args...>] _Event& push(const ActorId& dest, _Args&&... args) const noexcept` — **ordered** delivery; → mutable ref to the event (editable before flush). Supports non-trivially-destructible members.
+*   `[T<_Event,_Args...>] void send(const ActorId& dest, _Args&&... args) const noexcept` — **unordered** fire-and-forget; `_Event` must be trivially destructible. Prefer `push()`.
+*   `[T<_Event,_Args...>] [[nodiscard]] _Event build_event(qb::ActorId source, _Args&&... args) const noexcept` — construct an event locally without enqueuing (dest = `this->id()`).
+*   `[T<_Event,_Args...>] void broadcast(_Args&&... args) const noexcept` — to every actor on all cores. Single-core: `push<E>(qb::BroadcastId(core), ...)`.
+*   `void reply(Event& event) const noexcept` — reply to source (swaps dest↔source); handler must take event by non-const ref; broadcasts cannot be replied to.
+*   `void forward(ActorId dest, Event& event) const noexcept` — forward preserving source; same constraints as reply.
+*   `[[nodiscard]] Pipe getPipe(ActorId dest) const noexcept` — low-level pipe for `allocated_push`.
+*   `[T<..._Actors>] bool require() const noexcept` — actor discovery: broadcast a `PingEvent` per type; live actors reply via `RequireEvent` (handle with `registerEvent<RequireEvent>`).
+
+Type checks & referenced actors:
+*   `[T<_Type>] [[nodiscard]] bool is(uint32_t id) const noexcept`
+*   `[T<_Type>] [[nodiscard]] bool is(const RequireEvent& event) const noexcept`
+*   `[T<_Actor,_Args...>] qb::ActorHandle<_Actor> addRefActor(_Args&&... args) const` — create+init a referenced actor on the **same** core; returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating, after a failed init, or once it died — never a dangling pointer. Send to `handle.id()` any time; gate direct calls on `handle.ready()`. Parent does not own it.
+*   `[T<_Actor,_Args...>] [[nodiscard]] RefActorHandle<_Actor> addRefHandle(_Args&&... args) const` — like above but returns a liveness-checked handle (prefer across handler boundaries).
+
+Coroutines (C++20) — `spawn` is the default; `spawn_detached` is the low-level escape hatch:
+*   `[T<Func>] void spawn(Func&& func) const` — **preferred**. Runs `func(qb::ScopedCoroContext)` bound to the actor's per-actor cancellation scope: killing/destroying the actor cancels the scope, so a coroutine parked on `ctx.sleep` / `ctx.cancellation_point` / `ctx.until_cancelled` / `ctx.cancellable` / any patterns-library helper wakes on the next loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly (RAII + `catch` run). Must be called from the actor's own VirtualCore thread. Pass the lambda **without** trailing `()`. _(`spawn` declared `Actor.h:1152-1187`, body `VirtualCore.h:1131`)_
+*   `[T<Func>] void spawn_detached(Func&& func) const` — low level. Runs `func(qb::CoroContext)` in an isolated context that is **not** cancelled on kill: it runs to completion, orphaned. Use only for fire-and-forget work that must intentionally outlive the actor. It cannot drive `qb::ask` or any patterns helper (they require a `ScopedCoroContext`; a `CoroContext` is a compile error). _(`spawn_detached` declared `Actor.h:1092-1150`, body `VirtualCore.h:1118`)_
+*   Both: MUST NOT touch actor members after any `co_await` (the actor may be destroyed mid-suspension, and the scope does **not** legalise member access — it only bounds how long the coroutine can stay parked). Capture everything by value before the first `co_await`; reply via `ctx.push<Event>()` / `ctx.push_to<Event>(dest, …)`.
+*   `[[nodiscard]] ScopedCoroContext context() const` — the same cancellation-aware context, available wherever you hold the actor and **not** only inside a `spawn()` body: use it inside `onInit()` (itself a `task<bool>` with no `ctx` parameter) and as the first argument to every patterns free function (`qb::ask(context(), …)`). Lazily allocates the scope. _(`Actor.h:1189-1204`, `:1709-1713`)_
+*   `[T<E>] bool resolve_ask(E& e) const noexcept` — call from `on(E&)`; returns `true` if `e` matched a pending `qb::ask` of this actor and was delivered to the waiting coroutine, `false` if unsolicited.
+*   `[[nodiscard]] bool has_active_coroutines() const`, `[[nodiscard]] std::size_t active_coroutine_count() const`, `[[nodiscard]] bool has_coro_scope() const noexcept` (true once `spawn()` **or** `context()` lazily allocated the scope; `spawn_detached()` never does — `VirtualCore.h:1118-1119` vs `:1131-1133`).
+*   use: `registerEvent<MyEvent>(*this);` in `onInit`, then `void on(const MyEvent& e) { reply(...); }`.
+
+Tag: `struct no_default_events_t{}; inline constexpr no_default_events_t no_default_events{};` — pass to the protected ctor to opt out of default handlers.
+
+#### `class qb::Actor::EventBuilder`
+Returned by `Actor::to()`. Copyable, not default-constructible.
+*   `[T<_Event,_Args...>] EventBuilder& push(_Args&&... args) noexcept` — chained ordered sends to one destination.
+*   use: `to(dst).push<A>().push<B>();`
+
+#### `class qb::CoroContext`
+Safe restricted context handed to `spawn_detached` coroutines (captures the actor's `ActorId` by value, survives destruction — events to a dead actor are dropped, never delivered into freed memory). The `CoroContext` class is at _(`Actor.h:1332`)_; the alias `qb::coro_context` at _(`Actor.h:2194`)_.
+*   `[T<_Event,Args...>] void push(Args&&... args)` — push to self.
+*   `[T<_Event,Args...>] void push_to(ActorId dest, Args&&... args)` — push to a given dest.
+*   `[T<_Event,Args...>] void broadcast(Args&&... args)` — broadcast to all actors on all cores (backs `qb::require`).
+*   `[[nodiscard]] ActorId id() const noexcept`, `[[nodiscard]] uint64_t time() const noexcept` (epoch nanoseconds).
+
+#### `class qb::ScopedCoroContext : public CoroContext`
+Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb::scoped_coro_context`. A **superset** of `CoroContext` that also carries the actor's cancellation token, so everything below is cancelled when the actor is killed/destroyed. This is the type every `qb::` patterns free function takes. The `ScopedCoroContext` class is at _(`Actor.h:1621-1701`)_; the alias `qb::scoped_coro_context` at _(`Actor.h:2202`)_.
+*   `[[nodiscard]] const qb::io::async::cancellation_token& token() const noexcept`, `[[nodiscard]] bool cancelled() const noexcept`.
+*   `[[nodiscard]] qb::io::async::cancellation_token child_token() const` — a fresh token cancelled with the actor scope, cancellable independently.
+*   `[[nodiscard]] task<void> sleep(qb::duration d) const` — cancellation-aware sleep; throws `cancelled_error` on cancel.
+*   `[[nodiscard]] yield_awaiter cancellation_point() const` — `co_await` it inside a compute loop so a killed actor's coroutine bails between iterations.
+*   `[[nodiscard]] cancellation_awaiter until_cancelled() const` — park with no other work until the actor is killed (no timer allocated).
+*   `[T<T>] [[nodiscard]] auto cancellable(task<T>&& t) const` — wrap any `task<T>` so it is cancelled with the actor scope.
+
+#### `class qb::RefActorHandle<_Actor>`
+Type-safe weak reference to a same-core referenced actor. Dereference only on the owning core's thread.
+*   `ActorId id()`, `bool valid()`, `_Actor* get()` (re-resolves liveness, `nullptr` if dead), `operator->`, `operator*`, `explicit operator bool`.
+
+### `class qb::Service : public Actor`
+Internal base for per-core singleton-style actors. `explicit Service(ServiceId sid) noexcept`.
+
+### `class qb::ServiceActor<Tag> : public Service`
+Singleton actor base, unique per VirtualCore per `Tag`. Default-constructible.
+*   use: `struct MyService : qb::ServiceActor<MyTag> { ... };` then `getService<MyService>()`.
+
+### `class qb::Pipe` (`<qb/core/Pipe.h>`)
+Communication channel between actors (obtained via `Actor::getPipe`).
+*   `Pipe() = default`, `Pipe(const Pipe&) = default`
+*   `[T<_Event,_Args...>] _Event& push(_Args&&... args) const noexcept` — ordered push on this pipe.
+*   `[T<_Event,_Args...>] [[nodiscard]] _Event& allocated_push(std::size_t size, _Args&&... args) const noexcept` — `size` is the **trailing bytes reserved AFTER the event**, not the total: the impl does `size += sizeof(_Event)` then rounds up to whole buckets. Pass `0` unless you write raw bytes past the object. Passing `sizeof(_Event)+n` over-reserves a whole event and halves the cross-core ceiling.
+*   `[[nodiscard]] ActorId getDestination() const noexcept`, `[[nodiscard]] ActorId getSource() const noexcept`
+*   use: `auto p = getPipe(dst); p.allocated_push<BlobEvent>(0, blob);` — blob is heap-owned behind the `shared_ptr`, so no trailing bytes are needed.
+*   max in-pipe footprint for cross-core delivery: `65535 / QB_LOCKFREE_EVENT_BUCKET_BYTES` buckets (~1023, ≈64 KiB default). A bigger event is **dropped at flush** — it cannot fit the destination mailbox ring by construction, so the sender logs `LOG_CRIT`, disposes it and moves on rather than retrying forever and wedging the whole outbound pipe behind it (`qb/src/qb/core/VirtualCore.cpp`, `kMaxDeliverableBuckets`). Keep events small; put bulk data behind a pointer member.
+
+### `class qb::ICallback` (`<qb/core/ICallback.h>`, alias `qb::icallback`)
+Mixin: an actor deriving it and calling `registerCallback(*this)` gets `on(qb::LoopEvent const&)` every VirtualCore loop (after events, before pipe flush). Must be fast / non-blocking.
+*   `virtual ~ICallback();`
+*   `virtual void on(qb::LoopEvent const &) = 0;`
+*   use: `struct Worker : qb::Actor, qb::ICallback { qb::io::async::task<bool> onInit() override { registerCallback(*this); co_return true; } void on(qb::LoopEvent const &) override {...} };`
+
+### Events (`<qb/core/Event.h>`)
+
+#### `class qb::Event` (alias `qb::event`)
+Base class for all events; carries header state, id, dest, source. `dest`/`source` are framework-managed (private).
+*   `using id_handler_type = ActorId;` `using id_type = EventId` — **one representation in every build mode since 3.0** (it used to be `const char*` without NDEBUG, which moved `dest` from byte 8 to byte 16).
+*   `[T<T>] static id_type type_to_id() noexcept` — `T` must be a **complete** type (it reaches `typeid(T)`).
+*   `[T<T>] static char const *type_to_name() noexcept` — `typeid(T).name()`; diagnostics only.
+*   `[[nodiscard]] bool is_alive() const noexcept` — the reuse marker `reply()`/`forward()` set; **false** on a freshly built event.
+*   `[[nodiscard]] id_type getID() const noexcept`
+*   `[[nodiscard]] uint8_t getQOS() const noexcept` — **2** by default (`EventQOS2 == Event`); disjoint from the liveness bit.
+*   `[[nodiscard]] id_handler_type getDestination() const noexcept`, `getSource() const noexcept`
+*   `[[nodiscard]] std::size_t getSize() const noexcept`
+*   free function `[[nodiscard]] char const *qb::event_type_name(Event::id_type) noexcept` — reverse-resolves a runtime `getID()` to `typeid(T).name()`, or `"<unregistered>"`. Diagnostics only; the router never calls it.
+
+#### QoS tiers
+*   `using EventQOS2 = Event;` (highest), `using EventQOS1 = Event;` (medium) — both are the base
+    `Event`, so the engine really implements two tiers: `qos != 0` (guaranteed: bounded backoff, kept
+    in the pipe on backpressure) and `qos == 0` (best-effort: dropped on backpressure).
+*   `struct EventQOS0 : public Event {}` — distinct type, `qos=0` (lowest; unordered fire-and-forget).
+    Must be trivially destructible (static-asserted), and its QOS survives `reply()`/`forward()`.
+
+#### `struct qb::ServiceEvent : public Event` (alias `qb::service_event`)
+Service-to-service event.
+*   members: `id_handler_type forward; id_type service_event_id;`
+*   `void received() noexcept` — swap dest↔forward and id↔service_event_id, mark alive.
+*   `void live(bool) noexcept`
+
+#### Standard system events
+`KillEvent`/`UnregisterCallbackEvent`/`SignalEvent` derive directly from `Event`; `PingEvent`/`RequireEvent` derive from `CorrelatedEvent` (which carries `correlation_id` — see below).
+*   `struct KillEvent : public Event {}` — terminates an actor.
+*   `struct UnregisterCallbackEvent : public Event {}` — unregister periodic callback.
+*   `struct SignalEvent : public Event { int signum; }` — carries a signal number.
+*   `struct PingEvent : CorrelatedEvent { const uint32_t type; explicit PingEvent(uint32_t actor_type); }` — discovery/health-check; broadcast by `require<T>()`.
+*   `struct RequireEvent : CorrelatedEvent { const uint32_t type; }` — discovery reply (a reply means alive; no status field). Auto-routed to `ping`/`require`; legacy: match with `is<T>(event)`.
+*   `struct CorrelatedEvent : Event { std::uint64_t correlation_id; }` — base for correlated coroutine replies (ask / stream / discovery); the activation gate routes these into `onInit`.
+
+#### Event templates
+*   `[T<_Args...>] struct WithData : Event { std::tuple<_Args...> data; explicit WithData(_Args&&...); }`
+*   `struct WithoutData : Event {}`
+*   `struct AskData : WithoutData {}`
+*   `[T<_Args...>] struct FillEvent : WithData<_Args...> { FillEvent(); explicit FillEvent(_Args&&...); }`
+
+Aliases: `using VirtualPipe = allocator::pipe<EventBucket>;`.
+
+### Concepts (`<qb/core/Actor.h>`)
+`event_type`, `actor_type`, `service_type`, `callback_type`, `trivial_event` (= `event_type` + trivially-destructible), `event_qos0_type`, `service_event_type` — constrain template params.
+
+### Type id (`<qb/core/Event.h>`)
+*   `[T<T>] [[nodiscard]] TypeId type_id() noexcept` — dense, collision-free 16-bit per-type id, stable for program lifetime (up to 65535 types).
+
+### `class qb::VirtualCore` (`<qb/core/VirtualCore.h>`)
+Worker thread running the event loop over its actors. Construction/lifecycle is engine-private; only getters are public.
+
+### Internal actor-factory hooks (advanced, customization points)
+*   `[T<_Actor,_Args...>] [[nodiscard]] _Actor* qb::allocate_actor(_Args&&... args)` — ADL customization point for actor allocation (default `new _Actor(args...)`); plug in pools/arenas/PMR.
+
+## Patterns (`<qb/core/patterns.h>`)
+Header-only free functions / helper types over the kernel (`Actor` / `ScopedCoroContext`); the kernel holds no pattern logic. All are **core-local** (single-thread, no locking). `qb::AskEvent` (carries `correlation_id`) and `Actor::resolve_ask(e)` live in core (`<qb/core/Actor.h>`); the rest below are in `patterns/`. Snake_case aliases exist for the PascalCase types (`circuit_breaker`, `rate_limiter`, `worker_pool`, `supervisor`, …).
+
+### Request / response (`request.h`)
+*   `[concept] ask_event_type<E>` — `derived_from<AskEvent>` + `copyable`.
+*   `[T<Resp>] struct Request<Resp> : AskEvent { Resp response{}; using response_type=Resp; }` (alias `request`).
+*   `[T<E:ask_event_type>] [[nodiscard]] task<E> ask(ScopedCoroContext ctx, ActorId target, E req, qb::duration timeout)` — send + co_await the reply; throws `timeout_error` / `cancelled_error` (kill).
+*   `[T<E,Fn>] void answer(Actor& self, E& e, Fn&& fn)` — responder side: `resolve_ask` first, else `e.response = fn(e)` and `reply(e)`. `Fn`: `Resp(E const&)`.
+*   `struct deadline { std::uint64_t at_ns; }` — absolute completion time (epoch ns) shared across a chain.
+*   `[[nodiscard]] deadline deadline_in(ScopedCoroContext ctx, qb::duration dur)` / `[[nodiscard]] qb::duration remaining(deadline dl, ScopedCoroContext ctx)`.
+*   `[T<E>] [[nodiscard]] task<E> ask_by(ScopedCoroContext ctx, ActorId target, E req, deadline dl)` — `ask` bounded by `remaining(dl)`; fails fast (`timeout_error`) once the budget is spent. Thread one `deadline` down a chain to bound total latency.
+
+### Discovery / liveness (`discovery.h`)
+Coroutine replacement for the legacy `Actor::require<...>()` + `is<T>()` dance (still available). Replies carry an echoed `correlation_id` (via `CorrelatedEvent`) and are routed through the unified continuation registry — so `ping`/`require` work inside `onInit` with no `on(RequireEvent)` boilerplate. `PingEvent` type `0` = wildcard liveness.
+*   `[[nodiscard]] task<bool> ping(ScopedCoroContext ctx, ActorId target, qb::duration timeout=1s)` — targeted liveness probe; cancel-on-kill.
+*   `[T<_Actor>] [[nodiscard]] task<std::vector<ActorId>> require(ScopedCoroContext ctx, qb::duration timeout=200ms)` — discover live actors of a type within the window.
+*   Replies are routed automatically: `RequireEvent` is auto-handled by `Actor` (no `on(RequireEvent)` needed); `ping`/`require` work inside `onInit` too.
+
+### Idempotency (`idempotency.h`)
+*   `[concept] idempotent_event<E>` — `ask_event_type<E>` + has `e.response` and `e.idempotency_key`.
+*   `[T<Key,Resp>] class dedup_map { explicit dedup_map(size_t capacity=1024); const Resp* find(Key); void put(Key,Resp); bool contains(Key) const; size_t size()/capacity() const; void clear(); }` — bounded **LRU** of key→response (responder member).
+*   `[T<E:idempotent_event,Cache,Fn>] void answer_idempotent(Actor& self, E& e, Cache& cache, Fn&& fn)` — runs `fn` (the effect) **once per non-default `idempotency_key`**, replays the cached response on repeats; a default-valued key bypasses the cache.
+
+### Aggregation (`aggregate.h`)
+*   `[T<T>] class batcher { batcher(size_t max, qb::duration window, std::function<void(std::vector<T>&&)> on_flush); void add(ScopedCoroContext ctx, T item); void flush(); size_t pending() const; }` — flush on count **or** time window (whichever first); window timer is scope-bound (cancelled on kill). Actor member; `on_flush` may reference the actor.
+
+### Streaming (`streaming.h`)
+*   `[T<Chunk>] struct StreamRequest<Chunk> : AskEvent { Chunk chunk{}; bool stream_done=false; using chunk_type=Chunk; }` (alias `stream_request`).
+*   `[concept] stream_event_type<E>` — `derived_from<AskEvent>` + `copyable` + has `chunk`/`stream_done`/`chunk_type`.
+*   `struct stream_overflow_error : std::runtime_error` — responder outran the buffer.
+*   `[T<E>] class stream { /* move-only, single-consumer */ [[nodiscard]] <awaiter> next(); }` — `co_await s.next()` → `std::optional<E>` (`nullopt` at end-of-stream); throws `timeout_error` (per-chunk) / `cancelled_error` / `stream_overflow_error`.
+*   `[T<E:stream_event_type>] [[nodiscard]] stream<E> ask_stream(ScopedCoroContext ctx, ActorId target, E req, qb::duration timeout=5s, size_t capacity=256)` — start a streaming request.
+*   Asker routes chunks with `Actor::resolve_ask(e)` in its `on(E&)` (chunks are `AskEvent`s). Works inside `onInit`.
+*   `[T<E>] void yield_answer(Actor& self, E const& request, E::chunk_type chunk)` / `void end_stream(Actor& self, E const& request)` — responder: emit a chunk / signal end-of-stream.
+
+### Scatter-gather (`scatter.h`)
+*   `[T<E>] [[nodiscard]] task<std::vector<E>> ask_all(ScopedCoroContext ctx, std::vector<ActorId> targets, E req, qb::duration timeout)` — fan out, gather **all** (input order).
+*   `[T<E>] [[nodiscard]] task<std::vector<E>> ask_all(..., size_t max_in_flight)` — bounded **sliding window** (cancel-safe).
+*   `[T<E>] [[nodiscard]] task<E> ask_any(ScopedCoroContext ctx, std::vector<ActorId> targets, E req, qb::duration timeout)` — first reply wins; losers are reclaimed at once (`when_any` tears down each loser, stopping its ask timer — no lingering).
+*   `[T<E>] [[nodiscard]] task<std::vector<E>> ask_quorum(ScopedCoroContext ctx, std::vector<ActorId> targets, size_t k, E req, qb::duration timeout)` — first **k** of N; throws `timeout_error` if the quorum becomes unreachable.
+
+### Resilience (`resilience.h`)
+*   `struct retry_policy { int max_attempts=3; qb::duration backoff=50ms; double multiplier=2.0; qb::duration max_backoff=1s; double jitter=0.0; }` — `jitter` in `[0,1]` randomizes each backoff over `[b*(1-jitter), b]`.
+*   `struct circuit_open_error : std::runtime_error`.
+*   `class CircuitBreaker (alias circuit_breaker) { CircuitBreaker(unsigned failure_threshold, qb::duration cooldown); bool allow(uint64_t now_ns); void on_success(); void on_failure(uint64_t now_ns); void on_abandoned(uint64_t now_ns); State state() const; unsigned failure_count() const; enum class State{closed,open,half_open}; }` — half-open admits a single trial.
+*   `[T<E>] [[nodiscard]] task<E> ask_retry(ScopedCoroContext ctx, ActorId target, E req, qb::duration timeout, retry_policy policy={})` — retry with (jittered) exponential backoff; cancel-on-kill.
+*   `[T<E>] [[nodiscard]] task<E> ask_guarded(ScopedCoroContext ctx, std::shared_ptr<CircuitBreaker> breaker, ActorId target, E req, qb::duration timeout)` — fail fast with `circuit_open_error` when open.
+*   `class rate_limiter (alias token_bucket) { rate_limiter(double capacity, qb::duration per_token); bool try_acquire(uint64_t now_ns); [[nodiscard]] task<void> acquire(ScopedCoroContext ctx); double tokens(uint64_t now_ns); }` — cancellation-aware throttle.
+*   `class bulkhead { explicit bulkhead(size_t max_concurrent); class slot; [[nodiscard]] task<slot> enter(ScopedCoroContext ctx); bool try_enter(slot& out); size_t available() const; }` — caps concurrency; `enter` waits cancellation-aware, returns an RAII `slot`.
+
+### Saga (`saga.h`)
+*   `class SagaScope (alias saga_scope) { [T<Comp>] void on_compensate(Comp&& comp); task<void> compensate(); size_t pending() const; }` — `Comp`: `()->task<void>`; `compensate` runs rollbacks in reverse (cancellation-aware).
+*   `[T<Body>] [[nodiscard]] task<void> run_saga(ScopedCoroContext ctx, Body body)` — `Body`: `(ScopedCoroContext, SagaScope&)->task<void>`; auto-compensates on throw.
+
+### Routing (`routing.h`)
+*   `class WorkerPool (alias worker_pool) { WorkerPool(); explicit WorkerPool(std::vector<ActorId> workers); ActorId next(); ActorId for_key(uint64_t key) const; void add(ActorId); void remove(ActorId); bool empty() const; size_t size() const; const std::vector<ActorId>& workers() const; }` — round-robin (`next`) or sticky-by-key (`for_key`) dispatch target picker. `next`/`for_key` assert on an empty pool.
+
+### Pub/sub (`pubsub.h`)
+*   `[T<Topic>] class PubSub (alias pub_sub) : ServiceActor<PubSub<Topic>>` — per-core bus (a publication reaches subscribers on the bus's own core only). `void subscribe(ActorId)`, `void unsubscribe(ActorId)`, `[T<Args...>] void publish(Args const&... args)`, `size_t subscriber_count() const`.
+
+### Supervision (`supervisor.h`)
+*   `enum class restart_strategy { one_for_one, one_for_all, rest_for_one }`.
+*   `struct ChildDown : Event { … }` (alias `child_down`) — a supervised child reports failure.
+*   `class SupervisedActor : Actor (alias supervised_actor)` — base for children; reports `ChildDown` to its supervisor on failure.
+*   `class Supervisor : Actor (alias supervisor) { Supervisor(restart_strategy strategy, size_t child_count, unsigned max_restarts=0, qb::duration restart_window=0); virtual ActorId spawn_child(size_t slot, uint64_t generation)=0; }` — restarts children per strategy; `max_restarts`+`restart_window` give sliding-window intensity; a `KillEvent` tears down children first (no orphans).
+
+---
+
+# Part 2 — `qb-io`
+
+## Namespace `qb` (utility surface shared by qb-io)
+
+### Time model (`<qb/system/time.h>`)
+*   `using duration = std::chrono::nanoseconds;` — THE canonical span type.
+*   `using mono_time = std::chrono::steady_clock::time_point;`
+*   `using wall_time = std::chrono::system_clock::time_point;`
+*   `[[nodiscard]] mono_time mono_now() noexcept` — current monotonic instant.
+*   `[[nodiscard]] wall_time wall_now() noexcept` — current wall-clock instant.
+*   `inline namespace time_literals { using namespace std::chrono_literals; }` — `30s`, `100ms`, `5us`, … usable directly under `qb`.
+*   `[[nodiscard]] std::int64_t unix_seconds(wall_time) noexcept` / `unix_millis` / `unix_micros` / `unix_nanos` — epoch scalars.
+*   `[[nodiscard]] wall_time wall_from_unix_seconds(std::int64_t) noexcept` / `wall_from_unix_millis(std::int64_t) noexcept` / `wall_from_unix_nanos(std::int64_t) noexcept` (no micros builder).
+*   `[[nodiscard]] std::string format_utc(wall_time, std::string_view fmt)` — strftime UTC; "" on failure.
+*   `[[nodiscard]] std::string to_iso8601(wall_time)` — `YYYY-MM-DDTHH:MM:SSZ` (seconds resolution).
+*   `[[nodiscard]] std::optional<wall_time> parse_utc(std::string_view str, std::string_view fmt) noexcept` — always UTC; `nullopt` on error.
+*   `[[nodiscard]] std::optional<wall_time> from_iso8601(std::string_view) noexcept`
+*   `[[nodiscard]] std::uint64_t tsc_ticks() noexcept` — raw CPU TSC; micro-benchmark deltas only, NOT a clock.
+*   `class qb::ScopedTimer` — RAII monotonic stopwatch; `explicit ScopedTimer(TimerCallback)`, `duration stop()`, `void restart()`, `[[nodiscard]] duration elapsed() const`. Non-copyable/non-movable. (`TimerCallback = std::function<void(duration)>`.)
+*   `class qb::LogTimer` — logs scope elapsed µs on destruction; `explicit LogTimer(std::string reason)`, `[[nodiscard]] duration elapsed() const`.
+*   use: `qb::ScopedTimer t([](qb::duration d){ /* report */ });` ; `if (sock.connect(ep, 5s) == 0) {...}`
+
+### Number parsing (`<qb/system/parse.h>`)
+Locale-independent, non-throwing, allocation-free `string_view`→number over `std::from_chars` — the replacement for `std::stoi`/`std::stod`/`strtol`. `T` = any non-bool integral or floating type; out-of-range → `nullopt` (never wrapped). The internal `qb::detail::is_parsable_number_v<T>` trait backs the `to_number` static_assert.
+*   `[T] [[nodiscard]] std::optional<T> to_number(std::string_view s, int base=10) noexcept` — **strict**: the whole view must be one canonical number (no surrounding ws, no leading `+`, no trailing chars). Integral honours `base` 2..36 and only a leading `-` (unsigned rejects `-`); floating parses fixed/scientific + case-insensitive `inf`/`infinity`/`nan`, and subnormals exactly (unlike `std::stod`).
+*   `[T] [[nodiscard]] std::optional<T> to_number_prefix(std::string_view s, std::size_t* consumed=nullptr, int base=10) noexcept` — **lenient** (`strtol`/`stoi` idiom): skip leading ws, accept leading `+`, parse the longest numeric prefix, ignore the rest; `consumed` (if non-null) ← bytes parsed.
+*   use: `auto p = qb::to_number<uint16_t>("8080"); auto h = qb::to_number<int>("ff",16); size_t n; auto v = qb::to_number_prefix<long>("  42 rest",&n); // 42, n==4`
+
+### `using qb::uuid = ::uuids::uuid;` (`<qb/uuid.h>`)
+RFC 4122 128-bit UUID over the vendored uuids library.
+*   `uuid qb::generate_random_uuid();` — random (v4) UUID (thread_local mt19937 seeded from random_device).
+*   use: `qb::uuid id = qb::generate_random_uuid();`
+
+### `class qb::string<_Size = 30> : public std::array<char, _Size + 1>` (`<qb/string.h>`)
+Fixed-capacity inline string with a std::string-like API. Truncates silently to `_Size`.
+*   ctors: `string()`, `string(const char(&)[N])`, sized, fill, and string-like.
+*   `at`/`operator[]`/`front`/`back`/`data`/`c_str`, `size`/`length`/`capacity`/`max_size`/`empty`, `clear`/`resize`/`swap`/`substr`/`compare`, `find`/`rfind`, `append`/`push_back`/`pop_back`/`operator+=`, `starts_with`/`ends_with`/`contains`, full comparison operators, implicit conversion to `std::string` / `std::string_view`.
+*   `static constexpr std::size_t npos = numeric_limits<std::size_t>::max();`
+*   Non-members: `operator+` (result sized to max of operands), `swap`, `operator<<`/`operator>>`, reversed `operator==`/`!=` with C-strings.
+
+### Containers (`<qb/system/container/...>`)
+*   `[T] using unordered_map<K,V,H=std::hash<K>,E=std::equal_to<K>,A>` — always `ska::unordered_map` (node-based; references survive a rehash). Not `NDEBUG`-conditional since 3.0.
+*   `[T] using unordered_flat_map<K,V,H,E,A>` — always `ska::flat_hash_map` (open-addressing, cache-local).
+*   `[T] using unordered_set<K,H,E,A>` / `unordered_flat_set<K,H,E,A>` — set analogues.
+*   `[T] using icase_map<Value,_Trait=string_to_lower>` = `icase_basic_map<std::map<std::string,Value>,_Trait>` — case-insensitive ordered string map.
+*   `[T] using icase_unordered_map<Value,_Trait=string_to_lower>` = `icase_basic_map<qb::unordered_map<std::string,Value>,_Trait>`.
+*   `[T] class icase_basic_map<_Map,_Trait>` — lowercases keys via `_Trait` before delegating: `emplace`/`try_emplace`/`at`/`operator[]`/`find`/`has`/`erase`/iterators/`clear`/`size`/`empty`; `static std::string convert_key(T&&)`.
+*   `class string_to_lower` — ASCII case-folding trait; `static std::string convert(...)`.
+*   `[T] class ring_buffer<T, N, bool Overwrite = true>` — fixed-capacity circular FIFO: `push_back` (overwrites oldest if full and `Overwrite`, else discards), `pop_front`, `front`/`back`/`operator[]`, `begin`/`end`/`cbegin`/`cend`, `empty`/`full`/`capacity`/`clear`. Single-threaded.
+
+### Allocator pipe (`<qb/system/allocator/pipe.h>`)
+*   `[T] class base_pipe<T>` — extensible buffer: `data`/`begin`/`end`/`size`/`capacity`, `allocate`/`allocate_back`/`allocate_size`, `free`/`free_front`/`free_back`, `recycle`/`recycle_back`, `reorder`/`resize`/`reserve`/`reset`/`clear`.
+*   `[T] class pipe<T> : public base_pipe<T>` — cache-line aligned; adds `swap`, `put(iterator-range)`, `put(data,size)`, `operator<<(U&&)`.
+*   `template <> class pipe<char>` — text specialization: `put` for arithmetic/literals/`qb::string<N>`/`std::vector<T>`/`std::array<T,N>` (1-byte T), `write(char*,size)`, `str()`, `view()`, `operator<<`.
+
+### Lockfree primitives (`<qb/system/lockfree/...>`)
+
+#### `class qb::lockfree::SpinLock` (`spinlock.h`)
+TTAS spinlock. Non-copyable/non-movable. Satisfies `BasicLockable` (works with `std::lock_guard`).
+*   `[[nodiscard]] bool locked() const noexcept`
+*   `[[nodiscard]] bool trylock() noexcept` — single attempt.
+*   `[[nodiscard]] bool trylock(int64_t spin) noexcept` — bounded spins.
+*   `[[nodiscard]] bool trylock_for(qb::duration timespan) noexcept` — spin until acquired or `timespan` elapses (monotonic).
+*   `[[nodiscard]] bool trylock_until(qb::mono_time deadline) noexcept`
+*   `void lock() noexcept`, `void unlock() noexcept`
+*   use: `std::lock_guard<qb::lockfree::SpinLock> g(my_spin);`
+
+#### `qb::lockfree::spsc::ringbuffer<T,_MaxSize>` / `<T,0>` (`spsc.h`)
+Single-producer single-consumer ring. Fixed (`std::array`) or dynamic (`explicit ringbuffer(size_t max_size)`).
+*   `bool enqueue(const T&) noexcept`, `bool dequeue(T*) noexcept`
+*   `[T<_All=true>] size_t enqueue(const T*, size_t) noexcept`, `size_t dequeue(T*, size_t) noexcept`
+*   `[T<Func>] size_t dequeue(const Func&, T*, size_t) noexcept`, `[T<Func>] size_t consume_all(const Func&) noexcept`
+*   `[[nodiscard]] bool empty() const noexcept`
+
+#### `qb::lockfree::mpsc::ringbuffer<T,max_size,nb_producer>` / `<T,max_size,0>` (`mpsc.h`)
+Multi-producer single-consumer. Fixed producers (compile-time) or runtime (`explicit ringbuffer(size_t nb_producer)`, asserts `> 0`).
+*   `[T<_Index>] bool enqueue(const T&)` — by compile-time producer index (no lock).
+*   `bool enqueue(size_t index, const T&)` — by runtime index (no lock; one producer per index).
+*   `size_t enqueue(const T&)` — round-robin under that producer's SpinLock.
+*   `[T<_All=true>] size_t enqueue(const T*, size_t)` — round-robin bulk.
+*   `size_t dequeue(T*, size_t)`, `[T<Func>] size_t dequeue(const Func&, T*, size_t)`, `[T<Func>] size_t consume_all(const Func&)`
+*   `auto& ringOf(size_t index)` — direct per-producer spsc ring.
+
+#### `[T] class qb::lockfree::mpsc_unbounded_queue<T> : public nocopy` (`mpsc_unbounded_queue.h`)
+Unbounded lock-free Michael-Scott MPSC queue.
+*   `void push(T item)` — multi-producer safe (moves into a node).
+*   `bool pop(T& out)` — single-consumer; `false` if empty.
+*   `[[nodiscard]] std::size_t size() const` (approximate), `[[nodiscard]] bool empty() const` (approximate; consumer-only).
+
+### Event routers (`<qb/system/event/router.h>`, namespace `qb::router`)
+*   `[T] class sesh<_RawEvent,_Handler>` — Single-Event Single-Handler. `explicit sesh(_Handler&)`; `[T<_CleanEvent=true>] void route(_RawEvent&)`.
+*   `[T] class semh<_RawEvent,_Handler=void>` — Single-Event Multiple-Handler (keyed by handler-id). `route<_CleanEvent>(event)`, `subscribe(_Handler&)`, `unsubscribe(_HandlerId)`.
+*   `[T] class mesh<_RawEvent,_Handler,bool _CleanEvent=true>` — Multiple-Event Single-Handler. `explicit mesh(_Handler&)`, `void route(_RawEvent&)` (throws on unregistered event id), `[T<_Event>] void subscribe()/unsubscribe()`, `void unsubscribe()`.
+*   `[T] class memh<_RawEvent,bool _CleanEvent=true,_Handler=void>` — Multiple-Event Multiple-Handler. `[T<_Func>] void route(_RawEvent&, const _Func& onError)` (calls `onError`, no throw), `[T<_Event,_Handler>] void subscribe(_Handler&)`, `unsubscribe(...)`.
+
+### Endian / CPU / utility
+*   `enum class qb::endian::order { little, big, native, unknown = -1 };`
+*   `consteval order qb::endian::native_order() noexcept`, `consteval bool is_little_endian()/is_big_endian() noexcept`
+*   `[T] constexpr T qb::endian::byteswap(T) noexcept` (arithmetic/enum/trivially-copyable).
+*   `[T] constexpr T qb::endian::to_big_endian(T)/from_big_endian(T)/to_little_endian(T)/from_little_endian(T) noexcept`
+*   `class qb::CPU` (static-only): `Architecture()`, `Affinity()`, `LogicalCores()`, `PhysicalCores()`, `std::pair<int,int> TotalCores()`, `std::int64_t ClockSpeed()` (Hz or -1), `bool HyperThreading()`.
+*   `inline void qb::spin_loop_pause() noexcept` — CPU pause hint for spin loops.
+*   `[T<T,TCleaner>] [[nodiscard]] auto qb::resource(T handle, TCleaner cleaner)` — wrap a raw handle in `unique_ptr` with a custom deleter.
+*   `[T<F>] class qb::scope_guard` — RAII; runs `F` on destruction unless `dismiss()` called. `void dismiss() noexcept`.
+*   `[T...] [[nodiscard]] constexpr std::size_t qb::hash_combine(const Types&... args) noexcept` — fold hashes into one seed.
+*   `[T] constexpr bool qb::likely(bool) noexcept` / `qb::unlikely(bool) noexcept` — branch hints.
+*   `[T] constexpr ... qb::mv(T&&) noexcept` / `qb::fwd(...) noexcept` — concise `std::move`/`std::forward`.
+*   `struct qb::nocopy` — deletes copy AND move.
+*   `[T] struct qb::crtp<T>` — CRTP base, `auto&& impl(this auto&& self) noexcept`.
+
+### JSON (`<qb/json.h>`)
+`using namespace nlohmann;` is applied, so `qb::json = nlohmann::json` (plus `array`/`string`/`number`/`floating`/`boolean` aliases). `struct qb::jsonb` is a distinct binary-JSON wrapper over `nlohmann::json`. ADL hooks `to_json`/`from_json` for `qb::uuid` exist.
+
+## Namespace `qb::io`
+
+### Console output (`<qb/io.h>`)
+*   `class qb::io::cout` / `qb::io::cerr` — thread-safe `std::cout`/`std::cerr` wrappers; buffer to an internal stringstream, flush under a static mutex on destruction. Non-copyable.
+    *   `[T<T>] std::stringstream& operator<<(const T& data)`
+    *   use: `qb::io::cout() << "hello" << std::endl;`
+*   `constexpr static bool qb::debug` — false under NDEBUG, true otherwise.
+*   Logging macros `LOG_DEBUG/LOG_VERB/LOG_INFO/LOG_WARN/LOG_CRIT(X)` — no-op unless `QB_STDOUT_LOGGING`/`QB_WITH_LOGGING`. When `QB_WITH_LOGGING`: `qb::io::log::setLevel(Level)`, `qb::io::log::init(const std::string& file_path, uint32_t roll_MB = 128)`.
+
+### `class qb::io::uri` (`<qb/io/uri.h>`)
+RFC 3986 URI. Parsed on construction.
+*   ctors / assignment from `std::string` (+ optional address family, default `AF_INET`).
+*   `static uri parse(const std::string& str, int af = AF_INET) noexcept` — factory.
+*   Accessors: `scheme()`, `user_info()`, `host()`, `port()` (string), `[[nodiscard]] uint16_t u_port()` (numeric; 0 if malformed/>65535), `path()`, `fragment()`, `encoded_queries()`, `queries()`, `source()`, `af()`.
+*   `[T<T>] const std::string& query(T&& name, std::size_t index = 0, const std::string& not_found = "") const`
+*   `[[nodiscard]] bool is_valid() const noexcept` — false if last parse rejected input.
+*   Static codecs: `static std::string encode(std::string_view) noexcept` / `decode(std::string_view) noexcept` (+ `(const char*,size_t)` and `[T<_IT>](begin,end)` overloads).
+*   `static bool is_valid_scheme(std::string_view) noexcept`, `is_valid_host(std::string_view) noexcept`, `normalize_path(std::string&) noexcept`.
+*   RFC 3986 char predicates (free functions, `bool f(int c)`): `is_alnum`, `is_unreserved`, `is_gen_delim`, `is_sub_delim`, `is_reserved`, `is_scheme_character`, `is_user_info_character`, `is_authority_character`, `is_path_character`, `is_query_character`, `is_fragment_character`.
+*   use: `qb::io::uri u("tcp://127.0.0.1:8080/x"); u.host(); u.u_port();`
+
+### Low-level socket (`<qb/io/system/sys__socket.h>`)
+*   `using qb::io::socket_type = int` (POSIX) / `SOCKET` (Windows) (from config.h).
+*   `class qb::io::socket` — cross-platform move-only socket wrapper. Lifecycle: `open`/`reopen`/`close`/`is_open`/`native_handle`/`release_handle`. I/O: `send`/`recv`/`sendto`/`recvfrom`, timed `send_n`/`recv_n`/`connect_n`/`handle_read_ready`/`handle_write_ready` taking `qb::duration`. Connect/serve: `pconnect`/`xpconnect`/`pserve`, `bind`/`listen`/`accept`/`accept_n`. Options: `set_optval`/`get_optval`/`ioctl`/`set_keepalive`/`reuse_address(bool)`/`exclusive_address(bool)`. Static: `resolve*`/`getipsv`/`traverse_local_address`/`get_last_errno`.
+    *   `pserve` sets `SO_REUSEADDR` on POSIX but `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`): on Windows an in-use bind fails fast with `WSAEADDRINUSE` (no silent hijack/shadowing of an already-bound port), while POSIX keeps the TIME_WAIT-rebind behavior.
+*   `struct qb::io::inet::ip::endpoint` (alias surface `qb::io::endpoint`) — address-family-agnostic socket address (union of sockaddr/in/in6/un). Builders `as_in`/`as_un`/`as_is`; accessors `af()`, `port()`, `addr_v4()`, `ip()`, `to_string()`; `explicit operator bool` (`af()!=AF_UNSPEC`); `operator<`/`operator==`.
+*   `enum qb::io::SocketStatus { Error = -1, Done, CertificateError };`
+*   `inline bool qb::io::socket_no_error(int error)` — true for EWOULDBLOCK/EAGAIN/EINTR/EINPROGRESS.
+
+### TCP (`<qb/io/tcp/...>`)
+
+#### `class qb::io::tcp::socket : protected qb::io::socket`
+Reliable stream socket (IPv4/IPv6/Unix). `constexpr is_secure() == false`. Re-exports `close`/`is_open`/`native_handle`/`local_endpoint`/`peer_endpoint`/`release_handle`/`set_nonblocking`/`set_optval`/`get_optval`/`test_nonblocking`.
+*   `int init(int af = AF_INET) noexcept` — open SOCK_STREAM; 0 on success.
+*   `int connect(const qb::io::endpoint& ep) noexcept` — blocking; 0 on success.
+*   `int connect(const qb::io::endpoint& ep, qb::duration wtimeout) noexcept` — bound the handshake; timeout via `get_last_errno()`.
+*   `int connect(const uri& u) noexcept` / `int connect(const uri& u, qb::duration wtimeout) noexcept`
+*   `int connect_v4(const std::string& host, uint16_t port) noexcept` / `connect_v6(...)` / `connect_un(const std::filesystem::path& path) noexcept` (UDS needs `QB_ENABLE_UDS`).
+*   Non-blocking: `int n_connect(const qb::io::endpoint&) noexcept` / `n_connect(const uri&)` / `n_connect_v4`/`n_connect_v6`/`n_connect_un`.
+*   `void connected() noexcept` — no-op for plain TCP (overridden by ssl).
+*   `int read(void* dest, std::size_t len) const noexcept` / `int write(const void* data, std::size_t size) const noexcept` — read 0 = peer shutdown, negative = error/EWOULDBLOCK.
+*   `int bind(const qb::io::endpoint&) noexcept` / `int bind(const qb::io::uri&) noexcept` / `int disconnect() const noexcept`.
+*   use: `qb::io::tcp::socket s; s.init(); s.connect(uri("tcp://host:80"), 5s);`
+
+#### `class qb::io::tcp::listener : private qb::io::socket`
+TCP listener. `constexpr is_secure() == false`.
+*   `int listen(const io::endpoint&) noexcept` / `listen(const io::uri&)` / `int listen_v4(uint16_t port, const std::string& host = "0.0.0.0") noexcept` / `listen_v6(uint16_t port, const std::string& host = "::")` / `listen_un(const std::filesystem::path& path)` (default backlog SOMAXCONN).
+*   `tcp::socket accept() const noexcept` / `int accept(tcp::socket& sock) const noexcept` (0 on success).
+*   `int disconnect() const noexcept`
+
+#### Secure TCP (`<qb/io/tcp/ssl/...>`, requires `QB_HAS_SSL`/OpenSSL)
+*   **`class qb::io::ssl::Context` (`<qb/io/tcp/ssl/context.h>`) — the PREFERRED TLS config type.** Value-semantic, reference-counted, secure-by-default, RAII. Copyable (copies share one `SSL_CTX`, freed exactly once — **there is no user-visible `SSL_CTX_free`**). Fail-closed: a construction/config error yields a falsy Context whose `error()` explains why (it never degrades to an insecure context).
+    *   Factories: `static Context client()` (TLS 1.2+, system trust store, `VerifyMode::peer`), `static Context server(std::filesystem::path cert, std::filesystem::path key)` (loads+checks the identity; `VerifyMode::none`), `static Context adopt(SSL_CTX*) noexcept` (**TRANSFER** the caller's single ref — no up-ref), `static Context share(SSL_CTX*) noexcept` (**up-ref**; caller keeps + frees their own).
+    *   Fluent config (chainable; a no-op once errored): `min_version(TlsVersion)`/`max_version(TlsVersion)`, `verify(VerifyMode)`, `trust(std::filesystem::path)`/`trust_system()`, `identity(cert,key)` (client mTLS / extra server cert), `alpn(std::vector<std::string>)` (**empty list = no-op**), `ciphers(std::string)`/`ciphersuites(std::string)`/`curves(std::string)`, `dh_params(path)`, `session_cache(std::size_t)`/`session_timeout(std::chrono::seconds)`.
+    *   Typed callbacks (no raw C fn ptr / `void*` arg — the `std::function`s live on the `SSL_CTX` ex-data, reachable from every minted `SSL`): `on_keylog(std::function<void(std::string_view)>)`, `on_verify(std::function<bool(bool preverified, VerifyContext&)>)`, `on_sni(std::function<Context(std::string_view servername)>)` (server host → Context to switch to; empty return keeps the current).
+    *   `bool ok() const noexcept`, `std::string error() const`, `explicit operator bool`, `SSL_CTX* native() const noexcept` (escape hatch — borrow the raw ctx).
+*   `enum class qb::io::ssl::TlsVersion { v1_2, v1_3 }`; `enum class qb::io::ssl::VerifyMode { none, peer, peer_require }` (peer / +fail-if-no-cert=mTLS).
+*   `class qb::io::ssl::VerifyContext` — typed view over `X509_STORE_CTX` for an `on_verify` callback: `int depth() const`, `int error() const` (`X509_V_ERR_*`), `std::string error_string() const`, `Certificate current_certificate() const`, `X509_STORE_CTX* native() const`.
+*   `class qb::io::tcp::ssl::socket : public tcp::socket` — owns an `SSL*`. Secure-by-default for the auto client context (system trust store, `SSL_VERIFY_PEER`, hostname check). `constexpr is_secure() == true`.
+    *   `explicit socket(qb::io::ssl::Context)` — **preferred**: mint this connection's `SSL` from a shared context. Per-connection chainable setters (before connect): `socket& sni(std::string)`, `socket& alpn(std::vector<std::string>)` (override the context's), `socket& resume(qb::io::ssl::Session)`, `socket& insecure()`; `const qb::io::ssl::Context& context() const noexcept`.
+    *   `void init(SSL* handle = nullptr) noexcept` — adopt an external SSL handle (escape hatch).
+    *   `int connect(const endpoint& ep, const std::string& hostname = "") noexcept` (SNI), `connect(endpoint, hostname, qb::duration)`, `connect(const uri&)`, `connect(const uri&, qb::duration)` — timed overloads bound the TCP phase only.
+    *   `connect_v4`/`connect_v6` (host = SNI) / `connect_un(const std::filesystem::path& path)` (+ `n_connect_un` non-blocking).
+    *   `int n_connect(const endpoint&, const std::string& hostname = "") noexcept`, `int connected() noexcept` (drives SSL_connect/accept), `int handshake_status() noexcept` (1 done / 0 needs-IO / -1 fatal), `bool handshake_complete() const noexcept`, `int do_handshake() noexcept`.
+    *   `int read(void*, std::size_t) noexcept` / `int write(const void*, std::size_t) noexcept` (non-const), `int disconnect() noexcept`.
+    *   Pre-handshake config: `bool set_sni_hostname(const std::string&)`, `set_alpn_protocols(const std::vector<std::string>&)`, `set_verify_callback(...)`, `set_verify_depth(int)`, `disable_session_resumption()`, `request_ocsp_stapling(bool=true)`, `void set_insecure()` (opts out of verification — MITM risk), `bool verify_peer() const`.
+    *   Introspection: `SSL* ssl_handle() const noexcept`, `qb::io::ssl::Certificate get_peer_certificate_details() const`, `std::vector<...> get_peer_certificate_chain() const`, `get_negotiated_cipher_suite()`, `get_negotiated_tls_version()`, `get_alpn_selected_protocol()`, `get_last_ssl_error_string()`.
+    *   Session/PHA: `qb::io::ssl::Session get_session() const noexcept`, `bool set_session(qb::io::ssl::Session&) noexcept`, `bool request_client_post_handshake_auth() noexcept`.
+*   `class qb::io::tcp::ssl::listener : public tcp::listener` — holds a `qb::io::ssl::Context`, shared by reference count with every accepted connection. `constexpr is_secure() == true`.
+    *   **Preferred:** `explicit listener(qb::io::ssl::Context)` / `void init(qb::io::ssl::Context) noexcept`; `const qb::io::ssl::Context& context() const noexcept`.
+    *   `void init(SSL_CTX* ctx) noexcept` (adopts the ctx — transfer ownership), `ssl::socket accept() const noexcept` / `int accept(ssl::socket&) const noexcept`, `SSL_CTX* ssl_handle() const noexcept`.
+    *   Context tuning: `load_ca_certificates_for_client_auth`, `set_cipher_list`, `set_ciphersuites_tls13`, `set_tls_protocol_versions(int,int)`, `configure_mtls(...)`, `set_supported_alpn_protocols(...)`, `enable_session_caching(...)`, `configure_dh_parameters(...)`, `configure_ecdh_curves(...)`, `enable_post_handshake_auth()`.
+*   **Raw/advanced layer (kept permanently; prefer `ssl::Context`)** — free helpers in `qb::io::ssl`: `bool attach_socket(SSL*, ::socket_type)`, `Certificate get_certificate(SSL*)`, `SSL_CTX* create_client_context(const SSL_METHOD*)`, `SSL_CTX* create_server_context(const SSL_METHOD*, std::filesystem::path cert, std::filesystem::path key)` (caller `SSL_CTX_free`s), plus `bool load_ca_certificates(SSL_CTX*, const std::filesystem::path&)` / `load_ca_directory(SSL_CTX*, const std::filesystem::path&)` / `configure_mtls_server_context(SSL_CTX*, const std::filesystem::path& client_ca, int mode=SSL_VERIFY_PEER)` / `configure_client_certificate(SSL_CTX*, const std::filesystem::path& cert, const std::filesystem::path& key)` / `configure_dh_parameters_server(SSL_CTX*, const std::filesystem::path&)`, plus string-config `set_cipher_list`/`set_ciphersuites_tls13`/`set_tls_protocol_versions`/etc.
+    *   **All cert/key/CA/DH file paths are `std::filesystem::path` and resolved through `qb::io::sys::resolve_resource`** (relative paths found from the cwd or the executable's own dir; absolute unchanged) — see Synchronous file I/O below.
+*   `struct qb::io::ssl::Certificate { std::string subject, issuer; int64_t version; std::string serial_number; int64_t not_before, not_after; std::string signature_algorithm; std::vector<std::string> subject_alternative_names; }` (not_before/after are Unix timestamps int64).
+*   `struct qb::io::ssl::Session { SSL_SESSION* _session_handle = nullptr; bool is_valid() const; }`; `void free_session(Session&)`.
+
+### UDP (`<qb/io/udp/socket.h>`)
+*   `class qb::io::udp::socket : private qb::io::socket` — datagram socket (IPv4/IPv6/Unix DGRAM) with multicast. Constants `DefaultDatagramSize = 512`, `MaxDatagramSize = 65507`. No `is_secure()`.
+    *   `bool init(int af = AF_INET) noexcept` — open SOCK_DGRAM; **returns bool** (true = success).
+    *   `int bind(const qb::io::endpoint&)` / `bind(const qb::io::uri&)` / `bind_v4(uint16_t port, const std::string& host="0.0.0.0")` / `bind_v6(uint16_t, const std::string& host="::")` / `bind_un(const std::filesystem::path& path)`.
+    *   `int read(void* dest, std::size_t len, qb::io::endpoint& peer) const noexcept` — captures sender.
+    *   `int read_timeout(void* dest, std::size_t len, qb::io::endpoint& peer, const qb::duration& timeout) const noexcept` — `-ETIMEDOUT` on expiry.
+    *   `int try_read(void* dest, std::size_t len, qb::io::endpoint& peer) const noexcept` — non-blocking.
+    *   `int write(const void* data, std::size_t len, const qb::io::endpoint& to) const noexcept`
+    *   `int set_buffer_size(std::size_t)`, `set_broadcast(bool)`, `join_multicast_group(const std::string& group, const std::string& iface="")`, `leave_multicast_group(...)`, `set_multicast_ttl(int)`, `set_multicast_loopback(bool)`.
+    *   `int address_family() const noexcept`, `bool is_bound() const noexcept`, `int disconnect() const noexcept`.
+
+### QUIC (`<qb/io/quic.h>`, `<qb/io/async/quic/...>`) — gated on `QB_HAS_QUIC`
+Built on ngtcp2 + nghttp3. `[[nodiscard]] constexpr bool qb::io::quic::available() noexcept` reports whether the build has it. One `endpoint` owns one UDP socket and drives **many** connections (server role) — hence the `connection_id` overloads throughout; the single-argument forms address the sole/current connection.
+
+#### Value types (`<qb/io/quic/types.h>`, namespace `qb::io::quic`)
+*   `struct settings` — all defaults: `handshake_timeout=10s`, `idle_timeout=30s`, `stream_recv_window=1MiB`, `connection_recv_window=16MiB`, `max_stream_data_bidi_local/bidi_remote/uni=1MiB`, `max_streams_bidi=100`, `max_streams_uni=100`, `max_datagram_frame_size=0`, `max_connections=4096`, `max_pending_stream_bytes=16MiB`, `max_pending_stream_frames=4096`, `max_pending_datagram_bytes=4MiB`, `max_pending_datagram_frames=1024`, `udp_rx_batch_size=256`, `udp_tx_batch_size=256`, `enable_stateless_retry=true`, `enable_datagrams=false`, `enable_keylog=false`.
+*   `struct tls_config { std::filesystem::path certificate_file, private_key_file; std::string server_name; bool verify_peer = true; }`
+*   `struct stats` — counters: `bytes_sent/received`, `packets_sent/received/lost`, `retransmits`, `datagrams_sent/received/lost/acked`, `active_connections`, `active_streams`, `smoothed_rtt_us`, `congestion_window`, `bytes_in_flight`.
+*   `struct alpn { static constexpr std::string_view h3 = "h3"; }` — the default ALPN for `connect()`.
+*   `enum class disconnect_reason : int32_t` — `none=0`, `application_close=1`, and negatives `transport_error=-1`, `handshake_failed=-2`, `idle_timeout=-3`, `stateless_retry_failed=-4`, `path_validation_failed=-5`, `backend_unavailable=-6`, `buffer_overflow=-7`, `protocol_error=-8`.
+*   `enum class stream_close_reason : int32_t` — `none=0`, `finished=1`, `reset=-1`, `stop_sending=-2`, `flow_control_error=-3`, `connection_closed=-4`, `backend_unavailable=-5`.
+*   `enum class stream_direction : uint8_t { bidirectional, unidirectional }`, `enum class stream_origin : uint8_t { local, remote }`.
+
+#### `class qb::io::async::quic::endpoint` (`<qb/io/async/quic/endpoint.h>`)
+Non-copyable **and non-movable**. `enum class state { idle, listening, connecting, connected, closing, closed }`.
+*   ctors: `endpoint() = default`, `explicit endpoint(qb::io::quic::settings)`, `explicit endpoint(std::unique_ptr<qb::io::quic::backend>, qb::io::quic::settings = {})`.
+*   `bool listen(qb::io::uri const& bind_uri, std::filesystem::path const& cert_file, std::filesystem::path const& key_file, ...)`
+*   `bool connect(qb::io::uri const& remote_uri, std::vector<std::string> const& alpn = {std::string(alpn::h3)})`; also an `std::initializer_list<std::string>` overload (so `connect(uri, {"h3"})` compiles) and a `qb::io::quic::tls_config` overload.
+*   `stream open_bidirectional_stream()` / `open_unidirectional_stream()`, each also taking `std::uint64_t connection_id`.
+*   `void send_stream_data(std::uint64_t stream_id, std::span<const std::byte>|std::string_view data, bool fin = false)`, plus `(connection_id, stream_id, ...)` forms.
+*   `void extend_stream_credit(connection_id, stream_id, std::uint64_t bytes)`
+*   `void reset_stream(stream_id, std::uint64_t app_error = 0)` / `stop_stream(stream_id, std::uint64_t app_error = 0)`, plus `(connection_id, stream_id, app_error)` forms.
+*   `void send_datagram(std::span<const std::byte>|std::string_view)`, plus `(connection_id, ...)`. Requires `settings.enable_datagrams` and a non-zero `max_datagram_frame_size`.
+*   `void close_connection(connection_id, std::uint64_t app_error = 0, std::string_view reason = {})`, `void close(std::uint64_t app_error = 0, std::string_view reason = {})`.
+*   `void poll()`, `void set_backend(std::unique_ptr<backend>)`, `void set_settings(settings)`.
+*   `[[nodiscard]]` observers: `bool is_open()`, `state current_state()`, `settings const& settings()`, `stats const& stats()`, `qb::io::endpoint const& local_endpoint()`, `backend*`/`backend const* backend()`.
+*   `void on(qb::io::async::event::io const&)` / `on(qb::io::async::event::timer&)` — the listener drives these; do not call them.
+
+#### Events (`<qb/io/async/quic/events.h>`, namespace `qb::io::async::quic::event`)
+Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Derived`. Every one carries `connection_id`.
+*   `connected { connection_id; std::string negotiated_alpn; }`
+*   `connection_closed { connection_id; disconnect_reason reason; std::uint64_t error_code; std::string reason_phrase; }`
+*   `stream_started { connection_id; id; stream_direction direction; stream_origin origin; }`
+*   `stream_data { connection_id; id; std::string_view payload; bool fin; }` — **`payload` is a view into the receive buffer; copy it to keep it.**
+*   `stream_data_acked { connection_id; id; std::uint64_t bytes; }`
+*   `stream_closed { connection_id; id; stream_close_reason reason; std::uint64_t error_code; }`
+*   `datagram { connection_id; std::string_view payload; }` — same view lifetime rule.
+
+#### CRTP client / server (`<qb/io/async/quic/client.h>`, `server.h`)
+*   `template <typename Derived, typename StreamSession = void> class qb::io::async::quic::connector` — `connector<Derived, void>` is the raw-event client (`endpoint`'s `connect` overloads, re-declared so they are not hidden). With a `StreamSession`, it additionally gets the session API below.
+*   `template <typename Derived, typename StreamSession> class qb::io::async::quic::server` — `bool listen(uri const&, cert, key, ...)` + the session API.
+*   Session API on both: `[[nodiscard]] StreamSession* stream_session(stream_id)` / `(connection_id, stream_id)`; `[[nodiscard]] StreamSession* open_bidirectional_stream_session(connection_id = 0)` / `open_unidirectional_stream_session(connection_id = 0)`; `bool flush_stream_session(stream_id)` / `(connection_id, stream_id)` / `void flush_stream_session(StreamSession&)`; `bool finish_stream_session(...)` in the same three shapes (`finish` = flush + FIN).
+
+#### Streams and sessions (`<qb/io/async/quic/stream.h>`)
+*   `class qb::io::async::quic::stream` — lightweight handle: `[[nodiscard]] std::uint64_t connection_id()`, `id()`, `bool is_open()`, `stream_direction direction()`, `stream_origin origin()`, `void reset(std::uint64_t app_error = 0)`, `void close() noexcept`.
+*   `template <typename Derived> class session_base : public qb::io::async::buffered_io<Derived>` — non-copyable/non-movable. `[[nodiscard]]` `id()`, `connection_id()`, `is_open()`, `qb::allocator::pipe<char>& in()/out()`, `pendingRead()`, `pendingWrite()`, `max_read_buffer_size()`, `max_write_buffer_size()`; `set_max_read_buffer_size(std::size_t)`, `set_max_write_buffer_size(std::size_t)`; `bool append(std::string_view|std::span<const std::byte>)`, `char* publish(char const*, std::size_t)`, `bool process() noexcept`, `void flush(std::size_t) noexcept`, `void close() noexcept`.
+*   `template <typename Derived, typename Server> class client` — adds `[[nodiscard]] Server& server()`. `template <typename Derived> using stream_session = client<Derived, void>;` for the server-less case.
+
+#### Session registry (`<qb/io/async/quic/io_handler.h>`)
+`template <typename Derived, typename StreamSession> class io_handler` — sessions are keyed by `(connection_id, stream_id)`, so every accessor has a 1-arg (current connection) and a 2-arg form.
+*   `[[nodiscard]] session_map_t& sessions()`, `std::size_t session_count()`, `std::size_t max_sessions()`, `void set_max_sessions(std::size_t)`.
+*   `[[nodiscard]] StreamSession* session(...)` (+ const), `[[nodiscard]] std::shared_ptr<StreamSession> session_handle(...)` (+ const) — **prefer `session_handle` when the pointer must outlive the current dispatch.**
+*   `[[nodiscard]] StreamSession* registerSession(...)` / `register_stream_session(...)` (aliases), `void unregisterSession(...)`, `void disconnected(...)`, `void clearSessions()` / `clearSessions(connection_id)`.
+
+### Synchronous file I/O (`<qb/io/system/file.h>`)
+*   `class qb::io::sys::file` — move-only RAII over a native fd; copy deleted, dtor closes. `explicit file(const std::filesystem::path& fname, int flags = O_RDWR)`, `int open(const std::filesystem::path& fname, int flags = O_RDWR, int mode = 0644)` / `open(int fd)` / `close`/`read`/`write`/`is_open`/`native_handle`. All path params are `std::filesystem::path` (Windows opens via `CreateFileW` for Unicode). (`set_nonblocking` is a no-op.)
+*   `class qb::io::sys::file_to_pipe` — read a file into a `qb::allocator::pipe<char>`: `bool open(const std::filesystem::path& path)`, `read()`/`read_all()`, `read_bytes()`, `expected_size()`, `eof()`.
+*   `class qb::io::sys::pipe_to_file` — write a `pipe<char>` to a file (O_WRONLY|O_CREAT|O_TRUNC): `bool open(const std::filesystem::path& path, int mode = 0644)`, `write()`/`write_all()`, `written_bytes()`, `eos()`.
+*   Free functions in `qb::io::sys` for self-locating binaries:
+    *   `std::filesystem::path self_path()` — absolute path of the running executable (OS-queried: `GetModuleFileNameW` / `/proc/self/exe` / `_NSGetExecutablePath`); independent of `argv[0]` and the cwd. Empty on query failure.
+    *   `std::filesystem::path self_dir()` — `self_path().parent_path()`.
+    *   `std::filesystem::path resolve_resource(const std::filesystem::path& path)` — absolute path returned unchanged; relative path resolved against the **cwd first, then the executable's own dir** (so a binary shipped next to its assets runs from any cwd). Returned unchanged if neither candidate exists. Used internally by the SSL cert/key/CA/DH helpers and qbm-http `StaticFilesMiddleware`.
+
+### Stream bases (`<qb/io/stream.h>`)
+*   `[T] class istream<_IO_>` — input-stream base: owns the transport + a `pipe<char>` input buffer. `transport()`, `in()`, `pendingRead()`, `read()`, `flush(size)`, `eof()`, `close()`, `max_read_buffer_size()`/`set_max_read_buffer_size()`.
+*   `[T] class ostream<_IO_>` — output-only base: `out()`, `pendingWrite()`, `write()`, `publish(data,size)` (`nullptr` if cap exceeded), `close()`.
+*   `[T] class stream<_IO_> : public istream<_IO_>` — bidirectional base (primary base for socket transports); adds output buffer + `write()`, `out()`, `publish()`, `max_write_buffer_size()`/`set_max_write_buffer_size()`. `static constexpr has_reset_on_pending_read = false`.
+*   `static constexpr int qb::io::ErrBufferLimitExceeded = -2` — returned when a read/write would exceed the configured buffer cap (DoS protection).
+
+### Transports (`<qb/io/transport/...>`)
+*   `class qb::io::transport::tcp : public stream<io::tcp::socket>` — reliable TCP transport. `is_secure() == false`.
+*   `class qb::io::transport::stcp : public stream<io::tcp::ssl::socket>` — secure TCP transport (drains `SSL_pending()` after each read). `is_secure() == true`.
+*   `class qb::io::transport::udp : public stream<io::udp::socket>` — datagram transport. `is_secure() == false`, `has_reset_on_pending_read == true`.
+    *   `struct identity : public qb::io::endpoint` — UDP peer identity with `struct hasher` (usable as map key) and `operator==`/`!=`.
+    *   `const identity& getSource() const noexcept` — last datagram's sender.
+    *   `void setDestination(const identity& to) noexcept` — default reply target.
+    *   `char* publish(const char* data, std::size_t size) noexcept`, `char* publish_to(const identity& to, const char* data, std::size_t size) noexcept` (rejected with EMSGSIZE if `> MaxDatagramSize`).
+*   `class qb::io::transport::accept` — acceptor transport wrapping `io::tcp::listener`; `read()` accepts into `_accepted_io` (transient errors remapped to EWOULDBLOCK), `getAccepted()` → new `tcp::socket`. `is_secure() == false`.
+*   `class qb::io::transport::saccept` — secure variant wrapping `io::tcp::ssl::listener`; `getAccepted()` → `ssl::socket`. `is_secure() == true`.
+*   `class qb::io::transport::file : public stream<io::sys::file>` — file transport; `write()` is a no-op returning 0.
+
+### Protocol framing (`<qb/io/protocol/...>`)
+
+#### Protocol interface (`<qb/io/async/...>`)
+*   `class qb::io::async::IProtocol` — `virtual std::size_t getMessageSize() noexcept = 0`, `virtual void onMessage(std::size_t size) noexcept = 0`, `virtual void reset() noexcept = 0`.
+*   `[T] class qb::io::async::AProtocol<_IO_> : public IProtocol` — `AProtocol(_IO_& io) noexcept` (protected), member `_IO_& _io`, `bool ok() const noexcept`, `void not_ok() noexcept`.
+
+#### Base framers (`namespace qb::protocol::base`)
+*   `[T] class byte_terminated<_IO_, char _EndByte = '\0'>` — single-delimiter frames. `static delimiter_size = 1`, `static char end`, `std::size_t shiftSize(std::size_t) const noexcept`, `reset()`.
+*   `[T] class bytes_terminated<_IO_, _Trait>` — byte-sequence delimiter from `_Trait::_EndBytes` (e.g. CRLF). `delimiter_size = sizeof(_Trait::_EndBytes)-1`.
+*   `[T] class size_as_header<_IO_, _Size = uint16_t>` — length-prefixed; reads a `_Size` header (ntoh for 2/4 bytes), zero size → `not_ok()`. `static _Size Header(std::size_t)` (throws `std::runtime_error` if size exceeds header capacity).
+
+#### Text/binary (`namespace qb::protocol::text`)
+*   `[T] class basic_text<_IO_, _StringTrait, char _Sep = '\0'>` — delimiter-framed text; delivers `message{size, data, _StringTrait text}`.
+*   `[T] class basic_binary<_IO_, _SizeHeader = uint16_t>` — length-prefixed binary; delivers `message{size, data}`.
+*   Aliases: `binary8<_IO_>` (uint8 header), `binary16<_IO_>`, `binary32<_IO_>`; `string<_IO_>` (NUL, `std::string`), `command<_IO_>` (newline, `std::string`), `string_view<_IO_>` (NUL, zero-copy `std::string_view`), `command_view<_IO_>`.
+
+#### JSON (`namespace qb::protocol`)
+*   `[T] class json<IO_> : public base::byte_terminated<IO_, '\0'>` — NUL-terminated JSON (depth cap 512); delivers `message{size, data, nlohmann::json json}`.
+*   `[T] class json_packed<IO_> : public base::byte_terminated<IO_, '\0'>` — NUL-terminated MessagePack-encoded JSON.
+
+#### Connection protocols (`namespace qb::io::protocol`)
+*   `[T] class accept<_IO_, _Socket> : public async::AProtocol<_IO_>` — stateless; `message = _Socket`; moves the accepted socket into `_io.on()`.
+*   `[T] class handshake<_IO_> : public async::AProtocol<_IO_>` — drives `transport().do_handshake()`, emits `async::event::handshake`; `message = qb::io::async::event::handshake`.
+
+## Namespace `qb::io::async`
+
+### Event loop (`<qb/io/async/listener.h>`)
+*   `class qb::io::async::listener` — per-thread libev loop manager + coroutine scheduler.
+    *   `thread_local static listener current;` — the implicit loop every async object binds to.
+    *   `[T<_Event,_Actor,_Args...>] _Event& registerEvent(_Actor& actor, _Args&&... args)` — wrap a libev watcher.
+    *   `void unregisterEvent(IRegisteredKernelEvent* kevent)` (idempotent).
+    *   `void run(int flag = 0)` — run the loop (0 / EVRUN_ONCE / EVRUN_NOWAIT), then drain coroutines.
+    *   `void break_one()`, `void clear()`.
+    *   `std::size_t nb_invoked_event() const`, `total_events_processed() const`, `size() const`.
+    *   `ev::loop_ref loop() const`, `CoroutineScheduler& coro_scheduler()`.
+*   Free drivers:
+    *   `void init() noexcept` — no-op (listener self-initializes).
+    *   `std::size_t run(int flag = 0)` — run current thread's loop; → invoked events. Throws `std::logic_error` if called from inside a handler/coroutine drain.
+    *   `std::size_t run_once()` — EVRUN_ONCE (waits for ≥1 event; may block).
+    *   `std::size_t run_until(const bool& status)` — loop while `status` (50µs idle sleep).
+    *   `void break_parent() noexcept`
+*   `class qb::io::async::IRegisteredKernelEvent` — abstract: `virtual ~`, `virtual void stop() noexcept`, `virtual void invoke()`.
+*   use: `qb::io::async::run();` (blocking loop) ; `while (cond) qb::io::async::run_until(cond);`
+
+### CRTP integration (`<qb/io/async.h>`, `<qb/io/async/io.h>`)
+*   `[T] struct qb::io::use<_Derived>` — primary integration helper. Nested aliases: `use<Self>::input`/`output`/`io`; `use<Self>::tcp::{acceptor, io_handler<Client>, server<Client>, client<Server=void>, ssl::*}`; `use<Self>::udp::{server, client}`; `use<Self>::timeout` (= `with_timeout<Self>`); `use<Self>::file`. Protocol auto-picked from `_Derived::Protocol`.
+*   `[T] class base<_Derived, _EV_EVENT>` — CRTP base registering one libev watcher with `listener::current` (stops+unregisters on destruction).
+*   `[T] class with_timeout<_Derived> : public base<..., event::timer>` — inactivity-timeout mixin; calls `_Derived::on(event::timer&)` when it elapses.
+    *   `explicit with_timeout(qb::duration timeout = std::chrono::seconds(3))` — `<= 0` disables.
+    *   `void setTimeout(qb::duration) noexcept`, `void updateTimeout() noexcept` (reset countdown on activity), `qb::duration getTimeout() const noexcept`.
+*   `[T] class Timeout<_Func> : public with_timeout<...>` — self-deleting one-shot timer (`delete this` after firing).
+*   `[T] class ScopedTimeout<_Func> : public with_timeout<...>` — caller-owned (RAII) one-shot timer: `fired()`, `cancel()`.
+*   Callbacks / scheduling — three primitives, pick by intent:
+    *   `[T<_Func>] void callback(_Func&& func)` — run **inline immediately** (NOT deferred, despite the name).
+    *   `[T<_Func,Rep,Period>] void callback(_Func&& func, std::chrono::duration<Rep,Period> timeout)` — run after a real `timeout` (`<= 0` runs inline). Use for timeouts/deadlines.
+    *   `[T<_Func>] void defer(_Func&& func)` — run **at the tail of the current loop turn** (next tick, no delay, no timer). The primitive for "continue after this handler unwinds" (e.g. a reconnect that frees+recreates its connection). Never runs re-entrantly; captured state released on fire or on loop teardown.
+    *   `[T<_Func,Rep,Period>] auto scoped_callback(_Func&& func, std::chrono::duration<Rep,Period> timeout)` → `std::unique_ptr<ScopedTimeout<...>>` — hot-path timer variant; destroying/reusing the ptr cancels.
+    *   use: `qb::io::async::callback([]{ … }, 200ms);` (timer) · `qb::io::async::defer([]{ … });` (next turn).
+*   `[T] class file_watcher<_Derived> : public base<..., event::file>` — watch a file, read/parse new content via an owned protocol. `do_read = true`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`, `switch_protocol<P>(...)`, `read_all()`. The watcher copies the path into an owned `std::string _watched_path` for its lifetime — `qev_stat` stores the path **pointer** without copying, so the string must outlive the watcher.
+*   `[T] class directory_watcher<_Derived> : public base<..., event::file>` — directory attribute changes (no content read). `do_read = false`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`. Same owned-`_watched_path` invariant as `file_watcher`.
+*   `[T] class file<_Derived> : public file_watcher<_Derived>, qb::io::transport::file` (`<qb/io/async/file.h>`) — async file handler; auto-attaches `_Derived::Protocol`.
+
+### Async I/O bases (`<qb/io/async/io.h>`)
+*   `[T] class input<_Derived> : public base<..., event::io>` — async read side (EV_READ + protocol framer). API: `start()`, `stop()`, `ready_to_read()`, `is_reading()`, `is_connected()`, `disconnect(int reason = 1)` / `disconnect(event::disconnect_reason)`, `switch_protocol<P>(...)`, `clear_protocols()`, `protocol()`, `set_max_message_size(std::size_t)` (default `QB_MAX_MESSAGE_SIZE`; oversize → disconnect reason -2), `bytes_read()`, `messages_processed()`, `disconnection_reason()`, `system_error()`.
+*   `[T] class output<_Derived> : public base<..., event::io>` — async write side (EV_WRITE drain). API: `start()`, `stop()`, `ready_to_write()`, `is_writing()`, `is_connected()`, `[T<_Args...>] auto& publish(_Args&&... args)` (enforces max write buffer; overflow → disconnect), `operator<<`, `disconnect(...)`, `bytes_written()`.
+*   `[T] class io<_Derived> : public base<..., event::io>` — bidirectional (single watcher for read+write). Combines `input` + `output` APIs plus `void close_after_deliver() noexcept` (dispose after pending output flushed) and `void start() noexcept` (sets non-blocking, starts EV_READ; EV_WRITE added on demand).
+*   use: `struct Session : qb::io::use<Session>::tcp::client<MyServer> { using Protocol = qb::protocol::text::command<Session>; void on(Protocol::message&& m) {...} };`
+
+### Async TCP (`<qb/io/async/tcp/...>`)
+*   `[T] class acceptor<_Derived, _Prot> : public input<...>, _Prot` — accepts connections. `acceptor() noexcept`. `using accepted_socket_type = typename _Prot::socket_type;`. `void on(typename Protocol::message&& new_socket)` forwards to `_Derived`. `void on(event::disconnected&&)`.
+*   `[T] class server<_Derived, _Session, _Prot> : public acceptor<...>, public io_handler<_Derived, _Session>` — TCP server. `server() = default`. `void on(typename acceptor_type::accepted_socket_type&& new_io)` (registers a session). `void on(event::disconnected&&)`.
+*   `[T] class client<_Derived, _Transport, _Server = void> : public io<_Derived>, _Transport` — TCP client/session. Server-associated form: `client() = delete`, `explicit client(_Server& server)`. `using transport_io_type = typename _Transport::transport_io_type;`, `using IOServer = _Server;`, `constexpr static bool has_server = true`. Methods: `_Server& server()` / `const _Server& server() const`, `const uuid& id() const noexcept`, `auto shared()`, `auto ip()`, `auto port()`.
+*   `template <_Derived,_Transport> class client<_Derived,_Transport,void>` — standalone client. `client() noexcept`; `has_server = false`.
+*   `[T] class connector<Socket_, Func_>` — drives a non-blocking connect, self-held until one completion.
+*   Free `connect` overloads:
+    *   `[T<Socket_,Func_>] void connect(const uri& remote, Func_&& func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` — async connect; `func` called once with the socket (empty on failure/timeout).
+    *   `[T<Socket_,Func_>] void connect(Socket_&& existing_socket, const uri& remote, Func_&& func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)`
+    *   `[T<Transport = qb::io::transport::tcp>] auto connect(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` — coroutine overload; → `connect_awaiter<socket_type>` resolving to `std::optional<Socket_>`.
+    *   `[T<Socket_,Negotiator_,Func_>] void starttls_connect(const uri& remote, Func_&& func, qb::duration timeout = {}, bool verify_peer = true)` — opportunistic TLS (PostgreSQL `SSLRequest`, SMTP/IMAP `STARTTLS`): connect cleartext, run `Negotiator_`'s upgrade, then the TLS handshake; `func` gets the ready (secure) socket.
+    *   `[T<Socket_,Negotiator_,Func_>] void starttls_connect(Socket_&& existing, const uri& remote, Func_&& func, qb::duration timeout = {})` — STARTTLS with a caller-built socket carrying its own `ssl::Context` (custom CA / client-cert mTLS / verify); the Context governs verification, so there is **no** `verify_peer` bool (fails CLOSED on a broken Context).
+    *   `[T] class connect_awaiter<Socket_>` — C++20 coroutine awaiter resuming with `std::optional<Socket_>`.
+    *   use: `qb::io::async::tcp::connect<qb::io::transport::tcp::transport_io_type>(uri("tcp://h:80"), [](auto&& sock){...}, 5s);`
+
+### Async UDP (`<qb/io/async/udp/...>`)
+*   `[T] class server<_Derived> : public io<_Derived>, public transport::udp` — UDP server. `server()`; `has_server = false`.
+*   `[T] class client<_Derived> : public io<_Derived>, public transport::udp` — UDP client. `client()`; `has_server = false`.
+
+### Session manager (`<qb/io/async/io_handler.h>`)
+*   `[T] class io_handler<_Derived, _Session>` — manages async sessions.
+    *   `using session_map_t = qb::unordered_map<uuid, std::shared_ptr<_Session>>;`, `using IOSession = _Session;`
+    *   `session_map_t& sessions()`, `[[nodiscard]] std::size_t session_count() const noexcept` (singular — there is no `sessions_count`). _(`io_handler.h:139`, `:148`)_
+    *   `std::shared_ptr<_Session> session(uuid id)` (`nullptr` if absent).
+    *   `std::size_t max_sessions() const noexcept`, `void set_max_sessions(std::size_t max) noexcept` (0 = unlimited).
+    *   `[T<...Args>] _Session* registerSession(typename _Session::transport_io_type&& new_io, Args&&... args)` — register a session; → `nullptr` (after closing `new_io`) when at `max_sessions` or on duplicate-id insert failure.
+    *   `void unregisterSession(const uuid& ident)`
+    *   `std::pair<typename _Session::transport_io_type, bool> extractSession(const uuid& ident)`
+    *   `[T<_Args...>] _Derived& stream(_Args&&... args)` — broadcast to all sessions.
+    *   `[T<_Func,_Args...>] _Derived& stream_if(const _Func& func, _Args&&... args)` — broadcast to matching sessions.
+
+### Async event types (`<qb/io/async/event/...>`)
+*   `[T] struct event::base<_EV_EVENT> : public _EV_EVENT` — wraps a libev watcher; members `IRegisteredKernelEvent* _interface`, `int _revents`.
+*   `struct event::io : base<ev::io>` — read/write readiness (EV_READ/EV_WRITE).
+*   `struct event::timer : base<ev::timer>` — timeouts/periodic (`using timeout = timer;`).
+*   `struct event::file : base<ev::stat>` — file/dir attribute changes (`event.attr`/`event.prev`).
+*   `[T<int _SIG = -1>] struct event::signal : public base<ev::sig>` — watch a system signal (`-1` = dynamic signum).
+*   `enum class event::disconnect_reason : int { peer_closed=0, user_initiated=1, protocol_error=-1, message_too_large=-2, buffer_overflow=-3 };`
+*   `struct event::disconnected { int reason; std::error_code error_code; std::string message; static disconnected with_error(int,int,const std::string&={}); static disconnected with_system_error(int,const std::string&={}); }`
+*   `struct event::pending_read { std::size_t bytes; }`, `struct event::pending_write { std::size_t bytes; }`
+*   `struct event::input_drained {}` (`using eof = input_drained;`) — input buffer fully parsed.
+*   `struct event::eos {}` — all buffered output written.
+*   `struct event::dispose {}` — final cleanup hook (standalone components).
+*   `struct event::extracted {}` — session handed off (e.g. protocol upgrade).
+*   `struct event::handshake {}` — TLS handshake completed.
+
+## Namespace `qb::io::async` — Coroutine layer (`<qb/io/async/coroutine/...>`)
+
+C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an actor, spawn only via `Actor::spawn` (preferred — cancelled on actor death) or `Actor::spawn_detached`; never drive the scheduler directly with `run_sync`/`run_for` from a handler.
+
+### Core (`task.h`, `scheduler.h`, `awaiter.h`)
+*   `[T] class task<T = void>` — primary move-only coroutine return type, awaitable via `co_await`. `handle()`, `[[nodiscard]] handle_type detach() noexcept`, `done()`, `explicit operator bool`. `T await_resume()` (rethrows stored exception; throws `std::logic_error` if awaited before completion).
+*   `class CoroutineScheduler` — mono-thread scheduler over an `ev::loop_ref`.
+    *   `void spawn(task<void>&& t)`, `[T<Callable>] void spawn(Callable fn)` — **pass the lambda WITHOUT trailing `()`** (avoids dangling-closure UB).
+    *   `std::size_t run_ready(std::size_t max_count = 0)` — drain the ready queue (not re-entrant).
+    *   `void schedule_resume(std::coroutine_handle<>)`
+    *   `static CoroutineScheduler& current()`, `static CoroutineScheduler* current_ptr() noexcept`, `static void set_current(CoroutineScheduler*)`.
+    *   `std::size_t active_count() const`.
+*   `inline void schedule_via_current(std::coroutine_handle<> handle) noexcept`
+*   `struct awaiter_base` — base for libev awaiters (non-copyable/non-movable).
+*   `struct timer_awaiter : awaiter_base` — qev_timer-backed (ctor `(qb::duration, ev::loop_ref)`).
+*   `struct socket_awaiter : awaiter_base` — qev_io-backed (ctor `(int fd, int events, ev::loop_ref)`).
+*   `[T] struct async_awaiter<ResultType> : awaiter_base` — bridge a callback-based op to `co_await`.
+
+### Utilities (`utils.h`)
+*   `inline timer_awaiter sleep(qb::duration duration)` — suspend for a duration (`<= 0` = yield).
+*   `inline socket_awaiter wait_readable(int fd)` / `wait_writable(int fd)` / `wait_for_io(int fd, int events)`.
+*   `inline CoroutineScheduler& coro_scheduler()` — listener's scheduler.
+*   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration.
+*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code (forbidden inside a running coroutine).
+*   use: `co_await qb::io::async::sleep(100ms);`
+
+### Combinators (`combinators.h`)
+*   `[T<...Tasks>] auto when_all(Tasks...)` / `[T<T>] auto when_all(std::vector<task<T>>)` — await all; → tuple/vector; rethrows first exception. A `task<void>` branch occupies a `std::monostate` slot (`void` is not storable), so `when_all(v1(), i1())` binds to `[std::monostate, int]` and a `vector<task<void>>` yields `vector<std::monostate>`. Same rule for `parallel` / `parallel_map`.
+*   `[T<...Tasks>] auto when_any(Tasks...)` / `[T<T>] auto when_any(std::vector<task<T>>)` — await first; losers reclaimed (cancelled) on win.
+*   `struct when_any_result { size_t index; std::any value; std::exception_ptr exception; [T<T>] T get() const; }`
+*   `[T<...Tasks>] auto race(Tasks...)` — alias for `when_any`.
+*   `[T<T>] auto coro_with_timeout(task<T>&& t, qb::duration timeout)` — throws `timeout_error` if elapsed (inner task abandoned, not interrupted).
+*   `class timeout_error : public std::runtime_error`
+
+### Cancellation (`cancellation.h`)
+*   `class cancellation_token` — shared same-thread signal: `cancel()`, `is_cancelled()`, `on_cancel(cb)`, `throw_if_cancelled()`. Copyable. Cross-thread cancel must go via an actor event.
+*   `class cancelled_error : public std::runtime_error`
+*   `inline cancellation_awaiter check_cancelled(const cancellation_token&)`
+*   `inline yield_awaiter yield_or_cancel(const cancellation_token&)`
+*   `[T<T>] auto make_cancellable(task<T>&&, cancellation_token, bool throw_on_cancel = true)`
+*   `inline task<void> cancellable_sleep(qb::duration duration, cancellation_token token)`
+*   `[T<T>] task<T> with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {})` — `timeout_error` past deadline / `cancelled_error` on cancel.
+
+### Channels (`channel.h`)
+*   `[T] class channel<T>` — single-thread MPSC channel (capacity 0 = rendezvous). Non-copyable/non-movable.
+    *   `send_awaiter send(T value)` (throws `channel_closed` if closed), `recv_awaiter recv()` (→ `std::optional<T>`, empty on close).
+    *   `try_send`, `try_recv`, `close()`, `is_closed()`, `size()`, `capacity()`, `empty()`.
+    *   `task<std::optional<T>> recv_for(qb::duration timeout)` (nullopt on timeout/close), `task<bool> send_for(T value, qb::duration timeout)` (false on timeout/close).
+*   `class channel_closed : public std::runtime_error`
+*   `[T<...Ts>] auto select(channel<Ts>&...)` / `[T<T>] auto select(std::vector<channel<T>*>)` — first channel to deliver/close; → `select_result {index, closed, value}`.
+*   Helpers: `make_channel<T>(size_t)`, `make_pipeline<T,U,F>(F,size_t)`, `transform(channel&,channel&,F)`, `filter(channel&,channel&,F)`, `collect(channel&)`.
+
+### Sync primitives (`sync.h`)
+*   `class semaphore` — async counting semaphore: `acquire()`, `acquire(cancellation_token)` (cancellation-aware: a kill while parked unwinds via `cancelled_error` and retracts the queued claim — no permit leak), `try_acquire()`, `release()`, `scoped_acquire()` → `task<guard>`.
+*   `class async_mutex` — cooperative mutex: `lock()`, `try_lock()`, `unlock()`, `scoped_lock()` → `task<guard>`, `is_locked()`, `waiters_count()`.
+*   `class async_rw_lock` — `lock_read()`/`lock_write()`, `unlock_read()`/`unlock_write()`, `scoped_read_lock()`/`scoped_write_lock()` (writers prioritized).
+*   `class barrier` — reusable rendezvous: `arrive_and_wait()`, `reset()`.
+*   `class async_event` — manual/auto-reset: `wait()`, `set()`, `reset()`, `is_set()`, `waiters_count()`.
+*   `class async_latch` — one-shot countdown: `count_down(n)`, `wait()`, `arrive_and_wait()`, `is_ready()`, `current_count()`.
+*   `[T<F>] task<R> with_semaphore(semaphore&, F)` / `with_lock(async_mutex&, F)`.
+
+### Retry (`retry.h`)
+*   `[T<F>] auto with_retry(F f, retry_policy = {})` / `with_retry_until(F,P,retry_policy={})` / `retry(F)` / `make_retryable(F,retry_policy={})` — retry a task-returning callable (throws `retry_exhausted`).
+*   `struct retry_policy { size_t max_attempts; qb::duration base_delay; qb::duration max_delay; backoff_strategy strategy; std::function<bool(const std::exception&)> is_retryable; std::function<void(size_t,const std::exception&)> on_retry; }` (defaults: 3 attempts, 100ms base, 30s max, exponential).
+*   `enum class backoff_strategy { fixed, linear, exponential, exponential_jitter };`
+*   `class retry_exhausted : public std::runtime_error` — `attempts()`, `last_error()`/`rethrow_last()`.
+*   `inline retry_policy transient_network_policy()` / `idempotent_policy()` / `aggressive_retry_policy()`.
+
+### Structured concurrency (`scope.h`)
+*   `class coroutine_scope` — `spawn(task<T>)`/`spawn(Callable)`/`spawn_cancellable`, `join_all()`/`join_any()`/`join_all_for(qb::duration)`, `cancel_all()`, `cancel_token()`, `active_count`/`total_count`/`prune_completed`/`rethrow_if_error`. cleanup_policy `{join_all, cancel_all (default), detach}`.
+*   `class joining_scope` / `cancelling_scope` / `detaching_scope : public coroutine_scope` — fixed cleanup policy.
+*   `[T<...Tasks>] task<std::tuple<...>> parallel(Tasks...)`, `parallel_map(Range,F,size_t=10)`, `with_scope(F)`, `repeat_while(F,P,cancellation_token={})`, `capture_result(task<T>,std::optional<T>&)`. `parallel`/`parallel_map` store a `void` result as `std::monostate` (see `when_all`).
+
+### Generators & streams (`generator.h`, `stream.h`, `shared_task.h`, `mixin.h`)
+*   `[T] class generator<T>` — lazy sync generator (`co_yield` only): range-for, `has_next()`, `next()` → `std::optional<T>`. Move-only.
+*   `[T] class async_generator<T>` — supports `co_await` + `co_yield`; consume via `co_await gen.next()` → `std::optional<T>`.
+*   Factories/combinators: `from_range`, `from_iterator`, `iota`, `range`, `repeat`, `repeat_n`, `concat`, `take`, `skip`; async-gen algos `ag_for_each`, `ag_collect`, `ag_map`, `ag_filter`, `ag_reduce`, `ag_take`, `ag_skip`.
+*   `[T] class async_stream<T>` — pull-based async sequence. Factories `from_channel`/`from_vector`/`empty`/`single`; transforms `map`/`filter`/`take`/`skip`/`chain`/`buffer`/`debounce(qb::duration)`/`throttle(qb::duration)`/`backpressure`; terminals `for_each`/`collect`/`first`/`reduce`/`count`/`any`/`all`/`find`/`drain_to`. Combinators `merge_streams`/`zip`/`from_generator`/`repeat_value`/`interval(qb::duration)`/`timer(T, qb::duration)`/`range_stream`.
+*   `[T] class shared_task<T>` — copyable multi-awaiter handle: `valid()`, `is_ready()`, `operator co_await`.
+*   `[T<T>] shared_task<T> make_shared_task(task<T>&& t)` — spawn now, return a copyable handle.
+*   `[T<Derived>] class coro_mixin<Derived>` — CRTP base exposing `coro()` (driven via `Actor::spawn` / `Actor::spawn_detached`; owns no scheduler).
+
+## Namespace `qb::crypto` (`<qb/io/crypto.h>`, requires OpenSSL)
+
+`class qb::crypto` — container of **static** cryptographic operations (not instantiated).
+
+### Enums & params
+*   `enum class SymmetricAlgorithm { AES_128_CBC, AES_192_CBC, AES_256_CBC, AES_128_GCM, AES_192_GCM, AES_256_GCM, CHACHA20_POLY1305 };`
+*   `enum class DigestAlgorithm { MD5, SHA1, SHA224, SHA256, SHA384, SHA512, BLAKE2B512, BLAKE2S256 };`
+*   `enum class Argon2Variant { Argon2d, Argon2i, Argon2id };` (Argon2id recommended)
+*   `enum class KdfAlgorithm { PBKDF2, HKDF, Argon2 };`
+*   `enum class ECIESMode { STANDARD, AES_GCM, CHACHA20 };`
+*   `enum class EnvelopeFormat { RAW, JSON, BASE64 };`
+*   `struct Argon2Params { uint32_t t_cost; uint32_t m_cost; uint32_t parallelism; std::string salt; }` (defaults t_cost=3, m_cost=1<<16, parallelism=1).
+*   `class base64` (nested) — `static std::string encode(const std::string&) noexcept`, `static std::string decode(const std::string&) noexcept`.
+
+### Random & encoding
+*   `[T<T = std::mt19937>] static auto random_generator()` — RNG seeded from random_device.
+*   `[T<T>] static std::string generate_random_string(std::size_t len, const T& range)` — non-cryptographic.
+*   `static std::string generate_secure_random_string(std::size_t len, std::string_view range = range_alpha_numeric)` — RAND_bytes; throws `std::runtime_error` on RNG failure.
+*   `static std::string to_hex_string(const std::string& input, const std::string_view& range = range_hex_upper) noexcept`
+*   `static int hex_value(unsigned char) noexcept` (-1 if invalid), `static std::string hex_to_string(const std::string&) noexcept`.
+*   `static std::string base64_encode(const unsigned char* data, size_t len)`, `static std::vector<unsigned char> base64_decode(const std::string&)`.
+*   `static std::string base64url_encode(const std::vector<unsigned char>&)`, `static std::vector<unsigned char> base64url_decode(const std::string&)`.
+
+### Hashing & MAC
+*   `static std::string evp(std::istream&, const EVP_MD*) noexcept` — streaming digest → hex.
+*   `static std::string md5/sha1/sha256/sha512(const std::string& input, std::size_t iterations = 1) noexcept` (+ `std::istream` overloads).
+*   `static std::vector<unsigned char> sha256(const std::vector<unsigned char>& data)` — raw-bytes overload.
+*   `static std::vector<unsigned char> hash(const std::vector<unsigned char>& data, DigestAlgorithm)` — generic.
+*   `static std::vector<unsigned char> hmac(const std::vector<unsigned char>& data, const std::vector<unsigned char>& key, DigestAlgorithm)`
+*   `static std::vector<unsigned char> hmac_sha256(const std::vector<unsigned char>& key, const std::string& data)`
+*   `static const EVP_MD* get_evp_md(DigestAlgorithm)`
+*   `static bool constant_time_compare(const std::vector<unsigned char>& a, const std::vector<unsigned char>& b) noexcept` — timing-safe.
+
+### Symmetric crypto
+*   `static std::vector<unsigned char> generate_random_bytes(size_t)`, `generate_iv(SymmetricAlgorithm)`, `generate_key(SymmetricAlgorithm)`, `generate_salt(size_t)`, `generate_unique_iv(size_t size = 12)`.
+*   `static bool secure_random_fill(std::vector<unsigned char>& buffer)`
+*   `static std::vector<unsigned char> xor_bytes(const std::vector<unsigned char>& a, const std::vector<unsigned char>& b)` — throws `std::runtime_error` if sizes differ.
+*   `static std::vector<unsigned char> encrypt(const std::vector<unsigned char>& plaintext, const std::vector<unsigned char>& key, const std::vector<unsigned char>& iv, SymmetricAlgorithm, const std::vector<unsigned char>& aad = {})` — GCM appends auth tag.
+*   `static std::vector<unsigned char> decrypt(const std::vector<unsigned char>& ciphertext, const std::vector<unsigned char>& key, const std::vector<unsigned char>& iv, SymmetricAlgorithm, const std::vector<unsigned char>& aad = {})` — AEAD verifies tag (empty vector if auth fails).
+*   `static std::string encrypt_with_metadata(const std::vector<unsigned char>& plaintext, const std::vector<unsigned char>& key, const std::string& metadata, SymmetricAlgorithm = SymmetricAlgorithm::AES_256_GCM)`
+*   `static std::optional<std::pair<std::vector<unsigned char>, std::string>> decrypt_with_metadata(const std::string& ciphertext, const std::vector<unsigned char>& key, SymmetricAlgorithm = SymmetricAlgorithm::AES_256_GCM)`
+
+### KDFs
+*   `static std::string pbkdf2(const std::string& password, const std::string& salt, int iterations, int key_size) noexcept`
+*   `static std::vector<unsigned char> argon2_kdf(const std::string& password, size_t key_length, const Argon2Params&, Argon2Variant = Argon2Variant::Argon2id)`
+*   `static std::vector<unsigned char> hkdf(const std::vector<unsigned char>& ikm, const std::vector<unsigned char>& salt, const std::vector<unsigned char>& info, size_t output_length, DigestAlgorithm = DigestAlgorithm::SHA256)`
+*   `static std::vector<unsigned char> derive_key(const std::string& password, const std::vector<unsigned char>& salt, size_t key_length, KdfAlgorithm = KdfAlgorithm::Argon2, int iterations = 10000, const Argon2Params& = Argon2Params())`
+*   `static std::string hash_password(const std::string& password, Argon2Variant = Argon2Variant::Argon2id)` — Argon2 hash-with-params string.
+*   `static bool verify_password(const std::string& password, const std::string& hash)`
+
+### Asymmetric crypto & signatures (PEM unless noted)
+*   `static std::pair<std::string,std::string> generate_rsa_keypair(int bits = 2048)` — `{private, public}`.
+*   `static std::pair<std::string,std::string> generate_ec_keypair(const std::string& curve = "prime256v1")`
+*   `static std::vector<unsigned char> rsa_sign(const std::vector<unsigned char>& data, const std::string& private_key, DigestAlgorithm = DigestAlgorithm::SHA256)`; `static bool rsa_verify(..., const std::string& public_key, DigestAlgorithm = DigestAlgorithm::SHA256)`.
+*   `static std::vector<unsigned char> ec_sign(...)`; `static bool ec_verify(...)` (ECDSA).
+*   Ed25519: `static std::pair<std::string,std::string> generate_ed25519_keypair()` / `generate_ed25519_keypair_bytes()`; `ed25519_sign(...)` / `ed25519_verify(...)` (PEM and raw-bytes overloads).
+*   X25519: `static std::pair<std::string,std::string> generate_x25519_keypair()` / `generate_x25519_keypair_bytes()`; `x25519_key_exchange(...)` (raw-bytes and PEM overloads).
+*   ECIES (X25519 + AEAD; **raw-byte keys only, there is no PEM/`std::string` overload and no `DigestAlgorithm` parameter**):
+    *   `static std::pair<std::vector<unsigned char>,std::vector<unsigned char>> ecies_encrypt(const std::vector<unsigned char>& data, const std::vector<unsigned char>& recipient_public_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)` → **`{ephemeral_public_key, ciphertext}`, in that order** — NOT `{ciphertext, ephemeral}`, which is what this line used to say. `ecies_decrypt` takes them the other way round (ciphertext first), so the pair is deliberately not in call order; feeding it straight through throws `Failed to create public key from raw bytes`. _(`crypto_asymmetric.cpp:718`)_
+    *   `static std::vector<unsigned char> ecies_decrypt(const std::vector<unsigned char>& encrypted_data, const std::vector<unsigned char>& ephemeral_public_key, const std::vector<unsigned char>& recipient_private_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)`. _(`crypto.h:991-1000`)_
+    *   `ECIESMode::STANDARD` is AES-256-CBC with **no MAC** — unauthenticated and malleable; it exists only for interop. Use the default `AES_GCM` or `CHACHA20`. _(`crypto.h:693-701`)_
+*   Envelope AEAD-with-metadata: `static std::string encrypt_with_metadata(const std::vector<unsigned char>& plaintext, const std::vector<unsigned char>& key, const std::string& metadata, SymmetricAlgorithm = SymmetricAlgorithm::AES_256_GCM)`; `static std::optional<std::pair<std::vector<unsigned char>,std::string>> decrypt_with_metadata(const std::string& ciphertext, const std::vector<unsigned char>& key, SymmetricAlgorithm = SymmetricAlgorithm::AES_256_GCM)` (empty optional if authentication fails). _(`crypto.h:969-986`)_
+*   The `EnvelopeFormat` enum (`RAW | JSON | BASE64`) exists but **no function consumes it** — there is no `envelope_encrypt`/`envelope_decrypt`, and no `ecdh_derive_secret`. For key agreement use `x25519_key_exchange` (raw-bytes and PEM overloads). _(`crypto.h:704`, `:931`, `:943`)_
+
+### Encrypted tokens (NOT JWT)
+*   `static std::string generate_token(const std::string& payload, const std::vector<unsigned char>& key, qb::duration ttl = qb::duration::zero())` — AES-256-GCM-encrypted Base64URL token with `iat` and (if `ttl > 0`) `exp`. `ttl` is `qb::duration`; zero = no expiry (stored internally as Unix seconds).
+*   `static std::string verify_token(const std::string& token, const std::vector<unsigned char>& key)` — → payload, or "" if tampered/malformed/expired.
+
+## Namespace `qb::jwt` (`<qb/io/crypto_jwt.h>`)
+
+`class qb::jwt` — RFC 7519 JWT create/verify/decode; all-static API.
+
+### Types
+*   `enum class Algorithm { HS256, HS384, HS512, RS256, RS384, RS512, ES256, ES384, ES512, EdDSA };`
+*   `enum class ValidationError { NONE, INVALID_FORMAT, INVALID_SIGNATURE, TOKEN_EXPIRED, TOKEN_NOT_ACTIVE, INVALID_ISSUER, INVALID_AUDIENCE, INVALID_SUBJECT, CLAIM_MISMATCH };`
+*   `struct ValidationResult { ValidationError error; std::map<std::string,std::string> payload; bool is_valid() const; }` (`is_valid() == (error == NONE)`).
+*   `struct TokenParts { ...header, payload, signature... }` — decoded parts.
+*   `struct CreateOptions { Algorithm algorithm /*default HS256*/; std::string key; std::optional<std::string> type /*"JWT"*/; ...content_type, key_id, header_claims }`.
+*   `struct VerifyOptions { Algorithm algorithm; std::string key; bool verify_expiration/not_before /*true*/; bool verify_issuer/audience/subject/jti /*false*/ + expected values; ...required_claims; std::chrono::seconds clock_skew /*0*/ }`.
+
+### Functions
+*   `static std::string create(const std::map<std::string,std::string>& payload, const CreateOptions& options)` — build & sign.
+*   `static std::string create_token(const std::map<std::string,std::string>& payload, const std::string& issuer, const std::string& subject, const std::string& audience, std::chrono::seconds expires_in, std::chrono::seconds not_before = std::chrono::seconds(0), const std::string& jti = "", const CreateOptions& options = CreateOptions())` — standard claims; `exp`/`nbf` added only when `.count() > 0` (RFC NumericDate seconds).
+*   `static ValidationResult verify(const std::string& token, const VerifyOptions& options)` — verify signature + claims (exp/nbf vs current Unix seconds ± clock_skew).
+*   `static TokenParts decode(const std::string& token)` — split + base64url-decode WITHOUT verifying; throws `std::runtime_error` on malformed format.
+*   `static std::string algorithm_to_string(Algorithm)`, `static std::optional<Algorithm> algorithm_from_string(const std::string&)`.
+*   use: `auto t = qb::jwt::create(payload, {.algorithm = qb::jwt::Algorithm::HS256, .key = secret}); auto r = qb::jwt::verify(t, {.algorithm = ..., .key = secret}); if (r.is_valid()) { ... }`
