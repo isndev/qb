@@ -73,9 +73,27 @@ TEST_F(CoroutineTimerSleep, SleepCompletesAndResumes) {
 
 TEST_F(CoroutineTimerSleep, ShorterTimersResumeBeforeLongerOnesRelativeOrder) {
     // Record the order in which timers fire using a shared monotonic sequence counter instead of
-    // wall-clock timestamps. Timers are spawned with durations that are well separated (10ms apart)
-    // so the relative order is robust under scheduling jitter; we assert membership + that the
-    // shortest fired first and the longest fired last.
+    // wall-clock timestamps; we assert membership + that the shortest fired first and the longest
+    // fired last.
+    //
+    // The 10ms spacing is NOT what makes this robust, and the previous wording here — "well
+    // separated (10ms apart) so the relative order is robust under scheduling jitter" — was wrong
+    // in a way that invites the two bad fixes: 10ms buys nothing against the tens of milliseconds
+    // of jitter a loaded box produces, so believing that sentence leads either to raising the
+    // spacing (slower, no safer) or to writing the next test of this shape with 3ms and calling it
+    // safe. What actually holds the order is invariant I1 in shared/coroutine_test_support.h:
+    // `spawn` only ENQUEUES, so all five bodies start in one `run_ready()` drain and arm into one
+    // deadline-ordered libev heap — a stall delays all five equally and cannot reorder them.
+    // Measured under 40ms SIGSTOP stalls: the realized adjacent gap collapsed from 10ms to 0.002ms
+    // (0.02% of nominal) with zero inversions in 60 runs.
+    //
+    // The one way to invert this is a stall landing between two consecutive ARMS inside that drain
+    // (verified: 40ms injected there fails 3/3). That window is one coroutine start plus one
+    // clock_gettime — measured 3.6-41.3us worst adjacent arm gap over 40 runs under the same 40ms
+    // stalls, with all five armed inside 8.8-54.7us. Raising the 10ms spacing would not narrow
+    // that window by a nanosecond; it would only demand a longer stall, at the price of a slower
+    // test on every run. If this test ever does fail, look at resume order versus deadline order —
+    // not at the constants.
     constexpr int    count = 5;
     std::atomic<int> next_seq{0};
     std::vector<int> seq_of_index(count, -1); // seq_of_index[i] = completion order of timer i

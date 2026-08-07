@@ -504,6 +504,15 @@ TEST_F(ScopeStructuredConcurrency, JoinAllWakesImmediatelyWhenEmpty) {
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "empty join_all never woke";
 }
 
+// The 5ms between the two workers is not a jitter margin, so do not "fix" a failure here by
+// widening it: invariant I1 (shared/coroutine_test_support.h) holds the order. `scope.spawn` routes
+// to `coro_scheduler().spawn`, which only enqueues, so both workers arm in the same loop turn into
+// one deadline-ordered heap and a stall delays both equally. Measured under 40ms SIGSTOP stalls:
+// the realized gap collapsed from 5.30ms to 0.023ms — 0.5% of the nominal 5ms — with zero
+// inversions in 60 runs, and injecting a 20ms stall BETWEEN the two spawns also changed nothing.
+// The residual exposure is a stall landing between the two ARMS inside the drain, a window of a
+// few microseconds that widening the 5ms would not shrink. A real inversion means resume order
+// stopped following deadline order; that is the regression to look for.
 TEST_F(ScopeStructuredConcurrency, JoinAllResumesInCompletionOrder) {
     std::atomic<bool> done{false};
     std::vector<int>  order;

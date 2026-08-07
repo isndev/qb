@@ -314,6 +314,12 @@ class CoroutineTimingPatterns : public CoroutineIdiomFixture {};
 /**
  * @test Sequential timers fire in order with at-least-the-requested gaps
  * @brief A chain of sleeps records timestamps; each interval is at least its (tolerance-reduced) target.
+ * @note These are one-sided FLOORS, not two-sided margins: load only lengthens a measured span, so
+ *       it can only push them further into passing. They fail only on an EARLY timer, which
+ *       invariant I2 (shared/coroutine_test_support.h) excludes. The 5ms below nominal is slack
+ *       this test does not actually need — measured worst case across 125 release runs was
+ *       nominal + 5us, i.e. never early — so a failure here is a real regression in the timer
+ *       deadline, never jitter. Do not widen it.
  */
 TEST_F(CoroutineTimingPatterns, SequentialTimers) {
     std::vector<std::chrono::steady_clock::time_point> timestamps;

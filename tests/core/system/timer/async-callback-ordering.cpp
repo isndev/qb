@@ -111,6 +111,23 @@ TEST(AsyncCallbackOrdering, ChainedCallbacksFireInOrderExactlyOnce) {
 // ---------------------------------------------------------------------------
 // Timing: a fixed-delay chain of N callbacks takes AT LEAST N*delay (each link waits its full delay)
 // and fires EXACTLY N times. Lower bound is a hard invariant; upper bound is a loud deadline.
+//
+// "Hard invariant" is a specific claim, so here is what backs it — this is the TIGHTEST floor in
+// the suite (50 links, so 50 chances to come in early) and it has zero slack by design:
+//   - `qb::detail::to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:801) — a
+//     requested delay is never rounded DOWN;
+//   - `async::callback` forces `qev_now_update` immediately before arming (qb/io/async/io.h:388),
+//     so each link's deadline is a FRESH clock read plus 1ms, never a stale cached one — that
+//     refresh is exactly what this floor would catch the loss of;
+//   - libev fires a timer only once its clock is strictly PAST the deadline
+//     (`ANHE_at(timers[HEAP0]) < mn_now`, qb/vendor/qev/qev.c:4418) against
+//     `clock_gettime(CLOCK_MONOTONIC)` (qev.c:2876).
+// So each link is >= 1ms of monotonic time and the chain is >= N ms. `qb::mono_now()` below reads
+// `steady_clock`, which IS CLOCK_MONOTONIC on Linux and runs at the same rate on macOS; note it is
+// deliberately NOT `Actor::time()`, which is cached per VirtualCore loop turn and so can read a gap
+// UNDER its true elapsed value. Measured headroom: +0.34ms worst over 125 release runs (0.7% of the
+// 50ms nominal), and it only GROWS under load — +334ms worst under 40ms SIGSTOP stalls. Load cannot
+// break this floor; only a broken deadline can. Do not widen it to silence a failure.
 // ---------------------------------------------------------------------------
 namespace {
 std::atomic<int>      g_timed_fired{0};

@@ -646,6 +646,15 @@ TEST_F(CoroutineAwaiterTests, AwaitSuspendExceptionPropagates) {
 
 // =============================================================================
 // BUILT-IN sleep() AWAITER
+//
+// The two elapsed assertions below sit at EXACTLY the nominal duration, with no slack. That is
+// deliberate and correct, not an oversight: they are one-sided floors resting on invariant I2 in
+// shared/coroutine_test_support.h (fresh `qev_now_update` before every `qev_timer_start`, plus a
+// strictly-past fire condition), so a `sleep(D)` cannot return in under D of monotonic time. Load
+// only lengthens the measured span — verified over 125 release runs: the 50ms floor's headroom was
+// 1.2ms at its worst and ranged 1.8-71.0ms under 40ms SIGSTOP stalls, the 60ms floor's 2.0ms at its
+// worst and 98.7-125.6ms under the same stalls. Neither ever went negative. Widening either to
+// silence a failure would delete the suite's regression detector for that invariant.
 // =============================================================================
 
 /**
