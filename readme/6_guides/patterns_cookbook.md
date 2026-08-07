@@ -429,13 +429,18 @@ slot, so the request and its response travel in **one** event type. The responde
 `qb::answer(*this, e, fn)` helper (it routes its own replies via `resolve_ask` first, then computes + replies).
 
 ```cpp
-struct Quote : qb::Request<double> { std::string symbol; };          // request: symbol — response: double
+struct Quote : qb::Request<double> { qb::string<16> symbol; };       // request: symbol — response: double
+// Two things above are load-bearing:
+//   * `qb::string<N>`, NOT `std::string` — an event is memcpy-relocated cross-core, and a short
+//     std::string points into its own storage on libstdc++ (see the pitfall at the end).
+//   * the DESIGNATED form below (`{.symbol = ...}`). `Request<>` is an aggregate with a base, so
+//     a positional `Quote{"BTC"}` initialises the `Event` BASE and does not compile.
 
 // responder:
 void on(Quote &q) { qb::answer(*this, q, [](Quote const &r){ return lookup(r.symbol); }); }
 
 // asker (inside a spawn() coroutine):
-auto q = co_await qb::ask(ctx, market, Quote{"BTC"}, 500ms);
+auto q = co_await qb::ask(ctx, market, Quote{.symbol = "BTC"}, 500ms);
 use(q.response);
 ```
 
@@ -445,9 +450,9 @@ majority middle-ground). All throw `timeout_error` if the deadline / quorum can'
 
 ```cpp
 spawn([markets](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-    auto quotes = co_await qb::ask_all(ctx, markets, Quote{"BTC"}, 500ms);   // all N — std::vector<Quote>
+    auto quotes = co_await qb::ask_all(ctx, markets, Quote{.symbol = "BTC"}, 500ms);   // all N — std::vector<Quote>
     for (auto const &q : quotes) use(q.response);
-    auto fastest = co_await qb::ask_any(ctx, markets, Quote{"BTC"}, 500ms);  // first reply (k = 1)
+    auto fastest = co_await qb::ask_any(ctx, markets, Quote{.symbol = "BTC"}, 500ms);  // first reply (k = 1)
 
     // Quorum: the first k of N (e.g. a majority of replicas); throws if k can't be reached.
     auto majority = co_await qb::ask_quorum(ctx, replicas, replicas.size()/2 + 1, Read{key}, 200ms);
@@ -497,7 +502,7 @@ aborts the loop at once (the backoff waits are cancellation-aware).
 // jitter (0..1) randomizes each backoff over [backoff*(1-jitter), backoff] to avoid retry storms.
 qb::retry_policy policy{ .max_attempts = 5, .backoff = 50ms, .multiplier = 2.0,
                          .max_backoff = 1s, .jitter = 0.2 };
-auto r = co_await qb::ask_retry(ctx, market, Quote{"BTC"}, 200ms, policy);
+auto r = co_await qb::ask_retry(ctx, market, Quote{.symbol = "BTC"}, 200ms, policy);
 ```
 
 **Circuit breaker.** A `qb::CircuitBreaker` trips **open** after N consecutive failures, fails fast for
@@ -508,7 +513,7 @@ value (it outlives the actor); `ask_guarded` checks it, sends the ask, and recor
 // actor member: std::shared_ptr<qb::CircuitBreaker> breaker_ = std::make_shared<qb::CircuitBreaker>(5, 2s);
 spawn([breaker = breaker_, market](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
     try {
-        auto r = co_await qb::ask_guarded(ctx, breaker, market, Quote{"BTC"}, 200ms);
+        auto r = co_await qb::ask_guarded(ctx, breaker, market, Quote{.symbol = "BTC"}, 200ms);
         use(r.response);
     } catch (const qb::circuit_open_error &) {
         // breaker is open — fall back without touching the failing market
@@ -598,7 +603,7 @@ with `co_await s.next()` until end-of-stream. The responder emits chunks with `q
 finishes with `qb::end_stream`; the asker routes chunks with `resolve_ask` (they are `AskEvent`s).
 
 ```cpp
-struct Tail : qb::StreamRequest<LogLine> { std::string file; };
+struct Tail : qb::StreamRequest<LogLine> { qb::string<64> file; };   // qb::string, not std::string
 
 // responder:
 void on(Tail &t) {

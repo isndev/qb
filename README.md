@@ -210,11 +210,17 @@ are in [INSTALL.md](./INSTALL.md).
 
 Continuous integration builds and tests every change on:
 
-| OS                         | Compilers   | Standard library |
-|----------------------------|-------------|------------------|
-| Linux (`ubuntu-latest`)    | GCC, Clang  | libstdc++        |
-| macOS (`macos-latest`)     | Apple Clang | libc++           |
-| Windows (`windows-latest`) | MSVC        | MSVC STL         |
+| OS                         | Compilers   | Standard library | CI                    |
+|----------------------------|-------------|------------------|-----------------------|
+| Linux (`ubuntu-latest`)    | GCC, Clang  | libstdc++        | enabled               |
+| macOS (`macos-latest`)     | Apple Clang | libc++           | enabled               |
+| Windows (`windows-latest`) | MSVC        | MSVC STL         | **currently disabled** |
+
+> **Windows/MSVC is supported source, but is not exercised by CI right now.** The hosted-runner
+> job is commented out in `.github/workflows/cmake.yml` (it took ~70 minutes and its tests timed
+> out under that load, reporting runner noise rather than defects); the maintainer validates the
+> full MSVC solution out of band before each release. Treat a Windows build as verified by you,
+> not by this project's CI. See [INSTALL.md](INSTALL.md#supported-toolchains).
 
 Supported architectures: x86_64 and ARM64 (including Apple Silicon).
 

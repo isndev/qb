@@ -18,7 +18,7 @@ This page is the contributor-facing build reference. If you only want to *add qb
 | Threads | A POSIX threads (pthreads) implementation is required on non-Windows platforms; configuration fails with a fatal error if it is missing. | `qb/cmake/qbCompiler.cmake:389-392` |
 | Git | Needed on the configure machine only when a fetchable dependency (GoogleTest, Google Benchmark, zlib) is absent from the system and is built from source. | see [cmake_dependencies.md](./cmake_dependencies.md) |
 
-Architectures: x86_64 and ARM64 (including Apple Silicon). The continuous integration matrix builds and tests every change on Linux (GCC, Clang / libstdc++), macOS (Apple Clang / libc++), and Windows (MSVC / MSVC STL). See [INSTALL.md](../../INSTALL.md#supported-toolchains) for the matrix.
+Architectures: x86_64 and ARM64 (including Apple Silicon). The continuous integration matrix builds and tests every change on Linux (GCC, Clang / libstdc++) and macOS (Apple Clang / libc++). **Windows (MSVC / MSVC STL) is supported source but its CI job is currently disabled** — it is validated out of band before each release, so treat a Windows build as verified by you, not by this project's CI. See [INSTALL.md](../../INSTALL.md#supported-toolchains) for the matrix.
 
 Dependencies are resolved automatically: most builds need nothing installed beyond a compiler and CMake. libev and stduuid are qb forks, vendored and built from `qb/src/qb/vendor/`; OpenSSL, Argon2, and ngtcp2 are system-only and gate optional features when absent. The full policy lives in [cmake_dependencies.md](./cmake_dependencies.md).
 

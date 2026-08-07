@@ -29,13 +29,15 @@ The tables below group the options by purpose. Defaults are taken verbatim from 
   not found (`qbDependencies.cmake`). Set the `QB_WITH_*` option; read the `QB_HAS_*` result.
 - **Auto-detected features** — `QB_WITH_SSL` and `QB_WITH_COMPRESSION` request a feature but degrade
   gracefully when the dependency is missing. `QB_WITH_QUIC` is tri-state (see its row below).
-- **Fetchable vs system-only dependencies** — only the CMake-native dependencies (GoogleTest, Google
-  Benchmark, Zlib) can be built from source via `FetchContent`; the `QB_*_GIT_TAG` variables pin them.
-  OpenSSL, Argon2, and libngtcp2 are never fetched. The policy is owned by
+- **Fetchable vs system-only dependencies** — GoogleTest, Google Benchmark, Zlib **and nlohmann/json**
+  can be built from source via `FetchContent`; the four `QB_*_GIT_TAG` variables pin them.
+  OpenSSL, Argon2, and libngtcp2 are never fetched. nlohmann is the odd one out: it is required by
+  *every* build (`qb::json` **is** `nlohmann::json`), so an absent system copy plus
+  `QB_DEPS_FETCH_FALLBACK=OFF` is a fatal configure error, not a lost feature. The policy is owned by
   [CMake and dependencies](./cmake_dependencies.md).
-- **Cache types** — most options are CMake `option()` booleans (`ON`/`OFF`). Six are `STRING` cache
-  variables: `QB_CXX_STANDARD` (`20`/`23`), `QB_WITH_QUIC` (`AUTO`/`ON`/`OFF`), `QB_SANITIZE`, and the
-  three `QB_*_GIT_TAG` pins.
+- **Cache types** — most options are CMake `option()` booleans (`ON`/`OFF`). Eight are `STRING` cache
+  variables: `QB_CXX_STANDARD` (`20`/`23`), `QB_WITH_QUIC` (`AUTO`/`ON`/`OFF`), `QB_SANITIZE`,
+  `QB_USE_SYSTEM_NLOHMANN` (`AUTO`/`ON`/`OFF`), and the four `QB_*_GIT_TAG` pins.
 
 ## Build configuration
 
@@ -57,14 +59,16 @@ the whole workspace; building qb standalone uses the defaults above.
 
 | Option | Default | Purpose |
 |---|---|---|
-| `QB_DEPS_FETCH_FALLBACK` | `ON` | For fetchable dependencies (GoogleTest, Google Benchmark, Zlib), use the system package if `find_package` locates it, otherwise build the pinned tag from source via `FetchContent` ("system if present, else git"). |
+| `QB_DEPS_FETCH_FALLBACK` | `ON` | For fetchable dependencies (GoogleTest, Google Benchmark, Zlib, nlohmann/json), use the system package if `find_package` locates it, otherwise build the pinned tag from source via `FetchContent` ("system if present, else git"). With **no** system nlohmann this being `OFF` is a **fatal** configure error — there is no qb without nlohmann. |
 | `QB_USE_SYSTEM_GTEST` | `OFF` | Require a system GoogleTest (`find_package(GTest CONFIG REQUIRED)`); never fetch. |
 | `QB_USE_SYSTEM_BENCHMARK` | `OFF` | Require a system Google Benchmark (`find_package(benchmark CONFIG REQUIRED)`); never fetch. |
 | `QB_GOOGLETEST_GIT_TAG` | `v1.15.2` | Git tag (or SHA) for the `FetchContent` googletest build. Advanced. |
 | `QB_GOOGLEBENCHMARK_GIT_TAG` | `v1.9.2` | Git tag (or SHA) for the `FetchContent` googlebenchmark build. Advanced. |
 | `QB_ZLIB_GIT_TAG` | `v1.3.1` | Git tag (or SHA) for the `FetchContent` zlib fallback build. Advanced. |
+| `QB_USE_SYSTEM_NLOHMANN` | `AUTO` | Tri-state. `AUTO` probes for a system nlohmann_json (>= 3.11) then fetches; `ON` requires one and fails early if absent; `OFF` always fetches. An **installable** build (`QB_INSTALL=ON`, which is the standalone default) needs a real system copy either way — a fetched target is in no export set, so that combination is a configure-time error. |
+| `QB_NLOHMANN_GIT_TAG` | `v3.12.0` | Git tag (or SHA) for the `FetchContent` nlohmann_json fallback. Advanced. |
 
-The three `QB_*_GIT_TAG` variables are marked advanced (`mark_as_advanced`); they are visible in
+The four `QB_*_GIT_TAG` variables are marked advanced (`mark_as_advanced`); they are visible in
 `ccmake`/CMake-GUI under the advanced view. The full resolution policy lives in
 [CMake and dependencies](./cmake_dependencies.md).
 

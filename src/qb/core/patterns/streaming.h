@@ -53,7 +53,7 @@ namespace qb {
  * @details Derive your exchange from `StreamRequest<Chunk>` and add **request** fields; the base
  *          supplies the `chunk` slot, the `stream_done` end marker, and the `AskEvent` stream id.
  * @code
- * struct Tail : qb::StreamRequest<LogLine> { std::string file; }; // request: file — chunk: LogLine
+ * struct Tail : qb::StreamRequest<LogLine> { qb::string<64> file; }; // qb::string, not std::string
  * @endcode
  */
 template <class Chunk>

@@ -56,10 +56,10 @@ concept ask_event_type = std::derived_from<E, qb::AskEvent> && std::copyable<E>;
  * the `response` slot and the `AskEvent` correlation id, so one event type round-trips the whole
  * exchange.
  * @code
- * struct Quote : qb::Request<double> { std::string symbol; };   // request: symbol — response: double
+ * struct Quote : qb::Request<double> { qb::string<16> symbol; };// qb::string: events are memcpy-relocated
  *
  * // asker (inside a spawn() coroutine):
- * auto q = co_await qb::ask(ctx, market, Quote{"BTC"}, 500ms);
+ * auto q = co_await qb::ask(ctx, market, Quote{.symbol = "BTC"}, 500ms);  // designated: names the member
  * use(q.response);
  *
  * // responder (synchronous handler):

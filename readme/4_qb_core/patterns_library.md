@@ -139,7 +139,7 @@ public:
 
 // Asker — inside a spawned coroutine.
 spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-    auto q = co_await qb::ask(ctx, mkt, Quote{21}, 500ms);
+    auto q = co_await qb::ask(ctx, mkt, Ping{21}, 500ms);
     g_typed_resp = q.response;             // 21 * 2 == 42
     ctx.push<PatternsDone>();
 });
