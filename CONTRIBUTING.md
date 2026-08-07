@@ -25,7 +25,9 @@ Before filing an issue:
 3. Describe expected versus actual behavior, the steps to reproduce, and your environment: operating
    system, compiler and version, qb version, and the CMake options you built with.
 
-Use the bug-report issue template when one is available.
+The bug-report issue template prompts for exactly this. One of its fields — *how is qb consumed?*
+(`find_package` / `add_subdirectory` / FetchContent / a package manager / hand-written `-I` and `-l`)
+— is the fastest discriminator for build and link failures, so answer it even in a free-form report.
 
 ## Proposing enhancements
 
@@ -53,8 +55,10 @@ where possible), and why it benefits the framework. Check existing issues and di
    ```bash
    git commit -s
    ```
-8. Open a pull request against the default branch with a clear description and a reference to any related
-   issue (for example, "Closes #123").
+8. Open a pull request against **`develop`**, with a clear description and a reference to any related
+   issue (for example, "Closes #123"). `main` is the released line and moves only at a release; day-to-day
+   work lands on `develop`. CI runs on pull requests to either branch, so targeting `main` will not fail
+   loudly — it will simply propose your change for the released line, which is almost never what you want.
 
 Maintainers review every pull request and may request changes before merging.
 
@@ -79,13 +83,21 @@ Match the conventions of the surrounding code: the framework is CRTP- and templa
 
 ## Testing
 
-Tests use GoogleTest and run under `ctest`.
+Tests use GoogleTest and run under `ctest`, in two tiers:
 
 - **Unit tests** exercise a class or function in isolation — `tests/<module>/unit/`.
 - **System tests** exercise interactions through the `qb::Main` engine and actors —
   `tests/<module>/system/`.
 
-See the [testing guide](./readme/7_reference/testing.md) for details.
+Every test carries `tier:<tier>` and `module:<module>` labels, so `ctest -L tier:unit` or
+`ctest -L module:qb-core` selects a slice without needing a name regex.
+
+`tests/<module>/benchmark/` is a third directory but not a third tier: those targets are registered
+with `qb_add_benchmark`, are not `ctest` entries, and are not correctness gates.
+
+Anything touching async code, coroutines, or the tests themselves should also be run under the
+sanitizers before submitting — a data race or a use-after-free here is usually invisible to a plain
+Release run. See the [testing guide](./readme/7_reference/testing.md) for details.
 
 ## Development environment
 

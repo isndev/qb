@@ -1,0 +1,84 @@
+name: Bug report
+description: A reproducible defect, including build and integration failures.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every field below is one a maintainer actually reads when triaging. If a question does not
+        apply, say so rather than guessing — "not sure" is more useful than a plausible wrong answer.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what you expected instead
+      placeholder: |
+        Expected: find_package(qb) leaves my project's CMAKE_CXX_STANDARD alone.
+        Actual:   it is reset to 17, and my own sources stop compiling.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: >
+        The smallest thing that shows the problem — a short source file, a CMakeLists, or the exact
+        commands. If it needs a running PostgreSQL or Redis, say which and how it was started.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: qb version
+      description: >
+        A tag, or a commit id. If you are using an installed prefix, `cat <prefix>/share/qb/abi-fingerprint.txt`
+        answers this and the next two questions at once — paste it and skip ahead.
+      placeholder: "v3.0.0, or 7bc7ca25, or the abi-fingerprint.txt contents"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: consumption
+    attributes:
+      label: How is qb consumed?
+      description: >
+        This is the single most discriminating question for build and link failures, so it is asked
+        first rather than deduced. A hand-written `-I`/`-l` line misses qb's CMake usage requirements
+        and produces link errors that look like qb bugs but are not.
+      options:
+        - find_package(qb CONFIG) against an installed prefix
+        - add_subdirectory(qb) inside my project
+        - FetchContent
+        - vcpkg, Conan, or another package manager
+        - hand-written -I and -l flags
+        - other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform, compiler, and versions
+      placeholder: "Ubuntu 24.04, g++-14.2, CMake 3.31, libstdc++"
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Build configuration
+      description: >
+        The `cmake` command line, or at least the `QB_*` options and `CMAKE_BUILD_TYPE` you set.
+        Mention any sanitizer, `-DNDEBUG` mismatch between your targets, LTO, or `-march`.
+      render: shell
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Compiler, linker, or runtime output
+      description: >
+        Paste it verbatim rather than summarising. For an undefined symbol beginning `qb_abi_`, include
+        the full message — the symbol name states which configuration axis disagreed.
+      render: text

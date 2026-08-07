@@ -1,0 +1,37 @@
+name: Feature request
+description: A concrete addition or change to the framework.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For an open-ended idea, [Discussions](https://github.com/isndev/qb/discussions) is a better
+        room than an issue. Use this when you can state the problem and roughly what the API would
+        look like.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you unable to do today, and what did you try instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: What it would look like
+      description: >
+        A sketch of the API or the option, with a short usage example. It does not have to be right —
+        it has to be concrete enough to argue with.
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Anything that constrains the design
+      description: >
+        Optional. Relevant if it touches an actor's thread affinity, the `noexcept` event path,
+        coroutine lifetime, or the public ABI — those carry invariants a proposal has to fit
+        (see `readme/7_reference/core_invariants.md`).
