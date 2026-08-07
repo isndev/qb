@@ -74,9 +74,12 @@ present when the module is checked out alone.  Three ways to handle that were co
      unresolvable name by hand in `scripts/llm-guard.baseline`, which is SELF-CLEANING: an
      entry matching nothing FAILS.  Chosen.
 
-Measured cost of (c): 10 names across the four repos (qb 0, qbm-http 7, qbm-pgsql 0,
-qbm-redis 3).  Nothing loses coverage overall — `dev/agent/llm-guard.py` sees both trees and
-verifies all ten for real; this script simply states which ten it cannot.
+Measured cost of (c), counted from the baselines rather than remembered: **9 symbol entries**
+across the four repos (qb 0, qbm-http 6, qbm-pgsql 0, qbm-redis 3), naming **7 distinct symbols**
+— `qb_load_modules` is baselined in two qbm-http docs and once in qbm-redis, so entries exceed
+names.  (This paragraph said "10 names ... qbm-http 7" and matched neither count.)  Nothing loses
+coverage overall — `dev/agent/llm-guard.py` sees both trees and verifies all of them for real;
+this script simply states which ones it cannot.
 
 WHY THE PHANTOM AND FORBIDDEN RULES CARRY NO CORPUS FLOOR
 ---------------------------------------------------------
@@ -102,9 +105,14 @@ RELATION TO `dev/agent/llm-guard.py`
 That script keeps running from the superproject over these same files at their new submodule
 paths, with its `--min-llm-docs` floor unchanged at 8.  The overlap is deliberate and the two
 scopes differ in a way neither can cover alone: the root guard sees qb + all three modules at
-once (so it verifies the 10 cross-repo names, and it is the only thing that would catch a qb
-rename breaking a qbm doc), while this one is the only guard a public repo's own CI runs.
-Neither is redundant; dropping either leaves a real class unchecked.
+once (so it verifies the 9 baselined cross-repo entries, and it is the only thing that would
+catch a qb rename breaking a qbm doc), while this one is the only guard a public repo's own CI
+runs.  Neither is redundant; dropping either leaves a real class unchecked.
+
+That second claim was false for three of the four repos until the project identity below stopped
+being derived from the checkout's PATH — standalone, this script exited 2 having read nothing.
+`dev/agent/standalone-checkout-control.sh` now asserts it in the shape GitHub Actions actually
+produces, so it is a checked property rather than a stated one.
 
 Usage:  python3 scripts/llm-guard.py [--stats] [--show N] [--tolerance N]
         python3 scripts/llm-guard.py --record-digests   # after verifying a source move
@@ -124,11 +132,54 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)                       # project root
 
-# Project prefix in repo-root-form citations (…/qbm/http -> "qbm/http/"), identical to the
-# rule `cite-check.py` uses so the two agree on what "this project" means.
-_parts = ROOT.replace(os.sep, "/").split("/")
-PREFIX = ("/".join(_parts[-2:]) + "/") if _parts[-2:-1] == ["qbm"] else (_parts[-1] + "/")
-PROJECT = PREFIX.rstrip("/").replace("/", "-")           # qb | qbm-http | qbm-pgsql | qbm-redis
+# --------------------------------------------------------------------------------------------
+# WHICH of the four projects is this checkout?  Answered from the tree's CONTENT, never from the
+# directory it happens to sit in.  Identical in `cite-check.py` and `gen-llms-txt.py`, so the
+# three scripts cannot disagree about what "this project" is.
+#
+# The rule this replaces read the PATH: `…/qbm/http` -> "qbm/http/", anything else ->
+# "<dirname>/".  That is only true inside the qb-dev SUPERPROJECT.  A standalone checkout — the
+# only shape a public repo's OWN CI ever sees — is at $GITHUB_WORKSPACE =
+# /home/runner/work/<repo>/<repo>, whose parent is named after the REPOSITORY (`qbm-http`),
+# never `qbm`.  The derived prefix was therefore `qbm-http/`: a key in none of the per-project
+# tables in any of the three scripts.  Measured by running each repo's own `doc-lint.sh` inside
+# a GitHub-shaped workspace, in qbm-http, qbm-pgsql and qbm-redis:
+#
+#   llm-guard.py     FAIL [config], exit 2  — 0 symbols, 0 citations, 0 paths, 0 digests read
+#   gen-llms-txt.py  FAIL, exit 1           — the published-index gate checked nothing
+#   cite-check.py    exit 0, SILENTLY GREEN — `do_prose = PREFIX in PROSE_ON` was False, so the
+#                    prose citation form (23 qbm-http + 37 qbm-pgsql + 331 qbm-redis) was
+#                    skipped and its anti-vacuous floor never ran at all
+#
+# qb was unaffected, because its repository and its superproject directory are BOTH named `qb` —
+# which is exactly why four green superproject runs never showed it.
+#
+# The markers are load-bearing files that cannot be absent from a real checkout and do not move
+# when the checkout does: qb is the tree owning `cmake/qbConfig.cmake` (the version source of
+# truth VERSIONING.md names), a module is the tree whose `CMakeLists.txt` says
+# `project(qbm-<mod> …)`.
+PROJECT_PREFIXES = ("qb/", "qbm/http/", "qbm/pgsql/", "qbm/redis/")
+
+
+def project_prefix(root):
+    """This project's prefix in repo-root-form paths, or None if it is none of the four."""
+    try:
+        with open(os.path.join(root, "cmake", "qbConfig.cmake"), errors="ignore") as fh:
+            if re.search(r'^\s*set\(QB_FRAMEWORK_NAME\s+"qb"\)', fh.read(), re.M):
+                return "qb/"
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(root, "CMakeLists.txt"), errors="ignore") as fh:
+            m = re.search(r"^\s*project\(\s*qbm-([A-Za-z0-9_]+)\b", fh.read(), re.M)
+    except OSError:
+        m = None
+    p = ("qbm/%s/" % m.group(1)) if m else None
+    return p if p in PROJECT_PREFIXES else None
+
+
+PREFIX = project_prefix(ROOT)
+PROJECT = PREFIX.rstrip("/").replace("/", "-") if PREFIX else "(unidentified)"
 
 # Anti-vacuous floors, PER PROJECT and PER RULE.  Today's measured counts are in the comment
 # beside each; the floors sit just under.  `--stats` prints the live numbers.
@@ -678,10 +729,11 @@ def main() -> int:
                         help=f"override the {_f} floor (negative controls only)")
     a = ap.parse_args()
 
-    if PREFIX not in FLOORS:
-        print(f"  FAIL [config] this script is installed at {ROOT}, whose project prefix "
-              f"'{PREFIX}' is not one of {sorted(FLOORS)} — it cannot know what to expect "
-              f"here, and guessing would make every floor meaningless")
+    if PREFIX is None or PREFIX not in FLOORS:
+        print(f"  FAIL [config] cannot identify which project {ROOT} is: it has neither a "
+              f"cmake/qbConfig.cmake setting QB_FRAMEWORK_NAME \"qb\" nor a CMakeLists.txt "
+              f"with project(qbm-<mod> …) naming one of {sorted(FLOORS)}. Guessing would make "
+              f"every floor here meaningless, so this is a hard stop rather than a skip.")
         return 2
 
     bad = selftest()
