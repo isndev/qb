@@ -9,9 +9,9 @@ time/crypto/compression) and **`qb-core`** (actor engine on top of `qb-io`). `qb
 standalone.
 
 <!-- llms-txt:lead -->
-> qb is a C++20-first (optional C++23) actor framework for concurrent and distributed C++:
-> share-nothing actors over a non-blocking asynchronous I/O runtime with native C++20
-> coroutines. Two libraries compose — **qb-io** (event loop, TCP/UDP/TLS/QUIC transports,
+> qb — the qb Actor Framework, **QBAF** — is a C++20-first (optional C++23) actor framework
+> for concurrent and distributed C++: share-nothing actors over a non-blocking asynchronous
+> I/O runtime with native C++20 coroutines. Two libraries compose — **qb-io** (event loop, TCP/UDP/TLS/QUIC transports,
 > protocols, coroutines, time, crypto, compression) and **qb-core** (the actor engine on top
 > of it); qb-io is usable standalone. Optional **qbm** modules add HTTP/1.1·2·3 + WebSocket,
 > PostgreSQL and Redis. Apache-2.0, CMake ≥ 3.24, Linux · macOS · Windows, x86-64 · ARM64.
