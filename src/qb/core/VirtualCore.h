@@ -297,12 +297,12 @@ private:
      * `removeActor()` destroys the actor, which runs arbitrary user code (its destructor,
      * and any referenced actor it owns). That code may `kill()` a *different* actor, which
      * re-enters `killActor()` → `_actor_to_remove.insert()`. Iterating `_actor_to_remove`
-     * directly therefore mutates the container mid-iteration: under NDEBUG it is the ska flat
-     * hash set, whose growth rehash REALLOCATES the entry array and invalidates the live
-     * iterator (release-only — the sanitizer presets use a node-based `std::unordered_set`
-     * and cannot see it), and even where the iterator survives, an id landing behind the
-     * cursor is silently dropped by the subsequent `clear()`, leaving a `!is_alive()` actor
-     * in `_actors` forever so the core never terminates. The loop swaps into this buffer
+     * directly therefore mutates the container mid-iteration: a growth rehash of
+     * `qb::unordered_set` rebuilds the bucket array and invalidates every live iterator
+     * (node-based storage keeps *references* valid, not iterators), and even where the
+     * iterator survives, an id landing behind the cursor is silently dropped by the
+     * subsequent `clear()`, leaving a `!is_alive()` actor in `_actors` forever so the core
+     * never terminates. Neither half depends on the build mode. The loop swaps into this buffer
      * instead and repeats until no new kill appears. Member (not `thread_local`) because the
      * reap block is a `goto` target — jumping across a block-scope thread_local's
      * initialization is best avoided.

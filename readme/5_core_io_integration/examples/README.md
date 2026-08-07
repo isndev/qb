@@ -10,7 +10,7 @@ Five worked analyses of complete applications that combine `qb-core` actors with
 
 The two task pages in this section — [async operations inside actors](../async_in_actors.md) and [building network actors](../network_actors.md) — describe the mechanisms in isolation. These case studies show them composed into runnable programs. Each analysis breaks down one example from the repository: its actor topology, the `qb-io` facilities it drives, the events that travel between actors, and the design pattern it illustrates.
 
-Every analysis is grounded in source you can build and run. The networking examples (`chat_tcp`, `message_broker`) live under `examples/core_io/`; `file_monitor` and `file_processor` live there too; the `distributed_computing` study analyzes `examples/core/example10_distributed_computing.cpp`, a pure `qb-core` simulation that uses `qb::ICallback` and `qb::io::async::callback` for timing rather than network I/O. Read an analysis alongside its source rather than as a substitute for it.
+Every analysis is grounded in source you can build and run. Two of the five are **Unix-only**: `examples/core_io/CMakeLists.txt:35-38` wraps `file_processor` and `file_monitor` in `if (NOT QB_PLATFORM_WINDOWS)`, so they are not configured on Windows. The networking examples (`chat_tcp`, `message_broker`) live under `examples/core_io/`; `file_monitor` and `file_processor` live there too; the `distributed_computing` study analyzes `examples/core/example10_distributed_computing.cpp`, a pure `qb-core` simulation that uses `qb::ICallback` and `qb::io::async::callback` for timing rather than network I/O. Read an analysis alongside its source rather than as a substitute for it.
 
 ## Pages in this section
 

@@ -21,8 +21,16 @@ Include the whole library through one umbrella header:
 
 ```cpp
 #include <qb/patterns.h>   // pulls Actor.h + VirtualCore.h + core/patterns.h
+
+using namespace qb::time_literals;   // needed for the 500ms / 2s / 10s literals used below
 ```
-<!-- src: qb/src/qb/patterns.h:18-21 -->
+<!-- src: qb/src/qb/patterns.h:18-21; qb/src/qb/system/time.h:112-114 (inline namespace qb::time_literals) -->
+
+> **Every timeout in this page's snippets is a chrono literal** (`500ms`, `2s`, `10s`). Those suffixes
+> are not available by default — `qb::time_literals` is an inline namespace inside `qb` that re-exports
+> `std::chrono_literals`, so a snippet compiles only with `using namespace qb::time_literals;`
+> (or `std::chrono_literals`) in scope. The snippets below omit the line for brevity; add it once per
+> translation unit. Without it the error is `no matching literal operator for call to 'operator""ms'`.
 
 `qb/patterns.h` is self-sufficient: it includes `core/Actor.h`, `core/VirtualCore.h` (which has
 carried the Actor template implementation since 3.0 — it was `core/Actor.tpp` through 2.6.0) and

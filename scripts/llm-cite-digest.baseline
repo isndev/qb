@@ -6,6 +6,7 @@
 # excerpt rather than as an opaque hash.  Fields: doc <TAB> cited-spec <TAB>
 # digest <TAB> excerpt.  Keyed WITHOUT the doc's own line number, so
 # re-flowing a paragraph does not re-key the file.
+llm/qb.llm.api.md	Actor.h:1125-1135	d756f709669a	* @brief Alias of `addRefActor<T>()` — both return a phase-aware `qb:...
 llm/qb.llm.api.md	Actor.h:1144-1202	348256583ed8	/**
 llm/qb.llm.api.md	Actor.h:1204-1239	ebacec412d5d	/**
 llm/qb.llm.api.md	Actor.h:1241-1256	472d699eca5d	/**

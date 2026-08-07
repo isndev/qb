@@ -557,12 +557,14 @@ Inbound frames land in `on(const broker::Message&)`, which prints `RESPONSE`, `M
 ## Running it
 
 ```bash
-# from the build directory
-cmake --build . --target broker_server
-cmake --build . --target broker_client
+# from the repository root (qb-dev), using the CMake presets
+cmake --preset release
+cmake --build --preset release --target broker_server
+cmake --build --preset release --target broker_client
 
-./broker_server                 # listens on 0.0.0.0:12345
-./broker_client 127.0.0.1 12345 # one terminal per client
+cd build/presets/release/examples/core_io/message_broker
+./server/broker_server                 # listens on 0.0.0.0:12345
+./client/broker_client 127.0.0.1 12345 # one terminal per client
 ```
 
 Client commands. The broker verbs (`SUB`, `UNSUB`, `PUB`, and their long forms `SUBSCRIBE`/`UNSUBSCRIBE`/`PUBLISH`) are matched case-insensitively in `ClientActor::processCommand`; `help` and `quit` are matched lowercase-exactly in `InputActor`.
@@ -592,5 +594,5 @@ Subscribe two clients to `news`, publish from a third, and both subscribers rece
 - [TCP chat analysis](./chat_tcp_analysis.md) — the simpler topology this example extends.
 - [Custom protocols](../../3_qb_io/protocols.md) — the full `AProtocol` / `pipe::put` contract.
 - [Network-enabled actors](../network_actors.md) — `tcp::acceptor`, `tcp::io_handler`, `tcp::client`, and the `registerSession` contract.
-- [Async I/O inside actors](../async_in_actors.md) — `qb::io::async::connect`, `callback`, and timeouts.
+- [Async I/O inside actors](../async_in_actors.md) — `qb::io::async::tcp::connect`, `callback`, and timeouts.
 - [The event system](../../2_core_concepts/event_system.md) — `push`, event ownership, and `getSource()`.

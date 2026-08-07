@@ -122,7 +122,7 @@ public:
      *            the dangerous case: the stale reference stays inside a live allocation and
      *            silently aliases a different event. Finish populating the event before queueing
      *            anything else. Pinned by `PipeAllocatorContract.*` in
-     *            `qb-io/tests/unit/core/pipe-allocator.cpp`.
+     *            `tests/io/unit/core/pipe-allocator.cpp`.
      *
      * @details
      * Events pushed through `Pipe::push()` are delivered in FIFO order relative to

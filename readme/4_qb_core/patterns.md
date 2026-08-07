@@ -138,8 +138,12 @@ Two rules keep an actor FSM correct:
   handler that assumes a prior state corrupts the machine. The `if (_state != ...)` check above
   rejects events that arrive in the wrong state.
 - **Drive timed transitions through `callback` + a self-event**, never a blocking wait. The
-  `is_alive()` guard inside the closure is mandatory: the timer holds no claim on the actor, so the
-  actor can be killed between scheduling and firing.
+  `is_alive()` guard inside the closure is the minimum: the timer holds no claim on the actor, so the
+  actor can be killed between scheduling and firing. It is **not sufficient on its own** — `kill()`
+  only flags, and `~Actor()` runs later under `VirtualCore` control, so a timer that outlives the
+  *destructor* evaluates `this->is_alive()` on freed memory. When the timer's lifetime is the
+  actor's, own it: hold the `scoped_callback` handle as a member so the actor's own destructor
+  cancels it. See [Error handling — the two guards](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures).
 
 For a larger machine, a `std::map<State, std::map<Input, Handler>>` transition table makes the
 states and transitions explicit and keeps each handler small — see the full coffee-machine FSM in
@@ -198,10 +202,20 @@ qb::ActorId logger_id = qb::Actor::getServiceId<LoggerTag>(target_core);
 push<LogLine>(logger_id, "hello from another core");
 ```
 
-`getService<T>()` returns the live pointer on the **current** core, or `nullptr` if no such service
-runs there. `getServiceId<Tag>(core)` computes the deterministic `ActorId` a `ServiceActor<Tag>`
-would occupy on `core`; it does **not** verify that an instance is actually registered there, so a
-send to an unpopulated core's service id is dropped by the router.
+`getService<T>()` returns the registered pointer on the **current** core, or `nullptr` if no such
+service runs there. `getServiceId<Tag>(core)` computes the deterministic `ActorId` a
+`ServiceActor<Tag>` would occupy on `core`; it does **not** verify that an instance is actually
+registered there, so a send to an unpopulated core's service id is dropped by the router.
+
+> **`getService<T>()` is not phase-gated, and that is deliberate.** Unlike `ActorHandle::get()` and
+> `VirtualCore::findActor()`, it consults neither `is_active()` nor `is_alive()`. It hands back the
+> pointer while the service's own async `onInit()` is still in flight (*Activating*), and after the
+> service has been `kill()`ed but not yet reaped. That is what makes the bootstrap pattern work — a
+> service legitimately looks itself or a peer up from inside its own `onInit()`. The cost is on you:
+> the service you get back may not have finished initializing. If you need that guarantee, ask it
+> (`push` an event, or `co_await qb::ask(...)`) rather than touching its state. A non-null pointer is
+> therefore **not** evidence that the service is alive or ready.
+<!-- src: qb/src/qb/core/Actor.h:603-613 (not phase-gated, by design), :641-662 (the Activating inventory table) -->
 
 > **Pitfall:** prefer sending events to the service's `id()` over calling its methods through the
 > `getService<T>()` pointer. A direct call bypasses the event queue and runs synchronously inside
@@ -412,7 +426,7 @@ init, or once it died. The child has its own `ActorId` and receives events norma
 ```cpp
 // src: derived from qb/tests/core/system/actor/actor-add.cpp
 auto helper = addRefActor<ChildHelper>(id());   // qb::ActorHandle<ChildHelper>
-push<Task>(helper.id(), 2, 3);                    // always safe — stashed if still Activating
+push<Task>(helper.id(), Task{ .a = 2, .b = 3 }); // always safe — stashed if still Activating
 if (helper.ready())                              // sync-init child: ready at once
     helper->doSomethingDirect();                 // direct call only when active
 // async-init child: if (co_await helper.ready_async(context())) helper->serve();
@@ -481,7 +495,7 @@ public:
 | `id()` | `qb::ActorId` | The referenced actor's id — valid immediately, even while the child is still Activating (always safe to `push()` to). |
 | `get()` | `T *` | Phase-aware: the live pointer **only if the actor is active** on the current core, else `nullptr` (while Activating, after a failed init, or once it died). |
 | `ready()` | `bool` | `get() != nullptr` — the child is active and safe to call directly. |
-| `ready_async(ctx, timeout)` | `task<bool>` | `co_await` until the (async-init) child becomes active or the timeout elapses. |
+| `ready_async(ctx, timeout = 5s)` | `task<bool>` | `co_await` until the (async-init) child becomes active or the timeout elapses. **The default `timeout` is `std::chrono::seconds{5}`** — a bare `co_await h.ready_async(context())` is bounded at 5 s, not unbounded. |
 | `operator->()` | `T *` | `get()` with a debug-build assertion that it is non-null. |
 | `operator*()` | `T &` | Dereference; undefined unless `ready()`. |
 | `operator bool()` | `bool` | `== ready()`. |
@@ -529,9 +543,9 @@ public:
     }
 
     void on(qb::KillEvent const &) {
-        for (auto &h : _workers)                       // fan out shutdown to live children
-            if (h)
-                push<qb::KillEvent>(h->id());
+        for (auto &h : _workers)                       // fan out shutdown to every child
+            if (h.valid())                             // NOT `if (h)` — that is ready(), which is
+                push<qb::KillEvent>(h.id());           // false while the child is still Activating
         kill();
     }
 };
@@ -663,7 +677,12 @@ context.
 - **Unguarded state transitions.** An FSM handler that assumes a prior state without checking
   `_state` corrupts the machine when events arrive out of order. Guard every transition.
 - **Timer closures that re-enter a dead actor.** `qb::io::async::callback` keeps no claim on the
-  actor. Any closure that calls back into the actor must test `is_alive()` first.
+  actor. Any closure that calls back into the actor must test `is_alive()` first — and that guard
+  covers only the killed-but-not-yet-reaped window. A timer that survives `~Actor()` reads freed
+  memory *at the guard itself*. For actor-lifetime timers, own the `scoped_callback` handle as a
+  member (its destructor cancels the watcher), and for coroutines prefer `Actor::spawn()`, which
+  binds the frame to a per-actor cancellation scope. See
+  [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures).
 - **Passing a bare number as a delay.** `qb::io::async::callback(func, delay)` requires a
   `std::chrono::duration` (`std::chrono::seconds(2)`, `100ms` with `using namespace
   std::chrono_literals`), not a raw `double`.
@@ -674,8 +693,9 @@ context.
 - **Cross-core `ActorHandle` use.** Handles are same-core only. Reach actors on other cores by
   `id()`.
 - **Treating `require<T>()` as a live registry.** It is a one-shot ping answered only by actors
-  alive at that instant, and only with `Alive`. Re-issue it to rediscover, and detect deaths through
-  your own protocol.
+  alive at that instant. Presence *is* the status — `qb::RequireEvent` carries only `type` and the
+  inherited `correlation_id`, and there is **no status field** to test. Re-issue it to rediscover,
+  and detect deaths through your own protocol. (`qb/src/qb/core/Event.h:623`)
 - **Calling a `getService<T>()` pointer's mutating methods.** A direct call runs synchronously and
   bypasses the queue — a re-entrancy hazard. Send an event to the service's `id()` instead.
 

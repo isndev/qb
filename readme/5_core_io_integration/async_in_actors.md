@@ -12,8 +12,9 @@ Every `VirtualCore` runs a single thread that drives one `qb::io::async::listene
 
 This page covers the mechanisms an actor uses to stay non-blocking:
 
-- `qb::io::async::callback` — schedule a callable to run later on the same core's loop.
-- `qb::io::async::scoped_callback` — the same, but cancellable through a caller-owned handle.
+- `qb::io::async::defer` — run a callable at the tail of the current loop turn, after the handler unwinds.
+- `qb::io::async::callback` — run a callable after a `qb::duration` delay (**with no delay it runs inline, immediately**).
+- `qb::io::async::scoped_callback` — the same delayed timer, but cancellable through a caller-owned handle.
 - `qb::io::async::with_timeout<T>` — a CRTP mixin that fires after a span of inactivity.
 - `Actor::spawn_detached` — drive a coroutine on the core's loop, awaiting I/O without blocking.
 - Wrapping unavoidable blocking work (such as synchronous file I/O) in a callback or a dedicated worker actor.
@@ -27,15 +28,30 @@ A `VirtualCore` owns its actors exclusively, in one thread. The same thread owns
 
 Within a single core there are no data races to defend against — that is the point of the model — but the cost of that simplicity is the no-blocking rule. The rest of this page is about honoring it.
 
-## `qb::io::async::callback` — deferred and delayed actions
+## `qb::io::async::defer` — continue after the handler unwinds
 
-`qb::io::async::callback` schedules a callable to run later on the calling thread's event loop. It is the primary way an actor defers work to a future loop iteration.
+`qb::io::async::defer(func)` queues `func` to run **once, at the tail of the current loop turn**, after every watcher for that turn has returned. It is the primitive an actor uses to move work off the current handler frame without a timer — and the only one that is guaranteed never to run re-entrantly. Use it whenever a handler must destroy or replace the object it is running on (a reconnect that frees and recreates its connection is the canonical case).
+
+```cpp
+// Declared in qb/src/qb/io/async/listener.h
+namespace qb::io::async {
+    template <typename _Func>
+    void defer(_Func &&func);          // tail of this loop turn — never re-entrant
+}
+```
+<!-- src: qb/src/qb/io/async/listener.h:1032 (async::defer), :813 (listener::defer) -->
+
+Captured state is released when the callback fires or when the loop is torn down, whichever comes first, so a `shared_ptr` capture is leak-free. Same-thread only. `defer()` does **not** keep the actor alive — the liveness guard below applies to it exactly as it does to a delayed `callback`.
+
+## `qb::io::async::callback` — delayed actions
+
+`qb::io::async::callback(func, delay)` arms a one-shot timer on the calling thread's event loop. Despite the name, the **no-delay overload does not schedule anything** — see the key facts below.
 
 ```cpp
 // Declared in qb/src/qb/io/async/io.h
 namespace qb::io::async {
     template <typename _Func>
-    void callback(_Func &&func);                          // run on next opportunity
+    void callback(_Func &&func);                          // runs func() INLINE, right now
 
     template <typename _Func, typename Rep, typename Period>
     void callback(_Func &&func, std::chrono::duration<Rep, Period> timeout);
@@ -45,7 +61,7 @@ namespace qb::io::async {
 Key facts, each verified against the header:
 
 - **The delay is a `std::chrono` duration, not a `double`.** Pass `200ms`, `std::chrono::seconds(5)`, or any `std::chrono::duration`. There is no seconds-as-`double` overload. <!-- src: qb/src/qb/io/async/io.h:366 -->
-- **A non-positive (or absent) delay fires inline, immediately.** `callback(f)` and `callback(f, d)` with `d <= 0` invoke `func()` synchronously at the call site — they do *not* defer to the next iteration. Use a strictly positive duration when you need the callback to run on a later turn of the loop. <!-- src: qb/src/qb/io/async/io.h:318,368 -->
+- **A non-positive (or absent) delay fires inline, immediately.** `callback(f)` and `callback(f, d)` with `d <= 0` invoke `func()` synchronously at the call site — they do *not* defer to the next iteration. To run after the current handler unwinds, use `defer(f)` (above); do not reach for `callback(f, 1ms)`, which only hides the re-entrancy behind a timer. <!-- src: qb/src/qb/io/async/io.h:348-364,368 -->
 - **The callback runs on the same `VirtualCore`** that scheduled it, so it may touch that actor's state — but only if the actor is still alive when it fires.
 - **Fire-and-forget.** The scheduled timer (`Timeout<F>`) is heap-allocated and deletes itself after firing; there is no handle to cancel it. When you need cancellation, use `scoped_callback` (below).
 

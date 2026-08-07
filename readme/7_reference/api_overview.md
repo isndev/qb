@@ -107,7 +107,7 @@ See [The engine](../4_qb_core/engine.md).
 | Destructor | `virtual ~Actor() noexcept` | |
 | `kill` | `void kill() const noexcept` | Marks the actor for termination. |
 | `is_alive` | `bool is_alive() const noexcept` | False once `kill()` has taken effect. |
-| `is_active` | `bool is_active() const noexcept` | `is_alive()` **and** activated — false during the brief *Activating* window of a suspended async `onInit()`. The phase oracle used by `findActor` / `ActorHandle::get()`. |
+| `is_active` | `bool is_active() const noexcept` | `is_alive()` **and** activated — false during the brief *Activating* window of a suspended async `onInit()`. The phase oracle, with exactly two consumers: `VirtualCore::findActor<T>()` (hence every `ActorHandle` accessor) and `VirtualCore::isActorAlive()` (hence `is_actor_alive`). `getService<T>()` is deliberately not one of them. |
 | `is_actor_alive` | `bool is_actor_alive(ActorId id) const noexcept` | Liveness probe for *another* actor: true iff `id` names an actor on **this** `VirtualCore` that is alive **and** active. One hash lookup, no `dynamic_cast` — the type-erased sibling of `ActorHandle<T>::ready()`. Use it to prune bookkeeping that stores bare `ActorId`s (subscriber lists, routing tables), as `qb::PubSub<Topic>` does: the framework prunes its **own** subscription map when an actor dies, but a user-space mirror has no such hook. **Same-core only** — a `false` for a *remote* id is not evidence the actor is gone; use `co_await qb::ping(...)` for cross-core liveness. |
 
 **Identity and context**
@@ -459,7 +459,7 @@ Helpers: `qb::mono_now()`, `qb::wall_now()`, `qb::unix_seconds()`/`unix_millis()
 |---|---|---|
 | `qb::string<N>` | `qb/string.h` | Fixed-capacity, heap-free string; truncates past `N`. |
 | `qb::allocator::pipe<T>` | `qb/system/allocator/pipe.h` | Growable front-and-back buffer; backs I/O buffers. `pipe<char>` is the byte specialization. |
-| `qb::unordered_map` / `unordered_set` | `qb/system/container/unordered_map.h`, `unordered_set.h` | Flat hash tables (ska); `icase_unordered_map` is the case-insensitive variant. |
+| `qb::unordered_map` / `unordered_set` | `qb/system/container/unordered_map.h`, `unordered_set.h` | Node-based `ska` hash tables — unconditional in every build mode, references survive a rehash. `qb::unordered_flat_map` / `unordered_flat_set` are the open-addressing variants; `icase_unordered_map` is the case-insensitive one. |
 | `qb::ring_buffer<T, N, Overwrite>` | `qb/system/container/ring_buffer.h` | Fixed-capacity circular FIFO. |
 | `qb::json` / `qb::jsonb` | `qb/json.h` | nlohmann/json aliases; `jsonb` is a distinct wrapper type. |
 | `qb::uuid` | `qb/uuid.h` | RFC 4122 UUID; `qb::generate_random_uuid()` for v4. |

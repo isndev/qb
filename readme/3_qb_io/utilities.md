@@ -2,7 +2,7 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
-Beyond sockets and the event loop, `qb-io` ships a set of standalone utilities — the canonical time vocabulary, cryptography and JWT, compression, URI parsing, fixed-capacity strings and flat hash maps, UUIDs, JSON, and endian helpers — usable on their own without the actor runtime.
+Beyond sockets and the event loop, `qb-io` ships a set of standalone utilities — the canonical time vocabulary, cryptography and JWT, compression, URI parsing, fixed-capacity strings and hash maps, UUIDs, JSON, and endian helpers — usable on their own without the actor runtime.
 
 **Prerequisites:** [qb-io module overview](./README.md) — **See also:** [Async I/O system](./async_system.md), [Protocols](./protocols.md), [Lock-free primitives](./../7_reference/lockfree_primitives.md)
 

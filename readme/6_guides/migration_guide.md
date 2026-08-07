@@ -261,7 +261,13 @@ qb::Timestamp deadline = start + qb::Duration::seconds(30);
 ```cpp
 // after.cpp — canonical chrono model
 // src: qb/src/qb/system/time.h
-#include <qb/system/time.h>   // qb::duration, qb::mono_time, qb::mono_now, literals
+#include <qb/system/time.h>   // qb::duration, qb::mono_time, qb::mono_now
+
+// REQUIRED for the `500ms` / `30s` suffixes below. The header declares the inline
+// namespace qb::time_literals (time.h:112-114), but a chrono literal is only found by
+// unqualified lookup once it is brought into scope — without this line the block fails
+// with: no matching literal operator for call to 'operator""ms'.
+using namespace qb::time_literals;
 
 qb::duration  timeout  = 500ms;                  // bare-int rejected; literal accepted
 qb::mono_time start    = qb::mono_now();         // monotonic anchor for elapsed time
@@ -277,6 +283,7 @@ A wall-clock example — formatting an expiry for a log line or a wire field:
 ```cpp
 // src: qb/src/qb/system/time.h
 #include <qb/system/time.h>
+using namespace qb::time_literals;                    // required for the `24h` suffix
 
 qb::wall_time expiry = qb::wall_now() + 24h;          // 24h from now, wall clock
 std::string   iso    = qb::to_iso8601(expiry);        // "YYYY-MM-DDTHH:MM:SSZ"
