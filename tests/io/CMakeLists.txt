@@ -23,7 +23,7 @@
 # tests for the IO library features.
 # -----------------------------------------------------------------------------
 
-# Tiered test tree (docs/tests-audit/_spec-qb-io.md): unit/ (pure logic, daemon-free) +
+# Tiered test tree (dev/tests-audit/_spec-qb-io.md): unit/ (pure logic, daemon-free) +
 # system/ (event loop on kernel objects / loopback). The legacy flat coroutine/ dir is kept
 # transitionally for the monoliths still being decomposed by the split wave.
 # This directory is now also entered when only QB_BUILD_BENCHMARKS is on (the benchmarks live

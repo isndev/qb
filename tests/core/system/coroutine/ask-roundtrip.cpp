@@ -29,7 +29,7 @@
  * `SlowMarket` / `Echoer`, all over the typed `Ping : Request<int>` exchange) — the single source of
  * truth, deduped from the byte-for-byte clones that used to live in this file and ask-patterns.cpp.
  *
- * Hardening over the original (see docs/tests-audit/qb-core/qbcore-c10.md):
+ * Hardening over the original (see dev/tests-audit/qb-core/qbcore-c10.md):
  *   - the fragile `30ms`-timeout / `80ms`-late-reply ORDERING ORACLE is replaced by an EVENT-DRIVEN
  *     gate: the gated market holds its reply until it receives an explicit "now" signal that the
  *     asker sends only AFTER it has observed its own timeout, so the late-reply-is-unsolicited

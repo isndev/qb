@@ -25,7 +25,7 @@
  *   - NO frame leak: `qb::io::async::detail::CoroutineFrameAllocator::live_frames` returns to the
  *     pre-run baseline after the spawn → park → kill → reclaim cycle (the real reclamation oracle).
  *
- * Hardening over the original (see docs/tests-audit/qb-core/qbcore-c09.md):
+ * Hardening over the original (see dev/tests-audit/qb-core/qbcore-c09.md):
  *   - the composite-bool lazy-allocation test is SPLIT into three independent assertions so a
  *     failure localises (before / after-detached / after-scoped);
  *   - the load-sensitive cases are made event-driven where possible: the multi-step cancel proves

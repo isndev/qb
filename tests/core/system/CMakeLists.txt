@@ -22,7 +22,7 @@
 # slow / signal / serial / requires-multicore.
 #
 # NOTE: the files still listed flat at the bottom (SPLIT_PENDING) are large monoliths
-# being decomposed per docs/tests-audit/_spec-qb-core.md §2; they are registered as-is
+# being decomposed per dev/tests-audit/_spec-qb-core.md §2; they are registered as-is
 # (tier:system) so the suite stays green until the split wave replaces them.
 # -----------------------------------------------------------------------------
 
