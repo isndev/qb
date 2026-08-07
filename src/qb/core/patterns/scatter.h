@@ -49,7 +49,7 @@ namespace qb {
  *          fan-out queries. A cross-core scatter keeps N asks in flight at once (bounded by
  *          `timeout`).
  * @code
- * auto quotes = co_await qb::ask_all(ctx, markets, Quote{"BTC"}, 500ms);
+ * auto quotes = co_await qb::ask_all(ctx, markets, Quote{.symbol = "BTC"}, 500ms);
  * for (auto const &q : quotes) use(q.response);
  * @endcode
  * @see qb::ask, qb::ask_any

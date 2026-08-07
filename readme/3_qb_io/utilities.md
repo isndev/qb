@@ -22,7 +22,7 @@ These utilities live in headers under `qb/src/qb/`. Several are header-only with
 | Fixed string | `qb/string.h` | `qb` | always |
 | Hash maps/sets | `qb/system/container/unordered_map.h`, `unordered_set.h` | `qb` | always |
 | UUID | `qb/uuid.h` | `qb`, `uuids` | always (vendored `stduuid`) |
-| JSON | `qb/json.h` | `qb` (via `nlohmann`) | always (vendored `nlohmann/json`) |
+| JSON | `qb/json.h` | `qb` (via `nlohmann`) | always — but `nlohmann/json` is an **external** dependency, not vendored |
 | Endian | `qb/system/endian.h` | `qb::endian` | always |
 
 `QB_WITH_SSL` and `QB_WITH_COMPRESSION` are user-facing build requests; they resolve to the compile-time defines `QB_HAS_SSL` and `QB_HAS_COMPRESSION` once the dependency is found. If the dependency is absent, the request is forced off and the corresponding header `#error`s when included (`crypto.h` → `"missing OpenSSL Library"`, `compression.h` → `"missing Z Library"`). _(`qb/src/qb/io/crypto.h:33-34`, `qb/src/qb/io/compression.h:37-38`; `docs-overhaul/qb/FACTBOOK.md` build-options table.)_
@@ -485,7 +485,7 @@ UUIDs serialize to and from JSON via the `uuids::to_json` / `uuids::from_json` a
 
 ## JSON (`qb::json`, `qb::jsonb`)
 
-`qb/json.h` integrates the vendored `nlohmann/json` library. `qb::json` is an alias for `nlohmann::json` (brought in via `using namespace nlohmann` inside `qb`), so the full `nlohmann` API is available. `qb::jsonb` is a distinct wrapper struct around `nlohmann::json` (binary-JSON intent) that forwards most operations to an internal `data` member but is a separate type that can be specialized differently in serialization contexts. _(`qb/src/qb/json.h:94-105,282-290`.)_
+`qb/json.h` integrates the `nlohmann/json` library. **qb does not vendor it** — 3.0 deleted the bundled copy, and nlohmann is now resolved system-first (`find_package(nlohmann_json 3.11)`) with a pinned `FetchContent` fallback. That matters to you, not just to qb's build: `qb::json` **is** `nlohmann::json`, so the type crosses qb's API boundary, and `qbConfig.cmake` therefore calls `find_dependency(nlohmann_json 3.11)` unconditionally — a consumer of an installed qb must have the package too, or `find_package(qb)` fails at configure time. See [CMake dependencies](../7_reference/cmake_dependencies.md#third-party-nlohmannjson). `qb::json` is an alias for `nlohmann::json` (brought in via `using namespace nlohmann` inside `qb`), so the full `nlohmann` API is available. `qb::jsonb` is a distinct wrapper struct around `nlohmann::json` (binary-JSON intent) that forwards most operations to an internal `data` member but is a separate type that can be specialized differently in serialization contexts. _(`qb/src/qb/json.h:94-105,282-290`.)_
 
 ```cpp
 #include <qb/json.h>

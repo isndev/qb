@@ -22,7 +22,7 @@ Every API used here is part of `qb-core` (the actor engine) and `qb-io` (the asy
 
 | Requirement | Detail |
 |---|---|
-| C++20 compiler | CI builds with GCC and Clang on Linux, Apple Clang on macOS, and MSVC on Windows. qb propagates a PUBLIC `cxx_std_${QB_CXX_STANDARD}` usage requirement, so consumers compile with the selected qb standard. Use `-DQB_CXX_STANDARD=23` to validate the C++23 path. |
+| C++20 compiler | CI builds with GCC and Clang on Linux and Apple Clang on macOS; the MSVC/Windows job is currently disabled and validated out of band. qb propagates a PUBLIC `cxx_std_${QB_CXX_STANDARD}` usage requirement, so consumers compile with the selected qb standard. Use `-DQB_CXX_STANDARD=23` to validate the C++23 path. |
 | CMake | **3.24 or newer.** 3.24 is the floor because qb resolves fetchable dependencies with `FetchContent` + `find_package` integration. |
 | Git | Required to clone qb and to fetch its submodules. GoogleTest and Google Benchmark are downloaded by `FetchContent` when tests or benchmarks are enabled. |
 | OpenSSL (optional) | Enables SSL/TLS transports and the `qb::crypto`/`qb::jwt` utilities. Controlled by `QB_WITH_SSL` (default `ON`, auto-disabled if OpenSSL is absent). |

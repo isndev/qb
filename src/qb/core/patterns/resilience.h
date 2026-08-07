@@ -418,7 +418,7 @@ private:
  * @details Only timeouts are retried; a kill propagates at once. Backoff waits are
  *          cancellation-aware (`ctx.sleep`), so a kill during a backoff also aborts.
  * @code
- * auto r = co_await qb::ask_retry(ctx, market, Quote{"BTC"}, 200ms, {.max_attempts = 5});
+ * auto r = co_await qb::ask_retry(ctx, market, Quote{.symbol = "BTC"}, 200ms, {.max_attempts = 5});
  * @endcode
  * @see qb::ask, qb::retry_policy
  */
