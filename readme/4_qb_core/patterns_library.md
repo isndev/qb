@@ -428,7 +428,7 @@ spawn([b = breaker, t, n](qb::ScopedCoroContext ctx) -> qb::io::async::task<void
     }
 });
 ```
-<!-- src: qb/tests/core/system/coroutine/coroutine-resilience.cpp:135-150 (ask_retry); :346-360,371 (ask_guarded) -->
+<!-- src: qb/tests/core/system/coroutine/coroutine-resilience.cpp:138-153 (ask_retry); :403-417,428 (ask_guarded) -->
 
 ### Example — rate limiter and bulkhead
 

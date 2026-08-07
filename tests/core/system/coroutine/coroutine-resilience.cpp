@@ -45,10 +45,13 @@
  * the kill-then-stop driver are hoisted to shared/AskResponders.h (single source of truth).
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/actor.h>
@@ -196,13 +199,61 @@ TEST(ActorAskRetry, ExhaustsAndThrowsTimeout) {
     EXPECT_EQ(g_retry_result.load(), -1) << "no value was ever produced";
 }
 
-// --- Backoff actually GROWS between retries (engine-observable, no sleeps) ------------------------
+// --- Backoff actually GROWS between retries ------------------------------------------------------
 //
-// A FlakyMarket that never answers within the retry budget receives one Ping per attempt and stamps
-// each arrival with its VirtualCore clock. Under exponential backoff (multiplier 2) the inter-arrival
-// gaps must strictly increase: gap(attempt2->3) > gap(attempt1->2). We assert that ordering (the
-// geometric series is deterministic because jitter is 0), not absolute durations — so the test
-// proves *growth* without becoming a wall-clock race.
+// Two oracles, deliberately split, because they answer different questions and only one of them can
+// be made load-insensitive:
+//
+//   1. BackoffScheduleGrowsAndClamps — the SCHEDULE itself. `ask_retry` advances its wait by
+//      `qb::detail::grow_backoff(current, multiplier, max_backoff)` (resilience.h), so the series is
+//      a deterministic property of the policy. Asserting it reads no clock at all and therefore
+//      cannot be perturbed by the runner. This is the primary oracle for "the backoff grows".
+//
+//   2. BackoffGrowsBetweenAttempts — that the ENGINE actually applies it, via the arrival timeline.
+//      This one is a wall-clock measurement and is only as good as its margin, so it compares the
+//      WIDEST available span rather than adjacent gaps. See the note on that test.
+//
+// Why the split, recorded so this is not rediscovered a third time: the arrival gaps are
+// `ask_timeout + backoff_n`, i.e. ~60/80/120ms here, so comparing ADJACENT gaps rests on a margin of
+// exactly `kBackoff` = 20ms — while the ask-timeout leg's own scheduler jitter is the same order.
+// Measured on a loaded 4-core VM (150 samples taken while the system tier ran at -j4): gap0 ranged
+// 53.2–79.9ms against a 60ms nominal, and the adjacent margin `gaps[1]-gaps[0]` fell to **0.21ms** of
+// its 20ms budget — a 1% worst case. It has since gone negative for real in a `-j4` lane
+// (83.9 vs 91.2ms). Note gap0's 53.2ms LOW: `Actor::time()` is sampled once per VirtualCore loop
+// turn, so a measured gap can come in UNDER its true elapsed time — which is also why a plain
+// "gap >= timeout + backoff" lower bound is not a valid fix here.
+//
+// This is the second time this class has bitten this file; the first is recorded at
+// `kRecoveryAskTimeout` above. Raising the constants was rejected: it makes the test slower and
+// leaves it fragile, just less often — which is exactly what produced that earlier note.
+
+// The schedule `ask_retry` consumes, asserted directly — no clock, no engine, no load sensitivity.
+// `grow_backoff` is the exact call resilience.h makes between attempts, so this is the real series
+// and not a restatement of the arithmetic.
+TEST(ActorAskRetry, BackoffScheduleGrowsAndClamps) {
+    const auto                policy = make_policy(8);
+    std::vector<qb::duration> schedule;
+    qb::duration              wait = policy.backoff;
+    for (int i = 0; i < 8; ++i) {
+        schedule.push_back(wait);
+        wait = qb::detail::grow_backoff(wait, policy.multiplier, policy.max_backoff);
+    }
+
+    ASSERT_EQ(schedule.front(), kBackoff) << "the first wait is policy.backoff verbatim";
+    // Strictly increasing, doubling, until the cap is reached.
+    for (std::size_t i = 1; i < schedule.size(); ++i) {
+        if (schedule[i - 1] == kMaxBackoff)
+            break;
+        EXPECT_GT(schedule[i], schedule[i - 1])
+            << "backoff " << i << " must exceed backoff " << (i - 1) << " (multiplier > 1)";
+        EXPECT_EQ(schedule[i], (std::min) (schedule[i - 1] * 2, qb::duration{kMaxBackoff}))
+            << "multiplier 2, clamped at max_backoff";
+    }
+    // The cap is reached and then held exactly — never exceeded, never resumed growing.
+    EXPECT_EQ(schedule[4], qb::duration{kMaxBackoff}) << "20->40->80->160->320ms hits the cap";
+    for (std::size_t i = 4; i < schedule.size(); ++i)
+        EXPECT_EQ(schedule[i], qb::duration{kMaxBackoff}) << "backoff " << i << " stays clamped";
+}
 
 namespace {
 std::atomic<bool> g_grow_ran{false};
@@ -256,10 +307,16 @@ TEST(ActorAskRetry, BackoffGrowsBetweenAttempts) {
 
     const auto gaps = log.gaps();
     ASSERT_EQ(gaps.size(), 3u) << "4 attempts -> 3 inter-arrival gaps";
-    // The first gap includes ~one ask timeout + the first backoff; the next gap adds the GROWN
-    // backoff. Each successive gap must be strictly larger (multiplier 2, no jitter).
-    EXPECT_GT(gaps[1], gaps[0]) << "backoff between attempt 2->3 must exceed 1->2 (it grew)";
-    EXPECT_GT(gaps[2], gaps[1]) << "backoff between attempt 3->4 must exceed 2->3 (it grew again)";
+    // Each gap is `ask_timeout + backoff_n`; the ask-timeout leg is constant, so growth shows up as
+    // the difference between gaps. Compare the FIRST against the LAST rather than adjacent pairs:
+    // same data, same runtime, same constants, but the nominal margin is `kBackoff * 3` (60ms,
+    // 120ms vs 60ms) instead of `kBackoff` (20ms). On the loaded-VM sample above that lifts the
+    // worst observed margin from 0.21ms to 36.0ms — 60% of budget instead of 1%. The exact
+    // per-step ratio is not this test's job: BackoffScheduleGrowsAndClamps pins it without a clock.
+    EXPECT_GT(gaps[2], gaps[0])
+        << "the wait before attempt 4 must exceed the wait before attempt 2 (backoff grew across "
+           "the retry loop); gaps ms = " << (gaps[0] / 1000000.0) << ", " << (gaps[1] / 1000000.0)
+        << ", " << (gaps[2] / 1000000.0);
 }
 
 // --- A kill aborts the retry loop with cancelled_error -------------------------------------------
