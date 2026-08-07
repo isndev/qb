@@ -27,6 +27,13 @@ on:
       - 'scripts/llm-guard.py'
       - 'scripts/llm-guard.baseline'
       - 'scripts/llm-cite-digest.baseline'
+      # `/llms.txt` + `/llms-full.txt` are the published agent index; doc-lint.sh section 1d
+      # regenerates them and fails on any difference. Both the generated files and the
+      # generator are listed so a hand edit to either is caught, and README.md is already
+      # above -- its "For AI assistants" section is what points a user at them.
+      - 'llms.txt'
+      - 'llms-full.txt'
+      - 'scripts/gen-llms-txt.py'
       # cite-check.py (driven from doc-lint.sh:93 -- this workflow is its only CI
       # caller) validates every `src:` citation against the SOURCE it names, so a
       # source-only commit -- a rename, a deletion, an insert that shifts line numbers --
@@ -74,6 +81,13 @@ on:
       - 'scripts/llm-guard.py'
       - 'scripts/llm-guard.baseline'
       - 'scripts/llm-cite-digest.baseline'
+      # `/llms.txt` + `/llms-full.txt` are the published agent index; doc-lint.sh section 1d
+      # regenerates them and fails on any difference. Both the generated files and the
+      # generator are listed so a hand edit to either is caught, and README.md is already
+      # above -- its "For AI assistants" section is what points a user at them.
+      - 'llms.txt'
+      - 'llms-full.txt'
+      - 'scripts/gen-llms-txt.py'
       # cite-check.py (driven from doc-lint.sh:93 -- this workflow is its only CI
       # caller) validates every `src:` citation against the SOURCE it names, so a
       # source-only commit -- a rename, a deletion, an insert that shifts line numbers --

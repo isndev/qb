@@ -158,6 +158,18 @@ SRC_EXT = (".h", ".hpp", ".hh", ".c", ".cpp", ".cc", ".cxx",
 # docs cannot yet confirm themselves, and this keeps that true if SRC_EXT ever grows.
 SKIP_IDENT_DIRS = {".git", "build", "node_modules", ".cache", ".idea", "readme",
                    "tests", "test", "examples", "llm", "scripts"}
+
+# The same self-confirmation hazard as `scripts/` above, one directory up.  `SRC_EXT` holds
+# `.txt` (for `CMakeLists.txt`), and `scripts/gen-llms-txt.py` publishes `llms-full.txt` at
+# the repo ROOT -- a byte copy of every `llm/` doc.  Indexed, it feeds the identifier set with
+# the very names the docs claim, so the published copy CONFIRMS the original.  Measured by
+# running the guard with the exclusion removed: 9 of the 12 hand-verified baseline entries go
+# STALE -- qbm-http 6 (qb_load_modules, target_link_libraries, TLS_server_method,
+# create_server_context, set_supported_alpn_protocols) and qbm-redis 3 (qb_load_modules,
+# init, run_sync) -- i.e. the guard stops being able to tell that those names are absent from
+# the module, with no source change at all.  These two files are still indexed as PATHS (a
+# citation to them resolves); they are only kept out of the identifier set.
+SKIP_IDENT_FILES = {"llms.txt", "llms-full.txt"}
 SKIP_DIRS = {".git", "build", "node_modules", ".cache", ".idea"}
 
 FORBIDDEN = [
@@ -326,7 +338,7 @@ class Index:
                     continue
                 p = os.path.join(dp, fn)
                 self.by_base.setdefault(fn, []).append(p)
-                if not idents_ok:
+                if not idents_ok or fn in SKIP_IDENT_FILES:
                     continue
                 try:
                     with open(p, errors="ignore") as fh:

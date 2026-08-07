@@ -1,0 +1,113 @@
+# qb Actor Framework
+
+> qb is a C++20-first (optional C++23) actor framework for concurrent and distributed C++:
+> share-nothing actors over a non-blocking asynchronous I/O runtime with native C++20
+> coroutines. Two libraries compose — **qb-io** (event loop, TCP/UDP/TLS/QUIC transports,
+> protocols, coroutines, time, crypto, compression) and **qb-core** (the actor engine on top
+> of it); qb-io is usable standalone. Optional **qbm** modules add HTTP/1.1·2·3 + WebSocket,
+> PostgreSQL and Redis. Apache-2.0, CMake ≥ 3.24, Linux · macOS · Windows, x86-64 · ARM64.
+
+Five rules decide whether generated qb code is correct; everything else is detail.
+
+1. **Time is `std::chrono`.** Every timeout / TTL / interval / delay / latency is a
+   `qb::duration` (= `std::chrono::nanoseconds`); it accepts finer-or-equal chrono literals
+   and rejects bare integers at compile time. `qb::mono_time` is the steady clock,
+   `qb::wall_time` the system clock, and subtracting one from the other does not compile.
+   Never emit `qb::Timestamp`, `qb::Duration`, `qb::TimePoint`, `to_timestamp(`,
+   `to_time_point(` or the header `<qb/system/timestamp.h>`: 3.0 removed all six.
+2. **Actors share nothing.** An actor is thread-affine to one `VirtualCore`, processes one
+   event at a time, and talks only by events — no mutexes, no shared mutable state, and no
+   actor ever constructed outside a worker thread (use `Main::core(i).addActor<T>(...)`,
+   `addActor<T>(core, ...)` or `addRefActor<T>(...)`).
+3. **`push` / `send` / `broadcast` are `noexcept`.** A throwing event constructor, or an OOM
+   growing the pipe, calls `std::terminate()`. Events are relocated with raw `memcpy`, so no
+   member may point into its own storage: a by-value `std::string` is never a valid event
+   member — use `qb::string<N>` or box it behind a smart pointer. `send<T>()` additionally
+   requires a trivially destructible event and is unordered; `push<T>()` is ordered.
+4. **A coroutine captures by value before its first `co_await`.** The actor can be destroyed
+   while the coroutine is suspended, so after any suspension the only legal channel back is
+   the context (`ctx.push_to<E>(...)`, `ctx.id()`, `ctx.time()`). Prefer `Actor::spawn(...)`
+   — bound to the actor's cancellation scope — over `Actor::spawn_detached(...)`, and pass
+   the lambda **without** a trailing `()`, which would destroy its closure before the
+   coroutine starts.
+5. **Register every event you handle.** `registerEvent<T>(*this)` inside `onInit()`, which is
+   itself a coroutine returning `qb::io::async::task<bool>`; `co_return false` or a throw
+   fails creation and yields an invalid `ActorId`.
+
+## Agent reference
+
+- [llms-full.txt](https://raw.githubusercontent.com/isndev/qb/main/llms-full.txt): both agent docs above, concatenated — one fetch, the whole machine-facing surface of this repo.
+- [qb — concepts for writing correct code](https://raw.githubusercontent.com/isndev/qb/main/llm/qb.llm.md): This file teaches an LLM the mental model and rules needed to emit compilable, correct qb code.
+- [QB Core & QB IO — API Reference for LLMs](https://raw.githubusercontent.com/isndev/qb/main/llm/qb.llm.api.md): Deterministic public-API reference for the qb-core and qb-io libraries of the qb C++20-first actor framework with optional C++23 support.
+
+## Project
+
+- [qb Actor Framework](https://raw.githubusercontent.com/isndev/qb/main/README.md): qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model.
+- [Installation](https://raw.githubusercontent.com/isndev/qb/main/INSTALL.md): How to add qb to a project and build it from source.
+- [Versioning and compatibility](https://raw.githubusercontent.com/isndev/qb/main/VERSIONING.md): qb follows Semantic Versioning 2.0.0.
+
+## Optional
+
+- [Introduction](https://raw.githubusercontent.com/isndev/qb/main/readme/1_introduction/README.md): The starting point for understanding what qb is, the problems it addresses, and the design principles that shape it.
+- [What qb is](https://raw.githubusercontent.com/isndev/qb/main/readme/1_introduction/overview.md): qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model, composed of two libraries: an actor engine (qb-core) layered on a standalone non-blocking asynchronous I/O runtime
+- [Design philosophy](https://raw.githubusercontent.com/isndev/qb/main/readme/1_introduction/philosophy.md): This page explains the design principles behind qb — share-nothing actor isolation, asynchronous-by-default I/O, a layered and modular architecture, explicit modern C++20/23, and lock-free inter-core messaging — and the rationale for each c
+- [Core concepts](https://raw.githubusercontent.com/isndev/qb/main/readme/2_core_concepts/README.md): The foundational model behind qb: isolated actors, the events they exchange, the non-blocking I/O loop that drives them, and the threading that runs them in parallel.
+- [The actor model in qb](https://raw.githubusercontent.com/isndev/qb/main/readme/2_core_concepts/actor_model.md): An actor is an isolated unit of state and behavior that communicates only by passing events; the runtime processes each actor's mailbox one event at a time, so its private state needs no locks.
+- [The asynchronous I/O model](https://raw.githubusercontent.com/isndev/qb/main/readme/2_core_concepts/async_io.md): How qb runs network and filesystem work without blocking a thread: a single-threaded, libev-backed event loop that dispatches readiness to on() handlers, plus a coroutine layer for code that prefers co_await over callbacks.
+- [Concurrency in qb](https://raw.githubusercontent.com/isndev/qb/main/readme/2_core_concepts/concurrency.md): qb makes the actor the unit of concurrency: each actor owns its state, runs on exactly one worker thread, and processes its mailbox one event at a time, so application code never reaches for a mutex.
+- [The event system](https://raw.githubusercontent.com/isndev/qb/main/readme/2_core_concepts/event_system.md): Events are the only channel through which actors communicate; this page covers how to define them, how the five delivery primitives differ, and what ordering and lifetime guarantees the runtime makes.
+- [The threading model](https://raw.githubusercontent.com/isndev/qb/main/readme/2_core_concepts/threading_model.md): qb runs one VirtualCore worker thread per engine core, each owning its actors and draining a private lock-free mailbox, so the only genuinely multi-threaded surface is the message-passing layer between cores.
+- [qb-io: asynchronous I/O runtime](https://raw.githubusercontent.com/isndev/qb/main/readme/3_qb_io/README.md): qb-io is the C++20 asynchronous I/O runtime under the qb actor framework, with optional C++23 validation: a single-threaded, libev-backed event loop with non-blocking TCP, UDP, SSL/TLS, and QUIC transports, a pluggable protocol layer, nativ
+- [The async runtime: event loop, timers, and callbacks](https://raw.githubusercontent.com/isndev/qb/main/readme/3_qb_io/async_system.md): qb::io::async is the single-threaded, libev-backed event loop that drives every non-blocking operation in qb-io: socket readiness, timers, scheduled callbacks, file-system watching, and the C++20 coroutine scheduler.
+- [C++20 coroutines](https://raw.githubusercontent.com/isndev/qb/main/readme/3_qb_io/coroutines.md): qb::io::async ships a native C++20/23 coroutine layer — task<T>, awaiters, combinators, channels, structured-concurrency scopes, generators, streams, retry, and cancellation — running directly on the same single-threaded libev loop as the r
+- [qb-io feature catalog](https://raw.githubusercontent.com/isndev/qb/main/readme/3_qb_io/features.md): An index of every qb-io capability — async engine, coroutines, transports, protocols, TLS, QUIC, crypto, compression, and utilities — with one-line summaries that link to the detail page that owns each topic.
+- [Framing messages with protocols](https://raw.githubusercontent.com/isndev/qb/main/readme/3_qb_io/protocols.md): A protocol is the pluggable framing strategy that turns a continuous byte stream into discrete application messages: it decides where one message ends and hands each complete message to the I/O component's handler.
+- [Native QUIC and HTTP/3 transport](https://raw.githubusercontent.com/isndev/qb/main/readme/3_qb_io/quic_transport.md): qb-io exposes QUIC as an optional asynchronous I/O family built on libngtcp2 and OpenSSL: a reactor-driven endpoint owns one UDP socket, drives the ngtcp2 backend, routes packets by connection id, and dispatches typed lifecycle events for c
+- [Secure TCP with SSL/TLS](https://raw.githubusercontent.com/isndev/qb/main/readme/3_qb_io/ssl_transport.md): qb-io layers OpenSSL-backed SSL/TLS over its TCP stack, with secure-by-default client verification, a context-owning listener, and a stream transport that drains OpenSSL's internal buffers.
+- [TCP and UDP transports and sockets](https://raw.githubusercontent.com/isndev/qb/main/readme/3_qb_io/transports.md): Transports bind the buffered stream abstractions to concrete sockets, turning a raw tcp::socket or udp::socket into a read/write/buffer unit that the asynchronous I/O layer and protocols build on.
+- [qb-io utilities](https://raw.githubusercontent.com/isndev/qb/main/readme/3_qb_io/utilities.md): Beyond sockets and the event loop, qb-io ships a set of standalone utilities — the canonical time vocabulary, cryptography and JWT, compression, URI parsing, fixed-capacity strings and flat hash maps, UUIDs, JSON, and endian helpers — usabl
+- [qb-core: the actor engine](https://raw.githubusercontent.com/isndev/qb/main/readme/4_qb_core/README.md): qb-core is the C++20-first actor runtime layered on qb-io: it owns the qb::Main engine, the per-thread qb::VirtualCore workers, the qb::Actor base class, and the event-passing layer that connects them.
+- [Writing actors with qb::Actor](https://raw.githubusercontent.com/isndev/qb/main/readme/4_qb_core/actor.md): How to define an actor, initialize it, handle events, send messages, manage its lifecycle, run periodic work, and expose it as a per-core service.
+- [The engine: qb::Main and VirtualCore](https://raw.githubusercontent.com/isndev/qb/main/readme/4_qb_core/engine.md): qb::Main is the runtime that launches one worker thread per logical core, places actors onto those workers, and drives event processing until shutdown; qb::VirtualCore is the per-thread worker it manages on your behalf.
+- [qb-core features and capabilities](https://raw.githubusercontent.com/isndev/qb/main/readme/4_qb_core/features.md): This page catalogs the capabilities of qb-core — the actor runtime built on qb-io — and links each one to the page that documents it in depth.
+- [Event messaging between actors](https://raw.githubusercontent.com/isndev/qb/main/readme/4_qb_core/messaging.md): A deep dive into the qb messaging layer: how push, send, reply, forward, and broadcast differ in delivery semantics, what ordering the runtime guarantees, and how events move through the per-actor pipe and the per-core mailbox both within a
+- [Actor patterns](https://raw.githubusercontent.com/isndev/qb/main/readme/4_qb_core/patterns.md): Compose the qb::Actor primitives into recurring designs: finite state machines, service registries, publish/subscribe, request/response with a timeout, supervision, and runtime dependency resolution.
+- [Interaction patterns library](https://raw.githubusercontent.com/isndev/qb/main/readme/4_qb_core/patterns_library.md): After reading this you can use the qb-core interaction patterns — request/reply, scatter-gather, discovery, saga, pub/sub, supervision, resilience, streaming, routing, idempotency and aggregation — to compose actor conversations without han
+- [Integrating core actors with asynchronous I/O](https://raw.githubusercontent.com/isndev/qb/main/readme/5_core_io_integration/README.md): How qb-core actors use the qb-io event loop to perform network, timer, and file work without blocking their VirtualCore.
+- [Asynchronous operations inside actors](https://raw.githubusercontent.com/isndev/qb/main/readme/5_core_io_integration/async_in_actors.md): How an actor uses the qb-io event loop — deferred callbacks, inactivity timers, and coroutines — to perform time-based and I/O-bound work without blocking its VirtualCore.
+- [Case studies: core and I/O integration examples](https://raw.githubusercontent.com/isndev/qb/main/readme/5_core_io_integration/examples/README.md): Five worked analyses of complete applications that combine qb-core actors with qb-io networking, watchers, and deferred work end to end.
+- [TCP chat: an annotated walkthrough](https://raw.githubusercontent.com/isndev/qb/main/readme/5_core_io_integration/examples/chat_tcp_analysis.md): A line-by-line reading of the chat_tcp example: how a multi-actor TCP server accepts connections, frames a custom binary protocol, manages per-client sessions, and centralizes chat state, paired with a reconnecting client.
+- [Distributed-computing simulation walkthrough](https://raw.githubusercontent.com/isndev/qb/main/readme/5_core_io_integration/examples/distributed_computing_analysis.md): An annotated reading of examples/core/example10_distributed_computing.cpp: five cooperating actor types that generate, schedule, execute, collect, and monitor a stream of simulated computational tasks across multiple cores.
+- [File-monitor example: annotated walkthrough](https://raw.githubusercontent.com/isndev/qb/main/readme/5_core_io_integration/examples/file_monitor_analysis.md): A guided reading of examples/core_io/file_monitor, which wraps qb::io::async::directory_watcher inside an actor so file-system attribute changes arrive as ordinary typed events on a VirtualCore.
+- [File-processor walkthrough](https://raw.githubusercontent.com/isndev/qb/main/readme/5_core_io_integration/examples/file_processor_analysis.md): An annotated reading of examples/core_io/file_processor/: a manager-worker topology that confines blocking file I/O to dedicated worker cores so the rest of the actor system stays responsive.
+- [Publish/subscribe message broker: an annotated walkthrough](https://raw.githubusercontent.com/isndev/qb/main/readme/5_core_io_integration/examples/message_broker_analysis.md): A reading of the message_broker example: a topic-based pub/sub broker that fans one published message out to many subscribers by sharing a single reference-counted payload across cores, framed over a custom binary protocol.
+- [Building network actors](https://raw.githubusercontent.com/isndev/qb/main/readme/5_core_io_integration/network_actors.md): Turn an actor into a non-blocking TCP, UDP, or SSL/TLS endpoint by inheriting from a qb::io::use<Self> mixin, so network I/O runs on the actor's own VirtualCore event loop and arrives as ordinary on(...) handler calls.
+- [Guides](https://raw.githubusercontent.com/isndev/qb/main/readme/6_guides/README.md): Task-oriented walkthroughs that take you from a first build to a production deployment, plus the patterns, tuning knobs, failure model, and migration paths you reach for along the way.
+- [Advanced usage](https://raw.githubusercontent.com/isndev/qb/main/readme/6_guides/advanced_usage.md): Five techniques for non-trivial systems: defining a custom wire protocol, scaling actors across cores, running coroutines safely inside actors, structuring shared logic as service actors, and composing the qbm modules with your own actors.
+- [Error handling and resilience](https://raw.githubusercontent.com/isndev/qb/main/readme/6_guides/error_handling.md): How qb propagates, contains, and reports failure: the exception policy, the VirtualCore fail-stop boundary, supervision patterns you build yourself, asynchronous I/O error events, and the async::callback lifetime rules.
+- [Getting started](https://raw.githubusercontent.com/isndev/qb/main/readme/6_guides/getting_started.md): Install qb, build and run a first actor, add a non-blocking timer, and find the next page to read.
+- [Migration guide](https://raw.githubusercontent.com/isndev/qb/main/readme/6_guides/migration_guide.md): Move an existing codebase to qb: from hand-rolled std::thread + locked queues to actors, and from the pre-2.0 qb::Timestamp/qb::Duration time types to the qb::duration/qb::mono_time/qb::wall_time chrono model.
+- [Patterns cookbook](https://raw.githubusercontent.com/isndev/qb/main/readme/6_guides/patterns_cookbook.md): Task-oriented recipes for the interactions you reach for most often: one-shot and periodic timers, request/reply, actor-scoped coroutines, coroutine ask, typed request/response with scatter-gather and saga, resilient ask (retry & circuit br
+- [Performance tuning](https://raw.githubusercontent.com/isndev/qb/main/readme/6_guides/performance_tuning.md): A method-driven guide to the knobs that affect throughput and latency in a qb actor system: core placement, event-loop idle latency, allocation behavior, the lock-free transport, and the two build flags (QB_ENABLE_NATIVE_ARCH, QB_ENABLE_LTO
+- [Production readiness checklist](https://raw.githubusercontent.com/isndev/qb/main/readme/6_guides/production_checklist.md): A pre-deployment checklist for qb services: how to build a portable binary, configure TLS, cap resource use, wire logging and signal handling, run the test suite, and decide what to monitor.
+- [Resource management](https://raw.githubusercontent.com/isndev/qb/main/readme/6_guides/resource_management.md): How RAII, actor ownership, and the actor lifecycle combine to release memory, descriptors, sockets, and TLS contexts deterministically, and where the framework hands ownership back to you.
+- [Reference](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/README.md): Fast-lookup material for working with qb: an API map, the build and dependency reference, the thread-safety and lifetime invariants each library upholds, the test and benchmark suites, plus an FAQ and a glossary.
+- [Public API overview](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/api_overview.md): A reference map of the public API: the namespaces, key types, and signatures of qb-core and qb-io, each linked to the header that owns it.
+- [Benchmarks](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/benchmarks.md): A reference for the qb micro-benchmark suites: the Google Benchmark targets gated by QB_BUILD_BENCHMARKS, what each one measures, how to build and run them, and how to read their output.
+- [Building from source](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/building.md): A reference for configuring, building, testing, and installing the qb framework from source with CMake: requirements, presets, options, generators, and install layout.
+- [CMake and third-party dependencies](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/cmake_dependencies.md): qb groups its dependencies into resolution classes — vendored forks that are qb's own code, third-party trees bundled in-tree, fetched from source on demand, or supplied by the system — and resolves each class with a single, predictable rul
+- [CMake options reference](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/cmake_options.md): Every QB_ CMake variable that configures a qb build, its default, and what it controls.
+- [qb-core thread-safety and lifecycle invariants](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/core_invariants.md): The rules qb-core assumes and the guarantees it gives in return: which thread owns what, when an actor is alive, and in what order events arrive — so you can reason about correctness without reading the scheduler.
+- [Frequently asked questions](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/faq.md): Short, grounded answers to the questions that come up most when adopting qb, each linking to the page that owns the full explanation.
+- [Glossary](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/glossary.md): A definition for every domain term used across the qb documentation, each grounded in the header that owns it and linking to the page that explains it in full.
+- [qb-io invariants: threading, lifetime, and ownership](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/io_invariants.md): The rules the asynchronous stack assumes — one event loop per thread, where callbacks run, when objects may be destroyed, and who owns each socket — with the header and line that enforces each one.
+- [Lock-free primitives](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/lockfree_primitives.md): The lock-free building blocks under qb/system/lockfree — SPSC and MPSC ring buffers, an unbounded MPSC queue, and a spinlock — that back the engine's inter-core message path, plus the threading contract you must honor to use them directly.
+- [Testing the framework](https://raw.githubusercontent.com/isndev/qb/main/readme/7_reference/testing.md): How the qb test suite is organized, how to build and run it with CTest and GoogleTest, and how the coverage option is wired.
+- [qb documentation](https://raw.githubusercontent.com/isndev/qb/main/readme/README.md): The narrative guide to the qb actor framework, organized into seven sections for progressive learning, from first principles to production reference.
+- [Changelog](https://raw.githubusercontent.com/isndev/qb/main/CHANGELOG.md): All notable changes to qb are documented here.
+- [Contributing to qb](https://raw.githubusercontent.com/isndev/qb/main/CONTRIBUTING.md): Thank you for your interest in improving qb.
+- [Security policy](https://raw.githubusercontent.com/isndev/qb/main/SECURITY.md): Security fixes are provided for the latest minor of the current major series.
+- [Support](https://raw.githubusercontent.com/isndev/qb/main/SUPPORT.md): How to get help with qb, and what to expect.
+- [Contributor Covenant Code of Conduct](https://raw.githubusercontent.com/isndev/qb/main/CODE_OF_CONDUCT.md): We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity
+
+<!-- generated by scripts/gen-llms-txt.py from llm/ + the files in this repo; run `python3 scripts/gen-llms-txt.py --write` after editing llm/ -->

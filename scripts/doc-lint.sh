@@ -131,6 +131,23 @@ else
   fail=1
 fi
 
+# ---------------------------------------------------------------------------
+echo "== 1d. Published agent index (llms.txt / llms-full.txt are what the generator produces) =="
+# `/llms.txt` and `/llms-full.txt` are what an agent actually fetches: GitMCP turns any public
+# GitHub repo into an MCP endpoint and reads them FIRST (its documented order is llms.txt, then
+# an AI-optimised docs build, then README.md). They are generated from `llm/` and from the files
+# in this checkout, never hand-written, and this check regenerates them in memory and fails on
+# any byte of difference -- so editing `llm/` without regenerating is a red build rather than a
+# published file that quietly describes the previous state. It also asserts the llmstxt.org
+# shape (H1, blockquote, prose, H2 link lists, `## Optional`) and that every published URL
+# names a file that exists here.
+if command -v python3 >/dev/null 2>&1; then
+  python3 "${SCRIPT_DIR}/gen-llms-txt.py" --check || fail=1
+else
+  red "  python3 not found -- gen-llms-txt.py cannot run, and this lint does not pass without it"
+  fail=1
+fi
+
 echo "== 2. Internal link check =="
 broken=0
 while read -r f; do
