@@ -8,6 +8,42 @@ C++20 coroutines. Two libraries: **`qb-io`** (runtime: event loop, sockets, prot
 time/crypto/compression) and **`qb-core`** (actor engine on top of `qb-io`). `qb-io` is usable
 standalone.
 
+<!-- llms-txt:lead -->
+> qb is a C++20-first (optional C++23) actor framework for concurrent and distributed C++:
+> share-nothing actors over a non-blocking asynchronous I/O runtime with native C++20
+> coroutines. Two libraries compose — **qb-io** (event loop, TCP/UDP/TLS/QUIC transports,
+> protocols, coroutines, time, crypto, compression) and **qb-core** (the actor engine on top
+> of it); qb-io is usable standalone. Optional **qbm** modules add HTTP/1.1·2·3 + WebSocket,
+> PostgreSQL and Redis. Apache-2.0, CMake ≥ 3.24, Linux · macOS · Windows, x86-64 · ARM64.
+
+Five rules decide whether generated qb code is correct; everything else is detail.
+
+1. **Time is `std::chrono`.** Every timeout / TTL / interval / delay / latency is a
+   `qb::duration` (= `std::chrono::nanoseconds`); it accepts finer-or-equal chrono literals
+   and rejects bare integers at compile time. `qb::mono_time` is the steady clock,
+   `qb::wall_time` the system clock, and subtracting one from the other does not compile.
+   Never emit `qb::Timestamp`, `qb::Duration`, `qb::TimePoint`, `to_timestamp(`,
+   `to_time_point(` or the header `<qb/system/timestamp.h>`: 3.0 removed all six.
+2. **Actors share nothing.** An actor is thread-affine to one `VirtualCore`, processes one
+   event at a time, and talks only by events — no mutexes, no shared mutable state, and no
+   actor ever constructed outside a worker thread (use `Main::core(i).addActor<T>(...)`,
+   `addActor<T>(core, ...)` or `addRefActor<T>(...)`).
+3. **`push` / `send` / `broadcast` are `noexcept`.** A throwing event constructor, or an OOM
+   growing the pipe, calls `std::terminate()`. Events are relocated with raw `memcpy`, so no
+   member may point into its own storage: a by-value `std::string` is never a valid event
+   member — use `qb::string<N>` or box it behind a smart pointer. `send<T>()` additionally
+   requires a trivially destructible event and is unordered; `push<T>()` is ordered.
+4. **A coroutine captures by value before its first `co_await`.** The actor can be destroyed
+   while the coroutine is suspended, so after any suspension the only legal channel back is
+   the context (`ctx.push_to<E>(...)`, `ctx.id()`, `ctx.time()`). Prefer `Actor::spawn(...)`
+   — bound to the actor's cancellation scope — over `Actor::spawn_detached(...)`, and pass
+   the lambda **without** a trailing `()`, which would destroy its closure before the
+   coroutine starts.
+5. **Register every event you handle.** `registerEvent<T>(*this)` inside `onInit()`, which is
+   itself a coroutine returning `qb::io::async::task<bool>`; `co_return false` or a throw
+   fails creation and yields an invalid `ActorId`.
+<!-- /llms-txt:lead -->
+
 ## Mental model
 
 **Actor** — an isolated object (derives `qb::Actor`) with a unique `qb::ActorId`. It owns private
@@ -60,7 +96,7 @@ Key members (all called from inside the actor): `id()`, `getIndex()`, `is_alive(
 `push<T>(dest, args...)`, `send<T>(dest, args...)`, `broadcast<T>(args...)`, `reply(e)`,
 `forward(dest, e)`, `to(dest).push<T>(...)` (EventBuilder), `getPipe(dest)`,
 `addRefActor<T>(args...)`, `addRefHandle<T>(args...)`, `getService<T>()`, `require<T>()`,
-`is<T>(event)`, `spawn(...)` / `spawn_detached(...)`, `context()`, `resolve_ask(e)`,
+`is<T>(event)`, `spawn(...)` / `spawn_detached(...)`, `context()`, `resolve_ask(e)`, `resolve_require(e)`,
 `has_active_coroutines()`.
 
 Lifecycle: by default every actor auto-subscribes to `KillEvent`, `SignalEvent`,
@@ -282,6 +318,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   saga (`run_saga`), routing (`WorkerPool`), pub/sub (`PubSub`), supervision (`Supervisor`). All
   core-local; coroutine-side helpers are cancel-on-kill.
 - **Discovery** — `require<Target>()`; handle `qb::RequireEvent` and gate on `is<Target>(event)`.
+  The default `on(qb::RequireEvent&)` already routes replies to a pending `co_await qb::ping`/
+  `qb::require` through `resolve_require(e)`, so the coroutine form needs no boilerplate — but if
+  you **override** that handler for the fire-and-forget form, call `resolve_require(e)` first or
+  every coroutine discovery on that actor hangs until its timeout. (Exactly `resolve_ask`'s rule.)
   There is **no `status` field**: presence *is* the status — a dead actor never replies. Prefer
   `co_await qb::require<Target>(context(), timeout)`, which correlates the replies for you.
   _(Event.h:420, :424)_
