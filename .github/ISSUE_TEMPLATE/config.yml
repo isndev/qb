@@ -1,0 +1,17 @@
+# Blank issues stay enabled on purpose. The only issue this project has ever received was
+# free-form and was exact; a form that turns that reporter away costs more than it saves.
+# The templates are here for people who want the prompts, not as a toll gate.
+blank_issues_enabled: true
+
+contact_links:
+  - name: Question, design help, or "how do I…"
+    url: https://github.com/isndev/qb/discussions
+    about: Discussions are the right place. Issues are for reproducible bugs and concrete requests.
+
+  - name: Security vulnerability
+    url: https://github.com/isndev/qb/security/advisories/new
+    about: Report privately, never as a public issue. See SECURITY.md for scope and what to expect.
+
+  - name: Bug in a qbm module (http, pgsql, redis)
+    url: https://github.com/isndev?tab=repositories&q=qbm
+    about: The modules are separate repositories. File it against the one that owns the code.

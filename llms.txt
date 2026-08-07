@@ -106,7 +106,7 @@ Five rules decide whether generated qb code is correct; everything else is detai
 - [qb documentation](https://raw.githubusercontent.com/isndev/qb/main/readme/README.md): The narrative guide to the qb actor framework, organized into seven sections for progressive learning, from first principles to production reference.
 - [Changelog](https://raw.githubusercontent.com/isndev/qb/main/CHANGELOG.md): All notable changes to qb are documented here.
 - [Contributing to qb](https://raw.githubusercontent.com/isndev/qb/main/CONTRIBUTING.md): Thank you for your interest in improving qb.
-- [Security policy](https://raw.githubusercontent.com/isndev/qb/main/SECURITY.md): Security fixes are provided for the latest minor of the current major series.
+- [Security policy](https://raw.githubusercontent.com/isndev/qb/main/SECURITY.md): Security fixes are provided for one series: the latest minor of the current major.
 - [Support](https://raw.githubusercontent.com/isndev/qb/main/SUPPORT.md): How to get help with qb, and what to expect.
 - [Contributor Covenant Code of Conduct](https://raw.githubusercontent.com/isndev/qb/main/CODE_OF_CONDUCT.md): We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity
 

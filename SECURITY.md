@@ -4,12 +4,23 @@
 
 ## Supported versions
 
-Security fixes are provided for the latest minor of the current major series.
+**Security fixes are provided for one series: the latest minor of the current major.** They are
+delivered as a new release of that series, not as a patch to an older one, and there is no backport
+commitment to a previous major. This is the same policy [VERSIONING.md](./VERSIONING.md) states for
+bug fixes, deliberately worded the same way — a security policy that promises more than the release
+policy delivers is worse than one that promises less.
 
 | Version | Supported |
 |---------|-----------|
-| 2.6.x   | Yes       |
+| 3.0.x   | Yes       |
+| 2.6.x   | No — superseded by 3.0; fixes ship in the 3.0 series |
 | < 2.0   | No        |
+
+Note that 3.0 is a **major** release with source-breaking changes, so "upgrade to the supported
+series" is not always a drop-in move; [CHANGELOG.md](./CHANGELOG.md) lists what changed, and the
+[migration guide](./readme/6_guides/migration_guide.md) covers the paths that need edits. If that is
+a genuine obstacle for a reported vulnerability, say so in the report — the decision is made per
+report, and it is better made with that information than without it.
 
 ## Reporting a vulnerability
 
@@ -39,9 +50,11 @@ Please give us reasonable time to investigate and release a fix before any publi
 
 In scope: memory-safety defects, denial-of-service vectors, authentication or cryptographic weaknesses, and
 input-handling flaws in qb's own code (qb-core, qb-io) and in how qb integrates and configures the bundled
-third-party components under `src/qb/vendor` (the libev fork `qev`, nanolog, ska_hash, stduuid) and
-`modules` (nlohmann/json).
+third-party components under `src/qb/vendor` — the libev fork `qev` (which carries wepoll on Windows),
+nanolog, ska_hash, and stduuid.
 
-Out of scope: defects in the upstream third-party projects themselves (libev, nlohmann/json, stduuid, …) —
+Out of scope: defects in the upstream third-party projects themselves (libev, stduuid, nlohmann/json, …) —
 report those to their maintainers; and issues that require a misconfiguration explicitly warned against in
 the documentation. Findings in the optional qbm modules belong to their respective repositories.
+nlohmann/json is a **dependency**, not a bundled component: since 3.0 it is resolved with
+`find_package(nlohmann_json)`, so a defect in it is upstream's, while qb's *use* of it is in scope.

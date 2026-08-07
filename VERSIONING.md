@@ -28,37 +28,169 @@ Given a version `MAJOR.MINOR.PATCH`:
 - **MAJOR** (`x.0.0`) — changes that may require source edits, including removals of previously deprecated
   APIs.
 
-## Source and binary compatibility
+## Source compatibility
 
-- **Source compatibility** is guaranteed within a major version, as described above.
-- **Binary (ABI) compatibility is not guaranteed across versions.** qb is a heavily templated,
-  CRTP-based, partly header-only framework, and several build options change code generation
-  (`QB_ENABLE_NATIVE_ARCH`, `QB_ENABLE_LTO`, `QB_ENABLE_FAST_MATH`, sanitizers). Link only translation
-  units built with the same qb version, the same standard library, and compatible flags. Do not ship a
-  prebuilt qb binary expected to link against differently-configured consumers.
-- **The *compiler* is part of that list, not just the standard library.** clang and gcc over the same
-  libstdc++ still disagree on one thing qb depends on: clang appends the cxx11 ABI tag (`B5cxx11`) to
-  the mangled name of a function-**local static** whose type carries it, and gcc does not. A local
-  static that the code treats as one shared object — a sentinel compared by address, a cache whose
-  identity matters — then exists twice in a mixed binary, with no link-time diagnostic. That is a real
-  3.0 fix, not a hypothetical (see *Fixed* in [CHANGELOG.md](./CHANGELOG.md): an empty
-  `qb::unordered_map` destroyed across the boundary freed static storage). qb's own headers are now
-  clean of it and the `ubuntu-abi-sentinel-sweep` CI job keeps them that way, but the guarantee stops
-  at qb's surface: prefer one compiler for the whole program.
-- **`NDEBUG` is the one exception, and it is qb's obligation, not yours.** A consumer's `NDEBUG` comes
-  from its own `CMAKE_BUILD_TYPE` — including the *unset* default, which defines no `NDEBUG` — and
-  nothing makes it agree with the build qb was installed from. No public type, member declaration or
-  alignment in a shipped header may therefore be selected by `NDEBUG` (or `_DEBUG`/`DEBUG`): the
-  disagreement is invisible to the linker and to `find_package`, so it surfaces as silent memory
-  corruption rather than an error. Two such splits existed and were removed in 3.0 —
-  `qb::unordered_map`/`unordered_set`, and `qb::Event::id_type` — and
-  [`scripts/check-abi-macro-split.py`](./scripts/check-abi-macro-split.py) fails CI on a new one.
-  `NDEBUG` may still change *behaviour* (`assert`, diagnostics); note that this leaves a formal ODR
-  difference on inline functions containing `assert()`, where a mismatched consumer silently loses
-  the assertion.
+Guaranteed within a major version, as described above. Code that compiles against `3.0` keeps
+compiling against every later `3.x`; anything that would require a source edit waits for `4.0`.
 
 The installed CMake package version file is generated with `COMPATIBILITY SameMajorVersion`, so
-`find_package(qb 2.0)` accepts any installed `2.x` but rejects a different major.
+`find_package(qb 3.0)` accepts any installed `3.x` and rejects a different major. That check is
+about *source*: it answers "is this qb new enough to compile my code?". It is not, and cannot be,
+a statement about binaries — see the next section, and note in particular that a `find_package`
+that succeeds can still be followed by a link failure.
+
+## Binary compatibility
+
+**qb promises no binary compatibility between any two versions, in either direction, including
+between `3.0.0` and `3.0.1`.** Every object file in a program — yours, qb's, and any static library
+of your own that exposes a qb type — must be compiled against the same qb it links against.
+Upgrading qb means rebuilding all of it. There is no drop-in replacement.
+
+That is stronger than the usual "ABI stability is not guaranteed" disclaimer, and it is deliberate:
+qb would rather be checked than trusted. **qb's own version is an axis of a link-time fingerprint**,
+so the promise is enforced rather than merely documented. A consumer compiled against `3.0.0`
+headers and linked against a `3.0.1` archive does not run and misbehave; it fails to link, naming
+the version it was compiled with.
+
+### What may change in a patch release
+
+Everything except the source API. A patch release may change the layout of any type, the body of
+any inline function or template, the size of any private member, and the order or identity of
+anything not part of the documented public API. qb is a heavily templated, CRTP-based, partly
+header-only framework: most of what a consumer compiles is qb's headers, so most changes are
+layout-visible by construction. Several build options additionally change code generation on their
+own — `QB_ENABLE_NATIVE_ARCH`, `QB_ENABLE_LTO`, `QB_ENABLE_FAST_MATH`, and any sanitizer.
+
+### The fingerprint: five axes, enforced at link time
+
+`src/qb/utility/abi.h` gives the archive one symbol per axis, named after the value **it** was
+compiled with, and makes every consumer translation unit that parses a qb header reference one
+symbol per axis named after the value **it** is being compiled with. Same configuration, the
+references resolve; different configuration, the link fails and the undefined symbol names the axis.
+There is no opt-out macro: each axis is a configuration in which the two sides are provably unsound
+together, so the remedy is to rebuild qb, not to silence the check.
+
+An axis qualifies only if a mismatch is simultaneously *possible* in a build that otherwise compiles,
+*silent* under every tool, and *unsound*. Five qualify:
+
+| Axis | Symbol | What differs when it is violated |
+|---|---|---|
+| qb version | `qb_abi_version_M_m_p` | anything (see above) — and it is the axis that catches a consumer compiled with a hand-written `-I`/`-l` line instead of qb's CMake usage requirements |
+| cache line | `qb_abi_cacheline_N` | `KNOWN_L1_CACHE_LINE_SIZE` re-lays out `qb::Event` and the coroutine frame pool |
+| exceptions | `qb_abi_exceptions_[01]` | `-fno-exceptions` forks inline bodies the archive also defines |
+| coroutine debug | `qb_abi_coroutine_debug_[01]` | `QB_DEBUG_COROUTINES` grows `task<T>::promise_type` |
+| jthread source | `qb_abi_std_jthread_[01]` | a standard library without `__cpp_lib_jthread`, or `QB_COMPAT_FORCE_THREAD_FALLBACK`, resizes `qb::jthread` and moves every member after it in `qb::Main` and `qb::VirtualCore` |
+
+Measured against an installed `3.0.0` prefix (macOS 26 / arm64, AppleClang 21), one axis moved per
+row, everything else held equal:
+
+```
+consumer configuration                     result
+-----------------------------------------  -------------------------------------------------------
+3.0.0, cacheline 64, coro-debug off        LINK OK                                    <- control
+qb 3.0.1  (patch bump)                     undefined: _qb_abi_version_3_0_1
+qb 3.1.0  (minor bump)                     undefined: _qb_abi_version_3_1_0
+qb 4.0.0  (major bump)                     undefined: _qb_abi_version_4_0_0
+hand-written -I/-l, no usage requirements  undefined: _qb_abi_version_unknown__compile_with_qb_s_…
+-DQB_DEBUG_COROUTINES                      undefined: _qb_abi_coroutine_debug_1
+-DKNOWN_L1_CACHE_LINE_SIZE=128             undefined: _qb_abi_cacheline_128
+-DQB_COMPAT_FORCE_THREAD_FALLBACK          undefined: _qb_abi_std_jthread_0
+-fno-exceptions                            undefined: _qb_abi_exceptions_0
+-DNDEBUG                                   LINK OK    (not an axis — see below)
+-std=c++23                                 LINK OK    (not an axis — layout is identical)
+```
+
+On MSVC and clang-cl the same axes are additionally emitted as `#pragma detect_mismatch` records,
+which the Microsoft linker reports as `LNK2038` naming **both** values. That pragma is an inert
+no-op on Mach-O and ELF, so it is a bonus where it works and never the mechanism.
+
+### What the fingerprint does *not* protect
+
+**It is a detector for five specific silent misconfigurations, not a general ABI checker.** It
+compares qb's configuration against qb's configuration. It cannot see, and does not claim to see:
+
+- **The compiler, or its version.** See the next section — this is the one with a worked example.
+- **The standard library.** libstdc++ against libc++, or two libstdc++ versions, are ABI axes the
+  standard libraries arbitrate with their own tags; qb does not duplicate that.
+- **Standard-library hardening or debug modes** (`_GLIBCXX_DEBUG`, `_LIBCPP_HARDENING_MODE`, …).
+- **`NDEBUG`** — deliberately excluded, and that exclusion is qb's obligation rather than yours.
+  A consumer's `NDEBUG` comes from its own `CMAKE_BUILD_TYPE`, including the *unset* default, which
+  defines none; a Debug consumer against a Release qb is a supported and CI-tested configuration, so
+  fingerprinting `NDEBUG` would turn the default consumer configuration into a hard link failure.
+  What qb owes in exchange is that no public type, member declaration or alignment in a shipped
+  header is selected by `NDEBUG` (or `_DEBUG`/`DEBUG`) — the disagreement would be invisible to the
+  linker *and* to `find_package`, surfacing as silent memory corruption. Two such splits existed and
+  were removed in 3.0 (`qb::unordered_map`/`unordered_set`, and `qb::Event::id_type`);
+  [`scripts/check-abi-macro-split.py`](./scripts/check-abi-macro-split.py) fails CI on a new one.
+  One residual is **open and stated rather than papered over**: `assert()` sites inside `inline` and
+  template bodies in shipped headers mean two translation units that disagree about `NDEBUG` emit two
+  bodies under one vague-linkage symbol, and object order alone decides which survives — so a
+  mismatched consumer can silently lose an assertion. Do not mix `NDEBUG` across translation units;
+  [the building guide](./readme/7_reference/building.md) says so where a user will hit it.
+- **Optimization, LTO, `-march`, or sanitizers.** Matching those is your build system's job.
+- **Feature switches** (`QB_HAS_SSL`, `QB_HAS_QUIC`, `QB_HAS_COMPRESSION`, `QB_WITH_LOGGING`). These
+  gate whole types rather than members of a type that exists either way, so a mismatch is a *compile*
+  error, not silent corruption — and the genuinely silent case, a hand-written `-I`/`-l` consumer,
+  is caught by the version axis.
+
+### Mixing compilers is still your problem
+
+The compiler is part of the "same configuration" requirement, not just the standard library, and the
+fingerprint cannot check it. The worked example is real and is a 3.0 fix rather than a hypothetical:
+clang appends the cxx11 ABI tag (`B5cxx11`) to the mangled name of a function-**local static** whose
+type carries it, and gcc does not. A local static that the code treats as one shared object — a
+sentinel compared by address, a cache whose identity matters — then exists twice in a mixed binary,
+with no link-time diagnostic at all. In qb's case an empty `qb::unordered_map` created on one side
+and destroyed on the other freed static storage (see *Fixed* in [CHANGELOG.md](./CHANGELOG.md)).
+
+qb's own headers are clean of that class and the `ubuntu-abi-sentinel-sweep` CI job keeps them that
+way — it compiles a probe with both compilers and diffs symbol names, and carries a negative control
+so a green result means "the two compilers agree" rather than "the probe stopped instantiating".
+**The guarantee stops at qb's surface.** Your own code and your other dependencies are not swept.
+Build the whole program with one compiler.
+
+Note also that macOS is structurally blind to this class: libc++ has no cxx11 tag, so a
+macOS-only workflow cannot reproduce it however many configurations it tries.
+
+### qb ships static-only
+
+The installed prefix contains static archives and nothing else — `libqb-core.a`, `libqb-io.a`,
+`libqev.a`, and one `.a` per qbm module. There is no shared build to consume: `SOVERSION` is set
+exactly once in the whole tree and it is on the vendored event-loop fork, never on qb's own targets;
+`QB_BUILD_SHARED_LIBS` exists but `BUILD_SHARED_LIBS` appears in no CI workflow, so a shared qb has
+never been configured anywhere. Treat it as unsupported for the 3.0 series. What that implies:
+
+- **Upgrading qb is a rebuild of your program, not a swap of a file.** This is the practical form of
+  the no-binary-compatibility promise, and it is why the version axis is not an inconvenience: with
+  static linkage there is no scenario in which replacing qb without recompiling was going to work.
+- **No parallel installs.** Without `SOVERSION` there is no distro-style side-by-side of two qb
+  versions in one prefix.
+- **A few qb entities must exist exactly once per process** — the event type-id counter, the
+  `ServiceActor` registry, the per-thread event loop and `VirtualCore`, the coroutine frame pool, and
+  a null-object sentinel compared by address. They are vague-linkage entities that the dynamic linker
+  coalesces across images, which `-fvisibility=hidden` would otherwise switch off; qb annotates them
+  `visibility("default")` so a host executable plus a `dlopen`ed plugin that both statically link qb
+  still share one of each. Without that annotation two event types silently receive the same id and
+  the router sends them to the same slot. The annotation is empty on Windows, where a shared qb needs
+  export-macro work first.
+
+### Diagnosing a mismatch
+
+1. The link error already names the axis and the value *your* translation unit was compiled with —
+   for example `_qb_abi_cacheline_128`, `referenced from: qb::detail::abi_fingerprint in main.o`.
+2. The archive's side of the story needs no demangler and no qb source tree:
+
+   ```sh
+   nm -g <prefix>/lib/libqb-io.a | grep qb_abi
+   strings <prefix>/lib/libqb-io.a | grep '^qb-abi '
+   ```
+
+3. A prebuilt prefix also records its configuration as a file — `share/qb/abi-fingerprint.txt`, read
+   back out of the archive rather than re-derived, so it cannot drift from the artefact. Comparing two
+   prefixes is a `diff`. See [INSTALL.md](./INSTALL.md).
+4. **Consume qb through `find_package` or `add_subdirectory`.** A hand-written `-I`/`-l` line misses
+   qb's usage requirements — not only the version, but the feature macros — and yields the
+   `qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements` symbol by design.
 
 ## Deprecation policy
 
@@ -74,9 +206,17 @@ A migration path is provided for every removal. See, for example, the time-type 
 
 ## Supported versions
 
-The `2.6.x` line is the actively maintained series. Security and bug fixes target the latest minor of the
-current major. There is no separate long-term-support branch at this time; this section will be updated if
-one is introduced.
+**One series is maintained at a time: the latest minor of the current major.** When `3.0.0` is
+released it becomes that series, and `2.6.x` stops receiving releases — including for fixes that
+already exist on `develop`. There is no backport commitment to the previous major and no separate
+long-term-support branch; this section will be updated if one is introduced.
+
+That is a deliberate policy rather than an oversight, and it has a visible consequence worth stating
+plainly: a fix merged after `2.6.0` was tagged is reachable only by moving to the next release, and
+for `3.0.0` that means a major upgrade with the source-breaking changes listed under *Removed* in
+[CHANGELOG.md](./CHANGELOG.md). Security fixes are the one place this could bite hardest, so
+[SECURITY.md](./SECURITY.md) states the same policy in the same words rather than implying a
+broader guarantee.
 
 ## C++ standard and toolchains
 
