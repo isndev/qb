@@ -25,7 +25,7 @@
  *     path runs none, a mid-flow cancel SKIPS rollback, and a throwing compensation does not abort
  *     the remaining (best-effort) rollbacks.
  *
- * Hardening over the original (see docs/tests-audit/qb-core/qbcore-c10.md):
+ * Hardening over the original (see dev/tests-audit/qb-core/qbcore-c10.md):
  *   - every bare `EXPECT_TRUE(g_*)` boolean assert carries a `<<` message naming the invariant;
  *   - the case-5 ask_any race is made DETERMINISTIC: the slow market is LATCHED — it does not emit
  *     its reply until it receives an explicit "you may reply" signal that the asker sends only AFTER

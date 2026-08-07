@@ -2,7 +2,7 @@
 
 This guide covers how qb / qbm tests and benchmarks are organized, how to run the lane you
 want, and how to add a new test. The full design rationale lives in the monorepo audit
-(`docs/tests-audit/_CONVENTIONS.md` — the authority); this file is the day-to-day reference and
+(`dev/tests-audit/_CONVENTIONS.md` — the authority); this file is the day-to-day reference and
 is self-contained for a standalone `qb` checkout.
 
 ## Tiers

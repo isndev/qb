@@ -269,7 +269,7 @@ The three signal entry points are static and `noexcept`: `registerSignal(signum)
 
 <!-- src: qb/src/qb/core/Main.cpp:404-418 (registerSignal / unregisterSignal / ignoreSignal) -->
 
-> Only `SIGINT` is registered automatically. If your platform delivers `SIGTERM` on shutdown (most container runtimes and service managers do), you must register it yourself or the process is killed without the graceful drain.
+> **Both** `SIGINT` and `SIGTERM` are registered automatically by `start()`, so the signal most container runtimes and service managers send on shutdown already gets the graceful drain — you do not need to register it. `registerSignal()` is for the non-terminal signals (`SIGHUP`, `SIGUSR1`, …), which are delivered as a `qb::SignalEvent` but do **not** kill anything unless you override `on(qb::SignalEvent &)`.
 
 `qb::Main::stop()` is itself async-signal-safe and may be called from a signal handler; it sets the same pending flag and leaves the heavier `std::stop_source` broadcast to `~Main()` / `join()` where normal thread synchronization is safe.
 
@@ -350,7 +350,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 - **`set_insecure()` reaching production.** It disables TLS peer verification and removes MITM protection. Grep for it before release. (§3)
 - **Assuming `QB_WITH_SSL` is on.** If OpenSSL is absent at configure time, SSL is silently forced off and the transports compile out. Confirm `QB_WITH_SSL=1` in the actual build. (§3)
 - **Relying on the 10 MB message limit.** The real default is 100 MB (`QB_MAX_MESSAGE_SIZE` in `config.h`); a doc comment in `qb/io/async/io.h` is stale. Set the limit explicitly per protocol. (§4)
-- **Only handling `SIGINT`.** `start()` registers `SIGINT` only. Container orchestrators send `SIGTERM` — register it yourself or lose the graceful drain. (§6)
+- **Assuming a non-terminal signal shuts the engine down.** `start()` already registers `SIGINT` *and* `SIGTERM`, and only those two kill actors. Routing `SIGHUP`/`SIGUSR1` through `registerSignal()` delivers a `qb::SignalEvent` but stops nothing until you override `on(qb::SignalEvent &)`. (§6)
 - **Testing only the default build.** A portable, LTO, or sanitizer build can expose latent bugs the default build hides. Run the suite against the configuration you ship. (§7)
 
 ## See also

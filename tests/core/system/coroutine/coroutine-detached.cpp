@@ -19,7 +19,7 @@
  * `coro_with_timeout`), exception propagation through chained `co_await`, the
  * `active_coroutine_count()` RAII counter, and coroutine lifetime vs actor death.
  *
- * Hardening over the original `-advanced` harness (see docs/tests-audit/qb-core/qbcore-c09.md):
+ * Hardening over the original `-advanced` harness (see dev/tests-audit/qb-core/qbcore-c09.md):
  *   - DE-FLAKED: completion is driven by event delivery, not by hard-coded wall-clock ordering, and
  *     the engine is torn down by `qb::Main::stop()` the instant the result is observed. A LOUD
  *     bounded `WatchdogActor` co-runs as a backstop: it stops the engine and flips

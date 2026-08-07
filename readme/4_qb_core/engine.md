@@ -113,7 +113,7 @@ int main() {
 
 `addActor<T>(index, args...)` is a convenience for `core(index).addActor<T>(args...)`. It records the actor's construction against the chosen core and reserves its `qb::ActorId` immediately; the actor object itself is constructed, and its `onInit()` is run, later when `start()` spins up the worker. The returned id is `qb::ActorId::NotFound` only when reservation fails at registration time — a second `ServiceActor` of a type already registered on that core, or the per-core actor count reaching its limit. `NotFound` is the default-constructed, invalid id; test it with `is_valid()` (`qb/src/qb/core/Main.h`, `qb/src/qb/core/ActorId.h`).
 
-A returned valid id does not by itself prove the actor's `onInit()` will succeed: an `onInit()` that returns `false` fails the core with `BadActorInit`; an `onInit()` that throws is caught by the engine and surfaced as `ExceptionThrown`. Either way the failure is reported through `hasError()`, not by changing the already-returned id (`qb/src/qb/core/Main.cpp`). Always check `hasError()` after `join()` (see [step 5](#5-check-for-errors)).
+A returned valid id does not by itself prove the actor's `onInit()` will succeed: an `onInit()` that returns `false` fails the core with `BadActorInit`, and an `onInit()` that **throws** is caught, logged, and surfaced as **`BadActorInit` too** — the throw is converted to an init failure rather than allowed to escape (`qb/src/qb/core/VirtualCore.cpp`, `InitOutcome::ReadyFalse`; `qb/src/qb/core/Main.cpp`). `ExceptionThrown` is a different condition: an exception escaping a handler once the core is *running*. Either way the failure is reported through `hasError()`, not by changing the already-returned id. Always check `hasError()` after `join()` (see [step 5](#5-check-for-errors)).
 
 ```cpp
 // Single actor; verify the returned id before relying on it.
@@ -210,13 +210,14 @@ Shutdown converges on one path regardless of trigger. A registered POSIX signal 
 **Signal management** is static and process-wide:
 
 ```cpp
-qb::Main::registerSignal(SIGTERM);   // route SIGTERM through the engine -> graceful stop
-qb::Main::registerSignal(SIGUSR1);   // route SIGUSR1 through the engine -> graceful stop
+qb::Main::registerSignal(SIGUSR1);   // route SIGUSR1 through the engine as a SignalEvent
 qb::Main::unregisterSignal(SIGUSR1); // restore default OS behavior for SIGUSR1
 qb::Main::ignoreSignal(SIGPIPE);     // common for network servers
 ```
 
-`start()` registers `SIGINT` through `sigaction` so a `Ctrl-C` triggers a graceful shutdown; it does not register `SIGTERM` for you. To shut down on `SIGTERM` (or any other signal), call `registerSignal()` for it before `start()`, as the worked examples do (`qb/src/qb/core/Main.cpp`, `examples/all/taskmanager/src/main.cpp`).
+`start()` registers **both** `SIGINT` and `SIGTERM` through `sigaction`, so a `Ctrl-C` *and* the signal a container runtime or service manager sends to stop a process both trigger a graceful shutdown. You do not need to register either one yourself (`qb/src/qb/core/Main.cpp`, `Main::install_default_signals`).
+
+`registerSignal()` is for the *other* signals. Routing one through the engine makes every core synthesise a `qb::SignalEvent` carrying that signal number — but it does **not** make the signal terminal: the default `qb::Actor::on(qb::SignalEvent const &)` kills only on `SIGINT` and `SIGTERM`. A `SIGHUP` or `SIGUSR1` is delivered for you to act on (config reload, stats dump); to do anything with it, override `on(qb::SignalEvent &)` and inspect `event.signum`.
 
 ### 5. Check for errors
 
@@ -226,8 +227,8 @@ After `join()` (or after a synchronous `start(false)` returns), `hasError()` rep
 enum VirtualCore::Error : uint64_t {
     BadInit         = (1u << 9u),   // a VirtualCore failed to initialize, or no core was registered
     NoActor         = (1u << 10u),  // a registered core started with zero actors
-    BadActorInit    = (1u << 11u),  // an actor's onInit() returned false
-    ExceptionThrown = (1u << 12u),  // an unhandled exception escaped a handler on the core, or onInit() threw
+    BadActorInit    = (1u << 11u),  // an actor's onInit() returned false, or threw
+    ExceptionThrown = (1u << 12u),  // an unhandled exception escaped a handler on the running core
 };
 ```
 

@@ -154,7 +154,7 @@ endfunction()
 # Internal function to parse common arguments
 #
 # TIER/MODULE/LABELS/REQUIRES/TIMEOUT/RESOURCE_LOCK/WINDOWS_EXCLUDE are the test-suite
-# convention args (see docs/tests-audit/_CONVENTIONS.md §4). They are parsed here for all
+# convention args (see dev/tests-audit/_CONVENTIONS.md §4). They are parsed here for all
 # target kinds. TIER/MODULE/LABELS/TIMEOUT/RESOURCE_LOCK are consumed only by qb_add_test /
 # qb_register_module_test / qb_add_benchmark; REQUIRES is consumed by those AND by
 # qb_add_executable (capability gating). qb_add_library ignores them all harmlessly.
@@ -348,7 +348,7 @@ endfunction()
 
 # Internal: translate the convention args (TIER/MODULE/LABELS/REQUIRES) into the concrete
 # CTest properties (labels, timeout, resource locks, skip-regex) and a skip-registration
-# decision. Implements docs/tests-audit/_CONVENTIONS.md §4.3/§4.5.
+# decision. Implements dev/tests-audit/_CONVENTIONS.md §4.3/§4.5.
 #
 #   out_prefix  - results are returned as ${out_prefix}_LABELS / _TIMEOUT / _LOCKS /
 #                 _SKIP_REGEX / _SKIP_REGISTER (TRUE if a compile-gated feature is absent).

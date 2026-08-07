@@ -922,10 +922,12 @@ int main() {
 - Prefer RAII for cleanup. Holding resources in members whose destructors release them means
   correctness does not hinge on the `KillEvent` handler running. See [resource
   management](./resource_management.md).
-- Signal handling is `SIGINT`-centric by default. `start()` installs a handler for `SIGINT` only;
-  when it fires, the engine broadcasts a `qb::SignalEvent`, and the default
-  `qb::Actor::on(qb::SignalEvent const &)` handler calls `kill()` **only when `event.signum ==
-  SIGINT`**. `Main::registerSignal(int)` makes another signal (for example `SIGTERM` or `SIGHUP`)
+- Signal handling covers **both terminal signals** by default. `start()` installs handlers for
+  `SIGINT` *and* `SIGTERM`; when either fires, the engine broadcasts a `qb::SignalEvent`, and the
+  default `qb::Actor::on(qb::SignalEvent const &)` handler calls `kill()` **when `event.signum` is
+  `SIGINT` or `SIGTERM`**. Everything else stays non-terminal on purpose, so a reload signal does
+  not tear the process down.
+  `Main::registerSignal(int)` makes another signal (for example `SIGHUP` or `SIGUSR1`)
   broadcast the same `qb::SignalEvent` carrying that signal number — but to act on it you must
   define your own `on(qb::SignalEvent &)` and inspect `event.signum`. `Main::unregisterSignal(int)`
   restores the default OS disposition, and `Main::ignoreSignal(int)` ignores a signal.
