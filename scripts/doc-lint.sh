@@ -11,11 +11,17 @@
 #   4. Narrative pages missing a "Verified-against" front-matter marker.
 #
 # Scope: qb's own Markdown (README.md, readme/**, governance files). It does not
-# scan source code (which is verified by the build) or the parent repo's llm/ and
-# .cursor/ surfaces — this script runs INSIDE the submodule and those live at the
-# superproject root, out of reach. Neither is unguarded, though: the superproject's
-# dev/agent/llm-guard.py covers BOTH llm/ and .cursor/skills/ (symbol existence +
-# content-aware citations + paths + retired tokens), and dev/agent/verify.sh runs it.
+# scan source code (which is verified by the build).
+#
+# llm/ IS in scope, but through section 1c rather than doc_files(): the agent-facing
+# llm/*.llm.md + llm/*.llm.api.md moved into this repo from the qb-dev superproject,
+# and they need rules this script does not have (symbol existence, content digest) while
+# legitimately NAMING retired tokens to warn agents off them, which section 1's cue-less
+# scan would report as usage. scripts/llm-guard.py owns that surface.
+#
+# .cursor/ still lives at the superproject root, out of reach of a script that runs
+# INSIDE this submodule; the superproject's dev/agent/llm-guard.py covers it (and keeps
+# reading llm/ too, from where it can see qb and all three modules at once).
 #
 # Usage:  ./scripts/doc-lint.sh        (run from the qb root)
 #
@@ -104,6 +110,27 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+echo "== 1c. Agent-facing llm/ docs (symbols, citations, digest, paths, retired tokens, version marker) =="
+# `llm/*.llm.md` + `llm/*.llm.api.md` moved into this repo from the qb-dev superproject, so the
+# doc that describes this code now travels with it and this repo is independently indexable.
+#
+# doc_files() above deliberately does NOT list them, and that is measured rather than assumed:
+# its forbidden-token scan matches per line with no negation cue, and these files NAME retired
+# tokens in order to warn agents off them. Replaying each repo's own pattern and filter over its
+# own llm/*.md: 11 lines would be flagged across the four repos (qb 3, qbm-http 5, qbm-pgsql 2,
+# qbm-redis 1), every one the doc doing its job. scripts/llm-guard.py owns that surface instead, with the cue, plus the two rules
+# nothing else here has: does every documented symbol still EXIST, and do the cited lines still
+# SAY what they said. It also validates the `Verified-against:` marker by value, which for these
+# files reached no check at all before the move.
+if command -v python3 >/dev/null 2>&1; then
+  python3 "${SCRIPT_DIR}/llm-guard.py" || fail=1
+else
+  # Same hard-failure policy as 1b: a guard that degrades into a pass is the defect this
+  # battery exists to catch, so its interpreter is not optional either.
+  red "  python3 not found -- llm-guard.py cannot run, and this lint does not pass without it"
+  fail=1
+fi
+
 echo "== 2. Internal link check =="
 broken=0
 while read -r f; do
