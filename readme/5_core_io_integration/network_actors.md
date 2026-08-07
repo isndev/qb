@@ -94,7 +94,8 @@ public:
     void on(qb::io::async::event::disconnected const &) {
         _connected = false;
         if (_should_reconnect)
-            qb::io::async::callback([this] { connect(); }, RECONNECT_DELAY);
+            // The timer holds no claim on this actor — guard re-entry. See Pitfalls.
+            qb::io::async::callback([this] { if (is_alive()) connect(); }, RECONNECT_DELAY);
     }
 
 private:
@@ -106,7 +107,7 @@ private:
                 if (socket.is_open())
                     onConnected(std::move(socket));
                 else if (_should_reconnect)
-                    qb::io::async::callback([this] { connect(); }, RECONNECT_DELAY);
+                    qb::io::async::callback([this] { if (is_alive()) connect(); }, RECONNECT_DELAY);
             },
             CONNECT_TIMEOUT);
     }
@@ -373,6 +374,8 @@ See [SSL/TLS transport](../3_qb_io/ssl_transport.md) for context creation, certi
 - **Binding `registerSession` to a reference.** It returns `Session*` (nullable at the session cap). Use `auto *session = registerSession(...)` and null-check; an `auto&` binding does not compile.
 - **Overriding `io_handler::disconnected` without forwarding.** Omitting the base call leaks the session's `shared_ptr` because it is never erased from the pool. Always call the base `disconnected(id)`.
 - **Ignoring `on(qb::io::async::event::disconnected const&)`.** Clients and sessions should handle it to reset state and (for clients) schedule reconnection. Acceptors should treat listener disconnection as fatal, typically `broadcast<qb::KillEvent>()`.
+- **A reconnect timer that captures `this` and re-enters a dead actor.** `qb::io::async::callback` keeps no claim on the actor: a 5-second retry armed from `on(disconnected&)` can fire after the actor was killed. Guard the closure with `is_alive()` — and note that guard covers only the killed-but-not-yet-reaped window, because `kill()` merely flags and `~Actor()` runs later under `VirtualCore` control. For a timer whose lifetime is the actor's, own it: hold the `scoped_callback` handle as a member so the actor's own destructor cancels the watcher. See [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures).
+- **Reconnecting from inside the handler that is destroying the connection.** If the retry path frees and recreates the connection object the handler is running on, do not run it inline — `qb::io::async::callback(fn)` with no delay does exactly that. Use `qb::io::async::defer(fn)`, which runs at the tail of the loop turn, after the handler unwinds. <!-- src: qb/src/qb/io/async/listener.h:1032 -->
 - **Leaking on shutdown.** In a `qb::KillEvent` handler, disconnect or clear sessions and close listeners before `kill()`. RAII closes descriptors, but an orderly drain avoids resetting live clients abruptly.
 
 ## See also

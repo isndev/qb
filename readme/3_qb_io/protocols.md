@@ -200,6 +200,7 @@ Three steps connect a protocol to a session: declare it, install it, and handle 
 ```cpp
 // src: qb/tests/io/system/session/text-session-loopback.cpp (adapted)
 #include <qb/io/async.h>
+#include <qb/io/protocol/text.h>   // required: async.h does not pull the text protocols in
 
 class CommandClient : public qb::io::use<CommandClient>::tcp::client<> {
 public:

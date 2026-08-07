@@ -247,25 +247,40 @@ guarantee resumption — the server must agree.
 
 ### `qb::io::tcp::ssl::listener`
 
-Declared in `qb/io/tcp/ssl/listener.h`. Inherits `qb::io::tcp::listener` and owns an
-`SSL_CTX` through a `std::unique_ptr<SSL_CTX, …>`. It is move-only.
+Declared in `qb/io/tcp/ssl/listener.h`. Inherits `qb::io::tcp::listener` and holds a
+value-semantic `qb::io::ssl::Context` — **not** a raw `std::unique_ptr<SSL_CTX, …>`. The context is
+shared by reference count with every connection the listener accepts, so there is no `SSL_CTX_free`
+bookkeeping and one context can back several listeners. It is move-only (copy construction and copy
+assignment are `= delete`).
 
 ```cpp
 class QB_API listener : public tcp::listener {
-    std::unique_ptr<SSL_CTX, void (*)(SSL_CTX *)> _ctx;
+    qb::io::ssl::Context _ctx;   // value-semantic, refcount-shared with every accepted connection
+    // _alpn_wire: the ALPN wire buffer, held behind a unique_ptr so its heap address
+    // stays STABLE across a listener move (the SSL_CTX registers that address as the
+    // alpn_select_cb argument). Used only by the raw set_supported_alpn_protocols() path.
+    mutable std::unique_ptr<std::vector<unsigned char>> _alpn_wire;
 public:
     constexpr static bool is_secure() noexcept { return true; }
 
-    void init(SSL_CTX *ctx) noexcept;          // takes ownership; call before listen()
+    listener() noexcept;
+    explicit listener(qb::io::ssl::Context ctx) noexcept;   // preferred
+    listener(listener const &)            = delete;
+    listener(listener &&)                 = default;
+    listener &operator=(listener &&)      = default;
+
+    void init(SSL_CTX *ctx) noexcept;          // escape hatch; takes ownership, call before listen()
 
     ssl::socket accept() const noexcept;
     int         accept(ssl::socket &socket) const noexcept;
 
-    [[nodiscard]] SSL_CTX *ssl_handle() const noexcept;
+    [[nodiscard]] SSL_CTX                     *ssl_handle() const noexcept;
+    [[nodiscard]] const qb::io::ssl::Context  &context() const noexcept;   // fail-closed via context().ok()
     // plus context configuration: configure_mtls, set_tls_protocol_versions,
     // set_cipher_list, set_supported_alpn_protocols, enable_session_caching, ...
 };
 ```
+<!-- src: qb/src/qb/io/tcp/ssl/listener.h:44 (class listener), :45 (the Context member), :85-96 (move-only), :107 (init), :146 (ssl_handle), :152 (context) -->
 <!-- src: qb/src/qb/io/tcp/ssl/listener.h:42-291 -->
 
 - **Context ownership.** `init(SSL_CTX*)` transfers ownership of the context to the

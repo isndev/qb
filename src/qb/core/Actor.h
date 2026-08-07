@@ -867,7 +867,7 @@ public:
      *            **before** queueing anything else, exactly as the example above does; never hold
      *            the reference across another send, a helper call that may send, or a loop
      *            iteration. Pinned by `PipeAllocatorContract.*` in
-     *            `qb-io/tests/unit/core/pipe-allocator.cpp`.
+     *            `tests/io/unit/core/pipe-allocator.cpp`.
      * @warning `noexcept`: an allocation failure while growing the pipe buffer or
      *          constructing the event (e.g. under OOM) cannot be reported and calls
      *          `std::terminate()`. Keep events small / allocation-light. See

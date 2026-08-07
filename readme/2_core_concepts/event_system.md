@@ -107,12 +107,18 @@ template <typename _Event, typename... _Args>
 _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 ```
 
-`push<E>(dest, args...)` constructs an `E` in the pipe from this actor (the source) to `dest` and returns a **mutable reference** to it, valid until the runtime flushes the pipe at the end of the current processing step. You may set additional fields on the returned reference before it is sent. Use `push` unless you have a specific reason not to.
+`push<E>(dest, args...)` constructs an `E` in the pipe from this actor (the source) to `dest` and returns a **mutable reference** to it. Set any additional fields on that reference **immediately**, before queueing anything else. Use `push` unless you have a specific reason not to.
+
+> **The returned reference dies at the very next event queued to the same destination core** — not at the end of the enclosing scope, and not at the pipe flush. The pipe is a growable buffer: the next `push`/`send`/`broadcast` resolving to that core either reallocates it (invalidating the reference) or compacts it in place, which leaves the reference aliasing a *different*, still-live event. That second case writes to valid memory, so **no allocator debugger and no sanitizer can see it** — ASan included. Never hold the reference across another send, across a helper call that might send, or across a loop iteration. Pinned by `PipeAllocatorContract.*` in `qb/tests/io/unit/core/pipe-allocator.cpp`.
+<!-- src: qb/src/qb/core/Actor.h:861-870; qb/src/qb/core/Pipe.h:118-125 -->
 
 ```cpp
 // src: derived from qb/src/qb/core/Actor.h (push, mutable-reference idiom)
 auto &evt = push<UpdateValue>(target_id, /*key=*/7, /*value=*/0.0);
-evt.value = 42.5; // modify before the pipe is flushed
+evt.value = 42.5;              // OK — nothing queued in between
+
+push<Other>(target_id);        // `evt` is dead from here on
+// evt.value = 1.0;            // UB: may write into `Other`, silently
 ```
 
 **Ordering guarantee.** Events sent with `push` from one source actor to one destination actor are delivered in the order they were pushed (FIFO per source→destination pipe). This is a *pairwise* guarantee: it says nothing about the relative order of events arriving at one actor from *different* sources, nor about events sent to *different* destinations.
@@ -187,7 +193,7 @@ Three constraints follow from the implementation:
 
 | Primitive | Ordering | Event constraints | Destination | Returns |
 | --- | --- | --- | --- | --- |
-| `push<E>(dest, …)` | FIFO per source→dest | any `qb::Event` subclass | one actor | `E&` (mutable until flush) |
+| `push<E>(dest, …)` | FIFO per source→dest | any `qb::Event` subclass | one actor | `E&` (dies at the next event queued to that core) |
 | `to(dest).push<E>(…)` | FIFO per source→dest | any `qb::Event` subclass | one actor | `EventBuilder&` |
 | `send<E>(dest, …)` | none | trivially destructible | one actor | `void` |
 | `broadcast<E>(…)` | none | trivially destructible (uses `send` path) | all actors, all cores | `void` |
@@ -251,7 +257,7 @@ public:
 
 A single actor processes its events one at a time, on its owning `VirtualCore` thread; one `on()` call completes before the next begins for that actor. Two rules follow from how the runtime treats the event object:
 
-- **Do not retain a `push` return reference past the current scope.** The reference is valid only until the pipe is flushed; the runtime owns the object afterward.
+- **Do not retain a `push` return reference across another queued event.** It dies at the very next `push`/`send`/`broadcast` reaching the same destination core — sooner than the enclosing scope, and sooner than the pipe flush. See [`push`](#push--ordered-delivery-the-default) for why this is invisible to sanitizers.
 - **Treat an event as consumed after `reply`/`forward`.** Both recycle the same object into the outbound path, so the in-handler reference must not be read or modified afterward. If you need to keep data, copy it out before the call.
 
 Conceptual flow from sender to handler:

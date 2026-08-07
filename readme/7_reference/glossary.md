@@ -206,7 +206,7 @@ I/O operations (network, file) that do not block the calling thread while waitin
 
 #### Async system (`qb::io::async`)
 
-The `qb-io` subsystem that owns the per-thread event loop, timers, asynchronous callbacks, and coroutine scheduling. Public entry points include `init`, `run`, `run_once`, `run_until`, `callback`, and `sleep(qb::duration)`. See [Async system](../3_qb_io/async_system.md).
+The `qb-io` subsystem that owns the per-thread event loop, timers, asynchronous callbacks, and coroutine scheduling. Public entry points include `init`, `run`, `run_once`, `run_until`, `run_for`, `run_sync`, `break_parent`, `defer`, `callback`, `scoped_callback`, and `sleep(qb::duration)`. See [Async system](../3_qb_io/async_system.md).
 
 #### `AProtocol<IO_Type>` (`qb::io::async::AProtocol`)
 
@@ -216,9 +216,17 @@ The CRTP base for a custom [protocol](#protocol-qbioasyncaprotocolio_type). It r
 
 The object a `co_await` expression operates on. It exposes `await_ready()`, `await_suspend(handle)`, and `await_resume()`; qb-io's libev-backed awaiters arm a watcher in `await_suspend` and stop it in `await_resume` (and in the destructor) to guard against a watcher firing after resumption. Defined in `src/qb/io/async/coroutine/awaiter.h`. See [Coroutines](../3_qb_io/coroutines.md).
 
+<a id="callback-io-qbioasynccallback"></a>
 #### `callback` (I/O — `qb::io::async::callback`)
 
-A `qb-io` utility that schedules a callable on the current thread's event loop, optionally after a [`qb::duration`](#qbduration) delay. Distinct from an [actor callback](#callback-actor-qbicallback). See [Async system](../3_qb_io/async_system.md).
+A `qb-io` utility that runs a callable on the current thread. With a positive [`qb::duration`](#qbduration) it arms a one-shot timer on the event loop; **with no delay (or a non-positive one) it calls the callable inline and immediately — it does not schedule and does not defer.** To continue after the current handler unwinds, use [`defer`](#defer-qbioasyncdefer). Distinct from an [actor callback](#callback-actor-qbicallback). Defined in `src/qb/io/async/io.h:348,368`. See [Async system](../3_qb_io/async_system.md).
+
+<a id="defer-qbioasyncdefer"></a>
+#### `defer` (`qb::io::async::defer`)
+
+A `qb-io` utility that queues a callable to run **once, at the tail of the current event-loop turn** — after every libev watcher for that turn has returned, so it never executes re-entrantly from inside a handler. The one correct primitive for "continue after this handler unwinds", above all when the handler must destroy or replace the object it is running on (a reconnect). No timer and no delay, unlike [`callback`](#callback-io-qbioasynccallback). Defined in `src/qb/io/async/listener.h:1032`, forwarding to the listener member at `:813`. See [Async system](../3_qb_io/async_system.md).
+
+The listener reports a non-empty deferred queue through `has_deferred` (`src/qb/io/async/listener.h:873`); a `VirtualCore` tick gates on it so a bare `defer()` still pumps the loop.
 
 <a id="coro_scheduler-coroutinescheduler"></a>
 #### `coro_scheduler` / CoroutineScheduler

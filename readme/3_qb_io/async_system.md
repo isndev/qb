@@ -48,8 +48,10 @@ Under `qb-core`, `qb::Main` runs the loop on each `VirtualCore`. Standalone, you
 | `async::break_parent()` | Request `listener::current` to break out of its current `run()` cycle. | `listener.h` |
 | `async::run_for(qb::duration)` | Pump the loop (and ready coroutines) for a `steady_clock`-measured duration, then return. Used by tests and coroutine drivers. | `coroutine/utils.h` |
 | `async::run_sync(Awaitable&&)` | Spawn an awaitable and pump the loop until it completes, returning its result. Bridges synchronous code (e.g. test setup) to coroutine APIs. | `coroutine/utils.h` |
+| `async::defer(func)` | Queue `func` to run once at the tail of the current turn — never re-entrantly. See [`async::defer`](#continuing-after-a-handler-unwinds-asyncdefer). | `listener.h` |
 
-After processing libev events, every `run()` call also drains any ready coroutines through the listener's scheduler.
+Each `run()` call finishes its turn in a fixed order: libev watchers first, then the **deferred queue** (`defer()` callbacks — drained before coroutines, so a `defer()` that wakes a coroutine is picked up in the same turn), then ready coroutines through the listener's scheduler. The coroutine drain is **bounded** at `listener::kMaxCoroutineResumesPerTurn` (65536) per turn, deliberately: two coroutines that resume each other would otherwise keep the ready queue non-empty forever and `run()` would never return, starving every watcher and wedging the `VirtualCore` driving it. The cap is per turn, not per coroutine — anything scheduled past it simply runs on the next turn, so nothing is dropped or reordered.
+<!-- src: qb/src/qb/io/async/listener.h:751-755 (deferred drain), :759-781 (why the coroutine drain is bounded), :786 (kMaxCoroutineResumesPerTurn = 65536) -->
 
 > **Pitfall — `EVRUN_ONCE` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_EV_USE_TIMERFD=ON`, off by default) and only `qev_io` watchers are active with no heap timers, `EVRUN_ONCE` can block for libev's internal maximum wait time. In pump loops, prefer `run_until` or `run(EVRUN_NOWAIT)`.
 
@@ -62,6 +64,7 @@ The `listener` exposes counters useful for monitoring and debugging:
 - `nb_invoked_event()` — events invoked during the most recent `run()` (reset each call).
 - `total_events_processed()` — cumulative events since listener creation (never reset).
 - `size()` — number of currently registered watchers.
+- `has_deferred()` — whether any `defer()` callback is still queued. A `VirtualCore` tick gates on it so a bare `defer()` still pumps the loop.
 
 ### Registering event handlers
 
@@ -127,6 +130,36 @@ int main() {
 
 To **cancel** a pending callback or hold a handle to it, use `scoped_callback` instead.
 
+## Continuing after a handler unwinds: `async::defer`
+
+```cpp
+template <typename _Func>
+void defer(_Func &&func);
+```
+
+`defer(func)` queues `func` to run **once, at the tail of the current loop turn** — after every libev watcher for that turn has returned. It is the one correct primitive for "continue after this event handler unwinds", and the only one of the three that is guaranteed never to run re-entrantly from inside a handler. No timer, no heap `Timeout`, no arbitrary delay.
+
+Reach for it whenever a handler must **destroy or replace the object it is currently running on** — the canonical case being a reconnect that frees and recreates its own connection. Doing that inline is a use-after-free; `callback(fn)` does it inline (see the pitfall below), and `callback(fn, 1ms)` only hides the race behind a timer.
+
+```cpp
+// src: derived from qb/src/qb/io/async/listener.h:813 (listener::defer)
+void on(qb::io::async::event::disconnected const &) {
+    // NOT callback(...): this frees the object whose handler is running.
+    qb::io::async::defer([this] { reconnect(); });
+}
+```
+
+Captured state is released when the callback fires **or** when the loop is torn down (`listener::current.clear()`), whichever comes first — so a `shared_ptr` capture keeps its target alive exactly that long, leak-free. Same-thread only. A `defer()` issued from *inside* a coroutine (which runs after the drain) fires on the next turn.
+
+Drive the loop with a NOWAIT pump (`run_until` / `run_sync`, or a `VirtualCore` tick, which gates on `listener::has_deferred()` so a bare `defer()` still pumps) rather than a single blocking `run(EVRUN_ONCE)` that could park before the drain.
+<!-- src: qb/src/qb/io/async/listener.h:1032 (async::defer), :813 (listener::defer), :873 (has_deferred), :751-755 (drain order) -->
+
+| | `defer()` | `callback(f)` | `callback(f, d>0)` |
+|---|---|---|---|
+| When it runs | tail of this loop turn | **inline, right now** | after a real delay `d` |
+| Re-entrant from a handler | never | **always** | no |
+| Safe to destroy the running object | yes | no | not deterministically |
+
 ## Owned, cancellable timers: `async::scoped_callback`
 
 `scoped_callback` (`qb/io/async/io.h`) is the RAII counterpart to `callback`. It returns a `std::unique_ptr<ScopedTimeout<std::decay_t<_Func>>>` that the caller owns. Destroying or resetting the pointer stops the watcher and releases its registration; no self-delete is involved.
@@ -149,13 +182,13 @@ handle.reset();
 
 A timeout of zero or less fires the callback inline at construction (matching `callback`'s immediate semantics) and marks the timer as fired. `ScopedTimeout` also exposes `fired()` and `cancel()` (which sets the timeout to `qb::duration::zero()`). As with `callback`, the callable runs inside a `catch (...)` and exceptions are swallowed.
 
-| | `callback()` | `scoped_callback()` | `with_timeout<D>` |
-|---|---|---|---|
-| Shape | free function | free function → handle | CRTP base (`on(event::timer)`) |
-| Ownership | self-deleting `Timeout<F>` | caller-owned `unique_ptr<ScopedTimeout<F>>` | member timer, lives with the object |
-| Cancellation | not possible | `handle.reset()` / `handle->cancel()` | `setTimeout(0)`; `updateTimeout()` defers |
-| Heap traffic (steady state) | zero (freelist) | one allocation per call | none |
-| Best for | fire-and-forget tasks | watchdogs, retry loops, cancellable deadlines | inactivity / idle deadlines, recurring ticks |
+| | `defer()` | `callback()` | `scoped_callback()` | `with_timeout<D>` |
+|---|---|---|---|---|
+| Shape | free function | free function | free function → handle | CRTP base (`on(event::timer)`) |
+| Ownership | listener-owned queue entry | self-deleting `Timeout<F>` | caller-owned `unique_ptr<ScopedTimeout<F>>` | member timer, lives with the object |
+| Cancellation | not possible (runs this turn) | not possible | `handle.reset()` / `handle->cancel()` | `setTimeout(0)`; `updateTimeout()` defers |
+| Heap traffic (steady state) | one `std::function` per call | zero (freelist) | one allocation per call | none |
+| Best for | breaking re-entrancy; reconnects that free the running object | fire-and-forget tasks | watchdogs, retry loops, cancellable deadlines | inactivity / idle deadlines, recurring ticks |
 
 ## Inactivity timeouts: `async::with_timeout<Derived>`
 
@@ -286,7 +319,7 @@ See [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.m
 ## Pitfalls
 
 - **`init()` does not reset the loop.** It is a no-op. For a clean event loop (tests, restarts), call `listener::current.clear()`.
-- **`callback(func)` is not deferred.** Overload (1), and overload (2) with a non-positive duration, run the callable synchronously and immediately. Only a positive duration schedules a future fire.
+- **`callback(func)` is not deferred — use [`defer(func)`](#continuing-after-a-handler-unwinds-asyncdefer).** Overload (1), and overload (2) with a non-positive duration, run the callable synchronously and immediately; only a positive duration schedules a future fire. If a handler needs to continue *after it unwinds* — above all if it must destroy or replace the object it is running on — that is `defer()`, not `callback()`, and not `callback(func, 1ms)`.
 - **Pass durations, not `double` seconds.** Every timed API takes `qb::duration` or a `std::chrono::duration`. There is no `double`-seconds public overload.
 - **Callbacks swallow exceptions.** `Timeout` and `ScopedTimeout` wrap the callable in `catch (...)`. Errors that escape your callable are silently dropped.
 - **Do not re-enter `run*` from a handler.** Calling `run`, `run_once`, `run_until`, `run_for`, or `run_sync` from inside a coroutine or actor handler executing under the scheduler throws `std::logic_error`.

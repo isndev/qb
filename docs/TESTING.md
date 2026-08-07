@@ -1,9 +1,9 @@
 # Testing the qb framework
 
 This guide covers how qb / qbm tests and benchmarks are organized, how to run the lane you
-want, and how to add a new test. The full design rationale lives in the monorepo audit
-(`dev/tests-audit/_CONVENTIONS.md` — the authority); this file is the day-to-day reference and
-is self-contained for a standalone `qb` checkout.
+want, and how to add a new test. It is the authority for this repository and is self-contained
+for a standalone `qb` checkout — the tier names, the label scheme and the `qb_add_test` contract
+described here are the ones CI enforces.
 
 ## Tiers
 

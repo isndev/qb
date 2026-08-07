@@ -59,7 +59,7 @@ At a glance, the five primitives differ along five axes:
 | `send` | **none** | new, at pipe **front** | **yes for `EventQOS0`** — the engine may DROP those on backpressure without destroying them | — | one `ActorId` |
 | `reply` | n/a (redirects one event) | **reuses** the received event | n/a | `on(E&)` non-const | back to `event.source` |
 | `forward` | n/a (redirects one event) | **reuses** the received event | n/a | `on(E&)` non-const | new `ActorId`; `source` preserved |
-| `broadcast` | FIFO per recipient, no global order | new per core (fans out via `send`) | **yes for `EventQOS0`** — same drop risk per remote core | — | every actor on every core |
+| `broadcast` | **none** (fans out via `send`, which is unordered) | new per core (fans out via `send`) | **yes for `EventQOS0`** — same drop risk per remote core | — | every actor on every core |
 
 The subsections below detail each. When unsure, the answer is `push`.
 

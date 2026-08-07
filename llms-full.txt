@@ -313,9 +313,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **Referenced child (same core)** — `addRefActor<Child>(args...)` returns a phase-aware
   `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()`/`operator->` resolve the live actor on demand
   and yield `nullptr` while the child is Activating, after a failed init, or once it died — never a
-  dangling pointer. Send to `handle.id()` any time; gate direct calls on `handle.ready()`. Use
-  `addRefHandle<Child>()` (`RefActorHandle`) for a liveness-checked reference held across handler
-  boundaries.
+  dangling pointer. Send to `handle.id()` any time; gate direct calls on `handle.ready()`.
+  `addRefHandle<Child>()` is a **pure alias** of `addRefActor` returning the same handle type — not a
+  stronger or separately liveness-checked one — and `RefActorHandle<T>` is a `using` alias of
+  `ActorHandle<T>`, not a distinct class. Both are retained only for source compatibility.
 - **Request/response with timeout** — prefer the native `co_await qb::ask(ctx, target, req, timeout)`
   (`qb::AskEvent`/`qb::Request<Resp>`, responder `qb::answer`, asker `resolve_ask`) over hand-rolled
   pending-state. `qb::ask` is a **free function** and its first parameter is a `qb::ScopedCoroContext` —
@@ -606,7 +607,7 @@ Type checks & referenced actors:
 *   `[T<_Type>] [[nodiscard]] bool is(uint32_t id) const noexcept`
 *   `[T<_Type>] [[nodiscard]] bool is(const RequireEvent& event) const noexcept`
 *   `[T<_Actor,_Args...>] qb::ActorHandle<_Actor> addRefActor(_Args&&... args) const` — create+init a referenced actor on the **same** core; returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating, after a failed init, or once it died — never a dangling pointer. Send to `handle.id()` any time; gate direct calls on `handle.ready()`. Parent does not own it.
-*   `[T<_Actor,_Args...>] [[nodiscard]] RefActorHandle<_Actor> addRefHandle(_Args&&... args) const` — like above but returns a liveness-checked handle (prefer across handler boundaries).
+*   `[T<_Actor,_Args...>] [[nodiscard]] ActorHandle<_Actor> addRefHandle(_Args&&... args) const` — **a pure alias of `addRefActor<T>()`**: it forwards to it and returns the same phase-aware `qb::ActorHandle<T>`. It is not a different or "more checked" handle. Retained for source compatibility; new code can just call `addRefActor` _(`Actor.h:1125-1135`)_.
 
 Coroutines (C++20) — `spawn` is the default; `spawn_detached` is the low-level escape hatch:
 *   `[T<Func>] void spawn(Func&& func) const` — **preferred**. Runs `func(qb::ScopedCoroContext)` bound to the actor's per-actor cancellation scope: killing/destroying the actor cancels the scope, so a coroutine parked on `ctx.sleep` / `ctx.cancellation_point` / `ctx.until_cancelled` / `ctx.cancellable` / any patterns-library helper wakes on the next loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly (RAII + `catch` run). Must be called from the actor's own VirtualCore thread. Pass the lambda **without** trailing `()`. _(`spawn` declared `Actor.h:1204-1239`, body `VirtualCore.h:1160`)_

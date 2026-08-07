@@ -12,7 +12,7 @@ This page catalogs the capabilities of `qb-core` — the actor runtime built on 
 
 `qb-core` provides the actor model on top of the `qb-io` asynchronous event loop: a base [`qb::Actor`](./actor.md) class, a typed event system, a multi-threaded engine ([`qb::Main`](./engine.md) plus one [`qb::VirtualCore`](./engine.md) worker thread per core), lock-free inter-core messaging, and C++20 coroutine integration. Each capability below is a one-line entry pointing at its owning page; the owning page holds the authoritative signatures and contracts.
 
-The public surface is reachable through three umbrella headers: `<qb/actor.h>` (actor and pipe), `<qb/main.h>` (engine), and `<qb/event.h>` (event base and system events).
+The public surface is reachable through four umbrella headers: `<qb/actor.h>` (actor and pipe), `<qb/main.h>` (engine), `<qb/event.h>` (event base and system events), and **`<qb/patterns.h>`** — the entire patterns library (`qb::ask`, `answer`, `ask_all`, `PubSub`, `Supervisor`, `run_saga`, …) lives under `qb/core/patterns/` and is reachable only through it. `qb-core` also ships `<qb/actorid.h>`, `<qb/coreset.h>`, `<qb/icallback.h>` and `<qb/string.h>` for the individual vocabulary types.
 
 ---
 
@@ -29,7 +29,7 @@ Owned by [Mastering `qb::Actor`](./actor.md).
 | Liveness query | `is_alive()` / `is_active()` | `is_alive()` is `true` until `kill()` takes effect; `is_active()` also requires a completed `onInit()` (false during the Activating window). |
 | RAII destruction | `virtual ~Actor()` | Runs only after the actor is fully removed from its core; member RAII cleanup is safe here. |
 | Lightweight actors | `qb::no_default_events` | Constructor tag that skips the five default system-event subscriptions (`KillEvent`, `SignalEvent`, `PingEvent`, `UnregisterCallbackEvent`, `RequireEvent`). |
-| Identity and timing accessors | `id()`, `getIndex()`, `getName()`, `getCoreSet()`, `time()` | Read-only accessors; `time()` returns a `uint64_t` nanosecond count cached once per loop iteration. |
+| Identity and timing accessors | `id()`, `getIndex()`, `getName()`, `getCoreSet()`, `time()`, `now()` | Read-only accessors; `time()` returns a `uint64_t` nanosecond count cached once per loop iteration, and `now()` returns the same instant as a `qb::wall_time` — prefer `now()` with the `std::chrono` time vocabulary. |
 
 Actor creation entry points:
 
@@ -108,6 +108,8 @@ Owned by [Common actor patterns and utilities](./patterns.md#coroutines-for-asyn
 | Launch a coroutine from a handler (recommended) | `Actor::spawn(func)` | Starts a *scoped* `qb::io::async::task<void>` that runs concurrently with the actor and is cancelled when the actor is killed; the actor keeps handling events while the coroutine is suspended at a `co_await`. |
 | Launch a detached coroutine | `Actor::spawn_detached(func)` | Same, but *detached* — the coroutine outlives the actor and is never cancelled on kill. Use only when the work must deliberately outlive its actor. |
 | Lifetime-safe context | `qb::CoroContext` / `qb::ScopedCoroContext` | Captures the actor's `ActorId` by value at spawn time; its `push<E>(...)` and `push_to<E>(dest, ...)` remain valid even if the parent actor is destroyed during a `co_await`. The scoped variant adds cancellation-aware ops and `ask()`. |
+| Cancellation-aware context outside `spawn` | `Actor::context()` | Returns the same `ScopedCoroContext` a `spawn()` body receives, available wherever you hold the actor — most notably **inside `onInit()`**, which is what makes a `co_await` during init cancellable when the actor is killed (`src/qb/core/Actor.h:1257`). |
+| Resolve a pending `qb::ask` | `Actor::resolve_ask(e)` | Routes a correlated reply arriving in an ordinary `on(E&)` handler back to the awaiting coroutine (`src/qb/core/Actor.h:1293`). |
 | Coroutine introspection | `has_active_coroutines()`, `active_coroutine_count()` | Inspect pending asynchronous work before destroying an actor. |
 
 The safety contract — never touch actor members after a `co_await`, copy all needed state by value before the first suspension, and use only `CoroContext` afterward — is detailed and illustrated under [qb-io: safe integration with `qb::Actor`](../3_qb_io/coroutines.md#safe-integration-with-qbactor).
@@ -131,7 +133,7 @@ Owned by [Common actor patterns and utilities](./patterns.md).
 
 - **`send()` is restricted to trivially destructible events.** Use `push()` for events holding `std::vector`, a smart pointer, or any other type with a non-trivial destructor. The rule is a usage contract on `send()`; the compiler enforces it only for `qb::EventQOS0`-derived events, which are the ones the engine may drop on backpressure without disposing them — a delivered event is destroyed exactly once by the receiver whichever primitive queued it. QoS is a binary cross-core backpressure policy (guaranteed vs best-effort), not a priority ordering; events drain in FIFO order regardless of QoS.
 - **A by-value `std::string` is not valid in an event on *any* path.** The runtime memcpy-relocates events — the source pipe moves what it already holds when it grows, `reply`/`forward` byte-recycle the event, and a cross-core hop copies it twice — and a short `std::string` points into its own storage on libstdc++. Same-core `push` is no exception. Use `qb::string<N>` or box it (see [Event messaging](./messaging.md)).
-- **`onInit()` is the only safe place to call `registerEvent<E>()`.** Returning `false` from it aborts startup and destroys the actor before it processes any message.
+- **`onInit()` is the normal place to call `registerEvent<E>()`, not the only legal one.** The header says "typically called within the actor's `onInit()`"; constructor-body registration also works, because the actor's id is assigned in the initializer list before the body runs, and `registerEvent` may also be called at runtime from any handler. What `onInit()` uniquely gives you is the failure path: returning `false` aborts startup and destroys the actor before it processes any message. (`src/qb/core/Actor.h:757`)
 - **`no_default_events` actors do not respond to `KillEvent` or signals** unless you subscribe to those events explicitly in `onInit()`.
 - **`reply()` and `forward()` consume the event.** After either call the received event object must not be used again in the handler; both require a non-const `on(E&)` handler.
 - **`on(qb::LoopEvent const&)` and every handler run on the `VirtualCore` thread.** Blocking or long-running work stalls every actor on that core; offload to a coroutine via `spawn()` instead.

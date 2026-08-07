@@ -259,6 +259,7 @@ The destructor runs after `kill()` has taken effect and the actor has been remov
 | `getName()` | `std::string_view` | Class name from `typeid`; demangled on GCC and Clang, raw on other compilers. |
 | `getCoreSet()` | `const qb::CoreIdSet &` | Cores the owning `VirtualCore` can reach. |
 | `time()` | `uint64_t` | Cached nanosecond timestamp; see below. |
+| `now()` | `qb::wall_time` | The `std::chrono` view of `time()` — same cached instant, as a `system_clock` time point. **Prefer this** over the raw `uint64_t` when working with the `qb::duration` / `mono_time` / `wall_time` vocabulary (`src/qb/core/Actor.h:591`). |
 | `is_alive()` | `bool` | True until `kill()` takes effect. |
 
 `time()` returns a `uint64_t` nanosecond value that the `VirtualCore` refreshes once per loop
@@ -464,7 +465,17 @@ public:
 `getService<T>()` returns a raw pointer to the service on the **same** core, or `nullptr` if no such
 service is registered there. Calling its methods directly bypasses the event queue, so reserve direct
 calls for read-only or clearly safe operations; for everything else, send events to the service's
-`id()`. To find the `ActorId` of a service on a specific core without dereferencing it, use
+`id()`.
+
+> **It is not phase-gated, deliberately — a non-null pointer is not proof the service is usable.**
+> `getService<T>()` consults neither `is_active()` nor `is_alive()`. It hands back the pointer while
+> the service's async `onInit()` is still in flight (*Activating*) **and** after the service has been
+> `kill()`ed but not yet reaped. That is what lets a service look itself, or a peer, up from inside
+> its own `onInit()`. The cost is on the caller: the service may not have finished initializing.
+> This matters most for the pattern the examples above use — caching the raw pointer as a member for
+> the actor's lifetime. If you need an initialization guarantee, ask the service (`push` an event, or
+> `co_await qb::ask(...)`) instead of touching its state.
+<!-- src: qb/src/qb/core/Actor.h:603-613 (not phase-gated, by design), :641-662 (the Activating inventory table) --> To find the `ActorId` of a service on a specific core without dereferencing it, use
 `getServiceId<Tag>(core_index)`, which returns an `ActorId`. Add a service to a core with
 `addActor<LoggerService>(core)` before the worker; see [the engine page](./engine.md) for startup
 ordering.

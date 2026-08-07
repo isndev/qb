@@ -13,7 +13,7 @@ How `qb-core` actors use the `qb-io` event loop to perform network, timer, and f
 Three properties follow from that shared loop, and every page in this section is an application of them:
 
 - **Non-blocking by construction.** I/O is initiated without blocking; the loop calls an `on(...)` handler when data is ready or an operation completes. A handler that blocks — a synchronous `read`, a `sleep`, a mutex wait — stalls every actor and every pending I/O event on that core.
-- **Unified scheduling.** Timers and deferred work scheduled with `qb::io::async::callback`, `scoped_callback`, or the `with_timeout<T>` mixin run on the same listener that dispatches messages, in the same single-threaded context.
+- **Unified scheduling.** Deferred continuations (`qb::io::async::defer`) and timers (`qb::io::async::callback` with a positive delay, `scoped_callback`, the `with_timeout<T>` mixin) run on the same listener that dispatches messages, in the same single-threaded context.
 - **Thread affinity, not locks.** Every I/O object created on a core's loop is bound to that core. Cross-core work travels as events (`push`/`broadcast`) or as a moved-in socket, never as a shared pointer to live I/O state.
 
 This section breaks the integration into two task pages and a set of worked example analyses.
@@ -22,7 +22,7 @@ This section breaks the integration into two task pages and a set of worked exam
 
 | Page | What it covers |
 |---|---|
-| [Asynchronous operations inside actors](./async_in_actors.md) | Deferred callbacks (`qb::io::async::callback`, `scoped_callback`), inactivity timers (`with_timeout<T>`), coroutines (`Actor::spawn` / `spawn_detached`), periodic work (`qb::ICallback`), and patterns for keeping blocking file I/O off the loop. |
+| [Asynchronous operations inside actors](./async_in_actors.md) | Deferred continuations (`qb::io::async::defer`), delayed callbacks (`qb::io::async::callback`, `scoped_callback`), inactivity timers (`with_timeout<T>`), coroutines (`Actor::spawn` / `spawn_detached`), periodic work (`qb::ICallback`), and patterns for keeping blocking file I/O off the loop. |
 | [Building network actors](./network_actors.md) | Turning an actor into a non-blocking TCP, UDP, or SSL/TLS endpoint with the `qb::io::use<Self>` mixins — clients, servers, acceptors, session pools, and cross-core socket transfer. |
 | [Case studies: example analyses](./examples/README.md) | Walkthroughs of five complete applications (`chat_tcp`, `distributed_computing`, `file_monitor`, `file_processor`, `message_broker`) that combine `qb-core` and `qb-io` end to end. |
 

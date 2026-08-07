@@ -154,7 +154,7 @@ UDP is all-or-nothing: `read_timeout` and `write` succeed for a whole datagram o
 
 `qb::io::transport::tcp` (`qb/io/transport/tcp.h`) is `stream<tcp::socket>` plus `static constexpr bool is_secure() = false`. It inherits the stream's buffered `read()`, `write()`, `publish()`, and buffer-cap controls unchanged. There is no datagram bookkeeping: TCP is a byte stream, so a single logical message may span several reads, and a [protocol](./protocols.md) is responsible for framing.
 
-This is the transport behind asynchronous TCP clients and server-side sessions exposed through `qb::io::use<...>::tcp::client` and `qb::io::use<...>::tcp::server`, documented in [the asynchronous I/O model](./async_system.md).
+This is the transport behind asynchronous TCP clients and server-side sessions exposed through `qb::io::use<...>::tcp::client` and `qb::io::use<...>::tcp::server`, documented in [Building network actors](../5_core_io_integration/network_actors.md).
 
 <!-- src: qb/src/qb/io/transport/tcp.h -->
 
@@ -379,11 +379,12 @@ int main() {
 - **UDP is all-or-nothing.** A datagram larger than `MaxDatagramSize` (65507) is rejected with `EMSGSIZE`, not truncated or split. Fragment large payloads at the application layer; the transport will not do it for you.
 - **Timed waits use `qb::duration`.** `connect(ep, wtimeout)` and `read_timeout(...)` take a `qb::duration` (a `std::chrono::nanoseconds` span). Non-positive durations are clamped to zero (poll once), not treated as "wait forever."
 - **Buffer caps are a DoS guard, not a soft limit.** A read past `max_read_buffer_size()` returns `ErrBufferLimitExceeded` (`-2`); a `publish()` past `max_write_buffer_size()` returns `nullptr`. Network-facing components should keep the defaults rather than raising the cap to `SIZE_MAX`.
-- **Do not drive sockets directly inside an actor.** The blocking socket calls shown above are for standalone or test code. Inside the runtime, derive from `qb::io::use<...>` so reads and writes run on the non-blocking event loop instead of stalling a `VirtualCore`. See [the asynchronous I/O model](./async_system.md).
+- **Do not drive sockets directly inside an actor.** The blocking socket calls shown above are for standalone or test code. Inside the runtime, derive from `qb::io::use<...>` so reads and writes run on the non-blocking event loop instead of stalling a `VirtualCore`. See [Building network actors](../5_core_io_integration/network_actors.md).
 
 ## See also
 
-- [Asynchronous I/O model](./async_system.md) — the event loop, `qb::io::use<...>` clients/servers, and how transports are driven non-blocking.
+- [Asynchronous I/O model](./async_system.md) — the event loop, timers, and how transports are driven non-blocking.
+- [Building network actors](../5_core_io_integration/network_actors.md) — the `qb::io::use<...>` client/server mixins that wrap these transports.
 - [Framing messages with protocols](./protocols.md) — turning the TCP byte stream into discrete messages.
 - [Secure (SSL/TLS) transport](./ssl_transport.md) — `transport::stcp` and the secure socket/listener.
 - [QUIC transport](./quic_transport.md) — the UDP-based, reactor-driven QUIC endpoint.

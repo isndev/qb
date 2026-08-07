@@ -133,7 +133,7 @@ The coroutine layer itself — `task<T>`, awaiters, channels, scopes, generators
 
 Not directly inside an `on()` handler or a registered callback. A blocking call (synchronous file or network I/O, `std::this_thread::sleep_for`, a blocking library call) stalls the actor's `VirtualCore` and, with it, every other actor on that core. Two patterns keep the loop responsive:
 
-- **Wrap a short, infrequent blocking call in `qb::io::async::callback`.** The scheduling handler returns immediately; the blocking work runs later on the loop, still occupying its turn but no longer holding up the handler that scheduled it.
+- **Move a short, infrequent blocking call off the handler frame with `qb::io::async::defer`.** The handler returns first; the blocking work runs at the tail of the same loop turn, still occupying that turn but no longer holding up the handler that queued it. Note that `qb::io::async::callback(f)` with **no** delay does *not* do this — it runs `f` inline, inside the handler, which is the very thing you were trying to avoid. Only `callback(f, d)` with `d > 0` schedules.
 - **Delegate to dedicated worker actors** — possibly on cores configured with higher latency — that perform the blocking operation and reply with an event.
 
 See [Async operations in actors](../5_core_io_integration/async_in_actors.md).

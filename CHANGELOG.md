@@ -307,7 +307,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   directly on the dispatch lookup at `-O0` over a 211-type table (the real event-type count in this
   repo), 9 interleaved rounds: the 16-bit key is faster in **9 of 9**, median −51 %. At engine level
   that is −11 % ns/event on `messaging-api-oneway`, measured during the evaluation that recommended
-  this change (`dev/analysis/EVENT-ID-ABI-3.0.md` §1) rather than re-derived here. Debug also
+  this change rather than re-derived here. Debug also
   regains 48 bytes of first-bucket payload capacity where it had 40.
 
   **What breaks, and only in Debug**, while a Release-only CI stays green: code that stored an
