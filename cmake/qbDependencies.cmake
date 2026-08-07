@@ -437,12 +437,29 @@ else()
                 "       * -DQB_USE_SYSTEM_NLOHMANN=ON    (require one -- fail early if absent), or\n"
                 "       * -DQB_INSTALL=OFF               (build and test, but produce no installable qb)")
         else()
-            set(_qb_nl_why "nlohmann_json was not found on the system, so it would be fetched")
+            # THE FIRST-RUN PATH. `cmake -B build` on a bare machine lands here: standalone qb
+            # defaults QB_INSTALL=ON (qbConfig.cmake:119), so a clone with no system nlohmann
+            # stops at configure. That is deliberate -- zlib behaves identically twenty lines up,
+            # and a silent downgrade to a non-installable build is worse -- but it is the FIRST
+            # thing a new reader sees, so the message has to be actionable in one read.
+            #
+            # It therefore names the pinned tag (so "would be fetched" says WHAT) and
+            # QB_USE_SYSTEM_NLOHMANN (so the reader meets the switch that governs all of this).
+            # The sibling branch above already named the switch; this one did not, and this is the
+            # branch almost everybody reaches.
+            # string(CONCAT), not a two-argument set(): `set(v "a" "b")` makes a LIST, and the
+            # quoted "${v}" below then joins it with a `;` straight into the user's error text.
+            string(CONCAT _qb_nl_why
+                "nlohmann_json was not found on the system, so it would be fetched "
+                "(${QB_NLOHMANN_GIT_TAG}, via QB_USE_SYSTEM_NLOHMANN=${QB_USE_SYSTEM_NLOHMANN})")
             set(_qb_nl_fix
                 "       * install nlohmann-json  (brew install nlohmann-json /\n"
                 "                                 apt install nlohmann-json3-dev), then reconfigure, or\n"
                 "       * point CMAKE_PREFIX_PATH at a prefix that already contains one, or\n"
-                "       * -DQB_INSTALL=OFF       (build and test, but produce no installable qb)")
+                "       * -DQB_INSTALL=OFF       (build and test, but produce no installable qb), or\n"
+                "       * -DQB_USE_SYSTEM_NLOHMANN=ON\n"
+                "                                (require a system copy -- turns this into a shorter\n"
+                "                                 error naming only the missing package)")
         endif()
         string(CONCAT _qb_nl_inst_msg
             "${_qb_nl_why}, but QB_INSTALL is ON.\n"
