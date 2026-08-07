@@ -47,6 +47,64 @@
  * Header-only, no test cases. All helpers live in namespace `qb::io::test`. The predicate is taken
  * by `std::function<bool()>` so the helper is non-templated (one definition, trivial to call) and
  * any callable — lambda, functor, bound member — drops straight in.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THE TIMER ASSERTIONS IN THIS SUITE ARE NOT MARGIN-LIMITED  (read before "widening" one)
+ * ---------------------------------------------------------------------------------------------
+ * Several tests here look margin-limited at a glance — `sleep(15ms)` vs `sleep(10ms)` deciding an
+ * order, or `EXPECT_GE(elapsed, 50ms)` after a `sleep(50ms)` with no slack at all. Ordinary
+ * scheduler jitter on a loaded box is tens of milliseconds, so those margins read as coin flips
+ * and invite the two bad "fixes": raising the constants (slower, still fragile) or loosening the
+ * floors (which deletes the only regression detector for I2 below). Neither is needed. Two
+ * structural invariants carry these assertions; the nominal margin is not what protects them.
+ *
+ * I1 — ORDER assertions are immune to jitter because jitter is COMMON MODE.
+ *      `CoroutineScheduler::spawn` does not start the body: `spawn_tracked` only enqueues
+ *      (`ready_queue_.push_back({handle, true})`, scheduler.h:965), so every task spawned before a
+ *      pump starts in ONE `run_ready()` drain and arms its timer in ONE loop turn, into libev's
+ *      single deadline-ordered heap. `timers_reify` then pops strictly in deadline order
+ *      (`ANHE_at(timers[HEAP0]) < mn_now`, vendor/qev/qev.c:4418). A stall therefore delays every
+ *      timer equally and cannot reorder them — it makes them all fire back-to-back, in order.
+ *      Measured (SIGSTOP/SIGCONT injection, 40 ms stall windows, release, macOS): the realized
+ *      inter-completion gap of the 15 ms/10 ms pair fell from 5.30 ms to 0.023 ms — 0.5% of its
+ *      nominal 5 ms budget — and the 10 ms-apart five-timer ladder fell from 10 ms to 0.002 ms,
+ *      with ZERO order inversions in 60 + 60 runs (240 adjacent pairs). The margin was consumed
+ *      essentially completely and the property still held; that is the signature of common mode.
+ *      Injecting the stall between two `spawn()` CALLS (40 ms) also changed nothing, because of
+ *      the lazy start above.
+ *      I1 is bounded, not absolute, and the bound is the useful number: the order CAN be inverted
+ *      by a stall that lands between two consecutive arms INSIDE the drain and outlasts the
+ *      nominal separation — verified, 3/3 failures with 40 ms injected there. But that window is
+ *      the cost of starting one coroutine plus one `clock_gettime`: measured across 40 runs under
+ *      40 ms SIGSTOP stalls, the whole five-timer ladder armed within 8.8-54.7 us and the worst
+ *      ADJACENT arm gap was 3.6-41.3 us. So the exposure is a ~10 us window, not the millisecond
+ *      margin — which is exactly why raising the sleep constants is the wrong lever: it does not
+ *      narrow the window at all, it only raises the stall length needed to exploit it, while
+ *      making every run slower. Nothing inverted in 125 ordinary + jittered runs per site.
+ *      What I1 does NOT cover: two timers armed in DIFFERENT loop turns, separated by real work.
+ *      Those carry independent jitter and are genuinely margin-limited — see the note in
+ *      core/system/coroutine/coroutine-resilience.cpp, which is the one case of that shape here.
+ *
+ * I2 — ELAPSED-FLOOR assertions (`EXPECT_GE(elapsed, nominal)`) are one-sided. Load only ADDS to a
+ *      measured span, so it can only push them further into passing; they fail only if a timer
+ *      fires EARLY on the clock the test reads. That is excluded by construction:
+ *        - `to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:801) — it never
+ *          rounds a requested delay down;
+ *        - `timer_awaiter::await_suspend` (async/coroutine/awaiter.h:347-348) and `async::callback`
+ *          (async/io.h:388) both force `qev_now_update` immediately before `qev_timer_start`, so
+ *          the deadline is a FRESH clock read plus the delay, never a stale cached one;
+ *        - `timers_reify` fires only once `mn_now` is strictly PAST that deadline (qev.c:4418),
+ *          against `clock_gettime(CLOCK_MONOTONIC)` (qev.c:2876).
+ *      So the realized delay is >= the requested one on CLOCK_MONOTONIC. Tests measure with
+ *      `steady_clock`/`qb::mono_now()`: on Linux that IS CLOCK_MONOTONIC (identical); on macOS
+ *      libc++ uses CLOCK_MONOTONIC_RAW, measured here to run at the same rate (+7.5 ppm, i.e.
+ *      0.4 us over a 50 ms span — the two clocks' constant offset is irrelevant to a duration).
+ *      Measured worst headroom over 125 release runs per site: the tightest floor in the suite is
+ *      the 50 x 1 ms chain in core/system/timer/async-callback-ordering.cpp at +0.34 ms, and every
+ *      floor's worst case GREW under load (that chain to +334 ms, the 2 x 20 ms retry floor to
+ *      +58 ms). None ever went negative.
+ *      A zero-margin floor here is therefore an invariant, not a coin flip — and it is what would
+ *      catch a dropped `qev_now_update`. Do not widen one to silence a failure: investigate it.
  */
 
 #ifndef QB_IO_TESTS_SHARED_COROUTINE_TEST_SUPPORT_H

@@ -202,6 +202,13 @@ TEST_F(RetryRunner, IsRetryableConsultedMidSequence) {
 
 // ---------------------------------------------------------------------------
 // Backoff behaviour — fixed (succeeds + tolerance timing), exponential (grows)
+//
+// Both elapsed assertions are one-sided FLOORS a couple of ms under nominal (38ms for 2 x 20ms,
+// 65ms for 10+20+40ms), and both are held by invariant I2 in ../../shared/coroutine_test_support.h:
+// a sleep cannot return early, so load only pushes these further into passing. Measured: the fixed
+// floor's headroom is 2ms at idle and rises to 58ms under 40ms SIGSTOP stalls, and the realized
+// elapsed never once came in below nominal across 125 release runs. These are NOT margins against
+// jitter — a failure means the backoff stopped waiting, not that the box was busy.
 // ---------------------------------------------------------------------------
 
 TEST_F(RetryRunner, FixedBackoffSucceedsAndWaitsBaseDelayPerRetry) {

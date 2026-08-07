@@ -883,6 +883,21 @@ TEST_F(CoroutineCombinators, WhenAnyNestedLoserDtorReclaimsNoLeak) {
 // A nested when_all / coro_with_timeout reclaimed by an OUTER when_any: its spawned branches /
 // detached runner must be torn down by the awaiter dtor so the last one to finish does not resume
 // the freed continuation.
+//
+// Each of these races a 40-50ms parker against `reclaim_fast_winner()`'s 5ms sleep, and the setup
+// REQUIRES the winner to win — so it is worth recording why that is not a coin flip, and why a
+// lost race could not be mistaken for a pass anyway.
+//
+//   - The race cannot invert under load. Both branches are constructed by the same `when_any`
+//     expression and arm in the same loop turn into one deadline-ordered libev heap, so a stall
+//     delays both equally: invariant I1 in shared/coroutine_test_support.h. Measured under 40ms
+//     SIGSTOP stalls, the `when_any` took up to 20ms LONGER than the parker's own 40ms nominal —
+//     i.e. the nominal margin was more than spent — with the correct winner in 120/120 samples.
+//   - A lost race is LOUD, not silent. Verified by injection (parker's inner sleep 40ms -> 1ms so
+//     the parker wins): the run fails twice, at `EXPECT_EQ(r.index, 1u)` here AND at
+//     `EXPECT_FALSE(g_resumed_after_reclaim)` in shared/coroutine_reclaim_support.h — because a
+//     parker that wins necessarily runs past its suspend point and trips that guard. The two
+//     assertions are double-entry bookkeeping: the premise cannot fail quietly.
 // =============================================================================
 
 TEST_F(CoroutineCombinators, WhenAllReclaimedWhileParked) {
