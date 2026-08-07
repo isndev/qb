@@ -1,11 +1,11 @@
 <!-- Verified-against: qb 3.0.0 (C++20 default, C++23 supported) -->
 
-# qb Actor Framework
+# qb Actor Framework (QBAF)
 
 <p align="center"><img src="./resources/logo.svg" width="180px" alt="qb Actor Framework logo" /></p>
 
-qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor
-model. It pairs
+qb — the qb Actor Framework, **QBAF** — is a C++20-first framework with optional C++23 support for building concurrent
+and distributed systems on the actor model. It pairs
 share-nothing actors with a non-blocking asynchronous I/O engine and native C++20 coroutines, so
 application code expresses *what* should happen on each message while the runtime handles scheduling,
 multicore distribution, and non-blocking I/O.

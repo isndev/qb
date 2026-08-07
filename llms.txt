@@ -1,8 +1,8 @@
-# qb Actor Framework
+# qb Actor Framework (QBAF)
 
-> qb is a C++20-first (optional C++23) actor framework for concurrent and distributed C++:
-> share-nothing actors over a non-blocking asynchronous I/O runtime with native C++20
-> coroutines. Two libraries compose — **qb-io** (event loop, TCP/UDP/TLS/QUIC transports,
+> qb — the qb Actor Framework, **QBAF** — is a C++20-first (optional C++23) actor framework
+> for concurrent and distributed C++: share-nothing actors over a non-blocking asynchronous
+> I/O runtime with native C++20 coroutines. Two libraries compose — **qb-io** (event loop, TCP/UDP/TLS/QUIC transports,
 > protocols, coroutines, time, crypto, compression) and **qb-core** (the actor engine on top
 > of it); qb-io is usable standalone. Optional **qbm** modules add HTTP/1.1·2·3 + WebSocket,
 > PostgreSQL and Redis. Apache-2.0, CMake ≥ 3.24, Linux · macOS · Windows, x86-64 · ARM64.
@@ -42,7 +42,7 @@ Five rules decide whether generated qb code is correct; everything else is detai
 
 ## Project
 
-- [qb Actor Framework](https://raw.githubusercontent.com/isndev/qb/main/README.md): qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model.
+- [qb Actor Framework (QBAF)](https://raw.githubusercontent.com/isndev/qb/main/README.md): qb — the qb Actor Framework, QBAF — is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model.
 - [Installation](https://raw.githubusercontent.com/isndev/qb/main/INSTALL.md): How to add qb to a project and build it from source.
 - [Versioning and compatibility](https://raw.githubusercontent.com/isndev/qb/main/VERSIONING.md): qb follows Semantic Versioning 2.0.0.
 

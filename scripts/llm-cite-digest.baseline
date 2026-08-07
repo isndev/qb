@@ -12,8 +12,15 @@ llm/qb.llm.api.md	Actor.h:1189-1204	472d699eca5d	/**
 llm/qb.llm.api.md	Actor.h:1332-1332	e5c3be79eca7	*/
 llm/qb.llm.api.md	Actor.h:1621-1701	675b76e4465e	*/
 llm/qb.llm.api.md	Actor.h:1709-1713	c4c5841791f7	*/
+llm/qb.llm.api.md	Actor.h:1812-1818	fa70d7763fca	/**
+llm/qb.llm.api.md	Actor.h:1820-1824	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
+llm/qb.llm.api.md	Actor.h:1840-1851	d27c2e9e1eac	[[nodiscard]] qb::io::async::task<bool>
+llm/qb.llm.api.md	Actor.h:1882-1883	7a029450b670	template <typename _Actor>
 llm/qb.llm.api.md	Actor.h:2194-2194	a0e051d59cc7	using coro_context = CoroContext;
 llm/qb.llm.api.md	Actor.h:2202-2202	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
+llm/qb.llm.api.md	Actor.h:612-621	9faa5a585d6b	/**
+llm/qb.llm.api.md	Event.h:654-655	e76bd16e4192	template <typename... _Args>
+llm/qb.llm.api.md	Event.h:663-664	46b3869d9c8b	template <typename... _Args>
 llm/qb.llm.api.md	VirtualCore.h:1118-1118	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
 llm/qb.llm.api.md	VirtualCore.h:1118-1119	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
 llm/qb.llm.api.md	VirtualCore.h:1131-1131	0a7c96426fa0	Actor::spawn(Func &&func) const {
@@ -25,6 +32,8 @@ llm/qb.llm.api.md	crypto.h:943-943	d0e7c7fb5535	static std::vector<unsigned char
 llm/qb.llm.api.md	crypto.h:969-986	1893285b514b	static std::string encrypt_with_metadata(const std::vector<unsigned c...
 llm/qb.llm.api.md	crypto.h:991-1000	cce5103b9a14	static std::pair<std::vector<unsigned char>, std::vector<unsigned char>>
 llm/qb.llm.api.md	crypto_asymmetric.cpp:718-718	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
+llm/qb.llm.api.md	scheduler.h:601-604	1cdfb1dc422b	[[nodiscard]] bool
+llm/qb.llm.api.md	task.h:686-701	78c61ef4167a	await_resume() {
 llm/qb.llm.md	Actor.cpp:114-119	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:300-318	94aff7135980	void
 llm/qb.llm.md	Actor.h:1092-1149	24c583abbd4b	/**

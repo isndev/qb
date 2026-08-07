@@ -25,7 +25,7 @@ These utilities live in headers under `qb/src/qb/`. Several are header-only with
 | JSON | `qb/json.h` | `qb` (via `nlohmann`) | always — but `nlohmann/json` is an **external** dependency, not vendored |
 | Endian | `qb/system/endian.h` | `qb::endian` | always |
 
-`QB_WITH_SSL` and `QB_WITH_COMPRESSION` are user-facing build requests; they resolve to the compile-time defines `QB_HAS_SSL` and `QB_HAS_COMPRESSION` once the dependency is found. If the dependency is absent, the request is forced off and the corresponding header `#error`s when included (`crypto.h` → `"missing OpenSSL Library"`, `compression.h` → `"missing Z Library"`). _(`qb/src/qb/io/crypto.h:33-34`, `qb/src/qb/io/compression.h:37-38`; `docs-overhaul/qb/FACTBOOK.md` build-options table.)_
+`QB_WITH_SSL` and `QB_WITH_COMPRESSION` are user-facing build requests; they resolve to the compile-time defines `QB_HAS_SSL` and `QB_HAS_COMPRESSION` once the dependency is found. If the dependency is absent, the request is forced off and the corresponding header `#error`s when included (`crypto.h` → `"missing OpenSSL Library"`, `compression.h` → `"missing Z Library"`). _(`qb/src/qb/io/crypto.h:33-34`, `qb/src/qb/io/compression.h:37-38`.)_
 
 ---
 
@@ -193,7 +193,7 @@ auto pt = C::decrypt(ct,        key, iv, C::SymmetricAlgorithm::AES_256_GCM, aad
 ```
 <!-- src: qb/src/qb/io/crypto.h:527-546 -->
 
-`SymmetricAlgorithm` covers AES-CBC and AES-GCM at 128/192/256-bit, plus `CHACHA20_POLY1305`. For AEAD modes, `encrypt` appends and `decrypt` verifies the authentication tag; a failed tag yields an empty result. _(`qb/src/qb/io/crypto.h:149,527-546`; `docs-overhaul/qb/FACTBOOK.md:484`.)_
+`SymmetricAlgorithm` covers AES-CBC and AES-GCM at 128/192/256-bit, plus `CHACHA20_POLY1305`. For AEAD modes, `encrypt` appends and `decrypt` verifies the authentication tag; a failed tag yields an empty result. _(`qb/src/qb/io/crypto.h:149,527-546`.)_
 
 ### Key derivation and password hashing
 
@@ -262,7 +262,7 @@ std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/ex
 ```
 <!-- src: qb/src/qb/io/crypto.h:777-790 -->
 
-`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_advanced.cpp:232,237,243-244,249-252`; `docs-overhaul/qb/FACTBOOK.md:481-483`.)_
+`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_advanced.cpp:232,237,243-244,249-252`.)_
 
 ---
 
@@ -309,7 +309,7 @@ if (result.is_valid()) {
 
 `create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/src/qb/io/crypto_jwt.h:67-94,175-192`; `qb/src/qb/io/crypto_jwt.cpp:282`.)_
 
-`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/src/qb/io/crypto_jwt.h:158,194-201`; `qb/src/qb/io/crypto_jwt.cpp:474,478`; `docs-overhaul/qb/FACTBOOK.md:285,486-487`.)_
+`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/src/qb/io/crypto_jwt.h:158,194-201`; `qb/src/qb/io/crypto_jwt.cpp:474,478`.)_
 
 ---
 
@@ -502,7 +502,7 @@ int         seq  = back["seq"].get<int>();
 ```
 <!-- src: qb/src/qb/json.h -->
 
-A `qb::allocator::pipe<char>::put<qb::json>` specialization lets JSON be written directly into a pipe buffer, and the JSON wire protocol (`qb::protocol::json`) frames JSON over NUL-terminated messages with a nesting-depth guard. See [Protocols](./protocols.md). _(`qb/src/qb/json.h:284-289`; `docs-overhaul/qb/FACTBOOK.md:118`.)_
+A `qb::allocator::pipe<char>::put<qb::json>` specialization lets JSON be written directly into a pipe buffer, and the JSON wire protocol (`qb::protocol::json`) frames JSON over NUL-terminated messages with a nesting-depth guard. See [Protocols](./protocols.md). _(`qb/src/qb/json.h:284-289`.)_
 
 ---
 
@@ -529,9 +529,9 @@ uint32_t sw   = qb::endian::byteswap(host);            // unconditional swap
 
 ## Pitfalls
 
-- **Empty result means authentication failure, not empty plaintext.** `crypto::decrypt`, the AEAD helpers, and `verify_token` return an empty vector/string when the authentication tag or token check fails. Always branch on emptiness before using the result. _(`docs-overhaul/qb/FACTBOOK.md:483-484`.)_
+- **Empty result means authentication failure, not empty plaintext.** `crypto::decrypt` _(`qb/src/qb/io/crypto.h:542-546`)_, the AEAD helpers, and `verify_token` _(`qb/src/qb/io/crypto.h:790`)_ return an empty vector/string when the authentication tag or token check fails. Always branch on emptiness before using the result.
 - **`generate_random_string` is not cryptographic.** It is a Mersenne Twister. Use `generate_secure_random_string`, `generate_random_bytes`, or `generate_salt` for any security-sensitive value. _(`qb/src/qb/io/crypto.h:175-242`.)_
-- **JWT and token TTLs are wall-clock seconds.** `create_token`'s `expires_in`/`not_before` and `generate_token`'s `ttl` resolve to whole-second `exp`/`nbf` claims evaluated against `system_clock`. Sub-second precision is lost and expiry follows wall-clock changes — by design, since expiry is a `wall_time` concept. _(`docs-overhaul/qb/FACTBOOK.md:481-485`.)_
+- **JWT and token TTLs are wall-clock seconds.** `create_token`'s `expires_in`/`not_before` and `generate_token`'s `ttl` resolve to whole-second `exp`/`nbf` claims evaluated against `system_clock`. Sub-second precision is lost and expiry follows wall-clock changes — by design, since expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_jwt.h:189-197`; `qb/src/qb/io/crypto.h:777-790`.)_
 - **`u_port()` returns `0` on failure.** A missing, malformed, or out-of-range port yields `0`, which is indistinguishable from an explicit `:0`. Check `is_valid()` and the raw `port()` string if `0` is meaningful in your scheme. _(`qb/src/qb/io/uri.h:476-487`.)_
 - **`qb::string<N>` truncates silently.** Assigning past `N` characters truncates rather than throwing or reallocating. Size the capacity to the worst case for your data. _(`qb/src/qb/string.h:509-560`.)_
 - **URI accessors borrow from the URI.** `scheme()`, `host()`, `path()`, etc. return `std::string_view` into the URI's owned source string; do not let them outlive the `uri` object. _(`qb/src/qb/io/uri.h:185-552`.)_

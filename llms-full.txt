@@ -1,4 +1,4 @@
-# qb Actor Framework — full agent documentation
+# qb Actor Framework (QBAF) — full agent documentation
 
 > Concatenation of this repository's `llm/` agent docs, in one file, for an agent
 > that wants the whole surface in a single fetch. The index is `llms.txt`.
@@ -24,9 +24,9 @@ time/crypto/compression) and **`qb-core`** (actor engine on top of `qb-io`). `qb
 standalone.
 
 <!-- llms-txt:lead -->
-> qb is a C++20-first (optional C++23) actor framework for concurrent and distributed C++:
-> share-nothing actors over a non-blocking asynchronous I/O runtime with native C++20
-> coroutines. Two libraries compose — **qb-io** (event loop, TCP/UDP/TLS/QUIC transports,
+> qb — the qb Actor Framework, **QBAF** — is a C++20-first (optional C++23) actor framework
+> for concurrent and distributed C++: share-nothing actors over a non-blocking asynchronous
+> I/O runtime with native C++20 coroutines. Two libraries compose — **qb-io** (event loop, TCP/UDP/TLS/QUIC transports,
 > protocols, coroutines, time, crypto, compression) and **qb-core** (the actor engine on top
 > of it); qb-io is usable standalone. Optional **qbm** modules add HTTP/1.1·2·3 + WebSocket,
 > PostgreSQL and Redis. Apache-2.0, CMake ≥ 3.24, Linux · macOS · Windows, x86-64 · ARM64.
@@ -577,7 +577,8 @@ Accessors:
 *   `[[nodiscard]] const CoreIdSet& getCoreSet() const noexcept`
 *   `[[nodiscard]] uint64_t time() const noexcept` — VirtualCore cached timestamp, **nanoseconds since epoch** (constant within one handler/`on(qb::LoopEvent const&)` tick). For continuous high-precision time use `qb::unix_nanos(qb::wall_now())`.
 *   `[T<_ServiceActor>] [[nodiscard]] _ServiceActor* getService() const noexcept` — same-core service pointer, or `nullptr`.
-*   `[[nodiscard]] bool is_alive() const noexcept` — true until `kill()` processed.
+*   `[[nodiscard]] bool is_alive() const noexcept` — true until `kill()` processed. **Not** a phase check: it is already true while the actor is still Activating.
+*   `[[nodiscard]] bool is_active() const noexcept` — alive **and** past `onInit()`. It differs from `is_alive()` exactly across the Activating window, so it is the self-directed counterpart of `ActorHandle::ready()` (for a child) and `is_actor_alive(id)` (for a peer) _(`Actor.h:612-621`)_.
 *   `[[nodiscard]] bool is_actor_alive(ActorId id) const noexcept` — untyped liveness probe for *another* actor: true iff `id` names an actor on **this** VirtualCore that is alive and whose `onInit()` has completed. One hash lookup, no `dynamic_cast` (the type-erased sibling of `ActorHandle<T>::ready()`). Use it to prune bookkeeping that stores bare `ActorId`s — subscriber lists, routing tables — as `qb::PubSub<Topic>` does; the framework prunes only its *own* subscription map when an actor dies. **Same-core only**: `false` for a remote id proves nothing, so use `co_await qb::ping(...)` for cross-core liveness.
 
 Callback management (requires deriving `ICallback`):
@@ -640,9 +641,16 @@ Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb
 *   `[[nodiscard]] cancellation_awaiter until_cancelled() const` — park with no other work until the actor is killed (no timer allocated).
 *   `[T<T>] [[nodiscard]] auto cancellable(task<T>&& t) const` — wrap any `task<T>` so it is cancelled with the actor scope.
 
-#### `class qb::RefActorHandle<_Actor>`
-Type-safe weak reference to a same-core referenced actor. Dereference only on the owning core's thread.
-*   `ActorId id()`, `bool valid()`, `_Actor* get()` (re-resolves liveness, `nullptr` if dead), `operator->`, `operator*`, `explicit operator bool`.
+#### `class qb::ActorHandle<_Actor>` — canonical; `qb::RefActorHandle<_Actor>` is an alias of it
+Type-safe, **phase-aware** weak reference to a same-core referenced actor, returned by `addRefActor` / `addRefHandle`. `RefActorHandle` is not a class: it is a `using` alias retained for source compatibility _(`Actor.h:1882-1883`)_. Dereference only on the owning core's thread.
+*   `[[nodiscard]] ActorId id() const noexcept` — valid the instant `addRefActor` returns, **even while the child is still Activating**, so it is always safe to `push()` to (events are stashed and replayed FIFO once the child becomes active).
+*   `[[nodiscard]] bool valid() const noexcept` — true iff the handle was constructed from a non-null actor (allocation succeeded). **Not** a liveness or readiness test.
+*   `[[nodiscard]] _Actor* get() const noexcept` — the pointer iff resolved **and** `is_active()`. `nullptr` otherwise — and "otherwise" is wider than "dead": also **while the child is still Activating** (its async `onInit()` has not completed) and after a failed init _(`Actor.h:1812-1818`)_.
+*   `[[nodiscard]] bool ready() const noexcept` — `== (get() != nullptr)`; the sync gate for the Activating window _(`Actor.h:1820-1824`)_.
+*   `[[nodiscard]] qb::io::async::task<bool> ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const` — `co_await` until the child is active; returns `false` if it did not become active in time. The async gate for the same window _(`Actor.h:1840-1851`)_.
+*   `operator->`, `operator*` — `get()` with a **debug assert** that it is ready; in a release build an unready handle is UB.
+*   `explicit operator bool` — `== ready()`.
+*   **Trap:** `auto h = addRefActor<Child>(cfg); h->method();` dereferences `nullptr` whenever `Child::onInit()` is async — debug assert, release UB. Gate the dereference on `ready()`, or `if (co_await h.ready_async(context())) h->method();`. Only the dereference needs the gate; `push(h.id(), ...)` never does.
 
 ### `class qb::Service : public Actor`
 Internal base for per-core singleton-style actors. `explicit Service(ServiceId sid) noexcept`.
@@ -704,8 +712,8 @@ Service-to-service event.
 
 #### Event templates
 *   `[T<_Args...>] struct WithData : Event { std::tuple<_Args...> data; explicit WithData(_Args&&...); }`
-*   `struct WithoutData : Event {}`
-*   `struct AskData : WithoutData {}`
+*   `[T<_Args...>] class WithoutData : Event {}` — a **template** (`_Args...` is a placeholder, unused): spell it `WithoutData<>`, never bare `WithoutData` _(`Event.h:654-655`)_.
+*   `[T<_Args...>] struct AskData : WithoutData<_Args...> {}` — likewise `AskData<>` _(`Event.h:663-664`)_.
 *   `[T<_Args...>] struct FillEvent : WithData<_Args...> { FillEvent(); explicit FillEvent(_Args&&...); }`
 
 Aliases: `using VirtualPipe = allocator::pipe<EventBucket>;`.
@@ -1110,8 +1118,8 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   Free drivers:
     *   `void init() noexcept` — no-op (listener self-initializes).
     *   `std::size_t run(int flag = 0)` — run current thread's loop; → invoked events. Throws `std::logic_error` if called from inside a handler/coroutine drain.
-    *   `std::size_t run_once()` — EVRUN_ONCE (waits for ≥1 event; may block).
-    *   `std::size_t run_until(const bool& status)` — loop while `status` (50µs idle sleep).
+    *   `std::size_t run_once()` — EVRUN_ONCE (waits for ≥1 event; may block). Throws the same `std::logic_error` as `run()`.
+    *   `std::size_t run_until(const bool& status)` — loop while `status` (50µs idle sleep). Throws the same `std::logic_error` as `run()`.
     *   `void break_parent() noexcept`
 *   `class qb::io::async::IRegisteredKernelEvent` — abstract: `virtual ~`, `virtual void stop() noexcept`, `virtual void invoke()`.
 *   use: `qb::io::async::run();` (blocking loop) ; `while (cond) qb::io::async::run_until(cond);`
@@ -1191,10 +1199,11 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an actor, spawn only via `Actor::spawn` (preferred — cancelled on actor death) or `Actor::spawn_detached`; never drive the scheduler directly with `run_sync`/`run_for` from a handler.
 
 ### Core (`task.h`, `scheduler.h`, `awaiter.h`)
-*   `[T] class task<T = void>` — primary move-only coroutine return type, awaitable via `co_await`. `handle()`, `[[nodiscard]] handle_type detach() noexcept`, `done()`, `explicit operator bool`. `T await_resume()` (rethrows stored exception; throws `std::logic_error` if awaited before completion).
+*   `[T] class task<T = void>` — primary move-only coroutine return type, awaitable via `co_await`. `handle()`, `[[nodiscard]] handle_type detach() noexcept`, `done()`, `explicit operator bool`. `T await_resume()` — rethrows a stored exception; throws `std::logic_error` in **two** cases, and the first is checked first: awaited on an **empty/moved-from** task (default-constructed, moved-from, or after `detach()`), or awaited before the coroutine completed _(`task.h:686-701`)_.
 *   `class CoroutineScheduler` — mono-thread scheduler over an `ev::loop_ref`.
     *   `void spawn(task<void>&& t)`, `[T<Callable>] void spawn(Callable fn)` — **pass the lambda WITHOUT trailing `()`** (avoids dangling-closure UB).
     *   `std::size_t run_ready(std::size_t max_count = 0)` — drain the ready queue (not re-entrant).
+    *   `[[nodiscard]] bool is_draining_ready() const noexcept` — true while inside `run_ready()`. This is the query the re-entrancy guard below tests _(`scheduler.h:601-604`)_.
     *   `void schedule_resume(std::coroutine_handle<>)`
     *   `static CoroutineScheduler& current()`, `static CoroutineScheduler* current_ptr() noexcept`, `static void set_current(CoroutineScheduler*)`.
     *   `std::size_t active_count() const`.
@@ -1208,8 +1217,8 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline timer_awaiter sleep(qb::duration duration)` — suspend for a duration (`<= 0` = yield).
 *   `inline socket_awaiter wait_readable(int fd)` / `wait_writable(int fd)` / `wait_for_io(int fd, int events)`.
 *   `inline CoroutineScheduler& coro_scheduler()` — listener's scheduler.
-*   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration.
-*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code (forbidden inside a running coroutine).
+*   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration. Throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`.
+*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:980-993`)_.
 *   use: `co_await qb::io::async::sleep(100ms);`
 
 ### Combinators (`combinators.h`)
