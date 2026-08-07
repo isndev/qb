@@ -251,11 +251,11 @@ template <typename Func> void spawn_detached(Func &&func) const;   // detached �
 - **`spawn(func)` — the recommended default.** The coroutine is *scoped* to the actor: when the actor is `kill()`ed, it is cooperatively cancelled at its next cancellation-aware suspension point. Its callable receives a `qb::ScopedCoroContext` (alias `scoped_coro_context`) — a `CoroContext` extended with cancellation-aware operations (`ctx.sleep(d)`, `ctx.until_cancelled()`, `ctx.cancellation_point()`, `ctx.cancellable(awaitable)`, child tokens). Request/response patterns — `qb::ask`, `qb::ask_all`, `qb::run_saga`, … — are **free functions** in `qb/patterns.h` that build on this context. Use `spawn` for any work bound to the actor's lifetime.
 - **`spawn_detached(func)` — explicit fire-and-forget.** The coroutine is *not* tied to the actor's lifetime: it runs to completion even after the actor is destroyed and is never cancelled on kill. Its callable receives a plain `qb::CoroContext`. Reach for it only when the work must deliberately outlive its actor, or when the coroutine has no cancellation-aware suspension point to cancel at.
 
-Both return immediately and **share the same safety contract**, because a coroutine frame can still be running a step while — or just after — its actor is destroyed: <!-- src: qb/src/qb/core/Actor.h:1043,1080 -->
+Both return immediately and **share the same safety contract**, because a coroutine frame can still be running a step while — or just after — its actor is destroyed: <!-- src: qb/src/qb/core/Actor.h:1095,1132 -->
 
 - **Never access actor members after a `co_await`.** The actor may have been destroyed while the coroutine was suspended; touching `this->_member` afterward is undefined behavior.
 - **Copy everything you need by value before the first `co_await`.** Do not capture `this` or references to actor members into the coroutine.
-- **After suspension, use only the `CoroContext`.** `ctx.push<Event>(...)` (to the spawning actor's own id), `ctx.push_to<Event>(dest, ...)` (to another actor), `ctx.id()`, and `ctx.time()` are safe; events to a dead actor are dropped. <!-- src: qb/src/qb/core/VirtualCore.h:1025,1031 -->
+- **After suspension, use only the `CoroContext`.** `ctx.push<Event>(...)` (to the spawning actor's own id), `ctx.push_to<Event>(dest, ...)` (to another actor), `ctx.id()`, and `ctx.time()` are safe; events to a dead actor are dropped. <!-- src: qb/src/qb/core/VirtualCore.h:1054,1060 -->
 - **Keep coroutines short-lived.** The longer a coroutine runs, the wider the window in which its actor can be destroyed.
 
 ```cpp
@@ -281,7 +281,7 @@ spawn([this](auto ctx) -> qb::io::async::task<void> {
 });
 ```
 
-`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is shared per `VirtualCore` and established when the core's listener is created, so both `spawn` and `spawn_detached` require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1211-1213,1196; qb/src/qb/io/async/listener.h:293; qb/src/qb/core/Actor.cpp:240-263 -->
+`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is shared per `VirtualCore` and established when the core's listener is created, so both `spawn` and `spawn_detached` require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1263-1265,1248; qb/src/qb/io/async/listener.h:293; qb/src/qb/core/Actor.cpp:240-263 -->
 
 For the scoped-cancellation operations and the native `ask()` request/response pattern, see the [scoped-coroutine and ask recipes](../6_guides/patterns_cookbook.md). For the awaitables themselves (`sleep`, timeouts, channels, `when_all`/`when_any`/`race`), see [Reference: C++20 coroutines](../3_qb_io/coroutines.md).
 

@@ -6,25 +6,27 @@
 # excerpt rather than as an opaque hash.  Fields: doc <TAB> cited-spec <TAB>
 # digest <TAB> excerpt.  Keyed WITHOUT the doc's own line number, so
 # re-flowing a paragraph does not re-key the file.
-llm/qb.llm.api.md	Actor.h:1092-1150	348256583ed8	/**
-llm/qb.llm.api.md	Actor.h:1152-1187	ebacec412d5d	/**
-llm/qb.llm.api.md	Actor.h:1189-1204	472d699eca5d	/**
-llm/qb.llm.api.md	Actor.h:1332-1332	e5c3be79eca7	*/
-llm/qb.llm.api.md	Actor.h:1621-1701	675b76e4465e	*/
-llm/qb.llm.api.md	Actor.h:1709-1713	c4c5841791f7	*/
-llm/qb.llm.api.md	Actor.h:1812-1818	fa70d7763fca	/**
-llm/qb.llm.api.md	Actor.h:1820-1824	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
-llm/qb.llm.api.md	Actor.h:1840-1851	d27c2e9e1eac	[[nodiscard]] qb::io::async::task<bool>
-llm/qb.llm.api.md	Actor.h:1882-1883	7a029450b670	template <typename _Actor>
-llm/qb.llm.api.md	Actor.h:2194-2194	a0e051d59cc7	using coro_context = CoroContext;
-llm/qb.llm.api.md	Actor.h:2202-2202	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
-llm/qb.llm.api.md	Actor.h:612-621	9faa5a585d6b	/**
+llm/qb.llm.api.md	Actor.h:1144-1202	348256583ed8	/**
+llm/qb.llm.api.md	Actor.h:1204-1239	ebacec412d5d	/**
+llm/qb.llm.api.md	Actor.h:1241-1256	472d699eca5d	/**
+llm/qb.llm.api.md	Actor.h:1384-1384	e5c3be79eca7	*/
+llm/qb.llm.api.md	Actor.h:1673-1753	675b76e4465e	*/
+llm/qb.llm.api.md	Actor.h:1761-1765	c4c5841791f7	*/
+llm/qb.llm.api.md	Actor.h:1868-1874	fa70d7763fca	/**
+llm/qb.llm.api.md	Actor.h:1876-1880	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
+llm/qb.llm.api.md	Actor.h:1896-1907	d27c2e9e1eac	[[nodiscard]] qb::io::async::task<bool>
+llm/qb.llm.api.md	Actor.h:1938-1939	7a029450b670	template <typename _Actor>
+llm/qb.llm.api.md	Actor.h:2250-2250	a0e051d59cc7	using coro_context = CoroContext;
+llm/qb.llm.api.md	Actor.h:2258-2258	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
+llm/qb.llm.api.md	Actor.h:599-616	11edeff824dc	/**
+llm/qb.llm.api.md	Actor.h:629-673	5c5465b8e08f	/**
 llm/qb.llm.api.md	Event.h:654-655	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:663-664	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.h:1118-1118	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1118-1119	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1131-1131	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1131-1133	b009dc2efdb7	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1147-1147	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1147-1148	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1160-1160	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1160-1162	b009dc2efdb7	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:746-769	cc12c180b3fc	template <typename _ServiceActor>
 llm/qb.llm.api.md	crypto.h:693-701	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:704-704	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto.h:931-931	9613fb7d2235	static std::vector<unsigned char> x25519_key_exchange(const std::vect...
@@ -36,29 +38,29 @@ llm/qb.llm.api.md	scheduler.h:601-604	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	task.h:686-701	78c61ef4167a	await_resume() {
 llm/qb.llm.md	Actor.cpp:114-119	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:300-318	94aff7135980	void
-llm/qb.llm.md	Actor.h:1092-1149	24c583abbd4b	/**
-llm/qb.llm.md	Actor.h:1150-1150	c83d000c16b8	void spawn_detached(Func &&func) const;
-llm/qb.llm.md	Actor.h:1152-1186	e1ee23a15572	/**
-llm/qb.llm.md	Actor.h:1187-1187	f9f0e3c13c7d	void spawn(Func &&func) const;
-llm/qb.llm.md	Actor.h:1189-1204	472d699eca5d	/**
-llm/qb.llm.md	Actor.h:1204-1204	e5c3be79eca7	*/
-llm/qb.llm.md	Actor.h:1332-1332	e5c3be79eca7	*/
-llm/qb.llm.md	Actor.h:1621-1701	675b76e4465e	*/
-llm/qb.llm.md	Actor.h:1709-1713	c4c5841791f7	*/
-llm/qb.llm.md	Actor.h:317-317	2ee867a48b62	* I/O, or query a peer — and the owning core keeps serving its other ...
-llm/qb.llm.md	Actor.h:577-577	e5c3be79eca7	*/
-llm/qb.llm.md	Actor.h:798-798	1f61849b0574	*          it. Pinned by `RelocatablePayload.*` / `RelocatablePayload...
-llm/qb.llm.md	Actor.h:810-810	3f0db9b0d7b0	*            destination core** — not merely at the end of the enclos...
-llm/qb.llm.md	Actor.h:936-936	a3ff690be5f0	* //   require<ServiceA, ServiceB>(); // discover; replies arrive aft...
+llm/qb.llm.md	Actor.h:1144-1201	24c583abbd4b	/**
+llm/qb.llm.md	Actor.h:1202-1202	c83d000c16b8	void spawn_detached(Func &&func) const;
+llm/qb.llm.md	Actor.h:1204-1238	e1ee23a15572	/**
+llm/qb.llm.md	Actor.h:1239-1239	f9f0e3c13c7d	void spawn(Func &&func) const;
+llm/qb.llm.md	Actor.h:1241-1256	472d699eca5d	/**
+llm/qb.llm.md	Actor.h:1256-1256	e5c3be79eca7	*/
+llm/qb.llm.md	Actor.h:1384-1384	e5c3be79eca7	*/
+llm/qb.llm.md	Actor.h:1673-1753	675b76e4465e	*/
+llm/qb.llm.md	Actor.h:1761-1765	c4c5841791f7	*/
+llm/qb.llm.md	Actor.h:322-322	2ee867a48b62	* I/O, or query a peer — and the owning core keeps serving its other ...
+llm/qb.llm.md	Actor.h:582-582	e5c3be79eca7	*/
+llm/qb.llm.md	Actor.h:850-850	1f61849b0574	*          it. Pinned by `RelocatablePayload.*` / `RelocatablePayload...
+llm/qb.llm.md	Actor.h:862-862	3f0db9b0d7b0	*            destination core** — not merely at the end of the enclos...
+llm/qb.llm.md	Actor.h:988-988	a3ff690be5f0	* //   require<ServiceA, ServiceB>(); // discover; replies arrive aft...
 llm/qb.llm.md	Event.h:420-420	d86605cd760f	id_handler_type source;
 llm/qb.llm.md	Event.h:424-424	5055bd28810c	public:
 llm/qb.llm.md	ICallback.h:16-16	5f1dd6082282	* @warning The tick handler is executed on the `VirtualCore`'s event-...
 llm/qb.llm.md	Main.cpp:237-237	ff663ac601a5	// receive path (`VirtualCore::__receive__`) uses — and NOT `consume_...
 llm/qb.llm.md	Main.cpp:369-369	5039d155a71c	bool
 llm/qb.llm.md	Pipe.h:126-126	df58248c414f	*
-llm/qb.llm.md	VirtualCore.h:1118-1118	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:1131-1131	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:586-586	380da7d2afc5	void   forward(ActorId dest, Event &event) noexcept;
+llm/qb.llm.md	VirtualCore.h:1147-1147	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:1160-1160	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:607-607	380da7d2afc5	void   forward(ActorId dest, Event &event) noexcept;
 llm/qb.llm.md	compression.h:37-37	a65746e68cdc	#ifndef QB_HAS_COMPRESSION
 llm/qb.llm.md	crypto.h:33-33	a223414b2c19	// This header used to `#error "missing OpenSSL Library"` when QB_HAS...
 llm/qb.llm.md	crypto.h:524-524	28dfa3bea74f	* @param aad Additional authenticated data (for AEAD modes like GCM)
