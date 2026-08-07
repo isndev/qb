@@ -62,11 +62,54 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
 
-# Project identity, computed exactly as llm-guard.py and cite-check.py compute it, so the
-# three scripts cannot disagree about what "this project" is.
-_parts = ROOT.replace(os.sep, "/").split("/")
-PREFIX = ("/".join(_parts[-2:]) + "/") if _parts[-2:-1] == ["qbm"] else (_parts[-1] + "/")
-PROJECT = PREFIX.rstrip("/").replace("/", "-")           # qb | qbm-http | qbm-pgsql | qbm-redis
+# --------------------------------------------------------------------------------------------
+# WHICH of the four projects is this checkout?  Answered from the tree's CONTENT, never from the
+# directory it happens to sit in.  Identical in `cite-check.py` and `llm-guard.py`, so the three
+# scripts cannot disagree about what "this project" is.
+#
+# The rule this replaces read the PATH: `…/qbm/http` -> "qbm/http/", anything else ->
+# "<dirname>/".  That is only true inside the qb-dev SUPERPROJECT.  A standalone checkout — the
+# only shape a public repo's OWN CI ever sees — is at $GITHUB_WORKSPACE =
+# /home/runner/work/<repo>/<repo>, whose parent is named after the REPOSITORY (`qbm-http`),
+# never `qbm`.  The derived prefix was therefore `qbm-http/`: a key in none of the per-project
+# tables in any of the three scripts.  Measured by running each repo's own `doc-lint.sh` inside
+# a GitHub-shaped workspace, in qbm-http, qbm-pgsql and qbm-redis:
+#
+#   llm-guard.py     FAIL [config], exit 2  — 0 symbols, 0 citations, 0 paths, 0 digests read
+#   gen-llms-txt.py  FAIL, exit 1           — the published-index gate checked nothing
+#   cite-check.py    exit 0, SILENTLY GREEN — `do_prose = PREFIX in PROSE_ON` was False, so the
+#                    prose citation form (23 qbm-http + 37 qbm-pgsql + 331 qbm-redis) was
+#                    skipped and its anti-vacuous floor never ran at all
+#
+# qb was unaffected, because its repository and its superproject directory are BOTH named `qb` —
+# which is exactly why four green superproject runs never showed it.
+#
+# The markers are load-bearing files that cannot be absent from a real checkout and do not move
+# when the checkout does: qb is the tree owning `cmake/qbConfig.cmake` (the version source of
+# truth VERSIONING.md names), a module is the tree whose `CMakeLists.txt` says
+# `project(qbm-<mod> …)`.
+PROJECT_PREFIXES = ("qb/", "qbm/http/", "qbm/pgsql/", "qbm/redis/")
+
+
+def project_prefix(root):
+    """This project's prefix in repo-root-form paths, or None if it is none of the four."""
+    try:
+        with open(os.path.join(root, "cmake", "qbConfig.cmake"), errors="ignore") as fh:
+            if re.search(r'^\s*set\(QB_FRAMEWORK_NAME\s+"qb"\)', fh.read(), re.M):
+                return "qb/"
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(root, "CMakeLists.txt"), errors="ignore") as fh:
+            m = re.search(r"^\s*project\(\s*qbm-([A-Za-z0-9_]+)\b", fh.read(), re.M)
+    except OSError:
+        m = None
+    p = ("qbm/%s/" % m.group(1)) if m else None
+    return p if p in PROJECT_PREFIXES else None
+
+
+PREFIX = project_prefix(ROOT)
+PROJECT = PREFIX.rstrip("/").replace("/", "-") if PREFIX else "(unidentified)"
 
 # GitHub repository each project publishes from.  These are the five public repos named in
 # AGENTS.md; the private superproject `isndev/qb-dev` deliberately has no entry, because
@@ -287,9 +330,11 @@ def links_of(txt: str) -> list[tuple[str, str]]:
 
 
 def check(write: bool, stats: bool) -> int:
-    if PREFIX not in REPO or PREFIX not in FLOORS:
-        die("this script is installed at %s, whose project prefix %r is not one of %s — "
-            "it cannot know what to generate" % (ROOT, PREFIX, sorted(REPO)))
+    if PREFIX is None or PREFIX not in REPO or PREFIX not in FLOORS:
+        die("cannot identify which project %s is: it has neither a cmake/qbConfig.cmake "
+            "setting QB_FRAMEWORK_NAME \"qb\" nor a CMakeLists.txt with project(qbm-<mod> …) "
+            "naming one of %s — so it cannot know what to generate, and guessing would "
+            "publish another repo's index" % (ROOT, sorted(REPO)))
     fail = 0
     want_txt, want_full = gen_llms_txt(), gen_llms_full()
     min_links, min_full, min_lead = FLOORS[PREFIX]

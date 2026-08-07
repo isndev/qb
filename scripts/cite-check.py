@@ -57,12 +57,67 @@ import os, re, sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)                       # project root
-# Project prefix in repo-root-form citations (…/qbm/http -> "qbm/http/").
-parts = ROOT.replace(os.sep, "/").split("/")
-if parts[-2:-1] == ["qbm"]:
-    PREFIX = "/".join(parts[-2:]) + "/"                  # qbm/http/
-else:
-    PREFIX = parts[-1] + "/"                             # qb/
+
+# --------------------------------------------------------------------------------------------
+# WHICH of the four projects is this checkout?  Answered from the tree's CONTENT, never from the
+# directory it happens to sit in.  Identical in `llm-guard.py` and `gen-llms-txt.py`, so the
+# three scripts cannot disagree about what "this project" is.
+#
+# The rule this replaces read the PATH: `…/qbm/http` -> "qbm/http/", anything else ->
+# "<dirname>/".  That is only true inside the qb-dev SUPERPROJECT.  A standalone checkout — the
+# only shape a public repo's OWN CI ever sees — is at $GITHUB_WORKSPACE =
+# /home/runner/work/<repo>/<repo>, whose parent is named after the REPOSITORY (`qbm-http`),
+# never `qbm`.  The derived prefix was therefore `qbm-http/`: a key in none of the per-project
+# tables in any of the three scripts.  Measured by running each repo's own `doc-lint.sh` inside
+# a GitHub-shaped workspace, in qbm-http, qbm-pgsql and qbm-redis:
+#
+#   llm-guard.py     FAIL [config], exit 2  — 0 symbols, 0 citations, 0 paths, 0 digests read
+#   gen-llms-txt.py  FAIL, exit 1           — the published-index gate checked nothing
+#   cite-check.py    exit 0, SILENTLY GREEN — `do_prose = PREFIX in PROSE_ON` was False, so the
+#                    prose citation form (23 qbm-http + 37 qbm-pgsql + 331 qbm-redis) was
+#                    skipped and its anti-vacuous floor never ran at all.  THIS script was the
+#                    dangerous one: the other two go red, this one printed its green line with
+#                    the "; N prose citations checked" suffix simply absent.
+#
+# qb was unaffected, because its repository and its superproject directory are BOTH named `qb` —
+# which is exactly why four green superproject runs never showed it.
+#
+# The markers are load-bearing files that cannot be absent from a real checkout and do not move
+# when the checkout does: qb is the tree owning `cmake/qbConfig.cmake` (the version source of
+# truth VERSIONING.md names), a module is the tree whose `CMakeLists.txt` says
+# `project(qbm-<mod> …)`.
+PROJECT_PREFIXES = ("qb/", "qbm/http/", "qbm/pgsql/", "qbm/redis/")
+
+
+def project_prefix(root):
+    """This project's prefix in repo-root-form paths, or None if it is none of the four."""
+    try:
+        with open(os.path.join(root, "cmake", "qbConfig.cmake"), errors="ignore") as fh:
+            if re.search(r'^\s*set\(QB_FRAMEWORK_NAME\s+"qb"\)', fh.read(), re.M):
+                return "qb/"
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(root, "CMakeLists.txt"), errors="ignore") as fh:
+            m = re.search(r"^\s*project\(\s*qbm-([A-Za-z0-9_]+)\b", fh.read(), re.M)
+    except OSError:
+        m = None
+    p = ("qbm/%s/" % m.group(1)) if m else None
+    return p if p in PROJECT_PREFIXES else None
+
+
+PREFIX = project_prefix(ROOT)
+if PREFIX is None:
+    # HARD STOP, not a fallback.  Every per-project table here (PROSE_FLOOR, PROSE_ON) is keyed
+    # on PREFIX, so an unidentified project does not get a weaker check — it gets NO prose check
+    # and NO floor, while still printing this script's green line.  That is the exact shape this
+    # battery exists to refuse, and it is what shipped.
+    print("  cite-check: cannot identify which project %s is — it has neither a "
+          "cmake/qbConfig.cmake setting QB_FRAMEWORK_NAME \"qb\" nor a CMakeLists.txt with "
+          "project(qbm-<mod> …) naming one of %s." % (ROOT, list(PROJECT_PREFIXES)))
+    print("  Refusing to run: the prose form and its anti-vacuous floor are both keyed on the "
+          "project, so an unidentified one would pass over unchecked text.")
+    sys.exit(2)
 
 # Three citation forms: HTML comment (prose), // line comment (in code fences),
 # and (src: ...) inline parenthetical.
@@ -122,6 +177,16 @@ PROSE_FLOOR = {"qb/": 660, "qbm/http/": 20, "qbm/pgsql/": 35, "qbm/redis/": 315}
 # Projects where the prose form is ON by default.  A project joins this set only once its
 # count is ZERO; enabling it over a red tree just teaches people to pass --no-prose.
 PROSE_ON = {"qb/", "qbm/http/", "qbm/pgsql/", "qbm/redis/"}
+
+# A project that IS identified but is missing from either table above loses the prose form and
+# its floor silently — the same defect as an unidentifiable project, one layer in.  That is not
+# hypothetical: the whole reason this file needed fixing is that `PREFIX in PROSE_ON` returning
+# False was a valid Python expression producing a green run.  Asserted, not intended.
+_gaps = [p for p in PROJECT_PREFIXES if p not in PROSE_FLOOR or p not in PROSE_ON]
+if _gaps:
+    print("  cite-check: %s can be identified but is absent from PROSE_FLOOR and/or PROSE_ON, "
+          "so the prose form would not run there and no floor would notice" % _gaps)
+    sys.exit(2)
 
 _lc = {}
 def nlines(p):
