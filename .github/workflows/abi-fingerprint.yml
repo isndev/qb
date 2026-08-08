@@ -40,10 +40,21 @@ jobs:
             os: ubuntu-latest
             cc: gcc-14
             cxx: g++-14
+          # This axis is also the project's ONLY clang+libstdc++ build, and that pairing is
+          # the one that sees `__cpp_sized_deallocation`. libstdc++ declares the sized
+          # deallocation functions -- including ::operator delete(void*, size_t, align_val_t)
+          # -- only when that macro is defined; libc++ declares them unconditionally. So a
+          # shipped header naming the sized+aligned overload compiles on macOS and on gcc and
+          # fails for a clang+libstdc++ CONSUMER, which is exactly how four such calls reached
+          # 3.0 (listener.h, io.h, task.h, nanolog.cpp) and were caught HERE, by a runner, and
+          # by nothing local. -fno-sized-deallocation is pinned rather than inherited: clang
+          # <= 18 defaults to it and clang >= 19 does not, so leaving it implicit means this
+          # coverage silently expires the day the runner image bumps its default clang.
           - name: linux-clang
             os: ubuntu-latest
             cc: clang
             cxx: clang++
+            cxxflags: -fno-sized-deallocation
           # Mach-O. `used` already implies no_dead_strip here; the assertion is that the
           # references survive -O2 and -Wl,-dead_strip.
           - name: macos-clang
@@ -68,6 +79,7 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
+          CXXFLAGS: ${{ matrix.cxxflags }}
         run: ./scripts/check-abi-fingerprint.sh --jobs 4
 
       # ── NEGATIVE CONTROL ──────────────────────────────────────────────────────────────────
@@ -82,6 +94,7 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
+          CXXFLAGS: ${{ matrix.cxxflags }}
         run: |
           cp src/qb/utility/abi.h /tmp/abi.h.orig
           # Neutralise ONLY the retain attribute; `used` stays, which is precisely the state the

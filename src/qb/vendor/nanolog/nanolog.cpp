@@ -404,7 +404,7 @@ public:
         for (size_t i = 0; i < m_size; ++i) {
             m_ring[i].~Item();
         }
-        ::operator delete(m_ring, m_size * sizeof(Item), std::align_val_t{alignof(Item)});
+        ::operator delete(m_ring, std::align_val_t{alignof(Item)}); // UNSIZED: the sized+aligned global needs __cpp_sized_deallocation
     }
 
     void

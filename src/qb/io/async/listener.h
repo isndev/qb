@@ -195,7 +195,7 @@ public:
                 void *p       = head;
                 while (p) {
                     void *next = *static_cast<void **>(p);
-                    ::operator delete(p, sizeof(RegisteredKernelEvent), std::align_val_t{alignof(RegisteredKernelEvent)});
+                    ::operator delete(p, std::align_val_t{alignof(RegisteredKernelEvent)}); // UNSIZED on purpose: see qb/io/async/io.h
                     p = next;
                 }
                 head = nullptr;

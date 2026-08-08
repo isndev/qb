@@ -156,9 +156,9 @@ inline void forget_frame_if_current(std::coroutine_handle<>) noexcept;
 //     the pool), so the holder only ever frees idle, balanced pool memory.
 //
 // The allocator is used by `task<T>::promise_type::operator new/delete`.
-// Both sized and unsized delete are provided; sized delete is used by
-// coroutine frame deallocation in C++20 (sized deallocation is enabled by
-// default on clang/gcc in C++14+).
+// Both sized and unsized delete are provided as CLASS members, which is always legal.
+// The GLOBAL sized overloads are NOT: libstdc++ declares ::operator delete(void*, size_t
+// [, align_val_t]) only under __cpp_sized_deallocation, and clang leaves that off (<= 18).
 namespace detail {
 
 class CoroutineFrameAllocator {
@@ -252,8 +252,8 @@ private:
     // Thread_local RAII holder for the bucket free-lists. Its destructor runs at
     // thread exit and returns every parked block to the global allocator, so a
     // spawned worker thread does not leak its frame pool when it terminates.
-    // Blocks were allocated bucket-sized (idx * kAlign) and cache-line aligned,
-    // so they must be freed with the matching sized+aligned ::operator delete.
+    // Blocks were allocated bucket-sized (idx * kAlign) and cache-line aligned, and are
+    // freed with the aligned -- UNSIZED -- ::operator delete; the size is a hint, not a contract.
     struct BucketPool {
         BucketArray heads{};
         BucketPool() noexcept {
@@ -262,11 +262,11 @@ private:
         ~BucketPool() noexcept {
             pool_alive() = false;
             for (std::size_t i = 0; i < kMaxBucket; ++i) {
-                void             *p          = heads[i];
-                const std::size_t block_size = (i + 1) * kAlign;
+                void *p = heads[i];
+                // (i + 1) * kAlign is the block size, deliberately NOT passed: see above.
                 while (p) {
                     void *next = *static_cast<void **>(p);
-                    ::operator delete(p, block_size, std::align_val_t{kAlign});
+                    ::operator delete(p, std::align_val_t{kAlign});
                     p = next;
                 }
                 heads[i] = nullptr;
