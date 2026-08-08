@@ -132,13 +132,22 @@ public:
     thread_join_guard(const thread_join_guard &)            = delete;
     thread_join_guard &operator=(const thread_join_guard &) = delete;
 
-    ~thread_join_guard() {
+    // Join EARLY, on purpose, when a test needs to observe something the thread
+    // publishes as its last act. Idempotent -- the destructor below finds the thread
+    // already joined and does nothing -- and it keeps the disconnect-then-join order,
+    // so calling it can never turn a stuck accept() into a hang.
+    void
+    join_now() {
         if (_thread.joinable()) {
             if (_before_join) {
                 _before_join();
             }
             _thread.join();
         }
+    }
+
+    ~thread_join_guard() {
+        join_now();
     }
 };
 
@@ -358,6 +367,15 @@ TEST(SSLSocketLoopback, LoopbackHandshakeExposesNegotiatedState) {
     EXPECT_EQ(std::string_view(reply, 4), "pong");
     EXPECT_FALSE(client.request_client_post_handshake_auth());
 
+    // JOIN BEFORE READING THE FLAG. `server_ok` is the server thread's LAST statement,
+    // after its final write -- so the client having read "pong" proves the write reached
+    // the wire, NOT that the thread got as far as the store. Reading it here while the
+    // guard still holds the join for end-of-scope is a plain race, and it was losing:
+    // `qb-io-test-system-ssl-socket-loopback` failed on ubuntu-clang-cxx23-release in 2
+    // of the last 4 cmake runs, always here, always `Actual: false`, always within 5 ms
+    // -- the shape of a thread preempted between two adjacent statements on a runner
+    // with fewer cores than the test has threads. Nothing about the SSL path is wrong.
+    server_join.join_now();
     EXPECT_TRUE(server_ok.load());
 }
 
