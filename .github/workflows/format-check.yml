@@ -58,6 +58,28 @@ jobs:
           ./scripts/ci-install-linux-dependencies.sh --profile format-check
           "clang-format-${LLVM_VERSION}" --version
 
+      # SCOPE — clang-format is diff-scoped ON PURPOSE, and this is the measurement behind it.
+      #
+      # Note first what is NOT diff-scoped: the four Python guards above all sweep the whole
+      # tree and carry floors. Only the clang-format leg below looks at changed files, so the
+      # blast radius of this decision is formatting alone.
+      #
+      # A whole-tree formatting gate was considered and rejected on data. Measured at 3.0.0 with
+      # the pinned clang-format 22 over this exact scope (429 files): 56 already fail — 13%,
+      # spread through real source (14 in src/qb/io, 9 in src/qb/core) rather than parked in a
+      # vendored corner. Switching to whole-tree would therefore make this lane red on its first
+      # run, and the only way out is a 56-file mechanical reformat: a large diff that churns
+      # `git blame` across the framework's hottest files and reviews as noise.
+      #
+      # The diff scope is the better instrument WHILE that backlog exists, because it ratchets.
+      # Every file a change touches must come back clean, so the backlog can only shrink, never
+      # grow, and it costs nothing to enforce. The honest caveat, which the green tick does not
+      # convey on its own: THIS STEP PROVES NOTHING ABOUT UNTOUCHED FILES. A run that reports
+      # success may have checked a single file, or — via the branch below — none at all.
+      #
+      # The sequence, if someone wants whole-tree later: land the reformat as its own commit,
+      # confirm 0 of 429 fail, then flip this leg to `git ls-files` and give it a floor like the
+      # guards above. Do not flip it first.
       - name: Collect changed C++ files
         id: changed
         shell: bash
