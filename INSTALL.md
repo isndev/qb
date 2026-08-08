@@ -28,6 +28,11 @@ Requirements:
 - A **C++20**-capable compiler from the families above. C++23 is supported by configuring with
   `-DQB_CXX_STANDARD=23`.
 - **CMake 3.24** or newer (required for the `FetchContent` `FIND_PACKAGE_ARGS` resolution qb uses).
+  The floor is a tested one, not just a declared one: the qb-dev superproject's `cmake-floor` job
+  configures qb on 3.24.4 and on 3.28.3 on every push, so a distro CMake (Ubuntu 24.04 LTS ships
+  3.28.3, Debian 12 ships 3.25.1, RHEL 9 ships 3.26.5) is enough. Consuming qb's own
+  `CMakePresets.json` needs 3.24 (schema v3); the qb-dev superproject's presets are schema v6
+  and need 3.25.
 - A POSIX threads implementation (pthreads) on non-Windows platforms.
 
 Architectures: x86_64 and ARM64 (including Apple Silicon).
