@@ -310,11 +310,11 @@ with I/O lifetime are:
   frames.
 - `spawn()` takes ownership of the coroutine handle and runs it to completion
   even if the original `task` object is destroyed
-  (`src/qb/io/async/coroutine/scheduler.h:90`). Pass a callable to `spawn`
+  (`src/qb/io/async/coroutine/scheduler.h:263-278`). Pass a callable to `spawn`
   **without invoking it** (`spawn(f)`, not `spawn(f())`): creating a coroutine
   from a temporary lambda with reference or loop-variable captures dangles after
   the first suspension. `spawn(Callable)` moves the closure into an owning frame
-  (`src/qb/io/async/coroutine/scheduler.h:378`).
+  (`src/qb/io/async/coroutine/scheduler.h:429-435`).
 
 ---
 

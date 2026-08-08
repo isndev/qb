@@ -236,7 +236,7 @@ public:
 - **`push()` is lock-free and multi-producer-safe.** Any number of threads may push concurrently. A push allocates one heap node and links it via an atomic `exchange` on the tail (`src/qb/system/lockfree/mpsc_unbounded_queue.h:80-84`).
 - **`pop()` is single-consumer only.** Only the one designated consumer thread may call `pop()`; it moves the value into `out` and returns `false` when the queue is empty (`src/qb/system/lockfree/mpsc_unbounded_queue.h:91`).
 - **`T` must be movable.** `push` takes `T` by value and moves it into the node; `pop` moves the node's value into `out` (`src/qb/system/lockfree/mpsc_unbounded_queue.h:43`).
-- **`size()` and `empty()` are approximate.** They reflect a momentary snapshot a producer can invalidate immediately; only the consumer should consult them, and only as a hint (`src/qb/system/lockfree/mpsc_unbounded_queue.h:117`).
+- **`size()` and `empty()` are approximate.** They reflect a momentary snapshot a producer can invalidate immediately; only the consumer should consult them, and only as a hint (`src/qb/system/lockfree/mpsc_unbounded_queue.h:134-148`).
 - **A sentinel node always remains.** The constructor allocates one sentinel and points both `head_` and `tail_` at it; the destructor walks from `head_` deleting every remaining node (`src/qb/system/lockfree/mpsc_unbounded_queue.h:64-68,70-77`). Each `push` adds a heap node; each `pop` frees the consumed one. This trades the ring buffer's zero-allocation steady state for unbounded capacity.
 
 ## Pitfalls

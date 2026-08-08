@@ -31,9 +31,9 @@ An actor is strictly thread-affine to the `VirtualCore` that created it: it neve
 Affinity is best-effort by design. A logical `CoreId` need not map to a physical CPU (for example, core 255 on an 8-core host), so a failed pin only logs a warning and never fails core initialization (`src/qb/core/VirtualCore.cpp:426-432`). Two filtering rules apply before any OS call:
 
 - Any `CoreId >= qb::MaxCores` is filtered out of the affinity set, including the `qb::NoAffinity` sentinel (`src/qb/core/VirtualCore.cpp:403-408`). `qb::NoAffinity == std::numeric_limits<CoreId>::max()` (`src/qb/core/Main.h:78`), so passing `CoreIdSet{qb::NoAffinity}` is a well-defined "let the OS schedule this thread" with no pinning performed.
-- If the filtered set contains zero real core ids — including an empty set — no affinity call is issued at all (`src/qb/core/VirtualCore.cpp:344`).
+- If the filtered set contains zero real core ids — including an empty set — no affinity call is issued at all (`src/qb/core/VirtualCore.cpp:409`).
 
-On Windows built with a GNU compiler, affinity is not applied (`#warning` at `src/qb/core/VirtualCore.cpp:382`).
+On Windows built with a GNU compiler, affinity is not applied (`#warning` at `src/qb/core/VirtualCore.cpp:447`).
 
 ### Per-core mailboxes and inter-core MPSC delivery
 
