@@ -128,7 +128,7 @@ def discover_units(root: Path) -> set[str]:
         conventions += list((mod / "not-qb").glob("*"))
     for d in conventions:
         if d.is_dir():
-            seen.add(str(d.relative_to(root)))
+            seen.add(d.relative_to(root).as_posix())
     # one nesting level down, which is how Catch2 hid inside stduuid
     for d in list(conventions):
         if not d.is_dir():
@@ -137,7 +137,7 @@ def discover_units(root: Path) -> set[str]:
             if not sub.is_dir() or sub.name.lower() in STRUCTURAL_DIRNAMES:
                 continue
             if any(f.suffix in SOURCE_SUFFIXES for f in sub.glob("*")):
-                seen.add(str(sub.relative_to(root)))
+                seen.add(sub.relative_to(root).as_posix())
     return seen - DISCOVERY_IGNORE
 
 
@@ -169,7 +169,7 @@ def main() -> int:
                     f"do not match -- it would never reach an installed prefix. "
                     f"Rename it to one of: {', '.join(INSTALLABLE_NOTICE_GLOBS)}")
             elif entry.get("in_header_notice_ok"):
-                bare = [str(p.relative_to(root)) for p in sources_of(unit)
+                bare = [p.relative_to(root).as_posix() for p in sources_of(unit)
                         if "permission is hereby granted" not in p.read_text(
                             encoding="utf-8", errors="replace").lower()]
                 if bare:
@@ -185,7 +185,7 @@ def main() -> int:
 
         # a unit with no license file must have per-file copyright everywhere
         if not notices and not entry.get("in_header_notice_ok"):
-            bare = [str(p.relative_to(root)) for p in sources_of(unit)
+            bare = [p.relative_to(root).as_posix() for p in sources_of(unit)
                     if not COPYRIGHT_RE.search(
                         p.read_text(encoding="utf-8", errors="replace")[:4000])]
             if bare:

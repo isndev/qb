@@ -223,8 +223,17 @@ TEST_F(EventLoopLifecycleTest, RunOnceDispatchesAnArmedTimer) {
     // dispatched so the test asserts the real contract ("an armed timer IS
     // dispatched and counted") instead of racing OS timer granularity. The bound
     // keeps a true never-dispatch failure loud (fired stays false → the assert fires).
-    std::size_t invoked = 0;
-    for (int i = 0; i < 1000 && !fired.load(); ++i)
+    // Bound by TIME, not by iteration count. The thing being waited for is a duration (a 1ms
+    // timer, quantised upward by the system tick), so a count only works while each run_once()
+    // blocks -- which is the POSIX behaviour that hid this. On Windows run_once() can return
+    // immediately on a spurious backend wakeup, and 1000 such returns elapse in ~1ms: measured
+    // here, the loop finished with invoked==0 in 1ms, i.e. it gave up long before the ~15.6ms
+    // system timer quantum could possibly have expired. A deadline makes the bound mean what
+    // the comment above says it means, on every platform, and keeps a true never-dispatch
+    // failure just as loud.
+    std::size_t invoked  = 0;
+    const auto  deadline = std::chrono::steady_clock::now() + 5s;
+    while (!fired.load() && std::chrono::steady_clock::now() < deadline)
         invoked += async::run_once();
     EXPECT_TRUE(fired.load()) << "run_once() did not dispatch the armed timer";
     EXPECT_GE(invoked, 1u) << "run_once() reported zero invoked events";

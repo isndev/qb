@@ -562,6 +562,13 @@ function(qb_add_test)
                 -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
             COMMAND_EXPAND_LISTS
         )
+        # ...and this is what actually deploys them. $<TARGET_RUNTIME_DLLS> above is EMPTY
+        # by construction for every vcpkg dep reached through a Find module, so the copy
+        # step alone left the executables unable to load. See cmake/qbRuntimeDlls.cmake.
+        qb_ensure_runtime_dll_deployer("${TEST_BINARY_DIR}" _qb_dll_deployer)
+        if(_qb_dll_deployer)
+            add_dependencies(${TEST_NAME} ${_qb_dll_deployer})
+        endif()
     endif()
 
     # Make test depend on SSL resources if they exist
@@ -716,6 +723,13 @@ function(qb_add_benchmark)
                 -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
             COMMAND_EXPAND_LISTS
         )
+        # ...and this is what actually deploys them. $<TARGET_RUNTIME_DLLS> above is EMPTY
+        # by construction for every vcpkg dep reached through a Find module, so the copy
+        # step alone left the executables unable to load. See cmake/qbRuntimeDlls.cmake.
+        qb_ensure_runtime_dll_deployer("${BENCH_BINARY_DIR}" _qb_dll_deployer)
+        if(_qb_dll_deployer)
+            add_dependencies(${BENCH_NAME} ${_qb_dll_deployer})
+        endif()
     endif()
 
     if(BENCH_MODULE)
@@ -1227,3 +1241,9 @@ endfunction()
 
 # Mark functions as loaded
 set(QB_FUNCTIONS_LOADED TRUE CACHE INTERNAL "qb functions loaded")
+
+# Windows runtime-DLL deployment for test/benchmark executables. Included LAST, and
+# deliberately: CMake resolves a function call at invocation time, so defining it here is
+# enough for qb_add_test()/qb_add_benchmark() above, and appending keeps every line number
+# in this file -- which the docs cite by range -- exactly where it was.
+include(${CMAKE_CURRENT_LIST_DIR}/qbRuntimeDlls.cmake)
