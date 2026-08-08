@@ -44,6 +44,33 @@ jobs:
           -DQB_ENABLE_NATIVE_ARCH=OFF
           -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}"
 
+      # Direct evidence that the build is INSTRUMENTED, rather than an inference from it.
+      #
+      # No lane built verbosely, so `-fsanitize` had never actually been seen on a compile line
+      # here: instrumentation was argued from the configure message, plus the CMake propagation
+      # path, plus runtime inflation (54 s vs 22 s). That chain is strong but every link is
+      # indirect, and it would survive QB_SANITIZE silently failing to reach the compiler — the
+      # lane would still pass, just testing nothing. compile_commands.json holds the exact
+      # command each TU is compiled with, so this reads the real thing and gates on it.
+      - name: Prove the sanitizer reaches the compile line
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re, sys
+          db = json.load(open("build/presets/sanitize/compile_commands.json"))
+          want = "-fsanitize=address,undefined"
+          hits = [e for e in db if want in (e.get("command") or " ".join(e.get("arguments", [])))]
+          print(f"compile_commands.json entries: {len(db)}")
+          print(f"entries carrying {want}: {len(hits)}")
+          if hits:
+              cmd = hits[0].get("command") or " ".join(hits[0]["arguments"])
+              print("\nfirst instrumented compile line (verbatim):\n  " + cmd)
+          if len(hits) < 100:
+              print(f"::error::only {len(hits)} TUs carry {want}; the sanitize lane is not "
+                    f"instrumenting the build it claims to instrument.")
+              sys.exit(1)
+          PY
+
       - name: Build
         run: cmake --build --preset sanitize --parallel "$(nproc)"
 
