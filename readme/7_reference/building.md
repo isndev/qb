@@ -14,7 +14,7 @@ This page is the contributor-facing build reference. If you only want to *add qb
 | Requirement | Detail | Source |
 |---|---|---|
 | C++ compiler | C++20-capable: GCC, Clang, Apple Clang, or MSVC. qb sets `QB_CXX_STANDARD=20` by default, accepts `QB_CXX_STANDARD=23`, and keeps `CMAKE_CXX_STANDARD_REQUIRED=ON` with extensions off. | `qb/cmake/qbConfig.cmake` |
-| CMake | 3.24 or newer. 3.24 is the floor because dependency resolution uses the `FetchContent` + `find_package` integration (`FIND_PACKAGE_ARGS`). | `qb/CMakeLists.txt:31`, `qb/CMakePresets.json:3-7` |
+| CMake | 3.24 or newer. 3.24 is the floor because dependency resolution uses the `FetchContent` + `find_package` integration (`FIND_PACKAGE_ARGS`). The whole range is exercised, not just the newest: the qb-dev superproject's `cmake-floor` job configures qb on 3.24.4 and on 3.28.3, so the stock CMake of Ubuntu 24.04 LTS (3.28.3), Debian 12 (3.25.1) and RHEL 9 (3.26.5) stays inside the claim rather than merely being promised by it. Consuming qb's own `CMakePresets.json` needs 3.24 (schema v3); the qb-dev superproject's presets are schema v6 and need 3.25. | `qb/CMakeLists.txt:31`, `qb/CMakePresets.json:3-7` |
 | Threads | A POSIX threads (pthreads) implementation is required on non-Windows platforms; configuration fails with a fatal error if it is missing. | `qb/cmake/qbCompiler.cmake:463-466` |
 | Git | Needed on the configure machine only when a fetchable dependency (GoogleTest, Google Benchmark, zlib) is absent from the system and is built from source. | see [cmake_dependencies.md](./cmake_dependencies.md) |
 
