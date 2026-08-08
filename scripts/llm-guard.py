@@ -114,6 +114,15 @@ being derived from the checkout's PATH — standalone, this script exited 2 havi
 `dev/agent/standalone-checkout-control.sh` now asserts it in the shape GitHub Actions actually
 produces, so it is a checked property rather than a stated one.
 
+A DIGEST PROVES A RANGE STILL SAYS WHAT IT SAID.  It can never prove the range said what the
+doc CLAIMS.  So `--record-digests` on a WRONG citation makes this baseline defend the error --
+green forever, and looking more authoritative every run.  It is not a fix for a red run: open
+the cited file at the cited lines first.  The excerpt column exists to make that cheap, and it
+is worth exactly as much as the attention paid to it.  (Measured: three entries in the
+superproject's baseline were found aimed at a different function entirely, one carrying the
+excerpt `endif()` where its sentence described a test working directory.  It was in the diff
+at record time.)
+
 Usage:  python3 scripts/llm-guard.py [--stats] [--show N] [--tolerance N]
         python3 scripts/llm-guard.py --record-digests   # after verifying a source move
 Exit 0 = clean, 1 = at least one FAILED (or a vacuous run), 2 = cannot determine the version.
@@ -811,7 +820,13 @@ def main() -> int:
                 "# llm-cite-digest.baseline -- what every line-cited range in llm/ SAID when\n"
                 "# it was last verified.  Regenerate with:\n"
                 "#     python3 scripts/llm-guard.py --record-digests\n"
-                "# and REVIEW the git diff: the trailing excerpt is the first cited line, so a\n"
+                "#\n"
+                "# A digest proves a range still SAYS what it said -- never that it said what the\n"
+                "# doc CLAIMS.  Recording a WRONG citation makes this file defend the error,\n"
+                "# permanently and silently.  --record-digests is NOT a fix for a red run: open the\n"
+                "# cited file at the cited lines first.\n"
+                "#\n"
+                "# REVIEW the git diff: the trailing excerpt is the first cited line, so a\n"
                 "# citation that has silently drifted onto other code shows up as a changed\n"
                 "# excerpt rather than as an opaque hash.  Fields: doc <TAB> cited-spec <TAB>\n"
                 "# digest <TAB> excerpt.  Keyed WITHOUT the doc's own line number, so\n"
