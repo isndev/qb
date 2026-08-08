@@ -395,6 +395,22 @@ if(QB_SANITIZE)
             # receive the flag per-target simply get it twice, which MSVC accepts.
             add_compile_options("/fsanitize=address")
             qb_status_message("Sanitizers enabled (MSVC): address (build-wide: MSVC cannot link mixed ASan/non-ASan objects)")
+
+            # Name what was DROPPED, not only what was kept. The `sanitize` preset asks for
+            # `address,undefined` and MSVC has no UBSan, so half the request disappears here.
+            # The status line above says "address", which IMPLIES it -- and an implication is
+            # not a report: GUARDRAILS.md tells an agent to "run sanitize (ASan+UBSan)", so a
+            # green Windows run was readable as UBSan coverage that never existed. A leg that
+            # quietly drops out while the run still prints green is the exact defect class the
+            # verify.sh battery exists for; the same standard belongs here.
+            string(REPLACE "," ";" _qb_san_requested "${QB_SANITIZE}")
+            list(REMOVE_ITEM _qb_san_requested "address")
+            if(_qb_san_requested)
+                qb_warning_message(
+                    "MSVC has no ${_qb_san_requested} sanitizer — QB_SANITIZE='${QB_SANITIZE}' "
+                    "was honoured as ADDRESS ONLY. Do not report this build as covering them.")
+            endif()
+            unset(_qb_san_requested)
         else()
             qb_warning_message("MSVC only supports /fsanitize=address; ignoring QB_SANITIZE='${QB_SANITIZE}'")
         endif()
