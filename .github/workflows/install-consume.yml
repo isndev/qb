@@ -343,15 +343,30 @@ jobs:
       # copy in modules/". The runner HAS a system nlohmann_json (the dependency script installs
       # nlohmann-json3-dev), which is what makes this a real test of OFF rather than of the
       # default — AUTO would have found the system one, so seeing a fetch proves OFF overrode it.
+      #
+      # Every assertion below greps a REFLOWED log, never the raw one. `message(FATAL_ERROR)`
+      # re-wraps its first paragraph to the terminal width, so a sentence that is one line in
+      # qbDependencies.cmake arrives split at whatever word crosses the margin:
+      #
+      #     [qb] QB_USE_SYSTEM_NLOHMANN is OFF, so nlohmann_json would be fetched, but
+      #     QB_INSTALL is ON.
+      #
+      # `grep -q "but QB_INSTALL is ON"` therefore never matched, and this step reported
+      # "configure failed, but not for the reason under test" against a configure that had
+      # failed for precisely the reason under test -- the first CI red of this job. Collapsing
+      # newlines and runs of spaces first makes the assertion independent of where CMake
+      # happens to break the line; it still demands the whole sentence, so nothing is weakened.
       - name: QB_USE_SYSTEM_NLOHMANN — OFF fetches the pinned tag, a bad value is rejected
         run: |
           set -euo pipefail
+          # says LOG PATTERN -- true when PATTERN is in LOG once whitespace is collapsed.
+          says() { tr '\n' ' ' < "$1" | tr -s ' ' | grep -qF "$2"; }
           cmake -S . -B b-nl-off -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF -DQB_INSTALL=OFF \
             -DQB_USE_SYSTEM_NLOHMANN=OFF > /tmp/nl-off.log 2>&1
-          grep -q "fetching v3.12.0 from git" /tmp/nl-off.log \
+          says /tmp/nl-off.log "fetching v3.12.0 from git" \
             || { echo "::error::QB_USE_SYSTEM_NLOHMANN=OFF did not fetch the pinned tag"; cat /tmp/nl-off.log; exit 1; }
-          grep -q "Using system nlohmann_json" /tmp/nl-off.log \
+          says /tmp/nl-off.log "Using system nlohmann_json" \
             && { echo "::error::QB_USE_SYSTEM_NLOHMANN=OFF still used the system copy"; cat /tmp/nl-off.log; exit 1; }
 
           # ...and the AUTO control, so the check above cannot pass on a runner that simply has no
@@ -359,7 +374,7 @@ jobs:
           cmake -S . -B b-nl-auto -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
             -DQB_USE_SYSTEM_NLOHMANN=AUTO > /tmp/nl-auto.log 2>&1
-          grep -q "Using system nlohmann_json" /tmp/nl-auto.log \
+          says /tmp/nl-auto.log "Using system nlohmann_json" \
             || { echo "::error::AUTO did not find the system nlohmann_json — the OFF check above proves nothing"; cat /tmp/nl-auto.log; exit 1; }
 
           # A fetched nlohmann cannot be exported, so an installable build must refuse rather than
@@ -371,7 +386,7 @@ jobs:
           rc=$?
           set -e
           [ "$rc" -ne 0 ] || { echo "::error::a fetched nlohmann produced an installable qb"; exit 1; }
-          grep -q "but QB_INSTALL is ON" /tmp/nl-inst.log \
+          says /tmp/nl-inst.log "QB_USE_SYSTEM_NLOHMANN is OFF, so nlohmann_json would be fetched, but QB_INSTALL is ON." \
             || { echo "::error::configure failed, but not for the reason under test"; cat /tmp/nl-inst.log; exit 1; }
 
           set +e
@@ -381,7 +396,7 @@ jobs:
           rc=$?
           set -e
           [ "$rc" -ne 0 ] || { echo "::error::QB_USE_SYSTEM_NLOHMANN accepted an out-of-range value"; exit 1; }
-          grep -q "must be AUTO, ON or OFF" /tmp/nl-bad.log \
+          says /tmp/nl-bad.log "must be AUTO, ON or OFF" \
             || { echo "::error::the tri-state validation did not fire"; cat /tmp/nl-bad.log; exit 1; }
 
       # The file's whole contract is that the `qb-abi` line is READ OUT OF THE INSTALLED ARCHIVE

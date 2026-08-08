@@ -246,7 +246,7 @@ class Timeout : public with_timeout<Timeout<_Func>> {
             void *p       = head;
             while (p) {
                 void *next = *static_cast<void **>(p);
-                ::operator delete(p, sizeof(Timeout), std::align_val_t{alignof(Timeout)});
+                ::operator delete(p, std::align_val_t{alignof(Timeout)}); // UNSIZED: sized+aligned needs __cpp_sized_deallocation
                 p = next;
             }
             head = nullptr;
