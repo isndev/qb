@@ -40,15 +40,13 @@ The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` t
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
-> **Note.** Only `std::exception` (and types derived from it) are caught at the `start_thread` boundary. An exception that is not derived from `std::exception` escapes even that handler and terminates the process via `std::terminate`. Throw `std::exception` subtypes.
+> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". **Both store the same `VirtualCore::Error::ExceptionThrown`** (`src/qb/core/Main.cpp:356-366`), so a non-`std::exception` throw does not terminate the process — that handler exists precisely to stop it escaping a `noexcept` function. Throw `std::exception` subtypes anyway: only that arm can log *what* was thrown.
 
 ```mermaid
 flowchart TD
     H["handler / on(LoopEvent) throws"] --> NOEX{"in a noexcept context?<br/>(push OOM · on(KillEvent) · …)"}
     NOEX -- yes --> TERM["std::terminate — process aborts"]
-    NOEX -- no --> T{"std::exception subtype?"}
-    T -- "no" --> TERM
-    T -- "yes" --> UW["stack unwinds out of VirtualCore::__workflow__"]
+    NOEX -- no --> UW["stack unwinds out of VirtualCore::__workflow__"]
     UW --> SC["caught one level up in Main::start_thread"]
     SC --> FLAG["core flagged ExceptionThrown<br/>worker thread exits → every actor on that core stops"]
     FLAG --> OBS["Main::hasError() reports it after the run"]
@@ -80,7 +78,7 @@ Two practical rules follow. First, sending an event never throws, so you cannot 
 | `onInit()` throws at startup | Caught inside `__drive_init__`; converted to an init failure | Core flagged `BadActorInit` (not `ExceptionThrown`); core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
 | `push`/`send` to a dead or unknown `ActorId` | Silent | Event dropped; sender keeps running | Nobody — design an explicit ack/timeout if you need to know |
 | Peer closes, socket error, protocol violation | `on(event::disconnected&&)` | Connection disposed; event delivered to the I/O component | The actor's `disconnected` handler |
-| Callback exception (`async::callback`, `scoped_callback`) | Swallowed | Caught by an internal `catch (...)`; the timer still self-deletes | Nobody — see [the callback footgun](#the-asynccallback-lifetime-footgun) |
+| Callback exception (`async::callback`, `scoped_callback`) | Swallowed | Caught by an internal `catch (...)`. `async::callback`'s `Timeout` (`src/qb/io/async/io.h:211`) then deletes itself; `scoped_callback`'s `ScopedTimeout` (`src/qb/io/async/io.h:410`) does **not** — it is owned by its handle and only marks itself fired | Nobody — see [the callback footgun](#the-asynccallback-lifetime-footgun) |
 
 ## Actor-level error management
 
@@ -151,7 +149,7 @@ struct ValidationResult : qb::Event {
 
 ### Self-termination with `kill()`
 
-If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first; pending events are not processed). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
+If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:363-365`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
 
 `kill()` does not notify anyone. If a supervisor needs to know, `push` a notification event to it *before* calling `kill()` (see [Supervision](#supervision-you-build-yourself)).
 
@@ -445,9 +443,9 @@ Decision table:
 
 - **Letting an exception escape a handler.** It stops every actor on the core, not just the one that threw. Catch recoverable failures locally; reserve uncaught throws for genuinely unrecoverable invariant violations where stopping the core is acceptable.
 - **Throwing across a `noexcept` boundary.** A throw from `push`'s OOM path, a `noexcept` handler, or a `noexcept` override calls `std::terminate` and bypasses even `start_thread`'s catch. Keep `noexcept` code non-throwing.
-- **Throwing a non-`std::exception` type.** Only `std::exception` and its subtypes are caught at the worker boundary; anything else terminates the process. Throw standard exception types.
+- **Throwing a non-`std::exception` type.** It is caught — the worker boundary has a `catch (...)` beside the `catch (const std::exception &)` and both flag `ExceptionThrown` — but only the typed arm can log *what* was thrown, so the crash report names nothing. Throw standard exception types.
 - **Treating `push` failure as catchable.** Sending is `noexcept` and never reports a bad destination. A message to a dead or unknown `ActorId` is dropped silently. If delivery matters, design an explicit acknowledgement plus a timeout.
-- **Relying on a callback exception to signal anything.** `async::callback` swallows exceptions and the timer self-deletes anyway. Report via an event or owned state instead.
+- **Relying on a callback exception to signal anything.** `async::callback` swallows exceptions and its timer self-deletes anyway (`scoped_callback`'s does not, but it swallows them just the same). Report via an event or owned state instead.
 - **Fire-and-forget callbacks that capture `this`.** A deferred `callback()` can run after the actor is destroyed, dereferencing freed memory. Guard with `is_alive()` and, for actor-lifetime timers, own the timer with `scoped_callback`.
 - **Reusing a `not_ok()` protocol.** `not_ok()` is irreversible and `reset()` does not clear it. To continue on the same transport, install a new protocol with `switch_protocol`.
 - **Reading `hasError()` mid-run.** It reflects the start barrier and is only meaningful after the engine has stopped. For live health, build supervision with ping/pong and timeouts.

@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`src/qb/io/async/listener.h:728`). `listener::current` is a
+  (`src/qb/io/async/listener.h:966-969`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -85,7 +85,7 @@ registry, or as a member — never relocate them.
 - `clear()` runs the loop four times with `EVRUN_NOWAIT`, not `EVRUN_ONCE`,
   because under a monotonic-clock + timerfd libev build the loop can pick a
   multi-million-second wait time when `timercnt == 0`, which would wedge thread
-  teardown (`src/qb/io/async/listener.h:486`). This is intentional; do not
+  teardown (`src/qb/io/async/listener.h:606-607`). This is intentional; do not
   "simplify" it to a single `EVRUN_ONCE`.
 
 ---
@@ -96,7 +96,7 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`src/qb/io/async/listener.h:743`).
+  (`src/qb/io/async/listener.h:981`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
   `run_for()` (`src/qb/io/async/coroutine/utils.h:285`, `:227`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
@@ -289,7 +289,7 @@ with I/O lifetime are:
 
 - The entire layer is **strictly mono-thread (cooperative)**. One
   `CoroutineScheduler` belongs to exactly one thread — the VirtualCore worker or
-  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:96`).
+  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:74-75`).
   Resuming or pushing from another thread is undefined behavior; cross-thread
   wake-ups go through the actor mailbox.
 - A `thread_local` scheduler is established automatically when a
@@ -305,7 +305,7 @@ with I/O lifetime are:
 - `~CoroutineScheduler` destroys only the ready-queue and deferred-completed
   frames it owns. **Suspended frames are intentionally leaked**, because their
   libev watchers still reference them
-  (`src/qb/io/async/coroutine/scheduler.h:155`). **Stop the event loop
+  (`src/qb/io/async/coroutine/scheduler.h:190-194`). **Stop the event loop
   before destroying the scheduler**, or those watchers fire against freed
   frames.
 - `spawn()` takes ownership of the coroutine handle and runs it to completion
@@ -353,7 +353,7 @@ with I/O lifetime are:
   the TCP phase (the TLS handshake is unbounded), and `udp::socket::read_timeout`
   returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
   returns `0` (`src/qb/io/tcp/ssl/socket.h:469`,
-  `src/qb/io/udp/socket.cpp:102`).
+  `src/qb/io/udp/socket.cpp:133`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
   qev's `qev_stat` stores the narrow `const char *` it is given **without
