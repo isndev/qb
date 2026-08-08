@@ -235,9 +235,9 @@ enum VirtualCore::Error : uint64_t {
 ```cpp
 engine.join();
 if (engine.hasError()) {
-    // Likely causes: an actor's onInit() returned false (BadActorInit),
-    // a registered core had no actors (NoActor), or a handler or onInit()
-    // threw (ExceptionThrown). All are surfaced through hasError().
+    // Likely causes: an actor's onInit() returned false OR threw
+    // (both BadActorInit), a registered core had no actors (NoActor),
+    // or an event handler threw (ExceptionThrown). All via hasError().
     return 1;
 }
 ```

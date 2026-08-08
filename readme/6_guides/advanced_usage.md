@@ -341,7 +341,7 @@ engine.core(0)
 
 ## Composing qbm modules
 
-The qbm modules — qbm-http (HTTP/1.1 always; HTTP/2, WebSocket, and JWT on SSL-enabled builds; optional HTTP/3 when QUIC and nghttp3 are present), qbm-pgsql (PostgreSQL), and qbm-redis (Redis) — are application protocols built on the same `qb-io` foundation your actors use. WebSocket is a capability of qbm-http (`qb::http::ws`, under `<http/ws.h>`), not a separate module. Composing a module means treating its client as ordinary asynchronous work owned by an actor: the actor issues a request, the result returns as a callback or coroutine resumption on the actor's own `VirtualCore`, and the actor forwards it onward as an event. Because the module client lives on the actor's core, it inherits the same single-threaded, no-locks discipline as everything else on that core.
+The qbm modules — qbm-http (HTTP/1.1 always; HTTP/2, WebSocket, and JWT on SSL-enabled builds; optional HTTP/3 when QUIC and nghttp3 are present), qbm-pgsql (PostgreSQL), and qbm-redis (Redis) — are application protocols built on the same `qb-io` foundation your actors use. WebSocket is a capability of qbm-http (`qb::http::ws`, under `<qbm/http/ws.h>`), not a separate module. Composing a module means treating its client as ordinary asynchronous work owned by an actor: the actor issues a request, the result returns as a callback or coroutine resumption on the actor's own `VirtualCore`, and the actor forwards it onward as an event. Because the module client lives on the actor's core, it inherits the same single-threaded, no-locks discipline as everything else on that core.
 
 ### Build-time composition
 
