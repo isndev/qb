@@ -32,27 +32,40 @@ jobs:
           ./scripts/ci-install-linux-dependencies.sh --profile sanitize-thread
           "clang-${LLVM_VERSION}" --version
 
+      # The build directory is READ from the line CMake prints — see the same step in
+      # sanitize.yml for the failure that taught this: a hard-coded `build/presets/<preset>`
+      # is the qb-dev superproject's layout, not this repo's.
       - name: Configure
-        run: >
-          cmake --preset sanitize-thread -G Ninja
-          -DCMAKE_C_COMPILER=clang-${LLVM_VERSION}
-          -DCMAKE_CXX_COMPILER=clang++-${LLVM_VERSION}
-          -DQB_CXX_STANDARD=20
-          -DQB_BUILD_EXAMPLES=OFF
-          -DQB_USE_SYSTEM_GTEST=ON
-          -DQB_ENABLE_NATIVE_ARCH=OFF
-          -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}"
+        run: |
+          set -euo pipefail
+          cmake --preset sanitize-thread -G Ninja \
+            -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" \
+            -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" \
+            -DQB_CXX_STANDARD=20 \
+            -DQB_BUILD_EXAMPLES=OFF \
+            -DQB_USE_SYSTEM_GTEST=ON \
+            -DQB_ENABLE_NATIVE_ARCH=OFF \
+            -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}" 2>&1 | tee "${RUNNER_TEMP}/configure.log"
+          builddir="$(sed -n 's/^-- Build files have been written to: //p' "${RUNNER_TEMP}/configure.log" | tail -1)"
+          if [ -z "${builddir}" ] || [ ! -d "${builddir}" ]; then
+            echo "::error::could not read the build directory out of the configure output (got '${builddir}')"
+            exit 1
+          fi
+          echo "build directory: ${builddir}"
+          echo "SANITIZE_BUILD_DIR=${builddir}" >> "${GITHUB_ENV}"
 
       # Direct evidence that the build is INSTRUMENTED — see the same step in sanitize.yml for
       # why an inference from the configure message and runtime inflation was not enough.
       - name: Prove the sanitizer reaches the compile line
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json, sys
-          db = json.load(open("build/presets/sanitize-thread/compile_commands.json"))
+          python3 - "${SANITIZE_BUILD_DIR}" <<'PY'
+          import json, os, sys
+          path = os.path.join(sys.argv[1], "compile_commands.json")
+          db = json.load(open(path))
           want = "-fsanitize=thread"
           hits = [e for e in db if want in (e.get("command") or " ".join(e.get("arguments", [])))]
+          print(f"compile database: {path}")
           print(f"compile_commands.json entries: {len(db)}")
           print(f"entries carrying {want}: {len(hits)}")
           if hits:
