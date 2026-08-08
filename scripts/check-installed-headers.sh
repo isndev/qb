@@ -28,16 +28,30 @@
 #                              --link TARGET ...        target(s) to link phase 2 against
 #                              --entry-dir DIR ...      directory of entry-point TUs
 #                              [--hostile]              -I instead of -isystem, warnings fatal
+#                              [--exclude "PATH REASON"] one more excluded header, with its reason
 #                              [--build-dir DIR] [--jobs N] [--keep]
 #
 # --tree takes NAME:MIN, and MIN is not decoration: it is an ANTI-VACUOUS FLOOR, per surface.
-# A sweep that finds 0 headers because a path moved passes every check in this file while
+# A sweep that FINDS too few headers because a path moved passes every check in this file while
 # proving nothing, and a shared floor lets one surface silently absorb another's collapse.
 # Raise a floor when a tree grows; never lower one to make a run pass.
+#
+# The floor is measured against the headers FOUND in the tree, not against the subset swept,
+# and that distinction is the whole reason a floor exists: it guards against the tree going
+# missing. Exclusions cannot hide behind it -- every one is named (in the table below or on the
+# command line), integrity-checked to still exist under the prefix, and printed per tree in the
+# run's own log. Counting the floor against the swept subset instead would mean the first
+# legitimate conditional exclusion forces the floor DOWN, which is the one edit this comment
+# and the one above both forbid.
+#
+# --exclude exists for exclusions the CALLER can justify and this script cannot see, e.g. a
+# header gated on a build capability the installed package does not carry. It is not a shortcut:
+# it takes the same "PATH REASON" shape as the table, gets the same existence check, and the
+# caller is expected to prove separately whatever the sweep can no longer prove.
 set -euo pipefail
 
 PREFIX=""; BUILD_DIR=""; JOBS=""; HOSTILE=0; KEEP=0; CXX_COMPILER=""
-declare -a TREES=() PACKAGES=() LINKS=() ENTRY_DIRS=()
+declare -a TREES=() PACKAGES=() LINKS=() ENTRY_DIRS=() EXTRA_EXCLUDES=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --cxx)       CXX_COMPILER="$2"; shift 2 ;;
@@ -46,6 +60,7 @@ while [ $# -gt 0 ]; do
     --package)   PACKAGES+=("$2"); shift 2 ;;
     --link)      LINKS+=("$2"); shift 2 ;;
     --entry-dir) ENTRY_DIRS+=("$2"); shift 2 ;;
+    --exclude)   EXTRA_EXCLUDES+=("$2"); shift 2 ;;
     --build-dir) BUILD_DIR="$2"; shift 2 ;;
     --jobs)      JOBS="$2"; shift 2 ;;
     --hostile)   HOSTILE=1; shift ;;
@@ -95,6 +110,16 @@ qb/io/async/epoll.h      platform fragment: needs <sys/epoll.h>; swept on Linux,
 "
 fi
 
+# ...and the caller's own, same shape and same integrity check. Appended AFTER the table so the
+# table stays the authoritative record of what this script decides on its own.
+for e in ${EXTRA_EXCLUDES[@]+"${EXTRA_EXCLUDES[@]}"}; do
+  case "$e" in
+    */*\ *) EXCLUDED_HEADERS="${EXCLUDED_HEADERS}${e}
+" ;;
+    *) echo "usage error: --exclude wants \"PATH REASON\" (a path and a stated reason), got '$e'" >&2; exit 2 ;;
+  esac
+done
+
 say()  { printf '%s\n' "$*"; }
 fail() { printf '::error::%s\n' "$*" >&2; exit 1; }
 
@@ -125,17 +150,26 @@ for spec in "${TREES[@]}"; do
   tree="${spec%%:*}"; floor="${spec#*:}"
   [ "$floor" != "$spec" ] || fail "--tree wants NAME:MIN (the anti-vacuous floor), got '$spec'"
   [ -d "$PREFIX/include/$tree" ] || fail "no such subtree: $PREFIX/include/$tree"
-  n=0
+  n=0; found=0; tree_excluded=""
   while IFS= read -r h; do
-    if is_excluded "$h"; then skipped=$((skipped + 1)); continue; fi
+    found=$((found + 1))
+    if is_excluded "$h"; then
+      skipped=$((skipped + 1)); tree_excluded="${tree_excluded} ${h}"; continue
+    fi
     slug="$(printf '%s' "$h" | tr '/.+-' '____')"
     printf '#include <%s>\n' "$h" > "$BUILD_DIR/tu/$slug.cpp"
     printf '  tu/%s.cpp\n' "$slug" >> "$BUILD_DIR/srcs.cmake"
     n=$((n + 1))
   done < <(cd "$PREFIX/include" && find "$tree" -type f \
              \( -name '*.h' -o -name '*.hpp' -o -name '*.tpp' -o -name '*.inl' \) | LC_ALL=C sort)
-  say "tree ${tree}: ${n} headers to sweep (floor ${floor})"
-  [ "$n" -ge "$floor" ] || fail "tree ${tree}: only ${n} headers found, floor is ${floor} -- this sweep would be vacuous"
+  say "tree ${tree}: ${found} headers found, ${n} to sweep (floor ${floor} on FOUND)"
+  [ -z "$tree_excluded" ] || say "  not swept:${tree_excluded}"
+  # Against FOUND, not against the swept subset -- see the --tree note at the top. Each
+  # excluded header is named above and was already proven to exist under the prefix, so the
+  # floor keeps doing its one job (the tree did not vanish) without turning every justified
+  # exclusion into a floor reduction.
+  [ "$found" -ge "$floor" ] || fail "tree ${tree}: only ${found} headers found, floor is ${floor} -- this sweep would be vacuous"
+  [ "$n" -gt 0 ] || fail "tree ${tree}: ${found} headers found but every one is excluded -- nothing would be compiled"
   total=$((total + n))
 done
 echo ")" >> "$BUILD_DIR/srcs.cmake"
