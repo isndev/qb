@@ -134,7 +134,7 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING` (`qbConfig.cmake:188`, `qbCompiler.cmake:358-450`). |
+| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING`. **MSVC ships only AddressSanitizer**: `address` is honoured (build-wide, because MSVC cannot link mixed ASan/non-ASan objects), every other component is dropped with a warning naming it — so the `sanitize` preset's `undefined` half does not run there, and `sanitize-thread` / `coverage` are disabled by preset condition on Windows altogether (`qbConfig.cmake:188`, `qbCompiler.cmake:358-466`). |
 | `QB_DEBUG_MEMORY` | bool; `OFF` | Legacy alias: when `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined` (`qbConfig.cmake:181,180-181`). |
 | `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets when `lcov`/`gcov` are found (`qbConfig.cmake:144`, `CMakeLists.txt:126-195`). |
 | `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:182,452`). |
