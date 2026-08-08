@@ -18,7 +18,9 @@ This guide covers the migrations that adopters hit most often.
 
 4. **`Event::id_type` in 3.0.** It stopped depending on `NDEBUG`, so a Debug consumer and a Release `libqb-core` finally agree on the event header. Two breaks, with different blast radii: the `id_type` return type changes **in Debug only** (a Release-only CI stays green), while `qb::type_id<T>()` now requires a complete type **in every build mode**, which breaks the common `ServiceActor<struct MyTag>` spelling everywhere. Read this one even if you never named `id_type`.
 
-The first three are not all-or-nothing. An actor can call into existing synchronous code, and the time aliases are plain `std::chrono` types, so a partial port still compiles and runs. The fourth is a hard 3.0 break; it is small, and it is a compile error rather than a silent one.
+5. **The remaining 3.0 source breaks.** Nine mechanical ones, each a compile or configure error with a fixed edit: the qbm include prefix, nlohmann no longer being bundled, the retired `.tpp`/`.inl` headers, `<cube.h>`, the vendored libev's rename to `qev`, `std::to_string(uuids::uuid)`, `SO_NOSIGPIPE` on Linux, the unprefixed socket macros, and qbm-redis `client_kill()`. Part 5 lists them in descending order of how many call sites each touches.
+
+The first three are not all-or-nothing. An actor can call into existing synchronous code, and the time aliases are plain `std::chrono` types, so a partial port still compiles and runs. The fourth and fifth are hard 3.0 breaks; they are small, and every one of them is a compile or configure error rather than a silent one.
 
 ## Part 1 — From threads and locked queues to actors
 
@@ -470,6 +472,260 @@ dispatch lookup itself over a 211-type table, the 16-bit key wins 9 rounds out o
 at engine level that was −11 % ns/event on `messaging-api-oneway`. A Debug event also regains the
 48 bytes of first-bucket payload capacity that Release always had (it was 40), and Release log
 lines gain an event-type name they never had.
+
+## Part 5 — The mechanical 3.0 breaks
+
+The four parts above are ports: you rewrite code to a different shape. This part is the rest of the
+3.0 break list — nine items that are pure edits. Every one is a compile error or a configure error,
+none is silent, and each has exactly one correct fix. They are ordered by how many call sites they
+touch, not by how interesting they are.
+
+| # | What breaks | Who it touches | Fix |
+|---|---|---|---|
+| 5.1 | `#include <http/…>` → `<qbm/http/…>` (same for `pgsql`, `redis`) | every qbm consumer, every include line | mechanical prefix |
+| 5.2 | nlohmann/json is no longer bundled | anyone who used `qb::json` without a system nlohmann | install the package |
+| 5.3 | the `.tpp` / `.inl` headers are gone | anyone who included one directly | include the `.h` |
+| 5.4 | `<cube.h>` is gone | anyone who used the umbrella | name the entry points |
+| 5.5 | the vendored libev is `qev` | anyone who reached the C API or `<ev/…>` | rename the prefix |
+| 5.6 | `std::to_string(uuids::uuid)` is gone | anyone who stringified a `qb::uuid` that way | `uuids::to_string` |
+| 5.7 | `SO_NOSIGPIPE` is not defined on Linux | Linux code that named the macro | use `MSG_NOSIGNAL` |
+| 5.8 | the unprefixed socket macros are off | Winsock-style code (`closesocket`, `SD_SEND`, …) | one option, or the `QB_` names |
+| 5.9 | qbm-redis `client_kill()` returns a count | qbm-redis callers of that one command | change the `Reply<>` type |
+
+### 5.1 The qbm include prefix
+
+Every qbm header is reached as `<qbm/<module>/…>` in 3.0. In 2.6.0 the include root was the module's
+*parent* directory — which only exists inside the development superproject — so the shipped spelling
+was `<http/http.h>`. Module sources now live at `<module>/src/qbm/<module>/`, and `src/` **is** the
+include root, so the same string works in the source tree and in an installed prefix
+— `qb_package_include_root` (`qb/cmake/qbPackage.cmake:51-55`) decides both, and the module
+registration (`qb/cmake/qbFunctions.cmake:887-894`) refuses to configure a module laid out any other
+way.
+
+```
+t_http.cpp:1:10: fatal error: 'http/http.h' file not found
+```
+
+```cpp
+// Before                              // After
+#include <http/http.h>                 #include <qbm/http/http.h>
+#include <http/middleware/cors.h>      #include <qbm/http/middleware/cors.h>
+#include <redis/redis.h>               #include <qbm/redis/redis.h>
+#include <pgsql/pgsql.h>               #include <qbm/pgsql/pgsql.h>
+```
+
+The CMake side does not move: the targets are still `qbm::http`, `qbm::pgsql`, `qbm::redis`, and an
+installed module is still found with `find_package(qbm-http CONFIG REQUIRED)`. Installed headers land
+under `<prefix>/include/qbm/<module>/`, and `<prefix>/include` now holds exactly `qb` and `qbm`.
+
+### 5.2 nlohmann/json is no longer bundled
+
+qb used to install its own copy of `nlohmann/json.hpp` whenever the build host had none. That copy
+declared 3.12.0 while diverging from the tag, so it shared the `json_abi_v3_12_0` inline namespace
+with a genuine 3.12.0 over different definitions. 3.0 deletes it: nlohmann is a real dependency,
+resolved by `find_package(nlohmann_json 3.11)` with a pinned `FetchContent` fallback.
+
+Nothing changes in your source. `qb::json` is still `nlohmann::json` — qb re-exports the namespace
+(`qb/src/qb/json.h:282-283`), so there is no alias to update. What changes is provisioning:
+
+- **A plain build or test run does not care.** With no system copy it fetches
+  `QB_NLOHMANN_GIT_TAG` (`qb/cmake/qbConfig.cmake:107`, default `v3.12.0`).
+- **An installable build needs a *real* system nlohmann.** A fetched target belongs to no export set,
+  so `QB_INSTALL=ON` without one is a deliberate configure-time error
+  (`qb/cmake/qbDependencies.cmake:464-472`) that names every way out:
+
+  ```
+  CMake Error at cmake/qbConfig.cmake:493 (message):
+    [qb] nlohmann_json was not found on the system, so it would be fetched
+    (v3.12.0, via QB_USE_SYSTEM_NLOHMANN=AUTO), but QB_INSTALL is ON.
+  ```
+
+  Fix it with `brew install nlohmann-json` / `apt install nlohmann-json3-dev`, or point
+  `CMAKE_PREFIX_PATH` at a prefix that has one, or build with `QB_INSTALL=OFF`.
+- **Consuming an installed qb needs the package too.** The generated `qbConfig.cmake` calls
+  `find_dependency(nlohmann_json 3.11)` unconditionally — the call is written into its template,
+  `qb/cmake/qbConfig.cmake.in`.
+
+`QB_USE_SYSTEM_NLOHMANN` (`qb/cmake/qbConfig.cmake:173`) is the lever: `AUTO` (default) takes a system
+copy when there is one, `ON` requires it, `OFF` always fetches.
+
+### 5.3 The `.tpp` and `.inl` headers are gone
+
+`.h` is now the only header extension in the framework and in every module, and
+`qb/scripts/check-header-extensions.py` fails the build if one comes back — it rejects both the files
+and any `#include` naming one. Nine files went: qb's `qb/core/Actor.tpp`, `Main.tpp`, `Pipe.tpp`,
+`VirtualCore.tpp` and `qb/io/system/sys__inet_compat.inl`; qbm-http's `routing/router.tpp`; qbm-pgsql's
+`resultset.inl`, `transaction.inl`, `transaction_coro.inl`.
+
+The four qb `.tpp` files were **installed public headers** in 2.6.0, so this is the one item in Part 5
+that a consumer could hit without ever having looked inside qb.
+
+```
+t_tpp.cpp:1:10: fatal error: 'qb/core/Actor.tpp' file not found
+```
+
+Template bodies moved to the tail of the `.h` that declares them — except `qb::Actor`'s, which moved
+to the tail of **`VirtualCore.h`** (`qb/src/qb/core/VirtualCore.h:916-921`). Most of those bodies name
+`VirtualCore::` in a nested-name-specifier and need a complete `qb::VirtualCore`, and `VirtualCore.h`
+already includes `Actor.h` — so `Actor.h` can never host them. The body has to go where the include
+cycle *closes*, which is a position, not a file you get to choose.
+
+```cpp
+// Before                                    // After
+#include <qb/core/Actor.tpp>                 #include <qb/actor.h>   // or <qb/core/VirtualCore.h>
+#include <qb/core/Main.tpp>                  #include <qb/main.h>    // or <qb/core/Main.h>
+#include <qb/core/Pipe.tpp>                  #include <qb/core/Pipe.h>
+#include <qb/core/VirtualCore.tpp>           #include <qb/core/VirtualCore.h>
+#include <qbm/http/routing/router.tpp>       #include <qbm/http/routing/router.h>
+#include <qbm/pgsql/resultset.inl>          #include <qbm/pgsql/resultset.h>
+```
+
+If you include the umbrella headers (`<qb/actor.h>`, `<qb/main.h>`, `<qb/io.h>`) there is nothing to
+edit — they already pull the right files.
+
+### 5.4 `<cube.h>` is gone
+
+`cube.h` sat at the top of qb's installed include root — `<prefix>/include/cube.h`, the last generic
+name in there — and did nothing but include `<qb/actor.h>`, `<qb/io.h>` and `<qb/main.h>`. 3.0 removes
+it and ships no replacement umbrella.
+
+```
+t_cube.cpp:1:10: fatal error: 'cube.h' file not found
+```
+
+```cpp
+// Before                    // After
+#include <cube.h>            #include <qb/actor.h>   // qb-core
+                             #include <qb/main.h>
+                             #include <qb/io.h>      // qb-io
+```
+
+### 5.5 The vendored libev is `qev`
+
+qb's libev fork was re-prefixed so its 58 exported C symbols can no longer collide at link time with a
+system libev, or with another library that vendored its own. `ev_*` became `qev_*`, `struct ev_loop`
+became `struct qev_loop`, the headers became `qev.h` / `qev++.h`, the CMake target `ev` became `qev`
+(`qb::ev` → `qb::qev`), and the archive `libev.a` became `libqev.a`.
+
+The 2.6.0 spelling of the header was `<ev/ev++.h>`, installed from qb's own `modules/ev/`. It is now
+`<qb/vendor/qev/qev++.h>`.
+
+**Most consumers need no edit at all.** The C++ namespace is still `ev`
+(`qb/src/qb/vendor/qev/qev++.h:33`), qb's watcher types still derive from `ev::io` / `ev::sig` /
+`ev::timer`, and `EV_READ` / `EV_WRITE` / `EV_MULTIPLICITY` were deliberately left alone. Two
+populations are affected: anyone who included `<ev/ev++.h>` directly, and anyone who called the libev
+**C** API through qb's copy.
+
+```
+t_ev.cpp:1:10: fatal error: 'ev/ev++.h' file not found
+
+t_qevsym.cpp:2:20: error: use of undeclared identifier 'ev_run'; did you mean 'qev_run'?
+```
+
+The compiler's fix-it is right: prefix the C calls with `q` (`ev_run` → `qev_run`,
+`qb/src/qb/vendor/qev/qev.h:696`), change the include to `<qb/vendor/qev/qev++.h>`, and change a CMake
+`qb::ev` dependency to `qb::qev`. Leave `ev::`, `EV_*` and the libevent-compat `event_*` names as they
+are.
+
+### 5.6 `std::to_string(uuids::uuid)` is gone
+
+2.6.0 added a `to_string` overload *inside `namespace std`*, next to the legitimate
+`std::hash<uuids::uuid>` specialisation. Adding a declaration to `std` is undefined behavior, so 3.0
+removed it. Nothing replaced it in `std`; the library's own function was always there.
+
+```
+t_uuid.cpp:5:21: error: no matching function for call to 'to_string'
+    5 |     std::string s = std::to_string(id);
+```
+
+```cpp
+// Before                              // After
+std::string s = std::to_string(id);    std::string s = uuids::to_string(id);
+                                       // or, unqualified — ADL finds it:
+                                       std::string s = to_string(id);
+```
+
+`uuids::to_string` is at `qb/src/qb/vendor/uuid/include/uuid.h:547-549`, and `qb::uuid` is
+`::uuids::uuid` (`qb/src/qb/uuid.h:45`), so the unqualified call resolves by argument-dependent lookup.
+`std::hash<uuids::uuid>` is untouched — a `qb::uuid` still works as a map key.
+
+### 5.7 `SO_NOSIGPIPE` is no longer defined on Linux
+
+`qb/io/config.h` used to do `#define SO_NOSIGPIPE MSG_NOSIGNAL` inside its `__linux__` branch: a socket
+*option* name bound to a message *flag* value, in a header that ships in the install tree. Linux has no
+such option — `setsockopt(SOL_SOCKET, MSG_NOSIGNAL, …)` returns `-1`/`ENOPROTOOPT`. The define is gone
+(`qb/src/qb/io/config.h:363`).
+
+Behavior changes on no platform: both of qb's own call sites already guarded with `!defined(__linux__)`,
+and qb applies the option at descriptor acquisition where it is real
+(`qb/src/qb/io/system/sys__socket.cpp:111-115`). Only code that *named* the macro on Linux breaks:
+
+```
+error: 'SO_NOSIGPIPE' undeclared
+```
+
+Use `MSG_NOSIGNAL` per send call, which is what every `qb::io::socket` send/recv entry point already
+passes. There is nothing to change if you only use qb's socket API.
+
+### 5.8 The unprefixed socket-portability macros are off by default
+
+`qb/io/config.h` no longer defines the bare Winsock-style spellings — `closesocket`, `ioctlsocket`,
+`SD_RECEIVE`, `SD_SEND`, `SD_BOTH`, `FD_TO_SOCKET`, `OPEN_FD_FROM_SOCKET` — because a header in an
+install tree must not claim names that generic. The `QB_`-prefixed equivalents are always defined.
+
+```cpp
+// Before                    // After
+closesocket(fd);             QB_CLOSESOCKET(fd);
+ioctlsocket(fd, c, &v);      QB_IOCTLSOCKET(fd, c, &v);
+shutdown(fd, SD_SEND);       shutdown(fd, QB_SD_SEND);
+```
+
+Better still, do not touch a raw descriptor: a `qb::io::socket` closes itself, and
+`socket::close(int shut_how = QB_SD_BOTH)` is the member that does it explicitly.
+
+If you need the old spellings back while you port, configure with `-DQB_LEGACY_SOCKET_MACROS`
+(`qb/src/qb/io/config.h:560`) — it restores every one of them, and it is meant as a bridge, not a
+setting to keep.
+
+### 5.9 qbm-redis: `client_kill()` returns `Reply<long long>`
+
+`client_kill()` was declared `Reply<status>`. Its `skipme` parameter defaults to `true`, so the wrapper
+*always* emitted the filter form of `CLIENT KILL`, and that form replies with an integer count —
+which a `Reply<status>` cannot decode. Every call, on every argument combination, failed with
+`"STRING or ERROR required for status"`. 3.0 changes the return type to `Reply<long long>`, which is
+what the command actually returns.
+
+The SFINAE guard on the callback overload moved with the return type, so an existing caller gets a hard
+compile error rather than a silent conversion:
+
+```
+t_redis.cpp:4:7: error: no matching member function for call to 'client_kill'
+    note: candidate template ignored: requirement
+    'std::is_invocable_v<(lambda …), qb::redis::Reply<long long> &&>' was not satisfied
+```
+
+```cpp
+// Before
+Reply<status> r = co_await c.client_kill(addr);
+if (r.ok()) { /* killed — how many? unknown */ }
+c.client_kill([](Reply<status> &&r) { … }, addr);
+
+// After
+Reply<long long> r = co_await c.client_kill(addr);
+if (r.ok()) { long long killed = r.result(); }
+c.client_kill([](Reply<long long> &&r) { … }, addr);
+```
+
+The parameter list is unchanged (`addr`, `id`, `type`, `skipme`). See qbm-redis's own CHANGELOG for the
+module's full 3.0 list.
+
+### One rename that is *not* a break
+
+qb 3.0 renamed `LOG_DEBUG` / `LOG_VERB` / `LOG_INFO` / `LOG_WARN` / `LOG_CRIT` to `QB_LOG_*`, because
+three of the five collide with POSIX `<syslog.h>`. The unprefixed names are still defined, as
+`#ifndef`-guarded aliases, so existing code compiles unchanged. The one behavioral difference: if your
+translation unit defines `LOG_INFO` before including qb, yours now wins where qb's used to. Prefer the
+`QB_LOG_*` spellings in new code.
 
 ## See also
 
