@@ -406,9 +406,9 @@ if(QB_SANITIZE)
             string(REPLACE "," ";" _qb_san_requested "${QB_SANITIZE}")
             list(REMOVE_ITEM _qb_san_requested "address")
             if(_qb_san_requested)
-                qb_warning_message(
-                    "MSVC has no ${_qb_san_requested} sanitizer — QB_SANITIZE='${QB_SANITIZE}' "
-                    "was honoured as ADDRESS ONLY. Do not report this build as covering them.")
+                # ONE argument: qb_warning_message() forwards its ARGN, and CMake joins a
+                # multi-argument call with ';' -- which printed ";was honoured as ADDRESS ONLY".
+                qb_warning_message("MSVC has no ${_qb_san_requested} sanitizer — QB_SANITIZE='${QB_SANITIZE}' was honoured as ADDRESS ONLY. Do not report this build as covering them.")
             endif()
             unset(_qb_san_requested)
         else()
