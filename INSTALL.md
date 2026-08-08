@@ -32,6 +32,34 @@ Requirements:
 
 Architectures: x86_64 and ARM64 (including Apple Silicon).
 
+### Known-bad toolchain: GCC 14.2 and `co_await` on a temporary
+
+**GCC 14.2 crashes with an internal compiler error on a `co_await` whose operand is a call taking a
+temporary argument.** Measured on Debian 13 / aarch64, by differential compilation with the project's
+own build command:
+
+```
+internal compiler error: in gimple_add_tmp_var, at gimplify.cc:802
+```
+
+The trigger is ordinary, valid C++20 — a coroutine awaiting a call whose argument is materialised in
+place, e.g. `co_await db->execute(stmt, params{std::vector<std::string>{...}})`. Clang 19.1.7 compiles
+the identical translation unit cleanly, which is what identifies this as a **compiler defect, not a qb
+defect**. It first surfaced in a `qbm-pgsql` parameter-round-trip integration test; no upstream GCC bug
+number is recorded here, and whether x86_64 GCC 14.2 is equally affected has **not** been verified.
+
+**qb does not work around it, deliberately.** The shape occurs at 26 call sites in `qbm-pgsql`'s tests
+alone and is idiomatic throughout the coroutine API, so hoisting the temporary in the one file that
+happened to crash would turn a loud, attributable compiler crash into a silent trap that adopters hit
+in their own code instead — with nothing anywhere to name the cause.
+
+If you are pinned to GCC 14.2, either:
+
+- **hoist the temporary into a named local** before awaiting —
+  `auto args = params{...}; auto r = co_await db->execute(stmt, std::move(args));` — at each site the
+  ICE reports, or
+- **build with Clang**, which the CI matrix above exercises on the same platform.
+
 ## Dependencies
 
 qb resolves dependencies in three ways. Most builds need nothing installed beyond a compiler and CMake.

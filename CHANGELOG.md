@@ -12,9 +12,22 @@ Tracks changes on the `develop` branch that are not yet part of a tagged release
 `3.0.0` while this section is still open; it becomes the `[3.0.0]` entry when that release is tagged.
 The latest tag remains `v2.6.0`.
 
-**This is a major release.** *Removed* below already lists two source-incompatible items
-(`<cube.h>`, which left the installed public surface, and `std::to_string(const uuids::uuid &)`);
-[VERSIONING.md](./VERSIONING.md) reserves removals that require source edits for a major release.
+**This is a major release, and it breaks source in eight places.** Count them here rather than
+discovering them one build error at a time — *Removed* carries five and *Changed* three:
+
+| | What breaks | Section |
+|---|---|---|
+| 1 | The vendored `nlohmann/json.hpp` is gone; nlohmann is now a **real dependency you must have** | Removed |
+| 2 | The four `.tpp` headers — including `<qb/core/Actor.tpp>`, `<qb/core/Pipe.tpp>`, `<qb/core/Main.tpp>` | Removed |
+| 3 | `<cube.h>`, the whole-framework umbrella, left the installed public surface | Removed |
+| 4 | `SO_NOSIGPIPE` is no longer defined by qb | Removed |
+| 5 | `std::to_string(const uuids::uuid &)` | Removed |
+| 6 | The unprefixed socket-portability macros are **off by default** | Changed |
+| 7 | `qb::Event::id_type` is now `qb::EventId` (a `uint16_t`) in *every* build mode | Changed |
+| 8 | `qb::type_id<T>()` / `Event::type_to_id<T>()` / `detail::type_id_for<T>()` now require a **complete** `T` | Changed |
+
+Each row is a bullet below, with the migration. [VERSIONING.md](./VERSIONING.md) reserves removals
+that require source edits for a major release.
 The vendored event loop's rename (`ev_*` → `qev_*`, `<qb/vendor/ev/ev++.h>` →
 `<qb/vendor/qev/qev++.h>`) has now landed, and so has the qbm public include prefix — as
 `<qbm/http/...>`, `<qbm/pgsql/...>`, `<qbm/redis/...>`, not the `<qb/...>` spelling this note
@@ -550,8 +563,9 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 - **`<cube.h>`**, the legacy whole-framework umbrella header (guard `QB_QB_H`; just `qb/actor.h`,
   `qb/io.h` and `qb/main.h`). **This removes a name from the installed public surface.** It was dead —
   nothing in the tree ever included it — and it was the last generic top-level name in the installed
-  include root, which is now exactly `qb/` (plus `nlohmann/` when qb falls back to its bundled copy);
-  the `install-consume` CI job asserts that root. qb has no whole-framework convenience header:
+  include root, which is now exactly `qb/` — the bundled nlohmann copy that used to add a second name
+  there was deleted in this same release, and the `install-consume` CI job now accepts that one value
+  and no other. qb has no whole-framework convenience header:
   include the entry points directly (`qb/actor.h` + `qb/main.h` for qb-core, `qb/io.h` for qb-io).
 - **`qb/io/system/sys__inet_compat.inl`**, and with it the `#if QB__HAS_NTOP` fallback branch in
   `qb/io/system/sys__socket.h` that declared `inet_ntop` / `inet_pton` for it. The bundled fallback
@@ -900,7 +914,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `std::shared_ptr` transitively and libstdc++ does not, so no amount of macOS testing could have
   found them. Both came out of the Linux leg.
 
-## [2.6.0] - 2026-06-29
+## [2.6.0] - 2026-08-02
 
 ### Added
 
