@@ -83,12 +83,23 @@ jobs:
         run: ./scripts/check-abi-fingerprint.sh --jobs 4
 
       # ── NEGATIVE CONTROL ──────────────────────────────────────────────────────────────────
-      # A gate that has never been seen to fail is not known to be a gate. This plants the exact
-      # defect the check exists to catch -- dropping `retain` from QB_ABI_RETAIN -- and requires
-      # the step above to REJECT it. On ELF the effect is real (--gc-sections discards the
-      # reference array and the mismatch links); on Mach-O `retain` was never load-bearing, so
-      # the control is asserted only where it applies, and the source is restored byte-exact
-      # either way.
+      # A gate that has never been seen to fail is not known to be a gate. Both platforms get
+      # one; they plant DIFFERENT defects, because the attribute that keeps the fingerprint
+      # references alive is not the same one on the two object formats.
+      #
+      #   * ELF (below): drop `retain`. `used` alone is defeated by GNU ld's --gc-sections,
+      #     which is the near-miss this whole job exists to have caught.
+      #   * Mach-O (further below): drop `used`. `retain` is ELF-only -- Clang ignores it on a
+      #     non-ELF target -- so planting the ELF defect on macOS would plant nothing, assert
+      #     nothing, and read as coverage. `used` is what implies no_dead_strip there, and
+      #     dropping it is the equivalent silent defeat.
+      #
+      # Measured, not assumed: on macOS with `used` removed the check goes PASS 1 / FAIL 7 --
+      # every axis links, including `cacheline mismatch LINKED under -Wl,-dead_strip`. Without
+      # this step the macOS leg was a check that had never been observed to fail.
+      #
+      # Both restore the source byte-exact, and the job's final `git diff --exit-code` is the
+      # backstop for that.
       - name: Negative control - dropping `retain` must fail the check (Linux)
         if: runner.os == 'Linux'
         env:
@@ -123,6 +134,42 @@ jobs:
             exit 1
           fi
           echo "control fired as required: check exited ${rc} with \`retain\` removed, abi.h restored byte-exact"
+
+      - name: Negative control - dropping `used` must fail the check (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+          CXXFLAGS: ${{ matrix.cxxflags }}
+        run: |
+          cp src/qb/utility/abi.h /tmp/abi.h.orig
+          # Neutralise ONLY the `used` attribute. On Mach-O that is the one keeping the
+          # unreferenced `abi_fingerprint` array -- and with it every undefined _qb_abi_*
+          # reference -- from being dropped before the linker ever sees it.
+          perl -0pi -e 's/#define QB_ABI_USED __attribute__\(\(used\)\)/#define QB_ABI_USED \/* control: used dropped *\//' src/qb/utility/abi.h
+          if diff -q /tmp/abi.h.orig src/qb/utility/abi.h >/dev/null; then
+            echo "::error::negative control did not modify abi.h - the patch no longer matches"
+            exit 1
+          fi
+          set +e
+          ./scripts/check-abi-fingerprint.sh --jobs 4 > /tmp/control.log 2>&1
+          rc=$?
+          set -e
+          echo "--- control run output (tail) ---"
+          tail -25 /tmp/control.log
+          cp /tmp/abi.h.orig src/qb/utility/abi.h
+          if ! git diff --quiet -- src/qb/utility/abi.h; then
+            echo "::error::failed to restore abi.h byte-exact after the control"
+            git diff -- src/qb/utility/abi.h
+            exit 1
+          fi
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::the ABI fingerprint check PASSED with \`used\` removed."
+            echo "::error::On Mach-O that attribute is the whole mechanism, so the check is not"
+            echo "::error::testing what it claims. Fix the check, not this control."
+            exit 1
+          fi
+          echo "control fired as required: check exited ${rc} with \`used\` removed, abi.h restored byte-exact"
 
       - name: Confirm the tree is unmodified
         run: git diff --exit-code
