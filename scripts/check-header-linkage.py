@@ -432,7 +432,8 @@ def main() -> int:
                 hits, count = analyse(path)
                 constructs += count
                 for line_no, kind, text in hits:
-                    findings.append(f"{path}:{line_no}: error: [{kind}] {text}")
+                    findings.append(
+                        f"{path.replace(os.sep, chr(47))}:{line_no}: error: [{kind}] {text}")
 
         if headers < floor:
             print(

@@ -114,7 +114,14 @@ TEST_F(AsyncConnectTimeoutTest, RefusedPortYieldsEmptySocketFromLoopNotReentrant
 
     EXPECT_FALSE(fired.load()) << "connect callback fired synchronously inside connect()";
 
-    EXPECT_TRUE(pump_until([&] { return fired.load(); })) << "connect failure was never delivered from the loop";
+    // The pump budget must be STRICTLY GREATER than the connect timeout above, or the test
+    // races its own two deadlines. pump_until()'s default is 2s -- exactly the connect timeout
+    // -- so the outcome depends on which 2s expires first. POSIX hid that: a loopback connect
+    // to a closed port is refused by an immediate RST, in microseconds, so the deadline never
+    // mattered. Windows does not: measured here over 200 iterations against 127.0.0.1:1,
+    // min 2014 ms / mean 2034 ms / max 2063 ms, every single one past 100 ms. The refusal
+    // therefore lands just AFTER both deadlines and this test failed 2 runs in 3.
+    EXPECT_TRUE(pump_until([&] { return fired.load(); }, 5s)) << "connect failure was never delivered from the loop";
     EXPECT_FALSE(reentrant.load()) << "connect callback must not be invoked re-entrantly";
     EXPECT_FALSE(socket_open.load()) << "a refused connect must yield an empty (closed) socket";
 }

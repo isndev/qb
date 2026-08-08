@@ -141,8 +141,13 @@ def main() -> int:
         for ext in ("cpp", "h", "hpp", "tpp"):
             files += glob.glob(os.path.join(root, "**", f"*.{ext}"), recursive=True)
         for f in sorted(set(files)):
-            if (os.sep + "build" + os.sep in f or os.sep + "modules" + os.sep in f
-                    or os.sep + "vendor" + os.sep in f):
+            # Normalise once, then compare AND print with '/'. glob hands back the native
+            # separator, so on Windows this guard located every planted defect, printed it as
+            # `qb\scripts\...`, and its negative control -- which greps for the
+            # `qb/scripts/...` spelling the project uses everywhere -- scored all 11 as MISSED:
+            # a guard reported blind while it was in fact working perfectly.
+            f = f.replace(os.sep, "/")
+            if "/build/" in f or "/modules/" in f or "/vendor/" in f:
                 continue
             for line, message in find_sites(f):
                 failed = True

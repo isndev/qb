@@ -132,6 +132,20 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)                       # project root
 
+
+def relpath(path: str) -> str:
+    """Project-relative path, ALWAYS '/'-spelled.
+
+    `os.path.relpath` returns the NATIVE separator, and every path this script compares
+    against -- a doc's own citation spec, a `PROJECT_PREFIXES` entry, a baseline key -- is
+    written the way the project spells it, with '/'.  On Windows the two never met: doc keys
+    read `llm\\qb.llm.md` while the baseline stores `llm/qb.llm.md`, so EVERY baselined
+    exception missed, firing twice -- once as the finding it should have suppressed, once as
+    `baseline-stale`.  Measured on one tree: 0 such failures on Linux, 34 on Windows.
+    Splitting a relpath on `os.sep` (Index.__init__) is the one native use that stays.
+    """
+    return os.path.relpath(path, ROOT).replace(os.sep, "/")
+
 # --------------------------------------------------------------------------------------------
 # WHICH of the four projects is this checkout?  Answered from the tree's CONTENT, never from the
 # directory it happens to sit in.  Identical in `cite-check.py` and `gen-llms-txt.py`, so the
@@ -324,7 +338,7 @@ def expected_version():
             m = re.search(rx, fh.read(), re.M)
     except OSError:
         m = None
-    return (m.group(1) if m else None), os.path.relpath(p, ROOT)
+    return (m.group(1) if m else None), relpath(p)
 
 
 def selftest():
@@ -387,7 +401,7 @@ class Index:
             for fn in fns:
                 if not fn.endswith(SRC_EXT):
                     continue
-                p = os.path.join(dp, fn)
+                p = os.path.join(dp, fn).replace(os.sep, "/")
                 self.by_base.setdefault(fn, []).append(p)
                 if not idents_ok or fn in SKIP_IDENT_FILES:
                     continue
@@ -417,9 +431,13 @@ class Index:
     def resolve(self, spec: str):
         for c in self._candidates(spec):
             if os.path.isfile(c):
-                return [c]
+                return [c.replace(os.sep, "/")]
         hits = self.by_base.get(os.path.basename(spec), [])
         if "/" in spec:
+            # `spec` is a citation as WRITTEN IN A DOC, always '/'-spelled, while `h`
+            # came from os.walk.  Indexing `h` natively made this silently false for
+            # every multi-segment spec on Windows -- the candidate list came back EMPTY
+            # and the citation was skipped instead of checked.  Hence '/' in by_base.
             hits = [h for h in hits if h.endswith(spec) or
                     h.endswith(spec[len(PREFIX):] if spec.startswith(PREFIX) else spec)]
         return hits
@@ -430,7 +448,7 @@ class Index:
         lookup or every one is reported missing."""
         for c in self._candidates(spec.rstrip("/")):
             if os.path.isdir(c):
-                return c
+                return c.replace(os.sep, "/")
         return None
 
     def lines(self, path):
@@ -456,7 +474,7 @@ def iter_docs():
 
 def check_doc(path, idx, tol, max_occ, want_ver, ver_src,
               findings, stats, suppressions, digests):
-    rel = os.path.relpath(path, ROOT)
+    rel = relpath(path)
     with open(path) as fh:
         lines = fh.read().split("\n")
 
@@ -801,7 +819,7 @@ def main() -> int:
             for (doc, spec), (h, head) in sorted(digests.items()):
                 fh.write(f"{doc}\t{spec}\t{h}\t{head}\n")
         print(f"  recorded {len(digests)} digests -> "
-              f"{os.path.relpath(a.digest_baseline, ROOT)}")
+              f"{relpath(a.digest_baseline)}")
         return 0
 
     # -- rule 2b: the cited lines must still say what they said -------------------
@@ -879,7 +897,7 @@ def main() -> int:
     for k in stale:
         print(f"  FAIL [baseline-stale] {k.replace(chr(9), '  ')} — this entry matches no "
               f"finding; the citation or symbol was fixed, moved or removed. Delete the line "
-              f"from {os.path.relpath(a.baseline, ROOT)}.")
+              f"from {relpath(a.baseline)}.")
 
     for (doc, spec), was, now in dig_drift[:a.show]:
         print(f"  FAIL [digest] {doc}: {spec} no longer says what it said")
@@ -904,7 +922,7 @@ def main() -> int:
 
     if accepted and not a.no_baseline:
         print(f"  baselined: {len(used)}/{len(accepted)} "
-              f"(see {os.path.relpath(a.baseline, ROOT)})")
+              f"(see {relpath(a.baseline)})")
 
     if vacuous:
         for v in vacuous:
