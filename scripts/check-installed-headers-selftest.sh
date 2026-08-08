@@ -170,6 +170,53 @@ else
   ok "empty entry dir rejected"
 fi
 
+# ---- C8/C9/C10 the --exclude flag ---------------------------------------------------------
+# --exclude lets a CALLER drop a header the gate cannot reason about on its own -- e.g. one gated
+# on a build capability the installed package does not carry (qbm/http/3/ without
+# QBM_HTTP_HAS_HTTP3, which is what the superproject's package-consume passes). A flag that can
+# remove things from a gate's scope needs its own controls more than most, so: it must demand a
+# stated REASON, it must apply the same existence check the built-in table gets, and it must
+# refuse to leave a tree with nothing left to compile.
+# Each of the three asserts the message TOO, not just a non-zero exit. A control that only
+# checks "it failed" is satisfied by a gate that fails for an unrelated reason -- and C10 in
+# particular runs against a hand-built prefix, where plenty could go wrong before the check
+# under test is ever reached.
+rejected_for() {   # rejected_for <label> <message substring> <extra gate args...>
+  local label="$1" want="$2"; shift 2
+  if run_gate "$@"; then
+    ko "${label}: ACCEPTED -- the check does not exist"
+  elif echo "$GATE_OUT" | grep -q -- "$want"; then
+    { echo "$GATE_OUT" | grep -m1 -- "$want" | sed 's/^/      /'; } || true
+    ok "${label}: rejected, and for the stated reason"
+  else
+    ko "${label}: rejected, but NOT for '${want}' -- wrong finding"
+    echo "$GATE_OUT" | tail -6 | sed 's/^/      /'
+  fi
+}
+
+say_control "C8  --exclude without a stated reason must be REJECTED"
+rejected_for "reasonless exclusion" "PATH REASON" \
+  "${QB_ARGS[@]}" --exclude "qb/string.h"
+
+say_control "C9  --exclude naming a header that is not installed must be REJECTED"
+rejected_for "nonexistent exclusion" "stale exclusion" \
+  "${QB_ARGS[@]}" --exclude "qb/no_such_header_at_all.h  planted control"
+
+# The floor is measured on headers FOUND, so it deliberately does NOT fire here -- excluding
+# everything leaves `found` untouched. That is exactly why the gate carries a SECOND check for
+# this case, and exactly why it needs a control: without it, "exclude the whole tree" would be a
+# green run that compiled nothing.
+say_control "C10 excluding every header in a tree must be REJECTED (nothing left to compile)"
+# A hand-built one-header prefix, and --prefix LAST so it overrides run_gate's. The tree is not
+# `qb`, so the built-in exclusion table is out of scope here and cannot interfere. Everything the
+# check under test needs happens in phase 1, before CMake is invoked at all -- which is why an
+# otherwise unusable prefix (no package, no real qb::core) is enough.
+mkdir -p "$WORK/onepfx/include/solo" "$WORK/onepfx/lib"
+: > "$WORK/onepfx/include/solo/only.h"
+rejected_for "fully-excluded tree" "every one is excluded" \
+  --tree solo:1 --link qb::core --entry-dir "$ENTRIES" \
+  --exclude "solo/only.h  planted control" --prefix "$WORK/onepfx"
+
 printf '\n=== controls: %d passed, %d failed, %d not applicable on this compiler ===\n' "$pass" "$fail" "$na"
 [ "$na" -eq 0 ] || echo "NOTE: ${na} control(s) could not run here -- that coverage must come from another leg."
 [ "$fail" -eq 0 ] || { echo "::error::check-installed-headers.sh self-test: ${fail} control(s) did not fire"; exit 1; }
