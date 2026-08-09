@@ -46,7 +46,7 @@ using namespace qb::io::async;
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
 
-namespace {
+namespace stream_transforms_test {
 
 class StreamTransforms : public ::testing::Test {
 protected:
@@ -69,7 +69,8 @@ struct Record {
     std::string name;
 };
 
-} // namespace
+} // namespace stream_transforms_test
+using namespace stream_transforms_test;
 
 // ---------------------------------------------------------------------------
 // Factories
