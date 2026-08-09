@@ -1,0 +1,17 @@
+# Line endings.
+#
+# A shell script must be LF IN THE WORKING TREE, on every platform. git's Windows default is
+# core.autocrlf=true, which checks them out CRLF -- and a CRLF shell script is not a cosmetic
+# problem in this repository. Every one of these was observed here on a Windows checkout:
+#
+#   * bash on Linux refuses the file outright: `syntax error near unexpected token do'$'\r'`.
+#   * a `perl -0pi -e 's/^...$/.../m'` injection in a negative control matches NOTHING, because
+#     `$` does not sit before the CR. All sixteen plants of one control then reported "injection
+#     did not land" -- the guard under test was never actually asked a question.
+#   * a heredoc inside a CRLF script carries the CR into the embedded program's string literals,
+#     so they cannot match a file the program reads in text mode.
+#   * a trailing `\` line continuation followed by CR stops being a continuation.
+#
+# Pinning it here makes the repository state the requirement, instead of leaving it to each
+# contributor's git configuration. Costs nothing where the checkout is already LF.
+*.sh text eol=lf

@@ -15,14 +15,14 @@ The suite uses [Google Benchmark](https://github.com/google/benchmark) (pinned t
 
 Two properties distinguish the benchmark targets from the test targets:
 
-- **They are not CTest targets.** `ctest` never runs them. They build only when `QB_BUILD_BENCHMARKS=ON` and must be launched manually. (`qb/tests/core/CMakeLists.txt:37-38`; `qb/cmake/qbFunctions.cmake:633-636`.)
-- **They live in their own output directory.** Every benchmark executable is written to `<build>/bin/benchmarks/`, not next to the test binaries. (`qb/cmake/qbFunctions.cmake:708-711`.)
+- **They are not CTest targets.** `ctest` never runs them. They build only when `QB_BUILD_BENCHMARKS=ON` and must be launched manually. (`qb/tests/core/CMakeLists.txt:37-38`; `qb/cmake/qbFunctions.cmake:652-655`.)
+- **They live in their own output directory.** Every benchmark executable is written to `<build>/bin/benchmarks/`, not next to the test binaries. (`qb/cmake/qbFunctions.cmake:727-730`.)
 
 The sources are organized into topic subgroups under each library's `tests/benchmark/` directory, with the source named for the subject it measures (`<subgroup>/<name>.cpp`). The build derives each target name by prepending `<module>-bench-`, so `messaging/ping-pong-throughput.cpp` produces the executable `qb-core-bench-ping-pong-throughput`. (`qb/tests/core/benchmark/CMakeLists.txt:31-43`.)
 
 ### How a target is created
 
-The CMake helper `qb_add_benchmark` builds the executable, applies the shared compiler/property set, and links Google Benchmark — preferring the imported `benchmark::benchmark` target and falling back to a plain `benchmark` target. It returns early (building nothing) when `QB_BUILD_BENCHMARKS` is off. Each directory wraps it in a small per-suite helper (`qbc_bench`/`qbio_bench`) that fixes the `<module>-bench-<name>` naming and the IDE folder. (`qb/cmake/qbFunctions.cmake:622-741`.)
+The CMake helper `qb_add_benchmark` builds the executable, applies the shared compiler/property set, and links Google Benchmark — preferring the imported `benchmark::benchmark` target and falling back to a plain `benchmark` target. It returns early (building nothing) when `QB_BUILD_BENCHMARKS` is off. Each directory wraps it in a small per-suite helper (`qbc_bench`/`qbio_bench`) that fixes the `<module>-bench-<name>` naming and the IDE folder. (`qb/cmake/qbFunctions.cmake:641-760`.)
 
 ```cmake
 # src: qb/tests/core/benchmark/CMakeLists.txt:32-43
@@ -161,7 +161,7 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 
 ## The qb-io benchmark suite
 
-`qb-io` ships its own Google Benchmark suite under `qb/tests/io/benchmark/`, following the same conventions as the core suite: each `<subgroup>/<name>.cpp` source is a standalone Google Benchmark program (`#include <benchmark/benchmark.h>`, `BENCHMARK(...)` registrations, `BENCHMARK_MAIN()`), built by `qb_add_benchmark` into a `qb-io-bench-<name>` target under `<build>/bin/benchmarks/`. The directory is gated by `QB_BUILD_BENCHMARKS` exactly like the core suite — the parent `CMakeLists.txt` wraps `add_subdirectory(benchmark)` in `if (QB_BUILD_BENCHMARKS)`, so nothing builds when the switch is off. Like the core benchmarks, these are not CTest targets and must be launched manually. Three subgroups carry a `REQUIRES ssl` / `REQUIRES compression` compile-gate, so they register only when `QB_HAS_SSL` / `QB_HAS_COMPRESSION` is set. (`qb/tests/io/CMakeLists.txt:37-38`; `qb/tests/io/benchmark/CMakeLists.txt:24-34`; `qb/cmake/qbFunctions.cmake:622-741`.)
+`qb-io` ships its own Google Benchmark suite under `qb/tests/io/benchmark/`, following the same conventions as the core suite: each `<subgroup>/<name>.cpp` source is a standalone Google Benchmark program (`#include <benchmark/benchmark.h>`, `BENCHMARK(...)` registrations, `BENCHMARK_MAIN()`), built by `qb_add_benchmark` into a `qb-io-bench-<name>` target under `<build>/bin/benchmarks/`. The directory is gated by `QB_BUILD_BENCHMARKS` exactly like the core suite — the parent `CMakeLists.txt` wraps `add_subdirectory(benchmark)` in `if (QB_BUILD_BENCHMARKS)`, so nothing builds when the switch is off. Like the core benchmarks, these are not CTest targets and must be launched manually. Three subgroups carry a `REQUIRES ssl` / `REQUIRES compression` compile-gate, so they register only when `QB_HAS_SSL` / `QB_HAS_COMPRESSION` is set. (`qb/tests/io/CMakeLists.txt:37-38`; `qb/tests/io/benchmark/CMakeLists.txt:24-34`; `qb/cmake/qbFunctions.cmake:641-760`.)
 
 | Source | Executable suffix | Measures |
 |---|---|---|

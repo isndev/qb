@@ -433,7 +433,26 @@ function(_qb_test_conventions out_prefix)
         set(_timeout 300)  # safe default for un-tiered/legacy calls
     endif()
 
+    # `requires-multicore` was a LABEL and nothing else -- it described the test without
+    # scheduling it. qb PINS each VirtualCore to a CPU (SetThreadAffinityMask on Windows,
+    # pthread_setaffinity_np elsewhere, VirtualCore.cpp:431,444) and always to the LOW core
+    # indices, so N concurrent multicore tests do not spread over the machine: they land on the
+    # same handful of CPUs. Seventeen tests carry the label and the test presets run
+    # `jobs: 4`, so four of them oversubscribe cores 0..k however many the host really has --
+    # measured on a 24-core Windows box, `messaging-api` and `ask-roundtrip` each blew their
+    # 120s tier timeout in a full parallel run and passed alone.
+    #
+    # One shared lock, so ctest never schedules two of them at once. The other ~334 tests keep
+    # running in parallel, so the wall-clock cost is small. Derived from the label rather than
+    # written at each of the seventeen call sites: a lock that has to be remembered per test is
+    # a lock the next multicore test will not have. Same mechanism the live-daemon tiers
+    # already use above.
+    if("requires-multicore" IN_LIST _labels)
+        list(APPEND _locks "qb-multicore")
+    endif()
+
     list(REMOVE_DUPLICATES _labels)
+    list(REMOVE_DUPLICATES _locks)
     set(${out_prefix}_LABELS "${_labels}" PARENT_SCOPE)
     set(${out_prefix}_TIMEOUT "${_timeout}" PARENT_SCOPE)
     set(${out_prefix}_LOCKS "${_locks}" PARENT_SCOPE)
@@ -1170,6 +1189,29 @@ function(qb_setup_test_resources)
             )
             
             qb_status_message("SSL test resources will be copied to: ${TEST_RESOURCES_DIR}/ssl")
+        endif()
+
+        # Order this copy BEFORE generate_ssl_certs' POST_BUILD, which stages a freshly
+        # generated pair into the SAME directory under the SAME two names.
+        #
+        # Nothing ordered them, and they are two separate copy invocations, so under `ninja -j`
+        # each FILE was won independently -- and a committed cert beside a generated key is not
+        # a key pair. create_server_context() then returns NULL and every test that loads them
+        # fails. Measured in a single run of this tree: `release` came out with a matching pair
+        # while `relwithdebinfo` got the committed cert next to the generated key, and nine
+        # SSL/TLS/QUIC tests failed reproducibly on "Failed to load QUIC server private key".
+        # It is a build-graph race, not a Windows quirk -- it can land either way anywhere.
+        #
+        # The GENERATED pair must be the survivor: tls-peer-verification needs the
+        # `subjectAltName = DNS:localhost` that only `openssl req -addext` writes, and
+        # tests/io/shared/ssl_fixtures.h names generate_ssl_certs as the source it expects.
+        # The committed pair stays as the fallback for a host with no openssl.
+        #
+        # Placed here, not in qb/CMakeLists.txt: generate_ssl_certs is created during
+        # add_subdirectory(io) and this function runs after it, so both targets exist -- and
+        # the ordering lives next to the target it orders.
+        if(TARGET generate_ssl_certs AND TARGET qb_copy_test_ssl_resources)
+            add_dependencies(generate_ssl_certs qb_copy_test_ssl_resources)
         endif()
     endif()
 endfunction()
