@@ -623,6 +623,20 @@ def check_doc(path, idx, tol, max_occ, want_ver, ver_src,
         if digests is not None:
             for spec, lo, hi, _, _ in cites:
                 cands = [c for c in idx.resolve(spec) if idx.lines(c) is not None]
+                # A bare basename can name several files (`types.h` is more than one header in
+                # most of these trees), and an ambiguous spec was dropped outright — leaving the
+                # single largest un-gated set of cited ranges in the corpus.  Most of that
+                # ambiguity is only apparent: narrow to the candidates long enough to HOLD the
+                # cited range first, and if exactly one survives the citation is unambiguous in
+                # fact.  Rule 2 has always judged a multi-candidate citation this way; this makes
+                # 2b agree with it.  Deliberately NOT widened past that — "prefer the candidate
+                # under this project" would resolve more, and a wrong pick RECORDS a digest for
+                # the wrong file, the one failure this rule cannot recover from.  Length is a
+                # FACT about the candidate; project affinity is a guess about the author.
+                if len(cands) > 1:
+                    fit = [c for c in cands if hi <= len(idx.lines(c))]
+                    if len(fit) == 1:
+                        cands = fit
                 if len(cands) != 1:
                     stats["digest_skip_ambiguous"] += 1
                     continue
@@ -683,7 +697,7 @@ def check_doc(path, idx, tol, max_occ, want_ver, ver_src,
             lo_w, hi_w = lo - tol, hi + tol
             for tgt in in_bounds:
                 src = idx.lines(tgt)
-                confirmed_here, usable = False, []
+                confirmed_here, usable, subject_hit = False, [], False
                 for pass_set in ([primary, local] if primary else [local]):
                     usable = []
                     for a in pass_set:
@@ -693,6 +707,8 @@ def check_doc(path, idx, tol, max_occ, want_ver, ver_src,
                             occ = [n for n in occ if n > BANNER_LINES]
                         if occ and len(occ) <= max_occ:
                             usable.append((a, occ))
+                    if usable and pass_set is primary:
+                        subject_hit = True     # see cite_skip_subject_only below
                     if usable and any(any(lo_w <= n <= hi_w for n in occ) for _, occ in usable):
                         confirmed_here = True
                         break
@@ -703,6 +719,25 @@ def check_doc(path, idx, tol, max_occ, want_ver, ver_src,
                     stats["cite_skip_stem_only"] += 1
                     continue
                 if not usable:
+                    # SUBJECT-ONLY, and the discard is DELIBERATE: pass 1 located the subject
+                    # and missed the window, pass 2 had no anchors left to re-judge with, and
+                    # the miss is dropped rather than reported.  Counted so the size of the
+                    # hole shows in --stats instead of hiding inside `no-anchor`.
+                    #
+                    # DO NOT "fix" this by keeping the pass-1 miss.  MEASURED over the whole
+                    # 166-doc superproject corpus: +22 findings, 0 retired, ONE of them a real
+                    # defect — a 95% false-positive rate, worse than the two variants already
+                    # declined (widening `strong_shaped`, 64%; a lowercase fallback, similar).
+                    # The cause is structural: pass 1's anchor is the LAST backticked identifier
+                    # before the citation, which on the dominant shapes is not the subject at all
+                    # — an English word carried by prose, or the last of several symbols on a row
+                    # citing one file per symbol (`| qb::ask + qb::answer | request.h:98,186 |`
+                    # hands `answer` to the `ask` target).  The second pass is their only
+                    # defence, and when it is empty there is no evidence either way.  A citation
+                    # reaching here is NOT unchecked: rule 2b digests it, which is the class
+                    # actually gated.
+                    if subject_hit:
+                        stats["cite_skip_subject_only"] += 1
                     continue
                 line_checked = True
                 if confirmed_here:
@@ -791,7 +826,7 @@ def main() -> int:
     stats = {k: 0 for k in ("symbols", "citations", "paths", "markers", "forbidden",
                             "phantom", "path_skip_external", "cite_skip_unresolved",
                             "cite_skip_no_anchor", "cite_skip_stem_only",
-                            "digest_skip_ambiguous")}
+                            "cite_skip_subject_only", "digest_skip_ambiguous")}
 
     idx = Index()
     docs = list(iter_docs())
@@ -879,6 +914,7 @@ def main() -> int:
               f"skipped(unresolved={stats['cite_skip_unresolved']}, "
               f"no-anchor={stats['cite_skip_no_anchor']}, "
               f"stem-only={stats['cite_skip_stem_only']}, "
+              f"subject-only={stats['cite_skip_subject_only']}, "
               f"ambiguous-digest={stats['digest_skip_ambiguous']}, "
               f"external-path={stats['path_skip_external']})  "
               f"deliberate warn-offs suppressed={len(suppressions)}")
