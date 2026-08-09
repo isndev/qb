@@ -419,10 +419,16 @@ jobs:
           export GIT_CONFIG_GLOBAL="${RUNNER_TEMP}/gitconfig"
           echo "GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL}" >> "${GITHUB_ENV}"
           : > "${GIT_CONFIG_GLOBAL}"
-          # One value is enough HERE only because the module job runs the same clone-into-target
-          # logic under both. If these two scripts ever stop sharing that logic, this needs the
-          # matrix too.
+          # One value is enough HERE only because the module job runs the same shared body under
+          # both. If these two scripts ever stop sharing it, this needs the matrix too.
           git config --global init.defaultBranch main
+          # A REAL USER HAS AN IDENTITY; a runner image does not. Without one the scaffolder
+          # cannot make the initial commit -- it stages everything, says so loudly and still
+          # exits 0, which is the right behaviour for a person but leaves this job asserting
+          # `rev-list --count HEAD` against an unborn HEAD. Measured, not guessed: that is
+          # exactly how this lane failed the first time it ran against the rewritten scripts.
+          git config --global user.name  'scaffold ci'
+          git config --global user.email 'scaffold-ci@example.invalid'
           git --version
           git config --global --list
 
