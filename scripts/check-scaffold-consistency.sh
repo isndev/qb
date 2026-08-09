@@ -32,8 +32,27 @@
 # ------------
 # Every check here can be made to pass by DELETING what it looks at, so each one first asserts
 # that its subject is present and substantial: both scripts must exist, both must carry the
-# marker, and the shared region must be at least SHARED_FLOOR lines. A diff of two empty strings
-# is equal, and a version check that finds no literal to compare would pass forever.
+# marker, the shared region must be at least SHARED_FLOOR lines, and render() must be at least
+# RENDER_FLOOR lines and contain a sed. A diff of two empty strings is equal, a version check that
+# finds no literal to compare would pass forever, and a token search over an empty haystack finds
+# what it is looking for exactly as often as one over a correct function.
+#
+# THE FOUR CHECKS, and the hole each of the last three closed
+# ----------------------------------------------------------
+#  1. QB_SHIPPED_VERSION == QB_FRAMEWORK_VERSION, and assigned EXACTLY ONCE. The count is the
+#     later addition: `sed … | head -1` read the FIRST assignment while bash uses the LAST, so a
+#     second, stale line was blessed as OK.
+#  2. The shared body below the marker is byte-identical in the two scripts.
+#  3. render() carries one sed expression per placeholder — searched INSIDE the function body.
+#     It used to be a whole-file grep, which a comment satisfied: render() reduced to `cat`, the
+#     six expressions left in a comment above it, printed OK and exited 0.
+#  4. No version literal in the shared body. This is the one that was invisible to BOTH 1 and 2 at
+#     once: `QB_VERSION_TAG="v2.6.0"` in place of `"v${QB_SHIPPED_VERSION}"`, identical in the two
+#     copies, leaves the identity check green and never touches the line check 1 reads.
+#
+# All four, plus their vacuity paths, are planted and asserted-rejected by the superproject's
+# dev/agent/scaffold-consistency-negative-control.sh. Run it after editing this file: a green exit
+# from a guard you just changed proves only that it did not crash.
 #
 # Usage:  ./scripts/check-scaffold-consistency.sh     (run from anywhere; resolves its own root)
 #
@@ -56,6 +75,24 @@ MARKER='^# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> SHARED BODY'
 # A floor, not a target: the body grows. It exists so that gutting the shared region — or moving
 # the marker to the last line — cannot turn the identity check into a comparison of nothing.
 SHARED_FLOOR=200
+
+# Same idea one level down, for check 3: the render() body must be substantial before its contents
+# are allowed to satisfy anything. Deleting the function, or reducing it to `cat`, must be a
+# finding rather than a vacuous pass.
+RENDER_FLOOR=6
+
+# Check 4's shape. THREE components, optionally v-prefixed: exactly the form QB_FRAMEWORK_VERSION
+# takes (3.0.0) and the tag built from it (v3.0.0). Deliberately not `[0-9]+\.[0-9]+`, which would
+# also match a `sleep 0.5` or a `timeout 2.5` — see the false-positive measurement in check 4.
+#
+# Exported and read back through ENVIRON rather than passed with `awk -v`, and that is not style:
+# `awk -v shape='…\.…'` PROCESSES ESCAPE SEQUENCES in the assigned value, so awk received
+# `v?[0-9]+.[0-9]+.[0-9]+` — three digit runs separated by ANY character, which quietly matches
+# `for i in 1 2 3`. It still rejected v2.6.0 and still passed the clean tree, so nothing observable
+# said the rule was not the rule as written. ENVIRON does no such processing: the regex behaves as
+# it reads. Control F5 pins this by planting a line the mangled form matches and the correct one
+# does not.
+export VERSION_SHAPE='v?[0-9]+\.[0-9]+\.[0-9]+'
 
 echo "== scaffolder consistency =="
 
@@ -83,7 +120,31 @@ fi
 echo "  qbConfig.cmake QB_FRAMEWORK_VERSION = ${EXPECTED_VERSION}"
 
 for f in "${PROJECT_SCRIPT}" "${MODULE_SCRIPT}"; do
-  got="$(sed -n 's/^QB_SHIPPED_VERSION=\([0-9][0-9.]*\)[[:space:]]*$/\1/p' "${f}" | head -1)"
+  # EXACTLY ONE assignment. This used to be `… | head -1`, which reads the FIRST assignment while
+  # bash uses the LAST — so appending `QB_SHIPPED_VERSION=2.6.0` after the good line made this
+  # check print "3.0.0 OK" over a script that pins v2.6.0. The guard was validating a value its
+  # subject does not use, which is the exact failure class it exists to stop.
+  #
+  # The fix REJECTS the duplicate rather than emulating bash's last-wins, and that choice is the
+  # defensible one: assignments can be indented, exported, conditional, inside a function or in a
+  # sourced file, so any `sed`-level emulation of "what bash would end up with" is an approximation
+  # that a determined defect walks straight past — and reading the last one would also silently
+  # bless a file carrying a dead, stale, misleading pin. "Exactly one top-level assignment" is a
+  # structural property, decidable by looking, and it is what every correct version of this file
+  # has. A scaffolder with two version pins is malformed whichever one wins.
+  #
+  # Counted with a DELIBERATELY WIDER pattern than the one parsed below: an indented or exported
+  # second assignment takes effect in bash and would be invisible to the canonical form.
+  n_assign="$(grep -cE '^[[:space:]]*(export[[:space:]]+)?QB_SHIPPED_VERSION=' "${f}")"
+  if [ "${n_assign}" -gt 1 ]; then
+    red "  ${f}: QB_SHIPPED_VERSION is assigned ${n_assign} times; exactly one is allowed"
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?QB_SHIPPED_VERSION=' "${f}" | sed 's/^/      /'
+    red "    bash uses the LAST assignment, so a second one silently re-pins the scaffolder."
+    fail=1
+    continue
+  fi
+
+  got="$(sed -n 's/^QB_SHIPPED_VERSION=\([0-9][0-9.]*\)[[:space:]]*$/\1/p' "${f}")"
   if [ -z "${got}" ]; then
     red "  ${f}: no QB_SHIPPED_VERSION=<version> assignment found"
     red "    That literal is what decides which qb a scaffolded tree builds against."
@@ -132,15 +193,83 @@ fi
 # because rendering fails on an unresolved one. That guarantee is only real if the scripts
 # actually substitute every token they claim to, so the render function is checked to carry
 # one sed expression per documented placeholder.
-for token in @QB_NAME@ @QB_NAME_LOWER@ @QB_NAME_UPPER@ @QB_REF@ @QB_VERSION@ @QB_TEMPLATE_REF@; do
-  for f in "${PROJECT_SCRIPT}" "${MODULE_SCRIPT}"; do
-    if ! grep -q -- "s|${token}|" "${f}"; then
+#
+# SCOPED TO THE FUNCTION BODY, and that scoping is the check. This used to grep the whole file,
+# which the comment above never claimed and which a comment could satisfy: replacing render()'s
+# body with `cat` and leaving the six expressions in a comment above it printed
+# "6 placeholders, both scaffolders OK" and exited 0, over a scaffolder that rendered nothing and
+# would have shipped literal @QB_NAME@ into a user's tree.
+vocab_ok=1
+for f in "${PROJECT_SCRIPT}" "${MODULE_SCRIPT}"; do
+  render_body="$(sed -n '/^render() {/,/^}/p' "${f}")"
+  render_lines="$(printf '%s' "${render_body}" | grep -c '' || true)"
+
+  # Anti-vacuity, in the same spirit as SHARED_FLOOR: an empty or gutted body must be a finding,
+  # never an empty haystack that every token search passes over. Deleting or renaming render()
+  # lands here rather than producing six identical "does not substitute" lines.
+  if [ -z "${render_body}" ]; then
+    red "  ${f}: no render() function found (expected 'render() {' at column 0)"
+    red "    Every placeholder check below reads its body; refusing to search an empty haystack."
+    fail=1; vocab_ok=0; continue
+  fi
+  if [ "${render_lines}" -lt "${RENDER_FLOOR}" ]; then
+    red "  ${f}: render() body is ${render_lines} lines, floor is ${RENDER_FLOOR}"
+    red "    Either the function was gutted or its closing brace moved."
+    fail=1; vocab_ok=0; continue
+  fi
+  if ! printf '%s\n' "${render_body}" | grep -q 'sed'; then
+    red "  ${f}: render() body contains no sed expression at all"
+    red "    A render() that does not substitute is a scaffolder that ships raw placeholders."
+    fail=1; vocab_ok=0; continue
+  fi
+
+  for token in @QB_NAME@ @QB_NAME_LOWER@ @QB_NAME_UPPER@ @QB_REF@ @QB_VERSION@ @QB_TEMPLATE_REF@; do
+    if ! printf '%s\n' "${render_body}" | grep -q -F -- "s|${token}|"; then
       red "  ${f}: render() does not substitute ${token}"
-      fail=1
+      fail=1; vocab_ok=0
     fi
   done
 done
-[ "${fail}" -eq 0 ] && echo "  substitution vocabulary: 6 placeholders, both scaffolders OK"
+[ "${vocab_ok}" -eq 1 ] && echo "  substitution vocabulary: 6 placeholders, inside render(), both scaffolders OK"
+
+# ---------------------------------------------------------------------------
+# 4. No version literal in the shared body.
+# ---------------------------------------------------------------------------
+# The hole this closes was invisible to BOTH checks above at once, which is what makes it the
+# dangerous one. Replace `QB_VERSION_TAG="v${QB_SHIPPED_VERSION}"` with `QB_VERSION_TAG="v2.6.0"`
+# in BOTH scripts and: check 2 is green, because the copies are still identical to each other;
+# check 1 is green, because it only ever looks at the QB_SHIPPED_VERSION line, which is untouched
+# and still correct. The scaffolder pins the wrong qb and every check reports OK.
+#
+# Rule: on a shared-body line that is not a whole-line comment, no version-shaped literal. Every
+# version reference in the body already flows through ${QB_SHIPPED_VERSION}, directly or via
+# QB_VERSION_TAG, so this costs the correct scripts nothing.
+#
+# FALSE-POSITIVE MEASUREMENT, because a rule that cries wolf gets ignored rather than fixed:
+#   over both shared bodies (398 lines each), as they stand today —
+#     any `x.y`, all lines .............. 1 finding per script, 1 LEGITIMATE  → 100% FP, declined
+#     `v?x.y.z`, all lines .............. 1 finding per script, 1 LEGITIMATE  → 100% FP, declined
+#     `v?x.y.z`, non-comment lines ...... 0 findings                          → 0% FP, SHIPPED
+#   The rejected finding in both cases is the same line, and it is documentation, not a pin:
+#     `#     .../qb/v3.0.0/script/...  -> exactly that release`
+#   Hence: whole-line comments are exempt, and the shape is three components. Two components
+#   (`[0-9]+\.[0-9]+`) was not shipped because it would match a `sleep 0.5`.
+literals_ok=1
+for f in "${PROJECT_SCRIPT}" "${MODULE_SCRIPT}"; do
+  hits="$(awk -v marker="${MARKER}" '
+    BEGIN { shape = ENVIRON["VERSION_SHAPE"] }
+    $0 ~ marker { inbody = 1 }
+    inbody && $0 !~ /^[[:space:]]*#/ && $0 ~ shape { printf "      %d: %s\n", NR, $0 }
+  ' "${f}")"
+  if [ -n "${hits}" ]; then
+    red "  ${f}: version literal hardcoded in the shared body"
+    printf '%s\n' "${hits}"
+    red "    Identical in both copies, this is invisible to the identity check AND to the"
+    red "    QB_SHIPPED_VERSION check. Derive it from \${QB_SHIPPED_VERSION} instead."
+    fail=1; literals_ok=0
+  fi
+done
+[ "${literals_ok}" -eq 1 ] && echo "  shared body carries no hardcoded version literal OK"
 
 # ---------------------------------------------------------------------------
 if [ "${fail}" -eq 0 ]; then
