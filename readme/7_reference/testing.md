@@ -58,7 +58,7 @@ Every test also carries CTest labels — `tier:<tier>` and `module:<module>`, pl
 
 ## Building the tests
 
-Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:86`, with the default computed at `74-87`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:14`).
+Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:86`, with the default computed at `74-87`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:38`).
 
 ```bash
 # From the repository root
@@ -107,7 +107,7 @@ To build and run the suite instrumented, configure with a sanitizer preset rathe
 
 ## Running the tests
 
-`enable_testing()` is invoked once at the repository root (`qb-dev/CMakeLists.txt:47`), not inside qb, so CTest discovers the whole tree. There are two ways to run tests.
+`enable_testing()` is invoked once at the repository root (`qb-dev/CMakeLists.txt:74`), not inside qb, so CTest discovers the whole tree. There are two ways to run tests.
 
 ### With CTest
 

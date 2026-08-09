@@ -112,7 +112,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_BENCHMARKS=ON -B build
 cmake --build build --parallel
 ```
 
-The repository-root `CMakeLists.txt` defaults `QB_BUILD_BENCHMARKS=ON` (`qb-dev/CMakeLists.txt:15`), and the `dev` CMake preset enables it as well (`qb/CMakePresets.json`). When building from the repository root or with that preset, the flag is already set:
+The repository-root `CMakeLists.txt` defaults `QB_BUILD_BENCHMARKS=ON` (`qb-dev/CMakeLists.txt:39`), and the `dev` CMake preset enables it as well (`qb/CMakePresets.json`). When building from the repository root or with that preset, the flag is already set:
 
 ```bash
 # src: qb/CMakePresets.json (dev preset)
