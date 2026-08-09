@@ -171,13 +171,24 @@ TEST(InitGateEdges, MultipleSendersAllStashedAndReplayed) {
 struct Ping2 : public qb::Event {};
 std::atomic<bool> g_cb_received{false};
 std::atomic<bool> g_cb_while_activating{false};
+// Set by the victim the instant it enters its Activating window. The sender waits on THIS
+// rather than guessing the moment with a fixed sleep -- see the note on Bcaster below.
+std::atomic<bool> g_victim_activating{false};
 
 class BcastVictim : public qb::Actor {
 public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping2>(*this);
-        co_await context().sleep(40ms); // still Activating when the broadcast arrives
+        g_victim_activating.store(true);
+        // 300ms, not 40ms. What this case asserts is that the broadcast is HANDLED while the
+        // actor is still Activating, so the window has to outlast the scheduling latency of
+        // one broadcast -- and that latency is not bounded by anything the test controls. At
+        // 40ms against a sender that woke at 10ms the margin was 30ms, which the preset's own
+        // `jobs: 4` closed: this case failed under parallel ctest on Windows while passing 8/8
+        // in isolation. A margin is the only thing that makes a wall-clock assertion honest,
+        // and 300ms costs one third of a second once.
+        co_await context().sleep(300ms); // still Activating when the broadcast arrives
         co_return true;
     }
     void
@@ -194,7 +205,13 @@ class Bcaster : public qb::Actor {
 public:
     qb::io::async::task<bool>
     onInit() override {
-        co_await context().sleep(10ms); // fire while BcastVictim is still in its 40ms init window
+        // Wait for the victim to ACTUALLY be in its window instead of guessing that a fixed
+        // 10ms sleep lands inside it. The guess was the second half of the same flakiness: it
+        // spends part of the victim's margin before the broadcast is even sent, and on Windows
+        // a 10ms timer is quantised up to the ~15.6ms system tick, so what the test called
+        // "10ms" was never 10ms. Polling costs nothing and fires as early as it possibly can.
+        while (!g_victim_activating.load())
+            co_await context().sleep(1ms);
         broadcast<Ping2>();
         kill();
         co_return true;
@@ -204,6 +221,7 @@ public:
 TEST(InitGateEdges, CustomBroadcastPassesGateWhileActivating) {
     g_cb_received.store(false);
     g_cb_while_activating.store(false);
+    g_victim_activating.store(false);
     qb::Main main;
     main.addActor<BcastVictim>(0);
     main.addActor<Bcaster>(0);

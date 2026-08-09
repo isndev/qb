@@ -99,6 +99,52 @@ if(QB_COMPILER_MSVC)
     # first, because the next heavy TU would simply hit it again. The only cost is slightly
     # larger .obj files; there is no codegen or runtime effect.
 
+    # ------------------------------------------------------------------------------------
+    # /Ob1 -> /Ob2 in the optimised configurations CMake defaults to /Ob1.
+    #
+    # A C++20 coroutine's symmetric transfer -- `await_suspend` returning a coroutine_handle --
+    # is REQUIRED by the language to be a tail call ([dcl.fct.def.coroutine]/5.2). At MSVC's
+    # /Ob1 inline level the compiler cannot perform it, and it says so as an **error**, not a
+    # warning, with no /WX anywhere on the command line:
+    #
+    #   coroutine-resilience.cpp(145,276,339):
+    #     error C4737: Unable to perform required tail call. Performance may be degraded.
+    #
+    # It is right to make it an error: a symmetric transfer that is not a tail call grows the
+    # stack on every resume, so a long await chain overflows it. The wording ("Performance may
+    # be degraded") badly undersells that.
+    #
+    # Measured on this file, MSVC 19.51, one flag at a time -- the trigger is /Ob1 alone, not
+    # /Zi and not /O2-vs-/O1:
+    #     /Zi /O2 /Ob1  (RelWithDebInfo, CMake default) -> 3 errors
+    #     /O1 /Ob1      (MinSizeRel,     CMake default) -> 3 errors
+    #     /Zi /O2 /Ob2  -> clean      /O1 /Ob2 -> clean      /O2 /Ob2 (Release) -> clean
+    #     /Od           (Debug)       -> clean (no optimiser, nothing to fail)
+    # So `relwithdebinfo` did not build AT ALL on MSVC, and MinSizeRel would not either.
+    #
+    # REPLACED rather than appended: MSVC honours the last /Ob on the line, so appending /Ob2
+    # does work -- but it also emits `D9025: overriding '/Ob1' with '/Ob2'` on every single
+    # translation unit, which is noise in a project that counts its warnings. Replacing touches
+    # only the token that is wrong and leaves any other flag the user set alone.
+    #
+    # For MinSizeRel this trades size for correctness. That is not a close call: the alternative
+    # is a configuration that does not compile.
+    foreach(_qb_cfg RELWITHDEBINFO MINSIZEREL)
+        foreach(_qb_lang C CXX)
+            if(CMAKE_${_qb_lang}_FLAGS_${_qb_cfg} MATCHES "/Ob1")
+                string(REPLACE "/Ob1" "/Ob2" _qb_fixed "${CMAKE_${_qb_lang}_FLAGS_${_qb_cfg}}")
+                # CACHE FORCE, because this must reach qbm/ and examples/ too: they are added
+                # from the SUPERPROJECT's scope (CMakeLists.txt:83 qb_load_modules, :93
+                # examples), not from qb's, so a directory-scoped set would stop at qb/.
+                set(CMAKE_${_qb_lang}_FLAGS_${_qb_cfg} "${_qb_fixed}" CACHE STRING
+                    "Flags used by the ${_qb_lang} compiler during ${_qb_cfg} builds." FORCE)
+                qb_status_message(
+                    "MSVC ${_qb_cfg}: /Ob1 -> /Ob2 (a coroutine symmetric transfer cannot be a tail call at /Ob1; error C4737)")
+            endif()
+        endforeach()
+    endforeach()
+    unset(_qb_fixed)
+
     # Warning configuration
     # /W4 enforces four classes this project deliberately does NOT enforce on GCC/clang, where the
     # set is `-Wall -Wextra -Wpedantic -Wno-unused-parameter` (see below). Because CI promotes
@@ -151,7 +197,9 @@ if(QB_COMPILER_MSVC)
     # RelWithDebInfo flags
     list(APPEND QB_CXX_FLAGS_RELWITHDEBINFO
         "/O2"               # Maximize speed
-        "/Ob1"              # Inline function expansion
+        "/Ob2"              # Inline function expansion -- /Ob2, not CMake's default /Ob1:
+                            # a coroutine symmetric transfer cannot be a tail call at /Ob1
+                            # and MSVC errors (C4737). See the block near the top.
         "/Gy"               # Enable function-level linking
         "/Zi"               # Debug information
         "/MD"               # Multi-threaded DLL
@@ -161,7 +209,9 @@ if(QB_COMPILER_MSVC)
     # MinSizeRel flags
     list(APPEND QB_CXX_FLAGS_MINSIZEREL
         "/O1"               # Minimize size
-        "/Ob1"              # Inline function expansion
+        "/Ob2"              # Inline function expansion -- /Ob2, not CMake's default /Ob1:
+                            # a coroutine symmetric transfer cannot be a tail call at /Ob1
+                            # and MSVC errors (C4737). See the block near the top.
         "/Gy"               # Enable function-level linking
         "/MD"               # Multi-threaded DLL
         "/DNDEBUG"          # Define NDEBUG
