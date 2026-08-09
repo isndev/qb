@@ -33,7 +33,7 @@ Higher-level protocols (HTTP/1.1, HTTP/2, and HTTP/3, WebSocket, PostgreSQL, Red
 
 ### Generate a project
 
-The `qb-new-project.sh` helper scaffolds a buildable project from the
+The `qb-new-project.sh` helper scaffolds a project from the
 [`qb-sample-project`](https://github.com/isndev/qb-sample-project) template:
 
 ```bash
@@ -41,18 +41,33 @@ curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-projec
 cd MyProject
 cmake -DCMAKE_BUILD_TYPE=Release -B build
 cmake --build build --parallel
-./build/qb-sample-project
 ```
 
-It clones the template, re-initializes it as a fresh Git repository under the name you pass, and
-pulls qb in as a submodule. It refuses to run if `MyProject/` or `qb-sample-project/` already
-exists in the current directory, and aborts on the first failed step — worth knowing, because the
-invocation above pipes it into `bash` in whatever directory you happen to be standing in.
+It clones the template into `MyProject/`, drops the `origin` remote so the result is yours, and
+initializes the submodules — including qb itself. It creates nothing outside `MyProject/`, refuses
+to run if that name is taken, aborts on the first failed step, and removes what it made if it does
+not finish — worth knowing, because the invocation above pipes it into `bash` in whatever directory
+you happen to be standing in. It prints the file count and the qb the template pinned; if you see
+`0 files` or an unexpected qb, stop and read the next paragraph.
 
-> **Both scaffolding scripts are bash** (`#!/usr/bin/env bash`, `set -euo pipefail`) and use `git`,
-> `mkdir` and `mv`. They do **not** run in `cmd.exe` or PowerShell. On Windows, run them from
-> **WSL** or **Git Bash**. Nothing else in qb's build requires a shell — MSVC builds work normally
-> once the project exists; this constraint applies only to the two generators.
+> **The template is versioned separately from the framework, and the two are not currently in
+> step.** The one-liner fetches the script from `main`, the script clones the template from *its*
+> default branch, and the qb the template pins as a submodule is a third, independent pointer —
+> today it names a commit from before v2.0.0, so a freshly scaffolded project does **not** build
+> against this qb. Until the template is refreshed, prefer
+> [Integrate into your build](#integrate-into-your-build): add qb to a CMake project you already
+> have. `QB_TEMPLATE_REF=<ref>` pins the template clone once the template carries a ref matching a
+> qb release.
+
+> **Both scaffolding scripts are bash** (`#!/usr/bin/env bash`, `set -euo pipefail`) and shell out
+> to `git` only. They do **not** run in `cmd.exe` or PowerShell. On Windows, run them from **WSL**
+> or **Git Bash**. Nothing else in qb's build requires a shell — MSVC builds work normally once the
+> project exists; this constraint applies only to the two generators.
+>
+> Both are fetched **from a branch**, so the URL selects the version: `.../qb/main/script/...` is
+> the released line, `.../qb/<tag>/script/...` pins one release. `curl | bash` also means the code
+> runs unreviewed in the directory you are standing in — `curl -fsSL <url> -o scaffold.sh`, read it,
+> then `bash scaffold.sh MyProject` does the same thing and lets you look first.
 
 ### Your first actor
 
@@ -147,8 +162,7 @@ target_link_libraries(my_app PRIVATE qbm::http)
 ### Scaffold your own module
 
 `qb-new-module.sh` is the module-side counterpart of `qb-new-project.sh`. It scaffolds a qbm module
-from the [`qb-sample-module`](https://github.com/isndev/qb-sample-module) template — the layout
-`qb_load_modules` expects, with the `qb_register_module` call already wired:
+from the [`qb-sample-module`](https://github.com/isndev/qb-sample-module) template:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-module.sh | bash /dev/stdin mymodule
@@ -156,9 +170,19 @@ curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-module
 
 Run it from your project's `qbm/` directory; the result is picked up by the
 `qb_load_modules("${CMAKE_CURRENT_SOURCE_DIR}/qbm")` call above and exposed as `qbm::mymodule`. The
-same guards apply as for `qb-new-project.sh`: it refuses to overwrite an existing `mymodule/` or
-`qb-sample-module/`, aborts on the first failed step, and — being bash — needs WSL or Git Bash on
-Windows.
+same guards apply as for `qb-new-project.sh`: it creates nothing outside `mymodule/`, refuses to
+overwrite it, aborts on the first failed step, cleans up after itself, and — being bash — needs WSL
+or Git Bash on Windows.
+
+> **The module template predates the 3.0 source layout and does not configure against this qb.**
+> It was last touched in 2019: it registers a header-only module without `HEADER_ONLY`, keeps its
+> headers in a flat `actor/ event/ service/` tree rather than under `src/qbm/<name>/`, calls a
+> `qb_register_module_gtest()` that no longer exists, and overrides `onInit()` with the pre-2.6
+> `bool` signature instead of `qb::io::async::task<bool>`. Until it is refreshed, copy the shape of
+> a real module instead — `qbm-http`, `qbm-pgsql` and `qbm-redis` are the reference, and each
+> carries a `.github/ci/superbuild/CMakeLists.txt` showing the only root from which a single module
+> builds. A qbm module cannot be configured standalone: it calls `qb_register_module()` and
+> `qb_add_test()`, which an installed qb does not ship.
 
 ## Building
 
