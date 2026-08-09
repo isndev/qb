@@ -1,0 +1,353 @@
+# Runs the two scaffolding scripts a new user's very first command invokes.
+#
+# Nothing in any repo of this project has ever executed script/qb-new-project.sh or
+# script/qb-new-module.sh -- `grep -rn 'qb-new-' .github/ scripts/` returned only the scripts
+# themselves. That single gap is the direct cause of four shipped defects, and what makes them
+# one class is that EVERY ONE OF THEM EXITED 0 WHILE PRODUCING A WRONG RESULT:
+#
+#   1. The module script cloned `isndev/qbm-sample`, which does not exist, and there was no
+#      `set -e`. The clone failed, the `cd` failed, and `mkdir .git; mv * .git` then ran against
+#      the USER'S INVOCATION DIRECTORY and swallowed its contents. Exit 0.
+#   2. `git --bare init` took HEAD from the user's `init.defaultBranch` while the push named
+#      `master`, the template's branch. With `init.defaultBranch=main`, HEAD pointed at a branch
+#      that did not exist, `git reset --hard` succeeded against an unborn HEAD without writing a
+#      file, and the script printed "Created" over a directory containing nothing but `.git`.
+#      Exit 0. Fixed in 9e209efc.
+#   3. `rm -rf "../${TEMPLATE}"` was computed relative to a user-supplied name, so a name with a
+#      separator moved the deletion one directory up onto an unrelated checkout.
+#   4. Nothing removed the half-built directory on failure, so the new guards then refused the
+#      retry the user obviously wanted.
+#
+# `set -e` cannot see defect 2 -- no command failed -- and no compiler, linter or test in this
+# tree looks at a shell script. A runner executing them is the only instrument that can.
+#
+# WHY BOTH `init.defaultBranch` SETTINGS, AND WHY IT IS NOT OPTIONAL. Three script designs were
+# tried while fixing defect 2, and a single-configuration run passes TWO OF THE THREE:
+#   `git --bare init` + push        -- broken when init.defaultBranch != the template's branch
+#   `git init` + `git fetch +refs`  -- fetch refuses to write the branch HEAD is on, so this is
+#                                      broken when init.defaultBranch == the template's branch
+#   `git clone` into the target     -- takes HEAD from the source; correct under both
+# Only running the matrix separates the third from the first two. Pinning one value here would
+# reproduce exactly the blind spot that let defect 2 ship.
+#
+# NO BUILD STEP, DELIBERATELY. qb-sample-project and qb-sample-module are two major versions
+# stale and do not compile against qb 3.0.0, so a build leg would be red from its first run --
+# and a lane that ships red gets ignored or disabled. Scope here is "the scaffolder produces the
+# tree it claims to have produced", which is the class all four defects belong to. Bringing the
+# templates current is tracked separately; when it lands, add the build leg here.
+#
+# COST. The module template is ~8 KB with no submodules, so it carries the branch matrix and
+# every control. qb-new-project.sh clones six submodules (~75 MB, ~15 s measured) and therefore
+# runs exactly once, in a job of its own.
+name: scaffold
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scaffold-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  module:
+    name: qb-new-module.sh (init.defaultBranch=${{ matrix.default_branch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        default_branch: [ master, main ]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # An isolated global config, so `git config --global` below configures THIS JOB and not
+      # whatever the runner image happens to ship. It is also what makes `init.defaultBranch` a
+      # controlled variable rather than an assumption about the image.
+      #
+      # Exported through GITHUB_ENV rather than a job-level `env:` on purpose: the `runner`
+      # context is NOT one of the contexts available to `jobs.<id>.env`, so `${{ runner.temp }}`
+      # there is a workflow-parse error, not a value.
+      - name: Git configuration under test
+        env:
+          DEFAULT_BRANCH: ${{ matrix.default_branch }}
+        run: |
+          set -euo pipefail
+          export GIT_CONFIG_GLOBAL="${RUNNER_TEMP}/gitconfig"
+          echo "GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL}" >> "${GITHUB_ENV}"
+          : > "${GIT_CONFIG_GLOBAL}"
+          git config --global init.defaultBranch "${DEFAULT_BRANCH}"
+          # The anti-vacuity control below commits into a local stand-in template; the runner
+          # image has no identity of its own.
+          git config --global user.name  'scaffold ci'
+          git config --global user.email 'scaffold-ci@example.invalid'
+          git --version
+          git config --global --list
+
+      # THE RUN THAT MATTERS. Everything after this is a control proving this one is not vacuous.
+      - name: Scaffold a module
+        run: |
+          set -euo pipefail
+          inv="${RUNNER_TEMP}/scaffold-module"
+          rm -rf "${inv}"; mkdir -p "${inv}"; cd "${inv}"
+
+          rc=0
+          bash "${GITHUB_WORKSPACE}/script/qb-new-module.sh" m || rc=$?
+          [ "${rc}" -eq 0 ] || { echo "::error::qb-new-module.sh exited ${rc}"; exit 1; }
+
+          tracked=$(git -C m ls-files | wc -l | tr -d '[:space:]')
+          echo "tracked files: ${tracked}"
+          [ "${tracked}" -gt 0 ] || {
+            echo "::error::exit 0 over an empty checkout -- defect 2 is back"; exit 1; }
+
+          # Defect 2's exact signature was a directory holding nothing but `.git`, which
+          # `ls-files` alone would not have distinguished from a real checkout on every
+          # possible failure. Asserted on the DISK, and without naming a file the template
+          # could rename out from under this job.
+          worktree=$(find m -mindepth 1 -maxdepth 1 -not -name .git | wc -l | tr -d '[:space:]')
+          [ "${worktree}" -gt 0 ] || {
+            echo "::error::'m' contains nothing but .git"; exit 1; }
+
+          # The script claims to leave the result detached from the template. Nothing else
+          # checks that, and a user who pushes to an upstream they did not know they had is a
+          # worse outcome than a failed scaffold.
+          remotes=$(git -C m remote)
+          [ -z "${remotes}" ] || {
+            echo "::error::the template remote survived: ${remotes}"; exit 1; }
+
+          # A FLOOR, not a target. 12 is what the template checked out when this lane was
+          # written; a template that grows must not read as a gate failure.
+          if [ "${tracked}" -ne 12 ]; then
+            echo "::notice::template now checks out ${tracked} files (12 when this lane was written)"
+          fi
+          echo "ok: ${tracked} tracked files, ${worktree} worktree entries, no remote"
+
+      # NEGATIVE CONTROL 1 -- name validation.
+      #
+      # "It failed" is NOT the property under test. Defect 1 failed too, and destroyed the
+      # user's directory on the way out; defect 3 failed by deleting a sibling checkout. The
+      # property is "it failed WITHOUT WRITING ANYTHING", so every case below hashes the
+      # invocation directory before and after and requires the two to match. The directory is
+      # seeded with files first -- an empty directory cannot demonstrate that it survived.
+      #
+      # Both scripts, because their validation blocks are separate copies of the same code and
+      # only one of them can be checked by looking at the other. Neither case touches the
+      # network, so this costs nothing.
+      - name: Control - a name that is a path, or an option, is refused and writes nothing
+        run: |
+          set -euo pipefail
+
+          n=0
+          expect_rejected() {
+            local script=$1 label=$2
+            shift 2
+
+            n=$((n + 1))
+            local inv="${RUNNER_TEMP}/neg/${n}"
+            mkdir -p "${inv}/subdir"
+            echo 'user data the scaffolder must not touch' > "${inv}/keepme.txt"
+            echo 'nested'                                  > "${inv}/subdir/inner.txt"
+
+            local before after rc=0
+            before=$(cd "${inv}" && find . | sort | md5sum)
+            # The log goes OUTSIDE the invocation directory: writing it inside would change the
+            # very hash this control compares.
+            ( cd "${inv}" && bash "${GITHUB_WORKSPACE}/script/${script}" "$@" ) \
+              > "${inv}.log" 2>&1 || rc=$?
+            after=$(cd "${inv}" && find . | sort | md5sum)
+
+            echo "--- ${script} ${label} -> exit ${rc}"
+            sed 's/^/    /' "${inv}.log"
+
+            if [ "${rc}" -ne 2 ]; then
+              echo "::error::${script} ${label}: expected exit 2, got ${rc}"; return 1
+            fi
+            if [ "${before}" != "${after}" ]; then
+              echo "::error::${script} ${label}: the invocation directory changed"
+              ( cd "${inv}" && find . | sort )
+              return 1
+            fi
+            if [ -e "${inv}/.git" ]; then
+              echo "::error::${script} ${label}: a .git appeared in the invocation directory"
+              return 1
+            fi
+            echo "    exit 2, directory unchanged (${before%% *})"
+          }
+
+          for script in qb-new-module.sh qb-new-project.sh; do
+            expect_rejected "${script}" "name '../evil'" '../evil'
+            expect_rejected "${script}" "name 'a/b'"     'a/b'
+            expect_rejected "${script}" "name '-x'"      '-x'
+            expect_rejected "${script}" "empty name"     ''
+            expect_rejected "${script}" "no argument"
+          done
+          echo "control: ${n} rejected invocations, every invocation directory byte-identical"
+
+      # NEGATIVE CONTROL 2 -- a clone that fails.
+      #
+      # This is defect 1 replayed. Simulated by redirecting the isndev prefix at a path that is
+      # not there, which fails the clone exactly where the 404 did while needing no network.
+      # Three things are required of the failure: a non-zero exit, an untouched invocation
+      # directory, and specifically NO `.git` in it -- that last one is the shape the original
+      # `mkdir .git; mv * .git` left behind, and the reason a user lost their files.
+      #
+      # The redirect is per-step env rather than `git config --global`, on purpose: a global
+      # redirect that outlived its step would silently turn a later REAL clone into a fake one,
+      # and the step that would then pass while proving nothing is the one above.
+      - name: Control - a failing clone leaves the invocation directory untouched
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "url.${{ runner.temp }}/no-such-templates/.insteadOf"
+          GIT_CONFIG_VALUE_0: "https://github.com/isndev/"
+        run: |
+          set -euo pipefail
+          git config --get-regexp '^url\.' || {
+            echo "::error::the redirect is not in effect -- this control would clone for real"; exit 1; }
+          [ ! -e "${RUNNER_TEMP}/no-such-templates" ] || {
+            echo "::error::the 'nonexistent' template path exists"; exit 1; }
+
+          for script in qb-new-module.sh qb-new-project.sh; do
+            inv="${RUNNER_TEMP}/clonefail/${script}"
+            rm -rf "${inv}"; mkdir -p "${inv}/subdir"
+            echo 'user data the scaffolder must not touch' > "${inv}/keepme.txt"
+            echo 'nested'                                  > "${inv}/subdir/inner.txt"
+
+            before=$(cd "${inv}" && find . | sort | md5sum)
+            rc=0
+            ( cd "${inv}" && bash "${GITHUB_WORKSPACE}/script/${script}" m ) \
+              > "${inv}.log" 2>&1 || rc=$?
+            after=$(cd "${inv}" && find . | sort | md5sum)
+
+            echo "--- ${script} against an unreachable template -> exit ${rc}"
+            sed 's/^/    /' "${inv}.log"
+
+            [ "${rc}" -ne 0 ] || {
+              echo "::error::${script} exited 0 with the clone failing -- defect 1 is back"; exit 1; }
+            [ "${before}" = "${after}" ] || {
+              echo "::error::${script}: the invocation directory changed"
+              ( cd "${inv}" && find . | sort ); exit 1; }
+            [ ! -e "${inv}/.git" ] || {
+              echo "::error::${script}: a .git appeared in the invocation directory"; exit 1; }
+            [ ! -e "${inv}/m" ] || {
+              echo "::error::${script}: the half-built target survived the failure"; exit 1; }
+            echo "    non-zero exit, no .git, no half-built target, directory unchanged (${before%% *})"
+          done
+          echo "control: a failing clone destroys nothing"
+
+      # POSITIVE CONTROL for the scripts' own anti-vacuity check.
+      #
+      # The check that turns defect 2's whole class loud is the `tracked -eq 0` branch at the end
+      # of each script. Nothing above can reach it -- the real template is never empty -- so
+      # without this step that branch could be deleted and every other leg would stay green.
+      # A check that can never fire passes forever.
+      #
+      # Redirect the prefix at local repositories whose only commit is empty: the clone SUCCEEDS,
+      # every git command succeeds, and the result has zero files. That is defect 2's end state
+      # reproduced exactly, and the script must call it out instead of printing "Created".
+      # `init.defaultBranch` gives these stand-ins the branch this matrix leg is testing, so the
+      # control is exercised under both settings rather than one.
+      - name: Control - an empty checkout is reported, not claimed as success
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "url.${{ runner.temp }}/empty-templates/.insteadOf"
+          GIT_CONFIG_VALUE_0: "https://github.com/isndev/"
+        run: |
+          set -euo pipefail
+          tpl="${RUNNER_TEMP}/empty-templates"
+          rm -rf "${tpl}"; mkdir -p "${tpl}"
+          for template in qb-sample-module qb-sample-project; do
+            git init --quiet "${tpl}/${template}.git"
+            git -C "${tpl}/${template}.git" commit --quiet --allow-empty -m 'empty template'
+            files=$(git -C "${tpl}/${template}.git" ls-files | wc -l | tr -d '[:space:]')
+            [ "${files}" -eq 0 ] || {
+              echo "::error::the stand-in ${template} is not empty (${files} files)"; exit 1; }
+            echo "stand-in ${template}.git: branch $(git -C "${tpl}/${template}.git" rev-parse --abbrev-ref HEAD), ${files} files"
+          done
+
+          for script in qb-new-module.sh qb-new-project.sh; do
+            inv="${RUNNER_TEMP}/vacuity/${script}"
+            rm -rf "${inv}"; mkdir -p "${inv}"
+            echo 'user data the scaffolder must not touch' > "${inv}/keepme.txt"
+
+            before=$(cd "${inv}" && find . | sort | md5sum)
+            rc=0
+            ( cd "${inv}" && bash "${GITHUB_WORKSPACE}/script/${script}" m ) \
+              > "${inv}.log" 2>&1 || rc=$?
+            after=$(cd "${inv}" && find . | sort | md5sum)
+
+            echo "--- ${script} against an empty template -> exit ${rc}"
+            sed 's/^/    /' "${inv}.log"
+
+            [ "${rc}" -eq 1 ] || {
+              echo "::error::${script}: expected exit 1 on an empty checkout, got ${rc}"; exit 1; }
+            grep -q 'came out empty' "${inv}.log" || {
+              echo "::error::${script}: exited 1 without reporting the empty checkout -- wrong finding"; exit 1; }
+            [ "${before}" = "${after}" ] || {
+              echo "::error::${script}: the invocation directory changed"
+              ( cd "${inv}" && find . | sort ); exit 1; }
+            [ ! -e "${inv}/m" ] || {
+              echo "::error::${script}: the empty target survived"; exit 1; }
+            echo "    exit 1, reported 'came out empty', directory unchanged (${before%% *})"
+          done
+          echo "positive control: the anti-vacuity check fires"
+
+  project:
+    # Runs ONCE. This template pulls six submodules; the branch matrix and every control live in
+    # the module job above, which exercises the same code paths against an 8 KB template.
+    name: qb-new-project.sh
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # See the module job: `runner` is not available to `jobs.<id>.env`, so the isolated global
+      # config is exported through GITHUB_ENV instead.
+      - name: Git configuration under test
+        run: |
+          set -euo pipefail
+          export GIT_CONFIG_GLOBAL="${RUNNER_TEMP}/gitconfig"
+          echo "GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL}" >> "${GITHUB_ENV}"
+          : > "${GIT_CONFIG_GLOBAL}"
+          # One value is enough HERE only because the module job runs the same clone-into-target
+          # logic under both. If these two scripts ever stop sharing that logic, this needs the
+          # matrix too.
+          git config --global init.defaultBranch main
+          git --version
+          git config --global --list
+
+      - name: Scaffold a project
+        run: |
+          set -euo pipefail
+          inv="${RUNNER_TEMP}/scaffold-project"
+          rm -rf "${inv}"; mkdir -p "${inv}"; cd "${inv}"
+
+          rc=0
+          bash "${GITHUB_WORKSPACE}/script/qb-new-project.sh" MyProject || rc=$?
+          [ "${rc}" -eq 0 ] || { echo "::error::qb-new-project.sh exited ${rc}"; exit 1; }
+
+          tracked=$(git -C MyProject ls-files | wc -l | tr -d '[:space:]')
+          echo "tracked files: ${tracked}"
+          [ "${tracked}" -gt 0 ] || {
+            echo "::error::exit 0 over an empty checkout -- defect 2 is back"; exit 1; }
+
+          worktree=$(find MyProject -mindepth 1 -maxdepth 1 -not -name .git | wc -l | tr -d '[:space:]')
+          [ "${worktree}" -gt 0 ] || {
+            echo "::error::'MyProject' contains nothing but .git"; exit 1; }
+
+          remotes=$(git -C MyProject remote)
+          [ -z "${remotes}" ] || {
+            echo "::error::the template remote survived: ${remotes}"; exit 1; }
+
+          # The script reports the qb the TEMPLATE pinned, which is not this one. Echo it so the
+          # log says how stale the template is on the day it ran -- that number is the trigger
+          # for adding the build leg this lane deliberately omits.
+          git -C MyProject/qb describe --tags --always
+          echo "ok: ${tracked} tracked files, ${worktree} worktree entries, no remote"
