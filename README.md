@@ -43,21 +43,42 @@ cmake -DCMAKE_BUILD_TYPE=Release -B build
 cmake --build build --parallel
 ```
 
-It clones the template into `MyProject/`, drops the `origin` remote so the result is yours, and
-initializes the submodules — including qb itself. It creates nothing outside `MyProject/`, refuses
-to run if that name is taken, aborts on the first failed step, and removes what it made if it does
-not finish — worth knowing, because the invocation above pipes it into `bash` in whatever directory
-you happen to be standing in. It prints the file count and the qb the template pinned; if you see
-`0 files` or an unexpected qb, stop and read the next paragraph.
+It renders the template under the name you passed: `MyProject` is substituted into the CMake project
+and target names, the C++ namespaces, the include guards and the directory names, so nothing has to
+be renamed by hand. That is also why the name is validated up front — it must match
+`[A-Za-z][A-Za-z0-9_-]*`, and anything else exits 2 rather than failing at the first compile error.
+The result is a fresh git repository with a single initial commit and no remote, not a copy of the
+template's history, and there are no submodules to initialize: the generated `CMakeLists.txt` fetches
+qb and the qbm modules with CMake's `FetchContent` at the first configure. The script creates nothing
+outside `MyProject/`, refuses to run if that name is taken, aborts on the first failed step, and
+removes what it made if it does not finish — worth knowing, because the invocation above pipes it
+into `bash` in whatever directory you happen to be standing in. It reports the file count, the
+template ref and the qb ref it wrote into the tree, and why it chose each.
 
-> **The template is versioned separately from the framework, and the two are not currently in
-> step.** The one-liner fetches the script from `main`, the script clones the template from *its*
-> default branch, and the qb the template pins as a submodule is a third, independent pointer —
-> today it names a commit from before v2.0.0, so a freshly scaffolded project does **not** build
-> against this qb. Until the template is refreshed, prefer
-> [Integrate into your build](#integrate-into-your-build): add qb to a CMake project you already
-> have. `QB_TEMPLATE_REF=<ref>` pins the template clone once the template carries a ref matching a
-> qb release.
+The generated project builds to `./build/bin/MyProject` and ships a ctest suite (targets named
+`MyProject-test-<tier>-<name>`) plus a GitHub Actions workflow. To build against a qb checkout you
+already have, configure with `-DFETCHCONTENT_SOURCE_DIR_QB=/path/to/qb`.
+
+> **Which qb the generated project builds against is decided by the script, not stored in the
+> template.** It used to be a submodule gitlink committed in the template, a pinned dependency that
+> could only drift, and it drifted two majors. Nothing stores it now: each script carries the version
+> of the qb it ships with, asserted equal to `QB_FRAMEWORK_VERSION` in
+> [`cmake/qbConfig.cmake`](./cmake/qbConfig.cmake) by
+> [`scripts/check-scaffold-consistency.sh`](./scripts/check-scaffold-consistency.sh), and writes the
+> matching ref into the generated tree — so the URL the one-liner is fetched from selects the
+> pairing. The template content resolves against the same version: an explicit `QB_TEMPLATE_REF`
+> wins, then a `v<version>` tag on the template, then, only when qb `v<version>` is known *not* to
+> exist, the template's `develop` branch, and finally the template's default branch, which is
+> reported as a fallback. The script always prints which ref it used and why. Both templates now
+> carry CI of their own that renders with this same script and builds, tests and runs the result on
+> Linux and macOS.
+>
+> One honest caveat: 3.0.0 is not tagged yet, so today the script resolves to the templates'
+> `develop` branch and writes `develop` as the qb ref, and says so when it runs. The generated tree
+> therefore follows a moving branch rather than a pinned release; to pin it, set `QB_GIT_REF` in the
+> generated `CMakeLists.txt` to a released tag. Two overrides exist for the other direction:
+> `QB_TEMPLATE_DIR=<path>` renders from a local template checkout (for template authors), and
+> `QB_REF=<ref>` overrides the qb ref written into the generated tree.
 
 > **Both scaffolding scripts are bash** (`#!/usr/bin/env bash`, `set -euo pipefail`) and shell out
 > to `git` only. They do **not** run in `cmd.exe` or PowerShell. On Windows, run them from **WSL**
@@ -174,15 +195,30 @@ same guards apply as for `qb-new-project.sh`: it creates nothing outside `mymodu
 overwrite it, aborts on the first failed step, cleans up after itself, and — being bash — needs WSL
 or Git Bash on Windows.
 
-> **The module template predates the 3.0 source layout and does not configure against this qb.**
-> It was last touched in 2019: it registers a header-only module without `HEADER_ONLY`, keeps its
-> headers in a flat `actor/ event/ service/` tree rather than under `src/qbm/<name>/`, calls a
-> `qb_register_module_gtest()` that no longer exists, and overrides `onInit()` with the pre-2.6
-> `bool` signature instead of `qb::io::async::task<bool>`. Until it is refreshed, copy the shape of
-> a real module instead — `qbm-http`, `qbm-pgsql` and `qbm-redis` are the reference, and each
-> carries a `.github/ci/superbuild/CMakeLists.txt` showing the only root from which a single module
-> builds. A qbm module cannot be configured standalone: it calls `qb_register_module()` and
-> `qb_add_test()`, which an installed qb does not ship.
+The generated module ships its public headers under `src/qbm/mymodule/`, a tiered `tests/` suite
+registered with `qb_register_module_test()`, and a superbuild root that builds and runs those tests
+with no further setup:
+
+```bash
+cmake -S .github/ci/superbuild -B build
+cmake --build build --parallel --target qbm-mymodule-tests
+ctest --test-dir build -L module:qbm-mymodule
+```
+
+> **Why a superbuild root rather than `cmake -S . -B build`?** A qbm module cannot be configured
+> standalone: it calls `qb_register_module()` and `qb_add_test()`, development-time helpers an
+> installed qb does not ship. `.github/ci/superbuild/CMakeLists.txt` is the same answer `qbm-http`,
+> `qbm-pgsql` and `qbm-redis` give — a minimal root that adds a qb *source* tree first and the module
+> second — in the same shape, with one deliberate difference: theirs require both trees to be passed
+> in, because their CI always passes them, while the generated one defaults its own paths and fetches
+> qb, so it works with no arguments on a machine that has no qb checkout.
+>
+> The module name is not merely a directory name, which is why it is stricter than a project's:
+> `mymodule` becomes the `qbm-mymodule` target, the `qbm::mymodule` namespace and the
+> `src/qbm/mymodule/` directory that `qb_register_module()` requires, so it must be a lowercase
+> identifier (`[a-z][a-z0-9_]*`) and anything else exits 2 rather than failing at the first compile
+> error. The qb the module builds against is chosen by the script at scaffold time exactly as it is
+> for a project, including the `develop` caveat that applies while 3.0.0 is untagged.
 
 ## Building
 

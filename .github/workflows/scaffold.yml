@@ -30,15 +30,24 @@
 # Only running the matrix separates the third from the first two. Pinning one value here would
 # reproduce exactly the blind spot that let defect 2 ship.
 #
-# NO BUILD STEP, DELIBERATELY. qb-sample-project and qb-sample-module are two major versions
-# stale and do not compile against qb 3.0.0, so a build leg would be red from its first run --
-# and a lane that ships red gets ignored or disabled. Scope here is "the scaffolder produces the
-# tree it claims to have produced", which is the class all four defects belong to. Bringing the
-# templates current is tracked separately; when it lands, add the build leg here.
+# THE BUILD LEG THIS LANE USED TO OMIT NOW EXISTS. It was omitted because both templates were
+# two majors stale and did not compile against 3.0.0, so a build would have been red from its
+# first run -- and a lane that ships red gets ignored or disabled. Both templates have since been
+# rebuilt, so the omission's reason is gone and the leg is here: each job configures, builds and
+# runs what the scaffolder produced. That closes the gap the four defects came through, because
+# "the tree it claims to have produced" and "a tree that works" are different claims and only the
+# second is what a user gets.
 #
-# COST. The module template is ~8 KB with no submodules, so it carries the branch matrix and
-# every control. qb-new-project.sh clones six submodules (~75 MB, ~15 s measured) and therefore
-# runs exactly once, in a job of its own.
+# WHAT THIS LANE IS NOT. It is not the templates' own CI. isndev/qb-sample-project and
+# isndev/qb-sample-module each carry .github/workflows/template.yml, which renders with THIS
+# script and builds the result on Linux and macOS. Those fire when the TEMPLATE changes; this one
+# fires when qb changes. Both are needed: the scaffolder and the template are two halves of one
+# product and either side can break the pair.
+#
+# COST. The scaffolders no longer clone submodules -- the generated tree resolves qb through
+# FetchContent -- so the expensive part is now the compile, not the checkout. Both jobs build, and
+# the branch matrix plus every negative control stays on the module job, which is the cheaper of
+# the two.
 name: scaffold
 
 on:
@@ -67,6 +76,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+
+      # THE VERSION BINDING, checked before anything is scaffolded. Each scaffolder carries the qb
+      # version it ships with as a literal, and writes the matching ref into every tree it
+      # generates. A literal nothing checks is a stale copy waiting to happen -- and this project
+      # has fixed three of those already (the qbm project() lines, the User-Agent, 129
+      # Verified-against markers). The guard also asserts the two scripts' shared body has not
+      # drifted, which is the defect that once had the module script cloning a repository that
+      # does not exist while its own `cd` named one that does.
+      - name: Scaffolder consistency (version binding + shared body)
+        run: ./scripts/check-scaffold-consistency.sh
 
       # An isolated global config, so `git config --global` below configures THIS JOB and not
       # whatever the runner image happens to ship. It is also what makes `init.defaultBranch` a
@@ -122,12 +141,31 @@ jobs:
           [ -z "${remotes}" ] || {
             echo "::error::the template remote survived: ${remotes}"; exit 1; }
 
-          # A FLOOR, not a target. 12 is what the template checked out when this lane was
-          # written; a template that grows must not read as a gate failure.
-          if [ "${tracked}" -ne 12 ]; then
-            echo "::notice::template now checks out ${tracked} files (12 when this lane was written)"
+          # THE RESULT IS A NEW REPOSITORY, not the template's history renamed. Exactly one
+          # commit is the observable form of that, and it is what distinguishes the current
+          # design from the `git clone` + `git remote remove origin` it replaced.
+          commits=$(git -C m rev-list --count HEAD)
+          [ "${commits}" -eq 1 ] || {
+            echo "::error::${commits} commits in a freshly scaffolded module; expected exactly 1"; exit 1; }
+
+          # RENDERING. The template ships @QB_NAME@ placeholders in file contents AND in path
+          # names; a module whose directory was not renamed does not even configure, because
+          # qb_register_module() requires src/qbm/<name>/. Both are asserted, and so is the
+          # absence of the old template's own identifiers.
+          [ -f m/src/qbm/m/m.h ] || {
+            echo "::error::src/qbm/m/m.h missing -- the path placeholder was not rendered"; exit 1; }
+          if grep -rIl '@QB_[A-Z_]*@' m --exclude-dir=.git 2>/dev/null | grep -q .; then
+            echo "::error::unresolved placeholders survived rendering:"
+            grep -rIl '@QB_[A-Z_]*@' m --exclude-dir=.git | sed 's/^/  /'; exit 1
           fi
-          echo "ok: ${tracked} tracked files, ${worktree} worktree entries, no remote"
+          if grep -rIl 'qbm-sample\|qbm::sample' m --exclude-dir=.git | grep -q .; then
+            echo "::error::the template's own name leaked into the generated module"; exit 1
+          fi
+
+          # A FLOOR, not a target. A template that grows must not read as a gate failure.
+          [ "${tracked}" -ge 8 ] || {
+            echo "::error::only ${tracked} tracked files, floor is 8"; exit 1; }
+          echo "ok: ${tracked} tracked files, ${worktree} worktree entries, 1 commit, no remote"
 
       # NEGATIVE CONTROL 1 -- name validation.
       #
@@ -298,12 +336,77 @@ jobs:
           done
           echo "positive control: the anti-vacuity check fires"
 
+      # POSITIVE CONTROL for the RENDER anti-vacuity check.
+      #
+      # The scaffolder refuses a template that contains no @QB_...@ placeholder at all, because
+      # such a template would copy cleanly, compile cleanly, and hand every user a tree named
+      # after the template -- a wrong result with a zero exit, which is this lane's entire subject.
+      # A real template always has placeholders, so nothing above can reach that branch, and
+      # without this step it could be deleted with every other leg staying green.
+      - name: Control - a template with no placeholders is refused
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "url.${{ runner.temp }}/flat-templates/.insteadOf"
+          GIT_CONFIG_VALUE_0: "https://github.com/isndev/"
+        run: |
+          set -euo pipefail
+          tpl="${RUNNER_TEMP}/flat-templates/qb-sample-module.git"
+          rm -rf "${tpl}"; mkdir -p "${tpl}/template"
+          echo 'cmake_minimum_required(VERSION 3.24)' > "${tpl}/template/CMakeLists.txt"
+          git init --quiet "${tpl}"
+          git -C "${tpl}" add -A
+          git -C "${tpl}" commit --quiet -m 'template with no placeholders'
+          # The stand-in must be non-empty, or this would re-run the previous control instead.
+          [ "$(git -C "${tpl}" ls-files | wc -l)" -gt 0 ] || {
+            echo "::error::the stand-in template is empty"; exit 1; }
+
+          inv="${RUNNER_TEMP}/flat"; rm -rf "${inv}"; mkdir -p "${inv}"
+          rc=0
+          ( cd "${inv}" && bash "${GITHUB_WORKSPACE}/script/qb-new-module.sh" m ) \
+            > "${inv}.log" 2>&1 || rc=$?
+          sed 's/^/    /' "${inv}.log"
+          [ "${rc}" -eq 1 ] || {
+            echo "::error::expected exit 1 on an unrendered template, got ${rc}"; exit 1; }
+          grep -q 'not personalised' "${inv}.log" || {
+            echo "::error::exited 1 without reporting the missing placeholders -- wrong finding"; exit 1; }
+          [ ! -e "${inv}/m" ] || { echo "::error::the unrendered target survived"; exit 1; }
+          echo "positive control: an unrendered template is refused"
+
+      # THE BUILD LEG. Everything above proves the scaffolder produced the tree it claims to have
+      # produced; this proves that tree is usable. A qbm module cannot be configured standalone,
+      # so the entry point is the superbuild root the template ships -- and no qb path is passed,
+      # which makes this also the measurement of the "works on a machine with no qb" claim.
+      - name: Build and test the scaffolded module
+        if: matrix.default_branch == 'main'
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y ninja-build libssl-dev zlib1g-dev
+          cd "${RUNNER_TEMP}/scaffold-module/m"
+          cmake -S .github/ci/superbuild -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel --target qbm-m-tests 2>&1 | tee "${RUNNER_TEMP}/build.log"
+          tus="$(grep -c 'Building CXX object' "${RUNNER_TEMP}/build.log" || true)"
+          echo "translation units compiled: ${tus}"
+          [ "${tus}" -gt 0 ] || { echo "::error::0 TUs compiled; the test result below would be vacuous"; exit 1; }
+          ctest --test-dir build -L 'module:qbm-m' --output-on-failure --output-junit "${RUNNER_TEMP}/results.xml"
+          python3 - "${RUNNER_TEMP}/results.xml" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          cases = list(ET.parse(sys.argv[1]).getroot().iter('testcase'))
+          skipped = [c.get('name') for c in cases if c.find('skipped') is not None]
+          executed = len(cases) - len(skipped)
+          print(f"registered={len(cases)} executed={executed} skipped={len(skipped)}")
+          bad = False
+          if executed < 2: print(f"::error::{executed} tests EXECUTED, floor is 2"); bad = True
+          if skipped:      print("::error::a test self-skipped; ctest reports that as a pass"); bad = True
+          sys.exit(1 if bad else 0)
+          PY
+
   project:
-    # Runs ONCE. This template pulls six submodules; the branch matrix and every control live in
-    # the module job above, which exercises the same code paths against an 8 KB template.
+    # Runs ONCE, under one `init.defaultBranch`. The branch matrix and every negative control live
+    # in the module job above, which exercises the SAME shared body -- the two scaffolders differ
+    # only in a configuration block, and scripts/check-scaffold-consistency.sh asserts that.
     name: qb-new-project.sh
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v6
@@ -346,8 +449,72 @@ jobs:
           [ -z "${remotes}" ] || {
             echo "::error::the template remote survived: ${remotes}"; exit 1; }
 
-          # The script reports the qb the TEMPLATE pinned, which is not this one. Echo it so the
-          # log says how stale the template is on the day it ran -- that number is the trigger
-          # for adding the build leg this lane deliberately omits.
-          git -C MyProject/qb describe --tags --always
-          echo "ok: ${tracked} tracked files, ${worktree} worktree entries, no remote"
+          commits=$(git -C MyProject rev-list --count HEAD)
+          [ "${commits}" -eq 1 ] || {
+            echo "::error::${commits} commits in a freshly scaffolded project; expected exactly 1"; exit 1; }
+
+          if grep -rIl '@QB_[A-Z_]*@' MyProject --exclude-dir=.git 2>/dev/null | grep -q .; then
+            echo "::error::unresolved placeholders survived rendering:"
+            grep -rIl '@QB_[A-Z_]*@' MyProject --exclude-dir=.git | sed 's/^/  /'; exit 1
+          fi
+          grep -q 'project(MyProject' MyProject/CMakeLists.txt || {
+            echo "::error::CMakeLists.txt does not name the project MyProject"; exit 1; }
+
+          # There is no qb submodule any more, and there must not be: the generated tree resolves
+          # qb through FetchContent at a ref this script wrote. A .gitmodules here would mean the
+          # stored-pin design -- the one that went two majors stale -- had come back.
+          [ ! -e MyProject/.gitmodules ] || {
+            echo "::error::the generated project has a .gitmodules; the stored qb pin is back"; exit 1; }
+          # And the ref it wrote must be a real ref on isndev/qb, or the user's first configure
+          # fails on a clone. This is the version binding, measured rather than assumed.
+          ref="$(sed -n 's/^set(QB_GIT_REF "\([^"]*\)".*/\1/p' MyProject/CMakeLists.txt | head -1)"
+          echo "the scaffolder wrote QB_GIT_REF=${ref}"
+          [ -n "${ref}" ] || { echo "::error::no QB_GIT_REF in the generated CMakeLists.txt"; exit 1; }
+          git ls-remote --exit-code --heads --tags https://github.com/isndev/qb "${ref}" >/dev/null || {
+            echo "::error::QB_GIT_REF='${ref}' does not exist on isndev/qb"; exit 1; }
+
+          echo "ok: ${tracked} tracked files, ${worktree} worktree entries, 1 commit, no remote"
+
+      # THE BUILD LEG. See the file header: this used to be omitted because the template was two
+      # majors stale and would have been red from day one. It is not any more.
+      - name: Build, test and run the scaffolded project
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y ninja-build libssl-dev zlib1g-dev
+          cd "${RUNNER_TEMP}/scaffold-project/MyProject"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMYPROJECT_BUILD_TESTS=ON
+          cmake --build build --parallel 2>&1 | tee "${RUNNER_TEMP}/build.log"
+
+          tus="$(grep -c 'Building CXX object' "${RUNNER_TEMP}/build.log" || true)"
+          echo "translation units compiled: ${tus}"
+          [ "${tus}" -gt 0 ] || { echo "::error::0 TUs compiled; everything below would be vacuous"; exit 1; }
+
+          test -x build/bin/MyProject || { echo "::error::build/bin/MyProject was not produced"; exit 1; }
+          ./build/bin/MyProject --version
+
+          ctest --test-dir build --output-on-failure --output-junit "${RUNNER_TEMP}/results.xml"
+          python3 - "${RUNNER_TEMP}/results.xml" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          cases = list(ET.parse(sys.argv[1]).getroot().iter('testcase'))
+          skipped = [c.get('name') for c in cases if c.find('skipped') is not None]
+          executed = len(cases) - len(skipped)
+          print(f"registered={len(cases)} executed={executed} skipped={len(skipped)}")
+          bad = False
+          if executed < 2: print(f"::error::{executed} tests EXECUTED, floor is 2"); bad = True
+          if skipped:      print("::error::a test self-skipped; ctest reports that as a pass"); bad = True
+          sys.exit(1 if bad else 0)
+          PY
+
+          # A scaffolded server that builds but does not serve is still a broken scaffold.
+          ./build/bin/MyProject --port 18080 &
+          server=$!
+          trap 'kill "${server}" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 50); do
+            curl -fsS --max-time 1 http://127.0.0.1:18080/health >/dev/null 2>&1 && break
+            sleep 0.2
+          done
+          body="$(curl -fsS --max-time 5 'http://127.0.0.1:18080/?name=ada')"
+          echo "GET /?name=ada -> ${body}"
+          echo "${body}" | grep -q '"message":"hello, ada"' || {
+            echo "::error::the scaffolded server did not greet the caller"; exit 1; }
+          echo "ok: the scaffolded project built, tested and served"
