@@ -24,12 +24,19 @@ WHY A SCRIPT AND NOT JUST THE COMPILER
 --------------------------------------
 Because the compiler is a demonstrably unreliable oracle for this class. Measured at 3.0.0
 with g++-14 14.2.0, `-O3`, `QB_TESTS_WERROR=ON`, over a full build of all 349 test targets:
-SIX qbm-http test files instantiate `coro_session` over anonymous-namespace fixtures, and
-gcc-14 diagnoses exactly ONE of them (`ws-framing-edge.cpp`, twice — once per fixture pair).
-`ws-coro-server.cpp`, `ws-coro-handoff.cpp` and `ws-coro-handshake-negative.cpp` carry the
-identical shape and compile silently; confirmed separately with `-fsyntax-only -Wno-error`,
-which reports `2` for the first file and `0` for the others. A rule enforced only by the
-instance gcc happens to notice is not enforced.
+FIVE test files carried the shape, across TWO repos, and gcc-14 diagnoses exactly ONE of
+them (`ws-framing-edge.cpp`, twice — once per fixture pair). Exactly four qbm-http test
+sources instantiate `coro_session` at all, and pre-fix all four passed anonymous-namespace
+fixtures to it: `ws-framing-edge.cpp` plus `ws-coro-server.cpp`, `ws-coro-handoff.cpp` and
+`ws-coro-handshake-negative.cpp`, which carry the identical shape and compile silently. The
+fifth is qb's own `tests/io/unit/coroutine/stream-transforms.cpp`, which reaches the same
+frame through a different carrier — so the set is NOT one repo's, and a check scoped to
+qbm-http would miss a fifth of it. A rule enforced only by the instance gcc happens to
+notice is not enforced.
+
+(`ws-lifecycle.cpp`, `ws-robustness.cpp` and `ws-client-echo.cpp` are where the
+`<file>_test` naming convention comes from, but they instantiate no carrier and were never
+part of this set.)
 
 The gcc-14 axis in `.github/workflows/qbm-tests.yml` still runs, and is still the thing that
 catches an unrelated diagnostic. This script is the part that does not depend on which
@@ -48,9 +55,13 @@ For every `*.cpp` under each scanned root:
 
 The carriers are DERIVED from the framework source, never typed here: `--framework <dir>`
 roots are scanned for `template <…> class|struct NAME` whose brace-matched body contains a
-`spawn(` call taking a lambda literal. At 3.0.0 that finds exactly one, `coro_session`, and
-the run PRINTS what it found — a carrier set that silently empties is the vacuity this
-guard would otherwise die of, so an empty set is a hard failure.
+`spawn(` call taking a lambda literal. At 3.0.0, with `--framework qb/src --framework
+qbm/http/src`, that finds THREE — `async_stream` (qb/src/qb/io/async/coroutine/stream.h),
+`batcher` (qb/src/qb/core/patterns/aggregate.h) and `coro_session`
+(qbm/http/src/qbm/http/ws/coro.h) — the same three AGENTS.md names, and two of them are
+qb's own, which is why the qb tree is scanned and not only the module that owns the
+diagnosed file. The run PRINTS what it found — a carrier set that silently empties is the
+vacuity this guard would otherwise die of, so an empty set is a hard failure.
 
 WHAT IT DELIBERATELY DOES NOT CATCH
 -----------------------------------
