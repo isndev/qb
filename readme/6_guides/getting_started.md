@@ -38,7 +38,7 @@ There are two on-ramps. Pick one.
 
 ### Option A — scaffold a new project
 
-The `qb-new-project.sh` helper bootstraps a project from the `qb-sample-project` template. It clones the template, re-initializes it as a fresh Git repository under the name you pass, and pulls qb (and any other dependencies) as submodules:
+The `qb-new-project.sh` helper bootstraps a project from the `qb-sample-project` template. It clones the template into the name you pass, drops the `origin` remote so the history is yours, and initializes the submodules — including qb:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-project.sh | bash /dev/stdin MyProject
@@ -47,15 +47,15 @@ cmake -DCMAKE_BUILD_TYPE=Release -B build
 cmake --build build --parallel
 ```
 
-The result is a buildable CMake project with qb wired in and ready to extend. Build it with the commands above, then run the executable named in the generated `CMakeLists.txt`. Skip to [section 3](#3-your-first-actor) and edit the generated source to add your own actors.
+> **Check what it printed before you build.** The template is versioned independently of the framework and the two are not currently in step: the script is fetched from `main`, the template is cloned from *its* default branch, and the qb the template pins as a submodule is a third, independent pointer — today a commit from before v2.0.0. The last line of output names that pin. A project scaffolded from the template as it stands **does not compile against this qb**: its `main.cpp` includes `<http/http.h>` rather than `<qbm/http/http.h>`, overrides `onInit()` with the pre-2.6 `bool` signature instead of `qb::io::async::task<bool>`, and its `test/CMakeLists.txt` calls a `cxx_gtest()` that no longer exists. Until the template is refreshed, use [Option B](#option-b--embed-qb-in-an-existing-cmake-project) below. `QB_TEMPLATE_REF=<ref>` pins the template clone once the template carries a ref matching a qb release.
 
-The script refuses to run if `MyProject/` or `qb-sample-project/` already exists in the current directory, and aborts on the first failed step rather than continuing — worth knowing because the recommended invocation above pipes it into `bash` in whatever directory you happen to be standing in.
+The script creates nothing outside `MyProject/`, refuses to run if that name is taken, aborts on the first failed step, and deletes what it made if it does not finish — worth knowing because the recommended invocation above pipes it into `bash` in whatever directory you happen to be standing in. It reports the number of files checked out rather than an unconditional "Created", so a template that yields an empty tree fails loudly instead of exiting 0 over an empty directory.
 
-`qb-new-module.sh`, in the same directory, is its module-side counterpart: it scaffolds a qbm module from the `qb-sample-module` template, in the layout `qb_load_modules` expects. Run it from your project's `qbm/` directory. See [Composing qbm modules](advanced_usage.md#composing-qbm-modules).
+`qb-new-module.sh`, in the same directory, is its module-side counterpart: it scaffolds a qbm module from the `qb-sample-module` template. That template was last touched in 2019 and does not configure against a current qb either — see [Composing qbm modules](advanced_usage.md#composing-qbm-modules). Run it from your project's `qbm/` directory.
 
-> **Both scripts are bash.** They declare `#!/usr/bin/env bash`, use `set -euo pipefail`, and shell out to `git`, `mkdir` and `mv` — so neither runs in `cmd.exe` or PowerShell. On Windows, invoke them from **WSL** or **Git Bash**. This is the only part of qb that needs a POSIX shell: once the project exists, the MSVC build path is unaffected (see [Platform notes](../7_reference/building.md#platform-notes)).
+> **Both scripts are bash.** They declare `#!/usr/bin/env bash`, use `set -euo pipefail`, and shell out to `git` — so neither runs in `cmd.exe` or PowerShell. On Windows, invoke them from **WSL** or **Git Bash**. This is the only part of qb that needs a POSIX shell: once the project exists, the MSVC build path is unaffected (see [Platform notes](../7_reference/building.md#platform-notes)). Both are fetched from a branch, so the URL selects the version — `.../qb/main/script/...` is the released line, `.../qb/<tag>/script/...` pins one release. Downloading with `-o` and reading before running does the same thing without executing unreviewed code in your working directory.
 
-<!-- src: qb/script/qb-new-project.sh:1,48-65, qb/script/qb-new-module.sh:1,14,33-40 -->
+<!-- src: qb/script/qb-new-project.sh:68,134-144,157-164, qb/script/qb-new-module.sh:60,126-136,149-156 -->
 
 ### Option B — embed qb in an existing CMake project
 

@@ -767,6 +767,54 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   of `0`. This matters most for `qb-new-project.sh`, which `README.md` documents as
   `curl … | bash /dev/stdin MyProject` — i.e. it runs in whatever directory the user is standing in,
   and it took the identical path any time its own clone failed.
+
+  **A second round found three more defects of the same shape — exit 0, wrong result — that
+  `set -e` structurally cannot catch, because no command in them fails.** (1) `git --bare init`
+  takes HEAD from the user's `init.defaultBranch`, while the push named `master` because that is the
+  template's branch. On a machine configured with `init.defaultBranch=main`, HEAD pointed at a
+  branch that did not exist, `git reset --hard` succeeded against an unborn HEAD without writing a
+  file, `git submodule update` found no `.gitmodules`, and the script printed `Created 'MyProject'`
+  and exited **0** over a directory containing nothing but `.git`. Reproduced under both settings.
+  (2) `rm -rf "../${TEMPLATE}"` ran from inside `${NAME}`, so its target depended on where `${NAME}`
+  had put us: a name containing a separator (`../foo`) moved the deletion one directory up onto an
+  unrelated `qb-sample-project`. (3) Nothing removed the half-built directories when a later step
+  failed, so the freshly added guards then refused the retry the user obviously wanted.
+
+  Both scripts now validate the name as a plain directory name, resolve the single target path once
+  and absolutely, and `trap` a cleanup that removes only what they created and only on failure. The
+  bare-repo dance is gone with them: `git clone` into the target followed by `git remote remove
+  origin` reaches the same result — full template history, no upstream remote — in two commands that
+  cannot run anywhere else, take HEAD from the source rather than from `init.defaultBranch`, and
+  create nothing outside the target, so there is no intermediate template directory to collide with.
+  `mkdir .git; mv * .git`, the primitive that did the original damage, no longer appears in either
+  file. Each script then **asserts** the result is non-empty and prints the file count instead of an
+  unconditional `Created`, which is what turns this whole class loud; the assertion was positively
+  controlled against a template whose only commit is empty. An intermediate `git init` + `git fetch
+  +refs/heads/X:refs/heads/X` form was rejected on measurement: `fetch` refuses to write the branch
+  HEAD is on, so it inverted defect 1 rather than fixing it, failing whenever `init.defaultBranch`
+  happened to *match* the template's branch. Both scripts also take `QB_TEMPLATE_REF` to pin the
+  template clone.
+
+- **The two scaffolding templates are two major versions behind the framework, and every
+  documentation surface describing them said otherwise.** Measured, not inferred:
+  `qb-sample-project` pins qb at a commit from before **v2.0.0** and is internally consistent with
+  it, so it configures *and builds* — which is why nothing ever complained. Repointed at qb `main`
+  (v2.6.0) or `develop` (3.0.0) it fails to compile, first on `#include <http/http.h>` (3.0 spells
+  it `<qbm/http/http.h>`), then on `bool onInit()` where the base has returned
+  `qb::io::async::task<bool>` since before 2.6.0, then on `router().get()`, `qb::http::date::now()`
+  and a `qb::json` initializer; configured the way its own README instructs
+  (`-DQB_BUILD_TEST=ON` — the option has been `QB_BUILD_TESTS` for some time) it does not even
+  configure, because `test/CMakeLists.txt` calls a `cxx_gtest()` that no longer exists.
+  `qb-sample-module` has not been touched since **2019** and fails at line 3 of its own
+  `CMakeLists.txt`: `qb_register_module()` reports `SOURCES is required for non-header-only
+  modules`, and adding `HEADER_ONLY` only advances it to the next failure, which is that 3.0 expects
+  a module's public headers under `src/qbm/<name>/` rather than in a flat `actor/ event/ service/`
+  tree. `README.md` called the first "buildable" and the second "the layout `qb_load_modules`
+  expects, with the `qb_register_module` call already wired"; `readme/6_guides/getting_started.md`
+  called the result "a buildable CMake project with qb wired in and ready to extend". All three
+  claims are now replaced by what was measured, with a pointer to the embed-in-an-existing-project
+  path and, for modules, to the three real modules and their `.github/ci/superbuild/CMakeLists.txt`.
+  Nothing builds either template in CI, in any repository, which is why none of this was caught.
 - **The documented crypto surface described three functions that have never existed, and gave
   `ecies_encrypt`'s return pair in the wrong order.** `readme/3_qb_io/utilities.md` listed
   `ecdh_derive_secret` under *Key agreement* and `envelope_encrypt`/`envelope_decrypt` under

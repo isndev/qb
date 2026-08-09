@@ -358,14 +358,16 @@ target_link_libraries(my_app
 )
 ```
 
-To start a module of your own, `script/qb-new-module.sh` scaffolds one from the `qb-sample-module` template — the same directory layout `qb_load_modules` discovers, with the `qb_register_module` call already wired:
+To start a module of your own, `script/qb-new-module.sh` scaffolds one from the `qb-sample-module` template:
 
 ```bash
-# <!-- src: qb/script/qb-new-module.sh:16-17,32-39 -->
+# <!-- src: qb/script/qb-new-module.sh:62-64,126-136 -->
 curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-module.sh | bash /dev/stdin mymodule
 ```
 
-Run it from your project's `qbm/` directory and the result is picked up by the `qb_load_modules` call above as `qbm::mymodule`. It refuses to overwrite an existing `mymodule/` or `qb-sample-module/` and aborts on the first failed step. Like `qb-new-project.sh` it is **bash**, so on Windows it needs WSL or Git Bash; nothing else in the module build path does.
+Run it from your project's `qbm/` directory and the result is picked up by the `qb_load_modules` call above as `qbm::mymodule`. It creates nothing outside `mymodule/`, refuses to overwrite it, aborts on the first failed step, and removes what it made if it does not finish. Like `qb-new-project.sh` it is **bash**, so on Windows it needs WSL or Git Bash; nothing else in the module build path does.
+
+> **What the template gives you today is not a working module.** `qb-sample-module` was last touched in 2019 and fails at its very first `qb_register_module()` call against a current qb: it has no `SOURCES` and does not pass `HEADER_ONLY`, and once that is fixed it fails again because 3.0 expects a module's public headers under `<module>/src/qbm/<name>/` rather than in a flat `actor/ event/ service/` tree. Its `test/CMakeLists.txt` calls `qb_register_module_gtest()`, which does not exist — the current spelling is `qb_register_module_test()` — and its actors override `onInit()` as `bool` rather than `qb::io::async::task<bool>`. Until it is refreshed, take the shape from a real module: `qbm-http`, `qbm-pgsql` and `qbm-redis` all follow the 3.0 layout, and each ships a `.github/ci/superbuild/CMakeLists.txt` that is the only root from which one module builds on its own — a qbm module cannot be configured standalone, because `qb_register_module()` and `qb_add_test()` are development-time helpers an installed qb does not ship.
 
 Each qbm module is a compiled library (`qb_register_module` with a `SOURCES` list), not header-only. Linking `qbm::<mod>` is `PUBLIC`-transitive: it pulls in `qb::core` and `qb::io`, and `qb_register_module` propagates the selected qb standard to the consumer through `target_compile_features(... PUBLIC cxx_std_${QB_CXX_STANDARD})`, so your target compiles at the framework-required language level automatically.
 
