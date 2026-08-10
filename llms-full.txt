@@ -169,6 +169,16 @@ int main() {
 `qb::duration`: `qb::duration::zero()` = busy-spin; `>0` parks on a condition variable up to that span
 when idle.
 
+`setAffinity` is best-effort, and on **Apple Silicon it does nothing at all** — silently. macOS has no
+`pthread_setaffinity_np`, so qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, a flavor
+arm64 macOS does not implement: it answers `KERN_NOT_SUPPORTED` for every core (measured on an Apple M4
+Pro, Darwin 25.6.0: `ret == 46`). qb's shim reports that as success on purpose — failing would warn once
+per core on every run — so no caller and no log learns the pin never happened. Even on Intel macOS the
+affinity tag is a scheduler *hint* that groups threads onto a shared L2, not a pin to CPU N. Hard per-CPU
+pinning is real only on Linux (`pthread_setaffinity_np`) and Windows/MSVC (`SetThreadAffinityMask`).
+**Never assume a pin took effect: ask `qb::CPU::ThreadPinningSupported()`** (`qb/system/cpu.h`), the one
+way to tell "pinned" from "silently not pinned". A refused pin never fails core init either way.
+
 ### Async I/O — standalone `qb-io`
 
 ```cpp
@@ -900,6 +910,7 @@ Unbounded lock-free Michael-Scott MPSC queue.
 *   `[T] constexpr T qb::endian::byteswap(T) noexcept` (arithmetic/enum/trivially-copyable).
 *   `[T] constexpr T qb::endian::to_big_endian(T)/from_big_endian(T)/to_little_endian(T)/from_little_endian(T) noexcept`
 *   `class qb::CPU` (static-only): `Architecture()`, `Affinity()`, `LogicalCores()`, `PhysicalCores()`, `std::pair<int,int> TotalCores()`, `std::int64_t ClockSpeed()` (Hz or -1), `bool HyperThreading()`.
+*   `[[nodiscard]] static bool qb::CPU::ThreadPinningSupported() noexcept` — does OS thread pinning actually take effect here? `false` on Apple Silicon (`THREAD_AFFINITY_POLICY` → `KERN_NOT_SUPPORTED`), so `CoreInitializer::setAffinity` is a silent no-op there; `true` on Linux and Windows/MSVC. Probed once at runtime (not an `#ifdef`: Rosetta 2 runs x86_64 on an arm64 kernel) and cached. `true` means the mechanism exists, not that a given request succeeds.
 *   `inline void qb::spin_loop_pause() noexcept` — CPU pause hint for spin loops.
 *   `[T<T,TCleaner>] [[nodiscard]] auto qb::resource(T handle, TCleaner cleaner)` — wrap a raw handle in `unique_ptr` with a custom deleter.
 *   `[T<F>] class qb::scope_guard` — RAII; runs `F` on destruction unless `dismiss()` called. `void dismiss() noexcept`.

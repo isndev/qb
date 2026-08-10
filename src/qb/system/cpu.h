@@ -154,6 +154,39 @@ public:
      * @brief Returns true when logical cores differ from physical cores
      */
     [[nodiscard]] static bool HyperThreading();
+
+    /**
+     * @brief Reports whether OS-level thread pinning actually takes effect on this host.
+     *
+     * @return `true` when the platform implements per-thread CPU pinning; `false` when the
+     *         kernel refuses the request outright, so `CoreInitializer::setAffinity()` is a
+     *         no-op and `VirtualCore` threads are placed wherever the OS scheduler wants.
+     *
+     * @details
+     * Motivating case: **Apple Silicon**. macOS has no `pthread_setaffinity_np`, so qb emulates
+     * one with `thread_policy_set(THREAD_AFFINITY_POLICY)`. arm64 macOS does not implement that
+     * flavor — every call answers `KERN_NOT_SUPPORTED` (measured: Apple M4 Pro, Darwin 25.6.0,
+     * `ret == 46` for every core) — and qb's shim deliberately reports *success* for that code,
+     * because returning failure would make `VirtualCore::__init__` warn on every core of every
+     * run. Pinning therefore does nothing there, silently. This query is what makes it
+     * observable, so a test or a user can branch on it instead of assuming.
+     *
+     * Determined once per process and cached:
+     * - macOS: runtime probe (`thread_policy_get(THREAD_AFFINITY_POLICY)`, side-effect free).
+     *   Deliberately NOT a compile-time `#ifdef __aarch64__`: an x86_64 binary under Rosetta 2
+     *   runs on an arm64 kernel, so only a runtime probe gives the right answer.
+     * - Other POSIX: `true` — `pthread_setaffinity_np()` is implemented.
+     * - Windows: `true` — `SetThreadAffinityMask()` is implemented.
+     *
+     * @note `true` means the *mechanism* exists, not that a particular request will succeed.
+     *       Affinity stays best-effort: an out-of-range `CoreId` or a restrictive cgroup can
+     *       still fail, and a failed pin never fails `VirtualCore` init.
+     * @note Even where macOS does implement the flavor (Intel), `<mach/thread_policy.h>`
+     *       describes it as experimental and as a scheduler *hint*: threads sharing an affinity
+     *       tag are placed to share an L2 cache. It groups threads by tag; it is not a pin to
+     *       CPU N. So `true` on macOS is a weaker guarantee than `true` on Linux or Windows.
+     */
+    [[nodiscard]] static bool ThreadPinningSupported() noexcept;
 };
 
 } // namespace qb

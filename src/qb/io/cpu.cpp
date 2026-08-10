@@ -3,6 +3,10 @@
 #include <qb/system/parse.h>
 
 #if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/thread_act.h>
+#include <mach/thread_policy.h>
+#include <pthread.h>
 #include <sys/sysctl.h>
 
 #elif defined(unix) || defined(__unix) || defined(__unix__)
@@ -267,6 +271,47 @@ bool
 CPU::HyperThreading() {
     const auto [logical, physical] = TotalCores();
     return logical > 0 && physical > 0 && logical != physical;
+}
+
+bool
+CPU::ThreadPinningSupported() noexcept {
+#if defined(__APPLE__)
+    // Probe the kernel once per process. `thread_policy_get` is used rather than
+    // `thread_policy_set` on purpose: it reaches the same THREAD_AFFINITY_POLICY
+    // implementation (and so the same KERN_NOT_SUPPORTED on arm64) without leaving an
+    // affinity tag on whichever thread happens to ask first. The magic static gives the
+    // one-time, thread-safe init; the lambda cannot throw, so `noexcept` holds.
+    static const bool supported = [] {
+        thread_affinity_policy_data_t policy      = {THREAD_AFFINITY_TAG_NULL};
+        mach_msg_type_number_t        count       = THREAD_AFFINITY_POLICY_COUNT;
+        boolean_t                     get_default = FALSE;
+
+        const kern_return_t ret = thread_policy_get(pthread_mach_thread_np(pthread_self()), THREAD_AFFINITY_POLICY,
+                                                    reinterpret_cast<thread_policy_t>(&policy), &count, &get_default);
+        // Only KERN_NOT_SUPPORTED means "this kernel has no such thing". Any other
+        // failure is a per-call problem, not a missing mechanism.
+        return ret != KERN_NOT_SUPPORTED;
+    }();
+
+    return supported;
+
+#elif defined(unix) || defined(__unix) || defined(__unix__)
+    // pthread_setaffinity_np() is implemented; individual requests may still be refused.
+    return true;
+
+#elif defined(_WIN32) || defined(_WIN64)
+#ifdef _MSC_VER
+    // SetThreadAffinityMask() is implemented; individual requests may still be refused.
+    return true;
+#else
+    // Mirrors VirtualCore::__init__, which only issues SetThreadAffinityMask() under
+    // _MSC_VER (a GNU toolchain on Windows gets a #warning and no pinning at all).
+    return false;
+#endif
+
+#else
+#error Unsupported platform
+#endif
 }
 
 } // namespace qb
