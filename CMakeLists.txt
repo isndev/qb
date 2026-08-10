@@ -143,12 +143,39 @@ endif ()
 # -----------------------------------------------------------------------------
 # Code Coverage Setup
 # -----------------------------------------------------------------------------
-if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
+# These targets exist ONLY when qb is the top-level project.
+#
+# They report qb alone -- COVERAGE_LCOV_EXCLUDES below drops '*modules*' -- and they
+# zero and capture gcov counters with `-directory .` taken from qb's PROJECT_BINARY_DIR.
+# A superproject that reaches this file through add_subdirectory() has its own aggregate
+# family rooted one level up (qb-dev's CMakeLists.txt does), and that root is a STRICT
+# PARENT of this one: `<build>/` contains `<build>/qb/`. Two families over one set of
+# `.gcda` files with no ordering edge between them is not a smaller report, it is a
+# WRONG one -- `--zerocounters` from the parent erases counters the child is producing,
+# and neither target declares the counters as an output so no generator can order them.
+#
+# The subset here is redundant as well as unsafe: the superproject's `coverage` covers
+# qb AND every qbm module, in the same three report kinds. So the top-level project owns
+# the report; an embedded qb contributes instrumentation and nothing else.
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE AND NOT PROJECT_IS_TOP_LEVEL)
+    qb_status_message(
+            "Coverage instrumentation is on, but qb is not the top-level project: the qb-coverage* report targets belong to the top-level project (in qb-dev that is the aggregate `coverage` target, qb + qbm)")
+elseif (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
     include("${QB_CMAKE_DIR}/CodeCoverage.cmake")
 
     find_program(LCOV_PATH lcov)
     if (NOT GCOV_PATH)
         find_program(GCOV_PATH gcov)
+    endif ()
+
+    # These three targets read `.gcno`/`.gcda`, which only gcov-style instrumentation
+    # emits. qbCompiler.cmake gives clang `-fprofile-instr-generate -fcoverage-mapping`
+    # instead (QB_COVERAGE_KIND "llvm"), so on clang no `.gcno` is ever written and lcov
+    # /gcovr have nothing to read -- they run the whole instrumented suite first and only
+    # then produce an empty report. Say so at configure time rather than after the run.
+    if (LCOV_PATH AND GCOV_PATH AND NOT QB_COVERAGE_KIND STREQUAL "gcov")
+        qb_warning_message(
+                "QB_COVERAGE_KIND is '${QB_COVERAGE_KIND}': the qb-coverage* targets are gcov-based and this build emits no .gcno/.gcda, so they will report nothing. Use a GCC toolchain for them, or the qb-dev superproject's LLVM `coverage` target")
     endif ()
 
     if (LCOV_PATH AND GCOV_PATH)
@@ -191,26 +218,44 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
             endif ()
         endif ()
 
-        SETUP_TARGET_FOR_COVERAGE_LCOV(
-                NAME qb-coverage
-                EXECUTABLE ctest
-                DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
-                LCOV_ARGS
+        # One writer, three readers (CodeCoverage.cmake, SETUP_COVERAGE_RUN banner).
+        #
+        # The three report targets used to zero the counters and run the whole suite
+        # each, with no edge between them, so `cmake --build . --target qb-coverage
+        # qb-coverage-xml` had qb-coverage's `--zerocounters` racing the run whose
+        # counters qb-coverage-xml was about to read. coverage.yml only avoided it by
+        # invoking two sequential steps -- a convention, enforced by nothing, and the
+        # numbers are wrong quietly when it is broken.
+        set(QB_COVERAGE_LCOV_ARGS
                 --ignore-errors mismatch,mismatch
                 --ignore-errors unused,unused
                 --ignore-errors inconsistent,inconsistent
         )
 
+        SETUP_COVERAGE_RUN(
+                NAME qb-coverage-run
+                EXECUTABLE ctest
+                DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
+                LCOV_ARGS ${QB_COVERAGE_LCOV_ARGS}
+        )
+
+        SETUP_TARGET_FOR_COVERAGE_LCOV(
+                NAME qb-coverage
+                RUN_TARGET qb-coverage-run
+                DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
+                LCOV_ARGS ${QB_COVERAGE_LCOV_ARGS}
+        )
+
         SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(
                 NAME qb-coverage-xml
-                EXECUTABLE ctest
+                RUN_TARGET qb-coverage-run
                 DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
                 GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
         )
 
         SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML(
                 NAME qb-coverage-html
-                EXECUTABLE ctest
+                RUN_TARGET qb-coverage-run
                 DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
                 GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
         )
