@@ -228,6 +228,10 @@ TEST(InitPatterns, AskAllInsideOnInitGathers) {
 // ===========================================================================
 // 4. ask_any resolves on the FIRST reply — a fast peer beats an Activating one.
 // ===========================================================================
+// The SLOW peer. Its multiplier is deliberately NOT the 10 that `CfgService` (the fast peer) uses:
+// with both answering `key * 10` the gathered value is 60 whichever one replied first, so the
+// assertion below could not tell the winner from the loser and held for either outcome. 7 makes the
+// two answers distinguishable (42 vs 60), which is the only thing that makes this case falsifiable.
 class AsyncResponder : public qb::Actor {
 public:
     qb::io::async::task<bool>
@@ -238,7 +242,7 @@ public:
     }
     void
     on(Cfg &e) {
-        qb::answer(*this, e, [](Cfg const &r) { return r.key * 10; });
+        qb::answer(*this, e, [](Cfg const &r) { return r.key * 7; });
         kill();
     }
 };
@@ -263,12 +267,14 @@ public:
 TEST(InitPatterns, AskAnyToActivatingTargetResolvesOnFastReply) {
     g_any_value.store(-1);
     qb::Main   main;
-    const auto slow = main.addActor<AsyncResponder>(0); // Activating target (replies late)
-    const auto fast = main.addActor<CfgService>(0);     // already-active target — wins
+    const auto slow = main.addActor<AsyncResponder>(0); // Activating target (x7, replies late)
+    const auto fast = main.addActor<CfgService>(0);     // already-active target (x10) — wins
     main.addActor<AskAnyInInit>(0, std::vector<qb::ActorId>{slow, fast});
     main.start(false);
     main.join();
-    EXPECT_EQ(g_any_value.load(), 60); // 6*10 from the fast peer; the slow Activating one loses the race
+    // 6*10 from the fast peer. The slow peer would answer 42, so this equality is what identifies
+    // the winner — the race outcome, not merely that SOME peer replied.
+    EXPECT_EQ(g_any_value.load(), 60) << "ask_any must resolve on the already-active peer's reply, not the Activating one's";
     EXPECT_FALSE(main.hasError());
 }
 

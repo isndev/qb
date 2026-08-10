@@ -152,6 +152,7 @@ TEST(InitStress, TreeOfAsyncInitActors) {
 // ===========================================================================
 std::atomic<bool> g_overflow_destroyed{false};
 std::atomic<int>  g_overflow_handler_calls{0};
+std::atomic<bool> g_overflow_victim_activated{false};
 
 class StashOverflowVictim : public qb::Actor {
 public:
@@ -162,14 +163,20 @@ public:
         // stash overflow fails the activation and cancels the sleep, so the case still completes
         // in ~170 ms whatever the number here — widening it costs nothing.
         //
-        // It has to be generous, because losing this race does not fail the test, it HANGS it.
-        // If the 6000 pushes do not all land before the victim finishes activating, the victim
-        // activates SUCCESSFULLY, and on that path nothing ever kill()s it — so main.join()
-        // never returns and the binary spins forever (measured under ASan at the old 80 ms:
-        // ***Timeout with 788 s of CPU burned, while the other three cases in this file each
-        // finished in ~42 ms). ASan simply makes 6000 push allocations take longer than 80 ms.
-        // 3 s gives ~37x headroom over the observed cost on an instrumented build.
+        // It has to be generous, because the margin is what makes losing this race unlikely: if the
+        // 6000 pushes do not all land before the victim finishes activating, the victim activates
+        // SUCCESSFULLY and the case has tested nothing. ASan simply makes 6000 push allocations take
+        // longer than the old 80 ms (measured: ***Timeout with 788 s of CPU burned, while the other
+        // three cases in this file each finished in ~42 ms). 3 s gives ~37x headroom over the
+        // observed cost on an instrumented build.
         co_await context().sleep(3000ms);
+        // REACHED ONLY ON THE LOST RACE. The sleep is cancelled when the stash overflow fails the
+        // activation, so arriving here means the flood did not overflow in time. Record it and
+        // kill() so the engine still comes down: without the kill nothing ever kills this actor and
+        // `main.join()` never returns, which is how a lost race used to present — a tier timeout
+        // rather than the assertion below. Margin keeps the race won; this keeps losing it LOUD.
+        g_overflow_victim_activated.store(true);
+        kill();
         co_return true;
     }
     void
@@ -199,11 +206,16 @@ public:
 TEST(InitStress, StashOverflowFailsActivation) {
     g_overflow_destroyed.store(false);
     g_overflow_handler_calls.store(0);
+    g_overflow_victim_activated.store(false);
     qb::Main   main;
     const auto victim = main.addActor<StashOverflowVictim>(0);
     main.addActor<Flooder>(0, victim);
     main.start(false);
     main.join();
+    // The race is the precondition, so assert it FIRST: a victim that activated never overflowed,
+    // and every assertion after this one would be describing a different scenario.
+    EXPECT_FALSE(g_overflow_victim_activated.load())
+        << "the victim finished activating before the flood overflowed the stash — the case did not test the overflow path";
     EXPECT_TRUE(g_overflow_destroyed.load());      // overflow forced the activation to fail + remove it
     EXPECT_EQ(g_overflow_handler_calls.load(), 0); // the flood was never replayed (the actor failed init)
     EXPECT_FALSE(main.hasError());

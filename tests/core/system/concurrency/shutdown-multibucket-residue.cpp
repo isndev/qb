@@ -21,6 +21,11 @@
  * mailbox at shutdown. Run under ASan the pre-fix code corrupts the heap here; the live-payload
  * counter also catches a double- or missed-dispose in a plain build.
  *
+ * That counter is 0 both when the sweep is correct and when nothing was ever pushed, so the case
+ * also carries the two runtime witnesses its sibling shutdown-saturation.cpp has: the sink must
+ * have received events (traffic really flowed, so the ring really wrapped) and the flood must have
+ * outrun it (residue really existed for the post-join sweep). Both are asserted per iteration.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -83,6 +88,14 @@ struct FatEvent : public qb::Event {
 std::atomic<std::uint32_t> g_sink_id{0};
 std::atomic<bool>          g_sink_ready{false};
 
+// Runtime witnesses that the scenario actually happened, mirroring `g_received` in the sibling
+// shutdown-saturation.cpp. Without them the only assertion is a live-payload count, which is
+// trivially 0 when NOTHING was ever pushed: a flood that never started (sink id never published, the
+// source core never scheduled, the sleep below landing on the wrong side of startup) left the case
+// green having exercised no sweep at all.
+std::atomic<std::uint64_t> g_pushed{0};
+std::atomic<std::uint64_t> g_received{0};
+
 // Drains, but deliberately slowly, so the mailbox stays saturated (and therefore wrapped)
 // while the source keeps flooding — mirrors SlowSinkActor in shutdown-saturation.cpp.
 class SlowSinkActor : public qb::Actor {
@@ -96,7 +109,8 @@ public:
         co_return true;
     }
     void
-    on(FatEvent const &) {
+    on(FatEvent const &e) {
+        g_received.fetch_add(e.payload.blob.empty() ? 0u : 1u, std::memory_order_relaxed);
         volatile int sink = 0;
         for (int i = 0; i < 256; ++i)
             sink = sink + i;
@@ -130,6 +144,7 @@ public:
         const qb::ActorId sink{g_sink_id.load(std::memory_order_acquire)};
         for (int i = 0; i < 1500; ++i)
             push<FatEvent>(sink, _seq++);
+        g_pushed.fetch_add(1500, std::memory_order_relaxed);
     }
 };
 
@@ -150,6 +165,8 @@ TEST(ShutdownMultibucketResidue, TeardownSweepHandlesAWrapStraddlingEvent) {
     for (int it = 0; it < kIterations; ++it) {
         g_live_payloads.store(0, std::memory_order_relaxed);
         g_sink_ready.store(false, std::memory_order_relaxed);
+        g_pushed.store(0, std::memory_order_relaxed);
+        g_received.store(0, std::memory_order_relaxed);
 
         {
             qb::Main main;
@@ -163,6 +180,16 @@ TEST(ShutdownMultibucketResidue, TeardownSweepHandlesAWrapStraddlingEvent) {
             main.join();
             EXPECT_FALSE(main.hasError()) << "iteration " << it;
         } // ~Main -> post-join residual sweep
+
+        // The payload count below is 0 both when the sweep is correct and when the flood never
+        // happened, so witness the scenario before believing it: the sink must have DRAINED
+        // multi-bucket events (the ring wrapped under real traffic) and the flood must have
+        // outrun it (residue was left for the post-join sweep to find). Without both, the
+        // assertion that follows is vacuous.
+        ASSERT_GT(g_received.load(std::memory_order_relaxed), 0u)
+            << "iteration " << it << ": the sink received no FatEvent — the flood never reached it, so no ring wrapped";
+        ASSERT_GT(g_pushed.load(std::memory_order_relaxed), g_received.load(std::memory_order_relaxed))
+            << "iteration " << it << ": the sink drained everything pushed — no residue was left for the teardown sweep";
 
         ASSERT_EQ(g_live_payloads.load(std::memory_order_relaxed), 0)
             << "iteration " << it << ": every FatEvent payload must be disposed exactly once by the teardown sweep";

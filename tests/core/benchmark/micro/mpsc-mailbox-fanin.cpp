@@ -32,7 +32,9 @@
  *     comparable across benches);
  *   - a one-shot, out-of-loop correctness probe runs the smallest fan-in and `DoNotOptimize`s the
  *     drained-bucket total, so a structurally broken harness (a consumer that never reaches `total`)
- *     is caught before any timing rather than becoming a timing gate.
+ *     is caught before any timing rather than becoming a timing gate. The harness bounds that drain
+ *     and reports `stalled`, so the probe SkipWithErrors with the count it reached instead of
+ *     hanging — which is how the same defect used to present.
  *
  * Rewritten from the former `bm-mpsc-mailbox-sweep.cpp` onto the shared harness.
  */
@@ -41,6 +43,7 @@
 #include <benchmark/benchmark.h>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include <qb/utility/prefix.h>
 
@@ -73,16 +76,26 @@ BM_MpscMailbox_FanInDrain(benchmark::State &state) {
         return;
     }
 
-    // One-shot out-of-loop correctness probe: a consumer that never reaches `total` would hang here,
-    // catching a structurally broken harness before any timing. DoNotOptimize keeps it from folding.
+    // One-shot out-of-loop correctness probe: a consumer that never reaches `total` is a structurally
+    // broken harness, caught here before any timing. It used to be caught by HANGING — the harness now
+    // bounds the drain and reports it, so the same defect names itself instead of arriving as a job
+    // that never finished. DoNotOptimize keeps the probe from folding.
     {
-        std::uint64_t probe_fails = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_empty_bucket, consume_noop);
+        const auto    probe       = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_empty_bucket, consume_noop);
+        std::uint64_t probe_fails = probe.enqueue_failures; // non-const lvalue: the const-ref DoNotOptimize overload is deprecated
         benchmark::DoNotOptimize(probe_fails);
+        if (probe.stalled) {
+            state.SkipWithError(
+                ("fan-in drain stalled: consumer took " + std::to_string(probe.drained) + " of " + std::to_string(total) + " buckets")
+                    .c_str());
+            return;
+        }
     }
 
     std::uint64_t fails = 0;
     for (auto _ : state) {
-        fails = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_empty_bucket, consume_noop);
+        const auto run = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_empty_bucket, consume_noop);
+        fails          = run.enqueue_failures;
         benchmark::DoNotOptimize(fails);
     }
 

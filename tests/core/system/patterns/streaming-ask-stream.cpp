@@ -250,6 +250,10 @@ TEST(AskStream, OverflowThrows) {
 // ===========================================================================
 namespace {
 std::atomic<bool> g_reclaim_ran{false};
+// Witness that the chunk actually LANDED while nobody was parked — i.e. that `stream_state::wake()`
+// really ran against the reclaimed waiter, which is the entire subject of the case. Left at -1 the
+// chunk never arrived and the run proved nothing (see the drain below).
+std::atomic<int> g_reclaim_chunk{-1};
 } // namespace
 
 struct TriggerYield : qb::Event {};
@@ -302,7 +306,22 @@ public:
                 co_return 99;
             }());
             c.template push_to<TriggerYield>(prod); // now make a chunk arrive (would wake the freed frame)
-            co_await c.sleep(80ms);                 // give the chunk time to land
+            // KEEP this sleep: it is load-bearing, not padding. The chunk has to arrive while NOBODY
+            // is parked on next() — that is what makes st->waiter the reclaimed frame's handle
+            // instead of a fresh one. Draining with next() straight away would park a new waiter and
+            // exercise the ordinary path, deleting the coverage.
+            co_await c.sleep(80ms);
+            // …and then witness that it landed. The sleep alone asserted nothing: on the timing
+            // inversion (chunk still in flight at 80 ms) the case passed having never reached
+            // stream_state::wake(). This drain is bounded by the stream's own 5 s timeout, and the
+            // value pins WHICH chunk arrived. `s` still owns the registry slot, so the chunk is
+            // buffered in the state and next() returns it without suspending.
+            try {
+                if (auto chunk = co_await s.next())
+                    g_reclaim_chunk.store(chunk->chunk);
+            } catch (const std::exception &) {
+                // leave the witness at -1: the assertion after join() reports it
+            }
             g_reclaim_ran.store(true);
             qb::Main::stop();
         });
@@ -316,6 +335,7 @@ public:
 
 TEST(AskStream, ReclaimedWhileParkedNoUAF) {
     g_reclaim_ran.store(false);
+    g_reclaim_chunk.store(-1);
     qb::Main   main;
     const auto prod = main.addActor<DeferredProducer>(0);
     main.addActor<ReclaimConsumer>(0, prod);
@@ -323,4 +343,6 @@ TEST(AskStream, ReclaimedWhileParkedNoUAF) {
     main.join(); // must not hang or crash — the reclaimed next() frame is never resumed by the chunk
     EXPECT_FALSE(main.hasError());
     EXPECT_TRUE(g_reclaim_ran.load()) << "the consumer coroutine must have run to completion";
+    EXPECT_EQ(g_reclaim_chunk.load(), 42)
+        << "the chunk never landed while the reclaimed frame was the registered waiter — the UAF path was not exercised";
 }
