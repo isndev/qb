@@ -97,8 +97,8 @@ when absent their features degrade silently (see [CMake and dependencies](./cmak
 
 Because `QB_ENABLE_NATIVE_ARCH` defaults to `OFF`, a binary built with the defaults is portable: qb
 targets a conservative baseline and no host-specific instruction set is baked in. Set
-`-DQB_ENABLE_NATIVE_ARCH=ON` (or use the `release-native` preset) only when the
-artifact will run on other hosts.
+`-DQB_ENABLE_NATIVE_ARCH=ON` (or use the `release-native` preset) only when the artifact will run on
+the machine that built it, or on hardware you know matches it — never for something you distribute.
 
 ## Coverage, sanitizers, and debug
 
@@ -126,7 +126,7 @@ error), and `-g`. The `sanitize` and `sanitize-thread` presets provide ready-mad
   enable even when set to `ON`.
 - **`QB_ENABLE_NATIVE_ARCH=ON` is not portable.** It bakes the build host's instruction set into the
   artifact, so a binary built on a newer CPU dies with SIGILL on an older one. It is `OFF` by default
-  and every preset except `release-native` / `benchmarks` keeps it off — turn it on deliberately, and
+  and every preset here except `release-native` keeps it off (the qb-dev superproject adds `benchmarks`) — turn it on deliberately, and
   never for something you distribute.
 - **`QB_ENABLE_FAST_MATH` changes numeric results.** It relaxes IEEE-754 guarantees; leave it off unless
   the workload tolerates that.

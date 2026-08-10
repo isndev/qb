@@ -25,7 +25,7 @@ These primitives are correct only under tightly scoped threading contracts. Each
 | `mpsc::ringbuffer`, round-robin enqueue | many | exactly one | per-producer `SpinLock` |
 | `mpsc_unbounded_queue` | many | exactly one | lock-free (Michael-Scott) |
 
-"Exactly one consumer" is not advisory. In the SPSC buffer, `write_index_` is written only from the enqueue side and `read_index_` only from the dequeue side; a second producer or a second consumer races those stores and the result is undefined (`src/qb/system/lockfree/spsc.h:151`). The MPSC `dequeue` and `consume_all` overloads are likewise single-consumer only (`src/qb/system/lockfree/mpsc.h:171`).
+"Exactly one consumer" is not advisory. In the SPSC buffer, `write_index_` is written only from the enqueue side and `read_index_` only from the dequeue side; a second producer or a second consumer races those stores and the result is undefined (`src/qb/system/lockfree/spsc.h:151`). The MPSC `dequeue` and `consume_all` overloads are likewise single-consumer only (`src/qb/system/lockfree/mpsc.h:169-170`).
 
 These types live in `qb` (the foundation shared by `qb-io` and `qb-core`), not in either library exclusively. They depend on the canonical time model (`qb::duration`, `qb::mono_time`; see [API overview](./api_overview.md)) and on cache-line constants from `qb/utility/prefix.h`.
 
@@ -34,9 +34,9 @@ These types live in `qb` (the foundation shared by `qb-io` and `qb-core`), not i
 - **Header:** `qb/system/lockfree/spinlock.h`
 - **Type:** `qb::lockfree::SpinLock`
 
-A test-and-test-and-set (TTAS) busy-wait mutex over a single `std::atomic<bool>` (`src/qb/system/lockfree/spinlock.h:205`). A contending thread loops ("spins") on a relaxed load — issuing `qb::spin_loop_pause()` between reads — and only retries the atomic exchange once the lock appears free, which reduces cache-line ping-pong under contention (`src/qb/system/lockfree/spinlock.h:159`).
+A test-and-test-and-set (TTAS) busy-wait mutex over a single `std::atomic<bool>` (`src/qb/system/lockfree/spinlock.h:205`). A contending thread loops ("spins") on a relaxed load — issuing `qb::spin_loop_pause()` between reads — and only retries the atomic exchange once the lock appears free, which reduces cache-line ping-pong under contention (`src/qb/system/lockfree/spinlock.h:185-191`).
 
-`SpinLock` satisfies the C++ *BasicLockable* requirement (`lock()` / `unlock()`), so it composes directly with `std::lock_guard<SpinLock>` — which is exactly how `mpsc::ringbuffer` uses it (`src/qb/system/lockfree/mpsc.h:137`).
+`SpinLock` satisfies the C++ *BasicLockable* requirement (`lock()` / `unlock()`), so it composes directly with `std::lock_guard<SpinLock>` — which is exactly how `mpsc::ringbuffer` uses it (`src/qb/system/lockfree/mpsc.h:135`).
 
 ### Interface
 
@@ -62,9 +62,9 @@ public:
 
 ### Contract and behavior
 
-- **Non-copyable, non-movable.** All four copy/move special members are deleted (`src/qb/system/lockfree/spinlock.h:53`). A `SpinLock` must stay put in memory — embed it as a member, never pass it by value.
+- **Non-copyable, non-movable.** All four copy/move special members are deleted (`src/qb/system/lockfree/spinlock.h:53,58,68,73`). A `SpinLock` must stay put in memory — embed it as a member, never pass it by value.
 - **Timed methods use the monotonic clock.** `trylock_for(qb::duration)` computes its deadline with `qb::mono_now()` (steady clock), never wall time, so adjusting the system clock cannot extend or shorten the wait (`src/qb/system/lockfree/spinlock.h:138`). `trylock_until(qb::mono_time)` delegates to `trylock_for(deadline - qb::mono_now())`.
-- **A past deadline degrades to a single try.** Because `trylock_until` subtracts the current time from the deadline, a deadline already in the past yields a negative `qb::duration`; the `do … while` body still runs once, so the call performs exactly one non-blocking `trylock()` and returns its result rather than failing outright (`src/qb/system/lockfree/spinlock.h:147`).
+- **A past deadline degrades to a single try.** Because `trylock_until` subtracts the current time from the deadline, a deadline already in the past yields a negative `qb::duration`; the `do … while` body still runs once, so the call performs exactly one non-blocking `trylock()` and returns its result rather than failing outright (`src/qb/system/lockfree/spinlock.h:146-147,173`).
 - **Try-acquire results are `[[nodiscard]]`.** `trylock`, its timed variants, and `locked()` are marked `[[nodiscard]]`; ignoring the return value is a logic error the compiler will warn about.
 
 ### When to reach for it
@@ -76,13 +76,13 @@ Use `SpinLock` only for critical sections that are a handful of instructions lon
 - **Header:** `qb/system/lockfree/spsc.h`
 - **Types:** `qb::lockfree::spsc::ringbuffer<T, _MaxSize>` (fixed) and `qb::lockfree::spsc::ringbuffer<T, 0>` (runtime-sized)
 
-A bounded, wait-free single-producer/single-consumer FIFO. The producer advances `write_index_`; the consumer advances `read_index_`. The two indices live on separate cache lines — `padding1` is sized `QB_LOCKFREE_CACHELINE_BYTES - sizeof(size_t)` — so the producer's and consumer's writes never trigger false sharing (`src/qb/system/lockfree/spsc.h:56`). Coordination uses acquire/release ordering on the indices; no lock is taken on either side.
+A bounded, wait-free single-producer/single-consumer FIFO. The producer advances `write_index_`; the consumer advances `read_index_`. The two indices live on separate cache lines — `padding1` is sized `QB_LOCKFREE_CACHELINE_BYTES - sizeof(size_t)` — so the producer's and consumer's writes never trigger false sharing (`src/qb/system/lockfree/spsc.h:55-59`). Coordination uses acquire/release ordering on the indices; no lock is taken on either side.
 
 ### Type requirements and capacity
 
 - **`T` must be trivially copyable.** A `static_assert` enforces this, because the bulk enqueue/dequeue paths move elements with `std::memcpy` (`src/qb/system/lockfree/spsc.h:52`). The single-element `enqueue(T const&)` placement-news a copy, but for the trivially-copyable `T` the type allows, that is byte-equivalent to the bulk `memcpy`; no per-element constructor or destructor runs on the bulk path.
 - **One slot is reserved.** A buffer of requested capacity *N* allocates *N + 1* slots: the extra slot disambiguates full from empty (the buffer is full when advancing the write index would collide with the read index). Usable capacity equals the requested `_MaxSize` (fixed variant) or the constructor argument (runtime variant) (`src/qb/system/lockfree/spsc.h:370`).
-- **Fixed vs. runtime size.** `ringbuffer<T, _MaxSize>` embeds a `std::array<T, _MaxSize + 1>` sized at compile time. `ringbuffer<T, 0>` takes the size as a constructor argument and allocates `new T[size + 1]` (`src/qb/system/lockfree/spsc.h:469`).
+- **Fixed vs. runtime size.** `ringbuffer<T, _MaxSize>` embeds a `std::array<T, _MaxSize + 1>` sized at compile time. `ringbuffer<T, 0>` takes the size as a constructor argument and allocates `new T[size + 1]` (`src/qb/system/lockfree/spsc.h:477-479`).
 
 ### Interface
 
@@ -157,9 +157,9 @@ The producer index is the **sender's** resolved core id, so each producer is per
 
 The enqueue API splits into two families with very different safety properties. Choosing the wrong one is the most common way to misuse this type.
 
-**Indexed enqueue — no lock, caller-bound producers.** The compile-time `enqueue<_Index>(...)` and runtime `enqueue(index, ...)` overloads take **no lock**. They write straight into the SPSC ring at that index, which is correct only if at most one thread ever uses a given index (`src/qb/system/lockfree/mpsc.h:76`, `:104`). This is the fast path: when each producer thread is permanently bound to its own ring — as in the engine, where the producer index is the sender core's id — no synchronization is needed at all.
+**Indexed enqueue — no lock, caller-bound producers.** The compile-time `enqueue<_Index>(...)` and runtime `enqueue(index, ...)` overloads take **no lock**. They write straight into the SPSC ring at that index, which is correct only if at most one thread ever uses a given index (`src/qb/system/lockfree/mpsc.h:74-77`, `:102-105`). This is the fast path: when each producer thread is permanently bound to its own ring — as in the engine, where the producer index is the sender core's id — no synchronization is needed at all.
 
-**Round-robin enqueue — `SpinLock`-guarded, any thread.** The `enqueue(T const&)` and `enqueue(T const*, size)` overloads pick a producer ring via a `static thread_local` counter modulo the producer count, then take that producer's `SpinLock` under a `std::lock_guard` before writing (`src/qb/system/lockfree/mpsc.h:133`). These overloads are safe to call concurrently from arbitrarily many threads, at the cost of the spinlock; the modulo also balances load across rings.
+**Round-robin enqueue — `SpinLock`-guarded, any thread.** The `enqueue(T const&)` and `enqueue(T const*, size)` overloads pick a producer ring via a `static thread_local` counter modulo the producer count, then take that producer's `SpinLock` under a `std::lock_guard` before writing (`src/qb/system/lockfree/mpsc.h:133-136`). These overloads are safe to call concurrently from arbitrarily many threads, at the cost of the spinlock; the modulo also balances load across rings.
 
 ```cpp
 // src: src/qb/system/lockfree/mpsc.h
@@ -200,9 +200,9 @@ public:
 
 ### Where the engine uses it
 
-Each `VirtualCore` consumes from exactly one inbound mailbox. A `Mailbox` is a `lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>` — the runtime-producer-count specialization (`src/qb/core/Main.h:328`) — with the producer count fixed at construction to the number of cores (`std::make_unique<Mailbox>(nb_producers, …)` where `nb_producers = _core_set.getNbCore()`, `src/qb/core/Main.cpp:126`). The mailboxes are owned by an internal `SharedCoreCommunication` instance held by `qb::Main` (`src/qb/core/Main.h:323`).
+Each `VirtualCore` consumes from exactly one inbound mailbox. A `Mailbox` is a `lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>` — the runtime-producer-count specialization (`src/qb/core/Main.h:328`) — with the producer count fixed at construction to the number of cores (`std::make_unique<Mailbox>(nb_producers, …)` where `nb_producers = _core_set.getNbCore()`, `src/qb/core/Main.cpp:128-129`). The mailboxes are owned by an internal `SharedCoreCommunication` instance held by `qb::Main` (`src/qb/core/Main.h:323`).
 
-- **`EventBucket`** is a cache-line-aligned padding unit (`QB_LOCKFREE_EVENT_BUCKET_BYTES`, equal to `QB_LOCKFREE_CACHELINE_BYTES`, default 64) so event payloads stay cache-aligned in the ring (`src/qb/utility/prefix.h:131`).
+- **`EventBucket`** is a cache-line-aligned padding unit (`QB_LOCKFREE_EVENT_BUCKET_BYTES`, equal to `QB_LOCKFREE_CACHELINE_BYTES`, default 64) so event payloads stay cache-aligned in the ring (`src/qb/utility/prefix.h:68,138-139`).
 - **`MaxRingEvents`** is `uint16_t::max() / QB_LOCKFREE_EVENT_BUCKET_BYTES` — the per-producer ring capacity, derived so a bucket count fits a 16-bit field (`src/qb/core/Main.h:326`).
 - **Producers are core-bound.** `SharedCoreCommunication::send` enqueues into the destination mailbox with the *sender's* resolved core id as the producer index — `_mail_boxes[dest_index]->enqueue(source_index, …)` — so the engine rides the lock-free runtime-indexed path, not the spinlock-guarded round-robin path (`src/qb/core/Main.cpp:215`).
 - **The single consumer drains via the functor `dequeue` overload.** `VirtualCore::__receive__` calls `_mail_box.dequeue(func, _event_buffer->data(), MaxRingEvents)`, which copies each producer ring's pending `EventBucket`s into the core's event buffer and then invokes the functor over that buffer to dispatch them to the event router (`src/qb/core/VirtualCore.cpp:224-226`). This is the copying `dequeue` path, not the zero-copy `consume_all` path described above.
@@ -234,7 +234,7 @@ public:
 ### Contract and behavior
 
 - **`push()` is lock-free and multi-producer-safe.** Any number of threads may push concurrently. A push allocates one heap node and links it via an atomic `exchange` on the tail (`src/qb/system/lockfree/mpsc_unbounded_queue.h:80-84`).
-- **`pop()` is single-consumer only.** Only the one designated consumer thread may call `pop()`; it moves the value into `out` and returns `false` when the queue is empty (`src/qb/system/lockfree/mpsc_unbounded_queue.h:91`).
+- **`pop()` is single-consumer only.** Only the one designated consumer thread may call `pop()`; it moves the value into `out` and returns `false` when the queue is empty (`src/qb/system/lockfree/mpsc_unbounded_queue.h:107-131`).
 - **`T` must be movable.** `push` takes `T` by value and moves it into the node; `pop` moves the node's value into `out` (`src/qb/system/lockfree/mpsc_unbounded_queue.h:43`).
 - **`size()` and `empty()` are approximate.** They reflect a momentary snapshot a producer can invalidate immediately; only the consumer should consult them, and only as a hint (`src/qb/system/lockfree/mpsc_unbounded_queue.h:134-148`).
 - **A sentinel node always remains.** The constructor allocates one sentinel and points both `head_` and `tail_` at it; the destructor walks from `head_` deleting every remaining node (`src/qb/system/lockfree/mpsc_unbounded_queue.h:64-68,70-77`). Each `push` adds a heap node; each `pop` frees the consumed one. This trades the ring buffer's zero-allocation steady state for unbounded capacity.

@@ -215,7 +215,7 @@ registered there, so a send to an unpopulated core's service id is dropped by th
 > the service you get back may not have finished initializing. If you need that guarantee, ask it
 > (`push` an event, or `co_await qb::ask(...)`) rather than touching its state. A non-null pointer is
 > therefore **not** evidence that the service is alive or ready.
-<!-- src: qb/src/qb/core/Actor.h:603-613 (not phase-gated, by design), :641-662 (the Activating inventory table) -->
+<!-- src: qb/src/qb/core/Actor.h:603-613 (not phase-gated, by design); qb/src/qb/core/Actor.h:641-662 (the Activating inventory table) -->
 
 > **Pitfall:** prefer sending events to the service's `id()` over calling its methods through the
 > `getService<T>()` pointer. A direct call bypasses the event queue and runs synchronously inside

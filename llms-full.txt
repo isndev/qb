@@ -236,7 +236,7 @@ on a *cancellation-aware* await (`ctx.sleep`, `ctx.cancellation_point`, `ctx.unt
 `ctx.cancellable`, and everything in the patterns library — `qb::ask` and friends) wakes on the next
 loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly (destructors and `catch`
 blocks run). A killed actor therefore cannot leave a coroutine parked on a long timeout or a dead
-socket. `spawn()` hands the lambda a `qb::ScopedCoroContext`. _(Actor.h:1204-1238)_
+socket. `spawn()` hands the lambda a `qb::ScopedCoroContext`. _(Actor.h:1204-1239)_
 
 ```cpp
 #include <qb/actor.h>
@@ -273,7 +273,7 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 - **After any `co_await`, the only legal channel back is the context.** `ctx.push<E>()` /
   `ctx.push_to<E>(dest, …)` / `ctx.broadcast<E>()` / `ctx.id()` / `ctx.time()` are safe by
   construction — the context stores the `ActorId` by value, and events addressed to a dead actor are
-  dropped, not delivered into freed memory. _(Actor.h:1384)_
+  dropped, not delivered into freed memory. _(Actor.h:1380-1386)_
 - **`spawn()` must be called from the actor's own VirtualCore thread** (i.e. from a handler,
   `onInit()`, or `on(qb::LoopEvent const&)`).
 - **Pass the lambda WITHOUT a trailing `()`.** `spawn(f())` invokes the closure to get a `task`, the
@@ -284,7 +284,7 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 `qb::ScopedCoroContext` is a superset of `qb::CoroContext`. On top of `push`/`push_to`/`broadcast`/
 `id`/`time` it adds the cancellation-aware surface: `sleep(qb::duration)`, `cancellation_point()`,
 `until_cancelled()`, `cancellable(task<T>&&)`, `child_token()`, `token()`, `cancelled()`.
-_(Actor.h:1673-1753)_
+_(Actor.h:1674-1753)_
 
 `Actor::context()` returns that same `ScopedCoroContext` **wherever you hold the actor** — most
 importantly inside `onInit()`, which is itself a coroutine (`task<bool>`) and gets no `ctx`
@@ -296,7 +296,7 @@ receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not*
 actor dies — it runs to completion, orphaned. Reach for it only for fire-and-forget work that must
 *intentionally outlive* the actor, e.g. flushing an audit record during shutdown. It cannot be used
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
-`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1144-1201)_
+`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1144-1202)_
 
 ```cpp
 void on(const AuditEvent &) {
@@ -350,7 +350,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   every coroutine discovery on that actor hangs until its timeout. (Exactly `resolve_ask`'s rule.)
   There is **no `status` field**: presence *is* the status — a dead actor never replies. Prefer
   `co_await qb::require<Target>(context(), timeout)`, which correlates the replies for you.
-  _(Event.h:420, :424)_
+  _(Event.h:619-632)_
 - **reply vs forward** — both reuse the received event (require a non-const `on(Event&)` handler).
   `reply(e)` swaps dest↔source; `forward(dest, e)` keeps the original source. Neither works on
   broadcast events (dropped). After the call the event is consumed — do not touch it.
@@ -365,12 +365,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`onInit()` is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; it must
   `registerEvent<T>(*this)` for every handled event.** `co_return true` activates the actor; `co_return false`
   or throwing fails init and the resulting `ActorId` is invalid. While `onInit()` is suspended the actor
-  is *Activating*. _(Actor.h:322)_
+  is *Activating*. _(Actor.h:321-334)_
 - **`push`/`send`/`broadcast` and the messaging hot path are `noexcept`.** A throw across that boundary
   (e.g. OOM growing the pipe, or a throwing event constructor) calls `std::terminate()`. Keep events
-  small and allocation-light. _(Actor.h:850; Pipe.h:126)_
+  small and allocation-light. _(Actor.h:871-877; Pipe.h:135-150)_
 - **`send<T>()` requires a trivially-destructible event** and is unordered; `push<T>()` is ordered and
-  carries no destructibility requirement. Use `push` unless you have a specific reason. _(Actor.h:862)_
+  carries no destructibility requirement. Use `push` unless you have a specific reason. _(Actor.h:829-834, :886-890)_
 - **Every event payload must be trivially *relocatable* — on `push` as much as on `send`.** The
   runtime moves events with raw `memcpy` and abandons the source without running a destructor there,
   so no member may point into its own storage. A by-value `std::string` is exactly that shape on
@@ -383,38 +383,38 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating,
   after a failed init, or once it died — never a dangling pointer. Send to `handle.id()` any time; gate
   direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
-  _(Actor.h:988, :1256)_
+  _(Actor.h:1098-1102, :1122, :1830-1832)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
   both must be called from the actor's own worker thread. _(`spawn_detached` Actor.h:1202 / VirtualCore.h:1147; `spawn` Actor.h:1239 / VirtualCore.h:1160)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
-  stalls the whole core and every actor on it. _(ICallback.h:16)_
+  stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
-  with 0 actors fails startup. _(Main.cpp:369, :237)_
+  with 0 actors fails startup. _(Main.cpp:484-486, :341-343)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
   `on(qb::LoopEvent const&)` invocation. For a continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:582; VirtualCore.h:607)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:567-583; VirtualCore.h:649-660)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
-  object on the same thread whose `listener::current` it bound to. _(listener.h:63; io.h:79)_
+  object on the same thread whose `listener::current` it bound to. _(async/listener.h:66-78; async/io.h:62-67, :82-83, :91-95)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
-  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:980-993; mixin.h:63)_
+  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:980-993; mixin.h:63-71)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
-  them. _(listener.h:717)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:367)_ _(listener.h:1032)_
+  them. _(listener.h:965-977)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:353-379)_ _(listener.h:1032)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
-  without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:230)_
+  without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:406-435)_
 - **Stop the event loop before destroying a coroutine scheduler;** suspended frames are intentionally
-  leaked while their watchers reference them. _(scheduler.h:155)_
+  leaked while their watchers reference them. _(scheduler.h:183-203)_
 - **Time model is `std::chrono`-only on public signatures.** All timeouts/TTL/intervals/delays take
   `qb::duration` (= `std::chrono::nanoseconds`); it accepts finer-or-equal chrono literals and **rejects
   bare integers at compile time**. `qb::mono_time` (steady) is for deadlines/timers/latency, `qb::wall_time`
   (system) for dates/expiry/wire; subtracting one from the other does not compile. The retired tokens
   `qb::Timestamp`, `qb::Duration`, `qb::TimePoint`, `to_timestamp(`, `to_time_point(` no longer exist —
-  never emit them. _(time.h:8-25, aliases :90/:93/:96)_
+  never emit them. _(time.h:8-25, aliases :90, :93, :96)_
 - **`qb::string<N>` silently truncates** anything past capacity `N` (only `at()` / out-of-range
   `substr` throw). _(string.h:201)_
 - **DoS bounds are enforced:** read/write buffers cap at 200 MB (`QB_MAX_READ/WRITE_BUFFER_SIZE`), a
@@ -425,7 +425,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:127; ssl/socket.h:775, :81)_
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:127; ssl/socket.h:464, :871, :84, :95)_
 - **Filesystem paths are `std::filesystem::path` and resource paths self-locate.** `sys::file::open`/ctor,
   `file_to_pipe`/`pipe_to_file::open`, the SSL cert/key/CA/DH helpers (`create_server_context`,
   `load_ca_certificates`/`load_ca_directory`/`configure_mtls_server_context`/`configure_client_certificate`/`configure_dh_parameters_server`),
@@ -435,17 +435,20 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   paths and http static roots resolve through `qb::io::sys::resolve_resource` — a relative path is found from the cwd **or
   the running executable's own dir** (`self_path()`/`self_dir()`), so a binary shipped next to its assets/certs runs from any
   cwd; absolute paths pass through unchanged. URL/route paths, actor event path fields, and remote/wire paths (redis
-  module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:94)_
+  module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `qev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
   hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; qev++.h:696)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:254-271)_
-- **`crypto.h` requires `QB_HAS_SSL`, `compression.h` requires `QB_HAS_COMPRESSION`** (hard `#error`
-  otherwise). These are the compile-time flags the headers gate on; the `QB_WITH_SSL`/`QB_WITH_COMPRESSION`
+- **`compression.h` hard-`#error`s without `QB_HAS_COMPRESSION`; `crypto.h` does not — its OpenSSL gate is
+  per-member.** Including `crypto.h` in a no-SSL build compiles: `qb::crypto` still declares everything that
+  needs no OpenSSL (the hex codec the pgsql `bytea` wire format depends on), and the OpenSSL-only members are
+  removed from the class, so misuse fails at the **call site** (`no member named 'md5' in 'qb::crypto'`) rather
+  than at the `#include`. These are the compile-time flags the headers gate on; the `QB_WITH_SSL`/`QB_WITH_COMPRESSION`
   CMake options, when enabled, define the `QB_HAS_SSL`/`QB_HAS_COMPRESSION` macros. AEAD `decrypt`/`verify_token`
-  return empty on auth failure — treat empty as rejection, never as "decrypted to nothing". _(crypto.h:33; compression.h:37; crypto.h:524, :825)_
+  return empty on auth failure — treat empty as rejection, never as "decrypted to nothing". _(crypto.h:33-44; compression.h:37-39; crypto.h:542-544, :784-790)_
 
 ## Build / integration
 
@@ -637,14 +640,14 @@ Returned by `Actor::to()`. Copyable, not default-constructible.
 *   use: `to(dst).push<A>().push<B>();`
 
 #### `class qb::CoroContext`
-Safe restricted context handed to `spawn_detached` coroutines (captures the actor's `ActorId` by value, survives destruction — events to a dead actor are dropped, never delivered into freed memory). The `CoroContext` class is at _(`Actor.h:1384`)_; the alias `qb::coro_context` at _(`Actor.h:2250`)_.
+Safe restricted context handed to `spawn_detached` coroutines (captures the actor's `ActorId` by value, survives destruction — events to a dead actor are dropped, never delivered into freed memory). The `CoroContext` class is at _(`Actor.h:1385-1394`)_; the alias `qb::coro_context` at _(`Actor.h:2250`)_.
 *   `[T<_Event,Args...>] void push(Args&&... args)` — push to self.
 *   `[T<_Event,Args...>] void push_to(ActorId dest, Args&&... args)` — push to a given dest.
 *   `[T<_Event,Args...>] void broadcast(Args&&... args)` — broadcast to all actors on all cores (backs `qb::require`).
 *   `[[nodiscard]] ActorId id() const noexcept`, `[[nodiscard]] uint64_t time() const noexcept` (epoch nanoseconds).
 
 #### `class qb::ScopedCoroContext : public CoroContext`
-Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb::scoped_coro_context`. A **superset** of `CoroContext` that also carries the actor's cancellation token, so everything below is cancelled when the actor is killed/destroyed. This is the type every `qb::` patterns free function takes. The `ScopedCoroContext` class is at _(`Actor.h:1673-1753`)_; the alias `qb::scoped_coro_context` at _(`Actor.h:2258`)_.
+Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb::scoped_coro_context`. A **superset** of `CoroContext` that also carries the actor's cancellation token, so everything below is cancelled when the actor is killed/destroyed. This is the type every `qb::` patterns free function takes. The `ScopedCoroContext` class is at _(`Actor.h:1674-1753`)_; the alias `qb::scoped_coro_context` at _(`Actor.h:2258`)_.
 *   `[[nodiscard]] const qb::io::async::cancellation_token& token() const noexcept`, `[[nodiscard]] bool cancelled() const noexcept`.
 *   `[[nodiscard]] qb::io::async::cancellation_token child_token() const` — a fresh token cancelled with the actor scope, cancellable independently.
 *   `[[nodiscard]] task<void> sleep(qb::duration d) const` — cancellation-aware sleep; throws `cancelled_error` on cancel.
@@ -1182,7 +1185,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 ### Session manager (`<qb/io/async/io_handler.h>`)
 *   `[T] class io_handler<_Derived, _Session>` — manages async sessions.
     *   `using session_map_t = qb::unordered_map<uuid, std::shared_ptr<_Session>>;`, `using IOSession = _Session;`
-    *   `session_map_t& sessions()`, `[[nodiscard]] std::size_t session_count() const noexcept` (singular — there is no `sessions_count`). _(`io_handler.h:139`, `:148`)_
+    *   `session_map_t& sessions()`, `[[nodiscard]] std::size_t session_count() const noexcept` (singular — there is no `sessions_count`). _(`async/io_handler.h:139-140`, `:148-149`)_
     *   `std::shared_ptr<_Session> session(uuid id)` (`nullptr` if absent).
     *   `std::size_t max_sessions() const noexcept`, `void set_max_sessions(std::size_t max) noexcept` (0 = unlimited).
     *   `[T<...Args>] _Session* registerSession(typename _Session::transport_io_type&& new_io, Args&&... args)` — register a session; → `nullptr` (after closing `new_io`) when at `max_sessions` or on duplicate-id insert failure.
@@ -1348,7 +1351,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   X25519: `static std::pair<std::string,std::string> generate_x25519_keypair()` / `generate_x25519_keypair_bytes()`; `x25519_key_exchange(...)` (raw-bytes and PEM overloads).
 *   ECIES (X25519 + AEAD; **raw-byte keys only, there is no PEM/`std::string` overload and no `DigestAlgorithm` parameter**):
     *   `static std::pair<std::vector<unsigned char>,std::vector<unsigned char>> ecies_encrypt(const std::vector<unsigned char>& data, const std::vector<unsigned char>& recipient_public_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)` → **`{ephemeral_public_key, ciphertext}`, in that order** — NOT `{ciphertext, ephemeral}`, which is what this line used to say. `ecies_decrypt` takes them the other way round (ciphertext first), so the pair is deliberately not in call order; feeding it straight through throws `Failed to create public key from raw bytes`. _(`crypto_asymmetric.cpp:718`)_
-    *   `static std::vector<unsigned char> ecies_decrypt(const std::vector<unsigned char>& encrypted_data, const std::vector<unsigned char>& ephemeral_public_key, const std::vector<unsigned char>& recipient_private_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)`. _(`crypto.h:991-1000`)_
+    *   `static std::vector<unsigned char> ecies_decrypt(const std::vector<unsigned char>& encrypted_data, const std::vector<unsigned char>& ephemeral_public_key, const std::vector<unsigned char>& recipient_private_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)`. _(`crypto.h:996-1000`)_
     *   `ECIESMode::STANDARD` is AES-256-CBC with **no MAC** — unauthenticated and malleable; it exists only for interop. Use the default `AES_GCM` or `CHACHA20`. _(`crypto.h:693-701`)_
 *   Envelope AEAD-with-metadata: `static std::string encrypt_with_metadata(const std::vector<unsigned char>& plaintext, const std::vector<unsigned char>& key, const std::string& metadata, SymmetricAlgorithm = SymmetricAlgorithm::AES_256_GCM)`; `static std::optional<std::pair<std::vector<unsigned char>,std::string>> decrypt_with_metadata(const std::string& ciphertext, const std::vector<unsigned char>& key, SymmetricAlgorithm = SymmetricAlgorithm::AES_256_GCM)` (empty optional if authentication fails). _(`crypto.h:969-986`)_
 *   The `EnvelopeFormat` enum (`RAW | JSON | BASE64`) exists but **no function consumes it** — there is no `envelope_encrypt`/`envelope_decrypt`, and no `ecdh_derive_secret`. For key agreement use `x25519_key_exchange` (raw-bytes and PEM overloads). _(`crypto.h:704`, `:931`, `:943`)_

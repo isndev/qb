@@ -149,7 +149,7 @@ struct ValidationResult : qb::Event {
 
 ### Self-termination with `kill()`
 
-If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:363-365`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
+If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:363-373`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
 
 `kill()` does not notify anyone. If a supervisor needs to know, `push` a notification event to it *before* calling `kill()` (see [Supervision](#supervision-you-build-yourself)).
 
@@ -382,7 +382,7 @@ qb::io::async::callback([this]() {
 **2. Own the timer with `scoped_callback`** so it is cancelled deterministically when the actor dies. `scoped_callback` returns `std::unique_ptr<ScopedTimeout<…>>`; store it as an actor member. When the actor is destroyed, the member's destructor stops the watcher and releases its registration, so the callback can never run after the actor is gone:
 
 ```cpp
-// src: qb/src/qb/io/async/io.h:385-468 (ScopedTimeout / scoped_callback)
+// src: qb/src/qb/io/async/io.h:410 (class ScopedTimeout), :470, :481 (scoped_callback overloads)
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <chrono>
@@ -417,7 +417,7 @@ The correct primitive for "continue **after the current event handler returns**,
 Use it when a handler must do something that is unsafe inline — above all, destroy or replace the very object it is running on:
 
 ```cpp
-// src: qb/src/qb/io/async/listener.h:872 (qb::io::async::defer)
+// src: qb/src/qb/io/async/listener.h:1032 (qb::io::async::defer), :813 (listener::defer)
 void on(event::disconnected const &) {
     // Reconnect = destroy the current connection and build a new one. Doing it
     // inline here (still inside this handler's dispatch) frees `this` mid-call —

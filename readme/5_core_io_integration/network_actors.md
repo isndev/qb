@@ -142,7 +142,7 @@ Points worth noting:
 For a single-actor server, inherit from `use<Self>::tcp::server<Session>`. This base combines the acceptor and the `io_handler<Session>` pool: it accepts connections, constructs a `Session` per client, and (when present) calls your `on(Session&)` hook after registration.
 
 ```cpp
-// src: qb/src/qb/io/async/tcp/server.h (base contract) — pattern adapted
+// src: qb/src/qb/io/async/tcp/server.h (base contract; pattern adapted)
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <qb/io/uri.h>

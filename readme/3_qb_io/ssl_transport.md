@@ -47,7 +47,7 @@ but OpenSSL is found by `find_package(OpenSSL QUIET)` and is **never** fetched. 
 is not present, `QB_WITH_SSL` is forced `OFF`, the resolved capability `QB_HAS_SSL` becomes
 false, and the entire SSL/TLS slice is absent.
 
-<!-- src: qb/cmake/qbConfig.cmake:100, qb/cmake/qbDependencies.cmake:124-146 -->
+<!-- src: qb/cmake/qbConfig.cmake:148, qb/cmake/qbDependencies.cmake:124-146 -->
 
 | Symbol | Meaning |
 | --- | --- |
@@ -59,11 +59,15 @@ All SSL headers (`qb/io/tcp/ssl/socket.h`, `qb/io/tcp/ssl/listener.h`,
 aliases in `qb/io/async.h` are themselves guarded by `#ifdef QB_HAS_SSL`, so code that
 references them must also be compiled under that definition.
 
-<!-- src: qb/src/qb/io/async.h:114-127 -->
+<!-- src: qb/src/qb/io/async.h:113-127 -->
 
-> The crypto and JWT toolbox (`qb/io/crypto.h`) shares this OpenSSL dependency and `#error`s
-> at compile time unless `QB_HAS_SSL` is defined. A non-SSL build has neither secure
-> transport nor the crypto utilities.
+> The crypto and JWT toolbox shares this OpenSSL dependency, but does not fail the same way.
+> `qb/io/crypto_jwt.h` `#error`s at compile time unless `QB_HAS_SSL` is defined;
+> `qb/io/crypto.h` compiles either way, because its gate is per **member** — the class keeps
+> everything that needs no OpenSSL (the hex codec a cleartext qbm-pgsql build depends on) and
+> drops the rest, so a no-SSL build fails at the call site (`no member named 'md5' in
+> 'qb::crypto'`). A non-SSL build has neither secure transport nor the OpenSSL-backed crypto.
+> <!-- src: qb/src/qb/io/crypto.h:33-44, qb/src/qb/io/crypto_jwt.h:36-38 -->
 
 ## Core components
 
@@ -106,7 +110,7 @@ context's `SSL_CTX` ex-data, so they are reachable from every minted `SSL` and a
 the context. `VerifyMode` is `none` / `peer` / `peer_require` (the last adds fail-if-no-cert, i.e.
 mutual TLS); `TlsVersion` is `v1_2` / `v1_3`.
 
-<!-- src: qb/src/qb/io/tcp/ssl/context.h:62, qb/src/qb/io/tcp/ssl/context.h:72 -->
+<!-- src: qb/src/qb/io/tcp/ssl/context.h:62 (TlsVersion), :72 (VerifyMode), :190-194 (typed on_keylog/on_verify/on_sni) -->
 
 The raw `qb::io::ssl::` free functions and `socket::init(SSL*)` / `listener::init(SSL_CTX*)` remain
 available as an advanced escape hatch for fully hand-built configurations.
@@ -149,7 +153,7 @@ public:
     [[nodiscard]] SSL *ssl_handle() const noexcept;
 };
 ```
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:335-744 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:338-925 -->
 
 Key behaviors verified in the header:
 
@@ -211,7 +215,7 @@ int rc = c.connect_v4("127.0.0.1", 64388);
 When you supply your own `SSL` handle through `init(SSL*)`, `qb-io` does **not** modify the
 verification policy; your context's settings are used as-is.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:765-782 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:498-505 (init takes ownership of the SSL), :404-410 (the context path is honoured as-is) -->
 
 #### Pre-handshake configuration
 
@@ -230,7 +234,7 @@ the socket and applied once the `SSL` handle exists, so they are valid to set be
 | `set_session(qb::io::ssl::Session&)` | Offer a previously cached session for resumption. |
 | `set_insecure()` | Disable peer verification on the auto-created context. |
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:614-714 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:754 (disable_session_resumption), :765 (request_ocsp_stapling), :799 (set_session), :822 (set_sni_hostname), :834 (set_alpn_protocols), :844 (set_verify_callback), :852 (set_verify_depth), :871 (set_insecure) -->
 
 #### Introspection and sessions
 
@@ -243,7 +247,7 @@ After a successful handshake the socket exposes: `get_negotiated_cipher_suite()`
 owns it and must release it with `qb::io::ssl::free_session()`. Setting a session does not
 guarantee resumption — the server must agree.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:583-663 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:710-735 (introspection), :774 (peer chain), :786 (get_session), :310 (free_session) -->
 
 ### `qb::io::tcp::ssl::listener`
 
@@ -356,7 +360,7 @@ working directory first and then against the running executable's own directory.
 shipped next to its `cert.pem` / `key.pem` therefore loads them regardless of the cwd it is
 launched from.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:186-204, 206-300, 414-418 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:186-204, :206-300, :414-418 -->
 
 ## Building an SSL server
 
@@ -371,7 +375,7 @@ file paths, and hand it to the transport's listener before listening. The aliase
 | `use<T>::tcp::ssl::io_handler<Session>` | Session-management mixin for custom servers. |
 | `use<T>::tcp::ssl::client<Server = void>` | Secure client session over `transport::stcp`. |
 
-<!-- src: qb/src/qb/io/async.h:114-127 -->
+<!-- src: qb/src/qb/io/async.h:113-127 -->
 
 ```cpp
 // src: qb/tests/io/system/tls/tls-text-roundtrip.cpp:78-127 (adapted)
@@ -478,7 +482,7 @@ client.transport().set_sni_hostname("api.example.com");   // before connect
 if (SocketStatus::Done != client.transport().connect_v4("api.example.com", 443))
     throw std::runtime_error("TLS connect/verify failed");
 ```
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:677-696 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:822 (set_sni_hostname) -->
 
 ## Generating a test certificate
 
@@ -487,7 +491,7 @@ command (RSA-2048, `CN=localhost`, 365-day validity, with a `subjectAltName` so 
 verification can pass for `localhost`) is:
 
 ```bash
-# src: qb/tests/io/system/CMakeLists.txt:99-101
+# src: qb/tests/io/system/CMakeLists.txt:106-108
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
     -days 365 -nodes \
     -subj "/CN=localhost/O=QB Tests/C=US" \
@@ -513,7 +517,7 @@ A self-signed certificate is rejected by a default (verifying) client; pair it w
 - **Timed connect does not bound the handshake.** The timed `connect(ep, hostname, wtimeout)`
   overloads bound only the underlying TCP connect phase; the TLS handshake itself is not
   separately timed.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.h:467-469, 479-481; qb/src/qb/io/tcp/ssl/socket.cpp:743-779 -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.h:529, :541 (timed connect overloads); qb/src/qb/io/tcp/ssl/socket.cpp:769-798 -->
 - **`SSL_CTX` ownership splits by path.** A context from `create_*_context` is caller-owned
   and must be `SSL_CTX_free`d — unless it is passed to `listener::init()`, which then owns
   and frees it. A `Session` from `get_session()` is always caller-owned; release it with
