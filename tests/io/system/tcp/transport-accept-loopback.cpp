@@ -76,9 +76,11 @@
 #include <qb/io/transport/accept.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/loopback_fixture.h"
 
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
+using qb::io::test::read_exact_within;
 
 // ===========================================================================
 // PART A — transport::accept mixin, direct loopback (no event loop)
@@ -103,39 +105,54 @@ TEST(TransportAccept, ReadAcceptsAPendingConnectionAndGetAcceptedRoundTrips) {
         EXPECT_GE(client.write("ping", 4), 4);
 
         char buffer[8] = {};
-        // Bounded read for the echoed reply.
-        const auto deadline = std::chrono::steady_clock::now() + 2s;
-        int        got      = 0;
-        while (got < 4 && std::chrono::steady_clock::now() < deadline) {
-            const int n = client.read(buffer + got, 4 - got);
-            if (n > 0)
-                got += n;
-            else
-                std::this_thread::sleep_for(1ms);
-        }
-        EXPECT_EQ(got, 4);
+        // Bounded read for the echoed reply. The deadline is only a bound because the
+        // read is non-blocking: `connect_v4` leaves the socket in the OS default
+        // (blocking) mode, so the loop this replaced re-checked `deadline` between
+        // reads it could never get back to — the 2s was decoration.
+        EXPECT_EQ(read_exact_within(client, buffer, 4, 2s), 4u);
         EXPECT_EQ(std::string(buffer, 4), "pong");
         client.disconnect();
     });
 
-    // Block-accept the pending connection via the mixin's read(): it returns the
-    // native handle of the freshly accepted socket (never (size_t)-1 here).
-    const std::size_t handle = acceptor.read();
+    // Join on EVERY exit path. The explicit `client_thread.join()` further down is
+    // still where the ordering matters (it must precede `flush()`), and leaves this
+    // guard a no-op; the guard exists for the path where a fatal ASSERT below returns
+    // from the test body first. `~std::thread` on a still-joinable thread calls
+    // std::terminate(), which aborts the process mid-report and truncates the very
+    // failure that caused it — the same "a finding becomes infrastructure noise"
+    // outcome the bounded waits here exist to prevent. Safe now that the client's own
+    // waits are bounded, so it cannot be parked when this runs.
+    struct join_on_exit {
+        std::thread &t;
+        ~join_on_exit() {
+            if (t.joinable())
+                t.join();
+        }
+    } const client_joiner{client_thread};
+
+    // Accept the pending connection via the mixin's read(). Bounded: a client whose
+    // connect never lands (its ASSERT above aborted the thread body) would park a
+    // blocking accept on the MAIN thread forever, and `client_thread.join()` below
+    // would never be reached to report it. With a non-blocking listener `read()`
+    // returns (size_t)-1 until a connection is queued — the documented behaviour the
+    // next test in this file pins — so polling it is the mixin's own contract, and
+    // the success branch taken here (`accept()==Done` -> native handle) is unchanged.
+    acceptor.transport().set_nonblocking(true);
+    std::size_t handle       = static_cast<std::size_t>(-1);
+    const auto  accept_until = std::chrono::steady_clock::now() + 3s;
+    while ((handle = acceptor.read()) == static_cast<std::size_t>(-1) && std::chrono::steady_clock::now() < accept_until)
+        std::this_thread::sleep_for(1ms);
     ASSERT_NE(handle, static_cast<std::size_t>(-1)) << "read() failed to accept the pending connection";
 
     qb::io::tcp::socket &accepted = acceptor.getAccepted();
     ASSERT_TRUE(accepted.is_open());
     EXPECT_EQ(static_cast<std::size_t>(accepted.native_handle()), handle) << "getAccepted() must wrap the exact handle read() returned";
 
-    // Drain the client's "ping" and echo "pong" back.
-    accepted.set_nonblocking(false);
+    // Drain the client's "ping" and echo "pong" back. Bounded: this loop had no
+    // deadline at all, on the main thread, over a socket deliberately flipped to
+    // blocking — a client that connected but never wrote wedged the binary.
     char in[8] = {};
-    int  got   = 0;
-    while (got < 4) {
-        const int n = accepted.read(in + got, 4 - got);
-        ASSERT_GT(n, 0);
-        got += n;
-    }
+    ASSERT_EQ(read_exact_within(accepted, in, 4), 4u) << "accepted socket never carried the client's 4-byte ping";
     EXPECT_EQ(std::string(in, 4), "ping");
     EXPECT_GE(accepted.write("pong", 4), 4);
 
