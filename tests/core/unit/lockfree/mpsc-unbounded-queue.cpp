@@ -43,6 +43,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -167,6 +168,17 @@ constexpr int kProducers   = 4;
 constexpr int kPerProducer = 20000;
 constexpr int kTotal       = kProducers * kPerProducer;
 
+// Ceiling on the two consumer drain loops below. Both are hot busy-waits on "have I drained every
+// item yet", so the ONE defect they exist to catch — a lost item — is also the one thing that makes
+// their exit condition unreachable. Unbounded, that does not fail the test: it pegs a core until
+// ctest's per-tier TIMEOUT (60s for tier:unit, `qb/cmake/qbFunctions.cmake` default) kills it, and
+// the run is reported as `***Timeout`, indistinguishable in a CI log from an overloaded runner —
+// while `"item N was lost or duplicated"`, the assertion written to name the defect, never runs.
+// Falling through on the deadline hands the verdict to those assertions instead.
+// 20s is ~1400x the measured 14ms whole-binary runtime, so it cannot fire on a slow or
+// sanitizer-instrumented host, and it stays comfortably under the 60s tier timeout.
+constexpr auto kDrainDeadline = std::chrono::seconds(20);
+
 TEST(MpscUnboundedQueue, MultiProducerLosesNothingAndKeepsPerProducerOrder) {
     mpsc_unbounded_queue<int> q;
     std::atomic<bool>         go{false};
@@ -191,8 +203,9 @@ TEST(MpscUnboundedQueue, MultiProducerLosesNothingAndKeepsPerProducerOrder) {
     std::thread consumer([&] {
         while (!go.load(std::memory_order_acquire))
             qb::spin_loop_pause();
-        int out = 0;
-        while (static_cast<int>(drained.size()) < kTotal) {
+        int        out      = 0;
+        const auto deadline = std::chrono::steady_clock::now() + kDrainDeadline;
+        while (static_cast<int>(drained.size()) < kTotal && std::chrono::steady_clock::now() < deadline) {
             max_size_seen = std::max(max_size_seen, q.size());
             if (q.pop(out))
                 drained.push_back(out);
@@ -252,7 +265,8 @@ TEST(MpscUnboundedQueue, MultiProducerPayloadsAreDestroyedExactlyOnce) {
             while (!go.load(std::memory_order_acquire))
                 qb::spin_loop_pause();
             CountedPayload out;
-            while (drained.load(std::memory_order_relaxed) < kProducers * kEach) {
+            const auto     deadline = std::chrono::steady_clock::now() + kDrainDeadline;
+            while (drained.load(std::memory_order_relaxed) < kProducers * kEach && std::chrono::steady_clock::now() < deadline) {
                 if (q.pop(out))
                     drained.fetch_add(1, std::memory_order_relaxed);
             }

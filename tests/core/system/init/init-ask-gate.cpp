@@ -125,13 +125,32 @@ TEST(InitAskGate, ReplyDeliveredNotStashedCrossCore) {
 // ---------------------------------------------------------------------------
 std::atomic<int> g_both_value{-1};
 std::atomic<int> g_both_stash_hits{0};
+// Synchronisation + non-vacuity witnesses for case 3. `g_both_stash_hits` is an ASKER-side counter:
+// it proves the REPLY was not stashed. Nothing here proved the case's headline claim — that the
+// REQUEST was stashed at the still-Activating responder — and that claim rested entirely on the
+// asker's 5ms sleep landing inside the responder's 25ms window, with nothing synchronising them.
+// Both timers live on core 0's single loop, and `listener::run(EVRUN_NOWAIT)` fires every expired
+// timer in one call, so a single >=25ms stall of that loop collapses both deadlines into one turn:
+// the asker pushes `Cfg`, `__pump_activations__()` then activates the responder, and only then does
+// the pipe drain — into an ALREADY ACTIVE responder. Never stashed, and every assertion below still
+// holds. `g_both_responder_activating` replaces the guess with a signal, and
+// `g_both_ask_pre_activation` makes the un-stashed run fail instead of pass.
+std::atomic<bool> g_both_responder_activating{false};
+std::atomic<bool> g_both_responder_activated{false};
+std::atomic<bool> g_both_ask_pre_activation{false};
+// Fail-fast ceiling on the asker's poll, in 1ms steps. Never reached in practice (both onInit()s
+// are driven in one `__init__actors__` pass, so the flag is set on the first look); its only job is
+// to stop an unbounded wait from hanging to the 120s tier timeout when the flag never arrives.
+constexpr int kResponderPollCap = 300;
 
 class AsyncResponder : public qb::Actor {
 public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Cfg>(*this);
-        co_await context().sleep(25ms); // Activating — the asker's request stashes HERE
+        g_both_responder_activating.store(true); // window OPEN — the asker waits on this
+        co_await context().sleep(25ms);          // Activating — the asker's request stashes HERE
+        g_both_responder_activated.store(true);  // window CLOSED
         co_return true;
     }
     void
@@ -150,7 +169,16 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Cfg>(*this);
-        co_await context().sleep(5ms); // be Activating on the asker side too
+        // Wait for the responder to actually be IN its window rather than guessing that a fixed
+        // 5ms sleep lands inside its 25ms one. This asker is still inside its own onInit while it
+        // polls, so it remains Activating on its side too — which is what the reply-side assertion
+        // below needs — and it now asks as early as it possibly can instead of burning 5ms of the
+        // responder's margin first. Bounded; see kResponderPollCap.
+        for (int i = 0; i < kResponderPollCap && !g_both_responder_activating.load(); ++i)
+            co_await context().sleep(1ms);
+        // Sampled as late as possible before the request goes out: false means the responder had
+        // already finished onInit, so the request reached an ACTIVE actor and was never stashed.
+        g_both_ask_pre_activation.store(!g_both_responder_activated.load());
         auto reply = co_await qb::ask(context(), _r, Cfg{4}, 2s);
         g_both_value.store(reply.response);
         kill();
@@ -166,11 +194,19 @@ public:
 TEST(InitAskGate, ReplyFromActivatingResponderDeliveredNotStashed) {
     g_both_value.store(-1);
     g_both_stash_hits.store(0);
+    g_both_responder_activating.store(false);
+    g_both_responder_activated.store(false);
+    g_both_ask_pre_activation.store(false);
     qb::Main   main;
     const auto r = main.addActor<AsyncResponder>(0);
     main.addActor<AsyncAsker>(0, r);
     main.start(false);
     main.join();
+    // Non-vacuity FIRST. Without it this case degenerates into an exact duplicate of case 1 above:
+    // an ask answered by an already-active responder returns 40 and stashes nothing either.
+    EXPECT_TRUE(g_both_ask_pre_activation.load())
+        << "the request must be issued while the responder is still Activating — otherwise it was "
+           "never stashed at the responder and this case tests nothing case 1 does not";
     EXPECT_EQ(g_both_value.load(), 40); // request stashed at the Activating responder, reply delivered
     EXPECT_EQ(g_both_stash_hits.load(), 0) << "reply from an Activating responder was stashed at the asker instead of delivered to the awaiter";
     EXPECT_FALSE(main.hasError());
