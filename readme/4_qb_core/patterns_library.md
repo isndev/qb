@@ -52,19 +52,19 @@ this page only states what the patterns depend on.
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
   `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1215-1217`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1205`, `:1710-1714`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1257`, `:1762-1766`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
-  `qb/src/qb/core/Actor.h:1350-1385`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:1636-1668`). **Never capture `this` past a `co_await`** — capture by
-  value (`qb/src/qb/core/Actor.h:1619-1620`).
+  `qb/src/qb/core/Actor.h:1385,1403,1413,1422,1429,1437`) plus the scope token and cancellation-aware `sleep`
+  (`qb/src/qb/core/Actor.h:1674-1675,1688-1690,1717-1719`). **Never capture `this` past a `co_await`** — capture by
+  value (`qb/src/qb/core/Actor.h:1219-1221`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
-  (`qb/src/qb/core/Event.h:365-367`); `qb::AskEvent` derives from it for the request/response API
+  (`qb/src/qb/core/Event.h:581-582`); `qb::AskEvent` derives from it for the request/response API
   (`qb/src/qb/core/Actor.h:1451`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
-  discovery (`qb/src/qb/core/Event.h:388-416`). Because the id sits at a uniform offset, the
+  discovery (`qb/src/qb/core/Event.h:604,623`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
   (inside `onInit()`), so the whole library works during init
-  (`qb/src/qb/core/Event.h:358-363`).
+  (`qb/src/qb/core/Event.h:574-578`).
 
 ### Cancellation, timeout and failure — the common contract
 
@@ -119,7 +119,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   sending nothing, if the budget is already spent (`request.h:156-160`).
 
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
-(`qb/src/qb/core/Actor.h:1225-1241`); one actor can both ask and answer the same event type
+(`qb/src/qb/core/Actor.h:1277-1293`); one actor can both ask and answer the same event type
 because `answer`/`resolve_ask` disambiguate replies from inbound requests
 (`qb/tests/core/system/coroutine/ask-patterns.cpp:22-23`).
 
@@ -192,7 +192,7 @@ sequenceDiagram
     Reg-->>Co: resume → returns filled E
     Note over Co: timeout → timeout_error · kill → cancelled_error
 ```
-<!-- Reflects qb/src/qb/core/patterns/request.h:98-105,186-193 + qb/src/qb/core/Actor.h:1225-1241 -->
+<!-- Reflects qb/src/qb/core/patterns/request.h:98-105,186-193 and qb/src/qb/core/Actor.h:1277-1293 -->
 
 ---
 
@@ -436,7 +436,7 @@ spawn([b = breaker, t, n](qb::ScopedCoroContext ctx) -> qb::io::async::task<void
     }
 });
 ```
-<!-- src: qb/tests/core/system/coroutine/coroutine-resilience.cpp:138-153 (ask_retry); :403-417,428 (ask_guarded) -->
+<!-- src: qb/tests/core/system/coroutine/coroutine-resilience.cpp:138-153 (ask_retry); qb/tests/core/system/coroutine/coroutine-resilience.cpp:403-417,452 (ask_guarded) -->
 
 ### Example — rate limiter and bulkhead
 
@@ -656,7 +656,7 @@ for (int i = 0; i < kJobs; ++i)
 // Sticky-by-key:
 push<Session>(pool.for_key(userId), s);          // same user → same worker
 ```
-<!-- src: qb/tests/core/system/patterns/routing-dispatch.cpp:125-128 + qb/src/qb/core/patterns/routing.h:42-46 -->
+<!-- src: qb/tests/core/system/patterns/routing-dispatch.cpp:125-128; qb/src/qb/core/patterns/routing.h:42-46 -->
 
 ---
 
@@ -751,8 +751,8 @@ public:
 
 The awaitable patterns work during actor activation: obtain the context with `Actor::context()` and
 `co_await` directly in `onInit()`. Replies reach the still-*Activating* asker through the
-continuation registry (`qb/src/qb/core/Actor.h:1189-1205`,
-`qb/src/qb/core/Event.h:358-363`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
+continuation registry (`qb/src/qb/core/Actor.h:1241-1257`,
+`qb/src/qb/core/Event.h:574-578`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
 `ask_any`, `ask_guarded`, `ask_quorum`, `ask_by`, `run_saga` and `rate_limiter` all inside `onInit()`
 (`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,260,295,327,367,398,503`).
 
@@ -798,7 +798,7 @@ qb::io::async::task<bool> onInit() override {
   per-event exception containment on the steady-state dispatch path. Validate before `answer`, or
   carry failure in the response payload (`request.h:178-185`).
 - **Capture by value, never `this`.** The scope token bounds a coroutine's lifetime but does not make
-  actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1619-1620`). The
+  actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1219-1221`). The
   long-lived resilience helpers (`CircuitBreaker`, `rate_limiter`, `bulkhead`) are held by
   `std::shared_ptr` and captured by value so they outlive the actor
   (`resilience.h:115-118`, `:228-231`, `:320-322`).

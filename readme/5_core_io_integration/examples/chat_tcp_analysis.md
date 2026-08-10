@@ -234,7 +234,7 @@ void ServerActor::on(NewSessionEvent& evt) {
 }
 ```
 
-`registerSession()` checks the session cap first, then constructs the `ChatSession`, inserts it into the map keyed by the session's `qb::uuid`, moves the socket into it, calls the session's `start()`, and returns a `ChatSession*`. It returns `nullptr` when a configured session cap is hit (default: unlimited — `QB_DEFAULT_MAX_SESSIONS` is `0`) or on an ID collision, closing the incoming socket in either case; the caller must null-check. <!-- src: qb/src/qb/io/async/io_handler.h:209 -->
+`registerSession()` checks the session cap first, then constructs the `ChatSession`, inserts it into the map keyed by the session's `qb::uuid`, moves the socket into it, calls the session's `start()`, and returns a `ChatSession*`. It returns `nullptr` when a configured session cap is hit (default: unlimited — `QB_DEFAULT_MAX_SESSIONS` is `0`) or on an ID collision, closing the incoming socket in either case; the caller must null-check. <!-- src: qb/src/qb/io/async/io_handler.h:106,210-234 -->
 
 > **Always null-check.** The return type is `ChatSession*`, not a reference, so the null-checked pointer form above is the pattern to follow — the checked-in example does exactly this, returning early when `registerSession()` hands back `nullptr`. See `qb/src/qb/io/async/io_handler.h`.
 

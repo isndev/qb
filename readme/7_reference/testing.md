@@ -58,7 +58,7 @@ Every test also carries CTest labels — `tier:<tier>` and `module:<module>`, pl
 
 ## Building the tests
 
-Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:86`, with the default computed at `74-87`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:38`).
+Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:86`, with the default computed at `qb/cmake/qbConfig.cmake:75-85`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:38`).
 
 ```bash
 # From the repository root
@@ -84,7 +84,7 @@ ls build/bin/tests/
 - **`QB_DEPS_FETCH_FALLBACK=ON`** (the default) — use a system GoogleTest if `find_package` locates one, otherwise build the pinned tag from source through FetchContent ("system if present, else git"). The from-source path needs network access on the first configure.
 - **`QB_DEPS_FETCH_FALLBACK=OFF`** — always build the pinned tag from source, ignoring any system copy.
 
-The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig.cmake:105`, marked advanced at `108`). FetchContent is configured with `BUILD_GMOCK=ON` and `INSTALL_GTEST=OFF`. See [CMake and dependencies](./cmake_dependencies.md) for the full dependency-resolution model.
+The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig.cmake:104`, marked advanced at `qb/cmake/qbConfig.cmake:108-109`). FetchContent is configured with `BUILD_GMOCK=ON` and `INSTALL_GTEST=OFF`. See [CMake and dependencies](./cmake_dependencies.md) for the full dependency-resolution model.
 
 ### Test resources
 

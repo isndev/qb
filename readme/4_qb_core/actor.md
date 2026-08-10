@@ -475,7 +475,7 @@ calls for read-only or clearly safe operations; for everything else, send events
 > This matters most for the pattern the examples above use — caching the raw pointer as a member for
 > the actor's lifetime. If you need an initialization guarantee, ask the service (`push` an event, or
 > `co_await qb::ask(...)`) instead of touching its state.
-<!-- src: qb/src/qb/core/Actor.h:603-613 (not phase-gated, by design), :641-662 (the Activating inventory table) --> To find the `ActorId` of a service on a specific core without dereferencing it, use
+<!-- src: qb/src/qb/core/Actor.h:603-613 (not phase-gated, by design); qb/src/qb/core/Actor.h:641-662 (the Activating inventory table) --> To find the `ActorId` of a service on a specific core without dereferencing it, use
 `getServiceId<Tag>(core_index)`, which returns an `ActorId`. Add a service to a core with
 `addActor<LoggerService>(core)` before the worker; see [the engine page](./engine.md) for startup
 ordering.

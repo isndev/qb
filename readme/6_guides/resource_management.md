@@ -35,19 +35,19 @@ qb adds owners for the resources it introduces. The key invariant for every one 
 | TCP socket | `qb::io::tcp::socket` | `src/qb/io/tcp/socket.h` | Move-only; closes the descriptor on destruction. |
 | UDP socket | `qb::io::udp::socket` | `src/qb/io/udp/socket.h` | Move-only. |
 | TLS socket | `qb::io::tcp::ssl::socket` | `src/qb/io/tcp/ssl/socket.h` | Move-only; owns and frees its `SSL` object (held in a `std::unique_ptr`) on destruction. |
-| TLS listener | `qb::io::tcp::ssl::listener` | `src/qb/io/tcp/ssl/listener.h` | Move-only; **takes ownership of the `SSL_CTX`** you pass to `init()` and frees it via `std::unique_ptr`. |
+| TLS listener | `qb::io::tcp::ssl::listener` | `src/qb/io/tcp/ssl/listener.h` | Move-only; **takes ownership of the `SSL_CTX`** you pass to `init()` — it is transferred into the listener's value-semantic, reference-counted `qb::io::ssl::Context` member, which frees it when the last copy (and the last `SSL` minted from it) is gone. Not a `std::unique_ptr`. |
 
-<!-- src: src/qb/io/system/file.h:77 -->
-<!-- src: src/qb/io/system/sys__socket.h:850,858,872,878 (copy deleted / move kept), 893 (~socket) -->
-<!-- src: src/qb/io/tcp/socket.h:91 -->
-<!-- src: src/qb/io/tcp/ssl/socket.h:338 (_ssl_handle unique_ptr); src/qb/io/tcp/ssl/listener.h:44 (listener _ctx unique_ptr) -->
+<!-- src: src/qb/io/system/file.h:78-79 (copy deleted), :85 (move ctor), :91 (move assign), :99 (~file) -->
+<!-- src: src/qb/io/system/sys__socket.h:850,858,872,878 (copy deleted / move kept), :893 (~socket) -->
+<!-- src: src/qb/io/tcp/socket.h:94 (copy deleted), :99 (move ctor), :105 (move assign) -->
+<!-- src: src/qb/io/tcp/ssl/socket.h:339 (_ssl_handle unique_ptr); src/qb/io/tcp/ssl/listener.h:45 (listener _ctx is a value-semantic qb::io::ssl::Context, NOT a unique_ptr) -->
 
 ### The actor destruction guarantee
 
 For an actor, RAII works because the runtime gives you a precise destruction contract. Three points define it:
 
 - **Construction is thread-affine.** An actor is constructed on the `VirtualCore` worker thread that will host it, never on the main thread. Use `Main::core(idx).addActor<T>(...)` or `addRefActor<T>(...)`; constructing an actor from an arbitrary thread asserts (the constructor checks `VirtualCore::_handler != nullptr`). (`src/qb/core/Actor.cpp:115`)
-- **`onInit()` runs once, before any business event.** It runs after construction and ID assignment and is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; while suspended the actor is *Activating* (inbound unicast stashed + replayed FIFO once active, bounded by the activation deadline). `co_return false` (or an uncaught exception) aborts registration and **immediately destroys the actor** — so any resource you acquired in the constructor is released right away. What you observe depends on the creation path: a runtime `addRefActor<T>()`/`addRefHandle<T>()` hands you back an **empty handle** (`!valid()`), whereas a pre-start `addActor<T>()` whose `onInit()` fails *synchronously* at startup flags the core `BadActorInit` and the core fails to start (`Main::hasError()` is true). See [Error handling](./error_handling.md) for the full failure table. (`src/qb/core/Actor.h:354`, `src/qb/core/VirtualCore.cpp:468-470`, `src/qb/core/Main.cpp:348-350`, `src/qb/core/Main.cpp:450`)
+- **`onInit()` runs once, before any business event.** It runs after construction and ID assignment and is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; while suspended the actor is *Activating* (inbound unicast stashed + replayed FIFO once active, bounded by the activation deadline). `co_return false` (or an uncaught exception) aborts registration and **immediately destroys the actor** — so any resource you acquired in the constructor is released right away. What you observe depends on the creation path: a runtime `addRefActor<T>()`/`addRefHandle<T>()` hands you back an **empty handle** (`!valid()`), whereas a pre-start `addActor<T>()` whose `onInit()` fails *synchronously* at startup flags the core `BadActorInit` and the core fails to start (`Main::hasError()` is true). See [Error handling](./error_handling.md) for the full failure table. (`src/qb/core/Actor.h:354-357`, `src/qb/core/VirtualCore.cpp:468-470`, `src/qb/core/Main.cpp:348-350`, `src/qb/core/Main.cpp:450`)
 - **`kill()` flags, it does not destroy.** `kill()` sets `_alive = false` and asks the `VirtualCore` to retire the actor. The actor stops receiving *new* events but may still drain events already queued; **`~Actor()` runs later, under `VirtualCore` control**, on the same worker thread. (`src/qb/core/Actor.cpp:282-290`)
 
 Because destruction is single-threaded and deterministic, member subobjects are destroyed in reverse declaration order after your `~MyActor()` body returns. Declare your RAII members and let the compiler-generated cleanup do the rest.
@@ -165,10 +165,10 @@ If the parent needs its referenced children gone when it stops, it must send eac
 
 `SSL_CTX` is the one place where ownership splits, so it deserves explicit attention.
 
-- **Helper-created contexts are caller-owned.** `qb::io::ssl::create_client_context(method)` and `qb::io::ssl::create_server_context(method, cert_path, key_path)` each return a raw `SSL_CTX*` (or `nullptr` on failure) that **you must free with `SSL_CTX_free()`** unless you hand the context off (see below). (`src/qb/io/tcp/ssl/socket.h:81`, `:92`)
-- **A listener you hand it to takes ownership.** `qb::io::tcp::ssl::listener::init(SSL_CTX*)` stores the context in a `std::unique_ptr` and frees it on destruction. Once you call `init()`, do **not** call `SSL_CTX_free()` yourself — that is a double-free. Call `init()` before `listen()`. (`src/qb/io/tcp/ssl/listener.h:102-107`)
+- **Helper-created contexts are caller-owned.** `qb::io::ssl::create_client_context(method)` and `qb::io::ssl::create_server_context(method, cert_path, key_path)` each return a raw `SSL_CTX*` (or `nullptr` on failure) that **you must free with `SSL_CTX_free()`** unless you hand the context off (see below). (`src/qb/io/tcp/ssl/socket.h:81-84`, `:92-95`)
+- **A listener you hand it to takes ownership.** `qb::io::tcp::ssl::listener::init(SSL_CTX*)` transfers your single reference into the listener's value-semantic `qb::io::ssl::Context` member (`Context::adopt`, no up-ref), which frees the `SSL_CTX` when the last copy of it is gone. Once you call `init()`, do **not** call `SSL_CTX_free()` yourself — that is a double-free. Call `init()` before `listen()`. Prefer the `init(qb::io::ssl::Context)` overload: no raw context lifetime to manage at all. (`src/qb/io/tcp/ssl/listener.h:102-107`, `:115`; `src/qb/io/tcp/ssl/listener.cpp:38-42`)
 
-The transport-based server pattern below is the common case: the freshly created context is passed straight into the transport's listener, which then owns it for the transport's lifetime.
+The transport-based server pattern below is the common case, and the suite itself uses the value-semantic form: the context is passed straight into the transport's listener, which shares it with every accepted connection.
 
 ```cpp
 // src: qb/tests/io/system/session/text-session-loopback.cpp:283
@@ -177,10 +177,15 @@ The transport-based server pattern below is the common case: the freshly created
 
 using namespace qb::io;
 
-// Server: create_server_context returns an owned SSL_CTX*; the listener's
-// init() takes ownership and frees it on destruction. No SSL_CTX_free here.
-server.transport().init(ssl::create_server_context(
-    TLS_server_method(), "cert.pem", "key.pem"));
+// Server, PREFERRED: a value-semantic ssl::Context. No raw SSL_CTX, nothing to free.
+server.transport().init(ssl::Context::server("cert.pem", "key.pem"));
+
+// Server, raw escape hatch (use ONE of the two, not both): create_server_context
+// returns an owned SSL_CTX*; init() transfers that single reference into the
+// listener's Context, so there is still no SSL_CTX_free here.
+// src: qb/src/qb/io/tcp/ssl/listener.h:107
+// server.transport().init(ssl::create_server_context(
+//     TLS_server_method(), "cert.pem", "key.pem"));
 
 // Client: secure by default. qb-io loads the system trust store, enables
 // SSL_VERIFY_PEER, and verifies the certificate against the target host.
@@ -190,7 +195,7 @@ client.transport().set_insecure();
 
 Two further facts shape correct TLS lifetime management:
 
-- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. When you supply your own `SSL*` via `init(SSL*)`, qb-io does not change your verification policy. (`src/qb/io/tcp/ssl/socket.h:857-864`)
+- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. When you supply your own `SSL*` via `init(SSL*)`, qb-io does not change your verification policy. (`src/qb/io/tcp/ssl/socket.h:857-871`)
 - **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`src/qb/io/tcp/ssl/socket.h:780-781`)
 
 ### `qb::io::use<>` ties transport lifetime to the actor
@@ -206,7 +211,7 @@ The hardest lifetime bugs in an event-driven system are not leaks — they are u
 Three concrete cases from the framework:
 
 - **Zero-copy broadcast.** In the message-broker pattern, a payload is stored once in a `broker::MessageContainer` and shared across many events via an internal `shared_ptr`; the events carry `std::string_view`s into that container. The container's lifetime must outlive event delivery — drop it too early and every view dangles. (`examples/core_io/message_broker/README.md:74`)
-- **Accepted-socket ownership transfer.** In a TCP accept handler, the accepted socket must be **moved** out of the `on(accepted_socket_type&&)` parameter into the event immediately: `evt.socket = std::move(sock);`. This transfers descriptor ownership to the worker that will service the connection, on its core. Copying is not an option — the socket is move-only — and leaving the fd in the parameter would close it when the handler returns. (`examples/all/auction_house/include/auction_house/actors/tcp_listener.h:59`)
+- **Accepted-socket ownership transfer.** In a TCP accept handler, the accepted socket must be **moved** out of the `on(accepted_socket_type&&)` parameter into the event immediately: `evt.socket = std::move(sock);`. This transfers descriptor ownership to the worker that will service the connection, on its core. Copying is not an option — the socket is move-only — and leaving the fd in the parameter would close it when the handler returns. (`examples/all/auction_house/include/auction_house/actors/tcp_listener.h:61-63`)
 - **Coroutine awaiters.** An awaiter must remain alive until `await_resume()`. Never create a temporary awaiter that goes out of scope before resumption — its watcher is stopped in `await_resume()`/the destructor specifically to avoid use-after-free. (`src/qb/io/async/coroutine/awaiter.h:30`)
 
 For ad-hoc cleanup that is not naturally a class member — a temporary handle from a C API, a rollback on an early return — use the framework's lightweight guards instead of hand-rolled `try`/`catch`:
@@ -223,7 +228,7 @@ void with_external_handle() {
 }
 ```
 
-`qb::scope_guard` runs its callable on destruction unless `dismiss()` was called; it is `[[nodiscard]]` and move-constructible (copy construction and both assignment operators are deleted), so it cannot be copied or reassigned, only moved at construction. `qb::resource(handle, cleaner)` wraps a `void*` in a `std::unique_ptr<void, TCleaner>` for the same purpose. (`src/qb/system/cpu.h:60`, `:73`)
+`qb::scope_guard` runs its callable on destruction unless `dismiss()` was called; it is `[[nodiscard]]` and move-constructible (copy construction and both assignment operators are deleted), so it cannot be copied or reassigned, only moved at construction. `qb::resource(handle, cleaner)` wraps a `void*` in a `std::unique_ptr<void, TCleaner>` for the same purpose. (`scope_guard` `src/qb/system/cpu.h:75`, `dismiss` `:95`, deleted copy/assign `:99-101`; `resource` `:60-63`)
 
 ## Pitfalls
 

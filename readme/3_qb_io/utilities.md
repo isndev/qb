@@ -25,13 +25,13 @@ These utilities live in headers under `qb/src/qb/`. Several are header-only with
 | JSON | `qb/json.h` | `qb` (via `nlohmann`) | always — but `nlohmann/json` is an **external** dependency, not vendored |
 | Endian | `qb/system/endian.h` | `qb::endian` | always |
 
-`QB_WITH_SSL` and `QB_WITH_COMPRESSION` are user-facing build requests; they resolve to the compile-time defines `QB_HAS_SSL` and `QB_HAS_COMPRESSION` once the dependency is found. If the dependency is absent, the request is forced off and the corresponding header `#error`s when included (`crypto.h` → `"missing OpenSSL Library"`, `compression.h` → `"missing Z Library"`). _(`qb/src/qb/io/crypto.h:33-34`, `qb/src/qb/io/compression.h:37-38`.)_
+`QB_WITH_SSL` and `QB_WITH_COMPRESSION` are user-facing build requests; they resolve to the compile-time defines `QB_HAS_SSL` and `QB_HAS_COMPRESSION` once the dependency is found. If the dependency is absent, the request is forced off — and the three headers then behave **differently**, which matters when you write a build-portable feature gate. `compression.h` and `crypto_jwt.h` `#error` on include (`"missing Z Library"`, `"qb::jwt requires OpenSSL (build qb with QB_WITH_SSL=ON)"`). `crypto.h` does **not**: it used to, and that gated the whole file including the plain-C++ hex codec a cleartext qbm-pgsql build needs, so the gate is now per member — `class crypto` still exists and still declares everything that needs no OpenSSL, while every OpenSSL-backed member is removed from the class. A no-SSL build therefore fails at the **call site** (`no member named 'md5' in 'qb::crypto'`), not at the include. _(`qb/src/qb/io/crypto.h:33-44`, `qb/src/qb/io/crypto_jwt.h:36-38`, `qb/src/qb/io/compression.h:37-39`.)_
 
 ---
 
 ## Time vocabulary (`qb::duration`, `qb::mono_time`, `qb::wall_time`)
 
-The single source of truth for time across qb and its modules, built entirely on `std::chrono`. The model is deliberately minimal: one span type and two distinct instant types. _(`qb/src/qb/system/time.h:82-88`.)_
+The single source of truth for time across qb and its modules, built entirely on `std::chrono`. The model is deliberately minimal: one span type and two distinct instant types. _(`qb/src/qb/system/time.h:90-96`.)_
 
 | Type | Alias | Use for |
 |---|---|---|
@@ -126,7 +126,7 @@ auto rate = qb::to_number<double>("3.5e-2");                // std::optional{0.0
 std::size_t used = 0;
 auto lead = qb::to_number_prefix<long>("  42 rest", &used); // std::optional{42}, used == 4
 ```
-<!-- src: qb/src/qb/system/parse.h:108,138 -->
+<!-- src: qb/src/qb/system/parse.h:110,140 -->
 
 Reach for `to_number` to validate untrusted input — a malformed or out-of-range value is a `std::nullopt`, never an exception or a wrapped integer — and for `to_number_prefix` to scan a number off the front of a buffer. The compile-time trait `qb::detail::is_parsable_number_v<T>` (an internal, `detail`-namespace trait) is what both functions `static_assert` on; the time vocabulary itself uses `to_number_prefix` internally to parse wire timestamps without touching the locale.
 
@@ -134,7 +134,7 @@ Reach for `to_number` to validate untrusted input — a malformed or out-of-rang
 
 ## Cryptography (`qb::crypto`)
 
-`qb::crypto` is an OpenSSL-backed static toolbox: every entry point is a static member of `class crypto`. Requires an OpenSSL-enabled build (`QB_WITH_SSL` → `QB_HAS_SSL`). _(`qb/src/qb/io/crypto.h:33,85`.)_
+`qb::crypto` is an OpenSSL-backed static toolbox: every entry point is a static member of `class crypto`. Everything documented below needs an OpenSSL-enabled build (`QB_WITH_SSL` → `QB_HAS_SSL`); without it those members are not declared at all. _(`qb/src/qb/io/crypto.h:39-44,95`.)_
 
 ### Hashing and encoding
 
@@ -161,7 +161,7 @@ std::string hex    = qb::crypto::to_hex_string(std::string(data.begin(), data.en
 ```
 <!-- src: qb/tests/io/unit/crypto/crypto-primitives.cpp -->
 
-The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a hexadecimal string and take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/src/qb/io/crypto.h:152,309-393`.)_
+The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a hexadecimal string and take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/src/qb/io/crypto.h:152,327-411`.)_
 
 ### Random data
 
@@ -172,7 +172,7 @@ The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a
 | `generate_salt(size_t)` | OpenSSL `RAND_bytes` (CSPRNG) | Argon2/PBKDF2 salts. |
 | `generate_random_string(len, range)` | `std::mt19937` | Non-cryptographic only (e.g. test fixtures). |
 
-`generate_random_string` is seeded from `std::random_device` but uses a Mersenne Twister and is **not** cryptographically secure; use `generate_secure_random_string` for any security-sensitive value. _(`qb/src/qb/io/crypto.h:175-242,505,917`.)_
+`generate_random_string` is seeded from `std::random_device` but uses a Mersenne Twister and is **not** cryptographically secure; use `generate_secure_random_string` for any security-sensitive value. _(`qb/src/qb/io/crypto.h:175-242,492,819`.)_
 
 ### Symmetric encryption (AEAD)
 
@@ -250,7 +250,7 @@ if (auto opened = qb::crypto::decrypt_with_metadata(sealed, key)) {
 
 ### Constant-time comparison and secure tokens
 
-`constant_time_compare(a, b)` compares two byte vectors without short-circuiting (use it for HMACs and password hashes). `generate_token(payload, key, ttl)` produces an encrypted, authenticated token; `verify_token(token, key)` returns the payload or an empty string on any failure (tampering, malformed input, or expiry). _(`qb/src/qb/io/crypto.h:583,812-825`.)_
+`constant_time_compare(a, b)` compares two byte vectors without short-circuiting (use it for HMACs and password hashes). `generate_token(payload, key, ttl)` produces an encrypted, authenticated token; `verify_token(token, key)` returns the payload or an empty string on any failure (tampering, malformed input, or expiry). _(`qb/src/qb/io/crypto.h:583,777-790`.)_
 
 ```cpp
 auto key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
@@ -262,7 +262,7 @@ std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/ex
 ```
 <!-- src: qb/src/qb/io/crypto.h:777-790 -->
 
-`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_advanced.cpp:232,237,243-244,249-252`.)_
+`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_advanced.cpp:232,236-238`.)_
 
 ---
 
@@ -270,7 +270,7 @@ std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/ex
 
 `qb::jwt` implements RFC 7519 over `qb::crypto`, in the same OpenSSL-gated slice. Every entry point is a static member of `class jwt`. _(`qb/src/qb/io/crypto_jwt.h:58`.)_
 
-Supported `Algorithm` values: `HS256/384/512` (HMAC), `RS256/384/512` (RSASSA-PKCS1-v1_5), `ES256/384/512` (ECDSA on P-256/P-384/P-521), and `EdDSA` (Ed25519). _(`qb/src/qb/io/crypto_jwt.h:51-62`.)_
+Supported `Algorithm` values: `HS256/384/512` (HMAC), `RS256/384/512` (RSASSA-PKCS1-v1_5), `ES256/384/512` (ECDSA on P-256/P-384/P-521), and `EdDSA` (Ed25519). _(`qb/src/qb/io/crypto_jwt.h:63-74`.)_
 
 ```cpp
 #include <qb/io/crypto_jwt.h>
@@ -305,17 +305,17 @@ if (result.is_valid()) {
     // handle expiry
 }
 ```
-<!-- src: qb/tests/io/unit/crypto/crypto-jwt.cpp:91-146 -->
+<!-- src: qb/tests/io/unit/crypto/crypto-jwt.cpp:210-234 -->
 
-`create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/src/qb/io/crypto_jwt.h:67-94,175-192`; `qb/src/qb/io/crypto_jwt.cpp:282`.)_
+`create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/src/qb/io/crypto_jwt.h:79-103,195-198`; `qb/src/qb/io/crypto_jwt.cpp:389-395`.)_
 
-`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/src/qb/io/crypto_jwt.h:158,194-201`; `qb/src/qb/io/crypto_jwt.cpp:474,478`.)_
+`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/src/qb/io/crypto_jwt.h:158,207,209-216`; `qb/src/qb/io/crypto_jwt.cpp:550-590,592-605`.)_
 
 ---
 
 ## Compression (`qb::gzip`, `qb::deflate`)
 
-zlib-backed gzip and deflate. Requires `QB_WITH_COMPRESSION` → `QB_HAS_COMPRESSION`. The convenience namespaces `qb::gzip` and `qb::deflate` are `using`-aliases of `qb::compression::gzip` / `qb::compression::deflate`. _(`qb/src/qb/io/compression.h:962-964`.)_
+zlib-backed gzip and deflate. Requires `QB_WITH_COMPRESSION` → `QB_HAS_COMPRESSION`. The convenience namespaces `qb::gzip` and `qb::deflate` are `using`-aliases of `qb::compression::gzip` / `qb::compression::deflate`. _(`qb/src/qb/io/compression.h:963,974`.)_
 
 ```cpp
 #include <qb/io/compression.h>
@@ -329,7 +329,7 @@ std::string decompressed = qb::gzip::uncompress(compressed.c_str(), compressed.s
 ```
 <!-- src: qb/tests/io/unit/compression/compression-codec.cpp:140-163 -->
 
-`compress(const char* data, size_t size, int level = Z_DEFAULT_COMPRESSION)` and `uncompress(const char* data, size_t size)` return a `std::string`. Generic container overloads, `uncompress(Output&, data, size, max = 0)`, accept a `max` output budget: a non-zero `max` rejects inputs that would inflate beyond it (a decompression-bomb guard), throwing `std::runtime_error`. A truncated or incomplete stream also throws `std::runtime_error`. _(`qb/src/qb/io/compression.h:487-563,662-733,838-909`; `qb/tests/io/unit/compression/compression-codec.cpp:182-206`.)_
+`compress(const char* data, size_t size, int level = Z_DEFAULT_COMPRESSION)` and `uncompress(const char* data, size_t size)` return a `std::string`. Generic container overloads, `uncompress(Output&, data, size, max = 0)`, accept a `max` output budget: a non-zero `max` rejects inputs that would inflate beyond it (a decompression-bomb guard), throwing `std::runtime_error`. A truncated or incomplete stream also throws `std::runtime_error`. _(`qb/src/qb/io/compression.h:487-563,662-733,838-909`; `qb/tests/io/unit/compression/compression-codec.cpp:184-197,200-208`.)_
 
 `qb::gzip::is_compressed(data, size)` heuristically detects a gzip or zlib header. For streaming over large or chunked data, the lower-level `qb::compression` namespace exposes `compress_provider` / `decompress_provider` interfaces with an `operation_hint` (`is_last` / `has_more`) and provider factories. _(`qb/src/qb/io/compression.h:56-247,744-766`.)_
 
@@ -361,7 +361,7 @@ std::string dec = qb::io::uri::decode(enc);        // "a b/c"
 ```
 <!-- src: qb/tests/io/unit/core/uri-parse.cpp:431-453 -->
 
-`u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0)` returns a single decoded value as `std::string const&` (a reference to a static empty string on a miss); `query_or(name, fallback, index = 0)` returns the value **by value** with a custom fallback. `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/src/qb/io/uri.h:474,476-573`.)_
+`u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0)` returns a single decoded value as `std::string const&` (a reference to a static empty string on a miss); `query_or(name, fallback, index = 0)` returns the value **by value** with a custom fallback. `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/src/qb/io/uri.h:474,500-568,577-591`.)_
 
 ---
 
@@ -441,7 +441,7 @@ std::size_t cap = name.capacity();  // == 32 (compile-time max)
 ```
 <!-- src: qb/src/qb/string.h -->
 
-`size()` (alias `length()`) is the current length; `capacity()` and `max_size()` both return the compile-time `N`. Assigning or appending past `N` truncates to `N` rather than reallocating. The internal length field uses the smallest unsigned integer type that can hold `N + 1` (`uint8_t`/`uint16_t`/`size_t`), so small fixed strings stay compact. `qb::string<N>` converts implicitly to both `std::string` and `std::string_view`. _(`qb/src/qb/string.h:90,310-323,509-560`.)_
+`size()` (alias `length()`) is the current length; `capacity()` and `max_size()` both return the compile-time `N`. Assigning or appending past `N` truncates to `N` rather than reallocating. The internal length field uses the smallest unsigned integer type that can hold `N + 1` (`uint8_t`/`uint16_t`/`size_t`), so small fixed strings stay compact. `qb::string<N>` converts implicitly to both `std::string` and `std::string_view`. _(`qb/src/qb/string.h:90,200-201,310-323,509-560`.)_
 
 ---
 
@@ -532,10 +532,10 @@ uint32_t sw   = qb::endian::byteswap(host);            // unconditional swap
 - **Empty result means authentication failure, not empty plaintext.** `crypto::decrypt` _(`qb/src/qb/io/crypto.h:542-546`)_, the AEAD helpers, and `verify_token` _(`qb/src/qb/io/crypto.h:790`)_ return an empty vector/string when the authentication tag or token check fails. Always branch on emptiness before using the result.
 - **`generate_random_string` is not cryptographic.** It is a Mersenne Twister. Use `generate_secure_random_string`, `generate_random_bytes`, or `generate_salt` for any security-sensitive value. _(`qb/src/qb/io/crypto.h:175-242`.)_
 - **JWT and token TTLs are wall-clock seconds.** `create_token`'s `expires_in`/`not_before` and `generate_token`'s `ttl` resolve to whole-second `exp`/`nbf` claims evaluated against `system_clock`. Sub-second precision is lost and expiry follows wall-clock changes — by design, since expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_jwt.h:189-197`; `qb/src/qb/io/crypto.h:777-790`.)_
-- **`u_port()` returns `0` on failure.** A missing, malformed, or out-of-range port yields `0`, which is indistinguishable from an explicit `:0`. Check `is_valid()` and the raw `port()` string if `0` is meaningful in your scheme. _(`qb/src/qb/io/uri.h:476-487`.)_
-- **`qb::string<N>` truncates silently.** Assigning past `N` characters truncates rather than throwing or reallocating. Size the capacity to the worst case for your data. _(`qb/src/qb/string.h:509-560`.)_
+- **`u_port()` returns `0` on failure.** A missing, malformed, or out-of-range port yields `0`, which is indistinguishable from an explicit `:0`. Check `is_valid()` and the raw `port()` string if `0` is meaningful in your scheme. _(`qb/src/qb/io/uri.h:474-484`.)_
+- **`qb::string<N>` truncates silently.** Assigning past `N` characters truncates rather than throwing or reallocating. Size the capacity to the worst case for your data. _(`qb/src/qb/string.h:200-201,254-255`.)_
 - **URI accessors borrow from the URI.** `scheme()`, `host()`, `path()`, etc. return `std::string_view` into the URI's owned source string; do not let them outlive the `uri` object. _(`qb/src/qb/io/uri.h:185-552`.)_
-- **Crypto and compression headers `#error` without their dependency.** Including `crypto.h`/`crypto_jwt.h` without `QB_HAS_SSL`, or `compression.h` without `QB_HAS_COMPRESSION`, fails to compile. Guard optional features behind those defines. _(`qb/src/qb/io/crypto.h:33-34`, `qb/src/qb/io/compression.h:37-38`.)_
+- **The dependency gate is not the same shape in all three headers.** `crypto_jwt.h` without `QB_HAS_SSL` and `compression.h` without `QB_HAS_COMPRESSION` `#error` at the include. `crypto.h` compiles either way — its OpenSSL-backed members are simply absent from `class crypto`, so a no-SSL build fails at the call site (`no member named 'md5'`) instead. Guard optional features behind those defines rather than relying on an include-time failure. _(`qb/src/qb/io/crypto.h:39-44`, `qb/src/qb/io/crypto_jwt.h:36-38`, `qb/src/qb/io/compression.h:37-39`.)_
 
 ---
 

@@ -16,7 +16,7 @@ Defaults are tuned for *development on the build host*. The most common producti
 
 `QB_ENABLE_NATIVE_ARCH` is **`OFF`** by default, so a default build is already portable. Turning it **on** adds `-march=native` (or `-mcpu=native` where `-march=native` is unsupported, e.g. older Apple Clang on arm64; MSVC uses `/arch:AVX2`), and a binary built that way may execute illegal instructions on an older or different CPU. Check it explicitly before shipping: the `release-native` and `benchmarks` presets turn it on.
 
-<!-- src: qb/cmake/qbConfig.cmake:89-95, qb/cmake/qbCompiler.cmake:283-310 -->
+<!-- src: qb/cmake/qbConfig.cmake:132-140 (QB_ENABLE_NATIVE_ARCH declared OFF, with the rationale), qb/cmake/qbCompiler.cmake:305-306 (MSVC /arch:AVX2), :324-338 (-march=native, -mcpu=native fallback) -->
 
 For any binary that ships to a machine other than the one that built it — a container image, a release artifact, a fleet with mixed CPU generations — turn native targeting **off**:
 
@@ -28,7 +28,7 @@ cmake --build build --parallel
 
 With `QB_ENABLE_NATIVE_ARCH=OFF` and `QB_ENABLE_OPTIMIZATIONS=ON` (the default), GCC/Clang fall back to a portable baseline: `-march=x86-64` on x86-64, `-march=armv8-a` on non-Apple ARM64. On Apple Silicon the toolchain already targets the native CPU, so qb deliberately does *not* force a generic baseline there (forcing `armv8-a` would lose LSE atomics).
 
-<!-- src: qb/cmake/qbCompiler.cmake:298-311 -->
+<!-- src: qb/cmake/qbCompiler.cmake:339-349 (portable baseline: -march=armv8-a on non-Apple ARM64, -march=x86-64 on x86-64; Apple Silicon deliberately left alone) -->
 
 A ready-made preset wraps the same configuration:
 
@@ -48,13 +48,13 @@ All shipped presets (including `release` and `release-lto`) inherit the hidden `
 - [ ] `CMAKE_BUILD_TYPE=Release` (or `RelWithDebInfo` if you keep symbols for crash triage).
 - [ ] Leave `QB_ENABLE_FAST_MATH=OFF` (default) unless you have audited every floating-point path — it breaks IEEE-754 compliance.
 
-<!-- src: qb/cmake/qbConfig.cmake:93, qb/cmake/qbCompiler.cmake:260-262,275-281 (fast-math) -->
+<!-- src: qb/cmake/qbConfig.cmake:141 (QB_ENABLE_FAST_MATH OFF), qb/cmake/qbCompiler.cmake:300-302 (MSVC /fp:fast), :315-321 (GCC/Clang -ffast-math) -->
 
 ## 2. Link-time optimization
 
 `QB_ENABLE_LTO` is **`OFF`** by default. Enabling it adds `-flto` (plus `-fuse-linker-plugin` on GCC) on GCC/Clang Release builds, and `/LTCG` on MSVC. LTO can improve runtime performance at the cost of longer link times; it is orthogonal to native targeting, so it composes with a portable build.
 
-<!-- src: qb/cmake/qbConfig.cmake:88, qb/cmake/qbCompiler.cmake:316-339 (LTO block) -->
+<!-- src: qb/cmake/qbConfig.cmake:131 (QB_ENABLE_LTO OFF), qb/cmake/qbCompiler.cmake:353-381 (LTO block) -->
 
 ```bash
 cmake --preset release-lto                       # Release + QB_ENABLE_LTO=ON
@@ -64,7 +64,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -DQB_ENABLE_LTO=ON -DQB_ENABLE_NATIVE_ARCH=OFF 
 
 LTO flags are only applied to the `Release` configuration. If the compiler reports `-flto` as unsupported, qb emits a warning and continues without it rather than failing the build.
 
-<!-- src: qb/cmake/qbCompiler.cmake:327-337 (Release-only -flto + unsupported-flag warning) -->
+<!-- src: qb/cmake/qbCompiler.cmake:367-379 (Release-only -flto + unsupported-flag warning) -->
 
 **Checklist**
 
@@ -75,17 +75,17 @@ LTO flags are only applied to the `Release` configuration. If the compiler repor
 
 TLS lives in `qb-io` and is gated by `QB_WITH_SSL` (default **`ON`**, backed by OpenSSL via `find_package`). If OpenSSL is not found at configure time, `QB_WITH_SSL` is forced **OFF** and the SSL transports compile out — so confirm the feature is actually enabled in your production build, not silently dropped.
 
-<!-- src: qb/cmake/qbConfig.cmake:100, qb/cmake/qbDependencies.cmake:124-146 -->
+<!-- src: qb/cmake/qbConfig.cmake:148 (QB_WITH_SSL ON), qb/cmake/qbDependencies.cmake:124-146 (OpenSSL probe; QB_WITH_SSL forced OFF when absent) -->
 
 Verify with the configuration banner the build prints, or check that `QB_WITH_SSL=1` is in the compile definitions.
 
-<!-- src: qb/cmake/qbConfig.cmake:377-378 (QB_WITH_SSL=1 compile def), 366-385 (configuration banner) -->
+<!-- src: qb/cmake/qbConfig.cmake:453 (QB_WITH_SSL=1 compile def), qb/cmake/qbConfig.cmake:524-551 (configuration banner; the SSL line is :547) -->
 
 ### Client connections are secure by default
 
 When `qb-io` builds the client `SSL_CTX` itself — the usual `connect()` / `n_connect()` / async-connector path — it is secure by default: it loads the system trust store, enables `SSL_VERIFY_PEER`, and checks the server certificate against the target hostname (or IP). The `_verify_peer` member starts `true`.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:342 (_verify_peer = true), 766-782 (set_insecure / secure-by-default doc) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:348 (_verify_peer = true), :854-871 (set_insecure / secure-by-default doc), :877 (verify_peer) -->
 
 The production hazard is the opt-out. `set_insecure()` clears verification (it is meant for self-signed certs in tests, externally-handled pinning, or trusted private channels) and removes protection against man-in-the-middle attacks. Audit your codebase before shipping:
 
@@ -96,13 +96,13 @@ grep -rn "set_insecure" your_service/ qbm/
 
 Note one asymmetry: when you adopt an externally-created `SSL` handle via `init(SSL*)`, qb-io does **not** touch verification policy — your context's settings are used as-is. If you build the context yourself, you own the verification posture.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:448-455 (init(SSL*)), 779-780 (verification-untouched note) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:498-505 (init(SSL*)), :868-869 (verification-untouched note) -->
 
 ### Server contexts
 
 Server-side TLS is built explicitly. `qb::io::ssl::create_server_context(method, cert_path, key_path)` constructs a context from a certificate and key; for mutual TLS, `configure_mtls_server_context(ctx, client_ca_file_path, verification_mode = SSL_VERIFY_PEER)` adds client-certificate verification (the default mode is `SSL_VERIFY_PEER`).
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:83-94, 144-154 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:84 (create_client_context), :95 (create_server_context), :154 (configure_mtls_server_context) -->
 
 These functions take `std::filesystem::path` arguments (certificate, key, CA file, CA directory, DH parameters, client certificate). Each filesystem path is resolved through `qb::io::sys::resolve_resource()`: an absolute path is used unchanged, while a relative path is looked up first against the current working directory and then against the running executable's own directory. A binary shipped with its certificates next to it therefore finds them from any working directory, while an absolute deploy path is honoured verbatim. (URL/URI and wire paths are unaffected — those remain `std::string`.)
 
@@ -110,7 +110,7 @@ These functions take `std::filesystem::path` arguments (certificate, key, CA fil
 
 After a handshake completes you can introspect the live connection — `get_negotiated_tls_version()`, `get_negotiated_cipher_suite()`, `get_alpn_selected_protocol()`, `get_peer_certificate_chain()` — to log or assert the negotiated parameters.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:642 (cipher suite), 648 (tls version), 654 (alpn), 689 (peer cert chain) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:716 (cipher suite), :722 (tls version), :728 (alpn), :774 (peer cert chain) -->
 
 ### Windows server bind: exclusive, not reusable
 
@@ -134,7 +134,7 @@ qb caps inbound work per connection to resist oversized-message denial of servic
 
 Every protocol-driven I/O component carries a `_max_message_size`, initialized to `QB_MAX_MESSAGE_SIZE` (**100 MB** by default — note that a stale doc comment on `max_message_size()` in `qb/io/async/io.h` says 10 MB; the macro definition in `config.h` is the source of truth). A frame larger than the limit marks the protocol invalid and disconnects with reason `-2` ("message too large").
 
-<!-- src: qb/src/qb/io/config.h:163-173, qb/src/qb/io/async/io.h:495,802,1998 (_max_message_size members), 1283,2584 (disconnect reason -2) -->
+<!-- src: qb/src/qb/io/config.h:174-176 (QB_MAX_MESSAGE_SIZE = 100MB), qb/src/qb/io/async/io.h:503,810,2023 (_max_message_size members), :1298-1301,:2613-2616 (reason -2, message too large) -->
 
 100 MB is generous for most services. Lower it per component to match the largest legitimate message you accept:
 
@@ -145,7 +145,7 @@ this->set_max_message_size(1 * 1024 * 1024);
 
 You can read the active limit back with `max_message_size()`. Setting it too low rejects legitimate traffic; too high re-opens the DoS surface — size it to the workload.
 
-<!-- src: qb/src/qb/io/async/io.h:1048 (max_message_size), 1074 (set_max_message_size) -->
+<!-- src: qb/src/qb/io/async/io.h:1065-1068 (max_message_size), :1092-1093 (set_max_message_size); the second copy lives on the bidirectional base, :2335-2337, :2361-2362 -->
 
 The framework also defines input/output buffer ceilings in the same header for the same reason; see [config.h](../../src/qb/io/config.h) for `QB_MAX_MESSAGE_SIZE` and the buffer-limit macros, all overridable at compile time with `-D`.
 
@@ -155,7 +155,7 @@ The framework also defines input/output buffer ceilings in the same header for t
 
 `qb::io::event::Config` defines compile-time `constexpr` hints — a default poll timeout of 100 ms, a 64-event-per-poll batch, and a `MAX_CONNECTIONS` value of 10000 — but these are **not** wired into the event loop or the accept path; nothing in the framework reads them. The header itself describes `MAX_CONNECTIONS` as "a conceptual maximum ... a soft limit or a hint for sizing internal structures, rather than a hard enforced limit." The real per-handler connection cap is `QB_DEFAULT_MAX_SESSIONS` (default `0`, unlimited), settable at runtime with `set_max_sessions()`; beyond that, OS fd limits apply.
 
-<!-- src: qb/src/qb/io/system/ev_config.h:44-82 (unenforced constants), qb/src/qb/io/config.h:220-233 (QB_DEFAULT_MAX_SESSIONS), qb/src/qb/io/async/io_handler.h:169 (set_max_sessions) -->
+<!-- src: qb/src/qb/io/system/ev_config.h:44-82 (unenforced constants), qb/src/qb/io/config.h:223-236 (QB_DEFAULT_MAX_SESSIONS), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions) -->
 
 ### Idle latency vs. CPU
 
@@ -198,7 +198,7 @@ For a busy server every active core at zero latency pins a CPU; on a shared or o
 
 Logging is gated by `QB_WITH_LOGGING` (default **`ON`**), which defines `QB_WITH_LOGGING=1` and compiles in the nanolog-backed `qb::io::log` API. When the option is off, the `qb::io::log` namespace (init/setLevel/Level) is not available. The `LOG_*` macros remain defined — as a `qb::io::cout()` fallback when `QB_STDOUT_LOGGING` is set, otherwise as no-ops.
 
-<!-- src: qb/cmake/qbConfig.cmake:99 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:374-375 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:34-81 -->
+<!-- src: qb/cmake/qbConfig.cmake:147 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:449-451 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:39-86 (the QB_WITH_LOGGING-guarded qb::io::log namespace) -->
 
 Initialize logging once at startup, before any logging call. `init` takes the log-file path and a roll size in megabytes (default 128):
 
@@ -217,15 +217,15 @@ int main() {
 
 `setLevel` sets the minimum severity recorded; messages below it are dropped. The level enum, lowest to highest, is `DEBUG, VERBOSE, INFO, WARN, CRIT`.
 
-<!-- src: qb/src/qb/io.h:48-81 -->
+<!-- src: qb/src/qb/io.h:63 (setLevel), :76-81 (the level enum), :84 (init) -->
 
 Two related options affect diagnostics rather than the file logger: `QB_STDOUT_LOGGING` (default **OFF**) enables a stdout fallback, and `QB_DEBUG_ACTOR` (default **OFF**) enables actor debugging output. Leave both off in production unless you are actively debugging.
 
-<!-- src: qb/cmake/qbConfig.cmake:112-113 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), 330-335 (compile defs) -->
+<!-- src: qb/cmake/qbConfig.cmake:182-183 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), :461-466 (compile defs) -->
 
 `qb::io::cout()` is a thread-safe console wrapper, but the header itself notes that production code should prefer the logging system over direct console output.
 
-<!-- src: qb/src/qb/io.h:84-100 -->
+<!-- src: qb/src/qb/io.h:101-104 (the prefer-logging note, then class cout) -->
 
 **Checklist**
 
@@ -237,13 +237,13 @@ Two related options affect diagnostics rather than the file logger: `QB_STDOUT_L
 
 ## 6. Signal handling
 
-`qb::Main::start()` installs a `SIGINT` handler automatically (in both async and synchronous modes). The handler is async-signal-safe: it sets an internal `_signal_pending` flag that each `VirtualCore` polls every loop iteration, so the write is observed within the configured mailbox latency and the engine shuts down gracefully.
+`qb::Main::start()` installs handlers for **both** `SIGINT` and `SIGTERM` automatically (in both async and synchronous modes). The handler is async-signal-safe: it sets an internal `_signal_pending` flag — and bumps a `_signal_generation` counter so a repeat signal is re-delivered — that each `VirtualCore` polls every loop iteration, so the write is observed within the configured mailbox latency and the engine shuts down gracefully.
 
-<!-- src: qb/src/qb/core/Main.cpp:198-201 (onSignal), 290,313 (SIGINT registered) -->
+<!-- src: qb/src/qb/core/Main.cpp:280-287 (onSignal), :521-532 (install_default_signals registers SIGINT + SIGTERM), :416 (sync start path), :439 (async start path) -->
 
 On POSIX the handler is installed with `sigaction` (no `SA_RESETHAND`, with `SA_RESTART`), so a *second* `SIGINT` still triggers the graceful path rather than the historical System-V behavior of resetting to default and terminating the process. On Windows, `std::signal` is used.
 
-<!-- src: qb/src/qb/core/Main.cpp:382-401 (install_signal incl. comment + sigaction body) -->
+<!-- src: qb/src/qb/core/Main.cpp:500-518 (install_signal incl. comment + sigaction body) -->
 
 To shut down on additional signals — typically `SIGTERM` under an init system or container orchestrator — register them after constructing the engine:
 
@@ -267,13 +267,13 @@ int main() {
 
 The three signal entry points are static and `noexcept`: `registerSignal(signum)` routes the signal to the graceful-shutdown handler, `unregisterSignal(signum)` restores the OS default disposition (`SIG_DFL`), and `ignoreSignal(signum)` sets `SIG_IGN`.
 
-<!-- src: qb/src/qb/core/Main.cpp:404-418 (registerSignal / unregisterSignal / ignoreSignal) -->
+<!-- src: qb/src/qb/core/Main.cpp:534-547 (registerSignal / unregisterSignal / ignoreSignal) -->
 
 > **Both** `SIGINT` and `SIGTERM` are registered automatically by `start()`, so the signal most container runtimes and service managers send on shutdown already gets the graceful drain — you do not need to register it. `registerSignal()` is for the non-terminal signals (`SIGHUP`, `SIGUSR1`, …), which are delivered as a `qb::SignalEvent` but do **not** kill anything unless you override `on(qb::SignalEvent &)`.
 
 `qb::Main::stop()` is itself async-signal-safe and may be called from a signal handler; it sets the same pending flag and leaves the heavier `std::stop_source` broadcast to `~Main()` / `join()` where normal thread synchronization is safe.
 
-<!-- src: qb/src/qb/core/Main.cpp:340-346 (stop) -->
+<!-- src: qb/src/qb/core/Main.cpp:454-463 (stop) -->
 
 **Checklist**
 
@@ -296,7 +296,7 @@ ctest --test-dir build/dev --output-on-failure
 
 Before shipping, also run the suite under sanitizers — this is where memory-safety and data-race regressions surface. The `sanitize` preset configures AddressSanitizer + UndefinedBehaviorSanitizer; `sanitize-thread` configures ThreadSanitizer. Both instrument every qb / qbm / test target and their link step (the `QB_SANITIZE` flags apply regardless of `CMAKE_BUILD_TYPE`, though these presets configure a Debug build).
 
-<!-- src: qb/CMakePresets.json:90-106 (sanitize, sanitize-thread), qb/cmake/qbCompiler.cmake:360-389 (QB_SANITIZE applied regardless of build type) -->
+<!-- src: qb/CMakePresets.json:90-106 (sanitize, sanitize-thread), qb/cmake/qbCompiler.cmake:399-408 (QB_SANITIZE applied to every qb/qbm/test target, regardless of build type) -->
 
 ```bash
 cmake --preset sanitize          # ASan + UBSan
@@ -310,7 +310,7 @@ ctest --test-dir build/sanitize-thread --output-on-failure
 
 `QB_SANITIZE` adds `-fno-sanitize-recover=all`, so the first error aborts — CI-friendly. Note that sanitizers are incompatible with `QB_WITH_PROFILING`: enabling both warns at configure time because tcmalloc/gperftools intercept the same hooks.
 
-<!-- src: qb/cmake/qbCompiler.cmake:367-376 (-fno-sanitize-recover=all + profiling-incompatibility warning) -->
+<!-- src: qb/cmake/qbCompiler.cmake:417 (-fno-sanitize-recover=all), :409-411 (profiling-incompatibility warning) -->
 
 See [Testing](../7_reference/testing.md) for the full reference, including running a single test by name.
 
@@ -335,7 +335,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:328-332 (LOG_CRIT/stderr), 323-326 (hasError), qb/src/qb/io/async/io.h:1283,2584 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:642,648,661 (introspection), qb/src/qb/io/async/io_handler.h:169 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:442-446 (LOG_CRIT/stderr on init failure), :449-452 (hasError), qb/src/qb/io/async/io.h:1298-1301,2613-2616 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:716,722,735 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

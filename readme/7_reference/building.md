@@ -102,7 +102,7 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | Option | Type / default | Effect |
 |---|---|---|
 | `CMAKE_BUILD_TYPE` | `Debug` \| `Release` \| `RelWithDebInfo` \| `MinSizeRel`; default `Release` | Standard CMake build configuration (`qbConfig.cmake:209-223`). |
-| `BUILD_SHARED_LIBS` / `QB_BUILD_SHARED_LIBS` | bool; `QB_BUILD_SHARED_LIBS` defaults to the value of `BUILD_SHARED_LIBS` (itself `OFF` unless set) | Build `qb-io`/`qb-core` (and modules) as shared objects instead of static. Setting `BUILD_SHARED_LIBS=ON` switches qb to shared; `QB_BUILD_SHARED_LIBS` is an explicit qb-only override (`qbConfig.cmake:113`). The whole tree is built position-independent regardless (`CMAKE_POSITION_INDEPENDENT_CODE ON`, `qbConfig.cmake:275`). |
+| `BUILD_SHARED_LIBS` / `QB_BUILD_SHARED_LIBS` | bool; `QB_BUILD_SHARED_LIBS` defaults to the value of `BUILD_SHARED_LIBS` (itself `OFF` unless set) | Build `qb-io`/`qb-core` (and modules) as shared objects instead of static. Setting `BUILD_SHARED_LIBS=ON` switches qb to shared; `QB_BUILD_SHARED_LIBS` is an explicit qb-only override (`qbConfig.cmake:113`). A **standalone** qb build is position-independent throughout (`CMAKE_POSITION_INDEPENDENT_CODE ON`, `qbConfig.cmake:274-276`); when qb is embedded via `add_subdirectory` that global is deliberately left alone, so the parent project's own setting governs. |
 | `QB_BUILD_TESTS` | bool; `ON` | Build the unit and system tests (GoogleTest). Gates GoogleTest resolution (`qbConfig.cmake:86`). |
 | `QB_BUILD_BENCHMARKS` | bool; `OFF` | Build performance benchmarks (Google Benchmark) (`qbConfig.cmake:90`). |
 | `QB_BUILD_EXAMPLES` | bool; `ON` | Build the example applications (`qbConfig.cmake:87`). |
@@ -118,7 +118,7 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | `QB_WITH_COMPRESSION` | bool; `ON` | Compression in `qb-io` via zlib — system first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` (`qbConfig.cmake:149`). |
 | `QB_WITH_QUIC` | `AUTO` \| `ON` \| `OFF`; `AUTO` | QUIC transport via libngtcp2. `AUTO` enables it iff libngtcp2 is found (quiet when absent); `ON` requires it (warns if missing); `OFF` disables it. Requires `QB_WITH_SSL` (`qbConfig.cmake:152-153`). |
 | `QB_WITH_LOGGING` | bool; `ON` | Logging subsystem (nanolog); defines `QB_WITH_LOGGING=1` (`qbConfig.cmake:147`). |
-| `QB_STDOUT_LOGGING` | bool; `OFF` | Stdout logging fallback; defines `QB_STDOUT_LOGGING=1` (`qbConfig.cmake:183,455`). |
+| `QB_STDOUT_LOGGING` | bool; `OFF` | Stdout logging fallback; defines `QB_STDOUT_LOGGING=1` (`qbConfig.cmake:183,464-466`). |
 | `QB_WITH_PROFILING` | bool; `OFF` | Link gperftools (tcmalloc/profiler) when found. Incompatible with `QB_SANITIZE` (`qbConfig.cmake:178`). |
 
 ### Performance
@@ -135,9 +135,9 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | Option | Type / default | Effect |
 |---|---|---|
 | `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING`. **MSVC ships only AddressSanitizer**: `address` is honoured (build-wide, because MSVC cannot link mixed ASan/non-ASan objects), every other component is dropped with a warning naming it — so the `sanitize` preset's `undefined` half does not run there, and `sanitize-thread` / `coverage` are disabled by preset condition on Windows altogether (`qbConfig.cmake:188`, `qbCompiler.cmake:408-468`). |
-| `QB_DEBUG_MEMORY` | bool; `OFF` | Legacy alias: when `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined` (`qbConfig.cmake:181,180-181`). |
-| `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets when `lcov`/`gcov` are found (`qbConfig.cmake:144`, `CMakeLists.txt:126-195`). |
-| `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:182,452`). |
+| `QB_DEBUG_MEMORY` | bool; `OFF` | Legacy alias: when `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined` (`qbConfig.cmake:181,190-192`). |
+| `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets when `lcov`/`gcov` are found (`qbConfig.cmake:144`, `CMakeLists.txt:146-216`). |
+| `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:182,461-463`). |
 
 ### Dependency resolution
 
@@ -160,7 +160,7 @@ qb does not pin a generator; it uses whatever CMake selects or you request. `cma
 - **Visual Studio** (multi-config, e.g. `-G "Visual Studio 17 2022"`): pick the configuration at build time with `cmake --build build --config Release`. With a multi-config generator, `CMAKE_BUILD_TYPE` has no effect — pass `--config`.
 - **Ninja Multi-Config**: also multi-config; select with `--config` at build time.
 
-For multi-config generators, qb routes per-configuration outputs into the same `bin`/`lib` layout described below (`qbConfig.cmake:237-249`).
+For multi-config generators, qb routes per-configuration outputs into the same `bin`/`lib` layout described below (`qbConfig.cmake:312-333`).
 
 ## Build the code and run tests
 
@@ -182,7 +182,7 @@ ctest --test-dir build --output-on-failure
 
 A successful build produces the two libraries and, when enabled, the example, test, and benchmark executables.
 
-- **Libraries:** `qb-io` (asynchronous I/O and utilities) and `qb-core` (the actor engine, which depends on `qb-io`). Consumers link the namespaced aliases `qb::io` and `qb::core` (`CMakeLists.txt:98-108`). Shared builds carry the platform extension (`libqb-io.so`, `libqb-io.dylib`, `qb-io.dll`).
+- **Libraries:** `qb-io` (asynchronous I/O and utilities) and `qb-core` (the actor engine, which depends on `qb-io`). Consumers link the namespaced aliases `qb::io` and `qb::core` (`CMakeLists.txt:107-111,117-127`). Shared builds carry the platform extension (`libqb-io.so`, `libqb-io.dylib`, `qb-io.dll`).
 - **Output directories:** unless a parent project has already chosen them, runtime artifacts go under `${CMAKE_BINARY_DIR}/bin` and libraries/archives under `${CMAKE_BINARY_DIR}/lib` (`qbConfig.cmake:298-300`). When qb is embedded via `add_subdirectory`, it does not override an output tree the parent already set.
 - **Coverage targets** (`QB_BUILD_COVERAGE=ON`, Debug, non-Windows): `qb-coverage`, `qb-coverage-xml`, `qb-coverage-html`.
 
@@ -196,7 +196,7 @@ cmake --build build --parallel
 cmake --install build --prefix /your/prefix    # omit --prefix for the system default
 ```
 
-The install (`CMakeLists.txt:232-325`) lays out. Every rule below is emitted by the one shared
+The install (`CMakeLists.txt:232-377`) lays out. Every rule below is emitted by the one shared
 helper `qb_install_package()` (`cmake/qbPackage.cmake:92-234`), which each qbm module calls with
 the same arguments shape:
 
@@ -369,7 +369,7 @@ every actor TU pay that is the worse trade. **Include an umbrella.**
 ## Pitfalls
 
 - **Bundled deps missing from a checkout.** libev and stduuid are vendored as committed files under `qb/src/qb/vendor/`, not submodules and not fetched; a normal clone always ships them. A `libev … not found` fatal error means they are missing — restore them with `git checkout -- src/qb/vendor` or re-clone. A `git submodule update` will not bring them back.
-- **Host-tuned binary fails on another machine.** Only if the build asked for it: `QB_ENABLE_NATIVE_ARCH` defaults to `OFF`, and the only presets that turn it on are `release-native` and `benchmarks`. Check the cache (`cmake -L build/... | grep NATIVE_ARCH`) before blaming codegen — if it reads `OFF`, a SIGILL on another machine is not native-arch and `-DQB_ENABLE_NATIVE_ARCH=OFF` will change nothing.
+- **Host-tuned binary fails on another machine.** Only if the build asked for it: `QB_ENABLE_NATIVE_ARCH` defaults to `OFF`, and the only preset here that turns it on is `release-native` (the qb-dev superproject adds `benchmarks`). Check the cache (`cmake -L build/... | grep NATIVE_ARCH`) before blaming codegen — if it reads `OFF`, a SIGILL on another machine is not native-arch and `-DQB_ENABLE_NATIVE_ARCH=OFF` will change nothing.
 - **`undefined symbol: qb_abi_…` when linking an application.** Not a missing library — the
   [link-time configuration fingerprint](#link-time-configuration-fingerprint) reporting that the
   application and the archive were compiled with different ABI-relevant settings. The symbol name

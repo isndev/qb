@@ -46,8 +46,8 @@ Two compile-time details shape what a benchmark actually exercises:
 
 Every core benchmark declares `UseRealTime()`, because the work runs on `VirtualCore` worker threads rather than the benchmark thread, so wall time is the meaningful measure. Almost all of them also wrap actor-graph construction in `PauseTiming()`/`ResumeTiming()` so that only the engine run is timed. Where the benchmarks differ is whether engine startup is inside the timed region:
 
-- **Startup is timed.** Most throughput benchmarks resume timing before calling the blocking `main.start(true)`, so both startup and the drain (`join()`) fall inside the measurement. (`qb/tests/core/benchmark/messaging/fan-in-contention.cpp:100-106`.)
-- **Startup is excluded.** `messaging/ping-pong-throughput.cpp` calls the non-blocking `main.start()` while timing is paused, resumes timing, and measures only the drain phase (`main.join()`). (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:174-179`.)
+- **Startup is timed.** Most throughput benchmarks resume timing before calling the blocking `main.start(true)`, so both startup and the drain (`join()`) fall inside the measurement. (`qb/tests/core/benchmark/messaging/fan-in-contention.cpp:106-114`.)
+- **Startup is excluded.** `messaging/ping-pong-throughput.cpp` calls the non-blocking `main.start()` while timing is paused, resumes timing, and measures only the drain phase (`main.join()`). (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:176-183`.)
 
 The two regions are not directly comparable — compare results only across benchmarks that time the same region. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:30-33`.)
 
@@ -55,7 +55,7 @@ Cross-thread latency benchmarks cannot use a `thread_local` sink: actors write o
 
 ## The qb-core benchmark targets
 
-The sources live under `qb/tests/core/benchmark/`, grouped into four subgroups (`micro/`, `system/`, `messaging/`, `topology/`) and registered in that directory's `CMakeLists.txt`. The executable name is `qb-core-bench-<name>`.
+The sources live under `qb/tests/core/benchmark/`, grouped into five subgroups (`micro/`, `system/`, `messaging/`, `topology/`, `patterns/`) and registered in that directory's `CMakeLists.txt`. The executable name is `qb-core-bench-<name>`.
 
 ### `micro/` — primitive throughput (no `qb::Main`)
 
@@ -65,6 +65,7 @@ The sources live under `qb/tests/core/benchmark/`, grouped into four subgroups (
 | `micro/mpsc-router-dispatch.cpp` | `mpsc-router-dispatch` | MPSC mailbox ingress plus `qb::router::memh` typed dispatch, modeling a single consumer core draining mailboxes. |
 | `micro/spinlock-contention.cpp` | `spinlock-contention` | `qb::lockfree::SpinLock` uncontended acquire/release latency and N-thread contended throughput. |
 | `micro/jsonb-dump.cpp` | `jsonb-dump` | `qb::json` / `qb::jsonb` serialize (`dump()`) and parse throughput on an HTTP-shaped payload. |
+| `micro/parse-numbers.cpp` | `parse-numbers` | Numeric string-to-value parse throughput: `qb::to_number` versus `std::from_chars` versus libc. |
 
 ### `system/` — engine bring-up, push allocator, scheduler
 
@@ -100,7 +101,15 @@ The sources live under `qb/tests/core/benchmark/`, grouped into four subgroups (
 | `topology/multicast-latency.cpp` | `multicast-latency` | Multicast latency — one event fans out to every consumer once. |
 | `topology/topology-zoo.cpp` | `topology-zoo` | The diamond topology plus shared-core placement variants. |
 
-<!-- src: qb/tests/core/benchmark/CMakeLists.txt:45-74 -->
+### `patterns/` — pub/sub, saga, and resilience overhead
+
+| Source | Executable suffix | Measures |
+|---|---|---|
+| `patterns/pubsub-dispatch.cpp` | `pubsub-dispatch` | Topic publish fan-out throughput: `qb::PubSub<Topic>` to N same-core subscribers. |
+| `patterns/saga-orchestration.cpp` | `saga-orchestration` | `qb::run_saga` multi-step orchestration overhead against the same steps as raw `qb::ask`s. |
+| `patterns/resilience-overhead.cpp` | `resilience-overhead` | Per-call overhead of `qb::CircuitBreaker` and `qb::rate_limiter` (no actor engine — the guards take the clock as a parameter). |
+
+<!-- src: qb/tests/core/benchmark/CMakeLists.txt:45-80 -->
 
 ## Building the benchmarks
 
@@ -112,12 +121,12 @@ cmake -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_BENCHMARKS=ON -B build
 cmake --build build --parallel
 ```
 
-The repository-root `CMakeLists.txt` defaults `QB_BUILD_BENCHMARKS=ON` (`qb-dev/CMakeLists.txt:39`), and the `dev` CMake preset enables it as well (`qb/CMakePresets.json`). When building from the repository root or with that preset, the flag is already set:
+The repository-root `CMakeLists.txt` sets `QB_BUILD_BENCHMARKS=ON` (`qb-dev/CMakeLists.txt:39`) — but **without** `FORCE`, unlike the tests and examples lines around it, so a preset that already put the variable in the cache wins. The superproject's `dev` preset does exactly that: it inherits `debug` → `base`, and `base` sets `QB_BUILD_BENCHMARKS=OFF` (`qb-dev/CMakePresets.json:21`), adding nothing of its own. **`cmake --preset dev` from the repository root therefore does not build the benchmarks** — use the `benchmarks` preset, which is `release` plus `-march=native` (`qb-dev/CMakePresets.json:128-135`), or pass the flag explicitly. In a *standalone* `qb` checkout the qb-only `dev` preset does enable them (`qb/CMakePresets.json:45-51`).
 
 ```bash
-# src: qb/CMakePresets.json (dev preset)
-cmake --preset dev
-cmake --build build/dev --parallel
+# src: qb-dev/CMakePresets.json (benchmarks preset)
+cmake --preset benchmarks
+cmake --build --preset benchmarks --parallel
 ```
 
 To build a single benchmark instead of the whole suite, name its target:
@@ -181,8 +190,10 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 | `io/file-stream.cpp` | `file-stream` | File helpers and file-backed streams. |
 | `session/session-json.cpp` | `session-json` | JSON session round-trips over loopback TCP and TLS. Built only when `QB_HAS_SSL` (`REQUIRES ssl`). |
 | `transport/async-bases-framing.cpp` | `async-bases-framing` | The read→frame→`onMessage`→drain loop of the async I/O bases. |
+| `transport/tcp-loopback-echo.cpp` | `tcp-loopback-echo` | Plain-TCP loopback echo round-trip throughput (no TLS, daemon-free). |
+| `coroutine/sync-primitives.cpp` | `sync-primitives` | The qb-io coroutine synchronization primitives (`semaphore`, `async_mutex`, `async_rw_lock`, `async_latch`). |
 
-<!-- src: qb/tests/io/benchmark/CMakeLists.txt:36-51 -->
+<!-- src: qb/tests/io/benchmark/CMakeLists.txt:36-53 -->
 
 Build and run them the same way as the core benchmarks — each is a standard Google Benchmark binary that accepts the usual flags:
 
@@ -195,7 +206,7 @@ Build and run them the same way as the core benchmarks — each is a standard Go
 - **Benchmark numbers from a `Debug` build are not baselines.** Several benchmarks shrink their iteration counts and event sizes when `NDEBUG` is not defined. Configure `Release` (or `RelWithDebInfo`) before measuring. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:48-53`.)
 - **`ctest` will not run these.** The benchmark targets are intentionally excluded from CTest. Launch the executables in `<build>/bin/benchmarks/` directly. (`qb/tests/core/CMakeLists.txt:37-38`.)
 - **The worker-core sweep tops out at eight.** `cappedBenchmarkCores()` clamps the swept core count to `min(effectiveHardwareCores(), kMaxBenchmarkCores)` with `kMaxBenchmarkCores == 8`; a benchmark will not exercise more than eight scheduler cores even on a larger machine. (`qb/tests/core/shared/BenchmarkCores.h:39,48-49`.)
-- **Do not compare across timing regions.** Benchmarks that time the blocking `start(true)` plus the drain and benchmarks (such as `messaging/ping-pong-throughput.cpp`) that time only the drain (`join()`) measure different regions; their absolute numbers are not interchangeable. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:174-179`; `qb/tests/core/benchmark/messaging/fan-in-contention.cpp:100-106`.)
+- **Do not compare across timing regions.** Benchmarks that time the blocking `start(true)` plus the drain and benchmarks (such as `messaging/ping-pong-throughput.cpp`) that time only the drain (`join()`) measure different regions; their absolute numbers are not interchangeable. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:176-183`; `qb/tests/core/benchmark/messaging/fan-in-contention.cpp:106-114`.)
 - **Google Benchmark must be resolvable.** When `QB_USE_SYSTEM_BENCHMARK=ON` and no system package exists, configuration fails with a `find_package(benchmark CONFIG REQUIRED)` error; with the default fetch fallback, the first configure needs network access to clone the pinned tag. See [cmake_dependencies.md](./cmake_dependencies.md).
 
 ## See also

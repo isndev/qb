@@ -171,14 +171,14 @@ Returned by `Actor::to()`. Copyable, not default-constructible.
 *   use: `to(dst).push<A>().push<B>();`
 
 #### `class qb::CoroContext`
-Safe restricted context handed to `spawn_detached` coroutines (captures the actor's `ActorId` by value, survives destruction — events to a dead actor are dropped, never delivered into freed memory). The `CoroContext` class is at _(`Actor.h:1384`)_; the alias `qb::coro_context` at _(`Actor.h:2250`)_.
+Safe restricted context handed to `spawn_detached` coroutines (captures the actor's `ActorId` by value, survives destruction — events to a dead actor are dropped, never delivered into freed memory). The `CoroContext` class is at _(`Actor.h:1385-1394`)_; the alias `qb::coro_context` at _(`Actor.h:2250`)_.
 *   `[T<_Event,Args...>] void push(Args&&... args)` — push to self.
 *   `[T<_Event,Args...>] void push_to(ActorId dest, Args&&... args)` — push to a given dest.
 *   `[T<_Event,Args...>] void broadcast(Args&&... args)` — broadcast to all actors on all cores (backs `qb::require`).
 *   `[[nodiscard]] ActorId id() const noexcept`, `[[nodiscard]] uint64_t time() const noexcept` (epoch nanoseconds).
 
 #### `class qb::ScopedCoroContext : public CoroContext`
-Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb::scoped_coro_context`. A **superset** of `CoroContext` that also carries the actor's cancellation token, so everything below is cancelled when the actor is killed/destroyed. This is the type every `qb::` patterns free function takes. The `ScopedCoroContext` class is at _(`Actor.h:1673-1753`)_; the alias `qb::scoped_coro_context` at _(`Actor.h:2258`)_.
+Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb::scoped_coro_context`. A **superset** of `CoroContext` that also carries the actor's cancellation token, so everything below is cancelled when the actor is killed/destroyed. This is the type every `qb::` patterns free function takes. The `ScopedCoroContext` class is at _(`Actor.h:1674-1753`)_; the alias `qb::scoped_coro_context` at _(`Actor.h:2258`)_.
 *   `[[nodiscard]] const qb::io::async::cancellation_token& token() const noexcept`, `[[nodiscard]] bool cancelled() const noexcept`.
 *   `[[nodiscard]] qb::io::async::cancellation_token child_token() const` — a fresh token cancelled with the actor scope, cancellable independently.
 *   `[[nodiscard]] task<void> sleep(qb::duration d) const` — cancellation-aware sleep; throws `cancelled_error` on cancel.
@@ -716,7 +716,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 ### Session manager (`<qb/io/async/io_handler.h>`)
 *   `[T] class io_handler<_Derived, _Session>` — manages async sessions.
     *   `using session_map_t = qb::unordered_map<uuid, std::shared_ptr<_Session>>;`, `using IOSession = _Session;`
-    *   `session_map_t& sessions()`, `[[nodiscard]] std::size_t session_count() const noexcept` (singular — there is no `sessions_count`). _(`io_handler.h:139`, `:148`)_
+    *   `session_map_t& sessions()`, `[[nodiscard]] std::size_t session_count() const noexcept` (singular — there is no `sessions_count`). _(`async/io_handler.h:139-140`, `:148-149`)_
     *   `std::shared_ptr<_Session> session(uuid id)` (`nullptr` if absent).
     *   `std::size_t max_sessions() const noexcept`, `void set_max_sessions(std::size_t max) noexcept` (0 = unlimited).
     *   `[T<...Args>] _Session* registerSession(typename _Session::transport_io_type&& new_io, Args&&... args)` — register a session; → `nullptr` (after closing `new_io`) when at `max_sessions` or on duplicate-id insert failure.
@@ -882,7 +882,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   X25519: `static std::pair<std::string,std::string> generate_x25519_keypair()` / `generate_x25519_keypair_bytes()`; `x25519_key_exchange(...)` (raw-bytes and PEM overloads).
 *   ECIES (X25519 + AEAD; **raw-byte keys only, there is no PEM/`std::string` overload and no `DigestAlgorithm` parameter**):
     *   `static std::pair<std::vector<unsigned char>,std::vector<unsigned char>> ecies_encrypt(const std::vector<unsigned char>& data, const std::vector<unsigned char>& recipient_public_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)` → **`{ephemeral_public_key, ciphertext}`, in that order** — NOT `{ciphertext, ephemeral}`, which is what this line used to say. `ecies_decrypt` takes them the other way round (ciphertext first), so the pair is deliberately not in call order; feeding it straight through throws `Failed to create public key from raw bytes`. _(`crypto_asymmetric.cpp:718`)_
-    *   `static std::vector<unsigned char> ecies_decrypt(const std::vector<unsigned char>& encrypted_data, const std::vector<unsigned char>& ephemeral_public_key, const std::vector<unsigned char>& recipient_private_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)`. _(`crypto.h:991-1000`)_
+    *   `static std::vector<unsigned char> ecies_decrypt(const std::vector<unsigned char>& encrypted_data, const std::vector<unsigned char>& ephemeral_public_key, const std::vector<unsigned char>& recipient_private_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)`. _(`crypto.h:996-1000`)_
     *   `ECIESMode::STANDARD` is AES-256-CBC with **no MAC** — unauthenticated and malleable; it exists only for interop. Use the default `AES_GCM` or `CHACHA20`. _(`crypto.h:693-701`)_
 *   Envelope AEAD-with-metadata: `static std::string encrypt_with_metadata(const std::vector<unsigned char>& plaintext, const std::vector<unsigned char>& key, const std::string& metadata, SymmetricAlgorithm = SymmetricAlgorithm::AES_256_GCM)`; `static std::optional<std::pair<std::vector<unsigned char>,std::string>> decrypt_with_metadata(const std::string& ciphertext, const std::vector<unsigned char>& key, SymmetricAlgorithm = SymmetricAlgorithm::AES_256_GCM)` (empty optional if authentication fails). _(`crypto.h:969-986`)_
 *   The `EnvelopeFormat` enum (`RAW | JSON | BASE64`) exists but **no function consumes it** — there is no `envelope_encrypt`/`envelope_decrypt`, and no `ecdh_derive_secret`. For key agreement use `x25519_key_exchange` (raw-bytes and PEM overloads). _(`crypto.h:704`, `:931`, `:943`)_

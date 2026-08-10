@@ -36,7 +36,7 @@ Treat events as plain data carriers. The receiving actor reads the data and deci
 Derive a `struct` (or `class`) from `qb::Event` and add data members. The framework constructs your event in place inside the destination pipe, forwarding the constructor arguments you pass to the send call.
 
 ```cpp
-// src: derived from qb/core/Event.h and examples/core/example2_basic_actors.cpp
+// src: qb/src/qb/core/Event.h; examples/core/example2_basic_actors.cpp (derived from)
 #include <qb/core/Event.h> // qb::Event
 #include <qb/string.h>     // qb::string<N>
 #include <cstdint>
@@ -154,7 +154,7 @@ void broadcast(_Args &&...args) const noexcept;
 `broadcast<E>(args...)` delivers a copy of the event to every actor currently running across all `VirtualCore`s, with this actor as the source. It is built on the `send` path (`qb::VirtualCore::broadcast` calls `send` once per core), so it carries the same trivially-destructible expectation: broadcast plain-data or `qb::string<N>` events, not events holding `std::string`/`std::vector`. To target every actor on a single core instead, push to a `qb::BroadcastId`:
 
 ```cpp
-// src: qb/tests/core/system/messaging/messaging-api.cpp + ActorId.h (BroadcastId)
+// src: qb/tests/core/system/messaging/messaging-api.cpp:247; qb/src/qb/core/ActorId.h:454 (BroadcastId)
 broadcast<SystemNotice>("shutting down");         // all actors, all cores
 push<SystemNotice>(qb::BroadcastId(core_id), ""); // all actors on one core
 ```
