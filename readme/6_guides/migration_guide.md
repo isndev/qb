@@ -221,7 +221,7 @@ Two design points drive the migration:
 
 The literal operators (`30s`, `100ms`, `5us`, …) are pulled into `qb` through `inline namespace qb::time_literals`, so call sites can write them after `#include <qb/system/time.h>` with no extra `using`. _(`qb/src/qb/system/time.h:110-114`.)_
 
-> **Retired tokens — never reintroduce them.** `qb::Timestamp`, `qb::Duration`, and `qb::TimePoint` no longer exist anywhere in the framework; the canonical replacements are defined in `<qb/system/time.h>`. Any reference to them is pre-2.0 code that must be ported. The documentation anti-drift guard rejects these tokens everywhere except the migration, contributing, and changelog surfaces. _(`qb/src/qb/system/time.h:87-96`; `qb/scripts/doc-lint.sh:74` (the token list), `:76-81` (the three allowed surfaces).)_
+> **Retired tokens — never reintroduce them.** `qb::Timestamp`, `qb::Duration`, and `qb::TimePoint` no longer exist anywhere in the framework; the canonical replacements are defined in `<qb/system/time.h>`. Any reference to them is pre-2.0 code that must be ported. The documentation anti-drift guard rejects these tokens everywhere except the migration, contributing, and changelog surfaces. _(`qb/src/qb/system/time.h:87-96`; `qb/scripts/doc-lint.sh:74` (the token list), `qb/scripts/doc-lint.sh:76-81` (the three allowed surfaces).)_
 
 ### Old-to-new mapping table
 

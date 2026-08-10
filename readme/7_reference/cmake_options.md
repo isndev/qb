@@ -19,7 +19,10 @@ line, for example:
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DQB_WITH_SSL=ON -DQB_BUILD_TESTS=OFF
 ```
 
-The tables below group the options by purpose. Defaults are taken verbatim from `qbConfig.cmake`.
+The tables below group the options by purpose. Defaults are taken from `qbConfig.cmake` — verbatim
+where the declaration writes a literal, and spelled out as a rule where it does not: `QB_BUILD_TESTS`,
+`QB_BUILD_EXAMPLES` and `QB_INSTALL` are **computed** from whether qb is the top-level project
+(`qb/cmake/qbConfig.cmake:75-85,118-122`), so a single value would be wrong for one of the two cases.
 
 ## Concepts
 
@@ -44,16 +47,32 @@ The tables below group the options by purpose. Defaults are taken verbatim from 
 | Option | Default | Purpose |
 |---|---|---|
 | `QB_CXX_STANDARD` | `20` | C++ standard required by qb targets. `STRING` cache variable accepting `20` or `23` (configure fails otherwise); pass `-DQB_CXX_STANDARD=23` for the modern path, as the `debug-cxx23`/`dev-cxx23` presets do. |
-| `QB_BUILD_TESTS` | `ON` | Build the qb GoogleTest suites. Gates GoogleTest resolution and the `qb_add_test` helper. |
-| `QB_BUILD_EXAMPLES` | `ON` | Build the bundled examples. |
+| `QB_BUILD_TESTS` | `ON` standalone / `${BUILD_TESTING}` (else `OFF`) embedded | Build the qb GoogleTest suites. Gates GoogleTest resolution and the `qb_add_test` helper. The default is **computed**, not fixed: `ON` only when qb is the top-level project; under `add_subdirectory` it follows `BUILD_TESTING` when the parent defined it, otherwise `OFF`. |
+| `QB_BUILD_EXAMPLES` | `ON` standalone / `OFF` embedded | Build the bundled examples. Same computed default as `QB_BUILD_TESTS`, except that an embedded qb is flatly `OFF` — `BUILD_TESTING` does not apply to examples. |
 | `QB_BUILD_BENCHMARKS` | `OFF` | Build the Google Benchmark suites. Gates Google Benchmark resolution. |
 | `QB_BUILD_DOCS` | `OFF` | Build the documentation target (`add_subdirectory(docs)`). |
 | `QB_BUILD_SHARED_LIBS` | `${BUILD_SHARED_LIBS}` | Build the qb libraries as shared objects instead of static. Defaults to the standard `BUILD_SHARED_LIBS`, so `-DBUILD_SHARED_LIBS=ON` also switches qb to shared, while still allowing a qb-only override. |
-| `QB_INSTALL` | `ON` | Install the framework: export `qbTargets`/`qbConfig` and headers (see `find_package(qb)` integration). |
+| `QB_INSTALL` | `ON` standalone / `OFF` embedded | Install the framework: export `qbTargets`/`qbConfig` and headers (see `find_package(qb)` integration). Computed the same way: an embedded qb must not inject its headers and package files into the parent's `cmake --install`, so a superproject that genuinely wants them passes `-DQB_INSTALL=ON`. |
 
-The repository-root `CMakeLists.txt` forces `QB_BUILD_TESTS=ON` and `QB_BUILD_EXAMPLES=ON`, and
-defaults `QB_BUILD_BENCHMARKS=ON` (overridable, e.g. the `coverage` preset turns it off) when building
-the whole workspace; building qb standalone uses the defaults above.
+Building qb standalone uses the defaults above. Building it as part of the **qb-dev superproject** is
+different, and not uniformly: the repository root FORCE-enables `QB_BUILD_TESTS=ON` and
+`QB_BUILD_EXAMPLES=ON` (`qb-dev/CMakeLists.txt:38,40`), so no preset and no `-D` can turn those two
+off — but `QB_BUILD_BENCHMARKS=ON`, on the line between them, carries **no** `FORCE`
+(`qb-dev/CMakeLists.txt:39`), and the superproject's hidden `base` preset, which every visible preset
+inherits, has already put `QB_BUILD_BENCHMARKS=OFF` into the cache (`qb-dev/CMakePresets.json:21`). A
+plain cache default cannot overwrite an existing cache entry, so that root line is a no-op under every
+preset: `dev`, `release`, `sanitize`, `sanitize-thread`, `coverage`, `feature-gates` and
+`relwithdebinfo` all build **zero** benchmarks. `coverage` is not an exception that switches them off —
+it only restates the `OFF` it already inherited. The single preset that turns them back on is
+`benchmarks` (`qb-dev/CMakePresets.json:128-135`). `-DQB_BUILD_BENCHMARKS=ON` on the configure line
+also works, because a command-line `-D` overrides a preset's `cacheVariables`; and in a preset-free
+superproject configure `-DQB_BUILD_BENCHMARKS=OFF` is honoured as well — that is what the missing
+`FORCE` buys, and it is exactly what `QB_BUILD_TESTS` and `QB_BUILD_EXAMPLES` do **not** grant you.
+The `package` preset takes a third path: `QB_DEV_PACKAGING=ON`
+drops both `FORCE`s so all three switches become plain defaults, and sets all three `OFF`
+(`qb-dev/CMakeLists.txt:33-41`). See [Benchmarks](./benchmarks.md#building-the-benchmarks). Note that
+the `dev` row in [Presets](#presets) below describes qb's **own** `CMakePresets.json`, where `dev`
+does enable benchmarks — the two files are not the same file.
 
 ## Dependency resolution
 

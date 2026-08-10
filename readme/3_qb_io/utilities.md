@@ -16,7 +16,7 @@ These utilities live in headers under `qb/src/qb/`. Several are header-only with
 |---|---|---|---|
 | Time vocabulary | `qb/system/time.h` | `qb` | always |
 | Number parsing | `qb/system/parse.h` | `qb` | always |
-| Crypto + JWT | `qb/io/crypto.h`, `qb/io/crypto_jwt.h` | `qb::crypto`, `qb::jwt` | OpenSSL (`QB_WITH_SSL`) |
+| Crypto + JWT | `qb/io/crypto.h`, `qb/io/crypto_jwt.h` | `qb::crypto`, `qb::jwt` | OpenSSL (`QB_WITH_SSL`) — **per member** in `crypto.h`, whole-header (`#error`) in `crypto_jwt.h`; see below |
 | Compression | `qb/io/compression.h` | `qb::compression`, `qb::gzip`, `qb::deflate` | zlib (`QB_WITH_COMPRESSION`) |
 | URI | `qb/io/uri.h` | `qb::io` | always |
 | Fixed string | `qb/string.h` | `qb` | always |
@@ -79,7 +79,7 @@ uint64_t tsc_ticks() noexcept;
 
 The chrono literals (`30s`, `100ms`, `5us`, …) are pulled into `qb` via `inline namespace qb::time_literals`, so call sites can write them without an extra `using`. _(`qb/src/qb/system/time.h:110-114`.)_
 
-`format_utc`/`parse_utc` operate in UTC only and have no time-zone database dependency: formatting uses `strftime`, parsing uses `std::get_time` + `timegm`. `format_utc` returns an empty string on failure; `parse_utc`/`from_iso8601` return `std::nullopt` on any parse error. _(`qb/src/qb/system/time.h:29-30,303-347`.)_
+`format_utc`/`parse_utc` operate in UTC only and have no time-zone database dependency: formatting uses `std::format`/`strftime`, parsing uses `std::get_time` + `qb::safe_timegm` (qb's own pure-integer conversion, **not** the C library's `timegm`/`_mkgmtime`, which reject a negative `time_t` on Windows). `format_utc` returns an empty string on failure; `parse_utc`/`from_iso8601` return `std::nullopt` on any parse error. _(`qb/src/qb/system/time.h:27-34` for the toolchain note, `:303-347` for the four functions.)_
 
 `tsc_ticks()` reads the CPU time-stamp counter. It is monotonic per-core and high-resolution but uncalibrated and not comparable to wall or monotonic clocks — use it only for single-thread micro-benchmark deltas, never as a clock. _(`qb/src/qb/system/time.h:680-684`.)_
 
@@ -134,7 +134,7 @@ Reach for `to_number` to validate untrusted input — a malformed or out-of-rang
 
 ## Cryptography (`qb::crypto`)
 
-`qb::crypto` is an OpenSSL-backed static toolbox: every entry point is a static member of `class crypto`. Everything documented below needs an OpenSSL-enabled build (`QB_WITH_SSL` → `QB_HAS_SSL`); without it those members are not declared at all. _(`qb/src/qb/io/crypto.h:39-44,95`.)_
+`qb::crypto` is a static toolbox: every entry point is a static member of `class crypto`. **Almost** everything documented below is OpenSSL-backed and needs `QB_WITH_SSL` → `QB_HAS_SSL`; those members are removed from the class in a no-SSL build, so the failure lands at the call site rather than at the include. The exceptions sit in the region the header marks *OpenSSL-free* — which still nests `#ifdef QB_HAS_SSL` stretches inside it, so membership is per declaration, not per line range. Five members are declared unconditionally: `to_hex_string`, `hex_value`, `hex_to_string`, `xor_bytes`, and `constant_time_compare`. Two of them are used in the sections below, so read the gate per member, not per page. _(`qb/src/qb/io/crypto.h:39-44` and `:95` for the gate and the class; the marked region opens at `:265-268` and closes at `:585`; the five are `:281`, `:292`, `:302`, `:481`, `:583`.)_
 
 ### Hashing and encoding
 
@@ -214,7 +214,7 @@ auto dk   = C::derive_key("password", salt, /*key_length*/ 32,
 
 `KdfAlgorithm` is `PBKDF2`, `HKDF`, or `Argon2`; `derive_key` defaults to `Argon2` with `iterations = 10000` (used only by PBKDF2) and a default `Argon2Params`. Dedicated entry points exist for each primitive: `pbkdf2`, `hkdf`, `argon2_kdf`. `Argon2Params` defaults to `t_cost = 3`, `m_cost = 1 << 16` KiB, `parallelism = 1`; `Argon2Variant` is `Argon2d`, `Argon2i`, or `Argon2id`. _(`qb/src/qb/io/crypto.h:425,669-690,724,741,762-764`.)_
 
-> **Argon2 is an optional dependency.** The `QB_HAS_ARGON2` macro is set only when the Argon2 library is found, and that probe runs only when OpenSSL is present (`qb/cmake/qbDependencies.cmake:131-140`). When Argon2 is absent, `hash_password` and Argon2-mode `derive_key` **silently fall back to PBKDF2-HMAC-SHA256** (with a different self-describing hash prefix) rather than failing or warning (`qb/src/qb/io/crypto_advanced.cpp:165-182,444-456`). The stored-hash format therefore depends on how the framework was built: a build with SSL but without the Argon2 library stores PBKDF2 hashes even though the API defaults read as "Argon2id". `verify_password` is gated the same way, so it only validates the format its own build produces — a hash written by one build configuration will not verify against a binary built the other way. Confirm `QB_HAS_ARGON2` if you require Argon2id, and keep the build configuration consistent across any services that share a hash store.
+> **Argon2 is an optional dependency.** The `QB_HAS_ARGON2` macro is set only when the Argon2 library is found, and that probe runs only when OpenSSL is present (`qb/cmake/qbDependencies.cmake:126-141`). When Argon2 is absent, `hash_password` and Argon2-mode `derive_key` **silently fall back to PBKDF2-HMAC-SHA256** (with a different self-describing hash prefix — `$pbkdf2-sha256$i=…` instead of `$argon2…$`) rather than failing or warning (`qb/src/qb/io/crypto_advanced.cpp:158-178` for `argon2_kdf`, `:420-446` for `hash_password`, whose `#else` branch writes that prefix at `:443`). The stored-hash format therefore depends on how the framework was built: a build with SSL but without the Argon2 library stores PBKDF2 hashes even though the API defaults read as "Argon2id". `verify_password` is gated the same way, so it only validates the format its own build produces — a hash written by one build configuration will not verify against a binary built the other way. Confirm `QB_HAS_ARGON2` if you require Argon2id, and keep the build configuration consistent across any services that share a hash store.
 
 ### Asymmetric cryptography
 
@@ -236,7 +236,7 @@ _(`qb/src/qb/io/crypto.h:594-648,846-901,910-1000`.)_
 
 **Authenticated encryption with associated metadata.** `encrypt_with_metadata(plaintext, key, metadata, algorithm = SymmetricAlgorithm::AES_256_GCM)` returns a structured `std::string` carrying IV, AAD and tag; the `metadata` travels in the clear but is authenticated, so tampering with it fails decryption. `decrypt_with_metadata(ciphertext, key, algorithm = SymmetricAlgorithm::AES_256_GCM)` returns `std::optional<std::pair<std::vector<unsigned char>, std::string>>` — `{plaintext, metadata}` on success, and an **empty optional** on any authentication failure, so check it before using either half.
 
-<!-- src: qb/src/qb/io/crypto.h:969-987 -->
+<!-- src: qb/src/qb/io/crypto.h:969-970 (encrypt_with_metadata), :984-986 (decrypt_with_metadata) -->
 
 ```cpp
 auto key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
@@ -268,7 +268,7 @@ std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/ex
 
 ## JSON Web Tokens (`qb::jwt`)
 
-`qb::jwt` implements RFC 7519 over `qb::crypto`, in the same OpenSSL-gated slice. Every entry point is a static member of `class jwt`. _(`qb/src/qb/io/crypto_jwt.h:58`.)_
+`qb::jwt` implements RFC 7519 over `qb::crypto`'s OpenSSL-backed members — and unlike `crypto.h`, whose gate is per member, `crypto_jwt.h` is gated as a **whole header**: it `#error`s on include when `QB_HAS_SSL` is undefined. Every entry point is a static member of `class jwt`. _(the gate is `qb/src/qb/io/crypto_jwt.h:36-38`; `class jwt` is `:58`.)_
 
 Supported `Algorithm` values: `HS256/384/512` (HMAC), `RS256/384/512` (RSASSA-PKCS1-v1_5), `ES256/384/512` (ECDSA on P-256/P-384/P-521), and `EdDSA` (Ed25519). _(`qb/src/qb/io/crypto_jwt.h:63-74`.)_
 
@@ -327,17 +327,17 @@ std::string compressed   = qb::gzip::compress(original.c_str(), original.size())
 std::string decompressed = qb::gzip::uncompress(compressed.c_str(), compressed.size());
 // qb::deflate::compress / uncompress are the raw-deflate equivalents.
 ```
-<!-- src: qb/tests/io/unit/compression/compression-codec.cpp:140-163 -->
+<!-- src: qb/tests/io/unit/compression/compression-codec.cpp:142-160 (TEST Gzip_All), :162-180 (TEST Deflate_All) -->
 
-`compress(const char* data, size_t size, int level = Z_DEFAULT_COMPRESSION)` and `uncompress(const char* data, size_t size)` return a `std::string`. Generic container overloads, `uncompress(Output&, data, size, max = 0)`, accept a `max` output budget: a non-zero `max` rejects inputs that would inflate beyond it (a decompression-bomb guard), throwing `std::runtime_error`. A truncated or incomplete stream also throws `std::runtime_error`. _(`qb/src/qb/io/compression.h:487-563,662-733,838-909`; `qb/tests/io/unit/compression/compression-codec.cpp:184-197,200-208`.)_
+`compress(const char* data, size_t size, int level = Z_DEFAULT_COMPRESSION)` and `uncompress(const char* data, size_t size)` return a `std::string`. Generic container overloads, `uncompress(Output&, data, size, max = 0)`, accept a `max` output budget: a non-zero `max` rejects inputs that would inflate beyond it (a decompression-bomb guard), throwing `std::runtime_error`. A truncated or incomplete stream also throws `std::runtime_error`. _(the generic `compression::uncompress` is `qb/src/qb/io/compression.h:477-564`, with the `max` rejections at `:528-530` and `:539-541` and the truncated-stream throw at `:558-561`; the `std::string` one-shots are `:656` / `:725` for deflate and `:827` / `:896` for gzip; the `max = 0` container overloads are `:668-670` and `:839-841`. Tests: `qb/tests/io/unit/compression/compression-codec.cpp:184-197,200-209`.)_
 
-`qb::gzip::is_compressed(data, size)` heuristically detects a gzip or zlib header. For streaming over large or chunked data, the lower-level `qb::compression` namespace exposes `compress_provider` / `decompress_provider` interfaces with an `operation_hint` (`is_last` / `has_more`) and provider factories. _(`qb/src/qb/io/compression.h:56-247,744-766`.)_
+`qb::gzip::is_compressed(data, size)` heuristically detects a gzip or zlib header. For streaming over large or chunked data, the lower-level `qb::compression` namespace exposes `compress_provider` / `decompress_provider` interfaces with an `operation_hint` (`is_last` / `has_more`) and provider factories. _(`qb/src/qb/io/compression.h:747-758` for `is_compressed`; `:56-61` for `operation_hint`, `:89` for `compress_provider`, `:135` for `decompress_provider`, `:286` / `:294` for the `make_compressor` / `make_decompressor` factories.)_
 
 ---
 
 ## URI parsing (`qb::io::uri`)
 
-RFC 3986 parsing and percent-encoding. Construction runs `parse()` immediately; `is_valid()` reports whether the source parsed into a structurally valid URI. Component accessors return `std::string_view` borrowing from the URI's owned source string. _(`qb/src/qb/io/uri.h:182-575`.)_
+RFC 3986 parsing and percent-encoding. Construction runs `parse()` immediately; `is_valid()` reports whether the source parsed into a structurally valid URI. Component accessors return `std::string_view` borrowing from the URI's owned source string. _(`qb/src/qb/io/uri.h:179-592` — the whole class; `:182` is the owned `_source`, `:203` the private `parse()` the constructors run, `:419-422` `is_valid()`.)_
 
 ```cpp
 #include <qb/io/uri.h>
@@ -367,7 +367,7 @@ std::string dec = qb::io::uri::decode(enc);        // "a b/c"
 
 ## Executable location and resource resolution (`qb::io::sys`)
 
-Three free functions in `qb::io::sys` (`qb/io/system/file.h`) let a binary locate itself and the resources shipped alongside it, so it runs correctly from any working directory. _(`qb/src/qb/io/system/file.h:359-388`.)_
+Three free functions in `qb::io::sys` (`qb/io/system/file.h`) let a binary locate itself and the resources shipped alongside it, so it runs correctly from any working directory. _(`qb/src/qb/io/system/file.h:359-387`.)_
 
 ```cpp
 #include <qb/io/system/file.h>
@@ -387,7 +387,7 @@ std::filesystem::path resolve_resource(const std::filesystem::path &path);
 
 } // namespace qb::io::sys
 ```
-<!-- src: qb/src/qb/io/system/file.h:359-388 -->
+<!-- src: qb/src/qb/io/system/file.h:359-387 -->
 
 `resolve_resource` returns an **absolute** path unchanged. A **relative** path is looked up first against the current working directory (preserving the historical behaviour), then against the executable's own directory (`self_dir()`). The first candidate that exists wins; if neither exists the original path is returned unchanged so diagnostics report exactly what was requested. This is the self-locating-binary pattern: place an asset next to the executable and `resolve_resource("assets/config.json")` finds it whether the process is launched from its own directory or anywhere else. _(`qb/src/qb/io/system/file.cpp:418-438`.)_
 
@@ -441,7 +441,7 @@ std::size_t cap = name.capacity();  // == 32 (compile-time max)
 ```
 <!-- src: qb/src/qb/string.h -->
 
-`size()` (alias `length()`) is the current length; `capacity()` and `max_size()` both return the compile-time `N`. Assigning or appending past `N` truncates to `N` rather than reallocating. The internal length field uses the smallest unsigned integer type that can hold `N + 1` (`uint8_t`/`uint16_t`/`size_t`), so small fixed strings stay compact. `qb::string<N>` converts implicitly to both `std::string` and `std::string_view`. _(`qb/src/qb/string.h:90,200-201,310-323,509-560`.)_
+`size()` (alias `length()`) is the current length; `capacity()` and `max_size()` both return the compile-time `N`. Assigning or appending past `N` truncates to `N` rather than reallocating. The internal length field uses the smallest unsigned integer type that can hold `N + 1` (`uint8_t`/`uint16_t`/`size_t`), so small fixed strings stay compact. `qb::string<N>` converts implicitly to both `std::string` and `std::string_view`. _(`qb/src/qb/string.h:90` (the `size_type` alias), `:200-201` (the truncating `assign`), `:314` / `:323` (the two conversion operators), `:527-528` (`size`), `:537-538` (`length`), `:547-548` (`max_size`), `:557-559` (`capacity`).)_
 
 ---
 
@@ -508,7 +508,7 @@ A `qb::allocator::pipe<char>::put<qb::json>` specialization lets JSON be written
 
 ## Endian helpers (`qb::endian`)
 
-`qb/system/endian.h` builds on C++20 `std::endian` and C++23 `std::byteswap`. Detection is `consteval` (compile-time) and conversion is `constexpr`. _(`qb/src/qb/system/endian.h:37-167`.)_
+`qb/system/endian.h` builds on C++20 `std::endian` and C++23 `std::byteswap`. Detection is `consteval` (compile-time) and conversion is `constexpr`. _(`qb/src/qb/system/endian.h:33-171` — the whole `namespace qb::endian`.)_
 
 ```cpp
 #include <qb/system/endian.h>
@@ -523,7 +523,7 @@ uint32_t sw   = qb::endian::byteswap(host);            // unconditional swap
 ```
 <!-- src: qb/src/qb/system/endian.h -->
 
-`native_order()`, `is_little_endian()`, and `is_big_endian()` are `consteval`. `byteswap<T>` accepts arithmetic and enum types. The `to_big_endian` / `from_big_endian` / `to_little_endian` / `from_little_endian` helpers are no-ops when the requested order already matches the host and a `byteswap` otherwise — the standard idiom for reading and writing fixed-endian wire formats. _(`qb/src/qb/system/endian.h:48-167`.)_
+`native_order()`, `is_little_endian()`, and `is_big_endian()` are `consteval`. `byteswap<T>` accepts arithmetic and enum types. The `to_big_endian` / `from_big_endian` / `to_little_endian` / `from_little_endian` helpers are no-ops when the requested order already matches the host and a `byteswap` otherwise — the standard idiom for reading and writing fixed-endian wire formats. _(`qb/src/qb/system/endian.h:49-169` — `native_order` at `:49-50` through the closing brace of `from_little_endian` at `:169`.)_
 
 ---
 
@@ -534,7 +534,7 @@ uint32_t sw   = qb::endian::byteswap(host);            // unconditional swap
 - **JWT and token TTLs are wall-clock seconds.** `create_token`'s `expires_in`/`not_before` and `generate_token`'s `ttl` resolve to whole-second `exp`/`nbf` claims evaluated against `system_clock`. Sub-second precision is lost and expiry follows wall-clock changes — by design, since expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_jwt.h:189-197`; `qb/src/qb/io/crypto.h:777-790`.)_
 - **`u_port()` returns `0` on failure.** A missing, malformed, or out-of-range port yields `0`, which is indistinguishable from an explicit `:0`. Check `is_valid()` and the raw `port()` string if `0` is meaningful in your scheme. _(`qb/src/qb/io/uri.h:474-484`.)_
 - **`qb::string<N>` truncates silently.** Assigning past `N` characters truncates rather than throwing or reallocating. Size the capacity to the worst case for your data. _(`qb/src/qb/string.h:200-201,254-255`.)_
-- **URI accessors borrow from the URI.** `scheme()`, `host()`, `path()`, etc. return `std::string_view` into the URI's owned source string; do not let them outlive the `uri` object. _(`qb/src/qb/io/uri.h:185-552`.)_
+- **URI accessors borrow from the URI.** `scheme()`, `host()`, `path()`, etc. return `std::string_view` into the URI's owned source string; do not let them outlive the `uri` object. _(the owned `_source` and the views into it are `qb/src/qb/io/uri.h:182-190`; `scheme()` is `:437-440`, `host()` is `:455-457`, `path()` is `:490-492`.)_
 - **The dependency gate is not the same shape in all three headers.** `crypto_jwt.h` without `QB_HAS_SSL` and `compression.h` without `QB_HAS_COMPRESSION` `#error` at the include. `crypto.h` compiles either way — its OpenSSL-backed members are simply absent from `class crypto`, so a no-SSL build fails at the call site (`no member named 'md5'`) instead. Guard optional features behind those defines rather than relying on an include-time failure. _(`qb/src/qb/io/crypto.h:39-44`, `qb/src/qb/io/crypto_jwt.h:36-38`, `qb/src/qb/io/compression.h:37-39`.)_
 
 ---

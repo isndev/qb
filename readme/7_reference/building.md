@@ -91,7 +91,7 @@ cmake -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_TESTS=ON \
       -DQB_WITH_SSL=OFF -DQB_WITH_COMPRESSION=OFF -B build
 ```
 
-If `CMAKE_BUILD_TYPE` is not set, qb defaults it to `Release` (`qb/cmake/qbConfig.cmake:209-213`). qb also enables `CMAKE_EXPORT_COMPILE_COMMANDS` by default (for clangd / IDE tooling) unless a parent project already set it (`qbConfig.cmake:227-228`).
+If `CMAKE_BUILD_TYPE` is not set, qb defaults it to `Release` — but only under three conditions, all three read off the same `if` (`qb/cmake/qbConfig.cmake:210-213`): qb must be the top-level project, `CMAKE_BUILD_TYPE` must actually be empty, and the generator must be single-config. An **embedded** qb leaves the parent's choice alone, and on a **multi-config** generator (Visual Studio, Ninja Multi-Config, Xcode) nothing is defaulted because `CMAKE_BUILD_TYPE` is not the knob — pick the configuration at build time with `--config`. qb also enables `CMAKE_EXPORT_COMPILE_COMMANDS` by default (for clangd / IDE tooling) unless a parent project already set it (`qbConfig.cmake:227-228`).
 
 ## Build options
 
@@ -101,13 +101,13 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `CMAKE_BUILD_TYPE` | `Debug` \| `Release` \| `RelWithDebInfo` \| `MinSizeRel`; default `Release` | Standard CMake build configuration (`qbConfig.cmake:209-223`). |
+| `CMAKE_BUILD_TYPE` | `Debug` \| `Release` \| `RelWithDebInfo` \| `MinSizeRel`; defaulted to `Release` **only** in a standalone, single-config configure | Standard CMake build configuration (`qbConfig.cmake:209-223`). The `Release` default is guarded on all three of top-level / empty / single-config (`qbConfig.cmake:211`); embedded or multi-config, qb sets nothing and the variable stays as the parent or the generator left it. |
 | `BUILD_SHARED_LIBS` / `QB_BUILD_SHARED_LIBS` | bool; `QB_BUILD_SHARED_LIBS` defaults to the value of `BUILD_SHARED_LIBS` (itself `OFF` unless set) | Build `qb-io`/`qb-core` (and modules) as shared objects instead of static. Setting `BUILD_SHARED_LIBS=ON` switches qb to shared; `QB_BUILD_SHARED_LIBS` is an explicit qb-only override (`qbConfig.cmake:113`). A **standalone** qb build is position-independent throughout (`CMAKE_POSITION_INDEPENDENT_CODE ON`, `qbConfig.cmake:274-276`); when qb is embedded via `add_subdirectory` that global is deliberately left alone, so the parent project's own setting governs. |
-| `QB_BUILD_TESTS` | bool; `ON` | Build the unit and system tests (GoogleTest). Gates GoogleTest resolution (`qbConfig.cmake:86`). |
-| `QB_BUILD_BENCHMARKS` | bool; `OFF` | Build performance benchmarks (Google Benchmark) (`qbConfig.cmake:90`). |
-| `QB_BUILD_EXAMPLES` | bool; `ON` | Build the example applications (`qbConfig.cmake:87`). |
+| `QB_BUILD_TESTS` | bool; `ON` **standalone**, computed when embedded | Build the unit and system tests (GoogleTest). Gates GoogleTest resolution (`qbConfig.cmake:86`). The default is not a literal — `qbConfig.cmake:75-85` computes it: `ON` only when qb is the top-level project; under `add_subdirectory` it follows `BUILD_TESTING` when the parent defined it, and is `OFF` otherwise. |
+| `QB_BUILD_BENCHMARKS` | bool; `OFF` | Build performance benchmarks (Google Benchmark). Unconditionally `OFF` — this one really is a literal (`qbConfig.cmake:90`). |
+| `QB_BUILD_EXAMPLES` | bool; `ON` **standalone**, `OFF` embedded | Build the example applications (`qbConfig.cmake:87`, default computed at `qbConfig.cmake:75-85`). No `BUILD_TESTING` escape hatch here, unlike `QB_BUILD_TESTS`: an embedded qb is flatly `OFF` (`qbConfig.cmake:84`). |
 | `QB_BUILD_DOCS` | bool; `OFF` | Add the Doxygen documentation subdirectory (`qbConfig.cmake:110`, `CMakeLists.txt:225-227`). |
-| `QB_INSTALL` | bool; `ON` | Generate installation rules (`cmake --install`) (`qbConfig.cmake:118-122`, `CMakeLists.txt:232`). |
+| `QB_INSTALL` | bool; `ON` **standalone**, `OFF` embedded | Generate installation rules (`cmake --install`) (`qbConfig.cmake:118-122`, `CMakeLists.txt:232`). Same standalone/embedded split, for a different reason: an embedded qb that added its own `install()` rules would inject qb's headers and CMake package files into the *parent* project's `cmake --install`. A superproject that genuinely wants them passes `-DQB_INSTALL=ON`. |
 | `CMAKE_INSTALL_PREFIX` | path | Standard install root. |
 
 ### Optional features
@@ -134,7 +134,7 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING`. **MSVC ships only AddressSanitizer**: `address` is honoured (build-wide, because MSVC cannot link mixed ASan/non-ASan objects), every other component is dropped with a warning naming it — so the `sanitize` preset's `undefined` half does not run there, and `sanitize-thread` / `coverage` are disabled by preset condition on Windows altogether (`qbConfig.cmake:188`, `qbCompiler.cmake:408-468`). |
+| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING`. **MSVC ships only AddressSanitizer**: `address` is honoured (build-wide, because MSVC cannot link mixed ASan/non-ASan objects), every other component is dropped with a warning naming it — so the `sanitize` preset's `undefined` half does not run there (`qbConfig.cmake:188`, `qbCompiler.cmake:422-466`). `sanitize-thread` and `coverage` are worse on Windows, because nothing here stops them: `qb/CMakePresets.json` carries no `condition` key at all, so both configure normally on MSVC and then quietly produce an *uninstrumented* build. `QB_SANITIZE=thread` is dropped with a warning (`qbCompiler.cmake:464-466`) and `QB_BUILD_COVERAGE` adds no flags and no report targets, also with a warning (`qbCompiler.cmake:477-479`, `qb/CMakeLists.txt:146`) — read the configure output before reporting a green Windows run as sanitized or covered. The qb-dev superproject *does* gate them: its `sanitize-thread` and `coverage` presets carry a `condition` on `hostSystemName != Windows`, so there they are unavailable rather than silent. |
 | `QB_DEBUG_MEMORY` | bool; `OFF` | Legacy alias: when `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined` (`qbConfig.cmake:181,190-192`). |
 | `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets when `lcov`/`gcov` are found (`qbConfig.cmake:144`, `CMakeLists.txt:146-216`). |
 | `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:182,461-463`). |
@@ -188,7 +188,9 @@ A successful build produces the two libraries and, when enabled, the example, te
 
 ## Install
 
-With `QB_INSTALL=ON` (the default), the configure step generates install rules. Install after building:
+With `QB_INSTALL=ON` (`qbConfig.cmake:118-122`) — the default in a **standalone** qb build, but `OFF`
+when qb is embedded via `add_subdirectory` — the configure step generates install rules. That is why
+the recipe below passes it explicitly rather than relying on the default. Install after building:
 
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Release -DQB_INSTALL=ON -B build

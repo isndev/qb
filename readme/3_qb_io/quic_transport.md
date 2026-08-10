@@ -132,7 +132,7 @@ A server derives from `server<Derived, StreamSession>`; a client that manages st
 
 Not every field is wired in the shipped backend. The verified enforcement points are:
 
-- The transport-parameter fields (`max_stream_data_*`, `connection_recv_window` → `initial_max_data`, `max_streams_bidi`, `max_streams_uni`, `max_datagram_frame_size`) are written into the ngtcp2 transport parameters when the connection starts. <!-- src: qb/src/qb/io/quic.cpp:995-1000 -->
+- The transport-parameter fields (`max_stream_data_*`, `connection_recv_window` → `initial_max_data`, `max_streams_bidi`, `max_streams_uni`, `max_datagram_frame_size`) are written into the ngtcp2 transport parameters when the connection starts — `max_datagram_frame_size` only when `enable_datagrams` is set, otherwise the parameter goes on the wire as `0`. <!-- src: qb/src/qb/io/quic.cpp:995-1005 (make_transport_params), :1005 (max_datagram_frame_size, gated on enable_datagrams) -->
 - `max_pending_stream_bytes` / `max_pending_stream_frames` and `max_pending_datagram_bytes` / `max_pending_datagram_frames` are enforced inside the native backend; overrunning a pending queue closes the connection with `disconnect_reason::buffer_overflow`. <!-- src: qb/src/qb/io/quic.cpp:501-506 -->
 - `udp_rx_batch_size` and `udp_tx_batch_size` are enforced by the endpoint's UDP read and write loops, not the backend; a value of `0` means an unbounded batch. <!-- src: qb/src/qb/io/async/quic/endpoint.h:163 (udp_tx_batch_size), :585 (udp_rx_batch_size) -->
 
@@ -161,9 +161,9 @@ endpoint.set_settings(cfg);
 QUIC connection migration is supported within the owning endpoint: a peer that changes its network path — a client whose NAT rebinds it to a new source port, or one that deliberately migrates — keeps its connection instead of being dropped. Two mechanisms cooperate:
 
 - **Path rebind on send.** Outgoing packets are addressed to the peer's *current*, path-validated address that ngtcp2 writes back after each `writev`, not the address cached when the connection was accepted. Sending to the stale accept-time address would black-hole every packet and idle-time-out the connection.
-  <!-- src: qb/src/qb/io/quic.cpp:1142-1150 -->
+  <!-- src: qb/src/qb/io/quic.cpp:1141-1157 (fill_packet_path), :1149-1150 (the rebind onto the path ngtcp2 wrote back) -->
 - **Connection-id rotation.** When ngtcp2 issues fresh Source Connection IDs (which the peer may migrate onto), the server re-indexes the connection's current SCID set, so a later datagram carrying a rotated destination connection id still routes to the existing connection rather than being mistaken for a brand-new one.
-  <!-- src: qb/src/qb/io/quic.cpp:326-330, :752-763 (reconcile_server_cids) -->
+  <!-- src: qb/src/qb/io/quic.cpp:324-330 (the per-datagram call), :751-798 (reconcile_server_cids), :786-795 (the set difference that retires and re-indexes) -->
 
 Active migration is enabled at the transport-parameter level (`disable_active_migration = 0`). This is path migration *within* the one core that owns the endpoint; moving a connection across cores/threads is a separate concern (see [V1 limits](#v1-limits)).
 
@@ -244,7 +244,7 @@ void run_client(Client& client) {
 `connect(remote_uri, alpn_protocols = {"h3"})` and its `tls_config` overload init and bind a local UDP socket, configure the backend, start the client role, and move the endpoint to the `connecting` state. ALPN entries must be 1 to 255 bytes long and at least one is required; otherwise the wire-ALPN builder throws `std::invalid_argument`.
 
 <!-- src: qb/src/qb/io/async/quic/endpoint.h:387-390 (default ALPN), :412-440 (tls_config overload) -->
-<!-- src: qb/src/qb/io/quic.cpp:34-44 -->
+<!-- src: qb/src/qb/io/quic.cpp:39-51 (make_wire_alpn), :43-44 (the 1..255 throw), :48-49 (the at-least-one throw) -->
 
 ### Streams and protocols
 
@@ -276,7 +276,7 @@ auto* stream = server.open_unidirectional_stream_session(connection_id);
 server.finish_stream_session(connection_id, stream->id());
 ```
 
-<!-- src: qb/src/qb/io/async/quic/server.h:38-93 -->
+<!-- src: qb/src/qb/io/async/quic/server.h:40-98 (the connection-id-taking session overloads), :46-50 (open_unidirectional_stream_session), :85-92 (finish_stream_session) -->
 
 ## Lifecycle events
 
@@ -329,7 +329,7 @@ A stream-session buffer overflow is fatal to the stream. Appending past `max_rea
 - **The endpoint cannot be moved.** All copy and move operations are deleted. Construct it in place and hold it by pointer or reference; never store it in a container that relocates its elements.
   <!-- src: qb/src/qb/io/async/quic/endpoint.h:308-311 -->
 - **`listen` / `connect` and the stream mutators throw when QUIC is absent.** `ensure_backend()` throws `std::runtime_error` if `qb::io::quic::available()` is false or no backend could be created, and `make_native_backend()` throws when `QB_HAS_QUIC` is undefined. Guard with `available()` or `QB_HAS_QUIC` before calling them.
-  <!-- src: qb/src/qb/io/async/quic/endpoint.h:78-86 -->
+  <!-- src: qb/src/qb/io/async/quic/endpoint.h:84-93 -->
   <!-- src: qb/src/qb/io/quic.cpp:1553-1560 -->
 - **Borrowed event payloads do not outlive the dispatch.** Copy `event::stream_data.payload` / `event::datagram.payload` before returning from the handler.
 - **Set `tls.server_name` for client connections.** Without it, the chain is validated but the hostname is not, leaving the connection open to an on-path certificate substitution. The string overload of `connect` sets it for you from the URI host.

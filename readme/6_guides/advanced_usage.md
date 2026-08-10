@@ -361,7 +361,7 @@ target_link_libraries(my_app
 To start a module of your own, `script/qb-new-module.sh` scaffolds one from the `qb-sample-module` template:
 
 ```bash
-# <!-- src: qb/script/qb-new-module.sh:62-64,126-136 -->
+# <!-- src: qb/script/qb-new-module.sh:66, qb/script/qb-new-module.sh:126-136, qb/script/qb-new-module.sh:209-212, qb/script/qb-new-module.sh:216-233 -->
 curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-module.sh | bash /dev/stdin mymodule
 ```
 
