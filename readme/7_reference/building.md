@@ -106,8 +106,8 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | `QB_BUILD_TESTS` | bool; `ON` **standalone**, computed when embedded | Build the unit and system tests (GoogleTest). Gates GoogleTest resolution (`qbConfig.cmake:86`). The default is not a literal — `qbConfig.cmake:75-85` computes it: `ON` only when qb is the top-level project; under `add_subdirectory` it follows `BUILD_TESTING` when the parent defined it, and is `OFF` otherwise. |
 | `QB_BUILD_BENCHMARKS` | bool; `OFF` | Build performance benchmarks (Google Benchmark). Unconditionally `OFF` — this one really is a literal (`qbConfig.cmake:90`). |
 | `QB_BUILD_EXAMPLES` | bool; `ON` **standalone**, `OFF` embedded | Build the example applications (`qbConfig.cmake:87`, default computed at `qbConfig.cmake:75-85`). No `BUILD_TESTING` escape hatch here, unlike `QB_BUILD_TESTS`: an embedded qb is flatly `OFF` (`qbConfig.cmake:84`). |
-| `QB_BUILD_DOCS` | bool; `OFF` | Add the Doxygen documentation subdirectory (`qbConfig.cmake:110`, `CMakeLists.txt:225-227`). |
-| `QB_INSTALL` | bool; `ON` **standalone**, `OFF` embedded | Generate installation rules (`cmake --install`) (`qbConfig.cmake:118-122`, `CMakeLists.txt:232`). Same standalone/embedded split, for a different reason: an embedded qb that added its own `install()` rules would inject qb's headers and CMake package files into the *parent* project's `cmake --install`. A superproject that genuinely wants them passes `-DQB_INSTALL=ON`. |
+| `QB_BUILD_DOCS` | bool; `OFF` | Add the Doxygen documentation subdirectory (`qbConfig.cmake:110`, `CMakeLists.txt:270-272`). |
+| `QB_INSTALL` | bool; `ON` **standalone**, `OFF` embedded | Generate installation rules (`cmake --install`) (`qbConfig.cmake:118-122`, `CMakeLists.txt:277`). Same standalone/embedded split, for a different reason: an embedded qb that added its own `install()` rules would inject qb's headers and CMake package files into the *parent* project's `cmake --install`. A superproject that genuinely wants them passes `-DQB_INSTALL=ON`. |
 | `CMAKE_INSTALL_PREFIX` | path | Standard install root. |
 
 ### Optional features
@@ -134,9 +134,9 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING`. **MSVC ships only AddressSanitizer**: `address` is honoured (build-wide, because MSVC cannot link mixed ASan/non-ASan objects), every other component is dropped with a warning naming it — so the `sanitize` preset's `undefined` half does not run there (`qbConfig.cmake:188`, `qbCompiler.cmake:422-466`). `sanitize-thread` and `coverage` are worse on Windows, because nothing here stops them: `qb/CMakePresets.json` carries no `condition` key at all, so both configure normally on MSVC and then quietly produce an *uninstrumented* build. `QB_SANITIZE=thread` is dropped with a warning (`qbCompiler.cmake:464-466`) and `QB_BUILD_COVERAGE` adds no flags and no report targets, also with a warning (`qbCompiler.cmake:477-479`, `qb/CMakeLists.txt:146`) — read the configure output before reporting a green Windows run as sanitized or covered. The qb-dev superproject *does* gate them: its `sanitize-thread` and `coverage` presets carry a `condition` on `hostSystemName != Windows`, so there they are unavailable rather than silent. |
+| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING`. **MSVC ships only AddressSanitizer**: `address` is honoured (build-wide, because MSVC cannot link mixed ASan/non-ASan objects), every other component is dropped with a warning naming it — so the `sanitize` preset's `undefined` half does not run there (`qbConfig.cmake:188`, `qbCompiler.cmake:422-466`). `sanitize-thread` and `coverage` are worse on Windows, because nothing here stops them: `qb/CMakePresets.json` carries no `condition` key at all, so both configure normally on MSVC and then quietly produce an *uninstrumented* build. `QB_SANITIZE=thread` is dropped with a warning (`qbCompiler.cmake:464-466`) and `QB_BUILD_COVERAGE` adds no flags and no report targets, also with a warning (`qbCompiler.cmake:477-479`, `qb/CMakeLists.txt:160,163`) — read the configure output before reporting a green Windows run as sanitized or covered. The qb-dev superproject *does* gate them: its `sanitize-thread` and `coverage` presets carry a `condition` on `hostSystemName != Windows`, so there they are unavailable rather than silent. |
 | `QB_DEBUG_MEMORY` | bool; `OFF` | Legacy alias: when `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined` (`qbConfig.cmake:181,190-192`). |
-| `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets when `lcov`/`gcov` are found (`qbConfig.cmake:144`, `CMakeLists.txt:146-216`). |
+| `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage-run` plus the `qb-coverage`, `qb-coverage-xml` and `qb-coverage-html` report targets when `lcov`/`gcov` are found **and qb is the top-level project** (`qbConfig.cmake:144`, `CMakeLists.txt:160-265`). |
 | `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:182,461-463`). |
 
 ### Dependency resolution
@@ -184,7 +184,7 @@ A successful build produces the two libraries and, when enabled, the example, te
 
 - **Libraries:** `qb-io` (asynchronous I/O and utilities) and `qb-core` (the actor engine, which depends on `qb-io`). Consumers link the namespaced aliases `qb::io` and `qb::core` (`CMakeLists.txt:107-111,117-127`). Shared builds carry the platform extension (`libqb-io.so`, `libqb-io.dylib`, `qb-io.dll`).
 - **Output directories:** unless a parent project has already chosen them, runtime artifacts go under `${CMAKE_BINARY_DIR}/bin` and libraries/archives under `${CMAKE_BINARY_DIR}/lib` (`qbConfig.cmake:298-300`). When qb is embedded via `add_subdirectory`, it does not override an output tree the parent already set.
-- **Coverage targets** (`QB_BUILD_COVERAGE=ON`, Debug, non-Windows): `qb-coverage`, `qb-coverage-xml`, `qb-coverage-html`.
+- **Coverage targets** (`QB_BUILD_COVERAGE=ON`, Debug, non-Windows, qb top-level): `qb-coverage-run` — the one target that zeroes the counters and runs the suite — plus the report targets `qb-coverage`, `qb-coverage-xml`, `qb-coverage-html`, each ordered after it.
 
 ## Install
 
@@ -198,13 +198,13 @@ cmake --build build --parallel
 cmake --install build --prefix /your/prefix    # omit --prefix for the system default
 ```
 
-The install (`CMakeLists.txt:232-377`) lays out. Every rule below is emitted by the one shared
+The install (`CMakeLists.txt:277-422`) lays out. Every rule below is emitted by the one shared
 helper `qb_install_package()` (`cmake/qbPackage.cmake:92-234`), which each qbm module calls with
 the same arguments shape:
 
 - **Libraries** under `${CMAKE_INSTALL_LIBDIR}`, **runtime** under `${CMAKE_INSTALL_BINDIR}`, **headers** under `${CMAKE_INSTALL_INCLUDEDIR}` (GNU install dirs). The export set bundles `qb-io`, `qb-core`, and the bundled `qev`/`stduuid` targets so their names are rewritten under the `qb::` namespace in the dependency graph.
-- **CMake package files** under `${CMAKE_INSTALL_LIBDIR}/cmake/qb`: `qbTargets.cmake` (namespaced `qb::`), `qbConfig.cmake`, and a `qbConfigVersion.cmake` written with `COMPATIBILITY SameMajorVersion` (`CMakeLists.txt:295-299`, generated at `cmake/qbPackage.cmake:212-228`).
-- **Find modules for consumers:** `FindArgon2.cmake` is installed when the build resolved Argon2 (`QB_HAS_ARGON2`), and `FindNgtcp2.cmake` when QUIC was enabled (`QB_HAS_QUIC`), so a downstream `find_package(qb)` of a QUIC- or Argon2-enabled build can recreate the imported targets `qb::io` links transitively (`CMakeLists.txt:265-274`).
+- **CMake package files** under `${CMAKE_INSTALL_LIBDIR}/cmake/qb`: `qbTargets.cmake` (namespaced `qb::`), `qbConfig.cmake`, and a `qbConfigVersion.cmake` written with `COMPATIBILITY SameMajorVersion` (`CMakeLists.txt:340-344`, generated at `cmake/qbPackage.cmake:212-228`).
+- **Find modules for consumers:** `FindArgon2.cmake` is installed when the build resolved Argon2 (`QB_HAS_ARGON2`), and `FindNgtcp2.cmake` when QUIC was enabled (`QB_HAS_QUIC`), so a downstream `find_package(qb)` of a QUIC- or Argon2-enabled build can recreate the imported targets `qb::io` links transitively (`CMakeLists.txt:310-319`).
 
 Downstream then consumes the installed copy with `find_package`:
 

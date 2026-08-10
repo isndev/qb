@@ -235,19 +235,24 @@ That registers the target and CTest entry as `qb-core-test-unit-my-feature`. Opt
 
 ## Coverage
 
-`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:144`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, and `lcov` plus `gcov` are found on the system (`qb/CMakeLists.txt:146-154`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing.
+`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:144`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, qb is the top-level project, and `lcov` plus `gcov` are found on the system (`qb/CMakeLists.txt:163-181`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing.
 
-When enabled, three report targets are registered, each driven by running `ctest`:
+When enabled — **and only when qb is the top-level project** (`qb/CMakeLists.txt:160`); an embedded qb
+contributes instrumentation and leaves the report to the superproject — four targets are registered.
+`qb-coverage-run` runs `ctest` once; the three report targets read the counters it produced and are
+ordered after it, so any subset of them in one `cmake --build` runs the suite once and reports the same
+numbers:
 
 | Target | Tool | Output |
 | --- | --- | --- |
+| `qb-coverage-run` | lcov | zeroes the counters, runs the suite (no report) |
 | `qb-coverage` | lcov | lcov `.info` report |
 | `qb-coverage-xml` | gcovr | Cobertura XML |
 | `qb-coverage-html` | gcovr | HTML report |
 
-<!-- src: qb/CMakeLists.txt:194-216, qb/cmake/CodeCoverage.cmake -->
+<!-- src: qb/CMakeLists.txt:235-261, qb/cmake/CodeCoverage.cmake -->
 
-The exclusion list filters out system headers, benchmarks, modules, the vendored forks, examples, and the test sources themselves so the report reflects framework code (`qb/CMakeLists.txt:170-178`). A typical run:
+The exclusion list filters out system headers, benchmarks, modules, the vendored forks, examples, and the test sources themselves so the report reflects framework code (`qb/CMakeLists.txt:187-205`). A typical run:
 
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_COVERAGE=ON -B build
