@@ -30,18 +30,54 @@
 find_package(Doxygen)
 if (DOXYGEN_FOUND)
     set(DOXYGEN_INPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}) # This will be qb/docs
-    set(DOXYGEN_OUTPUT_DIR ${CMAKE_SOURCE_DIR}/build/docs) # CMAKE_SOURCE_DIR is qb/
-    set(BUILD_DOC_DIR ${CMAKE_SOURCE_DIR}/build/docs)
-    if (NOT EXISTS ${BUILD_DOC_DIR})
-        file(MAKE_DIRECTORY ${BUILD_DOC_DIR})
-    endif ()
+
+    # Output into the BINARY tree, one directory per build.
+    #
+    # This used to be ${CMAKE_SOURCE_DIR}/build/docs, with a trailing comment asserting
+    # "CMAKE_SOURCE_DIR is qb/". It is not, whenever qb is not the top-level project: the
+    # superproject reaches it through add_subdirectory(), so CMAKE_SOURCE_DIR is the qb-dev
+    # workspace root and an ALL target was writing generated HTML into the SOURCE checkout.
+    # Two build directories over one checkout -- which is the normal state here, CMakePresets
+    # gives every preset its own binaryDir under the same source tree -- then had two Doxygen
+    # runs writing one output directory with nothing ordering them, and a `cmake --build` of
+    # any preset dirtied the working tree.
+    # CMAKE_CURRENT_BINARY_DIR is per build dir AND per configuration, so both problems go
+    # away without the target having to know whether qb is embedded.
+    #
+    # DOXYGEN_OUTPUT_DIR was also DEAD before this: Doxyfile.in hard-coded
+    # OUTPUT_DIRECTORY = "@CMAKE_SOURCE_DIR@/build/docs" and never referenced the variable,
+    # so setting it here changed nothing. It is now what the template substitutes.
+    # Doxyfile.in's HTML_OUTPUT is the relative "html", so this is the parent of the HTML.
+    set(DOXYGEN_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
+    set(BUILD_DOC_DIR ${DOXYGEN_OUTPUT_DIR}/html)
+    # Created at BUILD time, not only at configure time: a configure-time-only mkdir leaves
+    # the ALL target writing into a missing directory if anything removes it in between.
+    file(MAKE_DIRECTORY ${BUILD_DOC_DIR})
 
 
     set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in) # qb/docs/Doxyfile.in
     set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile) # e.g. qb/build/docs_cmake_build/Doxyfile
 
     # Variables needed for Doxyfile.in
-    # set(QB_DIRECTORY ${CMAKE_SOURCE_DIR}) # Root of the qb project
+    #
+    # QB_DIRECTORY is the root of the qb CHECKOUT and it is not optional: Doxyfile.in builds
+    # INPUT, EXCLUDE, EXAMPLE_PATH and STRIP_FROM_PATH out of it (lines 51, 146-149, 207-208,
+    # 212). It was commented out, so @QB_DIRECTORY@ substituted to the empty string and the
+    # generated Doxyfile read `INPUT = "/docs/doxygen_groups.h" "/src/" "/readme"
+    # "/docs/mainpage.h"` -- four absolute paths at the filesystem ROOT. Doxygen would have
+    # documented nothing (or, on a host that happens to have /src, something else entirely).
+    # Nothing caught it because no preset sets QB_BUILD_DOCS, so the target is never built.
+    #
+    # QB_ROOT_DIR, not CMAKE_SOURCE_DIR: the latter is the top-level project, which is the
+    # qb-dev workspace whenever qb is embedded -- the same wrong assumption the output
+    # directory above carried.
+    if (NOT DEFINED QB_DIRECTORY)
+        if (DEFINED QB_ROOT_DIR)
+            set(QB_DIRECTORY "${QB_ROOT_DIR}")
+        else ()
+            set(QB_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+        endif ()
+    endif ()
 
     # QB_PREFIX is the HUMAN-READABLE project name stamped into Doxyfile.in's PROJECT_NAME.
     # It legitimately contains spaces, which is why it must never be used to build a target
@@ -73,6 +109,7 @@ if (DOXYGEN_FOUND)
     # QB_PREFIX still names the project inside the generated documentation, via Doxyfile.in.
     message(STATUS "INFO: Doxygen build target 'qb-docs' added (${QB_PREFIX} v${QB_VERSION})")
     add_custom_target(qb-docs ALL
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${BUILD_DOC_DIR}
             COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
             COMMENT "Generating API documentation with Doxygen for ${QB_PREFIX} v${QB_VERSION}"

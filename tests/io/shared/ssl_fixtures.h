@@ -27,11 +27,35 @@
  *   4. a relative `resources/ssl/`                     — `./resources/ssl/cert.pem`
  * Candidates 1–2 and 4 cover the runtime layouts CMake copies the generated pair into
  * (the certs land next to the test binary); candidate 3 anchors on this header's own
- * `__FILE__` rather than the *test's* `__FILE__`, so it resolves to the one checked-in copy
- * regardless of which subdirectory the including test lives in (the tests sit at varying
- * depths — `unit/ssl/`, `system/tcp/`, `system/quic/` — and a test-relative path would not
- * be portable across them). The first existing candidate wins; if none exists the first
- * (CWD) candidate is returned so callers still get a sensible, reportable path.
+ * `__FILE__` rather than the *test's* `__FILE__`, so it resolves regardless of which
+ * subdirectory the including test lives in (the tests sit at varying depths — `unit/ssl/`,
+ * `system/tcp/`, `system/quic/` — and a test-relative path would not be portable across
+ * them). The first existing candidate wins; if none exists the first (CWD) candidate is
+ * returned so callers still get a sensible, reportable path.
+ *
+ * THREE distinct pairs can answer this search, and they are not interchangeable. This
+ * paragraph used to call candidate 3 "the one checked-in copy"; there are two checked-in
+ * copies, and neither of them is what candidates 1–2 normally find:
+ *
+ *   - `<build>/bin/tests/{cert,key}.pem` — candidate 1, and what the suite actually runs
+ *     against, because `qb_add_test` sets WORKING_DIRECTORY to that directory. It is the
+ *     GENERATED pair (`CN=localhost, O=QB Tests, C=US`, with `subjectAltName = DNS:localhost`)
+ *     that `generate_ssl_certs` writes on any host with openssl. Exactly one build target
+ *     writes it — see `qb_setup_test_resources()` in `qb/cmake/qbFunctions.cmake`, which
+ *     stages the committed fallback there ONLY when `generate_ssl_certs` does not exist.
+ *   - `qb/resources/ssl/{cert,key}.pem` — the `QB_SSL_RESOURCES` pair
+ *     (`qb/cmake/qbDependencies.cmake`). Subject `C=FR, ST=Paris, L=Paris, O=ISNDEV`: no CN
+ *     and no subjectAltName, so hostname verification cannot be exercised against it. It is
+ *     staged into `<build>/bin/tests/ssl/` (candidate 2), is the openssl-less fallback for
+ *     candidate 1, and is the pair the qbm-http suite and the HTTPS/H2/H3 examples resolve
+ *     from the source tree.
+ *   - `qb/tests/io/system/resources/ssl/{cert,key}.pem` — candidate 3, and the ONLY committed
+ *     pair with `CN=localhost`. `system/tcp/ssl-socket-loopback.cpp` addresses it directly
+ *     through its own `localhost_fixture()` rather than through this search, precisely
+ *     because which pair the search returns depends on the working directory.
+ *
+ * So: candidate 1 is the contract, candidate 3 is the source-tree safety net that makes
+ * `require_ssl_files()` true even in a checkout that was never built.
  *
  * Per the test-suite spec §7 the harness *ships* the certificate, so a positive TLS test
  * should treat its absence as a hard failure (`ASSERT_TRUE(require_ssl_files())`), not a

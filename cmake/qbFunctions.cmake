@@ -583,26 +583,63 @@ function(qb_add_test)
 
     # This avoids the scope issue where QB_CMAKE_DIR is undefined when qb_add_test()
     # is called from a qbm subdirectory that was added after qb's own scope closed.
+    #
+    # ONE writer, not ~340. The shared deployer is asked for FIRST and the per-target
+    # POST_BUILD is its fallback, not its companion. Both wrote the same DLLs into the same
+    # ${TEST_BINARY_DIR}, and cmake/qbRuntimeDlls.cmake says in as many words that ~300 test
+    # targets doing that under `ninja -j` IS the ERROR_SHARING_VIOLATION race that got
+    # VCPKG_APPLOCAL_DEPS turned off -- so the deployer was added BESIDE the defect it was
+    # written to replace. It is inert today only because $<TARGET_RUNTIME_DLLS> is empty by
+    # construction for every vcpkg dep reached through a Find module (UNKNOWN_LIBRARY), and
+    # the script it calls is itself TOCTOU (deploy_runtime_dlls.cmake: EXISTS/IS_NEWER_THAN
+    # then file(COPY), with nothing holding the destination between the two).
+    #
+    # The POST_BUILD is kept, gated, for the Windows build with no vcpkg tree: there
+    # qb_ensure_runtime_dll_deployer() has no directory to deploy FROM and returns empty, and
+    # $<TARGET_RUNTIME_DLLS> is the only mechanism left. That configuration can still race
+    # itself if a dependency does arrive as a genuine imported SHARED_LIBRARY; it is not the
+    # configuration CMakePresets' windows-base builds, and closing it needs a real
+    # single-writer union of every target's runtime DLLs, which is not this change.
+    #
+    # KNOWN GAP, measured not assumed: the deployer copies *.dll out of the vcpkg bin dir
+    # only, so it does NOT carry qb-core.dll / qb-io.dll, which land in their own target
+    # binary dirs (no library here sets RUNTIME_OUTPUT_DIRECTORY). With QB_BUILD_SHARED_LIBS=ON
+    # those enter $<TARGET_RUNTIME_DLLS> for all ~340 targets at once -- which is what "armed"
+    # meant -- and gating the POST_BUILD off means nothing deploys them. That is a hole, but a
+    # hole in a configuration that cannot link on MSVC anyway: QB_API is #ifdef QB_DYNAMIC
+    # (src/qb/utility/build_macros.h:63-73), nothing in this build system ever defines
+    # QB_DYNAMIC, and the macro annotates 11 classes, all of them in qb-io and none in
+    # qb-core -- so a shared qb-core.dll exports nothing at all and no test can link it.
+    # Do not "fix" the deployment without first giving the shared build real exports.
     if(WIN32)
-        add_custom_command(TARGET ${TEST_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND}
-                "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${TEST_NAME}>,;>"
-                "-DDEST_DIR=${TEST_BINARY_DIR}"
-                -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
-            COMMAND_EXPAND_LISTS
-        )
-        # ...and this is what actually deploys them. $<TARGET_RUNTIME_DLLS> above is EMPTY
-        # by construction for every vcpkg dep reached through a Find module, so the copy
-        # step alone left the executables unable to load. See cmake/qbRuntimeDlls.cmake.
         qb_ensure_runtime_dll_deployer("${TEST_BINARY_DIR}" _qb_dll_deployer)
         if(_qb_dll_deployer)
             add_dependencies(${TEST_NAME} ${_qb_dll_deployer})
+        else()
+            add_custom_command(TARGET ${TEST_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND}
+                    "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${TEST_NAME}>,;>"
+                    "-DDEST_DIR=${TEST_BINARY_DIR}"
+                    -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
+                COMMAND_EXPAND_LISTS
+            )
         endif()
     endif()
 
-    # Make test depend on SSL resources if they exist
+    # Make test depend on SSL resources if they exist.
+    #
+    # This fires only for tests registered AFTER qb_setup_test_resources() has run -- in
+    # practice the qbm module suites, since qb/CMakeLists.txt calls it at :140 and qb's own
+    # tests are registered at :108/:111. The ones registered earlier are wired retroactively
+    # from that function, off the QB_TEST_TARGETS global; see the comment there.
+    #
+    # generate_ssl_certs is named alongside because with the single-writer rule it, not the
+    # copy target, is what puts cert.pem/key.pem in bin/tests on any host with openssl.
     if(QB_HAS_SSL AND TARGET qb_copy_test_ssl_resources)
         add_dependencies(${TEST_NAME} qb_copy_test_ssl_resources)
+        if(TARGET generate_ssl_certs)
+            add_dependencies(${TEST_NAME} generate_ssl_certs)
+        endif()
     endif()
     
     # Register test with CTest
@@ -744,20 +781,24 @@ function(qb_add_benchmark)
     # Same rationale as for tests: use a -P script to handle the empty-list case safely.
     # CMAKE_CURRENT_FUNCTION_LIST_DIR resolves to this file's directory regardless
     # of which scope calls qb_add_benchmark().
+    #
+    # Same single-writer rule as qb_add_test(), for the same reason and with the same known
+    # gap -- see the long comment there. 62 benchmark targets sharing ${BENCH_BINARY_DIR} is
+    # a smaller crowd than the ~340 tests, but it is the same defect, so it gets the same
+    # shape: ask for the shared deployer first, fall back to the per-target POST_BUILD only
+    # when there is no vcpkg tree to deploy from.
     if(WIN32)
-        add_custom_command(TARGET ${BENCH_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND}
-                "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${BENCH_NAME}>,;>"
-                "-DDEST_DIR=${BENCH_BINARY_DIR}"
-                -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
-            COMMAND_EXPAND_LISTS
-        )
-        # ...and this is what actually deploys them. $<TARGET_RUNTIME_DLLS> above is EMPTY
-        # by construction for every vcpkg dep reached through a Find module, so the copy
-        # step alone left the executables unable to load. See cmake/qbRuntimeDlls.cmake.
         qb_ensure_runtime_dll_deployer("${BENCH_BINARY_DIR}" _qb_dll_deployer)
         if(_qb_dll_deployer)
             add_dependencies(${BENCH_NAME} ${_qb_dll_deployer})
+        else()
+            add_custom_command(TARGET ${BENCH_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND}
+                    "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${BENCH_NAME}>,;>"
+                    "-DDEST_DIR=${BENCH_BINARY_DIR}"
+                    -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
+                COMMAND_EXPAND_LISTS
+            )
         endif()
     endif()
 
@@ -1175,54 +1216,101 @@ function(qb_setup_test_resources)
     endif()
     
     set(TEST_RESOURCES_DIR "${CMAKE_BINARY_DIR}/bin/tests")
-    
+
     # Create a global target for copying SSL resources
     if(QB_HAS_SSL AND QB_SSL_RESOURCES)
+        # ONE writer per file, so nothing has to be ordered.
+        #
+        # bin/tests/ssl/ is only ever written here, so it is unconditional. The FLAT
+        # bin/tests/{cert,key}.pem pair is different: generate_ssl_certs' POST_BUILD
+        # (tests/io/system/CMakeLists.txt) writes those exact two names into that exact
+        # directory whenever a host has openssl. Staging the committed pair there too made
+        # them two producers of one path, and the file's content then depended on which edge
+        # ninja happened to finish last -- per FILE, so a committed cert could land beside a
+        # generated key, create_server_context() returns NULL, and nine SSL/TLS/QUIC tests
+        # fail. That was measured once in this tree: `release` got a matching pair while
+        # `relwithdebinfo` got a mismatched one.
+        #
+        # An add_dependencies() edge (kept below) orders the two, and MEASURING it says the
+        # order holds: 20/20 clean-shape and 20/20 incremental-shape samples on macOS/ninja
+        # produced the generated pair, matched, with .ninja_log showing a strict
+        # copy -> openssl -> POST_BUILD chain and no overlap. But ordering only decides who
+        # wins a race that still exists, and it decides it only while BOTH targets are in the
+        # graph -- generate_ssl_certs is pulled in by nine SSL test targets, so a build that
+        # names none of them has the committed pair as the sole writer and a later build flips
+        # the file back. Conditioning the flat copy on the absence of generate_ssl_certs
+        # removes the second writer instead of sequencing it: in every graph exactly one
+        # target writes cert.pem and key.pem, and which one is decided at configure time.
+        #
+        # The committed pair remains the fallback for a host with no openssl -- which is the
+        # only reason the branch exists, and why nothing here is deleted.
+        set(_qb_ssl_stage_commands
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${TEST_RESOURCES_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}/ssl")
+        if(TARGET generate_ssl_certs)
+            set(_qb_ssl_stage_what "ssl/ only; generate_ssl_certs owns the flat cert.pem/key.pem")
+        else()
+            # Tests load certificates by bare name ("cert.pem"/"key.pem") and run
+            # with WORKING_DIRECTORY = the test bin dir (see qb_add_test), so also
+            # stage the resources directly there. Without this the SSL tests can
+            # only find the certs from a hand-copied bin/tests, otherwise they
+            # silently skip (or crash, for tests that don't guard a null context).
+            list(APPEND _qb_ssl_stage_commands
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}")
+            set(_qb_ssl_stage_what "ssl/ + the flat cert.pem/key.pem (no openssl on this host)")
+        endif()
+
         if(NOT TARGET qb_copy_test_ssl_resources)
             add_custom_target(qb_copy_test_ssl_resources ALL
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${TEST_RESOURCES_DIR}"
-                COMMAND ${CMAKE_COMMAND} -E copy_directory
-                    "${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}/ssl"
-                # Tests load certificates by bare name ("cert.pem"/"key.pem") and run
-                # with WORKING_DIRECTORY = the test bin dir (see qb_add_test), so also
-                # stage the resources directly there. Without this the SSL tests can
-                # only find the certs from a hand-copied bin/tests, otherwise they
-                # silently skip (or crash, for tests that don't guard a null context).
-                COMMAND ${CMAKE_COMMAND} -E copy_directory
-                    "${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}"
-                COMMENT "Copying SSL resources to test directory: ${TEST_RESOURCES_DIR} (+/ssl)"
+                ${_qb_ssl_stage_commands}
+                COMMENT "Copying SSL resources to test directory: ${TEST_RESOURCES_DIR} (${_qb_ssl_stage_what})"
             )
-            
+
             # Set folder for IDE organization
             set_target_properties(qb_copy_test_ssl_resources PROPERTIES
                 FOLDER "Tests/Resources"
             )
-            
-            qb_status_message("SSL test resources will be copied to: ${TEST_RESOURCES_DIR}/ssl")
+
+            qb_status_message("SSL test resources will be copied to: ${TEST_RESOURCES_DIR}/ssl -- ${_qb_ssl_stage_what}")
         endif()
 
-        # Order this copy BEFORE generate_ssl_certs' POST_BUILD, which stages a freshly
-        # generated pair into the SAME directory under the SAME two names.
+        # Belt to the braces above: order this copy BEFORE generate_ssl_certs' POST_BUILD.
+        # With the flat copy conditioned out this edge no longer decides the CONTENT of any
+        # file -- it only guarantees bin/tests/ssl/ is populated before the generated pair
+        # lands beside it, so a reader that falls through to the ssl/ candidate never sees a
+        # half-written directory. Do not read it as the fix for the race; the fix is that
+        # there is no second writer.
         #
-        # Nothing ordered them, and they are two separate copy invocations, so under `ninja -j`
-        # each FILE was won independently -- and a committed cert beside a generated key is not
-        # a key pair. create_server_context() then returns NULL and every test that loads them
-        # fails. Measured in a single run of this tree: `release` came out with a matching pair
-        # while `relwithdebinfo` got the committed cert next to the generated key, and nine
-        # SSL/TLS/QUIC tests failed reproducibly on "Failed to load QUIC server private key".
-        # It is a build-graph race, not a Windows quirk -- it can land either way anywhere.
+        # HISTORY, because the numbers here have been misquoted once already and the wrong
+        # ones are load-bearing for anyone deciding whether this still matters:
         #
-        # macOS measured the same race with a different outcome, and the second half is the
-        # one that matters: over 38 samples read from `.ninja_log`, a CLEAN build produced the
-        # generated pair 13/13 -- but only by an RSA-keygen head start whose margin ranged
-        # -3ms..+60ms, so the two edges genuinely overlapped twice -- while every INCREMENTAL
-        # rebuild produced the committed pair 25/25. The openssl edge declares no inputs, so it
-        # never re-runs and both edges degrade to plain copies. That case is deterministic,
-        # silent, and the one a developer hits constantly: the suite was testing the committed
-        # certificate, not the generated one. No mixed pair occurred there (0/38) and no test
-        # failed, because both outcomes are internally consistent key pairs.
+        #   The original defect: two unordered copy invocations, each FILE won independently
+        #   under `ninja -j`. A committed cert beside a generated key is not a key pair;
+        #   create_server_context() returns NULL and every test that loads them fails. Measured
+        #   in a single run of this tree: `release` came out with a matching pair while
+        #   `relwithdebinfo` got the committed cert next to the generated key, and nine
+        #   SSL/TLS/QUIC tests failed reproducibly on "Failed to load QUIC server private key".
         #
-        # The GENERATED pair must be the survivor because tests/io/shared/ssl_fixtures.h names
+        #   A 38-sample macOS measurement (13 clean / 25 incremental) then reported the clean
+        #   build winning for the generated pair only by an RSA-keygen head start of
+        #   -3ms..+60ms, and EVERY incremental rebuild producing the committed pair, 25/25.
+        #   That measurement predates this add_dependencies() line and does not describe the
+        #   tree it was written into. Re-measured after it, in an isolated checkout so a
+        #   concurrent build could not contaminate the sample: CLEAN 20/20 generated,
+        #   INCREMENTAL 20/20 generated, 0 mixed, `.ninja_log` showing a strict
+        #   copy -> openssl -> POST_BUILD chain with no overlap in any of the 40. The openssl
+        #   OUTPUT rule indeed never re-runs on an incremental build, but the POST_BUILD hangs
+        #   off the custom TARGET, which is unconditionally dirty and IS ordered -- so the
+        #   "both edges degrade to plain copies" conclusion does not follow.
+        #
+        #   What the ordering never fixed, and the single-writer rule does: a build whose graph
+        #   contains none of the nine SSL test targets does not contain generate_ssl_certs at
+        #   all, so the committed pair was the sole writer and the file flipped with build
+        #   history.
+        #
+        # The GENERATED pair is the survivor because tests/io/shared/ssl_fixtures.h names
         # generate_ssl_certs as the source it expects -- so that is the pair the suite should
         # deterministically get. NOT because any test needs the `subjectAltName = DNS:localhost`
         # that `openssl req -addext` writes: an earlier version of this comment said
@@ -1239,6 +1327,26 @@ function(qb_setup_test_resources)
         if(TARGET generate_ssl_certs AND TARGET qb_copy_test_ssl_resources)
             add_dependencies(generate_ssl_certs qb_copy_test_ssl_resources)
         endif()
+
+        # The edge qb_add_test() thinks it adds does not exist for any of qb's own tests.
+        # Its guard is `TARGET qb_copy_test_ssl_resources`, and qb/CMakeLists.txt calls this
+        # function at :140 -- AFTER add_subdirectory(io) at :108 and add_subdirectory(core)
+        # at :111 have already registered every qb-io and qb-core test. The target does not
+        # exist yet at that point, so the guard is false 324 times and only the qbm module
+        # tests, registered later from the superproject root, ever got the dependency.
+        # Measured, not inferred: `ninja qb-core-test-system-actor-add` into an emptied
+        # bin/tests staged NOTHING, 10/10 samples -- no cert.pem, no key.pem, no ssl/. A full
+        # build hides it completely because the copy target is ALL.
+        # QB_TEST_TARGETS is the list qb_add_test() has been appending to all along.
+        get_property(_qb_pre_registered_tests GLOBAL PROPERTY QB_TEST_TARGETS)
+        foreach(_qb_pre_test IN LISTS _qb_pre_registered_tests)
+            if(TARGET ${_qb_pre_test})
+                add_dependencies(${_qb_pre_test} qb_copy_test_ssl_resources)
+                if(TARGET generate_ssl_certs)
+                    add_dependencies(${_qb_pre_test} generate_ssl_certs)
+                endif()
+            endif()
+        endforeach()
     endif()
 endfunction()
 
@@ -1262,23 +1370,48 @@ function(qb_copy_resources)
         qb_error_message("qb_copy_resources: RESOURCES is required")
     endif()
     
+    # PER-TARGET by default, not a directory every caller shares.
+    #
+    # The default used to be ${CMAKE_BINARY_DIR}/bin/resources, one path for the whole build
+    # tree, and this function creates an unordered custom target per caller -- so two callers
+    # taking the default are two concurrent copy_directory invocations into one directory with
+    # nothing sequencing them. Both in-tree callers already had to work around it by hand and
+    # said so: examples/all/taskmanager/CMakeLists.txt and .../auction_house/CMakeLists.txt
+    # each pass DESTINATION "${CMAKE_BINARY_DIR}/bin/<example>/resources" with the comment
+    # "so parallel builds never race (or clobber each other) on a shared bin/resources
+    # directory". A default that every real caller has to override is the wrong default;
+    # this makes the safe layout the one you get for free.
     if(NOT RES_DESTINATION)
-        set(RES_DESTINATION "${CMAKE_BINARY_DIR}/bin/resources")
+        set(RES_DESTINATION "${CMAKE_BINARY_DIR}/bin/${RES_TARGET}/resources")
     endif()
-    
+
     # Create custom target for copying resources
     set(copy_target "${RES_TARGET}_copy_resources")
-    
+
     add_custom_target(${copy_target}
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${RES_RESOURCES} ${RES_DESTINATION}
         COMMENT "Copying resources for ${RES_TARGET}"
     )
-    
+
+    # An explicit DESTINATION can still collide -- two callers may legitimately want to
+    # populate one directory from different source trees. Serialise instead of refusing:
+    # each new copy target for an already-claimed destination is ordered after the previous
+    # one, so N callers become a chain rather than N racing writers. Costs nothing when the
+    # destination is unique, which is now the default.
+    string(MAKE_C_IDENTIFIER "QB_RESOURCE_DEST_${RES_DESTINATION}" _res_dest_key)
+    get_property(_res_prev GLOBAL PROPERTY ${_res_dest_key})
+    if(_res_prev)
+        add_dependencies(${copy_target} ${_res_prev})
+        qb_status_message(
+            "qb_copy_resources: ${RES_TARGET} shares ${RES_DESTINATION} with ${_res_prev}; ordered after it")
+    endif()
+    set_property(GLOBAL PROPERTY ${_res_dest_key} "${copy_target}")
+
     # Make the main target depend on the copy target
     add_dependencies(${RES_TARGET} ${copy_target})
-    
-    qb_debug_message("Added resource copy for: ${RES_TARGET}")
+
+    qb_debug_message("Added resource copy for: ${RES_TARGET} -> ${RES_DESTINATION}")
 endfunction()
 
 # qb_install_target - Install a target with proper configuration
