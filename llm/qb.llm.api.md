@@ -444,6 +444,7 @@ Unbounded lock-free Michael-Scott MPSC queue.
 *   `[T] constexpr T qb::endian::byteswap(T) noexcept` (arithmetic/enum/trivially-copyable).
 *   `[T] constexpr T qb::endian::to_big_endian(T)/from_big_endian(T)/to_little_endian(T)/from_little_endian(T) noexcept`
 *   `class qb::CPU` (static-only): `Architecture()`, `Affinity()`, `LogicalCores()`, `PhysicalCores()`, `std::pair<int,int> TotalCores()`, `std::int64_t ClockSpeed()` (Hz or -1), `bool HyperThreading()`.
+*   `[[nodiscard]] static bool qb::CPU::ThreadPinningSupported() noexcept` — does OS thread pinning actually take effect here? `false` on Apple Silicon (`THREAD_AFFINITY_POLICY` → `KERN_NOT_SUPPORTED`), so `CoreInitializer::setAffinity` is a silent no-op there; `true` on Linux and Windows/MSVC. Probed once at runtime (not an `#ifdef`: Rosetta 2 runs x86_64 on an arm64 kernel) and cached. `true` means the mechanism exists, not that a given request succeeds.
 *   `inline void qb::spin_loop_pause() noexcept` — CPU pause hint for spin loops.
 *   `[T<T,TCleaner>] [[nodiscard]] auto qb::resource(T handle, TCleaner cleaner)` — wrap a raw handle in `unique_ptr` with a custom deleter.
 *   `[T<F>] class qb::scope_guard` — RAII; runs `F` on destruction unless `dismiss()` called. `void dismiss() noexcept`.
