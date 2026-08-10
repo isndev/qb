@@ -178,7 +178,7 @@ Key behaviors verified in the header:
   nothing in qb; to tell a verification failure apart, read `SSL_get_verify_result()` or
   the OpenSSL error queue.
   <!-- src: qb/src/qb/io/system/sys__socket.h:1567-1571 (SocketStatus enumerators) -->
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:788-799 (connect return gate), 904-912 (n_connect), 724-750 (handCheck) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:788-799 (connect return gate), :904-912 (n_connect), :724-750 (handCheck) -->
 - **Handshake progress.** `handshake_status()` returns `1` when the TLS handshake is
   complete, `0` when OpenSSL needs more socket readiness (`WANT_READ`/`WANT_WRITE`), and
   `-1` on a fatal error. `handshake_complete()` reports whether it finished successfully.
@@ -285,7 +285,7 @@ public:
 };
 ```
 <!-- src: qb/src/qb/io/tcp/ssl/listener.h:44 (class listener), :45 (the Context member), :85-96 (move-only), :107 (init), :146 (ssl_handle), :152 (context) -->
-<!-- src: qb/src/qb/io/tcp/ssl/listener.h:42-291 -->
+<!-- src: qb/src/qb/io/tcp/ssl/listener.h:44-341 (the whole class, `class QB_API listener` to its closing brace) -->
 
 - **Context ownership.** `init(SSL_CTX*)` transfers ownership of the context to the
   listener, which frees it on destruction. Call `init()` **before** `listen()`.
@@ -342,7 +342,7 @@ bool set_alpn_protos_client(SSL_CTX *ctx, const std::vector<std::string> &protoc
 
 } // namespace qb::io::ssl
 ```
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:36-318 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:37-323 (the whole `namespace qb::io::ssl` free-function block), :84 (create_client_context), :95 (create_server_context), :321 (enable_post_handshake_auth_server) -->
 
 `create_client_context` and `create_server_context` return `nullptr` on failure (for
 example when the certificate or key file cannot be loaded). **The caller owns the returned
@@ -360,7 +360,7 @@ working directory first and then against the running executable's own directory.
 shipped next to its `cert.pem` / `key.pem` therefore loads them regardless of the cwd it is
 launched from.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:186-204, :206-300, :414-418 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:185-204 (create_server_context), :206-308 (the four CA/client-cert helpers), :207 (load_ca_certificates), :220 (load_ca_directory), :273 (configure_mtls_server_context), :291 (configure_client_certificate), :413-418 (configure_dh_parameters_server) -->
 
 ## Building an SSL server
 

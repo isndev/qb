@@ -15,10 +15,10 @@
 llm/qb.llm.api.md	Actor.h:1125-1135	d756f709669a	* @brief Alias of `addRefActor<T>()` — both return a phase-aware `qb:...
 llm/qb.llm.api.md	Actor.h:1144-1202	348256583ed8	/**
 llm/qb.llm.api.md	Actor.h:1204-1239	ebacec412d5d	/**
-llm/qb.llm.api.md	Actor.h:1241-1256	472d699eca5d	/**
+llm/qb.llm.api.md	Actor.h:1241-1257	fdcc13b19f97	/**
 llm/qb.llm.api.md	Actor.h:1385-1394	dadd4620b634	class CoroContext {
 llm/qb.llm.api.md	Actor.h:1674-1753	72ac7be17054	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.api.md	Actor.h:1761-1765	c4c5841791f7	*/
+llm/qb.llm.api.md	Actor.h:1762-1765	d1b41f340749	inline ScopedCoroContext
 llm/qb.llm.api.md	Actor.h:1868-1874	fa70d7763fca	/**
 llm/qb.llm.api.md	Actor.h:1876-1880	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
 llm/qb.llm.api.md	Actor.h:1896-1907	d27c2e9e1eac	[[nodiscard]] qb::io::async::task<bool>
@@ -54,10 +54,10 @@ llm/qb.llm.md	Actor.h:1144-1202	348256583ed8	/**
 llm/qb.llm.md	Actor.h:1202-1202	c83d000c16b8	void spawn_detached(Func &&func) const;
 llm/qb.llm.md	Actor.h:1204-1239	ebacec412d5d	/**
 llm/qb.llm.md	Actor.h:1239-1239	f9f0e3c13c7d	void spawn(Func &&func) const;
-llm/qb.llm.md	Actor.h:1241-1256	472d699eca5d	/**
+llm/qb.llm.md	Actor.h:1241-1257	fdcc13b19f97	/**
 llm/qb.llm.md	Actor.h:1380-1386	7df8f4e2778e	* Provides a restricted interface for coroutines to interact with
 llm/qb.llm.md	Actor.h:1674-1753	72ac7be17054	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.md	Actor.h:1761-1765	c4c5841791f7	*/
+llm/qb.llm.md	Actor.h:1762-1765	d1b41f340749	inline ScopedCoroContext
 llm/qb.llm.md	Actor.h:1830-1832	1d53b2f3f947	* Thread-model: must only be dereferenced from the owning VirtualCore...
 llm/qb.llm.md	Actor.h:321-334	5f38a59348eb	* is a coroutine (`qb::io::async::task<bool>`) it **may `co_await`** ...
 llm/qb.llm.md	Actor.h:567-583	3f6d7c2d7bd4	* @brief Get current time from the VirtualCore's perspective (nanosec...

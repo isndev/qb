@@ -274,7 +274,7 @@ _(Actor.h:1674-1753)_
 `Actor::context()` returns that same `ScopedCoroContext` **wherever you hold the actor** — most
 importantly inside `onInit()`, which is itself a coroutine (`task<bool>`) and gets no `ctx`
 parameter. It is also what you pass to the free functions of the patterns library:
-`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1241-1256, :1761-1765)_
+`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1241-1257, :1762-1765)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
 receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not** cancelled when the

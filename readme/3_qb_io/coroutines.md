@@ -72,14 +72,14 @@ task<void> root() {
 }
 
 int main() {
-    qb::io::async::init();                        // ready the thread's listener
+    qb::io::async::init();                        // no-op, kept for symmetry (see below)
     coro_scheduler().spawn(root());               // task is a prvalue → moved
     run_for(2s);                                  // pump the loop + scheduler
     return 0;
 }
 ```
 
-`init()` makes the thread's `listener::current` available; it does not clear existing state. `coro_scheduler()` returns the listener's scheduler so `spawn`, timers, and `run_ready()` all share one loop. Under `qb-core`, each `VirtualCore` owns its listener and pumps the loop for you — you never call `run_for` from inside an actor (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)).
+`init()` is a **no-op** kept for symmetry — its whole body is a comment. `listener::current` is a `thread_local` that initializes itself on first access, so nothing needs readying; and `init()` deliberately does *not* clear existing state, because fixtures that share a thread's listener would have their already-registered watchers invalidated. For a genuinely clean loop, call `listener::current.clear()` (see [The async runtime](./async_system.md#initialization)). `coro_scheduler()` returns the listener's scheduler so `spawn`, timers, and `run_ready()` all share one loop. Under `qb-core`, each `VirtualCore` owns its listener and pumps the loop for you — you never call `run_for` from inside an actor (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)).
 <!-- src: qb/src/qb/io/async/listener.h:966 (init), qb/src/qb/io/async/coroutine/utils.h:212 (coro_scheduler), :227 (run_for) -->
 
 ## `task<T>` — the coroutine return type
@@ -625,7 +625,7 @@ public:
 | Event handlers stay `void on(Event&)` | `registerEvent` requires a `void` handler; a `task<void> on(Event&)` breaks actor dispatch | `Actor.h:771` |
 | Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1239`, `:1202` |
 | Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:1161-1163`, `:1219-1220`; examples/coroutine/actor_example.cpp:80 |
-| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; dead-actor events are dropped | `Actor.h:1402-1403` |
+| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is disposed instead of delivered | `Actor.h:1402-1403` (`push`), `:1412-1413` (`push_to`); `qb/src/qb/system/event/router.h:348-357` (no handler → dispose, no dispatch) |
 | Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:1157-1159` |
 
 `spawn()` and `spawn_detached()` must be called on the actor's own `VirtualCore` thread (each debug-asserts that a thread-local scheduler exists). They are the only supported way to use coroutines inside an actor — never call `run`, `run_for`, or `run_sync` from a handler.

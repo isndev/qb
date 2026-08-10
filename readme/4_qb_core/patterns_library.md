@@ -307,7 +307,7 @@ of a type within a time window.
   replies for the whole window, returning the responders' ids (empty if none)
   (`discovery.h:205-242`).
 - Replies are routed automatically by `Actor`'s default `on(RequireEvent&)` (which calls
-  `resolve_require`) — **no handler boilerplate** (`qb/src/qb/core/Actor.h:460-475`). Both work
+  `resolve_require`) — **no handler boilerplate** (`qb/src/qb/core/Actor.h:461-476`). Both work
   inside `onInit()` because replies reach an *Activating* asker through the continuation registry
   (`discovery.h:187-189`, `:213-217`). Throws `cancelled_error` on kill; never throws on timeout
   (a timed-out `ping` returns `false`, a timed-out `require` returns the partial set)
@@ -770,25 +770,25 @@ qb::io::async::task<bool> onInit() override {
 
 | Goal | Pattern | Entry point |
 |---|---|---|
-| One typed round-trip to one actor | request/reply | `qb::ask` + `qb::answer` (`request.h:98,186`) |
-| Bound the total latency of a request chain | request/reply | `qb::ask_by` + `qb::deadline` (`request.h:154,115`) |
-| Ask many, need every reply | scatter-gather | `qb::ask_all` (`scatter.h:57`) |
-| Ask many, fan out without overwhelming a downstream | scatter-gather | `qb::ask_all(…, max_in_flight)` (`scatter.h:109`) |
-| Ask many, fastest reply wins (hedged) | scatter-gather | `qb::ask_any` (`scatter.h:138`) |
-| Ask many, need a majority / first `k` | scatter-gather | `qb::ask_quorum` (`scatter.h:242`) |
+| One typed round-trip to one actor | request/reply | `qb::ask` + `qb::answer` (`request.h:100,188`) |
+| Bound the total latency of a request chain | request/reply | `qb::ask_by` + `qb::deadline` (`request.h:156,115`) |
+| Ask many, need every reply | scatter-gather | `qb::ask_all` (`scatter.h:59`) |
+| Ask many, fan out without overwhelming a downstream | scatter-gather | `qb::ask_all(…, max_in_flight)` (`scatter.h:111`) |
+| Ask many, fastest reply wins (hedged) | scatter-gather | `qb::ask_any` (`scatter.h:140`) |
+| Ask many, need a majority / first `k` | scatter-gather | `qb::ask_quorum` (`scatter.h:244`) |
 | Is an actor alive? | discovery | `qb::ping` (`discovery.h:192`) |
 | Find all live actors of a type | discovery | `qb::require<T>` (`discovery.h:225`) |
-| Multi-step workflow with rollback | saga | `qb::run_saga` + `qb::SagaScope` (`saga.h:115,44`) |
-| Survive transient timeouts | resilience | `qb::ask_retry` (`resilience.h:425`) |
-| Fail fast when a dependency is down | resilience | `qb::ask_guarded` + `qb::CircuitBreaker` (`resilience.h:463,120`) |
+| Multi-step workflow with rollback | saga | `qb::run_saga` + `qb::SagaScope` (`saga.h:117,44`) |
+| Survive transient timeouts | resilience | `qb::ask_retry` (`resilience.h:427`) |
+| Fail fast when a dependency is down | resilience | `qb::ask_guarded` + `qb::CircuitBreaker` (`resilience.h:465,120`) |
 | Throttle call rate | resilience | `qb::rate_limiter` (`resilience.h:239`) |
 | Cap concurrent calls to a resource | resilience | `qb::bulkhead` (`resilience.h:331`) |
-| One request, many replies | streaming | `qb::ask_stream` + `qb::yield_answer` / `qb::end_stream` (`streaming.h:322,352,368`) |
+| One request, many replies | streaming | `qb::ask_stream` + `qb::yield_answer` / `qb::end_stream` (`streaming.h:324,354,370`) |
 | Fan an event to many subscribers (per core) | pub/sub | `qb::PubSub<Topic>` (`pubsub.h:62`) |
 | Restart child actors on failure | supervision | `qb::Supervisor` + `qb::SupervisedActor` (`supervisor.h:128,77`) |
 | Distribute work across workers | routing | `qb::WorkerPool` (`routing.h:48`) |
-| Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:158,64`) |
-| Batch small items into one costly action | aggregation | `qb::batcher` (`aggregate.h:65`) |
+| Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:160,65`) |
+| Batch small items into one costly action | aggregation | `qb::batcher` (`aggregate.h:66`) |
 
 ---
 
