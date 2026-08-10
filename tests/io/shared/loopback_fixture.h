@@ -103,6 +103,59 @@ using namespace std::chrono_literals;
 inline constexpr std::chrono::milliseconds kLoopbackWaitBudget{3000};
 
 // ---------------------------------------------------------------------------
+// thread_joiner — join a worker thread on EVERY exit path from a test body.
+//
+// A test that reaches its explicit `join()` is already fine; this is for the path
+// where a FATAL assertion (ASSERT_*/FAIL) returns from the body first, leaving the
+// thread joinable. `~std::thread` on a joinable thread calls std::terminate(), which
+// aborts the process mid-report and truncates the very failure that caused it — no
+// `[  FAILED  ]` line, no summary, and a ctest result of "Subprocess aborted" instead
+// of "Failed". That is the same "a finding is rendered unreadable" outcome the bounded
+// waits in this header exist to prevent, so it belongs next to them.
+//
+// Declare it right after the thread. It is a no-op once an explicit join has run
+// (`joinable()` is then false), so it never changes the ordering a test relies on.
+// It only makes sense over a thread whose own waits are bounded — otherwise it turns
+// an abort into a hang, which is worse.
+// ---------------------------------------------------------------------------
+class thread_joiner {
+    std::thread &_t;
+
+public:
+    explicit thread_joiner(std::thread &t) noexcept
+        : _t(t) {}
+    thread_joiner(const thread_joiner &)            = delete;
+    thread_joiner &operator=(const thread_joiner &) = delete;
+    ~thread_joiner() {
+        if (_t.joinable())
+            _t.join();
+    }
+};
+
+// ---------------------------------------------------------------------------
+// wait_acceptable_within — bounded wait until a listener has a connection QUEUED.
+//
+// The gentler of the two bounding techniques here, and the one to reach for when the
+// accept call itself is what a test is pinning: it leaves that call, and the listener's
+// blocking mode, exactly as written, and only bounds the WAIT in front of it. Once this
+// returns true a connection is already queued, so the following blocking `accept()`
+// completes without entering the kernel wait at all.
+//
+// Use `accept_within` instead when the test just needs a connected socket — it is the
+// simpler call. Use this one when the test asserts on what `accept()` itself returns
+// (e.g. an SSL listener with no context must FAIL to accept a real client): flipping
+// such a listener non-blocking would let it report "nothing queued" before the client
+// even connects, and the case would pass without ever exercising what it names.
+//
+// `handle_read_ready` is select-based and portable (it is what `recv_n`/`connect_n` use
+// internally), so this stays Windows-clean.
+// ---------------------------------------------------------------------------
+[[nodiscard]] inline bool
+wait_acceptable_within(::socket_type listener_fd, std::chrono::milliseconds budget = kLoopbackWaitBudget) {
+    return qb::io::socket::handle_read_ready(listener_fd, std::chrono::duration_cast<qb::duration>(budget)) > 0;
+}
+
+// ---------------------------------------------------------------------------
 // accept_within — accept ONE connection, with a deadline the accept cannot defeat.
 //
 // Flips the listener non-blocking so `accept()` returns immediately when the queue

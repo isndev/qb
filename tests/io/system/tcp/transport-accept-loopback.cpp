@@ -116,19 +116,9 @@ TEST(TransportAccept, ReadAcceptsAPendingConnectionAndGetAcceptedRoundTrips) {
 
     // Join on EVERY exit path. The explicit `client_thread.join()` further down is
     // still where the ordering matters (it must precede `flush()`), and leaves this
-    // guard a no-op; the guard exists for the path where a fatal ASSERT below returns
-    // from the test body first. `~std::thread` on a still-joinable thread calls
-    // std::terminate(), which aborts the process mid-report and truncates the very
-    // failure that caused it — the same "a finding becomes infrastructure noise"
-    // outcome the bounded waits here exist to prevent. Safe now that the client's own
-    // waits are bounded, so it cannot be parked when this runs.
-    struct join_on_exit {
-        std::thread &t;
-        ~join_on_exit() {
-            if (t.joinable())
-                t.join();
-        }
-    } const client_joiner{client_thread};
+    // guard a no-op; the guard is for the path where a fatal ASSERT below returns from
+    // the test body first. See qb::io::test::thread_joiner for why that matters.
+    const qb::io::test::thread_joiner client_joiner{client_thread};
 
     // Accept the pending connection via the mixin's read(). Bounded: a client whose
     // connect never lands (its ASSERT above aborted the thread body) would park a

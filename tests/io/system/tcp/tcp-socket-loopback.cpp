@@ -81,6 +81,8 @@ using qb::io::test::accept_low_level_connections;
 using qb::io::test::accept_tcp_connections;
 using qb::io::test::read_some_within;
 using qb::io::test::reserve_free_tcp_port;
+using qb::io::test::thread_joiner;
+using qb::io::test::wait_acceptable_within;
 using qb::io::test::with_tcp_pair;
 
 namespace {
@@ -484,6 +486,11 @@ TEST(TCPSocket, LowLevelPortableConnectAndTransferHelpers) {
 
     std::thread server_thread([&] {
         qb::io::socket accepted;
+        // Bounded: the object-returning accept() blocks, and the client below connects
+        // under a FATAL assert -- one that fires returns from the test body and leaves
+        // this thread parked, which is std::terminate at ~std::thread rather than a
+        // report. Gate on readiness so the accept itself cannot wait.
+        ASSERT_TRUE(wait_acceptable_within(listener.native_handle())) << "no client connected within the accept budget";
         accepted = listener.accept().release_handle();
         ASSERT_TRUE(accepted.is_open());
 
@@ -492,6 +499,8 @@ TEST(TCPSocket, LowLevelPortableConnectAndTransferHelpers) {
         EXPECT_STREQ(buffer, "hello");
         EXPECT_EQ(accepted.send_n("world", static_cast<int>(sizeof("world")), 1s), static_cast<int>(sizeof("world")));
     });
+
+    const thread_joiner server_joiner{server_thread};
 
     qb::io::socket client;
     ASSERT_EQ(client.pconnect("127.0.0.1", port), 0);
@@ -811,11 +820,14 @@ TEST(TCPSocket, LowLevelSendNRecvNTraverseWouldBlockRetryLoop) {
 
     std::thread server_thread([&] {
         qb::io::socket accepted;
+        ASSERT_TRUE(wait_acceptable_within(listener.native_handle())) << "no client connected within the accept budget";
         accepted = listener.accept().release_handle();
         ASSERT_TRUE(accepted.is_open());
         const int sent = accepted.send_n(payload.data(), payload_size, 5s);
         EXPECT_EQ(sent, payload_size) << "send_n did not flush the full payload through the retry loop";
     });
+
+    const thread_joiner server_joiner{server_thread};
 
     qb::io::socket client;
     ASSERT_EQ(client.pconnect("127.0.0.1", port), 0);

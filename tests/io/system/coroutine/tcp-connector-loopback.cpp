@@ -44,6 +44,20 @@
  * asserts on (so a stalled read fails loudly instead of comparing against ""). Each test asserts a
  * completion flag AFTER the pump, so a coroutine that never ran FAILS rather than passes vacuously.
  *
+ * That claim used to cover the CLIENT half only. Every server thread here reached its peer through
+ * `listener.accept()` — the object-returning form, which (unlike `accept(sock&)`) goes straight to
+ * ::accept and blocks — and two of them then blocking-read the request. The `pump_until` above each
+ * `server.join()` is a NON-FATAL EXPECT_TRUE, so a connect that never lands falls straight through
+ * it into a join on a thread parked in the kernel: the test records its verdict and then never
+ * exits, and the verdict is replaced in the log by a ctest ***Timeout. `server.joinable()` does not
+ * help — a thread parked in accept() is joinable. Both waits are now `accept_within` /
+ * `read_some_within`, whose deadlines are reachable because the calls are non-blocking.
+ *
+ * `read_until_data` below is NOT part of that family and is deliberately left alone: it polls the
+ * socket the connector yields, and `n_connect` -> `socket::connect_n(s, ep)` sets that socket
+ * non-blocking and never restores it (sys__socket.cpp:789-793), so its `qb::mono_now() < deadline`
+ * is genuinely reachable.
+ *
  * @ingroup Tests
  */
 
@@ -69,7 +83,9 @@
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
+using qb::io::test::accept_within;
 using qb::io::test::pump_until;
+using qb::io::test::read_some_within;
 
 namespace {
 
@@ -148,7 +164,8 @@ TEST_F(TcpConnectorLoopbackTest, ConnectResumesWithOpenSocket) {
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
 
-        qb::io::tcp::socket sock = listener.accept();
+        qb::io::tcp::socket sock;
+        ASSERT_TRUE(accept_within(listener, sock)) << "no client connected within the accept budget";
         accepted.store(sock.is_open());
         sock.close();
         listener.disconnect();
@@ -216,10 +233,11 @@ TEST_F(TcpConnectorLoopbackTest, RequestResponseRoundTrip) {
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
 
-        qb::io::tcp::socket sock = listener.accept();
+        qb::io::tcp::socket sock;
+        ASSERT_TRUE(accept_within(listener, sock)) << "no client connected within the accept budget";
         if (sock.is_open()) {
             char      request[64] = {};
-            const int n           = sock.read(request, sizeof(request));
+            const int n           = read_some_within(sock, request, sizeof(request));
             if (n > 0 && std::string_view(request, static_cast<std::size_t>(n)) == "PING") {
                 server_saw_ping.store(true);
                 const char reply[] = "PONG";
@@ -288,10 +306,11 @@ TEST_F(TcpConnectorLoopbackTest, ConnectedSocketWritesToServer) {
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
 
-        qb::io::tcp::socket sock = listener.accept();
+        qb::io::tcp::socket sock;
+        ASSERT_TRUE(accept_within(listener, sock)) << "no client connected within the accept budget";
         if (sock.is_open()) {
             char      buffer[64] = {};
-            const int n          = sock.read(buffer, sizeof(buffer));
+            const int n          = read_some_within(sock, buffer, sizeof(buffer));
             if (n > 0)
                 received.assign(buffer, static_cast<std::size_t>(n));
             sock.close();
@@ -341,7 +360,8 @@ TEST_F(TcpConnectorLoopbackTest, CoalescedServerWritesReadInOneRecv) {
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
 
-        qb::io::tcp::socket sock = listener.accept();
+        qb::io::tcp::socket sock;
+        ASSERT_TRUE(accept_within(listener, sock)) << "no client connected within the accept budget";
         if (sock.is_open()) {
             const char payload[] = "ALPHA\nBETA\nGAMMA\n";
             (void) sock.write(payload, std::strlen(payload));
@@ -391,7 +411,8 @@ TEST_F(TcpConnectorLoopbackTest, FailedConnectDoesNotPoisonLaterConnect) {
         qb::io::tcp::listener listener;
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
-        qb::io::tcp::socket sock = listener.accept();
+        qb::io::tcp::socket sock;
+        ASSERT_TRUE(accept_within(listener, sock)) << "no client connected within the accept budget";
         sock.close();
         listener.disconnect();
         listener.close();
@@ -439,7 +460,8 @@ TEST_F(TcpConnectorLoopbackTest, ParallelClientsAllConnect) {
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
 
         for (int i = 0; i < kClients; ++i) {
-            qb::io::tcp::socket sock = listener.accept();
+            qb::io::tcp::socket sock;
+            ASSERT_TRUE(accept_within(listener, sock)) << "only " << i << " of " << kClients << " clients connected within the accept budget";
             if (sock.is_open()) {
                 ++accepted;
                 sock.close();
@@ -489,7 +511,8 @@ TEST_F(TcpConnectorLoopbackTest, ConnectWithExistingSocketSucceeds) {
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
 
-        qb::io::tcp::socket sock = listener.accept();
+        qb::io::tcp::socket sock;
+        ASSERT_TRUE(accept_within(listener, sock)) << "no client connected within the accept budget";
         accepted.store(sock.is_open());
         sock.close();
         listener.disconnect();
@@ -545,7 +568,8 @@ TEST_F(TcpConnectorLoopbackTest, SequentialAttemptsReuseScheduler) {
             ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
             server_port.store(static_cast<int>(listener.local_endpoint().port()));
 
-            qb::io::tcp::socket sock = listener.accept();
+            qb::io::tcp::socket sock;
+            ASSERT_TRUE(accept_within(listener, sock)) << "no client connected within the accept budget";
             sock.close();
             listener.disconnect();
             listener.close();
@@ -598,7 +622,8 @@ TEST_F(TcpConnectorLoopbackTest, ExplicitTransportCoroutineConnectResolvesToTheC
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
 
-        qb::io::tcp::socket sock = listener.accept();
+        qb::io::tcp::socket sock;
+        ASSERT_TRUE(accept_within(listener, sock)) << "no client connected within the accept budget";
         accepted.store(sock.is_open());
         sock.close();
         listener.disconnect();

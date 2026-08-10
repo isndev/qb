@@ -78,6 +78,7 @@
 #include <qb/io/tcp/ssl/listener.h>
 #include <qb/io/tcp/ssl/socket.h>
 
+#include "../../shared/loopback_fixture.h"
 #include "../../shared/ssl_fixtures.h"
 
 using namespace std::chrono_literals;
@@ -151,10 +152,22 @@ public:
     }
 };
 
-// Deadline-bounded exact read/write over a (blocking) TLS socket. Returns a gtest
+// Deadline-bounded exact read/write over a TLS socket. Returns a gtest
 // AssertionResult so a stall fails with a precise byte-count message.
+//
+// The socket is flipped NON-BLOCKING first, and that is what makes `deadline` a
+// deadline. Both helpers were written for a non-blocking socket — the `ret == 0`
+// arm below is `ssl::socket::read()` mapping SSL_ERROR_WANT_READ/WANT_WRITE to 0
+// ("no data ready; not an error", ssl/socket.cpp:996-1002), and NonBlockingReadWithNoDataReportsWouldBlock
+// pins exactly that return. On a blocking socket that arm is unreachable, so the
+// loop parked inside SSL_read and re-checked `deadline` only between reads it
+// could never return from: a peer that stopped writing without sending
+// close_notify hung the binary, and the 2s was decoration. Four sibling tests
+// already called set_nonblocking(true) by hand before reading, which is the
+// asymmetry that gives this away as an oversight rather than a design.
 ::testing::AssertionResult
 read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std::chrono::milliseconds timeout = 2s) {
+    socket.set_nonblocking(true);
     auto       *out      = static_cast<char *>(data);
     std::size_t received = 0;
     const auto  deadline = std::chrono::steady_clock::now() + timeout;
@@ -189,8 +202,13 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std
                                          << ", last read result=" << last;
 }
 
+// Same contract, same reason for the flip: `ssl::socket::write()` maps WANT_WRITE /
+// WANT_READ to 0 (ssl/socket.cpp:1023-1031), so the `ret == 0` arm below is the
+// would-block retry — dead on a blocking socket, which is where this loop's deadline
+// went. Read and write agree on the mode, so neither has to restore it.
 ::testing::AssertionResult
 write_exactly(qb::io::tcp::ssl::socket &socket, const void *data, std::size_t size, std::chrono::milliseconds timeout = 2s) {
+    socket.set_nonblocking(true);
     const auto *in       = static_cast<const char *>(data);
     std::size_t written  = 0;
     const auto  deadline = std::chrono::steady_clock::now() + timeout;
@@ -259,6 +277,14 @@ TEST(SSLSocketLoopback, AcceptWithoutContextFailsCleanlyAfterTcpAccept) {
             client.disconnect();
         });
 
+        // Gate on readiness, do NOT flip the listener non-blocking: this case asserts
+        // that a real, connected client is still REFUSED (no SSL context), so a listener
+        // that could answer "nothing queued" would let it pass without a client at all.
+        // Joined on every exit path: the ASSERT below is fatal, and without this a
+        // timeout would return from the body leaving the thread joinable — std::terminate,
+        // which swallows the message it just printed.
+        const qb::io::test::thread_joiner joiner{client_thread};
+        ASSERT_TRUE(qb::io::test::wait_acceptable_within(listener.native_handle())) << "client never connected within the accept budget";
         auto accepted = listener.accept();
         EXPECT_FALSE(accepted.is_open());
         EXPECT_EQ(accepted.ssl_handle(), nullptr);
@@ -277,7 +303,9 @@ TEST(SSLSocketLoopback, AcceptWithoutContextFailsCleanlyAfterTcpAccept) {
             client.disconnect();
         });
 
-        qb::io::tcp::ssl::socket accepted;
+        qb::io::tcp::ssl::socket          accepted;
+        const qb::io::test::thread_joiner joiner{client_thread};
+        ASSERT_TRUE(qb::io::test::wait_acceptable_within(listener.native_handle())) << "client never connected within the accept budget";
         EXPECT_EQ(listener.accept(accepted), -1);
         EXPECT_FALSE(accepted.is_open());
         EXPECT_EQ(accepted.ssl_handle(), nullptr);
