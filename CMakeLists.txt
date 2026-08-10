@@ -172,13 +172,41 @@ elseif (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
     # emits. qbCompiler.cmake gives clang `-fprofile-instr-generate -fcoverage-mapping`
     # instead (QB_COVERAGE_KIND "llvm"), so on clang no `.gcno` is ever written and lcov
     # /gcovr have nothing to read -- they run the whole instrumented suite first and only
-    # then produce an empty report. Say so at configure time rather than after the run.
+    # then produce an empty report. Measured on a fully instrumented clang tree: 0 `.gcno`,
+    # 0 `.gcda`, 356 `.profraw`.
+    #
+    # A configure-time warning was the first answer and it is not enough. The warning scrolls
+    # past in a build log; the target still builds the whole suite, runs all 356 tests, and
+    # then writes an empty report that reads like a coverage collapse. So on a non-gcov
+    # toolchain the four gcov targets are REPLACED, name for name, by ones that fail in under
+    # a second and say which of the two real paths to take. Nothing is removed from a gcov
+    # build -- qb/.github/workflows/coverage.yml configures with gcc-14, so QB_COVERAGE_KIND
+    # is "gcov" there and the targets below are created exactly as before -- and nothing is
+    # left undiscoverable: `--target qb-coverage` still resolves, it just answers instead of
+    # running for ten minutes to say nothing.
     if (LCOV_PATH AND GCOV_PATH AND NOT QB_COVERAGE_KIND STREQUAL "gcov")
         qb_warning_message(
-                "QB_COVERAGE_KIND is '${QB_COVERAGE_KIND}': the qb-coverage* targets are gcov-based and this build emits no .gcno/.gcda, so they will report nothing. Use a GCC toolchain for them, or the qb-dev superproject's LLVM `coverage` target")
+                "QB_COVERAGE_KIND is '${QB_COVERAGE_KIND}': the qb-coverage* targets are gcov-based and this build emits no .gcno/.gcda, so they would report nothing. They are replaced by a fail-fast stub. Use a GCC toolchain for them, or the qb-dev superproject's LLVM `coverage` target")
+        foreach (_qb_cov_stub qb-coverage-run qb-coverage qb-coverage-xml qb-coverage-html)
+            add_custom_target(${_qb_cov_stub}
+                    COMMAND ${CMAKE_COMMAND} -E echo
+                        "${_qb_cov_stub}: refusing to run -- this build's instrumentation is '${QB_COVERAGE_KIND}', not gcov."
+                    COMMAND ${CMAKE_COMMAND} -E echo
+                        "  ${CMAKE_CXX_COMPILER_ID} was given -fprofile-instr-generate -fcoverage-mapping, so it writes .profraw and NO .gcno/.gcda."
+                    COMMAND ${CMAKE_COMMAND} -E echo
+                        "  lcov and gcovr would run the entire test suite and then emit an EMPTY report."
+                    COMMAND ${CMAKE_COMMAND} -E echo
+                        "  Either: configure with a GCC toolchain (-DCMAKE_CXX_COMPILER=g++-14), which is what qb's coverage.yml does;"
+                    COMMAND ${CMAKE_COMMAND} -E echo
+                        "  or:     use the qb-dev superproject's LLVM-native aggregate target (cmake --preset coverage && cmake --build --preset coverage --target coverage)."
+                    COMMAND ${CMAKE_COMMAND} -E false
+                    COMMENT "gcov coverage target on a non-gcov toolchain"
+                    VERBATIM)
+            set_target_properties(${_qb_cov_stub} PROPERTIES FOLDER "Coverage")
+        endforeach ()
     endif ()
 
-    if (LCOV_PATH AND GCOV_PATH)
+    if (LCOV_PATH AND GCOV_PATH AND QB_COVERAGE_KIND STREQUAL "gcov")
         qb_status_message("Code coverage enabled")
 
         # '*vendor*' alongside '*modules*': the forks (qev, uuid, nanolog, ska_hash) moved under
@@ -259,7 +287,11 @@ elseif (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
                 DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
                 GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
         )
-    else ()
+    elseif (NOT LCOV_PATH OR NOT GCOV_PATH)
+        # Narrowed from a bare `else()`: with the QB_COVERAGE_KIND condition added above, a
+        # plain else would greet an llvm build that HAS lcov and gcov installed with "tools not
+        # found", which is false and sends the reader looking for the wrong thing. The
+        # non-gcov case is reported by the branch above, which also installs the stubs.
         qb_warning_message("Coverage requested but tools not found (lcov, gcov)")
     endif ()
 endif ()

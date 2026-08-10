@@ -27,7 +27,16 @@
 # this directory, found Doxygen, configured the Doxyfile -- and created no target at all.
 # The documented option was inert, silently, and a configure log carrying "Doxygen build
 # target added" never appeared to say otherwise.
-find_package(Doxygen)
+# OPTIONAL_COMPONENTS dot, because Doxyfile.in's HAVE_DOT is SUBSTITUTED from what this
+# find_package actually resolves. It used to be the unconditional literal `HAVE_DOT = YES`
+# next to an empty `DOT_PATH`, i.e. a promise that Graphviz is installed and on PATH, made by
+# a file that had never asked. On a host without it Doxygen emits a warning for every graph it
+# was told to draw and draws none, so the generated book quietly loses its class,
+# collaboration, include and directory diagrams while the run still exits 0.
+#
+# `dot` is OPTIONAL, not REQUIRED: documentation without diagrams is worth building, and a
+# hard failure would make Graphviz a dependency of `-DQB_BUILD_DOCS=ON` on every host.
+find_package(Doxygen OPTIONAL_COMPONENTS dot)
 if (DOXYGEN_FOUND)
     set(DOXYGEN_INPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}) # This will be qb/docs
 
@@ -99,6 +108,27 @@ if (DOXYGEN_FOUND)
             set(QB_VERSION "${PROJECT_VERSION}")
         endif ()
         message(STATUS "QB_VERSION not set by parent, derived: ${QB_VERSION}")
+    endif ()
+
+    # HAVE_DOT / DOT_PATH: report what the configure FOUND, never what we hope is installed.
+    #
+    # DOT_PATH is the DIRECTORY holding the tool, not the tool itself -- Doxygen appends the
+    # executable name to it -- so a full path here silently disables dot again. FindDoxygen
+    # gives the executable; the directory is derived from it.
+    #
+    # Leaving DOT_PATH empty when dot IS found would also work on a host where it is on PATH,
+    # and would break the one where CMake located it somewhere else (a Homebrew or vcpkg
+    # prefix that the build shell exports but a desktop-launched IDE does not). Naming the
+    # resolved directory costs nothing and removes the difference.
+    if (TARGET Doxygen::dot AND DOXYGEN_DOT_EXECUTABLE)
+        set(QB_DOXYGEN_HAVE_DOT "YES")
+        get_filename_component(QB_DOXYGEN_DOT_PATH "${DOXYGEN_DOT_EXECUTABLE}" DIRECTORY)
+        message(STATUS "INFO: Graphviz dot found (${DOXYGEN_DOT_EXECUTABLE}); Doxygen graphs enabled")
+    else ()
+        set(QB_DOXYGEN_HAVE_DOT "NO")
+        set(QB_DOXYGEN_DOT_PATH "")
+        message(STATUS "INFO: Graphviz dot NOT found; Doxygen graphs disabled (HAVE_DOT=NO). "
+                       "Install Graphviz to get the class/collaboration/include diagrams.")
     endif ()
 
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)

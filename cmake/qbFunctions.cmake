@@ -1207,6 +1207,44 @@ endfunction()
 # Test Resource Functions
 # -----------------------------------------------------------------------------
 
+# qb_resource_byproducts(<src-dir> <dst-dir> <out-var>)
+#
+# Map every file under <src-dir> to the path `cmake -E copy_directory <src> <dst>` will write
+# under <dst-dir>, so a staging target can DECLARE those files with BYPRODUCTS.
+#
+# WHY THIS EXISTS. `BYPRODUCTS` appeared ZERO times in this tree. Every staging target is a
+# bare `add_custom_target(... COMMAND cmake -E copy_directory ...)`, so the files it writes are
+# not nodes in the ninja graph at all, with two consequences that have both been observed here:
+#
+#   * Nothing can depend on the FILE. Ordering between a producer and a consumer of
+#     bin/tests/cert.pem rests entirely on hand-written add_dependencies() edges between
+#     TARGETS -- which is why the comment block below has to argue at length about who wins a
+#     race, and why the fix it landed on was to remove the second writer at configure time
+#     rather than to sequence it. A declared byproduct makes the collision a GENERATE-TIME
+#     error ("multiple rules generate .../cert.pem") instead of a silent last-writer-wins.
+#   * `ninja -t clean` does not remove them, because clean only removes declared outputs. A
+#     stale artefact therefore survives a clean and can satisfy a later run -- an SSL test
+#     passing on a certificate no configuration in the current tree would produce.
+#
+# The glob is CONFIGURE_DEPENDS on purpose: adding a resource file must re-run CMake, or the
+# declared list silently stops matching what the copy writes, which is the same class of
+# quiet drift this is closing.
+#
+# Note what this does NOT do: a custom TARGET is always out of date, so declaring byproducts
+# does not make the copy incremental and cannot make ninja skip a writer. That matters --
+# converting one writer of a path to add_custom_command(OUTPUT ...) while another stayed a
+# bare target was tried in this tree and made things WORSE, because ninja then considered the
+# file up to date while the other writer overwrote it on every build.
+function(qb_resource_byproducts SRC DST OUT)
+    file(GLOB_RECURSE _qrb_files LIST_DIRECTORIES false RELATIVE "${SRC}"
+         CONFIGURE_DEPENDS "${SRC}/*")
+    set(_qrb_out "")
+    foreach(_qrb_f IN LISTS _qrb_files)
+        list(APPEND _qrb_out "${DST}/${_qrb_f}")
+    endforeach()
+    set(${OUT} "${_qrb_out}" PARENT_SCOPE)
+endfunction()
+
 # qb_setup_test_resources - Setup SSL resources for tests (centralized)
 # This function creates a global target that copies SSL resources to the test directory
 # Call this once in your root CMakeLists.txt or test configuration
@@ -1248,6 +1286,12 @@ function(qb_setup_test_resources)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${TEST_RESOURCES_DIR}"
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}/ssl")
+        # ...and DECLARE what those commands write. The byproduct list follows the same
+        # configure-time branch as the commands, which is what keeps the single-writer rule
+        # below expressible in the graph: whichever target owns the flat pair is the only one
+        # that names it, so a reintroduced second writer is a ninja error rather than a race.
+        qb_resource_byproducts("${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}/ssl"
+                               _qb_ssl_stage_byproducts)
         if(TARGET generate_ssl_certs)
             set(_qb_ssl_stage_what "ssl/ only; generate_ssl_certs owns the flat cert.pem/key.pem")
         else()
@@ -1259,12 +1303,16 @@ function(qb_setup_test_resources)
             list(APPEND _qb_ssl_stage_commands
                 COMMAND ${CMAKE_COMMAND} -E copy_directory
                     "${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}")
+            qb_resource_byproducts("${QB_SSL_RESOURCES}" "${TEST_RESOURCES_DIR}"
+                                   _qb_ssl_flat_byproducts)
+            list(APPEND _qb_ssl_stage_byproducts ${_qb_ssl_flat_byproducts})
             set(_qb_ssl_stage_what "ssl/ + the flat cert.pem/key.pem (no openssl on this host)")
         endif()
 
         if(NOT TARGET qb_copy_test_ssl_resources)
             add_custom_target(qb_copy_test_ssl_resources ALL
                 ${_qb_ssl_stage_commands}
+                BYPRODUCTS ${_qb_ssl_stage_byproducts}
                 COMMENT "Copying SSL resources to test directory: ${TEST_RESOURCES_DIR} (${_qb_ssl_stage_what})"
             )
 
@@ -1390,9 +1438,19 @@ function(qb_copy_resources)
     # Create custom target for copying resources
     set(copy_target "${RES_TARGET}_copy_resources")
 
+    # Declare what the copy writes (see qb_resource_byproducts). Consequence worth stating,
+    # because it turns a silent shape into a loud one: if two callers write the SAME relative
+    # file into one DESTINATION, ninja now refuses at generate time ("multiple rules generate")
+    # instead of letting the serialisation edge below pick a winner. That is the intent -- the
+    # edge can order two writers, it cannot make last-writer-wins on one file correct -- and it
+    # costs nothing for callers whose file sets are disjoint, which is every caller in this tree
+    # (taskmanager and auction_house each pass their own DESTINATION).
+    qb_resource_byproducts("${RES_RESOURCES}" "${RES_DESTINATION}" _qb_res_byproducts)
+
     add_custom_target(${copy_target}
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${RES_RESOURCES} ${RES_DESTINATION}
+        BYPRODUCTS ${_qb_res_byproducts}
         COMMENT "Copying resources for ${RES_TARGET}"
     )
 

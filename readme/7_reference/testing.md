@@ -88,7 +88,7 @@ The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig
 
 ### Test resources
 
-If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the committed SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:1213-1277`). The flat `bin/tests/cert.pem` + `key.pem` pair that the tests actually load has exactly **one** producer, chosen at configure time: `generate_ssl_certs`, which writes a freshly generated self-signed `CN=localhost` pair, on any host with `openssl`; the committed pair only when that target does not exist. Two targets used to write those two names into that one directory, which made the certificate the suite tested a property of the build graph. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:653-655`).
+If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the committed SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:1251-1325`). The flat `bin/tests/cert.pem` + `key.pem` pair that the tests actually load has exactly **one** producer, chosen at configure time: `generate_ssl_certs`, which writes a freshly generated self-signed `CN=localhost` pair, on any host with `openssl`; the committed pair only when that target does not exist. Two targets used to write those two names into that one directory, which made the certificate the suite tested a property of the build graph. Whichever target owns them now DECLARES them, with `BYPRODUCTS`, so they are nodes in the build graph rather than bytes some command happened to write: `ninja -t clean` removes them (it used to leave all four staged files behind, so a certificate from an earlier configuration survived a clean and could satisfy a later run), and a reintroduced second writer is a generate-time "multiple rules generate" error instead of a race. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:653-655`).
 
 ### Conditional suites
 
@@ -235,7 +235,7 @@ That registers the target and CTest entry as `qb-core-test-unit-my-feature`. Opt
 
 ## Coverage
 
-`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:144`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, qb is the top-level project, and `lcov` plus `gcov` are found on the system (`qb/CMakeLists.txt:163-181`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing.
+`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:144`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, qb is the top-level project, `lcov` plus `gcov` are found on the system, and `QB_COVERAGE_KIND` is `gcov` (`qb/CMakeLists.txt:163-209`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing. That last condition is the one a clang host trips: `qbCompiler.cmake` gives clang `-fprofile-instr-generate -fcoverage-mapping`, which writes `.profraw` and never a `.gcno`, so lcov and gcovr would run the entire suite and then report nothing. The four target names are still created there, as stubs that fail immediately and name the alternatives — a GCC toolchain, or the superproject's LLVM-native `coverage` target.
 
 When enabled — **and only when qb is the top-level project** (`qb/CMakeLists.txt:160`); an embedded qb
 contributes instrumentation and leaves the report to the superproject — four targets are registered.
@@ -250,9 +250,9 @@ numbers:
 | `qb-coverage-xml` | gcovr | Cobertura XML |
 | `qb-coverage-html` | gcovr | HTML report |
 
-<!-- src: qb/CMakeLists.txt:235-261, qb/cmake/CodeCoverage.cmake -->
+<!-- src: qb/CMakeLists.txt:263-289, qb/cmake/CodeCoverage.cmake -->
 
-The exclusion list filters out system headers, benchmarks, modules, the vendored forks, examples, and the test sources themselves so the report reflects framework code (`qb/CMakeLists.txt:187-205`). A typical run:
+The exclusion list filters out system headers, benchmarks, modules, the vendored forks, examples, and the test sources themselves so the report reflects framework code (`qb/CMakeLists.txt:215-233`). A typical run:
 
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_COVERAGE=ON -B build
