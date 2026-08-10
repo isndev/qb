@@ -123,7 +123,7 @@ the machine that built it, or on hardware you know matches it — never for some
 
 | Option | Default | Purpose |
 |---|---|---|
-| `QB_BUILD_COVERAGE` | `OFF` | Code coverage instrumentation (Debug builds, non-Windows only); sets up the `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets via lcov/gcovr. |
+| `QB_BUILD_COVERAGE` | `OFF` | Code coverage instrumentation (Debug builds, non-Windows only); sets up the `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets via lcov/gcovr — those three read `.gcno`/`.gcda`, so they are real targets only on a gcov toolchain and fail-fast stubs under clang's LLVM instrumentation. |
 | `QB_SANITIZE` | `""` (empty/off) | Comma-separated sanitizer list (for example `address,undefined`, `thread`, `memory`, `leak`) applied to every qb, qbm, and test target plus their link step (GCC/Clang). MSVC supports only `/fsanitize=address`. |
 | `QB_DEBUG_MEMORY` | `OFF` | Legacy alias: when set and `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined`. Also defines `QB_DEBUG_MEMORY=1`. |
 | `QB_DEBUG_ACTOR` | `OFF` | Enable actor debugging; defines `QB_DEBUG_ACTOR=1`. |

@@ -420,7 +420,7 @@ EXTERNAL_PAGES         = YES
 
 DIA_PATH               =
 HIDE_UNDOC_RELATIONS   = YES
-HAVE_DOT               = YES
+HAVE_DOT               = @QB_DOXYGEN_HAVE_DOT@
 DOT_NUM_THREADS        = 0
 DOT_FONTPATH           =
 CLASS_GRAPH            = YES
@@ -437,7 +437,7 @@ GRAPHICAL_HIERARCHY    = YES
 DIRECTORY_GRAPH        = YES
 DOT_IMAGE_FORMAT       = png
 INTERACTIVE_SVG        = NO
-DOT_PATH               =
+DOT_PATH               = @QB_DOXYGEN_DOT_PATH@
 DOTFILE_DIRS           =
 MSCFILE_DIRS           =
 DIAFILE_DIRS           =

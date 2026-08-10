@@ -117,8 +117,16 @@ if (QB_HAS_SSL)
         add_custom_target(generate_ssl_certs DEPENDS ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT})
         set(TEST_CERT_DIR "${CMAKE_BINARY_DIR}/bin/tests")
         file(MAKE_DIRECTORY ${TEST_CERT_DIR})
+        # BYPRODUCTS, because this POST_BUILD is the ONLY writer of bin/tests/{cert,key}.pem on
+        # a host with openssl (qb_setup_test_resources drops its flat copy when this target
+        # exists -- see the single-writer argument in qbFunctions.cmake). Undeclared, those two
+        # files were not nodes in the ninja graph: `ninja -t clean` left them, so a certificate
+        # from an earlier configuration survived a clean and could satisfy a later SSL run.
+        # Declaring them also makes a reintroduced second writer a generate-time error rather
+        # than a race that has to be argued about.
         add_custom_command(TARGET generate_ssl_certs POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT} ${TEST_CERT_DIR}/
+                BYPRODUCTS "${TEST_CERT_DIR}/cert.pem" "${TEST_CERT_DIR}/key.pem"
                 COMMENT "Copying SSL certificates to test binary directory")
         foreach (_ssl_dep qb-io-test-system-ssl-socket-loopback
                 qb-io-test-system-secure-transport-loopback
