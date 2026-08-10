@@ -26,29 +26,29 @@ An actor is strictly thread-affine to the `VirtualCore` that created it: it neve
 
 ### CPU affinity: a best-effort pin
 
-`CoreInitializer::setAffinity(CoreIdSet const &)` requests that the `VirtualCore` thread be pinned to a set of physical CPU cores (`src/qb/core/Main.h:241`). The pin is applied when the engine starts, inside `VirtualCore::__init__` (`src/qb/core/VirtualCore.cpp:336`), using `pthread_setaffinity_np` on POSIX/macOS and `SetThreadAffinityMask` on MSVC Windows.
+`CoreInitializer::setAffinity(CoreIdSet const &)` requests that the `VirtualCore` thread be pinned to a set of physical CPU cores (`src/qb/core/Main.h:270`). The pin is applied when the engine starts, inside `VirtualCore::__init__` (`src/qb/core/VirtualCore.cpp:401`), using `pthread_setaffinity_np` on POSIX/macOS and `SetThreadAffinityMask` on MSVC Windows.
 
 Affinity is best-effort by design. A logical `CoreId` need not map to a physical CPU (for example, core 255 on an 8-core host), so a failed pin only logs a warning and never fails core initialization (`src/qb/core/VirtualCore.cpp:426-432`). Two filtering rules apply before any OS call:
 
-- Any `CoreId >= qb::MaxCores` is filtered out of the affinity set, including the `qb::NoAffinity` sentinel (`src/qb/core/VirtualCore.cpp:403-408`). `qb::NoAffinity == std::numeric_limits<CoreId>::max()` (`src/qb/core/Main.h:78`), so passing `CoreIdSet{qb::NoAffinity}` is a well-defined "let the OS schedule this thread" with no pinning performed.
+- Any `CoreId >= qb::MaxCores` is filtered out of the affinity set, including the `qb::NoAffinity` sentinel (`src/qb/core/VirtualCore.cpp:403-408`). `qb::NoAffinity == std::numeric_limits<CoreId>::max()` (`src/qb/core/Main.h:104`), so passing `CoreIdSet{qb::NoAffinity}` is a well-defined "let the OS schedule this thread" with no pinning performed.
 - If the filtered set contains zero real core ids — including an empty set — no affinity call is issued at all (`src/qb/core/VirtualCore.cpp:409`).
 
 On Windows built with a GNU compiler, affinity is not applied (`#warning` at `src/qb/core/VirtualCore.cpp:447`).
 
 ### Per-core mailboxes and inter-core MPSC delivery
 
-Each `VirtualCore` consumes from exactly one inbound mailbox. A `Mailbox` is a multi-producer/single-consumer lock-free ring buffer of `EventBucket` slots (`src/qb/core/Main.h:299`), built on `qb::lockfree::mpsc::ringbuffer` (`src/qb/system/lockfree/mpsc.h:47`). All mailboxes are owned by an internal `SharedCoreCommunication` instance held by `qb::Main` (`src/qb/core/Main.h:293`). The MPSC shape is the crux of the threading model: many sender cores enqueue into a mailbox, but only the owning `VirtualCore` ever dequeues from it.
+Each `VirtualCore` consumes from exactly one inbound mailbox. A `Mailbox` is a multi-producer/single-consumer lock-free ring buffer of `EventBucket` slots (`src/qb/core/Main.h:328`), built on `qb::lockfree::mpsc::ringbuffer` (`src/qb/system/lockfree/mpsc.h:47`). All mailboxes are owned by an internal `SharedCoreCommunication` instance held by `qb::Main` (`src/qb/core/Main.h:323`). The MPSC shape is the crux of the threading model: many sender cores enqueue into a mailbox, but only the owning `VirtualCore` ever dequeues from it.
 
 Cross-core routing is O(1). The engine wraps the configured `CoreIdSet` in an internal `CoreSet`, which precomputes a dense, zero-based index for each logical `CoreId` so an event's destination core resolves to a mailbox slot without a hash lookup (`src/qb/core/CoreSet.h:49`). Application code does not touch the internal `CoreSet` directly; to query which cores an actor can reach, call `Actor::getCoreSet()`, which returns a `const CoreIdSet&` (the user-facing bitset, not the internal `CoreSet`) (`src/qb/core/Actor.h:563`).
 
-Within one iteration, a `VirtualCore` flushes its outbound events to peer mailboxes (`__flush_all__`) and then drains its own inbound mailbox (`__receive__`) (`src/qb/core/VirtualCore.cpp:699-704`). Outbound flushing is bounded so it cannot deadlock against a full peer mailbox: QoS-guaranteed events use a spin-then-yield backoff with partial flush, and best-effort (QoS-0) events are dropped after a single failed `try_send` (`src/qb/core/VirtualCore.cpp:348-372`). A single event spanning more `EventBucket` slots than the ring holds is a different case entirely — the destination's batched, all-or-nothing `enqueue` of `event.bucket_size` buckets fails no matter how much the peer drains (`src/qb/core/Main.cpp:213`), so retrying could never converge. The flush therefore recognises it as permanently unsendable rather than backpressured: it logs at `LOG_CRIT`, disposes the event and drops it, and keeps flushing the rest of the pipe (`src/qb/core/VirtualCore.cpp:334-344`). The ring capacity is `MaxRingEvents == std::numeric_limits<uint16_t>::max() / QB_LOCKFREE_EVENT_BUCKET_BYTES` (`src/qb/core/Main.h:297`). The inter-core flush and deadlock-recovery rules are consolidated in [Core invariants](../7_reference/core_invariants.md).
+Within one iteration, a `VirtualCore` flushes its outbound events to peer mailboxes (`__flush_all__`) and then drains its own inbound mailbox (`__receive__`) (`src/qb/core/VirtualCore.cpp:699-704`). Outbound flushing is bounded so it cannot deadlock against a full peer mailbox: QoS-guaranteed events use a spin-then-yield backoff with partial flush, and best-effort (QoS-0) events are dropped after a single failed `try_send` (`src/qb/core/VirtualCore.cpp:348-372`). A single event spanning more `EventBucket` slots than the ring holds is a different case entirely — the destination's batched, all-or-nothing `enqueue` of `event.bucket_size` buckets fails no matter how much the peer drains (`src/qb/core/Main.cpp:213`), so retrying could never converge. The flush therefore recognises it as permanently unsendable rather than backpressured: it logs at `LOG_CRIT`, disposes the event and drops it, and keeps flushing the rest of the pipe (`src/qb/core/VirtualCore.cpp:334-344`). The ring capacity is `MaxRingEvents == std::numeric_limits<uint16_t>::max() / QB_LOCKFREE_EVENT_BUCKET_BYTES` (`src/qb/core/Main.h:326`). The inter-core flush and deadlock-recovery rules are consolidated in [Core invariants](../7_reference/core_invariants.md).
 
 ### Engine latency: busy-spin versus parked-idle
 
 The idle latency of a core is a `qb::duration` (`std::chrono::nanoseconds`; see [the time vocabulary](../7_reference/api_overview.md)). It controls what a `VirtualCore` does when its event loop finds no work.
 
-- `setLatency(qb::duration::zero())` — the default — puts the core in busy-spin low-latency mode: the loop never blocks and the thread holds its CPU at 100% to react with minimal delay (`src/qb/core/Main.h:249-250`).
-- `setLatency(d)` with `d > 0` lets the core park on a `std::condition_variable` for up to `d` when idle (`src/qb/core/Main.h:251-252`, mailbox `wait()` at `src/qb/core/Main.h:320`). A peer enqueuing an event calls `notify()` to wake it. This trades worst-case wake-up latency for lower CPU.
+- `setLatency(qb::duration::zero())` — the default — puts the core in busy-spin low-latency mode: the loop never blocks and the thread holds its CPU at 100% to react with minimal delay (`src/qb/core/Main.h:278-279`).
+- `setLatency(d)` with `d > 0` lets the core park on a `std::condition_variable` for up to `d` when idle (`src/qb/core/Main.h:280-281`, mailbox `wait()` at `src/qb/core/Main.h:349`). A peer enqueuing an event calls `notify()` to wake it. This trades worst-case wake-up latency for lower CPU.
 
 ```mermaid
 flowchart TB
@@ -67,10 +67,10 @@ Two scopes set latency:
 
 | Call | Scope | Signature |
 | --- | --- | --- |
-| [`CoreInitializer::setLatency`](../4_qb_core/engine.md) | One core | `CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept` (`src/qb/core/Main.h:254`) |
-| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:610`) |
+| [`CoreInitializer::setLatency`](../4_qb_core/engine.md) | One core | `CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept` (`src/qb/core/Main.h:284`) |
+| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:639`) |
 
-`Main::getLatency()` does not exist; read a single core's configured value with `engine.core(id).getLatency()`, which returns the `qb::duration` last set (`src/qb/core/Main.h:270`).
+`Main::getLatency()` does not exist; read a single core's configured value with `engine.core(id).getLatency()`, which returns the `qb::duration` last set (`src/qb/core/Main.h:300`).
 
 ### What is real multithreading, and what is not
 

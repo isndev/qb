@@ -70,6 +70,31 @@ class IActorFactory;
  * `SetThreadAffinityMask` call is issued — semantics identical to passing an
  * empty `CoreIdSet`. This makes `NoAffinity` a safe, well-defined sentinel.
  *
+ * @warning **Opting out is what a Mac gives you anyway.** The paragraph above
+ * describes the sentinel; it does not promise that omitting the sentinel pins
+ * anything. Whether a *real* `CoreId` produces an OS-level pin is a platform
+ * property, and on macOS the answer is "no" or "not the way it reads":
+ * - macOS has no `pthread_setaffinity_np`, so qb supplies one that calls
+ *   `thread_policy_set(THREAD_AFFINITY_POLICY)`. On **Apple Silicon** that
+ *   flavor is not implemented: every call answers `KERN_NOT_SUPPORTED`, and
+ *   the shim deliberately reports *success* for that code (otherwise every
+ *   core of every run would warn). Nothing is pinned, silently.
+ * - Where macOS *does* implement it (Intel), `<mach/thread_policy.h>` calls it
+ *   experimental and a scheduler **hint**: threads sharing an affinity *tag*
+ *   are placed so as to share an L2 cache. qb passes the `CoreId` as that tag,
+ *   so `setAffinity(3)` requests "group me with other tag-3 threads", not "pin
+ *   me to CPU 3". That is a different guarantee from the Linux/Windows one, on
+ *   every Mac.
+ * - The shim also honours only the **first** real id in the set, so a
+ *   multi-core `CoreIdSet` narrows to its lowest member there.
+ *
+ * Do not infer placement from a successful `setAffinity()`; ask
+ * `qb::CPU::ThreadPinningSupported()` (`qb/system/cpu.h`), which reports
+ * whether this host implements per-thread pinning at all — a runtime probe, so
+ * it is also right for an x86_64 binary running under Rosetta 2. Linux and
+ * other POSIX use the real `pthread_setaffinity_np`; MSVC Windows uses
+ * `SetThreadAffinityMask`; a Windows GNU build applies no affinity at all.
+ *
  * Implementation detail: value is `std::numeric_limits<CoreId>::max()`,
  * deliberately strictly greater than `qb::MaxCores`, so it can never be
  * mistaken for a legitimate hardware core id.
@@ -237,6 +262,10 @@ public:
      * @return Reference to this `CoreInitializer` for method chaining.
      * @note By default, affinity is typically set to allow the VirtualCore thread to run on any CPU.
      *       This setting takes effect when the engine starts.
+     * @warning This is a **request**, and on macOS it does not pin: the call succeeds while
+     *          nothing is placed (Apple Silicon) or groups threads by cache tag rather than
+     *          binding them to a CPU (Intel). See `qb::NoAffinity` above for the full account,
+     *          and branch on `qb::CPU::ThreadPinningSupported()` rather than on this returning.
      */
     CoreInitializer &setAffinity(CoreIdSet const &cores = {}) noexcept;
 
@@ -679,10 +708,15 @@ using engine = Main;
 //     them -- `IActorFactory` is forward-declared at Main.h:49 -- which is why this header
 //     still compiles alone and why the include was never needed above.
 //   * Position: at the tail, not in the include block at the top. Main.h is one of the most
-//     densely cited headers in the readme book (~18 `Main.h:NNN` citations across five
-//     pages); hoisting one line into the include block would shift every one of them and
-//     force a re-point-by-offset, which is exactly how a wrong citation gets propagated.
-//     Appending shifts nothing.
+//     densely cited headers in the readme book (31 `Main.h:NNN` citations across seven
+//     pages, measured; it was written "~18 across five"); hoisting one line into the include
+//     block would shift every one of them and force a re-point-by-offset, which is exactly
+//     how a wrong citation gets propagated. Appending shifts nothing.
+//     The `qb::NoAffinity` block above WAS extended in 3.0 -- because the old text implied
+//     that `setAffinity()` pins on every platform, which is false on macOS -- and all 31
+//     were then re-derived AT THE NEW COORDINATES rather than offset. Nine of them turned
+//     out to have been wrong beforehand (off-by-one onto a closing `*/`, or pointing at an
+//     unrelated line entirely), which is the argument for re-reading rather than shifting.
 //   * NOT VirtualCore.h. Main.tpp used to pull it, and nothing here needs it: `Main::addActor`
 //     goes through `core(cid)`, a `CoreInitializer` declared above. Adding it would also make
 //     `<qb/core/Main.h>` alone drag <windows.h>/WIN32_LEAN_AND_MEAN/NOMINMAX into every TU,
