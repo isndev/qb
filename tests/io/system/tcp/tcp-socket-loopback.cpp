@@ -79,6 +79,7 @@ using namespace std::chrono_literals;
 
 using qb::io::test::accept_low_level_connections;
 using qb::io::test::accept_tcp_connections;
+using qb::io::test::read_some_within;
 using qb::io::test::reserve_free_tcp_port;
 using qb::io::test::with_tcp_pair;
 
@@ -133,9 +134,13 @@ TEST(TCPSocket, InitBindAndUriContracts) {
 TEST(TCPSocket, UriAndTimeoutConnectVariantsReachLoopbackServer) {
     with_tcp_pair(
         [](qb::io::tcp::socket accepted) {
-            accepted.set_nonblocking(false);
             char buffer[16] = {};
-            EXPECT_EQ(accepted.read(buffer, sizeof("ping")), static_cast<int>(sizeof("ping")));
+            // Bounded on both halves: each side runs on a thread the other joins, so
+            // a peer that connects but stops writing (a regressed write(), a client
+            // body that returned early holding the fd) would park a blocking read
+            // past every deadline in this test and hang the join instead of letting
+            // the EXPECTs below be reported.
+            EXPECT_EQ(read_some_within(accepted, buffer, sizeof("ping")), static_cast<int>(sizeof("ping")));
             EXPECT_STREQ(buffer, "ping");
             EXPECT_GE(accepted.write("pong", sizeof("pong")), static_cast<int>(sizeof("pong")));
         },
@@ -149,7 +154,9 @@ TEST(TCPSocket, UriAndTimeoutConnectVariantsReachLoopbackServer) {
             EXPECT_GE(client.write("ping", sizeof("ping")), static_cast<int>(sizeof("ping")));
 
             char buffer[16] = {};
-            EXPECT_EQ(client.read(buffer, sizeof("pong")), static_cast<int>(sizeof("pong")));
+            // `connect(uri, 1s)` restores blocking mode on the way out, so this read
+            // was blocking with no bound of any kind on the MAIN thread.
+            EXPECT_EQ(read_some_within(client, buffer, sizeof("pong")), static_cast<int>(sizeof("pong")));
             EXPECT_STREQ(buffer, "pong");
             client.disconnect();
         });
@@ -161,9 +168,11 @@ TEST(TCPSocket, BlockingLoopbackTransfersExactPayload) {
     constexpr char message[] = "Hello Test !";
     with_tcp_pair(
         [&](qb::io::tcp::socket accepted) {
-            accepted.set_nonblocking(false);
-            char      buffer[512] = {};
-            const int got         = accepted.read(buffer, sizeof(buffer));
+            char buffer[512] = {};
+            // Still exactly ONE read of up to 512 bytes — `read_some_within` retries
+            // only while the socket has nothing to give, so this keeps pinning "the
+            // whole payload arrived in a single segment" while gaining a real bound.
+            const int got = read_some_within(accepted, buffer, sizeof(buffer));
             ASSERT_EQ(got, static_cast<int>(sizeof(message)));
             EXPECT_STREQ(buffer, message);
         },

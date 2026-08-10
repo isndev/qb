@@ -65,6 +65,7 @@
 #include <qb/io/protocol/text.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/loopback_fixture.h"
 #include "../../shared/ssl_fixtures.h"
 
 #ifndef _WIN32
@@ -561,19 +562,17 @@ public:
     on(IOSession &) {}
 };
 
-// Read exactly `want` bytes from a blocking socket within a deadline; returns bytes read.
+// Read exactly `want` bytes within a deadline; returns bytes read.
+//
+// The deadline is only a deadline because the read is non-blocking. This helper used
+// to poll a socket the caller had flipped to BLOCKING, so `steady_clock::now() < deadline`
+// was re-checked only between reads it could never return from: a server that stopped
+// sending mid-frame parked the worker thread in the kernel for good, and the `worker.join()`
+// at the end of the test then hung the binary — turning "the protocol switch did not echo
+// the frame back" into a ctest timeout that reads as runner flake.
 std::size_t
 read_exact(qb::io::tcp::socket &sock, char *buf, std::size_t want) {
-    std::size_t got      = 0;
-    const auto  deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (got < want && std::chrono::steady_clock::now() < deadline) {
-        const auto n = sock.read(buf + got, want - got);
-        if (n > 0)
-            got += static_cast<std::size_t>(n);
-        else
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    return got;
+    return qb::io::test::read_exact_within(sock, buf, want, std::chrono::seconds(5));
 }
 
 } // namespace
@@ -609,7 +608,6 @@ TEST(TextSessionProtocolSwitch, TextToBinary) {
         // "hello" + '\n' (6 bytes) — read the FULL echoed line including the
         // terminator so no stray '\n' is left to corrupt the later binary frame.
         ASSERT_GT(sock.write("hello\n", 6), 0);
-        sock.set_nonblocking(false);
         char echo[6]{};
         ASSERT_EQ(read_exact(sock, echo, 6), 6u);
         EXPECT_EQ(std::string_view(echo, 6), "hello\n");

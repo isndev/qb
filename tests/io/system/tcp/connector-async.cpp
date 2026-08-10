@@ -54,7 +54,9 @@
 
 using namespace qb::io;
 using namespace std::chrono_literals;
+using qb::io::test::accept_within;
 using qb::io::test::pump_until;
+using qb::io::test::read_some_within;
 using qb::io::test::reserve_free_tcp_port;
 using qb::io::test::reset_async_context;
 
@@ -74,14 +76,21 @@ protected:
 
 // Accept `count` connections, echo one byte on each, then disconnect. Runs on a
 // dedicated thread so the calling thread can pump the connector's loop.
+//
+// Both waits are bounded, and both have to be: the caller `join()`s this thread
+// unconditionally after its own EXPECTs, which are non-fatal. So a connect that
+// never lands (the connector regressed) would park the accept forever, and a
+// client that holds the delivered fd open without writing (the self-hold leak the
+// first test in this file guards) would park the read forever — in either case the
+// caller's assertion has already been recorded and is then never printed, because
+// the binary never exits. Bounding them here is what lets those EXPECTs be read.
 void
 echo_one_byte_server(qb::io::tcp::listener &listener, int count) {
     for (int i = 0; i < count; ++i) {
         qb::io::tcp::socket accepted;
-        ASSERT_EQ(listener.accept(accepted), SocketStatus::Done);
-        accepted.set_nonblocking(false);
+        ASSERT_TRUE(accept_within(listener, accepted)) << "connect #" << i << " never reached the echo server";
         char marker = 0;
-        ASSERT_EQ(accepted.read(&marker, sizeof(marker)), 1);
+        ASSERT_EQ(read_some_within(accepted, &marker, sizeof(marker)), 1) << "echo server never received the client's marker byte";
         ASSERT_EQ(accepted.write(&marker, sizeof(marker)), 1);
         accepted.disconnect();
     }
@@ -218,8 +227,13 @@ TEST_F(ConnectorAsyncTest, FreshSocketConnectsAndEchoesByte) {
             if (sock.is_open()) {
                 ASSERT_EQ(sock.write("a", 1), 1);
                 char reply = 0;
-                sock.set_nonblocking(false);
-                echoed = (sock.read(&reply, sizeof(reply)) == 1) && (reply == 'a');
+                // Bounded, and this is the site where it matters most: the completion
+                // callback runs on the MAIN thread, from inside the `pump_until` below.
+                // A blocking read here parks the one thread that would otherwise get to
+                // evaluate that pump's deadline, so the bound cannot fire at all and the
+                // wedge is total — worse than the same blocking read on a worker thread,
+                // which at least leaves the main thread free to report.
+                echoed = (read_some_within(sock, &reply, sizeof(reply)) == 1) && (reply == 'a');
                 sock.disconnect();
             }
             done = true;
@@ -257,8 +271,9 @@ TEST_F(ConnectorAsyncTest, MovedInSocketConnectsAndEchoesByte) {
             if (sock.is_open()) {
                 ASSERT_EQ(sock.write("b", 1), 1);
                 char reply = 0;
-                sock.set_nonblocking(false);
-                echoed = (sock.read(&reply, sizeof(reply)) == 1) && (reply == 'b');
+                // Bounded — see FreshSocketConnectsAndEchoesByte: this runs on the main
+                // thread inside pump_until, so a blocking read disables the pump's own bound.
+                echoed = (read_some_within(sock, &reply, sizeof(reply)) == 1) && (reply == 'b');
                 sock.disconnect();
             }
             done = true;
@@ -351,8 +366,9 @@ TEST_F(ConnectorAsyncTest, FreshSocketConnectsWithoutDeadlineAndEchoesByte) {
         if (sock.is_open()) {
             ASSERT_EQ(sock.write("z", 1), 1);
             char reply = 0;
-            sock.set_nonblocking(false);
-            echoed = (sock.read(&reply, sizeof(reply)) == 1) && (reply == 'z');
+            // Bounded — see FreshSocketConnectsAndEchoesByte: this runs on the main
+            // thread inside pump_until, so a blocking read disables the pump's own bound.
+            echoed = (read_some_within(sock, &reply, sizeof(reply)) == 1) && (reply == 'z');
             sock.disconnect();
         }
         done = true;
