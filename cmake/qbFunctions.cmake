@@ -1332,8 +1332,10 @@ function(qb_setup_test_resources)
         # Its guard is `TARGET qb_copy_test_ssl_resources`, and qb/CMakeLists.txt calls this
         # function at :140 -- AFTER add_subdirectory(io) at :108 and add_subdirectory(core)
         # at :111 have already registered every qb-io and qb-core test. The target does not
-        # exist yet at that point, so the guard is false 324 times and only the qbm module
-        # tests, registered later from the superproject root, ever got the dependency.
+        # exist yet at that point, so the guard is false for every one of qb's own tests --
+        # 174 of the 356 the `release` preset registers on macOS, the other 182 being the qbm
+        # module tests, which are registered later from the superproject root and are the only
+        # ones that ever got the dependency. (Count it per preset; feature gating moves it.)
         # Measured, not inferred: `ninja qb-core-test-system-actor-add` into an emptied
         # bin/tests staged NOTHING, 10/10 samples -- no cert.pem, no key.pem, no ssl/. A full
         # build hides it completely because the copy target is ALL.
