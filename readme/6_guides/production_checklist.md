@@ -164,7 +164,7 @@ Each `VirtualCore` runs a busy loop by default. `CoreInitializer::setLatency(qb:
 - `qb::duration::zero()` (the default) — low-latency mode: the core spins, consuming a full CPU on its assigned core.
 - `latency > 0` — the core may sleep up to that duration when idle, cutting CPU use at the cost of worst-case event-handling latency.
 
-<!-- src: qb/src/qb/core/Main.h:242-254 -->
+<!-- src: qb/src/qb/core/Main.h:271-284 -->
 
 ```cpp
 // src: derived from qb/src/qb/core/Main.h (CoreInitializer API)

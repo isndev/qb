@@ -437,7 +437,7 @@ function(_qb_test_conventions out_prefix)
     # scheduling it. qb PINS each VirtualCore to a CPU (SetThreadAffinityMask on Windows,
     # pthread_setaffinity_np elsewhere, VirtualCore.cpp:431,444) and always to the LOW core
     # indices, so N concurrent multicore tests do not spread over the machine: they land on the
-    # same handful of CPUs. SIXTEEN tests carry the label -- fifteen in a QB_WITH_LOGGING=OFF
+    # same handful of CPUs. NINETEEN tests carry the label -- eighteen in a QB_WITH_LOGGING=OFF
     # build, since engine-io-smoke is registered conditionally -- and the test presets run
     # `jobs: 4`, so four of them oversubscribe cores 0..k however many the host really has --
     # measured on a 24-core Windows box, `messaging-api` and `ask-roundtrip` each blew their
@@ -450,11 +450,11 @@ function(_qb_test_conventions out_prefix)
     # 6.1-6.4s serialized against 7.3-9.5s with three concurrent multicore tests -- but by
     # cutting contention, not by undoing an affinity that was never applied.
     #
-    # One shared lock, so ctest never schedules two of them at once. The other 340 of macOS
-    # `release`'s 356 keep running in parallel: measured cost of the lock on a warm full suite
-    # is +0.73s (30.78s -> 31.51s, n=5 and n=8), inside run-to-run spread. Derived from the
-    # label rather than written at each of the sixteen call sites, because a lock that has to
-    # be remembered per test is a lock the next multicore test will not have. Same mechanism
+    # One shared lock, so ctest never schedules two of them at once. The other 337 of macOS
+    # `release`'s 356 keep running in parallel: measured cost of the lock on a warm full suite is
+    # +0.73s (30.78s -> 31.51s, n=5 and n=8), inside run-to-run spread. Derived from the label,
+    # not written at each of the nineteen call sites (all in one CMakeLists; no CI asserts that
+    # count, so re-grep it), because a per-test lock is one the next test forgets. Same mechanism
     # the live-daemon tiers already use above, where a REQUIRES live token appends its own
     # ${C_MODULE}-integration lock.
     if("requires-multicore" IN_LIST _labels)

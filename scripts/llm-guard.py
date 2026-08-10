@@ -304,7 +304,7 @@ BACKTICK = re.compile(r"`([^`\n]+)`")
 CITE = re.compile(r"\b([A-Za-z0-9_][A-Za-z0-9_./+-]*\.(?:h|hpp|cpp|cc|cmake|txt|json))"
                   r":(\d+)(?:-(\d+))?")
 CONT = re.compile(r"(?<![\w.])[:/](\d+)(?:-(\d+))?\b")
-TAIL = re.compile(r"(?:,\d+(?:-\d+)?)+")
+TAIL = re.compile(r"(?:,[ \t]*\d+(?:-\d+)?)+")
 BANNER_LINES = 12
 DECL_NAME = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]{2,})\s*\(")
 # A backticked span that is unmistakably a repo path.  Shape (b) — any slash-separated path
@@ -611,6 +611,7 @@ def check_doc(path, idx, tol, max_occ, want_ver, ver_src,
                 if not t:
                     continue
                 for part in t.group(0).lstrip(",").split(","):
+                    part = part.strip()
                     a, _, b = part.partition("-")
                     cites.append((p, int(a), int(b or a), e, s))
 

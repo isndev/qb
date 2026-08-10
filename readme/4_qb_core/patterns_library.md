@@ -754,7 +754,7 @@ The awaitable patterns work during actor activation: obtain the context with `Ac
 continuation registry (`qb/src/qb/core/Actor.h:1189-1205`,
 `qb/src/qb/core/Event.h:358-363`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
 `ask_any`, `ask_guarded`, `ask_quorum`, `ask_by`, `run_saga` and `rate_limiter` all inside `onInit()`
-(`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,256,289,321,361,451,496`).
+(`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,260,295,327,367,398,503`).
 
 ```cpp
 qb::io::async::task<bool> onInit() override {
@@ -810,7 +810,7 @@ qb::io::async::task<bool> onInit() override {
   that dies silently is not auto-restarted (`supervisor.h:125-127`).
 - **A bounded `ask_stream` buffer fails loudly.** If the responder outruns `capacity`, `next()`
   throws `stream_overflow_error` rather than silently dropping chunks (`streaming.h:88-93`,
-  `:124-135`).
+  `streaming.h:124-135`).
 
 ## See also
 
