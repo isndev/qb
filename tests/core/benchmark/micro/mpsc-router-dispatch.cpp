@@ -45,6 +45,7 @@
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <string>
 #include <type_traits>
 #include <typeinfo>
 
@@ -238,6 +239,8 @@ make_routed_bucket(std::size_t const pid, std::uint64_t const sent) noexcept {
 struct RouterRunResult {
     std::uint64_t enqueue_failures = 0;
     std::uint64_t checksum         = 0;
+    std::uint64_t drained          = 0;     ///< buckets the harness consumer actually took
+    bool          stalled          = false; ///< the drain gave up short of `total` (see fan_in_result)
 };
 
 template <std::size_t MailboxCap>
@@ -273,9 +276,9 @@ run_router_mailbox(std::size_t const nb_producers, std::uint64_t const total, st
         }
     };
 
-    const std::uint64_t fails = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_routed_bucket, consume);
+    const auto run = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_routed_bucket, consume);
 
-    return {fails, local_checksum.value};
+    return {run.enqueue_failures, local_checksum.value, run.drained, run.stalled};
 }
 
 template <std::size_t MailboxCap>
@@ -292,10 +295,17 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
 
     // One-shot out-of-loop correctness probe: dispatch must actually fire — a router that routed
     // nothing (everything mis-routed to the dispose lambda) leaves checksum == 0. Caught here, before
-    // any timing, rather than expressed as a timing gate.
+    // any timing, rather than expressed as a timing gate. A drain that cannot finish is reported the
+    // same way rather than hanging the run (see qb::bench::fan_in_result).
     {
         auto probe = run_router_mailbox<MailboxCap>(nb_producers, total, dequeue_batch);
         benchmark::DoNotOptimize(probe.checksum);
+        if (probe.stalled) {
+            state.SkipWithError(
+                ("fan-in drain stalled: consumer took " + std::to_string(probe.drained) + " of " + std::to_string(total) + " buckets")
+                    .c_str());
+            return;
+        }
         if (probe.checksum == 0ull) {
             state.SkipWithError("router dispatched zero messages (no handler fired)");
             return;

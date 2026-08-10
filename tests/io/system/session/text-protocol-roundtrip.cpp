@@ -311,6 +311,14 @@ TEST_F(SessionRoundtripTest, CloseAfterDeliverSendsDataThenDisconnects) {
 
 namespace bc {
 
+constexpr int kNumClients = 3;
+
+// Client-side witnesses. The server cannot see what a client received, and the broadcast is
+// server->client, so nothing observable on the server proves the fan-out arrived: these count it
+// where it actually happens.
+std::atomic<int> g_clients_got_hello{0};   // clients that read "hello_all" back off the wire
+std::atomic<int> g_conns_at_broadcast{-1}; // sessions registered when the trigger was handled
+
 class BroadcastServer;
 
 class BroadcastSession : public use<BroadcastSession>::tcp::client<BroadcastServer> {
@@ -327,6 +335,7 @@ public:
 class BroadcastServer : public use<BroadcastServer>::tcp::server<BroadcastSession> {
 public:
     int  connection_count = 0;
+    int  broadcast_fanout = 0; // live sessions stream() was fanned out to, recorded AT the broadcast
     bool all_received     = false;
 
     void
@@ -336,17 +345,29 @@ public:
 
     void
     broadcast_to_all(std::string_view msg) {
+        // `sessions()` IS the set stream() writes to, so sampling it here (not later, after clients
+        // start dropping) is the server-side half of the claim and the only part the server can know.
+        broadcast_fanout = static_cast<int>(this->sessions().size());
+        g_conns_at_broadcast.store(connection_count);
         this->stream(msg, '\n');
     }
 
+    /**
+     * The condition the test pumps on.
+     *
+     * It used to walk `sessions()` requiring `message_count >= 2` each. A server-side session only
+     * ever counts messages the CLIENT sent it, and each client sends at most one, so `>= 2` was
+     * unreachable for every session — the loop could succeed only over an EMPTY map. Measured on the
+     * pre-fix binary: `all_received` became true with 0 live sessions, i.e. once all three clients
+     * had disconnected. It was a vacuous quantifier, never a statement about the broadcast, and it
+     * would have held just as well had `stream()` sent nothing at all.
+     *
+     * What the test's name claims is that the fan-out covered every live session and that every
+     * client got the bytes. Both are now measured, so both are what this waits for.
+     */
     void
     check_all_received() {
-        if (connection_count < 3)
-            return;
-        for (auto &[id, session] : this->sessions())
-            if (session->message_count < 2)
-                return;
-        all_received = true;
+        all_received = broadcast_fanout >= kNumClients && g_clients_got_hello.load() >= kNumClients;
     }
 };
 
@@ -361,13 +382,16 @@ BroadcastSession::on(Protocol::message &&msg) {
 
 TEST_F(SessionRoundtripTest, BroadcastReachesAllSessions) {
     using namespace bc;
+    g_clients_got_hello.store(0);
+    g_conns_at_broadcast.store(-1);
+
     BroadcastServer server;
     ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
     const auto port = server.transport().local_endpoint().port();
     ASSERT_NE(port, 0);
     server.start();
 
-    constexpr int            num_clients = 3;
+    constexpr int            num_clients = kNumClients;
     std::vector<std::thread> clients;
     for (int c = 0; c < num_clients; ++c) {
         clients.emplace_back([c, port]() {
@@ -377,9 +401,26 @@ TEST_F(SessionRoundtripTest, BroadcastReachesAllSessions) {
                 std::this_thread::sleep_for(100ms); // let the other two register first
                 sock.write("broadcast_trigger\n", 18);
             }
-            sock.set_nonblocking(false);
-            char buffer[512]{};
-            sock.read(buffer, sizeof(buffer));
+            // Deadline-bounded, and it stops on the payload it came for. A blocking read() returns
+            // on ANY byte and never returns at all when the broadcast is not sent — which made
+            // `t.join()` below the place this case hung on its own failure, after pump_until had
+            // already reported it. Same wire traffic, but a client that is never served now ends.
+            sock.set_nonblocking(true);
+            char        buffer[512]{};
+            std::size_t total    = 0;
+            const auto  deadline = std::chrono::steady_clock::now() + 5s;
+            while (total < sizeof(buffer) && std::chrono::steady_clock::now() < deadline) {
+                const auto n = sock.read(buffer + total, sizeof(buffer) - total);
+                if (n > 0) {
+                    total += static_cast<std::size_t>(n);
+                    if (std::string_view(buffer, total).find("hello_all") != std::string_view::npos) {
+                        g_clients_got_hello.fetch_add(1);
+                        break;
+                    }
+                } else {
+                    std::this_thread::sleep_for(5ms);
+                }
+            }
             sock.disconnect();
         });
     }
@@ -396,6 +437,13 @@ TEST_F(SessionRoundtripTest, BroadcastReachesAllSessions) {
         t.join();
 
     EXPECT_EQ(server.connection_count, num_clients);
+    // The 100 ms sleep above only makes the intended interleaving LIKELY; this is what makes it
+    // checked. On the inverted timing the trigger is handled with fewer sessions registered, the
+    // broadcast reaches fewer clients, and the case used to pass regardless.
+    EXPECT_EQ(g_conns_at_broadcast.load(), num_clients)
+        << "the trigger was handled before every peer had registered — the broadcast could not have reached them all";
+    EXPECT_EQ(server.broadcast_fanout, num_clients) << "stream() fanned out to fewer than every live session";
+    EXPECT_EQ(g_clients_got_hello.load(), num_clients) << "not every client read the broadcast payload back";
 }
 
 // =============================================================================
