@@ -74,6 +74,8 @@
 
 #include <qb/io/system/sys__socket.h>
 
+#include "../../shared/loopback_fixture.h"
+
 #if !defined(_WIN32)
 // For the SIGPIPE-containment cases at the bottom of this file: they fork a child,
 // reset the signal disposition and observe the wait status.
@@ -347,16 +349,28 @@ TEST(SocketErrorPaths, ErrorClassifiersDistinguishFatalFromTransient) {
 namespace {
 
 // Accept exactly `count` connections on a listening qb::io::socket, then return.
-// Every client connect below succeeds against a real listening port, so the loop
-// self-terminates without relying on a shutdown to wake a blocked accept().
+//
+// Bounded, and it has to be. The clients below all connect with NON-FATAL EXPECT_,
+// so one that regresses leaves the count short -- and a blocking accept() then parks
+// this thread forever while the caller's `server_thread.join()` waits on it, which
+// replaces the EXPECT's message with a ctest timeout. The old `break` on a closed
+// socket did not cover it either: it needed the listener torn down to wake the
+// accept, and on macOS a cross-thread shutdown() does NOT wake a blocked accept().
+// A non-blocking listener plus a real deadline is the only form that self-terminates.
 void
-accept_exactly(qb::io::socket &listener, int count) {
+accept_exactly(qb::io::socket &listener, int count, std::chrono::milliseconds budget = 5s) {
+    listener.set_nonblocking(true);
+    const auto deadline = std::chrono::steady_clock::now() + budget;
     for (int i = 0; i < count; ++i) {
-        qb::io::socket accepted = listener.accept();
-        if (!accepted.is_open()) {
-            break; // listener was torn down early
+        ::socket_type handle = qb::io::inet::invalid_socket;
+        while (listener.accept_n(handle) != 0) {
+            if (std::chrono::steady_clock::now() >= deadline) {
+                ADD_FAILURE() << "only " << i << " of " << count << " clients connected within the accept budget";
+                return;
+            }
+            std::this_thread::sleep_for(1ms);
         }
-        accepted.close();
+        qb::io::socket accepted(handle); // closes on scope exit
     }
 }
 
@@ -427,21 +441,39 @@ TEST(SocketErrorPaths, SendNBreaksInsteadOfBlockingOnBackpressuredClosedPeer) {
 
     std::atomic<bool> peer_closed{false};
     std::thread       server_thread([&] {
-        qb::io::socket accepted = listener.accept();
-        if (accepted.is_open()) {
-            accepted.close(); // peer goes away
+        // Bounded accept, and a `peer_closed` that is ALWAYS published: the main thread
+        // spins on that flag with no deadline of its own, so a thread that parked in
+        // accept() or returned early would wedge it forever.
+        if (qb::io::test::wait_acceptable_within(listener.native_handle())) {
+            qb::io::socket accepted = listener.accept();
+            if (accepted.is_open()) {
+                accepted.close(); // peer goes away
+            }
+        } else {
+            ADD_FAILURE() << "no client connected within the accept budget";
         }
         peer_closed = true;
     });
+
+    // Joined on every exit path: several fatal ASSERTs follow, and each would otherwise
+    // return from the body leaving this thread joinable — std::terminate, which drops the
+    // message it just printed. Safe: the thread's accept is bounded above.
+    const qb::io::test::thread_joiner server_joiner{server_thread};
 
     qb::io::socket client;
     ASSERT_TRUE(client.open(AF_INET, SOCK_STREAM, 0));
     ASSERT_EQ(client.connect(qb::io::endpoint("127.0.0.1", port)), 0);
 
-    // Tiny send buffer; wait until the peer has closed.
+    // Tiny send buffer; wait until the peer has closed. Bounded: the flag is set on
+    // every path out of the server thread above, so a timeout here means that thread
+    // never ran at all -- which is a finding, not a reason to spin forever.
     ASSERT_EQ(client.set_optval(SOL_SOCKET, SO_SNDBUF, 4096), 0);
-    while (!peer_closed.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    {
+        const auto peer_deadline = std::chrono::steady_clock::now() + 5s;
+        while (!peer_closed.load() && std::chrono::steady_clock::now() < peer_deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        ASSERT_TRUE(peer_closed.load()) << "the server thread never reported the peer close";
     }
 
     // send_n's contract is that it BREAKS OUT within its time budget instead of blocking on a

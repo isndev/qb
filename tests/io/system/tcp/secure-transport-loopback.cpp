@@ -78,6 +78,7 @@
 #include <qb/io/transport/saccept.h>
 #include <qb/io/transport/stcp.h>
 
+#include "../../shared/loopback_fixture.h"
 #include "../../shared/ssl_fixtures.h"
 
 using namespace std::chrono_literals;
@@ -113,8 +114,16 @@ drive_server_handshake(qb::io::tcp::ssl::socket &socket, std::chrono::millisecon
 }
 
 // Deadline-bounded encrypted read of exactly `n` bytes on a raw ssl::socket.
+//
+// Non-blocking first, and that is what makes `deadline` a deadline: the `else`
+// arm below is `ssl::socket::read()` reporting WANT_READ/WANT_WRITE as 0
+// (ssl/socket.cpp:996-1002), which only ever happens on a NON-blocking socket.
+// `connect_v4`/`accept` leave these sockets in the OS default (blocking), so the
+// loop used to park inside SSL_read and re-check the clock only between reads it
+// could not return from -- and every caller runs on a thread the other side joins.
 bool
 ssl_read_exactly(qb::io::tcp::ssl::socket &socket, char *out, std::size_t n, std::chrono::milliseconds timeout = 2s) {
+    socket.set_nonblocking(true);
     std::size_t got      = 0;
     const auto  deadline = std::chrono::steady_clock::now() + timeout;
     while (got < n && std::chrono::steady_clock::now() < deadline) {
@@ -130,8 +139,12 @@ ssl_read_exactly(qb::io::tcp::ssl::socket &socket, char *out, std::size_t n, std
 }
 
 // Deadline-bounded encrypted write of exactly `n` bytes on a raw ssl::socket.
+// Same reasoning as ssl_read_exactly: `ssl::socket::write()` maps WANT_WRITE /
+// WANT_READ to 0 (ssl/socket.cpp:1023-1031), so the retry arm needs the socket
+// non-blocking to ever be taken. Read and write agree on the mode.
 bool
 ssl_write_exactly(qb::io::tcp::ssl::socket &socket, const char *in, std::size_t n, std::chrono::milliseconds timeout = 2s) {
+    socket.set_nonblocking(true);
     std::size_t sent     = 0;
     const auto  deadline = std::chrono::steady_clock::now() + timeout;
     while (sent < n && std::chrono::steady_clock::now() < deadline) {
@@ -197,10 +210,18 @@ TEST(SecureTransport, SacceptAndStcpRoundTripEncryptedPayload) {
     std::atomic<bool> server_ready{false};
     std::atomic<bool> server_ok{false};
     std::thread       server_thread([&] {
-        server_ready = true;
-        // saccept.read() accepts the pending secure connection and returns the
-        // accepted native handle (never (size_t)-1 here).
-        const std::size_t handle = acceptor.read();
+        // Bounded secure accept. With the listener non-blocking, saccept.read()
+        // reports "nothing queued" as (size_t)-1 -- the contract
+        // SacceptReadWithNoPendingConnectionReportsFailure above already pins -- so the
+        // deadline is reachable. Blocking, it parked this thread in ::accept forever
+        // whenever the client's connect never landed, and the main body below joins
+        // this thread unconditionally.
+        acceptor.transport().set_nonblocking(true);
+        server_ready             = true;
+        std::size_t handle       = static_cast<std::size_t>(-1);
+        const auto  accept_until = std::chrono::steady_clock::now() + 5s;
+        while ((handle = acceptor.read()) == static_cast<std::size_t>(-1) && std::chrono::steady_clock::now() < accept_until)
+            std::this_thread::sleep_for(1ms);
         if (handle == static_cast<std::size_t>(-1)) {
             ADD_FAILURE() << "saccept.read() failed to accept the pending secure connection";
             return;
@@ -225,6 +246,11 @@ TEST(SecureTransport, SacceptAndStcpRoundTripEncryptedPayload) {
         // moved-out flush() semantics are exercised in the dedicated test below.
     });
 
+    // Join on every exit path: the ASSERTs below are fatal, and without this a failing
+    // one returns from the body leaving `server_thread` joinable — std::terminate, and
+    // the failure never reaches the report. Safe because the accept above is bounded.
+    const qb::io::test::thread_joiner server_joiner{server_thread};
+
     while (!server_ready.load())
         std::this_thread::sleep_for(1ms);
 
@@ -238,8 +264,14 @@ TEST(SecureTransport, SacceptAndStcpRoundTripEncryptedPayload) {
     ASSERT_TRUE(client.transport().handshake_complete());
 
     // Send "hello" through the stcp stream half (publish into _out_buffer, then
-    // drain it with write()). The socket may be non-blocking after the handshake,
-    // so a single write() can report 0 (WANT_WRITE) — loop until the buffer empties.
+    // drain it with write()). Both poll loops below treat 0 as "would-block, retry",
+    // which is only ever produced by a NON-blocking socket -- and `connect_v4` goes
+    // through the plain blocking connect and never touches the flag, so the socket
+    // arrives here blocking and neither 3s deadline could be reached. (The comment
+    // this replaces claimed the socket "may be non-blocking after the handshake";
+    // measured, it is not, and that wrong comment is what kept both loops looking
+    // bounded.) Flip it once, here, for the write and the read that follow.
+    ASSERT_EQ(client.transport().set_nonblocking(true), 0);
     ASSERT_NE(client.publish("hello", 5), nullptr);
     {
         const auto wdeadline = std::chrono::steady_clock::now() + 3s;
@@ -297,11 +329,22 @@ TEST(SecureTransport, SacceptFlushReleasesAlreadyMovedOutSlot) {
     qb::io::tcp::ssl::socket client;
     std::thread              client_thread([&] {
         client.set_insecure();
-        client.connect_v4("127.0.0.1", port);
+        // The result was discarded: a connect that failed left the main thread's
+        // accept below with nothing to accept, and no record of why.
+        EXPECT_EQ(client.connect_v4("127.0.0.1", port), 0) << "secure client connect failed";
         client_connected = true;
     });
 
-    const std::size_t handle = acceptor.read();
+    const qb::io::test::thread_joiner client_joiner{client_thread};
+
+    // Bounded, on the MAIN thread: a blocking accept here parks the thread that owns
+    // every assertion below AND the client_thread.join() that would report the
+    // client's own failure. Same non-blocking contract as the server thread above.
+    acceptor.transport().set_nonblocking(true);
+    std::size_t handle       = static_cast<std::size_t>(-1);
+    const auto  accept_until = std::chrono::steady_clock::now() + 5s;
+    while ((handle = acceptor.read()) == static_cast<std::size_t>(-1) && std::chrono::steady_clock::now() < accept_until)
+        std::this_thread::sleep_for(1ms);
     ASSERT_NE(handle, static_cast<std::size_t>(-1)) << "saccept.read() failed to accept";
 
     // Move the accepted ssl::socket out (this is what onMessage() does): the slot

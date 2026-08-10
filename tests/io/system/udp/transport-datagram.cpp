@@ -69,15 +69,31 @@ namespace {
 // result (bytes, or a negative qb error code), or 0 on a deadline timeout. The
 // caller asserts on the returned value, so a stalled delivery surfaces as a
 // precise failure rather than a busy-loop that "looks" like a zero-length read.
+//
+// The bound is the READINESS wait, not the read. `recvfrom` on the (blocking)
+// receiving socket parks in the kernel, so the `now() < deadline` below could not be
+// re-reached: today every call site is preceded by a successful loopback write() so a
+// datagram is already queued, but UDP is allowed to drop one, and a doc-comment
+// promising a bound the code cannot deliver is how the next caller gets caught.
+//
+// Waiting on readiness rather than flipping the socket non-blocking is deliberate,
+// and the difference is NOT cosmetic: for `transport::udp::read()` a return of 0
+// means "a real ZERO-LENGTH datagram arrived" (it calls setDestination for it), not
+// "would block" — the opposite of the TLS helpers, where 0 IS would-block. Made
+// non-blocking, an empty queue returns -1/EWOULDBLOCK, which this loop's `ret != 0`
+// hands straight back to the caller as a result; measured, that fails 7 of these 12
+// tests. Gating on readiness leaves every return value meaning exactly what the
+// transport says it means.
 int
 read_datagram(qb::io::transport::udp &receiver, std::chrono::milliseconds timeout = 1s) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     do {
-        const int ret = receiver.read();
-        if (ret != 0) {
-            return ret;
+        if (qb::io::socket::handle_read_ready(receiver.transport().native_handle(), 2ms) > 0) {
+            const int ret = receiver.read();
+            if (ret != 0) {
+                return ret;
+            }
         }
-        std::this_thread::sleep_for(2ms);
     } while (std::chrono::steady_clock::now() < deadline);
     return 0;
 }
@@ -89,14 +105,20 @@ int
 read_zero_length_datagram(qb::io::transport::udp &receiver, std::chrono::milliseconds timeout = 1s) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     do {
-        const int ret = receiver.read();
-        if (ret != 0) {
-            return ret; // a real (non-empty) datagram or an error
+        // Same readiness gate as read_datagram, and here the reason it must be a gate
+        // rather than a non-blocking flip is on the surface: this helper's whole job is
+        // to tell `read()==0 and a source port` (an empty datagram) apart from
+        // `read()==0 and no source` (nothing yet), and a non-blocking socket collapses
+        // the second case into -1.
+        if (qb::io::socket::handle_read_ready(receiver.transport().native_handle(), 2ms) > 0) {
+            const int ret = receiver.read();
+            if (ret != 0) {
+                return ret; // a real (non-empty) datagram or an error
+            }
+            if (receiver.getSource().port() != 0) {
+                return 0; // empty datagram delivered, source recorded
+            }
         }
-        if (receiver.getSource().port() != 0) {
-            return 0; // empty datagram delivered, source recorded
-        }
-        std::this_thread::sleep_for(2ms);
     } while (std::chrono::steady_clock::now() < deadline);
     return -1; // never delivered
 }
