@@ -437,16 +437,26 @@ function(_qb_test_conventions out_prefix)
     # scheduling it. qb PINS each VirtualCore to a CPU (SetThreadAffinityMask on Windows,
     # pthread_setaffinity_np elsewhere, VirtualCore.cpp:431,444) and always to the LOW core
     # indices, so N concurrent multicore tests do not spread over the machine: they land on the
-    # same handful of CPUs. Seventeen tests carry the label and the test presets run
+    # same handful of CPUs. SIXTEEN tests carry the label -- fifteen in a QB_WITH_LOGGING=OFF
+    # build, since engine-io-smoke is registered conditionally -- and the test presets run
     # `jobs: 4`, so four of them oversubscribe cores 0..k however many the host really has --
     # measured on a 24-core Windows box, `messaging-api` and `ask-roundtrip` each blew their
     # 120s tier timeout in a full parallel run and passed alone.
     #
-    # One shared lock, so ctest never schedules two of them at once. The other ~334 tests keep
-    # running in parallel, so the wall-clock cost is small. Derived from the label rather than
-    # written at each of the seventeen call sites: a lock that has to be remembered per test is
-    # a lock the next multicore test will not have. Same mechanism the live-daemon tiers
-    # already use above.
+    # The pinning above is what the rationale rests on, and it is NOT universal: on Apple
+    # Silicon `thread_policy_set(THREAD_AFFINITY_POLICY)` returns KERN_NOT_SUPPORTED for every
+    # core and VirtualCore.cpp maps that to success, so nothing is pinned there and neither test
+    # came near its timeout. The lock still pays for itself on macOS -- `messaging-api` runs
+    # 6.1-6.4s serialized against 7.3-9.5s with three concurrent multicore tests -- but by
+    # cutting contention, not by undoing an affinity that was never applied.
+    #
+    # One shared lock, so ctest never schedules two of them at once. The other 340 of macOS
+    # `release`'s 356 keep running in parallel: measured cost of the lock on a warm full suite
+    # is +0.73s (30.78s -> 31.51s, n=5 and n=8), inside run-to-run spread. Derived from the
+    # label rather than written at each of the sixteen call sites, because a lock that has to
+    # be remembered per test is a lock the next multicore test will not have. Same mechanism
+    # the live-daemon tiers already use above, where a REQUIRES live token appends its own
+    # ${C_MODULE}-integration lock.
     if("requires-multicore" IN_LIST _labels)
         list(APPEND _locks "qb-multicore")
     endif()
@@ -1202,9 +1212,25 @@ function(qb_setup_test_resources)
         # SSL/TLS/QUIC tests failed reproducibly on "Failed to load QUIC server private key".
         # It is a build-graph race, not a Windows quirk -- it can land either way anywhere.
         #
-        # The GENERATED pair must be the survivor: tls-peer-verification needs the
-        # `subjectAltName = DNS:localhost` that only `openssl req -addext` writes, and
-        # tests/io/shared/ssl_fixtures.h names generate_ssl_certs as the source it expects.
+        # macOS measured the same race with a different outcome, and the second half is the
+        # one that matters: over 38 samples read from `.ninja_log`, a CLEAN build produced the
+        # generated pair 13/13 -- but only by an RSA-keygen head start whose margin ranged
+        # -3ms..+60ms, so the two edges genuinely overlapped twice -- while every INCREMENTAL
+        # rebuild produced the committed pair 25/25. The openssl edge declares no inputs, so it
+        # never re-runs and both edges degrade to plain copies. That case is deterministic,
+        # silent, and the one a developer hits constantly: the suite was testing the committed
+        # certificate, not the generated one. No mixed pair occurred there (0/38) and no test
+        # failed, because both outcomes are internally consistent key pairs.
+        #
+        # The GENERATED pair must be the survivor because tests/io/shared/ssl_fixtures.h names
+        # generate_ssl_certs as the source it expects -- so that is the pair the suite should
+        # deterministically get. NOT because any test needs the `subjectAltName = DNS:localhost`
+        # that `openssl req -addext` writes: an earlier version of this comment said
+        # tls-peer-verification needs it, and that was measured false. That test asserts the
+        # OPPOSITE -- that a verifying client REJECTS the self-signed server cert -- and passes
+        # against the committed pair, which carries no subjectAltName at all. All nine
+        # SSL/TLS/QUIC tests pass against it. Determinism is the whole justification; do not
+        # re-derive a stronger one from a property no test reads.
         # The committed pair stays as the fallback for a host with no openssl.
         #
         # Placed here, not in qb/CMakeLists.txt: generate_ssl_certs is created during

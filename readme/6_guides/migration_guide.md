@@ -499,7 +499,7 @@ Every qbm header is reached as `<qbm/<module>/…>` in 3.0. In 2.6.0 the include
 was `<http/http.h>`. Module sources now live at `<module>/src/qbm/<module>/`, and `src/` **is** the
 include root, so the same string works in the source tree and in an installed prefix
 — `qb_package_include_root` (`qb/cmake/qbPackage.cmake:51-55`) decides both, and the module
-registration (`qb/cmake/qbFunctions.cmake:906-913`) refuses to configure a module laid out any other
+registration (`qb/cmake/qbFunctions.cmake:916-923`) refuses to configure a module laid out any other
 way.
 
 ```
