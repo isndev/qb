@@ -2078,6 +2078,14 @@ TEST(SSLFixtures, ShippedCertificatesAreValidAndNotAboutToExpire) {
         ssl_resource_path("cert.pem"),
         std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path().parent_path() / "resources"
             / "ssl" / "cert.pem", // qb/resources/ssl — QUIC + qbm-http use this one
+        // system/resources/ssl — the CN=localhost pair, and until this line the ONE committed
+        // certificate nothing here checked. `ssl_resource_path()` reaches it only as its
+        // third candidate, and the first (the test's own working directory) always exists in
+        // a built tree, so the entry above resolved to the staged pair and this fixture went
+        // unexamined. It is `localhost_fixture()`'s pair — the only one carrying a CN, so the
+        // only one hostname verification can be exercised against — and it is exactly the
+        // file that was found expired once already.
+        localhost_fixture("cert.pem"),
     };
 
     bool checked_any = false;
