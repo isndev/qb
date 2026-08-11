@@ -188,8 +188,10 @@ echo "== 2b. Cross-repo URL check (repo name + git ref of absolute isndev links)
 # ref. Docs must cite the RELEASED line, so `main` or a 40-hex permalink; a link into a moving
 # development branch is rejected because it silently rots again on the next merge.
 # The two scaffolding templates joined this list when the scripts that clone them were finally
-# documented. Both verified present and public with `gh repo view` (default branch `master`, which
-# is what the scripts' `+master:master` push targets) — and `isndev/qbm-sample`, the 404 that
+# documented. Both verified present and public with `gh repo view` (default branch `main` since 2026-08-11,
+# both also tagged v3.0.0; `master` survives as pre-3.0 history. The claim that stood here --
+# that the scripts push `+master:master` -- was WRONG even when written: neither scaffolder
+# pushes any branch; they clone, then `git init` a fresh repo on the USER's init.defaultBranch) — and `isndev/qbm-sample`, the 404 that
 # `qb-new-module.sh` cloned through 2.6.0, still resolves to "Could not resolve to a Repository".
 # That is the whole point of this check: the name a script clones and the name a doc links must
 # both be real, and neither was validated by anything before.
