@@ -662,8 +662,9 @@ struct async_awaiter : awaiter_base {
         awaiter_base::await_resume();
         // Invariant: the ONLY path that schedules this frame for resumption is
         // `callback_`, which engages `result_` before calling `on_event_ready()`.
-        assert(result_.has_value() && "async_awaiter resumed without a result — the async operation "
-                                      "must invoke its callback exactly once to complete the await");
+        assert(result_.has_value()
+               && "async_awaiter resumed without a result — the async operation "
+                  "must invoke its callback exactly once to complete the await");
         return std::move(*result_);
     }
 

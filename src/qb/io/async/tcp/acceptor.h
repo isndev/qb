@@ -157,8 +157,7 @@ public:
 #ifdef QB_HAS_SSL
         using tpt = std::decay_t<decltype(this->transport())>;
         if constexpr (tpt::is_secure()) {
-            this->transport().init(
-                qb::io::ssl::Context::server(std::move(cert_file), std::move(key_file)).alpn(std::move(alpn_protocols)));
+            this->transport().init(qb::io::ssl::Context::server(std::move(cert_file), std::move(key_file)).alpn(std::move(alpn_protocols)));
             if (!this->transport().context().ok()) {
                 QB_LOG_CRIT("Failed to initialize SSL/TLS server context: " << this->transport().context().error());
                 return false;

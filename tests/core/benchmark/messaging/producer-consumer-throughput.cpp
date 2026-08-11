@@ -91,8 +91,7 @@ public:
 
 // Build a producer→consumer pair on the given cores (producer always on core 0).
 void
-build_producer_consumer(qb::Main &main, std::uint32_t const consumer_core,
-                        std::shared_ptr<std::atomic<std::uint64_t>> const &tally = nullptr) {
+build_producer_consumer(qb::Main &main, std::uint32_t const consumer_core, std::shared_ptr<std::atomic<std::uint64_t>> const &tally = nullptr) {
     main.addActor<PcProducerActor>(0, main.addActor<PcConsumerActor>(consumer_core, tally));
 }
 

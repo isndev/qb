@@ -111,262 +111,262 @@
  * ```
  */
 
-     /**
-      * @defgroup Callback Callback System
-      * @ingroup Core
-      * @brief Support for periodic callbacks within actors.
-      *
-      * Includes the `qb::ICallback` interface. Actors that inherit from it can register
-      * themselves with `registerCallback(*this)` to have `on(qb::LoopEvent const&)` invoked on
-      * every iteration of their `VirtualCore`'s event loop. The callback must be fast and
-      * non-blocking.
-      */
+/**
+ * @defgroup Callback Callback System
+ * @ingroup Core
+ * @brief Support for periodic callbacks within actors.
+ *
+ * Includes the `qb::ICallback` interface. Actors that inherit from it can register
+ * themselves with `registerCallback(*this)` to have `on(qb::LoopEvent const&)` invoked on
+ * every iteration of their `VirtualCore`'s event loop. The callback must be fast and
+ * non-blocking.
+ */
 
-     /**
-      * @defgroup PipeCore Core Communication Channels
-      * @ingroup Core
-      * @brief Primitives for direct actor-to-actor communication channels.
-      *
-      * Focuses on the `qb::Pipe` class, which is the low-level communication channel
-      * returned by `Actor::getPipe()`. Using `Pipe` directly enables:
-      * - Fluent multi-event sending via method chaining
-      * - `allocated_push()` to pre-size the buffer for large payloads
-      */
+/**
+ * @defgroup PipeCore Core Communication Channels
+ * @ingroup Core
+ * @brief Primitives for direct actor-to-actor communication channels.
+ *
+ * Focuses on the `qb::Pipe` class, which is the low-level communication channel
+ * returned by `Actor::getPipe()`. Using `Pipe` directly enables:
+ * - Fluent multi-event sending via method chaining
+ * - `allocated_push()` to pre-size the buffer for large payloads
+ */
 
-     // IO System Modules
-     //--------------------------------------------------------------------------------------------------
-     /**
-      * @defgroup IO IO System
-      * @ingroup QB
-      * @brief Asynchronous I/O operations, networking, and related utilities.
-      *
-      * Provides non-blocking I/O for TCP, UDP, SSL, files, along with protocols,
-      * cryptographic functions, and compression.
-      */
+// IO System Modules
+//--------------------------------------------------------------------------------------------------
+/**
+ * @defgroup IO IO System
+ * @ingroup QB
+ * @brief Asynchronous I/O operations, networking, and related utilities.
+ *
+ * Provides non-blocking I/O for TCP, UDP, SSL, files, along with protocols,
+ * cryptographic functions, and compression.
+ */
 
-     /**
-      * @defgroup Async Asynchronous System
-      * @ingroup IO
-      * @brief Core mechanisms for event-driven asynchronous programming.
-      *
-      * Includes the event listener (`qb::io::async::listener`), base async I/O classes
-      * (`qb::io::async::input`, `qb::io::async::output`, `qb::io::async::io`),
-      * timed callbacks (`qb::io::async::callback`, `qb::io::async::scoped_callback`),
-      * timeout helpers (`qb::io::async::with_timeout`, `qb::io::async::Timeout`,
-      * `qb::io::async::ScopedTimeout`), and file/directory watchers.
-      *
-      * The async system supports two complementary programming models that share
-      * the same single-threaded event loop:
-      * - **Event-driven callbacks** — override `on(event::X&&)` methods.
-      * - **C++20 coroutines** — use `co_await` with `task<T>`, sleep(), and awaiters.
-      *
-      * @see Coroutine
-      */
+/**
+ * @defgroup Async Asynchronous System
+ * @ingroup IO
+ * @brief Core mechanisms for event-driven asynchronous programming.
+ *
+ * Includes the event listener (`qb::io::async::listener`), base async I/O classes
+ * (`qb::io::async::input`, `qb::io::async::output`, `qb::io::async::io`),
+ * timed callbacks (`qb::io::async::callback`, `qb::io::async::scoped_callback`),
+ * timeout helpers (`qb::io::async::with_timeout`, `qb::io::async::Timeout`,
+ * `qb::io::async::ScopedTimeout`), and file/directory watchers.
+ *
+ * The async system supports two complementary programming models that share
+ * the same single-threaded event loop:
+ * - **Event-driven callbacks** — override `on(event::X&&)` methods.
+ * - **C++20 coroutines** — use `co_await` with `task<T>`, sleep(), and awaiters.
+ *
+ * @see Coroutine
+ */
 
-     /**
-      * @defgroup Coroutine C++20 Coroutine Support
-      * @ingroup Async
-      * @brief First-class C++20 coroutine infrastructure for `qb-io`.
-      *
-      * Provides a complete coroutine ecosystem layered on top of the `listener`/libev
-      * event loop. All coroutines on a thread share a single `CoroutineScheduler` and
-      * are **never concurrent** — interleaving occurs only at `co_await` points.
-      *
-      * ### Key components
-      *
-      * | Header | Exports |
-      * |--------|---------|
-      * | `coroutine/task.h`       | `task<T>` — lazy, move-only coroutine return type |
-      * | `coroutine/shared_task.h`| `shared_task<T>` — multi-consumer shared result |
-      * | `coroutine/scheduler.h`  | `CoroutineScheduler`, `coro_scheduler()` |
-      * | `coroutine/awaiter.h`    | `timer_awaiter`, `socket_awaiter`, `async_awaiter<T>` |
-      * | `coroutine/utils.h`      | `sleep()`, `wait_readable()`, `wait_writable()`, `run_for()` |
-      * | `coroutine/combinators.h`| `when_all()`, `when_any()`, `race()`, `coro_with_timeout()` |
-      * | `coroutine/cancellation.h`| `cancellation_token`, `cancellable_sleep()`, `with_deadline()` |
-      * | `coroutine/sync.h`       | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch` |
-      * | `coroutine/channel.h`    | `channel<T>`, `select()`, pipeline utilities |
-      * | `coroutine/scope.h`      | `coroutine_scope`, `with_scope()`, `parallel_map()` |
-      * | `coroutine/generator.h`  | `generator<T>`, `async_generator<T>`, consumers |
-      * | `coroutine/stream.h`     | `async_stream<T>`, `interval()`, `merge_streams()`, `zip()` |
-      * | `coroutine/retry.h`      | `retry_policy`, `with_retry()`, `make_retryable()` |
-      * | `coroutine/mixin.h`      | `coro_mixin<Derived>` — CRTP helper |
-      * | `coroutine.h`            | Umbrella include |
-      *
-      * ### Quick start
-      * @code
-      * #include <qb/io/async/coroutine.h>
-      *
-      * qb::io::async::task<int> fetch_data() {
-      *     co_await qb::io::async::sleep(std::chrono::milliseconds(100));
-      *     co_return 42;
-      * }
-      *
-      * int main() {
-      *     qb::io::async::init();
-      *     qb::io::async::coro_scheduler().spawn(fetch_data());
-      *     qb::io::async::run();
-      * }
-      * @endcode
-      *
-      * @see task
-      * @see CoroutineScheduler
-      * @see timer_awaiter
-      * @see socket_awaiter
-      */
+/**
+ * @defgroup Coroutine C++20 Coroutine Support
+ * @ingroup Async
+ * @brief First-class C++20 coroutine infrastructure for `qb-io`.
+ *
+ * Provides a complete coroutine ecosystem layered on top of the `listener`/libev
+ * event loop. All coroutines on a thread share a single `CoroutineScheduler` and
+ * are **never concurrent** — interleaving occurs only at `co_await` points.
+ *
+ * ### Key components
+ *
+ * | Header | Exports |
+ * |--------|---------|
+ * | `coroutine/task.h`       | `task<T>` — lazy, move-only coroutine return type |
+ * | `coroutine/shared_task.h`| `shared_task<T>` — multi-consumer shared result |
+ * | `coroutine/scheduler.h`  | `CoroutineScheduler`, `coro_scheduler()` |
+ * | `coroutine/awaiter.h`    | `timer_awaiter`, `socket_awaiter`, `async_awaiter<T>` |
+ * | `coroutine/utils.h`      | `sleep()`, `wait_readable()`, `wait_writable()`, `run_for()` |
+ * | `coroutine/combinators.h`| `when_all()`, `when_any()`, `race()`, `coro_with_timeout()` |
+ * | `coroutine/cancellation.h`| `cancellation_token`, `cancellable_sleep()`, `with_deadline()` |
+ * | `coroutine/sync.h`       | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch` |
+ * | `coroutine/channel.h`    | `channel<T>`, `select()`, pipeline utilities |
+ * | `coroutine/scope.h`      | `coroutine_scope`, `with_scope()`, `parallel_map()` |
+ * | `coroutine/generator.h`  | `generator<T>`, `async_generator<T>`, consumers |
+ * | `coroutine/stream.h`     | `async_stream<T>`, `interval()`, `merge_streams()`, `zip()` |
+ * | `coroutine/retry.h`      | `retry_policy`, `with_retry()`, `make_retryable()` |
+ * | `coroutine/mixin.h`      | `coro_mixin<Derived>` — CRTP helper |
+ * | `coroutine.h`            | Umbrella include |
+ *
+ * ### Quick start
+ * @code
+ * #include <qb/io/async/coroutine.h>
+ *
+ * qb::io::async::task<int> fetch_data() {
+ *     co_await qb::io::async::sleep(std::chrono::milliseconds(100));
+ *     co_return 42;
+ * }
+ *
+ * int main() {
+ *     qb::io::async::init();
+ *     qb::io::async::coro_scheduler().spawn(fetch_data());
+ *     qb::io::async::run();
+ * }
+ * @endcode
+ *
+ * @see task
+ * @see CoroutineScheduler
+ * @see timer_awaiter
+ * @see socket_awaiter
+ */
 
-     /**
-      * @defgroup AsyncEvent Asynchronous I/O Events
-      * @ingroup Async
-      * @brief Specific event types for asynchronous I/O operations.
-      *
-      * Such as \`qb::io::async::event::disconnected\`, \`qb::io::async::event::timer\`, etc.
-      * These are distinct from actor system events in EventCore.
-      * @see EventCore
-      */
+/**
+ * @defgroup AsyncEvent Asynchronous I/O Events
+ * @ingroup Async
+ * @brief Specific event types for asynchronous I/O operations.
+ *
+ * Such as \`qb::io::async::event::disconnected\`, \`qb::io::async::event::timer\`, etc.
+ * These are distinct from actor system events in EventCore.
+ * @see EventCore
+ */
 
-     /**
-      * @defgroup Networking Networking Utilities
-      * @ingroup IO
-      * @brief Socket wrappers, endpoint representation, and URI parsing.
-      *
-      * Contains \`qb::io::socket\`, \`qb::io::endpoint\`, and \`qb::io::uri\`.
-      */
+/**
+ * @defgroup Networking Networking Utilities
+ * @ingroup IO
+ * @brief Socket wrappers, endpoint representation, and URI parsing.
+ *
+ * Contains \`qb::io::socket\`, \`qb::io::endpoint\`, and \`qb::io::uri\`.
+ */
 
-     /**
-      * @defgroup TCP TCP Communication
-      * @ingroup Networking
-      * @brief Components for TCP-based network communication.
-      *
-      * Includes \`qb::io::tcp::socket\` and \`qb::io::tcp::listener\`.
-      */
+/**
+ * @defgroup TCP TCP Communication
+ * @ingroup Networking
+ * @brief Components for TCP-based network communication.
+ *
+ * Includes \`qb::io::tcp::socket\` and \`qb::io::tcp::listener\`.
+ */
 
-     /**
-      * @defgroup UDP UDP Communication
-      * @ingroup Networking
-      * @brief Components for UDP-based network communication.
-      *
-      * Includes \`qb::io::udp::socket\`.
-      */
+/**
+ * @defgroup UDP UDP Communication
+ * @ingroup Networking
+ * @brief Components for UDP-based network communication.
+ *
+ * Includes \`qb::io::udp::socket\`.
+ */
 
-     /**
-      * @defgroup SSL Secure Sockets Layer (SSL/TLS)
-      * @ingroup Networking
-      * @brief Components for secure, encrypted TCP communication (requires OpenSSL).
-      *
-      * Includes \`qb::io::tcp::ssl::socket\` and \`qb::io::tcp::ssl::listener\`.
-      */
+/**
+ * @defgroup SSL Secure Sockets Layer (SSL/TLS)
+ * @ingroup Networking
+ * @brief Components for secure, encrypted TCP communication (requires OpenSSL).
+ *
+ * Includes \`qb::io::tcp::ssl::socket\` and \`qb::io::tcp::ssl::listener\`.
+ */
 
-     /**
-      * @defgroup Transport Transport Layer
-      * @ingroup IO
-      * @brief Abstractions over network sockets and file operations for stream-based I/O.
-      *
-      * Contains classes like \`qb::io::transport::tcp\`, \`qb::io::transport::udp\`,
-      * \`qb::io::transport::stcp\`.
-      */
+/**
+ * @defgroup Transport Transport Layer
+ * @ingroup IO
+ * @brief Abstractions over network sockets and file operations for stream-based I/O.
+ *
+ * Contains classes like \`qb::io::transport::tcp\`, \`qb::io::transport::udp\`,
+ * \`qb::io::transport::stcp\`.
+ */
 
-     /**
-      * @defgroup Protocol Protocol Handling
-      * @ingroup IO
-      * @brief Message framing and parsing implementations.
-      *
-      * Defines \`qb::io::async::AProtocol\` and built-in protocols like
-      * text-based, binary, and JSON.
-      */
+/**
+ * @defgroup Protocol Protocol Handling
+ * @ingroup IO
+ * @brief Message framing and parsing implementations.
+ *
+ * Defines \`qb::io::async::AProtocol\` and built-in protocols like
+ * text-based, binary, and JSON.
+ */
 
-     /**
-      * @defgroup FileSystem File System Operations
-      * @ingroup IO
-      * @brief Components for interacting with the local file system.
-      *
-      * Includes synchronous file operations (\`qb::io::sys::file\`) and asynchronous
-      * file watching (\`qb::io::async::file_watcher\`).
-      */
+/**
+ * @defgroup FileSystem File System Operations
+ * @ingroup IO
+ * @brief Components for interacting with the local file system.
+ *
+ * Includes synchronous file operations (\`qb::io::sys::file\`) and asynchronous
+ * file watching (\`qb::io::async::file_watcher\`).
+ */
 
-     /**
-      * @defgroup Crypto Cryptographic Utilities
-      * @ingroup IO
-      * @brief Hashing, encryption, and JWT functionalities (requires OpenSSL).
-      *
-      * Contains \`qb::crypto\` and \`qb::jwt\`.
-      */
+/**
+ * @defgroup Crypto Cryptographic Utilities
+ * @ingroup IO
+ * @brief Hashing, encryption, and JWT functionalities (requires OpenSSL).
+ *
+ * Contains \`qb::crypto\` and \`qb::jwt\`.
+ */
 
-     /**
-      * @defgroup Compression Compression Utilities
-      * @ingroup IO
-      * @brief Data compression and decompression (requires Zlib).
-      *
-      * Contains \`qb::compression\`.
-      */
+/**
+ * @defgroup Compression Compression Utilities
+ * @ingroup IO
+ * @brief Data compression and decompression (requires Zlib).
+ *
+ * Contains \`qb::compression\`.
+ */
 
-     /**
-      * @defgroup JSON JSON Utilities
-      * @ingroup IO
-      * @brief JSON parsing, manipulation, and serialization utilities.
-      *
-      * Provides \`qb::json\`, \`qb::jsonb\`, and integration with the nlohmann/json library.
-      */
+/**
+ * @defgroup JSON JSON Utilities
+ * @ingroup IO
+ * @brief JSON parsing, manipulation, and serialization utilities.
+ *
+ * Provides \`qb::json\`, \`qb::jsonb\`, and integration with the nlohmann/json library.
+ */
 
-     // System-Level Utilities
-     //--------------------------------------------------------------------------------------------------
-     /**
-      * @defgroup System System-Level Utilities
-      * @ingroup QB
-      * @brief Low-level system interactions and information.
-      */
+// System-Level Utilities
+//--------------------------------------------------------------------------------------------------
+/**
+ * @defgroup System System-Level Utilities
+ * @ingroup QB
+ * @brief Low-level system interactions and information.
+ */
 
-     /**
-      * @defgroup LockFree Lock-Free Primitives
-      * @ingroup System
-      * @brief Concurrent data structures without traditional locks.
-      *
-      * Includes spinlocks, MPSC/SPSC queues.
-      */
+/**
+ * @defgroup LockFree Lock-Free Primitives
+ * @ingroup System
+ * @brief Concurrent data structures without traditional locks.
+ *
+ * Includes spinlocks, MPSC/SPSC queues.
+ */
 
-     /**
-      * @defgroup SystemInfo System Information
-      * @ingroup System
-      * @brief Utilities for querying CPU and system properties.
-      *
-      * Contains \`qb::CPU\` and \`qb::endian\`.
-      */
+/**
+ * @defgroup SystemInfo System Information
+ * @ingroup System
+ * @brief Utilities for querying CPU and system properties.
+ *
+ * Contains \`qb::CPU\` and \`qb::endian\`.
+ */
 
-     /**
-      * @defgroup Time Time Utilities
-      * @ingroup System
-      * @brief High-precision timestamp and duration classes.
-      *
-      * Contains \`qb::wall_time\` and \`qb::duration\`.
-      */
+/**
+ * @defgroup Time Time Utilities
+ * @ingroup System
+ * @brief High-precision timestamp and duration classes.
+ *
+ * Contains \`qb::wall_time\` and \`qb::duration\`.
+ */
 
-     // General Utilities
-     //--------------------------------------------------------------------------------------------------
-     /**
-      * @defgroup Utility General Utilities
-      * @ingroup QB
-      * @brief General-purpose helper classes and functions.
-      */
+// General Utilities
+//--------------------------------------------------------------------------------------------------
+/**
+ * @defgroup Utility General Utilities
+ * @ingroup QB
+ * @brief General-purpose helper classes and functions.
+ */
 
-     /**
-      * @defgroup Container Containers & Allocators
-      * @ingroup Utility
-      * @brief Custom containers and memory allocators for performance.
-      *
-      * Includes \`qb::allocator::pipe\`, \`qb::string\`, and optimized hash maps/sets.
-      */
+/**
+ * @defgroup Container Containers & Allocators
+ * @ingroup Utility
+ * @brief Custom containers and memory allocators for performance.
+ *
+ * Includes \`qb::allocator::pipe\`, \`qb::string\`, and optimized hash maps/sets.
+ */
 
-     /**
-      * @defgroup TypeTraits Type Traits & Metaprogramming
-      * @ingroup Utility
-      * @brief Advanced type traits and metaprogramming helpers.
-      *
-      * Contains utilities from \`qb/utility/type_traits.h\`.
-      */
+/**
+ * @defgroup TypeTraits Type Traits & Metaprogramming
+ * @ingroup Utility
+ * @brief Advanced type traits and metaprogramming helpers.
+ *
+ * Contains utilities from \`qb/utility/type_traits.h\`.
+ */
 
-     /**
-      * @defgroup MiscUtils Miscellaneous Utilities
-      * @ingroup Utility
-      * @brief Other small helper utilities.
-      *
-      * Includes \`qb::nocopy\`, \`qb::functional\`, branch prediction hints, etc.
-      */
+/**
+ * @defgroup MiscUtils Miscellaneous Utilities
+ * @ingroup Utility
+ * @brief Other small helper utilities.
+ *
+ * Includes \`qb::nocopy\`, \`qb::functional\`, branch prediction hints, etc.
+ */

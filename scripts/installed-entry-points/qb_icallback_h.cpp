@@ -13,10 +13,10 @@ struct Ticker : qb::ICallback {
 
 int
 main() {
-    Ticker           t;
-    qb::LoopEvent    loop{};
+    Ticker        t;
+    qb::LoopEvent loop{};
     loop.iteration = 3;
-    static_cast<qb::ICallback &>(t).on(loop);   // through the vtable
+    static_cast<qb::ICallback &>(t).on(loop); // through the vtable
     std::printf("%llu\n", (unsigned long long) t.seen);
     return 0;
 }

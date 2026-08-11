@@ -92,8 +92,7 @@ apply_pipeline_chain_args(::benchmark::internal::Benchmark *b) {
     for (auto i = 1u; i <= nb_core; i *= 2) {
         const int j0 = std::max(1, static_cast<int>(i));
         for (int j = j0; j <= max_j; j *= 10) {
-            const std::int64_t nb_events =
-                std::clamp(kDeliveryBudget / static_cast<std::int64_t>(j), kMinSamples, kMaxSamples);
+            const std::int64_t nb_events = std::clamp(kDeliveryBudget / static_cast<std::int64_t>(j), kMinSamples, kMaxSamples);
             b->Args({nb_events, j, static_cast<std::int64_t>(i)});
         }
     }

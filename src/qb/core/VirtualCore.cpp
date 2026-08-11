@@ -153,7 +153,7 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
         // core. Stop draining this batch instead of looping indefinitely.
         if (unlikely(event->bucket_size == 0)) {
             QB_LOG_CRIT(*this << " received event with bucket_size==0 (malformed or "
-                              "oversized event); aborting batch");
+                                 "oversized event); aborting batch");
             break;
         }
         // Activation gate: while the destination actor is still Activating (an
@@ -205,8 +205,8 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
             // and mark it used, rather than warning in every logging-off build.
             static_cast<void>(this);
             if (!event.getDestination().is_broadcast())
-                QB_LOG_WARN(*this << " failed to send event[" << qb::event_type_name(event.getID()) << '#' << event.getID()
-                               << "] sent from " << event.getSource());
+                QB_LOG_WARN(*this << " failed to send event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] sent from "
+                                  << event.getSource());
         });
         ++_metrics._nb_event_received;
         _metrics._nb_bucket_received += event->bucket_size;
@@ -329,15 +329,15 @@ VirtualCore::__flush_all__() noexcept {
                 // >= 65536-bucket `allocated_push`. Discard what is left of this pipe
                 // (`partial` stays false, so the trailing `pipe.reset()` frees it).
                 QB_LOG_CRIT(*this << " outbound pipe to core(" << pipe_idx << ") holds a zero-width event (bucket_size overflowed); "
-                               << "discarding the rest of the pipe");
+                                  << "discarding the rest of the pipe");
                 break;
             }
             if (unlikely(event.bucket_size > kMaxDeliverableBuckets)) {
                 QB_LOG_CRIT(*this << " dropping event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from "
-                               << event.getSource() << " to " << event.getDestination()
-                               << ": " << event.bucket_size << " buckets exceeds the " << kMaxDeliverableBuckets
-                               << "-bucket mailbox ring, so it can never be delivered cross-core. Keep events small and move bulk "
-                                  "data behind a pointer member (see Pipe::allocated_push).");
+                                  << event.getSource() << " to " << event.getDestination() << ": " << event.bucket_size
+                                  << " buckets exceeds the " << kMaxDeliverableBuckets
+                                  << "-bucket mailbox ring, so it can never be delivered cross-core. Keep events small and move bulk "
+                                     "data behind a pointer member (see Pipe::allocated_push).");
                 _router.dispose(event);
                 ++_metrics._nb_event_sent;
                 _metrics._nb_bucket_sent += event.bucket_size;
@@ -546,7 +546,7 @@ VirtualCore::__stash_event__(ActorId const dest, Event *event) noexcept {
         // activation on the next pump by forcing its deadline to expire now. Report `false`
         // so the caller disposes the dropped event's payload (it is not taken into the stash).
         QB_LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid() << "); dropping event["
-                       << qb::event_type_name(event->getID()) << '#' << event->getID() << "] and failing activation");
+                          << qb::event_type_name(event->getID()) << '#' << event->getID() << "] and failing activation");
         it->second.deadline_ns = 1; // already in the past ⇒ pump cancels + fails it
         return false;
     }
@@ -909,7 +909,7 @@ VirtualCore::removeActor(ActorId const id) noexcept {
                 QB_LOG_INFO(*actor << " destroyed with " << actor->active_coroutine_count() << " scoped coroutine(s) pending cancellation");
             else
                 QB_LOG_WARN(*actor << " destroyed with " << actor->active_coroutine_count()
-                                << " active coroutines - coroutines must not access actor state!");
+                                   << " active coroutines - coroutines must not access actor state!");
         }
         QB_LOG_INFO("Delete " << *actor);
         _actors.erase(it);

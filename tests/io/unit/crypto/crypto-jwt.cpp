@@ -127,8 +127,10 @@ openssl_verify_raw_ecdsa(const std::string &msg, const std::vector<unsigned char
         const int      der_len = i2d_ECDSA_SIG(sig, &der);
         if (der_len > 0) {
             EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-            ok = ctx && EVP_DigestVerifyInit(ctx, nullptr, es_digest(alg), nullptr, pkey) == 1 &&
-                 EVP_DigestVerify(ctx, der, static_cast<std::size_t>(der_len), reinterpret_cast<const unsigned char *>(msg.data()), msg.size()) == 1;
+            ok = ctx && EVP_DigestVerifyInit(ctx, nullptr, es_digest(alg), nullptr, pkey) == 1
+                 && EVP_DigestVerify(ctx, der, static_cast<std::size_t>(der_len), reinterpret_cast<const unsigned char *>(msg.data()),
+                                     msg.size())
+                        == 1;
             EVP_MD_CTX_free(ctx);
         }
         OPENSSL_free(der);
@@ -151,10 +153,10 @@ openssl_sign_raw_ecdsa(const std::string &msg, const std::string &priv_pem, jwt:
     if (!pkey)
         return {};
     std::vector<unsigned char> raw;
-    EVP_MD_CTX                *ctx = EVP_MD_CTX_new();
+    EVP_MD_CTX                *ctx     = EVP_MD_CTX_new();
     std::size_t                der_len = 0;
-    if (ctx && EVP_DigestSignInit(ctx, nullptr, es_digest(alg), nullptr, pkey) == 1 &&
-        EVP_DigestSign(ctx, nullptr, &der_len, reinterpret_cast<const unsigned char *>(msg.data()), msg.size()) == 1) {
+    if (ctx && EVP_DigestSignInit(ctx, nullptr, es_digest(alg), nullptr, pkey) == 1
+        && EVP_DigestSign(ctx, nullptr, &der_len, reinterpret_cast<const unsigned char *>(msg.data()), msg.size()) == 1) {
         std::vector<unsigned char> der(der_len);
         if (EVP_DigestSign(ctx, der.data(), &der_len, reinterpret_cast<const unsigned char *>(msg.data()), msg.size()) == 1) {
             der.resize(der_len);
@@ -165,8 +167,8 @@ openssl_sign_raw_ecdsa(const std::string &msg, const std::string &priv_pem, jwt:
                 const BIGNUM *s = nullptr;
                 ECDSA_SIG_get0(sig, &r, &s);
                 raw.assign(2 * coord_len, 0);
-                if (!r || !s || BN_bn2binpad(r, raw.data(), static_cast<int>(coord_len)) != static_cast<int>(coord_len) ||
-                    BN_bn2binpad(s, raw.data() + coord_len, static_cast<int>(coord_len)) != static_cast<int>(coord_len))
+                if (!r || !s || BN_bn2binpad(r, raw.data(), static_cast<int>(coord_len)) != static_cast<int>(coord_len)
+                    || BN_bn2binpad(s, raw.data() + coord_len, static_cast<int>(coord_len)) != static_cast<int>(coord_len))
                     raw.clear();
                 ECDSA_SIG_free(sig);
             }
@@ -439,7 +441,7 @@ TEST(CryptoJWT, ECDSAEmitsRawJoseSignatureAndInteroperates) {
         ASSERT_FALSE(pub.empty());
 
         const std::map<std::string, std::string> payload = {{"user_id", "42"}};
-        jwt::CreateOptions                        co;
+        jwt::CreateOptions                       co;
         co.algorithm            = c.alg;
         co.key                  = priv;
         const std::string token = jwt::create(payload, co);

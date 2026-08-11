@@ -292,7 +292,6 @@ using pipe = Pipe;
 
 namespace qb {
 
-
 template <typename T, typename... _Args>
 T &
 Pipe::push(_Args &&...args) const noexcept {

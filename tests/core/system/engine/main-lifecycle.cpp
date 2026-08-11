@@ -247,16 +247,16 @@ TEST(MainLifecycle, SecondSignalStopsEngineAfterSurvivedFirst) {
     reset_atoms();
     qb::Main main;
     main.addActor<SurviveFirstSignalActor>(0);
-    main.start();       // non-blocking
-    main.stop();        // signal #1 — the actor observes it but stays live (reload semantics)
+    main.start(); // non-blocking
+    main.stop();  // signal #1 — the actor observes it but stays live (reload semantics)
     // The two stop()s MUST be observed as distinct generations: wait until the core has delivered
     // #1 before raising #2, otherwise they coalesce into one bump and the actor sees a single event.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (g_signals_observed.load() < 1 && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     ASSERT_GE(g_signals_observed.load(), 1) << "the first signal was never delivered to the actor";
-    main.stop();        // signal #2 — with the fix this is delivered and the actor self-kills
-    main.join();        // pre-fix: hangs here (the second signal was dropped)
+    main.stop(); // signal #2 — with the fix this is delivered and the actor self-kills
+    main.join(); // pre-fix: hangs here (the second signal was dropped)
     EXPECT_FALSE(main.hasError());
     EXPECT_GE(g_signals_observed.load(), 2) << "a signal after an already-consumed one must still be delivered";
 }

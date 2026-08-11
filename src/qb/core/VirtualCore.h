@@ -350,8 +350,7 @@ public:
      *          Set it (in ns) **before** `qb::Main::start()` to tune it (e.g. lower in tests).
      *          A `0` value disables the bound — not recommended, it removes the deadlock guard.
      */
-    QB_ABI_ANCHOR static inline std::uint64_t activation_deadline_ns =
-        5ull * 1000u * 1000u * 1000u; // 5 s
+    QB_ABI_ANCHOR static inline std::uint64_t activation_deadline_ns = 5ull * 1000u * 1000u * 1000u; // 5 s
 
 private:
     // --- loop
@@ -749,8 +748,8 @@ VirtualCore::getService() const noexcept {
     const auto &it = _actors.find(ActorId(_ServiceActor::ServiceIndex, _index));
     if (it == _actors.end()) {
         QB_LOG_CRIT("Failed to get Service[" << typeid(_ServiceActor).name() << "]"
-                                          << " in Core(" << _index << ")"
-                                          << " : does not exist");
+                                             << " in Core(" << _index << ")"
+                                             << " : does not exist");
         return nullptr;
     }
     // NOTE: getService is intentionally NOT phase-gated — a service legitimately looks

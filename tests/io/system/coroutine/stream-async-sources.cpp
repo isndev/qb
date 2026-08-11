@@ -306,7 +306,6 @@ TEST_F(StreamAsyncSources, BackpressureSurfacesThrowingSourceInsteadOfHanging) {
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); }))
-        << "backpressure consumer hung after the source threw — the buffer was never closed";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "backpressure consumer hung after the source threw — the buffer was never closed";
     EXPECT_TRUE(caught.load()) << "a throwing source must surface its exception to the consumer, not vanish as EOF";
 }

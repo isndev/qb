@@ -74,8 +74,7 @@ drive_server_handshake(qb::io::tcp::ssl::socket &socket, std::chrono::millisecon
 TEST(SslContextHandshake, ContextClientAndServerNegotiateAlpn) {
     ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
 
-    qb::io::tcp::ssl::listener listener{
-        Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")).alpn({"h2", "http/1.1"})};
+    qb::io::tcp::ssl::listener listener{Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")).alpn({"h2", "http/1.1"})};
     ASSERT_TRUE(listener.context().ok()) << listener.context().error();
     ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
     const auto port = listener.local_endpoint().port();
@@ -156,8 +155,7 @@ TEST(SslContextHandshake, VerifyingContextRejectsSelfSignedServer) {
 TEST(SslContextHandshake, TypedClientCallbacksFireDuringHandshake) {
     ASSERT_TRUE(require_ssl_files());
 
-    qb::io::tcp::ssl::listener listener{
-        Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")).alpn({"h2"})};
+    qb::io::tcp::ssl::listener listener{Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")).alpn({"h2"})};
     ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
@@ -177,20 +175,20 @@ TEST(SslContextHandshake, TypedClientCallbacksFireDuringHandshake) {
     std::atomic<int> verify_calls{0};
     // NOT insecure(): the context verifies, so on_verify runs. It accepts everything (returns true), so the
     // self-signed server is accepted THROUGH the callback — proving on_verify both fires and governs.
-    auto ctx = Context::client()
-                   .alpn({"h2"})
-                   .on_keylog([&](std::string_view line) {
+    auto                     ctx = Context::client()
+                                       .alpn({"h2"})
+                                       .on_keylog([&](std::string_view line) {
                        if (!line.empty())
                            keylog_lines.fetch_add(1);
-                   })
-                   .on_verify([&](bool /*preverified*/, qb::io::ssl::VerifyContext &vc) {
+                                       })
+                                       .on_verify([&](bool /*preverified*/, qb::io::ssl::VerifyContext &vc) {
                        verify_calls.fetch_add(1);
                        (void) vc.depth();
                        (void) vc.error();
                        (void) vc.error_string();
                        (void) vc.current_certificate();
                        return true; // accept despite the self-signed chain
-                   });
+                                       });
     qb::io::tcp::ssl::socket client{std::move(ctx)};
     client.sni("localhost");
     ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
@@ -210,12 +208,11 @@ TEST(SslContextHandshake, ServerSniCallbackFiresWithClientHostname) {
 
     std::atomic<int> sni_calls{0};
     std::string      seen_host; // written on the server thread, read after join (happens-before)
-    auto             server_ctx = Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"))
-                          .on_sni([&](std::string_view host) {
-                              sni_calls.fetch_add(1);
-                              seen_host = std::string(host);
-                              return Context{}; // empty -> keep the current context
-                          });
+    auto server_ctx = Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")).on_sni([&](std::string_view host) {
+        sni_calls.fetch_add(1);
+        seen_host = std::string(host);
+        return Context{}; // empty -> keep the current context
+    });
     qb::io::tcp::ssl::listener listener{std::move(server_ctx)};
     ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
     const auto port = listener.local_endpoint().port();
@@ -251,8 +248,7 @@ TEST(SslContextHandshake, ServerSniCallbackFiresWithClientHostname) {
 TEST(SslContextHandshake, PerConnectionAlpnOverridesContext) {
     ASSERT_TRUE(require_ssl_files());
 
-    qb::io::tcp::ssl::listener listener{
-        Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")).alpn({"h2", "http/1.1"})};
+    qb::io::tcp::ssl::listener listener{Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")).alpn({"h2", "http/1.1"})};
     ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);

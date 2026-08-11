@@ -333,7 +333,7 @@ TEST(UDPSocket, MulticastJoinLeaveWithDefaultInterface) {
 // through the switch to the -1 error return.
 TEST(UDPSocket, BindWithUnknownAddressFamilyUriFails) {
     qb::io::udp::socket socket;
-    const qb::io::uri unknown_af("", AF_UNSPEC); // af() == AF_UNSPEC -> switch fallthrough
+    const qb::io::uri   unknown_af("", AF_UNSPEC); // af() == AF_UNSPEC -> switch fallthrough
     EXPECT_EQ(socket.bind(unknown_af), -1);
     EXPECT_FALSE(socket.is_open());
 }

@@ -79,8 +79,8 @@ struct NameLifetimeProbeActor : qb::Actor {};
 struct NameLifetimeThreadProbeActor : qb::Actor {};
 
 // ── Case 1 state: read from an atexit handler registered before main() ────────────────────
-const char *g_name       = nullptr; ///< The cached pointer, captured by the test body.
-std::string g_name_bytes;           ///< What it must still read as at the very end of the process.
+const char *g_name = nullptr; ///< The cached pointer, captured by the test body.
+std::string g_name_bytes;     ///< What it must still read as at the very end of the process.
 
 void
 verify_name_survives_static_destruction() {
@@ -116,7 +116,7 @@ const struct AtExitRegistrar {
 // happens-before edge, which is what makes the exit-time free and this thread's reads
 // genuinely unordered — the same absence of ordering a detached engine thread has against
 // the atexit chain.
-std::atomic<bool> g_reader_started{false};
+std::atomic<bool>         g_reader_started{false};
 std::atomic<const char *> g_reader_target{nullptr};
 
 } // namespace
@@ -132,8 +132,7 @@ TEST(ActorNameLifetime, NameStorageOutlivesStaticDestruction) {
     const char *name = qb::ActorProxy::getName<NameLifetimeProbeActor>();
     ASSERT_NE(name, nullptr) << "getName<T>() must never hand back nullptr — Actor::getName() "
                                 "builds a std::string_view straight from it";
-    EXPECT_NE(std::string_view(name).find("NameLifetimeProbeActor"), std::string_view::npos)
-        << "expected a demangled type name, got: " << name;
+    EXPECT_NE(std::string_view(name).find("NameLifetimeProbeActor"), std::string_view::npos) << "expected a demangled type name, got: " << name;
 
     // Stable across calls: the whole point of the cache.
     EXPECT_EQ(name, qb::ActorProxy::getName<NameLifetimeProbeActor>());

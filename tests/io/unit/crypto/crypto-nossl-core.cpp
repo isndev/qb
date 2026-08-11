@@ -140,11 +140,11 @@ TEST(CryptoNoSslCore, HexToStringRejectsOddLengthAndNonHex) {
     // assertion can distinguish them — `len & 1` earns its place by preventing the
     // out-of-bounds iterator read, not by changing the result. Verified by injection.
     EXPECT_EQ(qb::crypto::hex_to_string(""), "");
-    EXPECT_EQ(qb::crypto::hex_to_string("A"), "");    // odd length
-    EXPECT_EQ(qb::crypto::hex_to_string("ABC"), "");  // odd length
-    EXPECT_EQ(qb::crypto::hex_to_string("ZZ"), "");   // non-hex, high nibble
-    EXPECT_EQ(qb::crypto::hex_to_string("AG"), "");   // non-hex, LOW nibble only
-    EXPECT_EQ(qb::crypto::hex_to_string("00 11"), ""); // embedded space (odd length too)
+    EXPECT_EQ(qb::crypto::hex_to_string("A"), "");                   // odd length
+    EXPECT_EQ(qb::crypto::hex_to_string("ABC"), "");                 // odd length
+    EXPECT_EQ(qb::crypto::hex_to_string("ZZ"), "");                  // non-hex, high nibble
+    EXPECT_EQ(qb::crypto::hex_to_string("AG"), "");                  // non-hex, LOW nibble only
+    EXPECT_EQ(qb::crypto::hex_to_string("00 11"), "");               // embedded space (odd length too)
     EXPECT_EQ(qb::crypto::hex_to_string(std::string("A\0", 2)), ""); // embedded NUL
 }
 

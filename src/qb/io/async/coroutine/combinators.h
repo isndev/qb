@@ -249,11 +249,11 @@ public:
 
 private:
     struct state_t {
-        std::vector<task<T>>              tasks;
+        std::vector<task<T>>                 tasks;
         std::vector<detail::value_slot_t<T>> results;
-        size_t                            completed{0}; // single-thread
-        std::coroutine_handle<> continuation;
-        std::exception_ptr      first_exception;
+        size_t                               completed{0}; // single-thread
+        std::coroutine_handle<>              continuation;
+        std::exception_ptr                   first_exception;
         // Spawned run_one frame per branch — see the variadic when_all_awaiter. Recorded so a
         // destroy-while-parked teardown can reclaim every not-yet-finished branch.
         std::vector<std::coroutine_handle<>> branch_handles;
@@ -728,7 +728,7 @@ class timeout_awaiter {
         // awaiter, so it survives the awaiter's destruction while run_task is still
         // running; `finish()` always stops it before this state_t is destroyed.
         qev_timer timer{};
-        bool     timer_started{false};
+        bool      timer_started{false};
         // The detached run_task driving inner_task. Recorded so a destroy-while-parked teardown
         // (awaiter unwound mid-race) can reclaim it instead of letting it resume a freed frame.
         std::coroutine_handle<> runner_handle{};
@@ -901,7 +901,7 @@ class timeout_awaiter<void> {
         // Single self-stopping timeout watcher; stopped via finish() before this state_t
         // is destroyed. See the non-void timeout_awaiter for the full lifetime contract.
         qev_timer timer{};
-        bool     timer_started{false};
+        bool      timer_started{false};
         // The detached run_task driving inner_task — see the non-void timeout_awaiter.
         std::coroutine_handle<> runner_handle{};
 

@@ -68,11 +68,13 @@
  *
  * | axis | symbol | why it qualifies (measured) |
  * |---|---|---|
- * | qb version | `qb_abi_version_M_m_p` | installed headers and archive are one unit; nothing else detects skew, and it is the axis that catches a consumer compiled without qb's CMake usage requirements at all |
- * | cache line | `qb_abi_cacheline_N` | `sizeof(qb::Event)` 64 -> 128, `CoroutineFrameAllocator::kAlign` 64 -> 128 |
- * | exceptions | `qb_abi_exceptions_[01]` | `-fno-exceptions` forks 8 inline bodies, of which `router::memh<Event,true,void>::subscribe` and `nanolog::NanoLogLine::operator<< <uint16_t>` are *also* defined by the archive |
- * | coroutine debug | `qb_abi_coroutine_debug_[01]` | `QB_DEBUG_COROUTINES` grows `task<T>::promise_type` 32 -> 40 |
- * | jthread source | `qb_abi_std_jthread_[01]` | `QB_COMPAT_FORCE_THREAD_FALLBACK` (or a standard library without `__cpp_lib_jthread`) swaps `qb::jthread` 16 -> 24 and moves every member after it: `qb::Main` 88 -> 96, `qb::VirtualCore` 8648 -> 8656 |
+ * | qb version | `qb_abi_version_M_m_p` | installed headers and archive are one unit; nothing else detects skew, and it is the axis that
+ * catches a consumer compiled without qb's CMake usage requirements at all | | cache line | `qb_abi_cacheline_N` | `sizeof(qb::Event)` 64 ->
+ * 128, `CoroutineFrameAllocator::kAlign` 64 -> 128 | | exceptions | `qb_abi_exceptions_[01]` | `-fno-exceptions` forks 8 inline bodies, of
+ * which `router::memh<Event,true,void>::subscribe` and `nanolog::NanoLogLine::operator<< <uint16_t>` are *also* defined by the archive | |
+ * coroutine debug | `qb_abi_coroutine_debug_[01]` | `QB_DEBUG_COROUTINES` grows `task<T>::promise_type` 32 -> 40 | | jthread source |
+ * `qb_abi_std_jthread_[01]` | `QB_COMPAT_FORCE_THREAD_FALLBACK` (or a standard library without `__cpp_lib_jthread`) swaps `qb::jthread` 16 ->
+ * 24 and moves every member after it: `qb::Main` 88 -> 96, `qb::VirtualCore` 8648 -> 8656 |
  *
  * Deliberately **excluded**, each for a reason that must be re-argued before it changes:
  *
@@ -192,8 +194,7 @@
  *          fingerprinted by construction: the `QB_COMPAT_FORCE_THREAD_FALLBACK` knob, and a
  *          standard library that does not advertise `__cpp_lib_jthread`.
  */
-#if !defined(QB_COMPAT_FORCE_THREAD_FALLBACK) && defined(__cpp_lib_jthread) && \
-    __cpp_lib_jthread >= 201911L
+#if !defined(QB_COMPAT_FORCE_THREAD_FALLBACK) && defined(__cpp_lib_jthread) && __cpp_lib_jthread >= 201911L
 #define QB_ABI_STD_JTHREAD 1
 #else
 #define QB_ABI_STD_JTHREAD 0
@@ -223,11 +224,8 @@
 // whose inline feature answers contradict the archive's out-of-line ones. So that case gets a
 // symbol whose name says what to do about it rather than a misleading `0_0_0`.
 #if defined(QB_VERSION_MAJOR) && defined(QB_VERSION_MINOR) && defined(QB_VERSION_PATCH)
-#define QB_ABI_SYM_VERSION \
-    QB_ABI_VERSION_SYM(QB_VERSION_MAJOR, QB_VERSION_MINOR, QB_VERSION_PATCH)
-#define QB_ABI_VERSION_TEXT                                                    \
-    QB_ABI_STR(QB_VERSION_MAJOR) "." QB_ABI_STR(QB_VERSION_MINOR) "." QB_ABI_STR( \
-        QB_VERSION_PATCH)
+#define QB_ABI_SYM_VERSION QB_ABI_VERSION_SYM(QB_VERSION_MAJOR, QB_VERSION_MINOR, QB_VERSION_PATCH)
+#define QB_ABI_VERSION_TEXT QB_ABI_STR(QB_VERSION_MAJOR) "." QB_ABI_STR(QB_VERSION_MINOR) "." QB_ABI_STR(QB_VERSION_PATCH)
 #else
 #define QB_ABI_SYM_VERSION qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements
 #define QB_ABI_VERSION_TEXT "unknown"
@@ -240,10 +238,9 @@
  *          `strings <archive> | grep '^qb-abi '` answers "what was this built with?" with no
  *          demangler and no qb source tree. That question had no answer before 3.0.
  */
-#define QB_ABI_FINGERPRINT_TEXT                                                       \
-    "qb-abi qb=" QB_ABI_VERSION_TEXT " cacheline=" QB_ABI_STR(QB_ABI_CACHELINE_BYTES) \
-    " exceptions=" QB_ABI_STR(QB_ABI_EXCEPTIONS) " coroutine_debug=" QB_ABI_STR(      \
-        QB_ABI_CORO_DEBUG) " std_jthread=" QB_ABI_STR(QB_ABI_STD_JTHREAD)
+#define QB_ABI_FINGERPRINT_TEXT                                                                                  \
+    "qb-abi qb=" QB_ABI_VERSION_TEXT " cacheline=" QB_ABI_STR(QB_ABI_CACHELINE_BYTES) " exceptions=" QB_ABI_STR( \
+        QB_ABI_EXCEPTIONS) " coroutine_debug=" QB_ABI_STR(QB_ABI_CORO_DEBUG) " std_jthread=" QB_ABI_STR(QB_ABI_STD_JTHREAD)
 
 #ifdef __cplusplus
 
@@ -365,8 +362,8 @@ namespace qb::detail {
  *          `abi_fingerprint` is the one grep that leads to this file and its explanation.
  */
 QB_ABI_USED QB_ABI_RETAIN inline const void *const abi_fingerprint[] = {
-    &QB_ABI_SYM_VERSION, &QB_ABI_SYM_CACHELINE, &QB_ABI_SYM_EXCEPTIONS, &QB_ABI_SYM_CORO_DEBUG,
-    &QB_ABI_SYM_STD_JTHREAD};
+    &QB_ABI_SYM_VERSION, &QB_ABI_SYM_CACHELINE, &QB_ABI_SYM_EXCEPTIONS, &QB_ABI_SYM_CORO_DEBUG, &QB_ABI_SYM_STD_JTHREAD
+};
 } // namespace qb::detail
 
 #endif /* __cplusplus */

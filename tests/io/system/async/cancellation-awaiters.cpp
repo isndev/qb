@@ -402,7 +402,9 @@ TEST_F(CancellationAwaiters, NestedCancellableSleepFrameNotRescheduledOnCancel) 
     // The parker awaits the sleep awaiter DIRECTLY so its own (test) frame carries
     // the >4KiB local and is the exact frame the sleep hook would reschedule.
     // Parenthesised so the preprocessor does not split the braced comma into two macro args.
-    auto parker = [](cancellation_token t) -> task<int> { QB_RECLAIM_PARK((cancellable_sleep_awaiter{60000ms, t})); };
+    auto parker = [](cancellation_token t) -> task<int> {
+        QB_RECLAIM_PARK((cancellable_sleep_awaiter{60000ms, t}));
+    };
 
     coro_scheduler().spawn([&, parker]() -> task<void> {
         try {

@@ -30,7 +30,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <qb/core/Actor.h>   // qb::detail::ask_next_id — the correlation-id codec (core index + counter)
+#include <qb/core/Actor.h> // qb::detail::ask_next_id — the correlation-id codec (core index + counter)
 #include <qb/core/ActorId.h>
 
 using qb::ActorId;
@@ -273,8 +273,8 @@ TEST(CoreIdBitSet, PostIncrementIteratorVisitsEachMember) {
     // The returned pre-advance copy is the whole point of operator++(int): capture it, advance the
     // live iterator, and confirm the copy still dereferences to the OLD position while the live one
     // has moved on to the next set bit.
-    auto it  = s.begin();          // -> 1 (first set bit)
-    auto old = it++;               // old -> 1, it -> 3
+    auto it  = s.begin(); // -> 1 (first set bit)
+    auto old = it++;      // old -> 1, it -> 3
     EXPECT_EQ(*old, static_cast<CoreId>(1)) << "post-increment must return the pre-advance position";
     EXPECT_EQ(*it, static_cast<CoreId>(3)) << "the live iterator advanced to the next member";
 }

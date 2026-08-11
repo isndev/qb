@@ -26,7 +26,7 @@
 #include "task.h"
 #include "utils.h"
 #include "cancellation.h"
-#include "sync.h" // semaphore — coroutine_scope's concurrency limiter is one
+#include "sync.h"           // semaphore — coroutine_scope's concurrency limiter is one
 #include <qb/system/time.h> // qb::duration
 #include <algorithm>
 #include <vector>
@@ -751,8 +751,7 @@ namespace detail {
 // so a `task<void>` mapper stores a `std::monostate` marker instead of failing to compile.
 template <typename F, typename Item, typename R>
 task<void>
-parallel_map_worker(std::shared_ptr<semaphore> sem, F fn, std::shared_ptr<std::vector<std::optional<R>>> results,
-                    std::size_t idx, Item item) {
+parallel_map_worker(std::shared_ptr<semaphore> sem, F fn, std::shared_ptr<std::vector<std::optional<R>>> results, std::size_t idx, Item item) {
     auto guard = co_await sem->scoped_acquire();
     if constexpr (std::is_same_v<R, std::monostate>) {
         co_await fn(item);

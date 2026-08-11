@@ -14,7 +14,7 @@ produce() {
 
 int
 main() {
-    auto t = produce();          // ~task<int>  -> forget_frame_if_current
+    auto t = produce(); // ~task<int>  -> forget_frame_if_current
     (void) t;
     return 0;
 }

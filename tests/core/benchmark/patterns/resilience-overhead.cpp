@@ -38,7 +38,7 @@ namespace {
 void
 BM_Resilience_CircuitBreaker_Closed(benchmark::State &state) {
     qb::CircuitBreaker breaker(5u, 1s);
-    std::uint64_t      now = 0;
+    std::uint64_t      now    = 0;
     std::uint64_t      passed = 0;
     for (auto _ : state) {
         bool ok = breaker.allow(now);
@@ -57,8 +57,8 @@ BM_Resilience_CircuitBreaker_Closed(benchmark::State &state) {
 // --- CircuitBreaker: open fail-fast (tripped; every allow() during cooldown returns false) -------
 void
 BM_Resilience_CircuitBreaker_OpenFastFail(benchmark::State &state) {
-    qb::CircuitBreaker  breaker(3u, 10s);
-    std::uint64_t       now = 0;
+    qb::CircuitBreaker breaker(3u, 10s);
+    std::uint64_t      now = 0;
     // Trip it out of the timed region: 3 consecutive failures -> open.
     for (int i = 0; i < 3; ++i)
         breaker.on_failure(now);

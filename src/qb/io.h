@@ -199,7 +199,7 @@ public:
  * @brief Verbose-level log macro
  * @param X Message to log
  */
-#define QB_LOG_VERB(X)                   \
+#define QB_LOG_VERB(X)                    \
     do {                                  \
         qb::io::cout() << X << std::endl; \
     } while (false)
@@ -207,7 +207,7 @@ public:
  * @brief Info-level log macro
  * @param X Message to log
  */
-#define QB_LOG_INFO(X)                   \
+#define QB_LOG_INFO(X)                    \
     do {                                  \
         qb::io::cout() << X << std::endl; \
     } while (false)
@@ -215,7 +215,7 @@ public:
  * @brief Warning-level log macro
  * @param X Message to log
  */
-#define QB_LOG_WARN(X)                   \
+#define QB_LOG_WARN(X)                    \
     do {                                  \
         qb::io::cout() << X << std::endl; \
     } while (false)
@@ -223,7 +223,7 @@ public:
  * @brief Critical-level log macro
  * @param X Message to log
  */
-#define QB_LOG_CRIT(X)                   \
+#define QB_LOG_CRIT(X)                    \
     do {                                  \
         qb::io::cout() << X << std::endl; \
     } while (false)
@@ -233,35 +233,35 @@ public:
  * @param X Message to log
  */
 #define QB_LOG_DEBUG(X) \
-    do {             \
+    do {                \
     } while (false)
 /**
  * @brief Verbose-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
 #define QB_LOG_VERB(X) \
-    do {            \
+    do {               \
     } while (false)
 /**
  * @brief Info-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
 #define QB_LOG_INFO(X) \
-    do {            \
+    do {               \
     } while (false)
 /**
  * @brief Warning-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
 #define QB_LOG_WARN(X) \
-    do {            \
+    do {               \
     } while (false)
 /**
  * @brief Critical-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
 #define QB_LOG_CRIT(X) \
-    do {            \
+    do {               \
     } while (false)
 #endif
 #endif

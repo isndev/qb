@@ -110,7 +110,7 @@ TEST(TlsPeerVerification, SecureByDefaultRejectsSelfSignedAndInsecureOptsOut) {
     ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
 
     qb::io::tcp::ssl::listener listener;
-    auto tls = qb::io::ssl::Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"));
+    auto                       tls = qb::io::ssl::Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"));
     ASSERT_TRUE(tls.ok());
     listener.init(std::move(tls));
     ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);

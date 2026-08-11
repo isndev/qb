@@ -72,8 +72,7 @@
 #endif
 #ifdef QB_TYPE_ID_SLOT_ASAN
 extern "C" void *__asan_get_current_fake_stack(void);
-extern "C" void *__asan_addr_is_in_fake_stack(void *fake_stack, void *addr, void **beg,
-                                              void **end);
+extern "C" void *__asan_addr_is_in_fake_stack(void *fake_stack, void *addr, void **beg, void **end);
 #endif
 #endif
 #endif
@@ -125,7 +124,7 @@ address_is_on_this_thread_stack(void const *const p) noexcept {
     void       *low  = nullptr;
     std::size_t size = 0;
     // glibc hands back the LOWEST address; the stack is [low, low + size).
-    int const   rc   = pthread_attr_getstack(&attr, &low, &size);
+    int const rc = pthread_attr_getstack(&attr, &low, &size);
     pthread_attr_destroy(&attr);
     if (rc != 0 || low == nullptr || size == 0)
         return false;
@@ -136,7 +135,6 @@ address_is_on_this_thread_stack(void const *const p) noexcept {
     return addr >= lo && addr < hi;
 }
 #endif /* QB_TYPE_ID_SLOT_STACK_CHECK */
-
 
 /// One slot per representable `TypeId`, so every id a program can hand out has a home and
 /// `_type_names[id]` can never be out of range.
@@ -155,9 +153,8 @@ static_assert(std::is_trivially_destructible_v<decltype(_type_names)>,
               "the registry must outlive every static destructor: a type can be registered, and a "
               "name looked up on a log path, while other statics are being torn down");
 
-static_assert(std::atomic<char const *>::is_always_lock_free,
-              "the type-name registry must not take a lock: it is written from magic-static "
-              "initialisers that can run during static initialisation, on any thread");
+static_assert(std::atomic<char const *>::is_always_lock_free, "the type-name registry must not take a lock: it is written from magic-static "
+                                                              "initialisers that can run during static initialisation, on any thread");
 
 } // namespace
 
@@ -184,10 +181,10 @@ register_type_id(type_id_slot &slot, char const *const name) noexcept {
 #ifdef QB_TYPE_ID_SLOT_STACK_CHECK
         // About to publish `&slot` permanently. A slot with automatic storage becomes a dangling
         // node the moment the caller returns, and every later registration walks it.
-        assert(!address_is_on_this_thread_stack(&slot) &&
-               "qb::detail::register_type_id: the slot is published into a process-wide list and "
-               "must therefore have static storage duration -- this one is on the stack. Use a "
-               "block-scope `static type_id_slot`, as qb::detail::type_id_for<T>() does.");
+        assert(!address_is_on_this_thread_stack(&slot)
+               && "qb::detail::register_type_id: the slot is published into a process-wide list and "
+                  "must therefore have static storage duration -- this one is on the stack. Use a "
+                  "block-scope `static type_id_slot`, as qb::detail::type_id_for<T>() does.");
 #endif
         slot.name = name;
         // HAZARD, UNGUARDED -- THIS IS THE LINE THAT WRAPS. `TypeId` is `uint16_t`
@@ -201,7 +198,7 @@ register_type_id(type_id_slot &slot, char const *const name) noexcept {
         // `assert` on a registration path, or widening a PUBLIC type to uint32_t) are maintainer
         // calls, not drive-bys. Full measurement at the `_type_id_counter` declaration,
         // Event.h:66-83.
-        slot.id   = static_cast<TypeId>(_type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1);
+        slot.id = static_cast<TypeId>(_type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1);
         register_type_name(slot.id, name);
         slot.next = _type_id_registry.load(std::memory_order_relaxed);
         _type_id_registry.store(&slot, std::memory_order_release);

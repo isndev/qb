@@ -71,8 +71,8 @@ ecdsa_der_to_raw(const std::vector<unsigned char> &der, std::size_t coord_len) {
     const BIGNUM *s = nullptr;
     ECDSA_SIG_get0(sig, &r, &s);
     std::vector<unsigned char> raw(2 * coord_len, 0);
-    const bool                 ok = r && s && BN_bn2binpad(r, raw.data(), static_cast<int>(coord_len)) == static_cast<int>(coord_len) &&
-                    BN_bn2binpad(s, raw.data() + coord_len, static_cast<int>(coord_len)) == static_cast<int>(coord_len);
+    const bool                 ok = r && s && BN_bn2binpad(r, raw.data(), static_cast<int>(coord_len)) == static_cast<int>(coord_len)
+                                    && BN_bn2binpad(s, raw.data() + coord_len, static_cast<int>(coord_len)) == static_cast<int>(coord_len);
     ECDSA_SIG_free(sig);
     if (!ok)
         return {};

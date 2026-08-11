@@ -35,11 +35,11 @@ namespace {
 // server ALPN wire buffer at a stable heap address reachable from any SSL.
 // ---------------------------------------------------------------------------
 struct ctx_state {
-    std::function<void(std::string_view)>            keylog;
-    std::function<bool(bool, VerifyContext &)>        verify;
-    std::function<Context(std::string_view)>          sni;
-    std::vector<unsigned char>                        alpn_wire; ///< Server accept-list (length-prefixed).
-    bool                                              is_server = false;
+    std::function<void(std::string_view)>      keylog;
+    std::function<bool(bool, VerifyContext &)> verify;
+    std::function<Context(std::string_view)>   sni;
+    std::vector<unsigned char>                 alpn_wire; ///< Server accept-list (length-prefixed).
+    bool                                       is_server = false;
 };
 
 // OpenSSL calls this when an SSL_CTX carrying our ex-data slot is finally freed.
@@ -139,7 +139,7 @@ ctx_sni_trampoline(SSL *ssl, int *, void *) {
     auto *st = ctx_get_state(SSL_get_SSL_CTX(ssl));
     if (!st || !st->sni)
         return SSL_TLSEXT_ERR_OK;
-    const char *name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    const char *name     = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     Context     selected = st->sni(name ? std::string_view{name} : std::string_view{});
     // SSL_set_SSL_CTX up-refs the selected context, so it stays alive even after `selected` dies;
     // its ex-data state rides along on that context. Callers typically keep per-host Contexts anyway.
@@ -317,8 +317,8 @@ Context &
 Context::verify(VerifyMode mode) {
     if (usable()) {
         // Preserve any installed on_verify trampoline when changing the mode.
-        auto             *st = ctx_get_state(_ctx.get());
-        SSL_verify_cb     cb = (st && st->verify) ? &ctx_verify_trampoline : nullptr;
+        auto         *st = ctx_get_state(_ctx.get());
+        SSL_verify_cb cb = (st && st->verify) ? &ctx_verify_trampoline : nullptr;
         SSL_CTX_set_verify(_ctx.get(), ctx_ossl_verify_mode(mode), cb);
     }
     return *this;

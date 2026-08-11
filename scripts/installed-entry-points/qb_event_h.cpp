@@ -8,7 +8,6 @@ struct StandaloneEvent : qb::Event {
 
 int
 main() {
-    std::printf("%u %s\n", (unsigned) qb::Event::type_to_id<StandaloneEvent>(),
-                qb::event_type_name(qb::Event::type_to_id<StandaloneEvent>()));
+    std::printf("%u %s\n", (unsigned) qb::Event::type_to_id<StandaloneEvent>(), qb::event_type_name(qb::Event::type_to_id<StandaloneEvent>()));
     return 0;
 }
