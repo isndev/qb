@@ -49,8 +49,8 @@ private:
     // while the dispatch loop is running; a send/credit/reset issued by a user handler re-enters
     // drain_backend_events, which then only raises `_drain_events_again` so the outermost loop
     // drains the newly-queued events after the current handler has fully unwound.
-    bool                                   _draining_events    = false;
-    bool                                   _drain_events_again = false;
+    bool _draining_events    = false;
+    bool _drain_events_again = false;
 
 protected:
     virtual void
@@ -244,47 +244,47 @@ protected:
         do {
             _drain_events_again = false;
             for (auto const &event : _backend->drain_events()) {
-            if (event.type == qb::io::quic::backend_event::kind::connected) {
-                _state = state::connected;
-                dispatch(qb::io::async::quic::event::connected{event.connection_id, event.text});
-            } else if (event.type == qb::io::quic::backend_event::kind::connection_closed) {
-                if (!_server_role || event.connection_id == 0) {
-                    _state = state::closed;
-                    _open  = false;
-                } else {
-                    _state = _backend->current_stats().active_connections > 0 ? state::connected : state::listening;
-                    _open  = true;
+                if (event.type == qb::io::quic::backend_event::kind::connected) {
+                    _state = state::connected;
+                    dispatch(qb::io::async::quic::event::connected{event.connection_id, event.text});
+                } else if (event.type == qb::io::quic::backend_event::kind::connection_closed) {
+                    if (!_server_role || event.connection_id == 0) {
+                        _state = state::closed;
+                        _open  = false;
+                    } else {
+                        _state = _backend->current_stats().active_connections > 0 ? state::connected : state::listening;
+                        _open  = true;
+                    }
+                    dispatch(qb::io::async::quic::event::connection_closed{
+                        event.connection_id,
+                        event.connection_reason == qb::io::quic::disconnect_reason::none ? qb::io::quic::disconnect_reason::transport_error
+                                                                                         : event.connection_reason,
+                        event.error_code, event.text
+                    });
+                } else if (event.type == qb::io::quic::backend_event::kind::stream_started) {
+                    dispatch(qb::io::async::quic::event::stream_started{
+                        event.connection_id, event.stream_id, stream_direction(event.stream_id), stream_origin(event.stream_id)
+                    });
+                } else if (event.type == qb::io::quic::backend_event::kind::stream_data) {
+                    dispatch(qb::io::async::quic::event::stream_data{
+                        event.connection_id, event.stream_id,
+                        std::string_view{reinterpret_cast<const char *>(event.payload.data()), event.payload.size()}, event.error_code != 0
+                    });
+                } else if (event.type == qb::io::quic::backend_event::kind::stream_data_acked) {
+                    dispatch(qb::io::async::quic::event::stream_data_acked{event.connection_id, event.stream_id, event.error_code});
+                } else if (event.type == qb::io::quic::backend_event::kind::stream_closed) {
+                    dispatch(qb::io::async::quic::event::stream_closed{
+                        event.connection_id, event.stream_id,
+                        event.stream_reason == qb::io::quic::stream_close_reason::none ? qb::io::quic::stream_close_reason::reset
+                                                                                       : event.stream_reason,
+                        event.error_code
+                    });
+                } else if (event.type == qb::io::quic::backend_event::kind::datagram) {
+                    dispatch(qb::io::async::quic::event::datagram{
+                        event.connection_id, std::string_view{reinterpret_cast<const char *>(event.payload.data()), event.payload.size()}
+                    });
                 }
-                dispatch(qb::io::async::quic::event::connection_closed{
-                    event.connection_id,
-                    event.connection_reason == qb::io::quic::disconnect_reason::none ? qb::io::quic::disconnect_reason::transport_error
-                                                                                     : event.connection_reason,
-                    event.error_code, event.text
-                });
-            } else if (event.type == qb::io::quic::backend_event::kind::stream_started) {
-                dispatch(qb::io::async::quic::event::stream_started{
-                    event.connection_id, event.stream_id, stream_direction(event.stream_id), stream_origin(event.stream_id)
-                });
-            } else if (event.type == qb::io::quic::backend_event::kind::stream_data) {
-                dispatch(qb::io::async::quic::event::stream_data{
-                    event.connection_id, event.stream_id,
-                    std::string_view{reinterpret_cast<const char *>(event.payload.data()), event.payload.size()}, event.error_code != 0
-                });
-            } else if (event.type == qb::io::quic::backend_event::kind::stream_data_acked) {
-                dispatch(qb::io::async::quic::event::stream_data_acked{event.connection_id, event.stream_id, event.error_code});
-            } else if (event.type == qb::io::quic::backend_event::kind::stream_closed) {
-                dispatch(qb::io::async::quic::event::stream_closed{
-                    event.connection_id, event.stream_id,
-                    event.stream_reason == qb::io::quic::stream_close_reason::none ? qb::io::quic::stream_close_reason::reset
-                                                                                   : event.stream_reason,
-                    event.error_code
-                });
-            } else if (event.type == qb::io::quic::backend_event::kind::datagram) {
-                dispatch(qb::io::async::quic::event::datagram{
-                    event.connection_id, std::string_view{reinterpret_cast<const char *>(event.payload.data()), event.payload.size()}
-                });
             }
-        }
         } while (_drain_events_again && _backend);
         _draining_events = false; // clear BEFORE the reap below (the guard's dtor is a harmless re-clear)
         // Reap / stats run once, at the outermost drain, after every event has been dispatched and

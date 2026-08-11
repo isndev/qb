@@ -6,10 +6,9 @@
 
 int
 main() {
-    const qb::ActorId      none;                     // == ActorId::NotFound
-    const qb::ActorId      raw(0x00010002u);
-    const qb::BroadcastId  all(1);
-    std::printf("%u %u %u %u\n", (unsigned) none.index(), (unsigned) raw.sid(),
-                (unsigned) raw.index(), (unsigned) all.index());
+    const qb::ActorId     none; // == ActorId::NotFound
+    const qb::ActorId     raw(0x00010002u);
+    const qb::BroadcastId all(1);
+    std::printf("%u %u %u %u\n", (unsigned) none.index(), (unsigned) raw.sid(), (unsigned) raw.index(), (unsigned) all.index());
     return 0;
 }

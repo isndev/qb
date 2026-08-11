@@ -28,9 +28,9 @@
 #include <coroutine>
 #include <cstdio>
 #include <exception>
-#include <memory>   // std::shared_ptr — async_generator's shared state (:369, :416, :420)
+#include <memory> // std::shared_ptr — async_generator's shared state (:369, :416, :420)
 #include <optional>
-#include <vector>   // std::vector — collect_to_vector()/ag_collect() below return one
+#include <vector> // std::vector — collect_to_vector()/ag_collect() below return one
 
 /** Set QB_DEBUG_AGEN=1 (compile flag or before the include) to enable
  *  async_generator trace prints that show the yield/next/suspend flow. */

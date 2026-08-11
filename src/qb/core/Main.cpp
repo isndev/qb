@@ -193,12 +193,12 @@ SharedCoreCommunication::send(CoreId const source_index, Event const &event) con
 #ifndef NDEBUG
     if (unlikely(event_points_into_itself(event))) {
         QB_LOG_CRIT("Event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
-                          << event.getDestination()
-                          << " holds a pointer into its own storage, so it cannot be delivered cross-core: "
-                             "the transport relocates events with memcpy and never runs the source destructor. "
-                             "Use qb::string<N> for inline text, or keep the data on the heap behind a "
-                             "shared_ptr/unique_ptr member. A by-value std::string is the usual cause "
-                             "(short strings are self-referential on libstdc++).");
+                             << event.getDestination()
+                             << " holds a pointer into its own storage, so it cannot be delivered cross-core: "
+                                "the transport relocates events with memcpy and never runs the source destructor. "
+                                "Use qb::string<N> for inline text, or keep the data on the heap behind a "
+                                "shared_ptr/unique_ptr member. A by-value std::string is the usual cause "
+                                "(short strings are self-referential on libstdc++).");
         assert(false
                && "qb: event payload is not trivially relocatable (holds a pointer into itself) — "
                   "see the QB_LOG_CRIT above and Actor::push's @warning");

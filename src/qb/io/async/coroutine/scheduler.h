@@ -852,8 +852,7 @@ private:
     // -- `QB_ABI_ANCHOR`, `static inline thread_local`, the in-class definition -- is unchanged
     // and must stay unchanged, because those are what make the TLS descriptor a
     // **weak external** one the dynamic linker coalesces across images.
-    QB_ABI_ANCHOR static inline thread_local
-        std::unique_ptr<CoroutineScheduler, detail::scheduler_deleter> owned_current_{};
+    QB_ABI_ANCHOR static inline thread_local std::unique_ptr<CoroutineScheduler, detail::scheduler_deleter> owned_current_{};
 };
 
 // Defined here, below the class, where `CoroutineScheduler` is complete. Declaring it above and

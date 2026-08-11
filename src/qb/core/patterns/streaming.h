@@ -158,7 +158,7 @@ template <class E>
 struct stream_next_awaiter {
     std::shared_ptr<stream_state<E>>           st;
     qb::duration                               timeout;
-    qev_timer                                   timer{};
+    qev_timer                                  timer{};
     bool                                       timer_started = false;
     bool                                       timed_out     = false;
     std::shared_ptr<bool>                      alive         = std::make_shared<bool>(true);

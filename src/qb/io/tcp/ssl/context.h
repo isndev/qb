@@ -99,7 +99,8 @@ public:
     /** @brief The certificate currently being verified, as a `qb::io::ssl::Certificate`. */
     [[nodiscard]] Certificate current_certificate() const;
     /** @brief Borrow the raw `X509_STORE_CTX` for any OpenSSL call this view does not wrap. */
-    [[nodiscard]] X509_STORE_CTX *native() const noexcept {
+    [[nodiscard]] X509_STORE_CTX *
+    native() const noexcept {
         return _raw;
     }
 };
@@ -170,19 +171,20 @@ public:
 
     // --- fluent configuration (chainable; a no-op once the context is in an error state) ---
 
-    Context &min_version(TlsVersion v);                                    ///< Minimum negotiated TLS version (default v1_2).
-    Context &max_version(TlsVersion v);                                    ///< Maximum negotiated TLS version.
-    Context &verify(VerifyMode mode);                                      ///< Peer verification policy.
-    Context &trust(std::filesystem::path ca_file_or_dir);                  ///< Add a CA file or directory to the trust store.
-    Context &trust_system();                                              ///< (Re)load the OS default trust store (client default).
+    Context &min_version(TlsVersion v);                                       ///< Minimum negotiated TLS version (default v1_2).
+    Context &max_version(TlsVersion v);                                       ///< Maximum negotiated TLS version.
+    Context &verify(VerifyMode mode);                                         ///< Peer verification policy.
+    Context &trust(std::filesystem::path ca_file_or_dir);                     ///< Add a CA file or directory to the trust store.
+    Context &trust_system();                                                  ///< (Re)load the OS default trust store (client default).
     Context &identity(std::filesystem::path cert, std::filesystem::path key); ///< This endpoint's cert+key (client mTLS / extra server cert).
-    Context &alpn(std::vector<std::string> protocols);                    ///< ALPN: client offer / server accept-preference. Empty list = no-op (leaves ALPN unconfigured).
-    Context &ciphers(std::string tls12_list);                            ///< TLS <= 1.2 cipher list (OpenSSL format).
-    Context &ciphersuites(std::string tls13_list);                       ///< TLS 1.3 ciphersuites (OpenSSL format).
-    Context &curves(std::string groups);                                 ///< Supported ECDH groups, e.g. "X25519:P-256".
-    Context &dh_params(std::filesystem::path pem);                        ///< Server DH parameters (PEM) for DHE suites.
-    Context &session_cache(std::size_t entries);                          ///< Server session cache size (0 disables).
-    Context &session_timeout(std::chrono::seconds timeout);              ///< Session lifetime.
+    Context &
+    alpn(std::vector<std::string> protocols); ///< ALPN: client offer / server accept-preference. Empty list = no-op (leaves ALPN unconfigured).
+    Context &ciphers(std::string tls12_list); ///< TLS <= 1.2 cipher list (OpenSSL format).
+    Context &ciphersuites(std::string tls13_list);          ///< TLS 1.3 ciphersuites (OpenSSL format).
+    Context &curves(std::string groups);                    ///< Supported ECDH groups, e.g. "X25519:P-256".
+    Context &dh_params(std::filesystem::path pem);          ///< Server DH parameters (PEM) for DHE suites.
+    Context &session_cache(std::size_t entries);            ///< Server session cache size (0 disables).
+    Context &session_timeout(std::chrono::seconds timeout); ///< Session lifetime.
 
     // --- typed callbacks (no raw C function pointer, no void* arg) ---
 
@@ -200,7 +202,8 @@ public:
     /** @brief The first configuration error recorded, or an empty string if `ok()`. */
     [[nodiscard]] std::string error() const;
     /** @brief `ok()`. Lets a `Context` be tested directly: `if (ctx) { ... }`. */
-    [[nodiscard]] explicit operator bool() const noexcept {
+    [[nodiscard]] explicit
+    operator bool() const noexcept {
         return ok();
     }
     /** @brief ESCAPE HATCH: borrow the raw `SSL_CTX` (null if falsy). Ownership stays with the `Context`. */

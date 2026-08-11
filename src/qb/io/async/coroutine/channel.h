@@ -651,8 +651,7 @@ public:
                 // `state->value` in the first place — see the select-machinery note on
                 // `offer_to_select_waiter` — so the branch is provably dead, not merely untaken.
                 if constexpr (std::is_copy_constructible_v<T>) {
-                    if (!_resumed && state && _ch_alive && *_ch_alive && state->winner != 1 && !state->closed
-                        && state->value.has_value())
+                    if (!_resumed && state && _ch_alive && *_ch_alive && state->winner != 1 && !state->closed && state->value.has_value())
                         ch._buffer.push(std::any_cast<T>(std::move(state->value)));
                 }
             }

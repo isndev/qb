@@ -44,8 +44,7 @@ use_push(const VirtualCoreOnlyActor &a, qb::ActorId dest) {
 
 void
 use_archive(const qb::VirtualCore &vc) {
-    std::printf("%u %llu %zu\n", (unsigned) vc.getIndex(), (unsigned long long) vc.time(),
-                vc.getCoreSet().size());
+    std::printf("%u %llu %zu\n", (unsigned) vc.getIndex(), (unsigned long long) vc.time(), vc.getCoreSet().size());
 }
 
 int

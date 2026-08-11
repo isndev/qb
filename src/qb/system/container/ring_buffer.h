@@ -31,7 +31,7 @@
                    // header compiled alone ONLY on macOS until the Linux leg of the
                    // installed-header gate said "'ptrdiff_t' does not name a type".
 #include <cstring>
-#include <iterator>   // std::forward_iterator_tag — iterator_category below
+#include <iterator> // std::forward_iterator_tag — iterator_category below
 #include <type_traits>
 
 namespace qb {

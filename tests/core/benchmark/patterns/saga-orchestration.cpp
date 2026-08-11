@@ -71,16 +71,16 @@ public:
 
         if (_with_saga) {
             spawn([responder, steps, result](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-                co_await qb::run_saga(ctx, [responder, steps, result](qb::ScopedCoroContext c,
-                                                                      qb::SagaScope       &saga) -> qb::io::async::task<void> {
-                    for (int i = 0; i < steps; ++i) {
-                        auto r = co_await qb::ask(c, responder, Probe{i}, std::chrono::seconds(2));
-                        result->fetch_add(static_cast<std::uint64_t>(r.response), std::memory_order_relaxed);
-                        saga.on_compensate([c, responder, i]() -> qb::io::async::task<void> {
-                            (void) co_await qb::ask(c, responder, Probe{-(i + 1)}, std::chrono::seconds(2));
-                        });
-                    }
-                });
+                co_await qb::run_saga(ctx,
+                                      [responder, steps, result](qb::ScopedCoroContext c, qb::SagaScope &saga) -> qb::io::async::task<void> {
+                                          for (int i = 0; i < steps; ++i) {
+                                              auto r = co_await qb::ask(c, responder, Probe{i}, std::chrono::seconds(2));
+                                              result->fetch_add(static_cast<std::uint64_t>(r.response), std::memory_order_relaxed);
+                                              saga.on_compensate([c, responder, i]() -> qb::io::async::task<void> {
+                                                  (void) co_await qb::ask(c, responder, Probe{-(i + 1)}, std::chrono::seconds(2));
+                                              });
+                                          }
+                                      });
                 ctx.push<SagaDone>(); // to our own actor (self)
             });
         } else {

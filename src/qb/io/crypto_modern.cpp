@@ -463,7 +463,8 @@ crypto::hmac(const std::vector<unsigned char> &data, const std::vector<unsigned 
         // duplication is exactly what let the two owners drift apart, so removing it is the fix,
         // not just deleting the extra frees.
         const std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey{
-            EVP_PKEY_new_mac_key(EVP_PKEY_HMAC, nullptr, key.data(), static_cast<int>(key.size())), &EVP_PKEY_free};
+            EVP_PKEY_new_mac_key(EVP_PKEY_HMAC, nullptr, key.data(), static_cast<int>(key.size())), &EVP_PKEY_free
+        };
         if (!pkey) {
             throw std::runtime_error("Failed to create HMAC key: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                                      get_openssl_error());           // LCOV_EXCL_LINE GCOVR_EXCL_LINE

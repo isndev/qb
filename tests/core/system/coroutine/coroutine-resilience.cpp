@@ -244,10 +244,8 @@ TEST(ActorAskRetry, BackoffScheduleGrowsAndClamps) {
     for (std::size_t i = 1; i < schedule.size(); ++i) {
         if (schedule[i - 1] == kMaxBackoff)
             break;
-        EXPECT_GT(schedule[i], schedule[i - 1])
-            << "backoff " << i << " must exceed backoff " << (i - 1) << " (multiplier > 1)";
-        EXPECT_EQ(schedule[i], (std::min) (schedule[i - 1] * 2, qb::duration{kMaxBackoff}))
-            << "multiplier 2, clamped at max_backoff";
+        EXPECT_GT(schedule[i], schedule[i - 1]) << "backoff " << i << " must exceed backoff " << (i - 1) << " (multiplier > 1)";
+        EXPECT_EQ(schedule[i], (std::min) (schedule[i - 1] * 2, qb::duration{kMaxBackoff})) << "multiplier 2, clamped at max_backoff";
     }
     // The cap is reached and then held exactly — never exceeded, never resumed growing.
     EXPECT_EQ(schedule[4], qb::duration{kMaxBackoff}) << "20->40->80->160->320ms hits the cap";
@@ -313,10 +311,9 @@ TEST(ActorAskRetry, BackoffGrowsBetweenAttempts) {
     // 120ms vs 60ms) instead of `kBackoff` (20ms). On the loaded-VM sample above that lifts the
     // worst observed margin from 0.21ms to 36.0ms — 60% of budget instead of 1%. The exact
     // per-step ratio is not this test's job: BackoffScheduleGrowsAndClamps pins it without a clock.
-    EXPECT_GT(gaps[2], gaps[0])
-        << "the wait before attempt 4 must exceed the wait before attempt 2 (backoff grew across "
-           "the retry loop); gaps ms = " << (gaps[0] / 1000000.0) << ", " << (gaps[1] / 1000000.0)
-        << ", " << (gaps[2] / 1000000.0);
+    EXPECT_GT(gaps[2], gaps[0]) << "the wait before attempt 4 must exceed the wait before attempt 2 (backoff grew across "
+                                   "the retry loop); gaps ms = "
+                                << (gaps[0] / 1000000.0) << ", " << (gaps[1] / 1000000.0) << ", " << (gaps[2] / 1000000.0);
 }
 
 // --- A kill aborts the retry loop with cancelled_error -------------------------------------------

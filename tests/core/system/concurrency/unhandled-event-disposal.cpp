@@ -46,40 +46,69 @@ namespace {
 std::atomic<std::int64_t> g_live{0};
 struct Tracked {
     std::string blob;
-    Tracked() : blob(64, 'z') { g_live.fetch_add(1); }
-    Tracked(Tracked const &o) : blob(o.blob) { g_live.fetch_add(1); }
-    ~Tracked() { g_live.fetch_sub(1); }
+    Tracked()
+        : blob(64, 'z') {
+        g_live.fetch_add(1);
+    }
+    Tracked(Tracked const &o)
+        : blob(o.blob) {
+        g_live.fetch_add(1);
+    }
+    ~Tracked() {
+        g_live.fetch_sub(1);
+    }
 };
-struct UnhandledEvent : qb::Event { Tracked p; };   // NO actor ever registers this
-struct HandledEvent : qb::Event { Tracked p; };     // registered by the receiver
+struct UnhandledEvent : qb::Event {
+    Tracked p;
+}; // NO actor ever registers this
+struct HandledEvent : qb::Event {
+    Tracked p;
+}; // registered by the receiver
 
 std::atomic<std::uint32_t> g_dst{0};
 std::atomic<int>           g_handled{0};
 
 class Receiver : public qb::Actor {
 public:
-    qb::io::async::task<bool> onInit() final {
+    qb::io::async::task<bool>
+    onInit() final {
         registerEvent<HandledEvent>(*this);
         registerEvent<qb::KillEvent>(*this);
         g_dst.store(static_cast<std::uint32_t>(id()));
         co_return true;
     }
-    void on(HandledEvent const &) { g_handled.fetch_add(1); }
-    void on(qb::KillEvent const &) { kill(); }
+    void
+    on(HandledEvent const &) {
+        g_handled.fetch_add(1);
+    }
+    void
+    on(qb::KillEvent const &) {
+        kill();
+    }
 };
 
-class Sender : public qb::Actor, public qb::ICallback {
+class Sender
+    : public qb::Actor
+    , public qb::ICallback {
     int _n = 0;
+
 public:
-    qb::io::async::task<bool> onInit() final {
+    qb::io::async::task<bool>
+    onInit() final {
         registerEvent<qb::KillEvent>(*this);
         registerCallback(*this);
         co_return true;
     }
-    void on(qb::KillEvent const &) { unregisterCallback(); kill(); }
-    void on(qb::LoopEvent const &) final {
+    void
+    on(qb::KillEvent const &) {
+        unregisterCallback();
+        kill();
+    }
+    void
+    on(qb::LoopEvent const &) final {
         const auto d = g_dst.load();
-        if (!d || _n >= 1000) return;
+        if (!d || _n >= 1000)
+            return;
         qb::ActorId dest{d};
         for (int i = 0; i < 100 && _n < 1000; ++i, ++_n) {
             push<UnhandledEvent>(dest);
@@ -94,7 +123,7 @@ TEST(UnhandledEventDisposal, EventWithNoSubscriberStillDisposesItsPayload) {
     {
         qb::Main main;
         main.addActor<Receiver>(0);
-        main.addActor<Sender>(0);   // same core: pure local pipe, no mailbox involved
+        main.addActor<Sender>(0); // same core: pure local pipe, no mailbox involved
         main.start();
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
         qb::Main::stop();

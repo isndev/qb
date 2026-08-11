@@ -85,9 +85,7 @@ struct CohortProbe {};
 template <std::size_t W, std::size_t... Is>
 void
 registerCohort(std::index_sequence<Is...>, CohortIds &ids, CohortNames &names) {
-    ((ids[Is]   = qb::type_id<CohortProbe<W, Is>>(),
-      names[Is] = qb::Event::type_to_name<CohortProbe<W, Is>>()),
-     ...);
+    ((ids[Is] = qb::type_id<CohortProbe<W, Is>>(), names[Is] = qb::Event::type_to_name<CohortProbe<W, Is>>()), ...);
 }
 
 template <std::size_t W>
@@ -180,8 +178,7 @@ TEST(TypeId, IdsAreDenseAndSequential) {
     collectDenseTypeIds(std::make_index_sequence<kNTypes>{}, ids);
     ASSERT_EQ(ids.size(), kNTypes);
     for (std::size_t i = 1; i < ids.size(); ++i)
-        EXPECT_EQ(static_cast<int>(ids[i]) - static_cast<int>(ids[i - 1]), 1)
-            << "ids must be handed out densely; gap at index " << i;
+        EXPECT_EQ(static_cast<int>(ids[i]) - static_cast<int>(ids[i - 1]), 1) << "ids must be handed out densely; gap at index " << i;
 }
 
 TEST(TypeId, EventTypeNameIsAvailableInEveryBuildMode) {
@@ -215,8 +212,7 @@ TEST(TypeId, EventTypeNameIsAvailableInEveryBuildMode) {
     constexpr auto kMaxId = std::numeric_limits<qb::Event::id_type>::max();
     ASSERT_GT(kMaxId, fresh) << "this process handed out the top of the id domain, so the probe "
                                 "below would be asserting on a REGISTERED id";
-    EXPECT_STREQ(qb::event_type_name(kMaxId), "<unregistered>")
-        << "the registry must cover the whole id domain, including ids never assigned";
+    EXPECT_STREQ(qb::event_type_name(kMaxId), "<unregistered>") << "the registry must cover the whole id domain, including ids never assigned";
 }
 
 TEST(TypeId, ConcurrentDistinctTypeRegistrationIsRaceFree) {
@@ -227,12 +223,12 @@ TEST(TypeId, ConcurrentDistinctTypeRegistrationIsRaceFree) {
     // the thread-sanitizer probe for the side registry.
     constexpr std::size_t kReaders = 4;
 
-    std::atomic<bool>                     go{false};
-    std::atomic<bool>                     stop{false};
-    std::atomic<std::size_t>              chars_read{0};
-    std::array<CohortIds, kWriters>       ids{};
-    std::array<CohortNames, kWriters>     names{};
-    std::vector<std::thread>              threads;
+    std::atomic<bool>                 go{false};
+    std::atomic<bool>                 stop{false};
+    std::atomic<std::size_t>          chars_read{0};
+    std::array<CohortIds, kWriters>   ids{};
+    std::array<CohortNames, kWriters> names{};
+    std::vector<std::thread>          threads;
     threads.reserve(kWriters + kReaders);
 
     for (std::size_t w = 0; w < kWriters; ++w) {
@@ -271,10 +267,8 @@ TEST(TypeId, ConcurrentDistinctTypeRegistrationIsRaceFree) {
     for (std::size_t w = 0; w < kWriters; ++w) {
         for (std::size_t i = 0; i < kPerWriter; ++i) {
             EXPECT_NE(ids[w][i], qb::TypeId{0}) << "writer " << w << " slot " << i;
-            EXPECT_TRUE(uniq.insert(ids[w][i]).second)
-                << "id " << ids[w][i] << " handed out twice (writer " << w << " slot " << i << ")";
-            EXPECT_STREQ(qb::event_type_name(ids[w][i]), names[w][i])
-                << "id " << ids[w][i] << " resolved to the wrong type's name";
+            EXPECT_TRUE(uniq.insert(ids[w][i]).second) << "id " << ids[w][i] << " handed out twice (writer " << w << " slot " << i << ")";
+            EXPECT_STREQ(qb::event_type_name(ids[w][i]), names[w][i]) << "id " << ids[w][i] << " resolved to the wrong type's name";
         }
     }
     EXPECT_EQ(uniq.size(), kWriters * kPerWriter);
@@ -293,16 +287,15 @@ TEST(TypeId, EventLayoutIsIndependentOfBuildMode) {
     struct Probe : qb::Event {
         std::uint32_t payload;
     };
-    static_assert(std::is_trivially_copyable_v<Probe>,
-                  "the transport relocates events with memcpy, so the wire image must be a "
-                  "faithful object representation");
+    static_assert(std::is_trivially_copyable_v<Probe>, "the transport relocates events with memcpy, so the wire image must be a "
+                                                       "faithful object representation");
 
     // Read dest/source out of a known byte pattern rather than out of offsetof(): qb::Event has
     // private members, so a derived probe is not standard-layout and offsetof() is only
     // conditionally supported (-Winvalid-offsetof is fatal under QB_TESTS_WERROR). This is the
     // ABI demo from dev/analysis/EVENT-ID-ABI-3.0.md turned into an assertion — byte[i] == i is
     // exactly what a mismatched consumer used to read wrong.
-    Probe                                probe{};
+    Probe                                    probe{};
     std::array<unsigned char, sizeof(Probe)> wire{};
     for (std::size_t i = 0; i < wire.size(); ++i)
         wire[i] = static_cast<unsigned char>(i);
@@ -322,12 +315,9 @@ TEST(TypeId, EventLayoutIsIndependentOfBuildMode) {
         return v;
     };
 
-    EXPECT_EQ(probe.getID(), static_cast<qb::Event::id_type>(half_at(6)))
-        << "Event::id must live at bytes 6..7 of the wire image";
-    EXPECT_EQ(static_cast<std::uint32_t>(probe.getDestination()), word_at(8))
-        << "Event::dest must live at bytes 8..11 of the wire image";
-    EXPECT_EQ(static_cast<std::uint32_t>(probe.getSource()), word_at(12))
-        << "Event::source must live at bytes 12..15 of the wire image";
+    EXPECT_EQ(probe.getID(), static_cast<qb::Event::id_type>(half_at(6))) << "Event::id must live at bytes 6..7 of the wire image";
+    EXPECT_EQ(static_cast<std::uint32_t>(probe.getDestination()), word_at(8)) << "Event::dest must live at bytes 8..11 of the wire image";
+    EXPECT_EQ(static_cast<std::uint32_t>(probe.getSource()), word_at(12)) << "Event::source must live at bytes 12..15 of the wire image";
 
     // And therefore a derived event's own payload starts at byte 16 — measured, not offsetof().
     const auto *const base   = reinterpret_cast<const unsigned char *>(static_cast<const qb::Event *>(&probe));
@@ -369,12 +359,10 @@ TEST(TypeIdIdentity, RegistryRecoversAnIdInsteadOfMintingASecond) {
     //
     // Stand in for the forked magic static in a second image: fresh storage, same type name.
     static qb::detail::type_id_slot second_image_slot{};
-    const auto                      recovered =
-        qb::detail::register_type_id(second_image_slot, typeid(RegistryProbeEvent).name());
+    const auto                      recovered = qb::detail::register_type_id(second_image_slot, typeid(RegistryProbeEvent).name());
 
     EXPECT_EQ(recovered, first) << "a second slot must recover the id, not mint a colliding one";
-    EXPECT_EQ(qb::detail::_type_id_counter.load(std::memory_order_relaxed), counter_before)
-        << "recovering an id must not consume one";
+    EXPECT_EQ(qb::detail::_type_id_counter.load(std::memory_order_relaxed), counter_before) << "recovering an id must not consume one";
     EXPECT_EQ(second_image_slot.name, nullptr) << "a recovered id must leave the caller's slot unused";
 
     // Positive control for the check above: an unregistered name DOES consume an id and DOES fill
@@ -385,11 +373,10 @@ TEST(TypeIdIdentity, RegistryRecoversAnIdInsteadOfMintingASecond) {
     // instead of minting, so the mint-only assertions are scoped to the first pass rather than
     // making the test order- AND repetition-dependent in a second way.
     const bool first_pass = (fresh_slot.name == nullptr);
-    const auto minted = qb::detail::register_type_id(fresh_slot, "qb::test::NeverRegisteredBefore");
+    const auto minted     = qb::detail::register_type_id(fresh_slot, "qb::test::NeverRegisteredBefore");
     if (first_pass) {
         EXPECT_EQ(minted, static_cast<qb::TypeId>(counter_before + 1));
-        EXPECT_EQ(qb::detail::_type_id_counter.load(std::memory_order_relaxed),
-                  static_cast<qb::TypeId>(counter_before + 1));
+        EXPECT_EQ(qb::detail::_type_id_counter.load(std::memory_order_relaxed), static_cast<qb::TypeId>(counter_before + 1));
     }
     EXPECT_EQ(fresh_slot.id, minted);
     EXPECT_STREQ(fresh_slot.name, "qb::test::NeverRegisteredBefore");
@@ -415,8 +402,7 @@ TEST(TypeIdIdentityDeathTest, PublishingASlotWithAutomaticStorageAborts) {
         {
             // Automatic storage: the shape that produced `rc=139` on 3 of 6 shuffle seeds.
             qb::detail::type_id_slot on_the_stack{};
-            qb::detail::register_type_id(on_the_stack,
-                                         "qb::test::SlotWithAutomaticStorage");
+            qb::detail::register_type_id(on_the_stack, "qb::test::SlotWithAutomaticStorage");
         },
         "must therefore have static storage duration");
 }
@@ -426,14 +412,14 @@ TEST(TypeIdIdentity, AStaticSlotIsAcceptedByTheStorageDurationCheck) {
     // must NOT abort, so the death test above is pinning the storage duration and not simply the
     // fact that `register_type_id` was called.
     static qb::detail::type_id_slot in_static_storage{};
-    const auto id = qb::detail::register_type_id(in_static_storage,
-                                                 "qb::test::SlotWithStaticStorage");
+    const auto                      id = qb::detail::register_type_id(in_static_storage, "qb::test::SlotWithStaticStorage");
     EXPECT_NE(id, 0u);
 }
 #else
 TEST(TypeIdIdentity, StorageDurationCheckIsCompiledOutHere) {
     GTEST_SKIP() << "register_type_id's storage-duration assert is Debug + POSIX only "
-                    "(NDEBUG=" <<
+                    "(NDEBUG="
+                 <<
 #ifdef NDEBUG
         1
 #else

@@ -42,10 +42,10 @@
 // declarations in qb/utility/abi.h are what give these definitions external linkage -- a const
 // object at namespace scope would otherwise be internal.
 extern "C" {
-const char QB_ABI_SYM_VERSION    = 0;
-const char QB_ABI_SYM_CACHELINE  = 0;
-const char QB_ABI_SYM_EXCEPTIONS = 0;
-const char QB_ABI_SYM_CORO_DEBUG = 0;
+const char QB_ABI_SYM_VERSION     = 0;
+const char QB_ABI_SYM_CACHELINE   = 0;
+const char QB_ABI_SYM_EXCEPTIONS  = 0;
+const char QB_ABI_SYM_CORO_DEBUG  = 0;
 const char QB_ABI_SYM_STD_JTHREAD = 0;
-const char qb_abi_fingerprint[]  = QB_ABI_FINGERPRINT_TEXT;
+const char qb_abi_fingerprint[]   = QB_ABI_FINGERPRINT_TEXT;
 }

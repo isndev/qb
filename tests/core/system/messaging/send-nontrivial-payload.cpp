@@ -90,8 +90,7 @@ struct Ordered : qb::Event {
         : seq(s) {}
 };
 
-static_assert(!std::is_trivially_destructible_v<Unordered>,
-              "the point of this file is a send() whose event is NOT trivially destructible");
+static_assert(!std::is_trivially_destructible_v<Unordered>, "the point of this file is a send() whose event is NOT trivially destructible");
 
 constexpr int kCount = 200;
 

@@ -48,15 +48,13 @@ expand(std::vector<std::string> const &base, std::size_t const reps) {
 }
 
 // Integer shapes: zero, small, negative, both 32/64-bit extremes, round millions, hex-of-decimal.
-const std::vector<std::string> kIntBase = {"0",          "7",          "-42",       "255",
-                                           "65535",      "1000000",    "-1",        "2147483647",
-                                           "-2147483648", "305419896", "9223372036854775807",
-                                           "-9223372036854775808"};
+const std::vector<std::string> kIntBase = {
+    "0", "7", "-42", "255", "65535", "1000000", "-1", "2147483647", "-2147483648", "305419896", "9223372036854775807", "-9223372036854775808"
+};
 
 // Floating shapes: integral, decimals, signed, scientific (±exp), tiny, a subnormal-ish value.
-const std::vector<std::string> kDblBase = {"0.0",       "3.14159",     "-2.5",      "1e10",
-                                           "6.022e23",  "-1.5e-9",     "0.000123",  "123456.789",
-                                           "42",        "-0.0",        "2.5e-300",  "9.87654321e8"};
+const std::vector<std::string> kDblBase = {"0.0",      "3.14159",    "-2.5", "1e10", "6.022e23", "-1.5e-9",
+                                           "0.000123", "123456.789", "42",   "-0.0", "2.5e-300", "9.87654321e8"};
 
 std::size_t
 corpus_bytes(std::vector<std::string> const &c) {
@@ -75,10 +73,10 @@ BM_Parse_Int_QbToNumber(benchmark::State &state) {
     // One-shot out-of-loop guard: qb::to_number must parse every entry AND match std::from_chars.
     {
         for (auto const &s : corpus) {
-            auto        qb_v = qb::to_number<std::int64_t>(s);
-            std::int64_t fc  = 0;
-            const auto  r    = std::from_chars(s.data(), s.data() + s.size(), fc);
-            const bool  fc_ok = (r.ec == std::errc{} && r.ptr == s.data() + s.size());
+            auto         qb_v  = qb::to_number<std::int64_t>(s);
+            std::int64_t fc    = 0;
+            const auto   r     = std::from_chars(s.data(), s.data() + s.size(), fc);
+            const bool   fc_ok = (r.ec == std::errc{} && r.ptr == s.data() + s.size());
             if (!qb_v || !fc_ok || *qb_v != fc) {
                 state.SkipWithError("qb::to_number<int64> disagrees with std::from_chars on the corpus");
                 return;
@@ -150,9 +148,9 @@ BM_Parse_Double_QbToNumber(benchmark::State &state) {
     // One-shot out-of-loop guard: parse every entry AND match std::from_chars bit-for-bit.
     {
         for (auto const &s : corpus) {
-            auto       qb_v = qb::to_number<double>(s);
-            double     fc   = 0.0;
-            const auto r    = std::from_chars(s.data(), s.data() + s.size(), fc);
+            auto       qb_v  = qb::to_number<double>(s);
+            double     fc    = 0.0;
+            const auto r     = std::from_chars(s.data(), s.data() + s.size(), fc);
             const bool fc_ok = (r.ec == std::errc{} && r.ptr == s.data() + s.size());
             if (!qb_v || !fc_ok || *qb_v != fc) {
                 state.SkipWithError("qb::to_number<double> disagrees with std::from_chars on the corpus");

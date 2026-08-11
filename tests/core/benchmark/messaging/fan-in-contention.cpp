@@ -92,7 +92,7 @@ BM_FanIn_OneWayPush(benchmark::State &state) {
     // message across all producers (a dropped/mis-routed push is caught by a positive check,
     // not merely by a join() hang on a sink that never reaches quota).
     {
-        auto     tally  = std::make_shared<std::atomic<std::uint64_t>>(0);
+        auto     tally = std::make_shared<std::atomic<std::uint64_t>>(0);
         qb::Main probe;
         auto     expect = build_fan_in(probe, producers, msgs_per, consumer_core, cap, same_core, tally);
         probe.start(true);

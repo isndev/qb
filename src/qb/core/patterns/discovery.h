@@ -94,7 +94,7 @@ struct discovery_awaiter {
     std::shared_ptr<discovery_state>           st;
     qb::duration                               timeout;
     std::uint64_t                              id;
-    qev_timer                                   timer{};
+    qev_timer                                  timer{};
     bool                                       timer_started = false;
     std::shared_ptr<bool>                      alive         = std::make_shared<bool>(true);
     qb::io::async::cancellation_token::id_type cancel_id     = 0;
