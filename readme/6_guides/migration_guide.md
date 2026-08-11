@@ -310,8 +310,8 @@ The migration matters because the framework's own surfaces take these types. A f
 
 ## Part 3 — From the synchronous `onInit()` to the async-init APIs
 
-The development branch makes two **source-incompatible** changes to the actor API. Both are
-mechanical to adopt.
+3.0 makes two **source-incompatible** changes to the actor API — on `main` as well as `develop`,
+which have carried the same 3.0.0 since 2026-08-11. Both are mechanical to adopt.
 
 ### `onInit()` is now a coroutine
 

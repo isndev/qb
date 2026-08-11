@@ -73,10 +73,12 @@ already have, configure with `-DFETCHCONTENT_SOURCE_DIR_QB=/path/to/qb`.
 > carry CI of their own that renders with this same script and builds, tests and runs the result on
 > Linux and macOS.
 >
-> One honest caveat: 3.0.0 is not tagged yet, so today the script resolves to the templates'
-> `develop` branch and writes `develop` as the qb ref, and says so when it runs. The generated tree
-> therefore follows a moving branch rather than a pinned release; to pin it, set `QB_GIT_REF` in the
-> generated `CMakeLists.txt` to a released tag. Two overrides exist for the other direction:
+> One honest caveat, and since 2026-08-11 it applies to only one of the two refs. Both templates are
+> now tagged `v3.0.0`, so the template ref matches that tag on the first rung and the script reports
+> `matches qb 3.0.0` — it does not reach the `develop` rung at all. qb itself has no `v3.0.0` yet, so
+> the qb ref written into the generated tree is still `develop`, and the script says so when it runs.
+> The generated tree therefore follows a moving branch **for qb** rather than a pinned release; to pin
+> it, set `QB_GIT_REF` in the generated `CMakeLists.txt` to a released tag. Two overrides exist for the other direction:
 > `QB_TEMPLATE_DIR=<path>` renders from a local template checkout (for template authors), and
 > `QB_REF=<ref>` overrides the qb ref written into the generated tree.
 
@@ -86,7 +88,8 @@ already have, configure with `-DFETCHCONTENT_SOURCE_DIR_QB=/path/to/qb`.
 > project exists; this constraint applies only to the two generators.
 >
 > Both are fetched **from a branch**, so the URL selects the version: `.../qb/main/script/...` is
-> the released line, `.../qb/<tag>/script/...` pins one release. `curl | bash` also means the code
+> the default branch — which carries a pre-release 3.0.0 until `v3.0.0` is tagged — and
+> `.../qb/<tag>/script/...` pins one release. `curl | bash` also means the code
 > runs unreviewed in the directory you are standing in — `curl -fsSL <url> -o scaffold.sh`, read it,
 > then `bash scaffold.sh MyProject` does the same thing and lets you look first.
 
