@@ -305,7 +305,7 @@ if (result.is_valid()) {
     // handle expiry
 }
 ```
-<!-- src: qb/tests/io/unit/crypto/crypto-jwt.cpp:210-234 -->
+<!-- src: qb/tests/io/unit/crypto/crypto-jwt.cpp:212-236 -->
 
 `create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/src/qb/io/crypto_jwt.h:79-103,195-198`; `qb/src/qb/io/crypto_jwt.cpp:389-395`.)_
 

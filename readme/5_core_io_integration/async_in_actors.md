@@ -250,7 +250,7 @@ public:
 };
 ```
 
-`with_timeout` is the same mixin that network session classes use for idle-connection cleanup; the message-broker server's `BrokerSession` closes its connection from exactly this handler. <!-- src: examples/core_io/message_broker/server/BrokerSession.cpp:159 -->
+`with_timeout` is the same mixin that network session classes use for idle-connection cleanup; the message-broker server's `BrokerSession` closes its connection from exactly this handler. <!-- src: examples/core_io/message_broker/server/BrokerSession.cpp:156-157 -->
 
 > **`with_timeout` vs. `callback`.** `with_timeout` models *inactivity* — a deadline that resets on activity and auto-reschedules until the real deadline. `callback`/`scoped_callback` model a *one-shot* deferral at a fixed delay. Reach for `with_timeout` when "reset the clock on every message" is the natural description; reach for a callback when "do X once, T from now" is.
 
@@ -271,7 +271,7 @@ Both return immediately and **share the same safety contract**, because a corout
 
 - **Never access actor members after a `co_await`.** The actor may have been destroyed while the coroutine was suspended; touching `this->_member` afterward is undefined behavior.
 - **Copy everything you need by value before the first `co_await`.** Do not capture `this` or references to actor members into the coroutine.
-- **After suspension, use only the `CoroContext`.** `ctx.push<Event>(...)` (to the spawning actor's own id), `ctx.push_to<Event>(dest, ...)` (to another actor), `ctx.id()`, and `ctx.time()` are safe; events to a dead actor are dropped. <!-- src: qb/src/qb/core/VirtualCore.h:1054,1060 -->
+- **After suspension, use only the `CoroContext`.** `ctx.push<Event>(...)` (to the spawning actor's own id), `ctx.push_to<Event>(dest, ...)` (to another actor), `ctx.id()`, and `ctx.time()` are safe; events to a dead actor are dropped. <!-- src: qb/src/qb/core/VirtualCore.h:1053,1059 -->
 - **Keep coroutines short-lived.** The longer a coroutine runs, the wider the window in which its actor can be destroyed.
 
 ```cpp
@@ -319,7 +319,7 @@ public:
 
 Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling thread, and an actor's thread is its whole `VirtualCore`. Three patterns keep the core responsive, in increasing order of isolation:
 
-1. **Wrap the blocking call in `async::callback`** (suitable for infrequent, non-critical I/O). The callback still blocks the core *for its own turn*, but it keeps the blocking work out of the actor's main message-handling path. When the I/O finishes, `push` a result event back to the requester. This is what the `file_processor` worker does. <!-- src: examples/core_io/file_processor/file_worker.h:100 -->
+1. **Wrap the blocking call in `async::callback`** (suitable for infrequent, non-critical I/O). The callback still blocks the core *for its own turn*, but it keeps the blocking work out of the actor's main message-handling path. When the I/O finishes, `push` a result event back to the requester. This is what the `file_processor` worker does. <!-- src: examples/core_io/file_processor/file_worker.h:102 -->
 
    ```cpp
    // FileWorker schedules the blocking read off the message-handling path.
@@ -333,7 +333,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
    });
    ```
 
-2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `file_processor` example builds exactly this manager-worker topology. <!-- src: examples/core_io/file_processor/main.cpp:213,219-223 -->
+2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `file_processor` example builds exactly this manager-worker topology. <!-- src: examples/core_io/file_processor/main.cpp:223,229-233 -->
 
 3. **Watch the filesystem instead of polling it.** To *react* to file or directory changes, use `qb::io::async::file_watcher<T>` / `directory_watcher<T>`, which deliver `on(qb::io::async::event::file const&)` notifications through the loop with no blocking. The `file_monitor` example demonstrates a directory-watcher actor. <!-- src: examples/core_io/file_monitor -->
 

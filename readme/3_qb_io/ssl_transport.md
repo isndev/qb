@@ -78,7 +78,7 @@ same reference-counted `SSL_CTX`, destroyed exactly once when the last copy — 
 minted from it — is gone. There is no user-visible `SSL_CTX_free`, so the double-free / leak
 footguns of hand-rolled OpenSSL ownership are structurally impossible.
 
-<!-- src: qb/src/qb/io/tcp/ssl/context.h:127 -->
+<!-- src: qb/src/qb/io/tcp/ssl/context.h:128 -->
 
 It is **secure by default** and **fails closed**: `Context::client()` pins TLS 1.2+, loads the
 system trust store, and verifies the peer; a construction or configuration error (a missing cert, a
@@ -99,7 +99,7 @@ The factories are `Context::client()`, `Context::server(cert, key)`, and two esc
 wrapping a raw `SSL_CTX*`: `Context::adopt` (transfer the caller's reference) and `Context::share`
 (take a new reference; the caller keeps theirs).
 
-<!-- src: qb/src/qb/io/tcp/ssl/context.h:138-163 -->
+<!-- src: qb/src/qb/io/tcp/ssl/context.h:139-164 -->
 
 Configuration is a fluent chain (`min_version`/`max_version`, `verify`, `trust`/`trust_system`,
 `identity`, `alpn`, `ciphers`/`ciphersuites`/`curves`, `dh_params`, `session_cache`/
@@ -110,7 +110,7 @@ context's `SSL_CTX` ex-data, so they are reachable from every minted `SSL` and a
 the context. `VerifyMode` is `none` / `peer` / `peer_require` (the last adds fail-if-no-cert, i.e.
 mutual TLS); `TlsVersion` is `v1_2` / `v1_3`.
 
-<!-- src: qb/src/qb/io/tcp/ssl/context.h:62 (TlsVersion), :72 (VerifyMode), :190-194 (typed on_keylog/on_verify/on_sni) -->
+<!-- src: qb/src/qb/io/tcp/ssl/context.h:62 (TlsVersion), :72 (VerifyMode), :192-196 (typed on_keylog/on_verify/on_sni) -->
 
 The raw `qb::io::ssl::` free functions and `socket::init(SSL*)` / `listener::init(SSL_CTX*)` remain
 available as an advanced escape hatch for fully hand-built configurations.

@@ -296,7 +296,7 @@ with I/O lifetime are:
   `qb::io::async::listener` is created on the thread. `schedule_via_current()`
   asserts in debug and silently no-ops in release if no scheduler exists,
   leaving any queued waiter permanently unresumed
-  (`src/qb/io/async/coroutine/scheduler.h:888-902`).
+  (`src/qb/io/async/coroutine/scheduler.h:887-901`).
 - **Awaiters must remain alive until `await_resume()`**
   (`src/qb/io/async/coroutine/awaiter.h:30-33`). Never create a temporary
   awaiter that goes out of scope before resumption; watchers are stopped in
