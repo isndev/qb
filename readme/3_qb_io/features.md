@@ -1,10 +1,10 @@
 # qb-io feature catalog
 
-> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — f1d8cca6
 
 An index of every `qb-io` capability — async engine, coroutines, transports, protocols, TLS, QUIC, crypto, compression, and utilities — with one-line summaries that link to the detail page that owns each topic.
 
-**Prerequisites:** none — **See also:** [qb-io overview](./README.md), [the asynchronous engine](./async_system.md), [io invariants reference](../7_reference/io_invariants.md)
+**Prerequisites:** none — **See also:** [qb-io overview](./README.md) · [the async runtime](./async_system.md) · [what has no coroutine form](./gaps.md) · [io invariants reference](../7_reference/io_invariants.md)
 
 `qb-io` is the C++20 asynchronous runtime with optional C++23 support under the qb actor framework. It is also usable standalone: the event loop, transports, protocols, and utilities have no dependency on `qb-core`. This page is a map. Each entry names the type or namespace, states what it does in one line, and links to the page that documents it in full. Where a capability is optional, the entry names the compile-time feature macro that gates it and the CMake option that defines that macro.
 
@@ -51,7 +51,9 @@ A coroutine runtime layered on the same `listener`. Callbacks and coroutines sha
 - **Async streams (`async_stream<T>`)** — a lazy functional pipeline with `map` / `filter` / `take` / `skip`, terminal consumers, `merge_streams`, `zip`, and `interval`.
 - **Retry (`with_retry`, `with_retry_until`, `make_retryable`)** — retry an operation under a `retry_policy` with a configurable `backoff_strategy`.
 
-→ [C++20 coroutines](./coroutines.md)
+Two limits to know before you plan around this layer. **Cancellation is opt-in per awaiter, and almost nothing opts in**: exactly five awaitables register a hook on a `cancellation_token`, so `cancel()` does not stop a coroutine parked on anything else. And **the coroutine surface stops at the raw descriptor**: `sleep`, `wait_readable`/`wait_writable`/`wait_for_io`, `tcp::connect` / `tcp::starttls_connect` and `async_awaiter<T>` are the whole list of entry points — accept, sessions, QUIC, signals and file I/O have no `co_await` form.
+
+→ [C++20 coroutines](./coroutines.md) · [What has no coroutine form](./gaps.md)
 
 ## 3. Networking
 
@@ -118,7 +120,7 @@ Cross-cutting helpers usable from any qb-io or qb-core code.
 - **Compression (`qb::compression`, optional `QB_HAS_COMPRESSION`)** — gzip and deflate, in-memory (`compress` / `uncompress`, `qb::gzip`, `qb::deflate`) and streaming (`compress_provider` / `decompress_provider`); `uncompress` enforces a caller-supplied output budget to reject decompression bombs.
 - **System information** — CPU details (`qb::CPU`) and endianness checks plus byte-swap helpers (`qb::endian`, in `qb/system/endian.h`). → [Foundations](../0_foundations/README.md)
 - **Containers and allocators** — `qb::allocator::pipe<T>` (resizable I/O buffer), `qb::string<N>` (fixed-capacity, heap-free small string), `qb::unordered_map` / `qb::unordered_set` (unconditional aliases for the **node-based** `ska::unordered_map` / `ska::unordered_set` — references survive a rehash; `qb::unordered_flat_map` / `qb::unordered_flat_set` name the open-addressing variant), and `qb::icase_unordered_map` (case-insensitive string keys).
-- **Lock-free primitives (`qb::lockfree`)** — `SpinLock` plus SPSC and MPSC ring-buffer queues, used internally by `qb-core` for inter-core message passing. → [Concurrency primitives](../0_foundations/concurrency_primitives.md)
+- **Lock-free primitives (`qb::lockfree`)** — SPSC and MPSC ring buffers plus a `SpinLock`. The MPSC ring is what carries `qb-core`'s inter-core mailbox; the `SpinLock` guards only the ring's *round-robin* enqueue overloads, which the engine never calls — it passes its own resolved producer slot to the indexed overload, so the message path takes no lock. → [Concurrency primitives](../0_foundations/concurrency_primitives.md)
 - **UUID (`qb::uuid`)** — RFC 4122 identifiers (an alias for `uuids::uuid` from stduuid). → [Encoding and conversion](../0_foundations/encoding.md)
 
 → [Essential utilities](./utilities.md)
@@ -126,7 +128,8 @@ Cross-cutting helpers usable from any qb-io or qb-core code.
 ## See also
 
 - [qb-io overview and reading order](./README.md)
-- [The asynchronous engine](./async_system.md) — the event loop every entry on this page sits on
+- [The async runtime](./async_system.md) — the loop turn every entry on this page sits on
 - [C++20 coroutines](./coroutines.md)
+- [What has no coroutine form](./gaps.md) — the capability gaps, each with its structural reason
 - [io invariants reference](../7_reference/io_invariants.md) — required reading before writing a custom protocol, transport, or async component
 - [Building from source](../7_reference/building.md) — the optional-feature gates and CMake options in full

@@ -70,7 +70,7 @@ The loop only makes progress while it is being run.
 
 With the default `flag == 0`, libev blocks until `break_parent()` is called or no active watchers remain. `EVRUN_NOWAIT` checks once and returns; `EVRUN_ONCE` waits for and processes one block of events.
 
-These functions throw `std::logic_error` if called from inside a coroutine or actor handler that is already executing under the scheduler's ready-drain — you must not re-enter the loop while it is dispatching. (See the pitfalls below for `run_once` and timerfd.)
+These functions throw `std::logic_error` when called from inside a **coroutine body**, which by construction runs under the scheduler's ready-drain. They do **not** throw from a plain actor event handler, which runs *after* the drain has returned — there the call simply blocks the `VirtualCore`, with no diagnostic at all. [The async runtime](../3_qb_io/async_system.md#run_sync-and-run_for-block-the-calling-thread) owns that distinction and the scope test that follows from it. (See the pitfalls below for `run_once` and timerfd.)
 
 > Both of these — the readiness model and the loop-driving functions — are owned by the qb-io reference. This page introduces them; [qb-io: the asynchronous system](../3_qb_io/async_system.md) is the full treatment.
 
@@ -260,7 +260,7 @@ Positive codes are available for application-specific use; the standard meaning 
 
 - **`callback(func)` with no delay is synchronous.** The single-argument overload, and the two-argument overload with a non-positive timeout, run `func()` immediately on the calling stack — they do not defer to a later loop iteration. Only `callback(func, timeout)` with a strictly positive `timeout` defers. Do not rely on the no-delay form to "yield" control back to the loop.
 - **One listener per thread; never share I/O objects.** A component, timer, or coroutine binds to the listener of the thread that created it. Touching it from another thread corrupts the loop. To cross threads, send an event (under `qb-core`) or use a per-thread listener.
-- **Do not re-enter the loop from a handler.** Calling `run()`, `run_once()`, or `run_until()` from inside an `on()` handler or coroutine that is already running under the scheduler throws `std::logic_error`. Let the current dispatch return.
+- **Do not re-enter the loop from a handler — and do not expect to be told.** From a coroutine body, `run()`, `run_once()`, `run_until()`, `run_for()` and `run_sync()` throw `std::logic_error`. From an actor event handler they throw nothing and freeze the `VirtualCore` instead; see [the rule](../3_qb_io/async_system.md#the-rule). Let the current dispatch return.
 - **`run_once()` can block on idle `qev_io`-only loops when timerfd is enabled.** qb's bundled libev disables timerfd by default (the `QB_EV_USE_TIMERFD` CMake option defaults to `OFF` in `qb/src/qb/vendor/qev/CMakeLists.txt`). If you build with `-DQB_EV_USE_TIMERFD=ON`, then when there are only `qev_io` watchers and no heap timers, `EVRUN_ONCE` can block for libev's internal maximum wait time. In pump loops prefer `run_until(status)` or `run(EVRUN_NOWAIT)` regardless.
 - **Guard actor state in *delayed* callbacks.** A delayed `callback` (or a coroutine that resumes after a suspension) may outlive the actor that scheduled it. Capture the actor's id by value and push an event back, or check `is_alive()`, rather than dereferencing a captured `this`. The synchronous no-delay path is exempt because the actor cannot have been destroyed yet.
 

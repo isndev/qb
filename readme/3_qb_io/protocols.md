@@ -1,10 +1,10 @@
 # Framing messages with protocols
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — f1d8cca6
 
 A protocol is the pluggable framing strategy that turns a continuous byte stream into discrete application messages: it decides where one message ends and hands each complete message to the I/O component's handler.
 
-**Prerequisites:** [qb-io overview](./README.md), [Transports](./transports.md) — **See also:** [Asynchronous I/O model](./async_system.md), [TCP transport](./transports.md), [Secure (SSL/TLS) transport](./ssl_transport.md)
+**Prerequisites:** [qb-io overview](./README.md) · [Transports](./transports.md) — **See also:** [The async runtime](./async_system.md) · [Secure (SSL/TLS) transport](./ssl_transport.md) · [The pipe](../0_foundations/buffers.md)
 
 ## Summary
 
@@ -109,7 +109,17 @@ sequenceDiagram
     end
 ```
 
-A `not_ok()` from either hook breaks out of this cycle: the framework closes the connection and dispatches `event::disconnected` instead of continuing the loop.
+### What "the framework then closes the connection" actually means
+
+`not_ok()` sets a flag. When the connection closes as a result depends on *which hook* set it, and the difference is observable:
+
+- **From `onMessage()` — immediately.** The framing loop re-reads `_protocol->ok()` right after the call returns and stops there (`src/qb/io/async/io.h:2643`). With no output pending it sets `reason = -1` and disposes on this same event; with output pending it flushes first, arms `EV_WRITE`, and the write path disposes once the buffer drains (`src/qb/io/async/io.h:2646-2654`, `:2702-2709`).
+- **From `getMessageSize()` — on the next event.** Returning `0` after calling `not_ok()` simply ends the `while` loop, and `process_messages()` reports success; nothing re-checks `ok()` afterwards. The close happens either through the write path (if there is buffered output) or at the top of the *next* readiness event, where the read branch is skipped because the protocol no longer reports itself usable, and the handler falls straight to its error label.
+  <!-- src: qb/src/qb/io/async/io.h:2756 (the read branch is gated on the protocol), :2806-2824 (the error label) -->
+
+That second path is not a defect — it is the mechanism behind **`close_after_deliver()`** (`src/qb/io/async/io.h:2499`), which marks the protocol not-ok precisely so the session disposes *after* its pending response has gone out. If you want an immediate close instead, call `disconnect(reason)`, which sets `_reason` and feeds the watcher an event (`src/qb/io/async/io.h:2574`).
+
+One more property of the same loop, easy to miss and occasionally load-bearing: the framework **snapshots** `should_flush()` before calling `onMessage()`, and uses that snapshot to decide whether to flush this message's bytes (`src/qb/io/async/io.h:2627`). An `onMessage()` that switches protocols — a handshake upgrading to HTTP/2, say — therefore flushes according to the *old* protocol's rule, which is the one that framed the bytes being consumed. It also means `set_should_flush()` called from inside `onMessage()` has no effect on the message being processed.
 
 ## Built-in protocols
 
@@ -192,6 +202,22 @@ Two protocols under `qb::io::protocol` (in `qb/io/protocol/accept.h` and `qb/io/
 - `handshake` drives a transport (SSL/TLS) handshake to completion and emits `async::event::handshake`. It is a deliberate exception to the "`getMessageSize()` is a pure query" rule — it calls into the transport's `do_handshake()` and caches the result — and it disables input-buffer flushing (`set_should_flush(false)`) so handshake bytes are not consumed as messages.
 
 You normally never name these directly; the secure transports wire them in for you. See [Secure (SSL/TLS) transport](./ssl_transport.md).
+
+The `accept` protocol is worth two minutes anyway, because it is the clearest proof that **`getMessageSize()` does not have to count bytes.** Its whole implementation is three lines:
+
+```cpp
+// src: qb/src/qb/io/protocol/accept.h:77-95
+std::size_t getMessageSize() noexcept final {
+    return static_cast<size_t>(this->_io.getAccepted().is_open());
+}
+void onMessage(std::size_t /*size*/) noexcept final {
+    this->_io.on(std::move(this->_io.getAccepted()));
+}
+```
+
+`getMessageSize()` answers "is there one?" with `1` or `0`. `onMessage()` moves the accepted socket out to the acceptor's handler. And `flush(1)` — which the framework calls because `should_flush()` defaults to true — is `_accepted_io.release_handle()` on the acceptance transport (`src/qb/io/transport/accept.h:116-118`), i.e. the step that stops the transport's own socket object from closing the descriptor it just handed away. Three hooks, no bytes, and the "message" is a file descriptor.
+
+It also shows why the `size <= pendingRead()` guard cannot be unconditional: `transport::accept` has no `in()` and no `pendingRead()` at all, so the check is compiled out for it by a `requires` test (`src/qb/io/async/io.h:2605-2611`) rather than failing every accept.
 
 ## Using a protocol in an I/O component
 
@@ -389,7 +415,8 @@ The `chat_tcp` and `message_broker` examples under `examples/core_io/` apply thi
 - **Buffer views are transient.** `data`/`cbegin()` pointers and `string_view`/`command_view` payloads reference the live input buffer and are invalidated once `onMessage()` returns and the bytes are flushed. Copy out anything you keep.
 - **`reset()` does not clear `not_ok()`.** `reset()` clears partial parsing state (the scan offset, a half-read header) but does not restore `ok()`. After a protocol marks itself not-ok, the connection closes; `reset()` cannot rescue it.
 - **Handle endianness in custom headers.** Multi-byte length or type fields should be serialized and deserialized in a fixed byte order (network order is the convention; see `htons`/`htonl` and the `size_as_header` source). A raw `memcpy` of a `uint32_t` is host-endian and will mis-frame across architectures.
-- **Size limits are enforced, not advisory.** Input/output buffers are capped at `QB_MAX_READ_BUFFER_SIZE` / `QB_MAX_WRITE_BUFFER_SIZE` and per-message size at `QB_MAX_MESSAGE_SIZE` (see `qb/io/config.h`). Exceeding them marks the protocol not-ok and disconnects (`buffer_overflow`, reason `-3`). Raise a component's limit deliberately with `set_max_message_size()` / `set_max_read_buffer_size()` rather than assuming it is unlimited.
+- **Size limits are enforced, not advisory — and the two limits are different codes.** A `getMessageSize()` result above `max_message_size()` (default `QB_MAX_MESSAGE_SIZE`) marks the protocol `not_ok()` and disconnects with `message_too_large`, reason **`-2`** (`src/qb/io/async/io.h:2613-2618`). A read or write buffer that would exceed `max_read_buffer_size()` / `max_write_buffer_size()` (default `QB_MAX_WRITE_BUFFER_SIZE`, `QB_MAX_READ_BUFFER_SIZE`) disconnects with `buffer_overflow`, reason **`-3`**, and does *not* touch the protocol's `ok()` at all (`src/qb/io/async/io.h:2767-2770`). Raise a component's limit deliberately with `set_max_message_size()` / `set_max_read_buffer_size()` rather than assuming it is unlimited.
+- **`not_ok()` from `getMessageSize()` does not close on this event.** It closes on the next one, or through the write path once pending output drains — which is exactly what `close_after_deliver()` relies on. If you need the connection down now, call `disconnect(reason)`. See [what "the framework then closes the connection" means](#what-the-framework-then-closes-the-connection-actually-means).
 
 ## See also
 

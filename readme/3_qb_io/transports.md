@@ -1,10 +1,48 @@
 # TCP and UDP transports and sockets
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — f1d8cca6
 
 Transports bind the buffered stream abstractions to concrete sockets, turning a raw `tcp::socket` or `udp::socket` into a read/write/buffer unit that the asynchronous I/O layer and protocols build on.
 
-**Prerequisites:** [qb-io overview](./README.md), [Asynchronous I/O model](./async_system.md) — **See also:** [Framing messages with protocols](./protocols.md), [Secure (SSL/TLS) transport](./ssl_transport.md), [QUIC transport](./quic_transport.md), [Time vocabulary](../0_foundations/time.md)
+**Prerequisites:** [qb-io overview](./README.md) · [The async runtime](./async_system.md) — **See also:** [Framing messages with protocols](./protocols.md) · [Secure (SSL/TLS) transport](./ssl_transport.md) · [QUIC transport](./quic_transport.md) · [What has no coroutine form](./gaps.md) · [The pipe](../0_foundations/buffers.md)
+
+## The journey of one byte
+
+Before the API surface, the path — because every rule further down this page is a step on it. A byte arrives on a connected TCP socket belonging to a session your code wrote. Here is everything that happens to it, in order:
+
+```mermaid
+sequenceDiagram
+    participant K as kernel
+    participant L as listener (libev)
+    participant IO as io<Session> (CRTP base)
+    participant T as transport::tcp
+    participant P as Protocol
+    participant S as Session
+    K->>L: fd becomes EV_READ ready
+    L->>IO: invoke() calls on(event::io const &)
+    IO->>T: Derived.read()
+    T->>K: recv into in_buffer.allocate_back(65536)
+    T-->>IO: n bytes, free_back(65536 - n)
+    loop while getMessageSize() > 0
+        IO->>P: getMessageSize()
+        P-->>IO: size of one complete frame
+        IO->>P: onMessage(size)
+        P->>S: _io.on(Protocol::message)
+        IO->>T: flush(size) if should_flush()
+    end
+    IO->>T: eof() — reset or reorder the input buffer
+    IO->>S: on(pending_read) or on(input_drained)
+    IO->>T: write() if anything was published
+```
+<!-- src: qb/src/qb/io/async/io.h:2730-2802 (the io handler), :2597-2661 (the framing loop); qb/src/qb/io/stream.h:152-173 (read), :183-198 (flush/eof) -->
+
+Five things are worth noticing in that picture, because each one is a rule somewhere else:
+
+1. **The read is one call of a fixed size.** `istream::read()` reserves `QB_DEFAULT_READ_BUFFER_SIZE` (65 536) bytes at the tail of the input pipe, reads into it, and hands the unused tail straight back with `free_back` (`src/qb/io/stream.h:167-171`). No memmove, no realloc on the common path — that is [the pipe's cursor model](../0_foundations/buffers.md#what-allocate_back-actually-does) doing its job.
+2. **The framing loop drains everything buffered before returning.** Several messages in one read are dispatched in one turn.
+3. **The framework, not the protocol, removes the bytes** — `flush(size)` after `onMessage`, and only when the protocol's `should_flush()` says so.
+4. **Output is drained in the same handler**, not on a separate `EV_WRITE` wake-up, whenever the read produced something to send (`src/qb/io/async/io.h:2798`). Waiting for libev to report writability instead lets the output buffer grow without bound under sustained read pressure — measured on SSL-over-UDS on macOS, where the kernel socket buffer is much smaller than TCP loopback.
+5. **Nothing in that path allocates per message.** The pipes grow and are reused; the watcher registration is drawn from a freelist.
 
 ## Summary
 
@@ -39,6 +77,42 @@ The lower layer is a thin, move-only wrapper over a native socket handle. The up
 
 `qb::io::socket` and the typed sockets are **move-only**: copy construction and copy assignment are deleted, and the destructor closes the handle. Pass them by value to transfer ownership (for example, moving an accepted socket from a listener into a session), never by copy.
 
+### The CRTP sandwich, and the one rule the type system does not enforce
+
+A working session is three independent pieces glued by CRTP, and knowing which piece owns what is what makes the next rule make sense.
+
+```mermaid
+flowchart TB
+    D["your Session : public use&lt;Session&gt;::tcp::client&lt;Server&gt;<br/>owns: on(Protocol::message), on(event::disconnected), your state"]
+    C["async::tcp::client&lt;Session, transport::tcp, Server&gt;<br/>base list: io&lt;Session&gt; FIRST, then transport::tcp"]
+    I["io&lt;Session&gt; : base&lt;io&lt;Session&gt;, event::io&gt;<br/>owns: the libev watcher, the framing loop, dispose()"]
+    T["transport::tcp = stream&lt;tcp::socket&gt;<br/>owns: the fd, the two pipe&lt;char&gt; buffers"]
+    P["Protocol : AProtocol&lt;Session&gt;<br/>owns: getMessageSize / onMessage — held by io&lt;&gt;, not by the transport"]
+    D --> C
+    C --> I
+    C --> T
+    I -. "drives" .-> P
+    P -. "reads _io.in(), writes _io.on(message)" .-> D
+```
+<!-- src: qb/src/qb/io/async/tcp/client.h:46-52 (the base list), qb/src/qb/io/async/io.h:2015 (io), :2019-2027 (the protocol members), qb/src/qb/io/transport/tcp.h:42 (the transport) -->
+
+**Base destruction order is the reverse of the base list — so the transport, which owns the fd, is destroyed *before* the `io<Derived>` base, which owns the watcher.** Leave the watcher armed until the `io<Derived>` destructor and libev's `qev_io_stop` runs against an already-closed descriptor, corrupting its per-fd bookkeeping (`anfds[fd]`). That is an intermittent use-after-close whose symptom is a later crash somewhere else entirely, in `clear_pending` or `fd_change`.
+
+The fix is the same in every composition, and it is a **destructor body**, because a destructor body runs before any base destructor — i.e. while the transport is still alive and the fd is still valid:
+
+```cpp
+~client() {
+    this->_async_event.stop();
+}
+```
+<!-- src: qb/src/qb/io/async/tcp/client.h:229-231 -->
+
+Every combination in the tree carries it, each with the reasoning written next to it: `tcp::client` in both its server-associated and standalone forms (`src/qb/io/async/tcp/client.h:106-108`, `:229-231`), `udp::server` (`src/qb/io/async/udp/server.h:74-76`), and the acceptor, whose `_Prot` base owns the *listening* socket and whose destructor stops `_async_event` for the same reason (`src/qb/io/async/tcp/acceptor.h:104-106`). Stopping an already-stopped or never-started watcher is a no-op, so the call is unconditional.
+
+**If you write your own composition of an `async::io`/`input`/`output` base with a transport, you owe it that destructor.** Nothing in the type system asks for it. Server-associated sessions are the most exposed case, because `dispose()` deliberately does *not* stop their watcher — the server owns that lifecycle — so without the destructor the watcher routinely outlives its fd (`src/qb/io/async/io.h:2877-2879`).
+
+A second rule with no compiler behind it, from the same sandwich: **the protocol belongs to the `io<Derived>` base, not to the transport.** `switch_protocol<P>(args...)` constructs `P`, checks `ok()`, takes ownership into a `std::vector<std::unique_ptr<IProtocol>>` and makes it active (`src/qb/io/async/io.h:2081`); `clear_protocols()` drops them all and leaves the never-null `NoProtocol` sentinel behind (`src/qb/io/async/io.h:2017`). A protocol that outlives its session, or a session whose protocol was cleared mid-message, is a lifetime question about that list — see [Protocols](./protocols.md#using-a-protocol-in-an-io-component).
+
 ### Stream abstractions
 
 The three stream templates live in `qb/io/stream.h`. Each is parameterized by the underlying I/O type `_IO_`:
@@ -49,9 +123,19 @@ The three stream templates live in `qb/io/stream.h`. Each is parameterized by th
 
 `stream::write()` calls `this->_in.write(...)`, so a bidirectional stream sends through the same socket it reads from. Reading and writing both go through buffers, so partial reads and partial writes are handled by the stream, not by your code.
 
-Buffer growth is bounded for denial-of-service protection. `set_max_read_buffer_size(size)` and `set_max_write_buffer_size(size)` adjust the per-stream caps at runtime; the defaults are `QB_MAX_READ_BUFFER_SIZE` and `QB_MAX_WRITE_BUFFER_SIZE` (200 MB each, defined in `qb/io/config.h`). A read that would push the input buffer over its cap returns the error code `qb::io::ErrBufferLimitExceeded` (`-2`); a `publish()` that would push the output buffer over its cap returns `nullptr`. The per-read chunk size is `QB_DEFAULT_READ_BUFFER_SIZE` (65536 bytes). Passing `SIZE_MAX` to either setter disables the cap; that is not recommended for network-facing components.
+Buffer growth is bounded for denial-of-service protection. `set_max_read_buffer_size(size)` and `set_max_write_buffer_size(size)` adjust the per-stream caps at runtime; the defaults are `QB_MAX_READ_BUFFER_SIZE` and `QB_MAX_WRITE_BUFFER_SIZE` (200 MB each, defined in `qb/io/config.h`). The per-read chunk size is `QB_DEFAULT_READ_BUFFER_SIZE` (65536 bytes). Passing `SIZE_MAX` to either setter disables the cap; that is not recommended for network-facing components.
 
-<!-- src: qb/src/qb/io/stream.h -->
+The cap is enforced at two different layers, and they behave differently, so it is worth knowing which one you are calling:
+
+| Layer | Call | On overflow |
+|---|---|---|
+| stream | `istream::read()` | returns `qb::io::ErrBufferLimitExceeded` (`-2`) without reading (`src/qb/io/stream.h:160-162`) |
+| stream | `stream::publish(data, size)` | returns `nullptr` and copies nothing (`src/qb/io/stream.h:504-509`) |
+| CRTP | `io<Derived>::publish(args...)`, i.e. `*this << x` | **disconnects the session** with `disconnect_reason::buffer_overflow` (`src/qb/io/async/io.h:2519-2522`) |
+
+The CRTP layer checks twice, before and after streaming the arguments in, and on the second check it retracts the overflowing tail with `free_back` before disconnecting, so the buffer never actually exceeds its cap (`src/qb/io/async/io.h:2526-2538`). The read-side `-2` is likewise turned into a disconnect one level up, at `reason == -3` (`src/qb/io/async/io.h:2767-2770`). So from a session's point of view every buffer-cap breach ends the connection; the `nullptr`/`-2` returns are what the layer below reports upward.
+
+<!-- src: qb/src/qb/io/stream.h:39 (ErrBufferLimitExceeded), :130 (set_max_read_buffer_size), :486 (set_max_write_buffer_size) -->
 
 ### TCP socket: `qb::io::tcp::socket`
 
@@ -378,12 +462,15 @@ int main() {
 - **`udp::socket::init()` returns `bool`; `tcp::socket::init()` returns `int`.** For UDP, `true` means success; for TCP, `0` means success. Check the right sense.
 - **UDP is all-or-nothing.** A datagram larger than `MaxDatagramSize` (65507) is rejected with `EMSGSIZE`, not truncated or split. Fragment large payloads at the application layer; the transport will not do it for you.
 - **Timed waits use `qb::duration`.** `connect(ep, wtimeout)` and `read_timeout(...)` take a `qb::duration` (a `std::chrono::nanoseconds` span). Non-positive durations are clamped to zero (poll once), not treated as "wait forever."
-- **Buffer caps are a DoS guard, not a soft limit.** A read past `max_read_buffer_size()` returns `ErrBufferLimitExceeded` (`-2`); a `publish()` past `max_write_buffer_size()` returns `nullptr`. Network-facing components should keep the defaults rather than raising the cap to `SIZE_MAX`.
-- **Do not drive sockets directly inside an actor.** The blocking socket calls shown above are for standalone or test code. Inside the runtime, derive from `qb::io::use<...>` so reads and writes run on the non-blocking event loop instead of stalling a `VirtualCore`. See [Building network actors](../5_core_io_integration/network_actors.md).
+- **Buffer caps are a DoS guard, not a soft limit.** At the stream layer a read past `max_read_buffer_size()` returns `ErrBufferLimitExceeded` (`-2`) and `stream::publish` returns `nullptr`; at the CRTP layer both become a disconnect (`buffer_overflow`, reason `-3`). Network-facing components should keep the defaults rather than raising the cap to `SIZE_MAX`.
+- **A composition of an async base and a transport needs a destructor that stops the watcher.** The transport is destroyed first and takes the fd with it; nothing in the type system asks for the `~T() { this->_async_event.stop(); }`. See [the CRTP sandwich](#the-crtp-sandwich-and-the-one-rule-the-type-system-does-not-enforce).
+- **Do not drive sockets directly inside an actor.** The blocking socket calls shown above are for standalone or test code. Inside the runtime, derive from `qb::io::use<...>` so reads and writes run on the non-blocking event loop instead of stalling a `VirtualCore`. Note that even the *asynchronous* connect resolves a hostname synchronously before it suspends — see [what has no coroutine form](./gaps.md#hostname-resolution-is-synchronous--including-inside-co_await-tcpconnect). And see [Building network actors](../5_core_io_integration/network_actors.md).
 
 ## See also
 
-- [Asynchronous I/O model](./async_system.md) — the event loop, timers, and how transports are driven non-blocking.
+- [The async runtime](./async_system.md) — the event loop turn that drives every step of the journey above.
+- [What has no coroutine form](./gaps.md) — why there is no `co_await accept()` and no `co_await session.read()`, and what to do instead.
+- [The pipe](../0_foundations/buffers.md) — the cursor model behind `read()`, `flush()`, `publish()` and the partial-write path.
 - [Building network actors](../5_core_io_integration/network_actors.md) — the `qb::io::use<...>` client/server mixins that wrap these transports.
 - [Framing messages with protocols](./protocols.md) — turning the TCP byte stream into discrete messages.
 - [Secure (SSL/TLS) transport](./ssl_transport.md) — `transport::stcp` and the secure socket/listener.
