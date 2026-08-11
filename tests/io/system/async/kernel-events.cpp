@@ -40,6 +40,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
@@ -47,9 +48,76 @@
 #include <qb/io/async/listener.h>
 #include <qb/io/system/file.h>
 #include <qb/utility/build_macros.h>
+#include <string>
 #include <thread>
 
+#if defined(_WIN32)
+#include <process.h> // _getpid
+#else
+#include <unistd.h> // ::getpid
+#endif
+
 #include "../../shared/coroutine_test_support.h"
+
+namespace {
+
+// Process id, portably. Uniqueness ACROSS processes is the point: two ctest presets can have the
+// same binary in flight at once, and a pid is the only qualifier here that is guaranteed to differ
+// between them. (Sibling suites key on gtest's random_seed() instead — see io/unit/file/file-sys.cpp
+// — which is fine within one process but is NOT load-bearing for cross-process isolation, since two
+// runs are only as distinct as their seeds happen to be.)
+[[nodiscard]] inline unsigned long long
+current_pid() noexcept {
+#if defined(_WIN32)
+    return static_cast<unsigned long long>(::_getpid());
+#else
+    return static_cast<unsigned long long>(::getpid());
+#endif
+}
+
+// Every file these cases touch lives in a private directory under the OS temp area, qualified by pid
+// AND the running test's name — never the CWD.
+//
+// This suite used to write `./test.file`, `./test.file.tmp` and `./raw_file_watcher.tmp` relative to
+// wherever the binary happened to start. Under ctest that is the shared `bin/tests` directory, so
+// every one of those names was a cross-binary collision waiting to happen, and running the binary by
+// hand dropped the files into the user's working directory. It has already cost one segfault:
+// `KernelEvents.BasicIO` used to read the `test.file` that `KernelEvents.File` happened to leave in
+// the CWD, so whenever it ran ALONE the file was absent, `sys::file` reported the failed open as
+// `native_handle() == -1`, and `qev_io_start` indexed its `anfds` array with that negative fd (see
+// the comment in that case). Both now create what they read, where nothing else can see it.
+//
+// The directory is created on first use per test and removed by ScopedTempDir's destructor.
+class ScopedTempDir {
+public:
+    ScopedTempDir() {
+        const auto *info = ::testing::UnitTest::GetInstance()->current_test_info();
+        _dir             = std::filesystem::temp_directory_path()
+               / ("qb-kernel-events-" + std::to_string(current_pid()) + "-" + (info ? info->name() : "anon"));
+        std::error_code ec;
+        std::filesystem::remove_all(_dir, ec); // start clean
+        std::filesystem::create_directories(_dir, ec);
+    }
+
+    ScopedTempDir(const ScopedTempDir &)            = delete;
+    ScopedTempDir &operator=(const ScopedTempDir &) = delete;
+
+    ~ScopedTempDir() {
+        std::error_code ec;
+        std::filesystem::remove_all(_dir, ec);
+    }
+
+    // Absolute path of `leaf` inside this test's private directory.
+    [[nodiscard]] std::string
+    operator()(std::string_view leaf) const {
+        return (_dir / leaf).string();
+    }
+
+private:
+    std::filesystem::path _dir;
+};
+
+} // namespace
 
 struct FakeActor {
     int           nb_events          = 0;
@@ -152,11 +220,13 @@ TEST(KernelEvents, Timer) {
 }
 
 TEST(KernelEvents, File) {
-    std::remove("./test.file");
+    const ScopedTempDir tmp;
+    const std::string   file     = tmp("test.file");
+    const std::string   file_tmp = tmp("test.file.tmp");
 
 #ifndef _WIN32
     {
-        std::ofstream ofs("./test.file", std::ios::binary);
+        std::ofstream ofs(file, std::ios::binary);
         ofs << "old\n";
     }
 #endif
@@ -175,11 +245,11 @@ TEST(KernelEvents, File) {
     constexpr int kFileEventInterval = 0;
 #endif
 
-    auto       &ev = handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", kFileEventInterval);
+    auto       &ev = handler.registerEvent<qb::io::async::event::file>(actor, file.c_str(), kFileEventInterval);
     ScopedEvent guard{handler, ev._interface};
     ev.start();
 
-    std::thread t([]() {
+    std::thread t([&file, &file_tmp]() {
 #ifndef _WIN32
         // Write atomically: produce the full content in a temporary file,
         // close it (flushing all OS buffers), then rename it into place.
@@ -188,13 +258,16 @@ TEST(KernelEvents, File) {
         // the race where qev_stat fires on creation before the write completes
         // (which would give st_size == 0 instead of the expected 5).
         {
-            std::ofstream ofs("./test.file.tmp", std::ios::binary);
+            std::ofstream ofs(file_tmp, std::ios::binary);
             ofs << "test\n"; // exactly 5 bytes — matches EXPECT_EQ below
         }
-        EXPECT_EQ(std::rename("./test.file.tmp", "./test.file"), 0);
+        EXPECT_EQ(std::rename(file_tmp.c_str(), file.c_str()), 0);
 #else
-        // On Windows CMD, "echo test > file" produces "test \r\n" = 7 bytes.
-        EXPECT_EQ(system("echo test > test.file"), 0);
+        // On Windows CMD, "echo test > file" produces "test \r\n" = 7 bytes (the space before the
+        // redirect is echoed). The path is quoted because temp_directory_path() may contain spaces.
+        (void) file_tmp;
+        const std::string cmd = "echo test > \"" + file + "\"";
+        EXPECT_EQ(system(cmd.c_str()), 0);
 #endif
     });
 
@@ -215,12 +288,7 @@ TEST(KernelEvents, File) {
     EXPECT_EQ(actor.nb_events, 1);
     EXPECT_EQ(actor.observed_file_size, actor.expected_file_size);
     t.join();
-
-    // Leave the working directory as we found it. Under ctest the CWD is the build tree so
-    // the stray file went unnoticed, but running this binary by hand dropped `test.file`
-    // wherever the user happened to be.
-    std::remove("./test.file");
-    std::remove("./test.file.tmp");
+    // ScopedTempDir removes the whole directory — nothing is left anywhere, CWD included.
 }
 
 #ifndef _WIN32
@@ -234,14 +302,17 @@ TEST(KernelEvents, BasicIO) {
     // negative fd is an out-of-bounds access. libev guards it with
     // `EV_ASSERT_MSG(fd >= 0, ...)` (`src/qb/vendor/qev/qev.c`), but assertions are compiled out
     // under NDEBUG — so Debug asserted while Release crashed with EXC_BAD_ACCESS.
+    const ScopedTempDir tmp;
+    const std::string   file = tmp("test.file");
     {
-        std::ofstream seed("./test.file", std::ios::binary);
+        std::ofstream seed(file, std::ios::binary);
         seed << "test\n";
     }
 
     qb::io::async::listener handler;
-    qb::io::sys::file       f("test.file");
-    ASSERT_TRUE(f.is_open()) << "cannot open ./test.file — registering an io watcher on a "
+    qb::io::sys::file       f(file);
+    ASSERT_TRUE(f.is_open()) << "cannot open " << file
+                             << " — registering an io watcher on a "
                                 "negative fd is undefined behaviour, not a test failure";
     FakeActor actor;
 
@@ -256,7 +327,6 @@ TEST(KernelEvents, BasicIO) {
     EXPECT_EQ(actor.nb_events, 1);
 
     f.close();
-    std::remove("./test.file");
 }
 
 #endif
@@ -365,7 +435,8 @@ TEST(KernelEvents, RawPeriodicTimerFiresThenStops) {
 TEST(KernelEvents, RawFileWatcherDetectsChange) {
     qb::io::async::init();
 
-    const std::string path = "./raw_file_watcher.tmp";
+    const ScopedTempDir tmp;
+    const std::string   path = tmp("raw_file_watcher.tmp");
     {
         std::ofstream ofs(path, std::ios::binary);
         ofs << "initial";
@@ -390,6 +461,5 @@ TEST(KernelEvents, RawFileWatcherDetectsChange) {
         << "raw ev::stat watcher never detected the file change";
 
     qb::io::async::listener::current.clear();
-    std::remove(path.c_str());
 }
 #endif

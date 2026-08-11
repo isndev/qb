@@ -15,8 +15,11 @@
  * `server<Derived, Session>`) owns the lifecycle and the `backend_event` → `on(...)` fan-out, while a
  * swappable `qb::io::quic::backend` does the wire work. By injecting `qb::io::test::FakeQuicBackend`
  * (the shared in-memory mock in `shared/quic_test_doubles.h`) every facade behaviour can be exercised
- * with NO event loop, NO real socket, NO TLS and NO `QB_HAS_QUIC` — these tests run deterministically
- * and in parallel. They are the pure-unit half harvested out of the former `system/test-quic.cpp`
+ * with NO event loop, NO peer, NO TLS and NO `QB_HAS_QUIC` — these tests run deterministically and in
+ * parallel. Note the one thing the mock does NOT displace: `endpoint::connect`/`listen` bind a real
+ * `qb::io::udp::socket` themselves before delegating, so every bind site here must stay loopback +
+ * ephemeral (`quic://127.0.0.1:0`) or the suite stops being parallel-safe.
+ * They are the pure-unit half harvested out of the former `system/test-quic.cpp`
  * (the native libngtcp2 loopback half lives in `system/quic/quic-handshake.cpp`).
  *
  * What is proven here — the adapter's contract, asserted on state the *facade* produced, not on what the
@@ -286,12 +289,19 @@ TEST(QuicAdapterEndpoint, DelegatesServerLifecycleToBackend) {
     FakeQuicBackend              *raw = nullptr;
     qb::io::async::quic::endpoint endpoint{make_fake(raw)};
 
-    ASSERT_TRUE(endpoint.listen(qb::io::uri{"quic://0.0.0.0:4433"}, "cert.pem", "key.pem"));
+    // Loopback + ephemeral, like every other listen() in this file. The backend is a mock, but
+    // `endpoint::listen` binds a REAL udp::socket before delegating (endpoint.h `_socket.bind`), so a
+    // fixed port here was a genuine cross-process collision — and `0.0.0.0` bound every interface,
+    // which also trips the macOS incoming-connection firewall prompt.
+    ASSERT_TRUE(endpoint.listen(qb::io::uri{"quic://127.0.0.1:0"}, "cert.pem", "key.pem"));
     EXPECT_TRUE(endpoint.is_open());
     EXPECT_EQ(endpoint.current_state(), State::listening);
     EXPECT_EQ(raw->configure_calls, 1);
     EXPECT_EQ(raw->start_server_calls, 1);
-    EXPECT_EQ(raw->last_local.port(), 4433);
+    // Stronger than the old `== 4433`: the backend must receive the port the socket RESOLVED to,
+    // which with `:0` is provably not the port that was requested.
+    EXPECT_NE(raw->last_local.port(), 0);
+    EXPECT_EQ(raw->last_local.port(), endpoint.local_endpoint().port());
     ASSERT_EQ(raw->last_alpn.size(), 1u);
     EXPECT_EQ(raw->last_alpn.front(), "h3");
     EXPECT_EQ(raw->last_tls.certificate_file, std::filesystem::path{"cert.pem"});
