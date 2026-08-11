@@ -29,11 +29,11 @@ llm/qb.llm.api.md	Actor.h:599-616	11edeff824dc	/**
 llm/qb.llm.api.md	Actor.h:629-673	5c5465b8e08f	/**
 llm/qb.llm.api.md	Event.h:654-655	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:663-664	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.h:1147-1147	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1147-1148	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1160-1160	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1160-1162	b009dc2efdb7	Actor::spawn(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:746-769	cc12c180b3fc	template <typename _ServiceActor>
+llm/qb.llm.api.md	VirtualCore.h:1146-1146	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1146-1147	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1159-1159	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1159-1161	b009dc2efdb7	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:745-768	cc12c180b3fc	template <typename _ServiceActor>
 llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
 llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	crypto.h:693-701	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
@@ -69,9 +69,9 @@ llm/qb.llm.md	ICallback.h:16-19	88e747230d39	* @warning The tick handler is exec
 llm/qb.llm.md	Main.cpp:341-343	74f8f97adb96	} else if (core_factory.empty()) {
 llm/qb.llm.md	Main.cpp:484-486	0f521c2df42b	Main::core(CoreId const index) {
 llm/qb.llm.md	Pipe.h:135-150	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.h:1147-1147	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:1160-1160	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:649-660	ea1ffc0e035a	* @brief Get the current cached time for this VirtualCore's processin...
+llm/qb.llm.md	VirtualCore.h:1146-1146	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:1159-1159	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:648-659	ea1ffc0e035a	* @brief Get the current cached time for this VirtualCore's processin...
 llm/qb.llm.md	async/io.h:62-67	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
 llm/qb.llm.md	async/io.h:82-83	bc5b8adc7b00	base()
 llm/qb.llm.md	async/io.h:91-95	4ab46a163948	~base() {
@@ -97,7 +97,7 @@ llm/qb.llm.md	patterns/request.h:100-100	fd61ad9ff46e	ask(qb::ScopedCoroContext 
 llm/qb.llm.md	qev++.h:696-696	125d441028a9	set(const char *path, qev_tstamp interval = 0.) EV_NOEXCEPT {
 llm/qb.llm.md	scheduler.h:183-203	6f23a925c6f8	* Drains and destroys all coroutines in the ready queue only. Coroutines
 llm/qb.llm.md	scheduler.h:406-435	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
-llm/qb.llm.md	ssl/context.h:127-127	3b96c5ab4fe6	class QB_API Context {
+llm/qb.llm.md	ssl/context.h:128-128	3b96c5ab4fe6	class QB_API Context {
 llm/qb.llm.md	ssl/socket.h:464-464	37e2ac1caed3	explicit socket(qb::io::ssl::Context ctx) noexcept;
 llm/qb.llm.md	ssl/socket.h:84-84	111eae84930c	SSL_CTX *create_client_context(const SSL_METHOD *method);
 llm/qb.llm.md	ssl/socket.h:871-871	0e2c7a135bf8	void set_insecure() noexcept;
