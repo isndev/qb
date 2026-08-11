@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 project(qev
         VERSION 5.0.0
         DESCRIPTION "A modernized, cross-platform fork of libev (qev_* API, NOT drop-in)"
-        HOMEPAGE_URL "https://github.com/isndev/qb-ev"
+        HOMEPAGE_URL "https://github.com/isndev/qb" # NOT isndev/qb-ev: that repo is private, so it 404s publicly
         LANGUAGES C)
 
 # Detect whether we are the top-level project (standalone) or consumed as a
