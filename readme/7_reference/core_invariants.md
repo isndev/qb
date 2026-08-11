@@ -132,7 +132,7 @@ Termination is guaranteed in bounded time: after a partial flush the workflow dr
 | `Main` signal flag | `std::atomic<std::sig_atomic_t>` | async-signal-safe poll in the worker loop |
 | `Main::_stop_source` / `_stop_token` | `qb::stop_*` | standard library ordering when backed by `std::stop_*`; acquire/release atomic ordering in qb's fallback |
 | Service-id registration | atomic + magic-static + mutex | one-time cross-thread publish (`src/qb/core/VirtualCore.h:1035-1045`) |
-| Inter-core mailbox | lock-free MPSC ring buffer | own internal acquire/release (see [lock-free primitives](./lockfree_primitives.md)) |
+| Inter-core mailbox | lock-free MPSC ring buffer | own internal acquire/release (see [concurrency primitives](../0_foundations/concurrency_primitives.md)) |
 
 There is no `std::mutex` on the message path. The only locks in `qb-core` guard the one-time service-id map (static-init only) and the mailbox condition variable used when a core parks while truly idle at non-zero latency.
 

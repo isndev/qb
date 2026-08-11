@@ -4,7 +4,7 @@
 
 Transports bind the buffered stream abstractions to concrete sockets, turning a raw `tcp::socket` or `udp::socket` into a read/write/buffer unit that the asynchronous I/O layer and protocols build on.
 
-**Prerequisites:** [qb-io overview](./README.md), [Asynchronous I/O model](./async_system.md) — **See also:** [Framing messages with protocols](./protocols.md), [Secure (SSL/TLS) transport](./ssl_transport.md), [QUIC transport](./quic_transport.md), [Time model](./utilities.md)
+**Prerequisites:** [qb-io overview](./README.md), [Asynchronous I/O model](./async_system.md) — **See also:** [Framing messages with protocols](./protocols.md), [Secure (SSL/TLS) transport](./ssl_transport.md), [QUIC transport](./quic_transport.md), [Time vocabulary](../0_foundations/time.md)
 
 ## Summary
 
@@ -388,4 +388,4 @@ int main() {
 - [Framing messages with protocols](./protocols.md) — turning the TCP byte stream into discrete messages.
 - [Secure (SSL/TLS) transport](./ssl_transport.md) — `transport::stcp` and the secure socket/listener.
 - [QUIC transport](./quic_transport.md) — the UDP-based, reactor-driven QUIC endpoint.
-- [Time model](./utilities.md) — `qb::duration`, `qb::mono_time`, and `qb::wall_time`.
+- [Time vocabulary](../0_foundations/time.md) — `qb::duration`, `qb::mono_time`, and `qb::wall_time`.

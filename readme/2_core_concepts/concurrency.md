@@ -4,7 +4,7 @@
 
 qb makes the actor the unit of concurrency: each actor owns its state, runs on exactly one worker thread, and processes its mailbox one event at a time, so application code never reaches for a mutex.
 
-**Prerequisites:** [The actor model](./actor_model.md), [The event system](./event_system.md) — **See also:** [Asynchronous I/O](./async_io.md), [The engine](../4_qb_core/engine.md), [Lock-free primitives](../7_reference/lockfree_primitives.md), [Core invariants](../7_reference/core_invariants.md)
+**Prerequisites:** [The actor model](./actor_model.md), [The event system](./event_system.md) — **See also:** [Asynchronous I/O](./async_io.md), [The engine](../4_qb_core/engine.md), [Concurrency primitives](../0_foundations/concurrency_primitives.md), [Core invariants](../7_reference/core_invariants.md)
 
 ## Summary
 
@@ -162,7 +162,7 @@ flowchart LR
 
 **Single-thread-per-core (the surface you write against).** Your actors, their state, their event handlers, their `on(qb::LoopEvent const&)` ticks, and the per-core data structures the engine keeps for them all live on one thread. No part of the public actor API requires you to reason about concurrent access to your own state. The framework's own per-core structures — the actor maps, the service-id pool — also perform no synchronization, because they are owned by a single worker thread. (`src/qb/core/VirtualCore.h:177-178`, `src/qb/core/VirtualCore.h:275-276`)
 
-**Lock-free, real multi-threaded (the engine's message bus).** The one place where multiple threads genuinely meet is cross-core event delivery. Each `VirtualCore` has an incoming mailbox built on a multi-producer, single-consumer (MPSC) lock-free ring buffer: every other core can enqueue into it concurrently, while the owning core is the only consumer. (`src/qb/core/Main.h:328`, backed by `qb::lockfree::mpsc::ringbuffer` from `src/qb/system/lockfree/mpsc.h`) The enqueue path takes no lock; a per-mailbox `std::mutex` and `std::condition_variable` are used only to let an idle consumer sleep when its core latency is greater than zero, never to move an event. (`src/qb/core/Main.h:330-331`, used only by the sleep/wake handshake — `wait()` at `src/qb/core/Main.h:348-354` and `notify()` at `src/qb/core/Main.h:365-369`) This is the seam that lets ordered, transparent `push()` cross thread boundaries. The lock-free primitives are documented separately in [Lock-free primitives](../7_reference/lockfree_primitives.md); you use them through `push()`/`send()` and rarely touch them directly.
+**Lock-free, real multi-threaded (the engine's message bus).** The one place where multiple threads genuinely meet is cross-core event delivery. Each `VirtualCore` has an incoming mailbox built on a multi-producer, single-consumer (MPSC) lock-free ring buffer: every other core can enqueue into it concurrently, while the owning core is the only consumer. (`src/qb/core/Main.h:328`, backed by `qb::lockfree::mpsc::ringbuffer` from `src/qb/system/lockfree/mpsc.h`) The enqueue path takes no lock; a per-mailbox `std::mutex` and `std::condition_variable` are used only to let an idle consumer sleep when its core latency is greater than zero, never to move an event. (`src/qb/core/Main.h:330-331`, used only by the sleep/wake handshake — `wait()` at `src/qb/core/Main.h:348-354` and `notify()` at `src/qb/core/Main.h:365-369`) This is the seam that lets ordered, transparent `push()` cross thread boundaries. The lock-free primitives are documented separately in [Concurrency primitives](../0_foundations/concurrency_primitives.md); you use them through `push()`/`send()` and rarely touch them directly.
 
 The practical rule: trust the model. Write your handlers as if single-threaded — because for your state, they are — and let the lock-free message bus carry data between cores.
 
@@ -191,7 +191,7 @@ Both calls return the `CoreInitializer` for chaining and must run before `start(
 - [The event system](./event_system.md) — defining events and the `push`/`send`/`reply`/`forward` primitives.
 - [Asynchronous I/O](./async_io.md) — the non-blocking event loop each `VirtualCore` runs.
 - [The engine](../4_qb_core/engine.md) — `Main`, `VirtualCore`, and `CoreInitializer` in depth.
-- [Lock-free primitives](../7_reference/lockfree_primitives.md) — the MPSC ring buffer behind cross-core delivery.
+- [Concurrency primitives](../0_foundations/concurrency_primitives.md) — the MPSC ring buffer behind cross-core delivery.
 - [Performance tuning](../6_guides/performance_tuning.md) — choosing latency, affinity, and actor placement.
 - [Core invariants](../7_reference/core_invariants.md) — the full list of runtime guarantees.
 - [Glossary](../7_reference/glossary.md) — definitions of actor, VirtualCore, mailbox, and related terms.

@@ -318,15 +318,15 @@ A wall-clock instant, `std::chrono::system_clock::time_point`, obtained from `qb
 
 #### Lock-free
 
-Describes data structures that allow concurrent access from multiple threads without mutexes, relying on atomic CPU operations. qb uses lock-free queues for inter-core event delivery. See [Concurrency](../2_core_concepts/concurrency.md), [Lock-free primitives](./lockfree_primitives.md).
+Describes data structures that allow concurrent access from multiple threads without mutexes, relying on atomic CPU operations. qb uses lock-free queues for inter-core event delivery. See [Concurrency](../2_core_concepts/concurrency.md), [Concurrency primitives](../0_foundations/concurrency_primitives.md).
 
 #### MPSC queue (multiple-producer, single-consumer)
 
-A queue allowing many producer threads but exactly one consumer thread, used for the inter-core [mailbox](#mailbox) (`qb::lockfree::mpsc::ringbuffer`). See [Lock-free primitives](./lockfree_primitives.md).
+A queue allowing many producer threads but exactly one consumer thread, used for the inter-core [mailbox](#mailbox) (`qb::lockfree::mpsc::ringbuffer`). See [Concurrency primitives](../0_foundations/concurrency_primitives.md).
 
 #### SPSC queue (single-producer, single-consumer)
 
-A queue with exactly one producer and one consumer (`qb::lockfree::spsc::ringbuffer`). See [Lock-free primitives](./lockfree_primitives.md).
+A queue with exactly one producer and one consumer (`qb::lockfree::spsc::ringbuffer`). See [Concurrency primitives](../0_foundations/concurrency_primitives.md).
 
 <a id="pipe-memory-buffer-qballocatorpipet"></a>
 #### Pipe (memory buffer — `qb::allocator::pipe<T>`)
@@ -339,7 +339,7 @@ The C++ technique of binding resource lifetime to object lifetime — acquire in
 
 #### Spinlock (`qb::lockfree::SpinLock`)
 
-A mutual-exclusion lock that busy-waits (spins) instead of yielding, suited to very short, low-contention critical sections. Defined in `src/qb/system/lockfree/spinlock.h`. See [Lock-free primitives](./lockfree_primitives.md).
+A mutual-exclusion lock that busy-waits (spins) instead of yielding, suited to very short, low-contention critical sections. Defined in `src/qb/system/lockfree/spinlock.h`. See [Concurrency primitives](../0_foundations/concurrency_primitives.md).
 
 #### `qb::string<N>`
 
@@ -347,8 +347,8 @@ A fixed-capacity string holding up to `N` characters inline without heap allocat
 
 #### UUID (`qb::uuid`)
 
-A Universally Unique Identifier (RFC 4122). `qb::generate_random_uuid()` produces version-4 UUIDs. Defined in `src/qb/uuid.h`. See [Utilities](../3_qb_io/utilities.md).
+A Universally Unique Identifier (RFC 4122). `qb::generate_random_uuid()` produces version-4 UUIDs. Defined in `src/qb/uuid.h`. See [Encoding and conversion](../0_foundations/encoding.md).
 
 ---
 
-**See also:** [API overview](./api_overview.md) · [Frequently asked questions](./faq.md) · [Core invariants](./core_invariants.md) · [qb-io invariants](./io_invariants.md) · [Lock-free primitives](./lockfree_primitives.md)
+**See also:** [API overview](./api_overview.md) · [Frequently asked questions](./faq.md) · [Core invariants](./core_invariants.md) · [qb-io invariants](./io_invariants.md) · [Concurrency primitives](../0_foundations/concurrency_primitives.md)

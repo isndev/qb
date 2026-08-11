@@ -4,7 +4,7 @@
 
 qb runs one `VirtualCore` worker thread per engine core, each owning its actors and draining a private lock-free mailbox, so the only genuinely multi-threaded surface is the message-passing layer between cores.
 
-**Prerequisites:** [Concurrency in qb](./concurrency.md), [The actor model](./actor_model.md) — **See also:** [The event system](./event_system.md), [The engine](../4_qb_core/engine.md), [Lock-free primitives](../7_reference/lockfree_primitives.md), [Core invariants](../7_reference/core_invariants.md)
+**Prerequisites:** [Concurrency in qb](./concurrency.md), [The actor model](./actor_model.md) — **See also:** [The event system](./event_system.md), [The engine](../4_qb_core/engine.md), [Concurrency primitives](../0_foundations/concurrency_primitives.md), [Core invariants](../7_reference/core_invariants.md)
 
 ## Summary
 
@@ -160,6 +160,6 @@ A per-core `setLatency` is idempotent — calling it more than once on the same 
 - [The actor model](./actor_model.md) — actors, ids, and lifecycle on a `VirtualCore`.
 - [The event system](./event_system.md) — how events are addressed, pushed, and delivered.
 - [The engine](../4_qb_core/engine.md) — `Main`, `VirtualCore`, and `CoreInitializer` reference.
-- [Lock-free primitives](../7_reference/lockfree_primitives.md) — the MPSC ring buffer and spinlock backing the mailboxes.
+- [Concurrency primitives](../0_foundations/concurrency_primitives.md) — the MPSC ring buffer and spinlock backing the mailboxes.
 - [Core invariants](../7_reference/core_invariants.md) — thread-affinity, mailbox sizing, and shutdown rules in one place.
 - [API overview](../7_reference/api_overview.md) — the `qb::duration` time vocabulary used by `setLatency`, and the `Main`/`VirtualCore`/`CoreInitializer` surface.

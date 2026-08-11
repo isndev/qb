@@ -116,10 +116,10 @@ Cross-cutting helpers usable from any qb-io or qb-core code.
 - **Cryptography (`qb::crypto`, mostly optional `QB_HAS_SSL`)** — the gate here is per **member**, not per header: `crypto.h` compiles without OpenSSL and keeps the hex codec (`to_hex_string`, `hex_value`, `hex_to_string`) plus `xor_bytes` and `constant_time_compare`, while every OpenSSL-backed member is removed from the class. Under `QB_HAS_SSL` the full surface is hashing (MD5, SHA-1, SHA-256, SHA-512, HMAC), key derivation (PBKDF2, HKDF, Argon2), encoding (Base64, Base64URL, hex), symmetric encryption (AES-CBC, AES-GCM, ChaCha20-Poly1305), asymmetric primitives (RSA, ECDSA over P-256/P-384/P-521, Ed25519, X25519 exchange, ECIES), and secure random/token helpers.
 - **JSON Web Tokens (`qb::jwt`, optional `QB_HAS_SSL`)** — create, sign, decode, and verify JWTs.
 - **Compression (`qb::compression`, optional `QB_HAS_COMPRESSION`)** — gzip and deflate, in-memory (`compress` / `uncompress`, `qb::gzip`, `qb::deflate`) and streaming (`compress_provider` / `decompress_provider`); `uncompress` enforces a caller-supplied output budget to reject decompression bombs.
-- **System information** — CPU details (`qb::CPU`) and endianness checks plus byte-swap helpers (`qb::endian`, in `qb/system/endian.h`).
+- **System information** — CPU details (`qb::CPU`) and endianness checks plus byte-swap helpers (`qb::endian`, in `qb/system/endian.h`). → [Foundations](../0_foundations/README.md)
 - **Containers and allocators** — `qb::allocator::pipe<T>` (resizable I/O buffer), `qb::string<N>` (fixed-capacity, heap-free small string), `qb::unordered_map` / `qb::unordered_set` (unconditional aliases for the **node-based** `ska::unordered_map` / `ska::unordered_set` — references survive a rehash; `qb::unordered_flat_map` / `qb::unordered_flat_set` name the open-addressing variant), and `qb::icase_unordered_map` (case-insensitive string keys).
-- **Lock-free primitives (`qb::lockfree`)** — `SpinLock` plus SPSC and MPSC ring-buffer queues, used internally by `qb-core` for inter-core message passing.
-- **UUID (`qb::uuid`)** — RFC 4122 identifiers (an alias for `uuids::uuid` from stduuid).
+- **Lock-free primitives (`qb::lockfree`)** — `SpinLock` plus SPSC and MPSC ring-buffer queues, used internally by `qb-core` for inter-core message passing. → [Concurrency primitives](../0_foundations/concurrency_primitives.md)
+- **UUID (`qb::uuid`)** — RFC 4122 identifiers (an alias for `uuids::uuid` from stduuid). → [Encoding and conversion](../0_foundations/encoding.md)
 
 → [Essential utilities](./utilities.md)
 

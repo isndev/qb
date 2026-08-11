@@ -4,7 +4,7 @@
 
 `qb::io::async` is the single-threaded, libev-backed event loop that drives every non-blocking operation in `qb-io`: socket readiness, timers, scheduled callbacks, file-system watching, and the C++20 coroutine scheduler.
 
-**Prerequisites:** [QB-IO overview](./README.md), [Time model](./utilities.md) — **See also:** [C++20 coroutines](./coroutines.md), [Transports](./transports.md), [Protocols](./protocols.md), [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md)
+**Prerequisites:** [QB-IO overview](./README.md), [Time vocabulary](../0_foundations/time.md) — **See also:** [C++20 coroutines](./coroutines.md), [Transports](./transports.md), [Protocols](./protocols.md), [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md)
 
 ## Summary
 

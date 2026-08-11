@@ -4,7 +4,7 @@
 
 Move an existing codebase to qb: from hand-rolled `std::thread` + locked queues to actors, and from the pre-2.0 `qb::Timestamp`/`qb::Duration` time types to the `qb::duration`/`qb::mono_time`/`qb::wall_time` chrono model.
 
-**Prerequisites:** [Getting started](./getting_started.md) — **See also:** [The actor model](../2_core_concepts/actor_model.md), [Inter-actor messaging](../4_qb_core/messaging.md), [The threading model](../2_core_concepts/threading_model.md), [Time vocabulary](../3_qb_io/utilities.md#time-vocabulary-qbduration-qbmono_time-qbwall_time)
+**Prerequisites:** [Getting started](./getting_started.md) — **See also:** [The actor model](../2_core_concepts/actor_model.md), [Inter-actor messaging](../4_qb_core/messaging.md), [The threading model](../2_core_concepts/threading_model.md), [Time vocabulary](../0_foundations/time.md)
 
 ## Summary
 
@@ -204,7 +204,7 @@ Cross-core `push` is delivered over a lock-free queue; the code above is unchang
 
 ### Concepts
 
-qb 2.0 replaced the framework-specific time classes with three `std::chrono` aliases. They are the single source of truth across qb and every module; the [time vocabulary](../3_qb_io/utilities.md#time-vocabulary-qbduration-qbmono_time-qbwall_time) section owns their full definition. In brief:
+qb 2.0 replaced the framework-specific time classes with three `std::chrono` aliases. They are the single source of truth across qb and every module; the [time vocabulary](../0_foundations/time.md) page owns their full definition. In brief:
 
 | Alias | Underlying type | Use for |
 |---|---|---|
@@ -734,5 +734,5 @@ translation unit defines `LOG_INFO` before including qb, yours now wins where qb
 - [Inter-actor messaging](../4_qb_core/messaging.md) — `push`, `send`, `to`, `reply`, `forward`, and `broadcast`.
 - [The threading model](../2_core_concepts/threading_model.md) — how `CoreId`s map to worker threads and how cross-core delivery works.
 - [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) — offloading blocking work without stalling the loop.
-- [Time vocabulary](../3_qb_io/utilities.md#time-vocabulary-qbduration-qbmono_time-qbwall_time) — the canonical definition of `qb::duration`, `qb::mono_time`, and `qb::wall_time`.
+- [Time vocabulary](../0_foundations/time.md) — the canonical definition of `qb::duration`, `qb::mono_time`, and `qb::wall_time`.
 - [Error handling](./error_handling.md) — supervision and failure propagation across actors.

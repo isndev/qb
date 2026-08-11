@@ -4,7 +4,7 @@
 
 How an actor uses the `qb-io` event loop — deferred callbacks, inactivity timers, and coroutines — to perform time-based and I/O-bound work without blocking its `VirtualCore`.
 
-**Prerequisites:** [Core concepts: the actor model](../2_core_concepts/actor_model.md), [Reference: `qb-io` async system](../3_qb_io/async_system.md) — **See also:** [Network actors](./network_actors.md), [Reference: time utilities](../3_qb_io/utilities.md)
+**Prerequisites:** [Core concepts: the actor model](../2_core_concepts/actor_model.md), [Reference: `qb-io` async system](../3_qb_io/async_system.md) — **See also:** [Network actors](./network_actors.md), [Foundations: the time vocabulary](../0_foundations/time.md)
 
 ## Summary
 
@@ -352,4 +352,4 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
 - [Reference: `qb-io` async system](../3_qb_io/async_system.md) — the listener, timers, and watchers in full.
 - [Reference: C++20 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, and combinators.
 - [Reference: `qb::Actor`](../4_qb_core/actor.md) — `qb::ICallback` registration and the periodic-callback lifecycle.
-- [Reference: time utilities](../3_qb_io/utilities.md) — `qb::duration`, `qb::mono_time`, `qb::wall_time`.
+- [Foundations: the time vocabulary](../0_foundations/time.md) — `qb::duration`, `qb::mono_time`, `qb::wall_time`.

@@ -22,7 +22,6 @@ The earlier sections teach concepts in narrative order. This section is the oppo
 | [qb-io invariants: threading, lifetime, and ownership](./io_invariants.md) | The rules the asynchronous stack assumes — one event loop per thread, where callbacks run, when objects may be destroyed, and who owns each socket. Required reading before writing a custom protocol, transport, or async base class. |
 | [Frequently asked questions](./faq.md) | Short, grounded answers to the questions that come up most when adopting qb, each linking to the page that owns the full explanation. |
 | [Glossary](./glossary.md) | A definition for every domain term used across the documentation, grounded in the header that owns it and linked to the page that explains it in full. |
-| [Lock-free primitives](./lockfree_primitives.md) | The lock-free building blocks under `qb/system/lockfree` — SPSC and MPSC ring buffers, an unbounded MPSC queue, and a spinlock — that back the inter-core message path, plus the threading contract for using them directly. |
 | [Testing the framework](./testing.md) | How the test suite is organized, how to build and run it with CTest and GoogleTest, and how the coverage option is wired. |
 | [Benchmarks](./benchmarks.md) | The qb-core micro-benchmark suite: the Google Benchmark targets gated by `QB_BUILD_BENCHMARKS`, what each one measures, and how to build, run, and read them. |
 
@@ -32,8 +31,10 @@ Reference pages are meant for lookup, not front-to-back reading. Use these entry
 
 - **Evaluating or first building qb.** Start with [Building from source](./building.md), then [CMake options reference](./cmake_options.md) and [CMake and third-party dependencies](./cmake_dependencies.md) when a configure step needs tuning.
 - **Looking up an API.** Go straight to the [Public API overview](./api_overview.md); follow its links into the owning headers. Keep the [Glossary](./glossary.md) open for unfamiliar terms.
-- **Writing framework-level code** (a custom actor base, protocol, transport, or anything using a lock-free primitive directly). Read [qb-core thread-safety and lifecycle invariants](./core_invariants.md) and [qb-io invariants: threading, lifetime, and ownership](./io_invariants.md) first; consult [Lock-free primitives](./lockfree_primitives.md) only if you call those structures yourself rather than through the engine.
+- **Writing framework-level code** (a custom actor base, protocol, transport, or anything using a lock-free primitive directly). Read [qb-core thread-safety and lifecycle invariants](./core_invariants.md) and [qb-io invariants: threading, lifetime, and ownership](./io_invariants.md) first; consult [Concurrency primitives](../0_foundations/concurrency_primitives.md) only if you call those structures yourself rather than through the engine.
 - **Contributing or measuring.** [Testing the framework](./testing.md) for the suite layout and CTest workflow; [Benchmarks](./benchmarks.md) for the micro-benchmark targets.
 - **Stuck on a specific question.** Check the [FAQ](./faq.md) before reading a full page — each answer links to the page that owns the detail.
+
+The lock-free ring buffers, the spinlock, the allocator pipe and the time vocabulary are **not** here: they sit below both libraries and are documented in [Foundations](../0_foundations/README.md).
 
 For task-oriented, narrative material, see the [Developer guides](../6_guides/README.md); for the conceptual treatment of each library, see [qb-core](../4_qb_core/README.md) and [qb-io](../3_qb_io/README.md).

@@ -16,21 +16,24 @@ The sections below progress from concepts to reference. New readers should follo
 
 | # | Section | What it covers |
 |---|---|---|
+| 0 | [Foundations](./0_foundations/README.md) | The layer beneath the event loop: the time vocabulary, the allocator pipe, containers, encoding helpers, the lock-free primitives, and the ABI machinery. Optional before adopting; required before contributing. |
 | 1 | [Introduction](./1_introduction/README.md) | What qb is, the design philosophy behind it, and when the actor model is the right fit. |
 | 2 | [Core concepts](./2_core_concepts/README.md) | The vocabulary: actors, the event system, the asynchronous I/O model, concurrency, and the threading model. |
 | 3 | [qb-io](./3_qb_io/README.md) | The asynchronous runtime: the event loop, transports, the protocol layer, coroutines, SSL/TLS, QUIC, and utilities. |
 | 4 | [qb-core](./4_qb_core/README.md) | The actor engine: `qb::Actor`, the `qb::Main` engine and `qb::VirtualCore` scheduling, messaging, and actor patterns. |
 | 5 | [Core and I/O integration](./5_core_io_integration/README.md) | How actors use `qb-io` together — async work inside actors and network actors — with worked examples. |
 | 6 | [Guides](./6_guides/README.md) | Task-oriented walkthroughs: getting started, patterns, performance tuning, error handling, resource management, and migration. |
-| 7 | [Reference](./7_reference/README.md) | API overview, build system, CMake options, core and I/O invariants, lock-free primitives, benchmarks, testing, FAQ, and glossary. |
+| 7 | [Reference](./7_reference/README.md) | API overview, build system, CMake options, core and I/O invariants, benchmarks, testing, FAQ, and glossary. |
 
 ## Suggested reading order
 
-1. Start with [Introduction](./1_introduction/README.md) to understand the model and decide whether it fits the problem.
-2. Read [Core concepts](./2_core_concepts/README.md) for the vocabulary used throughout the rest of the guide.
-3. Work through [Getting started](./6_guides/getting_started.md) to build and run a first actor.
+1. Work through [Getting started](./6_guides/getting_started.md) to build and run a first actor — the model is easier to read once you have seen it run.
+2. Read [Introduction](./1_introduction/README.md) to understand the design and decide whether it fits the problem.
+3. Read [Core concepts](./2_core_concepts/README.md) for the vocabulary used throughout the rest of the guide.
 4. Go deeper into the library that matters for the task: [qb-core](./4_qb_core/README.md) for the actor engine, [qb-io](./3_qb_io/README.md) for the runtime.
 5. See the two combined in [Core and I/O integration](./5_core_io_integration/README.md), then consult [Guides](./6_guides/README.md) and [Reference](./7_reference/README.md) as needed.
+
+[Foundations](./0_foundations/README.md) is deliberately outside that order. Its public half — `qb::duration`, `qb::string<N>`, the containers — you will meet in the first actor you write, and each page stands alone; its machinery half is what you read before contributing to the engine, or the day one of the framework's rules surprises you and you want the mechanism rather than the rule.
 
 ## Project policies
 
