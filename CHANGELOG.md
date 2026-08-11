@@ -7,10 +7,11 @@ policy.
 
 ## [Unreleased]
 
-Tracks changes on the `develop` branch that are not yet part of a tagged release.
-`QB_FRAMEWORK_VERSION` is **3.0.0** on this branch, so a build made from `develop` already reports
-`3.0.0` while this section is still open; it becomes the `[3.0.0]` entry when that release is tagged.
-The latest tag remains `v2.6.0`.
+Tracks changes that are not yet part of a tagged release. Since 2026-08-11 that is **both**
+branches, not just `develop`: `main` was fast-forwarded to `develop` for the release, so
+`QB_FRAMEWORK_VERSION` is **3.0.0** on either, and a build from a default clone already reports
+`3.0.0` while this section is still open. It becomes the `[3.0.0]` entry when that release is
+tagged. The latest tag remains `v2.6.0`.
 
 **This is a major release, and it breaks source in eight places.** Count them here rather than
 discovering them one build error at a time — *Removed* carries five and *Changed* three:

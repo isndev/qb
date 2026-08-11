@@ -134,8 +134,11 @@ FLOORS = {
 # The published ref.  Every AI-docs channel measured in DISTRIBUTION-3.0.md §5.1 (GitMCP,
 # DeepWiki, Context7) reads the repository's DEFAULT branch, and all five public repos have
 # `default_branch = main`.  Pinning the links to `main` is therefore what makes them
-# resolve for a consumer; it also means the links are one release behind until the 3.0.0
-# merge, which is why check() validates them against the local tree and not the network.
+# resolve for a consumer.  Until the 2026-08-11 release merge that also meant the links ran one
+# release behind -- `main` was 2.6.0, whose tree had no `src/`, so the 3.0 paths these URLs name
+# did not exist on it.  That is why check() validates them against the local tree and not the
+# network, and the local resolution stays: it is offline, has no rate limit, and stays right on
+# whichever of the two branches moves first next time.
 REF = "main"
 
 LEAD_OPEN = "<!-- llms-txt:lead -->"
