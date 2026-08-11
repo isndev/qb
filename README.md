@@ -218,7 +218,8 @@ ctest --test-dir build -L module:qbm-mymodule
 > `src/qbm/mymodule/` directory that `qb_register_module()` requires, so it must be a lowercase
 > identifier (`[a-z][a-z0-9_]*`) and anything else exits 2 rather than failing at the first compile
 > error. The qb the module builds against is chosen by the script at scaffold time exactly as it is
-> for a project, including the `develop` caveat that applies while 3.0.0 is untagged.
+> for a project: the template ref resolves from the qb version the script ships with, and while
+> 3.0.0 is untagged the qb ref follows `develop`, which the script reports on every run.
 
 ## Building
 

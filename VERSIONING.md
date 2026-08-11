@@ -6,9 +6,10 @@ qb follows [Semantic Versioning 2.0.0](https://semver.org/). The version is defi
 `cmake/qbConfig.cmake` (`QB_FRAMEWORK_VERSION`) and consumed by `project()` in `CMakeLists.txt` — that
 file is the single source of truth, and every other version string in the tree is a copy of it.
 
-The latest **tagged release** is **2.6.0**. The `develop` branch, where the next release accumulates,
-reports **3.0.0**; a build made from `develop` therefore advertises a version that is not yet tagged.
-That next release is a **major** one — see [CHANGELOG.md](./CHANGELOG.md) for what makes it major.
+**`main` and `develop` both report 3.0.0, and no `v3.0.0` tag exists yet** — so a build from either
+branch advertises a version that is not yet tagged. The latest *tagged* release remains **2.6.0**.
+`main` was fast-forwarded to `develop` on 2026-08-11 in preparation for the release; until the tag
+lands, the default clone is a pre-release 3.0.0. That release is a **major** one — see [CHANGELOG.md](./CHANGELOG.md) for what makes it major.
 
 The qbm modules (`qbm-http`, `qbm-pgsql`, `qbm-redis`) carry the framework version rather than
 versions of their own. They are not standalone-configurable, so a module version can only ever mean
