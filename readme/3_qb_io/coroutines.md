@@ -388,7 +388,7 @@ auto [in_p, out_p] = make_pipeline<int, int>(            // pair of unique_ptr c
 ```
 
 `recv_for` / `send_for` are **member functions** (`ch.recv_for(timeout)` returns `task<std::optional<T>>`; `ch.send_for(value, timeout)` returns `task<bool>`). `send(value)`/`recv()` return awaiters; `recv()` yields `std::optional<T>` that is empty once the channel is closed, while `send(value)` throws `channel_closed` on a closed channel. `make_channel` and `make_pipeline` return `std::unique_ptr` so the caller owns the channel's lifetime.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:131 (capacity default 0), :302 (send), :410 (recv), :608 (recv_for), :709 (send_for), :420/:473 (try_send/try_recv), :490 (close), :916 (make_channel), :1093 (make_pipeline), :1017/:1039/:1061 (transform/filter/collect) -->
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:131 (capacity default 0), :302 (send), :410 (recv), :608 (recv_for), :708 (send_for), :420/:473 (try_send/try_recv), :490 (close), :915 (make_channel), :1092 (make_pipeline), :1016/:1039/:1061 (transform/filter/collect) -->
 
 ### `select` — first ready channel wins
 
@@ -399,10 +399,10 @@ else if (!res.closed)    use(res.get<std::string>());
 ```
 
 `select(...)` returns `select_result { size_t index; bool closed; std::any value; }`: `index` is the 0-based channel that won, `closed` is true when that channel was closed (the value is then empty), and `get<T>()` casts the received value.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:1140 (select_result), :1268 (select variadic), :1344 (select vector) -->
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:1139 (select_result), :1267 (select variadic), :1343 (select vector) -->
 
 > A `channel<T>` is single-thread only. Its destructor clears an internal liveness flag *before* closing, so a parked sender or receiver whose frame is torn down does not touch freed channel memory. `channel_range` (and `async_stream::from_channel`) drain non-blocking and stop at the first empty slot — use [`async_stream`](#async-streams) for true async iteration, and prefer `from_channel_shared` to avoid the borrowed-reference lifetime trap.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:137-143 (dtor clears _alive before close), :924-927 (channel_range does not suspend, Factbook); stream.h:98/:110 -->
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:137-143 (dtor clears _alive before close), :923-926 (channel_range does not suspend, Factbook); stream.h:98/:110 -->
 
 ## Structured concurrency: `coroutine_scope`
 
@@ -448,7 +448,7 @@ co_await repeat_while(
 ```
 
 `join_any()` returns `task<size_t>` (the completed index); `join_all_for(qb::duration)` returns `task<bool>`. The cleanup policy on scope destruction is one of `cancel_all` (default — signals the scope token), `join_all` (best-effort; children keep running via the shared scope state if you forgot to `co_await join_all()`), or `detach`. `parallel_map(items, f, max_concurrency = 10)` takes the mapping function *before* the concurrency limit; `repeat_while(factory, should_continue, cancel_token = {})` calls `should_continue()` synchronously and `factory()` to build each iteration's task. The ready-made `joining_scope`, `cancelling_scope`, and `detaching_scope` subclasses fix the policy.
-<!-- src: qb/src/qb/io/async/coroutine/scope.h:81 (cleanup_policy), :153 (default cancel_all), :228/:255 (spawn task/Callable), :366 (join_all), :423 (join_any), :487 (join_all_for), :617/:626/:635 (scope subclasses), :715 (with_scope), :732 (repeat_while), :779 (parallel_map) -->
+<!-- src: qb/src/qb/io/async/coroutine/scope.h:81 (cleanup_policy), :153 (default cancel_all), :228/:255 (spawn task/Callable), :366 (join_all), :423 (join_any), :487 (join_all_for), :617/:626/:635 (scope subclasses), :715 (with_scope), :732 (repeat_while), :778 (parallel_map) -->
 
 ## Generators
 

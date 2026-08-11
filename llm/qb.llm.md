@@ -372,14 +372,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
-  both must be called from the actor's own worker thread. _(`spawn_detached` Actor.h:1202 / VirtualCore.h:1147; `spawn` Actor.h:1239 / VirtualCore.h:1160)_
+  both must be called from the actor's own worker thread. _(`spawn_detached` Actor.h:1202 / VirtualCore.h:1146; `spawn` Actor.h:1239 / VirtualCore.h:1159)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
   with 0 actors fails startup. _(Main.cpp:484-486, :341-343)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
   `on(qb::LoopEvent const&)` invocation. For a continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:567-583; VirtualCore.h:649-660)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:567-583; VirtualCore.h:648-659)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:66-78; async/io.h:62-67, :82-83, :91-95)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
@@ -410,7 +410,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:127; ssl/socket.h:464, :871, :84, :95)_
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:128; ssl/socket.h:464, :871, :84, :95)_
 - **Filesystem paths are `std::filesystem::path` and resource paths self-locate.** `sys::file::open`/ctor,
   `file_to_pipe`/`pipe_to_file::open`, the SSL cert/key/CA/DH helpers (`create_server_context`,
   `load_ca_certificates`/`load_ca_directory`/`configure_mtls_server_context`/`configure_client_certificate`/`configure_dh_parameters_server`),
