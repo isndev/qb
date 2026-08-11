@@ -296,9 +296,43 @@ TEST(UDPSocket, Ipv6MulticastRejectsBadInputsAndAcceptsValidGroups) {
 
 // The default-interface (empty iface) multicast branch: a VALID group with an empty
 // interface takes the INADDR_ANY (v4) / resolve_iface_index("")==0 (v6) path — distinct
-// from the malformed-group / malformed-iface rejections the other cases drive. The
-// membership itself may be refused on a host with no multicast route, so the join/leave
-// return is asserted leniently (0 or -1); the point is to exercise the empty-iface arm.
+// from the malformed-group / malformed-iface rejections the other cases drive.
+//
+// The v6 half is where two kernels genuinely disagree, and the disagreement is in the
+// KERNEL, not in qb: join/leave_multicast_group are a faithful passthrough here
+// (`resolve_iface_index("") == 0`, socket.cpp:56, and the same `ipv6_mreq` reaches the same
+// `setsockopt`). Measured with raw `setsockopt` and no qb code in the loop:
+//
+//   Linux 6.12    join(idx=0) = 0    leave(idx=0) = 0
+//                 Index 0 on LEAVE is a WILDCARD — it also drops a membership that was
+//                 created with an explicit index, and after it succeeds a leave naming the
+//                 explicit index fails. So join("")/leave("") is symmetric.
+//
+//   Darwin 25.6   join(idx=0) = 0    leave(idx=0) = -1 EADDRNOTAVAIL   (0 successes in 10)
+//                 Index 0 is resolved by a route lookup on JOIN and the membership is
+//                 recorded against the CONCRETE interface that lookup picked (en0 here, the
+//                 default route's interface — not lo0, despite `ff00::/8 -> ::1`). On LEAVE
+//                 index 0 is a literal match key, so it matches nothing — not even a
+//                 membership that was itself created with index 0.
+//
+// The Darwin membership is not lost, only un-addressable as "0": a leave naming the resolved
+// index releases it (asserted below). So `join("") == 0` does NOT imply `leave("") == 0`, and
+// asserting that implication is what made this test fail on any macOS host with a default
+// IPv6 multicast route. It shipped in 2.6.0 and never fired in CI, because a runner has no
+// such route: the join returns -1 there and the strict branch was simply never reached.
+//
+// What this test asserts now, per platform:
+//   * everywhere  — an empty interface is exactly equivalent to an explicit "0";
+//                   the leave's return value must AGREE with whether the membership is
+//                   still held (the rejoin oracle below), so a failure must be an honest
+//                   failure and a success must be a real release;
+//                   and where the host refuses the join, the leave must refuse too — the
+//                   run is never vacuous.
+//   * Darwin      — a successful index-0 join is followed by a FAILING index-0 leave, and
+//                   the membership is still releasable by its resolved interface index.
+//   * Linux       — a successful index-0 join is followed by a SUCCEEDING index-0 leave.
+//   * elsewhere   — (Windows/BSD: unmeasured) no hard-coded expectation for the leave's
+//                   value, but the equivalence and the rejoin oracle still bind.
 TEST(UDPSocket, MulticastJoinLeaveWithDefaultInterface) {
     {
         qb::io::udp::socket socket;
@@ -309,7 +343,13 @@ TEST(UDPSocket, MulticastJoinLeaveWithDefaultInterface) {
         const int left = socket.leave_multicast_group("239.0.0.1", "");
         EXPECT_TRUE(left == 0 || left == -1);
         if (joined == 0) {
+            // v4 is symmetric on every kernel measured: IP_DROP_MEMBERSHIP with
+            // INADDR_ANY releases what IP_ADD_MEMBERSHIP with INADDR_ANY created.
             EXPECT_EQ(left, 0) << "leaving a group that was successfully joined must succeed";
+        } else {
+            // Non-vacuous on a host that refuses the join: with no membership on the
+            // socket there is nothing to drop, so the leave must fail too.
+            EXPECT_EQ(left, -1) << "leaving a group that was never joined must fail";
         }
     }
 
@@ -322,11 +362,64 @@ TEST(UDPSocket, MulticastJoinLeaveWithDefaultInterface) {
 
     const int joined6 = socket6.join_multicast_group("ff02::1", ""); // -> resolve_iface_index("") == 0 (any)
     EXPECT_TRUE(joined6 == 0 || joined6 == -1);
+
+    // Platform-independent, and asserted even where the host refuses the join: the empty
+    // interface must take exactly the index-0 path an explicit "0" takes. This is what keeps
+    // the empty-iface arm covered on a runner whose join returns -1 — without it the whole
+    // v6 leg would assert nothing there. A second socket is used because the two joins would
+    // otherwise collide (a repeat join on the SAME socket is EADDRINUSE); distinct sockets
+    // may each hold the same membership.
+    {
+        qb::io::udp::socket probe6;
+        ASSERT_EQ(probe6.bind_v6(0, "::1"), 0);
+        EXPECT_EQ(probe6.join_multicast_group("ff02::1", "0"), joined6) << "an empty interface must behave exactly like an explicit index 0";
+    }
+
     const int left6 = socket6.leave_multicast_group("ff02::1", "");
     EXPECT_TRUE(left6 == 0 || left6 == -1);
-    if (joined6 == 0) {
-        EXPECT_EQ(left6, 0) << "leaving a v6 group that was successfully joined must succeed";
+
+    if (joined6 != 0) {
+        // Non-vacuous where the join was refused: nothing was joined, so nothing can be left.
+        EXPECT_EQ(left6, -1) << "leaving a v6 group that was never joined must fail";
+        return;
     }
+
+    // The oracle. A repeat join is refused (EADDRINUSE) exactly while the membership is
+    // still held, so it reads the kernel's actual state independently of what the leave
+    // claimed. Verified on both kernels: a leave that reports success is followed by a
+    // successful rejoin, a leave that reports failure by a refused one, and a failed leave
+    // does not perturb the membership. This binds on every platform, including those whose
+    // index-0 leave semantics have not been measured.
+    const int rejoined6 = socket6.join_multicast_group("ff02::1", "");
+    if (left6 == 0) {
+        EXPECT_EQ(rejoined6, 0) << "a leave that reported success must really have released the membership";
+        EXPECT_EQ(socket6.leave_multicast_group("ff02::1", ""), 0);
+    } else {
+        EXPECT_EQ(rejoined6, -1) << "a leave that reported failure must really have left the membership held";
+    }
+
+#if defined(__APPLE__)
+    // Darwin's documented asymmetry, pinned to the measured value rather than widened. If a
+    // future Darwin resolves index 0 on the leave path the way it does on the join path,
+    // this fires — which is the point: the divergence would be gone and this branch, the
+    // sweep below and the note above should go with it.
+    EXPECT_EQ(left6, -1) << "Darwin: IPV6_LEAVE_GROUP with ipv6mr_interface == 0 never matches";
+
+    // The membership is un-addressable as "0", NOT unreleasable: naming the interface the
+    // join resolved to does release it. Asserting this is what distinguishes a kernel that
+    // mislays the membership (a real leak, worth reporting) from one that merely indexes it
+    // differently. Guarded on the membership still being held, so that a future Darwin whose
+    // index-0 leave works reports only the one assertion above and not a cascade.
+    if (left6 != 0) {
+        bool released_by_index = false;
+        for (unsigned int idx = 1; idx <= 64 && !released_by_index; ++idx) {
+            released_by_index = socket6.leave_multicast_group("ff02::1", std::to_string(idx)) == 0;
+        }
+        EXPECT_TRUE(released_by_index) << "Darwin: the index-0 membership must still be releasable via its resolved interface index";
+    }
+#elif defined(__linux__)
+    EXPECT_EQ(left6, 0) << "Linux: index 0 on IPV6_LEAVE_GROUP is a wildcard and must match";
+#endif
 }
 
 // bind(uri) with a URI whose address family is neither AF_INET/AF_INET6/AF_UNIX falls
