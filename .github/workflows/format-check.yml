@@ -64,22 +64,34 @@ jobs:
       # tree and carry floors. Only the clang-format leg below looks at changed files, so the
       # blast radius of this decision is formatting alone.
       #
-      # A whole-tree formatting gate was considered and rejected on data. Measured at 3.0.0 with
-      # the pinned clang-format 22 over this exact scope (429 files): 56 already fail — 13%,
-      # spread through real source (14 in src/qb/io, 9 in src/qb/core) rather than parked in a
-      # vendored corner. Switching to whole-tree would therefore make this lane red on its first
-      # run, and the only way out is a 56-file mechanical reformat: a large diff that churns
-      # `git blame` across the framework's hottest files and reviews as noise.
+      # A whole-tree formatting gate was once rejected on data: measured at 3.0.0 over this exact
+      # scope (429 files), 56 already failed — 13%, spread through real source (14 in src/qb/io,
+      # 9 in src/qb/core) rather than parked in a vendored corner. Flipping this leg then would
+      # have made the lane red on its first run.
       #
-      # The diff scope is the better instrument WHILE that backlog exists, because it ratchets.
-      # Every file a change touches must come back clean, so the backlog can only shrink, never
-      # grow, and it costs nothing to enforce. The honest caveat, which the green tick does not
-      # convey on its own: THIS STEP PROVES NOTHING ABOUT UNTOUCHED FILES. A run that reports
-      # success may have checked a single file, or — via the branch below — none at all.
+      # THAT BACKLOG IS NOW ZERO. The sweep this comment used to ask for has landed: every one of
+      # the 52 files still failing at the time was reformatted in a single mechanical commit,
+      # proven whitespace-only at token level, and `dev/agent/check-format.sh --census` now
+      # measures 0 non-conformant of 429 in scope. The precondition the old text set out — "land
+      # the reformat as its own commit, confirm 0 of 429 fail, THEN flip this leg to
+      # `git ls-files` and give it a floor" — is therefore met, and flipping is a one-line change
+      # to the step below plus a floor. It is deliberately NOT done here: it is a policy change to
+      # what this lane gates, and it is the maintainer's call, not a side effect of a cleanup.
       #
-      # The sequence, if someone wants whole-tree later: land the reformat as its own commit,
-      # confirm 0 of 429 fail, then flip this leg to `git ls-files` and give it a floor like the
-      # guards above. Do not flip it first.
+      # Until it is flipped, the honest caveat stands and the green tick does not convey it:
+      # THIS STEP PROVES NOTHING ABOUT UNTOUCHED FILES. A run that reports success may have
+      # checked a single file, or — via the branch below — none at all. Whole-tree coverage today
+      # comes from `dev/agent/check-format.sh`'s census leg, which is local and ceilinged, and
+      # from the pre-push hook in `dev/githooks/`.
+      #
+      # The exclusion below drops VENDORED third-party trees. `src/qb/vendor/` was always
+      # excluded; `not-qb/` and `src/qbm/<mod>/vendor/` were added when the sweep found qbm-http's
+      # vendored llhttp inside the census. Formatting it would falsify the invariant its own
+      # header states — "Vendored from llhttp 9.2.1 ... Only the symbol prefix differs; the parser
+      # is upstream's" — and destroy the ability to diff against upstream. Both new alternatives
+      # are a measured no-op for qb, which has neither directory; they are here so this regex and
+      # `check-format.sh`'s stay byte-identical, which is what makes the local gate answer the
+      # same question this lane does.
       - name: Collect changed C++ files
         id: changed
         shell: bash
@@ -106,7 +118,7 @@ jobs:
               '*.h' '*.hh' '*.hpp' '*.hxx' \
               '*.c' '*.cc' '*.cpp' '*.cxx' \
               '*.ipp' '*.tpp' |
-            grep -Ev '^(build|modules|src/qb/vendor)/' || true
+            grep -Ev '^(build|modules|not-qb|src/qb/vendor|src/qbm/[a-z0-9_]+/vendor)/' || true
           )"
 
           {
