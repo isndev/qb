@@ -311,7 +311,8 @@ inline void
 accept_tcp_connections(qb::io::tcp::listener &listener, int expected_count) {
     for (int i = 0; i < expected_count; ++i) {
         qb::io::tcp::socket accepted;
-        ASSERT_TRUE(accept_within(listener, accepted)) << "only " << i << " of " << expected_count << " clients connected within the accept budget";
+        ASSERT_TRUE(accept_within(listener, accepted))
+            << "only " << i << " of " << expected_count << " clients connected within the accept budget";
         EXPECT_TRUE(accepted.is_open());
         accepted.disconnect();
     }

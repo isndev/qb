@@ -204,9 +204,8 @@ TEST(InitAskGate, ReplyFromActivatingResponderDeliveredNotStashed) {
     main.join();
     // Non-vacuity FIRST. Without it this case degenerates into an exact duplicate of case 1 above:
     // an ask answered by an already-active responder returns 40 and stashes nothing either.
-    EXPECT_TRUE(g_both_ask_pre_activation.load())
-        << "the request must be issued while the responder is still Activating — otherwise it was "
-           "never stashed at the responder and this case tests nothing case 1 does not";
+    EXPECT_TRUE(g_both_ask_pre_activation.load()) << "the request must be issued while the responder is still Activating — otherwise it was "
+                                                     "never stashed at the responder and this case tests nothing case 1 does not";
     EXPECT_EQ(g_both_value.load(), 40); // request stashed at the Activating responder, reply delivered
     EXPECT_EQ(g_both_stash_hits.load(), 0) << "reply from an Activating responder was stashed at the asker instead of delivered to the awaiter";
     EXPECT_FALSE(main.hasError());

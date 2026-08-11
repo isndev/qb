@@ -105,13 +105,13 @@ struct ReentrantSendEndpoint : qb::io::async::quic::endpoint {
     using qb::io::async::quic::endpoint::endpoint;
 
     std::vector<std::string> order;
-    bool                     in_stream_data        = false;
+    bool                     in_stream_data         = false;
     bool                     close_seen_reentrantly = false;
 
     void
     dispatch(qb::io::async::quic::event::stream_data const &ev) override {
         order.push_back("stream_data:enter");
-        in_stream_data = true;
+        in_stream_data            = true;
         const std::byte payload[] = {std::byte{'x'}};
         send_stream_data(ev.connection_id, ev.id, std::span<const std::byte>(payload, 1), false);
         in_stream_data = false;
@@ -126,13 +126,12 @@ struct ReentrantSendEndpoint : qb::io::async::quic::endpoint {
     }
 };
 
-
 // An endpoint whose first stream_data dispatch throws. Models any real handler that can throw —
 // an HTTP/3 route handler, or a plain std::bad_alloc while building a response.
 struct ThrowingDispatchEndpoint : qb::io::async::quic::endpoint {
     using qb::io::async::quic::endpoint::endpoint;
 
-    int  data_dispatches = 0;
+    int  data_dispatches  = 0;
     int  close_dispatches = 0;
     bool throw_next       = true;
 
@@ -498,8 +497,7 @@ TEST(QuicAdapterEndpoint, ReentrantSendCloseIsDeferredPastTheOuterDispatch) {
     raw->queued_events.push_back(std::move(data));
     endpoint.poll();
 
-    EXPECT_FALSE(endpoint.close_seen_reentrantly)
-        << "connection_closed was dispatched on a nested stack inside the stream_data handler";
+    EXPECT_FALSE(endpoint.close_seen_reentrantly) << "connection_closed was dispatched on a nested stack inside the stream_data handler";
     ASSERT_EQ(endpoint.order.size(), 3u);
     EXPECT_EQ(endpoint.order[0], "stream_data:enter");
     EXPECT_EQ(endpoint.order[1], "stream_data:exit");

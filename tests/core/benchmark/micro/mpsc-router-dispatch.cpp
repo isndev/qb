@@ -302,8 +302,7 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
         benchmark::DoNotOptimize(probe.checksum);
         if (probe.stalled) {
             state.SkipWithError(
-                ("fan-in drain stalled: consumer took " + std::to_string(probe.drained) + " of " + std::to_string(total) + " buckets")
-                    .c_str());
+                ("fan-in drain stalled: consumer took " + std::to_string(probe.drained) + " of " + std::to_string(total) + " buckets").c_str());
             return;
         }
         if (probe.checksum == 0ull) {

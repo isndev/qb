@@ -152,8 +152,7 @@ TEST(MpscUnboundedQueue, DestructorReclaimsUndrainedPayloads) {
             ASSERT_TRUE(q.pop(out));
         EXPECT_EQ(out.value, 15);
     }
-    EXPECT_EQ(g_payload_live.load(std::memory_order_relaxed), 0)
-        << "queue teardown must destroy the payloads still parked in its nodes";
+    EXPECT_EQ(g_payload_live.load(std::memory_order_relaxed), 0) << "queue teardown must destroy the payloads still parked in its nodes";
 }
 
 // ---------------------------------------------------------------------------
