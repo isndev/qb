@@ -78,9 +78,9 @@ struct Tracked {
 // power-of-two-ish slot count, so an even/aligned stride could march the write index around
 // without ever straddling. An odd stride guarantees the wrap is hit.
 struct FatEvent : public qb::Event {
-    Tracked                  payload;
+    Tracked                                              payload;
     std::array<char, 2 * QB_LOCKFREE_EVENT_BUCKET_BYTES> filler{}; // -> 3 buckets: an ODD stride, so the write index cannot stay wrap-aligned
-    std::uint32_t            seq;
+    std::uint32_t                                        seq;
     explicit FatEvent(std::uint32_t s)
         : seq(s) {}
 };
@@ -122,7 +122,9 @@ public:
     }
 };
 
-class FloodActor : public qb::Actor, public qb::ICallback {
+class FloodActor
+    : public qb::Actor
+    , public qb::ICallback {
     std::uint32_t _seq{0};
 
 public:
@@ -152,8 +154,7 @@ public:
 
 TEST(ShutdownMultibucketResidue, TeardownSweepHandlesAWrapStraddlingEvent) {
     // A multi-bucket event is the whole point of this test.
-    ASSERT_GT(sizeof(FatEvent), static_cast<std::size_t>(QB_LOCKFREE_EVENT_BUCKET_BYTES))
-        << "FatEvent must span more than one ring slot";
+    ASSERT_GT(sizeof(FatEvent), static_cast<std::size_t>(QB_LOCKFREE_EVENT_BUCKET_BYTES)) << "FatEvent must span more than one ring slot";
 
     if (std::thread::hardware_concurrency() < 2) {
         GTEST_SKIP() << "needs >= 2 hardware cores (1 sink + 1 source)";

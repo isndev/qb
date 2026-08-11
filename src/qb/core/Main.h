@@ -745,15 +745,15 @@ CoreInitializer::addActor(_Args &&...args) noexcept {
             id = ActorId(_Actor::ServiceIndex, _index);
         } else {
             QB_LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
-                                                                     << " in Core(" << _index << ")"
-                                                                     << " : Already registered");
+                                                                        << " in Core(" << _index << ")"
+                                                                        << " : Already registered");
             return id;
         }
     } else {
         if (unlikely(_next_id == std::numeric_limits<ServiceId>::max())) {
             QB_LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
-                                                             << " in Core(" << _index << ")"
-                                                             << " : Max number of Actors reached");
+                                                                << " in Core(" << _index << ")"
+                                                                << " : Max number of Actors reached");
             return id;
         }
         id = ActorId(_next_id++, _index);

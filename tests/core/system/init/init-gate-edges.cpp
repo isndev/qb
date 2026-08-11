@@ -146,9 +146,8 @@ TEST(InitGateEdges, StashedEventsReplayedInOrderAfterActivation) {
 
     // Non-vacuity FIRST: without this, the three assertions below hold just as well for a burst
     // that was never stashed at all.
-    EXPECT_TRUE(g_so_burst_pre_activation.load())
-        << "the burst must be issued BEFORE the victim finishes onInit — otherwise the gate had "
-           "nothing to stash and the assertions below prove nothing";
+    EXPECT_TRUE(g_so_burst_pre_activation.load()) << "the burst must be issued BEFORE the victim finishes onInit — otherwise the gate had "
+                                                     "nothing to stash and the assertions below prove nothing";
     EXPECT_EQ(g_so_count.load(), 5);    // all five replayed
     EXPECT_TRUE(g_so_order.load());     // in FIFO order
     EXPECT_TRUE(g_so_all_after.load()); // never before onInit completed
@@ -215,9 +214,8 @@ TEST(InitGateEdges, MultipleSendersAllStashedAndReplayed) {
     main.addActor<MiniSender>(0, v);
     main.start(false);
     main.join();
-    EXPECT_EQ(g_ms_senders_pre_activation.load(), 3)
-        << "all THREE bursts must be issued before the victim finishes onInit — a burst issued "
-           "afterwards was never stashed, and would make the count below vacuous";
+    EXPECT_EQ(g_ms_senders_pre_activation.load(), 3) << "all THREE bursts must be issued before the victim finishes onInit — a burst issued "
+                                                        "afterwards was never stashed, and would make the count below vacuous";
     EXPECT_EQ(g_ms_count.load(), 9); // all 9 stashed across 3 senders, replayed after activation
     EXPECT_TRUE(g_ms_after.load());
     EXPECT_FALSE(main.hasError());

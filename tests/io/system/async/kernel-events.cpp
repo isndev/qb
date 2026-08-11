@@ -93,7 +93,7 @@ public:
     ScopedTempDir() {
         const auto *info = ::testing::UnitTest::GetInstance()->current_test_info();
         _dir             = std::filesystem::temp_directory_path()
-               / ("qb-kernel-events-" + std::to_string(current_pid()) + "-" + (info ? info->name() : "anon"));
+                           / ("qb-kernel-events-" + std::to_string(current_pid()) + "-" + (info ? info->name() : "anon"));
         std::error_code ec;
         std::filesystem::remove_all(_dir, ec); // start clean
         std::filesystem::create_directories(_dir, ec);
