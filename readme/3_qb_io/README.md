@@ -30,7 +30,7 @@ Both run on the same `listener`/libev loop, so a coroutine can `co_await` socket
 | [Framing messages with protocols](./protocols.md) | Built-in and custom `AProtocol` implementations that turn a continuous byte stream into discrete messages — byte/sequence-terminated and size-header framing, text, JSON/MessagePack, and the accept/handshake protocols. |
 | [Secure TCP with SSL/TLS](./ssl_transport.md) | OpenSSL-backed SSL/TLS over the TCP stack (`QB_WITH_SSL`): secure-by-default client verification, a context-owning listener, and a stream transport that drains OpenSSL's internal buffers. |
 | [Native QUIC and HTTP/3 transport](./quic_transport.md) | The optional QUIC family built on libngtcp2 (`QB_WITH_QUIC`): a reactor-driven endpoint over one UDP socket, connection-id routing, typed stream and datagram events, flow-control hooks, and the threading model. |
-| [qb-io utilities](./utilities.md) | The standalone helpers — canonical time vocabulary, cryptography and JWT, compression, URI parsing, fixed-capacity strings and hash maps, UUIDs, JSON, and endian helpers — usable without the actor runtime. |
+| [qb-io utilities](./utilities.md) | The batteries `qb-io` links — cryptography and JWT, compression, URI parsing, executable-relative resource resolution, synchronous file wrappers, and JSON. The framework vocabulary they are written in terms of (time, containers, encoding) is one tier down, in [Foundations](../0_foundations/README.md). |
 | [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md) | The single source of truth for thread-ownership, freelist, and CRTP-dispatch invariants. Required reading before writing a custom protocol, transport, or async component. |
 
 ## Suggested reading order
@@ -40,7 +40,7 @@ Both run on the same `listener`/libev loop, so a coroutine can `co_await` socket
 3. [C++20 coroutines](./coroutines.md) — read this if you prefer `co_await`-style sequential async code.
 4. [TCP and UDP transports](./transports.md), then [Framing messages with protocols](./protocols.md) — for network or file I/O.
 5. [Secure TCP with SSL/TLS](./ssl_transport.md), then [Native QUIC and HTTP/3 transport](./quic_transport.md) — for encrypted TCP and QUIC.
-6. [qb-io utilities](./utilities.md) — for time, crypto, compression, URI, container, and UUID needs.
+6. [qb-io utilities](./utilities.md) — for crypto, compression, URI, file and JSON needs; [Foundations](../0_foundations/README.md) for time, containers and encoding.
 7. [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md) — before extending the stack with a custom component.
 
 ## See also

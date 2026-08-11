@@ -219,7 +219,7 @@ engine.core(1).setLatency(100us);                  // background work: yield whe
 engine.core(1).setAffinity(qb::CoreIdSet{2});      // pin core-1 worker to CPU 2
 ```
 
-`setLatency` takes a `qb::duration` (a `std::chrono::nanoseconds` span); pass any `std::chrono` duration. See [time utilities](../3_qb_io/utilities.md) for the canonical time vocabulary.
+`setLatency` takes a `qb::duration` (a `std::chrono::nanoseconds` span); pass any `std::chrono` duration. See [the time vocabulary](../0_foundations/time.md) for the canonical span and instant types.
 
 ### Distribution patterns
 

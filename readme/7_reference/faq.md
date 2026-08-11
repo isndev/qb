@@ -33,7 +33,7 @@ The framework-native answer is to wrap the shared resource in a single owning ac
 
 ## Why does the framework avoid mutexes?
 
-Because the concurrency model removes the need for them in application code. Actors share no state and run their mailbox sequentially, so two of an actor's handlers can never race on its data — a property the runtime gives you by construction, not one you enforce with locks. Cross-core message passing is carried by lock-free MPSC queues inside the engine, not by guarded shared queues. See [The threading model](../2_core_concepts/threading_model.md) and the [lock-free primitives reference](./lockfree_primitives.md).
+Because the concurrency model removes the need for them in application code. Actors share no state and run their mailbox sequentially, so two of an actor's handlers can never race on its data — a property the runtime gives you by construction, not one you enforce with locks. Cross-core message passing is carried by lock-free MPSC queues inside the engine, not by guarded shared queues. See [The threading model](../2_core_concepts/threading_model.md) and the [concurrency primitives reference](../0_foundations/concurrency_primitives.md).
 
 The framework does not forbid `std::mutex`. It is the right tool when you bridge to code outside the actor model (see the previous question). The point is that idiomatic qb code does not need one, and reaching for a lock to protect an actor's own state is a sign the state should live behind a single actor instead.
 

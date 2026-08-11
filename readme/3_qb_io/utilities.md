@@ -2,133 +2,34 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
-Beyond sockets and the event loop, `qb-io` ships a set of standalone utilities — the canonical time vocabulary, cryptography and JWT, compression, URI parsing, fixed-capacity strings and hash maps, UUIDs, JSON, and endian helpers — usable on their own without the actor runtime.
+Beyond sockets and the event loop, `qb-io` ships a set of batteries — cryptography and JWT, compression, URI parsing, executable-relative resource resolution, synchronous file wrappers and JSON — usable on their own without the actor runtime.
 
-**Prerequisites:** [qb-io module overview](./README.md) — **See also:** [Async I/O system](./async_system.md), [Protocols](./protocols.md), [Lock-free primitives](./../7_reference/lockfree_primitives.md)
+**Prerequisites:** [qb-io module overview](./README.md) — **See also:** [Foundations](../0_foundations/README.md), [Async I/O system](./async_system.md), [Protocols](./protocols.md)
 
 ---
 
 ## Summary
 
-These utilities live in headers under `qb/src/qb/`. Several are header-only with no third-party dependency: the time vocabulary, `qb::string<N>`, the flat-map/icase-map containers, `qb::uuid`, JSON, and endian helpers. The crypto/JWT, compression, and URI slices are *declared* in headers but *defined* in compiled translation units that ship inside the `qb::io` library (`src/qb/io/{crypto*.cpp,compression.cpp,uri.cpp}`), so using them requires linking `qb::io` (and, for crypto/compression, the OpenSSL/zlib dependency) — there is no header-only inline path for these three. Two slices are additionally gated on optional libraries resolved at configure time:
+These are the facilities that need `qb::io` linked, an optional third-party library, or both. The crypto/JWT, compression and URI slices are *declared* in headers but *defined* in compiled translation units that ship inside the `qb::io` library (`src/qb/io/{crypto*.cpp,compression.cpp,uri.cpp}`), so using them requires linking `qb::io` (and, for crypto/compression, the OpenSSL/zlib dependency) — there is no header-only inline path for these three. Two slices are additionally gated on optional libraries resolved at configure time:
 
 | Slice | Header | Namespace | Build gate |
 |---|---|---|---|
-| Time vocabulary | `qb/system/time.h` | `qb` | always |
-| Number parsing | `qb/system/parse.h` | `qb` | always |
 | Crypto + JWT | `qb/io/crypto.h`, `qb/io/crypto_jwt.h` | `qb::crypto`, `qb::jwt` | OpenSSL (`QB_WITH_SSL`) — **per member** in `crypto.h`, whole-header (`#error`) in `crypto_jwt.h`; see below |
 | Compression | `qb/io/compression.h` | `qb::compression`, `qb::gzip`, `qb::deflate` | zlib (`QB_WITH_COMPRESSION`) |
 | URI | `qb/io/uri.h` | `qb::io` | always |
-| Fixed string | `qb/string.h` | `qb` | always |
-| Hash maps/sets | `qb/system/container/unordered_map.h`, `unordered_set.h` | `qb` | always |
-| UUID | `qb/uuid.h` | `qb`, `uuids` | always (vendored `stduuid`) |
+| Executable location / files | `qb/io/system/file.h` | `qb::io::sys` | always |
 | JSON | `qb/json.h` | `qb` (via `nlohmann`) | always — but `nlohmann/json` is an **external** dependency, not vendored |
-| Endian | `qb/system/endian.h` | `qb::endian` | always |
+
+**The framework vocabulary is one tier down, not here.** `qb::duration` / `mono_time` / `wall_time` and the civil types, `qb::string<N>`, the hash maps, `qb::to_number`, `qb::endian` and `qb::uuid` sit *below* `qb-io` — they are header-only, depend on nothing, and are needed to read this page. Each is owned by a [Foundations](../0_foundations/README.md) page:
+
+| Looking for | Page |
+|---|---|
+| `qb::duration`, `qb::mono_time`, `qb::wall_time`, `qb::date`, `ScopedTimer` | [The time vocabulary](../0_foundations/time.md) |
+| `qb::string<N>`, `qb::unordered_map`, `qb::icase_unordered_map` | [Containers](../0_foundations/containers.md) |
+| `qb::to_number`, `qb::endian`, `qb::uuid` | [Encoding and conversion](../0_foundations/encoding.md) |
+| `qb::allocator::pipe<char>` — the buffer every slice below writes into | [The pipe](../0_foundations/buffers.md) |
 
 `QB_WITH_SSL` and `QB_WITH_COMPRESSION` are user-facing build requests; they resolve to the compile-time defines `QB_HAS_SSL` and `QB_HAS_COMPRESSION` once the dependency is found. If the dependency is absent, the request is forced off — and the three headers then behave **differently**, which matters when you write a build-portable feature gate. `compression.h` and `crypto_jwt.h` `#error` on include (`"missing Z Library"`, `"qb::jwt requires OpenSSL (build qb with QB_WITH_SSL=ON)"`). `crypto.h` does **not**: it used to, and that gated the whole file including the plain-C++ hex codec a cleartext qbm-pgsql build needs, so the gate is now per member — `class crypto` still exists and still declares everything that needs no OpenSSL, while every OpenSSL-backed member is removed from the class. A no-SSL build therefore fails at the **call site** (`no member named 'md5' in 'qb::crypto'`), not at the include. _(`qb/src/qb/io/crypto.h:33-44`, `qb/src/qb/io/crypto_jwt.h:36-38`, `qb/src/qb/io/compression.h:37-39`.)_
-
----
-
-## Time vocabulary (`qb::duration`, `qb::mono_time`, `qb::wall_time`)
-
-The single source of truth for time across qb and its modules, built entirely on `std::chrono`. The model is deliberately minimal: one span type and two distinct instant types. _(`qb/src/qb/system/time.h:90-96`.)_
-
-| Type | Alias | Use for |
-|---|---|---|
-| `qb::duration` | `std::chrono::nanoseconds` | Every timeout, delay, TTL, interval, and latency value in public APIs. |
-| `qb::mono_time` | `std::chrono::steady_clock::time_point` | Deadlines, timers, the event-loop "now", latency, RTT. Immune to NTP/DST adjustments. |
-| `qb::wall_time` | `std::chrono::system_clock::time_point` | Dates, expiry, JWT `exp`/`nbf`, TLS validity, logs, wire formats. |
-
-`qb::duration` accepts any finer-or-equal `std::chrono` literal implicitly (`30s`, `100ms`, `5us`) and **rejects a bare integer**, so a seconds-versus-milliseconds unit confusion cannot compile. The two instant types are distinct on purpose: subtracting a wall instant from a monotonic one does not compile, which removes a class of "timeout fired early because the clock stepped" bugs. _(`qb/src/qb/system/time.h:8-20`.)_
-
-> The pre-2.0 PascalCase time aliases no longer exist. Use the three canonical lowercase types above.
-
-### Public surface
-
-```cpp
-#include <qb/system/time.h>
-
-namespace qb {
-
-// Current instants
-mono_time mono_now() noexcept;            // steady_clock::now()
-wall_time wall_now() noexcept;            // system_clock::now()
-
-// Unix-epoch extraction (wall instant -> integer count)
-int64_t unix_seconds(wall_time) noexcept;
-int64_t unix_millis (wall_time) noexcept;
-int64_t unix_micros (wall_time) noexcept;
-int64_t unix_nanos  (wall_time) noexcept;
-
-// Unix-epoch construction (integer count -> wall instant)
-wall_time wall_from_unix_seconds(int64_t) noexcept;
-wall_time wall_from_unix_millis (int64_t) noexcept;
-
-// UTC formatting / parsing (no time-zone database dependency)
-std::string                 format_utc(wall_time, std::string_view fmt);
-std::string                 to_iso8601(wall_time);          // "YYYY-MM-DDTHH:MM:SSZ"
-std::optional<wall_time>    parse_utc(std::string_view, std::string_view fmt) noexcept;
-std::optional<wall_time>    from_iso8601(std::string_view) noexcept;
-
-// Performance instrumentation (NOT a clock — uncalibrated, per-core)
-uint64_t tsc_ticks() noexcept;
-
-} // namespace qb
-```
-<!-- src: qb/src/qb/system/time.h -->
-
-The chrono literals (`30s`, `100ms`, `5us`, …) are pulled into `qb` via `inline namespace qb::time_literals`, so call sites can write them without an extra `using`. _(`qb/src/qb/system/time.h:110-114`.)_
-
-`format_utc`/`parse_utc` operate in UTC only and have no time-zone database dependency: formatting uses `std::format`/`strftime`, parsing uses `std::get_time` + `qb::safe_timegm` (qb's own pure-integer conversion, **not** the C library's `timegm`/`_mkgmtime`, which reject a negative `time_t` on Windows). `format_utc` returns an empty string on failure; `parse_utc`/`from_iso8601` return `std::nullopt` on any parse error. _(`qb/src/qb/system/time.h:27-34` for the toolchain note, `:303-347` for the four functions.)_
-
-`tsc_ticks()` reads the CPU time-stamp counter. It is monotonic per-core and high-resolution but uncalibrated and not comparable to wall or monotonic clocks — use it only for single-thread micro-benchmark deltas, never as a clock. _(`qb/src/qb/system/time.h:680-684`.)_
-
-### Scoped measurement helpers
-
-```cpp
-#include <qb/io.h>                 // qb::io::cout
-#include <qb/system/time.h>
-
-void process() {
-    qb::ScopedTimer timer([](qb::duration d) {
-        const auto us = std::chrono::duration_cast<std::chrono::microseconds>(d).count();
-        qb::io::cout() << "process took " << us << "us\n";
-    });
-    // ... work ...
-    // timer fires the callback with the measured qb::duration on scope exit.
-}
-```
-<!-- src: qb/src/qb/system/time.h:718-763 -->
-
-`ScopedTimer` measures elapsed monotonic time between construction and `stop()`/destruction, invoking the callback with the measured `qb::duration`; `stop()`, `restart()`, and `elapsed()` are available for manual control. It is non-copyable and non-movable. `LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction. _(`qb/src/qb/system/time.h:714-790`.)_
-
-> **Boundary seam.** The only place a raw `double` touches time is `qb::detail::to_ev_seconds` / `from_ev_seconds`, the conversion between `qb::duration` and qev's `qev_tstamp` (double seconds). Application code never needs these. _(`qb/src/qb/system/time.h:796-809`.)_
-
----
-
-## Number parsing (`qb::to_number`, `qb::to_number_prefix`)
-
-`qb/system/parse.h` provides locale-independent, non-throwing, allocation-free string→number conversion built on `std::from_chars` — the canonical replacement for `std::stoi`/`std::stol`/`std::stod`/`strtol`, which throw on bad input, depend on the global C locale, and (for `std::stod`) reject subnormals. Both functions take a `std::string_view` and return `std::optional<T>`, where `T` is any non-bool integral or floating-point type; a magnitude outside `T`'s range is reported as `std::nullopt`, never silently wrapped or truncated.
-
-Two contracts are offered:
-
-- **`qb::to_number<T>(sv, base = 10)` — strict.** The *entire* view must be a single canonical number: no surrounding whitespace, no leading `+`, no trailing characters. For integral `T` the `base` (2–36) is honoured exactly like `std::from_chars`, and only a leading `-` is accepted (an unsigned `T` rejects `-`). For floating `T` it parses fixed and scientific notation plus the case-insensitive `inf`/`infinity`/`nan` spellings, and parses subnormals exactly.
-- **`qb::to_number_prefix<T>(sv, consumed = nullptr, base = 10)` — lenient.** The `strtol`/`stoi` idiom: skip leading whitespace, accept a leading `+`, parse the longest numeric prefix, and ignore any trailing characters. When `consumed` is non-null it receives the number of bytes parsed (so you can advance a cursor through a larger buffer).
-
-```cpp
-#include <qb/system/parse.h>
-
-auto port = qb::to_number<std::uint16_t>("8080");           // std::optional{8080}
-auto bad  = qb::to_number<int>("12x");                      // std::nullopt — trailing 'x' rejected
-auto hex  = qb::to_number<int>("ff", 16);                   // std::optional{255}
-auto rate = qb::to_number<double>("3.5e-2");                // std::optional{0.035}
-
-std::size_t used = 0;
-auto lead = qb::to_number_prefix<long>("  42 rest", &used); // std::optional{42}, used == 4
-```
-<!-- src: qb/src/qb/system/parse.h:110,140 -->
-
-Reach for `to_number` to validate untrusted input — a malformed or out-of-range value is a `std::nullopt`, never an exception or a wrapped integer — and for `to_number_prefix` to scan a number off the front of a buffer. The compile-time trait `qb::detail::is_parsable_number_v<T>` (an internal, `detail`-namespace trait) is what both functions `static_assert` on; the time vocabulary itself uses `to_number_prefix` internally to parse wire timestamps without touching the locale.
 
 ---
 
@@ -426,63 +327,6 @@ if (writer.open("out.dat"))
 
 ---
 
-## Fixed-capacity string (`qb::string<N>`)
-
-`qb::string<N>` is an inline, `std::array`-backed string with a compile-time maximum capacity `N` (default `30`). It avoids heap allocation, which is faster than `std::string` for small, bounded strings. It is layout-trivial enough to embed directly in events and messages. _(`qb/src/qb/string.h:85-105`.)_
-
-```cpp
-#include <qb/string.h>
-
-qb::string<32> name = "actor-42";   // stored inline, no heap allocation
-name.append("-worker");
-const char *c = name.c_str();
-std::size_t n = name.size();        // current length
-std::size_t cap = name.capacity();  // == 32 (compile-time max)
-```
-<!-- src: qb/src/qb/string.h -->
-
-`size()` (alias `length()`) is the current length; `capacity()` and `max_size()` both return the compile-time `N`. Assigning or appending past `N` truncates to `N` rather than reallocating. The internal length field uses the smallest unsigned integer type that can hold `N + 1` (`uint8_t`/`uint16_t`/`size_t`), so small fixed strings stay compact. `qb::string<N>` converts implicitly to both `std::string` and `std::string_view`. _(`qb/src/qb/string.h:90` (the `size_type` alias), `:200-201` (the truncating `assign`), `:314` / `:323` (the two conversion operators), `:527-528` (`size`), `:537-538` (`length`), `:547-548` (`max_size`), `:557-559` (`capacity`).)_
-
----
-
-## Hash maps and case-insensitive maps
-
-`qb::unordered_map` / `qb::unordered_set` are unconditional aliases for `ska::unordered_map` / `ska::unordered_set` — **node-based**, with a chained bucket array, so references and pointers to elements survive a rehash exactly as `std::unordered_map` guarantees (only iterators are invalidated). qb depends on that stability. `qb::unordered_flat_map` / `qb::unordered_flat_set` name the open-addressing `ska::flat_hash_map` / `ska::flat_hash_set` variant directly, which trades that stability for locality. _(`qb/src/qb/system/container/unordered_map.h:49-50`, `:89-90`.)_
-
-```cpp
-#include <qb/system/container/unordered_map.h>
-
-qb::unordered_map<std::string, int> counts;
-counts["alpha"] = 1;
-
-// Case-insensitive string-keyed map: keys are ASCII-lowercased before every op.
-qb::icase_unordered_map<int> headers;
-headers["Content-Length"] = 42;
-int v = headers["content-length"];  // 42 — same entry
-```
-<!-- src: qb/src/qb/system/container/unordered_map.h -->
-
-`qb::icase_unordered_map<Value>` and the ordered `qb::icase_map<Value>` wrap an underlying map and ASCII-lowercase string keys (via the default `qb::string_to_lower` trait) before every operation — useful for HTTP headers and other case-insensitive lookups. This is exactly the type the URI parser uses for query parameters. _(`qb/src/qb/system/container/unordered_map.h:98-413`.)_
-
-> The alias does **not** depend on `NDEBUG`. Through 2.6.0 `qb::unordered_map` fell back to `std::unordered_map` in debug builds, which made a public type's identity differ between build modes; 3.0 made it `ska::unordered_map` in every mode. _(`qb/src/qb/system/container/unordered_map.h:89-90`.)_
-
----
-
-## UUID (`qb::uuid`)
-
-`qb::uuid` is a type alias for `uuids::uuid` from the vendored `stduuid` library — a 128-bit RFC 4122 identifier. `qb::generate_random_uuid()` produces a version-4 (random) UUID. _(`qb/src/qb/uuid.h`.)_
-
-```cpp
-#include <qb/uuid.h>
-
-qb::uuid id = qb::generate_random_uuid();   // version-4 UUID
-```
-<!-- src: qb/src/qb/uuid.h -->
-
-UUIDs serialize to and from JSON via the `uuids::to_json` / `uuids::from_json` adapters declared in `qb/json.h`. _(`qb/src/qb/json.h:301-311`.)_
-
----
-
 ## JSON (`qb::json`, `qb::jsonb`)
 
 `qb/json.h` integrates the `nlohmann/json` library. **qb does not vendor it** — 3.0 deleted the bundled copy, and nlohmann is now resolved system-first (`find_package(nlohmann_json 3.11)`) with a pinned `FetchContent` fallback. That matters to you, not just to qb's build: `qb::json` **is** `nlohmann::json`, so the type crosses qb's API boundary, and `qbConfig.cmake` therefore calls `find_dependency(nlohmann_json 3.11)` unconditionally — a consumer of an installed qb must have the package too, or `find_package(qb)` fails at configure time. See [CMake dependencies](../7_reference/cmake_dependencies.md#third-party-nlohmannjson). `qb::json` is an alias for `nlohmann::json` (brought in via `using namespace nlohmann` inside `qb`), so the full `nlohmann` API is available. `qb::jsonb` is a distinct wrapper struct around `nlohmann::json` (binary-JSON intent) that forwards most operations to an internal `data` member but is a separate type that can be specialized differently in serialization contexts. _(`qb/src/qb/json.h:94-105,282-290`.)_
@@ -506,34 +350,12 @@ A `qb::allocator::pipe<char>::put<qb::json>` specialization lets JSON be written
 
 ---
 
-## Endian helpers (`qb::endian`)
-
-`qb/system/endian.h` builds on C++20 `std::endian` and C++23 `std::byteswap`. Detection is `consteval` (compile-time) and conversion is `constexpr`. _(`qb/src/qb/system/endian.h:33-171` — the whole `namespace qb::endian`.)_
-
-```cpp
-#include <qb/system/endian.h>
-
-static_assert(qb::endian::native_order() == qb::endian::order::little ||
-              qb::endian::native_order() == qb::endian::order::big);
-
-uint32_t host = 0x01020304;
-uint32_t be   = qb::endian::to_big_endian(host);      // for wire formats
-uint32_t back = qb::endian::from_big_endian(be);       // == host
-uint32_t sw   = qb::endian::byteswap(host);            // unconditional swap
-```
-<!-- src: qb/src/qb/system/endian.h -->
-
-`native_order()`, `is_little_endian()`, and `is_big_endian()` are `consteval`. `byteswap<T>` accepts arithmetic and enum types. The `to_big_endian` / `from_big_endian` / `to_little_endian` / `from_little_endian` helpers are no-ops when the requested order already matches the host and a `byteswap` otherwise — the standard idiom for reading and writing fixed-endian wire formats. _(`qb/src/qb/system/endian.h:49-169` — `native_order` at `:49-50` through the closing brace of `from_little_endian` at `:169`.)_
-
----
-
 ## Pitfalls
 
 - **Empty result means authentication failure, not empty plaintext.** `crypto::decrypt` _(`qb/src/qb/io/crypto.h:542-546`)_, the AEAD helpers, and `verify_token` _(`qb/src/qb/io/crypto.h:790`)_ return an empty vector/string when the authentication tag or token check fails. Always branch on emptiness before using the result.
 - **`generate_random_string` is not cryptographic.** It is a Mersenne Twister. Use `generate_secure_random_string`, `generate_random_bytes`, or `generate_salt` for any security-sensitive value. _(`qb/src/qb/io/crypto.h:175-242`.)_
 - **JWT and token TTLs are wall-clock seconds.** `create_token`'s `expires_in`/`not_before` and `generate_token`'s `ttl` resolve to whole-second `exp`/`nbf` claims evaluated against `system_clock`. Sub-second precision is lost and expiry follows wall-clock changes — by design, since expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_jwt.h:189-197`; `qb/src/qb/io/crypto.h:777-790`.)_
 - **`u_port()` returns `0` on failure.** A missing, malformed, or out-of-range port yields `0`, which is indistinguishable from an explicit `:0`. Check `is_valid()` and the raw `port()` string if `0` is meaningful in your scheme. _(`qb/src/qb/io/uri.h:474-484`.)_
-- **`qb::string<N>` truncates silently.** Assigning past `N` characters truncates rather than throwing or reallocating. Size the capacity to the worst case for your data. _(`qb/src/qb/string.h:200-201,254-255`.)_
 - **URI accessors borrow from the URI.** `scheme()`, `host()`, `path()`, etc. return `std::string_view` into the URI's owned source string; do not let them outlive the `uri` object. _(the owned `_source` and the views into it are `qb/src/qb/io/uri.h:182-190`; `scheme()` is `:437-440`, `host()` is `:455-457`, `path()` is `:490-492`.)_
 - **The dependency gate is not the same shape in all three headers.** `crypto_jwt.h` without `QB_HAS_SSL` and `compression.h` without `QB_HAS_COMPRESSION` `#error` at the include. `crypto.h` compiles either way — its OpenSSL-backed members are simply absent from `class crypto`, so a no-SSL build fails at the call site (`no member named 'md5'`) instead. Guard optional features behind those defines rather than relying on an include-time failure. _(`qb/src/qb/io/crypto.h:39-44`, `qb/src/qb/io/crypto_jwt.h:36-38`, `qb/src/qb/io/compression.h:37-39`.)_
 
@@ -542,7 +364,7 @@ uint32_t sw   = qb::endian::byteswap(host);            // unconditional swap
 ## See also
 
 - [qb-io module overview](./README.md) — the async I/O library these utilities ship with.
-- [Async I/O system](./async_system.md) — where `qb::duration` parameterizes timers, timeouts, and `sleep`.
+- [Async I/O system](./async_system.md) — where [`qb::duration`](../0_foundations/time.md) parameterizes timers, timeouts, and `sleep`.
 - [Protocols](./protocols.md) — JSON, text, and binary framings, including the depth-guarded JSON protocol.
 - [SSL/TLS transport](./ssl_transport.md) — the other consumer of the OpenSSL-gated slice.
-- [Lock-free primitives](./../7_reference/lockfree_primitives.md) — `SpinLock` and the SPSC/MPSC ring buffers.
+- [Foundations](../0_foundations/README.md) — the time vocabulary, containers, encoding helpers and the `pipe<char>` buffer these slices are written in terms of.

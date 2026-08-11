@@ -7,7 +7,7 @@ A reference map of the public API: the namespaces, key types, and signatures of 
 
 **Prerequisites:** [Core concepts](../2_core_concepts/) — **See also:** [Glossary](./glossary.md),
 [Core invariants](./core_invariants.md), [qb-io invariants](./io_invariants.md),
-[Lock-free primitives](./lockfree_primitives.md)
+[Concurrency primitives](../0_foundations/concurrency_primitives.md)
 
 ## Summary
 
@@ -468,7 +468,7 @@ Helpers: `qb::mono_now()`, `qb::wall_now()`, `qb::unix_seconds()`/`unix_millis()
 
 - **Lock-free** (`qb/system/lockfree/`): `qb::lockfree::SpinLock` (TTAS), `spsc::ringbuffer`,
   `mpsc::ringbuffer`, and `mpsc_unbounded_queue`. These are correctness-critical concurrency primitives;
-  see [Lock-free primitives](./lockfree_primitives.md).
+  see [Concurrency primitives](../0_foundations/concurrency_primitives.md).
 - **System** : `qb::CPU` (`qb/system/cpu.h`) for core counts and affinity; `qb::endian` (`qb/system/endian.h`)
   for byte-order detection and `byteswap`.
 

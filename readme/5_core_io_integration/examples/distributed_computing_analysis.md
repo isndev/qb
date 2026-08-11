@@ -36,7 +36,7 @@ All five actor types derive from `qb::Actor`. Each registers its event handlers 
 
 ## Domain model
 
-Three plain structs carry the simulation state. Note the use of [`qb::string<N>`](../../3_qb_io/utilities.md), a fixed-capacity inline string (`template <std::size_t _Size = 30>`, backed by `std::array<char, _Size + 1>`) chosen so that events stay trivially copyable and avoid heap traffic on the hot path.
+Three plain structs carry the simulation state. Note the use of [`qb::string<N>`](../../0_foundations/containers.md), a fixed-capacity inline string (`template <std::size_t _Size = 30>`, backed by `std::array<char, _Size + 1>`) chosen so that events stay trivially copyable and avoid heap traffic on the hot path.
 
 ```cpp
 // src: examples/core/example10_distributed_computing.cpp
@@ -330,7 +330,7 @@ This matches how the framework's own tests schedule delayed work, e.g. the `1ms`
 
 ### The example's `getCurrentTimestamp()` is not the canonical clock
 
-The file defines a local `getCurrentTimestamp()` returning microseconds since epoch from `std::chrono::high_resolution_clock`. That is fine for an isolated demo, but it is **not** the framework time vocabulary. For real code, prefer the canonical types in [`qb/system/time.h`](../../3_qb_io/utilities.md): `qb::mono_now()` (a `qb::mono_time` from `steady_clock`) for intervals, deadlines, and latency; and `qb::wall_now()` (a `qb::wall_time` from `system_clock`) for wall-clock instants. Mixing a wall clock into interval math, as the example does, is exactly what the canonical split exists to prevent.
+The file defines a local `getCurrentTimestamp()` returning microseconds since epoch from `std::chrono::high_resolution_clock`. That is fine for an isolated demo, but it is **not** the framework time vocabulary. For real code, prefer the canonical types in [`qb/system/time.h`](../../0_foundations/time.md): `qb::mono_now()` (a `qb::mono_time` from `steady_clock`) for intervals, deadlines, and latency; and `qb::wall_now()` (a `qb::wall_time` from `system_clock`) for wall-clock instants. Mixing a wall clock into interval math, as the example does, is exactly what the canonical split exists to prevent.
 
 ### Scheduling is best-effort, not authoritative
 

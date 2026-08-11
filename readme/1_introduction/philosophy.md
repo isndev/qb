@@ -71,7 +71,7 @@ qb targets C++20 by default, supports C++23 explicitly, and uses the language di
 
 **Why explicit and modern.** Generic, value-semantic, RAII-based C++ lets the framework offer developer-facing abstractions whose runtime cost is visible and small. A single, typed time vocabulary removes a recurring source of bugs — mixed units and ambiguous "is this seconds or milliseconds" parameters — by making the unit part of the type.
 
-**See:** [The use<> helper and async system](../3_qb_io/async_system.md) · [Time utilities](../3_qb_io/utilities.md)
+**See:** [The use<> helper and async system](../3_qb_io/async_system.md) · [Time vocabulary](../0_foundations/time.md)
 
 ## Performance through lock-free messaging
 
@@ -86,7 +86,7 @@ qb is engineered for systems where latency and throughput matter. Its performanc
 
 This page describes the rationale; for the mechanism — how cores are scheduled, how mailboxes are drained, and how idle cores back off — see the threading model.
 
-**See:** [The threading model](../2_core_concepts/threading_model.md) · [Lock-free primitives](../7_reference/lockfree_primitives.md) · [Performance tuning](../6_guides/performance_tuning.md)
+**See:** [The threading model](../2_core_concepts/threading_model.md) · [Concurrency primitives](../0_foundations/concurrency_primitives.md) · [Performance tuning](../6_guides/performance_tuning.md)
 
 ## How the principles fit together
 

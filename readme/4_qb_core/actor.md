@@ -265,8 +265,7 @@ The destructor runs after `kill()` has taken effect and the actor has been remov
 `time()` returns a `uint64_t` nanosecond value that the `VirtualCore` refreshes once per loop
 iteration. Every call within a single handler or `on(qb::LoopEvent const&)` invocation returns the *same* value.
 For a continuously updating, high-precision timestamp, use `qb::unix_nanos(qb::wall_now())` from
-`<qb/system/time.h>` (see the canonical time vocabulary in [qb-io
-utilities](../3_qb_io/utilities.md)).
+`<qb/system/time.h>` (see the canonical [time vocabulary](../0_foundations/time.md)).
 
 ## Sending events
 
