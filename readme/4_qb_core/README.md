@@ -32,7 +32,7 @@ That buys a message path with no synchronisation on it at all, and a model small
 
 | It costs you | Where it is documented |
 |---|---|
-| A cross-core event is `memcpy`-relocated and its source destructor never runs, so a payload must be trivially **relocatable**, not merely copyable — and C++20 has no trait for that. | [messaging.md](./messaging.md#payloads-must-be-trivially-relocatable-not-merely-copyable) |
+| An event is `memcpy`-relocated — by pipe growth or compaction, by `reply`/`forward`, and again on the cross-core hop — and its source destructor never runs, so a payload must be trivially **relocatable**, not merely copyable. A same-core `push` is no exception, and C++20 has no trait for that. | [messaging.md](./messaging.md#payloads-must-be-trivially-relocatable-not-merely-copyable) |
 | The reference `push` returns dies at the **next** push to the same destination core, not at end of scope — and in-place compaction makes that invisible to every sanitizer. | [messaging.md](./messaging.md#the-reference-push-returns-dies-at-the-next-push-to-that-core) |
 | Blocking the calling thread inside a handler freezes every actor on that core, with no diagnostic. | [async_in_actors.md](../5_core_io_integration/async_in_actors.md#the-two-call-chains) |
 | The runtime allocates in proportion to the square of the core count and never shrinks — 22.5 MiB at rest on 8 cores. | [buffers.md](../0_foundations/buffers.md#memory-it-grows-and-it-does-not-come-back) |
