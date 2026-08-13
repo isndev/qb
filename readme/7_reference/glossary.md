@@ -125,7 +125,7 @@ A unidirectional, ordered channel from a source actor to a destination actor, ob
 
 #### push (`actor.push<T>()`)
 
-The primary way to send an event. `push<Event>(dest, args...)` is `noexcept`, guarantees **ordered** delivery to the same destination from the same source, supports event types with non-trivial members, and returns a mutable reference to the constructed event so you can fill fields before it is dispatched. Because it is `noexcept`, an allocation failure cannot be reported and calls `std::terminate()` — keep events small. Declared in `src/qb/core/Actor.h`. Contrast [send](#send-actorsendt). See [Messaging](../4_qb_core/messaging.md).
+The primary way to send an event. `push<Event>(dest, args...)` is `noexcept`, guarantees **ordered** delivery to the same destination from the same source, supports event types with non-trivial members, and returns a mutable reference to the constructed event so you can fill fields before it is dispatched — a reference that dies at the very next event queued to the same destination **core**, not at the end of the enclosing scope. Because it is `noexcept`, an allocation failure cannot be reported and calls `std::terminate()` — keep events small. Declared in `src/qb/core/Actor.h`. Contrast [send](#send-actorsendt). See [Messaging](../4_qb_core/messaging.md).
 
 #### `ActorHandle<T>` (`qb::ActorHandle`, alias `qb::RefActorHandle`)
 

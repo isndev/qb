@@ -101,7 +101,7 @@ Owned by [Engine — `qb::Main` and `VirtualCore`](./engine.md). See also [Core 
 
 ## C++20 coroutine integration
 
-Owned by [Common actor patterns and utilities](./patterns.md#coroutines-for-async-io). The coroutine runtime itself is documented under [qb-io: C++20 coroutines](../3_qb_io/coroutines.md).
+The lifetime story — what a `kill()` does to a coroutine that is already parked — is owned by [Writing actors](./actor.md#killed-while-parked); the awaitables and which of them are cancellation-aware, by [qb-io: C++20 coroutines](../3_qb_io/coroutines.md); the shapes they compose into, by [Actor patterns](./patterns.md#coroutines-for-async-io).
 
 | Capability | API | One-line summary |
 |---|---|---|

@@ -6,6 +6,8 @@ After reading this you can use the qb-core interaction patterns — request/repl
 discovery, saga, pub/sub, supervision, resilience, streaming, routing, idempotency and aggregation —
 to compose actor conversations without hand-writing correlation, timeout or cancellation logic.
 
+This page is the **catalogue** of the three pattern pages: what qb already ships, entry by entry. [Actor patterns](./patterns.md) is the **reference** — the shapes the engine supports and why they work — and [the patterns cookbook](../6_guides/patterns_cookbook.md) is the **recipes**.
+
 **Prerequisites:** [Writing actors with `qb::Actor`](./actor.md), [qb-io coroutines](../3_qb_io/coroutines.md) — **See also:** [Actor patterns](./patterns.md), [Event messaging](./messaging.md), [The engine](./engine.md)
 
 ---

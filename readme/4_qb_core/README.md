@@ -1,87 +1,69 @@
 # qb-core: the actor engine
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — 60487ee7
 
-`qb-core` is the C++20-first actor runtime layered on `qb-io`: it owns the `qb::Main` engine, the per-thread `qb::VirtualCore` workers, the `qb::Actor` base class, and the event-passing layer that connects them.
+`qb-core` is the actor runtime layered on `qb-io`, and it is small: one base class, one engine, one address type, one buffer — and one decision that everything else in this section follows from.
 
-**Prerequisites:** [The actor model](../2_core_concepts/actor_model.md), [The event system](../2_core_concepts/event_system.md), [qb-io module overview](../3_qb_io/README.md) — **See also:** [Core and IO integration](../5_core_io_integration/README.md), [Patterns cookbook](../6_guides/patterns_cookbook.md)
+**Prerequisites:** [The actor model](../2_core_concepts/actor_model.md), [The event system](../2_core_concepts/event_system.md), [qb-io overview](../3_qb_io/README.md) — **See also:** [Core and IO integration](../5_core_io_integration/README.md), [Core invariants](../7_reference/core_invariants.md)
 
-## Summary
+## The decision the whole tier descends from
 
-`qb-core` brings the actor model to the framework. An actor is an isolated object with a unique
-`qb::ActorId` that owns private state and communicates only by passing events. Each actor lives on
-exactly one `qb::VirtualCore` worker thread for its whole lifetime and processes its messages one at
-a time, so actor code is single-threaded by construction and needs no locks for its own state.
-`qb::Main` configures the cores, spawns one `std::jthread` per `VirtualCore`, places actors onto
-those workers, and drives the event loops until shutdown.
+An `ActorId` is `{ServiceId, CoreId}` packed into 32 bits, and **the core half is not metadata — it is the routing decision.** Every send resolves the destination core, then appends raw bytes to a buffer dedicated to that core. Nothing ever looks an actor up by identity across a thread boundary.
 
-This section documents that runtime: how to write an actor, how messages move between actors within
-and across cores, how the engine starts, stops, and pins threads, and how to compose the primitives
-into recurring designs.
-
-## Architecture at a glance
+Because actors are thread-affine, `VirtualCore::_handler` — a `thread_local` pointer to "the core running on this thread" — is always the right core, so almost every `qb::Actor` member is a one-line forward through it and **the actor state path carries no lock, no atomic and no fence.** `_alive` is a plain `bool` on purpose.
 
 ```mermaid
 flowchart TB
-    M["qb::Main<br/>engine controller — one jthread per VirtualCore"]
+    M["qb::Main — one jthread per used core"]
     M -- owns --> VC0
     M -- owns --> VC1
-    subgraph VC0["VirtualCore 0 — event loop + io listener"]
+    subgraph VC0["VirtualCore 0 — actors + one io listener"]
         A["Actor A"]
         B["Actor B"]
     end
-    subgraph VC1["VirtualCore 1 — event loop + io listener"]
+    subgraph VC1["VirtualCore 1 — actors + one io listener"]
         C["Actor C"]
         D["Actor D"]
     end
-    VC0 <-- "MPSC mailboxes" --> VC1
+    VC0 <-- "lock-free MPSC mailboxes" --> VC1
 ```
 
-Key design points, each documented on the linked page:
+That buys a message path with no synchronisation on it at all, and a model small enough to hold: *one thread owns everything it can see; to reach anything else, send a message.* What it costs is four things, none of which produces a compile error, and all four are why this section exists:
 
-- Each `VirtualCore` runs its own `qb::io::async::listener` event loop, so actors can mix
-  event handlers and async I/O on the same thread — see [the engine](./engine.md).
-- An actor never migrates between cores; its `_alive` flag is single-writer/single-reader on one
-  thread and needs no atomic — see [writing actors](./actor.md).
-- Actors on the **same** core exchange events through the core's local pipe (a per-destination-core
-  buffer); actors on **different** cores exchange them through per-core lock-free MPSC mailboxes —
-  see [messaging](./messaging.md).
-- Actors may run C++20 coroutines through `spawn` (or detached via `spawn_detached`), returning results to themselves through a
-  capture-by-value `qb::CoroContext` — see [actor patterns](./patterns.md) and
-  [qb-io coroutines](../3_qb_io/coroutines.md).
+| It costs you | Where it is documented |
+|---|---|
+| A cross-core event is `memcpy`-relocated and its source destructor never runs, so a payload must be trivially **relocatable**, not merely copyable — and C++20 has no trait for that. | [messaging.md](./messaging.md#payloads-must-be-trivially-relocatable-not-merely-copyable) |
+| The reference `push` returns dies at the **next** push to the same destination core, not at end of scope — and in-place compaction makes that invisible to every sanitizer. | [messaging.md](./messaging.md#the-reference-push-returns-dies-at-the-next-push-to-that-core) |
+| Blocking the calling thread inside a handler freezes every actor on that core, with no diagnostic. | [async_in_actors.md](../5_core_io_integration/async_in_actors.md#the-two-call-chains) |
+| The runtime allocates in proportion to the square of the core count and never shrinks — 22.5 MiB at rest on 8 cores. | [buffers.md](../0_foundations/buffers.md#memory-it-grows-and-it-does-not-come-back) |
 
 ## Pages in this section
 
-| Page | What it covers |
-|---|---|
-| [qb-core features and capabilities](./features.md) | A catalog of the runtime's capabilities — actor lifecycle, the event system, multicore scheduling, coroutine support, and shared utilities — each linked to its in-depth page. |
-| [Writing actors with `qb::Actor`](./actor.md) | Defining, initializing, and tearing down an actor; handling events; the `no_default_events` tag; periodic work via `ICallback`; and per-core services with `qb::ServiceActor`. |
-| [Event messaging between actors](./messaging.md) | How `push`, `send`, `reply`, `forward`, and `broadcast` differ in delivery semantics and ordering, and how events move through the per-destination-core pipe and per-core mailbox within and across cores. |
-| [The engine: `qb::Main` and `VirtualCore`](./engine.md) | Engine startup and shutdown, the `CoreInitializer` configuration step, CPU affinity, the `VirtualCore` loop, inter-core flushing, signal handling, and the stop-token cancellation path. |
-| [Actor patterns](./patterns.md) | Composing the `Actor` primitives into recurring designs: finite state machines, service registries, publish/subscribe, request/response with timeouts, supervision, referenced actors with `RefActorHandle`, runtime dependency resolution with `require`, and coroutine flows. |
-| [Interaction patterns library](./patterns_library.md) | The header-only toolkit that packages those designs as ready-made coroutine primitives — `qb::ask`/`answer`, scatter-gather (`ask_all`/`ask_any`/`ask_quorum`), discovery (`ping`/`require`), `run_saga`, resilience (`ask_retry`/`CircuitBreaker`/`rate_limiter`/`bulkhead`), `ask_stream`, `PubSub`, `Supervisor`, `WorkerPool`, `answer_idempotent`, and `batcher`. |
+| Page | Role | What it owns |
+|---|---|---|
+| [Features and capabilities](./features.md) | survey | A one-line entry per capability, each linked to its owning page. Read it to find out *where* something lives. |
+| [Writing actors](./actor.md) | narrative | Identity, the life of a `qb::Actor` from `addActor` through an `onInit()` that may suspend to a `kill()` that flags rather than destroys; the *Activating* phase; `qb::no_default_events`; `qb::ICallback` ticks; `qb::ServiceActor<Tag>` and `getService<T>()`; `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `spawn` versus `spawn_detached` and what a kill does to a parked coroutine. |
+| [Inter-actor messaging](./messaging.md) | narrative | The `qb::ActorId` as the route; one event traced core A → core B; `push` versus `send` as one mechanism; `reply`, `forward` and `broadcast`; the relocation rule; the reference-invalidation rule; the size ceiling; ordering. |
+| [The engine](./engine.md) | narrative | `qb::Main`, `qb::VirtualCore`, `CoreInitializer`, the eight-step loop pass, latency and affinity, the startup barrier and its error codes, backpressure, and the shutdown drain. |
+| [Actor patterns](./patterns.md) | reference | The *shapes* the engine supports and why they work: state machines, service registries, publish/subscribe, request/response, supervision, referenced actors, discovery, coroutine flows. |
+| [Interaction patterns library](./patterns_library.md) | catalogue | What qb ships **pre-built** for those shapes: `qb::ask`/`answer`, scatter-gather (`ask_all`/`ask_any`/`ask_quorum`), discovery (`ping`/`require`), `run_saga`, resilience (`ask_retry`/`CircuitBreaker`/`rate_limiter`/`bulkhead`), `ask_stream`, `PubSub`, `Supervisor`, `WorkerPool`, `answer_idempotent`, `batcher`. |
+
+Those last two sit beside [the patterns cookbook](../6_guides/patterns_cookbook.md), which is task-shaped: *reference* (why a shape works) → *catalogue* (what is already written) → *recipes* (how to assemble one for a job).
 
 ## Suggested reading order
 
-1. **[Features and capabilities](./features.md)** — survey what the runtime provides before going deep.
-2. **[Writing actors](./actor.md)** → **[Event messaging](./messaging.md)** — the two pages that
-   teach the day-to-day API: defining an actor and getting events between actors.
-3. **[The engine](./engine.md)** — how `qb::Main` brings cores up, schedules work, and shuts down,
-   so you understand the runtime your actors execute on.
-4. **[Actor patterns](./patterns.md)** — practical ways to structure application logic once the
-   fundamentals are clear.
-5. **[Interaction patterns library](./patterns_library.md)** — the ready-made coroutine primitives
-   (ask, scatter-gather, saga, resilience, supervision, …) that implement those patterns for you.
+1. **[Writing actors](./actor.md)** — the unit of computation, and its whole lifecycle.
+2. **[Inter-actor messaging](./messaging.md)** — how two of them reach each other, and the three rules that path imposes.
+3. **[The engine](./engine.md)** — the loop that runs both, and how it starts and stops.
+4. **[Actor patterns](./patterns.md)** → **[the patterns library](./patterns_library.md)** — structure, once the fundamentals are clear.
+
+[Features and capabilities](./features.md) is the index to jump into at any point.
 
 ## See also
 
-- [Core and IO integration](../5_core_io_integration/README.md) — how an actor drives `qb-io`
-  sockets, sessions, and protocols on its own `VirtualCore` listener.
-- [Patterns cookbook](../6_guides/patterns_cookbook.md) — task-oriented recipes that combine the
-  primitives from this section.
-- [The actor model](../2_core_concepts/actor_model.md) and
-  [The event system](../2_core_concepts/event_system.md) — the conceptual background this section
-  builds on.
+- [Core and IO integration](../5_core_io_integration/README.md) — how an actor drives `qb-io` sockets, sessions and timers on its own `VirtualCore` listener.
+- [Core invariants](../7_reference/core_invariants.md) — the same contracts in reference form, each cited to what enforces it.
+- [The pipe](../0_foundations/buffers.md) — the single buffer type behind both the mailbox and every I/O stream.
+- [Patterns cookbook](../6_guides/patterns_cookbook.md) — task-oriented recipes built from these primitives.
 
-**(Next:** ensure you have read the [qb-io module overview](../3_qb_io/README.md) — `qb-core` builds
-on it — then continue to [Core and IO integration](../5_core_io_integration/README.md).)**
+**(Next:** [Core and IO integration](../5_core_io_integration/README.md), where actors meet the event loop.)**

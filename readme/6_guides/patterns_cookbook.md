@@ -149,8 +149,9 @@ public:
 **Task.** Run an action on every loop iteration (a heartbeat, a poll, a drain step).
 
 Inherit from `qb::ICallback` and register it. `on(qb::LoopEvent const&)` is invoked once per `VirtualCore` loop
-iteration — after the mailbox is drained and before outgoing pipes are flushed. The `qb::LoopEvent`
-carries per-loop context (`now`, `iteration`). It runs on the
+pass — after that pass has flushed its outbound pipes *and* drained its mailbox, so anything the tick pushes
+leaves the core on the **next** pass ([the loop pass](../4_qb_core/engine.md#the-loop-pass)). The `qb::LoopEvent`
+carries per-pass context (`now`, `iteration`). It runs on the
 event-loop thread, so it must be fast and non-blocking.
 
 ```cpp

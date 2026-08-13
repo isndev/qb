@@ -4,6 +4,8 @@
 
 Compose the `qb::Actor` primitives into recurring designs: finite state machines, service registries, publish/subscribe, request/response with a timeout, supervision, and runtime dependency resolution.
 
+This page is the **reference** of the three pattern pages: the *shapes* the engine supports and why each one works. [The patterns library](./patterns_library.md) is the **catalogue** of what qb already ships pre-built for those shapes, and [the patterns cookbook](../6_guides/patterns_cookbook.md) is the **recipes** — task-shaped walkthroughs that assemble them for a job.
+
 **Prerequisites:** [Writing actors with qb::Actor](./actor.md), [Event messaging](./messaging.md) — **See also:** [The engine: Main and VirtualCore](./engine.md), [Coroutines](../3_qb_io/coroutines.md), [Patterns cookbook](../6_guides/patterns_cookbook.md)
 
 This page builds on the `Actor` API rather than redefining it. The send primitives

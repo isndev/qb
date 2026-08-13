@@ -33,7 +33,7 @@ Affinity is best-effort by design. A logical `CoreId` need not map to a physical
 - Any `CoreId >= qb::MaxCores` is filtered out of the affinity set, including the `qb::NoAffinity` sentinel (`src/qb/core/VirtualCore.cpp:403-408`). `qb::NoAffinity == std::numeric_limits<CoreId>::max()` (`src/qb/core/Main.h:104`), so passing `CoreIdSet{qb::NoAffinity}` is a well-defined "let the OS schedule this thread" with no pinning performed.
 - If the filtered set contains zero real core ids — including an empty set — no affinity call is issued at all (`src/qb/core/VirtualCore.cpp:409`).
 
-On Windows built with a GNU compiler, affinity is not applied (`#warning` at `src/qb/core/VirtualCore.cpp:447`).
+On Windows built with a GNU compiler, affinity is not applied (`#warning` at `src/qb/core/VirtualCore.cpp:447`). And on macOS "best-effort" is sharper than it sounds: the `pthread_setaffinity_np` above is a qb-supplied shim over `thread_policy_set`, which on Apple Silicon answers `KERN_NOT_SUPPORTED` and is deliberately reported as success — so the call returns and nothing is pinned. Do not infer placement from a call that returned; ask `qb::CPU::ThreadPinningSupported()` (`src/qb/system/cpu.h:189`). [The engine](../4_qb_core/engine.md#affinity-is-a-request-and-on-macos-it-is-a-different-request) has the full account.
 
 ### Per-core mailboxes and inter-core MPSC delivery
 
