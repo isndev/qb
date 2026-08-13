@@ -432,8 +432,9 @@ slot, so the request and its response travel in **one** event type. The responde
 ```cpp
 struct Quote : qb::Request<double> { qb::string<16> symbol; };       // request: symbol — response: double
 // Two things above are load-bearing:
-//   * `qb::string<N>`, NOT `std::string` — an event is memcpy-relocated cross-core, and a short
-//     std::string points into its own storage on libstdc++ (see the pitfall at the end).
+//   * `qb::string<N>`, NOT `std::string` — an event is memcpy-relocated on every path (pipe
+//     growth or compaction, reply/forward, and the cross-core hop), and a short std::string
+//     points into its own storage on libstdc++ (see the pitfall at the end).
 //   * the DESIGNATED form below (`{.symbol = ...}`). `Request<>` is an aggregate with a base, so
 //     a positional `Quote{"BTC"}` initialises the `Event` BASE and does not compile.
 
