@@ -137,7 +137,7 @@ Handlers are public member functions named `on`: `void on(const EventType&)` for
 
 | Member | Signature | Delivery |
 |---|---|---|
-| `push` | `template<class _Event, class... _Args> _Event& push(ActorId const& dest, _Args&&... args) const noexcept` | Ordered; returns a mutable reference to the queued event; supports non-trivial members. |
+| `push` | `template<class _Event, class... _Args> _Event& push(ActorId const& dest, _Args&&... args) const noexcept` | Ordered; supports non-trivial members. Returns a mutable reference to the queued event that **dies at the next event queued to the same destination core** — not at end of scope ([why](../4_qb_core/messaging.md#the-reference-push-returns-dies-at-the-next-push-to-that-core)). |
 | `send` | `template<class _Event, class... _Args> void send(ActorId const& dest, _Args&&... args) const noexcept` | Unordered; the event type must be trivially destructible. |
 | `broadcast` | `template<class _Event, class... _Args> void broadcast(_Args&&... args) const noexcept` | To every actor on every core. |
 | `reply` | `void reply(Event& event) const noexcept` | Returns a received event to its source by swapping destination and source. |

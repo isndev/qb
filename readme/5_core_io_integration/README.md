@@ -22,13 +22,13 @@ This section breaks the integration into two task pages and a set of worked exam
 
 | Page | What it covers |
 |---|---|
-| [Asynchronous operations inside actors](./async_in_actors.md) | Deferred continuations (`qb::io::async::defer`), delayed callbacks (`qb::io::async::callback`, `scoped_callback`), inactivity timers (`with_timeout<T>`), coroutines (`Actor::spawn` / `spawn_detached`), periodic work (`qb::ICallback`), and patterns for keeping blocking file I/O off the loop. |
+| [Asynchronous work inside an actor](./async_in_actors.md) | The two call chains — `co_await` versus `run_sync` — annotated against the loop pass, so it is visible which one gives the core back. Then the primitives: deferred continuations (`qb::io::async::defer`), delayed callbacks (`qb::io::async::callback`, `scoped_callback`), inactivity timers (`with_timeout<T>`), coroutines (`Actor::spawn` / `spawn_detached`), periodic work (`qb::ICallback`), and patterns for keeping blocking file I/O off the loop. |
 | [Building network actors](./network_actors.md) | Turning an actor into a non-blocking TCP, UDP, or SSL/TLS endpoint with the `qb::io::use<Self>` mixins — clients, servers, acceptors, session pools, and cross-core socket transfer. |
 | [Case studies: example analyses](./examples/README.md) | Walkthroughs of five complete applications (`chat_tcp`, `distributed_computing`, `file_monitor`, `file_processor`, `message_broker`) that combine `qb-core` and `qb-io` end to end. |
 
 ## Suggested reading order
 
-1. **[Asynchronous operations inside actors](./async_in_actors.md)** — start here. It establishes the single-thread-per-core contract and the timer, coroutine, and offloading mechanisms that the networking page and the examples all rely on.
+1. **[Asynchronous work inside an actor](./async_in_actors.md)** — start here. It establishes the single-thread-per-core contract and the timer, coroutine, and offloading mechanisms that the networking page and the examples all rely on.
 2. **[Building network actors](./network_actors.md)** — applies those mechanisms to network endpoints via `qb::io::use<>`, including the split acceptor / session-manager architecture used by the larger examples.
 3. **[Case studies: example analyses](./examples/README.md)** — read after the two task pages. Each analysis maps the concepts above onto a runnable program; the `chat_tcp` and `message_broker` studies are the natural follow-ups to the networking page, while `file_processor` and `file_monitor` extend the blocking-I/O and watcher patterns from the async page.
 
