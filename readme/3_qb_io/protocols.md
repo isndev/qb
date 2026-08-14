@@ -281,7 +281,7 @@ When no built-in framing fits your wire format, subclass `AProtocol<IO_>` and im
 ### 1. Define the wire structures
 
 ```cpp
-// src: examples/io/example5_custom_protocol.cpp (adapted)
+// src: examples/02-io/05-custom-protocol.cpp (adapted)
 #pragma pack(push, 1)
 struct MessageHeader {
     uint16_t magic;   // protocol identifier
@@ -305,7 +305,7 @@ struct custom_message {           // what the session's on() receives
 ### 2. Implement the protocol
 
 ```cpp
-// src: examples/io/example5_custom_protocol.cpp (adapted)
+// src: examples/02-io/05-custom-protocol.cpp (adapted)
 #include <qb/io/async.h>
 #include <cstring>
 
@@ -370,7 +370,7 @@ public:
 Teach the output pipe how to write your message type by specializing `qb::allocator::pipe<char>::put<T>`, which enables the `session << message` syntax:
 
 ```cpp
-// src: examples/io/example5_custom_protocol.cpp
+// src: examples/02-io/05-custom-protocol.cpp
 namespace qb::allocator {
 template <>
 pipe<char> &pipe<char>::put<custom_message>(const custom_message &msg) {
@@ -392,7 +392,7 @@ pipe<char> &pipe<char>::put<custom_message>(const custom_message &msg) {
 ### 4. Use it from a session
 
 ```cpp
-// src: examples/io/example5_custom_protocol.cpp (adapted)
+// src: examples/02-io/05-custom-protocol.cpp (adapted)
 class EchoSession : public qb::io::use<EchoSession>::tcp::client<> {
 public:
     using Protocol = custom_protocol<EchoSession>;
@@ -423,5 +423,5 @@ The `chat_tcp` and `message_broker` examples under `examples/core_io/` apply thi
 - [Asynchronous I/O model](./async_system.md) — the read loop, the event loop, and where `getMessageSize()` / `onMessage()` are called from.
 - [Transports](./transports.md) — the stream and transport layers a protocol reads through (`in()`, `out()`, `publish()`).
 - [Secure (SSL/TLS) transport](./ssl_transport.md) — how the `handshake` protocol participates in a TLS session.
-- `examples/io/example5_custom_protocol.cpp` — the complete custom binary protocol this page condenses.
+- `examples/02-io/05-custom-protocol.cpp` — the complete custom binary protocol this page condenses.
 - `examples/core_io/chat_tcp/shared/Protocol.h`, `examples/core_io/message_broker/shared/Protocol.h` — custom protocols inside full applications.

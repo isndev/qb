@@ -259,7 +259,7 @@ and utilities. See [qb-io](../3_qb_io/) for the full treatment.
   client class declares its transport and protocol by inheritance.
 
 ```cpp
-// src: examples/io (use<>::tcp pattern)
+// src: examples/02-io (use<>::tcp pattern)
 template <typename _Derived> struct qb::io::use {
     template <typename _Protocol = void> using io = async::io<_Derived>;
     struct tcp {

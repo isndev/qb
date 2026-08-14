@@ -355,4 +355,4 @@ A non-zero exit code means `engine.hasError()` reported a core that terminated o
 - **[Threading model](../2_core_concepts/threading_model.md)** — placing actors on cores and how inter-core messaging works.
 - **[Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md)** — timers, deferred callbacks, and coroutines from within an actor.
 - **[Patterns cookbook](./patterns_cookbook.md)** and **[Performance tuning](./performance_tuning.md)** — recurring designs and how to make them fast.
-- **Worked examples** ship under `examples/` in the repository: `examples/core/` (actors), `examples/io/` (async I/O), and `examples/core_io/` (the two combined). They build with the framework.
+- **Worked examples** ship under `examples/` in the repository: `examples/core/` (actors), `examples/02-io/` (async I/O), and `examples/core_io/` (the two combined). They build with the framework.
