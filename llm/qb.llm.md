@@ -104,7 +104,9 @@ Lifecycle: by default every actor auto-subscribes to `KillEvent`, `SignalEvent`,
 replies). For graceful cleanup override `on(const qb::KillEvent&)` and
 **call `kill()` at the end**. The virtual destructor runs later under VirtualCore control (RAII members
 clean up there). To opt out of the five default subscriptions construct with the `qb::no_default_events`
-tag — then you must register at least `KillEvent` yourself in `onInit()`.
+tag — then you must register at least `SignalEvent` yourself in `onInit()`: `Main::stop()` and
+SIGINT/SIGTERM reach an actor only as a `SignalEvent`, and the engine never sends a `KillEvent`, so
+registering just that one leaves the actor unstoppable and `Main::join()` hanging forever.
 
 ### Events
 
@@ -130,8 +132,11 @@ destructible**; `push<T>()` carries no destructibility requirement.
 `push` = ordered, returns the event by mutable reference for
 in-place population — that reference dies at the **next** event queued to the same destination core
 (the pipe reallocates or compacts), so populate it fully before sending anything else;
-`send` = unordered fire-and-forget. `qb::EventQOS0` is the lowest-priority,
-unordered, droppable-under-backpressure variant.
+`send` = unordered fire-and-forget. `qb::EventQOS0` is the droppable-under-backpressure
+variant, and the ONLY distinct QoS type — `EventQOS1`/`EventQOS2` are both `using … = Event`, so
+QoS is a drop policy, not a priority. A QoS-0 event is dropped WITHOUT being disposed, so its
+payload must be trivially destructible; that is a `static_assert` at every enqueue sink, and it is
+the real content of the "send takes trivially destructible events" rule.
 
 ### Engine
 
@@ -366,8 +371,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`push`/`send`/`broadcast` and the messaging hot path are `noexcept`.** A throw across that boundary
   (e.g. OOM growing the pipe, or a throwing event constructor) calls `std::terminate()`. Keep events
   small and allocation-light. _(Actor.h:871-877; Pipe.h:135-150)_
-- **`send<T>()` requires a trivially-destructible event** and is unordered; `push<T>()` is ordered and
-  carries no destructibility requirement. Use `push` unless you have a specific reason. _(Actor.h:829-834, :886-890)_
+- **`send<T>()` is unordered; `push<T>()` is ordered.** Trivial destructibility is a guideline on `send`
+  and a `static_assert` only when `T` derives from `qb::EventQOS0` — the one kind the cross-core flush
+  may DROP undisposed. A DELIVERED event is disposed exactly once whichever primitive queued it, so a
+  plain `qb::Event` owning heap is legal on both. Use `push` unless you have a specific reason.
+  _(Actor.h:829-834, :886-890)_
 - **Every event payload must be trivially *relocatable* — on `push` as much as on `send`.** The
   runtime moves events with raw `memcpy` and abandons the source without running a destructor there,
   so no member may point into its own storage. A by-value `std::string` is exactly that shape on
@@ -384,13 +392,20 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
-  both must be called from the actor's own worker thread. _(`spawn_detached` Actor.h:1202 / VirtualCore.h:1146; `spawn` Actor.h:1239 / VirtualCore.h:1159)_
+  both must be called from the actor's own worker thread. An exception escaping either body (other than
+  `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
+  body and answer through an event. _(`spawn_detached` Actor.h:1202 / VirtualCore.h:1175; `spawn` Actor.h:1239 /
+  VirtualCore.h:1188)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
   with 0 actors fails startup. _(Main.cpp:484-486, :341-343)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
-  `on(qb::LoopEvent const&)` invocation. For a continuously-updating value use `qb::wall_now()` /
+  `on(qb::LoopEvent const&)` invocation. Inside `onInit()` there is no pass yet, so it is the instant the
+  core was constructed — a real epoch value, but the same one for every actor on that core. It was 0 there through
+  3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
+  fail `timeout_error` without sending. For a
+  continuously-updating value use `qb::wall_now()` /
   `qb::unix_nanos(qb::wall_now())`. _(Actor.h:567-583; VirtualCore.h:648-659)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:66-78; async/io.h:62-67, :82-83, :91-95)_

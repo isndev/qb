@@ -102,7 +102,7 @@ See [The engine](../4_qb_core/engine.md).
 | Member | Signature | Notes |
 |---|---|---|
 | Constructor | `Actor() noexcept` | Subscribes to the five default system events (`KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, `RequireEvent`). |
-| Tagged constructor | `explicit Actor(no_default_events_t) noexcept` | Skips the default subscriptions; the derived class registers what it needs in `onInit()`. |
+| Tagged constructor | `explicit Actor(no_default_events_t) noexcept` | Skips the default subscriptions; the derived class registers what it needs in `onInit()` — for shutdown that is `qb::SignalEvent`, not `qb::KillEvent`. |
 | `onInit` | `virtual qb::io::async::task<bool> onInit()` | Async init **coroutine**, run once after construction before business events. Register events / acquire resources here, and optionally `co_await` (sleep, `qb::ask` a peer, run a pattern). `co_return true` activates the actor; `co_return false` or an uncaught exception fails init and removes it. While a suspended `onInit` is in flight the actor is *Activating* (inbound unicast is stashed and replayed FIFO once active, bounded by an activation deadline). |
 | Destructor | `virtual ~Actor() noexcept` | |
 | `kill` | `void kill() const noexcept` | Marks the actor for termination. |
@@ -138,7 +138,7 @@ Handlers are public member functions named `on`: `void on(const EventType&)` for
 | Member | Signature | Delivery |
 |---|---|---|
 | `push` | `template<class _Event, class... _Args> _Event& push(ActorId const& dest, _Args&&... args) const noexcept` | Ordered; supports non-trivial members. Returns a mutable reference to the queued event that **dies at the next event queued to the same destination core** — not at end of scope ([why](../4_qb_core/messaging.md#the-reference-push-returns-dies-at-the-next-push-to-that-core)). |
-| `send` | `template<class _Event, class... _Args> void send(ActorId const& dest, _Args&&... args) const noexcept` | Unordered; the event type must be trivially destructible. |
+| `send` | `template<class _Event, class... _Args> void send(ActorId const& dest, _Args&&... args) const noexcept` | Unordered. Trivial destructibility is compiler-enforced only for `qb::EventQOS0`-derived events; a delivered event is disposed exactly once whichever primitive queued it. |
 | `broadcast` | `template<class _Event, class... _Args> void broadcast(_Args&&... args) const noexcept` | To every actor on every core. |
 | `reply` | `void reply(Event& event) const noexcept` | Returns a received event to its source by swapping destination and source. |
 | `forward` | `void forward(ActorId dest, Event& event) const noexcept` | Re-routes a received event to `dest`, preserving its original source. |

@@ -490,20 +490,20 @@ event_type_name(Event::id_type const id) noexcept {
 
 /**
  * @typedef EventQOS2
- * @brief Event with highest quality of service (priority level 2)
- * @details
- * Events with QOS level 2 have the highest priority in the event system
- * and will be processed before events with lower QOS levels.
+ * @brief An alias OF `qb::Event`, not a distinct type — and QoS is a drop policy, not a dispatch priority.
+ * @details `qb::Event`'s own header already encodes `qos = 2` (:414), so this names the base class itself. The field is
+ * read in exactly ONE place and as a BINARY gate: the cross-core flush drops a `qos == 0` event on backpressure and
+ * retries every other one (`VirtualCore.cpp:348`). Events drain FIFO whatever their QoS; nothing is processed "before".
  * @ingroup EventCore
  */
 using EventQOS2 = Event;
 
 /**
  * @typedef EventQOS1
- * @brief Event with medium quality of service (priority level 1)
- * @details
- * Events with QOS level 1 have medium priority in the event system
- * and will be processed after QOS2 events but before QOS0 events.
+ * @brief The SAME type as `EventQOS2` and as `qb::Event` — there is no middle QoS level to select.
+ * @details `static_assert(std::is_same_v<EventQOS1, EventQOS2>)` holds: both are `using … = Event`, whose header carries
+ * `qos = 2`. Writing `EventQOS1` selects nothing and changes nothing — prefer spelling `qb::Event`. `qb::EventQOS0` is
+ * the only distinct QoS type, and the only one whose payload must be trivially destructible: see its own note below.
  * @ingroup EventCore
  */
 using EventQOS1 = Event;
@@ -511,7 +511,7 @@ using EventQOS1 = Event;
 /*!
  * @struct EventQOS0
  * @ingroup EventCore
- * @brief Event with lowest quality of service level
+ * @brief Best-effort: the ONE event kind the cross-core flush may DROP undisposed, so its payload MUST be trivially destructible.
  */
 struct EventQOS0 : public Event {
     EventQOS0() {
@@ -874,6 +874,38 @@ routing_safe_type_id() noexcept {
                                                   "qb::ServiceEvent::service_event_id. The framework would swap the wrong field and the event "
                                                   "would be routed under the wrong type id. Rename your member. The offending type is the "
                                                   "template argument of the qb::detail::routing_safe_type_id<T> instantiation named below.");
+    }
+
+    // The OTHER contract every enqueue sink owes, and the one that used to be checked at only
+    // one of the three. `VirtualCore::fill_event` has carried this assertion since 2.x
+    // (VirtualCore.h:794-796), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
+    // `Pipe::allocated_push` duplicate `fill_event` rather than calling it, so
+    // `getPipe(dest).push<E>()` and `.allocated_push<E>()` were not -- exactly the gap the
+    // routing-field guard above was written to close for the header fields. MEASURED on this
+    // tree before the fix: 20000 `EventQOS0` events carrying a heap payload, enqueued with
+    // `getPipe(dest).push<E>()` at a core too busy to drain them, ended the run with 18977 live
+    // payloads. That is not a bookkeeping nicety -- it is an unbounded leak on a path a program
+    // reaches by being under load.
+    //
+    // WHY ONLY EventQOS0. QoS is a binary backpressure policy, not a priority. A `qos == 0`
+    // event is the one thing the cross-core flush is allowed to DISCARD when a peer's mailbox is
+    // full, and it discards it WITHOUT disposing it -- one `if (!event.state.bits.qos)` and a
+    // `continue`, with no `_router.dispose()` (VirtualCore.cpp:348-356). Every other event is
+    // retried, and every event that is actually DELIVERED has its destructor run exactly once by
+    // the receiving core whichever primitive queued it -- which is why a plain `qb::Event`
+    // subclass owning heap is legitimate here and is deliberately NOT rejected. See
+    // `qb/tests/core/system/messaging/send-nontrivial-payload.cpp`, which pins that to a zero
+    // live-object balance on every placement path.
+    if constexpr (std::is_base_of_v<EventQOS0, T>) {
+        static_assert(std::is_trivially_destructible_v<T>,
+                      "qb: this event derives from qb::EventQOS0 but is NOT trivially destructible. A QoS-0 event is the "
+                      "one kind the cross-core flush may DROP on backpressure, and it drops it without running its "
+                      "destructor -- so a std::string / std::vector / smart-pointer member LEAKS, silently and without "
+                      "bound, exactly when the system is busiest. Either give the event a trivially destructible payload "
+                      "(qb::string<N>, PODs, or bulk data behind a shared_ptr held by the RECEIVER), or derive from "
+                      "qb::Event instead: a plain event is retried rather than dropped, and is disposed exactly once. The "
+                      "offending type is the template argument of the qb::detail::routing_safe_type_id<T> instantiation "
+                      "named below.");
     }
 
     return Event::type_to_id<T>();

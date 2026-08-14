@@ -166,7 +166,7 @@ The full lifecycle walkthrough, the `is_alive()` semantics, and graceful-shutdow
 
 Constructing an actor with the default constructor auto-subscribes it to five system events: `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`. This is why a plain actor already shuts down cleanly on `Main::stop()` and on `SIGINT` without any handler code: the built-in `on(const KillEvent&)` calls `kill()`, and the built-in `on(const SignalEvent&)` calls `kill()` on **`SIGINT` and `SIGTERM`** — both are terminal, and `Main::start()` installs both, so a container stop (`SIGTERM` is what Docker, Kubernetes and systemd send first) unwinds every actor without escalating to `SIGKILL`. Every other signal is delivered but is **not** terminal: a signal added with `qb::Main::registerSignal()` (`SIGHUP`, `SIGUSR1`, …) arrives and is ignored unless you override `on(SignalEvent&)`. (`src/qb/core/Actor.cpp:120-124,168-171,186-187`, `src/qb/core/Actor.h:412`, `src/qb/core/Main.cpp:530-531`)
 
-For pools of short-lived actors where five subscriptions per actor are measurable overhead, pass `qb::no_default_events` to the base constructor to skip all five. The derived class is then responsible for registering, in `onInit()`, any system event it expects — at minimum `KillEvent`, so the actor can still be stopped gracefully.
+For pools of short-lived actors where five subscriptions per actor are measurable overhead, pass `qb::no_default_events` to the base constructor to skip all five. The derived class is then responsible for registering, in `onInit()`, any system event it expects — at minimum **`SignalEvent`**, which is how `Main::stop()` and the terminal signals arrive; the engine never sends a `KillEvent`, so registering that one alone leaves the actor unstoppable.
 
 ```cpp
 class LeanWorker : public qb::Actor {
@@ -174,12 +174,18 @@ public:
     LeanWorker() : qb::Actor(qb::no_default_events) {}  // no default subscriptions
 
     qb::io::async::task<bool> onInit() override {
-        registerEvent<qb::KillEvent>(*this);  // re-add graceful shutdown by hand
+        registerEvent<qb::SignalEvent>(*this);  // re-add graceful shutdown by hand — THIS is the one
+        registerEvent<qb::KillEvent>(*this);    // only needed if a peer kills you by pushing one
         registerEvent<WorkEvent>(*this);
         co_return true;
     }
 
     void on(WorkEvent &ev) { /* ... */ }
+
+    // Declaring `on(WorkEvent&)` hides EVERY base `on` overload, and dispatch goes through the
+    // derived type — so both of these are needed for the two registrations above to compile.
+    void on(qb::KillEvent const &) { kill(); }
+    void on(qb::SignalEvent const &) { kill(); }
 };
 ```
 

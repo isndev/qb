@@ -44,7 +44,7 @@ Use `push()`. It is the default and covers nearly every case.
 | Method | Ordering | Event payload constraint |
 |---|---|---|
 | `push<Event>(dest, …)` | Ordered: FIFO per sender→receiver pair | Any event, including members with non-trivial destructors (`std::vector`, `std::shared_ptr`, `std::unique_ptr`) |
-| `send<Event>(dest, …)` | **Unordered**, even to the same destination | Event type **must be trivially destructible** (POD members or `qb::string<N>` only) |
+| `send<Event>(dest, …)` | **Unordered**, even to the same destination | Compiler-enforced only for `qb::EventQOS0`-derived events (POD members or `qb::string<N>`); for a plain `qb::Event` it is a guideline, and heap-owning payloads are disposed correctly |
 
 `send()` exists for narrow, profiled cases where same-core latency matters and ordering does not; misusing it produces ordering bugs that are hard to trace. Both signatures are in `qb/src/qb/core/Actor.h` (`push` at `qb/src/qb/core/Actor.h:877`, `send` at `:900`).
 

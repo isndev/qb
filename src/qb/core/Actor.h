@@ -72,11 +72,11 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  *        (KillEvent, SignalEvent, UnregisterCallbackEvent, PingEvent, RequireEvent) on construction.
  * @ingroup Actor
  * @details
- * Pass `qb::no_default_events` to the protected `Actor` constructor to create a
- * lightweight actor that registers no system events. This is useful for pools of
- * short-lived actors where the router bookkeeping is a measurable overhead.
- * Power users opting in are expected to register the events they actually need in
- * `onInit()` (typically at least `KillEvent` for graceful shutdown).
+ * Pass `qb::no_default_events` to the protected `Actor` constructor for a lightweight actor that registers no system
+ * events — meant for pools of short-lived actors where the router bookkeeping is a measurable overhead.
+ * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:677`); nothing in the engine ever sends a `KillEvent`.
+ * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
     explicit constexpr no_default_events_t() noexcept = default;
@@ -296,9 +296,9 @@ protected:
      * @details
      * Unlike the default constructor, this overload does **not** register handlers for
      * `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, or `RequireEvent`.
-     * The derived class is fully responsible for registering in `onInit()` any
-     * system events it expects to receive (it is strongly recommended to at least
-     * register `KillEvent` to enable graceful shutdown via `Main::stop()`).
+     * The derived class registers, in `onInit()`, every system event it expects. For shutdown that means
+     * **`qb::SignalEvent`** — `Main::stop()` and the terminal signals arrive only as one — plus `qb::KillEvent` if a
+     * peer will kill this actor by pushing one. See the @warning on `qb::no_default_events_t`.
      *
      * Intended for high-throughput scenarios where actors are short-lived and the
      * five default subscriptions per actor become measurable overhead.
@@ -566,10 +566,8 @@ public:
     /**
      * @brief Get current time from the VirtualCore's perspective (nanoseconds since epoch).
      * @return `uint64_t` timestamp in nanoseconds.
-     * @details
-     * This value is optimized and cached/updated by the `VirtualCore` at the beginning of each
-     * of its processing loops. Thus, multiple calls to `time()` within the same event handler
-     * or `on(qb::LoopEvent const&)` invocation will return the *same* timestamp (equal to
+     * @details This value is optimized and cached/updated by the `VirtualCore` at the beginning of each processing loop. Thus,
+     * multiple calls in one event handler or `on(qb::LoopEvent const&)` invocation return the *same* timestamp (equal to
      * `qb::LoopEvent::now`).
      * @code
      * // ...
@@ -577,8 +575,10 @@ public:
      * // ... some heavy calculation ...
      * assert(t1 == time()); // true - will not assert within the same event handler execution
      * @endcode
-     * For a continuously updating, high-precision timestamp, use `qb::unix_nanos(qb::wall_now())` from `<qb/system/time.h>`.
      * @note This time is primarily for relative measurements or logging within an actor's turn.
+     * @note For a continuously updating, high-precision timestamp, use `qb::unix_nanos(qb::wall_now())` from `<qb/system/time.h>`.
+     * @note Inside `onInit()` there is no pass yet, so the value is the instant the owning `VirtualCore` was CONSTRUCTED
+     * (`VirtualCore.h:377` seeds it); through 3.0.0 that field was still 0 there, so `onInit()` read a zero timestamp.
      */
     [[nodiscard]] uint64_t time() const noexcept;
 
@@ -878,7 +878,7 @@ public:
 
     /**
      * @brief Send a new event in an unordered fashion to a destination actor.
-     * @tparam _Event The type of event to create and send (must derive from `qb::Event` and be trivially destructible).
+     * @tparam _Event The type of event to create and send (must derive from `qb::Event`).
      * @tparam _Args Types of arguments to forward to the `_Event` constructor.
      * @param dest The `ActorId` of the destination actor.
      * @param args Arguments to forward to the constructor of `_Event`.
@@ -886,8 +886,8 @@ public:
      * Events sent using `send()` are not guaranteed to be received in the order they were sent,
      * even if sent to the same destination from the same source. This method may offer slightly
      * lower latency for same-core communication in specific scenarios but sacrifices ordering.
-     * @note The `_Event` type **must be trivially destructible** (e.g., contain only POD types or `qb::string`).
-     *       `std::string`, `std::vector`, etc., are not permitted.
+     * @note Trivial destructibility is a guideline here and a COMPILER-ENFORCED rule only for `qb::EventQOS0` — the one kind
+     *       the flush may DROP undisposed. Prefer POD members or `qb::string`; a delivered event is disposed exactly once.
      * @code
      * // ActorId critical_service_id = GetSomeActorId();
      * // // Fire-and-forget status update, order not critical

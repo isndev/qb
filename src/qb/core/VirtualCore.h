@@ -374,7 +374,7 @@ private:
         std::uint64_t _nb_event_sent_try  = 0;
         std::uint64_t _nb_event_sent      = 0;
         std::uint64_t _nb_bucket_sent     = 0;
-        std::uint64_t _nanotimer          = 0;
+        std::uint64_t _nanotimer          = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now())); ///< seeded: onInit precedes pass 1
 
         /**
          * @brief Any evidence of work performed or attempted during this iteration?
@@ -1090,6 +1090,24 @@ struct coro_count_guard {
 };
 
 /**
+ * @brief Report an exception that escaped the body of an `Actor::spawn` / `spawn_detached` coroutine.
+ * @param owner The spawning actor's id, captured by value in the wrapper frame — the actor itself may already be gone.
+ * @param api   `"spawn"` or `"spawn_detached"`, so the diagnostic names the call the user wrote.
+ * @param ep    The escaped exception. Never null when called from a `catch (...)`.
+ * @details A spawned coroutine has NO continuation and no `task<>` owner, so `unhandled_exception()` parks the
+ *          `exception_ptr` in a promise that is then destroyed by the scheduler's frame drain and read by nobody:
+ *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
+ *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
+ *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
+ *          `VirtualCore.cpp:505`, and this brings the two into line. It does not change control flow: the frame
+ *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
+ *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
+ *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it
+ *          first, because a scope being cancelled is the teardown protocol rather than a failure.
+ */
+void report_unhandled_coroutine_exception(ActorId owner, char const *api, std::exception_ptr ep) noexcept;
+
+/**
  * Wrapper coroutine that owns the user's callable and the CoroContext
  * by value inside the coroutine frame. This prevents the "dangling lambda"
  * problem: when spawn_detached() receives a temporary lambda, the closure is
@@ -1118,7 +1136,14 @@ template <typename Func>
 qb::io::async::task<void>
 actor_coro_wrapper(Func func, CoroContext ctx, std::shared_ptr<std::atomic<std::size_t>> counter) {
     coro_count_guard guard{std::move(counter)};
-    co_await func(ctx);
+    try {
+        co_await func(ctx);
+    } catch (const qb::io::async::cancelled_error &) {
+        // A detached coroutine joined no scope, so this can only come from a token the user
+        // manages themselves — their control flow, not a failure. Silent, as it already was.
+    } catch (...) {
+        report_unhandled_coroutine_exception(ctx.id(), "spawn_detached", std::current_exception());
+    }
 }
 
 /**
@@ -1136,6 +1161,10 @@ actor_scoped_coro_wrapper(Func func, Ctx ctx, std::shared_ptr<std::atomic<std::s
         co_await func(ctx);
     } catch (const qb::io::async::cancelled_error &) {
         // Expected on actor-scope cancellation (kill/destroy) — swallow.
+    } catch (...) {
+        // Anything else is a real failure with nowhere to propagate: no continuation, no
+        // `task<>` owner. Report it rather than dropping it — see the note on the function.
+        report_unhandled_coroutine_exception(ctx.id(), "spawn", std::current_exception());
     }
 }
 

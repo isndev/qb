@@ -139,8 +139,8 @@ Actor::Actor(ActorId const id) noexcept
 Actor::Actor(no_default_events_t) noexcept
     : _id((assert(VirtualCore::_handler != nullptr && "Actor must be constructed from within a VirtualCore worker thread."),
            VirtualCore::_handler->__generate_id__())) {
-    // Intentionally no default event registrations — derived class owns its wiring.
-    // Register at minimum KillEvent in onInit() for graceful shutdown.
+    // Intentionally no default event registrations — derived class owns its wiring. The minimum for
+    // shutdown is SignalEvent, NOT KillEvent — see `qb::no_default_events_t` in Actor.h for why.
 }
 
 void
@@ -340,6 +340,53 @@ CoroContext::time() const noexcept {
 
 Service::Service(ServiceId const sid) noexcept
     : Actor(ActorId(sid, VirtualCore::_handler->getIndex())) {}
+
+namespace detail {
+
+// Declared in VirtualCore.h next to the two spawn wrappers that call it; see the note there for
+// why a spawned coroutine's exception has nowhere to go and was being dropped in silence.
+//
+// TWO CHANNELS, AND THE SECOND IS NOT BELT-AND-BRACES. `QB_LOG_CRIT` is the structured one and
+// it is a complete no-op unless the build defines QB_WITH_LOGGING or QB_STDOUT_LOGGING
+// (`qb/io.h:262-265`) -- and even when it is live it writes to nanolog, which produces nothing
+// until a program calls `qb::io::log::init()`. So on its own it would leave this report missing
+// in ordinary builds, which is the very failure being fixed. `qb::io::cerr()` is qb's own
+// mutex-guarded stderr (`qb/io.h:163`), always compiled, and is what the engine already uses to
+// announce a failed core init (`Main.cpp:445`). Nothing here is on a hot path: reaching this
+// function at all means a coroutine body threw.
+void
+report_unhandled_coroutine_exception(ActorId const owner, char const *const api, std::exception_ptr ep) noexcept {
+    const auto emit = [&](char const *const what) {
+        QB_LOG_CRIT("Actor(" << owner.index() << '.' << owner.sid() << ") " << api << "() coroutine body let an exception escape: " << what
+                             << " -- the frame unwound and the exception was DISCARDED.");
+        qb::io::cerr() << "CRITICAL: qb Actor(" << owner.index() << '.' << owner.sid() << ") " << api
+                       << "() coroutine body let an exception escape, and it was DISCARDED: " << what
+                       << " -- a spawned coroutine has no caller to receive it. Catch it in the body and report through an event." << std::endl;
+    };
+    // noexcept: this runs inside a catch handler while a coroutine frame unwinds, so it must not
+    // itself throw. The outer try covers `emit` -- including a throw out of the inner HANDLER,
+    // which the inner catch clauses cannot take.
+    try {
+        try {
+            if (ep)
+                std::rethrow_exception(ep);
+            emit("<no exception object>");
+        } catch (std::exception const &e) {
+            // Emit from INSIDE the handler, and never hold `e.what()` past it. `rethrow_exception`
+            // is not required to rethrow the same object: libstdc++ and libc++ bump a refcount, but
+            // MSVC throws a fresh COPY, and `std::exception`'s copy constructor duplicates the
+            // message buffer there (`__std_exception_copy`). So a `char const *` carried out of this
+            // block would dangle on Windows only -- the platform with no CI (see verify-windows.ps1).
+            emit(e.what());
+        } catch (...) {
+            emit("<exception not derived from std::exception>");
+        }
+    } catch (...) {
+        // Reporting must never become the failure. There is nothing left to try.
+    }
+}
+
+} // namespace detail
 } // namespace qb
 
 #ifdef QB_WITH_LOGGING
