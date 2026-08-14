@@ -35,7 +35,7 @@ Each `VirtualCore` owns its actors exclusively and runs them on its single threa
 Place an actor with `Main::addActor<T>(core_id, args…)`, or fluently across one core with `Main::core(core_id).builder()`. Placement is a topology decision: actors that exchange many messages belong on the same core to keep traffic off the cross-core mailbox; an actor that is a throughput bottleneck can be sharded into several instances spread across cores.
 
 ```cpp
-// src: examples/all/taskmanager/src/main.cpp
+// src: examples/07-applications/01-taskmanager/src/main.cpp
 #include <qb/main.h>
 #include <cstdint>
 #include <vector>
@@ -104,7 +104,7 @@ Verified behavior, from the mailbox `wait()` implementation (`Main.h`):
 The mixed topology — a zero-latency hot loop plus parked workers — is the common production shape:
 
 ```cpp
-// src: examples/all/taskmanager/src/main.cpp
+// src: examples/07-applications/01-taskmanager/src/main.cpp
 #include <qb/main.h>
 
 qb::Main engine;

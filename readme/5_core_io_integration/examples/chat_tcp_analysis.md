@@ -8,7 +8,7 @@ A line-by-line reading of the `chat_tcp` example: how a multi-actor TCP server a
 
 ## Summary
 
-The example lives at `examples/core_io/chat_tcp/` and builds two executables, a server and a client, that share one protocol definition. It is a working reference for five concerns that recur in every networked qb application:
+The example lives at `examples/05-services/01-tcp-chat/` and builds two executables, a server and a client, that share one protocol definition. It is a working reference for five concerns that recur in every networked qb application:
 
 - accepting TCP connections and handing them off across cores (`qb::io::use<T>::tcp::acceptor`);
 - managing a pool of per-client sessions inside one actor (`qb::io::use<T>::tcp::io_handler<Session>`);
@@ -19,13 +19,13 @@ The example lives at `examples/core_io/chat_tcp/` and builds two executables, a 
 The directory layout:
 
 ```text
-examples/core_io/chat_tcp/
+examples/05-services/01-tcp-chat/
 ├── shared/        Protocol.h, Protocol.cpp, Events.h  (linked into both binaries)
 ├── server/        AcceptActor, ServerActor, ChatSession, ChatRoomActor, main.cpp
 └── client/        ClientActor, InputActor, main.cpp
 ```
 
-<!-- src: examples/core_io/chat_tcp/CMakeLists.txt -->
+<!-- src: examples/05-services/01-tcp-chat/CMakeLists.txt -->
 
 > **A note on the source.** `io_handler::registerSession()` returns a nullable pointer (`ChatSession*`) — the DoS-hardening contract that returns `nullptr` when a session cap or ID collision closes the incoming socket. The checked-in example already uses this form, binding `auto* session` and null-checking before use. This page documents that contract.
 
@@ -44,10 +44,10 @@ flowchart TD
 
 The actual core placement is set in `server/main.cpp`: `ChatRoomActor` on core 3, two `ServerActor`s on core 1, and two `AcceptActor`s on core 0 listening on ports 3001 and 3002. There is no actor on core 2; the numbering leaves headroom.
 
-<!-- src: examples/core_io/chat_tcp/server/main.cpp -->
+<!-- src: examples/05-services/01-tcp-chat/server/main.cpp -->
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/main.cpp
+// src: examples/05-services/01-tcp-chat/server/main.cpp
 qb::Main engine;
 
 auto chatroom_id = engine.addActor<ChatRoomActor>(3);
@@ -74,7 +74,7 @@ engine.join();
 Both binaries link `shared/Protocol.{h,cpp}`. The wire format is a fixed 8-byte header followed by a UTF-8 payload.
 
 ```cpp
-// src: examples/core_io/chat_tcp/shared/Protocol.h
+// src: examples/05-services/01-tcp-chat/shared/Protocol.h
 struct MessageHeader {
     uint16_t magic;    // 'QC' == 0x5143
     uint8_t  version;  // 0x01
@@ -106,7 +106,7 @@ struct Message {
 The framework drives parsing in two phases. After each read it calls `getMessageSize()`; the protocol inspects the input buffer (`this->_io.in()`) and returns either `0` ("need more bytes") or the total size of one complete message. When a non-zero size is returned and that many bytes are buffered, the framework calls `onMessage(size)`, which reconstructs the `Message` and dispatches it to the owning I/O object via `this->_io.on(msg)`.
 
 ```cpp
-// src: examples/core_io/chat_tcp/shared/Protocol.h
+// src: examples/05-services/01-tcp-chat/shared/Protocol.h
 std::size_t getMessageSize() noexcept override {
     auto& buffer = this->_io.in();
     if (buffer.empty()) return 0;
@@ -138,7 +138,7 @@ Returning `0` is the framework's sentinel for "incomplete"; it leaves the buffer
 Sending is symmetric. `shared/Protocol.cpp` specializes `qb::allocator::pipe<char>::put` for `chat::Message`, so any I/O object can write a message with `*this << msg;`. The `operator<<` on a qb-io object forwards to `publish()`, which appends to the output pipe; the specialization decides the bytes.
 
 ```cpp
-// src: examples/core_io/chat_tcp/shared/Protocol.cpp
+// src: examples/05-services/01-tcp-chat/shared/Protocol.cpp
 namespace qb::allocator {
 template<>
 pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
@@ -177,8 +177,8 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 > `this`, which is why the by-value form was invisible on macOS and corrupted on Linux.
 > <!-- src: qb/src/qb/core/Actor.h:835-844 -->
 > It was not hypothetical here: `ChatRoomActor` runs on core 3 and the two `ServerActor`s on core 1
-> (`examples/core_io/chat_tcp/server/main.cpp:54`, `:60`), and `ChatRoomActor::sendToSession()` does
-> `push<SendMessageEvent>(server_id)` (`examples/core_io/chat_tcp/server/ChatRoomActor.cpp:153`) — so
+> (`examples/05-services/01-tcp-chat/server/main.cpp:63`, `:69`), and `ChatRoomActor::sendToSession()` does
+> `push<SendMessageEvent>(server_id)` (`examples/05-services/01-tcp-chat/server/ChatRoomActor.cpp:153`) — so
 > every targeted delivery is a cross-core hop, and short payloads such as `"Welcome Bob"` are the
 > common case. Replayed on both standard libraries, the by-value shape reads `self-referential: YES`
 > and aborts with `munmap_chunk(): invalid pointer` on libstdc++ while surviving untouched on
@@ -201,7 +201,7 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 `AcceptActor` mixes `qb::Actor` with `qb::io::use<AcceptActor>::tcp::acceptor`. The acceptor base owns a `qb::io::tcp::listener` (reached through `transport()`) and raises `on(accepted_socket_type&&)` for each completed connection. `accepted_socket_type` resolves to `qb::io::tcp::socket`.
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/AcceptActor.cpp
+// src: examples/05-services/01-tcp-chat/server/AcceptActor.cpp
 qb::io::async::task<bool> AcceptActor::onInit() {
     if (_server_pool.empty()) {
         qb::io::cerr() << "Cannot init AcceptActor with empty server pool" << std::endl;
@@ -225,7 +225,7 @@ Two details correct common misreadings:
 Dispatch is round-robin over the server pool, advancing a counter per accept:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/AcceptActor.cpp
+// src: examples/05-services/01-tcp-chat/server/AcceptActor.cpp
 void AcceptActor::on(accepted_socket_type&& new_io) {
     auto server_id = _server_pool[_session_counter++ % _server_pool.size()];
     auto& evt = push<NewSessionEvent>(server_id);
@@ -249,7 +249,7 @@ Moving the socket into `NewSessionEvent` is what lets the connection travel from
 On a `NewSessionEvent`, the actor adopts the socket into a fresh session, binding the nullable pointer and null-checking it before use:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ServerActor.cpp
+// src: examples/05-services/01-tcp-chat/server/ServerActor.cpp
 void ServerActor::on(NewSessionEvent& evt) {
     auto* session = registerSession(std::move(evt.socket));
     if (!session) {                                   // nullptr when the session cap is reached
@@ -267,7 +267,7 @@ void ServerActor::on(NewSessionEvent& evt) {
 `ServerActor` is the bridge between sessions and the room. Sessions call back into it (`server().handleAuth(...)`, `handleChat(...)`, `handleDisconnect(...)`), and it translates those into events for `ChatRoomActor`:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ServerActor.cpp
+// src: examples/05-services/01-tcp-chat/server/ServerActor.cpp
 void ServerActor::handleAuth(qb::uuid session_id, const std::string& username) {
     auto& evt = push<AuthEvent>(_chatroom_id);
     evt.session_id = session_id;
@@ -278,7 +278,7 @@ void ServerActor::handleAuth(qb::uuid session_id, const std::string& username) {
 In the other direction, `ChatRoomActor` sends `SendMessageEvent`s back. `ServerActor` looks up the target session in its own map and writes the message through it:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ServerActor.cpp
+// src: examples/05-services/01-tcp-chat/server/ServerActor.cpp
 void ServerActor::on(SendMessageEvent& evt) {
     auto it = sessions().find(evt.session_id);
     if (it != sessions().end()) {
@@ -295,7 +295,7 @@ void ServerActor::on(SendMessageEvent& evt) {
 `ChatSession` composes two qb-io mixins:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ChatSession.h
+// src: examples/05-services/01-tcp-chat/server/ChatSession.h
 class ChatSession
     : public qb::io::use<ChatSession>::tcp::client<ServerActor>,
       public qb::io::use<ChatSession>::timeout {
@@ -311,7 +311,7 @@ public:
 The constructor wires the protocol and arms the idle timer:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ChatSession.cpp
+// src: examples/05-services/01-tcp-chat/server/ChatSession.cpp
 ChatSession::ChatSession(ServerActor& server)
     : client(server) {
     this->template switch_protocol<Protocol>(*this);
@@ -323,7 +323,7 @@ ChatSession::ChatSession(ServerActor& server)
 `setTimeout` takes a `qb::duration` (a `std::chrono::nanoseconds` span); `std::chrono::seconds(120)` converts implicitly. Parsed messages route by type, and every received frame resets the idle timer:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ChatSession.cpp
+// src: examples/05-services/01-tcp-chat/server/ChatSession.cpp
 void ChatSession::on(const chat::Message& msg) {
     switch (msg.type) {
         case chat::MessageType::AUTH_REQUEST:
@@ -356,7 +356,7 @@ void ChatSession::on(qb::io::async::event::timer const&) {
 `ChatRoomActor` is a plain `qb::Actor` with no I/O mixins. It owns the only authoritative copy of chat state:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ChatRoomActor.h
+// src: examples/05-services/01-tcp-chat/server/ChatRoomActor.h
 std::map<qb::uuid, SessionInfo>  _sessions;   // session_id -> { owning ServerActor id, username }
 std::map<std::string, qb::uuid>  _usernames;  // username   -> session_id (duplicate check)
 ```
@@ -364,7 +364,7 @@ std::map<std::string, qb::uuid>  _usernames;  // username   -> session_id (dupli
 Because one actor processes its events sequentially, no locks guard these maps: that is the actor model's guarantee in practice. Authentication validates username uniqueness, registers the user, replies to the joining client, and announces the arrival to everyone:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ChatRoomActor.cpp
+// src: examples/05-services/01-tcp-chat/server/ChatRoomActor.cpp
 void ChatRoomActor::on(AuthEvent& evt) {
     auto session_id = evt.session_id;
     auto username   = evt.username;
@@ -389,7 +389,7 @@ void ChatRoomActor::on(AuthEvent& evt) {
 `evt.getSource()` is how the room learns which `ServerActor` owns the session, so replies route back to the right core. `broadcastMessage` builds one `CHAT_MESSAGE` and pushes a `SendMessageEvent` per recipient, each addressed to that recipient's owning `ServerActor`:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ChatRoomActor.cpp
+// src: examples/05-services/01-tcp-chat/server/ChatRoomActor.cpp
 void ChatRoomActor::broadcastMessage(const std::string& content) {
     // One heap message, shared by every recipient: the shared_ptr is what makes the event
     // relocatable, and it also replaces one copy per session with one allocation per broadcast.
@@ -408,7 +408,7 @@ void ChatRoomActor::broadcastMessage(const std::string& content) {
 `InputActor` mixes `qb::Actor` with `qb::ICallback`. `onInit()` calls `registerCallback(*this)`; thereafter the engine invokes `on(qb::LoopEvent const&)` once per loop iteration on the actor's core.
 
 ```cpp
-// src: examples/core_io/chat_tcp/client/InputActor.cpp
+// src: examples/05-services/01-tcp-chat/client/InputActor.cpp
 void InputActor::on(qb::LoopEvent const &) {
     std::string line;
     std::getline(std::cin, line);                    // see the blocking note below
@@ -434,7 +434,7 @@ void InputActor::on(qb::LoopEvent const &) {
 `onInit()` registers the input event and kicks off the first connect. Connection is asynchronous via `qb::io::async::tcp::connect`. The timeout argument is a `qb::duration` (a `std::chrono::nanoseconds` span), so pass a chrono value, not a bare `double`:
 
 ```cpp
-// src: examples/core_io/chat_tcp/client/ClientActor.cpp
+// src: examples/05-services/01-tcp-chat/client/ClientActor.cpp
 void ClientActor::connect() {
     qb::io::async::tcp::connect<qb::io::tcp::socket>(
         _server_uri,
@@ -455,7 +455,7 @@ The callback receives the connected socket by value; an open socket means succes
 `onConnected` adopts the socket into the client transport, switches on the protocol, and starts the I/O before authenticating:
 
 ```cpp
-// src: examples/core_io/chat_tcp/client/ClientActor.cpp
+// src: examples/05-services/01-tcp-chat/client/ClientActor.cpp
 void ClientActor::onConnected(qb::io::tcp::socket&& socket) {
     _connected = true;
 
@@ -480,7 +480,7 @@ void ClientActor::authenticate() {
 The transport is assigned directly (`this->transport() = std::move(socket)`), not nested through a second `transport()` call. Inbound server messages are handled by type — `AUTH_RESPONSE` flips the `_authenticated` flag, `CHAT_MESSAGE` prints, `ERROR` reports:
 
 ```cpp
-// src: examples/core_io/chat_tcp/client/ClientActor.cpp
+// src: examples/05-services/01-tcp-chat/client/ClientActor.cpp
 void ClientActor::on(const chat::Message& msg) {
     switch (msg.type) {
         case chat::MessageType::AUTH_RESPONSE:
@@ -502,7 +502,7 @@ void ClientActor::on(const chat::Message& msg) {
 Reconnection retries after a fixed delay rather than spinning. The delay is a coroutine bound to the actor, not a loop-owned timer — both the disconnect path and the connect-failure path route through one `scheduleReconnect()`:
 
 ```cpp
-// src: examples/core_io/chat_tcp/client/ClientActor.cpp
+// src: examples/05-services/01-tcp-chat/client/ClientActor.cpp
 void ClientActor::on(qb::io::async::event::disconnected const&) {
     _connected     = false;
     _authenticated = false;

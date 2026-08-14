@@ -58,10 +58,10 @@ The `Session` class itself is a `use<Session>::tcp::client<Manager>`: from qb-io
 
 ## TCP client actor
 
-The following client actor connects to a server, frames messages with a custom protocol, and reconnects on connection loss. It is derived from `examples/core_io/chat_tcp/client/ClientActor.{h,cpp}`, re-grounded against the current `connect` and timeout APIs. The reconnect delay below matches the shipped example: both of its retry paths now go through one `scheduleReconnect()` that waits inside the actor's cancellation scope and wakes the actor with a `ReconnectTickEvent`. They used to arm `qb::io::async::callback([this]{ … }, RECONNECT_DELAY)` at two sites with no liveness guard at all — that is the shape to move away from, for the reasons in [Capture safety](./async_in_actors.md#capture-safety-the-actor-may-be-gone). <!-- src: examples/core_io/chat_tcp/client/ClientActor.cpp:151-156 -->
+The following client actor connects to a server, frames messages with a custom protocol, and reconnects on connection loss. It is derived from `examples/05-services/01-tcp-chat/client/ClientActor.{h,cpp}`, re-grounded against the current `connect` and timeout APIs. The reconnect delay below matches the shipped example: both of its retry paths now go through one `scheduleReconnect()` that waits inside the actor's cancellation scope and wakes the actor with a `ReconnectTickEvent`. They used to arm `qb::io::async::callback([this]{ … }, RECONNECT_DELAY)` at two sites with no liveness guard at all — that is the shape to move away from, for the reasons in [Capture safety](./async_in_actors.md#capture-safety-the-actor-may-be-gone). <!-- src: examples/05-services/01-tcp-chat/client/ClientActor.cpp:151-156 -->
 
 ```cpp
-// src: examples/core_io/chat_tcp/client/ClientActor.h (adapted)
+// src: examples/05-services/01-tcp-chat/client/ClientActor.h (adapted)
 #include <qb/actor.h>
 #include <qb/io/async.h>      // qb::io::use<>, qb::io::async::tcp::connect
 #include <qb/io/uri.h>
@@ -226,10 +226,10 @@ To spread session handling across cores, split the two roles. An `AcceptActor` o
 
 ### Acceptor actor
 
-The acceptor listens and distributes. Verified against `examples/core_io/chat_tcp/server/AcceptActor.{h,cpp}`:
+The acceptor listens and distributes. Verified against `examples/05-services/01-tcp-chat/server/AcceptActor.{h,cpp}`:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/AcceptActor.h
+// src: examples/05-services/01-tcp-chat/server/AcceptActor.h
 class AcceptActor : public qb::Actor,
                     public qb::io::use<AcceptActor>::tcp::acceptor {
 public:
@@ -247,7 +247,7 @@ private:
 ```
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/AcceptActor.cpp
+// src: examples/05-services/01-tcp-chat/server/AcceptActor.cpp
 qb::io::async::task<bool> AcceptActor::onInit() {
     if (_server_pool.empty()) {
         qb::io::cerr() << "empty server pool\n";
@@ -281,10 +281,10 @@ void AcceptActor::on(qb::io::async::event::disconnected const &) {
 
 ### Session-managing actor
 
-A session manager inherits `use<Self>::tcp::io_handler<Session>` — a pool with no listener. It receives the accepted socket and calls `registerSession`, which constructs the `Session`, adopts the socket, and starts it. Verified against `examples/core_io/chat_tcp/server/ServerActor.{h,cpp}`:
+A session manager inherits `use<Self>::tcp::io_handler<Session>` — a pool with no listener. It receives the accepted socket and calls `registerSession`, which constructs the `Session`, adopts the socket, and starts it. Verified against `examples/05-services/01-tcp-chat/server/ServerActor.{h,cpp}`:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ServerActor.h
+// src: examples/05-services/01-tcp-chat/server/ServerActor.h
 class ServerActor : public qb::Actor,
                     public qb::io::use<ServerActor>::tcp::io_handler<ChatSession> {
 public:
@@ -297,7 +297,7 @@ public:
 ```
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ServerActor.cpp (re-grounded return type)
+// src: examples/05-services/01-tcp-chat/server/ServerActor.cpp (re-grounded return type)
 qb::io::async::task<bool> ServerActor::onInit() {
     registerEvent<NewSessionEvent>(*this);
     registerEvent<SendMessageEvent>(*this);
@@ -323,10 +323,10 @@ void ServerActor::on(SendMessageEvent &evt) {
 
 ### Session class
 
-The `Session` handles one client. It is a server-side `client<Manager>`: a `use<Session>::tcp::client<ServerActor>` endpoint owned by its manager. It may also mix in `use<Session>::timeout` for inactivity handling. Verified against `examples/core_io/chat_tcp/server/ChatSession.{h,cpp}`:
+The `Session` handles one client. It is a server-side `client<Manager>`: a `use<Session>::tcp::client<ServerActor>` endpoint owned by its manager. It may also mix in `use<Session>::timeout` for inactivity handling. Verified against `examples/05-services/01-tcp-chat/server/ChatSession.{h,cpp}`:
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ChatSession.h
+// src: examples/05-services/01-tcp-chat/server/ChatSession.h
 class ServerActor;   // forward declaration — the managing actor
 
 class ChatSession : public qb::io::use<ChatSession>::tcp::client<ServerActor>,
@@ -344,7 +344,7 @@ public:
 ```
 
 ```cpp
-// src: examples/core_io/chat_tcp/server/ChatSession.cpp
+// src: examples/05-services/01-tcp-chat/server/ChatSession.cpp
 ChatSession::ChatSession(ServerActor &server)
     : client(server) {
     this->template switch_protocol<Protocol>(*this);

@@ -26,7 +26,7 @@ A custom protocol has two independent pieces:
 The example below frames an 8-byte header (magic, version, type, payload length) followed by a variable-length payload.
 
 ```cpp
-// <!-- src: examples/core_io/chat_tcp/shared/Protocol.h -->
+// <!-- src: examples/05-services/01-tcp-chat/shared/Protocol.h -->
 #include <qb/io/async.h>
 #include <qb/system/allocator/pipe.h>
 #include <cstdint>
@@ -110,7 +110,7 @@ public:
 The outbound half is a single specialization in a `.cpp`:
 
 ```cpp
-// <!-- src: examples/core_io/chat_tcp/shared/Protocol.cpp -->
+// <!-- src: examples/05-services/01-tcp-chat/shared/Protocol.cpp -->
 namespace qb::allocator {
 
 template <>
@@ -135,7 +135,7 @@ pipe<char> &pipe<char>::put<chat::Message>(const chat::Message &msg) {
 A network actor (or a session it owns) selects its protocol with `switch_protocol<Protocol>(*this)`, declared in `qb/io/async/io.h`. The session declares the protocol type and activates it once, typically in its constructor or `on(event::connected)`:
 
 ```cpp
-// <!-- src: examples/core_io/chat_tcp/server/ChatSession.h -->
+// <!-- src: examples/05-services/01-tcp-chat/server/ChatSession.h -->
 class ChatSession : public qb::io::use<ChatSession>::tcp::client<ServerActor> {
 public:
     using Protocol = chat::ChatProtocol<ChatSession>;
@@ -167,7 +167,7 @@ Once attached, the parsed `chat::Message` arrives at `on(const chat::Message&)`,
 Place an actor on a specific core with `Main::addActor<T>(core_id, args...)`, or configure a core through `Main::core(core_id)` and use its `addActor`/`builder()` API. All placement happens *before* `start()`.
 
 ```cpp
-// <!-- src: examples/core/example3_multicore.cpp -->
+// <!-- src: examples/01-actors/04-cores-and-placement.cpp -->
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <thread>
@@ -223,7 +223,7 @@ engine.core(1).setAffinity(qb::CoreIdSet{2});      // pin core-1 worker to CPU 2
 
 ### Distribution patterns
 
-- **Round-robin dispatch.** A dispatcher actor on one core holds the `ActorId`s of workers on other cores and sends each task to the next worker in rotation — a rotating index plus `push<Event>(workers[index], args...)`. This is the pattern in `example3_multicore.cpp`, whose `DispatcherActor::dispatchOne()` round-robins one event across the worker vector and then paces the next one with a coroutine timer — `spawn(...)` + `co_await ctx.sleep(10ms)` + `ctx.push<DispatchTickEvent>()` — so the core keeps serving the worker that shares it while the dispatcher waits. <!-- src: examples/core/example3_multicore.cpp:257-294 -->
+- **Round-robin dispatch.** A dispatcher actor on one core holds the `ActorId`s of workers on other cores and sends each task to the next worker in rotation — a rotating index plus `push<Event>(workers[index], args...)`. This is the pattern in `04-cores-and-placement.cpp`, whose `DispatcherActor::dispatchOne()` round-robins one event across the worker vector and then paces the next one with a coroutine timer — `spawn(...)` + `co_await ctx.sleep(10ms)` + `ctx.push<DispatchTickEvent>()` — so the core keeps serving the worker that shares it while the dispatcher waits. <!-- src: examples/01-actors/04-cores-and-placement.cpp:267-304 -->
 - **Zero-copy re-dispatch.** When a dispatcher receives an event and wants to hand it on without rebuilding it, `forward(dest, event)` reuses the received event object. The handler must take the event by non-const reference, because `forward()` consumes it.
 - **Broadcast.** `broadcast<Event>(args...)` sends an event to every actor on every core; `push<Event>(qb::BroadcastId(core_id), args...)` targets every actor on a single core. Broadcast events cannot be `reply()`-ed to or `forward()`-ed.
 - **Runtime discovery.** Instead of hard-coding worker `ActorId`s, an actor can `co_await qb::require<Worker>(ctx, timeout)` to get the live workers' ids directly (works inside `onInit` — discover before activating), or `co_await qb::ping(ctx, target, timeout)` to probe one. The legacy fire-and-forget `require<WorkerA, WorkerB>()` + `on(RequireEvent&)` + `is<WorkerA>(event)` still works. This decouples placement from wiring and is detailed in [Actor patterns](../4_qb_core/patterns.md).
@@ -251,7 +251,7 @@ A spawned coroutine **must not touch actor member variables after any `co_await`
 2. After suspension, communicate back to the actor **only** through the `CoroContext` (`ctx`) the coroutine receives: `ctx.push<Event>(...)` (to self), `ctx.push_to<Event>(dest, ...)`, `ctx.id()`, and `ctx.time()`. Events sent to a dead actor are dropped, so this is always safe.
 
 ```cpp
-// <!-- src: examples/coroutine/actor_example.cpp -->
+// <!-- src: examples/03-coroutines/02-actor-coroutines.cpp -->
 #include <qb/actor.h>
 #include <qb/io/async/coroutine.h>
 

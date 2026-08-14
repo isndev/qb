@@ -36,7 +36,7 @@ Treat events as plain data carriers. The receiving actor reads the data and deci
 Derive a `struct` (or `class`) from `qb::Event` and add data members. The framework constructs your event in place inside the destination pipe, forwarding the constructor arguments you pass to the send call.
 
 ```cpp
-// src: qb/src/qb/core/Event.h; examples/core/example2_basic_actors.cpp (derived from)
+// src: qb/src/qb/core/Event.h; examples/01-actors/02-messaging.cpp (derived from)
 #include <qb/core/Event.h> // qb::Event
 #include <qb/string.h>     // qb::string<N>
 #include <cstdint>
@@ -222,7 +222,7 @@ For each registered type, provide a public `on()` method. The runtime selects th
 - `void on(E &event)` — non-const access, required when the handler will `reply(event)` or `forward(dest, event)`, or otherwise mutate the event in place.
 
 ```cpp
-// src: derived from examples/core/example2_basic_actors.cpp
+// src: derived from examples/01-actors/02-messaging.cpp
 #include <qb/core/Actor.h>
 #include <qb/io.h>
 

@@ -8,7 +8,7 @@ A reading of the `message_broker` example: a topic-based pub/sub broker that fan
 
 ## Summary
 
-The example lives at `examples/core_io/message_broker/` and builds two executables, `broker_server` and `broker_client`, that share one protocol and one set of event types. It extends the [`chat_tcp`](./chat_tcp_analysis.md) topology with a topic registry and a broadcast path, so read that walkthrough first; this page focuses on what is new.
+The example lives at `examples/05-services/02-pubsub-broker/` and builds two executables, `qb-example-services-pubsub-broker-server` and `qb-example-services-pubsub-broker-client`, that share one protocol and one set of event types. It extends the [`chat_tcp`](./chat_tcp_analysis.md) topology with a topic registry and a broadcast path, so read that walkthrough first; this page focuses on what is new.
 
 Three concerns distinguish the broker from a flat chat server:
 
@@ -19,13 +19,13 @@ Three concerns distinguish the broker from a flat chat server:
 The directory layout:
 
 ```text
-examples/core_io/message_broker/
+examples/05-services/02-pubsub-broker/
 ├── shared/        Protocol.h, Protocol.cpp, Events.h  (linked into both binaries)
 ├── server/        AcceptActor, ServerActor, BrokerSession, TopicManagerActor, main.cpp
 └── client/        ClientActor, InputActor, main.cpp
 ```
 
-<!-- src: examples/core_io/message_broker/CMakeLists.txt -->
+<!-- src: examples/05-services/02-pubsub-broker/CMakeLists.txt -->
 
 > **A note on the source.** `io_handler::registerSession()` returns a nullable pointer (`BrokerSession*`) — the DoS-hardening contract that hands back `nullptr` at the session cap, closing the incoming socket instead of allocating (see [Network-enabled actors](../network_actors.md)). The checked-in `ServerActor::on(NewSessionEvent&)` binds `auto* session` and returns early when it is `nullptr`. This page documents that contract.
 
@@ -41,7 +41,7 @@ flowchart TD
     TM -- "SendMessageEvent (shared payload)" --> SA
 ```
 
-<!-- src: examples/core_io/message_broker/server/main.cpp -->
+<!-- src: examples/05-services/02-pubsub-broker/server/main.cpp -->
 
 Every component except `BrokerSession` is a `qb::Actor`. `BrokerSession` is a plain object owned by a `ServerActor` and run on that actor's `VirtualCore`; it never crosses a core boundary. Cross-actor traffic is asynchronous events; the only data that travels with a published message is a copyable handle to a shared payload, not the payload itself.
 
@@ -50,7 +50,7 @@ Every component except `BrokerSession` is a `qb::Actor`. `BrokerSession` is a pl
 Both binaries link `shared/Protocol.{h,cpp}` and `shared/Events.h`. The wire format is an 8-byte fixed header followed by a UTF-8 string payload.
 
 ```cpp
-// src: examples/core_io/message_broker/shared/Protocol.h
+// src: examples/05-services/02-pubsub-broker/shared/Protocol.h
 namespace broker {
 
 struct MessageHeader {
@@ -90,7 +90,7 @@ struct Message {
 `broker::BrokerProtocol<IO_>` derives from `qb::io::async::AProtocol<IO_>` and implements the framing contract. `getMessageSize()` is called by the framework to learn whether the input buffer holds a complete message; `onMessage(size)` is called once it does. (For the full contract see [Custom protocols](../../3_qb_io/protocols.md).)
 
 ```cpp
-// src: examples/core_io/message_broker/shared/Protocol.h
+// src: examples/05-services/02-pubsub-broker/shared/Protocol.h
 template <typename IO_>
 class BrokerProtocol : public qb::io::async::AProtocol<IO_> {
     static constexpr size_t HEADER_SIZE = sizeof(MessageHeader);
@@ -151,7 +151,7 @@ public:
 Outbound serialization is a `qb::allocator::pipe<char>::put<T>` specialization. Writing `*this << message` from any I/O component routes through it.
 
 ```cpp
-// src: examples/core_io/message_broker/shared/Protocol.cpp
+// src: examples/05-services/02-pubsub-broker/shared/Protocol.cpp
 template <>
 pipe<char> &pipe<char>::put<broker::Message>(const broker::Message &msg) {
     broker::MessageHeader header{
@@ -174,7 +174,7 @@ The header is written from a stack value; the payload is appended only when non-
 The fan-out optimization lives in `shared/Events.h`. `broker::MessageContainer` wraps a plain `std::shared_ptr<broker::Message>` and exposes its accessors directly; the handle is copied safely across cores by `shared_ptr`'s intrinsically atomic reference count.
 
 ```cpp
-// src: examples/core_io/message_broker/shared/Events.h
+// src: examples/05-services/02-pubsub-broker/shared/Events.h
 class MessageContainer {
     std::shared_ptr<broker::Message> _message;
 
@@ -222,7 +222,7 @@ Copying a `MessageContainer` shares the underlying `broker::Message`; it does no
 `SubscribeEvent` shows the ownership pattern: it takes a `broker::Message&&`, moves it into the container, then takes the topic view from the container's now-stable payload.
 
 ```cpp
-// src: examples/core_io/message_broker/shared/Events.h
+// src: examples/05-services/02-pubsub-broker/shared/Events.h
 struct SubscribeEvent : public qb::Event {
     qb::uuid                 session_id;
     broker::MessageContainer message_data;
@@ -246,7 +246,7 @@ The member initialization order matters: `message_data` is constructed before `t
 `AcceptActor` inherits `qb::Actor` and `qb::io::use<AcceptActor>::tcp::acceptor`. `onInit()` listens on the configured URI and calls `start()`; each accepted socket arrives in `on(accepted_socket_type&&)` and is round-robined to a `ServerActor`.
 
 ```cpp
-// src: examples/core_io/message_broker/server/AcceptActor.cpp
+// src: examples/05-services/02-pubsub-broker/server/AcceptActor.cpp
 qb::io::async::task<bool> AcceptActor::onInit() {
     if (_server_pool.empty()) {
         qb::io::cerr() << "Cannot init AcceptActor with empty server pool" << std::endl;
@@ -278,7 +278,7 @@ void AcceptActor::on(qb::io::async::event::disconnected const &) {
 `ServerActor` inherits `qb::Actor` and `qb::io::use<ServerActor>::tcp::io_handler<BrokerSession>`. The `io_handler` mixin owns a `uuid → shared_ptr<BrokerSession>` registry, reachable through `sessions()`.
 
 ```cpp
-// src: examples/core_io/message_broker/server/ServerActor.cpp
+// src: examples/05-services/02-pubsub-broker/server/ServerActor.cpp
 qb::io::async::task<bool> ServerActor::onInit() {
     registerEvent<NewSessionEvent>(*this);
     registerEvent<SendMessageEvent>(*this);
@@ -300,7 +300,7 @@ void ServerActor::on(NewSessionEvent &evt) {
 The `handle*` methods are called by a `BrokerSession` (same core, plain method calls) and forward typed events to the `TopicManagerActor`. `handlePublish` is the one that preserves zero-copy ownership end to end:
 
 ```cpp
-// src: examples/core_io/message_broker/server/ServerActor.cpp
+// src: examples/05-services/02-pubsub-broker/server/ServerActor.cpp
 void ServerActor::handleSubscribe(qb::uuid session_id, broker::Message &&msg) {
     push<SubscribeEvent>(_topic_manager_id, session_id, std::move(msg));
 }
@@ -315,7 +315,7 @@ void ServerActor::handlePublish(qb::uuid session_id, broker::MessageContainer &&
 Replies arrive as `SendMessageEvent`, which the actor delivers to the named session by writing the contained message to its socket:
 
 ```cpp
-// src: examples/core_io/message_broker/server/ServerActor.cpp
+// src: examples/05-services/02-pubsub-broker/server/ServerActor.cpp
 void ServerActor::on(SendMessageEvent &evt) {
     auto it = sessions().find(evt.session_id);
     if (it != sessions().end()) {
@@ -332,7 +332,7 @@ void ServerActor::on(SendMessageEvent &evt) {
 `BrokerSession` inherits `qb::io::use<BrokerSession>::tcp::client<ServerActor>` (a server-side client endpoint that keeps a reference to its owner) and `qb::io::use<BrokerSession>::timeout`. The constructor installs the protocol and arms an inactivity timeout.
 
 ```cpp
-// src: examples/core_io/message_broker/server/BrokerSession.cpp
+// src: examples/05-services/02-pubsub-broker/server/BrokerSession.cpp
 BrokerSession::BrokerSession(ServerActor &server)
     : client(server) {
     this->template switch_protocol<Protocol>(*this);
@@ -345,7 +345,7 @@ BrokerSession::BrokerSession(ServerActor &server)
 The message handler is the zero-copy hinge. For `PUBLISH`, the payload is `"<topic> <content>"`; the session moves the whole message into a `MessageContainer`, then slices topic and content as views into that owned buffer before handing all three to `ServerActor`:
 
 ```cpp
-// src: examples/core_io/message_broker/server/BrokerSession.cpp
+// src: examples/05-services/02-pubsub-broker/server/BrokerSession.cpp
 void BrokerSession::on(broker::Message msg) {     // by value: free to move out of it
     switch (msg.type) {
     case broker::MessageType::SUBSCRIBE:
@@ -381,7 +381,7 @@ void BrokerSession::on(broker::Message msg) {     // by value: free to move out 
 Taking `msg` **by value** is deliberate: it lets the handler move the message out (into the container, or into a forwarded event) without a copy. The two views are derived only after `container` owns the buffer, so they never dangle. Disconnection and timeout each notify the owner:
 
 ```cpp
-// src: examples/core_io/message_broker/server/BrokerSession.cpp
+// src: examples/05-services/02-pubsub-broker/server/BrokerSession.cpp
 void BrokerSession::on(qb::io::async::event::disconnected const &) {
     this->server().handleDisconnect(this->id());
 }
@@ -396,7 +396,7 @@ void BrokerSession::on(qb::io::async::event::timer const &) {
 `TopicManagerActor` is a plain `qb::Actor`. It holds three maps and never touches a socket:
 
 ```cpp
-// src: examples/core_io/message_broker/server/TopicManagerActor.h
+// src: examples/05-services/02-pubsub-broker/server/TopicManagerActor.h
 std::map<qb::uuid, SessionInfo>                  _sessions;        // session -> owning ServerActor
 std::map<std::string, std::set<qb::uuid>>        _subscriptions;   // topic   -> subscribers
 std::map<qb::uuid, std::set<std::string>>        _session_topics;  // session -> its topics
@@ -405,7 +405,7 @@ std::map<qb::uuid, std::set<std::string>>        _session_topics;  // session ->
 `SessionInfo` records only the `qb::ActorId` of the `ServerActor` that owns a session, which is how a reply is routed back to the right core. The owner is learned from the event source — `evt.getSource()` returns the `ServerActor`'s id — and recorded on first subscribe:
 
 ```cpp
-// src: examples/core_io/message_broker/server/TopicManagerActor.cpp
+// src: examples/05-services/02-pubsub-broker/server/TopicManagerActor.cpp
 void TopicManagerActor::on(SubscribeEvent &evt) {
     auto session_id = evt.session_id;
     auto server_id  = evt.getSource();
@@ -423,7 +423,7 @@ void TopicManagerActor::on(SubscribeEvent &evt) {
 The topic view is converted to `std::string` exactly once, at the point it becomes a map key — the only unavoidable copy on the subscribe path. The publish handler is where the fan-out pays off:
 
 ```cpp
-// src: examples/core_io/message_broker/server/TopicManagerActor.cpp
+// src: examples/05-services/02-pubsub-broker/server/TopicManagerActor.cpp
 void TopicManagerActor::on(PublishEvent &evt) {
     std::string topic(evt.topic);
 
@@ -455,7 +455,7 @@ void TopicManagerActor::on(PublishEvent &evt) {
 Disconnect cleanup walks the session's topic set and removes it from each subscriber set, erasing topics that become empty:
 
 ```cpp
-// src: examples/core_io/message_broker/server/TopicManagerActor.cpp
+// src: examples/05-services/02-pubsub-broker/server/TopicManagerActor.cpp
 void TopicManagerActor::on(DisconnectEvent &evt) {
     auto session_it = _sessions.find(evt.session_id);
     if (session_it == _sessions.end()) return;
@@ -481,7 +481,7 @@ Keeping `_session_topics` makes cleanup O(topics-of-this-session) rather than a 
 `server/main.cpp` places the actors and starts the engine asynchronously so the main thread can wait for an Enter key to trigger a graceful stop.
 
 ```cpp
-// src: examples/core_io/message_broker/server/main.cpp
+// src: examples/05-services/02-pubsub-broker/server/main.cpp
 qb::Main engine;
 
 auto topic_manager_id = engine.addActor<TopicManagerActor>(2);   // core 2
@@ -509,7 +509,7 @@ The client mirrors [`chat_tcp`](./chat_tcp_analysis.md): an `InputActor` reads t
 `ClientActor` inherits `qb::Actor` and `qb::io::use<ClientActor>::tcp::client<>` (no owner template argument — it is a standalone client). It connects asynchronously and reconnects on loss:
 
 ```cpp
-// src: examples/core_io/message_broker/client/ClientActor.cpp
+// src: examples/05-services/02-pubsub-broker/client/ClientActor.cpp
 void ClientActor::connect() {
     qb::io::async::tcp::connect<qb::io::tcp::socket>(
         _server_uri,
@@ -575,7 +575,7 @@ The connection deadline and the reconnect delay are both five seconds. Both reco
 Outbound commands are built as `broker::Message` and written with `*this << msg`:
 
 ```cpp
-// src: examples/core_io/message_broker/client/ClientActor.cpp
+// src: examples/05-services/02-pubsub-broker/client/ClientActor.cpp
 void ClientActor::sendPublish(const std::string &topic, const std::string &message) {
     if (!_connected) { qb::io::cout() << "Not connected. Command discarded." << std::endl; return; }
     broker::Message msg{broker::MessageType::PUBLISH, topic + " " + message};
@@ -593,12 +593,12 @@ Inbound frames land in `on(const broker::Message&)`, which prints `RESPONSE`, `M
 ```bash
 # from the repository root (qb-dev), using the CMake presets
 cmake --preset release
-cmake --build --preset release --target broker_server
-cmake --build --preset release --target broker_client
+cmake --build --preset release --target qb-example-services-pubsub-broker-server
+cmake --build --preset release --target qb-example-services-pubsub-broker-client
 
-cd build/presets/release/examples/core_io/message_broker
-./server/broker_server                 # listens on 0.0.0.0:12345
-./client/broker_client 127.0.0.1 12345 # one terminal per client
+cd build/presets/release/examples/05-services/02-pubsub-broker
+./server/qb-example-services-pubsub-broker-server                 # listens on 0.0.0.0:12345
+./client/qb-example-services-pubsub-broker-client 127.0.0.1 12345 # one terminal per client
 ```
 
 Client commands. The broker verbs (`SUB`, `UNSUB`, `PUB`, and their long forms `SUBSCRIBE`/`UNSUBSCRIBE`/`PUBLISH`) are matched case-insensitively in `ClientActor::processCommand`; `help` and `quit` are matched lowercase-exactly in `InputActor`.

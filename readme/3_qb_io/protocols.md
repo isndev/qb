@@ -424,4 +424,4 @@ The `chat_tcp` and `message_broker` examples under `examples/core_io/` apply thi
 - [Transports](./transports.md) — the stream and transport layers a protocol reads through (`in()`, `out()`, `publish()`).
 - [Secure (SSL/TLS) transport](./ssl_transport.md) — how the `handshake` protocol participates in a TLS session.
 - `examples/02-io/05-custom-protocol.cpp` — the complete custom binary protocol this page condenses.
-- `examples/core_io/chat_tcp/shared/Protocol.h`, `examples/core_io/message_broker/shared/Protocol.h` — custom protocols inside full applications.
+- `examples/05-services/01-tcp-chat/shared/Protocol.h`, `examples/05-services/02-pubsub-broker/shared/Protocol.h` — custom protocols inside full applications.

@@ -800,7 +800,7 @@ int main() {
 - `broadcast` constructs a separate event copy per recipient. For a large payload delivered to a
   curated subscriber list, prefer a broker actor that forwards a shared payload (see the
   publish/subscribe pattern on [the actor patterns page](../4_qb_core/patterns.md), and the
-  `examples/core_io/message_broker/` example).
+  `examples/05-services/02-pubsub-broker/` example).
 
 ## Recipe: pipeline
 
@@ -890,7 +890,7 @@ files, or notify peers before it goes. For a system-wide stop, `broadcast<qb::Ki
 every actor; `engine.join()` returns once they have all terminated.
 
 ```cpp
-// src: derived from examples/core/example5_timers.cpp (broadcast<KillEvent>) and
+// src: derived from examples/01-actors/06-doing-things-later.cpp (broadcast<KillEvent>) and
 //      qb/src/qb/core/Main.h (registerSignal)
 #include <qb/actor.h>
 #include <qb/main.h>

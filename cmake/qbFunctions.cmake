@@ -1426,7 +1426,7 @@ function(qb_copy_resources)
     # tree, and this function creates an unordered custom target per caller -- so two callers
     # taking the default are two concurrent copy_directory invocations into one directory with
     # nothing sequencing them. Both in-tree callers already had to work around it by hand and
-    # said so: examples/all/taskmanager/CMakeLists.txt and .../auction_house/CMakeLists.txt
+    # said so: examples/07-applications/01-taskmanager/CMakeLists.txt and .../auction_house/CMakeLists.txt
     # each pass DESTINATION "${CMAKE_BINARY_DIR}/bin/<example>/resources" with the comment
     # "so parallel builds never race (or clobber each other) on a shared bin/resources
     # directory". A default that every real caller has to override is the wrong default;

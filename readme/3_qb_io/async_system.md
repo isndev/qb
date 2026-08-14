@@ -103,7 +103,7 @@ The pump runs *on whatever thread called it*. Everything therefore turns on whos
 **Outside the actor engine, that thread is yours.** A `main()`, a test fixture, a CLI, a setup step before `qb::Main::start()` — nothing else is scheduled on it, there is no core to freeze, and blocking it until an awaitable completes is the honest spelling. The framework's own best statement of this is a comment in an example:
 
 > *Pre-engine setup: there is no actor loop yet, so we drive a coroutine to completion synchronously.*
-> — `examples/all/auction_house/src/main.cpp:34-35`
+> — `examples/07-applications/02-auction-house/src/main.cpp:45-46`
 
 **Inside an actor handler, that thread is the `VirtualCore`.** Until the awaitable completes, this core never returns to its workflow loop: no `__flush_all__()`, no `__receive__()`, no `LoopEvent` tick, no actor reaping (`src/qb/core/VirtualCore.cpp:702-704`). Every actor on the core is frozen.
 

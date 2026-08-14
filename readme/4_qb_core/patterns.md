@@ -78,7 +78,7 @@ with `spawn` + `co_await ctx.sleep(...)`, which posts a self-event when the slee
 cancelled if the actor is killed first.
 
 ```cpp
-// src: derived from examples/core/example8_state_machine.cpp (scheduleAction)
+// src: derived from examples/01-actors/09-state-machine.cpp (scheduleAction)
 #include <qb/actor.h>
 #include <qb/io.h>
 #include <qb/io/async.h>
@@ -161,7 +161,7 @@ Two rules keep an actor FSM correct:
 
 For a larger machine, a `std::map<State, std::map<Input, Handler>>` transition table makes the
 states and transitions explicit and keeps each handler small — see the full coffee-machine FSM in
-`examples/core/example8_state_machine.cpp`.
+`examples/01-actors/09-state-machine.cpp`.
 
 ## Service actors as per-core registries
 
@@ -318,7 +318,7 @@ Design notes:
 - **The fan-out is already zero-copy**, because the body is boxed: each `Delivery` copies a
   `shared_ptr` (one refcount bump), not the bytes. That is the same choice the relocation rule
   forces on you — a by-value `std::string` is not a valid event member on any path — so the safe
-  shape and the fast shape coincide here. The `examples/core_io/message_broker` sample pushes the
+  shape and the fast shape coincide here. The `examples/05-services/02-pubsub-broker` sample pushes the
   same idea further: one shared-ownership `MessageContainer` holds the bytes and the events carry
   `std::string_view`s into it (a view is a pointer plus a length, so it relocates cleanly too).
 - **Distinguish broker pub/sub from `broadcast<E>()`.** `broadcast` reaches *every* actor on every
