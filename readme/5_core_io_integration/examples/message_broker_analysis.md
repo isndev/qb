@@ -271,7 +271,7 @@ void AcceptActor::on(qb::io::async::event::disconnected const &) {
 }
 ```
 
-`push<NewSessionEvent>(server_id)` allocates the event on the recipient's core and returns a reference for in-place field assignment. Moving the socket into `evt.socket` transfers the live file descriptor; nothing is duplicated.
+`push<NewSessionEvent>(server_id)` constructs the event in the **sender's** outbound pipe for that destination and returns a reference for in-place field assignment; the framework relocates it into the recipient's mailbox afterwards (`sender pipe → peer mailbox ring → receive buffer`). Moving the socket into `evt.socket` transfers the live file descriptor; nothing is duplicated. <!-- src: qb/src/qb/core/Actor.h:836-838 -->
 
 ### ServerActor — own sessions, bridge to the topic manager
 
@@ -537,7 +537,19 @@ void ClientActor::on(qb::io::async::event::disconnected const &) {
 }
 ```
 
-The connection deadline and the reconnect delay are both five seconds. Reconnection is scheduled with `qb::io::async::callback`, which runs the lambda on the actor's own event loop after the delay — no extra thread.
+The connection deadline and the reconnect delay are both five seconds, and there is a second, identical reconnect site on the connect-failure path.
+
+> **Do not copy the reconnect timer.** `qb::io::async::callback` does run the lambda on the actor's core with no extra thread — but the timer belongs to the **event loop**, not to the actor: the timed overload heap-allocates a `Timeout` that the listener owns and that fires whatever happened to the actor meanwhile. <!-- src: qb/src/qb/io/async/io.h:389 -->
+> This program supplies the precondition: `_should_reconnect` is cleared only by `ClientActor::disconnect()`, which nothing here calls, so when `InputActor` pushes `qb::KillEvent` the actor is destroyed with a five-second timer still holding `this`. An `if (is_alive())` guard inside the lambda would not help — `is_alive()` is a member read (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard *is* the use-after-free. Bind the wait to the actor instead:
+>
+> ```cpp
+> spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+>     co_await ctx.sleep(std::chrono::seconds(5));
+>     ctx.template push<ReconnectTickMessage>();   // ordinary handler calls connect()
+> });
+> ```
+>
+> `spawn` puts the coroutine in the actor's cancellation scope (`qb/src/qb/core/Actor.h:1238-1239`), which `Actor::kill()` cancels (`qb/src/qb/core/Actor.cpp:283-289`). The [`chat_tcp` walkthrough](./chat_tcp_analysis.md#clientactor--connect-authenticate-reconnect) carries the same correction for the same shape.
 
 > **Framework contract vs. the example.** `qb::io::async::tcp::connect()` takes its timeout as a `qb::duration` (`std::chrono::nanoseconds`, per [the canonical time model](../../7_reference/glossary.md)), and `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in example stores both deadlines as `static constexpr double CONNECT_TIMEOUT = 5.0;` / `RECONNECT_DELAY = 5.0;` and adapts them at the call site rather than passing a bare `double`: `connect()` wraps the value as `std::chrono::duration_cast<qb::duration>(std::chrono::duration<double>(CONNECT_TIMEOUT))`, and the reconnect paths pass `std::chrono::duration<double>(RECONNECT_DELAY)`. That compiles. Passing a chrono literal such as `std::chrono::seconds(5)` directly — dropping the `double` constants and the wrappers — is a clarity improvement, not a fix for a compile error.
 
@@ -552,7 +564,10 @@ void ClientActor::sendPublish(const std::string &topic, const std::string &messa
 }
 ```
 
-Inbound frames land in `on(const broker::Message&)`, which prints `RESPONSE`, `MESSAGE`, and `ERROR` payloads. `InputActor` uses `qb::ICallback` to poll `std::cin` without blocking the event loop and forwards each non-local line as a `BrokerInputEvent`; `quit` and `help` are handled in the input actor itself.
+Inbound frames land in `on(const broker::Message&)`, which prints `RESPONSE`, `MESSAGE`, and `ERROR` payloads. `InputActor` uses `qb::ICallback` to read `std::cin` once per loop turn and forwards each non-local line as a `BrokerInputEvent`; `quit` and `help` are handled in the input actor itself.
+
+> **That read *does* block, and `qb::ICallback` is the wrong place for it.** `InputActor::on(qb::LoopEvent const&)` calls `std::getline(std::cin, line)`, which blocks until the user presses return — and the tick handler runs on the `VirtualCore`'s event-loop thread, so the whole core stalls with it. `qb::ICallback`'s own contract is explicit: the handler "must **never** block (no mutex waits, no synchronous I/O, no `sleep`)". <!-- src: qb/src/qb/core/ICallback.h:165 -->
+> What makes it survivable here is placement, not design: `InputActor` is alone on core 0 while the client's network actor sits elsewhere, so the stall costs nothing that matters. Keep any `std::getline`-style reader off a core that carries network actors — and for real console input, read on a dedicated thread and hand lines over as events. The [`chat_tcp` walkthrough](./chat_tcp_analysis.md#inputactor--console-input-off-the-io-path) makes the same point about the same code.
 
 ## Running it
 

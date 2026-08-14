@@ -30,12 +30,18 @@ model page](../2_core_concepts/threading_model.md):
 
 The patterns also use two timing tools from `qb-io`:
 
-- `qb::io::async::callback(func, delay)` schedules `func` to run after `delay` on the actor's own
-  `VirtualCore` loop. `delay` is a `std::chrono::duration` (`qb/io/async/io.h`); a non-positive delay
-  runs `func` immediately. The callback runs outside any actor context, so it must capture only what
-  it needs and guard re-entry into the actor with `is_alive()`.
+- `spawn(f)` + `co_await ctx.sleep(delay)` is how anything happens *later*. The lambda takes a
+  `qb::ScopedCoroContext` and runs under the actor's cancellation scope, which `kill()` cancels, so a
+  pending sleep unwinds instead of resuming into a destroyed actor. Because it runs outside any handler
+  it must capture **by value only, never `this`**, and come back through a self-addressed event: `ctx`
+  carries the `ActorId`, not the address. `qb::io::async::callback(func, delay)` arms a similar timer
+  but binds it to the *event loop*, not to any actor, so it fires whatever happened to the actor
+  meanwhile; an `is_alive()` guard inside it cannot help, because reading `_alive` on a destroyed actor
+  is already the invalid access. Keep it for work that must deliberately outlive its actor, and use
+  `scoped_callback` held as an actor member when you want a cancellable handle.
 - `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
   For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/time.h`).
+<!-- src: qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/io/async/io.h:312-318,343 -->
 
 ## The patterns library (`<qb/core/patterns.h>`)
 
@@ -68,10 +74,11 @@ recipes in the [patterns cookbook](../6_guides/patterns_cookbook.md).
 An actor is already a state machine: its members are the state, and its event handlers are the
 transitions. Model the states with an `enum class`, store the current state as a member, and branch
 on it inside each handler. Timed transitions (a brew finishing, a session expiring) are scheduled
-with `qb::io::async::callback`, which posts a self-event when the timer fires.
+with `spawn` + `co_await ctx.sleep(...)`, which posts a self-event when the sleep elapses — and is
+cancelled if the actor is killed first.
 
 ```cpp
-// src: derived from examples/core/example8_state_machine.cpp
+// src: derived from examples/core/example8_state_machine.cpp (scheduleAction)
 #include <qb/actor.h>
 #include <qb/io.h>
 #include <qb/io/async.h>
@@ -105,10 +112,11 @@ public:
             return;                                 // guard: ignore out-of-state input
         _state = State::Processing;
         // Timed transition: post ShipOrder to self after the fulfillment delay.
-        qb::io::async::callback([this] {
-            if (is_alive())                         // the actor may be gone when the timer fires
-                push<ShipOrder>(id());
-        }, std::chrono::seconds(2));
+        // Capture nothing — `ctx` carries our ActorId, and kill() cancels the sleep.
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(std::chrono::seconds(2));
+            ctx.template push<ShipOrder>();
+        });
     }
 
     void on(ShipOrder const &) {
@@ -126,7 +134,7 @@ The `OrderActor` above is exactly this state machine:
 stateDiagram-v2
     [*] --> AwaitingPayment: PlaceOrder
     AwaitingPayment --> Processing: PaymentTaken
-    Processing --> Shipped: ShipOrder (timed +2s via callback)
+    Processing --> Shipped: ShipOrder (timed +2s via ctx.sleep)
     Shipped --> [*]
     note right of Processing
         PaymentTaken ignored unless AwaitingPayment;
@@ -139,13 +147,17 @@ Two rules keep an actor FSM correct:
 - **Guard every transition on the current state.** Handlers can fire in any order; an unguarded
   handler that assumes a prior state corrupts the machine. The `if (_state != ...)` check above
   rejects events that arrive in the wrong state.
-- **Drive timed transitions through `callback` + a self-event**, never a blocking wait. The
-  `is_alive()` guard inside the closure is the minimum: the timer holds no claim on the actor, so the
-  actor can be killed between scheduling and firing. It is **not sufficient on its own** — `kill()`
-  only flags, and `~Actor()` runs later under `VirtualCore` control, so a timer that outlives the
-  *destructor* evaluates `this->is_alive()` on freed memory. When the timer's lifetime is the
-  actor's, own it: hold the `scoped_callback` handle as a member so the actor's own destructor
-  cancels it. See [Error handling — the two guards](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures).
+- **Drive timed transitions through `spawn` + `ctx.sleep` + a self-event**, never a blocking wait and
+  never a bare `qb::io::async::callback`. That timer holds no claim on the actor, so it fires whether
+  or not the actor is still there — and an `is_alive()` guard inside the closure is not a weaker fix,
+  it is the same bug: `is_alive()` reads the actor's `_alive` member, so once the destructor has run,
+  *evaluating the guard* is the read of freed memory. Nor is the killed-but-not-yet-reaped window the
+  relevant one for a timed transition: `VirtualCore` reaps in the same or the next loop turn, seconds
+  before a two-second timer. `ctx.sleep` closes this by construction, because `kill()` cancels the
+  actor's coroutine scope; if you want a timer handle instead, hold a `scoped_callback` as a member so
+  the actor's own destructor cancels it. See [Error handling — the two guards](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures)
+  and [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
+  <!-- src: qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/core/VirtualCore.cpp:734,896 -->
 
 For a larger machine, a `std::map<State, std::map<Input, Handler>>` transition table makes the
 states and transitions explicit and keeps each handler small — see the full coffee-machine FSM in
@@ -154,7 +166,7 @@ states and transitions explicit and keeps each handler small — see the full co
 ## Service actors as per-core registries
 
 A `qb::ServiceActor<Tag>` is a singleton per `VirtualCore` per `Tag` (defined on [the actor
-page](./actor.md#service-actors-qbserviceactor)). That makes it the natural home for a per-core
+page](./actor.md#services-one-per-core-per-tag)). That makes it the natural home for a per-core
 shared resource — a logger, a metrics sink, a connection registry — that other actors on the same
 core reach by type, and actors on other cores reach by computed id.
 
@@ -360,11 +372,12 @@ public:
         _pending[id_] = true;
         push<Query>(_service, Query{ .correlation = id_, .key = key });
 
-        // Arm a deadline; the closure re-enters the actor only if it is still alive.
-        qb::io::async::callback([this, id_] {
-            if (is_alive())
-                push<QueryTimeout>(id(), QueryTimeout{ .correlation = id_ });
-        }, std::chrono::milliseconds(500));
+        // Arm a deadline. The correlation id travels by value; nothing captures `this`,
+        // and kill() cancels the sleep so a dead requester arms no timeout at all.
+        spawn([id_](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(std::chrono::milliseconds(500));
+            ctx.template push<QueryTimeout>(QueryTimeout{ .correlation = id_ });
+        });
     }
 
     void on(Answer const &ev) {
@@ -384,7 +397,7 @@ public:
 The responder answers the request's source, echoing the correlation id back in a distinct `Answer`
 event so the requester can pair it. (`reply()` reuses the *same* event object and so keeps the same
 type; use it when request and response share one event type, and a fresh event — as here — when they
-differ. See [reply and forward](./actor.md#reply-and-forward-reuse-a-received-event).)
+differ. See [reply and forward](./actor.md#steady-state-sending).)
 
 ```cpp
 class Service : public qb::Actor {
@@ -410,8 +423,12 @@ Key points:
   timeout (or vice versa) finds nothing to erase and is ignored.
 - **The timeout is a self-event, not a blocking wait.** The requester keeps processing other events
   while the deadline runs on its own loop.
-- **Guard the timeout closure with `is_alive()`.** If the requester is killed before the deadline,
-  the captured `this` would otherwise re-enter a dead actor.
+- **Bind the deadline to the requester, do not guard it.** `spawn` runs the sleep under the actor's
+  cancellation scope, so killing the requester cancels the pending deadline. The older shape —
+  `qb::io::async::callback([this, id_]{ if (is_alive()) … }, 500ms)` — does not work: that timer is
+  owned by the loop, it fires long after `VirtualCore` has reaped the actor, and `is_alive()` reads an
+  actor member, so evaluating the guard is itself the use-after-free.
+  <!-- src: qb/src/qb/core/Actor.cpp:205-208,283-289 -->
 
 For an exchange that fans out to an external network service, drive the I/O from a coroutine instead
 of a peer actor — see [Coroutines](#coroutines-for-async-io) below.
@@ -656,18 +673,35 @@ To shut down cleanly while coroutines are still in flight, check `has_active_cor
 termination until they drain:
 
 ```cpp
-void on(qb::KillEvent const &) {
-    if (has_active_coroutines()) {
-        // Re-check shortly; the timer holds no claim on the actor, so guard re-entry.
-        qb::io::async::callback([this] {
+class ApiActor : public qb::Actor {
+    // Lifetime-bound by ownership: destroying the actor destroys the handle,
+    // which cancels the pending re-check.
+    std::unique_ptr<qb::io::async::ScopedTimeout<std::function<void()>>> _drain_check;
+
+public:
+    void on(qb::KillEvent const &) {
+        if (!has_active_coroutines()) {
+            kill();
+            return;
+        }
+        // Re-check shortly. `this` is sound here because the timer is a MEMBER and so
+        // cannot outlive the actor; the guard covers the killed-but-not-yet-destroyed
+        // window, where reading `_alive` is still valid.
+        _drain_check = qb::io::async::scoped_callback(std::function<void()>{[this] {
             if (is_alive())
                 push<qb::KillEvent>(id());
-        }, std::chrono::milliseconds(100));
-    } else {
-        kill();
+        }}, std::chrono::milliseconds(100));
     }
-}
+};
 ```
+
+This is the one place on this page that does **not** use `spawn` + `ctx.sleep`, and the reason is
+specific: `spawn` increments the very counter this handler is polling
+(`active_coroutines_->fetch_add(1)`), so a spawned re-check would be work waiting for itself. A
+member-owned `scoped_callback` gives the same lifetime binding without touching the count. A bare
+`qb::io::async::callback` would give neither — its timer is owned by the loop, so it can fire after
+the actor is gone, and the `is_alive()` guard above is only valid because the *handle* is a member.
+<!-- src: qb/src/qb/core/VirtualCore.h:1159-1169, qb/src/qb/io/async/io.h:479-484 -->
 
 The full coroutine contract — the dangling-closure rule, the `task<void>` type, the scheduler, and
 the safety requirements — lives on the [Coroutines](../3_qb_io/coroutines.md) page. The footgun to
@@ -679,12 +713,18 @@ context.
 - **Unguarded state transitions.** An FSM handler that assumes a prior state without checking
   `_state` corrupts the machine when events arrive out of order. Guard every transition.
 - **Timer closures that re-enter a dead actor.** `qb::io::async::callback` keeps no claim on the
-  actor. Any closure that calls back into the actor must test `is_alive()` first — and that guard
-  covers only the killed-but-not-yet-reaped window. A timer that survives `~Actor()` reads freed
-  memory *at the guard itself*. For actor-lifetime timers, own the `scoped_callback` handle as a
-  member (its destructor cancels the watcher), and for coroutines prefer `Actor::spawn()`, which
-  binds the frame to a per-actor cancellation scope. See
-  [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures).
+  actor: its timer is owned by the event loop and fires whatever happened to the actor meanwhile.
+  `is_alive()` inside the closure is **not a partial fix, it is the same bug** — it reads the actor's
+  `_alive` member, so a timer that survives `~Actor()` reads freed memory *at the guard itself*, and
+  the branch never gets to run. Nor is the killed-but-not-yet-reaped window the one that matters for a
+  delayed timer: `VirtualCore` reaps in the same or the next loop turn, long before a 100 ms — let
+  alone a 5 s — timer. Bind the delay to the actor instead: `Actor::spawn()` + `co_await
+  ctx.sleep(...)` + a self-addressed event (the frame is bound to a per-actor cancellation scope that
+  `kill()` cancels), or own a `scoped_callback` handle as a member so the actor's own destructor
+  cancels the watcher. See
+  [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures) and
+  [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
+  <!-- src: qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/core/VirtualCore.cpp:734,896 -->
 - **Passing a bare number as a delay.** `qb::io::async::callback(func, delay)` requires a
   `std::chrono::duration` (`std::chrono::seconds(2)`, `100ms` with `using namespace
   std::chrono_literals`), not a raw `double`.

@@ -163,25 +163,52 @@ Key facts, each verified against the header:
 
 ### Capture safety: the actor may be gone
 
-A delayed callback can outlive the actor that scheduled it. If the lambda captures `this`, guard every member access with `is_alive()`:
+A delayed callback can outlive the actor that scheduled it, and **no guard written inside the lambda can repair that**. The `Timeout<F>` allocated by `callback(func, delay)` is registered as a *loop-owned* object: the listener owns it, it deletes itself when it fires, and nothing binds it to any `qb::Actor`. It fires when the loop says so, whatever happened to the actor meanwhile. <!-- src: qb/src/qb/io/async/io.h:312-318,343 -->
+
+So the check that looks like the remedy is itself the defect:
 
 ```cpp
-// Verify the actor still exists before touching its state.
+// WRONG — do not copy this shape.
 qb::io::async::callback([this, task_id]() {
     if (!is_alive())
-        return;                       // actor was killed; do nothing
-    // ... safe to use this-> members here ...
+        return;                       // too late: evaluating this IS the invalid access
+    // ... members ...
 }, std::chrono::seconds(5));
 ```
 
-That guard covers the killed-but-not-yet-reaped window, which is the one that matters: `kill()` only flags, and `~Actor()` runs later under `VirtualCore` control. For longer or riskier deferrals, prefer the message-back pattern — have the callback `push` an event to the actor's own `id()` instead of mutating state directly. Events addressed to a dead actor are dropped, so this needs no liveness check and keeps all state changes inside ordinary `on(Event&)` handlers.
+`Actor::is_alive()` is a plain read of the actor's `_alive` member. If the actor was already destroyed when the timer fires, *evaluating the guard* is the heap-use-after-free — the branch never gets the chance to protect anything. That is measured, not theoretical: `examples/core/example10_distributed_computing.cpp` carried exactly this shape at eight sites and AddressSanitizer aborted on it, 3 runs of 3. <!-- src: qb/src/qb/core/Actor.cpp:205-208, examples/core/example10_distributed_computing.cpp:45-56 -->
+
+Two arguments are commonly offered for the guard, and neither holds:
+
+- *"The callback runs on the actor's own core, so capturing `this` is safe — there is no cross-thread access."* This answers the wrong question. The hazard is **lifetime**, not threading; running on the right thread says nothing about whether the object still exists.
+- *"The guard covers the killed-but-not-yet-reaped window, which is the one that matters."* Backwards for a *delayed* callback. `kill()` only flags, but `VirtualCore` reaps in the same or the next loop turn — it unregisters the actor's callbacks and destroys it right there. A 5-second timer fires long after the reap. The guard covers microseconds; the hazard window is the whole delay. <!-- src: qb/src/qb/core/VirtualCore.cpp:734,896 -->
+
+**The fix is to bind the delay to the actor's lifetime instead of guarding after the fact.** `Actor::spawn` runs a coroutine under the actor's cancellation scope, and `kill()` cancels that scope, so a pending `ctx.sleep` unwinds rather than resuming into a destroyed actor:
+
+```cpp
+// RIGHT — the delay is cancelled when the actor is killed, and nothing captures `this`.
+void arm(int task_id) {
+    spawn([task_id](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        co_await ctx.sleep(std::chrono::seconds(5));   // cancelled if this actor is killed
+        ctx.template push<DeadlineElapsed>(task_id);   // back on the actor's own frame
+    });
+}
+```
+<!-- src: qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:283-289 -->
+
+Copy by value everything the body needs before the first `co_await`, and **never capture `this`**. The `ScopedCoroContext` carries the actor's `ActorId` by value, so the only way back into the actor is a `push` — which is exactly the message-back pattern, now with no member access at all. Handle the event in an ordinary `on(Event&)` handler and every state change happens on an actor the dispatcher has already proved is alive.
+
+That distinction is why the coroutine form supersedes the older advice to "have the callback `push` to `id()`". Pushing back to self is the right destination, but `push` and `id()` called from inside a `[this]`-capturing, loop-owned timer are still member calls on a possibly-dead actor — the message-back only becomes safe once the id travels by value, which is what `ctx` does.
+
+When you genuinely want a timer you can cancel by hand rather than a coroutine, the other lifetime-bound answer is `scoped_callback` held as an actor member: the actor's destructor destroys the handle, which cancels the pending call. See [`scoped_callback` — when you need the handle back](#scoped_callback--when-you-need-the-handle-back) below.
 
 ### A timeout-watchdog example
 
-This actor starts an operation and arms a timeout. If a completion signal does not clear the pending flag before the callback fires, the callback declares the operation timed out and resolves it through an event.
+This actor starts an operation and arms a timeout. The deadline is a coroutine, so nothing survives the actor; when it elapses the coroutine sends the actor a `DeadlineElapsed` event, and an ordinary handler — running on an actor the dispatcher has proved is alive — consults `_pending` and decides whether the operation really timed out.
 
 ```cpp
-// Inactivity / operation-timeout pattern using async::callback.
+// Operation-timeout pattern. The delay lives in a coroutine bound to this actor's
+// cancellation scope; the member map is only ever touched from an event handler.
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <qb/io.h>
@@ -196,6 +223,12 @@ struct TaskComplete : qb::Event {
     TaskComplete(int id, bool timeout) : task_id(id), timed_out(timeout) {}
 };
 
+// Self-addressed: "the deadline for task N has elapsed".
+struct DeadlineElapsed : qb::Event {
+    int task_id;
+    explicit DeadlineElapsed(int id) : task_id(id) {}
+};
+
 class WatchdogActor : public qb::Actor {
     std::map<int, bool> _pending;   // task_id -> still pending
     int                 _next_id = 1;
@@ -203,6 +236,7 @@ class WatchdogActor : public qb::Actor {
 public:
     qb::io::async::task<bool> onInit() override {
         registerEvent<TaskComplete>(*this);
+        registerEvent<DeadlineElapsed>(*this);
         registerEvent<qb::KillEvent>(*this);
         startOperation(5s);
         co_return true;
@@ -213,15 +247,21 @@ public:
         _pending[id] = true;
         // ... kick off the real non-blocking operation here ...
 
-        qb::io::async::callback([this, id]() {
-            if (!is_alive())
-                return;                                   // actor gone
-            auto it = _pending.find(id);
-            if (it != _pending.end() && it->second) {     // still pending -> timed out
-                push<TaskComplete>(this->id(), id, true);
-                _pending.erase(it);
-            }
-        }, timeout);
+        // Copy `id` and `timeout` by value; capture nothing else, and never `this`.
+        spawn([id, timeout](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(timeout);              // cancelled if the actor is killed
+            ctx.template push<DeadlineElapsed>(id);   // resume on the actor's own frame
+        });
+    }
+
+    // The deadline decision happens here, in an ordinary handler — `_pending` is a
+    // member and is never read from a coroutine frame.
+    void on(const DeadlineElapsed &ev) {
+        auto it = _pending.find(ev.task_id);
+        if (it != _pending.end() && it->second) {     // still pending -> timed out
+            _pending.erase(it);
+            push<TaskComplete>(id(), ev.task_id, true);
+        }
     }
 
     void on(const TaskComplete &ev) {
@@ -233,14 +273,20 @@ public:
 };
 ```
 
+Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:283-289, examples/core/example5_timers.cpp:225-238 -->
+
 `startOperation` takes a `qb::duration` — the canonical span type used for every timeout, delay and interval in the public API. It is an alias for `std::chrono::nanoseconds` and accepts any finer-or-equal chrono literal implicitly (`5s`, `200ms`), while rejecting a bare integer at compile time. <!-- src: qb/src/qb/system/time.h:90 -->
 
 ### Common uses
 
-- **Operation timeouts.** Arm a callback when you start something; cancel its effect by clearing a pending flag when the result arrives first, as above.
-- **Retry with backoff.** On a failed attempt, reschedule the next try with a growing delay.
-- **Yielding between steps.** Split a long computation into chunks and schedule the next chunk so the loop can service other actors in between. Use a strictly positive delay — a zero delay runs inline and yields nothing.
-- **Periodic work.** A callback can reschedule itself. For strictly every-iteration work, prefer `qb::ICallback`.
+Each of these is a *delay owned by an actor*, so each is a `spawn` + `co_await ctx.sleep(...)` that comes back through a self-addressed event — the form shown above.
+
+- **Operation timeouts.** Arm the deadline when you start something; the handler that receives the elapsed event drops it if a pending flag was already cleared by the real result, as above.
+- **Retry with backoff.** On a failed attempt, sleep for a growing delay and then push yourself a retry event.
+- **Yielding between steps.** Split a long computation into chunks and sleep between them so the loop can service other actors. Use a strictly positive delay — a zero delay yields nothing. (`co_await ctx.cancellation_point()` is the cheaper way to yield inside one coroutine's loop.)
+- **Periodic work.** The tick handler re-arms the next sleep. For strictly every-iteration work, prefer `qb::ICallback`.
+
+Reach for a bare `qb::io::async::callback(func, delay)` only for work that must deliberately outlive the actor that scheduled it — that is the one job the loop-owned timer is right for.
 
 ## `scoped_callback` — when you need the handle back
 
@@ -266,6 +312,9 @@ public:
         // ScopedTimeout<std::function<void()>> matches the member's type.
         _deadline = qb::io::async::scoped_callback(
             std::function<void()>{[this]() {
+                // `this` is sound here — and ONLY here — because the timer is a member:
+                // it cannot outlive the actor. The check is for the killed-but-not-yet-
+                // destroyed window, where reading `_alive` is still valid.
                 if (!is_alive())
                     return;
                 // deadline elapsed without a response
@@ -374,7 +423,7 @@ public:
 };
 ```
 
-`on(qb::LoopEvent const&)` is bound by the same no-blocking rule as everything else on the core: it must return quickly and must never block, sleep, or do synchronous I/O. <!-- src: qb/src/qb/core/ICallback.h:163-165 --> The tick fires *after* the pass has flushed its pipes and dispatched its events, so anything it pushes leaves the core on the next pass — see [the loop pass](../4_qb_core/engine.md#the-loop-pass). For a one-shot or backoff schedule rather than every-pass work, prefer `async::callback`; for the registration API and a worked heartbeat example, see [Writing actors](../4_qb_core/actor.md#periodic-work-qbicallback).
+`on(qb::LoopEvent const&)` is bound by the same no-blocking rule as everything else on the core: it must return quickly and must never block, sleep, or do synchronous I/O. <!-- src: qb/src/qb/core/ICallback.h:163-165 --> The tick fires *after* the pass has flushed its pipes and dispatched its events, so anything it pushes leaves the core on the next pass — see [the loop pass](../4_qb_core/engine.md#the-loop-pass). For a one-shot or backoff schedule rather than every-pass work, prefer `spawn` + `co_await ctx.sleep(...)`; for the registration API and a worked heartbeat example, see [Writing actors](../4_qb_core/actor.md#periodic-work-qbicallback).
 
 ## Blocking file I/O from an actor
 
@@ -403,7 +452,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
 - **`run_sync` / `run_for` inside a handler.** The thread you block is the `VirtualCore`. The framework's guard does not fire, the loop keeps turning so the I/O looks healthy, and the only symptom is actor latency. Use `spawn` + `co_await`.
 - **Expecting `callback(f)` or a zero delay to defer.** A non-positive duration runs `func()` inline at the call site. Use a strictly positive delay, or `defer(f)`.
 - **Passing a `double` as a delay.** `callback`, `with_timeout` and `connect` take `qb::duration` (a `std::chrono` span), never seconds-as-`double`. Write `5s` or `std::chrono::milliseconds(200)`; a bare integer does not compile. <!-- src: qb/src/qb/system/time.h:90 -->
-- **Touching `this` after the actor died.** A delayed callback can outlive its actor — guard with `is_alive()`, own the handle so the destructor cancels it, or prefer `push`-back-to-self over direct mutation.
+- **Touching `this` after the actor died.** A delayed `callback` outlives its actor, and `is_alive()` inside the closure does not save you — reading `_alive` on a destroyed actor *is* the invalid access. Bind the delay to the actor instead: `spawn` + `co_await ctx.sleep(...)` + a self-addressed event, or own a `scoped_callback` handle as a member so the destructor cancels it. <!-- src: qb/src/qb/core/Actor.cpp:205-208 -->
 - **Accessing actor state after `co_await`.** Copy state by value before the first suspension and use only the `CoroContext` afterwards.
 - **Sharing I/O objects across cores.** An async object is bound to one core's loop. Never hand it to another thread; move a socket into an event instead. <!-- src: qb/src/qb/io/async/listener.h:66-67,69-81 -->
 - **Blocking the loop at all.** A synchronous `read`, a `sleep`, a mutex wait, or an unbounded computation in a handler, a callback or an `on(qb::LoopEvent const&)` tick freezes the entire core. Defer it, chunk it, or offload it to a worker actor.

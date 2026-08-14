@@ -30,30 +30,42 @@ page](../2_core_concepts/threading_model.md):
 - **`kill()` only flags.** Termination sets `_alive = false`; destruction happens later under
   `VirtualCore` control. That deferral is what makes shutdown sequencing tractable.
 
-Two timing tools from `qb-io` recur throughout:
+Three timing tools from `qb-io` recur throughout, in order of preference:
 
+- `spawn(f)` + `co_await ctx.sleep(delay)` is the default. `f` takes a `qb::ScopedCoroContext` and
+  runs under the actor's cancellation scope, so `kill()` cancels a pending sleep instead of letting it
+  resume into a destroyed actor (`qb/src/qb/core/Actor.h`, `qb/src/qb/core/Actor.cpp`).
+- `qb::io::async::scoped_callback(func, delay)` returns a caller-owned `std::unique_ptr<ScopedTimeout<…>>`
+  whose destruction cancels the pending callback. Reach for it when you want a timer *handle* — held as
+  an actor member, the actor's own destructor cancels it (`qb/io/async/io.h`).
 - `qb::io::async::callback(func, delay)` schedules `func` on the actor's own `VirtualCore` loop after
   `delay`, a `std::chrono::duration` (`qb/io/async/io.h`). A non-positive `delay` — or the no-duration
-  overload `callback(func)` — runs `func` immediately and inline. The timer is one-shot and deletes
-  itself after firing.
-- `qb::io::async::scoped_callback(func, delay)` returns a caller-owned `std::unique_ptr<ScopedTimeout<…>>`
-  whose destruction cancels the pending callback. Prefer it when you need to cancel a timer or reuse
-  the handle (`qb/io/async/io.h`).
+  overload `callback(func)` — runs `func` immediately and inline. The timer is one-shot, owned by the
+  event loop, and deletes itself after firing.
 
-Because a scheduled callback runs outside any `on()` handler, it must capture only what it needs and
-guard re-entry into the actor with `is_alive()` before touching actor state. See [the `async::callback`
-lifetime rules](./error_handling.md) for the full contract.
+That last one is the sharp edge, and it is why the recipes below never use it for actor work. Its
+timer holds **no claim on any actor**: it fires when the loop says so, whatever happened to the actor
+meanwhile. Capturing `this` in it is a use-after-free waiting on timing, and adding `if (!is_alive())`
+does not help — `is_alive()` reads an actor member, so on a destroyed actor *evaluating the guard is
+itself the invalid access*. The rule for anything deferred out of an `on()` handler is therefore:
+**copy by value what the body needs, never capture `this`, and come back through a self-addressed
+event handled in an ordinary `on()`.** Use a bare `callback` only for work that must deliberately
+outlive its actor. See [the `async::callback` lifetime rules](./error_handling.md) and
+[Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone) for
+the full contract.
+<!-- src: qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/io/async/io.h:312-318,343 -->
 
 ## Recipe: one-shot timer
 
 **Task.** Run an action once, after a delay, from inside an actor.
 
-Schedule a `callback` that posts a self-event when the timer fires. Routing the deferred work back
-through an event (rather than doing it directly in the lambda) keeps it on the actor's single-threaded
-handler path, where member access is safe.
+Spawn a coroutine that sleeps and then posts a self-event. Routing the deferred work back through an
+event (rather than doing it in the lambda) keeps it on the actor's single-threaded handler path, where
+member access is safe — and because `ctx` carries the `ActorId` **by value**, the coroutine never needs
+`this` at all.
 
 ```cpp
-// src: derived from qb/tests/core/system/timer/async-callback-ordering.cpp
+// src: derived from qb/tests/core/system/coroutine/coroutine-scope.cpp
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <qb/io.h>
@@ -68,11 +80,11 @@ class OneShotActor : public qb::Actor {
 public:
     qb::io::async::task<bool> onInit() override {
         registerEvent<Tick>(*this);
-        // Fire Tick on ourselves 200 ms from now.
-        qb::io::async::callback([this]() {
-            if (is_alive())                 // the actor may already be gone
-                push<Tick>(id());
-        }, 200ms);
+        // Fire Tick on ourselves 200 ms from now. Cancelled if we are killed first.
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(200ms);
+            ctx.template push<Tick>();
+        });
         co_return true;
     }
 
@@ -93,10 +105,12 @@ int main() {
 
 **Pitfalls.**
 
-- The lambda runs outside any handler. Guard every actor access with `is_alive()`; a `push` to a dead
-  actor's `id()` is harmless, but reading or mutating members after destruction is undefined behavior.
-- `callback` schedules on *the calling thread's* loop. Call it from an actor handler (or `onInit`),
-  not from `main` or another thread, so the timer lands on the actor's own `VirtualCore`.
+- The coroutine body runs outside any handler, so it must reach the actor only through `ctx`. Capture
+  by value before the first `co_await` and never capture `this` — an `is_alive()` guard cannot make a
+  member access safe, because reading `_alive` on a destroyed actor is already the invalid access. A
+  `ctx.push` to a dead actor is harmless: the event is dropped.
+- `spawn` registers with *the calling thread's* scheduler. Call it from an actor handler (or `onInit`),
+  not from `main` or another thread, so the sleep lands on the actor's own `VirtualCore`.
 
 ### Cancellable variant
 
@@ -125,6 +139,9 @@ public:
     qb::io::async::task<bool> onInit() override {
         registerEvent<Deadline>(*this);
         registerEvent<Response>(*this);
+        // `this` is sound here — and only here — because the timer is a member and so
+        // cannot outlive the actor; the guard covers the killed-but-not-yet-destroyed
+        // window, where reading `_alive` is still valid.
         _deadline = qb::io::async::scoped_callback(std::function<void()>([this]() {
             if (is_alive())
                 push<Deadline>(id());
@@ -187,11 +204,11 @@ int main() {
 ```
 
 **Periodic at a fixed interval.** `on(qb::LoopEvent const&)` fires as fast as the loop turns, which is not a fixed
-period. For a steady wall-clock interval, chain self-scheduled `callback`s instead — each handler
-re-arms the next tick:
+period. For a steady wall-clock interval, chain self-scheduled coroutine sleeps instead — the tick
+handler re-arms the next one:
 
 ```cpp
-// src: derived from qb/tests/core/system/timer/async-callback-ordering.cpp
+// src: derived from qb/tests/core/system/coroutine/coroutine-scope.cpp
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <chrono>
@@ -210,20 +227,30 @@ public:
 
     void on(const PollNow &) {
         // ... do one unit of polling work ...
-        qb::io::async::callback([this]() {  // re-arm the next tick at a fixed delay
-            if (is_alive())
-                push<PollNow>(id());
-        }, 1s);
+        arm_next();
+    }
+
+private:
+    void arm_next() {                       // re-arm the next tick at a fixed delay
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(1s);
+            ctx.template push<PollNow>();
+        });
     }
 };
 ```
+
+The chain stops itself: `kill()` cancels the actor's coroutine scope, so a parked `ctx.sleep` unwinds
+rather than pushing one more tick at a dead actor. A `callback`-based chain has no such property — its
+timer is loop-owned, so the last one armed still fires, and `[this]` inside it is a use-after-free.
+<!-- src: qb/src/qb/core/Actor.cpp:283-289 -->
 
 **Pitfalls.**
 
 - `on(qb::LoopEvent const&)` blocks the whole core while it runs. Never sleep, wait on a mutex, or do synchronous
   I/O inside it.
-- Callback frequency depends on loop rate and the configured idle latency
-  (`CoreInitializer::setLatency`), not a clock. Use the self-scheduled-`callback` variant when the
+- `qb::ICallback` frequency depends on loop rate and the configured idle latency
+  (`CoreInitializer::setLatency`), not a clock. Use the self-scheduled `ctx.sleep` variant when the
   interval must be predictable.
 
 ## Recipe: request/reply
