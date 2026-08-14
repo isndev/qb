@@ -304,7 +304,7 @@ Pipe::push(_Args &&...args) const noexcept {
     auto *const raw = pipe->allocate_back(BUCKET_SIZE);
     detail::prepare_event_storage(raw, BUCKET_SIZE * sizeof(EventBucket));
     auto &data  = *(new (reinterpret_cast<T *>(raw)) T(std::forward<_Args>(args)...));
-    data.id     = data.template type_to_id<T>();
+    data.id     = detail::routing_safe_type_id<T>(); // == type_to_id<T>(), + the shadow guard
     data.dest   = dest;
     data.source = source;
     // C++20: use service_event_type concept
@@ -330,7 +330,7 @@ Pipe::allocated_push(std::size_t size, _Args &&...args) const noexcept {
     detail::prepare_event_storage(raw, size * sizeof(EventBucket));
     auto &data = *(new (reinterpret_cast<T *>(raw)) T(std::forward<_Args>(args)...));
 
-    data.id     = data.template type_to_id<T>();
+    data.id     = detail::routing_safe_type_id<T>(); // == type_to_id<T>(), + the shadow guard
     data.dest   = dest;
     data.source = source;
     // C++20: use service_event_type concept

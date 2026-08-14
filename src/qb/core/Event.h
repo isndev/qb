@@ -739,6 +739,148 @@ namespace qb {
 template <typename T>
 concept service_event_type = std::is_base_of_v<ServiceEvent, T>;
 
+namespace detail {
+
+// ============================================================================================
+// ROUTING-FIELD SHADOW GUARD.
+//
+// `qb::Event` carries its routing header in PRIVATE members -- `state`, `bucket_size`, `id`,
+// `dest`, `source` (:415-420) -- and `ServiceEvent` adds two PUBLIC ones, `forward` and
+// `service_event_id` (:532-533). The three sites that stamp that header
+// (`VirtualCore::fill_event`, `Pipe::push`, `Pipe::allocated_push`) do it through a value of
+// the *derived* type `T`, e.g. `data.id = ...`. So a user event that declares its own member
+// of the same name HIDES the base one: the write lands in the user's field, the routing header
+// stays as `prepare_event_storage` left it, and the router drops every instance.
+//
+// MEASURED, not inferred (`struct Row : qb::Event { int id; }`, ten pushes to a live registered
+// target): zero `Row`s delivered, a `Drain` pushed AFTER them delivered normally, and no
+// diagnostic of any kind -- `-Wall -Wextra -Wpedantic -Wshadow-all -Wshadow-field` say nothing,
+// because `-Wshadow-field` does not fire on a base field the derived class cannot see.
+//
+// WHY ACCESSIBILITY IS THE WHOLE TEST for the five `Event` fields, with no `friend` needed.
+// They are private, so for ANY `T` deriving from `qb::Event`, `&T::id` is well-formed in this
+// (non-friend) namespace if and only if `T` -- or an intermediate base -- declares its own
+// ACCESSIBLE `id`. And an accessible shadow is exactly the silent case: measured, a `private`
+// or `protected` shadow is ALREADY rejected loudly, because `fill_event` is a friend of
+// `qb::Event` but not of `T`, so `data.id` there is an access error
+// (`'id' is a private member of 'Row'`). Public shadows of all five compile clean today --
+// including `std::string id`, which swallows the narrowed `EventId` via `operator=(char)`.
+//
+// `ServiceEvent::forward` / `service_event_id` are PUBLIC, so accessibility says nothing about
+// them; those two use type identity against the base's own pointer-to-member type instead,
+// which is why they are checked separately and only for service events.
+//
+// PORTABILITY, measured rather than assumed -- the whole guard rests on access checking being
+// part of a `requires`-expression's satisfaction rather than a hard error, which is a place
+// compilers have historically differed. Verified on Apple clang 21.0.0 and GNU g++ 16.1.0, in
+// BOTH -std=c++20 and -std=c++23, over all seven names and every legitimate shape. MSVC is NOT
+// verified here and this workstation cannot verify it; `dev/agent/verify-windows.ps1` is where
+// that axis gets checked, and the failure mode to look for is the opposite of a false negative
+// -- a compiler that made `&T::id` a hard error instead of an unsatisfied requirement would
+// reject every clean event, which the positive controls in the negative-control battery catch
+// immediately.
+//
+// This is deliberately a hard error, never a runtime warning: the defect's entire character is
+// that it is silent, and a warning nobody reads reproduces it. It is also deliberately not a
+// constraint on `event_type` -- a failed constraint reports "no matching function", which names
+// neither the field nor the reason.
+// ============================================================================================
+
+/**
+ * @brief `true` when `T` declares its own accessible member hiding the named `qb::Event` field.
+ * @details Named rather than spelled inline in the `static_assert`s below so the guard is
+ *          *testable in both polarities* -- see `qb-core-test-unit-event-field-shadow`. A
+ *          `requires` buried in an assertion can only ever be observed failing.
+ * @{
+ */
+template <typename T>
+inline constexpr bool hides_event_id = requires { &T::id; };
+template <typename T>
+inline constexpr bool hides_event_dest = requires { &T::dest; };
+template <typename T>
+inline constexpr bool hides_event_source = requires { &T::source; };
+template <typename T>
+inline constexpr bool hides_event_bucket_size = requires { &T::bucket_size; };
+template <typename T>
+inline constexpr bool hides_event_state = requires { &T::state; };
+/** @} */
+
+/**
+ * @brief The same, for `ServiceEvent`'s two PUBLIC fields.
+ * @details Constrained to service events: `decltype(&T::forward)` is ill-formed for anything
+ *          else, and a variable template's initialiser is instantiated whole -- a `&&` against
+ *          `service_event_type<T>` would NOT short-circuit it away. Accessibility says nothing
+ *          here (both fields are public), so these compare pointer-to-member TYPE identity: a
+ *          redeclaration yields `X T::*` where the inherited field yields `Y ServiceEvent::*`.
+ * @{
+ */
+template <service_event_type T>
+inline constexpr bool hides_service_forward = !std::is_same_v<decltype(&T::forward), decltype(&ServiceEvent::forward)>;
+template <service_event_type T>
+inline constexpr bool hides_service_event_id = !std::is_same_v<decltype(&T::service_event_id), decltype(&ServiceEvent::service_event_id)>;
+/** @} */
+
+/**
+ * @brief Type id for `T`, refusing to route an event that hides a `qb::Event` routing field.
+ * @tparam T The event type being constructed and routed.
+ * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
+ *         compile-time only and this compiles to the same load as the call it replaced).
+ * @details Called from the three -- and, measured, only three -- sites that stamp the routing
+ *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:789) and
+ *          `Pipe::push` / `Pipe::allocated_push` (Pipe.h:307, :333). The two `Pipe` bodies do
+ *          NOT call `fill_event`; they duplicate it, so a guard placed only in `fill_event`
+ *          would miss `Actor::to(dest).push<E>()` and `allocated_push<E>()` entirely.
+ *          Everything else that constructs a user event -- `Actor::push`/`send`/`broadcast`/
+ *          `build_event`, `Actor::EventBuilder::push`, `CoroContext::push`/`push_to`/
+ *          `broadcast`, `qb::ask`/`ask_stream`/`yield_answer`/`PubSub::publish` -- funnels
+ *          into one of those three.
+ */
+template <typename T>
+[[nodiscard]] inline EventId
+routing_safe_type_id() noexcept {
+    static_assert(!hides_event_id<T>, "qb: this event type declares its own member named 'id', which HIDES the private routing field "
+                                      "qb::Event::id. The framework would write the event's type id into YOUR member and leave the "
+                                      "routing header unset, so every instance would be constructed, pushed and SILENTLY NEVER "
+                                      "DELIVERED. Rename your member (e.g. 'id' -> 'row_id'). The offending type is the template "
+                                      "argument of the qb::detail::routing_safe_type_id<T> instantiation named below.");
+    static_assert(!hides_event_dest<T>, "qb: this event type declares its own member named 'dest', which HIDES the private routing field "
+                                        "qb::Event::dest. The framework would write the destination into YOUR member and leave the "
+                                        "routing header unset, so every instance would be constructed, pushed and SILENTLY NEVER "
+                                        "DELIVERED. Rename your member (e.g. 'dest' -> 'target'). The offending type is the template "
+                                        "argument of the qb::detail::routing_safe_type_id<T> instantiation named below.");
+    static_assert(!hides_event_source<T>, "qb: this event type declares its own member named 'source', which HIDES the private routing field "
+                                          "qb::Event::source. The framework would write the sender id into YOUR member and leave the "
+                                          "routing header unset, so getSource()/reply() would be wrong and the event may be SILENTLY NEVER "
+                                          "DELIVERED. Rename your member (e.g. 'source' -> 'origin'). The offending type is the template "
+                                          "argument of the qb::detail::routing_safe_type_id<T> instantiation named below.");
+    static_assert(!hides_event_bucket_size<T>,
+                  "qb: this event type declares its own member named 'bucket_size', which HIDES the private routing "
+                  "field qb::Event::bucket_size. The framework would write the event's pipe footprint into YOUR "
+                  "member and leave the header's size at zero, corrupting the pipe walk. Rename your member "
+                  "(e.g. 'bucket_size' -> 'chunk_size'). The offending type is the template argument of the "
+                  "qb::detail::routing_safe_type_id<T> instantiation named below.");
+    static_assert(!hides_event_state<T>, "qb: this event type declares its own member named 'state', which HIDES the private routing field "
+                                         "qb::Event::state -- the header word carrying the alive bit, the QoS and the bucket factor. "
+                                         "Rename your member (e.g. 'state' -> 'status'). The offending type is the template argument of "
+                                         "the qb::detail::routing_safe_type_id<T> instantiation named below.");
+
+    if constexpr (service_event_type<T>) {
+        static_assert(!hides_service_forward<T>, "qb: this service event type declares its own member named 'forward', which HIDES "
+                                                 "qb::ServiceEvent::forward. The framework would write the return path into YOUR member, so "
+                                                 "received() would swap the wrong field and the reply would not come back. Rename your member. "
+                                                 "The offending type is the template argument of the qb::detail::routing_safe_type_id<T> "
+                                                 "instantiation named below.");
+        static_assert(!hides_service_event_id<T>, "qb: this service event type declares its own member named 'service_event_id', which HIDES "
+                                                  "qb::ServiceEvent::service_event_id. The framework would swap the wrong field and the event "
+                                                  "would be routed under the wrong type id. Rename your member. The offending type is the "
+                                                  "template argument of the qb::detail::routing_safe_type_id<T> instantiation named below.");
+    }
+
+    return Event::type_to_id<T>();
+}
+
+} // namespace detail
+
 } // namespace qb
 
 #endif // QB_EVENT_H
