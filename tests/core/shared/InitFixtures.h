@@ -80,8 +80,15 @@ struct PayloadEvent : public qb::Event {
     // `inline` so the single counter is shared across every TU that includes this header
     // (multiple init-suite targets do) without an ODR clash or a separate .cpp definition.
     inline static std::atomic<long> live{0};
-    std::string                     data; // heap allocation (> SSO) so ASan also guards double-free
-    int                             seq{0};
+    // The 64-char fill in the ctor below is load-bearing twice over. It forces a heap allocation,
+    // so ASan also guards double-free -- and it keeps this event RELOCATABLE. The engine relocates
+    // events with `memcpy` and never runs the source destructor; a SHORT std::string on libstdc++
+    // holds a pointer into its own inline buffer, so it would still address the sender's storage
+    // after the hop (see system/messaging/relocatable-payload.cpp). Shorten the fill and this
+    // fixture becomes self-referential -- silently, because libc++ recomputes the pointer from
+    // `this` and macOS would stay green.
+    std::string data; // heap allocation (> SSO) so ASan also guards double-free
+    int         seq{0};
 
     PayloadEvent() {
         live.fetch_add(1, std::memory_order_relaxed);
