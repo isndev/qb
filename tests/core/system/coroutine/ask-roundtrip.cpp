@@ -213,6 +213,13 @@ public:
             qb::Main::stop(); // ends the engine (SilentMarket is still alive)
         });
         // Kill this asker while the ask is still pending.
+        //
+        // Deliberate, and NOT the `[this]`-outlives-the-actor hazard: this callback is the actor's
+        // ONLY death, so the core loop cannot empty — and the listener cannot tear the pending
+        // Timeout down — before it fires. `is_alive()` therefore never reads freed memory here.
+        // The trigger also stays deliberately OUT-OF-BAND: a spawn + co_await ctx.sleep would add a
+        // second coroutine to the very cancellation scope whose effect on the ask above is what
+        // this test measures. Do not convert.
         qb::io::async::callback(
             [this] {
                 if (is_alive())

@@ -139,6 +139,12 @@ public:
         g_batch_pending.store(static_cast<int>(_batch.pending())); // proof: 2 items really buffered
         // Self-kill before the window: the actor dies → the scope-bound timer is cancelled → engine
         // empties and stops. No lingering stop-callback that could fire into a later test.
+        //
+        // Deliberate, and NOT the `[this]`-outlives-the-actor hazard: this callback is the actor's
+        // ONLY death, so the core loop cannot empty — and the listener cannot tear the pending
+        // Timeout down — before it fires; `is_alive()` never reads freed memory here. The trigger
+        // also stays deliberately OUT-OF-BAND: what this test measures is the scope-bound batcher
+        // timer dying with the actor, so the kill is kept outside that scope. Do not convert.
         qb::io::async::callback(
             [this] {
                 if (is_alive())

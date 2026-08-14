@@ -461,7 +461,7 @@ This example measured it: three runs of three aborted under the `sanitize` prese
 
 **A second program convicted itself on the way out.** `examples/qbm/redis/example6_transaction_example.cpp` aborted under the `sanitize` preset, three runs of three, with `heap-use-after-free` reading 4 bytes 76 bytes into a freed `OrderClientActor` — a `push<ShutdownEvent>(_coordinator_id)` inside a 500 ms `callback([this]...)` armed from `on(OrderResultEvent&)`, half a second after the coordinator had already killed the client. It is the same shape as the three this page measured, in a program nobody had pointed a sanitizer at.
 
-The replacement works because `spawn` (`qb/src/qb/core/Actor.h:1238-1239`) binds the coroutine to the actor's cancellation scope, `ScopedCoroContext::sleep` routes that scope's token into a cancellable sleep (`qb/src/qb/core/Actor.h:1717-1719`), and `Actor::kill()` cancels the scope (`qb/src/qb/core/Actor.cpp:283-289`). qb's own test suite pins the difference in one actor: a `spawn`ed 40 ms `ctx.sleep` must **not** complete after a kill at ~10 ms, while a `spawn_detached` sibling must (`qb/tests/core/system/coroutine/coroutine-scope.cpp:169-183`, asserted at `:211-212`).
+The replacement works because `spawn` (`qb/src/qb/core/Actor.h:1238-1239`) binds the coroutine to the actor's cancellation scope, `ScopedCoroContext::sleep` routes that scope's token into a cancellable sleep (`qb/src/qb/core/Actor.h:1717-1719`), and `Actor::kill()` cancels the scope (`qb/src/qb/core/Actor.cpp:283-289`). qb's own test suite pins the difference in one actor: a `spawn`ed 40 ms `ctx.sleep` must **not** complete after a kill at ~10 ms, while a `spawn_detached` sibling must (`qb/tests/core/system/coroutine/coroutine-scope.cpp:186-200`, asserted at `:228-229`).
 
 Three rules follow, and they are not stylistic:
 
@@ -469,7 +469,7 @@ Three rules follow, and they are not stylistic:
 2. **Come back through an event.** `ctx.push<Tick>()` posts to the spawning actor's id, and the actual work happens in an ordinary handler where `this` is valid again.
 3. **`spawn_detached` is the exception, not the shorthand.** It is genuinely detached: it survives the actor and completes. Reach for it only when that is the behaviour you want.
 
-`qb::io::async::callback` itself remains correct and useful — for work whose closure owns everything it touches, and for the framework's own timing tests, e.g. the chained `1ms` callbacks in `qb/tests/core/system/timer/async-callback-ordering.cpp:75-81`. What is wrong is capturing a raw `this` in one and guarding with a member.
+`qb::io::async::callback` itself remains correct and useful — for work whose closure owns everything it touches, and for the framework's own timing tests, e.g. the chained `1ms` callbacks in `qb/tests/core/system/timer/async-callback-ordering.cpp:81-87`. What is wrong is capturing a raw `this` in one and guarding with a member.
 
 ### Boxing a payload makes the *event* relocatable; it does not make the *pointee* owned
 

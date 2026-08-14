@@ -24,6 +24,12 @@
  * is a generous, loudly-failing deadline — never a silent hang.
  *
  * Per-test state lives in the fixture, not file-global mutables, so the cases are independent.
+ *
+ * The two `qb::io::async::callback([this, idx] { ... }, delay)` sites below are the SUBJECT of this
+ * file, not scaffolding: converting either to `spawn` + `co_await ctx.sleep` would delete the thing
+ * under test and leave the primitive unproven (audited 2026-08; both kept). They are also safe —
+ * each chain's terminal step calls `Main::stop()` and `kill()`, so the actor is alive at every link
+ * and the pending `Timeout` is never outlived by its actor. Measured: zero ASan reports.
  */
 
 #include <atomic>
