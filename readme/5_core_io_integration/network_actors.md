@@ -58,7 +58,7 @@ The `Session` class itself is a `use<Session>::tcp::client<Manager>`: from qb-io
 
 ## TCP client actor
 
-The following client actor connects to a server, frames messages with a custom protocol, and reconnects on connection loss. It is derived from `examples/core_io/chat_tcp/client/ClientActor.{h,cpp}`, re-grounded against the current `connect` and timeout APIs — **and the reconnect delay below deliberately does not match the shipped example.** That example still arms its retry with `qb::io::async::callback([this]{ … }, RECONNECT_DELAY)`, at two sites and with no liveness guard at all; it was not part of the sweep that converted the `examples/core/` set. That is the shape to move away from, for the reasons in [Capture safety](./async_in_actors.md#capture-safety-the-actor-may-be-gone) — copy the coroutine form here, not the file. <!-- src: examples/core_io/chat_tcp/client/ClientActor.cpp:116-121,191-196 -->
+The following client actor connects to a server, frames messages with a custom protocol, and reconnects on connection loss. It is derived from `examples/core_io/chat_tcp/client/ClientActor.{h,cpp}`, re-grounded against the current `connect` and timeout APIs. The reconnect delay below matches the shipped example: both of its retry paths now go through one `scheduleReconnect()` that waits inside the actor's cancellation scope and wakes the actor with a `ReconnectTickEvent`. They used to arm `qb::io::async::callback([this]{ … }, RECONNECT_DELAY)` at two sites with no liveness guard at all — that is the shape to move away from, for the reasons in [Capture safety](./async_in_actors.md#capture-safety-the-actor-may-be-gone). <!-- src: examples/core_io/chat_tcp/client/ClientActor.cpp:151-156 -->
 
 ```cpp
 // src: examples/core_io/chat_tcp/client/ClientActor.h (adapted)
@@ -313,8 +313,8 @@ void ServerActor::on(NewSessionEvent &evt) {
 void ServerActor::on(SendMessageEvent &evt) {
     auto it = this->sessions().find(evt.session_id);
     if (it != this->sessions().end())
-        *it->second << evt.message;   // serialize via the session's Protocol
-}
+        *it->second << *evt.message;  // the event holds a shared_ptr — never a by-value
+}                                     // std::string, which memcpy relocation cannot move
 ```
 
 `registerSession(transport_io_type&&, args...)` returns a `Session*` (not a reference); it is `nullptr` when the session limit is reached, so null-check it. Extra arguments are forwarded to the `Session` constructor after the managing actor reference. To reclaim a live descriptor — for example, to hand a connection to another handler during a protocol upgrade — use `extractSession(uuid)`, which removes the session and returns `{transport_io_type, bool}`.

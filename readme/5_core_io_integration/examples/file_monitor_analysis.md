@@ -18,7 +18,7 @@ The example builds three actors that cooperate over typed events:
 
 The load-bearing integration point is that `qb::io::async::directory_watcher<_Derived>` is a CRTP base whose `on(qb::io::async::event::file const&)` callback runs on the same `VirtualCore` event loop that dispatches actor messages. The watcher needs no extra thread, lock, or queue: its notifications and the actor's `on(Event&)` handlers are serialized by the same loop.
 
-> **Note on the time model.** The `examples/core_io/file_monitor` tree uses the canonical `std::chrono` time model. It arms watchers with `start(std::filesystem::path const&, qb::duration)` and schedules work with `callback(_Func&&, std::chrono::duration<Rep, Period>)` — every interval and delay is a `std::chrono` duration, never a bare `double`. The code blocks below match the on-disk sources.
+> **Note on the time model.** The `examples/core_io/file_monitor` tree uses the canonical `std::chrono` time model. It arms watchers with `start(std::filesystem::path const&, qb::duration)`, and every interval and delay is a `std::chrono` duration, never a bare `double`. Its three *delays* are no longer `callback(fn, duration)` at all: they are `spawn(...)` + `co_await ctx.sleep(d)` waking the actor with a tick event, through the `ClientActor::scheduleTick<T>()` helper. The remaining `qb::io::async::callback` calls in this tree are all the **one-argument** overload, which runs inline. The code blocks below match the on-disk sources.
 
 ## Architecture
 
@@ -177,7 +177,7 @@ DirectoryWatcher::DirectoryWatcher() {
 }
 ```
 
-`on(WatchDirectoryRequest&)` validates the path, records the subscriber, then runs the watcher setup through `qb::io::async::callback`. Read the next section before copying the pattern: this is the **no-delay** overload, which runs the closure *inline*, still inside the handler frame — despite the source comment's "asynchronously":
+`on(WatchDirectoryRequest&)` validates the path, records the subscriber, then runs the watcher setup through `qb::io::async::callback`. Read the next section before copying the pattern: this is the **no-delay** overload, which runs the closure *inline*, still inside the handler frame:
 
 ```cpp
 // src: examples/core_io/file_monitor/watcher.cpp
@@ -195,7 +195,8 @@ void DirectoryWatcher::on(WatchDirectoryRequest &request) {
                   request.requestor) == watch->subscribers.end())
         watch->subscribers.push_back(request.requestor);
 
-    // Scan the directory and set up watchers asynchronously
+    // Scan the directory and set up watchers.
+    // NOTE (in the source too): this is the ONE-argument overload — it runs INLINE.
     qb::io::async::callback([this, normalized_path, watch, request]() {
         bool success = setupDirectoryWatch(normalized_path, watch, request.recursive);
         push<WatchDirectoryResponse>(request.requestor, normalized_path, success,
@@ -209,12 +210,12 @@ void DirectoryWatcher::on(WatchDirectoryRequest &request) {
 Two integration details earn their place here:
 
 - **`qb::io::async::callback` never leaves this actor's loop.** It is not a thread pool: whatever runs, runs on the same `VirtualCore`, so the closure may touch `_watched_directories` and call `push<>` without synchronization.
-  **But the single-argument form here does not schedule at all.** `callback(fn)` is `{ fn(); }` — it calls `fn` synchronously, inside `on(WatchDirectoryRequest&)`. Only the timed form `callback(fn, duration)` with a *strictly positive* duration arms a timer; `duration <= 0` also runs inline. So the directory scan is **not** moved out of the message-handler frame — the source comment ("asynchronously") and the lambda both suggest otherwise, and neither is right. The handler blocks for the whole scan.
+  **But the single-argument form here does not schedule at all.** `callback(fn)` is `{ fn(); }` — it calls `fn` synchronously, inside `on(WatchDirectoryRequest&)`. Only the timed form `callback(fn, duration)` with a *strictly positive* duration arms a timer; `duration <= 0` also runs inline. So the directory scan is **not** moved out of the message-handler frame — the lambda suggests otherwise and the source comment used to say "asynchronously", which is why three separate sweeps misread this call as the timed, lifetime-hazardous form. The comment now states the overload and its inline behaviour explicitly. The handler blocks for the whole scan.
   To actually move it off the frame, the primitive is `qb::io::async::defer(fn)`, which runs at the tail of the current loop turn after the handler unwinds. Substituting it here would be a faithful fix; the example predates it.
 <!-- src: qb/src/qb/io/async/io.h:348-364,368-369 (the no-delay callback overload runs func inline); qb/src/qb/io/async/listener.h:1032 (async::defer) -->
 - **`push<WatchDirectoryResponse>(requestor, …)`** addresses the reply to the recorded `ActorId`. The response carries `success`, the normalized path (boxed), and a `qb::string<128> error_message` — the same envelope you would expect from any request/response actor pair, with the two payload shapes from [Event payloads](#event-payloads-why-every-path-is-a-stdshared_ptrstdstring) side by side.
 
-> **`callback` takes a duration, not a `double`.** The overload set is `callback(_Func&&)` and `callback(_Func&&, std::chrono::duration<Rep, Period>)`; neither deduces from a bare `double` or `int`. Accordingly `setupDirectoryWatch` arms its watcher with `startWatching(path, std::chrono::milliseconds(500))`, and the timed `qb::io::async::callback` calls pass `std::chrono` durations (`std::chrono::milliseconds(500)`, `std::chrono::seconds(duration)`, and so on).
+> **Durations, not a `double`.** The overload set is `callback(_Func&&)` and `callback(_Func&&, std::chrono::duration<Rep, Period>)`; neither deduces from a bare `double` or `int`, and neither does `ScopedCoroContext::sleep(qb::duration)`. Accordingly `setupDirectoryWatch` arms its watcher with `startWatching(path, std::chrono::milliseconds(500))`, and `ClientActor`'s three delays pass `std::chrono` durations into `scheduleTick<T>()` (`std::chrono::milliseconds(500)`, `std::chrono::seconds(duration)`, and so on).
 
 ### Recursion and subscriber tracking
 
@@ -342,13 +343,25 @@ Three facts to keep straight:
 
 `ClientActor` is both the orchestrator and a subscriber. Its lifecycle:
 
-1. **`onInit()`** creates the test directory if absent and schedules `startMonitoring` shortly after, using the timed form of `qb::io::async::callback`:
+1. **`onInit()`** creates the test directory if absent and schedules `startMonitoring` shortly after. The wait lives inside the actor's cancellation scope and comes back as an event, so nothing calls into a raw `this` after a delay:
 
    ```cpp
    // src: examples/core_io/file_monitor/main.cpp
-   qb::io::async::callback([this]() { startMonitoring(); },
-                           std::chrono::milliseconds(500));
+   scheduleTick<StartMonitoringTick>(std::chrono::milliseconds(500));
+
+   // the one helper all three of this actor's delays go through
+   template <typename TickEvent>
+   void scheduleTick(qb::duration d) {
+       spawn([d](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+           co_await ctx.sleep(d);
+           ctx.template push<TickEvent>();
+       });
+   }
+
+   void on(StartMonitoringTick&) { startMonitoring(); }   // runs only on a live actor
    ```
+
+   It was `qb::io::async::callback([this]{ startMonitoring(); }, 500ms)`. That timer belongs to the listener, not the actor, so it fires whatever happened to the actor meanwhile — and an `if (_is_running)` guard inside it is the member read that *is* the use-after-free, not a defence against it. <!-- src: qb/src/qb/io/async/io.h:389 -->
 
 2. **`startMonitoring`** sends the watch request with `recursive = true`, passing its own `id()` as the subscriber:
 
@@ -359,26 +372,26 @@ Three facts to keep straight:
 
 3. **`on(WatchDirectoryResponse&)`** confirms the watch and starts the file-activity loop.
 
-4. **File activity** runs through `qb::io::async::callback`. `createTestFile`/`modifyTestFile` open the file via `qb::io::sys::file` and write synchronously; `deleteTestFile` uses `std::filesystem::remove`. `scheduleRandomModifications` re-arms itself on a randomized delay, forming a self-perpetuating timed chain on the loop. Modernized, each delay is a `std::chrono` duration:
+4. **File activity** goes through the *one-argument* `qb::io::async::callback`, which runs inline. `createTestFile`/`modifyTestFile` open the file via `qb::io::sys::file` and write synchronously; `deleteTestFile` uses `std::filesystem::remove`. `scheduleRandomModifications` re-arms itself on a randomized delay, forming a self-perpetuating chain — but a chain of coroutines the actor owns, not of timers the loop owns:
 
    ```cpp
    // src: examples/core_io/file_monitor/main.cpp
    double secs = 0.5 + (std::rand() % 1000) / 1000.0;       // 0.5–1.5 s
-   qb::io::async::callback([this]() { scheduleRandomModifications(); },
-                           std::chrono::duration<double>(secs));
+   scheduleTick<NextOperationTick>(
+       std::chrono::duration_cast<qb::duration>(std::chrono::duration<double>(secs)));
    ```
 
-   `std::chrono::duration<double>` is itself a `std::chrono::duration<Rep, Period>`, so it satisfies the `callback` template; the bare `double secs` does not.
+   `std::chrono::duration<double>` is itself a `std::chrono::duration<Rep, Period>`, so it converts; the bare `double secs` does not. This chain is the one that used to matter most: it re-arms every ~1 s for the whole run, so at shutdown there is always one pending — and it used to be a `callback([this]{ scheduleRandomModifications(); }, d)`, i.e. a live timer holding a raw `this` at the exact moment the actor is being reaped.
 
 5. **`on(FileEvent&)`** logs each notification it receives back from `DirectoryWatcher`.
 
-6. **Shutdown.** After the configured run, a scheduled callback calls `broadcast<qb::KillEvent>()`, reaching every actor on every core. In its own `on(qb::KillEvent&)` the client first sends `UnwatchDirectoryRequest` to release the watch, then calls `kill()`.
+6. **Shutdown.** After the configured run, a `TestCompleteTick` handler calls `broadcast<qb::KillEvent>()`, reaching every actor on every core. In its own `on(qb::KillEvent&)` the client first sends `UnwatchDirectoryRequest` to release the watch, then calls `kill()`.
 
 ## Concepts this example demonstrates
 
 - **Composing a CRTP I/O primitive inside an actor.** `DirectoryWatcher` (the actor) owns `DirectoryMonitor` (the `directory_watcher<…>` CRTP derivative). The watcher's callback and the actor's handlers share one loop, so they share state without locks.
 - **`event::file` as the seam to the OS.** `event.attr`/`event.prev` carry `struct stat` snapshots; your `on(event::file const&)` decides what changed.
-- **Keeping work on the per-actor loop with `qb::io::async::callback`.** Both the watcher's setup scan and the client's timed file activity ride the loop rather than spawning threads — though only the client's *timed* calls are genuinely deferred; the setup scan runs inline (see above).
+- **Keeping work on the per-actor loop, and telling the two `callback` overloads apart.** The watcher's setup scan and the client's file operations use the one-argument `qb::io::async::callback(fn)`, which runs `fn` **inline** — nothing is deferred and no lifetime question arises. The client's three real *delays* use `spawn(...)` + `co_await ctx.sleep(d)` + a tick event instead, because a delay that ends in a call on the actor must be owned by the actor. Same function name, different overload, different rule.
 - **Request/response and fan-out over typed events.** `WatchDirectoryRequest`/`WatchDirectoryResponse` form a request/response pair; `publishFileEvent` fans `FileEvent` out to a tracked subscriber set.
 - **Relocation-safe event payloads.** Unbounded values (paths) are boxed behind a `std::shared_ptr`; bounded ones (the error message) live in a `qb::string<128>`. Nothing in an event addresses its own storage, so the engine's `memcpy` relocation is safe — see [Event payloads](#event-payloads-why-every-path-is-a-stdshared_ptrstdstring).
 - **Deterministic resource teardown.** Each `ev::stat` watcher lives in a `unique_ptr` under a `WatchInfo`; unwatch and kill both release them explicitly.

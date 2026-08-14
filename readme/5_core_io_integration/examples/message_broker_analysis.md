@@ -530,28 +530,47 @@ void ClientActor::onConnected(qb::io::tcp::socket &&socket) {
 void ClientActor::on(qb::io::async::event::disconnected const &) {
     _connected = false;
     if (_should_reconnect)
-        qb::io::async::callback([this] {
-            qb::io::cout() << "Attempting to reconnect..." << std::endl;
-            connect();
-        }, std::chrono::duration<double>(RECONNECT_DELAY));   // retry delay
+        scheduleReconnect();
+}
+
+void ClientActor::scheduleReconnect() {
+    spawn([delay = std::chrono::duration_cast<qb::duration>(
+                       std::chrono::duration<double>(RECONNECT_DELAY))](
+              qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        co_await ctx.sleep(delay);                 // cancelled with the actor
+        ctx.template push<ReconnectTickEvent>();
+    });
+}
+
+void ClientActor::on(const ReconnectTickEvent &) {  // runs only on a live actor
+    if (!_should_reconnect)
+        return;
+    qb::io::cout() << "Attempting to reconnect..." << std::endl;
+    connect();
 }
 ```
 
-The connection deadline and the reconnect delay are both five seconds, and there is a second, identical reconnect site on the connect-failure path.
+The connection deadline and the reconnect delay are both five seconds. Both reconnect paths — the disconnect handler above and `onConnectionFailed()` — go through the one `scheduleReconnect()`.
 
-> **Do not copy the reconnect timer.** `qb::io::async::callback` does run the lambda on the actor's core with no extra thread — but the timer belongs to the **event loop**, not to the actor: the timed overload heap-allocates a `Timeout` that the listener owns and that fires whatever happened to the actor meanwhile. <!-- src: qb/src/qb/io/async/io.h:389 -->
-> This program supplies the precondition: `_should_reconnect` is cleared only by `ClientActor::disconnect()`, which nothing here calls, so when `InputActor` pushes `qb::KillEvent` the actor is destroyed with a five-second timer still holding `this`. An `if (is_alive())` guard inside the lambda would not help — `is_alive()` is a member read (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard *is* the use-after-free. Bind the wait to the actor instead:
->
-> ```cpp
-> spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
->     co_await ctx.sleep(std::chrono::seconds(5));
->     ctx.template push<ReconnectTickMessage>();   // ordinary handler calls connect()
-> });
-> ```
->
-> `spawn` puts the coroutine in the actor's cancellation scope (`qb/src/qb/core/Actor.h:1238-1239`), which `Actor::kill()` cancels (`qb/src/qb/core/Actor.cpp:283-289`). The [`chat_tcp` walkthrough](./chat_tcp_analysis.md#clientactor--connect-authenticate-reconnect) carries the same correction for the same shape.
+> **Why the delay is a coroutine and not a timer.** Both sites used to be
+> `qb::io::async::callback([this]{ … connect(); }, RECONNECT_DELAY)`. That runs the lambda on the
+> actor's core with no extra thread — but the timer belongs to the **event loop**, not to the actor:
+> the timed overload heap-allocates a `Timeout` that the listener owns and that fires whatever
+> happened to the actor meanwhile. <!-- src: qb/src/qb/io/async/io.h:389 -->
+> This program supplies the precondition: `_should_reconnect` is cleared only by
+> `ClientActor::disconnect()`, which nothing here calls, so when `InputActor` pushes
+> `qb::KillEvent` the actor would be destroyed with a five-second timer still holding `this`. An
+> `if (is_alive())` guard inside the lambda does not help — `is_alive()` is a member read
+> (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard *is* the use-after-free.
+> `spawn` puts the coroutine in the actor's cancellation scope (`qb/src/qb/core/Actor.h:1238-1239`),
+> which `Actor::kill()` cancels (`qb/src/qb/core/Actor.cpp:283-289`). Note the shape of the
+> conversion: a coroutine may not touch actor state after a `co_await`, so the delay is captured by
+> value and everything that reads `_should_reconnect` or calls `connect()` moved into the
+> `ReconnectTickEvent` handler. The
+> [`chat_tcp` walkthrough](./chat_tcp_analysis.md#clientactor--connect-authenticate-reconnect)
+> carries the same correction for the same shape.
 
-> **Framework contract vs. the example.** `qb::io::async::tcp::connect()` takes its timeout as a `qb::duration` (`std::chrono::nanoseconds`, per [the canonical time model](../../7_reference/glossary.md)), and `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in example stores both deadlines as `static constexpr double CONNECT_TIMEOUT = 5.0;` / `RECONNECT_DELAY = 5.0;` and adapts them at the call site rather than passing a bare `double`: `connect()` wraps the value as `std::chrono::duration_cast<qb::duration>(std::chrono::duration<double>(CONNECT_TIMEOUT))`, and the reconnect paths pass `std::chrono::duration<double>(RECONNECT_DELAY)`. That compiles. Passing a chrono literal such as `std::chrono::seconds(5)` directly — dropping the `double` constants and the wrappers — is a clarity improvement, not a fix for a compile error.
+> **Framework contract vs. the example.** `qb::io::async::tcp::connect()` takes its timeout as a `qb::duration` (`std::chrono::nanoseconds`, per [the canonical time model](../../7_reference/glossary.md)), and both `qb::io::async::callback()` and `ScopedCoroContext::sleep()` take a `std::chrono::duration`. The checked-in example stores both deadlines as `static constexpr double CONNECT_TIMEOUT = 5.0;` / `RECONNECT_DELAY = 5.0;` and adapts them at the call site rather than passing a bare `double`: `connect()` wraps the value as `std::chrono::duration_cast<qb::duration>(std::chrono::duration<double>(CONNECT_TIMEOUT))`, and `scheduleReconnect()` does the same for the retry delay. That compiles. Passing a chrono literal such as `std::chrono::seconds(5)` directly — dropping the `double` constants and the wrappers — is a clarity improvement, not a fix for a compile error.
 
 Outbound commands are built as `broker::Message` and written with `*this << msg`:
 
@@ -601,7 +620,7 @@ Subscribe two clients to `news`, publish from a third, and both subscribers rece
 - **Topic conversion is the one copy.** `std::string_view` carries the topic to `TopicManagerActor`, but a `std::map<std::string, ...>` key forces one `std::string` construction per lookup. That copy is intrinsic to keying a map on a string; the views save the copies *before* that point, not the key itself.
 - **The fan-out shares payloads, not socket writes.** Sharing the `MessageContainer` removes per-subscriber heap churn inside the broker. Each subscriber still incurs one serialization and one socket write in `ServerActor`. Do not expect the optimization to reduce per-client network work.
 - **The timeout is 600 s, not 120 s.** The source comment is wrong; `setTimeout(std::chrono::seconds(600))` arms a 600-second inactivity window. Tune it for your traffic; idle subscribers that never publish will otherwise be disconnected.
-- **Prefer chrono literals over `double` deadlines.** The checked-in client stores `static constexpr double` constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `5.0`) and adapts them at the call site — `std::chrono::duration<double>(...)` for `qb::io::async::callback()`, plus a `duration_cast<qb::duration>` for `qb::io::async::tcp::connect()`. That compiles, but a bare `double` does *not* convert to `qb::duration` on its own. For new code, pass a chrono literal such as `std::chrono::seconds(5)` directly and skip the wrappers. See [Async I/O inside actors](../async_in_actors.md).
+- **Prefer chrono literals over `double` deadlines.** The checked-in client stores `static constexpr double` constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `5.0`) and adapts them at the call site — a `duration_cast<qb::duration>` of a `std::chrono::duration<double>(...)`, for both `qb::io::async::tcp::connect()` and the reconnect coroutine's `ctx.sleep()`. That compiles, but a bare `double` does *not* convert to `qb::duration` on its own. For new code, pass a chrono literal such as `std::chrono::seconds(5)` directly and skip the wrappers. See [Async I/O inside actors](../async_in_actors.md).
 - **`getMessageSize()` stays side-effect-free.** When you adapt this protocol, keep `getMessageSize()` a pure query and confine consumption to `onMessage()`; the framework calls the former repeatedly while a frame is still arriving. See [Custom protocols](../../3_qb_io/protocols.md).
 
 ## See also

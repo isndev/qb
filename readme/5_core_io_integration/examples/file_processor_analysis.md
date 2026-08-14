@@ -278,8 +278,18 @@ But the *callback* in this example does **not** defer the work. `qb::io::async::
 qb::io::async::task<bool> onInit() override {
     if (!fs::exists(_test_directory))
         fs::create_directories(_test_directory);
-    qb::io::async::callback([this]() { startTests(); }, 500ms);  // chrono literal — see Pitfalls
+    scheduleTick<StartTestsTick>(500ms);   // spawn + ctx.sleep — see the note below
     co_return true;
+}
+
+// The local helper both delays go through. Everything that touches actor state happens in
+// on(StartTestsTick&) / on(ShutdownTick&), because a handler only runs on a live actor.
+template <typename TickEvent>
+void scheduleTick(qb::duration d) {
+    spawn([d](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        co_await ctx.sleep(d);
+        ctx.template push<TickEvent>();
+    });
 }
 ```
 
@@ -288,11 +298,12 @@ qb::io::async::task<bool> onInit() override {
 ```cpp
 // src: examples/core_io/file_processor/main.cpp
 void checkCompletion() {
-    if (_pending_requests == 0) {
-        qb::io::async::callback([this]() {
-            broadcast<qb::KillEvent>();           // fan out shutdown to every actor
-        }, 1s);                                   // chrono literal — see Pitfalls
-    }
+    if (_pending_requests == 0)
+        scheduleTick<ShutdownTick>(1s);           // chrono literal — see Pitfalls
+}
+
+void on(ShutdownTick&) {
+    broadcast<qb::KillEvent>();                   // fan out shutdown to every actor
 }
 ```
 
@@ -325,10 +336,10 @@ engine.join();
 ## Pitfalls and corrections
 
 - **`callback(func)` with no delay runs inline.** This is the central correction to the example's framing: the worker's blocking I/O executes synchronously inside the message handler, not on a later loop turn. The responsiveness guarantee comes from placing workers on dedicated cores, not from the callback. Pass a strictly positive `qb::duration` to genuinely defer. <!-- src: qb/src/qb/io/async/io.h:348,368-369,376-378 -->
-- **The worker's lambdas capture `this` — harmlessly, because they fire inline.** Both worker callbacks are the *no-delay* overload, so `this` is necessarily valid: the call happens inside the handler that made it. <!-- src: examples/core_io/file_processor/file_worker.h:102 -->
-- **The client's two lambdas capture `this` with a real delay, and that is a dangling timer.** `ClientActor::onInit()` arms `qb::io::async::callback([this]() { startTests(); }, 500ms)` and the completion path arms `qb::io::async::callback([this]() { broadcast<qb::KillEvent>(); }, 1s)`. Both call a member function on a raw `this` after a delay, and the timed overload heap-allocates a `Timeout` owned by the **listener**, not by the actor — nothing cancels it if the actor dies first. <!-- src: qb/src/qb/io/async/io.h:389 --> In the shipped happy path nothing kills `ClientActor` before either fires, so this is a latent shape rather than an observed crash; adapt it and it becomes a live one. **Adding `is_alive()` is not the fix** — it is a member read (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard is itself the use-after-free. Bind the wait to the actor with `spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { co_await ctx.sleep(500ms); ctx.template push<StartTestsTick>(); })`, whose scope `Actor::kill()` cancels. <!-- src: qb/src/qb/core/Actor.h:1238-1239 --> See [Async in actors → capture safety](../async_in_actors.md#capture-safety-the-actor-may-be-gone).
+- **The worker's lambdas capture `this` — harmlessly, because they fire inline.** Both worker callbacks are the *no-delay* overload, so `this` is necessarily valid: the call happens inside the handler that made it. <!-- src: examples/core_io/file_processor/file_worker.h:112 -->
+- **A `this`-capturing lambda with a real delay is a dangling timer — this client used to have two.** `ClientActor::onInit()` armed `qb::io::async::callback([this]() { startTests(); }, 500ms)` and the completion path armed `qb::io::async::callback([this]() { broadcast<qb::KillEvent>(); }, 1s)`. Both called a member function on a raw `this` after a delay, and the timed overload heap-allocates a `Timeout` owned by the **listener**, not by the actor — nothing cancels it if the actor dies first. <!-- src: qb/src/qb/io/async/io.h:389 --> In the shipped happy path nothing killed `ClientActor` before either fired, so it was a latent shape rather than an observed crash — which is exactly why it survived so long; adapt such code and it becomes a live one. **Adding `is_alive()` is not the fix** — it is a member read (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard is itself the use-after-free. Both sites now bind the wait to the actor through `scheduleTick<T>(d)`, which is `spawn([d](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { co_await ctx.sleep(d); ctx.template push<T>(); })`, whose scope `Actor::kill()` cancels. <!-- src: qb/src/qb/core/Actor.h:1238-1239 --> Note that it is not a mechanical substitution: the body may not touch actor state after the `co_await`, so each delay also needs a tick event and a handler. See [Async in actors → capture safety](../async_in_actors.md#capture-safety-the-actor-may-be-gone).
 - **The manager's response handlers never run.** `FileManager::on(ReadFileResponse&)` / `on(WriteFileResponse&)` are registered but unreachable, because workers reply to the client directly. Do not cite them as the response path. If you want responses to flow through the manager (for example, to centralize logging or retries), have the worker reply to `_manager_id` and let the manager `forward` to `response.requestor`.
-- **`async::callback` takes `qb::duration`, not `double`.** Earlier revisions passed a bare `double` (`0.5`, `1.0`); the current overload signature is `callback(_Func&&, std::chrono::duration<Rep, Period>)`, which a `double` no longer matches. The example now uses the [`qb` chrono literals](../../0_foundations/time.md) — `callback(f, 500ms)` and `callback(f, 1s)`. **Those suffixes need a using-directive in scope**: `qb::time_literals` is an inline namespace that re-exports `std::chrono_literals`, so each translation unit needs `using namespace qb::time_literals;` (or `std::chrono_literals`). The snippets above omit it for brevity; without it the block fails to compile with `no matching literal operator for call to 'operator""ms'`. <!-- src: qb/src/qb/io/async/io.h:372-374 ; qb/src/qb/system/time.h:112-114 -->
+- **Delays are `std::chrono` durations, not `double`.** Earlier revisions passed a bare `double` (`0.5`, `1.0`); neither `callback(_Func&&, std::chrono::duration<Rep, Period>)` nor `ScopedCoroContext::sleep(qb::duration)` matches a `double`. The example now uses the [`qb` chrono literals](../../0_foundations/time.md) — `scheduleTick<StartTestsTick>(500ms)` and `scheduleTick<ShutdownTick>(1s)`. **Those suffixes need a using-directive in scope**: `qb::time_literals` is an inline namespace that re-exports `std::chrono_literals`, so each translation unit needs `using namespace qb::time_literals;` (or `std::chrono_literals`). The snippets above omit it for brevity; without it the block fails to compile with `no matching literal operator for call to 'operator""ms'`. <!-- src: qb/src/qb/io/async/io.h:372-374 ; qb/src/qb/system/time.h:112-114 -->
 - **Read priority can starve writes.** `on(WorkerAvailable&)` always drains `_read_requests` before `_write_requests`. Under sustained read load, queued writes wait indefinitely. A fair dispatcher would interleave the two queues.
 - **More workers than cores share a thread.** Mapping four workers onto three cores means two workers contend for one core's thread; their blocking I/O serializes. Size the worker pool to the I/O cores you actually reserved.
 - **`stat` outside the descriptor races.** The read path calls `stat(path)` separately from `open(path)`, so the size can change between the two calls. For exactly-correct reads, `fstat` the open descriptor or read in a loop until EOF.

@@ -38,13 +38,19 @@ Every page follows the same shape:
 - **QB facilities in use** — where the example reaches for `qb::io::use<>`, `Actor::spawn` with `qb::ScopedCoroContext`, `qb::io::async::callback`, `qb::ICallback`, custom `qb::Event` types, and protocol classes, with the relevant source path. (`qb::ICallback` appears in only two of the five: the console `InputActor` of `chat_tcp` and of `message_broker`, where it reads `std::cin` once per loop turn — a blocking call that both pages now flag, kept survivable only by isolating that actor on its own core.)
 - **Design pattern** — the reusable shape (split acceptor / session pool, manager-worker offload, watcher fan-out, zero-copy broadcast) abstracted from the concrete program.
 
-> **Four of the five pages carry a correction, not just a description.** `chat_tcp`, `message_broker`
-> and `file_processor` were written before qb 3.0's cancellation-scoped coroutines, and the programs
-> they analyse still arm delayed work with `qb::io::async::callback([this]{ … }, delay)` — a timer the
-> event loop owns and the actor does not, which fires after `~Actor()` and makes any `is_alive()` /
-> `_is_active` guard inside it the use-after-free rather than the protection against it. Each page now
-> says so at the call site and shows the lifetime-bound replacement. `distributed_computing` is the one
-> whose program was repaired, and it carries the AddressSanitizer evidence.
+> **Four of the five pages carry a correction, not just a description.** `chat_tcp`,
+> `message_broker`, `file_processor` and `file_monitor` were written before qb 3.0's
+> cancellation-scoped coroutines, when the programs they analyse armed delayed work with
+> `qb::io::async::callback([this]{ … }, delay)` — a timer the event loop owns and the actor does
+> not, which fires after `~Actor()` and makes any `is_alive()` / `_is_active` guard inside it the
+> use-after-free rather than the protection against it. **All five programs have since been
+> repaired**: every such site now waits with `spawn(...)` + `co_await ctx.sleep(d)` inside the
+> actor's cancellation scope and wakes the actor with a self-addressed tick event. Each page keeps
+> the correction, because the shape is what a reader has to learn — and because the *no-delay*
+> overload `qb::io::async::callback(fn)`, which runs inline and is not this hazard, is still used
+> in `file_processor` and `file_monitor` and is easy to confuse with it.
+> `distributed_computing` carries the AddressSanitizer evidence that made it a rule;
+> `example6_transaction_example` in `examples/qbm/redis/` produced a second, independent instance.
 
 These are case studies, not API references. When an analysis names a type, follow the cross-link to the page that owns its definition rather than relying on the summary here.
 

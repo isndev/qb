@@ -429,7 +429,7 @@ public:
 
 Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling thread, and an actor's thread is its whole `VirtualCore`. This is a genuine capability gap rather than an oversight — `async::file` watches metadata by polling and then performs a blocking read, and [what has no coroutine form](../3_qb_io/gaps.md#file-io-is-polled-metadata-plus-a-blocking-read) explains why. Three patterns keep the core responsive, in increasing order of isolation:
 
-1. **Wrap the blocking call in `async::callback`** (suitable for infrequent, non-critical I/O). The callback still blocks the core *for its own turn*, but it keeps the blocking work out of the actor's message-handling path. When the I/O finishes, `push` a result event back to the requester. This is what the `file_processor` worker does. <!-- src: examples/core_io/file_processor/file_worker.h:102 -->
+1. **Wrap the blocking call in `async::callback`** (suitable for infrequent, non-critical I/O). The callback still blocks the core *for its own turn*, but it keeps the blocking work out of the actor's message-handling path. When the I/O finishes, `push` a result event back to the requester. This is what the `file_processor` worker does. <!-- src: examples/core_io/file_processor/file_worker.h:112 -->
 
    ```cpp
    // FileWorker schedules the blocking read off the message-handling path.
@@ -443,7 +443,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
    });
    ```
 
-2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `file_processor` example builds exactly this manager-worker topology. <!-- src: examples/core_io/file_processor/main.cpp:223,229-233 -->
+2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `file_processor` example builds exactly this manager-worker topology. <!-- src: examples/core_io/file_processor/main.cpp:269,275-279 -->
 
 3. **Watch the filesystem instead of polling it.** To *react* to file or directory changes, use `qb::io::async::file_watcher<T>` / `directory_watcher<T>`, which deliver `on(qb::io::async::event::file const&)` notifications through the loop with no blocking. The `file_monitor` example demonstrates a directory-watcher actor. <!-- src: examples/core_io/file_monitor -->
 
