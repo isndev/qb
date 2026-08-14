@@ -246,38 +246,49 @@ Both actors run on core 0 here. To distribute them across cores, pass a differen
 
 ## 5. Add a non-blocking timer
 
-Actor handlers run on the `VirtualCore`'s event-loop thread, so they must not block. To run code after a delay without blocking, schedule it on the `qb-io` event loop with `qb::io::async::callback`. The callback fires on the same core, between event deliveries.
+Actor handlers run on the `VirtualCore`'s event-loop thread, so they must not block. To run code after a delay, spawn a coroutine with `Actor::spawn` and `co_await` its context's `sleep`. The coroutine *suspends* rather than blocking; the core keeps serving every other actor while it waits, and resumes it between event deliveries.
 
-`callback` takes a callable and a `std::chrono::duration`:
+`spawn` takes a lambda whose one parameter is a `qb::ScopedCoroContext`. That context is bound to this actor's cancellation scope, and it carries the actor's `ActorId` **by value** — which is what makes the pattern safe: the delay is tied to the actor's lifetime, and the work that follows it comes back through the mailbox rather than through a pointer:
 
 ```cpp
 #include <qb/main.h>
 #include <qb/actor.h>
+#include <qb/event.h>
 #include <qb/io.h>
-#include <qb/io/async.h>          // qb::io::async::callback
+#include <qb/io/async.h>
 #include <chrono>
 
 using namespace std::chrono_literals;
+
+struct TickEvent : qb::Event {};
 
 class HeartbeatActor : public qb::Actor {
     int _ticks = 0;
 
 public:
     qb::io::async::task<bool> onInit() final {
+        registerEvent<TickEvent>(*this);
         schedule_tick();
         co_return true;
     }
 
+    // The tick lands here, in an ordinary handler, on a demonstrably live actor.
+    void on(const TickEvent &) {
+        qb::io::cout() << "tick " << ++_ticks << '\n';
+        if (_ticks < 3)
+            schedule_tick();   // re-arm for the next tick
+        else
+            kill();
+    }
+
 private:
     void schedule_tick() {
-        // Run this lambda on the event loop ~500 ms from now.
-        qb::io::async::callback([this] {
-            qb::io::cout() << "tick " << ++_ticks << '\n';
-            if (_ticks < 3)
-                schedule_tick();   // re-arm for the next tick
-            else
-                kill();
-        }, 500ms);
+        // Sleep ~500 ms on the event loop, then send ourselves a TickEvent.
+        // Capture nothing — never `this`.
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(500ms);
+            ctx.template push<TickEvent>();
+        });
     }
 };
 
@@ -290,11 +301,16 @@ int main() {
 }
 ```
 
-The callback runs on the actor's own core, so capturing `this` and touching member state inside it is safe — there is no cross-thread access. A timeout of zero or less runs the callable inline at the call site rather than scheduling it; the single-argument overload `callback(func)` likewise invokes `func` immediately. Pass a positive duration to defer execution.
+Two rules make this shape the one to copy:
+
+- **Capture by value; never capture `this`.** `ctx` holds the actor's id, not its address, so the resumed body can only reach the actor through the mailbox — and an event addressed to a dead actor is simply dropped.
+- **`kill()` cancels a pending `ctx.sleep`.** The sleep is armed against the actor's cancellation scope, and `kill()` cancels that scope, so the coroutine unwinds instead of resuming into a destroyed actor.
+
+The primitive you may have expected here, `qb::io::async::callback(func, delay)`, is deliberately *not* what this section teaches. Its timer is owned by the event loop, not by any actor: it fires whenever the loop says so, whatever happened to the actor in the meantime, so `[this]` in its lambda is a use-after-free waiting for the right timing. Adding `if (!is_alive()) return;` does not rescue it — `is_alive()` is a read of an actor member, so on a destroyed actor *evaluating the guard is itself the invalid access*. Reach for `callback` only for work that must deliberately outlive the actor; when you want a timer you can cancel by hand, use `qb::io::async::scoped_callback(func, delay)` and keep the returned `std::unique_ptr` as an actor member, so destroying the actor destroys the timer. Note also that a non-positive delay — and the single-argument overload `callback(func)` — runs `func()` **inline at the call site**, scheduling nothing; `qb::io::async::defer(func)` is the one that waits for the current handler to unwind.
 
 For inactivity timeouts, coroutine-based async flows, and the full event-loop surface available to actors, see [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md).
 
-<!-- src: qb/src/qb/io/async/io.h:358-382, examples/core/example5_timers.cpp -->
+<!-- src: qb/src/qb/io/async/io.h:358-382, qb/src/qb/io/async/io.h:312-318,343,479-484, qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:205-208,283-289, examples/core/example5_timers.cpp, examples/core/example5_timers.cpp:234-237 -->
 
 ## 6. Build and run
 

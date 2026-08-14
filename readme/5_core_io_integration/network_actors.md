@@ -58,18 +58,21 @@ The `Session` class itself is a `use<Session>::tcp::client<Manager>`: from qb-io
 
 ## TCP client actor
 
-The following client actor connects to a server, frames messages with a custom protocol, and reconnects on connection loss. It is derived from `examples/core_io/chat_tcp/client/ClientActor.{h,cpp}`, re-grounded against the current `connect` and timeout APIs.
+The following client actor connects to a server, frames messages with a custom protocol, and reconnects on connection loss. It is derived from `examples/core_io/chat_tcp/client/ClientActor.{h,cpp}`, re-grounded against the current `connect` and timeout APIs — **and the reconnect delay below deliberately does not match the shipped example.** That example still arms its retry with `qb::io::async::callback([this]{ … }, RECONNECT_DELAY)`, at two sites and with no liveness guard at all; it was not part of the sweep that converted the `examples/core/` set. That is the shape to move away from, for the reasons in [Capture safety](./async_in_actors.md#capture-safety-the-actor-may-be-gone) — copy the coroutine form here, not the file. <!-- src: examples/core_io/chat_tcp/client/ClientActor.cpp:116-121,191-196 -->
 
 ```cpp
 // src: examples/core_io/chat_tcp/client/ClientActor.h (adapted)
 #include <qb/actor.h>
-#include <qb/io/async.h>      // qb::io::use<>, qb::io::async::tcp::connect, callback
+#include <qb/io/async.h>      // qb::io::use<>, qb::io::async::tcp::connect
 #include <qb/io/uri.h>
 #include <qb/io.h>            // qb::io::cout
 #include <chrono>
 #include "Protocol.h"          // chat::ChatProtocol<IO_>, chat::Message
 
 using namespace std::chrono_literals;   // 5s literal; qb re-exports these via qb::time_literals
+
+// Self-addressed: "the backoff has elapsed, try connecting again".
+struct Reconnect : qb::Event {};
 
 class ClientActor : public qb::Actor,
                     public qb::io::use<ClientActor>::tcp::client<> {
@@ -81,6 +84,7 @@ public:
         : _server_uri(std::move(server_uri)) {}
 
     qb::io::async::task<bool> onInit() override {
+        registerEvent<Reconnect>(*this);
         connect();
         co_return true;
     }
@@ -94,11 +98,23 @@ public:
     void on(qb::io::async::event::disconnected const &) {
         _connected = false;
         if (_should_reconnect)
-            // The timer holds no claim on this actor — guard re-entry. See Pitfalls.
-            qb::io::async::callback([this] { if (is_alive()) connect(); }, RECONNECT_DELAY);
+            arm_reconnect();
     }
 
+    // The retry lands here — an ordinary handler, on an actor that is live by construction.
+    void on(Reconnect const &) { connect(); }
+
 private:
+    // The delay belongs to this actor: kill() cancels the pending sleep, and the
+    // coroutine captures no `this` — `ctx` carries the ActorId by value.
+    void arm_reconnect() {
+        const qb::duration delay = RECONNECT_DELAY;
+        spawn([delay](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(delay);
+            ctx.template push<Reconnect>();
+        });
+    }
+
     void connect() {
         // connect() takes a qb::duration; a chrono literal satisfies it.
         qb::io::async::tcp::connect<qb::io::tcp::socket>(
@@ -107,7 +123,7 @@ private:
                 if (socket.is_open())
                     onConnected(std::move(socket));
                 else if (_should_reconnect)
-                    qb::io::async::callback([this] { if (is_alive()) connect(); }, RECONNECT_DELAY);
+                    arm_reconnect();
             },
             CONNECT_TIMEOUT);
     }
@@ -133,9 +149,9 @@ Points worth noting:
 
 - `qb::io::async::tcp::connect<Socket>(uri, callback, timeout, verify_peer)` performs the non-blocking connect; `timeout` is a `qb::duration` and defaults to `qb::duration::zero()` (no deadline). The callback receives a `Socket` whose `is_open()` is `false` on failure or timeout. For SSL clients, instantiate `connect<qb::io::tcp::ssl::socket>`; `verify_peer` (default `true`) controls certificate-chain and hostname verification.
 - After adopting the socket, call `switch_protocol<Protocol>(*this)` and then `start()`. `start()` registers the descriptor with the event loop; until it runs, no reads or writes are dispatched.
-- Reconnection is scheduled with `qb::io::async::callback(fn, delay)`, where `delay` is a `std::chrono` duration. See [async operations in actors](./async_in_actors.md) for the callback lifecycle.
+- Reconnection is scheduled with `spawn(...)` + `co_await ctx.sleep(delay)`, not with `qb::io::async::callback`. Both arm a real timer, but only the coroutine's is bound to the actor: `kill()` cancels it, whereas a `callback` timer is owned by the event loop and fires after the actor is gone. See [async operations in actors](./async_in_actors.md#capture-safety-the-actor-may-be-gone) for why the `is_alive()` guard people reach for cannot fix that.
 
-> **Time API.** Both `connect` and `callback` take a `std::chrono` duration (`qb::duration` is `std::chrono::nanoseconds`). A raw `double` does not convert to a chrono duration and will not compile — write `5s`, `250ms`, or an explicit `qb::duration` rather than a bare number.
+> **Time API.** `connect`, `callback` and `ctx.sleep` all take a `std::chrono` duration (`qb::duration` is `std::chrono::nanoseconds`). A raw `double` does not convert to a chrono duration and will not compile — write `5s`, `250ms`, or an explicit `qb::duration` rather than a bare number.
 
 ## TCP server: combined acceptor and session pool
 
@@ -374,7 +390,7 @@ See [SSL/TLS transport](../3_qb_io/ssl_transport.md) for context creation, certi
 - **Binding `registerSession` to a reference.** It returns `Session*` (nullable at the session cap). Use `auto *session = registerSession(...)` and null-check; an `auto&` binding does not compile.
 - **Overriding `io_handler::disconnected` without forwarding.** Omitting the base call leaks the session's `shared_ptr` because it is never erased from the pool. Always call the base `disconnected(id)`.
 - **Ignoring `on(qb::io::async::event::disconnected const&)`.** Clients and sessions should handle it to reset state and (for clients) schedule reconnection. Acceptors should treat listener disconnection as fatal, typically `broadcast<qb::KillEvent>()`.
-- **A reconnect timer that captures `this` and re-enters a dead actor.** `qb::io::async::callback` keeps no claim on the actor: a 5-second retry armed from `on(disconnected&)` can fire after the actor was killed. Guard the closure with `is_alive()` — and note that guard covers only the killed-but-not-yet-reaped window, because `kill()` merely flags and `~Actor()` runs later under `VirtualCore` control. For a timer whose lifetime is the actor's, own it: hold the `scoped_callback` handle as a member so the actor's own destructor cancels the watcher. See [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures).
+- **A reconnect timer that captures `this` and re-enters a dead actor.** `qb::io::async::callback` keeps no claim on the actor: a 5-second retry armed from `on(disconnected&)` fires whenever the loop says so, and by then the actor is typically destroyed — `VirtualCore` reaps in the same or the next loop turn, seconds before the timer. An `is_alive()` guard inside the closure does **not** rescue this: `is_alive()` reads an actor member, so on a destroyed actor evaluating the guard is itself the use-after-free. Use a timer whose lifetime is the actor's — `spawn(...)` + `co_await ctx.sleep(delay)` + a self-addressed event, as in the client above, or a `scoped_callback` handle held as a member so the actor's own destructor cancels the watcher. See [Capture safety](./async_in_actors.md#capture-safety-the-actor-may-be-gone) and [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures). <!-- src: qb/src/qb/core/Actor.cpp:205-208, qb/src/qb/io/async/io.h:312-318,343 -->
 - **Reconnecting from inside the handler that is destroying the connection.** If the retry path frees and recreates the connection object the handler is running on, do not run it inline — `qb::io::async::callback(fn)` with no delay does exactly that. Use `qb::io::async::defer(fn)`, which runs at the tail of the loop turn, after the handler unwinds. <!-- src: qb/src/qb/io/async/listener.h:1032 -->
 - **Leaking on shutdown.** In a `qb::KillEvent` handler, disconnect or clear sessions and close listeners before `kill()`. RAII closes descriptors, but an orderly drain avoids resetting live clients abruptly.
 

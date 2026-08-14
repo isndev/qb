@@ -51,6 +51,37 @@ engine.join();
 
 In this `main.cpp`, only `ClientActor` subscribes to file events — it does so by sending a `WatchDirectoryRequest` carrying its own `id()` as the `requestor`. `DirectoryWatcher` records that `ActorId` and pushes `FileEvent`s only to recorded subscribers (see [Event detection and fan-out](#event-detection-and-fan-out)). `FileProcessor` is constructed but never sends a `WatchDirectoryRequest`, so as wired it does not receive `FileEvent`s from `DirectoryWatcher`. `FileProcessor` is a complete, standalone consumer of `FileEvent`; to feed it, route file events to `processor_id` as well — for example by adding `processor_id` to the subscriber set, or by having `ClientActor` (or `DirectoryWatcher`) `push<FileEvent>(processor_id, …)`. The walkthrough below describes `FileProcessor` on its own terms so you can wire it into your own topology.
 
+### Event payloads: why every path is a `std::shared_ptr<std::string>`
+
+Every event in `events.h` boxes its path, and the reason is not ergonomics — it is the engine's relocation contract. The engine moves an event with `memcpy` and never runs the source destructor, so **a payload member may hold no pointer into its own storage**. A short `std::string` on libstdc++ holds exactly that: `_M_p` addresses the string's own inline buffer, so after the relocation the pointer still names the old bytes. libc++ recomputes the pointer from `this`, which is why the defect is invisible on macOS and corrupts on Linux — and why it can sit in a program that has "always worked". It is not a cross-core-only concern either: pipe growth, compaction, `reply()` and `forward()` relocate same-core events too.
+
+```cpp
+// src: examples/core_io/file_monitor/events.h
+struct FileEvent : public qb::Event {
+    std::shared_ptr<std::string>          path;      // boxed: the pointer moves, the chars don't
+    FileEventType                         type;
+    std::chrono::system_clock::time_point timestamp;
+
+    FileEvent(std::string p, FileEventType t)
+        : path(std::make_shared<std::string>(std::move(p)))
+        , type(t)
+        , timestamp(std::chrono::system_clock::now()) {}
+};
+
+struct WatchDirectoryResponse : public qb::Event {
+    std::shared_ptr<std::string> path;
+    bool                         success;
+    qb::string<128>              error_message;     // bounded: fits inline, so no box needed
+    /* ... */
+};
+```
+
+Two shapes, one rule, chosen by whether the value has a useful bound. A filesystem path does not, so it goes behind a `std::shared_ptr` rather than into a `qb::string<N>` that would silently truncate it. An error message does, so it lives in a `qb::string<128>` — a fixed-capacity inline buffer that is trivially relocatable by construction (past 128 characters it truncates, which for this envelope is acceptable and for a path would not be). `FileMetadata`, by contrast, keeps plain `std::string` members: it is actor-owned state that the engine never relocates, not an event payload.
+
+Constructing the event is unchanged at the call site — the constructors take `std::string` **by value** and box it internally, so `push<FileEvent>(subscriber, file_path_str, event_type)` still reads the same. What changes is every *read*: `event.path` is now a `shared_ptr`, so consumers write `*event.path`. Both handlers below show it.
+
+> **Boxing makes the event relocatable; it does not make the pointee owned.** Here that distinction costs nothing, because a `FileEvent`'s path is written once at construction and only ever read afterwards. Where a boxed payload is *mutated* after delivery, the `shared_ptr` becomes shared mutable state across cores and the fix is to snapshot at the actor boundary instead — see the [distributed-computing walkthrough](./distributed_computing_analysis.md#boxing-a-payload-makes-the-event-relocatable-it-does-not-make-the-pointee-owned).
+
 ## The watcher actor
 
 **Headers:** `examples/core_io/file_monitor/watcher.h`, `watcher.cpp`.
@@ -151,10 +182,9 @@ DirectoryWatcher::DirectoryWatcher() {
 ```cpp
 // src: examples/core_io/file_monitor/watcher.cpp
 void DirectoryWatcher::on(WatchDirectoryRequest &request) {
-    std::string normalized_path = std::filesystem::absolute(request.path).string();
+    std::string normalized_path = fs::absolute(*request.path).string();   // note the deref
 
-    if (!std::filesystem::exists(normalized_path) ||
-        !std::filesystem::is_directory(normalized_path)) {
+    if (!fs::exists(normalized_path) || !fs::is_directory(normalized_path)) {
         push<WatchDirectoryResponse>(request.requestor, normalized_path, false,
                                      "Path does not exist or is not a directory");
         return;
@@ -182,7 +212,7 @@ Two integration details earn their place here:
   **But the single-argument form here does not schedule at all.** `callback(fn)` is `{ fn(); }` — it calls `fn` synchronously, inside `on(WatchDirectoryRequest&)`. Only the timed form `callback(fn, duration)` with a *strictly positive* duration arms a timer; `duration <= 0` also runs inline. So the directory scan is **not** moved out of the message-handler frame — the source comment ("asynchronously") and the lambda both suggest otherwise, and neither is right. The handler blocks for the whole scan.
   To actually move it off the frame, the primitive is `qb::io::async::defer(fn)`, which runs at the tail of the current loop turn after the handler unwinds. Substituting it here would be a faithful fix; the example predates it.
 <!-- src: qb/src/qb/io/async/io.h:348-364,368-369 (the no-delay callback overload runs func inline); qb/src/qb/io/async/listener.h:1032 (async::defer) -->
-- **`push<WatchDirectoryResponse>(requestor, …)`** addresses the reply to the recorded `ActorId`. The response carries `success`, the normalized path, and an error string — the same envelope you would expect from any request/response actor pair.
+- **`push<WatchDirectoryResponse>(requestor, …)`** addresses the reply to the recorded `ActorId`. The response carries `success`, the normalized path (boxed), and a `qb::string<128> error_message` — the same envelope you would expect from any request/response actor pair, with the two payload shapes from [Event payloads](#event-payloads-why-every-path-is-a-stdshared_ptrstdstring) side by side.
 
 > **`callback` takes a duration, not a `double`.** The overload set is `callback(_Func&&)` and `callback(_Func&&, std::chrono::duration<Rep, Period>)`; neither deduces from a bare `double` or `int`. Accordingly `setupDirectoryWatch` arms its watcher with `startWatching(path, std::chrono::milliseconds(500))`, and the timed `qb::io::async::callback` calls pass `std::chrono` durations (`std::chrono::milliseconds(500)`, `std::chrono::seconds(duration)`, and so on).
 
@@ -246,7 +276,7 @@ void DirectoryWatcher::publishFileEvent(const std::filesystem::path &file_path,
 }
 ```
 
-`push<FileEvent>(subscriber, file_path, event_type)` constructs the event in place and enqueues it to the destination actor. `FileEvent` is an ordinary `qb::Event` subtype defined in `events.h`; its constructor stamps `timestamp` with `std::chrono::system_clock::now()`. The prefix match iterates `_watched_directories` (top-level roots) only — it never inspects the per-root `subdirectories` tree. A subdirectory `DirectoryMonitor` created by recursion still calls back into this same `publishFileEvent`, but the loop resolves the changed path to the deepest *root* that prefixes it (the parent root, since the subdirectory lives under it) and pushes to that root's `subscribers`. The inherited subscriber list copied onto each child `WatchInfo` at setup time is therefore never read here; it is a snapshot of the root's subscribers and remains correct only because it was copied from that root.
+`push<FileEvent>(subscriber, file_path_str, event_type)` constructs the event in place and enqueues it to the destination actor. `FileEvent` is an ordinary `qb::Event` subtype defined in `events.h`; its constructor takes the path **by value**, moves it into a `std::make_shared<std::string>` (see [Event payloads](#event-payloads-why-every-path-is-a-stdshared_ptrstdstring)), and stamps `timestamp` with `std::chrono::system_clock::now()`. Note that one `FileEvent` is constructed per subscriber, so each gets its own control block rather than sharing one — the loop below pushes inside the iteration, not once outside it. The prefix match iterates `_watched_directories` (top-level roots) only — it never inspects the per-root `subdirectories` tree. A subdirectory `DirectoryMonitor` created by recursion still calls back into this same `publishFileEvent`, but the loop resolves the changed path to the deepest *root* that prefixes it (the parent root, since the subdirectory lives under it) and pushes to that root's `subscribers`. The inherited subscriber list copied onto each child `WatchInfo` at setup time is therefore never read here; it is a snapshot of the root's subscribers and remains correct only because it was copied from that root.
 
 ### Teardown
 
@@ -261,11 +291,11 @@ void DirectoryWatcher::publishFileEvent(const std::filesystem::path &file_path,
 ```cpp
 // src: examples/core_io/file_monitor/processor.cpp
 void FileProcessor::on(FileEvent &event) {
-    switch (event.type) {
-        case FileEventType::CREATED:            processFileCreated(event.path);  break;
-        case FileEventType::MODIFIED:           processFileModified(event.path); break;
-        case FileEventType::DELETED:            processFileDeleted(event.path);  break;
-        case FileEventType::ATTRIBUTES_CHANGED: /* no content action */          break;
+    switch (event.type) {                                    // event.path is a shared_ptr:
+        case FileEventType::CREATED:            processFileCreated(*event.path);  break;
+        case FileEventType::MODIFIED:           processFileModified(*event.path); break;
+        case FileEventType::DELETED:            processFileDeleted(*event.path);  break;
+        case FileEventType::ATTRIBUTES_CHANGED: /* no content action */           break;
     }
     updateStats(event.type);
 }
@@ -350,11 +380,13 @@ Three facts to keep straight:
 - **`event::file` as the seam to the OS.** `event.attr`/`event.prev` carry `struct stat` snapshots; your `on(event::file const&)` decides what changed.
 - **Keeping work on the per-actor loop with `qb::io::async::callback`.** Both the watcher's setup scan and the client's timed file activity ride the loop rather than spawning threads — though only the client's *timed* calls are genuinely deferred; the setup scan runs inline (see above).
 - **Request/response and fan-out over typed events.** `WatchDirectoryRequest`/`WatchDirectoryResponse` form a request/response pair; `publishFileEvent` fans `FileEvent` out to a tracked subscriber set.
+- **Relocation-safe event payloads.** Unbounded values (paths) are boxed behind a `std::shared_ptr`; bounded ones (the error message) live in a `qb::string<128>`. Nothing in an event addresses its own storage, so the engine's `memcpy` relocation is safe — see [Event payloads](#event-payloads-why-every-path-is-a-stdshared_ptrstdstring).
 - **Deterministic resource teardown.** Each `ev::stat` watcher lives in a `unique_ptr` under a `WatchInfo`; unwatch and kill both release them explicitly.
 
 ## Pitfalls
 
 - **Intervals and delays are `std::chrono` durations, not bare numbers.** `start(…, qb::duration)` and `qb::io::async::callback(…, std::chrono::duration<Rep, Period>)` do not accept a bare `double`/`int`. The sources pass `std::chrono` durations throughout; keep any new interval or delay you add in that form.
+- **A bare `std::string` in an event payload is a latent corruption, and macOS cannot see it.** The engine relocates events with `memcpy`; libstdc++'s short-string optimization makes a short `std::string` point into itself, so it survives the move only on libc++. Every event in `events.h` is shaped to avoid it. Apply the same test to any event you add: does this member hold a pointer into its own bytes?
 - **Stat-diff watching is poll-based and coarse.** `ev::stat` polls at the configured interval and reports changes to the *watched path*, not per-child events. Changes within one interval can coalesce; a delete-then-recreate inside one poll window may surface as a single event. Pick `interval` for your latency/CPU trade-off, and do not expect per-file change journaling from this primitive.
 - **`qb::io::sys::file` blocks the event loop.** It is synchronous. Reading a large file inside `on(FileEvent&)` stalls the owning `VirtualCore`. Hand large reads to a worker actor on another core — that is the only option that actually leaves this thread. A `qb::io::async::defer` continuation moves the read off the handler frame but keeps it on the same core's turn, and a bare `qb::io::async::callback(fn)` moves it nowhere at all.
 - **`FileProcessor` is not wired to receive events as shipped.** Only `ClientActor` subscribes. To exercise `FileProcessor`, add its `ActorId` to the subscriber set or forward `FileEvent`s to `processor_id` (see [Wiring caveat](#wiring-caveat-who-actually-receives-fileevent)).

@@ -50,7 +50,7 @@ Because all coroutines on a thread share one scheduler and one event loop, only 
 
 ## Quick start (standalone)
 
-Outside `qb-core`, drive the loop yourself: initialize the thread's listener, spawn the root task, then run the loop.
+Outside `qb-core`, drive the loop yourself: initialize the thread's listener, then hand the root task to `run_sync`, which pumps the loop until that task completes and returns its value.
 
 ```cpp
 // src: derived from examples/coroutine/standalone_timer_example.cpp
@@ -66,21 +66,22 @@ task<int> compute_value(int base) {
     co_return base * 2;
 }
 
-task<void> root() {
+task<void> use_computed_value() {
     int result = co_await compute_value(21);
     std::cout << "Result: " << result << '\n';   // prints "Result: 42"
 }
 
 int main() {
     qb::io::async::init();                        // no-op, kept for symmetry (see below)
-    coro_scheduler().spawn(root());               // task is a prvalue → moved
-    run_for(2s);                                  // pump the loop + scheduler
+    run_sync(use_computed_value());               // pump the loop until the task is done
     return 0;
 }
 ```
 
-`init()` is a **no-op** kept for symmetry — its whole body is a comment. `listener::current` is a `thread_local` that initializes itself on first access, so nothing needs readying; and `init()` deliberately does *not* clear existing state, because fixtures that share a thread's listener would have their already-registered watchers invalidated. For a genuinely clean loop, call `listener::current.clear()` (see [The async runtime](./async_system.md#one-loop-one-thread-no-lock)). `coro_scheduler()` returns the listener's scheduler so `spawn`, timers, and `run_ready()` all share one loop. Under `qb-core`, each `VirtualCore` owns its listener and pumps the loop for you — you never call `run_for` from inside an actor (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)).
-<!-- src: qb/src/qb/io/async/listener.h:966 (init), qb/src/qb/io/async/coroutine/utils.h:212 (coro_scheduler), :227 (run_for) -->
+`init()` is a **no-op** kept for symmetry — its whole body is a comment. `listener::current` is a `thread_local` that initializes itself on first access, so nothing needs readying; and `init()` deliberately does *not* clear existing state, because fixtures that share a thread's listener would have their already-registered watchers invalidated. For a genuinely clean loop, call `listener::current.clear()` (see [The async runtime](./async_system.md#one-loop-one-thread-no-lock)). `coro_scheduler()` returns the listener's scheduler so `spawn`, timers, and `run_ready()` all share one loop; `run_sync` spawns onto it for you, which is why the example above never names it.
+
+Prefer `run_sync(awaitable)` over `run_for(duration)` for a root task. `run_sync` returns when the work is done — it pumps the loop until the awaitable completes, then yields its value or rethrows its exception. `run_for` returns when the *duration* is up, so it burns its whole budget even when the work finished early, and the duration is a correctness guess in the other direction too: pick it too small on a loaded machine and the coroutine is abandoned mid-flight, with no diagnostic and exit code 0. Reach for `run_for` only when pumping the loop for a fixed span is genuinely what you mean. Under `qb-core`, each `VirtualCore` owns its listener and pumps the loop for you — you call neither from inside an actor (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)).
+<!-- src: qb/src/qb/io/async/listener.h:966 (init), qb/src/qb/io/async/coroutine/utils.h:212 (coro_scheduler), :227 (run_for), :285 (run_sync), examples/coroutine/standalone_timer_example.cpp:133-164 -->
 
 ## `task<T>` — the coroutine return type
 
