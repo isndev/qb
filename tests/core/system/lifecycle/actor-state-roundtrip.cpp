@@ -32,41 +32,51 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <string>
+#include <string_view>
 
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
+#include <qb/string.h>
 
 using namespace std::chrono_literals;
 
 // ---------------------------------------------------------------------------
 // Protocol events.
+//
+// The keys are `qb::string<N>`, not `std::string`. The engine relocates an event with `memcpy`
+// and never runs the source destructor, so a payload member may hold no pointer into itself; a
+// SHORT std::string on libstdc++ does exactly that (`_M_p` addresses its own inline buffer), and
+// the keys here are short. This exchange happens to be single-core, so the trap is latent rather
+// than firing -- but "latent" depends on a core assignment two screens away, and pipe growth,
+// compaction, `reply()` and `forward()` relocate same-core events too. `relocatable-payload.cpp`
+// pins the rule; this file should not be the suite's own counter-example to it.
 // ---------------------------------------------------------------------------
 struct StateUpdate : public qb::Event {
-    std::string key;
-    int         value;
-    StateUpdate(std::string k, int v)
-        : key(std::move(k))
+    qb::string<32> key;
+    int            value;
+    StateUpdate(std::string_view k, int v)
+        : key(k)
         , value(v) {}
 };
 
 struct StateQuery : public qb::Event {
-    std::string key;
-    qb::ActorId reply_to;
-    int         tag; // echoed back in the response so the coordinator can sequence it
-    StateQuery(std::string k, qb::ActorId id, int t)
-        : key(std::move(k))
+    qb::string<32> key;
+    qb::ActorId    reply_to;
+    int            tag; // echoed back in the response so the coordinator can sequence it
+    StateQuery(std::string_view k, qb::ActorId id, int t)
+        : key(k)
         , reply_to(id)
         , tag(t) {}
 };
 
 struct StateResponse : public qb::Event {
-    std::string key;
-    int         value;
-    bool        found;
-    int         tag;
-    StateResponse(std::string k, int v, bool f, int t)
-        : key(std::move(k))
+    qb::string<32> key;
+    int            value;
+    bool           found;
+    int            tag;
+    StateResponse(std::string_view k, int v, bool f, int t)
+        : key(k)
         , value(v)
         , found(f)
         , tag(t) {}
@@ -119,14 +129,14 @@ public:
     on(const StateUpdate &e) {
         if (_failed)
             return;
-        _state[e.key] = e.value;
+        _state[e.key.c_str()] = e.value;
     }
 
     void
     on(const StateQuery &e) {
         if (_failed)
             return; // during the failure window a query produces NO response
-        const auto it    = _state.find(e.key);
+        const auto it    = _state.find(e.key.c_str());
         const bool found = (it != _state.end());
         const int  value = found ? it->second : -1;
         to(e.reply_to).push<StateResponse>(e.key, value, found, e.tag);
