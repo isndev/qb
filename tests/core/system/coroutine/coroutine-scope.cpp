@@ -39,6 +39,23 @@
  *
  * Every in-coroutine effect is mirrored to a file-scope atomic reset before the run and asserted
  * AFTER `join()` (no pass-if-never-run).
+ *
+ * The thirteen `qb::io::async::callback([this] { if (is_alive()) kill(); }, N)` timers below are
+ * DELIBERATE and must not be swept into `spawn` + `co_await ctx.sleep` (audited 2026-08; all
+ * thirteen kept). Two independent reasons:
+ *   - They are SAFE. The general hazard — a timed callback is owned by the event loop and outlives
+ *     its actor, so the `is_alive()` guard IS the read of freed memory — requires the actor to die
+ *     from some OTHER cause while the timer is still pending. Here this callback is each actor's
+ *     ONLY death: the core loop breaks only on `_actors.empty()`, which nothing else can bring
+ *     about, so neither the reap nor `listener::clear()` (which reclaims a pending `Timeout`
+ *     WITHOUT firing it) can run first. Measured: zero ASan reports over this file.
+ *   - The trigger is deliberately OUT-OF-BAND. It must not be a participant in the actor
+ *     cancellation scope that is this file's subject; converting puts the instrument inside the
+ *     thing being instrumented — a second scoped coroutine on the actor under test, inside the same
+ *     `active_coroutines_` counter and the same `CoroutineFrameAllocator` accounting that the four
+ *     `live_frames == baseline` tests use as their reclamation oracle. Note that this perturbation
+ *     would be SILENT rather than caught: both `active_coroutine_count()` reads below happen just
+ *     BEFORE the timer is armed, so neither would observe the extra coroutine.
  */
 
 #include <atomic>

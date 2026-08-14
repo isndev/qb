@@ -134,6 +134,10 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         auto v = _victim;
+        // Deliberate, and NOT the `[this]`-outlives-the-actor hazard: this helper is never a kill
+        // target and never kills itself, so `this` is live whenever the timer fires; and a timer still
+        // pending at teardown is reclaimed by listener::clear() WITHOUT firing. Must stay out-of-band:
+        // it triggers the cancel under test. Do not convert to spawn + ctx.sleep.
         qb::io::async::callback([this, v] { push<qb::KillEvent>(v); }, 40ms); // lands while parked
         qb::io::async::callback([] { qb::Main::stop(); }, 2s);                // backstop only — never the oracle
         co_return true;

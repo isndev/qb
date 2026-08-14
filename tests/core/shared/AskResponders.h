@@ -206,6 +206,12 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         auto v = _victim;
+        // Deliberate, and NOT the `[this]`-outlives-the-actor hazard: this helper is never a kill target
+        // (nothing pushes KillEvent at it, it never kills itself), so `this` is live whenever the timer
+        // fires; the run ends on the `_stop_after` callback below and the contract above is
+        // `kill_after < stop_after`, so this one always fires first. It must also stay OUT of every
+        // actor's cancellation scope: it is the out-of-band trigger for the cancel under test.
+        // Do not convert to spawn + co_await ctx.sleep.
         qb::io::async::callback([this, v] { push<qb::KillEvent>(v); }, _kill_after);
         qb::io::async::callback([] { qb::Main::stop(); }, _stop_after);
         co_return true;

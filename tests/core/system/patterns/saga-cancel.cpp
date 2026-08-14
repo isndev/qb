@@ -140,6 +140,10 @@ public:
         auto victim = _victim;
         // Compensation begins ~30ms (after the step-3 timeout); compB then parks on the silent peer.
         // Kill at 70ms → compB's ask is cancelled → rollback aborts before compA. Generous window.
+        // Deliberate, and NOT the `[this]`-outlives-the-actor hazard: this helper is never a kill
+        // target and never kills itself, so `this` is live whenever the timer fires; and a timer still
+        // pending at teardown is reclaimed by listener::clear() WITHOUT firing. Must stay out-of-band:
+        // it triggers the cancel under test. Do not convert to spawn + ctx.sleep.
         qb::io::async::callback([this, victim] { push<qb::KillEvent>(victim); }, 70ms);
         qb::io::async::callback([] { qb::Main::stop(); }, 2s); // backstop only — never the oracle
         co_return true;
