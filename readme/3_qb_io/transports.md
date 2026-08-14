@@ -401,7 +401,7 @@ int main() {
 }
 ```
 
-<!-- src: examples/io/example3_tcp_networking.cpp -->
+<!-- src: examples/02-io/03-tcp.cpp -->
 
 ### Asynchronous UDP client and server
 
@@ -452,7 +452,7 @@ int main() {
 }
 ```
 
-<!-- src: examples/io/example4_udp_networking.cpp -->
+<!-- src: examples/02-io/04-udp.cpp -->
 
 ## Pitfalls
 
