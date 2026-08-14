@@ -786,7 +786,7 @@ VirtualCore::registerCallback(_Actor &actor) noexcept {
 template <typename T>
 inline void
 VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) noexcept {
-    data.id     = data.template type_to_id<T>();
+    data.id     = detail::routing_safe_type_id<T>(); // == type_to_id<T>(), + the shadow guard
     data.dest   = dest;
     data.source = source;
 

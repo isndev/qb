@@ -31,6 +31,7 @@ qb_add_test(MODULE qb-core TIER unit NAME type-id-identity        SOURCES core/t
 qb_add_test(MODULE qb-core TIER unit NAME actor-name-lifetime     SOURCES core/actor-name-lifetime.cpp      DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME service-index-uniqueness SOURCES core/service-index-uniqueness.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME event-header   SOURCES core/event-header.cpp        DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME event-field-shadow      SOURCES core/event-field-shadow.cpp       DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME event-traits   SOURCES type/event-traits.cpp       DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME spinlock-basic SOURCES lockfree/spinlock-basic.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)
 qb_add_test(MODULE qb-core TIER unit NAME ring-wrap-batching SOURCES lockfree/ring-wrap-batching.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)
