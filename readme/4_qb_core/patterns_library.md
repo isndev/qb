@@ -100,11 +100,11 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
 |---|---|---|
 | `qb::Request<Resp>` | `struct Request : qb::AskEvent { using response_type = Resp; Resp response{}; }` | `request.h:70-74` |
 | `qb::ask` | `task<E> ask(ScopedCoroContext ctx, ActorId target, E req, qb::duration timeout)` | `request.h:98-105` |
-| `qb::answer` | `void answer(Actor &self, E &e, Fn &&fn) noexcept(noexcept(fn(e)))` | `request.h:186-193` |
+| `qb::answer` | `void answer(Actor &self, E &e, Fn &&fn) noexcept(noexcept(fn(e)))` | `request.h:192-199` |
 | `qb::deadline` | `struct deadline { std::uint64_t at_ns{0}; }` | `request.h:115-117` |
-| `qb::deadline_in` | `deadline deadline_in(ScopedCoroContext ctx, qb::duration dur) noexcept` | `request.h:120-124` |
-| `qb::remaining` | `qb::duration remaining(deadline dl, ScopedCoroContext ctx) noexcept` | `request.h:127-131` |
-| `qb::ask_by` | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, E req, deadline dl)` | `request.h:154-161` |
+| `qb::deadline_in` | `deadline deadline_in(ScopedCoroContext ctx, qb::duration dur) noexcept` | `request.h:126-130` |
+| `qb::remaining` | `qb::duration remaining(deadline dl, ScopedCoroContext ctx) noexcept` | `request.h:133-137` |
+| `qb::ask_by` | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, E req, deadline dl)` | `request.h:160-167` |
 
 - `ask` stamps a fresh correlation id, `push_to`s the request, and `co_await`s a single custom
   awaiter that handles correlation, timeout and cancel-on-kill with no detached helper
@@ -112,13 +112,13 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   `timeout_error` / `cancelled_error` (`request.h:86-93`).
 - `answer` is the responder helper. It first calls `self.resolve_ask(e)` (routing any reply to one of
   the responder's own pending asks, returning early if so), then sets `e.response = fn(e)` and
-  `reply()`s the same event back, preserving the correlation id (`request.h:186-193`). **`fn` must
+  `reply()`s the same event back, preserving the correlation id (`request.h:192-199`). **`fn` must
   not throw** — a throwing handler terminates the worker core; carry failure in the response payload
-  instead (`request.h:178-185`).
+  instead (`request.h:184-191`).
 - `deadline` is an **absolute** completion time (epoch nanoseconds). Thread one `deadline` through a
   chain of `ask_by` calls to bound the *whole* chain end-to-end; each hop gets only the time the
-  previous hop left (`request.h:108-117`, `:133-161`). `ask_by` throws `timeout_error` immediately,
-  sending nothing, if the budget is already spent (`request.h:156-160`).
+  previous hop left (`request.h:108-117`, `:139-167`). `ask_by` throws `timeout_error` immediately,
+  sending nothing, if the budget is already spent (`request.h:162-166`).
 
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
 (`qb/src/qb/core/Actor.h:1277-1293`); one actor can both ask and answer the same event type
@@ -194,7 +194,7 @@ sequenceDiagram
     Reg-->>Co: resume → returns filled E
     Note over Co: timeout → timeout_error · kill → cancelled_error
 ```
-<!-- Reflects qb/src/qb/core/patterns/request.h:98-105,186-193 and qb/src/qb/core/Actor.h:1277-1293 -->
+<!-- Reflects qb/src/qb/core/patterns/request.h:98-105,192-199 and qb/src/qb/core/Actor.h:1277-1293 -->
 
 ---
 
@@ -772,8 +772,8 @@ qb::io::async::task<bool> onInit() override {
 
 | Goal | Pattern | Entry point |
 |---|---|---|
-| One typed round-trip to one actor | request/reply | `qb::ask` + `qb::answer` (`request.h:100,188`) |
-| Bound the total latency of a request chain | request/reply | `qb::ask_by` + `qb::deadline` (`request.h:156,115`) |
+| One typed round-trip to one actor | request/reply | `qb::ask` + `qb::answer` (`request.h:100,194`) |
+| Bound the total latency of a request chain | request/reply | `qb::ask_by` + `qb::deadline` (`request.h:162,115`) |
 | Ask many, need every reply | scatter-gather | `qb::ask_all` (`scatter.h:59`) |
 | Ask many, fan out without overwhelming a downstream | scatter-gather | `qb::ask_all(…, max_in_flight)` (`scatter.h:111`) |
 | Ask many, fastest reply wins (hedged) | scatter-gather | `qb::ask_any` (`scatter.h:140`) |
@@ -798,7 +798,7 @@ qb::io::async::task<bool> onInit() override {
 
 - **`answer`'s `fn` must not throw.** A throwing actor handler terminates the worker core; there is no
   per-event exception containment on the steady-state dispatch path. Validate before `answer`, or
-  carry failure in the response payload (`request.h:178-185`).
+  carry failure in the response payload (`request.h:184-191`).
 - **Capture by value, never `this`.** The scope token bounds a coroutine's lifetime but does not make
   actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1219-1221`). The
   long-lived resilience helpers (`CircuitBreaker`, `rate_limiter`, `bulkhead`) are held by

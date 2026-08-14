@@ -25,8 +25,8 @@ page](../2_core_concepts/threading_model.md):
 - **One handler at a time.** An actor processes one event before the next, on a single
   `VirtualCore` thread, so its members need no locking.
 - **Ordered, per-destination delivery.** `push<E>(dest, …)` events to the same destination from the
-  same source arrive in send order; `send<E>(dest, …)` is unordered and restricted to
-  trivially-destructible events.
+  same source arrive in send order; `send<E>(dest, …)` is unordered and conventionally
+  reserved for trivially-destructible events.
 - **`kill()` only flags.** Termination sets `_alive = false`; destruction happens later under
   `VirtualCore` control. That deferral is what makes shutdown sequencing tractable.
 
@@ -946,8 +946,10 @@ int main() {
   (`qb::Actor::on(qb::KillEvent const &)`) calls `kill()` and nothing else. You define your own
   `on(const qb::KillEvent &)` to run cleanup first — and a custom handler **must** call `kill()`
   itself, or the actor never terminates and `join()` blocks. An actor built with
-  `qb::no_default_events` registers nothing; it must `registerEvent<qb::KillEvent>(*this)` in
-  `onInit()` to take part in ordered shutdown at all.
+  `qb::no_default_events` registers nothing; it must `registerEvent<qb::SignalEvent>(*this)` in
+  `onInit()` to take part in ordered shutdown at all — `Main::stop()` and the terminal signals
+  arrive only as a `SignalEvent`, and the engine never sends a `KillEvent`. Register that one too
+  if a peer will kill this actor by pushing one.
 - Prefer RAII for cleanup. Holding resources in members whose destructors release them means
   correctness does not hinge on the `KillEvent` handler running. See [resource
   management](./resource_management.md).

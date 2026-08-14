@@ -116,7 +116,13 @@ struct deadline {
     std::uint64_t at_ns{0}; ///< absolute deadline, in nanoseconds since the epoch (cf. `Actor::time()`).
 };
 
-/** @brief A `deadline` `dur` from now (using the context's cached `VirtualCore` clock). */
+/** @brief A `deadline` `dur` from now (using the context's cached `VirtualCore` clock).
+ *  @note It is an ABSOLUTE instant, so it inherits whatever `ctx.time()` reads at the moment you build it. Through 3.0.0
+ *        that was **0 inside `onInit()`** (the field is refreshed by the loop, and `onInit()` runs before the first pass),
+ *        which made a deadline built there land in 1970: MEASURED `dl.at_ns = 500000000` for a `500ms` budget, and the
+ *        first `remaining()` taken once the loop was running returned **0 ns**, so every `ask_by` on that chain threw
+ *        `timeout_error` without sending anything. `VirtualCore.h:377` now seeds the clock at core construction; pinned
+ *        by `InitClock.ADeadlineBuiltInOnInitIsNotAlreadyExpired`. */
 [[nodiscard]] inline deadline
 deadline_in(qb::ScopedCoroContext ctx, qb::duration dur) noexcept {
     const auto add = dur.count() > 0 ? static_cast<std::uint64_t>(dur.count()) : std::uint64_t{0};

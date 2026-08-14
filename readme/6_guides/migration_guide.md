@@ -50,7 +50,7 @@ For the full model see [The actor model](../2_core_concepts/actor_model.md); for
 | Polling loop / `sleep_for` between iterations | `qb::ICallback::on(qb::LoopEvent const&)` or `qb::io::async::callback` | A per-loop tick or a one-shot non-blocking timer on the same core. |
 | Manual `errno` / return-code propagation across threads | An error event, or an unhandled exception caught by the core | See [Error handling](./error_handling.md). |
 
-`push` and `send` differ: `push<_Event>(dest, …)` returns a reference to the queued event and guarantees ordered delivery from one source to one destination; `send<_Event>(dest, …)` is unordered, fire-and-forget, and restricted to trivially-destructible events. Prefer `push`. _(`push` `qb/src/qb/core/Actor.h:826-831,877`; `send` `:886-890`, `:900`.)_
+`push` and `send` differ: `push<_Event>(dest, …)` returns a reference to the queued event and guarantees ordered delivery from one source to one destination; `send<_Event>(dest, …)` is unordered and fire-and-forget, and is conventionally reserved for trivially-destructible events — a rule the compiler holds you to only for `qb::EventQOS0`-derived ones. Prefer `push`. _(`push` `qb/src/qb/core/Actor.h:826-831,877`; `send` `:886-890`, `:900`.)_
 
 ### Before: a hand-rolled worker
 

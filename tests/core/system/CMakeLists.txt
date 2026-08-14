@@ -29,6 +29,10 @@
 # --- engine / runtime -------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME main-lifecycle   SOURCES engine/main-lifecycle.cpp   DEPENDS ${PROJECT_NAME} LABELS signal serial requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME sigterm-shutdown SOURCES engine/sigterm-shutdown.cpp DEPENDS ${PROJECT_NAME} LABELS signal serial)
+# `serial` + `signal`: drives Main::stop(), which is process-wide state. Its second case ASSERTS a
+# wedge (a KillEvent-only no_default_events actor cannot be stopped), so it detaches one engine
+# thread on purpose -- see the file header. Bounded, and it is what the corrected docs rest on.
+qb_add_test(MODULE qb-core TIER system NAME no-default-events SOURCES engine/no-default-events.cpp DEPENDS ${PROJECT_NAME} LABELS signal serial)
 # engine-io-smoke drives the LOGGING BACKEND itself -- it points the global logger at a throwaway
 # temp path with qb::io::log::init() and reads the rolled files back. That namespace, and nanolog
 # behind it, only exist when QB_WITH_LOGGING is ON, and the test uses them unguarded, so with
@@ -68,6 +72,8 @@ qb_add_test(MODULE qb-core TIER system NAME service-event-ring SOURCES event/ser
 qb_add_test(MODULE qb-core TIER system NAME coroutine-basics   SOURCES coroutine/coroutine-basics.cpp   DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-core TIER system NAME coroutine-detached SOURCES coroutine/coroutine-detached.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME coroutine-scope    SOURCES coroutine/coroutine-scope.cpp    DEPENDS ${PROJECT_NAME} LABELS coroutine)
+# `serial`: it swaps std::cerr's streambuf to read the diagnostic back, which is process-global.
+qb_add_test(MODULE qb-core TIER system NAME coroutine-escaped-exception SOURCES coroutine/coroutine-escaped-exception.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine serial)
 qb_add_test(MODULE qb-core TIER system NAME ask-roundtrip      SOURCES coroutine/ask-roundtrip.cpp      DEPENDS ${PROJECT_NAME} LABELS coroutine requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME ask-patterns       SOURCES coroutine/ask-patterns.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME coroutine-resilience SOURCES coroutine/coroutine-resilience.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine patterns)
@@ -127,5 +133,6 @@ qb_add_test(MODULE qb-core TIER system NAME init-stress        SOURCES init/init
 qb_add_test(MODULE qb-core TIER system NAME init-handle        SOURCES init/init-handle.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-gate-edges    SOURCES init/init-gate-edges.cpp    DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-gate-disposal SOURCES init/init-gate-disposal.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-clock         SOURCES init/init-clock.cpp         DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 
 qb_debug_message("Configured ${CMAKE_CURRENT_SOURCE_DIR} with the tiered test helper")

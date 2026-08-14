@@ -146,7 +146,7 @@ A runtime actor-discovery mechanism. `require<ActorTypes...>()` broadcasts a `qb
 
 #### `send` (`actor.send<T>()`)
 
-Send an event in **unordered** fashion. `send<Event>(dest, args...)` is `noexcept` and may offer slightly lower same-core latency than [`push`](#push-actorpusht), but provides no ordering guarantee and requires the event type to be **trivially destructible** (POD members or [`qb::string`](#qbstringn); `std::string` and `std::vector` are not permitted). Prefer `push` unless order genuinely does not matter. Declared in `src/qb/core/Actor.h`. See [Messaging](../4_qb_core/messaging.md).
+Send an event in **unordered** fashion. `send<Event>(dest, args...)` is `noexcept` and may offer slightly lower same-core latency than [`push`](#push-actorpusht), but provides no ordering guarantee. Trivial destructibility (POD members or [`qb::string`](#qbstringn)) is **compiler-enforced only when the event derives from [`qb::EventQOS0`](#event-qbevent)**, the one kind the cross-core flush may drop undisposed; for a plain `qb::Event` it is a guideline, and a delivered heap-owning payload is disposed exactly once whichever primitive queued it. Prefer `push` unless order genuinely does not matter. Declared in `src/qb/core/Actor.h`. See [Messaging](../4_qb_core/messaging.md).
 
 #### `ServiceActor<Tag>` (`qb::ServiceActor`)
 
@@ -343,7 +343,7 @@ A mutual-exclusion lock that busy-waits (spins) instead of yielding, suited to v
 
 #### `qb::string<N>`
 
-A fixed-capacity string holding up to `N` characters inline without heap allocation, preferred over `std::string` for direct event members because it is trivially destructible — a requirement for [`send`](#send-actorsendt) — and ABI-stable. Defined in `src/qb/string.h`.
+A fixed-capacity string holding up to `N` characters inline without heap allocation, preferred over `std::string` for direct event members because it is trivially destructible — required of a `qb::EventQOS0` payload, and the only safe inline text on any cross-core path, since the transport relocates events with `memcpy` and a short `std::string` is self-referential on libstdc++ — and ABI-stable. Defined in `src/qb/string.h`.
 
 #### UUID (`qb::uuid`)
 

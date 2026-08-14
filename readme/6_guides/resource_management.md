@@ -90,7 +90,7 @@ Write an explicit `~MyActor()` only when you need an *action* (flush a buffer, e
 
 RAII releases resources, but it cannot perform side effects that must reach *other* actors or external systems while they are still operational. Sending an event, unregistering from a manager, or notifying a peer must happen during the shutdown sequence — before `~Actor()`. The hook for that is `on(const qb::KillEvent&)`.
 
-Every actor is, by default, subscribed to `KillEvent` (along with `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`) at construction. (`src/qb/core/Actor.cpp:120-124`) Constructing with `qb::no_default_events` skips all five, in which case the derived class must register at least `KillEvent` in `onInit()` to shut down gracefully. (`src/qb/core/Actor.h:75`)
+Every actor is, by default, subscribed to `KillEvent` (along with `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`) at construction. (`src/qb/core/Actor.cpp:120-124`) Constructing with `qb::no_default_events` skips all five, in which case the derived class must register at least `SignalEvent` in `onInit()` to shut down gracefully — `Main::stop()` and the terminal signals reach an actor only as one, and the engine never sends a `KillEvent`. (`src/qb/core/Actor.h:75`)
 
 Override `on(const qb::KillEvent&)`, perform the side effects, then **call `kill()`** to let the runtime proceed to destruction:
 
