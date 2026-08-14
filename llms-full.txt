@@ -197,10 +197,19 @@ qb::io::async::break_parent();                // stop this thread's run() loop
 using namespace qb;                           // brings chrono literals (5s, 100ms, ...)
 
 // Run a lambda on the current loop after a delay (chrono/qb::duration only):
-qb::io::async::callback([this] {
-    if (is_alive()) push<TickEvent>(id());    // ALWAYS guard actor capture with is_alive()
-}, 100ms);
+qb::io::async::callback([] { /* captures NOTHING from an actor */ }, 100ms);
 // delay <= 0 (or the no-duration overload) executes the lambda inline, NOT next iteration.
+
+// NEVER capture `this` in the TIMED overload from an actor. The Timeout is owned by the event
+// loop, not by the actor, so it fires after ~Actor(); and `if (is_alive())` inside it does NOT
+// help -- is_alive() is a member read, so the guard IS the use-after-free. AddressSanitizer
+// reports it as heap-use-after-free. From an actor, wait like this instead:
+spawn([d = 100ms](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+    co_await ctx.sleep(d);                    // cancelled when the actor is killed
+    ctx.template push<TickEvent>();           // work happens in on(TickEvent&), on a LIVE actor
+});
+// The one-argument overload is different and safe to capture `this` in: it runs INLINE, so the
+// actor cannot have gone away between the call and the body.
 
 // Three distinct primitives — pick by intent:
 //   callback(fn, delay>0)  -> run after a REAL timed delay (timeout / deadline).
@@ -316,8 +325,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 
 ## Key patterns
 
-- **Send to self / schedule** — `push<TickEvent>(id())`, or `qb::io::async::callback(fn, delay)` to
-  defer; the lambda re-checks `is_alive()` and pushes an event back.
+- **Send to self / schedule** — `push<TickEvent>(id())` now, or, after a delay,
+  `spawn([d](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { co_await ctx.sleep(d);
+  ctx.template push<TickEvent>(); })`. Do **not** use `qb::io::async::callback([this]..., delay)`
+  for this: that timer outlives the actor and an `is_alive()` re-check inside it is itself the
+  use-after-free.
 - **Service (core-local singleton)** — `class Cfg : public qb::ServiceActor<CfgTag> {...};` add via
   `addActor`; reach same-core via `getService<Cfg>()`.
 - **Referenced child (same core)** — `addRefActor<Child>(args...)` returns a phase-aware

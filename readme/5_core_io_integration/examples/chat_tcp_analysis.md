@@ -14,7 +14,7 @@ The example lives at `examples/core_io/chat_tcp/` and builds two executables, a 
 - managing a pool of per-client sessions inside one actor (`qb::io::use<T>::tcp::io_handler<Session>`);
 - framing a custom binary message format (`qb::io::async::AProtocol<IO_>` plus a `qb::allocator::pipe<char>::put<T>` specialization);
 - centralizing shared application state in a single-owner actor (`ChatRoomActor`);
-- a client that connects asynchronously and reconnects on failure (`qb::io::async::tcp::connect`, `qb::io::async::callback`).
+- a client that connects asynchronously and reconnects on failure (`qb::io::async::tcp::connect`, plus `spawn(...)` + `co_await ctx.sleep(d)` for the retry delay).
 
 The directory layout:
 
@@ -164,27 +164,35 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 
 - `NewSessionEvent` carries a `qb::io::tcp::socket` by value, transferring ownership of the accepted connection from `AcceptActor` to a `ServerActor`.
 - `AuthEvent` / `ChatEvent` carry a `qb::uuid session_id` plus a `qb::string<32>` username or `qb::string<256>` message — fixed-capacity inline strings that avoid a heap allocation per event.
-- `SendMessageEvent` carries a `qb::uuid session_id` and a `chat::Message message` to deliver to one client. **This one is not relocation-safe — see the warning below.**
+- `SendMessageEvent` carries a `qb::uuid session_id` and a `std::shared_ptr<const chat::Message> message` to deliver to one client. **It is boxed rather than held by value, and that is not a style choice — see the warning below.**
 - `DisconnectEvent` carries the `qb::uuid` of the closed session.
 - `ChatInputEvent` (client side) carries one line of console input as a `qb::string<256>`.
 
-> **`SendMessageEvent` holds a bare `std::string`, and this example crosses a core boundary with it.**
-> `chat::Message` is `{ MessageType type; std::string payload; }`, held **by value** inside the event.
-> The engine relocates an event with raw `memcpy` and never runs the source destructor, so a payload
-> member may hold no pointer into its own storage — and a *short* `std::string` on libstdc++ holds
+> **Why `SendMessageEvent` boxes its message.** `chat::Message` is
+> `{ MessageType type; std::string payload; }`. Held **by value** inside the event — as this example
+> did until the payload was moved to the heap — it puts a bare `std::string` in the event body. The
+> engine relocates an event with raw `memcpy` and never runs the source destructor, so a payload
+> member may hold no pointer into its own storage; a *short* `std::string` on libstdc++ holds
 > exactly that, because `_M_p` addresses its own inline buffer. libc++ recomputes `data()` from
-> `this`, which is why this is invisible on macOS and corrupts on Linux.
+> `this`, which is why the by-value form was invisible on macOS and corrupted on Linux.
 > <!-- src: qb/src/qb/core/Actor.h:835-844 -->
-> It is not hypothetical here: `ChatRoomActor` runs on core 3 and the two `ServerActor`s on core 1
+> It was not hypothetical here: `ChatRoomActor` runs on core 3 and the two `ServerActor`s on core 1
 > (`examples/core_io/chat_tcp/server/main.cpp:54`, `:60`), and `ChatRoomActor::sendToSession()` does
-> `push<SendMessageEvent>(server_id)` (`examples/core_io/chat_tcp/server/ChatRoomActor.cpp:150`) — so
+> `push<SendMessageEvent>(server_id)` (`examples/core_io/chat_tcp/server/ChatRoomActor.cpp:153`) — so
 > every targeted delivery is a cross-core hop, and short payloads such as `"Welcome Bob"` are the
-> common case. The two shapes that are safe are the ones the sibling events use: a `qb::string<N>`
-> for bounded text, or the data on the heap behind a `std::shared_ptr` (which is what
-> [`message_broker`](./message_broker_analysis.md) does, and why its own fan-out is sound).
-> A debug build will not let this pass silently — before relocating an event cross-core the engine
-> scans it for a pointer into its own storage and aborts with a diagnostic; the check is compiled
-> out under `NDEBUG`. <!-- src: qb/src/qb/core/Actor.h:845-848 -->
+> common case. Replayed on both standard libraries, the by-value shape reads `self-referential: YES`
+> and aborts with `munmap_chunk(): invalid pointer` on libstdc++ while surviving untouched on
+> libc++; the `shared_ptr` shape survives on both. The two safe shapes are the ones the sibling
+> events use: a `qb::string<N>` for bounded text, or the data on the heap behind a
+> `std::shared_ptr` — which is also what [`message_broker`](./message_broker_analysis.md) does, and
+> why its own fan-out is sound. `const` matters as much as the pointer: boxing makes the *event*
+> relocatable, not the *pointee* owned, so a payload published to another core must not be mutated
+> afterwards.
+> A debug build would not have let the by-value form pass silently *where it is actually unsafe* —
+> before relocating an event cross-core the engine scans it for a pointer into its own storage and
+> aborts with a diagnostic; the check is compiled out under `NDEBUG`, and on libc++ there is no
+> self-pointer for it to find, which is precisely why a macOS-only workflow never saw it.
+> <!-- src: qb/src/qb/core/Actor.h:845-848 -->
 
 ## Server walkthrough
 
@@ -274,7 +282,7 @@ In the other direction, `ChatRoomActor` sends `SendMessageEvent`s back. `ServerA
 void ServerActor::on(SendMessageEvent& evt) {
     auto it = sessions().find(evt.session_id);
     if (it != sessions().end()) {
-        *it->second << evt.message;     // serialize via the pipe<char>::put<chat::Message> specialization
+        *it->second << *evt.message;    // deref: the event holds a shared_ptr, see Events above
         it->second->updateTimeout();    // outbound traffic also counts as activity
     }
 }
@@ -370,10 +378,9 @@ void ChatRoomActor::on(AuthEvent& evt) {
     _sessions[session_id] = SessionInfo{server_id, username};
     _usernames[username]  = session_id;
 
-    chat::Message response;
-    response.type    = chat::MessageType::AUTH_RESPONSE;
-    response.payload = "Welcome " + std::string(username);
-    sendToSession(session_id, server_id, response);
+    sendToSession(session_id, server_id,
+                  std::make_shared<const chat::Message>(chat::MessageType::AUTH_RESPONSE,
+                                                        "Welcome " + std::string(username)));
 
     broadcastMessage(std::string(username) + " has joined the chat");
 }
@@ -384,9 +391,9 @@ void ChatRoomActor::on(AuthEvent& evt) {
 ```cpp
 // src: examples/core_io/chat_tcp/server/ChatRoomActor.cpp
 void ChatRoomActor::broadcastMessage(const std::string& content) {
-    chat::Message msg;
-    msg.type    = chat::MessageType::CHAT_MESSAGE;
-    msg.payload = content;
+    // One heap message, shared by every recipient: the shared_ptr is what makes the event
+    // relocatable, and it also replaces one copy per session with one allocation per broadcast.
+    auto msg = std::make_shared<const chat::Message>(chat::MessageType::CHAT_MESSAGE, content);
     for (const auto& [session_id, info] : _sessions)
         sendToSession(session_id, info.server_id, msg);
 }
@@ -443,7 +450,7 @@ void ClientActor::connect() {
 
 The callback receives the connected socket by value; an open socket means success.
 
-> **Framework contract vs. the example.** `qb::io::async::tcp::connect()` takes its timeout as a `qb::duration` (`std::chrono::nanoseconds`, per [the canonical time model](../../7_reference/glossary.md)), and `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in example already stores both deadlines as chrono values (`static constexpr auto CONNECT_TIMEOUT = std::chrono::seconds(5);` / `RECONNECT_DELAY = std::chrono::seconds(5);`), passing `std::chrono::duration_cast<qb::duration>(CONNECT_TIMEOUT)` to `connect()` and `RECONNECT_DELAY` directly to `callback()`. New code should likewise pass a chrono literal such as `std::chrono::seconds(5)`, as shown above; a bare `double` does not convert to `qb::duration`.
+> **Framework contract vs. the example.** `qb::io::async::tcp::connect()` takes its timeout as a `qb::duration` (`std::chrono::nanoseconds`, per [the canonical time model](../../7_reference/glossary.md)), and both `qb::io::async::callback()` and `ScopedCoroContext::sleep()` accept a `std::chrono::duration`. The checked-in example stores both deadlines as chrono values (`static constexpr auto CONNECT_TIMEOUT = std::chrono::seconds(5);` / `RECONNECT_DELAY = std::chrono::seconds(5);`), passing `std::chrono::duration_cast<qb::duration>(CONNECT_TIMEOUT)` to `connect()` and a `duration_cast<qb::duration>(RECONNECT_DELAY)` into the reconnect coroutine. New code should likewise pass a chrono literal such as `std::chrono::seconds(5)`, as shown above; a bare `double` does not convert to `qb::duration`.
 
 `onConnected` adopts the socket into the client transport, switches on the protocol, and starts the I/O before authenticating:
 
@@ -492,7 +499,7 @@ void ClientActor::on(const chat::Message& msg) {
 }
 ```
 
-Reconnection retries after a fixed delay rather than spinning. **The shipped code uses a shape you should not copy** — read the correction below the fence:
+Reconnection retries after a fixed delay rather than spinning. The delay is a coroutine bound to the actor, not a loop-owned timer — both the disconnect path and the connect-failure path route through one `scheduleReconnect()`:
 
 ```cpp
 // src: examples/core_io/chat_tcp/client/ClientActor.cpp
@@ -501,44 +508,50 @@ void ClientActor::on(qb::io::async::event::disconnected const&) {
     _authenticated = false;
 
     if (_should_reconnect) {
-        qb::io::async::callback(
-            [this]() {                                  // <-- captures a raw `this`
-                qb::io::cout() << "Attempting to reconnect..." << std::endl;
-                connect();
-            },
-            RECONNECT_DELAY);                           // static constexpr, 5 s
+        scheduleReconnect();
     }
+}
+
+void ClientActor::scheduleReconnect() {
+    spawn([delay = std::chrono::duration_cast<qb::duration>(RECONNECT_DELAY)](
+              qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        co_await ctx.sleep(delay);                 // cancelled with the actor
+        ctx.template push<ReconnectTickEvent>();   // ordinary handler calls connect()
+    });
+}
+
+void ClientActor::on(const ReconnectTickEvent&) {  // runs only on a live actor
+    if (!_should_reconnect)
+        return;
+    qb::io::cout() << "Attempting to reconnect..." << std::endl;
+    connect();
 }
 ```
 
-The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DELAY`) are both `static constexpr auto … = std::chrono::seconds(5)` on `ClientActor`; the delay is constant, not exponential backoff. There is a second, identical site on the connect-failure path (`onConnectionFailed()`).
+The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DELAY`) are both `static constexpr auto … = std::chrono::seconds(5)` on `ClientActor`; the delay is constant, not exponential backoff.
 
-> **This is a dangling-timer hazard, and this example is exactly the case where it bites.** The timed
-> `qb::io::async::callback` overload heap-allocates a `Timeout` that is owned by the **listener**, not
-> by any actor: it fires when the loop says so, whatever happened to the actor meanwhile.
+> **Why it is written that way, and what it used to be.** Both sites above were
+> `qb::io::async::callback([this]{ … connect(); }, RECONNECT_DELAY)`. The timed
+> `qb::io::async::callback` overload heap-allocates a `Timeout` owned by the **listener**, not by any
+> actor: it fires when the loop says so, whatever happened to the actor meanwhile.
 > <!-- src: qb/src/qb/io/async/io.h:389 -->
-> The precondition is already present here: `_should_reconnect` is cleared only by `ClientActor::disconnect()`,
-> which nothing in this program ever calls — when `InputActor` sends `qb::KillEvent`, the framework's
-> default kill handling tears the actor down with the flag still `true` and a 5-second timer holding
-> `this`. Adding an `if (is_alive())` guard inside the lambda would **not** fix it: `is_alive()` is a
-> member read (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard *is* the
-> use-after-free. New code should bind the wait to the actor instead, which is what the
-> `examples/core/` programs were swept to:
->
-> ```cpp
-> // What to write instead — cancelled automatically when the actor is killed.
-> spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
->     co_await ctx.sleep(RECONNECT_DELAY);
->     ctx.template push<ReconnectTickMessage>();   // ordinary handler calls connect()
-> });
-> ```
+> The precondition is present in this program: `_should_reconnect` is cleared only by
+> `ClientActor::disconnect()`, which nothing here ever calls — when `InputActor` sends
+> `qb::KillEvent`, the framework's default kill handling tears the actor down with the flag still
+> `true`, and a 5-second timer would still be holding `this`. Adding an `if (is_alive())` guard
+> inside such a lambda is **not** the fix: `is_alive()` is a member read
+> (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard *is* the use-after-free.
 >
 > `spawn` registers the coroutine in the actor's cancellation scope
 > (`qb/src/qb/core/Actor.h:1238-1239`), and `Actor::kill()` cancels that scope
-> (`qb/src/qb/core/Actor.cpp:283-289`). Where you want a handle rather than a coroutine, hold the
-> `std::unique_ptr` returned by `qb::io::async::scoped_callback` as an actor member — destroying it
-> cancels the pending callback. <!-- src: qb/src/qb/io/async/io.h:479-484 -->
-> See the [distributed-computing walkthrough](./distributed_computing_analysis.md#a-this-capturing-asynccallback-timer-is-a-use-after-free-and-the-guard-flag-is-the-bug) for the AddressSanitizer evidence.
+> (`qb/src/qb/core/Actor.cpp:283-289`), so the wait simply stops existing. Note that this is not a
+> search-and-replace: a coroutine may not touch actor state after a `co_await`, so the body captures
+> only the delay, by value, and everything that reads `_should_reconnect` or calls `connect()` moved
+> into the `ReconnectTickEvent` handler. That is the shape — roughly six extra lines per actor, not
+> per site. Where you want a handle rather than a coroutine, hold the `std::unique_ptr` returned by
+> `qb::io::async::scoped_callback` as an actor member — destroying it cancels the pending callback.
+> <!-- src: qb/src/qb/io/async/io.h:479-484 -->
+> See the [distributed-computing walkthrough](./distributed_computing_analysis.md#a-this-capturing-asynccallback-timer-is-a-use-after-free-and-the-guard-flag-is-the-bug) for the AddressSanitizer evidence that made this a rule.
 
 ## Lifecycle, end to end
 
@@ -561,9 +574,9 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 - **`setTimeout` is on the timeout mixin, not the client.** `updateTimeout()` must be called on every meaningful activity (inbound *and* outbound), or the session drops mid-conversation. The example resets it in both `ChatSession::on(Message)` and `ServerActor::on(SendMessageEvent&)`.
 - **Console input blocks its core.** Keep `std::getline`-style readers off any core that carries network actors. The example isolates `InputActor` on core 0 for exactly this reason.
 - **Bad-frame handling is minimal.** `ChatProtocol::reset()` does not drain the buffer, so a malformed header wedges the parser. Harden framing before reuse.
-- **A `this`-capturing `qb::io::async::callback(f, delay)` is a dangling timer, and an `is_alive()` guard does not save it.** The timer is owned by the listener, not by the actor, so it fires after `~Actor()`; the guard is a member read, which makes the guard itself the use-after-free. This example's reconnect path has that shape. Bind the wait to the actor with `spawn(...)` + `co_await ctx.sleep(d)`, or hold a `qb::io::async::scoped_callback` handle as a member. See [Reconnection](#client-walkthrough).
-- **`SendMessageEvent` carries a bare `std::string` across a core boundary.** Events are relocated with `memcpy` and the source destructor never runs, so a payload member may hold no pointer into its own storage — which a short `std::string` does on libstdc++. Use `qb::string<N>` for bounded text or put the data on the heap behind a `std::shared_ptr`, as the other events on both sides of this example do.
-- **Timeouts are `qb::duration` now, not `double`.** `qb::io::async::tcp::connect()` takes a `qb::duration`; `qb::io::async::callback()` takes any `std::chrono::duration`. The checked-in client uses chrono constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `std::chrono::seconds(5)`), passing a `std::chrono::duration_cast<qb::duration>` to `connect()` and the delay directly to `callback()`. New code should likewise pass a chrono literal such as `std::chrono::seconds(5)`; a bare `double` does not convert to `qb::duration`. See [Async I/O inside actors](../async_in_actors.md). <!-- src: qb/src/qb/system/time.h:90 -->
+- **A `this`-capturing `qb::io::async::callback(f, delay)` is a dangling timer, and an `is_alive()` guard does not save it.** The timer is owned by the listener, not by the actor, so it fires after `~Actor()`; the guard is a member read, which makes the guard itself the use-after-free. This example's reconnect path used to have that shape and no longer does — it waits with `spawn(...)` + `co_await ctx.sleep(d)` and wakes the actor with a `ReconnectTickEvent`. Where you want a handle rather than a coroutine, hold a `qb::io::async::scoped_callback` as a member. See [Reconnection](#client-walkthrough).
+- **Never put a bare `std::string` in an event.** Events are relocated with `memcpy` and the source destructor never runs, so a payload member may hold no pointer into its own storage — which a short `std::string` does on libstdc++. `SendMessageEvent` used to carry its `chat::Message` (and therefore that string) by value, across a core boundary, on every delivered line; it now carries a `std::shared_ptr<const chat::Message>`. Use `qb::string<N>` for bounded text or put the data on the heap behind a `std::shared_ptr`, as every other event on both sides of this example does. And note the second half of the rule: boxing makes the *event* relocatable, not the *pointee* owned — do not mutate a payload after publishing it to another core.
+- **Timeouts are `qb::duration` now, not `double`.** `qb::io::async::tcp::connect()` takes a `qb::duration`; `qb::io::async::callback()` and `ctx.sleep()` take any `std::chrono::duration`. The checked-in client uses chrono constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `std::chrono::seconds(5)`), passing a `std::chrono::duration_cast<qb::duration>` of each. New code should likewise pass a chrono literal such as `std::chrono::seconds(5)`; a bare `double` does not convert to `qb::duration`. See [Async I/O inside actors](../async_in_actors.md). <!-- src: qb/src/qb/system/time.h:90 -->
 
 ## See also
 
