@@ -129,7 +129,7 @@ What each call does:
 
 `registerEvent`, `push`, `on`, and `kill` are members of `qb::Actor`; `addActor`, `start`, and `join` are members of `qb::Main`.
 
-<!-- src: README.md (Your first actor), examples/core/example1_simple_actor.cpp -->
+<!-- src: README.md (Your first actor), examples/01-actors/01-hello-actor.cpp -->
 
 ### The `start()` / `join()` contract
 
@@ -242,7 +242,7 @@ Notes on the new pieces:
 
 Both actors run on core 0 here. To distribute them across cores, pass a different `CoreId` to `addActor`; messages cross cores over lock-free queues with no code change. See [the threading model](../2_core_concepts/threading_model.md).
 
-<!-- src: examples/core/example1_simple_actor.cpp, qb/src/qb/core/Actor.cpp:114-125,168-171, qb/src/qb/core/ActorId.h:401,442, qb/src/qb/core/Main.h:611 -->
+<!-- src: examples/01-actors/01-hello-actor.cpp, qb/src/qb/core/Actor.cpp:114-125,168-171, qb/src/qb/core/ActorId.h:401,442, qb/src/qb/core/Main.h:611 -->
 
 ## 5. Add a non-blocking timer
 
@@ -310,7 +310,7 @@ The primitive you may have expected here, `qb::io::async::callback(func, delay)`
 
 For inactivity timeouts, coroutine-based async flows, and the full event-loop surface available to actors, see [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md).
 
-<!-- src: qb/src/qb/io/async/io.h:358-382, qb/src/qb/io/async/io.h:312-318,343,479-484, qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:205-208,283-289, examples/core/example5_timers.cpp, examples/core/example5_timers.cpp:234-237 -->
+<!-- src: qb/src/qb/io/async/io.h:358-382, qb/src/qb/io/async/io.h:312-318,343,479-484, qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:205-208,283-289, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:246-249 -->
 
 ## 6. Build and run
 

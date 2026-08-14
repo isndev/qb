@@ -88,7 +88,7 @@ All cores and their per-core settings must be configured *before* `Main::start()
 The following pattern dedicates one zero-latency core to a hot accept loop and runs a pool of worker actors on other cores. It is an adapted, simplified version of the topology used by the auction-house example (whose real actors are `TcpListener` / `AuctionManager` and which also wires up a database); the snippet below distills just the core-placement and latency wiring.
 
 ```cpp
-// src: examples/all/auction_house/src/main.cpp (adapted/illustrative)
+// src: examples/07-applications/02-auction-house/src/main.cpp (adapted/illustrative)
 #include <qb/main.h>           // qb::Main, qb::CoreInitializer
 #include <qb/io.h>             // qb::io::cerr
 #include <qb/system/time.h>
@@ -129,7 +129,7 @@ int main() {
 To lower CPU on cores that tolerate a small wake-up delay, set a non-zero latency on those cores while keeping the hot core at zero. `Main::setLatency` overwrites the latency of *every* registered core, so call it first to set a fleet-wide default, then override the cores that need a different value:
 
 ```cpp
-// src: examples/all/taskmanager/src/main.cpp (adapted/illustrative latency topology)
+// src: examples/07-applications/01-taskmanager/src/main.cpp (adapted/illustrative latency topology)
 #include <qb/main.h>             // qb::Main, qb::CoreInitializer
 #include <qb/system/time.h> // qb::duration, qb::time_literals
 

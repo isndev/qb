@@ -37,7 +37,7 @@ Every actor inherits from `qb::Actor` (`qb/core/Actor.h`). The base class is non
 The example below is a self-contained counter actor. It registers its event handler in `onInit()`, mutates private state in the handler, and terminates itself once a threshold is reached.
 
 ```cpp
-// <!-- src: examples/core/example1_simple_actor.cpp (adapted) -->
+// <!-- src: examples/01-actors/01-hello-actor.cpp (adapted) -->
 #include <qb/actor.h>   // qb::Actor, qb::ActorId
 #include <qb/event.h>   // qb::Event, qb::KillEvent
 #include <qb/io.h>      // qb::io::cout (thread-safe console output)

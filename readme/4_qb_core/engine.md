@@ -312,7 +312,7 @@ One window remains open by construction: a peer's last cross-core flush can land
 ## A complete engine, start to finish
 
 ```cpp
-// src: derived from examples/all/taskmanager/src/main.cpp
+// src: derived from examples/07-applications/01-taskmanager/src/main.cpp
 #include <chrono>
 #include <vector>
 #include <qb/io.h>

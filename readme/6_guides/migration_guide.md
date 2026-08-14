@@ -113,7 +113,7 @@ The queue, the mutex, the condition variable, and the explicit thread all disapp
 
 ```cpp
 // after.cpp — actors
-// src: examples/core/example1_simple_actor.cpp (structure),
+// src: examples/01-actors/01-hello-actor.cpp (structure),
 //      qb/readme/6_guides/getting_started.md (idioms)
 #include <qb/actor.h>   // qb::Actor, qb::ActorId
 #include <qb/event.h>   // qb::Event

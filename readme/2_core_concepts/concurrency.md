@@ -74,7 +74,7 @@ Ordering is *pairwise*. `push()` orders messages along one source→destination 
 
 The [`qb::Main`](../4_qb_core/engine.md) engine turns the single-core model into a multicore one. It spawns one `qb::jthread` per `VirtualCore` (`std::jthread` when the standard library provides it, qb's C++20 fallback otherwise), each running its own [`qb-io` event loop](./async_io.md), and distributes actors across them. You assign an actor to a core when you add it:
 
-<!-- src: examples/core/example3_multicore.cpp (adapted) -->
+<!-- src: examples/01-actors/04-cores-and-placement.cpp (adapted) -->
 ```cpp
 #include <qb/actor.h>
 #include <qb/main.h>

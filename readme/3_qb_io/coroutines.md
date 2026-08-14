@@ -53,7 +53,7 @@ Because all coroutines on a thread share one scheduler and one event loop, only 
 Outside `qb-core`, drive the loop yourself: initialize the thread's listener, then hand the root task to `run_sync`, which pumps the loop until that task completes and returns its value.
 
 ```cpp
-// src: derived from examples/coroutine/standalone_timer_example.cpp
+// src: derived from examples/03-coroutines/01-first-coroutine.cpp
 #include <qb/io/async/coroutine.h>
 #include <chrono>
 #include <iostream>
@@ -81,7 +81,7 @@ int main() {
 `init()` is a **no-op** kept for symmetry — its whole body is a comment. `listener::current` is a `thread_local` that initializes itself on first access, so nothing needs readying; and `init()` deliberately does *not* clear existing state, because fixtures that share a thread's listener would have their already-registered watchers invalidated. For a genuinely clean loop, call `listener::current.clear()` (see [The async runtime](./async_system.md#one-loop-one-thread-no-lock)). `coro_scheduler()` returns the listener's scheduler so `spawn`, timers, and `run_ready()` all share one loop; `run_sync` spawns onto it for you, which is why the example above never names it.
 
 Prefer `run_sync(awaitable)` over `run_for(duration)` for a root task. `run_sync` returns when the work is done — it pumps the loop until the awaitable completes, then yields its value or rethrows its exception. `run_for` returns when the *duration* is up, so it burns its whole budget even when the work finished early, and the duration is a correctness guess in the other direction too: pick it too small on a loaded machine and the coroutine is abandoned mid-flight, with no diagnostic and exit code 0. Reach for `run_for` only when pumping the loop for a fixed span is genuinely what you mean. Under `qb-core`, each `VirtualCore` owns its listener and pumps the loop for you — you call neither from inside an actor (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)).
-<!-- src: qb/src/qb/io/async/listener.h:966 (init), qb/src/qb/io/async/coroutine/utils.h:212 (coro_scheduler), :227 (run_for), :285 (run_sync), examples/coroutine/standalone_timer_example.cpp:133-164 -->
+<!-- src: qb/src/qb/io/async/listener.h:966 (init), qb/src/qb/io/async/coroutine/utils.h:212 (coro_scheduler), :227 (run_for), :285 (run_sync), examples/03-coroutines/01-first-coroutine.cpp:144-175 -->
 
 ## `task<T>` — the coroutine return type
 
@@ -663,7 +663,7 @@ Under `qb-core`, each `VirtualCore` runs one thread, one listener, and one corou
 The supported integration points are `Actor::spawn` and `Actor::spawn_detached`. Both launch an *isolated* coroutine and may communicate back only through events. `spawn` is the recommended default: the coroutine is *scoped* to the actor (cancelled when the actor is killed) and receives a `qb::ScopedCoroContext` with cancellation-aware operations, usable with the free `qb::ask()` request/reply helper. `spawn_detached` is the explicit fire-and-forget variant: the coroutine outlives the actor and receives a plain `qb::CoroContext` (an `ActorId`-by-value handle). The example below uses `spawn`.
 
 ```cpp
-// src: derived from examples/coroutine/actor_example.cpp
+// src: derived from examples/03-coroutines/02-actor-coroutines.cpp
 #include <qb/actor.h>
 #include <qb/io/async/coroutine.h>
 #include <memory>
@@ -731,7 +731,7 @@ public:
 |---|---|---|
 | Event handlers stay `void on(Event&)` | `registerEvent` requires a `void` handler; a `task<void> on(Event&)` breaks actor dispatch | `Actor.h:771` |
 | Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1239`, `:1202` |
-| Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:1161-1163`, `:1219-1220`; examples/coroutine/actor_example.cpp:124 |
+| Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:1161-1163`, `:1219-1220`; examples/03-coroutines/02-actor-coroutines.cpp:138 |
 | Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is disposed instead of delivered | `Actor.h:1402-1403` (`push`), `:1412-1413` (`push_to`); `qb/src/qb/system/event/router.h:348-357` (no handler → dispose, no dispatch) |
 | Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:1157-1159` |
 

@@ -331,7 +331,7 @@ FileMetadata FileProcessor::extractMetadata(const std::string &path) {
 
 Three facts to keep straight:
 
-- **The type is `qb::io::sys::file` (namespace `qb::io::sys`), included from `<qb/io/system/file.h>`.** The header path says `system`, the namespace and type say `sys`. The header docstrings in the example that write "`qb::io::system::file`" are wrong on the namespace; the code is right.
+- **The type is `qb::io::sys::file` (namespace `qb::io::sys`), included from `<qb/io/system/file.h>`.** The header path says `system`, the namespace and type say `sys`. The header docstrings in this example used to write "`qb::io::system::file`", which is wrong on the namespace while the code was right; they were corrected with the 3.0 move.
 - **`qb::io::sys::file` is synchronous, blocking I/O.** Its `open`, `read`, and `write` return `int` (a native descriptor, or a byte count, or `-1` on error); `close` returns `void`. `read`/`write` block the calling thread. Calling it inside `on(FileEvent&)` stalls the `VirtualCore` for the duration of the read. The teaching-sized files here make that negligible; for large files this read belongs in a worker actor or behind `qb::io::async::callback` so the event loop stays responsive. (`qb::io::sys::file` is the right tool for short, bounded reads; it is not an async transport.)
 - **The hash is a rolling `* 31` polynomial, not a cryptographic digest.** It exists to distinguish a content change from a bare mtime touch — `processFileModified` re-hashes and compares against the stored `content_hash` to decide whether the file's bytes actually changed. Do not read it as integrity-grade hashing.
 

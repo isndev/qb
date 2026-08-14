@@ -79,7 +79,7 @@ The rule, in the form that matters here:
 The framework's own best statement of the legitimate case is a comment in an example:
 
 > *Pre-engine setup: there is no actor loop yet, so we drive a coroutine to completion synchronously.*
-> — `examples/all/auction_house/src/main.cpp:34-35`
+> — `examples/07-applications/02-auction-house/src/main.cpp:45-46`
 
 ## Coroutines from a handler: `spawn` and `spawn_detached`
 
@@ -273,7 +273,7 @@ public:
 };
 ```
 
-Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:283-289, examples/core/example5_timers.cpp:225-238 -->
+Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:283-289, examples/01-actors/06-doing-things-later.cpp:237-250 -->
 
 `startOperation` takes a `qb::duration` — the canonical span type used for every timeout, delay and interval in the public API. It is an alias for `std::chrono::nanoseconds` and accepts any finer-or-equal chrono literal implicitly (`5s`, `200ms`), while rejecting a bare integer at compile time. <!-- src: qb/src/qb/system/time.h:90 -->
 
@@ -395,7 +395,7 @@ public:
 };
 ```
 
-`with_timeout` is the same mixin network session classes use for idle-connection cleanup; the message-broker server's `BrokerSession` closes its connection from exactly this handler. <!-- src: examples/core_io/message_broker/server/BrokerSession.cpp:156-157 -->
+`with_timeout` is the same mixin network session classes use for idle-connection cleanup; the message-broker server's `BrokerSession` closes its connection from exactly this handler. <!-- src: examples/05-services/02-pubsub-broker/server/BrokerSession.cpp:156-157 -->
 
 > **`with_timeout` versus `callback`.** `with_timeout` models *inactivity* — a deadline that resets on activity and re-arms itself until the real deadline. `callback`/`scoped_callback` model a *one-shot* deferral at a fixed delay. Reach for `with_timeout` when "reset the clock on every message" is the natural description, and a callback when "do X once, T from now" is.
 
@@ -429,7 +429,7 @@ public:
 
 Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling thread, and an actor's thread is its whole `VirtualCore`. This is a genuine capability gap rather than an oversight — `async::file` watches metadata by polling and then performs a blocking read, and [what has no coroutine form](../3_qb_io/gaps.md#file-io-is-polled-metadata-plus-a-blocking-read) explains why. Three patterns keep the core responsive, in increasing order of isolation:
 
-1. **Wrap the blocking call in `async::callback`** (suitable for infrequent, non-critical I/O). The callback still blocks the core *for its own turn*, but it keeps the blocking work out of the actor's message-handling path. When the I/O finishes, `push` a result event back to the requester. This is what the `file_processor` worker does. <!-- src: examples/core_io/file_processor/file_worker.h:112 -->
+1. **Wrap the blocking call in `async::callback`** (suitable for infrequent, non-critical I/O). The callback still blocks the core *for its own turn*, but it keeps the blocking work out of the actor's message-handling path. When the I/O finishes, `push` a result event back to the requester. This is what the `qb-example-services-file-pipeline` worker does. <!-- src: examples/05-services/03-file-pipeline/file_worker.h:112 -->
 
    ```cpp
    // FileWorker schedules the blocking read off the message-handling path.
@@ -443,7 +443,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
    });
    ```
 
-2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `file_processor` example builds exactly this manager-worker topology. <!-- src: examples/core_io/file_processor/main.cpp:269,275-279 -->
+2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `qb-example-services-file-pipeline` example builds exactly this manager-worker topology. <!-- src: examples/05-services/03-file-pipeline/main.cpp:280,286-290 -->
 
 3. **Watch the filesystem instead of polling it.** To *react* to file or directory changes, use `qb::io::async::file_watcher<T>` / `directory_watcher<T>`, which deliver `on(qb::io::async::event::file const&)` notifications through the loop with no blocking. The `file_monitor` example demonstrates a directory-watcher actor. <!-- src: examples/core_io/file_monitor -->
 
