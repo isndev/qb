@@ -370,14 +370,14 @@ public:
 Teach the output pipe how to write your message type by specializing `qb::allocator::pipe<char>::put<T>`, which enables the `session << message` syntax:
 
 ```cpp
-// src: examples/02-io/05-custom-protocol.cpp
+// src: examples/02-io/05-custom-protocol.cpp (adapted)
 namespace qb::allocator {
 template <>
 pipe<char> &pipe<char>::put<custom_message>(const custom_message &msg) {
     MessageHeader header;
     header.magic   = MAGIC;
     header.version = VERSION;
-    header.type    = msg.type;
+    header.type    = msg.type;   // a scoped-enum type field needs static_cast<uint8_t>, as the example has
     header.id      = msg.id;
     header.length  = static_cast<uint32_t>(msg.payload.size());
 

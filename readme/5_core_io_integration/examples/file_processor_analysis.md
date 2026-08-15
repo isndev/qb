@@ -37,7 +37,7 @@ Five event types in `messages.h` carry the protocol. Each derives from `qb::Even
 
 ```cpp
 // src: examples/05-services/03-file-pipeline/messages.h
-namespace qb-example-services-file-pipeline {
+namespace file_processor {
 
 struct ReadFileRequest : public qb::Event {
     qb::string<256> filepath;    // path of the file to read
@@ -79,7 +79,7 @@ struct WorkerAvailable : public qb::Event {
     explicit WorkerAvailable(qb::ActorId id) : worker_id(id) {}
 };
 
-} // namespace qb-example-services-file-pipeline
+} // namespace file_processor
 ```
 
 The `requestor` field is what enables the direct-reply path: a request carries the `ActorId` that should receive the eventual response, and that id flows unchanged from client to manager to worker. The `request_id` lets the client correlate responses with its outstanding requests.
@@ -325,7 +325,7 @@ for (int i = 0; i < num_workers; ++i) {
     engine.addActor<FileWorker>(core_id, manager_id);
 }
 
-auto client_id = engine.addActor<ClientActor>(0, manager_id, test_dir);
+engine.addActor<ClientActor>(0, manager_id, test_dir);
 
 engine.start();
 engine.join();

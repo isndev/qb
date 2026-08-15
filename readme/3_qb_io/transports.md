@@ -401,7 +401,9 @@ int main() {
 }
 ```
 
-<!-- src: examples/02-io/03-tcp.cpp -->
+<!-- src: examples/02-io/03-tcp.cpp (adapted) -->
+
+The snippet above is a minimal echo session distilled to the transport calls. The shipped example builds the same `use<>::tcp::server<Session>` / `use<>::tcp::client<Manager>` pair, but its session (`ServerClientHandler`) answers a six-command line protocol — `help`, `time`, `echo <text>`, `stats`, `quit`, `shutdown` — rather than echoing every line, and its `main()` runs the server and the client on separate threads — each calling `qb::io::async::init()` for its own loop — driving the server loop under a run flag rather than `while (true)`.
 
 ### Asynchronous UDP client and server
 

@@ -816,6 +816,7 @@ qb::io::async::task<bool> onInit() override {
 
 ## See also
 
+- `examples/04-patterns/` — nine runnable programs that between them exercise all eleven headers on this page: `01-pubsub` (`pubsub.h`), `02-supervisor` (`supervisor.h`), `03-worker-pool` (`routing.h`), `04-scatter-gather` (`request.h`, `scatter.h`), `05-resilience` (`resilience.h`), `06-streaming` (`streaming.h`), `07-saga` (`saga.h`), `08-batching-and-idempotency` (`aggregate.h`, `idempotency.h`) and `09-discovery` (`discovery.h`). The `### Example` snippets on this page are illustrative; those programs are compiled and run.
 - [Actor patterns](./patterns.md) — the hand-rolled designs (FSM, registry, request/response, supervision) this library packages as ready-made primitives.
 - [qb-io coroutines](../3_qb_io/coroutines.md) — `task`, awaiters, and the cancellation model the awaitable patterns build on.
 - [Writing actors with `qb::Actor`](./actor.md) · [Event messaging](./messaging.md) — the `Actor`/event primitives every pattern composes.

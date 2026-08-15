@@ -48,7 +48,7 @@ worker_ids.reserve(num_workers);
 for (uint32_t i = 0; i < num_workers; ++i) {
     const uint32_t core = 1 + (i % 4);
     worker_ids.push_back(
-        engine.addActor<actors::TaskManager>(core, pg_uri, redis_uri));
+        engine.addActor<actors::TaskManager>(core, pg_uri, redis_uri, static_root));
 }
 
 // Co-locate the listener alone on a dedicated accept core, handing it the
