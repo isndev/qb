@@ -244,7 +244,7 @@ broker without knowing who (if anyone) will receive a message. Because the broke
 actor state, no synchronization is involved.
 
 ```cpp
-// src: derived from examples/core/example7_pub_sub.cpp
+// src: derived from examples/05-services/02-pubsub-broker/server/TopicManagerActor.h
 #include <qb/actor.h>
 #include <map>
 #include <memory>
@@ -326,7 +326,10 @@ Design notes:
   `broadcast` for system-wide notices (shutdown, alerts), the broker for selective subscription.
 
 The full demo — broker, multiple subscribers, a publisher, and a driver — is
-`examples/core/example7_pub_sub.cpp`.
+`examples/05-services/02-pubsub-broker/`. For the SHIPPED bus rather than a hand-rolled table, see
+`examples/04-patterns/01-pubsub.cpp` and [patterns_library.md](./patterns_library.md); the difference
+is that `qb::PubSub<Topic>` keys on the event TYPE, while a broker like this one keys on a runtime
+topic string.
 
 ## Request/response with a timeout
 

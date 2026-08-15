@@ -100,8 +100,6 @@
  *      - **Example Analyses**
  *          - @subpage core_io_example_analyses_readme "Example Analyses Overview"
  *          - @subpage example_analysis_chat_tcp_md "Example: TCP Chat"
- *          - @subpage example_analysis_dist_comp_md "Example: Distributed Computing"
- *          - @subpage example_analysis_file_monitor_md "Example: File Monitor"
  *          - @subpage example_analysis_file_processor_md "Example: File Processor"
  *          - @subpage example_analysis_msg_broker_md "Example: Message Broker"
  *

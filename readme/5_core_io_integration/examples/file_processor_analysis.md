@@ -358,6 +358,5 @@ The binary creates `./test_files/`, writes and reads five files, prints each ope
 
 - [Async in actors](../async_in_actors.md) — the three patterns for keeping a core responsive under blocking I/O, including this manager-worker topology.
 - [Message-broker walkthrough](./message_broker_analysis.md) — a publish/subscribe variant of the dispatcher pattern with zero-copy payload sharing.
-- [File-monitor walkthrough](./file_monitor_analysis.md) — reacting to filesystem changes with `directory_watcher` instead of polling.
 - [Messaging](../../4_qb_core/messaging.md) — `push`, `broadcast`, `forward`, and `ActorId` routing in full.
 - [Reference: `qb-io` async system](../../3_qb_io/async_system.md) — `callback`, `scoped_callback`, and timer semantics.

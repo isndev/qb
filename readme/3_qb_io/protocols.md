@@ -405,7 +405,7 @@ public:
 };
 ```
 
-The `chat_tcp` and `message_broker` examples under `examples/core_io/` apply this same structure (header + payload + `put<T>` specialization) to a full client/server application.
+The `01-tcp-chat` and `02-pubsub-broker` examples under `examples/05-services/` apply this same structure (header + payload + `put<T>` specialization) to a full client/server application.
 
 ## Pitfalls
 
