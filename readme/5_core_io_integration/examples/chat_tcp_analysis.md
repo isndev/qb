@@ -551,7 +551,7 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 > per site. Where you want a handle rather than a coroutine, hold the `std::unique_ptr` returned by
 > `qb::io::async::scoped_callback` as an actor member — destroying it cancels the pending callback.
 > <!-- src: qb/src/qb/io/async/io.h:479-484 -->
-> See the [distributed-computing walkthrough](./distributed_computing_analysis.md#a-this-capturing-asynccallback-timer-is-a-use-after-free-and-the-guard-flag-is-the-bug) for the AddressSanitizer evidence that made this a rule.
+> The AddressSanitizer evidence that made this a rule was measured on a pre-3.0 example that carried the shape at eight sites — three runs of three aborted with `heap-use-after-free`, reported inside exactly such a lambda. That program was retired with the rest of the pre-3.0 examples; see [async operations inside actors](../async_in_actors.md) for the mechanism.
 
 ## Lifecycle, end to end
 

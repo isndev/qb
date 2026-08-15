@@ -383,7 +383,7 @@ A service-facing actor typically:
 2. On an inbound request event, captures the request data by value and issues the module call.
 3. Returns the module's result to the requester as an event — keeping the boundary between "this actor talks to Redis" and "that actor handles business logic" clean.
 
-The example applications under `examples/qbm/` (HTTP servers with routing and middleware, the WebSocket chat, Redis pub/sub and streams, PostgreSQL transactions) demonstrate full wiring. Two composition styles recur:
+The example applications under `examples/06-modules/` (HTTP servers with routing and middleware, the WebSocket chat, Redis pub/sub and streams, PostgreSQL transactions) demonstrate full wiring. Two composition styles recur:
 
 - **Callback style.** The module client takes a completion callback that fires on the actor's core when the operation finishes; inside it the actor pushes a result event. Suitable for fire-and-forget and simple request/response.
 - **Coroutine style.** The actor `spawn`s a coroutine that `co_await`s the module operation, then returns the result through `ctx.push<Event>(...)`. This reads as straight-line code and composes naturally with the isolation rule above — capture the request by value, await, push back. Suitable for multi-step flows (read from Redis, then query PostgreSQL, then reply). Use `spawn`, not `spawn_detached`: a module awaiter registers no `on_cancel` hook, so a detached coroutine parked in one is bounded by nothing at all — wrap it with `ctx.cancellable(...)` or a deadline if you need it interruptible.

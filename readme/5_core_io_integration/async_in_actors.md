@@ -176,7 +176,7 @@ qb::io::async::callback([this, task_id]() {
 }, std::chrono::seconds(5));
 ```
 
-`Actor::is_alive()` is a plain read of the actor's `_alive` member. If the actor was already destroyed when the timer fires, *evaluating the guard* is the heap-use-after-free — the branch never gets the chance to protect anything. That is measured, not theoretical: `examples/core/example10_distributed_computing.cpp` carried exactly this shape at eight sites and AddressSanitizer aborted on it, 3 runs of 3. <!-- src: qb/src/qb/core/Actor.cpp:205-208, examples/core/example10_distributed_computing.cpp:45-56 -->
+`Actor::is_alive()` is a plain read of the actor's `_alive` member. If the actor was already destroyed when the timer fires, *evaluating the guard* is the heap-use-after-free — the branch never gets the chance to protect anything. That is measured, not theoretical: a pre-3.0 example carried exactly this shape at eight sites and AddressSanitizer aborted on it, 3 runs of 3. That program has since been retired; the shape has not. <!-- src: qb/src/qb/core/Actor.cpp:205-208 -->
 
 Two arguments are commonly offered for the guard, and neither holds:
 
@@ -445,7 +445,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
 
 2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `qb-example-services-file-pipeline` example builds exactly this manager-worker topology. <!-- src: examples/05-services/03-file-pipeline/main.cpp:280,286-290 -->
 
-3. **Watch the filesystem instead of polling it.** To *react* to file or directory changes, use `qb::io::async::file_watcher<T>` / `directory_watcher<T>`, which deliver `on(qb::io::async::event::file const&)` notifications through the loop with no blocking. The `file_monitor` example demonstrates a directory-watcher actor. <!-- src: examples/core_io/file_monitor -->
+3. **Watch the filesystem instead of polling it.** To *react* to file or directory changes, use `qb::io::async::file_watcher<T>` / `directory_watcher<T>`, which deliver `on(qb::io::async::event::file const&)` notifications through the loop with no blocking. `examples/02-io/08-timeouts-and-watchers.cpp` demonstrates both watchers, and is candid about the limit: a directory event says THAT something changed, never WHAT. <!-- src: examples/02-io/08-timeouts-and-watchers.cpp:194,204 -->
 
 ## Pitfalls
 
