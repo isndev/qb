@@ -210,7 +210,7 @@ The hardest lifetime bugs in an event-driven system are not leaks — they are u
 
 Three concrete cases from the framework:
 
-- **Zero-copy broadcast.** In the message-broker pattern, a payload is stored once in a `broker::MessageContainer` and shared across many events via an internal `shared_ptr`; the events carry `std::string_view`s into that container. The container's lifetime must outlive event delivery — drop it too early and every view dangles. (`examples/05-services/02-pubsub-broker/README.md:74`)
+- **Zero-copy broadcast.** In the message-broker pattern, a payload is stored once in a `broker::MessageContainer` and shared across many events via an internal `shared_ptr`; the events carry `std::string_view`s into that container. The container's lifetime must outlive event delivery — drop it too early and every view dangles. (`examples/05-services/02-pubsub-broker/README.md:76-85`)
 - **Accepted-socket ownership transfer.** In a TCP accept handler, the accepted socket must be **moved** out of the `on(accepted_socket_type&&)` parameter into the event immediately: `evt.socket = std::move(sock);`. This transfers descriptor ownership to the worker that will service the connection, on its core. Copying is not an option — the socket is move-only — and leaving the fd in the parameter would close it when the handler returns. (`examples/07-applications/02-auction-house/include/auction_house/actors/tcp_listener.h:61-63`)
 - **Coroutine awaiters.** An awaiter must remain alive until `await_resume()`. Never create a temporary awaiter that goes out of scope before resumption — its watcher is stopped in `await_resume()`/the destructor specifically to avoid use-after-free. (`src/qb/io/async/coroutine/awaiter.h:30`)
 

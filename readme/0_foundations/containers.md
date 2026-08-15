@@ -182,11 +182,11 @@ class ring_buffer;
 ```
 <!-- src: qb/src/qb/system/container/ring_buffer.h:47-48 -->
 
-A fixed-capacity circular FIFO with `push_back` / `pop_front` / `front` / `back` / `operator[]`, forward iterators, `empty()`, `full()`, `size()` and `capacity()` (`qb/src/qb/system/container/ring_buffer.h:224-238`). Storage is inline — `N` slots of raw aligned bytes with placement construction — so a full buffer performs no allocation. `N > 0` is a `static_assert` (`qb/src/qb/system/container/ring_buffer.h:229`).
+A fixed-capacity circular FIFO with `push_back` / `pop_front` / `front` / `back` / `operator[]`, forward iterators, `empty()`, `full()` and `capacity()` (`qb/src/qb/system/container/ring_buffer.h:224-238`). There is **no** `size()`: the live element count comes from the iterators, `std::distance(cbegin(), cend())`. Storage is inline — `N` slots of raw aligned bytes with placement construction — so a full buffer performs no allocation. `N > 0` is a `static_assert` (`qb/src/qb/system/container/ring_buffer.h:229`).
 
 The `Overwrite` parameter is the whole policy: at capacity, `true` (the default) drops the oldest element to make room, `false` makes `push_back` a no-op (`qb/src/qb/system/container/ring_buffer.h:283-288`). Pick deliberately — a sliding-window metric wants `true`, a bounded work queue almost never does.
 
-**It is an offered utility, not engine machinery.** Nothing in `qb/src`, the tests, the modules or the examples instantiates it; it is here for your code. Do not read it as a description of how the engine buffers anything — the engine's queues are the [pipe](./buffers.md) and the [lock-free rings](./concurrency_primitives.md), which are different types with different contracts. It is also **not** thread-safe: single-threaded use, or your own lock.
+**It is an offered utility, not engine machinery.** Nothing in `qb/src`, the tests or the modules instantiates it; it is here for your code. Its one demonstrator is `examples/02-io/11-logging-and-metrics.cpp`, which keeps a rolling latency window in a `qb::ring_buffer<std::uint64_t, 64>` — `Overwrite = true`, so the oldest sample is evicted at capacity — and counts its live samples through the iterators for exactly the reason above. Do not read it as a description of how the engine buffers anything — the engine's queues are the [pipe](./buffers.md) and the [lock-free rings](./concurrency_primitives.md), which are different types with different contracts. It is also **not** thread-safe: single-threaded use, or your own lock.
 
 ## Pitfalls
 

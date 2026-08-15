@@ -2,7 +2,7 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
-A line-by-line reading of the `chat_tcp` example: how a multi-actor TCP server accepts connections, frames a custom binary protocol, manages per-client sessions, and centralizes chat state, paired with a reconnecting client.
+A line-by-line reading of the `05-services/01-tcp-chat` example: how a multi-actor TCP server accepts connections, frames a custom binary protocol, manages per-client sessions, and centralizes chat state, paired with a reconnecting client.
 
 **Prerequisites:** [Network-enabled actors](../network_actors.md), [Async I/O inside actors](../async_in_actors.md) — **See also:** [Message broker analysis](./message_broker_analysis.md), [Custom protocols](../../3_qb_io/protocols.md)
 

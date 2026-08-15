@@ -12,6 +12,8 @@ The two task pages in this section — [async operations inside actors](../async
 
 Every analysis is grounded in source you can build and run, and all three now live under `examples/05-services/`: `01-tcp-chat/`, `02-pubsub-broker/` and `03-file-pipeline/`. One of the three is **Unix-only** — `examples/05-services/CMakeLists.txt:50-52` wraps the file pipeline in `if (NOT QB_PLATFORM_WINDOWS)`, so it is not configured on Windows. Read an analysis alongside its source rather than as a substitute for it.
 
+**A fourth project in that tier has no page here.** `examples/05-services/04-shutdown-and-drain/` (one binary, `qb-example-services-shutdown-and-drain`) is not analysed by any walkthrough below. Its subject is the shutdown sequence itself — SIGTERM arrives as a `qb::SignalEvent`, the acceptor stops accepting, work already taken is drained, every output buffer is flushed, and the process exits with a code that says whether it ever bound its port. Read its source and its header block directly.
+
 **This section used to carry five pages.** The two that are gone analysed programs the 3.0 restructure retired rather than moved: `distributed_computing` (a `qb-core`-only scheduler, replaced by `examples/04-patterns/03-worker-pool.cpp` and `04-scatter-gather.cpp`) and `file_monitor` (replaced by `examples/02-io/08-timeouts-and-watchers.cpp`). A walkthrough outlives its subject by exactly zero commits, so both went with the programs they read.
 
 ## Pages in this section

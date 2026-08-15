@@ -242,7 +242,7 @@ Notes on the new pieces:
 
 Both actors run on core 0 here. To distribute them across cores, pass a different `CoreId` to `addActor`; messages cross cores over lock-free queues with no code change. See [the threading model](../2_core_concepts/threading_model.md).
 
-<!-- src: examples/01-actors/01-hello-actor.cpp, qb/src/qb/core/Actor.cpp:114-125,168-171, qb/src/qb/core/ActorId.h:401,442, qb/src/qb/core/Main.h:611 -->
+<!-- src: examples/01-actors/02-messaging.cpp (the shipped request/response program this section mirrors), qb/src/qb/core/Actor.cpp:114-125,168-171, qb/src/qb/core/ActorId.h:401,442, qb/src/qb/core/Main.h:611 -->
 
 ## 5. Add a non-blocking timer
 

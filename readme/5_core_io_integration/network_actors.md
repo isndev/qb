@@ -201,7 +201,7 @@ The session pool is reachable through `sessions()` (a `qb::unordered_map<qb::uui
 
 ## TCP server: separate acceptor and session managers
 
-To spread session handling across cores, split the two roles. An `AcceptActor` owns the listener and forwards each accepted socket, as a `qb::Event`, to one of several `ServerActor` session managers — which can run on different `VirtualCore`s. This is the architecture used by both `chat_tcp` and `message_broker`.
+To spread session handling across cores, split the two roles. An `AcceptActor` owns the listener and forwards each accepted socket, as a `qb::Event`, to one of several `ServerActor` session managers — which can run on different `VirtualCore`s. This is the architecture used by both `examples/05-services/01-tcp-chat` and `examples/05-services/02-pubsub-broker`.
 
 ```text
             External clients

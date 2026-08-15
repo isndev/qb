@@ -325,8 +325,10 @@ Design notes:
   core unconditionally; the broker reaches exactly the actors that opted into a topic. Use
   `broadcast` for system-wide notices (shutdown, alerts), the broker for selective subscription.
 
-The full demo — broker, multiple subscribers, a publisher, and a driver — is
-`examples/05-services/02-pubsub-broker/`. For the SHIPPED bus rather than a hand-rolled table, see
+The full demo is `examples/05-services/02-pubsub-broker/` — note that it is a **two-binary TCP**
+program, not an in-process one: a server holding the topic registry, and separate client processes
+that subscribe and publish with `SUB` / `UNSUB` / `PUB` console commands.
+For the SHIPPED bus rather than a hand-rolled table, see
 `examples/04-patterns/01-pubsub.cpp` and [patterns_library.md](./patterns_library.md); the difference
 is that `qb::PubSub<Topic>` keys on the event TYPE, while a broker like this one keys on a runtime
 topic string.

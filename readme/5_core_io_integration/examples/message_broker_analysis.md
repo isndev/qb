@@ -2,7 +2,7 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
 
-A reading of the `message_broker` example: a topic-based pub/sub broker that fans one published message out to many subscribers by sharing a single reference-counted payload across cores, framed over a custom binary protocol.
+A reading of the `05-services/02-pubsub-broker` example: a topic-based pub/sub broker that fans one published message out to many subscribers by sharing a single reference-counted payload across cores, framed over a custom binary protocol.
 
 **Prerequisites:** [TCP chat analysis](./chat_tcp_analysis.md), [Network-enabled actors](../network_actors.md), [Async I/O inside actors](../async_in_actors.md) — **See also:** [Custom protocols](../../3_qb_io/protocols.md), [The event system](../../2_core_concepts/event_system.md)
 
