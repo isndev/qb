@@ -42,9 +42,27 @@ The gcc-14 axis in `.github/workflows/qbm-tests.yml` still runs, and is still th
 catches an unrelated diagnostic. This script is the part that does not depend on which
 instantiation gcc's front end decided to complain about.
 
+WHY `examples/` IS A ROOT, AND WHY HEADERS ARE IN SCOPE
+------------------------------------------------------
+The rule is about a fixture type handed to a framework template, and nothing about it is
+specific to a test. `examples/06-modules/ws/03-coro-session.cpp` and `04-coro-client.cpp` both
+derive from `coro_session`, and `examples/04-patterns/08-batching-and-idempotency.cpp` and
+`examples/07-applications/03-market-data-hub/` both instantiate `batcher` — so the same
+diagnostic is reachable from a tree that has no test in it at all. `examples/` is scanned as
+its own root, with its own floor, for the same reason every other root has one.
+
+Headers are scanned because in `examples/` the fixture is routinely NOT in the `.cpp`. The
+multi-file tiers (`05-services/`, `07-applications/`) put actor and session classes in
+`.h` files, and `examples/07-applications/03-market-data-hub/src/actors.h:122` instantiates
+`qb::batcher<Quote>` in a header — a carrier use a `.cpp`-only scan cannot see. An anonymous
+namespace in a header is a worse form of the same defect (every TU gets its own no-linkage
+type), so the scan covers `.cpp`, `.h` and `.hpp`. Measured at 3.0.0 the header scope adds
+78 files across the five roots and reports ZERO findings; it is a strict superset that costs
+nothing today and closes the hole the `examples/` root would otherwise open with it.
+
 WHAT IT CHECKS
 --------------
-For every `*.cpp` under each scanned root:
+For every translation-unit source AND header (`*.cpp`, `*.h`, `*.hpp`) under each scanned root:
 
   1. Find every anonymous-namespace region (`namespace {` … matching `}`) and collect the
      class/struct names DECLARED inside it (including forward declarations, which is how
@@ -84,7 +102,7 @@ USAGE
 -----
     ./scripts/check-coro-fixture-linkage.py                       # qb alone, from the qb root
     ./scripts/check-coro-fixture-linkage.py --framework qb/src --framework qbm/http/src \
-        qb/tests:219 qbm/http/tests:117 qbm/pgsql/tests:37 qbm/redis/tests:44
+        qb/tests:240 qbm/http/tests:125 qbm/pgsql/tests:41 qbm/redis/tests:48 examples:138
 
 Exit status: 0 clean, 1 findings, 2 usage/IO error.
 """
@@ -98,7 +116,10 @@ import sys
 SKIP_DIRS = {".git", "build", "__pycache__", ".cache", "node_modules", ".venv", "vendor"}
 
 FRAMEWORK_SUFFIXES = (".h", ".hpp")
-TEST_SUFFIXES = (".cpp",)
+# Sources AND headers: in `examples/` the fixture usually lives in a `.h` (see the header
+# note in the module docstring). `.h` is the only header extension this project allows —
+# `qb/scripts/check-header-extensions.py` enforces that — so there is no `.tpp`/`.inl` to add.
+SUBJECT_SUFFIXES = (".cpp", ".h", ".hpp")
 
 # `template <...>` followed (possibly across the parameter list) by `class|struct NAME`.
 CLASS_TEMPLATE_RE = re.compile(r"\btemplate\s*<", re.MULTILINE)
@@ -296,7 +317,7 @@ def check_file(path: str, carriers: dict[str, str]) -> tuple[list[str], int]:
 
 def default_args() -> list[str]:
     qb_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return ["--framework", os.path.join(qb_root, "src"), f"{os.path.join(qb_root, 'tests')}:219"]
+    return ["--framework", os.path.join(qb_root, "src"), f"{os.path.join(qb_root, 'tests')}:240"]
 
 
 def main() -> int:
@@ -359,12 +380,12 @@ def main() -> int:
 
         visited = 0
         anon = 0
-        for path in walk(root, TEST_SUFFIXES):
+        for path in walk(root, SUBJECT_SUFFIXES):
             visited += 1
             f, a = check_file(path, carriers)
             findings.extend(f)
             anon += a
-        print(f"  {root}: {visited} test sources visited (floor {floor}), {anon} anonymous-namespace regions")
+        print(f"  {root}: {visited} sources+headers visited (floor {floor}), {anon} anonymous-namespace regions")
         if visited < floor:
             print(f"::error::{root} visited {visited} sources, below its floor of {floor}", file=sys.stderr)
             return 2
@@ -386,7 +407,7 @@ def main() -> int:
         print(f"\n{len(findings)} finding(s).", file=sys.stderr)
         return 1
 
-    print(f"OK: {total_visited} test sources, {total_anon} anonymous-namespace regions, 0 findings.")
+    print(f"OK: {total_visited} sources+headers, {total_anon} anonymous-namespace regions, 0 findings.")
     return 0
 
 

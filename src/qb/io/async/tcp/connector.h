@@ -719,8 +719,15 @@ public:
                     state->result = std::move(socket);
                 }
                 state->ready = true;
-                if (state->scheduler && state->handle) {
-                    state->scheduler->schedule_resume(state->handle);
+                // Resolve the scheduler NOW, not at suspend time: the cached one may be the
+                // thread-local fallback this awaiter built when nothing was bound yet, which
+                // `listener::run()` never pumps. See the long note on
+                // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h) — this
+                // callback runs on the loop thread, so the current scheduler is the pumped one.
+                if (auto *target = ::qb::io::async::CoroutineScheduler::current_ptr() ? ::qb::io::async::CoroutineScheduler::current_ptr()
+                                                                                      : state->scheduler;
+                    target && state->handle) {
+                    target->schedule_resume(state->handle);
                 }
             },
             _timeout, _verify_peer);
@@ -802,8 +809,15 @@ public:
                     state->result = std::move(socket);
                 }
                 state->ready = true;
-                if (state->scheduler && state->handle) {
-                    state->scheduler->schedule_resume(state->handle);
+                // Resolve the scheduler NOW, not at suspend time: the cached one may be the
+                // thread-local fallback this awaiter built when nothing was bound yet, which
+                // `listener::run()` never pumps. See the long note on
+                // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h) — this
+                // callback runs on the loop thread, so the current scheduler is the pumped one.
+                if (auto *target = ::qb::io::async::CoroutineScheduler::current_ptr() ? ::qb::io::async::CoroutineScheduler::current_ptr()
+                                                                                      : state->scheduler;
+                    target && state->handle) {
+                    target->schedule_resume(state->handle);
                 }
             },
             _timeout);
@@ -887,8 +901,16 @@ public:
                 if (socket.is_open())
                     state->result = std::move(socket);
                 state->ready = true;
-                if (state->scheduler && state->handle)
-                    state->scheduler->schedule_resume(state->handle);
+                // Resolve the scheduler NOW, not at suspend time: the cached one may be the
+                // thread-local fallback this awaiter built when nothing was bound yet, which
+                // `listener::run()` never pumps. See the long note on
+                // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h) — this
+                // callback runs on the loop thread, so the current scheduler is the pumped one.
+                if (auto *target = ::qb::io::async::CoroutineScheduler::current_ptr() ? ::qb::io::async::CoroutineScheduler::current_ptr()
+                                                                                      : state->scheduler;
+                    target && state->handle) {
+                    target->schedule_resume(state->handle);
+                }
             },
             _timeout, _verify_peer);
     }

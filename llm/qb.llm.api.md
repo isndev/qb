@@ -745,7 +745,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an actor, spawn only via `Actor::spawn` (preferred — cancelled on actor death) or `Actor::spawn_detached`; never drive the scheduler directly with `run_sync`/`run_for` from a handler.
 
 ### Core (`task.h`, `scheduler.h`, `awaiter.h`)
-*   `[T] class task<T = void>` — primary move-only coroutine return type, awaitable via `co_await`. `handle()`, `[[nodiscard]] handle_type detach() noexcept`, `done()`, `explicit operator bool`. `T await_resume()` — rethrows a stored exception; throws `std::logic_error` in **two** cases, and the first is checked first: awaited on an **empty/moved-from** task (default-constructed, moved-from, or after `detach()`), or awaited before the coroutine completed _(`task.h:686-701`)_.
+*   `[T] class task<T = void>` — primary move-only coroutine return type, awaitable via `co_await`. `handle()`, `[[nodiscard]] handle_type detach() noexcept`, `done()`, `explicit operator bool`. `T await_resume()` — rethrows a stored exception; throws `std::logic_error` in **two** cases, and the first is checked first: awaited on an **empty/moved-from** task (default-constructed, moved-from, or after `detach()`), or awaited before the coroutine completed _(`task.h:719-734`)_.
 *   `class CoroutineScheduler` — mono-thread scheduler over an `ev::loop_ref`.
     *   `void spawn(task<void>&& t)`, `[T<Callable>] void spawn(Callable fn)` — **pass the lambda WITHOUT trailing `()`** (avoids dangling-closure UB).
     *   `std::size_t run_ready(std::size_t max_count = 0)` — drain the ready queue (not re-entrant).

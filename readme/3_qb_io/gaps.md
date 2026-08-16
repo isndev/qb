@@ -14,9 +14,9 @@ The complete list, and it is short. Everything else in `qb-io` reaches coroutine
 |---|---|---|
 | `co_await sleep(qb::duration)` | a `qev_timer`; a non-positive duration is a cooperative yield with no timer at all | `coroutine/utils.h:101` |
 | `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` | a `qev_io` watcher on a **raw descriptor** | `coroutine/utils.h:127`, `:158`, `:181` |
-| `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:752` |
-| `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:922` |
-| `co_await async_awaiter<T>(start_op)` | whatever callback you hand it | `coroutine/awaiter.h:598` |
+| `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:759` |
+| `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:944` |
+| `co_await async_awaiter<T>(start_op)` | whatever callback you hand it | `coroutine/awaiter.h:619` |
 
 Everything above `wait_readable` in the stack — sessions, servers, acceptors, the QUIC endpoint — is **callback-driven by construction**, and the bridge back into a coroutine is `async_awaiter<T>` or a hand-rolled awaiter of the same shape. That is not an accident of implementation: a session's bytes belong to a protocol, and a protocol's `onMessage()` is a `void` function called from inside the read loop. There is no point in that chain where the framework could suspend on your behalf without deciding *which* message you were waiting for.
 
@@ -52,7 +52,7 @@ Two caveats that the acceptor component handles for you and this loop does not: 
 
 Nothing lets you write `auto msg = co_await session.next_message()`. Bytes arrive at the `io` base's `on(event::io const &event)` handler (`src/qb/io/async/io.h:2730`), are framed by the active protocol in `process_messages()` (`:2597`), and are delivered synchronously to your `on(Protocol::message&&)`. The read loop drains every complete frame in the buffer before returning.
 
-The bridge in the other direction is the one qbm's three modules use, and it is worth naming because it is the pattern: a request is written, its completion callback is stored, and an awaiter parks the coroutine until that callback fires. `async_awaiter<T>` does this generically (`src/qb/io/async/coroutine/awaiter.h:598-677`), and the modules hand-roll the same shape when they need a richer result type. See [C++20 coroutines](./coroutines.md#bridging-a-callback-api) for the mechanics and the lifetime rules.
+The bridge in the other direction is the one qbm's three modules use, and it is worth naming because it is the pattern: a request is written, its completion callback is stored, and an awaiter parks the coroutine until that callback fires. `async_awaiter<T>` does this generically (`src/qb/io/async/coroutine/awaiter.h:619-698`), and the modules hand-roll the same shape when they need a richer result type. See [C++20 coroutines](./coroutines.md#bridging-a-callback-api) for the mechanics and the lifetime rules.
 
 ## QUIC has no coroutine surface at all
 
