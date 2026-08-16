@@ -45,7 +45,7 @@ llm/qb.llm.api.md	crypto.h:996-1000	b836147352c8	static std::vector<unsigned cha
 llm/qb.llm.api.md	crypto_asymmetric.cpp:718-718	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
 llm/qb.llm.api.md	listener.h:980-993	31584ba4b550	inline void
 llm/qb.llm.api.md	scheduler.h:601-604	1cdfb1dc422b	[[nodiscard]] bool
-llm/qb.llm.api.md	task.h:686-701	78c61ef4167a	await_resume() {
+llm/qb.llm.api.md	task.h:719-734	78c61ef4167a	await_resume() {
 llm/qb.llm.md	Actor.cpp:114-119	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:300-318	94aff7135980	void
 llm/qb.llm.md	Actor.h:1098-1102	692b17120c0c	* @return A phase-aware `qb::ActorHandle<_Actor>`. The handle's `id()...

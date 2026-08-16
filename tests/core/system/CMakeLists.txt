@@ -133,6 +133,17 @@ qb_add_test(MODULE qb-core TIER system NAME init-stress        SOURCES init/init
 qb_add_test(MODULE qb-core TIER system NAME init-handle        SOURCES init/init-handle.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-gate-edges    SOURCES init/init-gate-edges.cpp    DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-gate-disposal SOURCES init/init-gate-disposal.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+# The OTHER awaiter family in onInit: qb-io awaiters that cache their scheduler at SUSPEND time
+# (connect / sleep), as opposed to the actor-surface awaiters every other init test uses, which
+# resolve theirs at resume time via schedule_via_current. requires-multicore: each case runs a
+# watchdog actor on its own core.
+#
+# TIMEOUT is EXPLICIT, and overriding the 600 s `requires-multicore` floor downwards is the point.
+# Measured: 23 ms for all four cases healthy; a regression WEDGES the engine (the awaiter holds no
+# cancellation token, so nothing in-band can end the run -- see the file's header), and this
+# timeout is the only thing that reports it. Ten minutes to report a millisecond test is a worse
+# report, not a safer one.
+qb_add_test(MODULE qb-core TIER system NAME init-io-awaiters SOURCES init/init-io-awaiters.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine requires-multicore TIMEOUT 120)
 qb_add_test(MODULE qb-core TIER system NAME init-clock         SOURCES init/init-clock.cpp         DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 
 qb_debug_message("Configured ${CMAKE_CURRENT_SOURCE_DIR} with the tiered test helper")

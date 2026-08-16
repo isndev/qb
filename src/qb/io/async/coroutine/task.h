@@ -125,6 +125,25 @@ inline void defer_frame_destruction(std::coroutine_handle<>) noexcept;
 // program that owns a task<T>.
 inline void forget_frame_if_current(std::coroutine_handle<>) noexcept;
 
+// Defined OUT OF LINE in qb/io/logger.cpp, next to the `qb::io::cerr` it reports through — the
+// same placement, and for the same reason, as `qb::detail::report_unhandled_coroutine_exception`
+// in Actor.cpp: one policy, one place, and no I/O machinery pulled into this header. Deliberately
+// NOT `inline` (contrast the two declarations above, whose definitions live in scheduler.h): this
+// one has a real definition in the archive every qb-io consumer already links for `qb::io::cerr`.
+//
+// Called from task<T>::final_suspend on the DETACHED path only, and only when the promise
+// actually holds one — the awaiter carries a promise POINTER rather than a copy of the
+// exception_ptr, so the no-exception path (every ordinary completion) costs a null check.
+// Called from task<T>::final_suspend on the DETACHED path only — no continuation and no `task<T>`
+// owner — which is the exact state in which a stored exception can never be observed. Nothing
+// awaits the frame, so `await_resume()` (the only place that rethrows) never runs and the
+// exception dies with the promise. `Actor::spawn` / `spawn_detached` already report through
+// `qb::detail::report_unhandled_coroutine_exception` because their wrapper coroutines CATCH
+// (VirtualCore.h:1139-1146, 1160-1168) and therefore leave the wrapper promise clean — so they do
+// not reach here and cannot double-report. The free-function path,
+// `qb::io::async::coro_scheduler().spawn(t)`, has no such wrapper, and is what this covers.
+void report_detached_coroutine_exception(std::exception_ptr ep) noexcept;
+
 // ============================================================================
 // Coroutine frame freelist allocator (Finding 2.A.9)
 // ============================================================================
@@ -484,6 +503,15 @@ public:
             struct final_awaiter {
                 std::coroutine_handle<> continuation_;
                 CoroutineScheduler     *scheduler_;
+                // The PROMISE, not a copy of its exception_ptr. `final_suspend` runs on every
+                // coroutine completion, and on libc++ `exception_ptr`'s copy constructor and
+                // destructor are declared out of line — so carrying one here would add two real
+                // calls per completion to a hot path, for a value that is null in every run that
+                // does not throw. A raw pointer costs a move; the exception is read only on the
+                // branch that is about to discard it. The frame is alive throughout (we are
+                // suspended IN it, and `defer_frame_destruction` only queues the destroy), so
+                // dereferencing it in `await_suspend` is well defined.
+                promise_type *promise_;
 
                 bool
                 await_ready() const noexcept {
@@ -501,15 +529,20 @@ public:
                     // owner. Hand the frame to the scheduler to destroy on the
                     // current run_ready() drain (we cannot destroy it here — we
                     // are suspended in it). Without this the spawned frame leaks.
-                    if (scheduler_)
+                    if (scheduler_) {
+                        // …and nobody will ever read its result, so an exception stored by
+                        // `unhandled_exception()` is about to be destroyed unobserved. Say so.
+                        if (promise_ && promise_->has_exception())
+                            report_detached_coroutine_exception(promise_->exception());
                         defer_frame_destruction(h);
+                    }
                     return std::noop_coroutine();
                 }
 
                 void
                 await_resume() noexcept {}
             };
-            return final_awaiter{continuation_, scheduler_};
+            return final_awaiter{continuation_, scheduler_, this};
         }
 
         /**
@@ -805,6 +838,7 @@ public:
             struct final_awaiter {
                 std::coroutine_handle<> continuation_;
                 CoroutineScheduler     *scheduler_;
+                promise_type           *promise_; // see the note on task<T>'s final_awaiter
 #ifdef QB_DEBUG_COROUTINES
                 std::size_t coro_id_;
 #endif
@@ -825,8 +859,13 @@ public:
                     // owner and cannot destroy itself here, so it would leak.
                     if (continuation_)
                         return continuation_;
-                    if (scheduler_)
+                    if (scheduler_) {
+                        // …and no owner means no `await_resume()`, so a stored exception would
+                        // be destroyed unobserved. Report it rather than drop it.
+                        if (promise_ && promise_->exception_)
+                            report_detached_coroutine_exception(promise_->exception_);
                         defer_frame_destruction(h);
+                    }
                     return std::noop_coroutine();
                 }
 
@@ -834,7 +873,7 @@ public:
                 await_resume() noexcept {}
             };
             return final_awaiter{
-                continuation_, scheduler_
+                continuation_, scheduler_, this
 #ifdef QB_DEBUG_COROUTINES
                 ,
                 coro_id_

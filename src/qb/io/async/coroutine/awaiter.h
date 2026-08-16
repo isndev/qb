@@ -172,6 +172,27 @@ struct awaiter_base {
      *
      * Schedules the coroutine for resumption via the scheduler.
      * Must run on the thread that owns `listener::current` (libev callback thread).
+     *
+     * THE RESUME RESOLVES THE SCHEDULER *NOW*, NOT AT SUSPEND TIME
+     * ------------------------------------------------------------
+     * `scheduler_` is whatever was current when `await_suspend` ran, and that is not always the
+     * scheduler that will be PUMPED. The case that bites is an actor's `onInit()` whose first
+     * suspension is one of these awaiters: `VirtualCore::__drive_init__` resumes the frame
+     * directly and never `spawn()`s it, so no scheduler is bound yet, `CoroutineScheduler::current()`
+     * lazily builds a thread-local FALLBACK (scheduler.h:631-632) and we cache that — and then
+     * `__begin_activation__` calls `listener::current.coro_scheduler()`, whose first call
+     * `set_current()`s the LISTENER's scheduler (listener.h:890). `listener::run()` pumps only
+     * `_coro_scheduler` (listener.h:777-778), so a resume queued into the orphaned fallback is
+     * never drained: the awaited operation succeeds and the coroutine never wakes.
+     *
+     * Resolving at resume time is correct because this runs in a libev callback on the loop
+     * thread, where the current scheduler IS the one that loop pumps. It is also what the rest
+     * of qb-io already does — see listener.h:761, "every waker in qb-io defers through
+     * `schedule_via_current`". This one and the tcp connector's were the exceptions.
+     *
+     * The cached pointer stays as the FALLBACK (and `unregister_suspended` still uses it, since
+     * that is where the handle was registered), so nothing regresses on the ordinary path where
+     * the two are the same object.
      */
     void
     on_event_ready() noexcept {
@@ -188,8 +209,8 @@ struct awaiter_base {
         std::cerr << "[AWAITER] on_event_ready: scheduler=" << scheduler_ << " handle=" << handle_.address() << "\n";
 #endif
 
-        if (scheduler_ && handle_) {
-            scheduler_->schedule_resume(handle_);
+        if (auto *target = CoroutineScheduler::current_ptr() ? CoroutineScheduler::current_ptr() : scheduler_; target && handle_) {
+            target->schedule_resume(handle_);
         }
 #ifdef QB_DEBUG_COROUTINES
         else {

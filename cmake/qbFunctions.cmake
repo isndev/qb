@@ -426,6 +426,31 @@ function(_qb_test_conventions out_prefix)
         set(_labels "qb-tests")
     endif()
 
+    # A `requires-multicore` test's wall clock is set by CPU AVAILABILITY, not by the work it
+    # does, so the tier default -- which is sized for work -- is the wrong budget for it. The
+    # reason is one line of the engine: `VirtualCore::__workflow__` only ever blocks when a
+    # latency was configured (VirtualCore.cpp:787, `if (_mail_box.getLatency() > zero())`), and
+    # the default latency is zero. A multicore test therefore starts `min(hw, 8)` threads that
+    # PURE-SPIN, never yielding; progress needs all of them scheduled at once, so a shortfall of
+    # CPU does not slow the test proportionally, it convoys.
+    #
+    # Measured on this 14-CPU (10P+4E) macOS box at 3.0.0, `qb-core-test-system-messaging-api`,
+    # release, standalone, against N competing spinners:
+    #     N=0   10.3 s      N=4  15.8 s      N=8  154.8 s
+    # -- 15x from a 1x oversubscription, and the 120 s system-tier default is blown between
+    # N=4 and N=8. That is not a defect in the test and not something a test can fix: the same
+    # binary measured 9.4-11.6 s over five consecutive idle runs. It is why a spread of 9x was
+    # ever seen, and why raising the budget is the correct response rather than a concession.
+    #
+    # Derived from the label, like the lock below and for the same reason -- a per-test TIMEOUT
+    # is one the next multicore test forgets. Applied to the TIER DEFAULT only, BEFORE the
+    # explicit-TIMEOUT override, so `TIMEOUT` keeps meaning exactly what it documents. (No
+    # `requires-multicore` call site passes TIMEOUT today, so this changes nothing about which
+    # value wins; it fixes which value is the default.)
+    if("requires-multicore" IN_LIST _labels AND _timeout AND _timeout LESS 600)
+        set(_timeout 600)
+    endif()
+
     if(C_TIMEOUT)
         set(_timeout ${C_TIMEOUT})
     endif()

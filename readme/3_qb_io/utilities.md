@@ -371,7 +371,7 @@ A `qb::allocator::pipe<char>::put<qb::json>` specialization lets JSON be written
 
 `qb/io.h` is the header everything else in `qb-io` includes, and it carries two facilities that are easy to meet by accident.
 
-**`qb::io::cout()` and `qb::io::cerr()`** are temporary stream objects that buffer into a `std::stringstream` and flush the whole thing under a `static std::mutex` in their destructor (`qb/src/qb/io/logger.cpp:37-49`). That is what makes them safe to use from several `VirtualCore` threads without interleaving: one statement, one lock, one atomic write. Use them, not bare `std::cout`, anywhere more than one thread can print.
+**`qb::io::cout()` and `qb::io::cerr()`** are temporary stream objects that buffer into a `std::stringstream` and flush the whole thing under a `static std::mutex` in their destructor (`qb/src/qb/io/logger.cpp:43-55`). That is what makes them safe to use from several `VirtualCore` threads without interleaving: one statement, one lock, one atomic write. Use them, not bare `std::cout`, anywhere more than one thread can print.
 
 ```cpp
 #include <qb/io.h>
@@ -381,7 +381,7 @@ qb::io::cout() << "core " << id << " ready\n";   // whole line flushed under one
 
 **The `QB_LOG_*` macros** have two backends chosen at build time. Without `QB_WITH_LOGGING` they expand to `qb::io::cout()` (`qb/src/qb/io.h:188-228`). With it they route to nanolog, driven by `qb::io::log::init(file_path, roll_MB = 128)` and `qb::io::log::setLevel(Level)` (`qb/src/qb/io.h:84`, `:63`).
 
-> **A logging build writes a file before `main()` runs.** A load-time static, `LogInitializer`, calls `log::init("./qb", 512)` and sets the level to `INFO` under `NDEBUG` or `DEBUG` otherwise (`qb/src/qb/io/logger.cpp:52-64`). So merely linking `qb::io` in a `QB_WITH_LOGGING` build creates `./qb*.log` relative to the **working directory**, with no call from you. Call `log::init` yourself early if you want it somewhere else; the initializer is compiled out entirely when the option is off.
+> **A logging build writes a file before `main()` runs.** A load-time static, `LogInitializer`, calls `log::init("./qb", 512)` and sets the level to `INFO` under `NDEBUG` or `DEBUG` otherwise (`qb/src/qb/io/logger.cpp:123-151`). So merely linking `qb::io` in a `QB_WITH_LOGGING` build creates `./qb*.log` relative to the **working directory**, with no call from you. Call `log::init` yourself early if you want it somewhere else; the initializer is compiled out entirely when the option is off.
 
 ---
 

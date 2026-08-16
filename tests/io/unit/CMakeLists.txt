@@ -82,6 +82,9 @@ qb_add_test(MODULE qb-io TIER unit NAME quic-adapter           SOURCES quic/quic
 qb_add_test(MODULE qb-io TIER unit NAME scheduler-lifecycle         SOURCES coroutine/scheduler-lifecycle.cpp         DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME awaiter-protocol            SOURCES coroutine/awaiter-protocol.cpp            DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME exception-propagation       SOURCES coroutine/exception-propagation.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine)
+# The counterpart of exception-propagation: the DETACHED path, where nothing awaits the frame so
+# nothing can rethrow, and the exception used to be destroyed with the promise in silence.
+qb_add_test(MODULE qb-io TIER unit NAME detached-exception-report   SOURCES coroutine/detached-exception-report.cpp   DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME channel-payload-ownership   SOURCES coroutine/channel-payload-ownership.cpp   DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME coroutine-sync-primitives   SOURCES coroutine/coroutine-sync-primitives.cpp   DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME coroutine-combinators       SOURCES coroutine/coroutine-combinators.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine)

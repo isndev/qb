@@ -425,6 +425,22 @@ public:
     }
 
     /**
+     * @brief Get the number of elements currently held
+     *
+     * @return Count of elements, in `[0, capacity()]`
+     *
+     * @note The count `empty()`, `full()` and both iterators are already expressed in terms of
+     *       (`size_` is the member all four read); it was simply not reachable from outside the
+     *       class, so `capacity()` was public while the occupancy it bounds was not. Adding the
+     *       accessor is purely additive — no member changes, no behaviour changes, and the two
+     *       predicates keep their own spellings so no call site has to move.
+     */
+    [[nodiscard]] size_type
+    size() const noexcept {
+        return size_;
+    }
+
+    /**
      * @brief Get the capacity of the buffer
      *
      * @return The maximum number of elements the buffer can hold
