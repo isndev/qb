@@ -125,7 +125,7 @@ public:
      */
     self_type &
     operator++() noexcept {
-        index_ = ++index_ % N;
+        index_ = (index_ + 1) % N;
         ++count_;
         return *this;
     }
@@ -298,7 +298,7 @@ public:
 
         destroy_at(tail_);
         --size_;
-        tail_ = ++tail_ % N;
+        tail_ = (tail_ + 1) % N;
     }
 
     /**
@@ -458,7 +458,7 @@ public:
         if constexpr (!std::is_trivially_destructible_v<value_type>) {
             while (!empty()) {
                 destroy_at(tail_);
-                tail_ = ++tail_ % N;
+                tail_ = (tail_ + 1) % N;
                 --size_;
             }
         }
@@ -521,10 +521,10 @@ private:
             destroy_at(head_);
 
         new (elements_ + head_ * sizeof(T)) T{std::forward<U>(value)};
-        head_ = ++head_ % N;
+        head_ = (head_ + 1) % N;
 
         if (full())
-            tail_ = ++tail_ % N;
+            tail_ = (tail_ + 1) % N;
 
         if (!full())
             ++size_;

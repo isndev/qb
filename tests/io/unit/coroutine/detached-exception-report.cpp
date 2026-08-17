@@ -59,6 +59,8 @@
 #include <qb/io/async.h>
 #include <qb/io/async/coroutine.h>
 
+#include "../../shared/coroutine_test_support.h"
+
 namespace detached_exception_report_test {
 
 // RAII stderr capture. `qb::io::cerr` locks its own mutex and writes to `std::cerr`, so
@@ -114,15 +116,22 @@ throws_with_value() {
     co_return 1;
 }
 
-// Pump the loop long enough for the spawned frame to run, throw and reach final_suspend.
-void
+// Pump the loop until the spawned frame has run, thrown and reached final_suspend.
+//
+// This was a fixed count of `run(EVRUN_NOWAIT)` polls, and it passed on macOS for a reason that
+// had nothing to do with the code under test: every coroutine here opens with
+// `co_await sleep(1ms)`, and EVRUN_NOWAIT returns immediately when no watcher is ready, so 200
+// iterations are a busy-spin that may complete in well under the millisecond being waited for.
+// On Linux/gcc they do — the timer never fires, no body ever runs, and the three tests that
+// assert on OUTPUT fail while the two that assert stderr is EMPTY pass vacuously, which is the
+// worse half: a pump that drives nothing makes "nothing was printed" trivially true.
+//
+// `pump_until` is the project's shared deadline-bounded pump: it drives the framework's own
+// `run_for()`, so real time passes and the timer actually fires, it stops the instant the
+// predicate holds, and it returns false loudly on timeout instead of leaving a flag unset.
+bool
 pump() {
-    for (int i = 0; i < 200; ++i) {
-        qb::io::async::run(EVRUN_NOWAIT);
-        if (qb::io::async::listener::current.coro_scheduler().active_count() == 0)
-            break;
-    }
-    qb::io::async::run(EVRUN_NOWAIT);
+    return qb::io::test::pump_until([] { return qb::io::async::listener::current.coro_scheduler().active_count() == 0; });
 }
 
 class DetachedExceptionReport : public ::testing::Test {
@@ -142,7 +151,7 @@ TEST_F(DetachedExceptionReport, ReportsEscapingException) {
     {
         CapturedCerr cap;
         qb::io::async::coro_scheduler().spawn(throws_std());
-        pump();
+        EXPECT_TRUE(pump()) << "the spawned coroutine never reached final_suspend";
         out = cap.str();
     }
     EXPECT_NE(out.find("escaping-marker-2f7a"), std::string::npos) << "the exception's message never reached stderr; got: " << out;
@@ -154,7 +163,7 @@ TEST_F(DetachedExceptionReport, ReportsNonStdException) {
     {
         CapturedCerr cap;
         qb::io::async::coro_scheduler().spawn(throws_non_std());
-        pump();
+        EXPECT_TRUE(pump()) << "the spawned coroutine never reached final_suspend";
         out = cap.str();
     }
     EXPECT_NE(out.find("not derived from std::exception"), std::string::npos) << "a non-std throw was not reported; got: " << out;
@@ -165,7 +174,7 @@ TEST_F(DetachedExceptionReport, SilentOnClean) {
     {
         CapturedCerr cap;
         qb::io::async::coro_scheduler().spawn(completes_cleanly());
-        pump();
+        EXPECT_TRUE(pump()) << "the spawned coroutine never reached final_suspend";
         out = cap.str();
     }
     EXPECT_TRUE(out.empty()) << "a clean detached coroutine printed something; got: " << out;
@@ -176,7 +185,7 @@ TEST_F(DetachedExceptionReport, SilentOnCancellation) {
     {
         CapturedCerr cap;
         qb::io::async::coro_scheduler().spawn(throws_cancelled());
-        pump();
+        EXPECT_TRUE(pump()) << "the spawned coroutine never reached final_suspend";
         out = cap.str();
     }
     EXPECT_TRUE(out.empty()) << "cancellation is teardown, not a failure, and must not be reported; got: " << out;
@@ -195,7 +204,7 @@ TEST_F(DetachedExceptionReport, AwaitedTaskStillRethrows) {
             }
         };
         qb::io::async::coro_scheduler().spawn(driver());
-        pump();
+        EXPECT_TRUE(pump()) << "the spawned coroutine never reached final_suspend";
         out = cap.str();
     }
     EXPECT_TRUE(threw) << "an AWAITED task must still propagate by throwing";
