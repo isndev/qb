@@ -231,7 +231,7 @@ The listener reports a non-empty deferred queue through `has_deferred` (`src/qb/
 <a id="coro_scheduler-coroutinescheduler"></a>
 #### `coro_scheduler` / CoroutineScheduler
 
-The thread-local cooperative scheduler that holds the ready queue and frame bookkeeping and resumes coroutines on the `VirtualCore` (or listener) thread driving the libev loop. `coro_scheduler().spawn(std::move(task))` enqueues a top-level coroutine. Defined in `src/qb/io/async/coroutine/scheduler.h`. See [Coroutines](../3_qb_io/coroutines.md).
+The thread-local cooperative scheduler that holds the ready queue and frame bookkeeping and resumes coroutines on the `VirtualCore` (or listener) thread driving the libev loop. `coro_scheduler().spawn(std::move(task))` enqueues a top-level coroutine — the task overload takes `task<void>` only, since a spawned coroutine is detached and has nowhere to return a value; for a `task<T>`, spawn a callable and read the value back through the enclosing scope. Defined in `src/qb/io/async/coroutine/scheduler.h`. See [Coroutines](../3_qb_io/coroutines.md).
 
 #### CRTP (Curiously Recurring Template Pattern)
 

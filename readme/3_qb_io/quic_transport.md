@@ -194,6 +194,14 @@ A server requires `certificate_file` and `private_key_file`. For a client, `veri
 
 ## Examples
 
+A complete, runnable program lives in the corpus — `examples/02-io/12-quic.cpp`
+(`qb-example-io-quic`, gated `REQUIRES quic`). It runs a server and a client on **one** listener,
+completes a handshake with ALPN negotiated inside it, exchanges a bidirectional stream and a
+datagram over the same connection, and then asserts the case this page's ALPN section describes:
+a client offering an ALPN the server does not advertise is refused *inside* the handshake — the
+peer reaches `closed`, the server's `on(connected)` never fires, and the listener keeps serving
+its first connection. The snippets below are the same shapes, trimmed.
+
 ### Server
 
 ```cpp

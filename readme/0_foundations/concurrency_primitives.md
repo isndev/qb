@@ -121,7 +121,7 @@ public:
 - **Bulk enqueue is all-or-nothing by default.** The `_All` template parameter defaults to `true`: `enqueue<true>(t, size)` enqueues every element or none, returning `0` when there is insufficient room (`src/qb/system/lockfree/spsc.h:181-183`). Set `_All = false` for a partial enqueue that takes as many elements as fit.
 - **`consume_all` avoids the intermediate copy** — and that is exactly why it is the dangerous overload. It invokes `func` directly over the buffer's internal storage, passing a `T *` to the start of one contiguous segment and that segment's element count. Because the ring wraps, a full traversal can call the `functor` **twice**, once per segment (`src/qb/system/lockfree/spsc.h:305-306`).
 
-> **`consume_all` is only safe when one ring slot is one independent item.** The producer's bulk `enqueue` deliberately writes across the wrap with a two-section `memcpy`, so a logical item spanning several slots — a multi-bucket `qb::Event` is the obvious one — is split by that second call. A consumer that parses variable-length items by an embedded size field then reads a header whose item runs past the end of the segment. When items can span more than one slot, use the copy-out `dequeue(func, scratch, n)` overload instead: it reassembles the batch contiguously before calling the functor. This is not a hypothetical distinction — it is why the engine uses `dequeue`, not `consume_all`, to drain its mailbox (`src/qb/system/lockfree/spsc.h:275-283`).
+> **`consume_all` is only safe when one ring slot is one independent item.** The producer's bulk `enqueue` deliberately writes across the wrap with a two-section `memcpy`, so a logical item spanning several slots — a multi-bucket `qb::Event` is the obvious one — is split by that second call. A consumer that parses variable-length items by an embedded size field then reads a header whose item runs past the end of the segment. When items can span more than one slot, use the copy-out `dequeue(func, scratch, n)` overload instead: it reassembles the batch contiguously before calling the functor. This is not a hypothetical distinction — it is why the engine drains its mailbox through the copy-out overload (`mpsc::consume_all(func, scratch, chunk)`, which forwards to this one) rather than the in-place `consume_all(func)` (`src/qb/system/lockfree/spsc.h:275-283`).
 
 ### Where the engine uses it
 
@@ -151,7 +151,7 @@ flowchart LR
     P0 -- "enqueue(0, bucket)" --> R0
     P1 -- "enqueue(1, bucket)" --> R1
     PN -- "enqueue(N, bucket)" --> RN
-    R0 -- "dequeue(func, …) drains all slots" --> DC
+    R0 -- "consume_all(func, scratch, chunk) drains each ring" --> DC
     R1 --> DC
     RN --> DC
 ```
@@ -188,11 +188,11 @@ public:
     size_t enqueue(T const *t, size_t size);
 
     // --- consumer side (one thread only) ---
-    size_t dequeue(T *ret, size_t size);                       // drains across all rings
+    size_t dequeue(T *ret, size_t size);                       // TOTAL budget across all rings
     template <typename Func>
-    size_t dequeue(Func const &func, T *ret, size_t size);
+    size_t consume_all(Func const &func, T *scratch, size_t chunk); // chunk is PER-PRODUCER
     template <typename Func>
-    size_t consume_all(Func const &func);
+    size_t consume_all(Func const &func);                      // in-place, no copy
 
     auto  &ringOf(size_t index);                               // direct SPSC-ring access
 };

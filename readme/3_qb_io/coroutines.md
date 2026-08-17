@@ -587,6 +587,38 @@ auto fromi = from_iterator(my_vector.begin(), my_vector.end());
 ```
 
 A `generator<T>` must outlive any iterator over it; a throwing generator body surfaces the exception to the consumer rather than appearing as normal exhaustion. `collect_to_vector(gen)` has two overloads: an lvalue-reference one that drains a named generator in place, and an rvalue one so a composed pipeline — `collect_to_vector(take(range(0, 100), 4))` — can be drained in a single expression, matching every other helper in the family (all of which take their generator by value).
+
+#### The transforms, and which of them consume the source
+
+Both generator kinds carry the same operation set under the same names — the argument type picks the
+overload, which is why there is no prefix on either side. What a reader has to know is not the names but
+which ones **consume**:
+
+| | lazy — returns a generator | terminal — drains the source |
+| --- | --- | --- |
+| `generator<T>` | `take` · `skip` · `map` · `filter` · `concat` | `for_each` · `reduce` · `collect_to_vector` |
+| `async_generator<T>` | `take` · `skip` · `map` · `filter` | `for_each` · `reduce` · `collect_to_vector` · `map_to_vector` · `filter_to_vector` |
+
+```cpp
+// Lazy composes, and the composition is the reason to prefer it: nothing is produced that nobody asked
+// for. This pulls exactly three values out of an INFINITE source.
+auto first3 = collect_to_vector(take(map(iota(1), [](int v) { return v * v; }), 3));
+
+// Terminal, so the source is gone afterwards. The seed comes FIRST, as in std::ranges::fold_left.
+auto total  = reduce(range(1, 11), 0, std::plus<int>{});
+for_each(range(0, 3), [](int v) { use(v); });
+```
+
+`map_to_vector` and `filter_to_vector` exist only on the async side and are **eager**: they run the source
+to exhaustion and hand back a `task<std::vector<…>>`. They are not spelled `map`/`filter` on purpose —
+those are lazy here and on `async_stream`, and one word cannot mean "lazy" in one family and "eager, and
+it consumed your generator" in another. If you want the eager result from a lazy chain, say so:
+`co_await collect_to_vector(map(src, f))`.
+
+One property is worth relying on: **`take(gen, n)` pulls exactly `min(n, size(gen))` values and never one
+more.** The limit is tested before the source is resumed. Over `iota` an extra pull would cost nothing,
+which is exactly why the opposite behaviour survived for so long; over a source whose body reads a row, a
+token or a socket byte, that pull is a side effect nobody asked for.
 <!-- src: qb/src/qb/io/async/coroutine/generator.h:77 (generator), :112 (await_transform deleted), :513 (collect_to_vector lvalue), :540 (collect_to_vector rvalue), :567 (from_range), :608 (from_iterator), :623 (iota), range/repeat (:640/:655) -->
 
 ### Asynchronous `async_generator<T>`
@@ -642,7 +674,7 @@ co_await pipeline.for_each([](int v) { use(v); });        // sync sink
 std::vector<int>   v   = co_await pipeline.collect();
 std::optional<int> hd  = co_await pipeline.first();
 size_t             n   = co_await pipeline.count();
-int                sum = co_await pipeline.reduce([](int a, int b) { return a + b; }, 0);
+int                sum = co_await pipeline.reduce(0, [](int a, int b) { return a + b; });
 bool               any = co_await pipeline.any([](int v) { return v > 10; });
 bool               all = co_await pipeline.all([](int v) { return v > 0; });
 std::optional<int> hit = co_await pipeline.find([](int v) { return v == 36; });
@@ -824,10 +856,9 @@ Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it e
 | `coroutine/sync.h` | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`, `with_semaphore`, `with_lock` |
 | `coroutine/channel.h` | `channel<T>`, `channel_closed`, `select`, `make_channel`, `make_pipeline`, `transform`, `filter`, `collect` |
 | `coroutine/scope.h` | `coroutine_scope`, `joining_scope` / `cancelling_scope` / `detaching_scope`, `with_scope`, `parallel`, `parallel_map`, `repeat_while` |
-| `coroutine/generator.h` | `generator<T>`, `async_generator<T>`, `range`, `iota`, `from_range`, `for_each` / `collect_to_vector` / `map_to_vector` / `filter_to_vector` / `reduce` |
+| `coroutine/generator.h` | `generator<T>`, `async_generator<T>`, `range`, `iota`, `from_range`, `repeat` / `repeat_n`, `concat`; lazy `take` / `skip` / `map` / `filter`; terminal `for_each` / `reduce` / `collect_to_vector`; eager `map_to_vector` / `filter_to_vector` |
 | `coroutine/stream.h` | `async_stream<T>`, `range_stream`, `interval`, `merge_streams`, `zip`, `timer`, `repeat_value`, `from_generator` |
 | `coroutine/retry.h` | `retry_policy`, `backoff_strategy`, `retry_exhausted`, `with_retry`, `with_retry_until`, `make_retryable`, predefined policies |
-| `coroutine/mixin.h` | `coro_mixin<Derived>` — CRTP `.coro()` accessor |
 | `coroutine.h` | umbrella include for everything above |
 <!-- src: qb/src/qb/io/async/coroutine.h (include list) and each cited header -->
 

@@ -384,7 +384,7 @@ Fixed-capacity inline string with a std::string-like API. Truncates silently to 
 *   Non-members: `operator+` (result sized to max of operands), `swap`, `operator<<`/`operator>>`, reversed `operator==`/`!=` with C-strings.
 
 ### Containers (`<qb/system/container/...>`)
-*   `[T] using unordered_map<K,V,H=std::hash<K>,E=std::equal_to<K>,A>` — always `ska::unordered_map` (node-based; references survive a rehash). Not `NDEBUG`-conditional since 3.0.
+*   `[T] using unordered_map<K,V,H=std::hash<K>,E=std::equal_to<K>,A>` — always `ska::unordered_map` (node-based; references survive a rehash). Not `NDEBUG`-conditional since 3.0. Carries `contains(k)` as of 3.0 — a qb addition to the vendored fork, since upstream predates C++20 and its absence was the one place the drop-in-for-`std::unordered_map` promise failed. Scoped like `count()`: same key type, O(1), **no** heterogeneous overload (`find()` has none either). The same addition reaches `unordered_set`, `unordered_flat_map` and `unordered_flat_set` — it lives on the two shared vendored bases.
 *   `[T] using unordered_flat_map<K,V,H,E,A>` — always `ska::flat_hash_map` (open-addressing, cache-local).
 *   `[T] using unordered_set<K,H,E,A>` / `unordered_flat_set<K,H,E,A>` — set analogues.
 *   `[T] using icase_map<Value,_Trait=string_to_lower>` = `icase_basic_map<std::map<std::string,Value>,_Trait>` — case-insensitive ordered string map.
@@ -423,7 +423,9 @@ Multi-producer single-consumer. Fixed producers (compile-time) or runtime (`expl
 *   `bool enqueue(size_t index, const T&)` — by runtime index (no lock; one producer per index).
 *   `size_t enqueue(const T&)` — round-robin under that producer's SpinLock.
 *   `[T<_All=true>] size_t enqueue(const T*, size_t)` — round-robin bulk.
-*   `size_t dequeue(T*, size_t)`, `[T<Func>] size_t dequeue(const Func&, T*, size_t)`, `[T<Func>] size_t consume_all(const Func&)`
+*   `size_t dequeue(T*, size_t)` — `ret` is the OUTPUT, producers append, `size` is a **total** budget, return ≤ `size`.
+*   `[T<Func>] size_t consume_all(const Func&, T* scratch, size_t chunk)` — `scratch` is rewritten from index 0 per producer, so `chunk` is a **per-producer** batch limit and the return is a total that **may exceed** it (up to `nb_producer * chunk`). This is the overload the engine drains mailboxes with, and the per-producer form is what stops one saturated core starving the rest. Spelled `dequeue(Func, T*, size_t)` before 3.0; renamed, with no alias.
+*   `[T<Func>] size_t consume_all(const Func&)` — in-place walk, no copy; splits an item that spans the ring's wrap, so use the scratch overload for multi-slot items.
 *   `auto& ringOf(size_t index)` — direct per-producer spsc ring.
 
 #### `[T] class qb::lockfree::mpsc_unbounded_queue<T> : public nocopy` (`mpsc_unbounded_queue.h`)
@@ -814,14 +816,16 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `class joining_scope` / `cancelling_scope` / `detaching_scope : public coroutine_scope` — fixed cleanup policy.
 *   `[T<...Tasks>] task<std::tuple<...>> parallel(Tasks...)`, `parallel_map(Range,F,size_t=10)`, `with_scope(F)`, `repeat_while(F,P,cancellation_token={})`, `capture_result(task<T>,std::optional<T>&)`. `parallel`/`parallel_map` store a `void` result as `std::monostate` (see `when_all`).
 
-### Generators & streams (`generator.h`, `stream.h`, `shared_task.h`, `mixin.h`)
+### Generators & streams (`generator.h`, `stream.h`, `shared_task.h`)
 *   `[T] class generator<T>` — lazy sync generator (`co_yield` only): range-for, `has_next()`, `next()` → `std::optional<T>`. Move-only.
 *   `[T] class async_generator<T>` — supports `co_await` + `co_yield`; consume via `co_await gen.next()` → `std::optional<T>`.
-*   Factories/combinators: `from_range`, `from_iterator`, `iota`, `range`, `repeat`, `repeat_n`, `concat`, `take`, `skip`; async-gen algos `for_each`, `collect_to_vector`, `map_to_vector`, `filter_to_vector`, `reduce`, `take`, `skip`.
-*   `[T] class async_stream<T>` — pull-based async sequence. Factories `from_channel`/`from_vector`/`empty`/`single`; transforms `map`/`filter`/`take`/`skip`/`chain`/`buffer`/`debounce(qb::duration)`/`throttle(qb::duration)`/`backpressure`; terminals `for_each`/`collect`/`first`/`reduce`/`count`/`any`/`all`/`find`/`drain_to`. Combinators `merge_streams`/`zip`/`from_generator`/`repeat_value`/`interval(qb::duration)`/`timer(T, qb::duration)`/`range_stream`.
+*   Factories: `from_range`, `from_iterator`, `iota`, `range`, `repeat`, `repeat_n`, `empty_generator`, `single_generator`, `concat`.
+*   **One name per operation across both generator kinds** — the argument type selects the overload, so there is no `ag_` prefix (removed in 3.0, no alias). LAZY, returning a generator of the same kind: `take(gen, n)`, `skip(gen, n)`, `map(gen, f)`, `filter(gen, pred)`. TERMINAL, consuming the source: `for_each(gen, f)`, `reduce(gen, init, f)` (seed first, like `std::ranges::fold_left`), `collect_to_vector(gen)`. The sync forms return their value; the `async_generator<T>` forms return `task<…>` and must be awaited.
+*   `map_to_vector(async_generator<T>, f)` / `filter_to_vector(async_generator<T>, pred)` — **eager**: they run the source to exhaustion and return `task<std::vector<…>>`. Named apart from `map`/`filter` deliberately: those are lazy here and on `async_stream`, and one word cannot mean both.
+*   `take(gen, n)` pulls exactly `min(n, size)` values and never one more — the limit is tested before the source is resumed, which matters for any source whose production has a side effect.
+*   `[T] class async_stream<T>` — pull-based async sequence. Factories `from_channel`/`from_vector`/`empty`/`single`; transforms `map`/`filter`/`take`/`skip`/`chain`/`buffer`/`debounce(qb::duration)`/`throttle(qb::duration)`/`backpressure`; terminals `for_each`/`collect`/`first`/`reduce(init, f)`/`count`/`any`/`all`/`find`/`drain_to` — `reduce` takes the seed FIRST and its accumulator need not be the element type, matching `reduce(async_generator<T>, init, f)`. Combinators `merge_streams`/`zip`/`from_generator`/`repeat_value`/`interval(qb::duration)`/`timer(T, qb::duration)`/`range_stream`.
 *   `[T] class shared_task<T>` — copyable multi-awaiter handle: `valid()`, `is_ready()`, `operator co_await`.
 *   `[T<T>] shared_task<T> make_shared_task(task<T>&& t)` — spawn now, return a copyable handle.
-*   `[T<Derived>] class coro_mixin<Derived>` — CRTP base exposing `coro()` (driven via `Actor::spawn` / `Actor::spawn_detached`; owns no scheduler).
 
 ## Namespace `qb::crypto` (`<qb/io/crypto.h>`, requires OpenSSL)
 

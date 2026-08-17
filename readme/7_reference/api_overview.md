@@ -399,7 +399,7 @@ Entry points in `qb::io::async`:
 | `coro_scheduler` | `CoroutineScheduler& coro_scheduler()` | `coroutine/utils.h` |
 | `run_for` | `void run_for(qb::duration duration)` | `coroutine/utils.h` |
 
-`CoroutineScheduler::spawn(std::move(task))` runs a coroutine; the scheduler owns the frame. The wider
+`CoroutineScheduler::spawn(std::move(task))` runs a coroutine; the scheduler owns the frame. The task overload is `spawn(task<void>&&)` — there is no `task<T>` one, because a detached coroutine has nowhere to hand a value back to. The wider
 surface includes combinators (`when_all`, `when_any`, `race`), channels (`channel<T>`), cooperative sync
 (`async_mutex`, `semaphore`, `barrier`), retry, structured-concurrency scopes, generators, and
 `shared_task<T>`. Within an actor, launch a coroutine through `Actor::spawn` (recommended — scoped, cancelled on kill) or
