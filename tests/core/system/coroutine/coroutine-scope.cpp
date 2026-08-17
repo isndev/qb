@@ -462,10 +462,9 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            // Step 1 is a tiny (10ms) await that completes; step 2 is a deliberately LONG (1s) await
-            // so the 50ms kill is guaranteed to land strictly inside it on any realistic CI tick
-            // (well after step 1 finished, far before step 2's 1s deadline). The step counter then
-            // proves cancellation landed in step 2, deterministically.
+            // Step 1 is a tiny (10ms) await that completes; step 2 is a deliberately LONG (1s)
+            // await, and the kill is armed to land strictly inside it. The step counter then
+            // proves cancellation landed in step 2 rather than anywhere else.
             try {
                 co_await ctx.sleep(10ms);
                 g_steps.fetch_add(1); // step 1 — completes before kill
@@ -477,13 +476,35 @@ public:
                 g_seq_cancelled = true;
             }
         });
-        qb::io::async::callback(
-            [this] {
-                if (is_alive())
-                    kill();
-            },
-            50ms); // fires during the 1s step-2 await (after the 10ms step 1)
+        arm_kill();
         co_return true;
+    }
+
+private:
+    // Arm the kill on step 1's OBSERVED completion, not on a delay chosen to be longer than it.
+    //
+    // A fixed 50ms callback raced step 1's 10ms sleep: the two timers are independent, so on a
+    // loaded machine the 50ms one can be serviced before the 10ms one and the kill then cancels
+    // step 1, leaving g_steps at 0. Measured on Windows/MSVC 19.51 — 20/20 passes run alone, 6
+    // failures in 43 runs under 8-way concurrency, every failure with g_steps == 0. `ctest` runs
+    // these presets at jobs:4, so "alone" is not the condition the suite actually provides.
+    //
+    // Re-arming until the counter moves makes step 2 the cancellation point by CONSTRUCTION, on
+    // any machine and under any load — the property the test means to assert. Bounded, so a step 1
+    // that genuinely never completes fails the assertion loudly instead of hanging the suite.
+    void
+    arm_kill(int attempts_left = 100) {
+        qb::io::async::callback(
+            [this, attempts_left] {
+                if (!is_alive())
+                    return;
+                if (g_steps.load() == 0 && attempts_left > 0) {
+                    arm_kill(attempts_left - 1); // step 1 has not landed yet — look again
+                    return;
+                }
+                kill(); // provably inside step 2's 1s await
+            },
+            5ms);
     }
 };
 
