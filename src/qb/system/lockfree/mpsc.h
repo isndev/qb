@@ -261,18 +261,6 @@ public:
     }
 
     /**
-     * @deprecated Renamed to `consume_all(func, scratch, chunk)` in 3.0. Same behaviour; the
-     *             new name says that the drain is unbounded and that the return value may
-     *             exceed the third argument, which this one read as a budget it never was.
-     */
-    template <typename Func>
-    [[deprecated("renamed consume_all(func, scratch, chunk): the drain is per-producer, so the "
-                 "return may exceed the third argument — dequeue(T*, size) is the bounded one")]] size_t
-    dequeue(Func const &func, T *ret, size_t const size) {
-        return consume_all(func, ret, size);
-    }
-
-    /**
      * @brief Get direct access to a specific producer's ring buffer
      *
      * @param index The index of the producer
@@ -516,18 +504,6 @@ public:
             nb_consume += _producers[i]._ringbuffer.dequeue(func, scratch, chunk);
         }
         return nb_consume;
-    }
-
-    /**
-     * @deprecated Renamed to `consume_all(func, scratch, chunk)` in 3.0. Same behaviour; the
-     *             new name says that the drain is unbounded and that the return value may
-     *             exceed the third argument, which this one read as a budget it never was.
-     */
-    template <typename Func>
-    [[deprecated("renamed consume_all(func, scratch, chunk): the drain is per-producer, so the "
-                 "return may exceed the third argument — dequeue(T*, size) is the bounded one")]] size_t
-    dequeue(Func const &func, T *ret, size_t const size) {
-        return consume_all(func, ret, size);
     }
 
     /**

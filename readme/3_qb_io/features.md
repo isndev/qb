@@ -47,7 +47,7 @@ A coroutine runtime layered on the same `listener`. Callbacks and coroutines sha
 - **Synchronization primitives** — `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`. These need no OS locks because the single-thread model already serializes execution.
 - **Channels (`channel<T>`)** — in-thread communication with `send` / `recv`, timed variants (`send_for` / `recv_for`), `select` across channels, and `make_pipeline` / `transform` / `filter` / `collect` helpers.
 - **Structured concurrency (`coroutine_scope`)** — own a set of child coroutines with `join_all` / `join_any`, cancellation propagation, and `parallel_map` / `repeat_while`.
-- **Generators** — `generator<T>` (synchronous, range-for compatible) and `async_generator<T>` (`co_yield` plus `co_await`), with consumers `ag_for_each`, `ag_collect`, `ag_map`, `ag_filter`, `ag_reduce`.
+- **Generators** — `generator<T>` (synchronous, range-for compatible) and `async_generator<T>` (`co_yield` plus `co_await`), with consumers `for_each`, `collect_to_vector`, `map_to_vector`, `filter_to_vector`, `reduce`.
 - **Async streams (`async_stream<T>`)** — a lazy functional pipeline with `map` / `filter` / `take` / `skip`, terminal consumers, `merge_streams`, `zip`, and `interval`.
 - **Retry (`with_retry`, `with_retry_until`, `make_retryable`)** — retry an operation under a `retry_policy` with a configurable `backoff_strategy`.
 

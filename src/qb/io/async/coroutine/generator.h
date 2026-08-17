@@ -23,14 +23,14 @@
 #ifndef QB_IO_ASYNC_COROUTINE_GENERATOR_H
 #define QB_IO_ASYNC_COROUTINE_GENERATOR_H
 
-#include "task.h" // task<void> — ag_for_each()/ag_collect() below return one
+#include "task.h" // task<void> — for_each()/collect_to_vector() below return one
 #include <cassert>
 #include <coroutine>
 #include <cstdio>
 #include <exception>
 #include <memory> // std::shared_ptr — async_generator's shared state (:369, :416, :420)
 #include <optional>
-#include <vector> // std::vector — collect_to_vector()/ag_collect() below return one
+#include <vector> // std::vector — collect_to_vector()/map_to_vector() below return one
 
 /** Set QB_DEBUG_AGEN=1 (compile flag or before the include) to enable
  *  async_generator trace prints that show the yield/next/suspend flow. */
@@ -332,7 +332,7 @@ public:
 
         /**
          * @brief Symmetric-transfer yield: resumes the awaiting consumer
-         * (ag_for_each / ag_collect etc.) inline instead of going through
+         * (for_each / collect_to_vector etc.) inline instead of going through
          * the scheduler.  Previously returned std::suspend_always which
          * left both the generator AND the consumer permanently suspended.
          */
@@ -452,7 +452,7 @@ public:
          *    yielded values.
          *
          * 2. Use-after-free prevention: with a direct handle.resume() call,
-         *    the completion chain (generator → ag_for_each → caller task) can
+         *    the completion chain (generator → for_each → caller task) can
          *    trigger ~task<void>() which calls handle.destroy() BEFORE
          *    await_suspend() returns, leaving a dangling handle that the
          *    post-resume code would then dereference (SIGSEGV / ASAN UAF).
@@ -480,7 +480,7 @@ public:
             // generator runs unhandled_exception() and then drives the frame to final_suspend, so the
             // frame is `done()` at the same time the exception is stored. Checking done() first would
             // silently swallow that exception (next() would return nullopt as if the stream ended
-            // cleanly) — and every ag_* helper consumes via `while (co_await gen.next())`, so the throw
+            // cleanly) — and every consuming helper uses `while (co_await gen.next())`, so the throw
             // would never reach the caller. Rethrow first; only a clean end-of-stream returns nullopt.
             if (handle.promise().exception) {
                 // Clear the stored exception as we rethrow it: a throw ends the stream, so a
@@ -712,7 +712,7 @@ concat(generator<T> first, generator<T> second) {
  *           by then the pull has already happened.
  *         - `count == 0` must return without touching `gen` at all, because `begin()` itself
  *           resumes the coroutine once to reach the first `co_yield`.
- *       This matches `ag_take()` below, which has always tested before pulling.
+ *       This matches `take(async_generator<T>, n)` below, which has always tested before pulling.
  * @ingroup Coroutine
  */
 template <typename T>
@@ -751,117 +751,33 @@ skip(generator<T> gen, size_t count) {
 // async_generator<T> helper algorithms
 // =============================================================================
 
-/**
- * @brief Consume every value from an async_generator
- *
- * Calls f(*value) for each value produced. f may be a regular function or
- * a coroutine (returning task<void>).
- *
- * @code
- * async_generator<int> produce() { ... }
- *
- * co_await ag_for_each(produce(), [](int v) -> task<void> {
- *     co_await process(v);
- * });
- * @endcode
- * @ingroup Coroutine
- */
-template <typename T, typename F>
-task<void>
-ag_for_each(async_generator<T> gen, F f) {
-    QB_AGEN_TRACE("ag_for_each start");
-    [[maybe_unused]] std::size_t n = 0;
-    while (auto val = co_await gen.next()) {
-        QB_AGEN_TRACE("ag_for_each got item #%zu", n++);
-        if constexpr (std::is_same_v<std::invoke_result_t<F, T &>, task<void>>) {
-            co_await f(*val);
-        } else {
-            f(*val);
-        }
-    }
-    QB_AGEN_TRACE("ag_for_each done after %zu items", n);
-}
+// =============================================================================
+// One name per operation, across all three sequence families
+// =============================================================================
+//
+// `generator<T>`, `async_generator<T>` and `async_stream<T>` are three ways to model the
+// same idea, and until 3.0 they named its operations three different ways: `take` /
+// `ag_take` / `.take`, `collect_to_vector` / `ag_collect` / `.collect`, and — the part
+// that actually costs a reader — `map`, `filter`, `reduce` and `for_each` existed on two
+// of the three and simply were not there on the sync generator.
+//
+// The `ag_` prefix bought nothing: the argument types are distinct, so ORDINARY OVERLOAD
+// RESOLUTION separates `take(generator<T>, n)` from `take(async_generator<T>, n)`. It is
+// gone, with no compatibility alias — 3.0 is the release that reforms the API, and an
+// alias nobody is asked to migrate off is debt that outlives the reason for it.
+//
+// Two did NOT simply lose the prefix, and that is the sharper half: the old `ag_map` and
+// `ag_filter` are not transforms. They return `task<std::vector<R>>` — they run the source
+// to exhaustion and collect — while `async_stream::map`/`filter` are lazy and return a
+// stream. Giving them the plain name would make one word mean "lazy" in one family and
+// "eager, and it consumes your generator" in another, which is worse than a prefix nobody
+// can guess. They are `map_to_vector` / `filter_to_vector`, and the LAZY forms every other
+// family has are added below.
 
-/**
- * @brief Collect all values from an async_generator into a vector
- * @code
- * std::vector<int> v = co_await ag_collect(produce());
- * @endcode
- * @ingroup Coroutine
- */
-template <typename T>
-task<std::vector<T>>
-ag_collect(async_generator<T> gen) {
-    QB_AGEN_TRACE("ag_collect start");
-    std::vector<T> result;
-    while (auto val = co_await gen.next()) {
-        QB_AGEN_TRACE("ag_collect got item total=%zu", result.size() + 1);
-        result.push_back(std::move(*val));
-    }
-    QB_AGEN_TRACE("ag_collect done total=%zu", result.size());
-    co_return result;
-}
-
-/**
- * @brief Map each value with f, collecting into a vector
- * @code
- * auto doubled = co_await ag_map(produce(), [](int v){ return v * 2; });
- * @endcode
- * @ingroup Coroutine
- */
-template <typename T, typename F>
-task<std::vector<std::invoke_result_t<F, T>>>
-ag_map(async_generator<T> gen, F f) {
-    using R = std::invoke_result_t<F, T>;
-    std::vector<R> result;
-    while (auto val = co_await gen.next())
-        result.push_back(f(std::move(*val)));
-    co_return result;
-}
-
-/**
- * @brief Filter values, collecting matching ones into a vector
- * @code
- * auto evens = co_await ag_filter(produce(), [](int v){ return v % 2 == 0; });
- * @endcode
- * @ingroup Coroutine
- */
-template <typename T, typename Pred>
-task<std::vector<T>>
-ag_filter(async_generator<T> gen, Pred pred) {
-    std::vector<T> result;
-    while (auto val = co_await gen.next())
-        if (pred(*val))
-            result.push_back(std::move(*val));
-    co_return result;
-}
-
-/**
- * @brief Fold / reduce all values into a single accumulator
- *
- * @param gen     Source generator
- * @param init    Initial accumulator value
- * @param reducer Binary function: (Acc, T) -> Acc
- * @code
- * int sum = co_await ag_reduce(produce(), 0, std::plus<int>{});
- * @endcode
- * @ingroup Coroutine
- */
-template <typename T, typename Acc, typename F>
-task<Acc>
-ag_reduce(async_generator<T> gen, Acc init, F reducer) {
-    while (auto val = co_await gen.next())
-        init = reducer(std::move(init), std::move(*val));
-    co_return init;
-}
-
-/**
- * @brief Take at most N values from an async_generator
- * @ingroup Coroutine
- */
+/** @brief Take at most `n` values — same contract as `take(generator<T>, n)`. @ingroup Coroutine */
 template <typename T>
 async_generator<T>
-ag_take(async_generator<T> gen, size_t n) {
+take(async_generator<T> gen, size_t n) {
     size_t count = 0;
     while (count < n) {
         auto val = co_await gen.next();
@@ -872,19 +788,206 @@ ag_take(async_generator<T> gen, size_t n) {
     }
 }
 
-/**
- * @brief Skip the first N values from an async_generator
- * @ingroup Coroutine
- */
+/** @brief Skip the first `n` values — same contract as `skip(generator<T>, n)`. @ingroup Coroutine */
 template <typename T>
 async_generator<T>
-ag_skip(async_generator<T> gen, size_t n) {
+skip(async_generator<T> gen, size_t n) {
     size_t skipped = 0;
     while (auto val = co_await gen.next()) {
         if (skipped++ < n)
             continue;
         co_yield std::move(*val);
     }
+}
+
+/**
+ * @brief Lazily transform each value
+ *
+ * The lazy sibling of `async_stream::map` and of `map(generator<T>, F)`. Nothing is consumed
+ * until the result is pulled, so it composes — and the composition is the reason to prefer it
+ * over `map_to_vector` whenever the consumer decides how much it wants.
+ * @code
+ * async_generator<int> produce();
+ *
+ * // pulls exactly three values from produce(), not all of them
+ * auto v = co_await collect_to_vector(take(map(produce(), [](int x) { return x * 2; }), 3));
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T, typename F>
+async_generator<std::invoke_result_t<F, T>>
+map(async_generator<T> gen, F f) {
+    while (auto val = co_await gen.next())
+        co_yield f(std::move(*val));
+}
+
+/**
+ * @brief Lazily keep only the values matching `pred`
+ * @ingroup Coroutine
+ */
+template <typename T, typename Pred>
+async_generator<T>
+filter(async_generator<T> gen, Pred pred) {
+    while (auto val = co_await gen.next())
+        if (pred(*val))
+            co_yield std::move(*val);
+}
+
+/**
+ * @brief Run `f` over every value
+ *
+ * `f` may be an ordinary callable or return `task<void>`, in which case it is awaited before
+ * the next value is pulled — so a slow consumer applies backpressure to the source rather
+ * than racing it.
+ * @code
+ * async_generator<int> produce();
+ *
+ * co_await for_each(produce(), [](int v) -> task<void> {
+ *     co_await sleep(std::chrono::milliseconds(v));   // any awaitable: the source waits
+ * });
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T, typename F>
+task<void>
+for_each(async_generator<T> gen, F f) {
+    QB_AGEN_TRACE("for_each start");
+    [[maybe_unused]] std::size_t n = 0;
+    while (auto val = co_await gen.next()) {
+        QB_AGEN_TRACE("for_each got item #%zu", n++);
+        if constexpr (std::is_same_v<std::invoke_result_t<F, T &>, task<void>>) {
+            co_await f(*val);
+        } else {
+            f(*val);
+        }
+    }
+    QB_AGEN_TRACE("for_each done after %zu items", n);
+}
+
+/**
+ * @brief Fold every value into an accumulator
+ *
+ * @param gen     Source generator, consumed
+ * @param init    Initial accumulator value — **first**, like `std::accumulate` and
+ *                `std::ranges::fold_left`, and like `async_stream::reduce`
+ * @param reducer Binary function `(Acc, T) -> Acc`
+ * @code
+ * async_generator<int> produce();
+ *
+ * int sum = co_await reduce(produce(), 0, std::plus<int>{});
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T, typename Acc, typename F>
+task<Acc>
+reduce(async_generator<T> gen, Acc init, F reducer) {
+    while (auto val = co_await gen.next())
+        init = reducer(std::move(init), std::move(*val));
+    co_return init;
+}
+
+/**
+ * @brief Drain into a vector — the async sibling of `collect_to_vector(generator<T>&)`
+ * @code
+ * async_generator<int> produce();
+ *
+ * std::vector<int> all   = co_await collect_to_vector(produce());
+ * std::vector<int> first = co_await collect_to_vector(take(produce(), 3));
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T>
+task<std::vector<T>>
+collect_to_vector(async_generator<T> gen) {
+    QB_AGEN_TRACE("collect_to_vector start");
+    std::vector<T> result;
+    while (auto val = co_await gen.next()) {
+        QB_AGEN_TRACE("collect_to_vector got item total=%zu", result.size() + 1);
+        result.push_back(std::move(*val));
+    }
+    QB_AGEN_TRACE("collect_to_vector done total=%zu", result.size());
+    co_return result;
+}
+
+/**
+ * @brief Transform every value and collect the results — EAGER, unlike `map`
+ *
+ * Runs the source to exhaustion. Named for what it does because `map` is taken by the lazy
+ * form above, which is what the same word means on `async_stream`; reach for that one when
+ * something downstream decides how much to pull.
+ * @code
+ * async_generator<int> produce();
+ *
+ * std::vector<int> doubled = co_await map_to_vector(produce(), [](int v) { return v * 2; });
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T, typename F>
+task<std::vector<std::invoke_result_t<F, T>>>
+map_to_vector(async_generator<T> gen, F f) {
+    using R = std::invoke_result_t<F, T>;
+    std::vector<R> result;
+    while (auto val = co_await gen.next())
+        result.push_back(f(std::move(*val)));
+    co_return result;
+}
+
+/**
+ * @brief Keep the matching values and collect them — EAGER, unlike `filter`
+ * @code
+ * async_generator<int> produce();
+ *
+ * std::vector<int> evens = co_await filter_to_vector(produce(), [](int v) { return v % 2 == 0; });
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T, typename Pred>
+task<std::vector<T>>
+filter_to_vector(async_generator<T> gen, Pred pred) {
+    std::vector<T> result;
+    while (auto val = co_await gen.next())
+        if (pred(*val))
+            result.push_back(std::move(*val));
+    co_return result;
+}
+
+// -- the sync generator's missing half ----------------------------------------------
+// `generator<T>` had `take`, `skip` and `concat` but no `map`, `filter`, `for_each` or
+// `reduce`, so a reader who learned the async family found nothing here and one who
+// learned this one found prefixed names there. Lazy, like its `take`/`skip`.
+
+/** @brief Lazily transform each value of a sync generator. @ingroup Coroutine */
+template <typename T, typename F>
+generator<std::invoke_result_t<F, T>>
+map(generator<T> gen, F f) {
+    for (auto &val : gen)
+        co_yield f(std::move(val));
+}
+
+/** @brief Lazily keep only the values matching `pred`. @ingroup Coroutine */
+template <typename T, typename Pred>
+generator<T>
+filter(generator<T> gen, Pred pred) {
+    for (auto &val : gen)
+        if (pred(val))
+            co_yield std::move(val);
+}
+
+/** @brief Run `f` over every value of a sync generator. @ingroup Coroutine */
+template <typename T, typename F>
+void
+for_each(generator<T> gen, F f) {
+    for (auto &val : gen)
+        f(val);
+}
+
+/** @brief Fold every value into an accumulator. Seed first, like every sibling. @ingroup Coroutine */
+template <typename T, typename Acc, typename F>
+Acc
+reduce(generator<T> gen, Acc init, F reducer) {
+    for (auto &val : gen)
+        init = reducer(std::move(init), std::move(val));
+    return init;
 }
 
 } // namespace qb::io::async

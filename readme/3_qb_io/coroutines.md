@@ -596,22 +596,22 @@ Combines `co_yield` with `co_await`, so each element can wait on the event loop.
 ```cpp
 async_generator<std::string> read_lines(std::string path);   // co_await + co_yield inside
 
-co_await ag_for_each(read_lines("log.txt"), [](std::string line) {
+co_await for_each(read_lines("log.txt"), [](std::string line) {
     process(line);                                            // synchronous consumer
 });
-co_await ag_for_each(read_lines("log.txt"), [](std::string line) -> task<void> {
+co_await for_each(read_lines("log.txt"), [](std::string line) -> task<void> {
     co_await store(line);                                     // async consumer
 });
 
-std::vector<std::string> all = co_await ag_collect(read_lines("log.txt"));
-auto sizes = co_await ag_map   (read_lines("f"), [](auto& s) { return s.size(); });
-auto kept  = co_await ag_filter(read_lines("f"), [](auto& s) { return !s.empty(); });
-auto total = co_await ag_reduce(read_lines("f"), std::size_t{0},
+std::vector<std::string> all = co_await collect_to_vector(read_lines("log.txt"));
+auto sizes = co_await map_to_vector   (read_lines("f"), [](auto& s) { return s.size(); });
+auto kept  = co_await filter_to_vector(read_lines("f"), [](auto& s) { return !s.empty(); });
+auto total = co_await reduce(read_lines("f"), std::size_t{0},
                                 [](auto acc, auto& s) { return acc + s.size(); });
 ```
 
-`ag_reduce(gen, init, reducer)` takes the seed before the reducer.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:289 (async_generator), :772 (ag_for_each), :795 (ag_collect), :815 (ag_map), :832 (ag_filter), :853 (ag_reduce: init then reducer) -->
+`reduce(gen, init, reducer)` takes the seed before the reducer.
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:289 (async_generator), :780 (take), :794 (skip), :819 (map, lazy), :830 (filter, lazy), :853 (for_each), :883 (reduce: init then reducer), :901 (collect_to_vector), :927 (map_to_vector, eager), :946 (filter_to_vector, eager) -->
 
 ## Async streams
 
@@ -824,7 +824,7 @@ Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it e
 | `coroutine/sync.h` | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`, `with_semaphore`, `with_lock` |
 | `coroutine/channel.h` | `channel<T>`, `channel_closed`, `select`, `make_channel`, `make_pipeline`, `transform`, `filter`, `collect` |
 | `coroutine/scope.h` | `coroutine_scope`, `joining_scope` / `cancelling_scope` / `detaching_scope`, `with_scope`, `parallel`, `parallel_map`, `repeat_while` |
-| `coroutine/generator.h` | `generator<T>`, `async_generator<T>`, `range`, `iota`, `from_range`, `ag_for_each` / `ag_collect` / `ag_map` / `ag_filter` / `ag_reduce` |
+| `coroutine/generator.h` | `generator<T>`, `async_generator<T>`, `range`, `iota`, `from_range`, `for_each` / `collect_to_vector` / `map_to_vector` / `filter_to_vector` / `reduce` |
 | `coroutine/stream.h` | `async_stream<T>`, `range_stream`, `interval`, `merge_streams`, `zip`, `timer`, `repeat_value`, `from_generator` |
 | `coroutine/retry.h` | `retry_policy`, `backoff_strategy`, `retry_exhausted`, `with_retry`, `with_retry_until`, `make_retryable`, predefined policies |
 | `coroutine/mixin.h` | `coro_mixin<Derived>` — CRTP `.coro()` accessor |

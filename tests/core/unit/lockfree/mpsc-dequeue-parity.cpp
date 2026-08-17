@@ -41,9 +41,10 @@
  * `ConsumeAllIsPerProducer` and `ConsumeAllDrainsEveryProducer`, the second being the engine
  * invariant.
  *
- * The deprecated `dequeue(Func, ...)` forwarder is exercised too, because a rename that
- * changes behaviour on the old spelling is a silent breakage of every caller that has not
- * migrated yet.
+ * The old spelling is GONE rather than deprecated: 3.0 reforms the API, and an alias nobody
+ * is asked to migrate off is debt that outlives the reason for it. So there is no forwarder
+ * to compare against — what protects the rename is that the contracts below are asserted
+ * against each other and across the two layers.
  */
 
 #include <cstddef>
@@ -293,50 +294,6 @@ TEST(MpscDequeueParity, SpscFunctorDequeueIsBoundedUnlikeTheMpscLoop) {
 
     EXPECT_EQ(mpsc_n, kBudget * kProducers);
     EXPECT_NE(n, mpsc_n) << "same third argument, same spelling before 3.0, different contract";
-}
-
-TEST(MpscDequeueParity, DeprecatedDequeueForwarderStillBehavesIdentically) {
-    // A rename that changes behaviour on the old spelling is a silent breakage of every
-    // caller that has not migrated. The forwarder must be the same call, not merely a similar
-    // one — same total, same batching, same order.
-    Ring via_new;
-    Ring via_old;
-    fill(via_new);
-    fill(via_old);
-
-    std::vector<int> scratch_new(kBudget), scratch_old(kBudget);
-    std::vector<int> items_new, items_old;
-    std::size_t      batches_new = 0, batches_old = 0;
-
-    const auto n_new = via_new.consume_all(
-        [&](int *b, std::size_t c) {
-            ++batches_new;
-            items_new.insert(items_new.end(), b, b + c);
-        },
-        scratch_new.data(), kBudget);
-
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#elif defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4996)
-#endif
-    const auto n_old = via_old.dequeue(
-        [&](int *b, std::size_t c) {
-            ++batches_old;
-            items_old.insert(items_old.end(), b, b + c);
-        },
-        scratch_old.data(), kBudget);
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic pop
-#elif defined(_MSC_VER)
-#pragma warning(pop)
-#endif
-
-    EXPECT_EQ(n_new, n_old);
-    EXPECT_EQ(batches_new, batches_old);
-    EXPECT_EQ(items_new, items_old);
 }
 
 } // namespace mpsc_dequeue_parity_test
