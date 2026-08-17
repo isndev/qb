@@ -216,7 +216,6 @@
  * 2. task.h - task<T> (needs schedule_via_current from scheduler.h)
  * 3. awaiter.h - Awaiters (needs scheduler)
  * 4. utils.h - Utility functions (needs awaiters)
- * 5. mixin.h - CRTP mixin (optional, needs task)
  *
  * Single-thread: one scheduler per thread; do not share coroutine objects across threads.
  *
@@ -228,7 +227,6 @@
 #include "coroutine/task.h"      // Needs schedule_via_current for await_suspend
 #include "coroutine/awaiter.h"   // Needs scheduler
 #include "coroutine/utils.h"     // Needs awaiters
-#include "coroutine/mixin.h"     // Optional CRTP mixin
 
 // Combinators and utilities
 #include "coroutine/combinators.h"  // when_all, when_any, race, timeout

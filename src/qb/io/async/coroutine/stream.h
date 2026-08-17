@@ -423,16 +423,16 @@ public:
      * @endcode
      *
      * @note **The seed comes first, and the accumulator is free.** Both were changed in 3.0
-     *       and both were divergences from the same sibling. `ag_reduce(gen, init, reducer)`
+     *       and both were divergences from the same sibling. `reduce(gen, init, reducer)`
      *       already took the seed first — as do `std::accumulate` and `std::ranges::fold_left`
      *       — while this method took `(f, initial)`, so the two spellings of one idea
      *       disagreed on argument order with nothing comparing them. And the accumulator was
-     *       pinned to `T`, the element type, which `ag_reduce` never was: folding a stream of
+     *       pinned to `T`, the element type, which the generator `reduce` never was: folding a stream of
      *       ints into a string, or of frames into a checksum, was simply not expressible.
      *       Swapping the order is a compile error at every old call site, never a silent
      *       change of meaning — `reduce(f, 0)` deduces `Acc` as the closure type and then
      *       fails to call an `int`.
-     * @see qb::io::async::ag_reduce
+     * @see qb::io::async::reduce
      */
     template <typename Acc, typename F>
     task<Acc>

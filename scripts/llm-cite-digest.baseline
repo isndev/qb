@@ -92,7 +92,6 @@ llm/qb.llm.md	io.h:581-584	fffbfaac9503	start(const std::filesystem::path &fpath
 llm/qb.llm.md	listener.h:1032-1032	cc6b74b785e4	defer(_Func &&func) {
 llm/qb.llm.md	listener.h:965-977	9bb119dec73f	inline void
 llm/qb.llm.md	listener.h:980-993	31584ba4b550	inline void
-llm/qb.llm.md	mixin.h:63-71	a61c435057f9	* Finding 2.D.9 — relationship with qb::Actor::spawn_detached:
 llm/qb.llm.md	patterns/request.h:100-100	fd61ad9ff46e	ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duratio...
 llm/qb.llm.md	qev++.h:696-696	125d441028a9	set(const char *path, qev_tstamp interval = 0.) EV_NOEXCEPT {
 llm/qb.llm.md	scheduler.h:183-203	6f23a925c6f8	* Drains and destroys all coroutines in the ready queue only. Coroutines

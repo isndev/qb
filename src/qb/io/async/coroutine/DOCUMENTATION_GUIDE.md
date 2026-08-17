@@ -39,10 +39,9 @@ interleaving point is `co_await`. This means:
 | `sync.h`         | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`                            |
 | `channel.h`      | `channel<T>`, `select()`, `recv_for()`, `send_for()`, `transform()`, `filter()`                                 |
 | `scope.h`        | `coroutine_scope`, `with_scope()`, `parallel_map()`, `repeat_while()`                                           |
-| `generator.h`    | `generator<T>`, `async_generator<T>`, `ag_for_each()`, `ag_collect()`, `ag_map()`, `ag_filter()`, `ag_reduce()` |
+| `generator.h`    | `generator<T>`, `async_generator<T>`, `for_each()`, `collect_to_vector()`, `map_to_vector()`, `filter_to_vector()`, `reduce()` |
 | `stream.h`       | `async_stream<T>` — functional stream pipeline                                                                  |
 | `retry.h`        | `retry_policy`, `with_retry()`, `with_retry_until()`, `make_retryable()`                                        |
-| `mixin.h`        | `coro_mixin<Derived>` — CRTP helper for actors                                                                  |
 | `coroutine.h`    | Umbrella include for all of the above                                                                           |
 
 ---
@@ -392,12 +391,12 @@ async_generator<int> async_range(int n) {
 }
 
 // Consumers
-co_await ag_for_each(async_range(5), [](int v) { use(v); });
-co_await ag_for_each(async_range(5), [](int v) -> task<void> { co_await log(v); });
-auto vec  = co_await ag_collect(async_range(5));
-auto mapped  = co_await ag_map(async_range(5), [](int v) { return v * 2; });
-auto filtered = co_await ag_filter(async_range(10), [](int v) { return v % 2 == 0; });
-auto sum  = co_await ag_reduce(async_range(5), 0, [](int acc, int v) { return acc + v; });
+co_await for_each(async_range(5), [](int v) { use(v); });
+co_await for_each(async_range(5), [](int v) -> task<void> { co_await log(v); });
+auto vec  = co_await collect_to_vector(async_range(5));
+auto mapped  = co_await map_to_vector(async_range(5), [](int v) { return v * 2; });
+auto filtered = co_await filter_to_vector(async_range(10), [](int v) { return v % 2 == 0; });
+auto sum  = co_await reduce(async_range(5), 0, [](int acc, int v) { return acc + v; });
 
 // Sync helpers
 auto vec = collect_to_vector(fibonacci(10));
@@ -430,7 +429,7 @@ co_await stream.for_each([](int v) -> task<void> { co_await log(v); }); // async
 auto vec  = co_await stream.collect();
 auto opt  = co_await stream.first();
 auto n    = co_await stream.count();
-auto sum  = co_await stream.reduce(0, [](int a, int b){ return a+b; });   // seed first, like ag_reduce
+auto sum  = co_await stream.reduce(0, [](int a, int b){ return a+b; });   // seed first, like reduce
 bool any  = co_await stream.any([](int v)  { return v > 5; });
 bool all  = co_await stream.all([](int v)  { return v > 0; });
 auto opt  = co_await stream.find([](int v) { return v == 42; });
