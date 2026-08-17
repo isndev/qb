@@ -50,7 +50,7 @@ For the full model see [The actor model](../2_core_concepts/actor_model.md); for
 | Polling loop / `sleep_for` between iterations | `qb::ICallback::on(qb::LoopEvent const&)` or `qb::io::async::callback` | A per-loop tick or a one-shot non-blocking timer on the same core. |
 | Manual `errno` / return-code propagation across threads | An error event, or an unhandled exception caught by the core | See [Error handling](./error_handling.md). |
 
-`push` and `send` differ: `push<_Event>(dest, …)` returns a reference to the queued event and guarantees ordered delivery from one source to one destination; `send<_Event>(dest, …)` is unordered and fire-and-forget, and is conventionally reserved for trivially-destructible events — a rule the compiler holds you to only for `qb::EventQOS0`-derived ones. Prefer `push`. _(`push` `qb/src/qb/core/Actor.h:826-831,877`; `send` `:886-890`, `:900`.)_
+`push` and `send` differ: `push<_Event>(dest, …)` returns a reference to the queued event and guarantees ordered delivery from one source to one destination; `send<_Event>(dest, …)` is unordered and fire-and-forget, and is conventionally reserved for trivially-destructible events — a rule the compiler holds you to only for `qb::EventQOS0`-derived ones. Prefer `push`. _(`push` `qb/src/qb/core/Actor.h:831-836,882`; `send` `:891-895`, `:905`.)_
 
 ### Before: a hand-rolled worker
 
@@ -306,7 +306,7 @@ The migration matters because the framework's own surfaces take these types. A f
 - **Do not mix the two instant clocks.** You cannot subtract a `qb::wall_time` from a `qb::mono_time`; the compiler rejects it. Measure and schedule with `mono_time`; record dates and expiry with `wall_time`. Converting between them means going through a Unix-epoch scalar (`unix_seconds` / `wall_from_unix_seconds`) and accepting that the wall clock can step. _(`qb/src/qb/system/time.h:18-20`.)_
 - **`tsc_ticks()` is not a clock.** It is monotonic per core but uncalibrated and not comparable across cores or to either clock. Use it only for single-thread micro-benchmark deltas. _(`qb/src/qb/system/time.h:680-684`.)_
 - **`format_utc`/`parse_utc` are UTC-only.** There is no time-zone database on this toolchain; formatting uses `strftime` and parsing uses `std::get_time` + `timegm`, both in UTC. `format_utc` returns an empty string on failure; `parse_utc` and `from_iso8601` return `std::nullopt`. _(`qb/src/qb/system/time.h:27-30,305-342`.)_
-- **`Actor::time()` returns a raw `uint64_t`, not a chrono type.** It is the core's cached epoch-nanosecond count (sourced from `qb::wall_now()`), constant within one handler or `on(qb::LoopEvent const&)` invocation; it is not a `qb::mono_time` or `qb::wall_time`. For a fresh high-precision wall instant use `qb::unix_nanos(qb::wall_now())`. _(`qb/src/qb/core/Actor.h:566-583`.)_
+- **`Actor::time()` returns a raw `uint64_t`, not a chrono type.** It is the core's cached epoch-nanosecond count (sourced from `qb::wall_now()`), constant within one handler or `on(qb::LoopEvent const&)` invocation; it is not a `qb::mono_time` or `qb::wall_time`. For a fresh high-precision wall instant use `qb::unix_nanos(qb::wall_now())`. _(`qb/src/qb/core/Actor.h:571-588`.)_
 
 ## Part 3 — From the synchronous `onInit()` to the async-init APIs
 

@@ -172,6 +172,7 @@ namespace dz {
 
 std::atomic<bool> g_destroyed{false};
 std::atomic<bool> g_connected{false};
+std::atomic<int>  g_eos_count{0};
 
 class DisconnectZeroServer;
 
@@ -188,7 +189,16 @@ public:
 
     void
     on(Protocol::message &&) {
+        *this << "unsent" << Protocol::end; // queued, then abandoned by the abort below
         disconnect(0);
+    }
+
+    // The other side of the eos scoping. An aborting disconnect() has NOT delivered what it
+    // was holding, so it must stay silent — the eos emission added for close_after_deliver()
+    // is deliberately gated on `!_reason`, and this is what pins that gate.
+    void
+    on(qb::io::async::event::eos &&) {
+        g_eos_count.fetch_add(1);
     }
 };
 
@@ -206,6 +216,7 @@ TEST_F(SessionRoundtripTest, DisconnectZeroTriggersDisposal) {
     using namespace dz;
     g_destroyed.store(false);
     g_connected.store(false);
+    g_eos_count.store(0);
 
     DisconnectZeroServer server;
     ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
@@ -226,6 +237,7 @@ TEST_F(SessionRoundtripTest, DisconnectZeroTriggersDisposal) {
 
     EXPECT_TRUE(g_connected.load());
     EXPECT_TRUE(g_destroyed.load());
+    EXPECT_EQ(g_eos_count.load(), 0) << "an aborting disconnect() delivered nothing, so it must not report eos";
 }
 
 // =============================================================================
@@ -235,6 +247,14 @@ TEST_F(SessionRoundtripTest, DisconnectZeroTriggersDisposal) {
 namespace cad {
 
 std::atomic<bool> g_destroyed{false};
+// `eos` means "everything queued has reached the transport". close_after_deliver() is the
+// one path that asks the framework to wait for exactly that before closing, so it is the
+// path where a handler most wants the notification — and it was the one path that never
+// emitted it: handle_write() tested `!_protocol->ok()` (which close_after_deliver() sets)
+// and returned before the eos block. The write-only sibling `async::output::on(event::io)`
+// emits eos on every drain with no protocol test, so the two write paths disagreed.
+std::atomic<int>  g_eos_count{0};
+std::atomic<bool> g_eos_before_destroy{false};
 
 class CloseAfterDeliverServer;
 
@@ -254,6 +274,15 @@ public:
         *this << "goodbye" << Protocol::end;
         close_after_deliver();
     }
+
+    // Defining this handler is what opts the session in: the emission is guarded by
+    // `if constexpr (qb::has_on<_Derived, event::eos>)`.
+    void
+    on(qb::io::async::event::eos &&) {
+        g_eos_count.fetch_add(1);
+        if (!g_destroyed.load())
+            g_eos_before_destroy.store(true);
+    }
 };
 
 class CloseAfterDeliverServer : public use<CloseAfterDeliverServer>::tcp::server<CloseAfterDeliverSession> {
@@ -267,6 +296,8 @@ public:
 TEST_F(SessionRoundtripTest, CloseAfterDeliverSendsDataThenDisconnects) {
     using namespace cad;
     g_destroyed.store(false);
+    g_eos_count.store(0);
+    g_eos_before_destroy.store(false);
 
     CloseAfterDeliverServer server;
     ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
@@ -303,6 +334,14 @@ TEST_F(SessionRoundtripTest, CloseAfterDeliverSendsDataThenDisconnects) {
 
     EXPECT_TRUE(got_goodbye.load()) << "the pending 'goodbye' was not delivered before close";
     EXPECT_TRUE(g_destroyed.load());
+
+    // The eos contract: `event::eos` is documented as "all buffered data has been written
+    // and sent", unconditionally, and close_after_deliver() is precisely a request to be
+    // told when that has happened. Before the fix this read 0 — the graceful-close branch
+    // returned before the emission, so the one case that asked for the notification was
+    // the one case that never got it.
+    EXPECT_EQ(g_eos_count.load(), 1) << "close_after_deliver() must still report final delivery via eos";
+    EXPECT_TRUE(g_eos_before_destroy.load()) << "eos must be delivered while the session is alive, before disposal";
 }
 
 // =============================================================================
@@ -509,4 +548,84 @@ TEST_F(SessionRoundtripTest, RapidDisconnectsAllObserved) {
         t.join();
 
     EXPECT_EQ(g_disconnects.load(), kClients);
+}
+
+// =============================================================================
+// registerSession's construction order: the session exists BEFORE it owns a socket
+//
+// The pair here is "the session constructor" vs "the server's on(IOSession&) hook".
+// io_handler::registerSession() must build the session before it can move the accepted
+// socket into it, so anything touching the descriptor from a session CONSTRUCTOR
+// addresses fd -1 and silently fails — set_optval (TCP_NODELAY, SO_*), getsockname, peer
+// lookup, TLS handle access. Nothing reports it, which is why it cost an example program
+// a debugging session. The hook is the place that works, and this pins both halves so the
+// order stays a documented contract rather than an implementation detail.
+// =============================================================================
+
+namespace ord {
+
+std::atomic<bool> g_ctor_saw_open_socket{true}; // pessimistic: proven false below
+std::atomic<bool> g_hook_saw_open_socket{false};
+std::atomic<bool> g_hook_ran{false};
+std::atomic<int>  g_ctor_setopt_result{0};
+
+class OrderServer;
+
+class OrderSession : public use<OrderSession>::tcp::client<OrderServer> {
+public:
+    using Protocol = qb::protocol::text::command<OrderSession>;
+
+    explicit OrderSession(IOServer &server)
+        : client(server) {
+        // Step 1 of registerSession: the transport is default-constructed here.
+        g_ctor_saw_open_socket.store(transport().is_open());
+        // The exact call an example tried to make. It "succeeds" as far as the caller can
+        // tell -- there is no exception and the return is discarded by most callers -- but
+        // it is addressing an invalid descriptor.
+        g_ctor_setopt_result.store(transport().set_optval(IPPROTO_TCP, TCP_NODELAY, 1));
+    }
+
+    void
+    on(Protocol::message &&) {}
+};
+
+class OrderServer : public use<OrderServer>::tcp::server<OrderSession> {
+public:
+    // Step 4 of registerSession, after `session->transport() = std::move(new_io)`.
+    void
+    on(IOSession &s) {
+        g_hook_saw_open_socket.store(s.transport().is_open());
+        g_hook_ran.store(true);
+    }
+};
+
+} // namespace ord
+
+TEST_F(SessionRoundtripTest, SessionConstructorHasNoSocketButTheHookDoes) {
+    using namespace ord;
+    g_ctor_saw_open_socket.store(true);
+    g_hook_saw_open_socket.store(false);
+    g_hook_ran.store(false);
+    g_ctor_setopt_result.store(0);
+
+    OrderServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    ASSERT_NE(port, 0);
+    server.start();
+
+    std::thread t([port]() {
+        qb::io::tcp::socket sock;
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", port), SocketStatus::Done);
+        sock.write("hello\n", 6);
+        std::this_thread::sleep_for(100ms);
+        sock.disconnect();
+    });
+
+    EXPECT_TRUE(pump_until([] { return g_hook_ran.load(); }, 5s)) << "the server's on(IOSession&) hook never ran";
+    t.join();
+
+    EXPECT_FALSE(g_ctor_saw_open_socket.load()) << "the session constructor must NOT be assumed to own a socket";
+    EXPECT_NE(g_ctor_setopt_result.load(), 0) << "set_optval from a constructor addresses fd -1 and fails silently";
+    EXPECT_TRUE(g_hook_saw_open_socket.load()) << "on(IOSession&) is the hook that runs with the socket installed";
 }

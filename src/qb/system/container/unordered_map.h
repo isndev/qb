@@ -79,6 +79,16 @@ using unordered_flat_map = ska::flat_hash_map<K, V, H, E, A>;
  *          (`QB_ABI_UNORDERED_MAP`) so a future reintroduction fails loudly at
  *          `find_package()` time instead of at runtime.
  *
+ * @note **No `contains()` — use `find(k) != end()`.** This is `ska::unordered_map`, a
+ *       vendored third-party container (`qb/vendor/ska_hash/unordered_map.hpp`) written
+ *       before C++20 added `contains()`, and it does not provide one. It is *not* a
+ *       `std::unordered_map`, so the drop-in assumption fails here and only here — the rest
+ *       of the interface (`find`, `count`, `at`, `operator[]`, `emplace`, iterators) matches.
+ *       Adding the member would mean editing the vendored file, which the vendor-attribution
+ *       contract forbids: that header is carried verbatim so its upstream license and
+ *       provenance stay checkable, and `dev/agent/verify.sh`'s vendor-attribution leg
+ *       enforces it. `count(k) != 0` is equivalent and equally O(1) for a unique-key map.
+ *
  * @tparam K The key type
  * @tparam V The value type
  * @tparam H The hash function type (defaults to std::hash<K>)

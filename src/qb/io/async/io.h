@@ -2705,6 +2705,20 @@ private:
                 // not-ok by close_after_deliver(): dispose. The disconnected event's _system_error
                 // is finalized at the `error:` label in on(event::io) (io-defect-3 handled there —
                 // a protocol-initiated graceful close reports no system error).
+                //
+                // A graceful close-after-deliver still earns its `eos` first. `event::eos` is
+                // documented as "all buffered data has been written and sent" and the write-only
+                // sibling `output::on(event::io)` emits it on every drain with no protocol test,
+                // so suppressing it here made the ONE case where the user explicitly asked to be
+                // told about final delivery — close_after_deliver() — the one case that never
+                // reported it. Deliberately scoped to `!_reason`: an aborting disconnect() has
+                // not delivered anything, so it must stay silent.
+                if (!_reason) {
+                    if constexpr (qb::has_on<_Derived, event::eos>) {
+                        auto evt__eos = event::eos{};
+                        Derived.on(std::move(evt__eos));
+                    }
+                }
                 return false;
             }
             this->_async_event.set(EV_READ);

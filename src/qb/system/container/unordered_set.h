@@ -60,6 +60,11 @@ using unordered_flat_set = ska::flat_hash_set<K, H, E, A>;
  *          `qb/system/container/unordered_map.h` for the full account and for the
  *          configure-time tripwire that guards the invariant.
  *
+ * @note **No `contains()` — use `find(k) != end()`.** This is `ska::unordered_set`, a
+ *       vendored pre-C++20 container; see the identical note on `qb::unordered_map` for why
+ *       the member cannot simply be added (the vendored header is carried verbatim under the
+ *       vendor-attribution contract). `count(k) != 0` is equivalent and equally O(1).
+ *
  * @tparam K The key type
  * @tparam H The hash function type (defaults to std::hash<K>)
  * @tparam E The equality function type (defaults to std::equal_to<K>)

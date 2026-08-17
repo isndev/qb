@@ -129,7 +129,7 @@ When in doubt the answer is `push`.
 
 ### `to(dest)` — chaining over one pipe
 
-`to(dest)` returns an `Actor::EventBuilder`, which holds a `qb::Pipe` and whose `push` forwards to `Pipe::push` and returns the builder for chaining (`src/qb/core/Actor.h:492-530`; `src/qb/core/VirtualCore.h:1026-1031`):
+`to(dest)` returns an `Actor::EventBuilder`, which holds a `qb::Pipe` and whose `push` forwards to `Pipe::push` and returns the builder for chaining (`src/qb/core/Actor.h:497-535`; `src/qb/core/VirtualCore.h:1026-1031`):
 
 ```cpp
 // src: derived from qb/tests/core/system/messaging/messaging-api.cpp (EventBuilderPushActor)
@@ -198,7 +198,7 @@ copyAllocatedPayload(e);
 That reference **dies at the very next event queued to the same destination core** — not at the end of the enclosing scope, and not at the flush. The header says so itself:
 
 > The returned reference dies at the very next event queued to the same destination core — not merely at the end of the enclosing scope.
-> — the `@attention` on `Actor::push` (`src/qb/core/Actor.h:861-870`)
+> — the `@attention` on `Actor::push` (`src/qb/core/Actor.h:866-875`)
 
 The pipe is one growable allocation. `allocate_back` has three branches, and two of them move everything already queued ([`allocate_back`](../0_foundations/buffers.md#what-allocate_back-actually-does)):
 
@@ -383,7 +383,7 @@ Type ids are dense and assigned once per type through a magic static, then recor
 
 ## `noexcept` on the message path
 
-`push`, `send`, `broadcast`, `reply`, `forward`, `Pipe::push` and `Pipe::allocated_push` are all `noexcept`, yet they grow a pipe buffer — which can throw `std::bad_alloc` — and run your event's constructor in place, which can throw anything. A throw cannot cross a `noexcept` boundary, so **any such failure calls `std::terminate()` and aborts the process** (`src/qb/core/Actor.h:871-875`; `src/qb/core/Pipe.h:135-147`).
+`push`, `send`, `broadcast`, `reply`, `forward`, `Pipe::push` and `Pipe::allocated_push` are all `noexcept`, yet they grow a pipe buffer — which can throw `std::bad_alloc` — and run your event's constructor in place, which can throw anything. A throw cannot cross a `noexcept` boundary, so **any such failure calls `std::terminate()` and aborts the process** (`src/qb/core/Actor.h:876-880`; `src/qb/core/Pipe.h:135-147`).
 
 This is a design position, not an oversight: events are expected to be small, allocation-light messages on an adequately provisioned system, and an allocation failure in the messaging hot path is treated as fatal. Keep event constructors cheap, and move heap data in through an already-allocated `std::shared_ptr` rather than allocating inside the constructor.
 

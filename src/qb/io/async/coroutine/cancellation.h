@@ -221,10 +221,38 @@ public:
 /**
  * @brief Awaiter that suspends until cancellation is requested
  *
- * Usage:
+ * **This is a wait, not a poll — the name is the trap.** `await_ready()` returns
+ * `token.is_cancelled()`, so on a *live* token the awaiting coroutine parks and is only
+ * resumed by `cancel()`; it then throws `cancelled_error`. On an already-cancelled token it
+ * does not suspend and throws immediately. So `co_await check_cancelled(tok)` in the middle
+ * of a function is not a checkpoint that falls through when nothing is wrong — it stops
+ * there forever.
+ *
+ * That behaviour is what the awaiter is *for*: it is the cancellation branch of a race, and
+ * every in-tree use is that shape.
+ *
  * @code
- * co_await check_cancelled(token);  // Throws if cancelled
+ * // Correct: one branch of a race — whichever happens first wins.
+ * // when_any() composes task<T>, not bare awaiters, and each branch must be a NAMED local
+ * // of the enclosing frame: task's initial_suspend is suspend_always, so a body starts on a
+ * // later run_ready(), by which point a temporary closure is already gone.
+ * auto wait_op   = [&ev]()   -> task<void> { co_await ev.wait(); };
+ * auto cancel_op = [token]() -> task<void> { co_await check_cancelled(token); };
+ * auto result = co_await when_any(wait_op(), cancel_op());   // result.index == 1 on cancel
+ *
+ * // Correct: a loop checkpoint that yields AND observes cancellation.
+ * while (more()) { co_await yield_or_cancel(token); step(); }
+ *
+ * // Correct: a non-suspending poll, when you only want to bail out.
+ * token.throw_if_cancelled();
+ *
+ * // WRONG: parks until cancelled instead of falling through.
+ * co_await check_cancelled(token);
+ * do_more_work();                    // unreachable while the token is live
  * @endcode
+ *
+ * @see yield_or_cancel   — yields to the scheduler and checks on resume (the loop checkpoint)
+ * @see cancellation_token::throw_if_cancelled — the synchronous, non-suspending poll
  */
 struct cancellation_awaiter {
     cancellation_token      token;

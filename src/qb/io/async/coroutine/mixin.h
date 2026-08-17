@@ -85,13 +85,21 @@ protected:
 
 public:
     /**
-     * @brief Access coroutine-enabled interface
+     * @brief Readability accessor for the coroutine-returning half of a client's API
      *
-     * Returns a proxy object that provides coroutine versions of all methods.
-     * The proxy uses the same underlying client but returns task<T> instead of T.
+     * @warning **This returns `*this`, not a proxy.** It is `static_cast<Derived&>(*this)`
+     *          and nothing else, so `client.coro().get(k)` and `client.get(k)` name the
+     *          *same overload* and compile to the same code. It does not add coroutine
+     *          methods, does not change any return type from `T` to `task<T>`, and cannot
+     *          disambiguate a sync overload from a coroutine one. An earlier version of this
+     *          comment described a proxy that "returns task<T> instead of T"; no such proxy
+     *          was ever built, and reading it that way leads to code whose behaviour does not
+     *          match its spelling.
      *
-     * @example
-     * auto result = co_await redis.coro().get("key");
+     * @note The qbm clients that were the intended users resolved this differently: their
+     *       coroutine forms are distinct member overloads on the client itself (awaited
+     *       directly, e.g. `co_await client.get(k)`), so nothing in the tree calls `coro()`
+     *       — this mixin currently has zero users. It is kept for source compatibility.
      *
      * @return Reference to the derived type (CRTP pattern)
      */

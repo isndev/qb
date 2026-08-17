@@ -25,7 +25,7 @@ These primitives are correct only under tightly scoped threading contracts. Each
 | `mpsc::ringbuffer`, round-robin enqueue | many | exactly one | per-producer `SpinLock` |
 | `mpsc_unbounded_queue` | many | exactly one | lock-free (Michael-Scott) |
 
-"Exactly one consumer" is not advisory. In the SPSC buffer, `write_index_` is written only from the enqueue side and `read_index_` only from the dequeue side; a second producer or a second consumer races those stores and the result is undefined (`src/qb/system/lockfree/spsc.h:151`). The MPSC `dequeue` and `consume_all` overloads are likewise single-consumer only (`src/qb/system/lockfree/mpsc.h:173-177`).
+"Exactly one consumer" is not advisory. In the SPSC buffer, `write_index_` is written only from the enqueue side and `read_index_` only from the dequeue side; a second producer or a second consumer races those stores and the result is undefined (`src/qb/system/lockfree/spsc.h:151`). The MPSC `dequeue` and `consume_all` overloads are likewise single-consumer only (`src/qb/system/lockfree/mpsc.h:183-187`).
 
 These types live in `qb` — the foundation shared by `qb-io` and `qb-core` — not in either library exclusively. They depend on [the time vocabulary](./time.md) (`qb::duration`, `qb::mono_time`) and on the cache-line constants from [`qb/utility/prefix.h`](./abi_and_build_fingerprint.md).
 
@@ -156,7 +156,7 @@ flowchart LR
     RN --> DC
 ```
 
-The producer index is the **sender's** resolved core id, so each producer is permanently bound to one slot and rides the lock-free indexed path — no `SpinLock`, no cross-producer contention (see `SharedCoreCommunication::send`, below). The single consumer's `dequeue` advances `ret` by the count taken from each ring, so slots append rather than overwrite (`src/qb/system/lockfree/mpsc.h:173-177`).
+The producer index is the **sender's** resolved core id, so each producer is permanently bound to one slot and rides the lock-free indexed path — no `SpinLock`, no cross-producer contention (see `SharedCoreCommunication::send`, below). The single consumer's `dequeue` advances `ret` by the count taken from each ring, so slots append rather than overwrite (`src/qb/system/lockfree/mpsc.h:183-187`).
 
 ### Two enqueue families — read this before using
 
@@ -166,7 +166,7 @@ The enqueue API splits into two families with very different safety properties. 
 
 **Round-robin enqueue — `SpinLock`-guarded, any thread.** The `enqueue(T const&)` and `enqueue(T const*, size)` overloads pick a producer ring via a `static thread_local` counter modulo the producer count, then take that producer's `SpinLock` under a `std::lock_guard` before writing (`src/qb/system/lockfree/mpsc.h:133-136`). These overloads are safe to call concurrently from arbitrarily many threads, at the cost of the spinlock; the modulo also balances load across rings.
 
-> **Where the framework's only `SpinLock` lives, precisely.** All four `std::lock_guard<SpinLock>` sites in the tree are inside these round-robin overloads — `src/qb/system/lockfree/mpsc.h:135` and `:155` in the fixed-producer specialisation, `:351` and `:371` in the runtime one. **The engine calls none of them.** `SharedCoreCommunication::send` passes its own resolved core id to the *indexed* overload (`src/qb/core/Main.cpp:215`), so the answer to "is there a lock on the message path?" is no — not a fast one, not an uncontended one: none is taken.
+> **Where the framework's only `SpinLock` lives, precisely.** All four `std::lock_guard<SpinLock>` sites in the tree are inside these round-robin overloads — `src/qb/system/lockfree/mpsc.h:135` and `:155` in the fixed-producer specialisation, `:380` and `:400` in the runtime one. **The engine calls none of them.** `SharedCoreCommunication::send` passes its own resolved core id to the *indexed* overload (`src/qb/core/Main.cpp:215`), so the answer to "is there a lock on the message path?" is no — not a fast one, not an uncontended one: none is taken.
 
 ```cpp
 // src: src/qb/system/lockfree/mpsc.h
@@ -201,8 +201,8 @@ public:
 
 ### Contract and behavior
 
-- **At least one producer is required (runtime variant).** `ringbuffer<T, max_size, 0>` deletes its default constructor and asserts `nb_producer > 0` in the one it has, because the round-robin paths compute `tl_index % _nb_producer` — zero producers would be a division by zero (`src/qb/system/lockfree/mpsc.h:267-281`).
-- **`dequeue(T*, size)` appends across producers.** The single-consumer drain advances the output pointer by the count taken from each ring, so items from later producers are appended after earlier ones rather than overwriting them. The in-source comment is explicit that the alternative is silent data loss (`src/qb/system/lockfree/mpsc.h:173-177`).
+- **At least one producer is required (runtime variant).** `ringbuffer<T, max_size, 0>` deletes its default constructor and asserts `nb_producer > 0` in the one it has, because the round-robin paths compute `tl_index % _nb_producer` — zero producers would be a division by zero (`src/qb/system/lockfree/mpsc.h:296-310`).
+- **`dequeue(T*, size)` appends across producers.** The single-consumer drain advances the output pointer by the count taken from each ring, so items from later producers are appended after earlier ones rather than overwriting them. The in-source comment is explicit that the alternative is silent data loss (`src/qb/system/lockfree/mpsc.h:183-187`).
 - **`ringOf(index)` is an escape hatch.** It returns the underlying SPSC ring by reference for direct access. The SPSC single-producer/single-consumer contract then applies to whatever you do with it; there is no MPSC-level guard.
 
 ### Where the engine uses it

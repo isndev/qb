@@ -23,7 +23,7 @@ The framework targets C++20 by default; coroutine support requires a compiler wi
 <!-- src: qb/README.md (C++20 requirement); connector.h gated on __cpp_impl_coroutine -->
 
 Every timed coroutine API on this page takes a `qb::duration` (a `std::chrono::nanoseconds` span; any `std::chrono::duration` converts implicitly). Deadlines that need an absolute point use `std::chrono::steady_clock::time_point` (the type behind `qb::mono_time`). Raw `double`-seconds arguments are not part of this surface.
-<!-- src: qb/src/qb/io/async/coroutine/awaiter.h:330, cancellation.h:873 -->
+<!-- src: qb/src/qb/io/async/coroutine/awaiter.h:330, cancellation.h:901 -->
 
 ## The execution model
 
@@ -319,7 +319,7 @@ token.cancel();                                 // same thread only
 ```
 
 `cancellation_token` is copyable (it shares state through a `shared_ptr`) and holds no mutex: `cancel()` and `on_cancel()` must run on the token's own thread. `with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {})` throws `timeout_error` (including if the deadline is already past on entry) or `cancelled_error`; a winning operation result is authoritative and is never reclassified against wall-clock time. `check_cancelled(token)` and `yield_or_cancel(token)` throw `cancelled_error` when the token is set; `make_cancellable(task, token)` wraps a task so it surfaces cancellation.
-<!-- src: qb/src/qb/io/async/coroutine/cancellation.h:148 (cancel), :177 (on_cancel), :873 (with_deadline), :881-883 (deadline already past), :281 (check_cancelled), :318 (yield_or_cancel), :617 (make_cancellable), :737 (cancellable_sleep) -->
+<!-- src: qb/src/qb/io/async/coroutine/cancellation.h:148 (cancel), :177 (on_cancel), :901 (with_deadline), :909-911 (deadline already past), :309 (check_cancelled), :346 (yield_or_cancel), :645 (make_cancellable), :765 (cancellable_sleep) -->
 
 > **Cross-thread cancellation.** A token has no lock. To cancel from another thread, send a `qb-core` actor event to the owning thread and call `token.cancel()` from that actor's synchronous handler, where it runs on the right thread.
 <!-- src: qb/src/qb/io/async/coroutine/cancellation.h:97-103 -->
@@ -334,13 +334,13 @@ The distinction the vocabulary draws, and which the rest of this section depends
 
 | Awaitable | Parks on | Hook | On cancel |
 |---|---|---|---|
-| `co_await cancellable_sleep(d, tok)` | a spawned timer task (`sleep(d)` inside it) | `on_cancel` — `cancellation.h:691` | wakes now, tears the spawned timer down through `cancel_spawned`, and `await_resume` throws `cancelled_error` |
-| `co_await make_cancellable(std::move(t), tok, throw_on_cancel)` | a spawned `task_runner` driving the inner task | `on_cancel` — `cancellation.h:410` (`:548` for `void`) | destroys the runner frame **first**, then `forget`s and drops the inner task, then resumes the waiter; throws `cancelled_error` when `throw_on_cancel` |
-| `co_await with_deadline(std::move(op), deadline, tok)` | `when_any(op, timeout_branch)`; the timeout branch owns the hook | `on_cancel` — `cancellation.h:799` | resolves the branch with `result == 1`, reclaims the deadline timer, and `with_deadline` throws `cancelled_error` |
-| `co_await check_cancelled(tok)` | nothing but the token itself | `on_cancel` — `cancellation.h:255` | resumes and throws `cancelled_error` |
+| `co_await cancellable_sleep(d, tok)` | a spawned timer task (`sleep(d)` inside it) | `on_cancel` — `cancellation.h:719` | wakes now, tears the spawned timer down through `cancel_spawned`, and `await_resume` throws `cancelled_error` |
+| `co_await make_cancellable(std::move(t), tok, throw_on_cancel)` | a spawned `task_runner` driving the inner task | `on_cancel` — `cancellation.h:438` (`:576` for `void`) | destroys the runner frame **first**, then `forget`s and drops the inner task, then resumes the waiter; throws `cancelled_error` when `throw_on_cancel` |
+| `co_await with_deadline(std::move(op), deadline, tok)` | `when_any(op, timeout_branch)`; the timeout branch owns the hook | `on_cancel` — `cancellation.h:827` | resolves the branch with `result == 1`, reclaims the deadline timer, and `with_deadline` throws `cancelled_error` |
+| `co_await check_cancelled(tok)` | nothing but the token itself | `on_cancel` — `cancellation.h:283` | resumes and throws `cancelled_error` |
 | `co_await sem.acquire(tok)` | the semaphore's `_waiters` deque | `on_cancel` — `sync.h:237` | marks the node cancelled, retracts it from the queue, resumes, and throws `cancelled_error` |
 
-`yield_or_cancel(tok)` is a near miss worth naming: it re-enqueues the coroutine at the back of the ready queue and **checks** the token when it resumes — `yield_or_cancel` (`cancellation.h:292-320`), so it observes cancellation promptly in a loop — but it registers no hook, so it cannot be woken by `cancel()` from a longer sleep.
+`yield_or_cancel(tok)` is a near miss worth naming: it re-enqueues the coroutine at the back of the ready queue and **checks** the token when it resumes — `yield_or_cancel` (`cancellation.h:320-348`), so it observes cancellation promptly in a loop — but it registers no hook, so it cannot be woken by `cancel()` from a longer sleep.
 
 ### Not cancellation-aware — `cancel()` does nothing to these
 
@@ -438,9 +438,9 @@ co_await with_lock(mtx,     [] { return do_sync_work(); });
 ```
 
 Notes grounded in the headers: the mutex methods are `lock()` / `unlock()` / `scoped_lock()`; the read/write lock exposes `lock_read()` / `lock_write()` / `unlock_read()` / `unlock_write()` plus the RAII `scoped_read_lock()` / `scoped_write_lock()`. `async_event(bool auto_reset = false, bool initially_set = false)`. `with_semaphore` and `with_lock` take a *synchronous* callable and return its result (they `co_return f()`), not a task factory. Over-releasing a semaphore is a no-op; unlocking an unheld mutex or rw-lock asserts in debug builds.
-<!-- src: qb/src/qb/io/async/coroutine/sync.h:261 (acquire), :376 (scoped_acquire), :511 (lock), :534 (unlock), :601 (scoped_lock), :899/:905 (scoped_read/write_lock), :789/:803 (unlock_read/write), :1023 (arrive_and_wait), :1104 (async_event ctor), :1187 (set), :1296 (count_down), :1401/:1425 (with_semaphore/with_lock), :294/:535 (no-op / assert) -->
+<!-- src: qb/src/qb/io/async/coroutine/sync.h:261 (acquire), :376 (scoped_acquire), :511 (lock), :534 (unlock), :601 (scoped_lock), :899/:905 (scoped_read/write_lock), :789/:803 (unlock_read/write), :1023 (arrive_and_wait), :1104 (async_event ctor), :1187 (set), :1296 (count_down), :1443/:1474 (with_semaphore/with_lock), :294/:535 (no-op / assert) -->
 
-Two properties are worth spelling out because they are the reason these primitives exist at all rather than `std::mutex` and friends. **The rw-lock is writer-preferring**: a reader is admitted only when no writer holds *and* `_write_waiters` is empty (`sync.h:716`), so a steady stream of readers cannot starve a writer. And **`semaphore::acquire(cancellation_token)` is the one cancellation-aware primitive in the whole layer** (`sync.h:272`) — everything else here is woken only by a matching `release()`, `unlock()`, `set()` or arrival. `with_semaphore` uses the *non*-token overload (`sync.h:1402`).
+Two properties are worth spelling out because they are the reason these primitives exist at all rather than `std::mutex` and friends. **The rw-lock is writer-preferring**: a reader is admitted only when no writer holds *and* `_write_waiters` is empty (`sync.h:716`), so a steady stream of readers cannot starve a writer. And **`semaphore::acquire(cancellation_token)` is the one cancellation-aware primitive in the whole layer** (`sync.h:272`) — everything else here is woken only by a matching `release()`, `unlock()`, `set()` or arrival. `with_semaphore` uses the *non*-token overload (`sync.h:1444`).
 
 ## Channels
 
@@ -586,8 +586,8 @@ auto fromv = from_range(my_vector);
 auto fromi = from_iterator(my_vector.begin(), my_vector.end());
 ```
 
-A `generator<T>` must outlive any iterator over it; a throwing generator body surfaces the exception to the consumer rather than appearing as normal exhaustion. `collect_to_vector(gen)` takes the generator by reference.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:77 (generator), :112 (await_transform deleted), :513 (collect_to_vector ref), :543 (from_range), :584 (from_iterator), :599 (iota), range/repeat (:616/:631) -->
+A `generator<T>` must outlive any iterator over it; a throwing generator body surfaces the exception to the consumer rather than appearing as normal exhaustion. `collect_to_vector(gen)` has two overloads: an lvalue-reference one that drains a named generator in place, and an rvalue one so a composed pipeline — `collect_to_vector(take(range(0, 100), 4))` — can be drained in a single expression, matching every other helper in the family (all of which take their generator by value).
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:77 (generator), :112 (await_transform deleted), :513 (collect_to_vector lvalue), :540 (collect_to_vector rvalue), :567 (from_range), :608 (from_iterator), :623 (iota), range/repeat (:640/:655) -->
 
 ### Asynchronous `async_generator<T>`
 
@@ -611,7 +611,7 @@ auto total = co_await ag_reduce(read_lines("f"), std::size_t{0},
 ```
 
 `ag_reduce(gen, init, reducer)` takes the seed before the reducer.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:289 (async_generator), :731 (ag_for_each), :754 (ag_collect), :774 (ag_map), :791 (ag_filter), :812 (ag_reduce: init then reducer) -->
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:289 (async_generator), :772 (ag_for_each), :795 (ag_collect), :815 (ag_map), :832 (ag_filter), :853 (ag_reduce: init then reducer) -->
 
 ## Async streams
 
@@ -654,7 +654,7 @@ auto zipped = zip(stream_of_ints, stream_of_strings);             // pairs
 ```
 
 The numeric source is `range_stream(start, end)` (there is no `async_stream<T>::range`). `merge_streams` takes a `std::vector<async_stream<T>>`; `zip(a, b)` yields `async_stream<std::pair<T, U>>`; `reduce(f, initial)` takes the reducer then the seed; `for_each` also accepts a callable returning `task<void>` for an async sink.
-<!-- src: qb/src/qb/io/async/coroutine/stream.h:98/:110/:118 (from_channel/_shared/_vector), :833 (range_stream), :782 (interval), :670 (merge_streams), :723 (zip), :156/:173/:190/:206 (map/filter/take/skip), :392/:400/:408/:417/:425/:434/:443/:452/:462 (for_each/collect/first/reduce/count/any/all/find/drain_to) -->
+<!-- src: qb/src/qb/io/async/coroutine/stream.h:98/:110/:118 (from_channel/_shared/_vector), :862 (range_stream), :811 (interval), :670 (merge_streams), :723 (zip), :156/:173/:190/:206 (map/filter/take/skip), :392/:400/:408/:417/:425/:434/:443/:452/:462 (for_each/collect/first/reduce/count/any/all/find/drain_to) -->
 
 ## Safe integration with `qb::Actor`
 
@@ -725,21 +725,21 @@ public:
 ```
 
 `CoroContext` exposes exactly five members: `push<Event>(args…)` (send an event to the spawning actor — i.e. to `self`), `push_to<Event>(dest, args…)` (send to a specific `ActorId`), `broadcast<Event>(args…)` (fan out to every actor on all cores, mirroring `Actor::broadcast` — this is how `qb::require` sends its discovery ping), `id()`, and `time()`. Events sent to a now-dead actor are ignored, so the context is safe to use after any suspension. A `spawn` coroutine instead receives a `qb::ScopedCoroContext`, which derives from `CoroContext` and adds cancellation-aware operations (`sleep`, `until_cancelled`, `cancellation_point`, `cancellable`). For request/reply, use the free helper `qb::ask(ctx, target, Event{...}, timeout)` (declared in `qb/core/patterns/request.h`): it sends `Event` to `target` and `co_return`s the same `Event` filled in by the responder's `reply()` — e.g. `auto r = co_await qb::ask(ctx, target, PriceQuery{"BTC"}, 500ms);`. `has_active_coroutines()` reports whether the actor still has spawned coroutines in flight.
-<!-- src: qb/src/qb/core/Actor.h:1385 (class CoroContext), :1403 (push), :1413 (push_to), :1422 (broadcast), :1437 (time), :1674 (ScopedCoroContext), :1239 (spawn), :1202 (spawn_detached); qb/src/qb/core/patterns/request.h:100 (ask free helper); qb/src/qb/core/Actor.cpp:241,260 (__resolve_coro_scheduler__ debug-asserts a TLS scheduler) -->
+<!-- src: qb/src/qb/core/Actor.h:1390 (class CoroContext), :1408 (push), :1418 (push_to), :1427 (broadcast), :1442 (time), :1679 (ScopedCoroContext), :1244 (spawn), :1207 (spawn_detached); qb/src/qb/core/patterns/request.h:100 (ask free helper); qb/src/qb/core/Actor.cpp:241,260 (__resolve_coro_scheduler__ debug-asserts a TLS scheduler) -->
 
 | Rule | Reason | Source |
 |---|---|---|
-| Event handlers stay `void on(Event&)` | `registerEvent` requires a `void` handler; a `task<void> on(Event&)` breaks actor dispatch | `Actor.h:771` |
-| Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1239`, `:1202` |
-| Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:1161-1163`, `:1219-1220`; examples/03-coroutines/02-actor-coroutines.cpp:138 |
-| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is disposed instead of delivered | `Actor.h:1402-1403` (`push`), `:1412-1413` (`push_to`); `qb/src/qb/system/event/router.h:348-357` (no handler → dispose, no dispatch) |
-| Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:1157-1159` |
+| Event handlers stay `void on(Event&)` | `registerEvent` requires a `void` handler; a `task<void> on(Event&)` breaks actor dispatch | `Actor.h:776` |
+| Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1244`, `:1207` |
+| Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:1166-1168`, `:1224-1225`; examples/03-coroutines/02-actor-coroutines.cpp:138 |
+| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is disposed instead of delivered | `Actor.h:1407-1408` (`push`), `:1417-1418` (`push_to`); `qb/src/qb/system/event/router.h:348-357` (no handler → dispose, no dispatch) |
+| Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:1162-1164` |
 
 `spawn()` and `spawn_detached()` must be called on the actor's own `VirtualCore` thread (each debug-asserts that a thread-local scheduler exists). They are the only supported way to use coroutines inside an actor — `run`, `run_for` and `run_sync` block that thread, and [the framework's guard does not fire from a handler](./async_system.md#the-guard-and-what-it-actually-checks).
 
 One corollary of [the cancellation table](#every-awaitable-and-what-cancellation-does-to-it) applies specifically here, and it is the sharpest thing on this page. `kill()` cancels the actor's coroutine scope, which **signals the token** — by itself that stops nothing.
 
-A coroutine parked on a cancellation-aware operation unwinds promptly, because that awaiter registered a hook. All four of the context's own operations qualify: `ctx.sleep(d)` is `cancellable_sleep` (`src/qb/core/Actor.h:1719`), `ctx.until_cancelled()` is `check_cancelled` (`src/qb/core/Actor.h:1740`), `ctx.cancellable(t)` is `make_cancellable` (`src/qb/core/Actor.h:1752`), and `qb::ask` registers its own `on_cancel` hook on the same token (`src/qb/core/Actor.h:1584`). `ctx.cancellation_point()` is a near relative rather than a member of that set: it returns a `yield_or_cancel` that hands the loop a turn and throws if the token fired while it was away (`src/qb/core/Actor.h:1730`), so it is prompt inside a loop but cannot be woken out of a long wait.
+A coroutine parked on a cancellation-aware operation unwinds promptly, because that awaiter registered a hook. All four of the context's own operations qualify: `ctx.sleep(d)` is `cancellable_sleep` (`src/qb/core/Actor.h:1724`), `ctx.until_cancelled()` is `check_cancelled` (`src/qb/core/Actor.h:1745`), `ctx.cancellable(t)` is `make_cancellable` (`src/qb/core/Actor.h:1757`), and `qb::ask` registers its own `on_cancel` hook on the same token (`src/qb/core/Actor.h:1589`). `ctx.cancellation_point()` is a near relative rather than a member of that set: it returns a `yield_or_cancel` that hands the loop a turn and throws if the token fired while it was away (`src/qb/core/Actor.h:1735`), so it is prompt inside a loop but cannot be woken out of a long wait.
 
 A coroutine parked on **anything else** is listening to nothing. It is neither woken nor unwound; it resumes when its own operation finishes, into a world where its actor is gone. The `CoroContext` makes that safe rather than fatal — an event addressed to a dead actor finds no handler and is disposed — but the work is not cancelled, and whatever it holds is not released until it completes. **To be interruptible, an unwrapped await must be wrapped**: `ctx.cancellable(op)`, `with_deadline(op, deadline, ctx.token())`, or a `when_any` against `ctx.until_cancelled()`.
 <!-- src: qb/src/qb/core/Actor.cpp:260; qb/src/qb/io/async/listener.h:981 (ensure_not_inside_ready_drain) -->

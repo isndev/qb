@@ -1388,17 +1388,59 @@ private:
 // Helper Functions
 // =============================================================================
 
+namespace detail {
+
+/** @brief Detects `task<T>` so the `with_*` helpers can reject an awaiting callable. */
+template <typename T>
+struct is_task : std::false_type {};
+template <typename T>
+struct is_task<task<T>> : std::true_type {};
+template <typename T>
+inline constexpr bool is_task_v = is_task<std::remove_cvref_t<T>>::value;
+
 /**
- * @brief Execute function with semaphore limit
- * @tparam F Function type
+ * Shared diagnostic for `with_semaphore` / `with_lock`.
+ *
+ * Both helpers hold the primitive across `f()` and `co_return` its result, so `f` must be
+ * an ordinary callable that *completes* when called. Handing them a coroutine compiles
+ * without this check — `task<std::invoke_result_t<F>>` simply becomes `task<task<R>>` —
+ * and then does nothing at all: `task` is lazy (its `initial_suspend` is
+ * `std::suspend_always`), so the inner task is constructed suspended, `co_return`ed as a
+ * value, never awaited, and destroyed. The critical section never runs, the primitive is
+ * released, and there is no error anywhere. That silent no-op is exactly the shape the
+ * coroutine DOCUMENTATION_GUIDE showed for years, which is why it is a hard error now
+ * rather than a note.
+ */
+template <typename F>
+constexpr void
+assert_sync_callable() {
+    static_assert(!is_task_v<std::invoke_result_t<F>>, "with_semaphore()/with_lock() take a SYNCHRONOUS callable and co_return its result; "
+                                                       "a callable returning task<T> would never be awaited, so the critical section would "
+                                                       "silently not run. To await while holding the primitive, take the guard yourself: "
+                                                       "`auto g = co_await mtx.scoped_lock(); co_await work();` (or `co_await sem.acquire();` "
+                                                       "with a scope-exit `sem.release();`, or `auto g = co_await sem.scoped_acquire();`).");
+}
+
+} // namespace detail
+
+/**
+ * @brief Execute a synchronous function while holding a semaphore permit
+ * @tparam F Function type — must be a plain callable, **not** a coroutine
  * @param sem Semaphore to use
  * @param f Function to execute
  * @return Task with function result
+ *
+ * @note `f` is invoked synchronously and its result is `co_return`ed; the permit is held
+ *       across the call and released by the guard below. A callable returning `task<T>` is
+ *       rejected at compile time — see `detail::assert_sync_callable`. To *await* inside the
+ *       critical section, acquire the permit directly:
+ *       `auto g = co_await sem.scoped_acquire(); co_await work();`
  * @ingroup Coroutine
  */
 template <typename F>
 auto
 with_semaphore(semaphore &sem, F f) -> task<std::invoke_result_t<F>> {
+    detail::assert_sync_callable<F>();
     co_await sem.acquire();
 
     // Use RAII guard pattern manually
@@ -1413,16 +1455,23 @@ with_semaphore(semaphore &sem, F f) -> task<std::invoke_result_t<F>> {
 }
 
 /**
- * @brief Execute function with mutex lock
- * @tparam F Function type
+ * @brief Execute a synchronous function while holding a mutex
+ * @tparam F Function type — must be a plain callable, **not** a coroutine
  * @param mtx Mutex to use
  * @param f Function to execute
  * @return Task with function result
+ *
+ * @note `f` is invoked synchronously and its result is `co_return`ed; the lock is held
+ *       across the call by the RAII guard. A callable returning `task<T>` is rejected at
+ *       compile time — see `detail::assert_sync_callable`. To *await* inside the critical
+ *       section, take the guard yourself, which is the whole point of a coroutine-aware
+ *       mutex: `auto g = co_await mtx.scoped_lock(); co_await work();`
  * @ingroup Coroutine
  */
 template <typename F>
 auto
 with_lock(async_mutex &mtx, F f) -> task<std::invoke_result_t<F>> {
+    detail::assert_sync_callable<F>();
     auto guard = co_await mtx.scoped_lock();
     co_return f();
 }

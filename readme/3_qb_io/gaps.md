@@ -50,7 +50,7 @@ Two caveats that the acceptor component handles for you and this loop does not: 
 
 ## A session has no `co_await read()`
 
-Nothing lets you write `auto msg = co_await session.next_message()`. Bytes arrive at the `io` base's `on(event::io const &event)` handler (`src/qb/io/async/io.h:2730`), are framed by the active protocol in `process_messages()` (`:2597`), and are delivered synchronously to your `on(Protocol::message&&)`. The read loop drains every complete frame in the buffer before returning.
+Nothing lets you write `auto msg = co_await session.next_message()`. Bytes arrive at the `io` base's `on(event::io const &event)` handler (`src/qb/io/async/io.h:2744`), are framed by the active protocol in `process_messages()` (`:2597`), and are delivered synchronously to your `on(Protocol::message&&)`. The read loop drains every complete frame in the buffer before returning.
 
 The bridge in the other direction is the one qbm's three modules use, and it is worth naming because it is the pattern: a request is written, its completion callback is stored, and an awaiter parks the coroutine until that callback fires. `async_awaiter<T>` does this generically (`src/qb/io/async/coroutine/awaiter.h:619-698`), and the modules hand-roll the same shape when they need a richer result type. See [C++20 coroutines](./coroutines.md#bridging-a-callback-api) for the mechanics and the lifetime rules.
 
