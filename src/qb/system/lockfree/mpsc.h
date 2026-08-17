@@ -157,14 +157,24 @@ public:
     }
 
     /**
-     * @brief Dequeue multiple items from all producers
+     * @brief Dequeue multiple items from all producers into one output array
      *
      * This method tries to dequeue items from all producers' buffers until
      * either the requested number of items is dequeued or all buffers are empty.
      *
-     * @param ret Array to store the dequeued items
-     * @param size Maximum number of items to dequeue
-     * @return The number of items successfully dequeued
+     * @param ret Output array receiving the dequeued items. Each producer **appends**
+     *            after the previous one's items, so this must have room for @p size.
+     * @param size **Total** budget across all producers — the return value never exceeds it.
+     * @return The number of items successfully dequeued, in `[0, size]`.
+     *
+     * @warning `size` does **not** mean the same thing here as it does in the functor
+     *          overload below, because @p ret does not play the same role. Here @p ret is
+     *          the *output*: producers append into it, so the budget has to be global or the
+     *          array would overflow. In `dequeue(Func const&, T*, size_t)` @p ret is a
+     *          *scratch* buffer reused once per producer, so `size` is that buffer's capacity
+     *          and therefore a **per-producer** chunk limit. The two are deliberately
+     *          different and neither can adopt the other's meaning; see that overload's own
+     *          warning for why the engine depends on the per-producer form.
      */
     size_t
     dequeue(T *ret, size_t size) {
@@ -183,19 +193,38 @@ public:
     }
 
     /**
-     * @brief Dequeue multiple items with a function to process each item
+     * @brief Drain every producer, handing each producer's batch to a functor
      *
-     * @tparam Func Type of the function to process dequeued items
-     * @param func Function to process each dequeued item
-     * @param ret Array to store the dequeued items
-     * @param size Maximum number of items to dequeue
-     * @return The number of items successfully dequeued and processed
+     * Calls `func(ret, n)` once per non-empty producer ring, where `n` is the number of
+     * items copied out of *that* ring.
+     *
+     * @tparam Func Batch functor, invoked as `func(T *batch, std::size_t count)`
+     * @param func Functor consuming one producer's batch; must consume it before returning,
+     *             because the next producer reuses @p ret
+     * @param ret **Scratch** buffer of capacity @p size, rewritten from index 0 for every
+     *            producer — not an accumulating output array
+     * @param size Capacity of @p ret, and hence the **per-producer** chunk limit
+     * @return Total items dequeued across all producers — **may exceed @p size**, up to
+     *         `nb_producer * size`
+     *
+     * @warning **`size` is a per-producer chunk size, not a total budget**, and the return
+     *          value is a total. `dequeue(func, buf, 8)` over 3 producers holding 20 items
+     *          each returns 24, while the sibling `dequeue(T*, 8)` returns 8. That is not an
+     *          oversight and must not be "fixed" by carrying a budget across the producer
+     *          loop: `VirtualCore::__receive__` passes the scratch capacity here
+     *          (`MaxRingEvents`, which is exactly one ring's readable maximum) precisely so
+     *          that **every** core's ring is drained on every turn. With a shared budget the
+     *          first saturated producer would consume it and cores 2..N would never be read
+     *          — starvation on the engine's event path, under exactly the load that makes it
+     *          matter. If you need a bounded total, call the array overload above.
      */
     template <typename Func>
     size_t
     dequeue(Func const &func, T *ret, size_t const size) {
         size_t nb_consume = 0;
         for (auto &producer : _producers) {
+            // NOTE: `size` is deliberately NOT decremented across producers — see the warning
+            // above. `ret` is scratch and is rewritten from 0 by each producer's copy-out.
             nb_consume += producer._ringbuffer.dequeue(func, ret, size);
         }
         return nb_consume;
@@ -373,14 +402,20 @@ public:
     }
 
     /**
-     * @brief Dequeue multiple items from all producers
+     * @brief Dequeue multiple items from all producers into one output array
      *
      * This method tries to dequeue items from all producers' buffers until
      * either the requested number of items is dequeued or all buffers are empty.
      *
-     * @param ret Array to store the dequeued items
-     * @param size Maximum number of items to dequeue
-     * @return The number of items successfully dequeued
+     * @param ret Output array receiving the dequeued items. Each producer **appends**
+     *            after the previous one's items, so this must have room for @p size.
+     * @param size **Total** budget across all producers — the return value never exceeds it.
+     * @return The number of items successfully dequeued, in `[0, size]`.
+     *
+     * @warning `size` does **not** mean the same thing here as it does in the functor
+     *          overload below — see that overload's warning. Here @p ret is the *output* and
+     *          the budget is global; there @p ret is *scratch* and `size` is a per-producer
+     *          chunk limit.
      */
     size_t
     dequeue(T *ret, size_t size) {
@@ -399,19 +434,35 @@ public:
     }
 
     /**
-     * @brief Dequeue multiple items with a function to process each item
+     * @brief Drain every producer, handing each producer's batch to a functor
      *
-     * @tparam Func Type of the function to process dequeued items
-     * @param func Function to process each dequeued item
-     * @param ret Array to store the dequeued items
-     * @param size Maximum number of items to dequeue
-     * @return The number of items successfully dequeued and processed
+     * Calls `func(ret, n)` once per non-empty producer ring, where `n` is the number of
+     * items copied out of *that* ring.
+     *
+     * @tparam Func Batch functor, invoked as `func(T *batch, std::size_t count)`
+     * @param func Functor consuming one producer's batch; must consume it before returning,
+     *             because the next producer reuses @p ret
+     * @param ret **Scratch** buffer of capacity @p size, rewritten from index 0 for every
+     *            producer — not an accumulating output array
+     * @param size Capacity of @p ret, and hence the **per-producer** chunk limit
+     * @return Total items dequeued across all producers — **may exceed @p size**, up to
+     *         `_nb_producer * size`
+     *
+     * @warning **`size` is a per-producer chunk size, not a total budget**, and the return
+     *          value is a total; the sibling `dequeue(T*, size)` above returns at most
+     *          `size`. This is the overload the engine drains mailboxes with
+     *          (`VirtualCore::__receive__`, and `SharedCoreCommunication`'s teardown sweep),
+     *          and it depends on the per-producer form: a budget shared across the loop
+     *          would let one saturated producer consume it and starve every other core's
+     *          ring. If you need a bounded total, call the array overload above.
      */
     template <typename Func>
     size_t
     dequeue(Func const &func, T *ret, size_t const size) {
         size_t nb_consume = 0;
         for (std::size_t i = 0; i < _nb_producer; ++i) {
+            // NOTE: `size` is deliberately NOT decremented across producers — see the warning
+            // above. `ret` is scratch and is rewritten from 0 by each producer's copy-out.
             nb_consume += _producers[i]._ringbuffer.dequeue(func, ret, size);
         }
         return nb_consume;

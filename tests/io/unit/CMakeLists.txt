@@ -94,6 +94,7 @@ qb_add_test(MODULE qb-io TIER unit NAME patterns-idioms             SOURCES coro
 qb_add_test(MODULE qb-io TIER unit NAME channel-sync-ops            SOURCES coroutine/channel-sync-ops.cpp            DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME stream-transforms           SOURCES coroutine/stream-transforms.cpp           DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME generator-sync              SOURCES coroutine/generator-sync.cpp              DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME sibling-api-parity         SOURCES coroutine/sibling-api-parity.cpp         DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME generator-async             SOURCES coroutine/generator-async.cpp             DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME cancellation-token          SOURCES coroutine/cancellation-token.cpp          DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME retry-policy                SOURCES coroutine/retry-policy.cpp                DEPENDS ${PROJECT_NAME} LABELS coroutine)

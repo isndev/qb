@@ -110,7 +110,7 @@ _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 `push<E>(dest, args...)` constructs an `E` in the pipe from this actor (the source) to `dest` and returns a **mutable reference** to it. Set any additional fields on that reference **immediately**, before queueing anything else. Use `push` unless you have a specific reason not to.
 
 > **The returned reference dies at the very next event queued to the same destination core** — not at the end of the enclosing scope, and not at the pipe flush. The pipe is a growable buffer: the next `push`/`send`/`broadcast` resolving to that core either reallocates it (invalidating the reference) or compacts it in place, which leaves the reference aliasing a *different*, still-live event. That second case writes to valid memory, so **no allocator debugger and no sanitizer can see it** — ASan included. Never hold the reference across another send, across a helper call that might send, or across a loop iteration. Pinned by `PipeAllocatorContract.*` in `qb/tests/io/unit/core/pipe-allocator.cpp`.
-<!-- src: qb/src/qb/core/Actor.h:861-870; qb/src/qb/core/Pipe.h:118-125 -->
+<!-- src: qb/src/qb/core/Actor.h:866-875; qb/src/qb/core/Pipe.h:118-125 -->
 
 ```cpp
 // src: derived from qb/src/qb/core/Actor.h (push, mutable-reference idiom)

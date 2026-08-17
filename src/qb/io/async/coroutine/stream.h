@@ -741,20 +741,49 @@ zip(async_stream<T> a, async_stream<U> b) {
     });
 }
 
+namespace detail {
+/// `from_generator`'s element type: `U` for `f() -> std::optional<U>`, else `f()`'s own type.
+template <typename R>
+struct stream_element {
+    using type = R;
+};
+template <typename U>
+struct stream_element<std::optional<U>> {
+    using type = U;
+};
+template <typename F>
+using stream_element_t = typename stream_element<std::remove_cvref_t<std::invoke_result_t<F>>>::type;
+} // namespace detail
+
 /**
- * @brief Create stream from async generator function
+ * @brief Create a stream from a value-producing function
  * @tparam F Generator function type
- * @param f Function producing values
- * @return Async stream
+ * @param f Function producing values. Return `std::optional<U>` to make a **finite** stream
+ *          (`std::nullopt` ends it); return a plain `U` for an **infinite** one.
+ * @return Async stream of `U`
+ *
+ * @note **How the stream ends.** `async_stream`'s source contract is
+ *       `task<std::optional<T>>`, where `std::nullopt` means end-of-stream — that is how
+ *       `from_vector`, `single` and `empty` terminate. This factory used to wrap `f()` in an
+ *       engaged `optional` *unconditionally*, so an `f` had no way to say "no more": every
+ *       stream it built was infinite, and only a `take(n)` downstream could stop it. That
+ *       contradicted both its name and every sibling factory, so an `optional`-returning `f`
+ *       is now forwarded verbatim and terminates the stream. A non-`optional` `f` keeps the
+ *       old meaning exactly — an endless stream, like `repeat_value` — so existing callers
+ *       (which is what a plain `-> int` lambda is) are unaffected.
  * @ingroup Coroutine
  */
 template <typename F>
 auto
-from_generator(F f) -> async_stream<std::invoke_result_t<F>> {
-    using T = std::invoke_result_t<F>;
+from_generator(F f) -> async_stream<detail::stream_element_t<F>> {
+    using T = detail::stream_element_t<F>;
 
     auto gen = std::make_shared<F>(std::move(f));
-    return async_stream<T>([gen]() -> task<std::optional<T>> { co_return (*gen)(); });
+    return async_stream<T>([gen]() -> task<std::optional<T>> {
+        // An optional-returning f already speaks the source contract: forward it, nullopt
+        // and all. Anything else can never end, so engage the optional as before.
+        co_return (*gen)();
+    });
 }
 
 /**

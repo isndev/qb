@@ -175,7 +175,7 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 > member may hold no pointer into its own storage; a *short* `std::string` on libstdc++ holds
 > exactly that, because `_M_p` addresses its own inline buffer. libc++ recomputes `data()` from
 > `this`, which is why the by-value form was invisible on macOS and corrupted on Linux.
-> <!-- src: qb/src/qb/core/Actor.h:835-844 -->
+> <!-- src: qb/src/qb/core/Actor.h:840-849 -->
 > It was not hypothetical here: `ChatRoomActor` runs on core 3 and the two `ServerActor`s on core 1
 > (`examples/05-services/01-tcp-chat/server/main.cpp:63`, `:69`), and `ChatRoomActor::sendToSession()` does
 > `push<SendMessageEvent>(server_id)` (`examples/05-services/01-tcp-chat/server/ChatRoomActor.cpp:153`) — so
@@ -192,7 +192,7 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 > before relocating an event cross-core the engine scans it for a pointer into its own storage and
 > aborts with a diagnostic; the check is compiled out under `NDEBUG`, and on libc++ there is no
 > self-pointer for it to find, which is precisely why a macOS-only workflow never saw it.
-> <!-- src: qb/src/qb/core/Actor.h:845-848 -->
+> <!-- src: qb/src/qb/core/Actor.h:850-853 -->
 
 ## Server walkthrough
 
@@ -260,7 +260,7 @@ void ServerActor::on(NewSessionEvent& evt) {
 }
 ```
 
-`registerSession()` checks the session cap first, then constructs the `ChatSession`, inserts it into the map keyed by the session's `qb::uuid`, moves the socket into it, calls the session's `start()`, and returns a `ChatSession*`. It returns `nullptr` when a configured session cap is hit (default: unlimited — `QB_DEFAULT_MAX_SESSIONS` is `0`) or on an ID collision, closing the incoming socket in either case; the caller must null-check. <!-- src: qb/src/qb/io/async/io_handler.h:106,210-234 -->
+`registerSession()` checks the session cap first, then constructs the `ChatSession`, inserts it into the map keyed by the session's `qb::uuid`, moves the socket into it, calls the session's `start()`, and returns a `ChatSession*`. It returns `nullptr` when a configured session cap is hit (default: unlimited — `QB_DEFAULT_MAX_SESSIONS` is `0`) or on an ID collision, closing the incoming socket in either case; the caller must null-check. <!-- src: qb/src/qb/io/async/io_handler.h:106,224-248 -->
 
 > **Always null-check.** The return type is `ChatSession*`, not a reference, so the null-checked pointer form above is the pattern to follow — the checked-in example does exactly this, returning early when `registerSession()` hands back `nullptr`. See `qb/src/qb/io/async/io_handler.h`.
 
@@ -543,7 +543,7 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 > (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard *is* the use-after-free.
 >
 > `spawn` registers the coroutine in the actor's cancellation scope
-> (`qb/src/qb/core/Actor.h:1238-1239`), and `Actor::kill()` cancels that scope
+> (`qb/src/qb/core/Actor.h:1243-1244`), and `Actor::kill()` cancels that scope
 > (`qb/src/qb/core/Actor.cpp:283-289`), so the wait simply stops existing. Note that this is not a
 > search-and-replace: a coroutine may not touch actor state after a `co_await`, so the body captures
 > only the delay, by value, and everything that reads `_should_reconnect` or calls `connect()` moved

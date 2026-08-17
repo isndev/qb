@@ -206,6 +206,20 @@ public:
      * @note **Usage.** The session limit can be configured via `set_max_sessions()` or by
      *       defining `QB_DEFAULT_MAX_SESSIONS` before including this header. The default is
      *       `0` (unlimited) for backward compatibility.
+     *
+     * @note **The session is constructed BEFORE it owns a socket.** The order below is
+     *       fixed and is the only one possible — the session must exist before the accepted
+     *       socket can be moved into it:
+     *         1. `std::make_shared<_Session>(...)` — the session **constructor** runs here,
+     *            against a default-constructed transport whose descriptor is `-1`;
+     *         2. `session->transport() = std::move(new_io)` — the real socket arrives;
+     *         3. `registered.start()` — the session is wired into the event loop;
+     *         4. `_Derived::on(_Session&)` — called if the server defines it.
+     *       So **anything that touches the descriptor must not go in the session's
+     *       constructor**: `set_optval` (`TCP_NODELAY`, `SO_*`, keep-alive), `getsockname`,
+     *       peer lookup and TLS handle access all silently address fd `-1` there — they
+     *       fail, and nothing reports it. Do that work in the server's `on(_Session&)` hook
+     *       (step 4), which exists for exactly this and runs with the socket installed.
      */
     template <typename... Args>
     _Session *

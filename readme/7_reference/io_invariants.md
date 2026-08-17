@@ -227,7 +227,7 @@ registry, or as a member — never relocate them.
 ## 7. Sessions in `io_handler<Session>`
 
 - `io_handler::registerSession` enforces the session cap **before** allocation
-  (`src/qb/io/async/io_handler.h:216-219`). If `_max_sessions > 0` and the
+  (`src/qb/io/async/io_handler.h:230-233`). If `_max_sessions > 0` and the
   registry is full, it closes the incoming I/O (which already owns an open fd,
   and possibly an `SSL*`) and returns `nullptr` — no `Session` is allocated. This
   prevents a connection flood from amplifying into heap pressure.

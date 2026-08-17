@@ -280,9 +280,22 @@ async_latch latch(3);
 latch.count_down();                         // decrement
 co_await latch.wait();                      // wait for count == 0
 
-// RAII helpers
-co_await with_semaphore(sem, []() -> task<void> { co_await work(); });
-co_await with_lock(mtx, []() -> task<void>      { co_await work(); });
+// RAII helpers — the callable is SYNCHRONOUS; its result is co_return'ed.
+co_await with_semaphore(sem, [] { return compute(); });
+co_await with_lock(mtx,     [] { return compute(); });
+
+// To AWAIT while holding the primitive, take the guard yourself. Do not hand these
+// helpers a coroutine: `task<T>` is lazy, so a `[]() -> task<void>` callable would be
+// constructed suspended, co_return'ed as a value, never awaited, and destroyed — the
+// critical section would silently not run. That shape is now a compile error.
+{
+    auto g = co_await mtx.scoped_lock();
+    co_await work();
+}
+{
+    auto g = co_await sem.scoped_acquire();
+    co_await work();
+}
 ```
 
 ---

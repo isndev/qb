@@ -391,9 +391,14 @@ public:
      * at the end of their implementation to ensure proper termination.
      *
      * @param event The received kill event (often unused in overrides, but available).
+     * @note **Do not write `override`.** This handler is not virtual — event dispatch here is
+     *       static, resolved by the router against the most-derived overload set, so a derived
+     *       `on(qb::KillEvent const &)` *hides* this one rather than overriding it. Spelling
+     *       `override` is `error: only virtual member functions can be marked 'override'`.
+     *       The same applies to every other built-in handler below.
      * Example of overriding:
      * @code
-     * void on(qb::KillEvent const &event) override {
+     * void on(qb::KillEvent const &event) {
      *   QB_LOG_INFO("Actor " << id() << " cleaning up before termination...");
      *   // Perform cleanup: close connections, release resources not handled by RAII, etc.
      *   closeConnections();
@@ -420,7 +425,7 @@ public:
      * @param event The received signal event, containing `event.signum`.
      * Example of overriding:
      * @code
-     * void on(qb::SignalEvent const &event) override {
+     * void on(qb::SignalEvent const &event) {
      *   if (event.signum == SIGUSR1) {
      *     QB_LOG_INFO("Actor " << id() << " received SIGUSR1, reloading configuration.");
      *     reloadConfig(); // stays alive: SIGUSR1 is not terminal

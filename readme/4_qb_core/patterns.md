@@ -41,7 +41,7 @@ The patterns also use two timing tools from `qb-io`:
   `scoped_callback` held as an actor member when you want a cancellable handle.
 - `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
   For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/time.h`).
-<!-- src: qb/src/qb/core/Actor.h:1238-1239,1717-1719, qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/io/async/io.h:312-318,343 -->
+<!-- src: qb/src/qb/core/Actor.h:1243-1244,1722-1724, qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/io/async/io.h:312-318,343 -->
 
 ## The patterns library (`<qb/core/patterns.h>`)
 
@@ -229,7 +229,7 @@ registered there, so a send to an unpopulated core's service id is dropped by th
 > the service you get back may not have finished initializing. If you need that guarantee, ask it
 > (`push` an event, or `co_await qb::ask(...)`) rather than touching its state. A non-null pointer is
 > therefore **not** evidence that the service is alive or ready.
-<!-- src: qb/src/qb/core/Actor.h:603-613 (not phase-gated, by design); qb/src/qb/core/Actor.h:641-662 (the Activating inventory table) -->
+<!-- src: qb/src/qb/core/Actor.h:608-618 (not phase-gated, by design); qb/src/qb/core/Actor.h:646-667 (the Activating inventory table) -->
 
 > **Pitfall:** prefer sending events to the service's `id()` over calling its methods through the
 > `getService<T>()` pointer. A direct call bypasses the event queue and runs synchronously inside

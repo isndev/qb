@@ -519,6 +519,29 @@ collect_to_vector(generator<T> &gen) {
 }
 
 /**
+ * @brief Drain a temporary generator into a vector (rvalue overload)
+ * @tparam T Value type
+ * @param gen Generator to drain — consumed
+ * @return Vector of all values
+ *
+ * @note **Why this overload exists.** The lvalue-reference overload above cannot bind a
+ *       temporary, so the natural spelling `collect_to_vector(fibonacci(10))` — and the
+ *       composed one `collect_to_vector(take(std::move(g), 3))`, since every transform
+ *       here (`take`/`skip`/`concat`) *returns* a generator by value — did not compile,
+ *       while every sibling helper (`from_range`, `take`, `skip`, `concat`) takes its
+ *       generator **by value**. Adding the overload rather than changing the existing
+ *       parameter to by-value keeps `collect_to_vector(g)` on a named generator working
+ *       exactly as before, including the fact that it leaves `g` drained-but-alive.
+ *       The rvalue form owns `gen` for the call and destroys it at the closing brace.
+ * @ingroup Coroutine
+ */
+template <typename T>
+std::vector<T>
+collect_to_vector(generator<T> &&gen) {
+    return collect_to_vector(gen);
+}
+
+/**
  * @brief Create generator from range
  * @tparam Range Range type
  * @param range Source range (taken by value — see note)
@@ -675,16 +698,33 @@ concat(generator<T> first, generator<T> second) {
  * @param gen Source generator
  * @param count Maximum elements to take
  * @return Generator with at most count elements
+ *
+ * @note **Pulls exactly `min(count, size(gen))` values — never one more.** The limit is
+ *       tested *before* the source is resumed again, which matters whenever producing a
+ *       value has a side effect (a row read off a cursor, a byte consumed from a socket,
+ *       a counter advanced). The previous implementation resumed first and tested after,
+ *       so `take(gen, 3)` pulled 4 values and silently discarded the 4th; over `iota` that
+ *       is free, over a stateful source it is a lost item. Two consequences are load-bearing
+ *       and are why the loop is shaped like this rather than as a plain range-for with the
+ *       test on top:
+ *         - `break` after the `co_yield` exits *before* the range-for's `++it`, which is the
+ *           operation that resumes the generator. Testing at the top of the body cannot work:
+ *           by then the pull has already happened.
+ *         - `count == 0` must return without touching `gen` at all, because `begin()` itself
+ *           resumes the coroutine once to reach the first `co_yield`.
+ *       This matches `ag_take()` below, which has always tested before pulling.
  * @ingroup Coroutine
  */
 template <typename T>
 generator<T>
 take(generator<T> gen, size_t count) {
+    if (!count)
+        co_return; // begin() would resume the source once; take(gen, 0) must pull nothing
     size_t i = 0;
     for (auto &val : gen) {
-        if (i++ >= count)
-            break;
         co_yield std::move(val);
+        if (++i >= count)
+            break; // before ++it, i.e. before the source is resumed for the (count+1)-th value
     }
 }
 
