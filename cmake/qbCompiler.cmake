@@ -169,6 +169,19 @@ if(QB_COMPILER_MSVC)
         "/wd4702"           # unreachable code -- GCC/clang do not enable -Wunreachable-code. MSVC
                             # reports it per TEMPLATE INSTANTIATION (io.h's `if constexpr` disposal
                             # arms), so it fires on code that is live for other instantiations.
+        "/wd4033"           # 'must return a value' on a COROUTINE. MSVC runs its missing-return
+                            # analysis over the coroutine body, so a lambda returning task<T> whose
+                            # last statement is `throw` is reported even though no path can reach
+                            # the end. This is NOT a class the project declines to enforce: GCC and
+                            # clang enable -Wreturn-type, the same class, and are correctly silent
+                            # on the identical code -- measured with gcc 14.2 over the whole tree,
+                            # zero diagnostics for examples/03-coroutines/13-retry-and-single-
+                            # flight.cpp:150 and examples/06-modules/pgsql/03-transactions.cpp:206,
+                            # the two sites MSVC flags. Suppressed here rather than at those sites
+                            # because the alternative is an unreachable `co_return` planted in
+                            # teaching material, which would teach that one is required. The class
+                            # itself stays enforced -- three CI legs compile this tree with
+                            # -Wreturn-type and promote warnings to errors.
     )
     
     # Debug flags
