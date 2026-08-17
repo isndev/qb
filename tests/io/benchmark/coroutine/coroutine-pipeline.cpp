@@ -8,7 +8,7 @@
  *     msgs/sec;
  *   - `range_stream().filter().map().reduce()` / `.collect()` — the functional
  *     async-stream transform chain — items/sec;
- *   - `ag_map` / `ag_filter` over an `async_generator` — items/sec.
+ *   - `map_to_vector` / `filter_to_vector` over an `async_generator` — items/sec.
  *
  * All single-thread cooperative; throughput here is the per-message / per-item
  * scheduling + transform cost. Frameworks under
@@ -255,16 +255,16 @@ gen_range(std::uint64_t count) {
         co_yield i;
 }
 
-// Coordinator: ag_map(gen, *2) then sum, and ag_filter(gen, even) then count.
+// Coordinator: map_to_vector(gen, *2) then sum, and filter_to_vector(gen, even) then count.
 task<void>
 run_ag_map_filter(std::uint64_t count, std::atomic<std::uint64_t> *map_sum, std::atomic<std::size_t> *filt_count, std::atomic<bool> *done) {
-    auto          doubled = co_await ag_map(gen_range(count), [](std::uint64_t v) { return v * 2u; });
+    auto          doubled = co_await map_to_vector(gen_range(count), [](std::uint64_t v) { return v * 2u; });
     std::uint64_t s       = 0;
     for (auto v : doubled)
         s += v;
     map_sum->store(s, std::memory_order_relaxed);
 
-    auto evens = co_await ag_filter(gen_range(count), [](std::uint64_t v) { return (v & 1u) == 0u; });
+    auto evens = co_await filter_to_vector(gen_range(count), [](std::uint64_t v) { return (v & 1u) == 0u; });
     filt_count->store(evens.size(), std::memory_order_relaxed);
 
     done->store(true, std::memory_order_relaxed);
@@ -272,7 +272,7 @@ run_ag_map_filter(std::uint64_t count, std::atomic<std::uint64_t> *map_sum, std:
 }
 
 // ---------------------------------------------------------------------------
-// async_generator combinators: ag_map + ag_filter collecting into vectors. The
+// async_generator combinators: map_to_vector + filter_to_vector collecting into vectors. The
 // co_yield → next() symmetric-transfer hand-off per element. items/sec counts
 // both passes (map over count + filter over count).
 // ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ BM_Generator_MapFilter(benchmark::State &state) {
     const std::uint64_t expected_sum   = (count == 0) ? 0u : (count - 1u) * count;    // 2 * (0+...+count-1)
     const std::size_t   expected_count = static_cast<std::size_t>((count + 1u) / 2u); // evens in [0,count)
     if (last_sum != expected_sum || last_count != expected_count)
-        state.SkipWithError("async_generator ag_map/ag_filter produced unexpected results");
+        state.SkipWithError("async_generator map_to_vector/filter_to_vector produced unexpected results");
 
     state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(count) * 2);
 }

@@ -817,7 +817,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 ### Generators & streams (`generator.h`, `stream.h`, `shared_task.h`, `mixin.h`)
 *   `[T] class generator<T>` — lazy sync generator (`co_yield` only): range-for, `has_next()`, `next()` → `std::optional<T>`. Move-only.
 *   `[T] class async_generator<T>` — supports `co_await` + `co_yield`; consume via `co_await gen.next()` → `std::optional<T>`.
-*   Factories/combinators: `from_range`, `from_iterator`, `iota`, `range`, `repeat`, `repeat_n`, `concat`, `take`, `skip`; async-gen algos `ag_for_each`, `ag_collect`, `ag_map`, `ag_filter`, `ag_reduce`, `ag_take`, `ag_skip`.
+*   Factories/combinators: `from_range`, `from_iterator`, `iota`, `range`, `repeat`, `repeat_n`, `concat`, `take`, `skip`; async-gen algos `for_each`, `collect_to_vector`, `map_to_vector`, `filter_to_vector`, `reduce`, `take`, `skip`.
 *   `[T] class async_stream<T>` — pull-based async sequence. Factories `from_channel`/`from_vector`/`empty`/`single`; transforms `map`/`filter`/`take`/`skip`/`chain`/`buffer`/`debounce(qb::duration)`/`throttle(qb::duration)`/`backpressure`; terminals `for_each`/`collect`/`first`/`reduce`/`count`/`any`/`all`/`find`/`drain_to`. Combinators `merge_streams`/`zip`/`from_generator`/`repeat_value`/`interval(qb::duration)`/`timer(T, qb::duration)`/`range_stream`.
 *   `[T] class shared_task<T>` — copyable multi-awaiter handle: `valid()`, `is_ready()`, `operator co_await`.
 *   `[T<T>] shared_task<T> make_shared_task(task<T>&& t)` — spawn now, return a copyable handle.

@@ -20,9 +20,9 @@
  * `co_await sleep(1ms)` then `co_yield i`) through one `ag_*` combinator and asserts the exact
  * collected vector/scalar.
  *
- * Covered combinators: `ag_for_each` (sync + suspending callback), `ag_collect`, `ag_map`,
- * `ag_filter`, `ag_reduce`, `ag_take`, `ag_skip`, the empty-generator edge, and
- * `async_generator` move semantics. Re-homes the `ag_collect` symmetric-transfer regression.
+ * Covered combinators: `for_each` (sync + suspending callback), `collect_to_vector`, `map_to_vector`,
+ * `filter_to_vector`, `reduce`, `take`, `skip`, the empty-generator edge, and
+ * `async_generator` move semantics. Re-homes the `collect_to_vector` symmetric-transfer regression.
  *
  * De-flake: every test gates on a real completion flag through the shared
  * `qb::io::test::pump_until` (loud bounded timeout) instead of a blind `run_for(Nms)` window
@@ -77,7 +77,7 @@ range_async(int n) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// ag_for_each
+// for_each
 // ---------------------------------------------------------------------------
 
 TEST_F(GeneratorAsync, AgForEachVisitsAllValues) {
@@ -85,11 +85,11 @@ TEST_F(GeneratorAsync, AgForEachVisitsAllValues) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&visited, &done]() -> task<void> {
-        co_await ag_for_each(range_async(5), [&visited](int v) { visited.push_back(v); });
+        co_await for_each(range_async(5), [&visited](int v) { visited.push_back(v); });
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_for_each never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "for_each never finished";
     EXPECT_EQ(visited, (std::vector<int>{0, 1, 2, 3, 4}));
 }
 
@@ -98,19 +98,19 @@ TEST_F(GeneratorAsync, AgForEachWithSuspendingCallbackVisitsAll) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&visited, &done]() -> task<void> {
-        co_await ag_for_each(range_async(3), [&visited](int v) -> task<void> {
+        co_await for_each(range_async(3), [&visited](int v) -> task<void> {
             co_await sleep(1ms);
             visited.push_back(v * 10);
         });
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_for_each (async callback) never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "for_each (async callback) never finished";
     EXPECT_EQ(visited, (std::vector<int>{0, 10, 20}));
 }
 
 // ---------------------------------------------------------------------------
-// ag_collect / ag_map / ag_filter / ag_reduce
+// collect_to_vector / map_to_vector / filter_to_vector / reduce
 // ---------------------------------------------------------------------------
 
 TEST_F(GeneratorAsync, AgCollectGathersAll) {
@@ -118,11 +118,11 @@ TEST_F(GeneratorAsync, AgCollectGathersAll) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
-        result = co_await ag_collect(range_async(5));
+        result = co_await collect_to_vector(range_async(5));
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_collect never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "collect_to_vector never finished";
     EXPECT_EQ(result, (std::vector<int>{0, 1, 2, 3, 4}));
 }
 
@@ -131,11 +131,11 @@ TEST_F(GeneratorAsync, AgMapTransformsAll) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
-        result = co_await ag_map(range_async(4), [](int v) { return v * 2; });
+        result = co_await map_to_vector(range_async(4), [](int v) { return v * 2; });
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_map never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "map_to_vector never finished";
     EXPECT_EQ(result, (std::vector<int>{0, 2, 4, 6}));
 }
 
@@ -144,11 +144,11 @@ TEST_F(GeneratorAsync, AgFilterKeepsMatching) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
-        result = co_await ag_filter(range_async(6), [](int v) { return v % 2 == 0; });
+        result = co_await filter_to_vector(range_async(6), [](int v) { return v % 2 == 0; });
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_filter never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "filter_to_vector never finished";
     EXPECT_EQ(result, (std::vector<int>{0, 2, 4}));
 }
 
@@ -157,16 +157,16 @@ TEST_F(GeneratorAsync, AgReduceSumsAll) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&sum, &done]() -> task<void> {
-        sum = co_await ag_reduce(range_async(5), 0, std::plus<int>{});
+        sum = co_await reduce(range_async(5), 0, std::plus<int>{});
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_reduce never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "reduce never finished";
     EXPECT_EQ(sum, 0 + 1 + 2 + 3 + 4);
 }
 
 // ---------------------------------------------------------------------------
-// ag_take / ag_skip
+// take / skip
 // ---------------------------------------------------------------------------
 
 TEST_F(GeneratorAsync, AgTakeLimitsOutput) {
@@ -174,11 +174,11 @@ TEST_F(GeneratorAsync, AgTakeLimitsOutput) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
-        result = co_await ag_collect(ag_take(range_async(10), 3));
+        result = co_await collect_to_vector(take(range_async(10), 3));
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_take never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "take never finished";
     EXPECT_EQ(result, (std::vector<int>{0, 1, 2}));
 }
 
@@ -187,11 +187,11 @@ TEST_F(GeneratorAsync, AgSkipSkipsFirstN) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
-        result = co_await ag_collect(ag_skip(range_async(6), 3));
+        result = co_await collect_to_vector(skip(range_async(6), 3));
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_skip never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "skip never finished";
     EXPECT_EQ(result, (std::vector<int>{3, 4, 5}));
 }
 
@@ -204,11 +204,11 @@ TEST_F(GeneratorAsync, EmptyAsyncGeneratorYieldsNothing) {
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&result, &done]() -> task<void> {
-        result = co_await ag_collect(range_async(0));
+        result = co_await collect_to_vector(range_async(0));
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "empty ag_collect never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "empty collect_to_vector never finished";
     EXPECT_TRUE(result.empty());
 }
 
@@ -223,7 +223,7 @@ TEST_F(GeneratorAsync, MoveTransfersTheEntireSequence) {
     coro_scheduler().spawn([&]() -> task<void> {
         auto gen1 = range_async(3);
         auto gen2 = std::move(gen1); // moved-from gen1 owns nothing; gen2 owns the frame
-        result    = co_await ag_collect(std::move(gen2));
+        result    = co_await collect_to_vector(std::move(gen2));
         done.store(true);
     });
 
@@ -232,7 +232,7 @@ TEST_F(GeneratorAsync, MoveTransfersTheEntireSequence) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression: ag_collect drives the symmetric-transfer yield chain
+// Regression: collect_to_vector drives the symmetric-transfer yield chain
 // ---------------------------------------------------------------------------
 
 TEST_F(GeneratorAsync, AgCollectSymmetricTransferRegression) {
@@ -244,11 +244,11 @@ TEST_F(GeneratorAsync, AgCollectSymmetricTransferRegression) {
             for (int i = 0; i < 5; ++i)
                 co_yield i * 10;
         };
-        result = co_await ag_collect(gen());
+        result = co_await collect_to_vector(gen());
         done.store(true);
     });
 
-    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "ag_collect symmetric-transfer never finished";
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "collect_to_vector symmetric-transfer never finished";
     EXPECT_EQ(result, (std::vector<int>{0, 10, 20, 30, 40}));
 }
 

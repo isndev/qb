@@ -15,8 +15,8 @@
  *
  * Every defect this file pins was found by writing example programs, not by the suite —
  * and each was invisible to the suite for the same structural reason: **the two halves of
- * a pair were only ever tested alone.** `take()` had tests; `ag_take()` had tests; nothing
- * asked whether they agree. `from_generator` had a test, but it used an infinite source and
+ * a pair were only ever tested alone.** The sync `take()` had tests and the async one had
+ * tests; nothing asked whether they agree. `from_generator` had a test, but it used an infinite source and
  * a `take(5)`, so "can this factory terminate at all?" was never a question. `collect_to_vector`
  * had six call sites, all on named lvalues, so "every sibling takes by value and this one
  * does not" never surfaced.
@@ -24,7 +24,7 @@
  * A test that exercises one API against its own expectations cannot see a disagreement
  * between two APIs. This file is the counterpart: each test names a PAIR and asserts the
  * property that must hold across it. Where a pair must genuinely differ (`check_cancelled`
- * vs `yield_or_cancel`; the two `mpsc::dequeue` overloads, in
+ * vs `yield_or_cancel`; `mpsc::dequeue` against `mpsc::consume_all`, in
  * core/unit/lockfree/mpsc-dequeue-parity.cpp), the test pins the difference so it stays
  * deliberate and cannot drift back into an accident.
  *
@@ -100,7 +100,7 @@ async_range(int n) {
 }
 
 // ===========================================================================
-// PAIR 1 — take(generator) vs ag_take(async_generator)
+// PAIR 1 — take(generator) vs take(async_generator)
 //
 // Same idea, two implementations. The property that must hold across the pair:
 // taking N pulls exactly min(N, size) values from the source and NOT ONE MORE.
@@ -128,7 +128,7 @@ TEST_F(SiblingApiParity, TakeZeroDoesNotTouchTheSource) {
     EXPECT_EQ(pulls, 0) << "take(gen, 0) must not resume the source at all";
 }
 
-TEST_F(SiblingApiParity, TakeAgreesWithAgTakeOnPullCount) {
+TEST_F(SiblingApiParity, SyncAndAsyncTakeAgreeOnPullCount) {
     // The parity assertion proper: drive both halves of the pair over equivalent sources
     // and require the SAME observable pull count. This is the assertion no per-API test
     // could make, and the one that would have caught the defect.
@@ -139,13 +139,13 @@ TEST_F(SiblingApiParity, TakeAgreesWithAgTakeOnPullCount) {
     std::vector<int>  async_out;
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
-        async_out = co_await ag_collect(ag_take(counting_async_source(async_pulls), 4));
+        async_out = co_await collect_to_vector(take(counting_async_source(async_pulls), 4));
         done.store(true);
     });
-    ASSERT_TRUE(pump_until([&] { return done.load(); })) << "ag_take pipeline never completed";
+    ASSERT_TRUE(pump_until([&] { return done.load(); })) << "take pipeline never completed";
 
     EXPECT_EQ(sync_out, async_out);
-    EXPECT_EQ(sync_pulls, async_pulls) << "take() and ag_take() must agree on how much of the source they consume";
+    EXPECT_EQ(sync_pulls, async_pulls) << "the sync and async take() must agree on how much of the source they consume";
     EXPECT_EQ(sync_pulls, 4);
 }
 
@@ -500,10 +500,10 @@ TEST_F(SiblingApiParity, DocExampleCompilesCancellationIdioms) {
 }
 
 // ===========================================================================
-// PAIR 6 — ag_reduce(gen, init, f) vs async_stream::reduce(init, f)
+// PAIR 6 — reduce(gen, init, f) vs async_stream::reduce(init, f)
 //
 // One fold, two spellings, and until 3.0 they disagreed twice over: the stream
-// method took (f, initial) while ag_reduce took (init, reducer) — the order
+// method took (f, initial) while reduce took (init, reducer) — the order
 // std::accumulate and std::ranges::fold_left also use — and the stream method
 // pinned the accumulator to T, the element type, so folding into anything else
 // was simply not expressible. Neither divergence could be seen from inside
@@ -521,7 +521,7 @@ TEST_F(SiblingApiParity, ReduceTakesTheSeedFirstInBothFamilies) {
         // `acc * 2 + v` is neither commutative nor associative, so a reversed fold or a
         // swapped seed changes the answer instead of hiding in it.
         via_stream = co_await async_stream<int>::from_vector({0, 1, 2, 3}).reduce(100, [](int acc, int v) { return acc * 2 + v; });
-        via_ag     = co_await ag_reduce(async_range(4), 100, [](int acc, int v) { return acc * 2 + v; });
+        via_ag     = co_await reduce(async_range(4), 100, [](int acc, int v) { return acc * 2 + v; });
         done.store(true);
     });
 
@@ -532,7 +532,7 @@ TEST_F(SiblingApiParity, ReduceTakesTheSeedFirstInBothFamilies) {
 }
 
 TEST_F(SiblingApiParity, ReduceAcceptsAnAccumulatorUnlikeTheElementType) {
-    // The capability half. ag_reduce always allowed Acc != T; async_stream::reduce returned
+    // The capability half. reduce always allowed Acc != T; async_stream::reduce returned
     // task<T> and therefore could not fold ints into a string, a checksum or a count-with-
     // context. Nothing in the suite noticed, because nobody had tried to write it.
     std::atomic<bool> done{false};
@@ -545,7 +545,7 @@ TEST_F(SiblingApiParity, ReduceAcceptsAnAccumulatorUnlikeTheElementType) {
                 acc += ",";
             return acc + std::to_string(v);
         });
-        joined_ag     = co_await ag_reduce(async_range(3), std::string{}, [](std::string acc, int v) {
+        joined_ag     = co_await reduce(async_range(3), std::string{}, [](std::string acc, int v) {
             if (!acc.empty())
                 acc += ",";
             return acc + std::to_string(v);
@@ -556,6 +556,45 @@ TEST_F(SiblingApiParity, ReduceAcceptsAnAccumulatorUnlikeTheElementType) {
     ASSERT_TRUE(pump_until([&] { return done.load(); })) << "heterogeneous reduce never completed";
     EXPECT_EQ(joined_stream, joined_ag) << "both families must fold the same data into the same accumulator";
     EXPECT_EQ(joined_stream, "0,1,2") << "async_stream::reduce must fold into an arbitrary accumulator";
+}
+
+// ===========================================================================
+// PAIR 7 — the eager collectors against the lazy transforms
+//
+// The old `ag_` prefix bought nothing and is gone with no alias: the argument
+// type already separates take(generator<T>, n) from take(async_generator<T>, n),
+// so ordinary overload resolution does the work the prefix was doing by hand.
+//
+// Two names did NOT simply lose the prefix, and that is what this pair pins.
+// The old ag_map / ag_filter return task<vector<R>>: they run the source to
+// exhaustion and collect, while async_stream::map/filter are lazy. Giving them
+// the plain name would make one word mean "lazy" in one family and "eager, and
+// it consumes your generator" in another. They are map_to_vector /
+// filter_to_vector, and the LAZY forms every other family has were added — so
+// the property worth asserting is that the two really do differ in what they
+// pull from the source, which is the only thing a reader can observe.
+// ===========================================================================
+
+TEST_F(SiblingApiParity, EagerCollectorsKeptANameThatSaysTheyCollect) {
+    // map_to_vector / filter_to_vector are named for what they do rather than de-prefixed:
+    // both drain the source. The lazy `map`/`filter` added alongside them do
+    // NOT — take(map(src, f), 2) must pull exactly two values, which is the property that
+    // makes the two names worth telling apart.
+    std::atomic<bool> done{false};
+    std::vector<int>  eager, lazy;
+    int               lazy_pulls = 0;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        eager = co_await map_to_vector(async_range(4), [](int v) { return v * 10; });
+        lazy  = co_await collect_to_vector(take(map(counting_async_source(lazy_pulls), [](int v) { return v * 10; }), 2));
+        done.store(true);
+    });
+
+    ASSERT_TRUE(pump_until([&] { return done.load(); })) << "the eager/lazy comparison never completed";
+    EXPECT_EQ(eager, (std::vector<int>{0, 10, 20, 30})) << "map_to_vector drains the source";
+    EXPECT_EQ(lazy, (std::vector<int>{0, 10})) << "the lazy map must yield only what is taken";
+    EXPECT_EQ(lazy_pulls, 2) << "lazy map + take(2) must pull exactly 2 values — that is the difference "
+                                "the two names exist to carry";
 }
 
 } // namespace sibling_api_parity_test
