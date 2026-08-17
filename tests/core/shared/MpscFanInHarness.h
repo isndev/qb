@@ -159,11 +159,11 @@ run_mpsc_fan_in(std::size_t const nb_producers, std::uint64_t const total, std::
         bool                                  idle_timed = false;
         std::chrono::steady_clock::time_point idle_since{};
         while (popped < total) {
-            // Match engine: mpsc::dequeue(Func, ret, size) — each producer ring delivers up to
-            // `batch_cap` contiguous items into `ret` and invokes the functor (see
-            // VirtualCore::__receive__). Avoid mpsc::dequeue(T*, n) in one call across multiple
-            // rings, which reuses the same `ret` base without advancing the pointer.
-            const std::size_t n = queue.dequeue(consume, batch_buf.get(), batch_cap);
+            // Match engine: mpsc::consume_all(Func, scratch, chunk) — each producer ring
+            // delivers up to `batch_cap` contiguous items into `scratch` and invokes the
+            // functor (see VirtualCore::__receive__). Not mpsc::dequeue(T*, n), whose budget
+            // is a total across every ring rather than a per-ring batch.
+            const std::size_t n = queue.consume_all(consume, batch_buf.get(), batch_cap);
             if (n != 0u) {
                 popped += static_cast<std::uint64_t>(n);
                 idle_turns = 0;

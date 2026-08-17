@@ -162,7 +162,7 @@ run_stream_reduce(std::uint64_t count, std::atomic<std::uint64_t> *sink, std::at
     auto total = co_await range_stream<std::uint64_t>(0, count)
                      .filter([](std::uint64_t v) { return (v & 1u) == 0u; })
                      .map([](std::uint64_t v) { return v * 2u; })
-                     .reduce([](std::uint64_t acc, std::uint64_t v) { return acc + v; }, std::uint64_t{0});
+                     .reduce(std::uint64_t{0}, [](std::uint64_t acc, std::uint64_t v) { return acc + v; });
     sink->store(total, std::memory_order_relaxed);
     done->store(true, std::memory_order_relaxed);
     co_return;

@@ -430,7 +430,7 @@ co_await stream.for_each([](int v) -> task<void> { co_await log(v); }); // async
 auto vec  = co_await stream.collect();
 auto opt  = co_await stream.first();
 auto n    = co_await stream.count();
-auto sum  = co_await stream.reduce([](int a, int b){ return a+b; }, 0);
+auto sum  = co_await stream.reduce(0, [](int a, int b){ return a+b; });   // seed first, like ag_reduce
 bool any  = co_await stream.any([](int v)  { return v > 5; });
 bool all  = co_await stream.all([](int v)  { return v > 0; });
 auto opt  = co_await stream.find([](int v) { return v == 42; });

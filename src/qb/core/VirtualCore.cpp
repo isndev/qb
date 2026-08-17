@@ -220,8 +220,10 @@ VirtualCore::__receive__() {
     _mono_pipe->swap(_mono_pipe_swap);
     __receive_events__(std::span<EventBucket>{_mono_pipe->begin(), _mono_pipe->size()});
     _mono_pipe->reset();
-    // global_core_events
-    _mail_box.dequeue(
+    // global_core_events. `consume_all(func, scratch, chunk)`, not `dequeue(T*, n)`: the third
+    // argument is a PER-PRODUCER batch limit, so every peer core's ring is drained on every
+    // turn. A shared budget would let one saturated producer consume it and starve the rest.
+    _mail_box.consume_all(
         [this](EventBucket *buffer, std::size_t const nb_events) { __receive_events__(std::span<EventBucket>{buffer, nb_events}); },
         _event_buffer->data(), MaxRingEvents);
 }

@@ -91,6 +91,14 @@ counting_async_source(int &pulls) {
     }
 }
 
+/// A finite async source yielding 0..n-1, so an async_generator fold can be compared with the
+/// async_stream one over data of the same shape.
+async_generator<int>
+async_range(int n) {
+    for (int i = 0; i < n; ++i)
+        co_yield i;
+}
+
 // ===========================================================================
 // PAIR 1 — take(generator) vs ag_take(async_generator)
 //
@@ -489,6 +497,65 @@ TEST_F(SiblingApiParity, DocExampleCompilesCancellationIdioms) {
 
     ASSERT_TRUE(pump_until([&] { return raced.load() && looped.load(); })) << "documented cancellation idioms never completed";
     EXPECT_EQ(steps, 3);
+}
+
+// ===========================================================================
+// PAIR 6 — ag_reduce(gen, init, f) vs async_stream::reduce(init, f)
+//
+// One fold, two spellings, and until 3.0 they disagreed twice over: the stream
+// method took (f, initial) while ag_reduce took (init, reducer) — the order
+// std::accumulate and std::ranges::fold_left also use — and the stream method
+// pinned the accumulator to T, the element type, so folding into anything else
+// was simply not expressible. Neither divergence could be seen from inside
+// either test, because each family was only ever tested against itself.
+// ===========================================================================
+
+TEST_F(SiblingApiParity, ReduceTakesTheSeedFirstInBothFamilies) {
+    std::atomic<bool> done{false};
+    int               via_stream = -1;
+    int               via_ag     = -1;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        // SAME data, SAME seed, SAME reducer, identical argument order — so equality is the
+        // parity assertion rather than two constants that could each be wrong on their own.
+        // `acc * 2 + v` is neither commutative nor associative, so a reversed fold or a
+        // swapped seed changes the answer instead of hiding in it.
+        via_stream = co_await async_stream<int>::from_vector({0, 1, 2, 3}).reduce(100, [](int acc, int v) { return acc * 2 + v; });
+        via_ag     = co_await ag_reduce(async_range(4), 100, [](int acc, int v) { return acc * 2 + v; });
+        done.store(true);
+    });
+
+    ASSERT_TRUE(pump_until([&] { return done.load(); })) << "reduce parity pipeline never completed";
+    EXPECT_EQ(via_stream, via_ag) << "the two spellings of one fold must agree";
+    // ((((100*2+0)*2+1)*2+2)*2+3) = 1611
+    EXPECT_EQ(via_stream, 1611) << "async_stream::reduce must fold left from the seed";
+}
+
+TEST_F(SiblingApiParity, ReduceAcceptsAnAccumulatorUnlikeTheElementType) {
+    // The capability half. ag_reduce always allowed Acc != T; async_stream::reduce returned
+    // task<T> and therefore could not fold ints into a string, a checksum or a count-with-
+    // context. Nothing in the suite noticed, because nobody had tried to write it.
+    std::atomic<bool> done{false};
+    std::string       joined_stream;
+    std::string       joined_ag;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        joined_stream = co_await async_stream<int>::from_vector({0, 1, 2}).reduce(std::string{}, [](std::string acc, int v) {
+            if (!acc.empty())
+                acc += ",";
+            return acc + std::to_string(v);
+        });
+        joined_ag     = co_await ag_reduce(async_range(3), std::string{}, [](std::string acc, int v) {
+            if (!acc.empty())
+                acc += ",";
+            return acc + std::to_string(v);
+        });
+        done.store(true);
+    });
+
+    ASSERT_TRUE(pump_until([&] { return done.load(); })) << "heterogeneous reduce never completed";
+    EXPECT_EQ(joined_stream, joined_ag) << "both families must fold the same data into the same accumulator";
+    EXPECT_EQ(joined_stream, "0,1,2") << "async_stream::reduce must fold into an arbitrary accumulator";
 }
 
 } // namespace sibling_api_parity_test

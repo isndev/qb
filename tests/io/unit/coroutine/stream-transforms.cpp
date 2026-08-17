@@ -380,7 +380,7 @@ TEST_F(StreamTransforms, ReduceAggregatesWithFunction) {
     int               sum = -1;
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
-        sum = co_await async_stream<int>::from_vector({1, 2, 3, 4, 5}).reduce([](int a, int b) { return a + b; }, 0);
+        sum = co_await async_stream<int>::from_vector({1, 2, 3, 4, 5}).reduce(0, [](int a, int b) { return a + b; });
         done.store(true);
     });
 
@@ -397,14 +397,12 @@ TEST_F(StreamTransforms, ComplexRecordsSurviveFilterMapReducePipeline) {
         joined = co_await async_stream<Record>::from_vector(records)
                      .filter([](const Record &r) { return r.id % 2 == 0; })
                      .map([](Record r) { return r.name; })
-                     .reduce(
-                         [](std::string acc, std::string value) {
-                             if (!acc.empty())
-                                 acc += ",";
-                             acc += value;
-                             return acc;
-                         },
-                         std::string{});
+                     .reduce(std::string{}, [](std::string acc, std::string value) {
+                         if (!acc.empty())
+                             acc += ",";
+                         acc += value;
+                         return acc;
+                     });
         done.store(true);
     });
 

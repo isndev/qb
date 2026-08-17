@@ -9,16 +9,19 @@
 
 /**
  * @file unit/container/unordered-map-contract.cpp
- * @brief The two `qb::unordered_map` properties the framework actually leans on.
+ * @brief The `qb::unordered_map` properties the framework actually leans on, plus the one
+ *        place its "drop-in for std::unordered_map" promise used to fail.
  *
- * `qb/system/container/unordered_map.h` selects a **different container per build**: the ska
- * `flat_hash_map` under `NDEBUG`, node-based `std::unordered_map` otherwise. Every guarantee the
- * framework relies on therefore has to hold for *both*, and a violation in only one of them is the
- * worst kind — the sanitizer presets use the node-based map, so a flat-map-only defect is
- * structurally invisible there and surfaces only in release. That is exactly how the reap-loop
- * defect behaved (SIGSEGV in release, a silent hang under the sanitizers).
+ * `qb::unordered_map` is `ska::unordered_map`, unconditionally. Until 3.0.0 the alias resolved
+ * to a *different container per build* — ska under `NDEBUG`, `std::unordered_map` otherwise —
+ * which made the identity and layout of a public type depend on a build macro and aborted at
+ * runtime when a Debug consumer linked a Release libqb. That switch is gone and
+ * `qbmModuleConfig.cmake.in` carries a configure-time tripwire against its return, so these
+ * tests now pin one container rather than two. (This file's own header claimed the switch was
+ * still live until 3.0 — a per-build container is exactly the kind of claim that keeps reading
+ * as true long after it stops being.)
  *
- * Two properties are load-bearing across the codebase, and neither was pinned anywhere:
+ * Three properties are load-bearing, and none was pinned anywhere:
  *
  * 1. **`it = map.erase(it)` while iterating visits every element exactly once.** The HTTP/2 server
  *    walks `_server_streams` and erases as it goes on the GOAWAY path
@@ -32,24 +35,31 @@
  *    server takes `Http2ServerStream &` references and keeps using them across calls that can
  *    insert. Iterators are NOT stable across a rehash — only the pointed-to values are — so this
  *    test states both halves explicitly rather than leaving the distinction to folklore.
+ *
+ * 3. **`contains()` exists and agrees with `find()` and `count()`.** A qb addition to the fork:
+ *    C++20 gave every standard associative container a `contains()`, upstream ska predates
+ *    C++20, and the alias advertises itself as a drop-in — so its absence was the single point
+ *    where that promise failed, and it failed as a compile error naming a template deep inside
+ *    the vendored header. The test is a three-way agreement rather than a bare existence check,
+ *    because a `contains()` that disagreed with `find()` would be worse than none at all, and it
+ *    covers all four aliases: a member added to a shared base reaches map and set together, and
+ *    only checking one is how the other silently misses it.
  */
 
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <set>
+#include <string>
 #include <vector>
 #include <qb/system/container/unordered_map.h>
+#include <qb/system/container/unordered_set.h>
 
 namespace {
 
-/// Which container the current build actually selected — reported so a failure is unambiguous.
+/// Reported on a failure so the message names the container under test.
 constexpr const char *
 config_name() noexcept {
-#ifdef NDEBUG
-    return "NDEBUG -> ska::flat_hash_map";
-#else
-    return "!NDEBUG -> std::unordered_map";
-#endif
+    return "qb::unordered_map -> ska::unordered_map (unconditional since 3.0.0)";
 }
 
 } // namespace
@@ -103,4 +113,90 @@ TEST(UnorderedMapContract, ValuesStayPutAcrossARehashEvenThoughIteratorsDoNot) {
                                    "Actor* from its actor map and the HTTP/2 server keeps stream references across "
                                    "inserts — both would become use-after-free.";
     EXPECT_EQ(pinned, &m[1]) << config_name() << ": the mapped value moved during rehash";
+}
+
+// ---------------------------------------------------------------------------
+// contains() — the drop-in promise, on all four aliases
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Assert the three lookups agree, on any of the four qb aliases. A `contains()` that
+/// disagreed with `find()` would be worse than no `contains()` at all, so the property under
+/// test is agreement, not existence.
+template <typename Map>
+void
+expect_map_lookups_agree(const char *which) {
+    Map m;
+    for (int i = 0; i < 64; ++i)
+        m[i] = i * 10;
+
+    for (int i = 0; i < 128; ++i) {
+        const bool by_find     = m.find(i) != m.end();
+        const bool by_count    = m.count(i) != 0;
+        const bool by_contains = m.contains(i);
+        ASSERT_EQ(by_contains, by_find) << which << ": contains() disagrees with find() for key " << i;
+        ASSERT_EQ(by_contains, by_count) << which << ": contains() disagrees with count() for key " << i;
+        ASSERT_EQ(by_contains, i < 64) << which << ": wrong answer for key " << i;
+    }
+
+    // Erase must be observed by contains() too — a stale positive is the failure that would
+    // matter, since it is the spelling most callers will reach for on a liveness check.
+    m.erase(7);
+    EXPECT_FALSE(m.contains(7)) << which << ": contains() still reports an erased key";
+    EXPECT_EQ(m.find(7), m.end()) << which << ": find() still reports an erased key";
+
+    // And on an empty container, where a bad end() comparison would show.
+    Map empty;
+    EXPECT_FALSE(empty.contains(0)) << which << ": contains() on an empty map";
+}
+
+template <typename Set>
+void
+expect_set_lookups_agree(const char *which) {
+    Set s;
+    for (int i = 0; i < 64; ++i)
+        s.insert(i);
+
+    for (int i = 0; i < 128; ++i) {
+        const bool by_find     = s.find(i) != s.end();
+        const bool by_contains = s.contains(i);
+        ASSERT_EQ(by_contains, by_find) << which << ": contains() disagrees with find() for key " << i;
+        ASSERT_EQ(by_contains, i < 64) << which << ": wrong answer for key " << i;
+    }
+
+    s.erase(7);
+    EXPECT_FALSE(s.contains(7)) << which << ": contains() still reports an erased key";
+
+    Set empty;
+    EXPECT_FALSE(empty.contains(0)) << which << ": contains() on an empty set";
+}
+
+} // namespace
+
+TEST(UnorderedMapContract, ContainsAgreesWithFindAndCountOnEveryAlias) {
+    // Both node-based and flat variants: the member was added once to each vendored base
+    // (sherwood_v10_table and sherwood_v3_table), and each base serves a map and a set.
+    expect_map_lookups_agree<qb::unordered_map<int, int>>("qb::unordered_map");
+    expect_map_lookups_agree<qb::unordered_flat_map<int, int>>("qb::unordered_flat_map");
+    expect_set_lookups_agree<qb::unordered_set<int>>("qb::unordered_set");
+    expect_set_lookups_agree<qb::unordered_flat_set<int>>("qb::unordered_flat_set");
+}
+
+TEST(UnorderedMapContract, ContainsWorksForANonTrivialKey) {
+    // std::string keys exercise the hashing/equality path rather than the identity-hash one,
+    // which is what most callers actually use (header names, actor service names, route paths).
+    qb::unordered_map<std::string, int> m;
+    m["alpha"] = 1;
+    m["beta"]  = 2;
+
+    EXPECT_TRUE(m.contains("alpha"));
+    EXPECT_TRUE(m.contains("beta"));
+    EXPECT_FALSE(m.contains("gamma"));
+    EXPECT_EQ(m.contains("alpha"), m.find("alpha") != m.end());
+    EXPECT_EQ(m.contains("gamma"), m.find("gamma") != m.end());
+
+    qb::unordered_set<std::string> s{"one", "two"};
+    EXPECT_TRUE(s.contains("one"));
+    EXPECT_FALSE(s.contains("three"));
 }

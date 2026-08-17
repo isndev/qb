@@ -233,8 +233,8 @@ SharedCoreCommunication::dispose_residual_mailbox_events() noexcept {
     // pipe copy without freeing the payload, so the mailbox copy is the sole owner — dispose
     // it exactly once.
     //
-    // This MUST use the copy-out `dequeue(func, scratch, n)` — the same primitive the live
-    // receive path (`VirtualCore::__receive__`) uses — and NOT `consume_all`. `consume_all`
+    // This MUST use the copy-out `consume_all(func, scratch, chunk)` — what the live receive
+    // path uses (`VirtualCore::__receive__`) — and NOT the in-place `consume_all(func)`, which
     // walks the ring storage IN PLACE, so when the readable range wraps the end of the ring it
     // invokes the functor TWICE, on two disjoint segments. Events are bucket-granular with no
     // wrap alignment (the producer's `enqueue` splits them with a two-section memcpy), so a
@@ -249,7 +249,7 @@ SharedCoreCommunication::dispose_residual_mailbox_events() noexcept {
     for (auto &mb : _mail_boxes) {
         if (!mb)
             continue;
-        mb->dequeue(
+        mb->consume_all(
             [&disposer](EventBucket *buffer, std::size_t const nb_buckets) {
                 std::size_t i = 0;
                 while (i < nb_buckets) {

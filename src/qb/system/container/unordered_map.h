@@ -79,15 +79,16 @@ using unordered_flat_map = ska::flat_hash_map<K, V, H, E, A>;
  *          (`QB_ABI_UNORDERED_MAP`) so a future reintroduction fails loudly at
  *          `find_package()` time instead of at runtime.
  *
- * @note **No `contains()` — use `find(k) != end()`.** This is `ska::unordered_map`, a
- *       vendored third-party container (`qb/vendor/ska_hash/unordered_map.hpp`) written
- *       before C++20 added `contains()`, and it does not provide one. It is *not* a
- *       `std::unordered_map`, so the drop-in assumption fails here and only here — the rest
- *       of the interface (`find`, `count`, `at`, `operator[]`, `emplace`, iterators) matches.
- *       Adding the member would mean editing the vendored file, which the vendor-attribution
- *       contract forbids: that header is carried verbatim so its upstream license and
- *       provenance stay checkable, and `dev/agent/verify.sh`'s vendor-attribution leg
- *       enforces it. `count(k) != 0` is equivalent and equally O(1) for a unique-key map.
+ * @note **`contains()` is a qb addition to the fork.** Upstream `ska::unordered_map`
+ *       predates C++20 and has no such member, which made this the one place the drop-in
+ *       promise above failed — a caller reaching for the obvious spelling got a compile
+ *       error naming a template deep inside the vendored header. `qb/vendor/ska_hash/` is
+ *       a qb fork, not a verbatim copy (it already carries a local fix for a shared empty
+ *       sentinel), and the vendor-attribution contract requires the license to be present,
+ *       installable and recorded — not the source to be untouched — so the member was
+ *       added rather than documented away. It is scoped exactly like `count()`: same key
+ *       type, same lookup, same O(1), and **no heterogeneous overload**, because `find()`
+ *       has none either and adding one would out-promise the container.
  *
  * @tparam K The key type
  * @tparam V The value type

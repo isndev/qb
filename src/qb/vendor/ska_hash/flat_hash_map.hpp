@@ -562,6 +562,15 @@ public:
     count(const FindKey &key) const {
         return find(key) == end() ? 0 : 1;
     }
+    // qb local modification: see the identical note in unordered_map.hpp. C++20 gave
+    // every standard associative container a contains(), qb::unordered_flat_map /
+    // qb::unordered_flat_set present as drop-ins, and upstream predates C++20.
+    // Scoped exactly like count() above; no heterogeneous overload, because find()
+    // has none.
+    bool
+    contains(const FindKey &key) const {
+        return find(key) != end();
+    }
     std::pair<iterator, iterator>
     equal_range(const FindKey &key) {
         iterator found = find(key);

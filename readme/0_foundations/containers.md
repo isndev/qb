@@ -22,7 +22,7 @@ template <class K, …> using unordered_set      = ska::unordered_set<K, H, E, A
 template <class K, …> using unordered_flat_set = ska::flat_hash_set<K, H, E, A>;
 }
 ```
-<!-- src: qb/src/qb/system/container/unordered_map.h:49-50, :99-100 -->
+<!-- src: qb/src/qb/system/container/unordered_map.h:49-50, :100-101 -->
 <!-- src: qb/src/qb/system/container/unordered_set.h:45-46, :74-75 -->
 
 Both are from the vendored `ska_hash` library and both are drop-in for their `std::` equivalents. The difference is where the value lives, and it is the only thing you need to decide between them.
@@ -92,7 +92,7 @@ template <class Value, class Trait = string_to_lower>
 using icase_unordered_map = icase_basic_map<qb::unordered_map<std::string, Value>, Trait>;
 }
 ```
-<!-- src: qb/src/qb/system/container/unordered_map.h:227-228, :413-423 -->
+<!-- src: qb/src/qb/system/container/unordered_map.h:228-229, :414-424 -->
 
 ```cpp
 qb::icase_unordered_map<int> headers;
@@ -103,12 +103,12 @@ headers.has("CONTENT-LENGTH");    // true
 
 Four things to know about it:
 
-- **The stored key is the lowercased one.** `_Trait::convert` runs before every `emplace`, `try_emplace`, `at`, `operator[]`, `find` and `erase` — the first at `qb/src/qb/system/container/unordered_map.h:266-269`, the last at `:375-379`, so iterating the map yields lowercase keys — not the casing you inserted. If you must reproduce the original spelling on the wire, store it in the value.
-- **The conversion is ASCII-only.** `string_to_lower::charToLower` maps `'A'`–`'Z'` and leaves every other byte alone (`qb/src/qb/system/container/unordered_map.h:115-118`). That is correct for HTTP field names and wrong for arbitrary Unicode, deliberately.
-- **`has(key)` is the membership test** (`qb/src/qb/system/container/unordered_map.h:362-366`). The base map's `count` and `contains` are not among the re-exported members, so there is no way to reach a lookup that skips the key conversion.
-- **Inheritance is private**, and only a hand-picked set of base members is re-exported: `begin`, `cbegin`, `cend`, `clear`, `empty`, `end`, `erase`, `size` (`qb/src/qb/system/container/unordered_map.h:382-389`). Anything not on that list is intentionally unreachable, because reaching it would skip the key conversion.
+- **The stored key is the lowercased one.** `_Trait::convert` runs before every `emplace`, `try_emplace`, `at`, `operator[]`, `find` and `erase` — the first at `qb/src/qb/system/container/unordered_map.h:267-270`, the last at `:376-380`, so iterating the map yields lowercase keys — not the casing you inserted. If you must reproduce the original spelling on the wire, store it in the value.
+- **The conversion is ASCII-only.** `string_to_lower::charToLower` maps `'A'`–`'Z'` and leaves every other byte alone (`qb/src/qb/system/container/unordered_map.h:116-119`). That is correct for HTTP field names and wrong for arbitrary Unicode, deliberately.
+- **`has(key)` is the membership test** (`qb/src/qb/system/container/unordered_map.h:363-367`). The base map's `count` and `contains` are not among the re-exported members, so there is no way to reach a lookup that skips the key conversion.
+- **Inheritance is private**, and only a hand-picked set of base members is re-exported: `begin`, `cbegin`, `cend`, `clear`, `empty`, `end`, `erase`, `size` (`qb/src/qb/system/container/unordered_map.h:383-390`). Anything not on that list is intentionally unreachable, because reaching it would skip the key conversion.
 
-`convert_key(k)` is available as a static helper when you need the normalised form outside a map operation (`qb/src/qb/system/container/unordered_map.h:400-404`).
+`convert_key(k)` is available as a static helper when you need the normalised form outside a map operation (`qb/src/qb/system/container/unordered_map.h:401-405`).
 
 ## `qb::string<N>` — the reason the first example in the README is not `std::string`
 
@@ -192,8 +192,8 @@ The `Overwrite` parameter is the whole policy: at capacity, `true` (the default)
 
 - **`qb::string<N>` truncates silently.** Assigning or appending past `N` clamps; nothing throws and nothing reports it (`qb/src/qb/string.h:199-207`). This is the one that bites, because a path or a name that fits in your tests will not fit in production.
 - **`operator+` truncates too**, at `std::max` of the two capacities (`qb/src/qb/string.h:1155-1161`).
-- **An `icase_*` map stores the lowercased key.** Iterating it will not give you back the casing you inserted (`qb/src/qb/system/container/unordered_map.h:266-270`).
-- **`icase_*` lowercasing is ASCII-only** (`qb/src/qb/system/container/unordered_map.h:115-118`). Correct for HTTP field names; not a Unicode case-folding.
+- **An `icase_*` map stores the lowercased key.** Iterating it will not give you back the casing you inserted (`qb/src/qb/system/container/unordered_map.h:267-271`).
+- **`icase_*` lowercasing is ASCII-only** (`qb/src/qb/system/container/unordered_map.h:116-119`). Correct for HTTP field names; not a Unicode case-folding.
 - **Node stability is not reentrancy safety.** A reference into a `qb::unordered_map` survives a rehash and does *not* survive an `erase` of that entry from a callback you invoked while holding it.
 - **`unordered_flat_map` invalidates references on rehash.** Reach for it only when you copy values out; if you are unsure which you have, you want `qb::unordered_map`.
 - **Do not make the `unordered_map` alias conditional on a build macro**, for any reason, including debugger pretty-printers (`qb/src/qb/system/container/unordered_map.h:62-80`). It is the layout of a public type.
