@@ -410,12 +410,34 @@ public:
     }
 
     /**
-     * @brief Reduce all elements to a single value.
+     * @brief Fold every element into a single accumulator.
+     * @tparam Acc Accumulator type — need not be the element type
+     * @param init Initial accumulator value
+     * @param f    Binary function: `(Acc, T) -> Acc`
+     * @return Task producing the final accumulator
+     *
+     * @code
+     * auto sum   = co_await range_stream(1, 5).reduce(0, std::plus<int>{});
+     * auto joined = co_await from_vector({1, 2, 3}).reduce(std::string{},          // Acc != T
+     *                   [](std::string s, int v) { return s + std::to_string(v); });
+     * @endcode
+     *
+     * @note **The seed comes first, and the accumulator is free.** Both were changed in 3.0
+     *       and both were divergences from the same sibling. `ag_reduce(gen, init, reducer)`
+     *       already took the seed first — as do `std::accumulate` and `std::ranges::fold_left`
+     *       — while this method took `(f, initial)`, so the two spellings of one idea
+     *       disagreed on argument order with nothing comparing them. And the accumulator was
+     *       pinned to `T`, the element type, which `ag_reduce` never was: folding a stream of
+     *       ints into a string, or of frames into a checksum, was simply not expressible.
+     *       Swapping the order is a compile error at every old call site, never a silent
+     *       change of meaning — `reduce(f, 0)` deduces `Acc` as the closure type and then
+     *       fails to call an `int`.
+     * @see qb::io::async::ag_reduce
      */
-    template <typename F>
-    task<T>
-    reduce(F f, T initial) {
-        return reduce_impl(std::move(*this), std::move(f), std::move(initial));
+    template <typename Acc, typename F>
+    task<Acc>
+    reduce(Acc init, F f) {
+        return reduce_impl<Acc, F>(std::move(*this), std::move(init), std::move(f));
     }
 
     /**
@@ -549,10 +571,10 @@ public:
         co_return co_await stream._next();
     }
 
-    template <typename F>
-    static task<T>
-    reduce_impl(async_stream<T> stream, F f, T initial) {
-        T result = std::move(initial);
+    template <typename Acc, typename F>
+    static task<Acc>
+    reduce_impl(async_stream<T> stream, Acc init, F f) {
+        Acc result = std::move(init);
         while (true) {
             auto opt = co_await stream._next();
             if (!opt)

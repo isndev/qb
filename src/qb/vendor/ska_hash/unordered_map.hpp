@@ -354,6 +354,18 @@ public:
     count(const FindKey &key) const {
         return find(key) == end() ? 0 : 1;
     }
+    // qb local modification: C++20 added contains() to every standard associative
+    // container, and qb::unordered_map / qb::unordered_set present themselves as
+    // drop-in replacements for the std types. Upstream predates C++20 and has no
+    // such member, so its absence was the one place that promise failed -- a caller
+    // reaching for the obvious spelling got a compile error naming a template deep
+    // inside this file. Scoped exactly like count() above (same FindKey, same
+    // lookup, same O(1)); no heterogeneous overload, because find() has none either
+    // and inventing one here would out-promise the container.
+    bool
+    contains(const FindKey &key) const {
+        return find(key) != end();
+    }
     std::pair<iterator, iterator>
     equal_range(const FindKey &key) {
         iterator found = find(key);

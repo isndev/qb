@@ -193,49 +193,16 @@ public:
     }
 
     /**
-     * @brief Drain every producer, handing each producer's batch to a functor
-     *
-     * Calls `func(ret, n)` once per non-empty producer ring, where `n` is the number of
-     * items copied out of *that* ring.
-     *
-     * @tparam Func Batch functor, invoked as `func(T *batch, std::size_t count)`
-     * @param func Functor consuming one producer's batch; must consume it before returning,
-     *             because the next producer reuses @p ret
-     * @param ret **Scratch** buffer of capacity @p size, rewritten from index 0 for every
-     *            producer — not an accumulating output array
-     * @param size Capacity of @p ret, and hence the **per-producer** chunk limit
-     * @return Total items dequeued across all producers — **may exceed @p size**, up to
-     *         `nb_producer * size`
-     *
-     * @warning **`size` is a per-producer chunk size, not a total budget**, and the return
-     *          value is a total. `dequeue(func, buf, 8)` over 3 producers holding 20 items
-     *          each returns 24, while the sibling `dequeue(T*, 8)` returns 8. That is not an
-     *          oversight and must not be "fixed" by carrying a budget across the producer
-     *          loop: `VirtualCore::__receive__` passes the scratch capacity here
-     *          (`MaxRingEvents`, which is exactly one ring's readable maximum) precisely so
-     *          that **every** core's ring is drained on every turn. With a shared budget the
-     *          first saturated producer would consume it and cores 2..N would never be read
-     *          — starvation on the engine's event path, under exactly the load that makes it
-     *          matter. If you need a bounded total, call the array overload above.
-     */
-    template <typename Func>
-    size_t
-    dequeue(Func const &func, T *ret, size_t const size) {
-        size_t nb_consume = 0;
-        for (auto &producer : _producers) {
-            // NOTE: `size` is deliberately NOT decremented across producers — see the warning
-            // above. `ret` is scratch and is rewritten from 0 by each producer's copy-out.
-            nb_consume += producer._ringbuffer.dequeue(func, ret, size);
-        }
-        return nb_consume;
-    }
-
-    /**
-     * @brief Process all available items from all producers
+     * @brief Process all available items from all producers, in place
      *
      * @tparam Func Type of the function to process dequeued items
      * @param func Function to process each dequeued item
      * @return The number of items successfully processed
+     *
+     * @warning Walks each ring IN PLACE, so a readable range that wraps the end of the
+     *          buffer invokes @p func twice on two disjoint segments — which splits any
+     *          logical item spanning several slots. For those, use the copy-out overload
+     *          below, which reassembles each batch contiguously.
      */
     template <typename Func>
     size_t
@@ -245,6 +212,64 @@ public:
             nb_consume += producer._ringbuffer.consume_all(func);
         }
         return nb_consume;
+    }
+
+    /**
+     * @brief Drain every producer through a scratch buffer, one batch per producer
+     *
+     * Calls `func(scratch, n)` once per non-empty producer ring, where `n` is the number of
+     * items copied out of *that* ring. Unlike `consume_all(func)` above, each batch is
+     * copied out contiguously first, so an item spanning several slots survives a wrap.
+     *
+     * @tparam Func Batch functor, invoked as `func(T *batch, std::size_t count)`
+     * @param func Functor consuming one producer's batch; must consume it before returning,
+     *             because the next producer reuses @p scratch
+     * @param scratch Buffer of capacity @p chunk, rewritten from index 0 for every producer
+     *                — not an accumulating output array
+     * @param chunk Capacity of @p scratch, and hence the **per-producer** batch limit
+     * @return Total items drained across all producers — **may exceed @p chunk**, up to
+     *         `nb_producer * chunk`
+     *
+     * @note **This is `consume_all`, not `dequeue`, and the name is the contract.** It was
+     *       spelled `dequeue(func, ret, size)` until 3.0, which made it look like a bounded
+     *       sibling of `dequeue(T*, size)` when it is not: that one treats `size` as a total
+     *       budget and returns at most `size`; this one treats it as a per-producer chunk and
+     *       returns a total. Worse, one layer down the same name *is* bounded —
+     *       `spsc::ringbuffer::dequeue(func, ret, size)` copies out at most `size` and calls
+     *       the functor once — so it was the mpsc loop that silently changed the meaning of
+     *       the argument it forwarded, and a reader who had learned the spsc primitive (which
+     *       is exactly what `ringOf(i)` hands them) was misled by the layer above.
+     *
+     *       The per-producer budget is deliberate and load-bearing, which is why the fix was
+     *       the name rather than the behaviour: `VirtualCore::__receive__` passes the scratch
+     *       capacity (`MaxRingEvents`, one ring's readable maximum) precisely so that
+     *       **every** core's ring is drained on every turn. Carry a budget across the loop
+     *       and the first saturated producer consumes it while cores 2..N are never read —
+     *       starvation on the engine's event path, under exactly the load that makes it
+     *       matter. If you need a bounded total, call `dequeue(T*, size)`.
+     */
+    template <typename Func>
+    size_t
+    consume_all(Func const &func, T *scratch, size_t const chunk) {
+        size_t nb_consume = 0;
+        for (auto &producer : _producers) {
+            // `chunk` is deliberately NOT decremented across producers — see the note above.
+            // `scratch` is rewritten from index 0 by each producer's copy-out.
+            nb_consume += producer._ringbuffer.dequeue(func, scratch, chunk);
+        }
+        return nb_consume;
+    }
+
+    /**
+     * @deprecated Renamed to `consume_all(func, scratch, chunk)` in 3.0. Same behaviour; the
+     *             new name says that the drain is unbounded and that the return value may
+     *             exceed the third argument, which this one read as a budget it never was.
+     */
+    template <typename Func>
+    [[deprecated("renamed consume_all(func, scratch, chunk): the drain is per-producer, so the "
+                 "return may exceed the third argument — dequeue(T*, size) is the bounded one")]] size_t
+    dequeue(Func const &func, T *ret, size_t const size) {
+        return consume_all(func, ret, size);
     }
 
     /**
@@ -434,46 +459,16 @@ public:
     }
 
     /**
-     * @brief Drain every producer, handing each producer's batch to a functor
-     *
-     * Calls `func(ret, n)` once per non-empty producer ring, where `n` is the number of
-     * items copied out of *that* ring.
-     *
-     * @tparam Func Batch functor, invoked as `func(T *batch, std::size_t count)`
-     * @param func Functor consuming one producer's batch; must consume it before returning,
-     *             because the next producer reuses @p ret
-     * @param ret **Scratch** buffer of capacity @p size, rewritten from index 0 for every
-     *            producer — not an accumulating output array
-     * @param size Capacity of @p ret, and hence the **per-producer** chunk limit
-     * @return Total items dequeued across all producers — **may exceed @p size**, up to
-     *         `_nb_producer * size`
-     *
-     * @warning **`size` is a per-producer chunk size, not a total budget**, and the return
-     *          value is a total; the sibling `dequeue(T*, size)` above returns at most
-     *          `size`. This is the overload the engine drains mailboxes with
-     *          (`VirtualCore::__receive__`, and `SharedCoreCommunication`'s teardown sweep),
-     *          and it depends on the per-producer form: a budget shared across the loop
-     *          would let one saturated producer consume it and starve every other core's
-     *          ring. If you need a bounded total, call the array overload above.
-     */
-    template <typename Func>
-    size_t
-    dequeue(Func const &func, T *ret, size_t const size) {
-        size_t nb_consume = 0;
-        for (std::size_t i = 0; i < _nb_producer; ++i) {
-            // NOTE: `size` is deliberately NOT decremented across producers — see the warning
-            // above. `ret` is scratch and is rewritten from 0 by each producer's copy-out.
-            nb_consume += _producers[i]._ringbuffer.dequeue(func, ret, size);
-        }
-        return nb_consume;
-    }
-
-    /**
-     * @brief Process all available items from all producers
+     * @brief Process all available items from all producers, in place
      *
      * @tparam Func Type of the function to process dequeued items
      * @param func Function to process each dequeued item
      * @return The number of items successfully processed
+     *
+     * @warning Walks each ring IN PLACE, so a readable range that wraps the end of the
+     *          buffer invokes @p func twice on two disjoint segments — which splits any
+     *          logical item spanning several slots (a multi-bucket `qb::Event` is exactly
+     *          that). For those, use the copy-out overload below.
      */
     template <typename Func>
     size_t
@@ -483,6 +478,56 @@ public:
             nb_consume += _producers[i]._ringbuffer.consume_all(func);
         }
         return nb_consume;
+    }
+
+    /**
+     * @brief Drain every producer through a scratch buffer, one batch per producer
+     *
+     * Calls `func(scratch, n)` once per non-empty producer ring, where `n` is the number of
+     * items copied out of *that* ring. Unlike `consume_all(func)` above, each batch is
+     * copied out contiguously first, so an item spanning several slots survives a wrap —
+     * which is why this is the overload the engine drains mailboxes with.
+     *
+     * @tparam Func Batch functor, invoked as `func(T *batch, std::size_t count)`
+     * @param func Functor consuming one producer's batch; must consume it before returning,
+     *             because the next producer reuses @p scratch
+     * @param scratch Buffer of capacity @p chunk, rewritten from index 0 for every producer
+     *                — not an accumulating output array
+     * @param chunk Capacity of @p scratch, and hence the **per-producer** batch limit
+     * @return Total items drained across all producers — **may exceed @p chunk**, up to
+     *         `_nb_producer * chunk`
+     *
+     * @note **This is `consume_all`, not `dequeue`, and the name is the contract.** See the
+     *       fixed-size sibling above for the full account: it was spelled
+     *       `dequeue(func, ret, size)` until 3.0, which made it read as a bounded sibling of
+     *       `dequeue(T*, size)` when it is not — and the same name one layer down, on
+     *       `spsc::ringbuffer`, genuinely *is* bounded. `VirtualCore::__receive__` and
+     *       `SharedCoreCommunication`'s teardown sweep both depend on the per-producer form:
+     *       a budget shared across the loop would let one saturated producer consume it and
+     *       starve every other core's ring. For a bounded total, call `dequeue(T*, size)`.
+     */
+    template <typename Func>
+    size_t
+    consume_all(Func const &func, T *scratch, size_t const chunk) {
+        size_t nb_consume = 0;
+        for (std::size_t i = 0; i < _nb_producer; ++i) {
+            // `chunk` is deliberately NOT decremented across producers — see the note above.
+            // `scratch` is rewritten from index 0 by each producer's copy-out.
+            nb_consume += _producers[i]._ringbuffer.dequeue(func, scratch, chunk);
+        }
+        return nb_consume;
+    }
+
+    /**
+     * @deprecated Renamed to `consume_all(func, scratch, chunk)` in 3.0. Same behaviour; the
+     *             new name says that the drain is unbounded and that the return value may
+     *             exceed the third argument, which this one read as a budget it never was.
+     */
+    template <typename Func>
+    [[deprecated("renamed consume_all(func, scratch, chunk): the drain is per-producer, so the "
+                 "return may exceed the third argument — dequeue(T*, size) is the bounded one")]] size_t
+    dequeue(Func const &func, T *ret, size_t const size) {
+        return consume_all(func, ret, size);
     }
 
     /**
