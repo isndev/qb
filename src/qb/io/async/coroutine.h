@@ -11,7 +11,7 @@
  *
  * Basic Usage:
  * @code
- * #include <qb/io/async/coroutine.h>
+ * #include <qb/io/async.h>
  *
  * qb::io::async::task<int> fetch_data() {
  *     co_await qb::io::async::sleep(std::chrono::milliseconds(100));
@@ -19,10 +19,17 @@
  * }
  *
  * int main() {
- *     auto task = fetch_data();
- *     qb::io::async::coro_scheduler().spawn(std::move(task));
+ *     qb::io::async::init();
+ *     int result = 0;
+ *     // spawn() takes a CALLABLE returning task<void> — pass the lambda itself, with no
+ *     // trailing (), and read the value back through the enclosing scope. There is no
+ *     // spawn(task<int>&&): the only task overload is task<void>, because a spawned
+ *     // coroutine is detached and has nowhere to hand a value back to.
+ *     qb::io::async::coro_scheduler().spawn([&result]() -> qb::io::async::task<void> {
+ *         result = co_await fetch_data();
+ *     });
  *     qb::io::async::run_for(std::chrono::seconds(1));
- *     return 0;
+ *     return result == 42 ? 0 : 1;
  * }
  * @endcode
  *
@@ -259,7 +266,7 @@
  * ## Basic Usage
  *
  * @code
- * #include <qb/io/async/coroutine.h>
+ * #include <qb/io/async.h>
  *
  * qb::io::async::task<int> compute() {
  *     co_await qb::io::async::sleep(std::chrono::seconds(1));
@@ -267,10 +274,16 @@
  * }
  *
  * int main() {
- *     auto task = compute();
- *     qb::io::async::coro_scheduler().spawn(std::move(task));
+ *     qb::io::async::init();
+ *     int answer = 0;
+ *     // The lambda is passed WITHOUT a trailing () — spawn() owns the callable and builds
+ *     // the frame itself. `spawn(compute())` would not compile: the only task overload is
+ *     // spawn(task<void>&&), since a detached coroutine has nowhere to return a value.
+ *     qb::io::async::coro_scheduler().spawn([&answer]() -> qb::io::async::task<void> {
+ *         answer = co_await compute();
+ *     });
  *     qb::io::async::run();
- *     return 0;
+ *     return answer == 42 ? 0 : 1;
  * }
  * @endcode
  *
