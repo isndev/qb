@@ -15,3 +15,14 @@
 # Pinning it here makes the repository state the requirement, instead of leaving it to each
 # contributor's git configuration. Costs nothing where the checkout is already LF.
 *.sh text eol=lf
+
+# The event loop under src/qb/ev/ is MIRRORED from isndev/qev, and dev/agent/check-qev-identity.py
+# asserts the two copies are byte-identical. qev pins its whole tree to LF (`* text=auto eol=lf`);
+# this repository pinned only `*.sh`, so on a Windows checkout qb's copy came out CRLF against
+# qev's LF and all FOURTEEN mirrored files compared unequal -- a guard that could not pass, over
+# content whose committed blobs are in fact identical (verified: 14 of 14 the same object id).
+#
+# Pinned here rather than relaxed in the guard. "Byte-identical" is the contract worth keeping,
+# and the honest way to keep it is to make the two working trees actually identical rather than
+# to teach the comparison to look away. Costs nothing on Linux and macOS: both were already LF.
+src/qb/ev/** text eol=lf
