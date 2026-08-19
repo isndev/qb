@@ -26,3 +26,14 @@
 # and the honest way to keep it is to make the two working trees actually identical rather than
 # to teach the comparison to look away. Costs nothing on Linux and macOS: both were already LF.
 src/qb/ev/** text eol=lf
+
+# Files under a CROSS-REPOSITORY byte-identity contract, pinned so that contract cannot depend on
+# a platform default. dev/agent/verify.sh asserts these are byte-identical across repositories; a
+# comparison of working-tree bytes is only meaningful if every copy is checked out the same way.
+#
+# Not a live defect when this was written: they were unpinned EVERYWHERE, so Windows gave them all
+# CRLF and they still compared equal. The ev tree broke because qev pinned its whole tree to LF and
+# qb pinned nothing -- an ASYMMETRY, not CRLF itself, and it reported fourteen drifted files whose
+# committed blobs were identical. Pinning every side removes the accident that the symmetry rests on.
+scripts/*.py text eol=lf
+.clang-format text eol=lf
