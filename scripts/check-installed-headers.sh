@@ -97,18 +97,17 @@ BUILD_DIR="${BUILD_DIR:-${TMPDIR:-/tmp}/qb-installed-headers.$$}"
 # (qbm/pgsql/CMakeLists.txt, HEADER_EXCLUDE), so it no longer reaches a prefix and this gate
 # once again covers everything that does. A header that cannot compile alone belongs either
 # in the sweep or out of the package -- never in the package and out of the sweep.
-EXCLUDED_HEADERS="
-qb/ev/qev_vars.h vendored fragment: libev's X-macro variable table, has no standalone meaning
-"
+# EMPTY, and that is the point. It named `qb/ev/qev_vars.h` -- a spelling from the reverted
+# qev_ rename -- so it matched no installed file: the exclusion excluded nothing while reading
+# as though the one non-self-contained header in the shipped surface were accounted for.
+# ev_vars.h is out of the INSTALL now (qb/CMakeLists.txt, HEADER_EXCLUDE), which is what the
+# note above requires of such a header: in the sweep, or out of the package, never neither.
+EXCLUDED_HEADERS=""
 
-# qb/io/async/epoll.h is installed unconditionally but needs <sys/epoll.h>. Excluding it
-# outright would take it out of the gate on the ONE platform where it can be checked, so the
-# exclusion is conditional on the host: Linux sweeps it, everyone else names it and moves on.
-if [ "$(uname -s)" != "Linux" ]; then
-  EXCLUDED_HEADERS="${EXCLUDED_HEADERS}
-qb/io/async/epoll.h      platform fragment: needs <sys/epoll.h>; swept on Linux, skipped on $(uname -s)
-"
-fi
+# qb/io/async/epoll.h was excluded here on non-Linux hosts. It was DELETED by e21e3d00 and the
+# entry outlived it invisibly: the branch that adds it never runs on the Linux runner this job
+# uses, so only a maintainer running the gate on macOS would ever be told. Both stale entries
+# this list carried were found by its own integrity check, not by reading it.
 
 # ...and the caller's own, same shape and same integrity check. Appended AFTER the table so the
 # table stays the authoritative record of what this script decides on its own.

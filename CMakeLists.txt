@@ -369,8 +369,16 @@ if (QB_INSTALL)
     #     comment: they are 24 unprefixed upstream libevent C symbols on every consumer's link
     #     line), and declarations that name the real libevent's API over an incompatible
     #     `struct event_base` do more harm installed than missing.
+    #   * the qev fork's INTERNAL headers. src/qb/ is the include root, so every .h sitting in
+    #     src/qb/ev/ was shipped -- including ev_vars.h, which is libev's X-macro variable table
+    #     and cannot compile on its own, and ev_wrap.h, which is 129 `#define <name>
+    #     ((loop)->name)` over bare words like `backend`, `checks` and `activecnt`. No public
+    #     header includes either; ev.c reaches them from the source tree. The standalone qev
+    #     installs exactly ev.h, ev++.h and ev_config.h and states that split as its design, so
+    #     this brings the embedded install to the same three.
     # A module needs no exclusion at all.
     set(_qb_header_exclude "/qb/vendor/uuid/(catch|test|cmake)(/|$)")
+    set(_qb_header_exclude "${_qb_header_exclude}|/qb/ev/(ev_vars|ev_wrap|wepoll)\\.h$")
     if (NOT QB_EV_LIBEVENT_COMPAT)
         set(_qb_header_exclude "${_qb_header_exclude}|/qb/ev/event(_compat)?\\.h$")
     endif ()
