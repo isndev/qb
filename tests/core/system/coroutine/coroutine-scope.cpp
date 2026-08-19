@@ -274,11 +274,14 @@ TEST(ActorCoroutineScope, ManyScopedCoroutinesCancelledNoLeak) {
 
 // ---------------------------------------------------------------------------
 // 5. ctx.cancellation_point() bails cooperatively on kill.
-//    The loop has a 2ms period and the kill fires at 60ms, so ~30 iterations land
-//    before cancellation on any realistic tick — the "made progress before cancel"
-//    lower bound (> 0) has an enormous margin and cannot flake under load. The kill
-//    margin is deliberately wide (the dossier's tightening option) rather than a
-//    fragile narrow window.
+//    The kill is armed on the loop's OBSERVED progress, not after a delay believed to
+//    outlast it. What this replaced was 60ms against a 2ms loop period, documented as
+//    "~30 iterations ... cannot flake under load" -- arithmetic that holds only where a
+//    2ms sleep costs 2ms. Windows' default timer granularity is ~15.6ms, so 60ms buys
+//    three or four iterations rather than thirty, and one missed tick empties the
+//    margin: measured here, one failure in two full `debug` suite runs, g_loop_iterations
+//    at 0. Waiting on the counter makes "made progress before cancel" true by
+//    CONSTRUCTION, on any platform and under any load.
 // ---------------------------------------------------------------------------
 class CancellationPointActor : public qb::Actor {
 public:
@@ -295,13 +298,31 @@ public:
                 g_scoped_cancel_observed = true;
             }
         });
-        qb::io::async::callback(
-            [this] {
-                if (is_alive())
-                    kill();
-            },
-            60ms); // ~30 loop iterations land before this fires — a wide, load-robust margin
+        arm_kill();
         co_return true;
+    }
+
+private:
+    // Three rather than one: the property under test is a loop cancelled MID-FLIGHT, and a
+    // single iteration is a weaker statement than that. Three costs ~6ms where a sleep is
+    // honoured and ~47ms where it is rounded up to the timer tick -- bounded either way,
+    // unlike a wall-clock deadline. The attempt cap turns a loop that never progresses into
+    // a failed assertion rather than a hung suite.
+    static constexpr int MIN_ITERATIONS = 3;
+
+    void
+    arm_kill(int attempts_left = 100) {
+        qb::io::async::callback(
+            [this, attempts_left] {
+                if (!is_alive())
+                    return;
+                if (g_loop_iterations.load() < MIN_ITERATIONS && attempts_left > 0) {
+                    arm_kill(attempts_left - 1); // not far enough in yet -- look again
+                    return;
+                }
+                kill(); // provably inside a loop that has made progress
+            },
+            5ms);
     }
 };
 
