@@ -2,6 +2,8 @@
 set -euo pipefail
 export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
 
+LLVM_VERSION="${LLVM_VERSION:-22}"
+
 # apt on a hosted runner, bounded three ways.
 #
 # Measured twice on the sibling repo's identical step, and the first diagnosis was wrong. The
