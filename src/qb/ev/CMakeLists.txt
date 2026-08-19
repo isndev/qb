@@ -282,9 +282,17 @@ if (QB_EV_WATCHERS_FULL)
     set(QB_EV_PREPARE_ENABLE 1)
     set(QB_EV_CHECK_ENABLE 1)
     set(QB_EV_FORK_ENABLE 1)
-    set(QB_EV_CHILD_ENABLE 1)
     set(QB_EV_ASYNC_ENABLE 1)
     set(QB_EV_EMBED_ENABLE 1)
+    # The child watcher is the one family that is not a choice. It is built on waitpid(),
+    # SIGCHLD, WNOHANG and WUNTRACED -- POSIX, none of which Windows has -- so asking for it
+    # there is not a reduced feature set, it is a compile error (ev.c:3620, :4339). Upstream
+    # libev gates it the same way. "Full" therefore means every family the PLATFORM has.
+    if (WIN32)
+        set(QB_EV_CHILD_ENABLE 0)
+    else ()
+        set(QB_EV_CHILD_ENABLE 1)
+    endif ()
 else ()
     set(QB_EV_IDLE_ENABLE 0)
     set(QB_EV_PREPARE_ENABLE 0)
@@ -594,6 +602,53 @@ endif()
                 COMPONENT qev_Development)
     endif ()
 
+    # The upstream copyright notices, installed with the artefacts they cover.
+    #
+    # BSD-2 clause 2 requires a redistribution IN BINARY FORM to reproduce the upstream
+    # copyright notice, the conditions and the disclaimer "in the documentation and/or
+    # other materials provided with the distribution". Nothing installed them until now, and
+    # the published v5.0.0 archives proved what that costs: the Runtime tarball carried a
+    # shared object derived from libev and wepoll with not one line of attribution in it, and
+    # the Development tarball was no better. Only the SOURCE archive was ever compliant,
+    # because CPack copies the whole tree into that one.
+    #
+    # Installed into BOTH components deliberately. CPack packages each component into its own
+    # archive and either can be downloaded on its own, so a notice present in only one of them
+    # is a notice absent from half the distributions.
+    foreach (_qev_notice_component qev_Runtime qev_Development)
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+                      "${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES"
+                DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/doc/qev"
+                COMPONENT ${_qev_notice_component})
+    endforeach ()
+
+    # The manual page, when the tool that renders it is available.
+    #
+    # `qev.3` was an autotools-only artefact: `Makefile.am` has generated and installed it all
+    # along, and the CMake build -- the path the README documents FIRST -- shipped no manual
+    # page at all, while README and CHANGELOG both name `qev.3` among the things an install
+    # puts on disk. pod2man comes with perl and is absent on a plain Windows runner, so this is
+    # conditional on finding it rather than a new hard dependency; the .pod is likewise absent
+    # from qb's byte-shared copy of this tree, so its existence is a supported answer too.
+    find_program(QB_EV_POD2MAN NAMES pod2man)
+    if (QB_EV_POD2MAN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/docs/ev.pod")
+        set(_qev_man "${CMAKE_CURRENT_BINARY_DIR}/qev.3")
+        add_custom_command(
+            OUTPUT  "${_qev_man}"
+            COMMAND "${QB_EV_POD2MAN}" -n QEV -r "qev-${PROJECT_VERSION}"
+                    -c "qev - a modernized libev fork" -s 3
+                    "${CMAKE_CURRENT_SOURCE_DIR}/docs/ev.pod" > "${_qev_man}"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/ev.pod"
+            COMMENT "Generating qev.3"
+            VERBATIM)
+        add_custom_target(qev-man ALL DEPENDS "${_qev_man}")
+        # qev.3, not ev.3: the page is an INSTALLED artefact, and `ev.3` would overwrite a real
+        # libev's in a shared prefix -- the same rule the archive and the header directory follow.
+        install(FILES "${_qev_man}"
+                DESTINATION "${CMAKE_INSTALL_MANDIR}/man3"
+                COMPONENT qev_Development)
+    endif ()
+
     endif () # NOT QB_EV_EMBEDDED
 endif ()
 
@@ -654,7 +709,13 @@ if (QB_EV_STANDALONE)
     set(CPACK_PACKAGE_HOMEPAGE_URL      "https://github.com/isndev/qev")
     set(CPACK_PACKAGE_VERSION           "${PROJECT_VERSION}")
     set(CPACK_RESOURCE_FILE_LICENSE     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
-    set(CPACK_RESOURCE_FILE_README      "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+    # README.md is standalone-only -- qb's byte-shared copy of this tree does not carry one, and
+    # CPack's check is a hard FATAL_ERROR, not a warning. This is the same rule the tests and
+    # benchmark blocks below state for their own sources: a byte-shared file must not assume a
+    # sibling that only one of the two trees has.
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+        set(CPACK_RESOURCE_FILE_README  "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+    endif ()
     set(CPACK_GENERATOR                 "TGZ;ZIP")
     set(CPACK_SOURCE_GENERATOR          "TGZ")
     set(CPACK_DEB_COMPONENT_INSTALL     ON)
