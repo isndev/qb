@@ -389,7 +389,15 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     # The language level is a CONTRACT, not a hope: the sources use C99 designated initialisers and
     # `//` comments, and a consumer compiling with -std=c89 would fail deep inside ev.h instead of
     # at the point of the requirement. INTERFACE, so it propagates to whoever links.
-    target_compile_features(qev PUBLIC c_std_99)
+    # PRIVATE, not PUBLIC. This is the standard the loop's own C is COMPILED with; it is not a
+    # requirement on whoever links it. PUBLIC propagated a C-language feature through qb::ev ->
+    # qb::io -> the consumer, and CMake resolves that in the CONSUMING target's directory scope --
+    # so any project whose project() does not enable C died at generate time with
+    # "No known features for C compiler \"\" version .", naming a file it had never touched.
+    # It went unseen locally because the qb-dev superproject's own project() takes CMake's
+    # default languages, C CXX, which enables C for every subdirectory and masks it. qb built
+    # standalone -- which is what its CI does, and what a consumer does -- fails immediately.
+    target_compile_features(qev PRIVATE c_std_99)
 
     # A Debug and a Release build must be able to share one prefix. Without a postfix the second
     # install silently overwrites the first with a differently-instrumented archive -- the same
