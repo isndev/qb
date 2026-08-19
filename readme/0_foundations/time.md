@@ -266,12 +266,12 @@ void process() {
 
 ## The one seam where a raw `double` touches time
 
-qb's event loop is libev-derived (`qev`), and libev's timestamp type `qev_tstamp` is a `double` of seconds. That conversion exists in exactly one place, is spelled out in `qb::detail`, and nothing else in the tree is allowed to carry a raw scalar time:
+qb's event loop is libev-derived (`qev`), and libev's timestamp type `ev_tstamp` is a `double` of seconds. That conversion exists in exactly one place, is spelled out in `qb::detail`, and nothing else in the tree is allowed to carry a raw scalar time:
 
 ```cpp
 namespace qb::detail {
-double   to_ev_seconds(duration d) noexcept;      // qb::duration -> qev_tstamp
-duration from_ev_seconds(double seconds) noexcept;  // qev_tstamp -> qb::duration
+double   to_ev_seconds(duration d) noexcept;      // qb::duration -> ev_tstamp
+duration from_ev_seconds(double seconds) noexcept;  // ev_tstamp -> qb::duration
 }
 ```
 <!-- src: qb/src/qb/system/time.h:796-811 -->

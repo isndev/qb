@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
- * Part of qb-ev, a modernized cross-platform fork of libev.
+ * Part of qev, a modernized cross-platform fork of libev.
  * Based on libev by Marc Alexander Lehmann <libev@schmorp.de>.
  *   Upstream: http://software.schmorp.de/pkg/libev.html
  *
@@ -15,8 +15,8 @@
 
 /*
  * qb-io: loop_destroy skips close(backend_fd) when this backend is active so
- * linuxaio_destroy can qev_io_stop the internal epoll watcher before closing the
- * epoll fd (see qev.c). io_setup failure after epoll_init closes that fd here.
+ * linuxaio_destroy can ev_io_stop the internal epoll watcher before closing the
+ * epoll fd (see ev.c). io_setup failure after epoll_init closes that fd here.
  */
 
 /*
@@ -106,27 +106,27 @@ struct aio_ring {
 
 inline_size int
 evsys_io_setup(unsigned nr_events, aio_context_t *ctx_idp) {
-    return qev_syscall2(SYS_io_setup, nr_events, ctx_idp);
+    return ev_syscall2(SYS_io_setup, nr_events, ctx_idp);
 }
 
 inline_size int
 evsys_io_destroy(aio_context_t ctx_id) {
-    return qev_syscall1(SYS_io_destroy, ctx_id);
+    return ev_syscall1(SYS_io_destroy, ctx_id);
 }
 
 inline_size int
 evsys_io_submit(aio_context_t ctx_id, long nr, struct iocb *cbp[]) {
-    return qev_syscall3(SYS_io_submit, ctx_id, nr, cbp);
+    return ev_syscall3(SYS_io_submit, ctx_id, nr, cbp);
 }
 
 inline_size int
 evsys_io_cancel(aio_context_t ctx_id, struct iocb *cbp, struct io_event *result) {
-    return qev_syscall3(SYS_io_cancel, ctx_id, cbp, result);
+    return ev_syscall3(SYS_io_cancel, ctx_id, cbp, result);
 }
 
 inline_size int
 evsys_io_getevents(aio_context_t ctx_id, long min_nr, long nr, struct io_event *events, struct timespec *timeout) {
-    return qev_syscall5(SYS_io_getevents, ctx_id, min_nr, nr, events, timeout);
+    return ev_syscall5(SYS_io_getevents, ctx_id, min_nr, nr, events, timeout);
 }
 
 /*****************************************************************************/
@@ -174,7 +174,7 @@ inline_size void
 linuxaio_array_needsize_iocbp(ANIOCBP *base, int offset, int count) {
     while (count--) {
         /* TODO: quite the overhead to allocate every iocb separately, maybe use our own allocator? */
-        ANIOCBP iocb = (ANIOCBP) qev_malloc(sizeof(*iocb));
+        ANIOCBP iocb = (ANIOCBP) ev_malloc(sizeof(*iocb));
 
         /* full zero initialise is probably not required at the moment, but
          * this is not well documented, so we better do it.
@@ -191,7 +191,7 @@ linuxaio_array_needsize_iocbp(ANIOCBP *base, int offset, int count) {
 ecb_cold static void
 linuxaio_free_iocbp(EV_P) {
     while (linuxaio_iocbpmax--)
-        qev_free(linuxaio_iocbps[linuxaio_iocbpmax]);
+        ev_free(linuxaio_iocbps[linuxaio_iocbpmax]);
 
     linuxaio_iocbpmax = 0; /* next resize will completely reallocate the array, at some overhead */
 }
@@ -251,7 +251,7 @@ linuxaio_modify(EV_P_ int fd, int oev, int nev) {
 }
 
 static void
-linuxaio_epoll_cb(EV_P_ struct qev_io *w, int revents) {
+linuxaio_epoll_cb(EV_P_ struct ev_io *w, int revents) {
     epoll_poll(EV_A_ 0);
 }
 
@@ -328,7 +328,7 @@ linuxaio_ringbuf_valid(EV_P) {
 
 /* read at least one event from kernel, or timeout */
 inline_size void
-linuxaio_get_events(EV_P_ qev_tstamp timeout) {
+linuxaio_get_events(EV_P_ ev_tstamp timeout) {
     struct timespec ts;
     struct io_event ioev[8];           /* 256 octet stack space */
     int             want          = 1; /* how many events to request */
@@ -363,7 +363,7 @@ linuxaio_get_events(EV_P_ qev_tstamp timeout) {
             if (errno == EINTR)
                 /* ignored, retry */;
             else
-                qev_syserr("(libev) linuxaio io_getevents");
+                ev_syserr("(libev) linuxaio io_getevents");
         else if (res) {
             /* at least one event available, handle them */
             linuxaio_parse_events(EV_A_ ioev, res);
@@ -391,7 +391,7 @@ linuxaio_io_setup(EV_P) {
 }
 
 static void
-linuxaio_poll(EV_P_ qev_tstamp timeout) {
+linuxaio_poll(EV_P_ ev_tstamp timeout) {
     int submitted;
 
     /* first phase: submit new iocbs */
@@ -443,8 +443,8 @@ linuxaio_poll(EV_P_ qev_tstamp timeout) {
 
                     /* to bad, we can't get a new aio context, go 100% epoll */
                     linuxaio_free_iocbp(EV_A);
-                    qev_io_stop(EV_A_ & linuxaio_epoll_w);
-                    qev_ref(EV_A);
+                    ev_io_stop(EV_A_ & linuxaio_epoll_w);
+                    ev_ref(EV_A);
                     linuxaio_ctx = 0;
 
                     backend        = EVBACKEND_EPOLL;
@@ -463,7 +463,7 @@ linuxaio_poll(EV_P_ qev_tstamp timeout) {
             } else if (errno == EINTR) /* not seen in reality, not documented */
                 res = 0;               /* silently ignore and retry */
             else {
-                qev_syserr("(libev) linuxaio io_submit");
+                ev_syserr("(libev) linuxaio io_submit");
                 res = 0;
             }
         }
@@ -483,7 +483,7 @@ linuxaio_init(EV_P_ int flags) {
     /* would be great to have a nice test for IOCB_CMD_POLL instead */
     /* also: test some semi-common fd types, such as files and ttys in recommended_backends */
     /* 4.18 introduced IOCB_CMD_POLL, 4.19 made epoll work, and we need that */
-    if (qev_linux_version() < 0x041300)
+    if (ev_linux_version() < 0x041300)
         return 0;
 
     if (!epoll_init(EV_A_ 0))
@@ -500,10 +500,10 @@ linuxaio_init(EV_P_ int flags) {
         return 0;
     }
 
-    qev_io_init(&linuxaio_epoll_w, linuxaio_epoll_cb, (int) (uintptr_t) backend_fd, EV_READ);
-    qev_set_priority(&linuxaio_epoll_w, EV_MAXPRI);
-    qev_io_start(EV_A_ & linuxaio_epoll_w);
-    qev_unref(EV_A); /* watcher should not keep loop alive */
+    ev_io_init(&linuxaio_epoll_w, linuxaio_epoll_cb, (int) (uintptr_t) backend_fd, EV_READ);
+    ev_set_priority(&linuxaio_epoll_w, EV_MAXPRI);
+    ev_io_start(EV_A_ & linuxaio_epoll_w);
+    ev_unref(EV_A); /* watcher should not keep loop alive */
 
     backend_modify = linuxaio_modify;
     backend_poll   = linuxaio_poll;
@@ -520,7 +520,7 @@ linuxaio_init(EV_P_ int flags) {
 
 inline_size void
 linuxaio_destroy(EV_P) {
-    qev_io_stop(EV_A_ & linuxaio_epoll_w);
+    ev_io_stop(EV_A_ & linuxaio_epoll_w);
     epoll_destroy(EV_A);
     linuxaio_free_iocbp(EV_A);
     evsys_io_destroy(linuxaio_ctx); /* fails in child, aio context is destroyed */
@@ -539,14 +539,14 @@ linuxaio_fork(EV_P) {
     linuxaio_iteration = 0; /* we start over in the child */
 
     while (linuxaio_io_setup(EV_A) < 0)
-        qev_syserr("(libev) linuxaio io_setup");
+        ev_syserr("(libev) linuxaio io_setup");
 
     /* forking epoll should also effectively unregister all fds from the backend */
     epoll_fork(EV_A);
     /* epoll_fork already did this. hopefully */
     /*fd_rearm_all (EV_A);*/
 
-    qev_io_stop(EV_A_ & linuxaio_epoll_w);
-    qev_io_set(&linuxaio_epoll_w, (int) (uintptr_t) backend_fd, EV_READ);
-    qev_io_start(EV_A_ & linuxaio_epoll_w);
+    ev_io_stop(EV_A_ & linuxaio_epoll_w);
+    ev_io_set(&linuxaio_epoll_w, (int) (uintptr_t) backend_fd, EV_READ);
+    ev_io_start(EV_A_ & linuxaio_epoll_w);
 }

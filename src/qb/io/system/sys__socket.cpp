@@ -1215,7 +1215,7 @@ struct ws2_32_gc {
         // Raise the system timer resolution to 1ms. By default Windows quantizes
         // timers, Sleep() and the wait timeouts used by the event loop (select /
         // GetQueuedCompletionStatusEx) to ~15.6ms. That coarse granularity rounds
-        // every short qev_timer / async sleep up to the next ~15.6ms tick, which
+        // every short ev_timer / async sleep up to the next ~15.6ms tick, which
         // both slows the whole async stack down and makes sub-15ms timing
         // (coroutine sleeps, timeouts) wildly imprecise versus Linux/macOS. 1ms
         // matches the behaviour the rest of the framework assumes.

@@ -25,17 +25,27 @@
 #ifndef QB_IO_ASYNC_EVENT_BASE_H
 #define QB_IO_ASYNC_EVENT_BASE_H
 
-#include <qb/vendor/qev/qev++.h>
+#include <qb/ev/ev++.h>
 
-/* qb builds its vendored libev with EV_MULTIPLICITY=1 (qb/vendor/qev/config.h.cmakein). qev.h only
- * learns that from the generated qev_config.h, and its last-resort lookup for that file is guarded
- * by __has_include (qev.h:28-31) -- so if the file is not reachable, qev.h SILENTLY falls back to its
- * own default of EV_FEATURE_CONFIG == 4. Every qev_* prototype then grows a loop parameter that the
+/* The loop's C++ wrapper declares a TOP-LEVEL `ev` namespace, because it is libev's and libev's
+ * consumers write `ev::io`. qb re-exports it as `qb::ev` so that qb's own public API -- notably
+ * `qb::Actor::ask_loop()`, whose return type is `ev::loop_ref` (Actor.h:1479) -- can name a type
+ * inside qb's namespace instead of pointing consumers at a global one qb does not own. It is an
+ * ALIAS, not a second namespace: `qb::ev::io` and `::ev::io` are the same type, so nothing that
+ * already compiles stops compiling, and a consumer migrating from libev keeps `ev::io` too. */
+namespace qb {
+namespace ev = ::ev;
+} // namespace qb
+
+/* qb builds its vendored libev with EV_MULTIPLICITY=1 (qb/ev/config.h.cmakein). ev.h only
+ * learns that from the generated ev_config.h, and its last-resort lookup for that file is guarded
+ * by __has_include (ev.h:28-31) -- so if the file is not reachable, ev.h SILENTLY falls back to its
+ * own default of EV_FEATURE_CONFIG == 4. Every ev_* prototype then grows a loop parameter that the
  * compiled libqev.a does not have: an ODR/ABI mismatch that links and then misbehaves at runtime.
  * Make the miss a compile error instead. */
 #if !defined(EV_MULTIPLICITY) || (EV_MULTIPLICITY) != 1
 #error "qb: libev configuration header not reached (EV_MULTIPLICITY != 1). qb::io's exported \
-EV_CONFIG_H=<qb/vendor/qev/qev_config.h> definition, or the include directory carrying it, is missing."
+QB_EV_CONFIG_H=<qb/ev/ev_config.h> definition, or the include directory carrying it, is missing."
 #endif
 
 namespace qb::io::async {

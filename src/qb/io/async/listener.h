@@ -77,7 +77,7 @@ namespace qb::io::async {
  *       - If you need to use qb-io objects across different threads, each thread must have its own
  *         listener instance (via `async::init()`) and objects must not be shared.
  *       - On Windows the libev epoll backend is wepoll (IOCP). The loop must not call
- *         `epoll_wait` / `qev_run` on one thread while another thread closes the same loop or its
+ *         `epoll_wait` / `ev_run` on one thread while another thread closes the same loop or its
  *         epoll handle. Staying on one thread per `listener` satisfies that contract.
  */
 class listener {
@@ -328,7 +328,7 @@ private:
     // identically under `run(0)`, `EVRUN_ONCE` and `EVRUN_NOWAIT`.
     //
     // Leftovers (a callback that itself defers — excluded from this pass by the
-    // snapshot bound) must NOT be re-fed: `qev_feed_event` lands in the pass that is
+    // snapshot bound) must NOT be re-fed: `ev_feed_event` lands in the pass that is
     // still draining and would run them in the same turn. They are re-armed with a
     // 0-delay one-shot instead, which expires on the next loop iteration.
     ev::timer _defer_wake;
@@ -461,15 +461,15 @@ private:
         }
         if (req == EVFLAG_AUTO)
             return EVFLAG_AUTO;
-        if (!(qev_supported_backends() & req)) {
+        if (!(ev_supported_backends() & req)) {
             QB_LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' not built into libev; using auto");
             return EVFLAG_AUTO;
         }
         /* Probe: a backend can be compiled in yet fail at runtime (io_uring under a
          * restrictive seccomp profile, kqueue on some sandboxes, ...). Create and
          * immediately destroy a throwaway loop so the real loop below never throws. */
-        if (struct qev_loop *probe = qev_loop_new(req)) {
-            qev_loop_destroy(probe);
+        if (struct ev_loop *probe = ev_loop_new(req)) {
+            ev_loop_destroy(probe);
             return req;
         }
         QB_LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' unavailable at runtime; using auto");
@@ -492,7 +492,7 @@ public:
         // Lowest priority: libev invokes pendings highest-priority-first, so the
         // drain lands after every other watcher pending in the same iteration.
         // Safe here — the watcher is neither active nor pending at construction.
-        qev_set_priority(static_cast<qev_timer *>(&_defer_wake), EV_MINPRI);
+        ev_set_priority(static_cast<ev_timer *>(&_defer_wake), EV_MINPRI);
     }
 
     /**
@@ -535,7 +535,7 @@ public:
      * Removes and deletes all registered event handlers (IRegisteredKernelEvent instances).
      * It then runs the loop with `EVRUN_NOWAIT` (a few passes) to flush pending libev work
      * without blocking. Do not use `EVRUN_ONCE` here: with monotonic + timerfd enabled in
-     * libev, `qev_run` can choose a ~1.5e6 s waittime when `timercnt == 0`, which would wedge
+     * libev, `ev_run` can choose a ~1.5e6 s waittime when `timercnt == 0`, which would wedge
      * thread teardown (`~listener` / explicit `clear()`).
      * @note This is automatically called by the listener's destructor.
      */
@@ -648,8 +648,8 @@ public:
         // Contain user exceptions HERE — the single locus every watcher dispatch flows
         // through. `invoke()` runs arbitrary user code (`on(event::disconnected&&)`,
         // `on(event::pending_read&&)`, `on(event::eos&&)`, a protocol handler, an
-        // `ev::stat` observer, …), and libev is built as C (qb/src/qb/vendor/qev, LANGUAGES C):
-        // letting an exception unwind through `qev_invoke_pending`/`qev_run` is UB — it
+        // `ev::stat` observer, …), and libev is built as C (qb/src/qb/ev, LANGUAGES C):
+        // letting an exception unwind through `ev_invoke_pending`/`ev_run` is UB — it
         // skips libev's own epilogue (`--loop_depth`, the `loop_done = EVBREAK_CANCEL`
         // reset that re-arms a broken loop) and, on toolchains that do not emit unwind
         // info for C (MSVC), is a hard failure. It also strands `_dispatch_top` on a
@@ -720,7 +720,7 @@ public:
 
     /**
      * @brief Get a reference to the underlying libev event loop.
-     * @return `ev::loop_ref` (a reference wrapper to `qev_loop*`) for this listener.
+     * @return `ev::loop_ref` (a reference wrapper to `ev_loop*`) for this listener.
      * @details Useful for advanced direct interaction with libev if needed, though most
      *          operations are handled through the listener's API.
      */
@@ -740,7 +740,7 @@ public:
      *
      * @param flag The libev run flag (e.g., `EVRUN_NOWAIT` to check once and return,
      *             `EVRUN_ONCE` to wait for and process one event block, `0` for default blocking run).
-     *             Default is `0`, which means `qev_run` will block until `qev_break` is called or no active watchers remain.
+     *             Default is `0`, which means `ev_run` will block until `ev_break` is called or no active watchers remain.
      */
     inline void
     run(int flag = 0) {
@@ -1040,7 +1040,7 @@ defer(_Func &&func) {
  *
  * @warning With libev monotonic clock and timerfd enabled (`QB_EV_USE_TIMERFD=ON`),
  *          `EVRUN_ONCE` can block for libev's internal maximum waittime when there are
- *          only `qev_io` watchers and no heap timers (`timercnt == 0`). Prefer
+ *          only `ev_io` watchers and no heap timers (`timercnt == 0`). Prefer
  *          `run_until` / `run(EVRUN_NOWAIT)` in pumps, or keep timerfd disabled (default).
  *
  * @return The number of events invoked.

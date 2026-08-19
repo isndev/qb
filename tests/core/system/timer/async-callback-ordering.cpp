@@ -122,11 +122,11 @@ TEST(AsyncCallbackOrdering, ChainedCallbacksFireInOrderExactlyOnce) {
 // the suite (50 links, so 50 chances to come in early) and it has zero slack by design:
 //   - `qb::detail::to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:801) — a
 //     requested delay is never rounded DOWN;
-//   - `async::callback` forces `qev_now_update` immediately before arming (qb/io/async/io.h:388),
+//   - `async::callback` forces `ev_now_update` immediately before arming (qb/io/async/io.h:388),
 //     so each link's deadline is a FRESH clock read plus 1ms, never a stale cached one — that
 //     refresh is exactly what this floor would catch the loss of;
 //   - libev fires a timer only once its clock is strictly PAST the deadline
-//     (`ANHE_at(timers[HEAP0]) < mn_now`, qb/vendor/qev/qev.c:4418) against
+//     (`ANHE_at(timers[HEAP0]) < mn_now`, qb/ev/qev.c:4418) against
 //     `clock_gettime(CLOCK_MONOTONIC)` (qev.c:2876).
 // So each link is >= 1ms of monotonic time and the chain is >= N ms. `qb::mono_now()` below reads
 // `steady_clock`, which IS CLOCK_MONOTONIC on Linux and runs at the same rate on macOS; note it is

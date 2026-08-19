@@ -63,7 +63,7 @@
  *      (`ready_queue_.push_back({handle, true})`, scheduler.h:965), so every task spawned before a
  *      pump starts in ONE `run_ready()` drain and arms its timer in ONE loop turn, into libev's
  *      single deadline-ordered heap. `timers_reify` then pops strictly in deadline order
- *      (`ANHE_at(timers[HEAP0]) < mn_now`, vendor/qev/qev.c:4418). A stall therefore delays every
+ *      (`ANHE_at(timers[HEAP0]) < mn_now`, ev/qev.c:4418). A stall therefore delays every
  *      timer equally and cannot reorder them — it makes them all fire back-to-back, in order.
  *      Measured (SIGSTOP/SIGCONT injection, 40 ms stall windows, release, macOS): the realized
  *      inter-completion gap of the 15 ms/10 ms pair fell from 5.30 ms to 0.023 ms — 0.5% of its
@@ -91,7 +91,7 @@
  *        - `to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:801) — it never
  *          rounds a requested delay down;
  *        - `timer_awaiter::await_suspend` (async/coroutine/awaiter.h:347-348) and `async::callback`
- *          (async/io.h:388) both force `qev_now_update` immediately before `qev_timer_start`, so
+ *          (async/io.h:388) both force `ev_now_update` immediately before `ev_timer_start`, so
  *          the deadline is a FRESH clock read plus the delay, never a stale cached one;
  *        - `timers_reify` fires only once `mn_now` is strictly PAST that deadline (qev.c:4418),
  *          against `clock_gettime(CLOCK_MONOTONIC)` (qev.c:2876).
@@ -104,7 +104,7 @@
  *      floor's worst case GREW under load (that chain to +334 ms, the 2 x 20 ms retry floor to
  *      +58 ms). None ever went negative.
  *      A zero-margin floor here is therefore an invariant, not a coin flip — and it is what would
- *      catch a dropped `qev_now_update`. Do not widen one to silence a failure: investigate it.
+ *      catch a dropped `ev_now_update`. Do not widen one to silence a failure: investigate it.
  */
 
 #ifndef QB_IO_TESTS_SHARED_COROUTINE_TEST_SUPPORT_H

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
- * Part of qb-ev, a modernized cross-platform fork of libev.
+ * Part of qev, a modernized cross-platform fork of libev.
  * Based on libev by Marc Alexander Lehmann <libev@schmorp.de>.
  *   Upstream: http://software.schmorp.de/pkg/libev.html
  *
@@ -13,13 +13,13 @@
  * see THIRD-PARTY-NOTICES.
  */
 
-#ifndef QEVPP_H_
-#define QEVPP_H_
+#ifndef QB_EVPP_H_
+#define QB_EVPP_H_
 
 #ifdef EV_H
 #include EV_H
 #else
-#include "qev.h"
+#include "ev.h"
 #endif
 
 #ifndef EV_USE_STDEXCEPT
@@ -32,7 +32,7 @@
 
 namespace ev {
 
-typedef qev_tstamp tstamp;
+typedef ev_tstamp tstamp;
 
 enum {
     UNDEF = EV_UNDEF,
@@ -147,93 +147,93 @@ struct loop_ref {
         return !(*this == EV_A);
     }
 
-    operator struct qev_loop *() const EV_NOEXCEPT {
+    operator struct ev_loop *() const EV_NOEXCEPT {
         return EV_AX;
     }
 
-    operator const struct qev_loop *() const EV_NOEXCEPT {
+    operator const struct ev_loop *() const EV_NOEXCEPT {
         return EV_AX;
     }
 
     bool
     is_default() const EV_NOEXCEPT {
-        return EV_AX == qev_default_loop(0);
+        return EV_AX == ev_default_loop(0);
     }
 #endif
 
 #if EV_COMPAT3
     void
     loop(int flags = 0) {
-        qev_run(EV_AX_ flags);
+        ev_run(EV_AX_ flags);
     }
 
     void
     unloop(how_t how = ONE) EV_NOEXCEPT {
-        qev_break(EV_AX_ how);
+        ev_break(EV_AX_ how);
     }
 #endif
 
     void
     run(int flags = 0) {
-        qev_run(EV_AX_ flags);
+        ev_run(EV_AX_ flags);
     }
 
     void
     break_loop(how_t how = ONE) EV_NOEXCEPT {
-        qev_break(EV_AX_ how);
+        ev_break(EV_AX_ how);
     }
 
     void
     post_fork() EV_NOEXCEPT {
-        qev_loop_fork(EV_AX);
+        ev_loop_fork(EV_AX);
     }
 
     unsigned int
     backend() const EV_NOEXCEPT {
-        return qev_backend(EV_AX);
+        return ev_backend(EV_AX);
     }
 
     tstamp
     now() const EV_NOEXCEPT {
-        return qev_now(EV_AX);
+        return ev_now(EV_AX);
     }
 
     void
     ref() EV_NOEXCEPT {
-        qev_ref(EV_AX);
+        ev_ref(EV_AX);
     }
 
     void
     unref() EV_NOEXCEPT {
-        qev_unref(EV_AX);
+        ev_unref(EV_AX);
     }
 
 #if EV_FEATURE_API
     unsigned int
     iteration() const EV_NOEXCEPT {
-        return qev_iteration(EV_AX);
+        return ev_iteration(EV_AX);
     }
 
     unsigned int
     depth() const EV_NOEXCEPT {
-        return qev_depth(EV_AX);
+        return ev_depth(EV_AX);
     }
 
     void
     set_io_collect_interval(tstamp interval) EV_NOEXCEPT {
-        qev_set_io_collect_interval(EV_AX_ interval);
+        ev_set_io_collect_interval(EV_AX_ interval);
     }
 
     void
     set_timeout_collect_interval(tstamp interval) EV_NOEXCEPT {
-        qev_set_timeout_collect_interval(EV_AX_ interval);
+        ev_set_timeout_collect_interval(EV_AX_ interval);
     }
 #endif
 
     // function callback
     void
     once(int fd, int events, tstamp timeout, void (*cb)(int, void *), void *arg = 0) EV_NOEXCEPT {
-        qev_once(EV_AX_ fd, events, timeout, cb, arg);
+        ev_once(EV_AX_ fd, events, timeout, cb, arg);
     }
 
     // method callback
@@ -297,29 +297,29 @@ struct loop_ref {
 
     void
     feed_fd_event(int fd, int revents) EV_NOEXCEPT {
-        qev_feed_fd_event(EV_AX_ fd, revents);
+        ev_feed_fd_event(EV_AX_ fd, revents);
     }
 
     void
     feed_signal_event(int signum) EV_NOEXCEPT {
-        qev_feed_signal_event(EV_AX_ signum);
+        ev_feed_signal_event(EV_AX_ signum);
     }
 
 #if EV_MULTIPLICITY
-    struct qev_loop *EV_AX;
+    struct ev_loop *EV_AX;
 #endif
 };
 
 #if EV_MULTIPLICITY
 struct dynamic_loop : loop_ref {
     dynamic_loop(unsigned int flags = AUTO)
-        : loop_ref(qev_loop_new(flags)) {
+        : loop_ref(ev_loop_new(flags)) {
         if (!EV_AX)
             throw bad_loop();
     }
 
     ~dynamic_loop() EV_NOEXCEPT {
-        qev_loop_destroy(EV_AX);
+        ev_loop_destroy(EV_AX);
         EV_AX = 0;
     }
 
@@ -333,14 +333,14 @@ private:
 struct default_loop : loop_ref {
     default_loop(unsigned int flags = AUTO)
 #if EV_MULTIPLICITY
-        : loop_ref(qev_default_loop(flags))
+        : loop_ref(ev_default_loop(flags))
 #endif
     {
         if (
 #if EV_MULTIPLICITY
             !EV_AX
 #else
-            !qev_default_loop(flags)
+            !ev_default_loop(flags)
 #endif
         )
             throw bad_loop();
@@ -354,7 +354,7 @@ private:
 inline loop_ref
 get_default_loop() EV_NOEXCEPT {
 #if EV_MULTIPLICITY
-    return qev_default_loop(0);
+    return ev_default_loop(0);
 #else
     return loop_ref();
 #endif
@@ -373,8 +373,8 @@ get_default_loop() EV_NOEXCEPT {
 #define EV_PX_
 #endif
 
-template <class qev_watcher, class watcher>
-struct base : qev_watcher {
+template <class ev_watcher, class watcher>
+struct base : ev_watcher {
     // scoped pause/unpause of a watcher
     struct freeze_guard {
         watcher &w;
@@ -408,13 +408,13 @@ struct base : qev_watcher {
         : EV_A(EV_A)
 #endif
     {
-        qev_init(this, 0);
+        ev_init(this, 0);
     }
 
     void
-    set_(const void *data, void (*cb)(EV_P_ qev_watcher *w, int revents)) EV_NOEXCEPT {
+    set_(const void *data, void (*cb)(EV_P_ ev_watcher *w, int revents)) EV_NOEXCEPT {
         this->data = (void *) data;
-        qev_set_cb(static_cast<qev_watcher *>(this), cb);
+        ev_set_cb(static_cast<ev_watcher *>(this), cb);
     }
 
     // function callback
@@ -426,7 +426,7 @@ struct base : qev_watcher {
 
     template <void (*function)(watcher &w, int)>
     static void
-    function_thunk(EV_P_ qev_watcher *w, int revents) {
+    function_thunk(EV_P_ ev_watcher *w, int revents) {
         function(*static_cast<watcher *>(w), revents);
         (void) loop;
     }
@@ -447,7 +447,7 @@ struct base : qev_watcher {
 
     template <class K, void (K::*method)(watcher &w, int)>
     static void
-    method_thunk(EV_P_ qev_watcher *w, int revents) {
+    method_thunk(EV_P_ ev_watcher *w, int revents) {
         (static_cast<K *>(w->data)->*method)(*static_cast<watcher *>(w), revents);
         (void) loop;
     }
@@ -461,80 +461,80 @@ struct base : qev_watcher {
 
     template <class K, void (K::*method)()>
     static void
-    method_noargs_thunk(EV_P_ qev_watcher *w, int) {
+    method_noargs_thunk(EV_P_ ev_watcher *w, int) {
         (static_cast<K *>(w->data)->*method)();
         (void) loop;
     }
 
     void
     operator()(int events = EV_UNDEF) {
-        return qev_cb(static_cast<qev_watcher *>(this))(static_cast<qev_watcher *>(this), events);
+        return ev_cb(static_cast<ev_watcher *>(this))(static_cast<ev_watcher *>(this), events);
     }
 
     bool
     is_active() const EV_NOEXCEPT {
-        return qev_is_active(static_cast<const qev_watcher *>(this));
+        return ev_is_active(static_cast<const ev_watcher *>(this));
     }
 
     bool
     is_pending() const EV_NOEXCEPT {
-        return qev_is_pending(static_cast<const qev_watcher *>(this));
+        return ev_is_pending(static_cast<const ev_watcher *>(this));
     }
 
     void
     feed_event(int revents) EV_NOEXCEPT {
-        qev_feed_event(EV_A_ static_cast<qev_watcher *>(this), revents);
+        ev_feed_event(EV_A_ static_cast<ev_watcher *>(this), revents);
     }
 };
 
 inline tstamp
 now(EV_P) EV_NOEXCEPT {
-    return qev_now(EV_A);
+    return ev_now(EV_A);
 }
 
 inline void
 delay(tstamp interval) EV_NOEXCEPT {
-    qev_sleep(interval);
+    ev_sleep(interval);
 }
 
 inline int
 version_major() EV_NOEXCEPT {
-    return qev_version_major();
+    return ev_version_major();
 }
 
 inline int
 version_minor() EV_NOEXCEPT {
-    return qev_version_minor();
+    return ev_version_minor();
 }
 
 inline unsigned int
 supported_backends() EV_NOEXCEPT {
-    return qev_supported_backends();
+    return ev_supported_backends();
 }
 
 inline unsigned int
 recommended_backends() EV_NOEXCEPT {
-    return qev_recommended_backends();
+    return ev_recommended_backends();
 }
 
 inline unsigned int
 embeddable_backends() EV_NOEXCEPT {
-    return qev_embeddable_backends();
+    return ev_embeddable_backends();
 }
 
 inline void
 set_allocator(void *(*cb)(void *ptr, long size) EV_NOEXCEPT) EV_NOEXCEPT {
-    qev_set_allocator(cb);
+    ev_set_allocator(cb);
 }
 
 inline void
 set_syserr_cb(void (*cb)(const char *msg) EV_NOEXCEPT) EV_NOEXCEPT {
-    qev_set_syserr_cb(cb);
+    ev_set_syserr_cb(cb);
 }
 
 #if EV_MULTIPLICITY
 #define EV_CONSTRUCT(cppstem, cstem) \
-    (EV_PX = get_default_loop()) EV_NOEXCEPT : base<qev_##cstem, cppstem>(EV_A) {}
+    (EV_PX = get_default_loop()) EV_NOEXCEPT : base<ev_##cstem, cppstem>(EV_A) {}
 #else
 #define EV_CONSTRUCT(cppstem, cstem) \
     () EV_NOEXCEPT {}
@@ -544,15 +544,15 @@ set_syserr_cb(void (*cb)(const char *msg) EV_NOEXCEPT) EV_NOEXCEPT {
  * so a macro solution was chosen */
 #define EV_BEGIN_WATCHER(cppstem, cstem)                                 \
                                                                          \
-    struct cppstem : base<qev_##cstem, cppstem> {                        \
+    struct cppstem : base<ev_##cstem, cppstem> {                        \
         void                                                             \
         start() EV_NOEXCEPT {                                            \
-            qev_##cstem##_start(EV_A_ static_cast<qev_##cstem *>(this)); \
+            ev_##cstem##_start(EV_A_ static_cast<ev_##cstem *>(this)); \
         }                                                                \
                                                                          \
         void                                                             \
         stop() EV_NOEXCEPT {                                             \
-            qev_##cstem##_stop(EV_A_ static_cast<qev_##cstem *>(this));  \
+            ev_##cstem##_stop(EV_A_ static_cast<ev_##cstem *>(this));  \
         }                                                                \
                                                                          \
         cppstem                                                          \
@@ -562,7 +562,7 @@ set_syserr_cb(void (*cb)(const char *msg) EV_NOEXCEPT) EV_NOEXCEPT {
             stop();                                                      \
         }                                                                \
                                                                          \
-        using base<qev_##cstem, cppstem>::set;                           \
+        using base<ev_##cstem, cppstem>::set;                           \
                                                                          \
     private:                                                             \
         cppstem(const cppstem &o);                                       \
@@ -579,14 +579,14 @@ EV_BEGIN_WATCHER(io, io)
 void
 set(int fd, int events) EV_NOEXCEPT {
     freeze_guard freeze(this);
-    qev_io_set(static_cast<qev_io *>(this), fd, events);
+    ev_io_set(static_cast<ev_io *>(this), fd, events);
 }
 
 #if defined _WIN32
 void
 set(uintptr_t handle, int events) EV_NOEXCEPT {
     freeze_guard freeze(this);
-    qev_io_set_sock(static_cast<qev_io *>(this), handle, events);
+    ev_io_set_sock(static_cast<ev_io *>(this), handle, events);
 }
 #endif
 
@@ -594,8 +594,8 @@ void
 set(int events) EV_NOEXCEPT {
     // Modify the watched events in place (no stop/start): on Windows the freeze
     // stop/start did an eager epoll_ctl(DEL)+ADD that dropped already-pending
-    // readiness on the socket. qev_io_modify() issues a single EPOLL_CTL_MOD.
-    qev_io_modify(EV_A_ static_cast<qev_io *>(this), events);
+    // readiness on the socket. ev_io_modify() issues a single EPOLL_CTL_MOD.
+    ev_io_modify(EV_A_ static_cast<ev_io *>(this), events);
 }
 
 void
@@ -615,45 +615,45 @@ EV_END_WATCHER(io, io)
 
 EV_BEGIN_WATCHER(timer, timer)
 void
-set(qev_tstamp after, qev_tstamp repeat = 0.) EV_NOEXCEPT {
+set(ev_tstamp after, ev_tstamp repeat = 0.) EV_NOEXCEPT {
     freeze_guard freeze(this);
-    qev_timer_set(static_cast<qev_timer *>(this), after, repeat);
+    ev_timer_set(static_cast<ev_timer *>(this), after, repeat);
 }
 
 void
-start(qev_tstamp after, qev_tstamp repeat = 0.) EV_NOEXCEPT {
+start(ev_tstamp after, ev_tstamp repeat = 0.) EV_NOEXCEPT {
     set(after, repeat);
     start();
 }
 
 void
 again() EV_NOEXCEPT {
-    qev_timer_again(EV_A_ static_cast<qev_timer *>(this));
+    ev_timer_again(EV_A_ static_cast<ev_timer *>(this));
 }
 
-qev_tstamp
+ev_tstamp
 remaining() {
-    return qev_timer_remaining(EV_A_ static_cast<qev_timer *>(this));
+    return ev_timer_remaining(EV_A_ static_cast<ev_timer *>(this));
 }
 EV_END_WATCHER(timer, timer)
 
 #if EV_PERIODIC_ENABLE
 EV_BEGIN_WATCHER(periodic, periodic)
 void
-set(qev_tstamp at, qev_tstamp interval = 0.) EV_NOEXCEPT {
+set(ev_tstamp at, ev_tstamp interval = 0.) EV_NOEXCEPT {
     freeze_guard freeze(this);
-    qev_periodic_set(static_cast<qev_periodic *>(this), at, interval, 0);
+    ev_periodic_set(static_cast<ev_periodic *>(this), at, interval, 0);
 }
 
 void
-start(qev_tstamp at, qev_tstamp interval = 0.) EV_NOEXCEPT {
+start(ev_tstamp at, ev_tstamp interval = 0.) EV_NOEXCEPT {
     set(at, interval);
     start();
 }
 
 void
 again() EV_NOEXCEPT {
-    qev_periodic_again(EV_A_ static_cast<qev_periodic *>(this));
+    ev_periodic_again(EV_A_ static_cast<ev_periodic *>(this));
 }
 EV_END_WATCHER(periodic, periodic)
 #endif
@@ -663,7 +663,7 @@ EV_BEGIN_WATCHER(sig, signal)
 void
 set(int signum) EV_NOEXCEPT {
     freeze_guard freeze(this);
-    qev_signal_set(static_cast<qev_signal *>(this), signum);
+    ev_signal_set(static_cast<ev_signal *>(this), signum);
 }
 
 void
@@ -679,7 +679,7 @@ EV_BEGIN_WATCHER(child, child)
 void
 set(int pid, int trace = 0) EV_NOEXCEPT {
     freeze_guard freeze(this);
-    qev_child_set(static_cast<qev_child *>(this), pid, trace);
+    ev_child_set(static_cast<ev_child *>(this), pid, trace);
 }
 
 void
@@ -693,13 +693,13 @@ EV_END_WATCHER(child, child)
 #if EV_STAT_ENABLE
 EV_BEGIN_WATCHER(stat, stat)
 void
-set(const char *path, qev_tstamp interval = 0.) EV_NOEXCEPT {
+set(const char *path, ev_tstamp interval = 0.) EV_NOEXCEPT {
     freeze_guard freeze(this);
-    qev_stat_set(static_cast<qev_stat *>(this), path, interval);
+    ev_stat_set(static_cast<ev_stat *>(this), path, interval);
 }
 
 void
-start(const char *path, qev_tstamp interval = 0.) EV_NOEXCEPT {
+start(const char *path, ev_tstamp interval = 0.) EV_NOEXCEPT {
     stop();
     set(path, interval);
     start();
@@ -707,7 +707,7 @@ start(const char *path, qev_tstamp interval = 0.) EV_NOEXCEPT {
 
 void
 update() EV_NOEXCEPT {
-    qev_stat_stat(EV_A_ static_cast<qev_stat *>(this));
+    ev_stat_stat(EV_A_ static_cast<ev_stat *>(this));
 }
 EV_END_WATCHER(stat, stat)
 #endif
@@ -736,20 +736,20 @@ EV_END_WATCHER(check, check)
 #if EV_EMBED_ENABLE
 EV_BEGIN_WATCHER(embed, embed)
 void
-set_embed(struct qev_loop *embedded_loop) EV_NOEXCEPT {
+set_embed(struct ev_loop *embedded_loop) EV_NOEXCEPT {
     freeze_guard freeze(this);
-    qev_embed_set(static_cast<qev_embed *>(this), embedded_loop);
+    ev_embed_set(static_cast<ev_embed *>(this), embedded_loop);
 }
 
 void
-start(struct qev_loop *embedded_loop) EV_NOEXCEPT {
+start(struct ev_loop *embedded_loop) EV_NOEXCEPT {
     set(embedded_loop);
     start();
 }
 
 void
 sweep() {
-    qev_embed_sweep(EV_A_ static_cast<qev_embed *>(this));
+    ev_embed_sweep(EV_A_ static_cast<ev_embed *>(this));
 }
 EV_END_WATCHER(embed, embed)
 #endif
@@ -765,12 +765,12 @@ EV_END_WATCHER(fork, fork)
 EV_BEGIN_WATCHER(async, async)
 void
 send() EV_NOEXCEPT {
-    qev_async_send(EV_A_ static_cast<qev_async *>(this));
+    ev_async_send(EV_A_ static_cast<ev_async *>(this));
 }
 
 bool
 async_pending() EV_NOEXCEPT {
-    return qev_async_pending(static_cast<qev_async *>(this));
+    return ev_async_pending(static_cast<ev_async *>(this));
 }
 EV_END_WATCHER(async, async)
 #endif

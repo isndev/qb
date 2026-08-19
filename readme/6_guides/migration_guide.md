@@ -529,13 +529,13 @@ Nothing changes in your source. `qb::json` is still `nlohmann::json` — qb re-e
 (`qb/src/qb/json.h:282-283`), so there is no alias to update. What changes is provisioning:
 
 - **A plain build or test run does not care.** With no system copy it fetches
-  `QB_NLOHMANN_GIT_TAG` (`qb/cmake/qbConfig.cmake:107`, default `v3.12.0`).
+  `QB_NLOHMANN_GIT_TAG` (`qb/cmake/qbConfig.cmake:119`, default `v3.12.0`).
 - **An installable build needs a *real* system nlohmann.** A fetched target belongs to no export set,
   so `QB_INSTALL=ON` without one is a deliberate configure-time error
-  (`qb/cmake/qbDependencies.cmake:464-472`) that names every way out:
+  (`qb/cmake/qbDependencies.cmake:465-473`) that names every way out:
 
   ```
-  CMake Error at cmake/qbConfig.cmake:493 (message):
+  CMake Error at cmake/qbConfig.cmake:505 (message):
     [qb] nlohmann_json was not found on the system, so it would be fetched
     (v3.12.0, via QB_USE_SYSTEM_NLOHMANN=AUTO), but QB_INSTALL is ON.
   ```
@@ -546,7 +546,7 @@ Nothing changes in your source. `qb::json` is still `nlohmann::json` — qb re-e
   `find_dependency(nlohmann_json 3.11)` unconditionally — the call is written into its template,
   `qb/cmake/qbConfig.cmake.in`.
 
-`QB_USE_SYSTEM_NLOHMANN` (`qb/cmake/qbConfig.cmake:173`) is the lever: `AUTO` (default) takes a system
+`QB_USE_SYSTEM_NLOHMANN` (`qb/cmake/qbConfig.cmake:185`) is the lever: `AUTO` (default) takes a system
 copy when there is one, `ON` requires it, `OFF` always fetches.
 
 ### 5.3 The `.tpp` and `.inl` headers are gone
@@ -603,15 +603,15 @@ t_cube.cpp:1:10: fatal error: 'cube.h' file not found
 ### 5.5 The vendored libev is `qev`
 
 qb's libev fork was re-prefixed so its 58 exported C symbols can no longer collide at link time with a
-system libev, or with another library that vendored its own. `ev_*` became `qev_*`, `struct ev_loop`
-became `struct qev_loop`, the headers became `qev.h` / `qev++.h`, the CMake target `ev` became `qev`
+system libev, or with another library that vendored its own. `ev_*` became `ev_*`, `struct ev_loop`
+became `struct ev_loop`, the headers became `ev.h` / `ev++.h`, the CMake target `ev` became `qev`
 (`qb::ev` → `qb::qev`), and the archive `libev.a` became `libqev.a`.
 
 The 2.6.0 spelling of the header was `<ev/ev++.h>`, installed from qb's own `modules/ev/`. It is now
-`<qb/vendor/qev/qev++.h>`.
+`<qb/ev/ev++.h>`.
 
 **Most consumers need no edit at all.** The C++ namespace is still `ev`
-(`qb/src/qb/vendor/qev/qev++.h:33`), qb's watcher types still derive from `ev::io` / `ev::sig` /
+(`qb/src/qb/ev/ev++.h:33`), qb's watcher types still derive from `ev::io` / `ev::sig` /
 `ev::timer`, and `EV_READ` / `EV_WRITE` / `EV_MULTIPLICITY` were deliberately left alone. Two
 populations are affected: anyone who included `<ev/ev++.h>` directly, and anyone who called the libev
 **C** API through qb's copy.
@@ -619,11 +619,11 @@ populations are affected: anyone who included `<ev/ev++.h>` directly, and anyone
 ```
 t_ev.cpp:1:10: fatal error: 'ev/ev++.h' file not found
 
-t_qevsym.cpp:2:20: error: use of undeclared identifier 'ev_run'; did you mean 'qev_run'?
+t_qevsym.cpp:2:20: error: use of undeclared identifier 'ev_run'; did you mean 'ev_run'?
 ```
 
-The compiler's fix-it is right: prefix the C calls with `q` (`ev_run` → `qev_run`,
-`qb/src/qb/vendor/qev/qev.h:696`), change the include to `<qb/vendor/qev/qev++.h>`, and change a CMake
+The compiler's fix-it is right: prefix the C calls with `q` (`ev_run` → `ev_run`,
+`qb/src/qb/ev/ev.h:696`), change the include to `<qb/ev/ev++.h>`, and change a CMake
 `qb::ev` dependency to `qb::qev`. Leave `ev::`, `EV_*` and the libevent-compat `event_*` names as they
 are.
 

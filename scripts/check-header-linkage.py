@@ -122,9 +122,20 @@ import sys
 
 SCANNED_SUFFIXES = (".h", ".hh", ".hxx", ".ipp", ".tpp", ".inl")
 
-# Not qb's own shipped surface: vendored forks, the nlohmann drop-in, build output, and the
-# test trees (which are never installed and whose link errors the build reports directly).
-EXCLUDED_PARTS = ("/vendor/", "/modules/", "/build/", "/tests/", "/third_party/", "/.git/")
+# Not qb's own shipped surface: upstream-derived forks, the nlohmann drop-in, build output, and
+# the test trees (which are never installed and whose link errors the build reports directly).
+#
+# `/qb/ev/` is the event loop. It sat under `/vendor/` until 3.0 and was excluded by that entry;
+# promoting it out of vendor/ put 47 findings on the board, and every one of them is this parser
+# meeting C it cannot expand. libev declares linkage through its own macros -- `EV_INLINE` is
+# `static inline` (qev.h:244) or `static` (:246), `EV_API_DECL` is `static` (:250) or `extern`
+# (:252) -- so `EV_INLINE void qev_loop(EV_P_ int flags)` reads to this scanner as a bare
+# function definition in a header while being internal-linkage or a declaration in fact. The
+# exclusion tracks PROVENANCE, not the name of a directory, exactly as the formatter's does.
+# The invariant itself is not waived: the loop is compiled as C into libqev.a and every consumer
+# links that archive, so a genuine duplicate symbol there is a link error in qb's own build.
+EXCLUDED_PARTS = ("/vendor/", "/qb/ev/", "/modules/", "/build/", "/tests/", "/third_party/",
+                  "/.git/")
 
 ALLOW_RE = re.compile(r"header-linkage:\s*allow(?:\s+(?P<reason>\S.*))?$")
 

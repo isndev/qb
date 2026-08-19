@@ -34,7 +34,7 @@ marked "in-header" and have no separate file — the notice travels with the cod
 
    Upstream    http://software.schmorp.de/pkg/libev.html
    Author      Marc Alexander Lehmann <libev@schmorp.de>
-   Version     fork version qb-ev 5.0.0 (src/qb/vendor/qev/CMakeLists.txt, and
+   Version     fork version qb-ev 5.0.0 (src/qb/ev/CMakeLists.txt, and
                EV_VERSION_MAJOR/MINOR = 5/0 in qev.h). The upstream libev release
                this was forked from is NOT recorded anywhere in the tree: the
                fork renumbered libev's own EV_VERSION macros to its 5.0, so that
@@ -51,10 +51,10 @@ marked "in-header" and have no separate file — the notice travels with the cod
    event_compat.h additionally derives from libevent,
    Copyright (c) 2000-2004 Niels Provos <provos@citi.umich.edu>.
 
-   Vendored    src/qb/vendor/qev/
-   Installed   <prefix>/include/qb/vendor/qev/
-   License at  <prefix>/share/licenses/qb/third-party/qev/LICENSE
-               <prefix>/share/licenses/qb/third-party/qev/THIRD-PARTY-NOTICES
+   In-tree     src/qb/ev/
+   Installed   <prefix>/include/qb/ev/
+   License at  <prefix>/share/licenses/qb/third-party/ev/LICENSE
+               <prefix>/share/licenses/qb/third-party/ev/THIRD-PARTY-NOTICES
                  (the per-file derivation map and the full BSD-2-Clause text)
 
 2. nanolog

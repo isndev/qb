@@ -58,7 +58,7 @@ Every test also carries CTest labels — `tier:<tier>` and `module:<module>`, pl
 
 ## Building the tests
 
-Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:86`, with the default computed at `qb/cmake/qbConfig.cmake:75-85`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:38`).
+Tests compile as part of the standard build when `QB_BUILD_TESTS` is `ON`. The option defaults to `ON` (`qb/cmake/qbConfig.cmake:98`, with the default computed at `qb/cmake/qbConfig.cmake:87-97`), and the repository root forces it on for the development build (`qb-dev/CMakeLists.txt:38`).
 
 ```bash
 # From the repository root
@@ -84,7 +84,7 @@ ls build/bin/tests/
 - **`QB_DEPS_FETCH_FALLBACK=ON`** (the default) — use a system GoogleTest if `find_package` locates one, otherwise build the pinned tag from source through FetchContent ("system if present, else git"). The from-source path needs network access on the first configure.
 - **`QB_DEPS_FETCH_FALLBACK=OFF`** — always build the pinned tag from source, ignoring any system copy.
 
-The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig.cmake:104`, marked advanced at `qb/cmake/qbConfig.cmake:108-109`). FetchContent is configured with `BUILD_GMOCK=ON` and `INSTALL_GTEST=OFF`. See [CMake and dependencies](./cmake_dependencies.md) for the full dependency-resolution model.
+The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig.cmake:116`, marked advanced at `qb/cmake/qbConfig.cmake:120-121`). FetchContent is configured with `BUILD_GMOCK=ON` and `INSTALL_GTEST=OFF`. See [CMake and dependencies](./cmake_dependencies.md) for the full dependency-resolution model.
 
 ### Test resources
 
@@ -235,9 +235,9 @@ That registers the target and CTest entry as `qb-core-test-unit-my-feature`. Opt
 
 ## Coverage
 
-`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:144`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, qb is the top-level project, `lcov` plus `gcov` are found on the system, and `QB_COVERAGE_KIND` is `gcov` (`qb/CMakeLists.txt:163-209`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing. That last condition is the one a clang host trips: `qbCompiler.cmake` gives clang `-fprofile-instr-generate -fcoverage-mapping`, which writes `.profraw` and never a `.gcno`, so lcov and gcovr would run the entire suite and then report nothing. The four target names are still created there, as stubs that fail immediately and name the alternatives — a GCC toolchain, or the superproject's LLVM-native `coverage` target.
+`QB_BUILD_COVERAGE` (default `OFF`, `qb/cmake/qbConfig.cmake:156`) enables coverage instrumentation. It applies only when **all** of these hold: `CMAKE_BUILD_TYPE` is `Debug`, the platform is **not** Windows, qb is the top-level project, `lcov` plus `gcov` are found on the system, and `QB_COVERAGE_KIND` is `gcov` (`qb/CMakeLists.txt:169-215`). When any condition fails, the build proceeds without coverage and emits a warning if the tools are missing. That last condition is the one a clang host trips: `qbCompiler.cmake` gives clang `-fprofile-instr-generate -fcoverage-mapping`, which writes `.profraw` and never a `.gcno`, so lcov and gcovr would run the entire suite and then report nothing. The four target names are still created there, as stubs that fail immediately and name the alternatives — a GCC toolchain, or the superproject's LLVM-native `coverage` target.
 
-When enabled — **and only when qb is the top-level project** (`qb/CMakeLists.txt:160`); an embedded qb
+When enabled — **and only when qb is the top-level project** (`qb/CMakeLists.txt:166`); an embedded qb
 contributes instrumentation and leaves the report to the superproject — four targets are registered.
 `qb-coverage-run` runs `ctest` once; the three report targets read the counters it produced and are
 ordered after it, so any subset of them in one `cmake --build` runs the suite once and reports the same
@@ -250,9 +250,9 @@ numbers:
 | `qb-coverage-xml` | gcovr | Cobertura XML |
 | `qb-coverage-html` | gcovr | HTML report |
 
-<!-- src: qb/CMakeLists.txt:263-289, qb/cmake/CodeCoverage.cmake -->
+<!-- src: qb/CMakeLists.txt:269-295, qb/cmake/CodeCoverage.cmake -->
 
-The exclusion list filters out system headers, benchmarks, modules, the vendored forks, examples, and the test sources themselves so the report reflects framework code (`qb/CMakeLists.txt:215-233`). A typical run:
+The exclusion list filters out system headers, benchmarks, modules, the vendored forks, examples, and the test sources themselves so the report reflects framework code (`qb/CMakeLists.txt:221-239`). A typical run:
 
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_COVERAGE=ON -B build

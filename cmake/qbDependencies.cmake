@@ -98,8 +98,9 @@ endif()
 # -----------------------------------------------------------------------------
 # libev (using internal bundled version)
 # -----------------------------------------------------------------------------
-# qb uses a custom fork of libev, vendored under src/qb/vendor/qev
-set(QB_EV_DIR "${QB_VENDOR_DIR}/qev")
+# qb's event loop is a fork of libev, maintained in-tree under src/qb/ev and published
+# standalone as isndev/qev.
+set(QB_EV_DIR "${QB_EV_SRC_DIR}")
 
 if(EXISTS "${QB_EV_DIR}")
     set(LIBEV_FOUND TRUE)

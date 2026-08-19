@@ -7,8 +7,8 @@
  * socket-free) event loop:
  *
  *   - the high-level `listener::registerEvent<event::{signal,timer,file,io}>` path, dispatched onto a
- *     plain `FakeActor::on(...)` overload set (signal delivery, repeating timer, `qev_stat` file-size
- *     notification, and a readable-fd `qev_io` wakeup);
+ *     plain `FakeActor::on(...)` overload set (signal delivery, repeating timer, `ev_stat` file-size
+ *     notification, and a readable-fd `ev_io` wakeup);
  *   - the RAW libev watcher path used directly by framework internals — a self-managed `ev::timer`
  *     repeating watcher and a self-managed `ev::stat` file watcher attached straight to
  *     `listener::current.loop()` (absorbed from the dissolved system/test-async-io.cpp PeriodicTimer
@@ -84,7 +84,7 @@ current_pid() noexcept {
 // hand dropped the files into the user's working directory. It has already cost one segfault:
 // `KernelEvents.BasicIO` used to read the `test.file` that `KernelEvents.File` happened to leave in
 // the CWD, so whenever it ran ALONE the file was absent, `sys::file` reported the failed open as
-// `native_handle() == -1`, and `qev_io_start` indexed its `anfds` array with that negative fd (see
+// `native_handle() == -1`, and `ev_io_start` indexed its `anfds` array with that negative fd (see
 // the comment in that case). Both now create what they read, where nothing else can see it.
 //
 // The directory is created on first use per test and removed by ScopedTempDir's destructor.
@@ -255,7 +255,7 @@ TEST(KernelEvents, File) {
         // close it (flushing all OS buffers), then rename it into place.
         // rename(2) is atomic on POSIX — the stat watcher will see the file
         // appear with its final size in a single notification, eliminating
-        // the race where qev_stat fires on creation before the write completes
+        // the race where ev_stat fires on creation before the write completes
         // (which would give st_size == 0 instead of the expected 5).
         {
             std::ofstream ofs(file_tmp, std::ios::binary);
@@ -298,9 +298,9 @@ TEST(KernelEvents, BasicIO) {
     // `KernelEvents.File` happens to leave in the CWD. Relying on that ordering made this
     // case SEGFAULT whenever it ran alone (`--gtest_filter`, `--gtest_shuffle`, a sharded
     // run, or simply a clean working directory): `sys::file` reports a failed open as
-    // `native_handle() == -1`, and `qev_io_start` indexes its `anfds` array by fd, so a
+    // `native_handle() == -1`, and `ev_io_start` indexes its `anfds` array by fd, so a
     // negative fd is an out-of-bounds access. libev guards it with
-    // `EV_ASSERT_MSG(fd >= 0, ...)` (`src/qb/vendor/qev/qev.c`), but assertions are compiled out
+    // `EV_ASSERT_MSG(fd >= 0, ...)` (`src/qb/ev/qev.c`), but assertions are compiled out
     // under NDEBUG — so Debug asserted while Release crashed with EXC_BAD_ACCESS.
     const ScopedTempDir tmp;
     const std::string   file = tmp("test.file");
@@ -383,7 +383,7 @@ public:
         : _path(std::move(path)) {
         _watcher = new ev::stat(qb::io::async::listener::current.loop());
         _watcher->set<RawFileWatcher, &RawFileWatcher::on_change>(this);
-        // Poll explicitly instead of taking libev's default. `qev_stat_set(..., 0.)` means
+        // Poll explicitly instead of taking libev's default. `ev_stat_set(..., 0.)` means
         // DEF_STAT_INTERVAL = 5.0074 s (ev.c), and with no inotify on macOS that default IS the
         // detection latency — this case spent 5.0 s of the suite waiting out one poll tick. 0.1 is
         // clamped up to MIN_STAT_INTERVAL (0.1075 s), which is what the watcher actually polls at.
@@ -448,7 +448,7 @@ TEST(KernelEvents, RawFileWatcherDetectsChange) {
     qb::io::async::run_for(std::chrono::milliseconds(20));
     EXPECT_FALSE(watcher.changed.load());
 
-    // qev_stat polls mtime, whose granularity is coarse — wait past one tick, then
+    // ev_stat polls mtime, whose granularity is coarse — wait past one tick, then
     // rewrite atomically (write temp + rename) so the watcher sees a single change.
     std::this_thread::sleep_for(std::chrono::seconds(1));
     {

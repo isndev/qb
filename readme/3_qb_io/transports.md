@@ -96,7 +96,7 @@ flowchart TB
 ```
 <!-- src: qb/src/qb/io/async/tcp/client.h:46-52 (the base list), qb/src/qb/io/async/io.h:2015 (io), :2019-2027 (the protocol members), qb/src/qb/io/transport/tcp.h:42 (the transport) -->
 
-**Base destruction order is the reverse of the base list — so the transport, which owns the fd, is destroyed *before* the `io<Derived>` base, which owns the watcher.** Leave the watcher armed until the `io<Derived>` destructor and libev's `qev_io_stop` runs against an already-closed descriptor, corrupting its per-fd bookkeeping (`anfds[fd]`). That is an intermittent use-after-close whose symptom is a later crash somewhere else entirely, in `clear_pending` or `fd_change`.
+**Base destruction order is the reverse of the base list — so the transport, which owns the fd, is destroyed *before* the `io<Derived>` base, which owns the watcher.** Leave the watcher armed until the `io<Derived>` destructor and libev's `ev_io_stop` runs against an already-closed descriptor, corrupting its per-fd bookkeeping (`anfds[fd]`). That is an intermittent use-after-close whose symptom is a later crash somewhere else entirely, in `clear_pending` or `fd_change`.
 
 The fix is the same in every composition, and it is a **destructor body**, because a destructor body runs before any base destructor — i.e. while the transport is still alive and the fd is still valid:
 

@@ -95,9 +95,15 @@ set(UUID_USING_CXX20_SPAN ON)
 # consumer's include root. Both projects keep working standalone when this is unset.
 set(QB_VENDOR_INCLUDE_PREFIX "qb/vendor")
 
-# Load qb's own vendored forks (qev, uuid). Header-only forks (nanolog, ska_hash) need no build.
+# The event loop uses its own variable, not the vendor prefix, because it is not vendored and
+# because ITS CMakeLists.txt is byte-shared with the standalone isndev/qev repo -- an embedder
+# names the directory its include root exposes these headers under, and qb's answer is qb/ev.
+set(QB_EV_EMBED_INCLUDE_DIR "qb/ev")
+
+# Load qb's own vendored fork (uuid) and the event loop. Header-only forks (nanolog, ska_hash)
+# need no build.
 add_subdirectory("${QB_VENDOR_DIR}/uuid")
-add_subdirectory("${QB_VENDOR_DIR}/qev")
+add_subdirectory("${QB_EV_SRC_DIR}")
 
 # -----------------------------------------------------------------------------
 # Core Libraries
@@ -366,7 +372,7 @@ if (QB_INSTALL)
     # A module needs no exclusion at all.
     set(_qb_header_exclude "/qb/vendor/uuid/(catch|test|cmake)(/|$)")
     if (NOT QB_EV_LIBEVENT_COMPAT)
-        set(_qb_header_exclude "${_qb_header_exclude}|/qb/vendor/qev/event(_compat)?\\.h$")
+        set(_qb_header_exclude "${_qb_header_exclude}|/qb/ev/event(_compat)?\\.h$")
     endif ()
 
     qb_install_package(
@@ -379,7 +385,7 @@ if (QB_INSTALL)
             HEADER_EXCLUDE "${_qb_header_exclude}"
             TARGETS ${_QB_INSTALL_TARGETS}
             CMAKE_FILES ${_qb_find_modules}
-            VENDOR_DIRS "${QB_VENDOR_DIR}/*"
+            VENDOR_DIRS "${QB_VENDOR_DIR}/*" "${QB_EV_SRC_DIR}"
     )
 
     # ---- share/qb/abi-fingerprint.txt --------------------------------------------------------

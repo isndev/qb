@@ -98,7 +98,7 @@ public:
      * `_Prot` (which owns the listening socket) is a sibling base listed after
      * `input<acceptor>`, so it is destroyed first and closes the fd. Stopping the
      * watcher in this destructor body (runs before any base) prevents the
-     * `input<>` base destructor from calling `qev_io_stop` on a closed fd, which
+     * `input<>` base destructor from calling `ev_io_stop` on a closed fd, which
      * would corrupt libev's per-fd bookkeeping. A no-op if already stopped.
      */
     ~acceptor() {

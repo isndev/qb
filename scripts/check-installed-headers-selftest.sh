@@ -151,14 +151,14 @@ fi
 # qb/core/Actor.tpp until 3.0 retired the last .tpp under qb/ -- qev_vars.h is now the only
 # UNCONDITIONALLY excluded header the qb tree still ships, which is the property C6 needs.
 say_control "C6  an exclusion naming a header that no longer exists must be REJECTED"
-V="$P/include/qb/vendor/qev/qev_vars.h"
+V="$P/include/qb/ev/qev_vars.h"
 mv "$V" "$V.moved"
 if run_gate "${QB_ARGS[@]}"; then ko "a stale exclusion was accepted -- an excluded name can rot"; else
   { echo "$GATE_OUT" | grep -m1 'stale exclusion' | sed 's/^/      /'; } || true
   ok "stale exclusion detected"
 fi
 mv "$V.moved" "$V"
-[ "$(sha "$V")" = "$(sha "$PREFIX/include/qb/vendor/qev/qev_vars.h")" ] && ok "restored byte-exact" || ko "restore is NOT byte-exact"
+[ "$(sha "$V")" = "$(sha "$PREFIX/include/qb/ev/qev_vars.h")" ] && ok "restored byte-exact" || ko "restore is NOT byte-exact"
 
 # ---- C7 an entry point that links nothing ------------------------------------------------
 say_control "C7  an --entry-dir with no TUs must be REJECTED (a vacuous link phase)"

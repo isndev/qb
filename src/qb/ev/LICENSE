@@ -22,7 +22,7 @@ SOFTWARE.
 
 -------------------------------------------------------------------------------
 
-qb-ev is a modernized fork of libev and bundles a patched copy of wepoll.
+qev is a modernized fork of libev and bundles a patched copy of wepoll.
 Those upstream components are retained under their original BSD-2-Clause
 licenses. The combined work is distributed under the MIT License above; the
 original copyright notices are preserved in the respective source files and the

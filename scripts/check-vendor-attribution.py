@@ -59,8 +59,13 @@ COPYRIGHT_RE = re.compile(r"copyright|SPDX-FileCopyrightText|SPDX-License-Identi
 # in_header_notice_ok        : unit has no license FILE but every source carries the
 #                              full notice, so the notice travels with the code
 MANIFEST = [
-    dict(path="qb/src/qb/vendor/qev",          notices_in="qb",
-         record_as="src/qb/vendor/qev/"),
+    # NOT under vendor/ since 3.0, and still fully in scope here. Promoting the event loop out of
+    # vendor/ says "we maintain this", not "we no longer derive from libev" -- the BSD-2 obligation
+    # is discharged by LICENSE, THIRD-PARTY-NOTICES and the per-file copyright headers, all of
+    # which travel with the files. A move that quietly dropped a derived work out of the
+    # attribution guard would be the exact failure this file exists to catch.
+    dict(path="qb/src/qb/ev",                  notices_in="qb",
+         record_as="src/qb/ev/"),
     dict(path="qb/src/qb/vendor/nanolog",      notices_in="qb",
          record_as="src/qb/vendor/nanolog/",   in_header_notice_ok=True),
     dict(path="qb/src/qb/vendor/ska_hash",     notices_in="qb",
@@ -124,6 +129,11 @@ def discover_units(root: Path) -> set[str]:
     seen: set[str] = set()
     conventions = list((root / "qb/src/qb/vendor").glob("*"))
     conventions += list((root / "qb/modules").glob("*"))
+    # The event loop lives outside vendor/ but is still a derived work. Without this line the
+    # discovery half -- the half that caught Catch2 hiding inside stduuid -- would stop looking at
+    # it entirely, and a second upstream dropped in beside it would be invisible. The MANIFEST
+    # entry alone is not enough: that only proves what is DECLARED, never what APPEARED.
+    conventions.append(root / "qb/src/qb/ev")
     for mod in sorted((root / "qbm").glob("*")):
         conventions += list((mod / "not-qb").glob("*"))
     for d in conventions:

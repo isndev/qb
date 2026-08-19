@@ -207,7 +207,7 @@ fi
 # The optional 7th argument names a COMPILE-time refusal that is a property of the toolchain, not
 # a hole in the fingerprint. Some axes cannot be flipped on some compilers because the mismatch
 # build never reaches the linker: g++-14 rejects `throw` under -fno-exceptions even in code it
-# will not instantiate, so the -fno-exceptions consumer dies in qb/vendor/qev/qev++.h:318 --
+# will not instantiate, so the -fno-exceptions consumer dies in qb/ev/qev++.h:318 --
 #     error: exception handling disabled, use '-fexceptions' to enable
 # while clang accepts the unreached throw and proceeds to the link this check is about. Without
 # this branch that landed in the "failed, but not with the symbol" arm and reported FAIL, so the

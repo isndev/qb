@@ -256,7 +256,7 @@ A CRTP mixin that owns the map of active client [sessions](#session-networking) 
 
 #### libev
 
-The C event-loop library qb-io uses internally to interact with the OS notification mechanism (epoll, kqueue, and so on). The single seam between [`qb::duration`](#qbduration) nanoseconds and qev's `qev_tstamp` double-seconds is `qb::detail::to_ev_seconds` / `qb::detail::from_ev_seconds`. See [Async system](../3_qb_io/async_system.md).
+The C event-loop library qb-io uses internally to interact with the OS notification mechanism (epoll, kqueue, and so on). The single seam between [`qb::duration`](#qbduration) nanoseconds and qev's `ev_tstamp` double-seconds is `qb::detail::to_ev_seconds` / `qb::detail::from_ev_seconds`. See [Async system](../3_qb_io/async_system.md).
 
 #### Listener (`qb::io::async::listener`)
 

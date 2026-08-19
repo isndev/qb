@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
- * Part of qb-ev, a modernized cross-platform fork of libev.
+ * Part of qev, a modernized cross-platform fork of libev.
  * Based on libev by Marc Alexander Lehmann <libev@schmorp.de>.
  *   Upstream: http://software.schmorp.de/pkg/libev.html
  *
@@ -27,33 +27,33 @@
 #endif
 
 #if EV_MULTIPLICITY
-#define dLOOPev struct qev_loop *loop = (struct qev_loop *) ev->ev_base
-#define dLOOPbase struct qev_loop *loop = (struct qev_loop *) base
+#define dLOOPev struct ev_loop *loop = (struct ev_loop *) ev->ev_base
+#define dLOOPbase struct ev_loop *loop = (struct ev_loop *) base
 #else
 #define dLOOPev
 #define dLOOPbase
 #endif
 
-/* never accessed, will always be cast from/to qev_loop */
+/* never accessed, will always be cast from/to ev_loop */
 struct event_base {
     int dummy;
 };
 
-static struct event_base *qev_x_cur;
+static struct event_base *ev_x_cur;
 
-static qev_tstamp
-qev_tv_get(struct timeval *tv) {
+static ev_tstamp
+ev_tv_get(struct timeval *tv) {
     if (tv) {
-        qev_tstamp after = (qev_tstamp) tv->tv_sec + (qev_tstamp) tv->tv_usec * 1e-6;
+        ev_tstamp after = (ev_tstamp) tv->tv_sec + (ev_tstamp) tv->tv_usec * 1e-6;
         return after != 0. ? after : 1e-6;
     } else
         return -1.;
 }
 
 static void
-qev_tv_set(struct timeval *tv, qev_tstamp at) {
+ev_tv_set(struct timeval *tv, ev_tstamp at) {
     long sec  = (long) at;
-    long usec = (long) ((at - (qev_tstamp) sec) * 1e6);
+    long usec = (long) ((at - (ev_tstamp) sec) * 1e6);
 
     if (usec >= 1000000L) {
         ++sec;
@@ -89,15 +89,15 @@ void *
 event_init(void) {
 #if EV_MULTIPLICITY
     /* Idempotent: attach to the process-wide default loop once (libevent 1.x semantics). */
-    if (!qev_x_cur)
-        qev_x_cur = (struct event_base *) qev_default_loop(EVFLAG_AUTO);
+    if (!ev_x_cur)
+        ev_x_cur = (struct event_base *) ev_default_loop(EVFLAG_AUTO);
 #else
-    EV_ASSERT_MSG(!qev_x_cur, "libev: multiple event bases not supported when not compiled with EV_MULTIPLICITY");
+    EV_ASSERT_MSG(!ev_x_cur, "libev: multiple event bases not supported when not compiled with EV_MULTIPLICITY");
 
-    qev_x_cur = (struct event_base *) (long) qev_default_loop(EVFLAG_AUTO);
+    ev_x_cur = (struct event_base *) (long) ev_default_loop(EVFLAG_AUTO);
 #endif
 
-    return qev_x_cur;
+    return ev_x_cur;
 }
 
 const char *
@@ -109,7 +109,7 @@ event_base_get_method(const struct event_base *base) {
 struct event_base *
 event_base_new(void) {
 #if EV_MULTIPLICITY
-    return (struct event_base *) qev_loop_new(EVFLAG_AUTO);
+    return (struct event_base *) ev_loop_new(EVFLAG_AUTO);
 #else
     EV_ASSERT_MSG(0, "libev: multiple event bases not supported when not compiled with EV_MULTIPLICITY");
     return NULL;
@@ -119,14 +119,14 @@ event_base_new(void) {
 void
 event_base_free(struct event_base *base) {
 #if EV_MULTIPLICITY
-    struct qev_loop *loop;
+    struct ev_loop *loop;
 
     if (!base)
         return;
 
-    loop = (struct qev_loop *) base;
-    if (!qev_is_default_loop(loop))
-        qev_loop_destroy(loop);
+    loop = (struct ev_loop *) base;
+    if (!ev_is_default_loop(loop))
+        ev_loop_destroy(loop);
 #else
     (void) base;
 #endif
@@ -134,10 +134,10 @@ event_base_free(struct event_base *base) {
 
 int
 event_dispatch(void) {
-    if (!qev_x_cur)
+    if (!ev_x_cur)
         return -1;
 
-    return event_base_dispatch(qev_x_cur);
+    return event_base_dispatch(ev_x_cur);
 }
 
 #ifdef EV_STANDALONE
@@ -149,18 +149,18 @@ event_set_log_callback(event_log_cb cb) {
 
 int
 event_loop(int flags) {
-    if (!qev_x_cur)
+    if (!ev_x_cur)
         return -1;
 
-    return event_base_loop(qev_x_cur, flags);
+    return event_base_loop(ev_x_cur, flags);
 }
 
 int
 event_loopexit(struct timeval *tv) {
-    if (!qev_x_cur)
+    if (!ev_x_cur)
         return -1;
 
-    return event_base_loopexit(qev_x_cur, tv);
+    return event_base_loopexit(ev_x_cur, tv);
 }
 
 event_callback_fn
@@ -172,7 +172,7 @@ event_get_callback(const struct event *ev) {
 }
 
 static void
-qev_x_cb(struct event *ev, int revents) {
+ev_x_cb(struct event *ev, int revents) {
     revents &= EV_READ | EV_WRITE | EV_TIMER | EV_SIGNAL;
 
     ev->ev_res = revents;
@@ -180,7 +180,7 @@ qev_x_cb(struct event *ev, int revents) {
 }
 
 static void
-qev_x_cb_sig(EV_P_ struct qev_signal *w, int revents) {
+ev_x_cb_sig(EV_P_ struct ev_signal *w, int revents) {
 #if EV_MULTIPLICITY
     (void) loop;
 #endif
@@ -190,11 +190,11 @@ qev_x_cb_sig(EV_P_ struct qev_signal *w, int revents) {
     if (revents & EV_ERROR)
         event_del(ev);
 
-    qev_x_cb(ev, revents);
+    ev_x_cb(ev, revents);
 }
 
 static void
-qev_x_cb_io(EV_P_ struct qev_io *w, int revents) {
+ev_x_cb_io(EV_P_ struct ev_io *w, int revents) {
 #if EV_MULTIPLICITY
     (void) loop;
 #endif
@@ -204,11 +204,11 @@ qev_x_cb_io(EV_P_ struct qev_io *w, int revents) {
     if ((revents & EV_ERROR) || !(ev->ev_events & EV_PERSIST))
         event_del(ev);
 
-    qev_x_cb(ev, revents);
+    ev_x_cb(ev, revents);
 }
 
 static void
-qev_x_cb_to(EV_P_ struct qev_timer *w, int revents) {
+ev_x_cb_to(EV_P_ struct ev_timer *w, int revents) {
 #if EV_MULTIPLICITY
     (void) loop;
 #endif
@@ -217,7 +217,7 @@ qev_x_cb_to(EV_P_ struct qev_timer *w, int revents) {
 
     event_del(ev);
 
-    qev_x_cb(ev, revents);
+    ev_x_cb(ev, revents);
 }
 
 void
@@ -225,16 +225,16 @@ event_set(struct event *ev, int fd, short events, void (*cb)(int, short, void *)
     if (!ev)
         return;
 
-    EV_ASSERT_MSG(qev_x_cur, "libev: call event_init before event_set");
+    EV_ASSERT_MSG(ev_x_cur, "libev: call event_init before event_set");
 
     if (events & EV_SIGNAL)
-        qev_init(&ev->iosig.sig, qev_x_cb_sig);
+        ev_init(&ev->iosig.sig, ev_x_cb_sig);
     else
-        qev_init(&ev->iosig.io, qev_x_cb_io);
+        ev_init(&ev->iosig.io, ev_x_cb_io);
 
-    qev_init(&ev->to, qev_x_cb_to);
+    ev_init(&ev->to, ev_x_cb_to);
 
-    ev->ev_base     = qev_x_cur; /* not threadsafe, but it's how libevent works */
+    ev->ev_base     = ev_x_cur; /* not threadsafe, but it's how libevent works */
     ev->ev_fd       = fd;
     ev->ev_events   = events;
     ev->ev_pri      = 0;
@@ -246,10 +246,10 @@ event_set(struct event *ev, int fd, short events, void (*cb)(int, short, void *)
 
 int
 event_once(int fd, short events, void (*cb)(int, short, void *), void *arg, struct timeval *tv) {
-    if (!qev_x_cur || !cb)
+    if (!ev_x_cur || !cb)
         return -1;
 
-    return event_base_once(qev_x_cur, fd, events, cb, arg, tv);
+    return event_base_once(ev_x_cur, fd, events, cb, arg, tv);
 }
 
 int
@@ -260,27 +260,27 @@ event_add(struct event *ev, struct timeval *tv) {
     dLOOPev;
 
     if (ev->ev_events & EV_SIGNAL) {
-        if (!qev_is_active(&ev->iosig.sig)) {
-            qev_signal_set(&ev->iosig.sig, ev->ev_fd);
-            qev_signal_start(EV_A_ & ev->iosig.sig);
+        if (!ev_is_active(&ev->iosig.sig)) {
+            ev_signal_set(&ev->iosig.sig, ev->ev_fd);
+            ev_signal_start(EV_A_ & ev->iosig.sig);
 
             ev->ev_flags |= EVLIST_SIGNAL;
         }
     } else if (ev->ev_events & (EV_READ | EV_WRITE)) {
-        if (!qev_is_active(&ev->iosig.io)) {
-            qev_io_set(&ev->iosig.io, ev->ev_fd, ev->ev_events & (EV_READ | EV_WRITE));
-            qev_io_start(EV_A_ & ev->iosig.io);
+        if (!ev_is_active(&ev->iosig.io)) {
+            ev_io_set(&ev->iosig.io, ev->ev_fd, ev->ev_events & (EV_READ | EV_WRITE));
+            ev_io_start(EV_A_ & ev->iosig.io);
 
             ev->ev_flags |= EVLIST_INSERTED;
         }
     }
 
     if (tv) {
-        ev->to.repeat = qev_tv_get(tv);
-        qev_timer_again(EV_A_ & ev->to);
+        ev->to.repeat = ev_tv_get(tv);
+        ev_timer_again(EV_A_ & ev->to);
         ev->ev_flags |= EVLIST_TIMEOUT;
     } else {
-        qev_timer_stop(EV_A_ & ev->to);
+        ev_timer_stop(EV_A_ & ev->to);
         ev->ev_flags &= ~EVLIST_TIMEOUT;
     }
 
@@ -297,12 +297,12 @@ event_del(struct event *ev) {
     dLOOPev;
 
     if (ev->ev_events & EV_SIGNAL)
-        qev_signal_stop(EV_A_ & ev->iosig.sig);
+        ev_signal_stop(EV_A_ & ev->iosig.sig);
     else if (ev->ev_events & (EV_READ | EV_WRITE))
-        qev_io_stop(EV_A_ & ev->iosig.io);
+        ev_io_stop(EV_A_ & ev->iosig.io);
 
-    if (qev_is_active(&ev->to))
-        qev_timer_stop(EV_A_ & ev->to);
+    if (ev_is_active(&ev->to))
+        ev_timer_stop(EV_A_ & ev->to);
 
     ev->ev_flags = EVLIST_INIT;
 
@@ -319,13 +319,13 @@ event_active(struct event *ev, int res, short ncalls) {
     dLOOPev;
 
     if (res & EV_TIMEOUT)
-        qev_feed_event(EV_A_ & ev->to, res & EV_TIMEOUT);
+        ev_feed_event(EV_A_ & ev->to, res & EV_TIMEOUT);
 
     if (res & EV_SIGNAL)
-        qev_feed_event(EV_A_ & ev->iosig.sig, res & EV_SIGNAL);
+        ev_feed_event(EV_A_ & ev->iosig.sig, res & EV_SIGNAL);
 
     if (res & (EV_READ | EV_WRITE))
-        qev_feed_event(EV_A_ & ev->iosig.io, res & (EV_READ | EV_WRITE));
+        ev_feed_event(EV_A_ & ev->iosig.io, res & (EV_READ | EV_WRITE));
 }
 
 int
@@ -340,24 +340,24 @@ event_pending(struct event *ev, short events, struct timeval *tv) {
 
     if (ev->ev_events & EV_SIGNAL) {
         /* sig */
-        if (qev_is_active(&ev->iosig.sig) || qev_is_pending(&ev->iosig.sig))
+        if (ev_is_active(&ev->iosig.sig) || ev_is_pending(&ev->iosig.sig))
             revents |= EV_SIGNAL;
     } else if (ev->ev_events & (EV_READ | EV_WRITE)) {
         /* io */
-        if (qev_is_active(&ev->iosig.io) || qev_is_pending(&ev->iosig.io))
+        if (ev_is_active(&ev->iosig.io) || ev_is_pending(&ev->iosig.io))
             revents |= ev->ev_events & (EV_READ | EV_WRITE);
     }
 
-    if (qev_is_active(&ev->to) || qev_is_pending(&ev->to)) {
+    if (ev_is_active(&ev->to) || ev_is_pending(&ev->to)) {
         revents |= EV_TIMEOUT;
 
         if (tv && (requested & EV_TIMEOUT)) {
-            qev_tstamp at = qev_now(EV_A);
+            ev_tstamp at = ev_now(EV_A);
 
-            if (qev_is_active(&ev->to))
-                at += qev_timer_remaining(EV_A_ & ev->to);
+            if (ev_is_active(&ev->to))
+                at += ev_timer_remaining(EV_A_ & ev->to);
 
-            qev_tv_set(tv, at);
+            ev_tv_set(tv, at);
         }
     }
 
@@ -366,10 +366,10 @@ event_pending(struct event *ev, short events, struct timeval *tv) {
 
 int
 event_priority_init(int npri) {
-    if (!qev_x_cur)
+    if (!ev_x_cur)
         return -1;
 
-    return event_base_priority_init(qev_x_cur, npri);
+    return event_base_priority_init(ev_x_cur, npri);
 }
 
 int
@@ -399,13 +399,13 @@ event_base_loop(struct event_base *base, int flags) {
 
 #if EV_MULTIPLICITY
     {
-        struct qev_loop *loop = (struct qev_loop *) base;
+        struct ev_loop *loop = (struct ev_loop *) base;
 
-        return !qev_run(EV_A_ flags);
+        return !ev_run(EV_A_ flags);
     }
 #else
     (void) base;
-    return !qev_run(flags);
+    return !ev_run(flags);
 #endif
 }
 
@@ -415,49 +415,49 @@ event_base_dispatch(struct event_base *base) {
 }
 
 static void
-qev_x_loopexit_cb(int revents, void *base) {
+ev_x_loopexit_cb(int revents, void *base) {
     (void) revents;
 
 #if EV_MULTIPLICITY
-    struct qev_loop *loop = (struct qev_loop *) base;
+    struct ev_loop *loop = (struct ev_loop *) base;
 
-    qev_break(EV_A_ EVBREAK_ONE);
+    ev_break(EV_A_ EVBREAK_ONE);
 #else
     (void) base;
     (void) revents;
-    qev_break(EVBREAK_ONE);
+    ev_break(EVBREAK_ONE);
 #endif
 }
 
 int
 event_base_loopexit(struct event_base *base, struct timeval *tv) {
-    qev_tstamp after = qev_tv_get(tv);
+    ev_tstamp after = ev_tv_get(tv);
 
     if (!base)
         return -1;
 
 #if EV_MULTIPLICITY
     {
-        struct qev_loop *loop = (struct qev_loop *) base;
+        struct ev_loop *loop = (struct ev_loop *) base;
 
-        qev_once(EV_A_ - 1, 0, after >= 0. ? after : 0., qev_x_loopexit_cb, (void *) base);
+        ev_once(EV_A_ - 1, 0, after >= 0. ? after : 0., ev_x_loopexit_cb, (void *) base);
     }
 #else
-    qev_once(-1, 0, after >= 0. ? after : 0., qev_x_loopexit_cb, (void *) base);
+    ev_once(-1, 0, after >= 0. ? after : 0., ev_x_loopexit_cb, (void *) base);
 #endif
 
     return 0;
 }
 
-struct qev_x_once {
+struct ev_x_once {
     int fd;
     void (*cb)(int, short, void *);
     void *arg;
 };
 
 static void
-qev_x_once_cb(int revents, void *arg) {
-    struct qev_x_once *once = (struct qev_x_once *) arg;
+ev_x_once_cb(int revents, void *arg) {
+    struct ev_x_once *once = (struct ev_x_once *) arg;
 
     if (!once || !once->cb) {
         free(once);
@@ -470,9 +470,9 @@ qev_x_once_cb(int revents, void *arg) {
 
 int
 event_base_once(struct event_base *base, int fd, short events, void (*cb)(int, short, void *), void *arg, struct timeval *tv) {
-    struct qev_x_once *once;
+    struct ev_x_once *once;
     short             io_events = events & (EV_READ | EV_WRITE);
-    qev_tstamp         timeout   = tv ? qev_tv_get(tv) : ((events & EV_TIMEOUT) && !io_events ? 0. : -1.);
+    ev_tstamp         timeout   = tv ? ev_tv_get(tv) : ((events & EV_TIMEOUT) && !io_events ? 0. : -1.);
 
     if (!base || !cb)
         return -1;
@@ -480,7 +480,7 @@ event_base_once(struct event_base *base, int fd, short events, void (*cb)(int, s
     if ((fd < 0 || !io_events) && timeout < 0.)
         return -1;
 
-    once = (struct qev_x_once *) malloc(sizeof(struct qev_x_once));
+    once = (struct ev_x_once *) malloc(sizeof(struct ev_x_once));
     if (!once)
         return -1;
 
@@ -490,13 +490,13 @@ event_base_once(struct event_base *base, int fd, short events, void (*cb)(int, s
 
 #if EV_MULTIPLICITY
     {
-        struct qev_loop *loop = (struct qev_loop *) base;
+        struct ev_loop *loop = (struct ev_loop *) base;
 
-        qev_once(EV_A_ fd, io_events, timeout, qev_x_once_cb, (void *) once);
+        ev_once(EV_A_ fd, io_events, timeout, ev_x_once_cb, (void *) once);
     }
 #else
     (void) base;
-    qev_once(fd, io_events, timeout, qev_x_once_cb, (void *) once);
+    ev_once(fd, io_events, timeout, ev_x_once_cb, (void *) once);
 #endif
 
     return 0;
