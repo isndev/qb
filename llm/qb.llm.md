@@ -448,9 +448,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   the running executable's own dir** (`self_path()`/`self_dir()`), so a binary shipped next to its assets/certs runs from any
   cwd; absolute paths pass through unchanged. URL/route paths, actor event path fields, and remote/wire paths (redis
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
-- **`file_watcher`/`directory_watcher` own their watched path string.** qev's `qev_stat` stores the path
+- **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; qev++.h:696)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; ev++.h:696)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:254-271)_

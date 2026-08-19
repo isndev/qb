@@ -686,7 +686,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
     *   `[T<_Func>] void defer(_Func&& func)` — run **at the tail of the current loop turn** (next tick, no delay, no timer). The primitive for "continue after this handler unwinds" (e.g. a reconnect that frees+recreates its connection). Never runs re-entrantly; captured state released on fire or on loop teardown.
     *   `[T<_Func,Rep,Period>] auto scoped_callback(_Func&& func, std::chrono::duration<Rep,Period> timeout)` → `std::unique_ptr<ScopedTimeout<...>>` — hot-path timer variant; destroying/reusing the ptr cancels.
     *   use: `qb::io::async::callback([]{ … }, 200ms);` (timer) · `qb::io::async::defer([]{ … });` (next turn).
-*   `[T] class file_watcher<_Derived> : public base<..., event::file>` — watch a file, read/parse new content via an owned protocol. `do_read = true`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`, `switch_protocol<P>(...)`, `read_all()`. The watcher copies the path into an owned `std::string _watched_path` for its lifetime — `qev_stat` stores the path **pointer** without copying, so the string must outlive the watcher.
+*   `[T] class file_watcher<_Derived> : public base<..., event::file>` — watch a file, read/parse new content via an owned protocol. `do_read = true`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`, `switch_protocol<P>(...)`, `read_all()`. The watcher copies the path into an owned `std::string _watched_path` for its lifetime — `ev_stat` stores the path **pointer** without copying, so the string must outlive the watcher.
 *   `[T] class directory_watcher<_Derived> : public base<..., event::file>` — directory attribute changes (no content read). `do_read = false`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`. Same owned-`_watched_path` invariant as `file_watcher`.
 *   `[T] class file<_Derived> : public file_watcher<_Derived>, qb::io::transport::file` (`<qb/io/async/file.h>`) — async file handler; auto-attaches `_Derived::Protocol`.
 
@@ -757,8 +757,8 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
     *   `std::size_t active_count() const`.
 *   `inline void schedule_via_current(std::coroutine_handle<> handle) noexcept`
 *   `struct awaiter_base` — base for libev awaiters (non-copyable/non-movable).
-*   `struct timer_awaiter : awaiter_base` — qev_timer-backed (ctor `(qb::duration, ev::loop_ref)`).
-*   `struct socket_awaiter : awaiter_base` — qev_io-backed (ctor `(int fd, int events, ev::loop_ref)`).
+*   `struct timer_awaiter : awaiter_base` — ev_timer-backed (ctor `(qb::duration, ev::loop_ref)`).
+*   `struct socket_awaiter : awaiter_base` — ev_io-backed (ctor `(int fd, int events, ev::loop_ref)`).
 *   `[T] struct async_awaiter<ResultType> : awaiter_base` — bridge a callback-based op to `co_await`.
 
 ### Utilities (`utils.h`)

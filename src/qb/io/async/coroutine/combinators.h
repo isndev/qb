@@ -697,10 +697,10 @@ public:
  * @tparam T Result type of the task
  *
  * The inner task is driven by a spawned `run_task` coroutine; the timeout is a single
- * self-stopping raw `qev_timer` (mirrors `qb::detail::ask_awaiter`) — NOT a spawned
+ * self-stopping raw `ev_timer` (mirrors `qb::detail::ask_awaiter`) — NOT a spawned
  * `co_await sleep(timeout)` coroutine. A spawned timeout coroutine stays parked on its
  * sleep for the FULL timeout window even after the task wins, leaking its frame + the
- * qev_timer it is parked on until the original deadline (one zombie watcher per in-flight
+ * ev_timer it is parked on until the original deadline (one zombie watcher per in-flight
  * call on a hot path). The raw timer is instead stopped the instant the awaiter resumes
  * (`finish()` from await_resume), so a call that completes before its timeout leaves no
  * lingering watcher behind.
@@ -708,7 +708,7 @@ public:
  * Uses shared_ptr<state_t> so the spawned `run_task` coroutine can still access the
  * shared state after the awaiter is destroyed when the outer coroutine resumes (the
  * inner task keeps running in the background until it finishes naturally — Finding
- * 2.B.4 — its result then dropped). The `qev_timer` lives in state_t (its `data` points
+ * 2.B.4 — its result then dropped). The `ev_timer` lives in state_t (its `data` points
  * at the raw state_t, not the awaiter) and is always stopped via `finish()` before the
  * awaiter is destroyed, so the loop never holds a dangling timer pointer past the
  * awaiter's lifetime.
@@ -719,7 +719,7 @@ class timeout_awaiter {
         task<T>            inner_task;
         std::optional<T>   result;
         std::exception_ptr exception;
-        // Plain bool: run_task and the qev_timer callback run cooperatively on the same
+        // Plain bool: run_task and the ev_timer callback run cooperatively on the same
         // thread — only one can fire first, so the "first wins" check is sequential.
         bool                    completed{false};
         bool                    timed_out{false};
@@ -727,8 +727,8 @@ class timeout_awaiter {
         // Single self-stopping timeout watcher (see class doc). Lives here, not in the
         // awaiter, so it survives the awaiter's destruction while run_task is still
         // running; `finish()` always stops it before this state_t is destroyed.
-        qev_timer timer{};
-        bool      timer_started{false};
+        ev_timer timer{};
+        bool     timer_started{false};
         // The detached run_task driving inner_task. Recorded so a destroy-while-parked teardown
         // (awaiter unwound mid-race) can reclaim it instead of letting it resume a freed frame.
         std::coroutine_handle<> runner_handle{};
@@ -738,7 +738,7 @@ class timeout_awaiter {
 
         // The timeout fired before the task completed: record it and resume the awaiting
         // coroutine. Guarded by `completed` so a task that already won (or a redundant
-        // wake) is a no-op. Invoked from the qev_timer callback through the raw state
+        // wake) is a no-op. Invoked from the ev_timer callback through the raw state
         // pointer in `timer.data`, never via the (possibly destroyed) awaiter.
         void
         resolve_timeout() {
@@ -772,25 +772,25 @@ class timeout_awaiter {
     // resolved the wait → stop now, not at the end of the timeout window) and from the
     // destructor (awaiter unwound mid-race). The `_state` guard covers a moved-from awaiter.
     //
-    // Do NOT gate the stop on `qev_is_active`: the timeout is a one-shot qev_timer
+    // Do NOT gate the stop on `ev_is_active`: the timeout is a one-shot ev_timer
     // (repeat==0), so libev auto-stops it the instant it expires — BEFORE invoking
     // on_timeout — leaving it inactive but still queued in `pendings[]` with
     // `timer.data` → `_state`. If the awaiter unwinds in that window, an
-    // qev_is_active-gated stop would skip `clear_pending`, leaving a stale pending
-    // entry; qev_invoke_pending() would then call on_timeout() on a possibly-freed
-    // state. `qev_timer_stop` always calls clear_pending() first (then no-ops if
+    // ev_is_active-gated stop would skip `clear_pending`, leaving a stale pending
+    // entry; ev_invoke_pending() would then call on_timeout() on a possibly-freed
+    // state. `ev_timer_stop` always calls clear_pending() first (then no-ops if
     // already inactive), so gating only on `timer_started` is both safe and correct.
     // See qb/io/async/coroutine/awaiter.h (timer_awaiter dtor) for the full rationale.
     void
     finish() noexcept {
         if (_state && _state->timer_started) {
-            qev_timer_stop(static_cast<struct qev_loop *>(listener::current.loop()), &_state->timer);
+            ev_timer_stop(static_cast<struct ev_loop *>(listener::current.loop()), &_state->timer);
             _state->timer_started = false;
         }
     }
 
     static void
-    on_timeout(struct qev_loop *, qev_timer *w, int) noexcept {
+    on_timeout(struct ev_loop *, ev_timer *w, int) noexcept {
         if (auto *st = static_cast<state_t *>(w->data))
             st->resolve_timeout();
     }
@@ -837,15 +837,15 @@ public:
     await_suspend(std::coroutine_handle<> h) {
         _state->continuation  = h;
         _state->runner_handle = coro_scheduler().spawn_tracked(run_task(_state));
-        // Arm a single self-stopping qev_timer instead of spawning a `co_await sleep`
+        // Arm a single self-stopping ev_timer instead of spawning a `co_await sleep`
         // coroutine. `data` points at the raw state_t (kept alive by _state while the
-        // timer can fire); qev_now_update refreshes libev's cached time so the timeout is
+        // timer can fire); ev_now_update refreshes libev's cached time so the timeout is
         // measured from now, not a stale loop iteration (mirrors timer_awaiter).
         auto loop = listener::current.loop();
-        qev_timer_init(&_state->timer, &timeout_awaiter::on_timeout, qb::detail::to_ev_seconds(_timeout), 0.0);
+        ev_timer_init(&_state->timer, &timeout_awaiter::on_timeout, qb::detail::to_ev_seconds(_timeout), 0.0);
         _state->timer.data = _state.get();
-        qev_now_update(static_cast<struct qev_loop *>(loop));
-        qev_timer_start(loop, &_state->timer);
+        ev_now_update(static_cast<struct ev_loop *>(loop));
+        ev_timer_start(loop, &_state->timer);
         _state->timer_started = true;
     }
 
@@ -887,7 +887,7 @@ coro_with_timeout(task<T> &&t, qb::duration timeout) {
 /**
  * @brief Specialization for void tasks
  *
- * Same raw self-stopping `qev_timer` design as the non-void `timeout_awaiter` — see its
+ * Same raw self-stopping `ev_timer` design as the non-void `timeout_awaiter` — see its
  * class doc for the zombie-watcher rationale and the state_t/finish() lifetime contract.
  */
 template <>
@@ -900,8 +900,8 @@ class timeout_awaiter<void> {
         std::coroutine_handle<> continuation;
         // Single self-stopping timeout watcher; stopped via finish() before this state_t
         // is destroyed. See the non-void timeout_awaiter for the full lifetime contract.
-        qev_timer timer{};
-        bool      timer_started{false};
+        ev_timer timer{};
+        bool     timer_started{false};
         // The detached run_task driving inner_task — see the non-void timeout_awaiter.
         std::coroutine_handle<> runner_handle{};
 
@@ -938,18 +938,18 @@ class timeout_awaiter<void> {
 
     void
     finish() noexcept {
-        // Gate on `timer_started` only, never on `qev_is_active`: a one-shot timer
-        // that already expired is inactive but still pending; `qev_timer_stop`
+        // Gate on `timer_started` only, never on `ev_is_active`: a one-shot timer
+        // that already expired is inactive but still pending; `ev_timer_stop`
         // clears that pending entry first. See the timeout_awaiter<T> finish() and
         // qb/io/async/coroutine/awaiter.h (timer_awaiter dtor) for the full rationale.
         if (_state && _state->timer_started) {
-            qev_timer_stop(static_cast<struct qev_loop *>(listener::current.loop()), &_state->timer);
+            ev_timer_stop(static_cast<struct ev_loop *>(listener::current.loop()), &_state->timer);
             _state->timer_started = false;
         }
     }
 
     static void
-    on_timeout(struct qev_loop *, qev_timer *w, int) noexcept {
+    on_timeout(struct ev_loop *, ev_timer *w, int) noexcept {
         if (auto *st = static_cast<state_t *>(w->data))
             st->resolve_timeout();
     }
@@ -991,10 +991,10 @@ public:
         _state->continuation  = h;
         _state->runner_handle = coro_scheduler().spawn_tracked(run_task(_state));
         auto loop             = listener::current.loop();
-        qev_timer_init(&_state->timer, &timeout_awaiter::on_timeout, qb::detail::to_ev_seconds(_timeout), 0.0);
+        ev_timer_init(&_state->timer, &timeout_awaiter::on_timeout, qb::detail::to_ev_seconds(_timeout), 0.0);
         _state->timer.data = _state.get();
-        qev_now_update(static_cast<struct qev_loop *>(loop));
-        qev_timer_start(loop, &_state->timer);
+        ev_now_update(static_cast<struct ev_loop *>(loop));
+        ev_timer_start(loop, &_state->timer);
         _state->timer_started = true;
     }
 

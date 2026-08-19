@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
- * Part of qb-ev, a modernized cross-platform fork of libev.
+ * Part of qev, a modernized cross-platform fork of libev.
  * Based on libev by Marc Alexander Lehmann <libev@schmorp.de>.
  *   Upstream: http://software.schmorp.de/pkg/libev.html
  *
@@ -13,13 +13,13 @@
  * see THIRD-PARTY-NOTICES.
  */
 
-#ifndef QEV_EVENT_H_
-#define QEV_EVENT_H_
+#ifndef QB_EV_EVENT_H_
+#define QB_EV_EVENT_H_
 
 #ifdef EV_H
 #include EV_H
 #else
-#include "qev.h"
+#include "ev.h"
 #endif
 
 #ifndef EVLOOP_NONBLOCK
@@ -62,10 +62,10 @@ typedef void (*event_callback_fn)(int, short, void *);
 struct event {
     /* libev watchers we map onto */
     union {
-        struct qev_io     io;
-        struct qev_signal sig;
+        struct ev_io     io;
+        struct ev_signal sig;
     } iosig;
-    struct qev_timer to;
+    struct ev_timer to;
 
     /* compatibility slots */
     struct event_base *ev_base;

@@ -29,8 +29,8 @@ discovering them one build error at a time — *Removed* carries five and *Chang
 
 Each row is a bullet below, with the migration. [VERSIONING.md](./VERSIONING.md) reserves removals
 that require source edits for a major release.
-The vendored event loop's rename (`ev_*` → `qev_*`, `<qb/vendor/ev/ev++.h>` →
-`<qb/vendor/qev/qev++.h>`) has now landed, and so has the qbm public include prefix — as
+The vendored event loop's rename (`ev_*` → `ev_*`, `<qb/vendor/ev/ev++.h>` →
+`<qb/vendor/qev/ev++.h>`) has now landed, and so has the qbm public include prefix — as
 `<qbm/http/...>`, `<qbm/pgsql/...>`, `<qbm/redis/...>`, not the `<qb/...>` spelling this note
 previously anticipated. Keeping `qbm/` leaves the installed location `include/qbm/<name>/`
 untouched, so every CI assertion holds through the migration, and it keeps the two package
@@ -283,8 +283,8 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `libqev.a` ran the real one and after it ran qb's, both `rc=0`. Nothing in qb calls any of them
   (`nm -u libqb-io.a | grep -c '^ *_event_'` → 0). With the option off the real libevent now wins in
   **both** orders.
-- **The qev fork's 35 `HAVE_*` autoconf macros are private to `libqev.a`.** `qev_config.h` is a
-  public header (`qev.h` needs its `EV_USE_*` half, and `qev.h` is reached from `<qb/io.h>`), so it
+- **The qev fork's 35 `HAVE_*` autoconf macros are private to `libqev.a`.** `ev_config.h` is a
+  public header (`ev.h` needs its `EV_USE_*` half, and `ev.h` is reached from `<qb/io.h>`), so it
   used to push qb's *build-host* answers — `HAVE_POLL 1`, `HAVE_KQUEUE 1`, `HAVE_EPOLL_CTL 0`,
   `HAVE_EVENTFD 0`, … — into every consumer translation unit, where a project running its own
   feature checks would read qb's answer instead of its own. The `HAVE_*` half is now gated on
@@ -388,11 +388,11 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `add_subdirectory(qb)` are unaffected. `QB_INCLUDE_DIR` now points at `<qb>/src` and
   `QB_SOURCE_DIR` at `<qb>/src/qb`.
 - **The vendored libev fork is now `qev`: its own directory, header names, CMake target and C symbol
-  space.** `qb/vendor/ev/` → `qb/vendor/qev/`, `ev.h`/`ev++.h` → `qev.h`/`qev++.h`
-  (likewise `qev.c`, `qev_vars.h`, `qev_wrap.h`, the generated `qev_config.h` and the backend
-  sources), so a consumer writes `#include <qb/vendor/qev/qev++.h>`. The CMake target `ev` is `qev`,
+  space.** `qb/vendor/ev/` → `qb/vendor/qev/`, `ev.h`/`ev++.h` → `ev.h`/`ev++.h`
+  (likewise `ev.c`, `ev_vars.h`, `ev_wrap.h`, the generated `ev_config.h` and the backend
+  sources), so a consumer writes `#include <qb/vendor/qev/ev++.h>`. The CMake target `ev` is `qev`,
   `qb::ev` is `qb::qev`, `ev::ev` is `qev::qev`, and the archive is `libqev.a`. All 58 exported
-  `ev_*` symbols — and the types and macros they are built from — are `qev_*`.
+  `ev_*` symbols — and the types and macros they are built from — are `ev_*`.
 
   This fixes a **silent** failure: qb's event loop and a system libev define the same 58 names, so
   linking both into one binary succeeded with **exit 0 and no diagnostic** and the winner was decided
@@ -402,7 +402,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   **Not renamed, deliberately:** the 24 `event_*` functions and libevent's `struct event` members
   (`ev_fd`, `ev_events`, `ev_callback`, …) — those *are* libevent's API, and `event.h`,
   `event_compat.h`, `event.c` keep their names for the same reason. So `libqev.a` exports 57 owned
-  `qev_*` functions, `qev_default_loop_ptr`, and 24 unowned `event_*`: a chosen exposure that only
+  `ev_*` functions, `ev_default_loop_ptr`, and 24 unowned `event_*`: a chosen exposure that only
   matters to a binary that also links a real libevent. The `EV_*` macros (`EV_READ`, `EV_WRITE`,
   `EV_MULTIPLICITY`, the `QB_EV_*` CMake options) are unchanged, as is the `ev::` C++ namespace.
   Nothing was removed: every file in the fork is still there and still built.
@@ -641,10 +641,10 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   own `QB_BUILD_TESTS` gate. Measured: 0 executable targets before, **45** after.
 - **A `QB_INSTALL=OFF` build still installed one qb header into the consumer's prefix.**
   `src/qb/vendor/qev/CMakeLists.txt` emitted `install(FILES ${QB_EV_CONFIG_OUT} ...)` for the
-  generated `qev_config.h` outside any `QB_INSTALL` guard — the only `install()` in the whole
+  generated `ev_config.h` outside any `QB_INSTALL` guard — the only `install()` in the whole
   embedded-qb subtree that sat outside it. So `cmake --install` of a `QB_INSTALL=OFF` build (every
   dev preset, and every parent reaching qb via `add_subdirectory()`/`FetchContent`) silently
-  deposited `include/qb/vendor/qev/qev_config.h`, exit 0, no diagnostic — precisely the leak the
+  deposited `include/qb/vendor/qev/ev_config.h`, exit 0, no diagnostic — precisely the leak the
   option exists to prevent, and the host-probed generated header is the worst single file to leak.
   Measured: 1 file installed before, **0** after.
 - **`find_package(qb)` permanently polluted the consumer's `CMAKE_MODULE_PATH`.**
@@ -704,12 +704,12 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   the holdout.
 - **`scripts/check-abi-fingerprint.sh` failed on Linux + GCC, on a defect that does not exist.**
   The `exceptions` axis cannot be flipped under g++, which rejects `throw` under `-fno-exceptions`
-  even in code it will not instantiate, so the mismatch build dies in `vendor/qev/qev++.h` *before
+  even in code it will not instantiate, so the mismatch build dies in `vendor/qev/ev++.h` *before
   the link the check is about*; clang accepts the unreached `throw` and proceeds. That shape landed
   in the "failed, but not with the symbol" arm and reported FAIL, so the whole script exited 1 and
   the `linux-gcc` lane was red. It is now an explicit SKIP with the reason named — which is what
   this script's own contract already promised — and the axis remains required and armed: a
-  `-fno-exceptions` consumer that does not reach `qev++.h` compiles fine and then depends on the
+  `-fno-exceptions` consumer that does not reach `ev++.h` compiles fine and then depends on the
   link symbol. Measured: 8 PASS on clang, 7 PASS + 1 SKIP on g++-14.
 - **Standalone qb with default options could not configure on a host without a system zlib.**
   Standalone defaults `QB_INSTALL=ON` and `QB_DEPS_FETCH_FALLBACK=ON`, so zlib was built from
@@ -900,16 +900,16 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   are needed: `setsockopt(SO_NOSIGPIPE)` on a socket whose peer has already closed fails with
   `EINVAL`, so the backstop alone does not rescue `send_n`.
 - **The vendored `qev` fork kept upstream libev's include guards, so a consumer could not use both.**
-  `qev.h` still said `EV_H_`, `qev++.h` `EVPP_H__`, the libevent-compat `event.h` `EVENT_H_`. `qev.h`
+  `ev.h` still said `EV_H_`, `ev++.h` `EVPP_H__`, the libevent-compat `event.h` `EVENT_H_`. `ev.h`
   is installed and `<qb/main.h>` pulls it in transitively (`core/Actor.h` → `io/async/coroutine.h` →
-  `coroutine/scheduler.h` → `qev++.h`), so any binary that also used a real libev broke in **both**
+  `coroutine/scheduler.h` → `ev++.h`), so any binary that also used a real libev broke in **both**
   include orders — with qb first `ev_default_loop` is undeclared, with libev first the errors land
-  inside qb's own `qev++.h` — and there was no workaround short of splitting the two APIs across
+  inside qb's own `ev++.h` — and there was no workaround short of splitting the two APIs across
   different `.cpp` files. Every guard is now named after the fork: `QEV_H_`, `QEVPP_H_`,
   `QEV_EVENT_H_`, `QEV_EVENT_COMPAT_H_`, `QEV_WRAP_H`, `QEV_WEPOLL_H_`, `QEV_CONFIG_H_`. No
   conditional anywhere reads any of those names, so the rename is inert beyond the guards. The
   path-redirect macros `EV_H`, `EV_EVENT_H` and `EV_CONFIG_H` — no trailing underscore, set by CMake
-  as `PUBLIC` compile definitions — are deliberately untouched. This completes the `ev_*` → `qev_*`
+  as `PUBLIC` compile definitions — are deliberately untouched. This completes the `ev_*` → `ev_*`
   rename recorded under *Changed*: the C symbols moved first, the header-level coexistence was left
   unfinished. The 24 `event_*` libevent-compat symbols still collide at link time, still deliberately.
 - The documented return convention for the TLS `connect*` / `n_connect*` family said a failed peer
@@ -925,8 +925,8 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   also the only thing defining `__WIN__SYSTEM__`, its `#error "epoll is not available on windows"`
   guard could never fire. `qb/io/system/sys__socket.h` included `"qb/socket.cpp"` under
   `QB_HEADER_ONLY`; the implementation has always been the sibling `sys__socket.cpp`, so
-  `-DQB_HEADER_ONLY` failed outright. The vendored `qev.c` carries upstream libev's dangling
-  `#include "ev_iocp.c"` (renamed `qev_iocp.c`): upstream never shipped that file and neither does
+  `-DQB_HEADER_ONLY` failed outright. The vendored `ev.c` carries upstream libev's dangling
+  `#include "ev_iocp.c"` (renamed `ev_iocp.c`): upstream never shipped that file and neither does
   qev, and `EV_USE_IOCP` is reachable from no qb configuration, so the branch now says so with an
   `#error` instead of reporting a missing file.
 - `<qb/uuid.h>` included `<qb/vendor/uuid/include/uuid.h>` *above* its own `QB_UUID_H` include guard,

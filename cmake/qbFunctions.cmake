@@ -999,7 +999,7 @@ function(qb_register_module)
     # qb_install_package() uses to copy one onto the other. Without the pair the build interface
     # has no installed counterpart, and find_package() consumers configure fine and then fail to
     # compile on "'qbm/http/http.h' file not found" -- the drift class that shipped once already
-    # in qb (the missing <qb/vendor/qev/qev++.h> root) and is invisible to an in-tree test suite.
+    # in qb (the missing <qb/ev/qev++.h> root) and is invisible to an in-tree test suite.
     qb_package_include_root("${CMAKE_CURRENT_SOURCE_DIR}"
         _qb_module_include_root _qb_module_install_root)
     _qb_target_usage_scope(${module_target} _qb_module_scope)

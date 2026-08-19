@@ -57,7 +57,7 @@ but OpenSSL is found by `find_package(OpenSSL QUIET)` and is **never** fetched. 
 is not present, `QB_WITH_SSL` is forced `OFF`, the resolved capability `QB_HAS_SSL` becomes
 false, and the entire SSL/TLS slice is absent.
 
-<!-- src: qb/cmake/qbConfig.cmake:148, qb/cmake/qbDependencies.cmake:124-146 -->
+<!-- src: qb/cmake/qbConfig.cmake:160, qb/cmake/qbDependencies.cmake:125-147 -->
 
 | Symbol | Meaning |
 | --- | --- |

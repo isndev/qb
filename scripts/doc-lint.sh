@@ -195,7 +195,11 @@ echo "== 2b. Cross-repo URL check (repo name + git ref of absolute isndev links)
 # `qb-new-module.sh` cloned through 2.6.0, still resolves to "Could not resolve to a Repository".
 # That is the whole point of this check: the name a script clones and the name a doc links must
 # both be real, and neither was validated by anything before.
-ISNDEV_REPOS='qb qb-dev qb-ev qb-examples qbm-http qbm-pgsql qbm-redis qb-sample-project qb-sample-module'
+# `qb-ev` is the REPOSITORY; `qev` is the LIBRARY it ships (qev_*, libqev.a, find_package(qev)).
+# They differ on purpose: the artefact name has to be unambiguous on a link line, while the repo
+# name carries the org's qb-* grouping and says at a glance who maintains this fork of an
+# otherwise unmaintained library. Only the repo name belongs in this list.
+ISNDEV_REPOS='qb qb-dev qev qb-examples qbm-http qbm-pgsql qbm-redis qb-sample-project qb-sample-module'
 while read -r f; do
   grep -oE 'https://github\.com/isndev/[A-Za-z0-9_.+-]+(/(blob|tree|raw)/[^/)" ]+)?' "$f" 2>/dev/null \
     | while IFS= read -r u; do

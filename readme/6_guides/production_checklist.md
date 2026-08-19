@@ -16,7 +16,7 @@ Defaults are tuned for *development on the build host*. The most common producti
 
 `QB_ENABLE_NATIVE_ARCH` is **`OFF`** by default, so a default build is already portable. Turning it **on** adds `-march=native` (or `-mcpu=native` where `-march=native` is unsupported, e.g. older Apple Clang on arm64; MSVC uses `/arch:AVX2`), and a binary built that way may execute illegal instructions on an older or different CPU. Check it explicitly before shipping: the `release-native` and `benchmarks` presets turn it on.
 
-<!-- src: qb/cmake/qbConfig.cmake:132-140 (QB_ENABLE_NATIVE_ARCH declared OFF, with the rationale), qb/cmake/qbCompiler.cmake:338-339 (MSVC /arch:AVX2), :357-371 (-march=native, -mcpu=native fallback) -->
+<!-- src: qb/cmake/qbConfig.cmake:144-152 (QB_ENABLE_NATIVE_ARCH declared OFF, with the rationale), qb/cmake/qbCompiler.cmake:338-339 (MSVC /arch:AVX2), :357-371 (-march=native, -mcpu=native fallback) -->
 
 For any binary that ships to a machine other than the one that built it — a container image, a release artifact, a fleet with mixed CPU generations — turn native targeting **off**:
 
@@ -36,7 +36,7 @@ A ready-made preset wraps the same configuration:
 cmake --preset release-portable   # Release + QB_ENABLE_NATIVE_ARCH=OFF
 ```
 
-All shipped presets (including `release` and `release-lto`) inherit the hidden `base` preset, which sets `QB_ENABLE_NATIVE_ARCH=OFF` — so `cmake --preset release` is portable. So is a raw `cmake -D...` build with no preset: the option itself is declared `OFF` (`qb/cmake/qbConfig.cmake:140`). Use `release-native` to opt into host-tuned codegen.
+All shipped presets (including `release` and `release-lto`) inherit the hidden `base` preset, which sets `QB_ENABLE_NATIVE_ARCH=OFF` — so `cmake --preset release` is portable. So is a raw `cmake -D...` build with no preset: the option itself is declared `OFF` (`qb/cmake/qbConfig.cmake:152`). Use `release-native` to opt into host-tuned codegen.
 
 <!-- src: qb/CMakePresets.json (release-portable, release-native, release) -->
 
@@ -48,13 +48,13 @@ All shipped presets (including `release` and `release-lto`) inherit the hidden `
 - [ ] `CMAKE_BUILD_TYPE=Release` (or `RelWithDebInfo` if you keep symbols for crash triage).
 - [ ] Leave `QB_ENABLE_FAST_MATH=OFF` (default) unless you have audited every floating-point path — it breaks IEEE-754 compliance.
 
-<!-- src: qb/cmake/qbConfig.cmake:141 (QB_ENABLE_FAST_MATH OFF), qb/cmake/qbCompiler.cmake:333-335 (MSVC /fp:fast), :348-354 (GCC/Clang -ffast-math) -->
+<!-- src: qb/cmake/qbConfig.cmake:153 (QB_ENABLE_FAST_MATH OFF), qb/cmake/qbCompiler.cmake:333-335 (MSVC /fp:fast), :348-354 (GCC/Clang -ffast-math) -->
 
 ## 2. Link-time optimization
 
 `QB_ENABLE_LTO` is **`OFF`** by default. Enabling it adds `-flto` (plus `-fuse-linker-plugin` on GCC) on GCC/Clang Release builds, and `/LTCG` on MSVC. LTO can improve runtime performance at the cost of longer link times; it is orthogonal to native targeting, so it composes with a portable build.
 
-<!-- src: qb/cmake/qbConfig.cmake:131 (QB_ENABLE_LTO OFF), qb/cmake/qbCompiler.cmake:386-414 (LTO block) -->
+<!-- src: qb/cmake/qbConfig.cmake:143 (QB_ENABLE_LTO OFF), qb/cmake/qbCompiler.cmake:386-414 (LTO block) -->
 
 ```bash
 cmake --preset release-lto                       # Release + QB_ENABLE_LTO=ON
@@ -75,11 +75,11 @@ LTO flags are only applied to the `Release` configuration. If the compiler repor
 
 TLS lives in `qb-io` and is gated by `QB_WITH_SSL` (default **`ON`**, backed by OpenSSL via `find_package`). If OpenSSL is not found at configure time, `QB_WITH_SSL` is forced **OFF** and the SSL transports compile out — so confirm the feature is actually enabled in your production build, not silently dropped.
 
-<!-- src: qb/cmake/qbConfig.cmake:148 (QB_WITH_SSL ON), qb/cmake/qbDependencies.cmake:124-146 (OpenSSL probe; QB_WITH_SSL forced OFF when absent) -->
+<!-- src: qb/cmake/qbConfig.cmake:160 (QB_WITH_SSL ON), qb/cmake/qbDependencies.cmake:125-147 (OpenSSL probe; QB_WITH_SSL forced OFF when absent) -->
 
 Verify with the configuration banner the build prints, or check that `QB_WITH_SSL=1` is in the compile definitions.
 
-<!-- src: qb/cmake/qbConfig.cmake:453 (QB_WITH_SSL=1 compile def), qb/cmake/qbConfig.cmake:524-551 (configuration banner; the SSL line is :547) -->
+<!-- src: qb/cmake/qbConfig.cmake:465 (QB_WITH_SSL=1 compile def), qb/cmake/qbConfig.cmake:536-563 (configuration banner; the SSL line is :559) -->
 
 ### Client connections are secure by default
 
@@ -198,7 +198,7 @@ For a busy server every active core at zero latency pins a CPU; on a shared or o
 
 Logging is gated by `QB_WITH_LOGGING` (default **`ON`**), which defines `QB_WITH_LOGGING=1` and compiles in the nanolog-backed `qb::io::log` API. When the option is off, the `qb::io::log` namespace (init/setLevel/Level) is not available. The `LOG_*` macros remain defined — as a `qb::io::cout()` fallback when `QB_STDOUT_LOGGING` is set, otherwise as no-ops.
 
-<!-- src: qb/cmake/qbConfig.cmake:147 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:449-451 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:39-86 (the QB_WITH_LOGGING-guarded qb::io::log namespace) -->
+<!-- src: qb/cmake/qbConfig.cmake:159 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:461-463 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:39-86 (the QB_WITH_LOGGING-guarded qb::io::log namespace) -->
 
 Initialize logging once at startup, before any logging call. `init` takes the log-file path and a roll size in megabytes (default 128):
 
@@ -221,7 +221,7 @@ int main() {
 
 Two related options affect diagnostics rather than the file logger: `QB_STDOUT_LOGGING` (default **OFF**) enables a stdout fallback, and `QB_DEBUG_ACTOR` (default **OFF**) enables actor debugging output. Leave both off in production unless you are actively debugging.
 
-<!-- src: qb/cmake/qbConfig.cmake:182-183 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), :461-466 (compile defs) -->
+<!-- src: qb/cmake/qbConfig.cmake:194-195 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), :473-478 (compile defs) -->
 
 `qb::io::cout()` is a thread-safe console wrapper, but the header itself notes that production code should prefer the logging system over direct console output.
 

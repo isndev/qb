@@ -307,7 +307,7 @@ run_sync(Awaitable &&awaitable)
             } else {
                 // Do not use EVRUN_ONCE here: when libev uses timerfd-based time-jump
                 // detection, waittime can become MAX_BLOCKTIME2 while timercnt==0 (only
-                // qev_io watchers). One EVRUN_ONCE then blocks epoll_wait for ~10^6 seconds,
+                // ev_io watchers). One EVRUN_ONCE then blocks epoll_wait for ~10^6 seconds,
                 // freezing run_sync() and any test SetUp/TearDown that uses it.
                 listener::current.run(EVRUN_NOWAIT);
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));

@@ -16,7 +16,7 @@
  * `race` (variadic + vector, `when_any_result` with `.index`/`.value`/`.get<T>()`/
  * `.has_exception()`/structured binding), and `coro_with_timeout` (value + void, success +
  * timeout). The `CoroutineLifetime` fixture is the load-bearing detached-frame reclamation
- * suite: it proves the winner tears every losing branch down (frame + qev_timer) the instant it
+ * suite: it proves the winner tears every losing branch down (frame + ev_timer) the instant it
  * is decided, with `detail::CoroutineFrameAllocator::live_frames` returning to baseline long
  * before a multi-second loser sleep could complete.
  *
@@ -644,7 +644,7 @@ TEST_F(CoroutineCombinators, TimeoutAbandonsButDoesNotInterruptSlowOperation) {
 // =============================================================================
 // Lifetime & detached-frame reclamation
 // Stresses the shared_ptr<state_t> lifetime pattern AND the winner-reclaims-losers fix:
-// the winning branch tears every loser's run_one frame + inner task + armed qev_timer down
+// the winning branch tears every loser's run_one frame + inner task + armed ev_timer down
 // the instant it is decided. The oracle is live_frames returning to baseline AFTER the
 // winner resolves but LONG BEFORE the losers' (multi-second) sleeps could complete.
 // =============================================================================

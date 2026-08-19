@@ -98,7 +98,7 @@ BUILD_DIR="${BUILD_DIR:-${TMPDIR:-/tmp}/qb-installed-headers.$$}"
 # once again covers everything that does. A header that cannot compile alone belongs either
 # in the sweep or out of the package -- never in the package and out of the sweep.
 EXCLUDED_HEADERS="
-qb/vendor/qev/qev_vars.h vendored fragment: libev's X-macro variable table, has no standalone meaning
+qb/ev/qev_vars.h vendored fragment: libev's X-macro variable table, has no standalone meaning
 "
 
 # qb/io/async/epoll.h is installed unconditionally but needs <sys/epoll.h>. Excluding it

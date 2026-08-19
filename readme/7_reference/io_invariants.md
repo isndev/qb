@@ -113,8 +113,8 @@ registry, or as a member — never relocate them.
   protection, not cross-thread synchronization.
 
 > **`run_once()` footgun.** The bundled libev disables timerfd by default — the
-> `QB_EV_USE_TIMERFD` CMake option is `OFF` (`src/qb/vendor/qev/CMakeLists.txt:69`).
-> Built with `-DQB_EV_USE_TIMERFD=ON` and with only `qev_io` watchers active
+> `QB_EV_USE_TIMERFD` CMake option is `OFF` (`src/qb/ev/CMakeLists.txt:81`).
+> Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
 > `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1041-1044`).
@@ -146,14 +146,14 @@ registry, or as a member — never relocate them.
   listener TLS. Do not add a drain step.
 - All timeout, interval, and delay parameters in this layer are
   `qb::duration` (`std::chrono::nanoseconds`); the only raw `double` is libev's
-  `qev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /
+  `ev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /
   `from_ev_seconds` seam (`src/qb/io/async/io.h:166`). The retired
   pre-2.0 capitalized time identifiers appear nowhere in this layer and must
   never be reintroduced; the canonical vocabulary is `qb::duration`,
   `qb::mono_time`, and `qb::wall_time`
   (`src/qb/system/time.h`).
 
-> `callback()` refreshes libev's cached monotonic "now" (`qev_now_update`) before
+> `callback()` refreshes libev's cached monotonic "now" (`ev_now_update`) before
 > arming a timer, so a timer scheduled after the owning thread blocked outside
 > the loop does not expire far earlier than requested
 > (`src/qb/io/async/io.h:388`).
@@ -356,8 +356,8 @@ with I/O lifetime are:
   `src/qb/io/udp/socket.cpp:133`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
-  qev's `qev_stat` stores the narrow `const char *` it is given **without
-  copying** (`src/qb/vendor/qev/qev++.h:696`). `start()` therefore stashes
+  qev's `ev_stat` stores the narrow `const char *` it is given **without
+  copying** (`src/qb/ev/ev++.h:696`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
   `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:584-585`, `:748-749`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and

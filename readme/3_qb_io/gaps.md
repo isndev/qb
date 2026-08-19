@@ -12,8 +12,8 @@ The complete list, and it is short. Everything else in `qb-io` reaches coroutine
 
 | Spelling | Parks on | Declared |
 |---|---|---|
-| `co_await sleep(qb::duration)` | a `qev_timer`; a non-positive duration is a cooperative yield with no timer at all | `coroutine/utils.h:101` |
-| `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` | a `qev_io` watcher on a **raw descriptor** | `coroutine/utils.h:127`, `:158`, `:181` |
+| `co_await sleep(qb::duration)` | a `ev_timer`; a non-positive duration is a cooperative yield with no timer at all | `coroutine/utils.h:101` |
+| `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` | a `ev_io` watcher on a **raw descriptor** | `coroutine/utils.h:127`, `:158`, `:181` |
 | `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:759` |
 | `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:944` |
 | `co_await async_awaiter<T>(start_op)` | whatever callback you hand it | `coroutine/awaiter.h:619` |

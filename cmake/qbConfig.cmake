@@ -62,6 +62,18 @@ set(QB_CMAKE_DIR  "${QB_ROOT_DIR}/cmake"   CACHE INTERNAL "qb cmake scripts dire
 set(QB_VENDOR_DIR "${QB_INCLUDE_DIR}/qb/vendor")
 set(QB_SOURCE_DIR "${QB_INCLUDE_DIR}/qb")   # by the rule above: implementation beside its header
 
+# The event loop is NOT under vendor/, and that is a statement rather than a filing preference.
+# `vendor/` means "a copy we re-pull from upstream": upstream libev is unmaintained at 4.33/4.35,
+# every one of this fork's 58 exported symbols is renamed, all thirteen files are renamed, and it
+# carries qb's own fixes (Windows keep-alive, the wepoll and kqueue backends, the header
+# namespacing). Telling the next maintainer "do not touch, upstream owns this" would be false and
+# it is the engine of qb-io. It is published standalone as isndev/qev, and this tree is the source
+# of truth for that repo -- `dev/agent/check-qev-identity.py` in the superproject asserts the two
+# are byte-identical. The BSD-2 attribution is untouched by the move: it travels with LICENSE,
+# THIRD-PARTY-NOTICES and the per-file copyright headers, and qb/scripts/check-vendor-attribution.py
+# still covers it at the new path.
+set(QB_EV_SRC_DIR "${QB_SOURCE_DIR}/ev")
+
 # -----------------------------------------------------------------------------
 # Build Configuration Options
 # -----------------------------------------------------------------------------

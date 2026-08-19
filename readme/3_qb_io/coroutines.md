@@ -210,7 +210,7 @@ The callback must fire **exactly once**: `await_resume` asserts on a resume with
 
 What it does **not** give you is cancellation-awareness. A coroutine parked in an `async_awaiter` registers no `on_cancel` hook, so `cancel()` neither wakes it nor unwinds it; it stays parked until the operation completes naturally. To make one interruptible inside an actor, wrap it — `ctx.cancellable(...)`, `with_deadline(...)`, or a `when_any` against `check_cancelled(tok)`.
 
-`sleep(qb::duration)` with a duration of zero or less is a **cooperative yield**, not a kernel timer: the coroutine is re-enqueued at the back of the ready queue and resumes on the next scheduler turn. A positive duration arms an `qev_timer`. There is no `sleep_until` in this layer; for an absolute deadline use [`with_deadline`](#cancellation).
+`sleep(qb::duration)` with a duration of zero or less is a **cooperative yield**, not a kernel timer: the coroutine is re-enqueued at the back of the ready queue and resumes on the next scheduler turn. A positive duration arms an `ev_timer`. There is no `sleep_until` in this layer; for an absolute deadline use [`with_deadline`](#cancellation).
 <!-- src: qb/src/qb/io/async/coroutine/awaiter.h:303-312 (yield_only_ rationale), :332 (duration <= 0), :355-358 (re-enqueue, no timer), utils.h:101 (sleep); no sleep_until exists -->
 
 > Awaiters must remain alive until `await_resume()`. Never create a temporary awaiter that goes out of scope before the coroutine resumes. The framework awaiters stop their libev watcher in `await_resume()` and in their destructor, so an early return or thrown exception cannot leave a live watcher pointing at a freed frame.
@@ -285,7 +285,7 @@ try {
 
 `coro_with_timeout(task<T>&&, qb::duration)` returns `T` and **throws `timeout_error`** on timeout — it does not return an `std::optional`. On timeout the inner task keeps running in the background until it finishes naturally; its result is then dropped.
 
-The awaiter arms a **raw self-stopping `qev_timer`** rather than spawning a `co_await sleep()` helper, deliberately: a spawned helper would leave one parked frame plus one armed watcher per in-flight call for the full timeout duration — the `qev_timer` lives in the awaiter's shared state instead (`combinators.h:700-730`). It is non-copyable and non-movable for the same reason — the watcher's `data` pointer refers to the state it owns.
+The awaiter arms a **raw self-stopping `ev_timer`** rather than spawning a `co_await sleep()` helper, deliberately: a spawned helper would leave one parked frame plus one armed watcher per in-flight call for the full timeout duration — the `ev_timer` lives in the awaiter's shared state instead (`combinators.h:700-730`). It is non-copyable and non-movable for the same reason — the watcher's `data` pointer refers to the state it owns.
 
 Note the asymmetry between the timeout path and the teardown path, because it is easy to read as a contradiction. A **timeout** resolves the race in `resolve_timeout()` and leaves the inner task alone (`combinators.h:744-749`). A **destroyed awaiter** — this call was itself a `when_any` loser, or its scope was cancelled — tears the inner task down: it destroys the spawned runner, `forget`s the inner frame and drops it (`combinators.h:811-828`). For a genuinely interruptible deadline, use `with_deadline(op, tp, token)` instead.
 <!-- src: qb/src/qb/io/async/coroutine/combinators.h:883 (coro_with_timeout returns T), :856 (throws timeout_error), :816-818 (inner task is not interrupted) -->
@@ -348,14 +348,14 @@ Everything else. Grouped by what they park on, because that determines what *doe
 
 | Awaitable | Parks on | Woken by |
 |---|---|---|
-| `co_await sleep(d)` | `timer_awaiter`, i.e. a `qev_timer` (`awaiter.h:292`); `d <= 0` is a bare re-enqueue with no timer at all | the timer |
-| `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, ev)` | `socket_awaiter`, i.e. a `qev_io` watcher (`awaiter.h:467`) | fd readiness |
+| `co_await sleep(d)` | `timer_awaiter`, i.e. a `ev_timer` (`awaiter.h:292`); `d <= 0` is a bare re-enqueue with no timer at all | the timer |
+| `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, ev)` | `socket_awaiter`, i.e. a `ev_io` watcher (`awaiter.h:467`) | fd readiness |
 | `co_await async_awaiter<T>(op)` | your callback (`awaiter.h:619`) | your callback |
 | `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:680`) | connect success, failure, or the connector's own deadline |
 | `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:699`) | the inner coroutine finishing |
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
 | `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:76`, `:409`) | the branches |
-| `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `qev_timer` (`combinators.h:730`) | whichever comes first |
+| `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:730`) | whichever comes first |
 | `co_await ch.send(v)` / `ch.recv()` | the channel's own `_send_waiters` / `_recv_waiters` deque — `send_awaiter` (`channel.h:158`), `recv_awaiter` (`:312`) | a counterparty, or `close()` |
 | `co_await ch.send_for(v, d)` / `ch.recv_for(d)` | the same deques plus a spawned `sleep` timer — `timed_recv_awaiter` (`channel.h:618`), `timed_send_awaiter` (`:728`) | a counterparty, `close()`, or the timer |
 | `co_await select(a, b, ...)` | every channel's `_select_waiters`, through `channel_select_awaiter` (`channel.h:1160`) | the first channel with data or a close |
@@ -373,7 +373,7 @@ Since almost nothing is cancellation-aware, the mechanism that actually reclaims
 
 Every awaiter in the layer therefore carries a destructor that has to survive "destroyed while still parked", and they are worth knowing as a family because the pattern is the same each time:
 
-- **Watcher-backed awaiters stop the watcher unconditionally, gated only on "was it armed", never on `qev_is_active`.** A one-shot `qev_timer` is auto-stopped by libev the instant it expires — *before* its callback runs — so between expiry and dispatch it is inactive yet still sitting in `pendings[]` with `w->data` pointing at the awaiter. An active-gated stop would skip it and leave a freed watcher queued for invocation (`awaiter.h:409-428`).
+- **Watcher-backed awaiters stop the watcher unconditionally, gated only on "was it armed", never on `ev_is_active`.** A one-shot `ev_timer` is auto-stopped by libev the instant it expires — *before* its callback runs — so between expiry and dispatch it is inactive yet still sitting in `pendings[]` with `w->data` pointing at the awaiter. An active-gated stop would skip it and leave a freed watcher queued for invocation (`awaiter.h:409-428`).
 - **They scrub the scheduler's queues, not just the suspended set.** Once a watcher has fired, the frame has already moved out of `suspended_coroutines_` and *into* the ready queue and in-flight set. `unregister_suspended()` alone would leave a dangling handle for the next drain to resume; `unschedule()` → `CoroutineScheduler::forget()` clears all three (`awaiter.h:262-266`; `scheduler.h:387`).
 - **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:122-124`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:479-480`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1141-1142`); a destroyed `ch.recv()` whose sender already wrote through its result slot re-buffers the value so the message is not lost (`channel.h:349-351`).
 - **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:442-449`). Getting that order wrong is a use-after-free, which is why the source spells it out.

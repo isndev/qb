@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
- * Part of qb-ev, a modernized cross-platform fork of libev.
+ * Part of qev, a modernized cross-platform fork of libev.
  * Based on libev by Marc Alexander Lehmann <libev@schmorp.de>.
  *   Upstream: http://software.schmorp.de/pkg/libev.html
  *
@@ -64,7 +64,7 @@ poll_modify(EV_P_ int fd, int oev, int nev) {
 }
 
 static void
-poll_poll(EV_P_ qev_tstamp timeout) {
+poll_poll(EV_P_ ev_tstamp timeout) {
     struct pollfd *p;
     int            res;
 
@@ -78,7 +78,7 @@ poll_poll(EV_P_ qev_tstamp timeout) {
         else if (errno == ENOMEM && !syserr_cb)
             fd_enomem(EV_A);
         else if (errno != EINTR)
-            qev_syserr("(libev) poll");
+            ev_syserr("(libev) poll");
     } else
         /* Bound the scan: if the kernel's `res` disagrees with revents bits, avoid walking past the array. */
         for (p = polls; res && p < polls + pollcnt; ++p) {
@@ -115,6 +115,6 @@ poll_init(EV_P_ int flags) {
 
 inline_size void
 poll_destroy(EV_P) {
-    qev_free(pollidxs);
-    qev_free(polls);
+    ev_free(pollidxs);
+    ev_free(polls);
 }

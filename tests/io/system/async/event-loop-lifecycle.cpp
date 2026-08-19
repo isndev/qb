@@ -376,8 +376,8 @@ TEST_F(EventLoopLifecycleTest, ClearDestroysPendingLoopOwnedCallback) {
 // Regression: listener::on() invoked the handler unguarded, so a throwing user
 // handler -- `on(event::disconnected&&)`, `on(event::pending_read&&)`, an ev::stat
 // observer, any of them reachable from application code that merely allocates --
-// unwound straight through qev's `qev_invoke_pending`/`qev_run`. libev is built as
-// C (qb/src/qb/vendor/qev, LANGUAGES C), so that is UB: it skips libev's epilogue
+// unwound straight through qev's `ev_invoke_pending`/`ev_run`. libev is built as
+// C (qb/src/qb/ev, LANGUAGES C), so that is UB: it skips libev's epilogue
 // (`--loop_depth`, the `loop_done` reset that re-arms a broken loop) and has no
 // unwind info at all on MSVC. It also stranded `listener::_dispatch_top` on a
 // destroyed stack frame, corrupting the re-entrancy guard clear() reads. The loop
@@ -638,11 +638,11 @@ struct ScopedEnv {
 // drives the loop. The contract is the same on both: a KNOWN+SUPPORTED backend is
 // honoured; a KNOWN-but-unavailable one degrades to a valid auto backend (never
 // "unknown", never a throw). Assert against what the platform actually supports
-// (qev_supported_backends) so this verifies the contract rather than assuming select
+// (ev_supported_backends) so this verifies the contract rather than assuming select
 // is universal. We build a throwaway listener on a fresh thread (so listener::current
 // is untouched) and assert the resolved backend.
 TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsHonoursKnownSupportedBackend) {
-    const bool select_supported = (qev_supported_backends() & EVBACKEND_SELECT) != 0;
+    const bool select_supported = (ev_supported_backends() & EVBACKEND_SELECT) != 0;
 
     std::atomic<unsigned int> chosen{0};
     std::thread               t([&chosen] {

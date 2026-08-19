@@ -71,7 +71,7 @@ qb resolves dependencies in three ways. Most builds need nothing installed beyon
 
 | Dependency       | How it is obtained                                                   | Needed for                    |
 |------------------|----------------------------------------------------------------------|-------------------------------|
-| libev            | Forked + vendored (`qb/src/qb/vendor/qev`), built automatically      | Always (the event loop)       |
+| qev (libev fork) | Forked, in-tree (`qb/src/qb/ev`), built automatically        | Always (the event loop)       |
 | stduuid          | Forked + vendored (`qb/src/qb/vendor/uuid`); system uuid if absent   | Always (UUIDs)                |
 | nlohmann/json    | System first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` | Always (`qb::json`)           |
 | GoogleTest       | Fetched at configure time when `QB_BUILD_TESTS=ON`                   | Tests                         |
@@ -201,9 +201,9 @@ See [production_checklist.md](./readme/6_guides/production_checklist.md) before 
 ## Troubleshooting
 
 - **`CMake 3.24 or higher is required`** — upgrade CMake; the dependency resolution relies on it.
-- **`libev … not found`** — libev is vendored directly under `qb/src/qb/vendor/qev` (committed files, not a
+- **`libev … not found`** — the event loop lives directly under `qb/src/qb/ev` (committed files, not a
   submodule), so a normal clone always ships it. If it is missing, restore it from the repo
-  (`git checkout -- src/qb/vendor/qev`) or re-clone; a `git submodule update` will not bring it back.
+  (`git checkout -- src/qb/ev`) or re-clone; a `git submodule update` will not bring it back.
 - **SSL features missing** — install OpenSSL development headers; without them `QB_WITH_SSL` is auto-disabled.
 - **Host CPU binary fails on another machine** — check whether `QB_ENABLE_NATIVE_ARCH` was turned on.
   It is **`OFF` by default** (`cmake/qbConfig.cmake:140`) and every preset except `release-native` /

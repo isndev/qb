@@ -173,7 +173,7 @@ TEST(ActorCoroutineAsk, AskTimesOutWhenNoReply) {
     EXPECT_EQ(g_ask_price.load(), -1) << "no value may be observed when the ask times out";
 }
 
-// Timeout across cores: the qev_timer that backs the timeout lives on the asker's
+// Timeout across cores: the ev_timer that backs the timeout lives on the asker's
 // core, so a silent responder on another core still times out correctly.
 TEST(ActorCoroutineAsk, AskTimesOutCrossCore) {
     if (std::thread::hardware_concurrency() < 2) {

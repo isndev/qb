@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(qev
         VERSION 5.0.0
-        DESCRIPTION "A modernized, cross-platform fork of libev (qev_* API, NOT drop-in)"
-        HOMEPAGE_URL "https://github.com/isndev/qb" # NOT isndev/qb-ev: that repo is private, so it 404s publicly
+        DESCRIPTION "A modernized, cross-platform fork of libev (source-compatible ev_* API)"
+        HOMEPAGE_URL "https://github.com/isndev/qev"
         LANGUAGES C)
 
 # Detect whether we are the top-level project (standalone) or consumed as a
@@ -17,25 +17,37 @@ endif ()
 # ----------------------------------------------------------------------------
 # Header namespace
 # ----------------------------------------------------------------------------
-# An embedding project sets QB_VENDOR_INCLUDE_PREFIX (qb sets it to "qb/vendor") to declare that
-# this fork's headers are reached through ITS include root under that prefix, i.e.
-# <qb/vendor/qev/qev++.h>. In that mode this project publishes NO include directory of its own for
-# its headers and installs NO loose qev.h / qev++.h / event.h / event_compat.h: dropping those four
-# generic names into a consumer's include root is exactly the shadowing this prefix exists to stop
-# (a consumer with its own event.h had qb's silently win).
+# An embedding project sets QB_EV_EMBED_INCLUDE_DIR to name the directory ITS include root exposes
+# these headers under -- qb sets it to "qb/ev", so a qb consumer writes <qb/ev/ev++.h>. In that
+# mode this project publishes NO include directory of its own for its headers and installs NO loose
+# ev.h / ev++.h / event.h / event_compat.h: dropping those four generic names into a consumer's
+# include root is exactly the shadowing this variable exists to stop (a consumer with its own
+# event.h had qb's silently win).
 #
-# Unset/empty (standalone qev, or add_subdirectory() by a project that did not opt in) keeps the
-# historical layout byte-for-byte: headers at the include root, reached as <qev.h> / <qev++.h>.
-if (DEFINED QB_VENDOR_INCLUDE_PREFIX AND NOT QB_VENDOR_INCLUDE_PREFIX STREQUAL "")
-    set(QB_EV_HEADER_DIR "${QB_VENDOR_INCLUDE_PREFIX}/qev")
+# Unset/empty is the STANDALONE build -- the isndev/qev repo itself, or add_subdirectory() by a
+# project that did not opt in. There the headers install under include/qev/, never loose at the
+# include root: `include/ev.h` and `include/event.h` at a prefix root are how this fork used to
+# collide with a real libev and a real libevent installed beside it.
+#
+# This file is byte-shared with the standalone repo (dev/agent/check-qev-identity.py asserts it),
+# which is why the variable is spelled after this project and not after its embedder.
+if (DEFINED QB_EV_EMBED_INCLUDE_DIR AND NOT QB_EV_EMBED_INCLUDE_DIR STREQUAL "")
+    set(QB_EV_HEADER_DIR "${QB_EV_EMBED_INCLUDE_DIR}")
     set(QB_EV_EMBEDDED ON)
 else ()
-    set(QB_EV_HEADER_DIR "")
+    # "qev", NOT "qb/ev". Sharing qb's include namespace was tried and is WRONG: the two builds
+    # are not the same library. qb compiles the reduced watcher profile and the standalone compiles
+    # all fourteen, so `ev_config.h` differs (EV_IDLE/ASYNC/EMBED_ENABLE 0 vs 1) and with it the
+    # layout of `struct ev_loop` -- 1224 bytes against 1520. Installing both into one prefix would
+    # have let the second overwrite the first's header while `libqb-io.a`, compiled against the
+    # other layout, kept linking. Same-named files with different content is the collision class
+    # this whole fork exists to close; it does not get an exception for being ours.
+    set(QB_EV_HEADER_DIR "qev")
     set(QB_EV_EMBEDDED OFF)
 endif ()
 
 # ----------------------------------------------------------------------------
-# Versioning (keep in sync with qev.h EV_VERSION_MAJOR / EV_VERSION_MINOR)
+# Versioning (keep in sync with ev.h EV_VERSION_MAJOR / EV_VERSION_MINOR)
 # ----------------------------------------------------------------------------
 set(LIBEV_VERSION ${PROJECT_VERSION})
 set(LIBEV_VERSION_CURRENT ${PROJECT_VERSION_MAJOR})
@@ -63,8 +75,8 @@ else ()
     # Force the static target to exist even if a parent set BUILD_STATIC_LIBS=OFF.
     set(BUILD_STATIC_LIBS ON)
 endif ()
-# Default OFF: matches legacy qev_config.h (#define EV_USE_TIMERFD 0). Enabling makes
-# qev_run use MAX_BLOCKTIME2 when timerfd is active and timercnt==0, which stalls
+# Default OFF: matches legacy ev_config.h (#define EV_USE_TIMERFD 0). Enabling makes
+# ev_run use MAX_BLOCKTIME2 when timerfd is active and timercnt==0, which stalls
 # epoll_wait (regression #1 on event I/O tests). Opt in with -D QB_EV_USE_TIMERFD=ON.
 option(QB_EV_USE_TIMERFD "Enable qev timerfd (time-jump detection; affects idle waittime)" OFF)
 option(QB_EV_STRICT_WARNINGS "Build bundled qev with strict compiler warnings" ON)
@@ -73,7 +85,7 @@ option(QB_EV_STRICT_WARNINGS "Build bundled qev with strict compiler warnings" O
 # unprefixed names -- event_base_new, event_add, event_del, event_dispatch, event_set, ... The
 # ev->qev rename covered libev's own API (58 qev_*, 0 ev_*) and stopped there, so those 24 were
 # still in the installed libqev.a, which sits on EVERY consumer's link line (qb::io names
-# qb::qev in its INTERFACE_LINK_LIBRARIES). A consumer that also links the real libevent then
+# qb::ev in its INTERFACE_LINK_LIBRARIES). A consumer that also links the real libevent then
 # got whichever implementation the archive order happened to pick, with two unrelated
 # `struct event_base` layouts and no diagnostic from anyone. Measured, against a stand-in for
 # libevent:
@@ -91,7 +103,7 @@ option(QB_EV_WARNING_AUDIT "Enable extra noisy qev warning diagnostics for moder
 # below is what applies them). Enabling the audit without the baseline would
 # silently apply no warnings at all, so make the dependency explicit.
 if (QB_EV_WARNING_AUDIT AND NOT QB_EV_STRICT_WARNINGS)
-    message(STATUS "[qb-ev] QB_EV_WARNING_AUDIT=ON forces QB_EV_STRICT_WARNINGS=ON")
+    message(STATUS "[qev] QB_EV_WARNING_AUDIT=ON forces QB_EV_STRICT_WARNINGS=ON")
     set(QB_EV_STRICT_WARNINGS ON)
 endif ()
 
@@ -257,26 +269,52 @@ else ()
 endif ()
 
 # ----------------------------------------------------------------------------
+# Watcher families
+# ----------------------------------------------------------------------------
+# ON standalone, OFF embedded, and the asymmetry is the point: an embedder that uses six watcher
+# families should not pay for fourteen, and a library published to strangers must not silently
+# ship without half of them. Flip it explicitly if you want the other answer.
+option(QB_EV_WATCHERS_FULL
+       "Build every libev watcher family (idle, prepare, check, fork, child, async, embed)"
+       ${QB_EV_STANDALONE})
+if (QB_EV_WATCHERS_FULL)
+    set(QB_EV_IDLE_ENABLE 1)
+    set(QB_EV_PREPARE_ENABLE 1)
+    set(QB_EV_CHECK_ENABLE 1)
+    set(QB_EV_FORK_ENABLE 1)
+    set(QB_EV_CHILD_ENABLE 1)
+    set(QB_EV_ASYNC_ENABLE 1)
+    set(QB_EV_EMBED_ENABLE 1)
+else ()
+    set(QB_EV_IDLE_ENABLE 0)
+    set(QB_EV_PREPARE_ENABLE 0)
+    set(QB_EV_CHECK_ENABLE 0)
+    set(QB_EV_FORK_ENABLE 0)
+    set(QB_EV_CHILD_ENABLE 0)
+    set(QB_EV_ASYNC_ENABLE 0)
+    set(QB_EV_EMBED_ENABLE 0)
+endif ()
+message(STATUS "[qev] watcher families: ${QB_EV_WATCHERS_FULL} (full=all fourteen, off=qb's six)")
+
+# ----------------------------------------------------------------------------
 # Generate configuration header (public)
 # ----------------------------------------------------------------------------
 # Generated under a dedicated `include/` root mirroring the header namespace, so the ONE directory
 # this project puts on its consumers' include path contains nothing but ${QB_EV_HEADER_DIR}/.
 #
-# qev.h and qev.c look for this file in three ways (qev.h:24-32, qev.c:23-30):
-#     -DEV_CONFIG_H=<path>  >  HAVE_CONFIG_H + "config.h"  >  __has_include("qev_config.h")
-# The last one is quote-relative to qev.h: it only works when qev_config.h sits NEXT TO qev.h --
+# ev.h and ev.c look for this file in three ways (ev.h:24-32, ev.c:23-30):
+#     -DEV_CONFIG_H=<path>  >  HAVE_CONFIG_H + "config.h"  >  __has_include("ev_config.h")
+# The last one is quote-relative to ev.h: it only works when ev_config.h sits NEXT TO ev.h --
 # true in an installed tree, never true in a build tree (generated file, source-tree header). And
-# because it is guarded by __has_include, a miss is SILENT: qev.h falls back to its own defaults and
+# because it is guarded by __has_include, a miss is SILENT: ev.h falls back to its own defaults and
 # quietly disagrees with the compiled libqev.a (measured: EV_MULTIPLICITY 4 instead of 1). So the
 # define below is what actually carries the configuration, and it is deliberately PUBLIC: it must
-# reach every translation unit that includes qev.h, not just this library's own sources.
-if (QB_EV_EMBEDDED)
-    set(QB_EV_CONFIG_INCLUDE "<${QB_EV_HEADER_DIR}/qev_config.h>")
-    set(QB_EV_CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/include/${QB_EV_HEADER_DIR}/qev_config.h")
-else ()
-    set(QB_EV_CONFIG_INCLUDE "<qev_config.h>")
-    set(QB_EV_CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/include/qev_config.h")
-endif ()
+# reach every translation unit that includes ev.h, not just this library's own sources.
+# One layout, both modes. The namespace differs (qb/ev when embedded, qev standalone); the SHAPE
+# does not, and that is deliberate -- the standalone used to generate this at the include ROOT,
+# which is how `include/ev_config.h` ended up in a prefix beside a real libev's.
+set(QB_EV_CONFIG_INCLUDE "<${QB_EV_HEADER_DIR}/ev_config.h>")
+set(QB_EV_CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/include/${QB_EV_HEADER_DIR}/ev_config.h")
 
 configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmakein
@@ -286,13 +324,13 @@ configure_file(
 
 # Embedded: the parent project's install(DIRECTORY include/) does NOT cover this file (it is
 # generated into the build tree), so it still needs its own rule -- at the namespaced destination,
-# next to the qev.h that will look for it.
+# next to the ev.h that will look for it.
 #
 # Gated on QB_INSTALL when qb is the embedder, because this rule was the ONE hole in that gate.
 # It is the only install() in the entire embedded-qb subtree that sat outside the guard, so a
 # `cmake --install` of a QB_INSTALL=OFF build -- which is every dev preset, and every parent that
 # reaches qb via add_subdirectory()/FetchContent -- silently deposited exactly one qb header,
-# include/qb/vendor/qev/qev_config.h, into the CONSUMER's prefix. Exit 0, no diagnostic. That is
+# include/qb/ev/ev_config.h, into the CONSUMER's prefix. Exit 0, no diagnostic. That is
 # precisely the leak the QB_INSTALL option exists to prevent (see cmake/qbConfig.cmake), and this
 # file is the host-probed generated header, so it is also the worst single file to leak.
 # QB_INSTALL is undefined for a standalone qev build; default it ON there so the fork keeps
@@ -302,18 +340,15 @@ if (NOT DEFINED QB_INSTALL)
     set(QB_INSTALL ON)
 endif ()
 if (QB_INSTALL)
-    if (QB_EV_EMBEDDED)
-        install(FILES ${QB_EV_CONFIG_OUT}
-                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${QB_EV_HEADER_DIR})
-    else ()
-        install(FILES ${QB_EV_CONFIG_OUT} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-    endif ()
+    install(FILES ${QB_EV_CONFIG_OUT}
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${QB_EV_HEADER_DIR}
+            COMPONENT qev_Development)
 endif ()
 
 # ----------------------------------------------------------------------------
 # Build library
 # ----------------------------------------------------------------------------
-set(LIBEV_SRCS qev.c)
+set(LIBEV_SRCS ev.c)
 if (QB_EV_LIBEVENT_COMPAT)
     list(APPEND LIBEV_SRCS event.c)
 endif ()
@@ -330,30 +365,48 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     #     EV_FEATURES=0x7f
     #   )
 
-    # The generated-config root is PUBLIC in both modes: qev.h needs it wherever it is included.
+    # The generated-config root is PUBLIC in both modes: ev.h needs it wherever it is included.
     target_include_directories(qev
             PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_compile_definitions(qev PUBLIC EV_CONFIG_H=${QB_EV_CONFIG_INCLUDE})
+    target_compile_definitions(qev PUBLIC QB_EV_CONFIG_H=${QB_EV_CONFIG_INCLUDE})
     # PRIVATE, and that is the point: it is what unlocks the HAVE_* half of the generated config
-    # for qev.c only. Those 35 unprefixed autoconf names are qb's build-host answers, and the
+    # for ev.c only. Those 35 unprefixed autoconf names are qb's build-host answers, and the
     # config header is PUBLIC, so without this gate they reached -- and could silently override --
     # every consumer translation unit that includes <qb/io.h>. See config.h.cmakein.
-    target_compile_definitions(qev PRIVATE QEV_BUILDING_LIBRARY=1)
+    target_compile_definitions(qev PRIVATE QB_EV_BUILDING_LIBRARY=1)
 
-    if (QB_EV_EMBEDDED)
-        # PRIVATE, not PUBLIC: this directory holds qev.h, qev++.h, event.h, event_compat.h,
-        # qev_vars.h, qev_wrap.h and wepoll.h. Exporting it PUBLIC is what put all seven bare names
-        # on the include path of every target that links qev -- transitively, every consumer of
-        # qb::io. Embedded consumers reach them through the parent's include root instead
-        # (<${QB_EV_HEADER_DIR}/qev++.h>); qev's own .c files use quote-relative includes and need
-        # nothing but this private entry.
-        target_include_directories(qev PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
-    else ()
-        target_include_directories(qev PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
-    endif ()
+    # The language level is a CONTRACT, not a hope: the sources use C99 designated initialisers and
+    # `//` comments, and a consumer compiling with -std=c89 would fail deep inside ev.h instead of
+    # at the point of the requirement. INTERFACE, so it propagates to whoever links.
+    target_compile_features(qev PUBLIC c_std_99)
+
+    # A Debug and a Release build must be able to share one prefix. Without a postfix the second
+    # install silently overwrites the first with a differently-instrumented archive -- the same
+    # same-name-different-content class this fork exists to close.
+    set_target_properties(qev PROPERTIES DEBUG_POSTFIX "d")
+
+    # PRIVATE in BOTH modes, and the standalone half of that is a fix. This directory holds
+    # ev.h, ev++.h, event.h, event_compat.h, ev_vars.h, ev_wrap.h and wepoll.h. Exporting it
+    # PUBLIC is what put all seven bare names on the include path of every target that links qev --
+    # transitively, every consumer of qb::io, and every consumer of a standalone libqev. Consumers
+    # reach the two public headers through the namespaced root staged just below
+    # (<${QB_EV_HEADER_DIR}/ev++.h>); qev's own .c files use quote-relative includes and need
+    # nothing but this private entry.
+    target_include_directories(qev PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+
+    # Stage the public headers into the generated include root under the same namespace the
+    # install uses, so <${QB_EV_HEADER_DIR}/ev.h> resolves identically in a build tree and in an
+    # installed prefix. Embedded, the parent already exposes them at that path through its own
+    # include root and this is a harmless duplicate of two headers; standalone, it is the only
+    # thing that makes the namespaced spelling work before `cmake --install`.
+    foreach (_qev_public_header ev.h ev++.h)
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/${_qev_public_header}"
+                       "${CMAKE_CURRENT_BINARY_DIR}/include/${QB_EV_HEADER_DIR}/${_qev_public_header}"
+                       COPYONLY)
+    endforeach ()
 
     if (QB_EV_STRICT_WARNINGS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         # Keep the vendored event loop visible to modern compilers. The baseline is
@@ -419,8 +472,26 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
             WINDOWS_EXPORT_ALL_SYMBOLS ON
     )
 
-    # Namespaced aliases: consumers link `qb::qev` (brand) or `qev::qev` (standalone).
-    add_library(qb::qev ALIAS qev)
+    # Namespaced aliases. `qb::ev` follows qb's own rule -- the namespace absorbs the prefix,
+    # exactly as qb-io becomes qb::io -- so a consumer writes qb::ev beside qb::io and qb::core.
+    # `qev::qev` is the standalone idiom (fmt::fmt), for a project that reached this by
+    # find_package(qev) and has never heard of qb.
+    # EXPORT_NAME is what makes the exported name `qb::ev` while the physical target stays `qev`
+    # (so the archive is libqev.a). Without it, install(EXPORT ... NAMESPACE qb::) concatenates the
+    # namespace with the TARGET name and produces `qb::qev` -- which then makes the package config's
+    # own alias fail, because `qb::ev` never exists in the consumer's scope. Same mechanism qb uses
+    # for qb-io -> qb::io.
+    set_target_properties(qev PROPERTIES EXPORT_NAME ev)
+    # The ARCHIVE is named for the product that ships it, so the two never land on the same path:
+    # embedded it is libqb-ev.a, qb's third archive beside libqb-io.a and libqb-core.a, reached as
+    # qb::ev; standalone it is libqev.a, reached as find_package(qev) -> qev::qev. The CMake target
+    # keeps one name in both modes because the shared CMakeLists has to build the same thing.
+    if (QB_EV_EMBEDDED)
+        set_target_properties(qev PROPERTIES OUTPUT_NAME qb-ev)
+    else ()
+        set_target_properties(qev PROPERTIES OUTPUT_NAME qev)
+    endif ()
+    add_library(qb::ev ALIAS qev)
     if (NOT TARGET qev::qev)
         add_library(qev::qev ALIAS qev)
     endif ()
@@ -430,7 +501,7 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     # --------------------------------------------------------------------------
     # Skipped entirely when embedded: the parent owns the install. It installs the `qev` target in
     # its OWN export set and ships these headers through its own install(DIRECTORY include/), at
-    # the namespaced path. Running this block as well would (a) re-install qev.h/qev++.h/event.h/
+    # the namespaced path. Running this block as well would (a) re-install ev.h/ev++.h/event.h/
     # event_compat.h at the include ROOT, undoing the namespacing, and (b) drop a
     # lib/cmake/qev/ package next to the parent's own, exporting a second, differently-named
     # imported target for the same static library.
@@ -438,15 +509,24 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
 
+    # Components, because a distribution splits one build into two packages: libqev (the shared
+    # object a program needs at RUNTIME) and libqev-dev (headers, static archive, CMake package,
+    # pkg-config -- needed only to COMPILE against it). NAMELINK_COMPONENT puts the unversioned
+    # `libqev.so` symlink on the development side, where it belongs: it exists for the linker, not
+    # for the loader. Without this, packagers hand-curate file lists and get it wrong.
     install(TARGETS qev
             EXPORT qevTargets
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                    COMPONENT qev_Development
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                    COMPONENT qev_Runtime
+                    NAMELINK_COMPONENT qev_Development
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+                    COMPONENT qev_Runtime
             INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     )
 
-    set(_qev_install_headers qev.h qev++.h)
+    set(_qev_install_headers ev.h ev++.h)
     if (QB_EV_LIBEVENT_COMPAT)
         # Only shipped with the implementation. Installing the declarations without the bodies
         # would turn a use into an undefined reference -- loud, but pointlessly so; installing
@@ -454,13 +534,19 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
         # incompatible struct layouts.
         list(APPEND _qev_install_headers event.h event_compat.h)
     endif ()
+    # ${CMAKE_INSTALL_INCLUDEDIR}/qev, never the include ROOT. A prefix that carries a loose
+    # `ev.h` / `event.h` is how this fork used to shadow a real libev and a real libevent
+    # installed beside it -- the same shadowing the embedded mode has always prevented, applied
+    # to the standalone build that actually ships to strangers.
     install(FILES ${_qev_install_headers}
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${QB_EV_HEADER_DIR}
+            COMPONENT qev_Development)
 
     install(EXPORT qevTargets
             FILE qevTargets.cmake
             NAMESPACE qb::
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qev
+            COMPONENT qev_Development
     )
 
     file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/qevConfig.cmake.in
@@ -468,7 +554,7 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
 include(\"\${CMAKE_CURRENT_LIST_DIR}/qevTargets.cmake\")
 # Unprefixed alias for projects that link the fork under its own namespace.
 if(NOT TARGET qev::qev)
-  add_library(qev::qev ALIAS qb::qev)
+  add_library(qev::qev ALIAS qb::ev)
 endif()
 ")
     configure_package_config_file(
@@ -485,6 +571,102 @@ endif()
             ${CMAKE_CURRENT_BINARY_DIR}/qevConfig.cmake
             ${CMAKE_CURRENT_BINARY_DIR}/qevConfigVersion.cmake
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qev
+            COMPONENT qev_Development
     )
+
+    # pkg-config for non-CMake consumers: `pkg-config --cflags --libs qev`. Standalone only, and
+    # the template must EXIST -- qb's copy of this tree carries no qev.pc.in because an embedded
+    # build ships qb's package config instead. The file is byte-shared, so "it is not there" has
+    # to be a supported answer rather than a configure error.
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/qev.pc.in")
+        if (WIN32)
+            set(QB_EV_PC_PRIVATE_LIBS "-lws2_32")
+        else ()
+            set(QB_EV_PC_PRIVATE_LIBS "-lm")
+        endif ()
+        configure_file(
+                ${CMAKE_CURRENT_SOURCE_DIR}/qev.pc.in
+                ${CMAKE_CURRENT_BINARY_DIR}/qev.pc
+                @ONLY
+        )
+        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qev.pc
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+                COMPONENT qev_Development)
+    endif ()
+
     endif () # NOT QB_EV_EMBEDDED
+endif ()
+
+# ----------------------------------------------------------------------------
+# Tests & benchmark (standalone only)
+# ----------------------------------------------------------------------------
+# This file is byte-shared with qb's copy of the tree (dev/agent/check-qev-identity.py asserts
+# it), and qb's copy carries no tests/ or bench/ directory -- it reaches this loop through its own
+# suite. So the sources are required to EXIST rather than assumed: guarding on QB_EV_STANDALONE
+# alone would be enough today and would break the day somebody add_subdirectory()s this tree as
+# the top-level project of something else.
+# BUILD_TESTING is the switch every CMake user already knows and every CI already sets; honouring
+# it means `-DBUILD_TESTING=OFF` does what it says here too, instead of needing a project-specific
+# flag nobody will guess. Defaulted rather than include(CTest), which drags in CDash machinery a
+# library this size has no use for.
+if (NOT DEFINED BUILD_TESTING)
+    set(BUILD_TESTING ON)
+endif ()
+if (QB_EV_STANDALONE AND BUILD_TESTING)
+    set(_qev_tests_default ON)
+else ()
+    set(_qev_tests_default OFF)
+endif ()
+option(QB_EV_BUILD_TESTS      "Build the qev watcher coverage tests"  ${_qev_tests_default})
+option(QB_EV_BUILD_BENCHMARKS "Build the qev cross-backend benchmark" ${QB_EV_STANDALONE})
+
+if (QB_EV_BUILD_TESTS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test-watchers.c")
+    enable_testing()
+    add_executable(qev-test-watchers tests/test-watchers.c)
+    target_link_libraries(qev-test-watchers PRIVATE qev)
+    # PRIVATE source dir: the test is an INTERNAL consumer and includes "ev.h" quote-relative,
+    # the same way ev.c does. A public consumer writes <qev/ev.h> instead.
+    # No private source-dir include: the test consumes qev through its PUBLIC interface, so it
+    # compiles against the same <qev/ev.h> a downstream user does. A test that reached into the
+    # source tree would keep passing after an install layout broke.
+    add_test(NAME watchers COMMAND qev-test-watchers)
+    set_tests_properties(watchers PROPERTIES TIMEOUT 60)
+endif ()
+
+if (QB_EV_BUILD_BENCHMARKS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/bench-backends.c")
+    add_executable(qev-bench-backends bench/bench-backends.c)
+    target_link_libraries(qev-bench-backends PRIVATE qev)
+
+endif ()
+
+# ----------------------------------------------------------------------------
+# CPack — source and binary archives, standalone only
+# ----------------------------------------------------------------------------
+# `cpack` from a build tree produces the tarball a packager starts from, and `cpack --config
+# CPackSourceConfig.cmake` the source release. Both were absent, so cutting a release meant
+# `git archive` plus remembering what to exclude. Component-aware, so a distribution can build
+# libqev and libqev-dev from one invocation.
+if (QB_EV_STANDALONE)
+    set(CPACK_PACKAGE_NAME              "qev")
+    set(CPACK_PACKAGE_VENDOR            "isndev")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+        "A maintained, cross-platform continuation of libev with a modernised backend set")
+    set(CPACK_PACKAGE_HOMEPAGE_URL      "https://github.com/isndev/qev")
+    set(CPACK_PACKAGE_VERSION           "${PROJECT_VERSION}")
+    set(CPACK_RESOURCE_FILE_LICENSE     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+    set(CPACK_RESOURCE_FILE_README      "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+    set(CPACK_GENERATOR                 "TGZ;ZIP")
+    set(CPACK_SOURCE_GENERATOR          "TGZ")
+    set(CPACK_DEB_COMPONENT_INSTALL     ON)
+    set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+    set(CPACK_COMPONENTS_ALL            qev_Runtime qev_Development)
+    set(CPACK_COMPONENT_QEV_RUNTIME_DISPLAY_NAME     "qev runtime")
+    set(CPACK_COMPONENT_QEV_DEVELOPMENT_DISPLAY_NAME "qev development files")
+    set(CPACK_COMPONENT_QEV_DEVELOPMENT_DEPENDS      qev_Runtime)
+    # What must never end up in a source tarball. Anchored, so `build/` at the root goes and a
+    # legitimate `src/rebuild.c` stays.
+    set(CPACK_SOURCE_IGNORE_FILES
+            "/\\.git/" "/\\.github/" "/build.*/" "/b-[a-z]*/" "\\.DS_Store$"
+            "/autom4te\\.cache/" "\\.libs/" "\\.deps/" "^${CMAKE_CURRENT_SOURCE_DIR}/Makefile$")
+    include(CPack)
 endif ()

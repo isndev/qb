@@ -94,7 +94,7 @@ struct discovery_awaiter {
     std::shared_ptr<discovery_state>           st;
     qb::duration                               timeout;
     std::uint64_t                              id;
-    qev_timer                                  timer{};
+    ev_timer                                   timer{};
     bool                                       timer_started = false;
     std::shared_ptr<bool>                      alive         = std::make_shared<bool>(true);
     qb::io::async::cancellation_token::id_type cancel_id     = 0;
@@ -121,11 +121,11 @@ struct discovery_awaiter {
     await_suspend(std::coroutine_handle<> h) {
         st->waiter = h;
         if (timeout.count() > 0) {
-            qev_timer_init(&timer, &discovery_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
+            ev_timer_init(&timer, &discovery_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
             timer.data = this;
             auto loop  = qb::detail::ask_loop();
-            qev_now_update(static_cast<struct qev_loop *>(loop));
-            qev_timer_start(loop, &timer);
+            ev_now_update(static_cast<struct ev_loop *>(loop));
+            ev_timer_start(loop, &timer);
             timer_started = true;
         }
         auto a    = alive;
@@ -150,12 +150,12 @@ private:
     void
     stop_timer() noexcept {
         if (timer_started) {
-            qev_timer_stop(qb::detail::ask_loop(), &timer);
+            ev_timer_stop(qb::detail::ask_loop(), &timer);
             timer_started = false;
         }
     }
     static void
-    on_timeout(struct qev_loop *, qev_timer *w, int) noexcept {
+    on_timeout(struct ev_loop *, ev_timer *w, int) noexcept {
         auto *me = static_cast<discovery_awaiter *>(w->data);
         if (me)
             me->st->wake(); // window elapsed (require) / no reply (ping)

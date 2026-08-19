@@ -122,7 +122,7 @@ BM_ScopedCallback_ConstructCancel(benchmark::State &state) {
 // Non-zero-delay callback driven to completion through the event loop. Unlike
 // BM_AsyncCallback_ImmediateFire (which takes the inline d<=0 fast path and never
 // arms a libev timer), this schedules a real `Timeout<>` watcher and pumps the
-// loop until it fires — exercising the timer arm + qev_now_update + dispatch path.
+// loop until it fires — exercising the timer arm + ev_now_update + dispatch path.
 // This is wall-clock bound by `delay_us`, so it must run with UseRealTime().
 void
 BM_AsyncCallback_DelayedFire(benchmark::State &state) {

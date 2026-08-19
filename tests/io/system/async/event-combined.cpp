@@ -127,14 +127,14 @@ send_signal_to_self() {
 
 #if !QB_PLATFORM_MACOS && !defined(_WIN32)
 // Test focusing only on file events - not suitable for macOS or Windows.
-// On Windows, qev's qev_stat falls back to timer-based polling when no
+// On Windows, qev's ev_stat falls back to timer-based polling when no
 // inotify/kqueue equivalent is available.  With interval=0 the default poll
 // period is ~5 seconds (DEF_STAT_INTERVAL), so the 1-second test window
 // never captures an event.
 //
-// Linux + inotify: qev_stat on a local FS sets the internal stat timer repeat to
+// Linux + inotify: ev_stat on a local FS sets the internal stat timer repeat to
 // 0 and stops it (libev ev.c infy_add).  Then timercnt can be 0 while only the
-// inotify-backed qev_io remains; waittime stays at MAX_BLOCKTIME2 and a single
+// inotify-backed ev_io remains; waittime stays at MAX_BLOCKTIME2 and a single
 // EVRUN_ONCE blocks until an inotify event or that huge timeout — ignoring the
 // outer wall-clock loop.  Use EVRUN_NOWAIT here so each iteration returns and
 // the test's millisecond budget is meaningful.
@@ -285,8 +285,8 @@ TEST(KernelEventsCombined, TimerOnly) {
 // Test IO events — POSIX only (matches KernelEvents::BasicIO in test-event.cpp).
 // On Windows, libev uses wepoll/IOCP: readiness on a CRT regular-file descriptor
 // is not delivered like a socket, so EVRUN_ONCE can block forever with only an
-// qev_io on that fd.
-// On Linux, the same "no heap timers, only qev_io" pattern can yield MAX_BLOCKTIME2
+// ev_io on that fd.
+// On Linux, the same "no heap timers, only ev_io" pattern can yield MAX_BLOCKTIME2
 // in libev's waittime (see FileEvent comment); use EVRUN_NOWAIT in the timed loop.
 #ifndef _WIN32
 TEST(KernelEventsCombined, IOEvents) {

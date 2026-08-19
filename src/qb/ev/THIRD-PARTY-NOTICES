@@ -1,7 +1,7 @@
-qb-ev — Third-Party Notices
-===========================
+qev — Third-Party Notices
+=========================
 
-qb-ev (MIT, see LICENSE) is a modernized fork of libev and bundles a patched
+qev (MIT, see LICENSE) is a modernized fork of libev and bundles a patched
 copy of wepoll. The original components below remain under the BSD-2-Clause
 license of their respective authors, and the relevant source files retain those
 authors' copyright notices.
@@ -12,9 +12,9 @@ authors' copyright notices.
    Copyright (c) 2007-2020 Marc Alexander Lehmann <libev@schmorp.de>
    Homepage: http://software.schmorp.de/pkg/libev.html
 
-   Files derived from libev: qev.c, qev.h, qev++.h, event.c, event.h,
-   event_compat.h, qev_epoll.c, qev_kqueue.c, qev_poll.c, qev_select.c,
-   qev_port.c, qev_linuxaio.c, qev_iouring.c, qev_win32.c, qev_vars.h, qev_wrap.h.
+   Files derived from libev: ev.c, ev.h, ev++.h, event.c, event.h,
+   event_compat.h, ev_epoll.c, ev_kqueue.c, ev_poll.c, ev_select.c,
+   ev_port.c, ev_linuxaio.c, ev_iouring.c, ev_win32.c, ev_vars.h, ev_wrap.h.
 
    event_compat.h additionally derives from libevent,
    Copyright (c) 2000-2004 Niels Provos <provos@citi.umich.edu>.

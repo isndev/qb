@@ -152,13 +152,13 @@ struct stream_state {
 
 /**
  * @brief Awaiter backing `stream::next()` — wakes on a chunk, end-of-stream, per-chunk timeout
- *        (its own `qev_timer`) or actor-scope cancel. Mirrors `qb::detail::ask_awaiter`.
+ *        (its own `ev_timer`) or actor-scope cancel. Mirrors `qb::detail::ask_awaiter`.
  */
 template <class E>
 struct stream_next_awaiter {
     std::shared_ptr<stream_state<E>>           st;
     qb::duration                               timeout;
-    qev_timer                                  timer{};
+    ev_timer                                   timer{};
     bool                                       timer_started = false;
     bool                                       timed_out     = false;
     std::shared_ptr<bool>                      alive         = std::make_shared<bool>(true);
@@ -181,11 +181,11 @@ struct stream_next_awaiter {
         st->waiter = h;
         parked     = h;
         if (timeout.count() > 0) {
-            qev_timer_init(&timer, &stream_next_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
+            ev_timer_init(&timer, &stream_next_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
             timer.data = this;
             auto loop  = qb::detail::ask_loop();
-            qev_now_update(static_cast<struct qev_loop *>(loop));
-            qev_timer_start(loop, &timer);
+            ev_now_update(static_cast<struct ev_loop *>(loop));
+            ev_timer_start(loop, &timer);
             timer_started = true;
         }
         auto a    = alive;
@@ -236,12 +236,12 @@ private:
     void
     stop_timer() noexcept {
         if (timer_started) {
-            qev_timer_stop(qb::detail::ask_loop(), &timer);
+            ev_timer_stop(qb::detail::ask_loop(), &timer);
             timer_started = false;
         }
     }
     static void
-    on_timeout(struct qev_loop *, qev_timer *w, int) noexcept {
+    on_timeout(struct ev_loop *, ev_timer *w, int) noexcept {
         auto *me = static_cast<stream_next_awaiter *>(w->data);
         if (me && !me->st->done && me->st->waiter) {
             me->timed_out = true;

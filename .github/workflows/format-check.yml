@@ -84,14 +84,22 @@ jobs:
       # comes from `dev/agent/check-format.sh`'s census leg, which is local and ceilinged, and
       # from the pre-push hook in `dev/githooks/`.
       #
-      # The exclusion below drops VENDORED third-party trees. `src/qb/vendor/` was always
-      # excluded; `not-qb/` and `src/qbm/<mod>/vendor/` were added when the sweep found qbm-http's
-      # vendored llhttp inside the census. Formatting it would falsify the invariant its own
-      # header states — "Vendored from llhttp 9.2.1 ... Only the symbol prefix differs; the parser
-      # is upstream's" — and destroy the ability to diff against upstream. Both new alternatives
-      # are a measured no-op for qb, which has neither directory; they are here so this regex and
+      # The exclusion below drops UPSTREAM-DERIVED trees. `src/qb/vendor/` was always excluded;
+      # `not-qb/` and `src/qbm/<mod>/vendor/` were added when the sweep found qbm-http's vendored
+      # llhttp inside the census. Formatting it would falsify the invariant its own header states —
+      # "Vendored from llhttp 9.2.1 ... Only the symbol prefix differs; the parser is upstream's" —
+      # and destroy the ability to diff against upstream. Those two alternatives are a measured
+      # no-op for qb, which has neither directory; they are here so this regex and
       # `check-format.sh`'s stay byte-identical, which is what makes the local gate answer the
       # same question this lane does.
+      #
+      # `src/qb/ev/` is the event loop, promoted OUT of vendor/ in 3.0 because qb maintains it and
+      # publishes it as isndev/qb-ev. It stays excluded anyway, and the reason is the same one: it is
+      # a derived work of libev and of wepoll, whose retained copyright notices and per-file
+      # derivation map are the licence compliance. The exclusion tracks PROVENANCE, not the name of
+      # a directory. It also stays byte-identical to the standalone repo's copy — see
+      # `dev/agent/check-qev-identity.py` — and a formatter that ran on one tree and not the other
+      # would break that by construction.
       - name: Collect changed C++ files
         id: changed
         shell: bash
@@ -118,7 +126,7 @@ jobs:
               '*.h' '*.hh' '*.hpp' '*.hxx' \
               '*.c' '*.cc' '*.cpp' '*.cxx' \
               '*.ipp' '*.tpp' |
-            grep -Ev '^(build|modules|not-qb|src/qb/vendor|src/qbm/[a-z0-9_]+/vendor)/' || true
+            grep -Ev '^(build|modules|not-qb|src/qb/ev|src/qb/vendor|src/qbm/[a-z0-9_]+/vendor)/' || true
           )"
 
           {

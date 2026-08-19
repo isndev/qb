@@ -155,7 +155,7 @@ BM_ScopedCallback_ConstructFireDestroy(benchmark::State &state) {
 // with_timeout rearm: a single live handler whose deadline is repeatedly pushed
 // forward via updateTimeout() (the activity-reset every session does on each
 // read). The timer is armed far out so it never fires; we measure only the
-// rearm bookkeeping (qev_now_update + last_activity stamp).
+// rearm bookkeeping (ev_now_update + last_activity stamp).
 // ---------------------------------------------------------------------------
 void
 BM_WithTimeout_Rearm(benchmark::State &state) {

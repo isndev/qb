@@ -23,8 +23,8 @@ QUIC is controlled by the tri-state CMake cache variable `QB_WITH_QUIC`, which d
 | `ON`            | Require libngtcp2; warn and disable QUIC if it (or SSL) is missing.            |
 | `OFF`           | Disable QUIC outright.                                                          |
 
-<!-- src: qb/cmake/qbConfig.cmake:152-153 -->
-<!-- src: qb/cmake/qbDependencies.cmake:225-263 -->
+<!-- src: qb/cmake/qbConfig.cmake:164-165 -->
+<!-- src: qb/cmake/qbDependencies.cmake:226-264 -->
 
 ```sh
 cmake -DQB_WITH_QUIC=ON ...
@@ -44,7 +44,7 @@ if (!qb::io::quic::available()) {
 ```
 
 > **Note for CI — `ON` does not fail the build.** A runner without libngtcp2 configured with `QB_WITH_QUIC=AUTO` disables QUIC silently; with `=ON` it prints a `message(WARNING)`, sets `QB_HAS_QUIC` false and carries on. The knob that turns a missing dependency into a `FATAL_ERROR` is **`-DQB_REQUIRE_FEATURES=ON`**. This matters more than it looks: a test declared `qb_add_executable(REQUIRES quic)` is not merely skipped when the capability is off, it is never registered — so the only symptom of a QUIC-less runner is a `ctest` count that is quietly smaller. Configure CI with `-DQB_WITH_QUIC=ON -DQB_REQUIRE_FEATURES=ON`, and assert the registered-test count.
-<!-- src: qb/cmake/qbDependencies.cmake:255-257 (qb_feature_degraded), qb/cmake/qbConfig.cmake:509-518 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:394-398 (REQUIRES quic unregisters the target) -->
+<!-- src: qb/cmake/qbDependencies.cmake:256-258 (qb_feature_degraded), qb/cmake/qbConfig.cmake:521-530 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:394-398 (REQUIRES quic unregisters the target) -->
 
 ## Concepts
 

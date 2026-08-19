@@ -4,7 +4,7 @@
  *
  * Unlike the per-backend ctest matrix (which forces one backend per process via
  * QB_EV_BACKEND), this benchmark sweeps EVERY backend libev was built with in a
- * SINGLE run: it creates a dedicated qev_loop per backend (qev_loop_new(EVBACKEND_*)),
+ * SINGLE run: it creates a dedicated ev_loop per backend (ev_loop_new(EVBACKEND_*)),
  * skipping any that fail to initialise at runtime (e.g. io_uring under a seccomp
  * sandbox), and runs two stress workloads on each. Google Benchmark prints the
  * results side by side so the winner is obvious.
@@ -50,7 +50,7 @@
 #include <string>
 #include <vector>
 
-#include <qb/io/async/listener.h> /* brings qev.h (C API: qev_loop_new/EVBACKEND_*) + qev++.h (ev::) */
+#include <qb/io/async/listener.h> /* brings qev.h (C API: ev_loop_new/EVBACKEND_*) + qev++.h (ev::) */
 
 #ifndef _WIN32
 #include <fcntl.h>
@@ -92,17 +92,17 @@ backend_fits(unsigned backend, int total_fds) {
 }
 
 struct LoopFixture {
-    struct qev_loop *loop = nullptr;
+    struct ev_loop *loop = nullptr;
     explicit LoopFixture(unsigned backend) {
-        loop = qev_loop_new(backend);
-        if (loop && qev_backend(loop) != backend) { /* fell back to another backend */
-            qev_loop_destroy(loop);
+        loop = ev_loop_new(backend);
+        if (loop && ev_backend(loop) != backend) { /* fell back to another backend */
+            ev_loop_destroy(loop);
             loop = nullptr;
         }
     }
     ~LoopFixture() {
         if (loop)
-            qev_loop_destroy(loop);
+            ev_loop_destroy(loop);
     }
     LoopFixture(const LoopFixture &)            = delete;
     LoopFixture &operator=(const LoopFixture &) = delete;
@@ -162,7 +162,7 @@ bench_dispatch(benchmark::State &state, unsigned backend) {
         return;
     }
 
-    qev_run(fx.loop, EVRUN_NOWAIT); /* warm-up: flush the one-time registration changelist */
+    ev_run(fx.loop, EVRUN_NOWAIT); /* warm-up: flush the one-time registration changelist */
     g_events = 0;
 
     std::int64_t dispatched = 0;
@@ -174,7 +174,7 @@ bench_dispatch(benchmark::State &state, unsigned backend) {
         }
         long guard = 0;
         while (g_events < N && ++guard < 4000000L)
-            qev_run(fx.loop, EVRUN_NOWAIT);
+            ev_run(fx.loop, EVRUN_NOWAIT);
         dispatched += g_events;
     }
     teardown_pairs(sv, ws);
@@ -206,7 +206,7 @@ bench_active_few(benchmark::State &state, unsigned backend) {
         return;
     }
 
-    qev_run(fx.loop, EVRUN_NOWAIT); /* warm-up: flush the one-time registration changelist */
+    ev_run(fx.loop, EVRUN_NOWAIT); /* warm-up: flush the one-time registration changelist */
     g_events = 0;
 
     const int    K          = N < ACTIVE_K ? N : ACTIVE_K;
@@ -222,7 +222,7 @@ bench_active_few(benchmark::State &state, unsigned backend) {
         cursor     = (cursor + (std::size_t) K) % (std::size_t) N;
         long guard = 0;
         while (g_events < K && ++guard < 4000000L)
-            qev_run(fx.loop, EVRUN_NOWAIT);
+            ev_run(fx.loop, EVRUN_NOWAIT);
         dispatched += g_events;
     }
     teardown_pairs(sv, ws);
@@ -255,7 +255,7 @@ register_all() {
     static const unsigned candidates[] = {
         EVBACKEND_SELECT, EVBACKEND_POLL, EVBACKEND_EPOLL, EVBACKEND_KQUEUE, EVBACKEND_IOURING, EVBACKEND_LINUXAIO,
     };
-    const unsigned supported = qev_supported_backends();
+    const unsigned supported = ev_supported_backends();
 
     for (unsigned be : candidates) {
         if (!(supported & be))
@@ -291,12 +291,12 @@ main(int argc, char **argv) {
         rl.rlim_cur = rl.rlim_max;
         ::setrlimit(RLIMIT_NOFILE, &rl);
     }
-    std::printf("libev supported backends = 0x%x\n", qev_supported_backends());
+    std::printf("libev supported backends = 0x%x\n", ev_supported_backends());
     /* Winner-summary hint: name the backend libev auto-selected for the default
      * loop on THIS machine — at the largest ActiveFew/N it is also the row with
      * the highest items_per_second and the flattest scaling vs N. */
-    if (struct qev_loop *def = qev_default_loop(0)) {
-        std::printf("libev default (recommended) backend = %s\n", backend_name(qev_backend(def)));
+    if (struct ev_loop *def = ev_default_loop(0)) {
+        std::printf("libev default (recommended) backend = %s\n", backend_name(ev_backend(def)));
     }
     register_all();
 #endif

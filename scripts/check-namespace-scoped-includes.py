@@ -50,13 +50,13 @@ WHAT IT DELIBERATELY ALLOWS
     inside it belong to the enclosing namespace exactly as if the braces were not there
     ([dcl.link]), so a C header included in one still declares `::time` -- and doing so is the
     standard idiom for a C header that lacks its own `extern "C"` guard. Seven such sites are
-    live in this checkout (qb/src/qb/vendor/qev/event.h:41,42,47,48;
+    live in this checkout (qb/src/qb/ev/event.h:41,42,47,48;
     qbm/http .../vendor/llhttp.h:44,581; qbm/http/not-qb/llhttp/include/api.h:35), all correct.
     An `extern "C"` block nested INSIDE a namespace is still reported -- the namespace frame is
     what matters, and the C declarations really would land in it.
   * An `#include` inside a class/struct/union body at global scope: the X-macro member-list
     splice, `struct qev_loop { #define VAR(name, decl) decl; #include "qev_vars.h" };`
-    (qb/src/qb/vendor/qev/qev.c:2807). The included file is a member-declaration fragment, not
+    (qb/src/qb/ev/qev.c:2807). The included file is a member-declaration fragment, not
     a header with its own namespace-scope contents, and the splice point is the whole point.
     A class body nested inside a namespace IS reported: use the escape hatch below if a future
     X-macro fragment genuinely needs to live there.

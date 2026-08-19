@@ -1531,7 +1531,7 @@ void ask_register_type(qb::Event::id_type type) noexcept;
  * tasks the instant a winner is decided (so they no longer leave a zombie timer per
  * in-flight ask), but each still spawns and tears down several helper coroutine frames
  * per call. On a hot request/response path this awaiter is leaner: it arms a single
- * `qev_timer` and **stops it immediately** on response — no spawned helper at all. It
+ * `ev_timer` and **stops it immediately** on response — no spawned helper at all. It
  * lives in the ask() coroutine frame (address-stable) and is non-movable (the registry
  * holds it by address).
  */
@@ -1543,7 +1543,7 @@ struct ask_awaiter {
     qb::io::async::cancellation_token token;
     std::optional<E>                  result;
     std::coroutine_handle<>           cont;
-    qev_timer                         timer{};
+    ev_timer                          timer{};
     bool                              timer_started               = false;
     enum class kind { pending, ok, timed_out, cancelled } outcome = kind::pending;
     std::shared_ptr<bool>                      alive              = std::make_shared<bool>(true);
@@ -1578,11 +1578,11 @@ struct ask_awaiter {
         }
         ask_register(id, &slot);
         if (timeout.count() > 0) {
-            qev_timer_init(&timer, &ask_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
+            ev_timer_init(&timer, &ask_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
             timer.data = this;
             auto loop  = ask_loop();
-            qev_now_update(static_cast<struct qev_loop *>(loop));
-            qev_timer_start(loop, &timer);
+            ev_now_update(static_cast<struct ev_loop *>(loop));
+            ev_timer_start(loop, &timer);
             timer_started = true;
         }
         auto a    = alive;
@@ -1623,16 +1623,16 @@ private:
         token.remove_on_cancel(cancel_id);
         cancel_id = 0;
         if (timer_started) {
-            // The deadline is a one-shot qev_timer embedded directly in this
+            // The deadline is a one-shot ev_timer embedded directly in this
             // awaiter (which lives in the ask() coroutine frame). libev auto-stops
             // a one-shot the instant it expires, BEFORE invoking deliver/on_timeout
             // — leaving it inactive but still pending in `pendings[]` with
             // `timer.data` → this (about-to-be-freed) frame. Gating the stop on
-            // `qev_is_active` would skip `clear_pending` in that window, so a later
-            // qev_invoke_pending() would dispatch into freed memory. `qev_timer_stop`
+            // `ev_is_active` would skip `clear_pending` in that window, so a later
+            // ev_invoke_pending() would dispatch into freed memory. `ev_timer_stop`
             // always clears pending first, then no-ops if inactive — so gate on
             // `timer_started` only. See qb/io/async/coroutine/awaiter.h for details.
-            qev_timer_stop(ask_loop(), &timer);
+            ev_timer_stop(ask_loop(), &timer);
             timer_started = false;
         }
     }
@@ -1649,7 +1649,7 @@ private:
     }
 
     static void
-    on_timeout(struct qev_loop *, qev_timer *w, int) noexcept {
+    on_timeout(struct ev_loop *, ev_timer *w, int) noexcept {
         auto *me = static_cast<ask_awaiter *>(w->data);
         if (me && !me->slot.done) {
             me->slot.done = true;

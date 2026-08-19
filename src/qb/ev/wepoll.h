@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
- * Part of qb-ev. Vendored from wepoll (epoll for Windows) by Bert Belder,
- * with multiple correctness and portability fixes for qb-ev.
+ * Part of qev. Vendored from wepoll (epoll for Windows) by Bert Belder,
+ * with multiple correctness and portability fixes for qev.
  *   Upstream: https://github.com/piscisaureus/wepoll
  *
  * Released under the MIT License (see LICENSE). Portions derived from wepoll
@@ -14,8 +14,8 @@
  * see THIRD-PARTY-NOTICES.
  */
 
-#ifndef QEV_WEPOLL_H_
-#define QEV_WEPOLL_H_
+#ifndef QB_EV_WEPOLL_H_
+#define QB_EV_WEPOLL_H_
 
 #ifndef WEPOLL_EXPORT
 #define WEPOLL_EXPORT
@@ -76,4 +76,4 @@ WEPOLL_EXPORT int epoll_wait(HANDLE ephnd, struct epoll_event *events, int maxev
 } /* extern "C" */
 #endif
 
-#endif /* QEV_WEPOLL_H_ */
+#endif /* QB_EV_WEPOLL_H_ */

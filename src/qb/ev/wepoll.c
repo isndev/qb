@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
- * Part of qb-ev. Vendored from wepoll (epoll for Windows) by Bert Belder,
- * with multiple correctness and portability fixes for qb-ev.
+ * Part of qev. Vendored from wepoll (epoll for Windows) by Bert Belder,
+ * with multiple correctness and portability fixes for qev.
  *   Upstream: https://github.com/piscisaureus/wepoll
  *
  * Released under the MIT License (see LICENSE). Portions derived from wepoll

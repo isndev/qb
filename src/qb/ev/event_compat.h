@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor).
  *
- * Part of qb-ev, a modernized cross-platform fork of libev. This is libev's
+ * Part of qev, a modernized cross-platform fork of libev. This is libev's
  * libevent compatibility layer by Marc Alexander Lehmann, itself derived from
  * libevent by Niels Provos.
  *   Upstream: http://software.schmorp.de/pkg/libev.html
@@ -13,8 +13,8 @@
  * remain Copyright (c) 2000-2004 Niels Provos, and from libev Copyright (c)
  * Marc Alexander Lehmann, under the BSD-2-Clause license; see THIRD-PARTY-NOTICES.
  */
-#ifndef QEV_EVENT_COMPAT_H_
-#define QEV_EVENT_COMPAT_H_
+#ifndef QB_EV_EVENT_COMPAT_H_
+#define QB_EV_EVENT_COMPAT_H_
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -213,4 +213,4 @@ int evtag_unmarshal_timeval(struct evbuffer *evbuf, uint32_t need_tag, struct ti
 }
 #endif
 
-#endif /* QEV_EVENT_COMPAT_H_ */
+#endif /* QB_EV_EVENT_COMPAT_H_ */

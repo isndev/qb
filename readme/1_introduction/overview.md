@@ -25,7 +25,7 @@ Higher-level application protocols (HTTP/1.1, HTTP/2, and HTTP/3, WebSocket, Pos
 | `qb-core` | `qb/actor.h`, `qb/main.h`, `qb/event.h` | Actors, events, the `Main` engine, `VirtualCore` worker threads, inter-core messaging | No — depends on `qb-io` |
 
 Both are exposed to CMake as the aliases `qb::io` and `qb::core`. Link only `qb::io` when you need the asynchronous runtime without the actor model; link `qb::core` (which brings `qb::io` transitively) for the full engine.
-<!-- src: qb/CMakeLists.txt:118,124 -->
+<!-- src: qb/CMakeLists.txt:130,130 -->
 
 ## Architecture at a glance
 

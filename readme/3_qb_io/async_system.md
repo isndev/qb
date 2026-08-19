@@ -74,7 +74,7 @@ The free functions all operate on `listener::current`:
 | `async::run_for(qb::duration)` | Pump the loop and the scheduler for a `steady_clock`-measured window, then return. | `coroutine/utils.h:227` |
 | `async::run_sync(Awaitable&&)` | Spawn an awaitable and pump until it completes, returning its result. | `coroutine/utils.h:285` |
 
-> **`run_once()` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_EV_USE_TIMERFD=ON`, off by default) and only `qev_io` watchers are active with no heap timers (`timercnt == 0`), `EVRUN_ONCE` can block for libev's internal maximum wait time — on the order of 10⁶ seconds. In a pump loop, prefer `run_until` or `run(EVRUN_NOWAIT)`. Both `run_sync`'s pump and `listener::clear()`'s flush avoid `EVRUN_ONCE` for exactly this reason (`src/qb/io/async/coroutine/utils.h:308-312`; `src/qb/io/async/listener.h:536-539`).
+> **`run_once()` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_EV_USE_TIMERFD=ON`, off by default) and only `ev_io` watchers are active with no heap timers (`timercnt == 0`), `EVRUN_ONCE` can block for libev's internal maximum wait time — on the order of 10⁶ seconds. In a pump loop, prefer `run_until` or `run(EVRUN_NOWAIT)`. Both `run_sync`'s pump and `listener::clear()`'s flush avoid `EVRUN_ONCE` for exactly this reason (`src/qb/io/async/coroutine/utils.h:308-312`; `src/qb/io/async/listener.h:536-539`).
 
 ## `run_sync` and `run_for` block the calling thread
 
@@ -133,7 +133,7 @@ Four properties of that machinery are worth knowing because they show up in cras
 
 - **Registration is O(1) and allocation-free in steady state.** Handlers are linked into an intrusive doubly-linked list owned by the listener — the links live on `IRegisteredKernelEvent` itself, so there is no hash table and no per-registration node (`src/qb/io/async/listener.h:385`, `:401`). Each `RegisteredKernelEvent<E, A>` instantiation draws from its own thread-local LIFO freelist whose blocks are re-linked in place, so churn performs no `malloc`/`free` (`src/qb/io/async/listener.h:213-229`). The freelist is drained at thread exit, and a `delete` that runs *after* that teardown bypasses the dead list and goes straight to the global allocator — which is what stops a joined worker thread from leaking the watcher `~listener` frees on its way out (`src/qb/io/async/listener.h:232-245`).
 - **Dispatch checks liveness when the handler exposes it.** `invoke()` calls `_actor.on(_event)` only if `_actor.is_alive()` is true, when the handler type has that member at all (`src/qb/io/async/listener.h:142-149`). That is how a killed actor stops receiving watcher callbacks without every watcher having to be unregistered first.
-- **Exceptions are contained at the dispatch boundary, once.** `listener::on` wraps `invoke()` in `try { … } catch (...)` and logs a warning (`src/qb/io/async/listener.h:660-664`). This is not defensive style: libev is compiled as C, so letting an exception unwind through `qev_invoke_pending`/`qev_run` skips libev's own epilogue and is a hard failure on toolchains that emit no unwind info for C. It also strands the re-entrancy chain `clear()` reads on a destroyed stack frame.
+- **Exceptions are contained at the dispatch boundary, once.** `listener::on` wraps `invoke()` in `try { … } catch (...)` and logs a warning (`src/qb/io/async/listener.h:660-664`). This is not defensive style: libev is compiled as C, so letting an exception unwind through `ev_invoke_pending`/`ev_run` skips libev's own epilogue and is a hard failure on toolchains that emit no unwind info for C. It also strands the re-entrancy chain `clear()` reads on a destroyed stack frame.
 - **`clear()` detaches, it does not delete.** Each `async::base` holds a *reference* to its embedded event, so deleting the wrapper while the owning object is alive would leave a dangling `_async_event`; the owner's destructor performs the final unregister and delete (`src/qb/io/async/listener.h:564-608`). The one exception is a loop-owned self-deleting handler — an `async::callback` `Timeout` whose one-shot never fired — which `clear()` destroys through the owner hook it registered, unless that handler's `invoke()` is currently on the call stack, in which case the in-flight `delete this` reclaims it (`src/qb/io/async/listener.h:586-604`).
 
 ## Choosing a continuation primitive
@@ -159,7 +159,7 @@ This is the sharpest edge on the page, and the header says so itself. `callback(
 
 So a handler that calls `callback([this]{ delete this; })` to "schedule cleanup" frees itself *while its own handler is still on the stack*. And `callback(f, 1ms)` does not fix it — it only hides the race behind a timer.
 
-The delayed path refreshes libev's cached "now" before arming (`src/qb/io/async/io.h:388`). That matters more than it sounds: libev caches the monotonic time at loop-iteration boundaries, so a thread that has been out of the loop for a while — one that just returned from a blocking `sleep_for`, say — would otherwise compute the expiry against a stale base and fire the timer on the very next `qev_run`.
+The delayed path refreshes libev's cached "now" before arming (`src/qb/io/async/io.h:388`). That matters more than it sounds: libev caches the monotonic time at loop-iteration boundaries, so a thread that has been out of the loop for a while — one that just returned from a blocking `sleep_for`, say — would otherwise compute the expiry against a stale base and fire the timer on the very next `ev_run`.
 
 ### `defer(f)` is the one that breaks re-entrancy
 
@@ -302,9 +302,9 @@ public:
 ```
 
 - **`start(std::filesystem::path const&, qb::duration interval = 100ms)`** begins watching (`src/qb/io/async/io.h:581`, `:745`). `interval` is libev's polling cadence — shorter is more responsive and costs more CPU. **This is polling, not inotify/FSEvents**; `ev::stat` `stat()`s the path on a timer.
-- **The watcher owns the path string.** `qev_stat` stores the path *pointer* without copying it, so `start()` copies the path into a member `std::string` that lives as long as the watcher (`src/qb/io/async/io.h:580-584`, member at `:669`). You may safely pass a temporary.
+- **The watcher owns the path string.** `ev_stat` stores the path *pointer* without copying it, so `start()` copies the path into a member `std::string` that lives as long as the watcher (`src/qb/io/async/io.h:580-584`, member at `:669`). You may safely pass a temporary.
 - **`disconnect()`** stops the watcher (`src/qb/io/async/io.h:595`).
-- **The payload** carries `attr` (the current `qev_statdata`) and `prev` (the previous snapshot), both members of the libev watcher (`src/qb/vendor/qev/qev.h:453-454`). `attr.st_nlink == 0` means the path is gone.
+- **The payload** carries `attr` (the current `ev_statdata`) and `prev` (the previous snapshot), both members of the libev watcher (`src/qb/ev/ev.h:453-454`). `attr.st_nlink == 0` means the path is gone.
 
 The difference between the two: `file_watcher` also **reads and frames file content** (`do_read == true`, `src/qb/io/async/io.h:507`). When the watched file grows, its internal handler calls `read_all()` (`src/qb/io/async/io.h:621`), which loops `read()` → the active `IProtocol`'s `getMessageSize()`/`onMessage()` → `flush()` until the file is drained, enforcing `max_message_size()` on the way. `directory_watcher` (`do_read == false`) only forwards the notification. `async::file<Derived>` (`src/qb/io/async/file.h`) composes `file_watcher` with `transport::file`.
 
@@ -319,7 +319,7 @@ The read inside `read_all()` is a **blocking** `sys::file::read`, and a size *de
 | `disconnected` | Connection closed or I/O error | — | `int reason`, `std::error_code error_code`, `std::string message` |
 | `input_drained` *(alias `eof`)* | Input buffer fully consumed — **not** an end-of-stream signal | — | — |
 | `eos` | Output buffer fully flushed | — | — |
-| `file` | Watched file/directory attributes changed | `ev::stat` | `qev_statdata attr`, `qev_statdata prev` |
+| `file` | Watched file/directory attributes changed | `ev::stat` | `ev_statdata attr`, `ev_statdata prev` |
 | `handshake` | Transport handshake complete | — | — |
 | `io` | Raw fd readiness | `ev::io` | `_revents` carries `EV_READ`/`EV_WRITE` |
 | `pending_read` | Unprocessed bytes remain in the input buffer | — | `std::size_t bytes` |

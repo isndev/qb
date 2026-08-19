@@ -22,7 +22,7 @@ cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DQB_WITH_SSL=ON -DQB_BUILD_TESTS
 The tables below group the options by purpose. Defaults are taken from `qbConfig.cmake` — verbatim
 where the declaration writes a literal, and spelled out as a rule where it does not: `QB_BUILD_TESTS`,
 `QB_BUILD_EXAMPLES` and `QB_INSTALL` are **computed** from whether qb is the top-level project
-(`qb/cmake/qbConfig.cmake:75-85,118-122`), so a single value would be wrong for one of the two cases.
+(`qb/cmake/qbConfig.cmake:87-97,130-134`), so a single value would be wrong for one of the two cases.
 
 ## Concepts
 
@@ -48,7 +48,7 @@ where the declaration writes a literal, and spelled out as a rule where it does 
 |---|---|---|
 | `QB_CXX_STANDARD` | `20` | C++ standard required by qb targets. `STRING` cache variable accepting `20` or `23` (configure fails otherwise); pass `-DQB_CXX_STANDARD=23` for the modern path, as the `debug-cxx23`/`dev-cxx23` presets do. |
 | `QB_BUILD_TESTS` | `ON` standalone / `${BUILD_TESTING}` (else `OFF`) embedded | Build the qb GoogleTest suites. Gates GoogleTest resolution and the `qb_add_test` helper. The default is **computed**, not fixed: `ON` only when qb is the top-level project; under `add_subdirectory` it follows `BUILD_TESTING` when the parent defined it, otherwise `OFF`. |
-| `QB_BUILD_EXAMPLES` | `ON` standalone / `OFF` embedded | Build the examples. Same computed default as `QB_BUILD_TESTS`, except that an embedded qb is flatly `OFF` — `BUILD_TESTING` does not apply to examples. **This repository ships no `examples/` tree**: the examples are a separate submodule owned by the qb-dev superproject, and only that submodule's `examples/CMakeLists.txt` reads this option, so in a standalone `qb` checkout `ON` builds nothing extra. The configure summary says so when it cannot find the tree (`qb/cmake/qbConfig.cmake:540-543`). |
+| `QB_BUILD_EXAMPLES` | `ON` standalone / `OFF` embedded | Build the examples. Same computed default as `QB_BUILD_TESTS`, except that an embedded qb is flatly `OFF` — `BUILD_TESTING` does not apply to examples. **This repository ships no `examples/` tree**: the examples are a separate submodule owned by the qb-dev superproject, and only that submodule's `examples/CMakeLists.txt` reads this option, so in a standalone `qb` checkout `ON` builds nothing extra. The configure summary says so when it cannot find the tree (`qb/cmake/qbConfig.cmake:552-555`). |
 | `QB_BUILD_BENCHMARKS` | `OFF` | Build the Google Benchmark suites. Gates Google Benchmark resolution. |
 | `QB_BUILD_DOCS` | `OFF` | Build the documentation target (`add_subdirectory(docs)`). |
 | `QB_BUILD_SHARED_LIBS` | `${BUILD_SHARED_LIBS}` | Build the qb libraries as shared objects instead of static. Defaults to the standard `BUILD_SHARED_LIBS`, so `-DBUILD_SHARED_LIBS=ON` also switches qb to shared, while still allowing a qb-only override. |

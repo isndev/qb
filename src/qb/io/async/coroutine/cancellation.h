@@ -666,7 +666,7 @@ struct cancellable_sleep_awaiter {
         bool                    resumed{false};
         std::coroutine_handle<> handle;
         // The detached timer_task driving the sleep. On early cancel we tear it
-        // down through this handle so its frame + qev_timer are reclaimed now
+        // down through this handle so its frame + ev_timer are reclaimed now
         // instead of lingering parked on the full original duration.
         std::coroutine_handle<> timer_handle{};
     };
@@ -775,7 +775,7 @@ struct with_deadline_timeout_state {
     // instant this branch is resolved by another path — a cancel, or (the common
     // case) the operation winning the `when_any` race, which destroys this awaiter's
     // frame and runs the dtor below. Without this the timer stays parked on the full
-    // remaining-until-deadline sleep, leaking its frame + qev_timer (and on a core whose
+    // remaining-until-deadline sleep, leaking its frame + ev_timer (and on a core whose
     // listener is never torn down, for the rest of the thread's life).
     std::coroutine_handle<> timer_handle{};
 };
