@@ -1,10 +1,14 @@
 qev — Third-Party Notices
 =========================
 
-qev (MIT, see LICENSE) is a modernized fork of libev and bundles a patched
-copy of wepoll. The original components below remain under the BSD-2-Clause
-license of their respective authors, and the relevant source files retain those
-authors' copyright notices.
+qev is a modernized fork of libev and bundles a patched copy of wepoll. The
+combined work is distributed under the MIT License, reproduced in LICENSE. The
+original components below remain under the BSD-2-Clause license of their
+respective authors; the relevant source files retain those authors' copyright
+notices, and the full license text is reproduced at the end of this file.
+
+This file and LICENSE are installed together with the library, so a binary
+distribution carries the notices the BSD-2-Clause terms require.
 
 
 1. libev
@@ -24,6 +28,8 @@ authors' copyright notices.
    -------
    Copyright (c) 2012-2020 Bert Belder <bertbelder@gmail.com>
    Homepage: https://github.com/piscisaureus/wepoll
+   Derived from v1.5.8, the last upstream release. The vendored copy has diverged
+   from it and is maintained here; it is not refreshed from upstream.
 
    Files derived from wepoll: wepoll.c, wepoll.h.
 

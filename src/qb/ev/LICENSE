@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-
-qev is a modernized fork of libev and bundles a patched copy of wepoll.
-Those upstream components are retained under their original BSD-2-Clause
-licenses. The combined work is distributed under the MIT License above; the
-original copyright notices are preserved in the respective source files and the
-full third-party license texts are reproduced in THIRD-PARTY-NOTICES.

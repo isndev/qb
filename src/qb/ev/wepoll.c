@@ -8,6 +8,15 @@
  * Part of qev. Vendored from wepoll (epoll for Windows) by Bert Belder,
  * with multiple correctness and portability fixes for qev.
  *   Upstream: https://github.com/piscisaureus/wepoll
+ *   Derived from v1.5.8, the last upstream release (2019). Recorded because the
+ *   upstream sources carry no version string of their own, so the docs' claim had
+ *   nothing in the tree backing it.
+ *
+ *   THIS IS NOT A REFRESHABLE COPY. Do not re-pull it from upstream: wepoll is
+ *   unmaintained at 1.5.8, and this file has diverged from it -- 74% of its
+ *   non-comment lines are shared with v1.5.8, the rest being qev's own correctness
+ *   and portability fixes plus the qev naming. Replacing it with upstream's would
+ *   silently undo all of them.
  *
  * Released under the MIT License (see LICENSE). Portions derived from wepoll
  * remain Copyright (c) 2012-2020 Bert Belder under the BSD-2-Clause license;
