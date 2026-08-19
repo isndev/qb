@@ -97,7 +97,8 @@ BUILD_DIR="${BUILD_DIR:-${TMPDIR:-/tmp}/qb-installed-headers.$$}"
 # (qbm/pgsql/CMakeLists.txt, HEADER_EXCLUDE), so it no longer reaches a prefix and this gate
 # once again covers everything that does. A header that cannot compile alone belongs either
 # in the sweep or out of the package -- never in the package and out of the sweep.
-# EMPTY, and that is the point. It named `qb/ev/qev_vars.h` -- a spelling from the reverted
+# EMPTY, and that is the point -- C6 of the self-test asserts it stays that way. It named
+# `qb/ev/qev_vars.h`, a spelling from the reverted
 # qev_ rename -- so it matched no installed file: the exclusion excluded nothing while reading
 # as though the one non-self-contained header in the shipped surface were accounted for.
 # ev_vars.h is out of the INSTALL now (qb/CMakeLists.txt, HEADER_EXCLUDE), which is what the
