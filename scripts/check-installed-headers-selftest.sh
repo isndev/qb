@@ -145,20 +145,32 @@ else
   { echo "$GATE_OUT" | grep -m1 'floor' | sed 's/^/      /'; } || true; ok "floor enforced"
 fi
 
-# ---- C6 a stale exclusion ---------------------------------------------------------------
-# Deliberately qev_vars.h, not epoll.h: epoll.h is excluded only on non-Linux, so using it here
-# would make this control silently vanish on the ONE platform the gate runs on in CI. This was
-# qb/core/Actor.tpp until 3.0 retired the last .tpp under qb/ -- qev_vars.h is now the only
-# UNCONDITIONALLY excluded header the qb tree still ships, which is the property C6 needs.
-say_control "C6  an exclusion naming a header that no longer exists must be REJECTED"
-V="$P/include/qb/ev/qev_vars.h"
-mv "$V" "$V.moved"
-if run_gate "${QB_ARGS[@]}"; then ko "a stale exclusion was accepted -- an excluded name can rot"; else
-  { echo "$GATE_OUT" | grep -m1 'stale exclusion' | sed 's/^/      /'; } || true
-  ok "stale exclusion detected"
+# ---- C6 the built-in exclusion table must stay EMPTY --------------------------------------
+# C6 used to plant a stale entry by moving aside the file the table named -- qb/ev/qev_vars.h,
+# and before that qb/core/Actor.tpp. Both broke: the .tpp was retired in 3.0, and qev_vars.h was
+# a name from the reverted qev_ spelling (the installed file was ev_vars.h), so the entry matched
+# nothing and the control failed at `mv`, BEFORE the gate ran. A control that cannot set up its
+# own scenario tests nothing, and this one kept losing its subject to the shipped surface moving.
+#
+# The scenario is gone for good: the table is empty, because the header it named is out of the
+# INSTALL now. So C6 asserts the property that replaced it, which is the script's own stated
+# rule -- a header that cannot compile alone belongs out of the package, never in the package and
+# out of the sweep. If someone re-adds an entry, this fires and forces that conversation.
+#
+# Not a duplicate of C9: C9 exercises the CALLER's --exclude, this one the script's own table.
+# Nor is it covered by C0, which would catch an entry naming a MISSING file but accepts one
+# naming a header that is present and merely hidden from the sweep -- which is the abuse.
+say_control "C6  the gate's built-in exclusion table must be empty"
+if run_gate "${QB_ARGS[@]}"; then
+  excluded=$(echo "$GATE_OUT" | sed -n 's/.*phase 1: [0-9]* headers, \([0-9]*\) excluded by name.*/\1/p' | head -1)
+  if [ "${excluded:-x}" = 0 ]; then
+    ok "built-in exclusion table is empty (0 headers excluded by name)"
+  else
+    ko "the gate excluded ${excluded:-?} header(s) by name -- put them out of the package instead"
+  fi
+else
+  ko "the baseline gate run failed, so C6 could not measure the exclusion count"
 fi
-mv "$V.moved" "$V"
-[ "$(sha "$V")" = "$(sha "$PREFIX/include/qb/ev/qev_vars.h")" ] && ok "restored byte-exact" || ko "restore is NOT byte-exact"
 
 # ---- C7 an entry point that links nothing ------------------------------------------------
 say_control "C7  an --entry-dir with no TUs must be REJECTED (a vacuous link phase)"

@@ -71,9 +71,11 @@ jobs:
           # inside the decoy fires and this job fails.
           target_include_directories(consumer BEFORE PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/decoy")
           EOF
-          # The qev/ + qev*.h rows are the live ones (the fork's names since 3.0.0). The ev/ + ev*.h
-          # rows are kept on purpose: they are the names qb used to publish, and the decoy is the
-          # only thing that would notice them coming back.
+          # BOTH sets are names qb must never publish at the include root, and NEITHER is live:
+          # since 3.0 the fork installs under qb/ev/ and its C API deliberately keeps libev's ev_*
+          # spelling. A loose ev.h is what qb used to drop here; a loose qev.h is what the qev_
+          # prefix would have dropped had it not been reverted. The decoy is the only thing that
+          # would notice either coming back.
           mkdir -p decoy/ev decoy/qev decoy/uuid/include decoy/nanolog decoy/ska_hash
           for f in qev.h qev++.h qev_config.h qev_vars.h qev_wrap.h \
                    qev/qev.h qev/qev++.h qev/event.h qev/event_compat.h \
@@ -154,7 +156,7 @@ jobs:
             auto id = qb::generate_random_uuid();
             qb::json j; j["k"] = 42;
             std::printf("ev=%d.%d map=%d set=%d uuid=%zu json=%d\n",
-                        qev_version_major(), qev_version_minor(), um[1], (int) us.count(3),
+                        ev_version_major(), ev_version_minor(), um[1], (int) us.count(3),
                         uuids::to_string(id).size(), (int) j["k"]);
             const int abi = abi_probe();
             qb::Main engine;
