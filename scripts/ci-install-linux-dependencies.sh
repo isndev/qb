@@ -2,34 +2,35 @@
 set -euo pipefail
 export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
 
-# apt, bounded and retried.
+# apt on a hosted runner, bounded three ways.
 #
-# Every apt-get call here used to be a single unguarded attempt. `apt-get update` has no
-# timeout of its own, so against an unresponsive mirror it simply waits -- and every Linux job
-# in every qb workflow goes through this script, so one slow mirror stalls the whole board for
-# a reason that has nothing to do with the code. Measured: jobs sitting in "Install
-# dependencies" past twenty minutes while the same commit was green everywhere apt was not
-# involved.
+# Measured twice on the sibling repo's identical step, and the first diagnosis was wrong. The
+# step produced ZERO output between the command echo and the cancellation twenty minutes later
+# -- not one `Hit:` or `Get:` line -- so it was never fetching: it was waiting on the dpkg/apt
+# lock that unattended-upgrades holds while a fresh runner settles, and apt waits for that
+# FOREVER by default. Acquire::http::Timeout, the first fix, bounds network fetches and so
+# changed nothing; the second run timed out at 20m11s exactly like the first.
 #
-# The timeouts are what fixes it and the retry is what uses them: a loop around a command that
-# never returns never gets a second turn. Acquire::Retries covers the transient per-file case
-# inside one invocation; the loop covers a mirror that is down when we first ask.
-APT_OPTS=(-o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=3)
+# DPkg::Lock::Timeout makes apt give up on the lock rather than wait. `timeout` caps the call
+# whatever the reason it hangs, which is the guard that does not depend on the diagnosis being
+# right. Only then does retrying mean anything, because the first two guarantee there is a
+# second turn. `sudo timeout`, never `timeout sudo`: the latter signals sudo, which need not
+# pass it on to the apt-get it spawned, so the call would look bounded and not be.
+APT_LOCK_OPTS=(-o DPkg::Lock::Timeout=120 -o Acquire::Retries=3)
 
 apt_retry() {
-  local attempt
+  local attempt limit=300
+  [ "${1:-}" = install ] && limit=420
   for attempt in 1 2 3; do
-    if "${SUDO[@]}" apt-get "${APT_OPTS[@]}" "$@"; then
+    if "${SUDO[@]}" timeout "$limit" apt-get "${APT_LOCK_OPTS[@]}" "$@"; then
       return 0
     fi
-    echo "::warning::apt-get $1 failed (attempt ${attempt}/3); retrying" >&2
+    echo "::warning::apt-get $1 failed or timed out (attempt ${attempt}/3); retrying" >&2
     sleep $((attempt * 15))
   done
   echo "::error::apt-get $1 failed three times" >&2
   return 1
 }
-
-LLVM_VERSION="${LLVM_VERSION:-22}"
 
 install_gcc=false
 install_llvm_clang=false
