@@ -406,6 +406,22 @@ public:
             for (auto &entry : _server_connections) {
                 auto packets = entry.second->drain_packets();
                 _packets.insert(_packets.end(), std::make_move_iterator(packets.begin()), std::make_move_iterator(packets.end()));
+                // Index the child's CURRENT SCID set NOW -- the child's drain_transport() above is
+                // the very call inside which ngtcp2 mints fresh Source Connection IDs and writes the
+                // NEW_CONNECTION_ID frames announcing them. Reconciliation used to run only after an
+                // INBOUND datagram routed to the child, so a client that adopted a freshly announced
+                // CID without first sending one more packet on the old one missed _server_cid_index,
+                // fell through to the accept path (where ngtcp2_accept rejects anything that is not
+                // an Initial), and had every subsequent packet silently dropped -- a handshake the
+                // client had completed and the server no longer recognised. OpenSSL's QUIC client
+                // (Debian curl) switches exactly that eagerly and is entitled to: RFC 9000 5.1.1
+                // lets a peer use any active CID the moment it learns it; ngtcp2-based clients keep
+                // ACKing on the old CID first, which is why macOS never reproduced the ~3% loss.
+                // Reconciling here, before the datagrams carrying the announcement are even flushed,
+                // closes the window structurally: the CID is routable before the peer can have
+                // learnt it. Cost is nil on the common path -- reconcile exits after one vector
+                // comparison when nothing rotated.
+                reconcile_server_cids(entry.second.get());
             }
         }
         drain_transport();
