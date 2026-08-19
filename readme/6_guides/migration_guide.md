@@ -602,30 +602,32 @@ t_cube.cpp:1:10: fatal error: 'cube.h' file not found
 
 ### 5.5 The vendored libev is `qev`
 
-qb's libev fork was re-prefixed so its 58 exported C symbols can no longer collide at link time with a
-system libev, or with another library that vendored its own. `ev_*` became `ev_*`, `struct ev_loop`
-became `struct ev_loop`, the headers became `ev.h` / `ev++.h`, the CMake target `ev` became `qev`
-(`qb::ev` → `qb::qev`), and the archive `libev.a` became `libqev.a`.
+qb's libev fork is published standalone as [`isndev/qev`](https://github.com/isndev/qev), and what
+changed in 3.0 is **where its files live, not what they are called**. The 74 exported C symbols keep
+libev's own names — `ev_run`, `ev_io_start`, `struct ev_loop` (`qb/src/qb/ev/ev.h:696`) — because the
+C API is not reformed, only namespaced by path. What separates an installed qb from an installed
+libev is everything that reaches a filesystem: the archive is `libqb-ev.a` here and `libqev.a`
+standalone, and the headers sit under `qb/ev/`.
+
+> A `qev_*` symbol prefix was tried during 3.0 and **reverted**, so a program written against libev
+> compiles unchanged after one include-path edit. If you read a doc telling you to rename `ev_run` to
+> `qev_run`, it predates that decision.
 
 The 2.6.0 spelling of the header was `<ev/ev++.h>`, installed from qb's own `modules/ev/`. It is now
 `<qb/ev/ev++.h>`.
 
 **Most consumers need no edit at all.** The C++ namespace is still `ev`
-(`qb/src/qb/ev/ev++.h:33`), qb's watcher types still derive from `ev::io` / `ev::sig` /
-`ev::timer`, and `EV_READ` / `EV_WRITE` / `EV_MULTIPLICITY` were deliberately left alone. Two
-populations are affected: anyone who included `<ev/ev++.h>` directly, and anyone who called the libev
-**C** API through qb's copy.
+(`qb/src/qb/ev/ev++.h:33`), re-exported as `qb::ev`; qb's watcher types still derive from `ev::io` /
+`ev::sig` / `ev::timer`; `EV_READ` / `EV_WRITE` / `EV_MULTIPLICITY` are untouched; and the CMake
+dependency is still `qb::ev`, because the target carries `EXPORT_NAME ev` even though it is now
+physically named `qev`. One population is affected: anyone who included `<ev/ev++.h>` directly.
 
 ```
 t_ev.cpp:1:10: fatal error: 'ev/ev++.h' file not found
-
-t_qevsym.cpp:2:20: error: use of undeclared identifier 'ev_run'; did you mean 'ev_run'?
 ```
 
-The compiler's fix-it is right: prefix the C calls with `q` (`ev_run` → `ev_run`,
-`qb/src/qb/ev/ev.h:696`), change the include to `<qb/ev/ev++.h>`, and change a CMake
-`qb::ev` dependency to `qb::qev`. Leave `ev::`, `EV_*` and the libevent-compat `event_*` names as they
-are.
+Change the include to `<qb/ev/ev++.h>`. Leave the `ev_*` C calls, `ev::`, `EV_*` and the
+libevent-compat `event_*` names exactly as they are.
 
 ### 5.6 `std::to_string(uuids::uuid)` is gone
 
