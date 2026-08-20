@@ -202,6 +202,17 @@ install_ngtcp2() {
 
 apt_retry update
 
+# software-properties-common is an Ubuntu package that does not exist on Debian -- and the
+# self-hosted Debian runner proved it: three retries of "Unable to locate package". It only
+# ever mattered for add-apt-repository, which llvm.sh does not need on Debian. Install it
+# where the archive has it, skip it loudly where it does not.
+if apt-cache show software-properties-common >/dev/null 2>&1; then
+  extra_repo_pkgs=(software-properties-common)
+else
+  echo "software-properties-common not in this distribution's archive (Debian) - skipping"
+  extra_repo_pkgs=()
+fi
+
 packages=(
   ca-certificates
   cmake
@@ -218,7 +229,6 @@ packages=(
   nlohmann-json3-dev
   openssl
   pkg-config
-  software-properties-common
   wget
   zlib1g-dev
 )
@@ -239,7 +249,7 @@ if [[ "${install_google_benchmark}" == true ]]; then
   packages+=(libbenchmark-dev)
 fi
 
-apt_retry install -y "${packages[@]}"
+apt_retry install -y "${packages[@]}" "${extra_repo_pkgs[@]}"
 
 if [[ "${install_llvm_clang}" == true || "${install_llvm_format}" == true ]]; then
   install_llvm_repo
