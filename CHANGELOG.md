@@ -7,11 +7,10 @@ policy.
 
 ## [Unreleased]
 
-Tracks changes that are not yet part of a tagged release. Since 2026-08-11 that is **both**
-branches, not just `develop`: `main` was fast-forwarded to `develop` for the release, so
-`QB_FRAMEWORK_VERSION` is **3.0.0** on either, and a build from a default clone already reports
-`3.0.0` while this section is still open. It becomes the `[3.0.0]` entry when that release is
-tagged. The latest tag remains `v2.6.0`.
+Nothing yet. Entries land here as they are merged, and move under a version heading when that
+version is tagged.
+
+## [3.0.0] - 2026-08-20
 
 **This is a major release, and it breaks source in eight places.** Count them here rather than
 discovering them one build error at a time — *Removed* carries five and *Changed* three:
@@ -1148,5 +1147,6 @@ is broad, so entries are grouped rather than exhaustive.
 - QUIC: connection-limit denial-of-service mitigation, fail-closed RNG, and flow-control hardening.
 - async/transport and crypto paths hardened to fail closed under malformed or hostile input.
 
-[Unreleased]: https://github.com/isndev/qb/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/isndev/qb/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/isndev/qb/compare/v2.6.0...v3.0.0
 [2.6.0]: https://github.com/isndev/qb/releases/tag/v2.6.0

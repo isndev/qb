@@ -11,6 +11,12 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+
+# Least privilege. Nothing in this workflow writes to the repository, so nothing
+# in it needs a token that can.
+permissions:
+  contents: read
+
 concurrency:
   group: install-consume-${{ github.ref }}
   cancel-in-progress: true

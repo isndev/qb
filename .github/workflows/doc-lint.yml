@@ -113,6 +113,12 @@ on:
       # match, and resolve_in_project() SKIPs them (cite-check.py:69). Adding it would
       # guard nothing. Those 112 are validated by no repo -- tracked separately.
 
+
+# Least privilege. Nothing in this workflow writes to the repository, so nothing
+# in it needs a token that can.
+permissions:
+  contents: read
+
 concurrency:
   group: doc-lint-${{ github.ref }}
   cancel-in-progress: true
