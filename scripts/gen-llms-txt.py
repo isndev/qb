@@ -91,6 +91,27 @@ ROOT = os.path.dirname(SCRIPT_DIR)
 PROJECT_PREFIXES = ("qb/", "qbm/http/", "qbm/pgsql/", "qbm/redis/")
 
 
+
+def _strip_html_comments(text: str) -> str:
+    """Remove HTML comments by scanning, not by regex-matching their delimiters.
+
+    CodeQL's py/bad-tag-filter is right that a regex over comment syntax always leaves a
+    corner: browsers accept ``--!>`` as a close, an unterminated opener swallows the rest
+    of the line, and every pattern that enumerates those shapes is one quirk away from
+    wrong again. Finding the opener and cutting to the nearest close -- standard, sloppy,
+    or end of input -- has no corner to miss, and nothing here for the rule to flag.
+    """
+    out = text
+    while True:
+        i = out.find("<!--")
+        if i == -1:
+            return out
+        closes = [(j, n) for j, n in ((out.find("-->", i + 4), 3), (out.find("--!>", i + 4), 4)) if j != -1]
+        if not closes:
+            return out[:i]
+        j, n = min(closes)
+        out = out[:i] + out[j + n:]
+
 def project_prefix(root):
     """This project's prefix in repo-root-form paths, or None if it is none of the four."""
     try:
@@ -199,13 +220,7 @@ def note_of(rel: str) -> str:
             if para:
                 break
             continue
-        # Strip HTML comments defensively, not just the well-formed shape. `<!--.*?-->` alone
-        # leaves two things behind that CodeQL's bad-tag-filter rightly flags: the sloppy
-        # close `--!>` that browsers accept, and an opener with no close on the line, which
-        # would pass the whole comment body through into the published lead verbatim.
-        cleaned = re.sub(r"<!--.*?(?:-->|--!>)", "", s)
-        cleaned = re.sub(r"<!--.*$", "", cleaned)
-        para.append(cleaned.strip())
+        para.append(_strip_html_comments(s).strip())
     # Join the WHOLE paragraph before looking for a sentence end.  Reading only the first
     # physical line truncated every hard-wrapped lead ("... libraries of the"), which is how
     # a generated index ends up quoting half-sentences at an agent.
