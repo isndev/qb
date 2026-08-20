@@ -696,6 +696,34 @@ if (QB_EV_BUILD_TESTS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tes
     set_tests_properties(watchers PROPERTIES TIMEOUT 60)
 endif ()
 
+# Loop mechanics -- multi-loop isolation, timer ordering/pacing, priorities, the README's
+# "NULL if unavailable" backend promise, ev_feed_event, a real fork(), a cross-thread
+# ev_async_send, and a thousand concurrent timers. The watcher suite proves each family
+# FIRES; this one proves the loop around them BEHAVES.
+if (QB_EV_BUILD_TESTS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test-loops.c")
+    add_executable(qev-test-loops tests/test-loops.c)
+    target_link_libraries(qev-test-loops PRIVATE qev)
+    if (NOT WIN32)
+        find_package(Threads QUIET)
+        if (TARGET Threads::Threads)
+            target_link_libraries(qev-test-loops PRIVATE Threads::Threads)
+        endif ()
+    endif ()
+    add_test(NAME loops COMMAND qev-test-loops)
+    set_tests_properties(loops PROPERTIES TIMEOUT 60)
+endif ()
+
+# The wepoll backend -- the fork's headline feature -- gets its own suite, REGISTERED ONLY ON
+# WINDOWS: a green "wepoll" tick on a platform that never runs wepoll would be a lie, not a
+# skip. Includes the regression test for the interest-set-modification bug that motivated the
+# fork (a live watcher widened to READ|WRITE never reached the backend, e8090ecc).
+if (QB_EV_BUILD_TESTS AND TARGET qev AND WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test-wepoll.c")
+    add_executable(qev-test-wepoll tests/test-wepoll.c)
+    target_link_libraries(qev-test-wepoll PRIVATE qev ws2_32)
+    add_test(NAME wepoll COMMAND qev-test-wepoll)
+    set_tests_properties(wepoll PROPERTIES TIMEOUT 60)
+endif ()
+
 if (QB_EV_BUILD_BENCHMARKS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/bench-backends.c")
     add_executable(qev-bench-backends bench/bench-backends.c)
     target_link_libraries(qev-bench-backends PRIVATE qev)
