@@ -94,13 +94,13 @@ PROJECT_PREFIXES = ("qb/", "qbm/http/", "qbm/pgsql/", "qbm/redis/")
 def project_prefix(root):
     """This project's prefix in repo-root-form paths, or None if it is none of the four."""
     try:
-        with open(os.path.join(root, "cmake", "qbConfig.cmake"), errors="ignore") as fh:
+        with open(os.path.join(root, "cmake", "qbConfig.cmake"), errors="ignore", encoding="utf-8") as fh:
             if re.search(r'^\s*set\(QB_FRAMEWORK_NAME\s+"qb"\)', fh.read(), re.M):
                 return "qb/"
     except OSError:
         pass
     try:
-        with open(os.path.join(root, "CMakeLists.txt"), errors="ignore") as fh:
+        with open(os.path.join(root, "CMakeLists.txt"), errors="ignore", encoding="utf-8") as fh:
             m = re.search(r"^\s*project\(\s*qbm-([A-Za-z0-9_]+)\b", fh.read(), re.M)
     except OSError:
         m = None
@@ -199,7 +199,13 @@ def note_of(rel: str) -> str:
             if para:
                 break
             continue
-        para.append(re.sub(r"<!--.*?-->", "", s).strip())
+        # Strip HTML comments defensively, not just the well-formed shape. `<!--.*?-->` alone
+        # leaves two things behind that CodeQL's bad-tag-filter rightly flags: the sloppy
+        # close `--!>` that browsers accept, and an opener with no close on the line, which
+        # would pass the whole comment body through into the published lead verbatim.
+        cleaned = re.sub(r"<!--.*?(?:-->|--!>)", "", s)
+        cleaned = re.sub(r"<!--.*$", "", cleaned)
+        para.append(cleaned.strip())
     # Join the WHOLE paragraph before looking for a sentence end.  Reading only the first
     # physical line truncated every hard-wrapped lead ("... libraries of the"), which is how
     # a generated index ends up quoting half-sentences at an agent.

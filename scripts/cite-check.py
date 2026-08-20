@@ -92,13 +92,13 @@ PROJECT_PREFIXES = ("qb/", "qbm/http/", "qbm/pgsql/", "qbm/redis/")
 def project_prefix(root):
     """This project's prefix in repo-root-form paths, or None if it is none of the four."""
     try:
-        with open(os.path.join(root, "cmake", "qbConfig.cmake"), errors="ignore") as fh:
+        with open(os.path.join(root, "cmake", "qbConfig.cmake"), errors="ignore", encoding="utf-8") as fh:
             if re.search(r'^\s*set\(QB_FRAMEWORK_NAME\s+"qb"\)', fh.read(), re.M):
                 return "qb/"
     except OSError:
         pass
     try:
-        with open(os.path.join(root, "CMakeLists.txt"), errors="ignore") as fh:
+        with open(os.path.join(root, "CMakeLists.txt"), errors="ignore", encoding="utf-8") as fh:
             m = re.search(r"^\s*project\(\s*qbm-([A-Za-z0-9_]+)\b", fh.read(), re.M)
     except OSError:
         m = None

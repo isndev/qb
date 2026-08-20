@@ -187,13 +187,13 @@ PROJECT_PREFIXES = ("qb/", "qbm/http/", "qbm/pgsql/", "qbm/redis/")
 def project_prefix(root):
     """This project's prefix in repo-root-form paths, or None if it is none of the four."""
     try:
-        with open(os.path.join(root, "cmake", "qbConfig.cmake"), errors="ignore") as fh:
+        with open(os.path.join(root, "cmake", "qbConfig.cmake"), errors="ignore", encoding="utf-8") as fh:
             if re.search(r'^\s*set\(QB_FRAMEWORK_NAME\s+"qb"\)', fh.read(), re.M):
                 return "qb/"
     except OSError:
         pass
     try:
-        with open(os.path.join(root, "CMakeLists.txt"), errors="ignore") as fh:
+        with open(os.path.join(root, "CMakeLists.txt"), errors="ignore", encoding="utf-8") as fh:
             m = re.search(r"^\s*project\(\s*qbm-([A-Za-z0-9_]+)\b", fh.read(), re.M)
     except OSError:
         m = None
@@ -343,7 +343,7 @@ def expected_version():
         p, rx = os.path.join(ROOT, "CMakeLists.txt"), \
             r'^\s*project\(' + re.escape(PROJECT) + r'\s+VERSION\s+([0-9][0-9.]*)\)'
     try:
-        with open(p, errors="ignore") as fh:
+        with open(p, errors="ignore", encoding="utf-8") as fh:
             m = re.search(rx, fh.read(), re.M)
     except OSError:
         m = None
@@ -415,7 +415,7 @@ class Index:
                 if not idents_ok or fn in SKIP_IDENT_FILES:
                     continue
                 try:
-                    with open(p, errors="ignore") as fh:
+                    with open(p, errors="ignore", encoding="utf-8") as fh:
                         self.idents.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", fh.read()))
                 except OSError:
                     pass
@@ -463,7 +463,7 @@ class Index:
     def lines(self, path):
         if path not in self._lines:
             try:
-                with open(path, errors="ignore") as fh:
+                with open(path, errors="ignore", encoding="utf-8") as fh:
                     self._lines[path] = fh.read().split("\n")
             except OSError:
                 self._lines[path] = None
@@ -484,7 +484,7 @@ def iter_docs():
 def check_doc(path, idx, tol, max_occ, want_ver, ver_src,
               findings, stats, suppressions, digests):
     rel = relpath(path)
-    with open(path) as fh:
+    with open(path, encoding="utf-8") as fh:
         lines = fh.read().split("\n")
 
     # ---- 5. Verified-against marker, BY VALUE --------------------------------
@@ -814,7 +814,7 @@ def main() -> int:
 
     accepted = {}
     if not a.no_baseline and os.path.isfile(a.baseline):
-        with open(a.baseline) as fh:
+        with open(a.baseline, encoding="utf-8") as fh:
             for raw in fh:
                 raw = raw.rstrip("\n")
                 if not raw.strip() or raw.lstrip().startswith("#"):
@@ -851,7 +851,7 @@ def main() -> int:
                   f"(expected >= {min_dig}); the parser has stopped matching the corpus and "
                   f"recording now would erase the baseline")
             return 1
-        with open(a.digest_baseline, "w") as fh:
+        with open(a.digest_baseline, "w", encoding="utf-8") as fh:
             fh.write(
                 "# llm-cite-digest.baseline -- what every line-cited range in llm/ SAID when\n"
                 "# it was last verified.  Regenerate with:\n"
@@ -876,7 +876,7 @@ def main() -> int:
     # -- rule 2b: the cited lines must still say what they said -------------------
     recorded = {}
     if os.path.isfile(a.digest_baseline):
-        with open(a.digest_baseline) as fh:
+        with open(a.digest_baseline, encoding="utf-8") as fh:
             for raw in fh:
                 if not raw.strip() or raw.lstrip().startswith("#"):
                     continue
