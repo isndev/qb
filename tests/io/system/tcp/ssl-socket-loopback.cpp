@@ -726,6 +726,7 @@ TEST(SSLSocketLoopback, DriveNonBlockingConnectToCompletion) {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
+        rv.server_done(); // handshake complete — only now may the client tear down
         // Hold the accepted socket open until the client has closed ITS end: on Windows
         // the client's disconnect() lands as WSAECONNRESET on a server still inside the
         // handshake poll, which the de-flaked drive_server_handshake reports LOUDLY.
@@ -756,6 +757,10 @@ TEST(SSLSocketLoopback, DriveNonBlockingConnectToCompletion) {
     EXPECT_EQ(status, 1) << "non-blocking TLS handshake never completed; last status=" << status;
     EXPECT_TRUE(client.handshake_complete());
     EXPECT_FALSE(client.get_negotiated_tls_version().empty());
+    // TLS 1.3 completes asymmetrically: the client finishes on SENDING Finished, the
+    // server only after READING it — so tearing down here can land inside the server's
+    // handshake poll as an EOF/reset, which drive_server_handshake reports as fatal.
+    EXPECT_TRUE(rv.wait_server()) << "server handshake never completed";
     rv.client_done(); // the server may now let its socket go
     client.disconnect();
 }
@@ -765,6 +770,24 @@ TEST(SSLSocketLoopback, DriveNonBlockingConnectToCompletion) {
 // ===========================================================================
 
 namespace {
+
+// PEM written through a memory BIO then plain CRT fwrite: handing an application
+// FILE* to OpenSSL requires applink.c compiled into the EXE on Windows, and without
+// it OPENSSL_Uplink KILLS the process — no gtest verdict, just a dead run. No test
+// should depend on that link-time artefact, so no FILE* crosses the DLL boundary.
+bool
+pem_bio_to_file(BIO *bio, const std::string &path) {
+    char      *data = nullptr;
+    const long n    = BIO_get_mem_data(bio, &data);
+    if (n <= 0)
+        return false;
+    FILE *f = std::fopen(path.c_str(), "wb");
+    if (!f)
+        return false;
+    const bool ok = std::fwrite(data, 1, static_cast<std::size_t>(n), f) == static_cast<std::size_t>(n);
+    std::fclose(f);
+    return ok;
+}
 
 // Generate a self-signed EC certificate carrying DNS + IPv4 + IPv6 Subject
 // Alternative Names entirely in memory, write the cert+key to temp PEM files,
@@ -845,21 +868,18 @@ make_san_server_context(std::string &out_cert_path, std::string &out_key_path) {
     ok = ok && X509_sign(x509, pkey, EVP_sha256()) != 0;
 
     if (ok) {
-        const std::string base = std::string("/tmp/qb-ssl-san-") + std::to_string(::getpid());
+        // temp_directory_path(), not a literal /tmp: the MSVC CRT maps "/tmp" onto
+        // <current drive>:\tmp, which nothing guarantees exists.
+        const std::string base = (std::filesystem::temp_directory_path() / ("qb-ssl-san-" + std::to_string(::getpid()))).string();
         out_cert_path          = base + "-cert.pem";
         out_key_path           = base + "-key.pem";
 
-        FILE *cf = std::fopen(out_cert_path.c_str(), "wb");
-        FILE *kf = std::fopen(out_key_path.c_str(), "wb");
-        if (cf && kf && PEM_write_X509(cf, x509) == 1 && PEM_write_PrivateKey(kf, pkey, nullptr, nullptr, 0, nullptr, nullptr) == 1) {
-            // ok
-        } else {
-            ok = false;
-        }
-        if (cf)
-            std::fclose(cf);
-        if (kf)
-            std::fclose(kf);
+        BIO *cb = BIO_new(BIO_s_mem());
+        BIO *kb = BIO_new(BIO_s_mem());
+        ok = cb && kb && PEM_write_bio_X509(cb, x509) == 1 && PEM_write_bio_PrivateKey(kb, pkey, nullptr, nullptr, 0, nullptr, nullptr) == 1
+             && pem_bio_to_file(cb, out_cert_path) && pem_bio_to_file(kb, out_key_path);
+        BIO_free(cb);
+        BIO_free(kb);
     }
 
     SSL_CTX *ctx = nullptr;
@@ -1137,6 +1157,7 @@ TEST(SSLSocketLoopback, ConnectedFinalizerDrivesNonBlockingHandshake) {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
+        rv.server_done(); // handshake complete — only now may the client tear down
         // Hold the accepted socket open until the client has closed ITS end: on Windows
         // the client's disconnect() lands as WSAECONNRESET on a server still inside the
         // handshake poll, which the de-flaked drive_server_handshake reports LOUDLY.
@@ -1168,6 +1189,10 @@ TEST(SSLSocketLoopback, ConnectedFinalizerDrivesNonBlockingHandshake) {
     EXPECT_EQ(rc, 0) << "connected() reported a fatal handshake error";
     EXPECT_TRUE(client.handshake_complete());
     EXPECT_FALSE(client.get_negotiated_cipher_suite().empty());
+    // TLS 1.3 completes asymmetrically: the client finishes on SENDING Finished, the
+    // server only after READING it — so tearing down here can land inside the server's
+    // handshake poll as an EOF/reset, which drive_server_handshake reports as fatal.
+    EXPECT_TRUE(rv.wait_server()) << "server handshake never completed";
     rv.client_done(); // the server may now let its socket go
     client.disconnect();
 }
@@ -1265,6 +1290,7 @@ TEST(SSLSocketLoopback, InitClientUpgradesAlreadyConnectedSocket) {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
+        rv.server_done(); // handshake complete — only now may the client tear down
         // Hold the accepted socket open until the client has closed ITS end: on Windows
         // the client's disconnect() lands as WSAECONNRESET on a server still inside the
         // handshake poll, which the de-flaked drive_server_handshake reports LOUDLY.
@@ -1296,6 +1322,10 @@ TEST(SSLSocketLoopback, InitClientUpgradesAlreadyConnectedSocket) {
     EXPECT_EQ(status, 1) << "init_client() handshake never completed; last status=" << status;
     EXPECT_TRUE(upgraded.handshake_complete());
     EXPECT_FALSE(upgraded.get_negotiated_tls_version().empty());
+    // TLS 1.3 completes asymmetrically: the client finishes on SENDING Finished, the
+    // server only after READING it — so tearing down here can land inside the server's
+    // handshake poll as an EOF/reset, which drive_server_handshake reports as fatal.
+    EXPECT_TRUE(rv.wait_server()) << "server handshake never completed";
     rv.client_done(); // the server may now let its socket go
     upgraded.disconnect();
 }
@@ -1645,11 +1675,9 @@ write_temp_ec_private_key(const std::string &path) {
     if (!pkey) {
         return false;
     }
-    FILE *f  = std::fopen(path.c_str(), "wb");
-    bool  ok = f && PEM_write_PrivateKey(f, pkey, nullptr, nullptr, 0, nullptr, nullptr) == 1;
-    if (f) {
-        std::fclose(f);
-    }
+    BIO *b  = BIO_new(BIO_s_mem());
+    bool ok = b && PEM_write_bio_PrivateKey(b, pkey, nullptr, nullptr, 0, nullptr, nullptr) == 1 && pem_bio_to_file(b, path);
+    BIO_free(b);
     EVP_PKEY_free(pkey);
     return ok;
 }
@@ -1687,7 +1715,10 @@ TEST(SSLSocketLoopback, FreeFunctionContextConfigurationEdgeBranches) {
 
     // A valid cert paired with a freshly-generated, UNRELATED key must be rejected
     // (OpenSSL's cert/key consistency check fails).
-    const std::string mismatched_key = std::string("/tmp/qb-ssl-mismatch-key-") + std::to_string(::getpid()) + ".pem";
+    // temp_directory_path(), not a literal /tmp: the MSVC CRT maps "/tmp" onto
+    // <current drive>:\tmp, which nothing guarantees exists.
+    const std::string mismatched_key =
+        (std::filesystem::temp_directory_path() / ("qb-ssl-mismatch-key-" + std::to_string(::getpid()) + ".pem")).string();
     std::remove(mismatched_key.c_str());
     ASSERT_TRUE(write_temp_ec_private_key(mismatched_key));
     EXPECT_FALSE(qb::io::ssl::configure_client_certificate(ctx, ssl_resource_path("cert.pem"), mismatched_key))
