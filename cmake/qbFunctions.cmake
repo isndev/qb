@@ -1104,7 +1104,14 @@ function(qb_load_modules modules_dir)
             set(cmake_file "${full_module_path}/CMakeLists.txt")
             if(EXISTS "${cmake_file}")
                 qb_debug_message("Loading module: ${module_dir}")
-                add_subdirectory("${full_module_path}")
+                # Binary dir ALWAYS explicit: implicit mapping only exists when the modules
+                # directory sits under the caller's source root (the private superproject's
+                # layout). An out-of-tree caller — the examples repo's CI superbuild driver,
+                # which assembles qb + qbm + examples from sibling checkouts (Huly QB-7) —
+                # gets "not a subdirectory ... a binary directory must be explicitly
+                # specified" instead. For the in-tree superproject this spelling produces
+                # the identical <build>/qbm/<module> it always had.
+                add_subdirectory("${full_module_path}" "${CMAKE_BINARY_DIR}/qbm/${module_dir}")
             else()
                 qb_debug_message("Skipping module ${module_dir}: no CMakeLists.txt found")
             endif()
