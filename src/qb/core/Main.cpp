@@ -516,6 +516,28 @@ install_signal(int signum, void (*handler)(int)) noexcept {
     ::sigaction(signum, &sa, nullptr);
 #endif
 }
+#if defined(_WIN32) || defined(_WIN64)
+// The Windows console-control bridge (Huly QB-3). SIGTERM is never OS-delivered on Windows:
+// the one console event a supervisor can target at a process group is CTRL_BREAK, and the
+// MSVC CRT's own console handler raises it — and CTRL_CLOSE — as SIGBREAK for std::signal.
+// Translating SIGBREAK to the SIGTERM the rest of the pipeline already speaks means
+// cross-platform actor code (`on(SignalEvent{SIGTERM})`, the default kill path, the two
+// tier-7 example tails) works on Windows with no #ifdef of its own. The translation lives
+// in THIS handler, installed only by the default set below: a user who explicitly
+// registerSignal(SIGBREAK)s still receives SIGBREAK untranslated.
+// (CTRL_CLOSE grants ~5 s before the OS kills the process; the engine's teardown is
+// designed to fit well inside that.)
+//
+// Translation by RE-RAISE, not by calling Main::onSignal directly: onSignal is private to
+// Main (this is an anonymous-namespace free function), and std::raise(SIGTERM) delivers to
+// whatever handler the line below installed for SIGTERM — the full CRT semantics of the
+// signal it becomes. raise() is async-signal-safe, and the CRT runs console handlers on a
+// dedicated thread, so the re-raise lands right here on that thread.
+void
+console_break_as_term(int) noexcept {
+    std::raise(SIGTERM);
+}
+#endif
 } // namespace
 
 void
@@ -529,6 +551,13 @@ Main::install_default_signals() noexcept {
     // but installing the handler is harmless and keeps behaviour uniform.
     Main::registerSignal(SIGINT);
     Main::registerSignal(SIGTERM);
+#if defined(_WIN32) || defined(_WIN64)
+    // The console-control bridge: CTRL_BREAK / CTRL_CLOSE arrive as SIGBREAK (CRT contract)
+    // and leave the engine as a SIGTERM teardown. Without this line the 360-test suite stays
+    // green (in-process raise() works) while no supervisor can ever stop a qb server
+    // gracefully from outside — the gap the two tier-7 @expect[posix] tails documented.
+    install_signal(SIGBREAK, &console_break_as_term);
+#endif
 }
 
 void

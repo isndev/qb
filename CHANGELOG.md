@@ -7,8 +7,18 @@ policy.
 
 ## [Unreleased]
 
-Nothing yet. Entries land here as they are merged, and move under a version heading when that
-version is tagged.
+### Added
+
+- **Windows console control events now reach the signal pipeline.** A supervisor stopping a
+  qb process from outside — the runner sending CTRL_BREAK to a process group, a console
+  window closing — previously killed it with no actor teardown: SIGTERM is never
+  OS-delivered on Windows, and nothing mapped the console events the OS does deliver.
+  `install_default_signals()` now installs the console-control bridge: the CRT raises
+  CTRL_BREAK and CTRL_CLOSE as `SIGBREAK`, and the bridge re-raises it as the `SIGTERM`
+  the rest of the pipeline — and every actor's default kill path — already speaks. Written
+  cross-platform actor code (`on(SignalEvent)` with `SIGTERM`) needs no `#ifdef`. An
+  explicit `registerSignal(SIGBREAK)` still delivers `SIGBREAK` untranslated. CTRL_CLOSE
+  grants ~5 s before the OS kills the process; the engine teardown fits well inside.
 
 ## [3.0.0] - 2026-08-20
 

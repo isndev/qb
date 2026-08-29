@@ -524,7 +524,11 @@ class Main {
     std::atomic<uint64_t> _sync_start;
     static void           onSignal(int signal) noexcept;
     static void           start_thread(CoreSpawnerParameter const &params) noexcept;
-    /// Install the documented default signal dispositions (SIGINT + SIGTERM) at engine start.
+    /// Install the documented default signal dispositions at engine start: SIGINT + SIGTERM
+    /// everywhere, plus — on Windows — the console-control bridge (SIGBREAK, i.e. CTRL_BREAK
+    /// and CTRL_CLOSE as the CRT raises them, translated to SIGTERM so cross-platform actor
+    /// code and the default kill path work with no #ifdef). An explicit registerSignal(SIGBREAK)
+    /// still delivers SIGBREAK untranslated.
     static void install_default_signals() noexcept;
     static bool __wait__all__cores__ready(std::size_t nb_core, std::atomic<uint64_t> &sync_start) noexcept;
 

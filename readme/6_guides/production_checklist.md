@@ -267,7 +267,7 @@ int main() {
 
 The three signal entry points are static and `noexcept`: `registerSignal(signum)` routes the signal to the graceful-shutdown handler, `unregisterSignal(signum)` restores the OS default disposition (`SIG_DFL`), and `ignoreSignal(signum)` sets `SIG_IGN`.
 
-<!-- src: qb/src/qb/core/Main.cpp:534-547 (registerSignal / unregisterSignal / ignoreSignal) -->
+<!-- src: qb/src/qb/core/Main.cpp:563-576 (registerSignal / unregisterSignal / ignoreSignal) -->
 
 > **Both** `SIGINT` and `SIGTERM` are registered automatically by `start()`, so the signal most container runtimes and service managers send on shutdown already gets the graceful drain — you do not need to register it. `registerSignal()` is for the non-terminal signals (`SIGHUP`, `SIGUSR1`, …), which are delivered as a `qb::SignalEvent` but do **not** kill anything unless you override `on(qb::SignalEvent &)`.
 

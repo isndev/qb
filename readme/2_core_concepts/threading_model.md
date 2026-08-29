@@ -68,7 +68,7 @@ Two scopes set latency:
 | Call | Scope | Signature |
 | --- | --- | --- |
 | [`CoreInitializer::setLatency`](../4_qb_core/engine.md) | One core | `CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept` (`src/qb/core/Main.h:284`) |
-| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:639`) |
+| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:643`) |
 
 `Main::getLatency()` does not exist; read a single core's configured value with `engine.core(id).getLatency()`, which returns the `qb::duration` last set (`src/qb/core/Main.h:300`).
 

@@ -224,3 +224,43 @@ TEST(SignalShutdown, SighupIsNotTerminal) {
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 }
 #endif // !_WIN32
+
+// The Windows console-control bridge (Huly QB-3). SIGTERM is never OS-delivered on Windows:
+// a supervisor's one group-targetable console event is CTRL_BREAK, which the MSVC CRT raises
+// as SIGBREAK — and install_default_signals() translates to the SIGTERM teardown the rest of
+// the pipeline (and every actor's default kill path) already speaks. In-process raise(SIGBREAK)
+// exercises the same CRT dispatch the console handler uses, so this is the suite-level half;
+// the out-of-process half (GenerateConsoleCtrlEvent against a child) is the example runner's
+// job, whose two tier-7 post-SIGTERM tails this bridge un-gates.
+//
+// Windows only: SIGBREAK does not exist in POSIX <csignal>. Guarded like SighupIsNotTerminal
+// above, and for the mirror reason.
+#ifdef _WIN32
+TEST(SignalShutdown, ConsoleBreakLandsAsSigtermViaTheBridge) {
+    // engine_stops_on would call registerSignal(SIGBREAK) — the explicit, UNtranslated
+    // registration. The bridge belongs to install_default_signals(), so register nothing:
+    // start the engine, let it install its own set, then raise SIGBREAK and require the
+    // full SIGTERM teardown.
+    g_running.store(false, std::memory_order_relaxed);
+    auto done   = std::make_shared<std::promise<void>>();
+    auto future = done->get_future();
+
+    std::thread([done] {
+        qb::Main main;
+        main.addActor<ForeverActor>(0);
+        main.start();
+        main.join();
+        done->set_value();
+    }).detach();
+
+    const auto up_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!g_running.load(std::memory_order_relaxed) && std::chrono::steady_clock::now() < up_deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    ASSERT_TRUE(g_running.load()) << "the engine never came up";
+
+    std::raise(SIGBREAK);
+    EXPECT_TRUE(future.wait_for(std::chrono::seconds(15)) == std::future_status::ready)
+        << "SIGBREAK did not shut the engine down: the console-control bridge in "
+           "install_default_signals() is not translating it to SIGTERM";
+}
+#endif // _WIN32
