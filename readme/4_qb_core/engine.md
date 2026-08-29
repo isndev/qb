@@ -263,7 +263,7 @@ sequenceDiagram
     Note over W: actors drain, get reaped, _actors empties<br/>the loop exits into the residual drain
 ```
 
-`Main::start()` calls `Main::install_default_signals()`, which installs handlers for **both** `SIGINT` and `SIGTERM` through `sigaction`, so Ctrl-C and the signal a container runtime or service manager sends both unwind every actor through the ordinary `kill()` path (`src/qb/core/Main.cpp:521-532`). You do not need to register either yourself. `sigaction` rather than `std::signal` is deliberate: under the historical System V semantics `std::signal` resets the disposition after the first delivery, so a second Ctrl-C would terminate the process instead of shutting it down again (`src/qb/core/Main.cpp:500-518`).
+`Main::start()` calls `Main::install_default_signals()`, which installs handlers for **both** `SIGINT` and `SIGTERM` through `sigaction`, so Ctrl-C and the signal a container runtime or service manager sends both unwind every actor through the ordinary `kill()` path (`src/qb/core/Main.cpp:543-561`). You do not need to register either yourself. `sigaction` rather than `std::signal` is deliberate: under the historical System V semantics `std::signal` resets the disposition after the first delivery, so a second Ctrl-C would terminate the process instead of shutting it down again (`src/qb/core/Main.cpp:500-518`).
 
 The handler itself does the minimum a signal handler may: store the signum, then bump a generation counter with release ordering. Both are `std::atomic` and both are `static_assert`ed lock-free (`src/qb/core/Main.cpp:274-287`).
 
@@ -281,7 +281,7 @@ if (event.signum == SIGINT || event.signum == SIGTERM)
 ```
 <!-- src: qb/src/qb/core/Actor.cpp:186-187 -->
 
-A `SIGHUP` or `SIGUSR1` is delivered and ignored by the default handler — those are the config-reload and stats-dump cases. To act on one, declare your own `on(qb::SignalEvent const&)` and inspect `event.signum`; call `kill()` there if that signal should stop the actor. `unregisterSignal` restores the OS default, `ignoreSignal` sets `SIG_IGN` (the usual reason being `SIGPIPE` on a network server) (`src/qb/core/Main.cpp:534-547`).
+A `SIGHUP` or `SIGUSR1` is delivered and ignored by the default handler — those are the config-reload and stats-dump cases. To act on one, declare your own `on(qb::SignalEvent const&)` and inspect `event.signum`; call `kill()` there if that signal should stop the actor. `unregisterSignal` restores the OS default, `ignoreSignal` sets `SIG_IGN` (the usual reason being `SIGPIPE` on a network server) (`src/qb/core/Main.cpp:563-576`).
 
 ### The residual drain, and the flag it turns on
 

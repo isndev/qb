@@ -107,6 +107,9 @@ clean up there). To opt out of the five default subscriptions construct with the
 tag — then you must register at least `SignalEvent` yourself in `onInit()`: `Main::stop()` and
 SIGINT/SIGTERM reach an actor only as a `SignalEvent`, and the engine never sends a `KillEvent`, so
 registering just that one leaves the actor unstoppable and `Main::join()` hanging forever.
+Write signal handling against SIGINT/SIGTERM only, on every platform: on Windows the engine's
+console-control bridge delivers CTRL_BREAK and CTRL_CLOSE as SIGTERM (the CRT raises them as
+SIGBREAK; `install_default_signals()` translates), so cross-platform actor code needs no `#ifdef`.
 
 ### Events
 

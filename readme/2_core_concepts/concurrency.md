@@ -134,9 +134,9 @@ int main() {
 }
 ```
 
-`addActor<T>(core, args...)` returns the new actor's `ActorId` (`src/qb/core/Main.h:611`), which you pass to `push()` to address it from anywhere in the system. The dispatcher's `push<WorkEvent>` calls cross thread boundaries transparently: the framework places each event into the destination core's mailbox, and the destination core delivers it to the right `on()` handler during its own loop. From the handler's point of view there is no difference between a same-core and a cross-core message.
+`addActor<T>(core, args...)` returns the new actor's `ActorId` (`src/qb/core/Main.h:615`), which you pass to `push()` to address it from anywhere in the system. The dispatcher's `push<WorkEvent>` calls cross thread boundaries transparently: the framework places each event into the destination core's mailbox, and the destination core delivers it to the right `on()` handler during its own loop. From the handler's point of view there is no difference between a same-core and a cross-core message.
 
-By default `start()` is asynchronous: it returns once all cores report ready, and you call `join()` later to block until shutdown. (`src/qb/core/Main.h:565`, `src/qb/core/Main.cpp:433-438`)
+By default `start()` is asynchronous: it returns once all cores report ready, and you call `join()` later to block until shutdown. (`src/qb/core/Main.h:569`, `src/qb/core/Main.cpp:433-438`)
 
 > All actors and per-core configuration must be set up **before** `Main::start()`. `Main::core()` throws `std::runtime_error` once the engine is running. (`src/qb/core/Main.cpp:484-486`)
 

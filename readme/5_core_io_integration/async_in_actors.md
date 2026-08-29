@@ -79,7 +79,7 @@ The rule, in the form that matters here:
 The framework's own best statement of the legitimate case is a comment in an example:
 
 > *Pre-engine setup: there is no actor loop yet, so we drive a coroutine to completion synchronously.*
-> — `examples/07-applications/02-auction-house/src/main.cpp:48-49`
+> — `examples/07-applications/02-auction-house/src/main.cpp:45-46`
 
 ## Coroutines from a handler: `spawn` and `spawn_detached`
 
