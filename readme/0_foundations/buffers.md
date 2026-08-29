@@ -1,6 +1,6 @@
 # The pipe: qb's one buffer
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — ef7d3ea7
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — ef7d3ea7
 
 `qb::allocator::pipe<T>` is a single growable allocation with three cursors on it. It backs every actor mailbox and every I/O stream in the framework, and the rules people trip over — why a `push` reference dies at the next push, why draining a socket is O(1) per turn, why qb's memory never comes back — are all consequences of those cursors rather than separate policies.
 

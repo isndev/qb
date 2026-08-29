@@ -68,7 +68,7 @@ NAME_RULE="start with a letter and contain only letters, digits, '-' or '_'"
 # asserted equal to QB_FRAMEWORK_VERSION in qb/cmake/qbConfig.cmake by
 # scripts/check-scaffold-consistency.sh, which runs in scaffold.yml and in the superproject's
 # verify.sh. Bumping the framework version without bumping this is a red build.
-QB_SHIPPED_VERSION=3.0.0
+QB_SHIPPED_VERSION=3.0.1
 
 next_steps() {
     cat <<EOF

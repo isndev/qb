@@ -1,6 +1,6 @@
 # Core concepts
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
 
 The foundational model behind qb: isolated actors, the events they exchange, the non-blocking I/O loop that drives them, and the threading that runs them in parallel.
 

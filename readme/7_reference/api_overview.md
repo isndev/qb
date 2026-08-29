@@ -1,6 +1,6 @@
 # Public API overview
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
 
 A reference map of the public API: the namespaces, key types, and signatures of `qb-core` and
 `qb-io`, each linked to the header that owns it.

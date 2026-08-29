@@ -1,6 +1,6 @@
 # Integrating core actors with asynchronous I/O
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
 
 How `qb-core` actors use the `qb-io` event loop to perform network, timer, and file work without blocking their `VirtualCore`.
 

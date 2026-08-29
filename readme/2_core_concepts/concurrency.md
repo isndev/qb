@@ -1,6 +1,6 @@
 # Concurrency in qb
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) @ b87d39a
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) @ b87d39a
 
 qb makes the actor the unit of concurrency: each actor owns its state, runs on exactly one worker thread, and processes its mailbox one event at a time, so application code never reaches for a mutex.
 

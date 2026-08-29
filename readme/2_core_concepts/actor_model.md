@@ -1,6 +1,6 @@
 # The actor model in qb
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
 
 An actor is an isolated unit of state and behavior that communicates only by passing events; the runtime processes each actor's mailbox one event at a time, so its private state needs no locks.
 

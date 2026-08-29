@@ -1,6 +1,6 @@
 # The asynchronous I/O model
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
 
 How qb runs network and filesystem work without blocking a thread: a single-threaded, libev-backed event loop that dispatches readiness to `on()` handlers, plus a coroutine layer for code that prefers `co_await` over callbacks.
 

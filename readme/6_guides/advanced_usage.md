@@ -1,6 +1,6 @@
 # Advanced usage
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
 
 Five techniques for non-trivial systems: defining a custom wire protocol, scaling actors across cores, running coroutines safely inside actors, structuring shared logic as service actors, and composing the qbm modules with your own actors.
 
