@@ -70,7 +70,10 @@
 #define QB_IO_TESTS_SHARED_SSL_FIXTURES_H
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <thread>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -130,6 +133,69 @@ require_ssl_files() {
 ssl_files_available() {
     return require_ssl_files();
 }
+
+// ---------------------------------------------------------------------------
+// teardown_rendezvous — order the END of a client/server socket pair across
+// threads, in either direction.
+//
+// WHY: the loopback TLS harnesses run the server on a std::thread and the
+// client on the test body. On POSIX the teardown order barely matters; on
+// Windows it decides the test. Two measured shapes:
+//   * the client disconnect()s while the server thread is still inside
+//     drive_server_handshake() or a deadline-bounded read — the close lands as
+//     WSAECONNRESET on the server side and a de-flaked harness reports it
+//     LOUDLY (that is the WINDOWS_EXCLUDE this type exists to retire);
+//   * the server's socket destructs while the client is still draining — a
+//     Windows RST DISCARDS the peer's undelivered receive buffer, so bytes the
+//     server really wrote are never readable.
+// Each side therefore signals when it is done with the shared connection, and
+// the other side may wait for that signal before closing its end.
+//
+// The waits are deadline-bounded and return bool rather than asserting: a test
+// body that dies on a fatal ASSERT never reaches its signal, so the join
+// guard's before_join must ALSO release the rendezvous (both directions), and
+// a timed-out wait on the server thread must end the thread, not wedge the
+// join. Callers that want loudness assert on the returned bool client-side.
+// ---------------------------------------------------------------------------
+class teardown_rendezvous {
+    std::atomic<bool> _client_done{false};
+    std::atomic<bool> _server_done{false};
+
+    [[nodiscard]] static bool
+    wait_for(const std::atomic<bool> &flag, std::chrono::milliseconds timeout) noexcept {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (!flag.load(std::memory_order_acquire)) {
+            if (std::chrono::steady_clock::now() >= deadline)
+                return false;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return true;
+    }
+
+public:
+    void
+    client_done() noexcept {
+        _client_done.store(true, std::memory_order_release);
+    }
+    void
+    server_done() noexcept {
+        _server_done.store(true, std::memory_order_release);
+    }
+    // Called from a join guard's before_join: whatever side died, nobody waits.
+    void
+    release_all() noexcept {
+        client_done();
+        server_done();
+    }
+    [[nodiscard]] bool
+    wait_client(std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)) const noexcept {
+        return wait_for(_client_done, timeout);
+    }
+    [[nodiscard]] bool
+    wait_server(std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)) const noexcept {
+        return wait_for(_server_done, timeout);
+    }
+};
 
 } // namespace qb::io::test
 
