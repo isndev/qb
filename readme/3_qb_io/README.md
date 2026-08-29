@@ -1,6 +1,6 @@
 # qb-io: asynchronous I/O runtime
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — f1d8cca6
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — f1d8cca6
 
 `qb-io` is the C++20 asynchronous I/O runtime under the qb actor framework, with optional C++23 validation: a single-threaded, libev-backed event loop with non-blocking TCP, UDP, SSL/TLS, and QUIC transports, a pluggable protocol layer, native C++20 coroutines, and a set of standalone utilities.
 

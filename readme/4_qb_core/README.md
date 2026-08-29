@@ -1,6 +1,6 @@
 # qb-core: the actor engine
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — 60487ee7
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — 60487ee7
 
 `qb-core` is the actor runtime layered on `qb-io`, and it is small: one base class, one engine, one address type, one buffer — and one decision that everything else in this section follows from.
 

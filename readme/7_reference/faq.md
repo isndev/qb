@@ -1,6 +1,6 @@
 # Frequently asked questions
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
 
 Short, grounded answers to the questions that come up most when adopting qb, each linking to the page that owns the full explanation.
 

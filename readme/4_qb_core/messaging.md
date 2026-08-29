@@ -1,6 +1,6 @@
 # Inter-actor messaging: the address is the route
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — 60487ee7
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — 60487ee7
 
 An `ActorId` is `{ServiceId, CoreId}` packed into 32 bits, and the core half is not metadata — it *is* the routing decision. Every rule on this page (`push` versus `send`, the lifetime of the reference `push` hands back, why a payload must be relocatable, why one event can be silently dropped) is a consequence of that one packing and of the buffer it selects.
 

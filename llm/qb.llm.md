@@ -1,4 +1,4 @@
-<!-- Verified-against: qb 3.0.0 (C++20 default, C++23 supported). Source of truth: the headers and sources under qb/src. -->
+<!-- Verified-against: qb 3.0.1 (C++20 default, C++23 supported). Source of truth: the headers and sources under qb/src. -->
 # qb — concepts for writing correct code
 
 This file teaches an LLM the mental model and rules needed to emit **compilable, correct** qb code.

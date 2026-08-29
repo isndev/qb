@@ -1,6 +1,6 @@
 # Foundations
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — ef7d3ea7
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — ef7d3ea7
 
 The layer beneath the event loop: the vocabulary qb adds to the standard library, and the machinery `qb-io` and `qb-core` are built out of. Everything here lives in `qb/system/` and `qb/utility/` and depends on nothing else in the framework.
 

@@ -13,7 +13,7 @@ Source documents, in order: `llm/qb.llm.md`, `llm/qb.llm.api.md`
 
 <!-- BEGIN llm/qb.llm.md -->
 
-<!-- Verified-against: qb 3.0.0 (C++20 default, C++23 supported). Source of truth: the headers and sources under qb/src. -->
+<!-- Verified-against: qb 3.0.1 (C++20 default, C++23 supported). Source of truth: the headers and sources under qb/src. -->
 # qb — concepts for writing correct code
 
 This file teaches an LLM the mental model and rules needed to emit **compilable, correct** qb code.
@@ -494,7 +494,7 @@ separate ws module. Load them with `qb_load_modules("${CMAKE_CURRENT_SOURCE_DIR}
 
 <!-- BEGIN llm/qb.llm.api.md -->
 
-<!-- Verified-against: qb 3.0.0 (C++20 default, C++23 supported). Source of truth: the headers under qb/src. -->
+<!-- Verified-against: qb 3.0.1 (C++20 default, C++23 supported). Source of truth: the headers under qb/src. -->
 # QB Core & QB IO — API Reference for LLMs
 
 Deterministic public-API reference for the `qb-core` and `qb-io` libraries of the

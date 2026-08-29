@@ -1,4 +1,4 @@
-<!-- Verified-against: qb 3.0.0 (C++20 default, C++23 supported). Source of truth: the headers under qb/src. -->
+<!-- Verified-against: qb 3.0.1 (C++20 default, C++23 supported). Source of truth: the headers under qb/src. -->
 # QB Core & QB IO — API Reference for LLMs
 
 Deterministic public-API reference for the `qb-core` and `qb-io` libraries of the

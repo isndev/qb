@@ -1,6 +1,6 @@
 # Native QUIC and HTTP/3 transport
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — f1d8cca6
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — f1d8cca6
 
 `qb-io` exposes QUIC as an optional asynchronous I/O family built on libngtcp2 and OpenSSL: a reactor-driven endpoint owns one UDP socket, hands every datagram to the ngtcp2 backend — which routes it by connection id — and dispatches typed lifecycle events for connections, streams, and datagrams. It is a **callback surface with no coroutine form at all**; see [what has no coroutine form](./gaps.md#quic-has-no-coroutine-surface-at-all) for why.
 

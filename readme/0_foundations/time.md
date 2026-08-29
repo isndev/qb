@@ -1,6 +1,6 @@
 # The time vocabulary
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported) — ef7d3ea7
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — ef7d3ea7
 
 One span type and two instant types, defined once in `qb/system/time.h` and used by every timeout, deadline, TTL and expiry in qb and its modules — plus the civil calendar types, the UTC codecs, and the single place where the vocabulary is allowed to degrade to a raw `double`.
 

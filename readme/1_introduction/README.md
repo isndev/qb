@@ -1,6 +1,6 @@
 # Introduction
 
-> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
 
 The starting point for understanding what qb is, the problems it addresses, and the design principles that shape it.
 

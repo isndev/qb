@@ -1,6 +1,6 @@
 # Performance tuning
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
 
 A method-driven guide to the knobs that affect throughput and latency in a qb actor system: core placement, event-loop idle latency, allocation behavior, the lock-free transport, and the two build flags (`QB_ENABLE_NATIVE_ARCH`, `QB_ENABLE_LTO`) that change codegen.
 
