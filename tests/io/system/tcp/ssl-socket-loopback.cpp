@@ -721,12 +721,22 @@ TEST(SSLSocketLoopback, DriveNonBlockingConnectToCompletion) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread       server_thread([&] {
+    qb::io::test::teardown_rendezvous rv;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
+        // Hold the accepted socket open until the client has closed ITS end: on Windows
+        // the client's disconnect() lands as WSAECONNRESET on a server still inside the
+        // handshake poll, which the de-flaked drive_server_handshake reports LOUDLY.
+        // (void): a client that died on a fatal ASSERT never signals; the join guard
+        // releases the rendezvous instead, and this thread must end either way.
+        (void) rv.wait_client();
     });
-    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+    thread_join_guard                 server_join(server_thread, [&] {
+        rv.release_all();
+        listener.disconnect();
+    });
 
     qb::io::tcp::ssl::socket client;
     client.set_insecure();
@@ -746,6 +756,7 @@ TEST(SSLSocketLoopback, DriveNonBlockingConnectToCompletion) {
     EXPECT_EQ(status, 1) << "non-blocking TLS handshake never completed; last status=" << status;
     EXPECT_TRUE(client.handshake_complete());
     EXPECT_FALSE(client.get_negotiated_tls_version().empty());
+    rv.client_done(); // the server may now let its socket go
     client.disconnect();
 }
 
@@ -900,8 +911,9 @@ TEST(SSLSocketLoopback, PeerCertificateSubjectAlternativeNamesAreExtracted) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    qb::io::test::teardown_rendezvous rv;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
         ASSERT_EQ(listener.accept(server_socket), 0);
@@ -909,8 +921,12 @@ TEST(SSLSocketLoopback, PeerCertificateSubjectAlternativeNamesAreExtracted) {
         // Keep the connection alive until the client has inspected the cert.
         char marker = 0;
         record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)));
+        rv.server_done(); // see PostHandshakeAccessors: ordered teardown, Windows-safe
     });
-    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+    thread_join_guard                 server_join(server_thread, [&] {
+        rv.release_all();
+        listener.disconnect();
+    });
 
     while (!server_ready.load()) {
         std::this_thread::sleep_for(1ms);
@@ -953,6 +969,7 @@ TEST(SSLSocketLoopback, PeerCertificateSubjectAlternativeNamesAreExtracted) {
 
     // Unblock the server's read so the thread exits cleanly.
     EXPECT_TRUE(write_exactly(client, "x", 1));
+    ASSERT_TRUE(rv.wait_server()) << "server never finished with the shared connection";
     client.disconnect();
 }
 
@@ -971,16 +988,25 @@ TEST(SSLSocketLoopback, PostHandshakeAccessorsAndChannelBinding) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    qb::io::test::teardown_rendezvous rv;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
         char marker = 0;
         record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)));
+        // Signal BEFORE this socket destructs: a Windows RST from a server that closes
+        // first would discard bytes the client has not drained; here it also tells the
+        // client its unblocking "x" really landed, so its disconnect() cannot arrive
+        // while this thread still sits in read_exactly reporting the reset LOUDLY.
+        rv.server_done();
     });
-    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+    thread_join_guard                 server_join(server_thread, [&] {
+        rv.release_all();
+        listener.disconnect();
+    });
 
     while (!server_ready.load()) {
         std::this_thread::sleep_for(1ms);
@@ -1043,6 +1069,7 @@ TEST(SSLSocketLoopback, PostHandshakeAccessorsAndChannelBinding) {
     EXPECT_TRUE(client.request_ocsp_stapling(false));
 
     EXPECT_TRUE(write_exactly(client, "x", 1));
+    ASSERT_TRUE(rv.wait_server()) << "server never finished with the shared connection";
     client.disconnect();
 }
 
@@ -1105,12 +1132,22 @@ TEST(SSLSocketLoopback, ConnectedFinalizerDrivesNonBlockingHandshake) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread       server_thread([&] {
+    qb::io::test::teardown_rendezvous rv;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
+        // Hold the accepted socket open until the client has closed ITS end: on Windows
+        // the client's disconnect() lands as WSAECONNRESET on a server still inside the
+        // handshake poll, which the de-flaked drive_server_handshake reports LOUDLY.
+        // (void): a client that died on a fatal ASSERT never signals; the join guard
+        // releases the rendezvous instead, and this thread must end either way.
+        (void) rv.wait_client();
     });
-    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+    thread_join_guard                 server_join(server_thread, [&] {
+        rv.release_all();
+        listener.disconnect();
+    });
 
     qb::io::tcp::ssl::socket client;
     client.set_insecure();
@@ -1131,6 +1168,7 @@ TEST(SSLSocketLoopback, ConnectedFinalizerDrivesNonBlockingHandshake) {
     EXPECT_EQ(rc, 0) << "connected() reported a fatal handshake error";
     EXPECT_TRUE(client.handshake_complete());
     EXPECT_FALSE(client.get_negotiated_cipher_suite().empty());
+    rv.client_done(); // the server may now let its socket go
     client.disconnect();
 }
 
@@ -1222,12 +1260,22 @@ TEST(SSLSocketLoopback, InitClientUpgradesAlreadyConnectedSocket) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread       server_thread([&] {
+    qb::io::test::teardown_rendezvous rv;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
+        // Hold the accepted socket open until the client has closed ITS end: on Windows
+        // the client's disconnect() lands as WSAECONNRESET on a server still inside the
+        // handshake poll, which the de-flaked drive_server_handshake reports LOUDLY.
+        // (void): a client that died on a fatal ASSERT never signals; the join guard
+        // releases the rendezvous instead, and this thread must end either way.
+        (void) rv.wait_client();
     });
-    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+    thread_join_guard                 server_join(server_thread, [&] {
+        rv.release_all();
+        listener.disconnect();
+    });
 
     // Establish the plaintext TCP connection first, then move it into an ssl::socket.
     qb::io::tcp::socket plain;
@@ -1248,6 +1296,7 @@ TEST(SSLSocketLoopback, InitClientUpgradesAlreadyConnectedSocket) {
     EXPECT_EQ(status, 1) << "init_client() handshake never completed; last status=" << status;
     EXPECT_TRUE(upgraded.handshake_complete());
     EXPECT_FALSE(upgraded.get_negotiated_tls_version().empty());
+    rv.client_done(); // the server may now let its socket go
     upgraded.disconnect();
 }
 
@@ -1342,7 +1391,9 @@ TEST(SSLSocketLoopback, PostHandshakeAuthRequestSucceedsWhenServerEnablesIt) {
         std::this_thread::sleep_for(1ms);
     }
     client.disconnect();
-    server_thread.join();
+    // join_now(), not a direct join(): a direct join leaves the guard's before_join
+    // (the listener unwedge) dead code, measured by the teardown map.
+    server_join.join_now();
 
     ASSERT_TRUE(server_done.load()) << "server never recorded a PHA result within the deadline";
     ASSERT_EQ(server_is_tls13.load(), 1) << "PHA requires a TLS 1.3 negotiation";
@@ -1540,7 +1591,9 @@ TEST(SSLSocketLoopback, Tls12NegotiationRejectsServerPostHandshakeAuth) {
         std::this_thread::sleep_for(1ms);
     }
     client.disconnect();
-    server_thread.join();
+    // join_now(), not a direct join(): a direct join leaves the guard's before_join
+    // (the listener unwedge) dead code, measured by the teardown map.
+    server_join.join_now();
 
     ASSERT_TRUE(server_done.load()) << "server never recorded a PHA result within the deadline";
     ASSERT_EQ(server_version_is_12.load(), 1) << "negotiation did not land on TLS 1.2";
@@ -1683,14 +1736,15 @@ TEST(SSLSocketLoopback, GetLastSslErrorStringReportsQueuedHandshakeError) {
         qb::io::tcp::ssl::socket server_socket;
         if (listener.accept(server_socket) == 0) {
             const auto deadline = std::chrono::steady_clock::now() + 2s;
-            while (!server_socket.handshake_complete() && std::chrono::steady_clock::now() < deadline) {
+            while (!server_socket.handshake_complete() && !stop.load() && std::chrono::steady_clock::now() < deadline) {
                 if (server_socket.handshake_status() < 0) {
                     break; // client rejected our self-signed cert
                 }
                 std::this_thread::sleep_for(1ms);
             }
         }
-        (void) stop;
+        // stop is READ now: the guard sets it so this thread can end even if the
+        // client's aborting handshake never arrives.
     });
     thread_join_guard acceptor_join(acceptor, [&] {
         stop = true;
@@ -1720,16 +1774,25 @@ TEST(SSLSocketLoopback, ResumeChainableAcceptsCapturedSessionBeforeConnect) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    qb::io::test::teardown_rendezvous rv;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
         char marker = 0;
         record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)));
+        // Signal BEFORE this socket destructs: a Windows RST from a server that closes
+        // first would discard bytes the client has not drained; here it also tells the
+        // client its unblocking "x" really landed, so its disconnect() cannot arrive
+        // while this thread still sits in read_exactly reporting the reset LOUDLY.
+        rv.server_done();
     });
-    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
+    thread_join_guard                 server_join(server_thread, [&] {
+        rv.release_all();
+        listener.disconnect();
+    });
 
     while (!server_ready.load()) {
         std::this_thread::sleep_for(1ms);
@@ -1754,6 +1817,7 @@ TEST(SSLSocketLoopback, ResumeChainableAcceptsCapturedSessionBeforeConnect) {
     EXPECT_FALSE(session.is_valid());
 
     EXPECT_TRUE(write_exactly(client, "x", 1));
+    ASSERT_TRUE(rv.wait_server()) << "server never finished with the shared connection";
     client.disconnect();
 }
 
@@ -1769,21 +1833,22 @@ TEST(SSLSocketLoopback, NonBlockingReadWithoutDataYieldsWouldBlockAsZero) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::atomic<bool> client_done{false};
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    qb::io::test::teardown_rendezvous rv;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
-        // Never send application data; just hold the connection open until the client
-        // has observed the would-block read.
-        while (!client_done.load()) {
-            std::this_thread::sleep_for(1ms);
-        }
+        // The handshake is DONE on this side: say so, then hold the connection open
+        // until the client has observed the would-block result. Without the signal the
+        // client's whole body (microseconds) can close while this thread is still inside
+        // drive_server_handshake — the reset then reads as a LOUD handshake failure.
+        rv.server_done();
+        (void) rv.wait_client();
     });
-    thread_join_guard server_join(server_thread, [&] {
-        client_done = true;
+    thread_join_guard                 server_join(server_thread, [&] {
+        rv.release_all();
         listener.disconnect();
     });
 
@@ -1795,13 +1860,14 @@ TEST(SSLSocketLoopback, NonBlockingReadWithoutDataYieldsWouldBlockAsZero) {
     client.set_insecure();
     ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
     ASSERT_TRUE(client.handshake_complete());
+    ASSERT_TRUE(rv.wait_server()) << "server handshake never converged";
 
     ASSERT_EQ(client.set_nonblocking(true), 0);
     char      buffer[64] = {};
     const int ret        = client.read(buffer, sizeof(buffer));
     EXPECT_EQ(ret, 0) << "a non-blocking read with no data pending must report would-block as 0, not " << ret;
 
-    client_done = true;
+    rv.client_done();
     client.disconnect();
 }
 
@@ -1923,21 +1989,20 @@ TEST(SSLSocketLoopback, NonBlockingWriteToBackpressuredPeerYieldsWouldBlockAsZer
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::atomic<bool> client_done{false};
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    qb::io::test::teardown_rendezvous rv;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
         ASSERT_EQ(listener.accept(server_socket), 0);
         drive_server_handshake(server_socket);
-        // Deliberately never read the client's data so its send buffer fills — hold the
-        // connection open until the client has observed the would-block write.
-        while (!client_done.load()) {
-            std::this_thread::sleep_for(1ms);
-        }
+        // Same ordered teardown as NonBlockingReadWithoutData above: handshake done,
+        // then hold until the client is done with the shared connection.
+        rv.server_done();
+        (void) rv.wait_client();
     });
-    thread_join_guard server_join(server_thread, [&] {
-        client_done = true;
+    thread_join_guard                 server_join(server_thread, [&] {
+        rv.release_all();
         listener.disconnect();
     });
 
@@ -1949,6 +2014,7 @@ TEST(SSLSocketLoopback, NonBlockingWriteToBackpressuredPeerYieldsWouldBlockAsZer
     client.set_insecure();
     ASSERT_EQ(client.connect_v4("127.0.0.1", port), 0);
     ASSERT_TRUE(client.handshake_complete());
+    ASSERT_TRUE(rv.wait_server()) << "server handshake never converged";
 
     // Small send buffer + non-blocking so backpressure appears quickly and deterministically.
     const int small_sndbuf = 4096;
@@ -1968,7 +2034,7 @@ TEST(SSLSocketLoopback, NonBlockingWriteToBackpressuredPeerYieldsWouldBlockAsZer
     }
     EXPECT_TRUE(saw_would_block) << "a full non-blocking send buffer must surface WANT_WRITE as a 0-byte write";
 
-    client_done = true;
+    rv.client_done();
     client.disconnect();
 }
 
