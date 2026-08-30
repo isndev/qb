@@ -1,6 +1,6 @@
 # Asynchronous work inside an actor
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — 60487ee7
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — 60487ee7
 
 An actor's thread is not its own — it is the `VirtualCore`, and every other actor on that core is waiting behind it. This page is about the primitives that let a handler *stop doing work and come back later* (`defer`, `callback`, `scoped_callback`, `with_timeout`, `spawn`), and about the one call that looks like it does that and does the opposite.
 

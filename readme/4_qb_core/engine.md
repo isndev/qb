@@ -1,6 +1,6 @@
 # The engine: `qb::Main` and `VirtualCore`
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — 60487ee7
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — 60487ee7
 
 `qb::Main` is a configuration object that becomes N threads, each of them a `qb::VirtualCore` that owns a disjoint set of actors, drives one `qb::io::async::listener` loop, and runs the same eight-step pass forever. This page owns that pass, the startup barrier, the backpressure policy, and the shutdown drain.
 

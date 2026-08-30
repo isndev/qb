@@ -1,6 +1,6 @@
 # The async runtime: the event loop and its turn
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — f1d8cca6
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — f1d8cca6
 
 `qb::io::async` is one libev-backed event loop per thread. Almost every rule in `qb-io` — why `defer` runs next turn, why `co_await` gives the thread back, why `callback(f)` is not deferred at all, why the coroutine drain is capped — is a consequence of the order in which one turn of that loop does its work. This page owns that order.
 

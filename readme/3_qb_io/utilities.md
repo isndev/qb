@@ -1,6 +1,6 @@
 # qb-io utilities
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — f1d8cca6
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — f1d8cca6
 
 Beyond sockets and the event loop, `qb-io` ships a set of batteries — cryptography and JWT, compression, URI parsing, executable-relative resource resolution, synchronous file wrappers, console output and JSON — usable on their own without the actor runtime. Every one of them runs on the thread that calls it, which is the thread the rest of this page keeps coming back to.
 

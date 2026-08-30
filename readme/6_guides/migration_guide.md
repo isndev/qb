@@ -1,6 +1,6 @@
 # Migration guide
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 Move an existing codebase to qb: from hand-rolled `std::thread` + locked queues to actors, and from the pre-2.0 `qb::Timestamp`/`qb::Duration` time types to the `qb::duration`/`qb::mono_time`/`qb::wall_time` chrono model.
 

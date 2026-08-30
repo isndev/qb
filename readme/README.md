@@ -1,6 +1,6 @@
 # qb documentation
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 The narrative guide to the qb actor framework, organized into seven sections for progressive learning, from first principles to production reference.
 

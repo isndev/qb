@@ -1,6 +1,6 @@
 # Building network actors
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 Turn an actor into a non-blocking TCP, UDP, or SSL/TLS endpoint by inheriting from a `qb::io::use<Self>` mixin, so network I/O runs on the actor's own `VirtualCore` event loop and arrives as ordinary `on(...)` handler calls.
 

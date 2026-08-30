@@ -1,6 +1,6 @@
 # Publish/subscribe message broker: an annotated walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 A reading of the `05-services/02-pubsub-broker` example: a topic-based pub/sub broker that fans one published message out to many subscribers by sharing a single reference-counted payload across cores, framed over a custom binary protocol.
 

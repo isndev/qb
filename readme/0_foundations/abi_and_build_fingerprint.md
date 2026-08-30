@@ -1,6 +1,6 @@
 # ABI, the cache line, and the build fingerprint
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — ef7d3ea7
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — ef7d3ea7
 
 qb ships as public headers plus a compiled archive, and several of those headers change the *layout* of public types according to macros the **consumer** sets. This page is the machinery that turns that class of silent corruption into a link error you can read — plus the cache-line constant everything is laid out on, and the rest of `qb/utility/`.
 

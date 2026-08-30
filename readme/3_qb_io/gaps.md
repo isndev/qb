@@ -1,6 +1,6 @@
 # What has no coroutine form, and why
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — f1d8cca6
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — f1d8cca6
 
 `qb-io` has a full coroutine layer, and most of it is not connected to the network stack. Four capabilities have **no** `co_await` spelling — accept, QUIC, signals, and file I/O — and three more are synchronous in a way a coroutine cannot hide: hostname resolution, key derivation, and compression. This page names each one, gives the structural reason, and says what to do instead. Read it before you go looking for an awaiter that is not there.
 

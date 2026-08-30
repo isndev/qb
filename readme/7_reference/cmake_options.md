@@ -1,7 +1,7 @@
-<!-- Verified-against: qb 3.0.1 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 3.1.0 (C++20 default, C++23 supported) -->
 # CMake options reference
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 Every `QB_*` CMake variable that configures a qb build, its default, and what it controls.
 

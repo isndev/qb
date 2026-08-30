@@ -1,7 +1,7 @@
-<!-- Verified-against: qb 3.0.1 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 3.1.0 (C++20 default, C++23 supported) -->
 # Benchmarks
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 A reference for the qb micro-benchmark suites: the Google Benchmark targets gated by `QB_BUILD_BENCHMARKS`, what each one measures, how to build and run them, and how to read their output.
 

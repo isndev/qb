@@ -1,6 +1,6 @@
 # Glossary
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 A definition for every domain term used across the qb documentation, each grounded in the header that owns it and linking to the page that explains it in full.
 
