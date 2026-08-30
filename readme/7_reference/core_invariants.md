@@ -1,6 +1,6 @@
 # qb-core thread-safety and lifecycle invariants
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — 577606c
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — 577606c
 
 The rules `qb-core` assumes and the guarantees it gives in return: which thread owns what, when an actor is alive, and in what order events arrive — so you can reason about correctness without reading the scheduler.
 

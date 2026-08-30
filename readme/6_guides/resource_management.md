@@ -1,6 +1,6 @@
 # Resource management
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 How RAII, actor ownership, and the actor lifecycle combine to release memory, descriptors, sockets, and TLS contexts deterministically, and where the framework hands ownership back to you.
 

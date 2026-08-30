@@ -1,6 +1,6 @@
 # Reference
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 Fast-lookup material for working with qb: an API map, the build and dependency reference, the thread-safety and lifetime invariants each library upholds, the test and benchmark suites, plus an FAQ and a glossary.
 

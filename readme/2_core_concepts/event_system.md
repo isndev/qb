@@ -1,6 +1,6 @@
 # The event system
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 Events are the only channel through which actors communicate; this page covers how to define them, how the five delivery primitives differ, and what ordering and lifetime guarantees the runtime makes.
 

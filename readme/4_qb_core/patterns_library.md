@@ -1,6 +1,6 @@
 # Interaction patterns library
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 After reading this you can use the qb-core interaction patterns — request/reply, scatter-gather,
 discovery, saga, pub/sub, supervision, resilience, streaming, routing, idempotency and aggregation —

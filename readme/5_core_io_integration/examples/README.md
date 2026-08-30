@@ -1,6 +1,6 @@
 # Case studies: core and I/O integration examples
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 Three worked analyses of complete applications that combine `qb-core` actors with `qb-io` networking and deferred work end to end.
 

@@ -7,6 +7,10 @@ policy.
 
 ## [Unreleased]
 
+Nothing yet. Entries land here as they are merged, and move under a version heading when that version is tagged.
+
+## [3.1.0] - 2026-08-30
+
 ### Added
 
 - **Windows console control events now reach the signal pipeline.** A supervisor stopping a

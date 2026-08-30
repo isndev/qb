@@ -1,6 +1,6 @@
 # File-processor walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 An annotated reading of `examples/05-services/03-file-pipeline/`: a manager-worker topology that confines blocking file I/O to dedicated worker cores so the rest of the actor system stays responsive.
 

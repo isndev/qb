@@ -1,6 +1,6 @@
 # Encoding and conversion
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported) — ef7d3ea7
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — ef7d3ea7
 
 The three conversions every wire format needs: text to number, host byte order to network byte order, and a unique identifier. Each is one small header with one strong opinion behind it — no exceptions on bad input, no dependence on the global locale, no silent wrap.
 

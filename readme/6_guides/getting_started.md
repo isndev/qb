@@ -1,6 +1,6 @@
 # Getting started
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.0.1 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported)
 
 Install qb, build and run a first actor, add a non-blocking timer, and find the next page to read.
 
