@@ -4371,6 +4371,16 @@ ev_pending_count(EV_P) EV_NOEXCEPT {
     return count;
 }
 
+/* The number of REFERENCED active watchers, i.e. what keeps `ev_run` looping: the same
+ * `activecnt` its loop condition and its "nothing to wait for" short-cut read. An embedder
+ * that drives the loop with EVRUN_NOWAIT from its own scheduler (qb's VirtualCore) can
+ * skip the run entirely -- and the backend poll syscall it costs -- when this and
+ * `ev_pending_count` are both zero: there is no watcher to fire and no event queued. */
+unsigned int
+ev_active_count(EV_P) EV_NOEXCEPT {
+    return activecnt > 0 ? (unsigned int) activecnt : 0u;
+}
+
 ecb_noinline void
 ev_invoke_pending(EV_P) {
     pendingpri = NUMPRI;

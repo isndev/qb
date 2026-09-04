@@ -219,6 +219,16 @@ struct loop_ref {
         return ev_depth(EV_AX);
     }
 
+    unsigned int
+    pending_count() const EV_NOEXCEPT {
+        return ev_pending_count(EV_AX);
+    }
+
+    unsigned int
+    active_count() const EV_NOEXCEPT {
+        return ev_active_count(EV_AX);
+    }
+
     void
     set_io_collect_interval(tstamp interval) EV_NOEXCEPT {
         ev_set_io_collect_interval(EV_AX_ interval);
