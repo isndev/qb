@@ -267,6 +267,14 @@ namespace {
 constexpr std::uint32_t kFlushSpinAttempts  = 64;  // `spin_loop_pause` phase.
 constexpr std::uint32_t kFlushYieldAttempts = 512; // total budget per event.
 static_assert(kFlushSpinAttempts < kFlushYieldAttempts, "spin phase must precede yield phase");
+// Longest run of whole events `__flush_all__` publishes with ONE ring write (buckets, i.e.
+// cache lines). The run is what amortises the per-publish costs — the release store of the
+// ring's write index, the consumer's re-read of that line, the notify fence — and its cap is
+// what bounds how long the run's FIRST event waits for its last to be copied: 256 buckets is a
+// quarter of a 1023-bucket mailbox ring, ~16 KiB, a few hundred nanoseconds of memcpy. A pipe
+// holding one event (a ping-pong) forms a run of one and pays what `try_send` paid. See
+// `SharedCoreCommunication::send_run` for the measurement.
+constexpr std::size_t kFlushRunBuckets = 256;
 } // namespace
 
 // Widest event a destination mailbox ring can EVER accept — `kMaxDeliverableBuckets`,
@@ -278,6 +286,7 @@ static_assert(kFlushSpinAttempts < kFlushYieldAttempts, "spin phase must precede
 
 bool
 VirtualCore::__flush_all__() noexcept {
+    static_assert(kFlushRunBuckets <= kMaxDeliverableBuckets, "a run must fit an empty mailbox ring");
     bool        any_work = false;
     std::size_t pipe_idx = 0;
     for (auto &pipe : _pipes) {
@@ -295,6 +304,36 @@ VirtualCore::__flush_all__() noexcept {
         bool        partial = false;
 
         while (cur < end) {
+            // --- Fast path: a run of whole events, one ring write -----------------------
+            // Gather consecutive deliverable events from the head, up to `kFlushRunBuckets`.
+            // The run stops SHORT of a zero-width or oversize event so the slow path below
+            // meets it at the head and disposes it; a head wider than the cap forms a run of
+            // its own. `send_run` cuts the run to what the ring can take right now, at an event
+            // boundary, so the fast path only yields to the slow one when not even the head
+            // fits — which is the backpressure regime the backoff below exists for.
+            {
+                std::size_t run = 0, run_events = 0;
+                for (auto const *p = cur; p < end;) {
+                    const std::size_t width = reinterpret_cast<Event const *>(p)->bucket_size;
+                    if (unlikely(width == 0 || width > kMaxDeliverableBuckets) || (run && run + width > kFlushRunBuckets))
+                        break;
+                    run += width;
+                    ++run_events;
+                    p += width;
+                }
+                if (likely(run)) {
+                    const auto sent = _engine.send_run(_resolved_index, static_cast<CoreId>(pipe_idx), cur, run, run_events);
+                    if (likely(sent.buckets)) {
+                        _metrics._nb_event_sent_try += sent.events;
+                        _metrics._nb_event_sent += sent.events;
+                        _metrics._nb_bucket_sent += sent.buckets;
+                        cur += sent.buckets;
+                        continue;
+                    }
+                }
+            }
+
+            // --- Slow path: the head event alone --------------------------------------
             // Non-const: an undeliverable event is disposed here (its payload must be freed
             // exactly like every other terminal path), so we need a mutable reference.
             auto &event = *reinterpret_cast<Event *>(cur);

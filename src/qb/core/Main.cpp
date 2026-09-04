@@ -233,6 +233,56 @@ SharedCoreCommunication::send(CoreId const source_index, Event const &event) con
     return false;
 }
 
+SharedCoreCommunication::RunSent
+SharedCoreCommunication::send_run(CoreId const source_index, CoreId const dest_index, EventBucket const *const buckets, std::size_t const run,
+                                  std::size_t const events) const noexcept {
+    auto &mailbox = *_mail_boxes[dest_index];
+    auto &ring    = mailbox.ringOf(source_index);
+
+    // Ask for the whole run: the snapshot of the consumer's index proves it without a cross-line
+    // read in the steady state, and is refreshed only when it cannot.
+    const std::size_t room = ring.write_room(run);
+    RunSent           sent{run, events};
+    if (unlikely(room < run)) {
+        // Cut at the last whole event that fits. The walk is the cold path — a ring this close
+        // to full means the consumer is the slower side, and the per-event backoff in
+        // `__flush_all__` is what handles that regime.
+        sent = {};
+        for (auto const *cur = buckets, *const end = buckets + run; cur < end;) {
+            const std::size_t width = reinterpret_cast<Event const *>(cur)->bucket_size;
+            if (sent.buckets + width > room)
+                break;
+            sent.buckets += width;
+            ++sent.events;
+            cur += width;
+        }
+        if (!sent.buckets)
+            return sent;
+    }
+#ifndef NDEBUG
+    for (auto const *cur = buckets, *const end = buckets + sent.buckets; cur < end;) {
+        auto const &event = *reinterpret_cast<Event const *>(cur);
+        if (unlikely(event_points_into_itself(event))) {
+            QB_LOG_CRIT("Event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
+                                 << event.getDestination()
+                                 << " holds a pointer into its own storage, so it cannot be delivered cross-core: "
+                                    "the transport relocates events with memcpy and never runs the source destructor. "
+                                    "Use qb::string<N> for inline text, or keep the data on the heap behind a "
+                                    "shared_ptr/unique_ptr member. A by-value std::string is the usual cause "
+                                    "(short strings are self-referential on libstdc++).");
+            assert(false
+                   && "qb: event payload is not trivially relocatable (holds a pointer into itself) — "
+                      "see the QB_LOG_CRIT above and Actor::push's @warning");
+        }
+        cur += event.bucket_size;
+    }
+#endif
+    [[maybe_unused]] const std::size_t written = ring.template enqueue<true>(buckets, sent.buckets);
+    assert(written == sent.buckets && "write_room() proved the room, so enqueue<true> cannot refuse it");
+    mailbox.notify();
+    return sent;
+}
+
 SharedCoreCommunication::Mailbox &
 SharedCoreCommunication::getMailBox(CoreId const id) const noexcept {
     return *_mail_boxes[_core_set.resolve(id)].get();

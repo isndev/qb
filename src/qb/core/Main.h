@@ -554,6 +554,42 @@ public:
     [[nodiscard]] bool send(CoreId source_index, Event const &event) const noexcept;
 
     /**
+     * @brief What `send_run()` accepted: the whole-event prefix of the run the ring took.
+     */
+    struct RunSent {
+        std::size_t buckets = 0; ///< Buckets written — advance the pipe cursor by this much.
+        std::size_t events  = 0; ///< Whole events inside those buckets.
+    };
+
+    /**
+     * @brief Bulk producer path: write a run of WHOLE events into one destination ring as ONE
+     *        ring write.
+     * @ingroup Engine
+     * @param source_index The **physical** producer core's resolved index — same rule as `send()`.
+     * @param dest_index The **resolved** destination core: the index of the outbound pipe the run
+     *        comes from, which is exactly the mailbox every event in it is addressed to.
+     * @param buckets First bucket of the run (the head of that pipe's unsent region).
+     * @param run Width of the run in buckets. Every event in it must be deliverable on its own
+     *        (`0 < bucket_size <= MaxRingEvents`) — the caller filters the two cold shapes first.
+     * @param events Events in the run, counted by the caller's walk; re-counted here only when the
+     *        run has to be cut.
+     * @return The prefix accepted, always at an event boundary: all of @p run when the ring can
+     *         hold it right now, else the longest whole-event prefix that fits (possibly nothing —
+     *         then `send()` on the head event is the path that decides between backoff and drop).
+     * @details One `write_room()` query, one `enqueue<true>` of the accepted prefix, one
+     *          `notify()`. That is the entire point: `__flush_all__` used to publish the ring's
+     *          write index — and issue the notify fence — once PER EVENT, so a consumer fast
+     *          enough to keep the ring nearly empty re-read a line the producer was dirtying on
+     *          every event. Measured on savina/counting, 1M one-bucket events core 0 → core 1
+     *          (Windows/MSVC): the sparse-router consumer of 3.1.0 drained ~250–600 events per
+     *          batch; the dense-router consumer of axis I drained ~6–9, and BOTH cores slowed
+     *          by ~40 % for it. A per-run publish takes the coherence traffic out of the
+     *          per-event cost and makes the pair insensitive to which side is faster.
+     */
+    [[nodiscard]] RunSent send_run(CoreId source_index, CoreId dest_index, EventBucket const *buckets, std::size_t run,
+                                   std::size_t events) const noexcept;
+
+    /**
      * @brief Get the mailbox for a specific VirtualCore.
      * @ingroup Engine
      * @param id The `CoreId` of the VirtualCore whose mailbox is requested.
