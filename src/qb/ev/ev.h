@@ -731,6 +731,7 @@ ev_is_default_loop (void) EV_NOEXCEPT
     EV_API_DECL void ev_set_loop_release_cb(EV_P_ void (*release)(EV_P) EV_NOEXCEPT, void (*acquire)(EV_P) EV_NOEXCEPT) EV_NOEXCEPT;
 
     EV_API_DECL unsigned int ev_pending_count(EV_P) EV_NOEXCEPT; /* number of pending events, if any */
+    EV_API_DECL unsigned int ev_active_count(EV_P) EV_NOEXCEPT;  /* number of referenced active watchers (what keeps ev_run looping) */
 
     /*
      * stop/start the timer handling.
