@@ -266,7 +266,11 @@ private:
     Mailbox                     &_mail_box;
     std::unique_ptr<EventBuffer> _event_buffer;
     router::memh<Event>          _router;
-    // event flush
+    // event flush. The pool is declared BEFORE every pipe that draws from it: members are
+    // destroyed in reverse order, so each pipe releases its segments into a pool that is still
+    // alive. One pool per core -- a segment a receive pass has consumed is the one the next
+    // push grows into, whichever of this core's pipes needs it.
+    VirtualPipe::pool_type       _pipe_pool;
     PipeMap                      _pipes;
     VirtualPipe                 &_mono_pipe_swap;
     std::unique_ptr<VirtualPipe> _mono_pipe;
@@ -456,6 +460,8 @@ private:
      * @return Reference to the virtual pipe for communication with the target core
      */
     [[nodiscard]] VirtualPipe &__getPipe__(CoreId core) noexcept;
+    /// One outbound pipe per core, every one drawing from this core's segment pool.
+    [[nodiscard]] static PipeMap __make_pipes__(VirtualPipe::pool_type &pool, std::size_t nb_core);
     /**
      * @brief Dispatch a contiguous batch of events from a raw bucket buffer.
      * @param events A `std::span` view of the event buckets to route.
@@ -817,16 +823,20 @@ VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) noe
     router::ensure_disposer<Event, T>(); // no-op for the trivially-destructible events send requires
     auto                 &pipe        = __getPipe__(dest._core_id);
     constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
-    // Allocate raw + prepare + placement-new rather than pipe.allocate<T>(...): the bucket range
+    // Allocate raw + prepare + placement-new rather than a typed allocate: the bucket range
     // must be deterministic BEFORE the payload runs. See detail::prepare_event_storage.
-    auto *const raw = pipe.allocate(BUCKET_SIZE);
+    auto *const raw = pipe.allocate_back(BUCKET_SIZE);
     detail::prepare_event_storage(raw, BUCKET_SIZE * sizeof(EventBucket));
     auto &data = *(new (reinterpret_cast<T *>(raw)) T(std::forward<_Init>(init)...));
 
     fill_event(data, dest, source);
 
+    // Delivered straight into the peer's ring: give the tail range back. Nothing was queued in
+    // between, so this is the last allocation and `free_back` is exact. A `send` the ring could
+    // not take stays queued at the tail, behind earlier pushes -- `send` is unordered, and
+    // the flush delivers it with the rest.
     if (dest._core_id != _index && try_send(data))
-        pipe.free(data.bucket_size);
+        pipe.free_back(BUCKET_SIZE);
 }
 
 template <typename T, typename... _Init>

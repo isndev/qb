@@ -260,11 +260,14 @@ TEST(PipeAllocatorRobustness, MoveAssignLeavesSourceEmpty) {
 /**
  * @test A pointer handed out by `allocate_back` is invalidated by the next `allocate_back` that
  *       has to grow the buffer.
- * @brief This is the allocator-level contract behind `qb::Actor::push` / `qb::Pipe::push`
- *        returning a *reference* to the queued event for in-place population: the reference is
- *        valid only until the next event is queued into the SAME pipe (i.e. the next
- *        push/send/broadcast reaching the same destination core). Growth reallocates and memcpys,
- *        so the old pointer dangles.
+ * @brief The contract of the CONTIGUOUS pipe — the one `qb::io` streams and `pipe<char>` users
+ *        rely on: the buffer is a single allocation that grows by reallocating and memcpying, so
+ *        every earlier pointer dangles after a growth. It is NOT the contract behind
+ *        `qb::Actor::push` / `qb::Pipe::push` any more: since the event pipes moved to
+ *        `qb::allocator::segmented_pipe` (3.2), a queued event's reference stays valid until the
+ *        handler or callback that obtained it returns, whatever is pushed meanwhile — that
+ *        contract is pinned by `SegmentedPipeContract.*` (`segmented-pipe.cpp`) and
+ *        `PushReferenceStability.*` (`core/system/messaging/push-reference-stability.cpp`).
  *
  *        Only addresses are compared — the stale pointer is never dereferenced — so the test
  *        proves the hazard without itself committing the UB it documents.
@@ -287,9 +290,11 @@ TEST(PipeAllocatorContract, AllocateBackGrowthInvalidatesEarlierPointers) {
 /**
  * @test `reorder()` (the in-place compaction `allocate_back` performs instead of growing when the
  *       freed prefix is large enough) also invalidates earlier pointers.
- * @brief The nastier half of the contract: compaction keeps the SAME buffer and memmoves the live
- *        bytes down, so a stale pointer stays inside the allocation and silently aliases a
- *        DIFFERENT event. No allocator debugger can see that — only this contract can.
+ * @brief The nastier half of the contiguous contract: compaction keeps the SAME buffer and
+ *        memmoves the live bytes down, so a stale pointer stays inside the allocation and silently
+ *        aliases DIFFERENT data. No allocator debugger can see that — only this contract can. (It
+ *        is one of the two reasons the event pipes no longer use this allocator: a segment is
+ *        never compacted, so an event never moves once queued.)
  */
 TEST(PipeAllocatorContract, ReorderInvalidatesEarlierPointersWithoutFreeingTheBuffer) {
     qb::allocator::pipe<char> p;

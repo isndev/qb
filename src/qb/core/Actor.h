@@ -866,16 +866,19 @@ public:
      * // push<AnotherEvent>(target_id); // This will be processed by target_id after my_evt
      * @endcode
      * @note If the event type has a non-trivial destructor, the framework ensures it is called appropriately.
-     * @attention **The returned reference dies at the very next event queued to the same
-     *            destination core** — not merely at the end of the enclosing scope. The pipe is a
-     *            growable buffer: the next `push`/`send`/`broadcast` whose destination resolves to
-     *            that core may reallocate it (invalidating the reference) or compact it in place
-     *            (leaving the reference aliasing a *different* event inside a still-live
-     *            allocation — which no allocator debugger can detect). Populate the event fully
-     *            **before** queueing anything else, exactly as the example above does; never hold
-     *            the reference across another send, a helper call that may send, or a loop
-     *            iteration. Pinned by `PipeAllocatorContract.*` in
-     *            `tests/io/unit/core/pipe-allocator.cpp`.
+     * @attention **The returned reference lives until the handler or callback that obtained it
+     *            returns** — not merely until the next event is queued, and not one instruction
+     *            longer. The pipe is segmented: a later `push`/`send`/`broadcast` to the same
+     *            destination core links a new segment when it needs room and never reallocates
+     *            or compacts what an earlier push placed, so populating the event after further
+     *            pushes (as the example above does with `push<AnotherEvent>`) is well-defined.
+     *            The engine consumes the event only between handlers — the next receive pass for
+     *            a same-core destination, the next flush for a remote one — and that is when the
+     *            reference dies; a coroutine handler must therefore finish with it **before its
+     *            first `co_await`**. Pinned by `SegmentedPipeContract.*` in
+     *            `tests/io/unit/core/segmented-pipe.cpp` and, through the engine, by
+     *            `PushReferenceStability.*` in
+     *            `tests/core/system/messaging/push-reference-stability.cpp`.
      * @warning `noexcept`: an allocation failure while growing the pipe buffer or
      *          constructing the event (e.g. under OOM) cannot be reported and calls
      *          `std::terminate()`. Keep events small / allocation-light. See

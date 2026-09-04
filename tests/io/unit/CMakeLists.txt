@@ -27,6 +27,7 @@
 qb_add_test(MODULE qb-io TIER unit NAME uri-parse         SOURCES core/uri-parse.cpp         DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME json-pipe         SOURCES core/json-pipe.cpp         DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME pipe-allocator    SOURCES core/pipe-allocator.cpp    DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME segmented-pipe    SOURCES core/segmented-pipe.cpp    DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME endpoint-address  SOURCES core/endpoint-address.cpp  DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME udp-identity      SOURCES core/udp-identity.cpp      DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME cpu-topology      SOURCES core/cpu-topology.cpp      DEPENDS ${PROJECT_NAME})

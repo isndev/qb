@@ -70,7 +70,7 @@ Use the callback surface, and if you want coroutine ergonomics on top of it, par
 
 `event::signal<Sig>` wraps a libev `ev::sig` watcher (`src/qb/io/async/event/signal.h:82`) and is delivered like any other event: register it, implement `on(event::signal<SIGINT>&)`. There is no `co_await wait_signal(SIGINT)`.
 
-Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, coalesced to the most recent signum, which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:666-682`). That is the supported path, and it is an actor-tier concern.
+Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, coalesced to the most recent signum, which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:729-745`). That is the supported path, and it is an actor-tier concern.
 
 ## File I/O is polled metadata plus a blocking read
 

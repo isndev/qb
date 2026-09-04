@@ -100,9 +100,9 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     , _engine(engine)
     , _mail_box(engine.getMailBox(id))
     , _event_buffer(std::make_unique<EventBuffer>())
-    , _pipes(engine.getNbCore())
+    , _pipes(__make_pipes__(_pipe_pool, engine.getNbCore()))
     , _mono_pipe_swap(_pipes[_resolved_index])
-    , _mono_pipe(std::make_unique<VirtualPipe>()) {
+    , _mono_pipe(std::make_unique<VirtualPipe>(_pipe_pool)) {
     // Seed the pool after the last statically-registered service id. The
     // atomic load is relaxed because every writer publishes through the
     // magic-static acquire edge of `Actor::registerIndex<Tag>()` (2.3).
@@ -212,12 +212,28 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
     }
 }
 
+VirtualCore::PipeMap
+VirtualCore::__make_pipes__(VirtualPipe::pool_type &pool, std::size_t const nb_core) {
+    PipeMap pipes;
+    pipes.reserve(nb_core);
+    for (std::size_t i = 0; i < nb_core; ++i)
+        pipes.emplace_back(pool);
+    return pipes;
+}
+
 void
 VirtualCore::__receive__() {
-    // from same core
+    // from same core. Swap the self-core pipe out (handlers push into the fresh one), then walk
+    // it a segment at a time. Each segment goes back to the core's pool as soon as its events
+    // are routed, so a handler pushing to this same core grows into the segment that was just
+    // read -- warm in L2 -- rather than into fresh memory; a sustained burst then stays
+    // cache-resident whatever its size. An event's reference is valid for exactly the handler
+    // it is routed to, which is the contract Actor::push documents.
     _mono_pipe->swap(_mono_pipe_swap);
-    __receive_events__(std::span<EventBucket>{_mono_pipe->begin(), _mono_pipe->size()});
-    _mono_pipe->reset();
+    while (!_mono_pipe->empty()) {
+        __receive_events__(_mono_pipe->front());
+        _mono_pipe->pop_front();
+    }
     // global_core_events. `consume_all(func, scratch, chunk)`, not `dequeue(T*, n)`: the third
     // argument is a PER-PRODUCER batch limit, so every peer core's ring is drained on every
     // turn. A shared budget would let one saturated producer consume it and starve the rest.
@@ -298,135 +314,145 @@ VirtualCore::__flush_all__() noexcept {
         }
         any_work = true;
 
-        auto *const base    = pipe.data();
-        auto       *cur     = pipe.begin();
-        auto *const end     = pipe.end();
-        bool        partial = false;
+        // One segment at a time: `front()` is the head segment's live range, and no event
+        // straddles two segments, so a run never has to. A segment fully published is popped
+        // (back to the pool); a partial bail consumes up to the event that would not go.
+        bool partial = false, discard = false;
+        while (!partial && !discard && !pipe.empty()) {
+            auto const  seg = pipe.front();
+            auto       *cur = seg.data();
+            auto *const end = cur + seg.size();
 
-        while (cur < end) {
-            // --- Fast path: a run of whole events, one ring write -----------------------
-            // Gather consecutive deliverable events from the head, up to `kFlushRunBuckets`.
-            // The run stops SHORT of a zero-width or oversize event so the slow path below
-            // meets it at the head and disposes it; a head wider than the cap forms a run of
-            // its own. `send_run` cuts the run to what the ring can take right now, at an event
-            // boundary, so the fast path only yields to the slow one when not even the head
-            // fits — which is the backpressure regime the backoff below exists for.
-            {
-                std::size_t run = 0, run_events = 0;
-                for (auto const *p = cur; p < end;) {
-                    const std::size_t width = reinterpret_cast<Event const *>(p)->bucket_size;
-                    if (unlikely(width == 0 || width > kMaxDeliverableBuckets) || (run && run + width > kFlushRunBuckets))
-                        break;
-                    run += width;
-                    ++run_events;
-                    p += width;
-                }
-                if (likely(run)) {
-                    const auto sent = _engine.send_run(_resolved_index, static_cast<CoreId>(pipe_idx), cur, run, run_events);
-                    if (likely(sent.buckets)) {
-                        _metrics._nb_event_sent_try += sent.events;
-                        _metrics._nb_event_sent += sent.events;
-                        _metrics._nb_bucket_sent += sent.buckets;
-                        cur += sent.buckets;
-                        continue;
+            while (cur < end) {
+                // --- Fast path: a run of whole events, one ring write -----------------------
+                // Gather consecutive deliverable events from the head, up to `kFlushRunBuckets`.
+                // The run stops SHORT of a zero-width or oversize event so the slow path below
+                // meets it at the head and disposes it; a head wider than the cap forms a run of
+                // its own. `send_run` cuts the run to what the ring can take right now, at an event
+                // boundary, so the fast path only yields to the slow one when not even the head
+                // fits — which is the backpressure regime the backoff below exists for.
+                {
+                    std::size_t run = 0, run_events = 0;
+                    for (auto const *p = cur; p < end;) {
+                        const std::size_t width = reinterpret_cast<Event const *>(p)->bucket_size;
+                        if (unlikely(width == 0 || width > kMaxDeliverableBuckets) || (run && run + width > kFlushRunBuckets))
+                            break;
+                        run += width;
+                        ++run_events;
+                        p += width;
+                    }
+                    if (likely(run)) {
+                        const auto sent = _engine.send_run(_resolved_index, static_cast<CoreId>(pipe_idx), cur, run, run_events);
+                        if (likely(sent.buckets)) {
+                            _metrics._nb_event_sent_try += sent.events;
+                            _metrics._nb_event_sent += sent.events;
+                            _metrics._nb_bucket_sent += sent.buckets;
+                            cur += sent.buckets;
+                            continue;
+                        }
                     }
                 }
-            }
 
-            // --- Slow path: the head event alone --------------------------------------
-            // Non-const: an undeliverable event is disposed here (its payload must be freed
-            // exactly like every other terminal path), so we need a mutable reference.
-            auto &event = *reinterpret_cast<Event *>(cur);
-            ++_metrics._nb_event_sent_try;
-
-            if (try_send(event)) {
-                ++_metrics._nb_event_sent;
-                _metrics._nb_bucket_sent += event.bucket_size;
-                cur += event.bucket_size;
-                continue;
-            }
-
-            // --- Permanently unsendable, NOT backpressure -----------------------------
-            // Everything below this point assumes `try_send` failed because the peer's ring
-            // is momentarily full and will drain. Two shapes break that assumption, and for
-            // them the retry never converges: the bounded backoff expires, we partial-bail,
-            // and the next pass re-queues the exact same event. The pipe is FIFO, so the
-            // whole outbound stream to that core is held hostage behind it (head-of-line),
-            // including whatever would have killed the destination actor; the sender then
-            // leaves its main loop and spins in the shutdown residual drain forever because
-            // the destination is still "live". Net effect: `qb::Main::join()` never returns
-            // and two cores burn 100% CPU with no diagnostic. Pinned by
-            // `OversizeEvent.OversizedEventDoesNotWedgeTheEngine`.
-            //
-            // Both shapes are cold (they cost one compare against a constant on a path that
-            // already failed a send), and dropping is the only terminating action available:
-            // the event is undeliverable by construction, not by timing.
-            if (unlikely(event.bucket_size == 0)) {
-                // Malformed: a zero-width event leaves `cur` standing still, so the pipe can
-                // no longer be walked and the remaining events cannot even be identified to
-                // dispose them. Only reachable by overflowing `bucket_size`'s uint16 via a
-                // >= 65536-bucket `allocated_push`. Discard what is left of this pipe
-                // (`partial` stays false, so the trailing `pipe.reset()` frees it).
-                QB_LOG_CRIT(*this << " outbound pipe to core(" << pipe_idx << ") holds a zero-width event (bucket_size overflowed); "
-                                  << "discarding the rest of the pipe");
-                break;
-            }
-            if (unlikely(event.bucket_size > kMaxDeliverableBuckets)) {
-                QB_LOG_CRIT(*this << " dropping event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from "
-                                  << event.getSource() << " to " << event.getDestination() << ": " << event.bucket_size
-                                  << " buckets exceeds the " << kMaxDeliverableBuckets
-                                  << "-bucket mailbox ring, so it can never be delivered cross-core. Keep events small and move bulk "
-                                     "data behind a pointer member (see Pipe::allocated_push).");
-                _router.dispose(event);
-                ++_metrics._nb_event_sent;
-                _metrics._nb_bucket_sent += event.bucket_size;
-                cur += event.bucket_size;
-                continue;
-            }
-
-            if (!event.state.bits.qos) {
-                // Best-effort event: dropped on backpressure (preserves the
-                // original fire-and-forget semantics for QoS-0 events such as
-                // metrics or heartbeats). The "sent" counter is advanced to
-                // remain consistent with the previous behaviour.
-                ++_metrics._nb_event_sent;
-                _metrics._nb_bucket_sent += event.bucket_size;
-                cur += event.bucket_size;
-                continue;
-            }
-
-            // QoS-guaranteed event: bounded backoff.
-            bool sent = false;
-            for (std::uint32_t attempt = 1; attempt <= kFlushYieldAttempts; ++attempt) {
+                // --- Slow path: the head event alone --------------------------------------
+                // Non-const: an undeliverable event is disposed here (its payload must be freed
+                // exactly like every other terminal path), so we need a mutable reference.
+                auto &event = *reinterpret_cast<Event *>(cur);
                 ++_metrics._nb_event_sent_try;
+
                 if (try_send(event)) {
-                    sent = true;
+                    ++_metrics._nb_event_sent;
+                    _metrics._nb_bucket_sent += event.bucket_size;
+                    cur += event.bucket_size;
+                    continue;
+                }
+
+                // --- Permanently unsendable, NOT backpressure -----------------------------
+                // Everything below this point assumes `try_send` failed because the peer's ring
+                // is momentarily full and will drain. Two shapes break that assumption, and for
+                // them the retry never converges: the bounded backoff expires, we partial-bail,
+                // and the next pass re-queues the exact same event. The pipe is FIFO, so the
+                // whole outbound stream to that core is held hostage behind it (head-of-line),
+                // including whatever would have killed the destination actor; the sender then
+                // leaves its main loop and spins in the shutdown residual drain forever because
+                // the destination is still "live". Net effect: `qb::Main::join()` never returns
+                // and two cores burn 100% CPU with no diagnostic. Pinned by
+                // `OversizeEvent.OversizedEventDoesNotWedgeTheEngine`.
+                //
+                // Both shapes are cold (they cost one compare against a constant on a path that
+                // already failed a send), and dropping is the only terminating action available:
+                // the event is undeliverable by construction, not by timing.
+                if (unlikely(event.bucket_size == 0)) {
+                    // Malformed: a zero-width event leaves `cur` standing still, so the pipe can
+                    // no longer be walked and the remaining events cannot even be identified to
+                    // dispose them. Only reachable by overflowing `bucket_size`'s uint16 via a
+                    // >= 65536-bucket `allocated_push`. Discard what is left of this pipe
+                    // (`discard` makes the trailing `pipe.reset()` free every segment).
+                    QB_LOG_CRIT(*this << " outbound pipe to core(" << pipe_idx << ") holds a zero-width event (bucket_size overflowed); "
+                                      << "discarding the rest of the pipe");
+                    discard = true;
                     break;
                 }
-                if (attempt < kFlushSpinAttempts) {
-                    qb::spin_loop_pause();
-                } else {
-                    std::this_thread::yield();
+                if (unlikely(event.bucket_size > kMaxDeliverableBuckets)) {
+                    QB_LOG_CRIT(*this << " dropping event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from "
+                                      << event.getSource() << " to " << event.getDestination() << ": " << event.bucket_size
+                                      << " buckets exceeds the " << kMaxDeliverableBuckets
+                                      << "-bucket mailbox ring, so it can never be delivered cross-core. Keep events small and move bulk "
+                                         "data behind a pointer member (see Pipe::allocated_push).");
+                    _router.dispose(event);
+                    ++_metrics._nb_event_sent;
+                    _metrics._nb_bucket_sent += event.bucket_size;
+                    cur += event.bucket_size;
+                    continue;
                 }
+
+                if (!event.state.bits.qos) {
+                    // Best-effort event: dropped on backpressure (preserves the
+                    // original fire-and-forget semantics for QoS-0 events such as
+                    // metrics or heartbeats). The "sent" counter is advanced to
+                    // remain consistent with the previous behaviour.
+                    ++_metrics._nb_event_sent;
+                    _metrics._nb_bucket_sent += event.bucket_size;
+                    cur += event.bucket_size;
+                    continue;
+                }
+
+                // QoS-guaranteed event: bounded backoff.
+                bool sent = false;
+                for (std::uint32_t attempt = 1; attempt <= kFlushYieldAttempts; ++attempt) {
+                    ++_metrics._nb_event_sent_try;
+                    if (try_send(event)) {
+                        sent = true;
+                        break;
+                    }
+                    if (attempt < kFlushSpinAttempts) {
+                        qb::spin_loop_pause();
+                    } else {
+                        std::this_thread::yield();
+                    }
+                }
+
+                if (sent) {
+                    ++_metrics._nb_event_sent;
+                    _metrics._nb_bucket_sent += event.bucket_size;
+                    cur += event.bucket_size;
+                    continue;
+                }
+
+                // Budget exhausted — surrender cleanly. The destination's consumer
+                // is woken so it runs immediately (at zero latency only the fence
+                // runs — see `Mailbox::notify()`).
+                _engine.getMailBox(event.dest.index()).notify();
+                partial = true;
+                break;
             }
 
-            if (sent) {
-                ++_metrics._nb_event_sent;
-                _metrics._nb_bucket_sent += event.bucket_size;
-                cur += event.bucket_size;
-                continue;
-            }
-
-            // Budget exhausted — surrender cleanly. The destination's consumer
-            // is woken so it runs immediately (at zero latency only the fence
-            // runs — see `Mailbox::notify()`).
-            _engine.getMailBox(event.dest.index()).notify();
-            pipe.reset(static_cast<std::size_t>(cur - base));
-            partial = true;
-            break;
+            // Everything before `cur` in this segment is published or disposed. Consuming exactly
+            // that much pops the segment when the walk reached its end, and otherwise leaves the
+            // head at the event the next pass retries.
+            pipe.consume_front(static_cast<std::size_t>(cur - seg.data()));
         }
 
-        if (!partial)
+        if (discard)
             pipe.reset();
 
         ++pipe_idx;
@@ -716,7 +742,7 @@ VirtualCore::__workflow__() {
                 fill_event<SignalEvent>(sig_event, BroadcastId(_index), BroadcastId(_index));
                 sig_event.signum = (signum != 0) ? signum : SIGINT;
                 auto &pipe       = __getPipe__(_index);
-                pipe.recycle(sig_event, sig_event.bucket_size);
+                pipe.recycle_back(sig_event, sig_event.bucket_size);
             }
         }
 
@@ -808,7 +834,7 @@ VirtualCore::__workflow__() {
         // whole floor between two timeouts. The clock is read only on idle passes, and only
         // when the core can park at all.
         if (_mail_box.getLatency() > qb::duration::zero()) {
-            if (likely(_metrics.had_activity()) || _mono_pipe_swap.size() != 0) {
+            if (likely(_metrics.had_activity()) || !_mono_pipe_swap.empty()) {
                 _idle_since = qb::mono_time{};
             } else {
                 const auto now = qb::mono_now();
@@ -874,17 +900,20 @@ VirtualCore::__dispose_residual_to_stopped_cores__() noexcept {
         // events can never be delivered. Free their non-trivial QoS-2 payloads via the global
         // disposer registry (no-op for trivially-destructible events) and drop them — this
         // mirrors the stash-drop dispose in __receive_events__.
-        auto       *cur = pipe.begin();
-        auto *const end = pipe.end();
-        while (cur < end) {
-            auto      &event = *reinterpret_cast<Event *>(cur);
-            const auto bsz   = event.bucket_size;
-            // Defensive: a zero bucket_size (only reachable via a malformed event) would spin
-            // forever — stop draining this pipe instead (mirrors __receive_events__).
-            if (unlikely(bsz == 0))
-                break;
-            _router.dispose(event);
-            cur += bsz;
+        for (auto seg = pipe.front(); !seg.empty(); seg = pipe.front()) {
+            auto       *cur = seg.data();
+            auto *const end = cur + seg.size();
+            while (cur < end) {
+                auto      &event = *reinterpret_cast<Event *>(cur);
+                const auto bsz   = event.bucket_size;
+                // Defensive: a zero bucket_size (only reachable via a malformed event) would spin
+                // forever — stop draining this pipe instead (mirrors __receive_events__).
+                if (unlikely(bsz == 0))
+                    break;
+                _router.dispose(event);
+                cur += bsz;
+            }
+            pipe.pop_front();
         }
         pipe.reset();
         ++pipe_idx;
@@ -1034,7 +1063,7 @@ void
 VirtualCore::send(Event const &event) noexcept {
     if (event.dest._core_id == _index || !try_send(event)) {
         auto &pipe = __getPipe__(event.dest._core_id);
-        pipe.recycle(event, event.bucket_size);
+        pipe.recycle_back(event, event.bucket_size);
     }
 }
 

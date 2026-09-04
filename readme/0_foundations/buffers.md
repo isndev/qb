@@ -2,7 +2,7 @@
 
 > **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — ef7d3ea7
 
-`qb::allocator::pipe<T>` is a single growable allocation with three cursors on it. It backs every actor mailbox and every I/O stream in the framework, and the rules people trip over — why a `push` reference dies at the next push, why draining a socket is O(1) per turn, why qb's memory never comes back — are all consequences of those cursors rather than separate policies.
+`qb::allocator::pipe<T>` is a single growable allocation with three cursors on it. It backs every I/O stream in the framework, and the rules people trip over — why a `view()` dies at the next `put`, why draining a socket is O(1) per turn, why a stream's memory never comes back — are all consequences of those cursors rather than separate policies. The event pipes of a `VirtualCore` are its sibling, `qb::allocator::segmented_pipe<T>`: same cursor vocabulary, but growth links a segment instead of reallocating, so an event never moves once queued — [the Events section](#events) is that story.
 
 **Prerequisites:** none — **See also:** [Foundations overview](./README.md) · [Inter-actor messaging](../4_qb_core/messaging.md) · [Transports](../3_qb_io/transports.md) · [Core invariants](../7_reference/core_invariants.md)
 
@@ -63,11 +63,11 @@ The fast path is the common case and it invalidates nothing. The other two both 
 
 **Reallocation is the safe failure.** The old block is handed back to `std::allocator`. A stale pointer into it points at freed memory, which ASan, Valgrind and a hardened allocator all catch on the first dereference.
 
-**Compaction is the dangerous one.** `reorder()` `memmove`s within the *same live allocation* (`qb/src/qb/system/allocator/pipe.h:525`). A stale pointer still addresses valid, mapped, in-use memory — it now simply refers to *a different element*. No allocator debugger can see that, because nothing invalid has happened at the allocator level. This is the mechanism behind the framework's sharpest rule: the reference `Actor::push()` returns dies at the very next event queued to the same destination core, not at end of scope (`src/qb/core/Actor.h:866-875`). Reallocation would be loud; compaction is silent, and compaction is what a busy pipe does far more often.
+**Compaction is the dangerous one.** `reorder()` `memmove`s within the *same live allocation* (`qb/src/qb/system/allocator/pipe.h:525`). A stale pointer still addresses valid, mapped, in-use memory — it now simply refers to *a different element*. No allocator debugger can see that, because nothing invalid has happened at the allocator level. Reallocation would be loud; compaction is silent, and compaction is what a busy pipe does far more often. Until 3.2 this was the mechanism behind the framework's sharpest rule — the reference `Actor::push()` returned died at the very next event queued to the same destination core — and it is the first of the two reasons the event pipes moved off this allocator ([Events](#events)).
 
 Growth is geometric: `_factor` doubles until the request fits, and the new capacity is `_factor * 4096` elements (`qb/src/qb/system/allocator/pipe.h:369-375`). Two guards throw `std::bad_alloc` rather than wrapping — one when `_factor` would exceed `1 << (sizeof(size_t) * 4)` (`:371-372`), one when the arithmetic would still not fit (`:377-378`). Both are reachable only through a size that no legitimate caller produces, and they are the pipe's only `throw`.
 
-### `allocate()`, the front branch, and why `send` is unordered
+### `allocate()`, the front branch, and why `send` is unordered — the mechanism, and the one that replaced it
 
 `allocate(n)` tries the *front* first:
 
@@ -87,24 +87,24 @@ allocate(std::size_t const size) {
 
 The retired region in front of `_begin` is memory the pipe already owns and nobody is reading. Carving an object out of it costs one subtraction, and — crucially — the resulting element is **outside** the `[_begin_old, _end)` range a reader will walk. Pair that with `free(n)`, which consults `_flag_front` and retracts from whichever end the allocation came from (`qb/src/qb/system/allocator/pipe.h:339-345`), and you have an allocation that can be made and then *unmade* without disturbing anything queued.
 
-That pair is exactly what `VirtualCore::send` uses:
+That pair is what `VirtualCore::send` used until 3.1: allocate at the front, attempt an immediate cross-core delivery, retract on success. Since 3.2 the event path runs on `segmented_pipe` ([Events](#events)), which has no front end — a segment is a FIFO of whole events — and `send` gets the same effect from the tail:
 
 ```cpp
-auto *const raw = pipe.allocate(BUCKET_SIZE);
+auto *const raw = pipe.allocate_back(BUCKET_SIZE);
 // ... construct the event in place, fill its header ...
 if (dest._core_id != _index && try_send(data))
-    pipe.free(data.bucket_size);
+    pipe.free_back(BUCKET_SIZE);
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:822-829 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:822-840 -->
 
 Read that as a narrative and the whole `push` / `send` contract falls out:
 
-- `push` calls `allocate_back` (`src/qb/core/VirtualCore.h:855`). The event joins the FIFO stream at the tail and is delivered in the next flush, **in order** with everything already queued to that core.
-- `send` calls `allocate`, attempts an immediate cross-core delivery, and on success **retracts the allocation**. The event never enters the stream at all, so it can arrive *before* events queued earlier by `push` — that is the unordered contract, stated as a mechanism rather than a rule.
-- If the immediate attempt fails, or the destination is this same core, the retraction does not happen and the event stays in the pipe to be flushed normally.
-- The retraction is a cursor move, not a destructor call. Nothing runs `~T()` on that storage. That is why the same call site `static_assert`s that a `QoS < 2` event is trivially destructible (`src/qb/core/VirtualCore.h:802-804`): a non-trivial destructor would simply never run.
+- `push` calls `allocate_back` (`src/qb/core/VirtualCore.h:865`). The event joins the FIFO stream at the tail and is delivered in the next flush, **in order** with everything already queued to that core.
+- `send` also calls `allocate_back`, attempts an immediate cross-core delivery, and on success **retracts the allocation** with `free_back` — exact, because nothing was queued between the two calls, so the reservation is still the tail. The event never enters the stream at all, so it can arrive *before* events queued earlier by `push` — that is the unordered contract, stated as a mechanism rather than a rule.
+- If the immediate attempt fails, or the destination is this same core, the retraction does not happen and the event stays in the pipe, at the tail, to be flushed normally.
+- The retraction is a cursor move, not a destructor call. Nothing runs `~T()` on that storage. That is why the same call site `static_assert`s that a `QoS < 2` event is trivially destructible (`src/qb/core/VirtualCore.h:808-810`): a non-trivial destructor would simply never run.
 
-Two typed conveniences wrap the raw allocators for callers that do not need this control: `allocate_back<U>(args...)` and `allocate<U>(args...)` compute the bucket count for `U`, reserve it and placement-new in one step (`qb/src/qb/system/allocator/pipe.h:402-407`, `:452-457`); `allocate_size<U>(extra, args...)` reserves the object plus a trailing run of elements (`:418-423`). The event path deliberately does *not* use them — it allocates raw, prepares the whole bucket range to a deterministic value, and only then placement-news, because the cross-core relocation guard scans every byte of that range (`src/qb/core/VirtualCore.h:852-856`).
+Two typed conveniences wrap the raw allocators for callers that do not need this control: `allocate_back<U>(args...)` and `allocate<U>(args...)` compute the bucket count for `U`, reserve it and placement-new in one step (`qb/src/qb/system/allocator/pipe.h:402-407`, `:452-457`); `allocate_size<U>(extra, args...)` reserves the object plus a trailing run of elements (`:418-423`). The event path deliberately does *not* use them — it allocates raw, prepares the whole bucket range to a deterministic value, and only then placement-news, because the cross-core relocation guard scans every byte of that range (`src/qb/core/VirtualCore.h:862-866`).
 
 ## `pipe<T>::swap` — one cache line, and why it is asserted
 
@@ -127,7 +127,7 @@ _mono_pipe->swap(_mono_pipe_swap);
 __receive_events__(std::span<EventBucket>{_mono_pipe->begin(), _mono_pipe->size()});
 _mono_pipe->reset();
 ```
-<!-- src: qb/src/qb/core/VirtualCore.cpp:220-222 -->
+<!-- src: qb/src/qb/core/VirtualCore.cpp:232-235 -->
 
 Handlers dispatched from that drain will themselves `push` to actors on this core. Those pushes land in the *other* pipe, which is now the live one, so the range being iterated cannot grow or move underneath the loop. A 64-byte swap buys reentrancy safety for the price of two cache-line writes.
 
@@ -166,7 +166,11 @@ p.reorder();                      // compact; view() is still "PAYLOAD", size() 
 
 ### Events
 
-`qb::VirtualPipe` is `allocator::pipe<EventBucket>` (`src/qb/core/Event.h:689`), and every `VirtualCore` owns one per destination core plus one for itself (`src/qb/core/VirtualCore.cpp:103-105`). An event is measured in cache-line-sized buckets rather than bytes — 64 B by default, and [an ABI axis](./abi_and_build_fingerprint.md) — which is what keeps `bucket_size` inside the 16-bit event header. Full narrative on [Inter-actor messaging](../4_qb_core/messaging.md).
+`qb::VirtualPipe` is `allocator::segmented_pipe<EventBucket>` (`src/qb/core/Event.h:696`), and every `VirtualCore` owns one per destination core plus one for itself, all drawing from the core's one `segment_pool` (`src/qb/core/VirtualCore.h:273-276`, `src/qb/core/VirtualCore.cpp:216-223`). An event is measured in cache-line-sized buckets rather than bytes — 64 B by default, and [an ABI axis](./abi_and_build_fingerprint.md) — which is what keeps `bucket_size` inside the 16-bit event header. Full narrative on [Inter-actor messaging](../4_qb_core/messaging.md).
+
+The segmented pipe keeps the contiguous pipe's vocabulary (`allocate_back`, `free_back`, `front`, `reset`) and changes one thing: **what it holds never moves**. A segment is one 256 KB allocation (4096 buckets, the step `pipe<T>` starts from) with a header in its first bucket; the pipe is a FIFO chain of them (`src/qb/system/allocator/segmented_pipe.h:229-230`). `allocate_back(n)` is a compare and a cursor add while the tail has room (`:347-354`); when it does not, the remainder of the tail is skipped and a segment is linked behind it (`:290`) — no reallocation, no `memcpy`, no compaction, so an allocated range is always contiguous and every earlier address stays valid. A request wider than a segment gets a dedicated, exactly-sized segment that goes back to the allocator when consumed. The read side is `front()`, the head segment's live range, advanced by `consume_front(n)` (`:423`) and `pop_front()` (`:405`); a popped segment goes to the core's pool at once, so a handler pushing while the engine drains grows into the segment that was just read — still warm — rather than into fresh memory. That is what turns the memory table below from a quadratic commitment into a high-water mark: measured on the one-core counting benchmark at 1 M events, the contiguous pipe copied 64 MB it never needed to move and took 26 600 minor faults per run re-touching its doublings; the segmented one copies nothing and re-faults nothing after its first burst.
+
+The pool (`segment_pool`, `src/qb/system/allocator/segmented_pipe.h:113`) is per core and not thread-safe — a core only ever touches its own pipes; the cross-core hop is the mailbox ring, which copies *out* of a segment. It retains segments at high water like the contiguous pipe did, and `shrink()` (`:188`) gives them back; one standard segment stays resident once a pipe has held anything, so a pipe that empties every pass costs no pool traffic at all.
 
 ### Streams
 
@@ -194,22 +198,22 @@ That is a deliberate trade — a steady-state server pays no allocator traffic a
 
 | Structure | Count | Each | Note |
 |---|---|---|---|
-| `pipe<EventBucket>` | `N × (N + 1)` | 262 144 B | one per destination core per core, plus one same-core pipe per core |
+| `segmented_pipe<EventBucket>` | `N × (N + 1)` | 0 B at rest | one per destination core per core, plus one same-core pipe per core — by construction, none allocates before its first push (`src/qb/system/allocator/segmented_pipe.h:310`); each core's pool then holds its high water in 256 KB segments (until 3.2 this row was `pipe<EventBucket>` at 262 144 B each, allocated eagerly) |
 | mailbox producer slot | `N × N` | 65 728 B | one SPSC ring per sender, per destination mailbox |
 | per-core receive buffer | `N` | 65 536 B | one `_event_buffer` per core — a `std::array<EventBucket, 1024>` behind a `unique_ptr` (`src/qb/core/VirtualCore.h:267`) |
 
-| Cores | Pipes | Mailboxes | Buffers | Total at rest |
-|---|---|---|---|---|
-| 1 | 0.50 MiB | 0.06 MiB | 0.06 MiB | ~0.6 MiB |
-| 4 | 5.00 MiB | 1.00 MiB | 0.25 MiB | ~6.3 MiB |
-| 8 | 18.00 MiB | 4.01 MiB | 0.50 MiB | ~22.5 MiB |
-| 16 | 68.00 MiB | 16.05 MiB | 1.00 MiB | ~85 MiB |
+| Cores | Pipes (3.1, eager) | Pipes (3.2, at rest) | Mailboxes | Buffers | Total at rest (3.2) |
+|---|---|---|---|---|---|
+| 1 | 0.50 MiB | 0 | 0.06 MiB | 0.06 MiB | ~0.1 MiB |
+| 4 | 5.00 MiB | 0 | 1.00 MiB | 0.25 MiB | ~1.3 MiB |
+| 8 | 18.00 MiB | 0 | 4.01 MiB | 0.50 MiB | ~4.5 MiB |
+| 16 | 68.00 MiB | 0 | 16.05 MiB | 1.00 MiB | ~17 MiB |
 
-The per-structure figures are measured; the totals are that arithmetic. The shape is what matters: **doubling the core count roughly quadruples the resting footprint**, because every core keeps a private outbound pipe to every other core and every mailbox keeps a private inbound ring from every other core. That is the price of a message path with no lock and no shared cursor on it, and it is worth knowing before you configure a 64-core engine on a container with a memory limit.
+The per-structure figures are measured; the totals are that arithmetic. The shape is what matters: **doubling the core count roughly quadruples the resting footprint**, because every mailbox keeps a private inbound ring from every other core — and, until 3.2, every core kept an eagerly allocated private outbound pipe to every other core, which was the larger of the two terms. The pipes now cost what they hold: a core's pool grows to the high water of the busiest burst its pipes have seen, in 256 KB steps, and stays there. That is the price of a message path with no lock and no shared cursor on it, and it is worth knowing before you configure a 64-core engine on a container with a memory limit.
 
 ## Pitfalls
 
-- **A pointer into a pipe is valid until the next allocation on that pipe, and not one instruction longer.** Compaction (`reorder`) is the case no tool catches, because the memory stays live and merely means something else (`qb/src/qb/system/allocator/pipe.h:520-528`). This is the whole reason [`Actor::push`'s returned reference](../7_reference/core_invariants.md#sending-push-vs-send) has the rule it has.
+- **A pointer into a `pipe<T>` is valid until the next allocation on that pipe, and not one instruction longer.** Compaction (`reorder`) is the case no tool catches, because the memory stays live and merely means something else (`qb/src/qb/system/allocator/pipe.h:520-528`). A pointer into a `segmented_pipe<T>` is the opposite: valid until the segment holding it is consumed, whatever is allocated meanwhile — which is why [`Actor::push`'s returned reference](../7_reference/core_invariants.md#sending-push-vs-send) now lives for the whole handler.
 - **`free_front` / `free_back` run no destructors.** They are cursor arithmetic (`qb/src/qb/system/allocator/pipe.h:269-282`). A pipe holding non-trivially-destructible objects leaks every one of them unless the owner destroys them itself. For events that owner is the router, which disposes each one after routing — so the rule bites only where nothing routes them: the `qos == 0` drop on backpressure, which is why an `EventQOS0` payload must be trivially destructible.
 - **`reserve(n)` is not `std::vector::reserve`.** It calls `allocate_back(n)` and then `free_back(n)`, so it can trigger a growth *or a compaction* — and therefore invalidate outstanding pointers — before handing the space back (`qb/src/qb/system/allocator/pipe.h:543-547`).
 - **`resize(n)` shrinking does not destroy anything either.** It moves `_end` down (`qb/src/qb/system/allocator/pipe.h:256-262`).
@@ -224,5 +228,5 @@ The per-structure figures are measured; the totals are that arithmetic. The shap
 - [Inter-actor messaging](../4_qb_core/messaging.md) — `push` versus `send` as an API contract; this page is the mechanism underneath it.
 - [Transports](../3_qb_io/transports.md) — the streams that own the two `pipe<char>` buffers.
 - [Concurrency primitives](./concurrency_primitives.md) — the mailbox ring the flush drains into.
-- [Core invariants](../7_reference/core_invariants.md) — the reference-invalidation and relocation contracts stated as invariants.
+- [Core invariants](../7_reference/core_invariants.md) — the reference-lifetime and relocation contracts stated as invariants.
 - [ABI and the build fingerprint](./abi_and_build_fingerprint.md) — where the 64-byte bucket comes from.

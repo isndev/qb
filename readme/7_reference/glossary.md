@@ -121,11 +121,11 @@ The actor periodic-tick handler (replaces the former `onCallback()`); see [Callb
 <a id="pipe-communication-channel-qbpipe"></a>
 #### Pipe (communication channel — `qb::Pipe`)
 
-A unidirectional, ordered channel from a source actor to a destination actor, obtained via [`getPipe(dest)`](#getpipedest). It wraps an internal `VirtualPipe` (the lock-free ring-buffer segment owned by the source core) and exposes `push<Event>()` and `allocated_push<Event>()`. Defined in `src/qb/core/Pipe.h`. Distinct from the [memory `pipe`](#pipe-memory-buffer-qballocatorpipet). See [Messaging](../4_qb_core/messaging.md).
+A unidirectional, ordered channel from a source actor to a destination actor, obtained via [`getPipe(dest)`](#getpipedest). It wraps an internal `VirtualPipe` (the source core's segmented outbound queue towards the destination core) and exposes `push<Event>()` and `allocated_push<Event>()`. Defined in `src/qb/core/Pipe.h`. Distinct from the [memory `pipe`](#pipe-memory-buffer-qballocatorpipet). See [Messaging](../4_qb_core/messaging.md).
 
 #### push (`actor.push<T>()`)
 
-The primary way to send an event. `push<Event>(dest, args...)` is `noexcept`, guarantees **ordered** delivery to the same destination from the same source, supports event types with non-trivial members, and returns a mutable reference to the constructed event so you can fill fields before it is dispatched — a reference that dies at the very next event queued to the same destination **core**, not at the end of the enclosing scope. Because it is `noexcept`, an allocation failure cannot be reported and calls `std::terminate()` — keep events small. Declared in `src/qb/core/Actor.h`. Contrast [send](#send-actorsendt). See [Messaging](../4_qb_core/messaging.md).
+The primary way to send an event. `push<Event>(dest, args...)` is `noexcept`, guarantees **ordered** delivery to the same destination from the same source, supports event types with non-trivial members, and returns a mutable reference to the constructed event so you can fill fields before it is dispatched — a reference that lives until the handler that obtained it returns (across further pushes; not across a `co_await`, never in a member). Because it is `noexcept`, an allocation failure cannot be reported and calls `std::terminate()` — keep events small. Declared in `src/qb/core/Actor.h`. Contrast [send](#send-actorsendt). See [Messaging](../4_qb_core/messaging.md).
 
 #### `ActorHandle<T>` (`qb::ActorHandle`, alias `qb::RefActorHandle`)
 
@@ -331,7 +331,7 @@ A queue with exactly one producer and one consumer (`qb::lockfree::spsc::ringbuf
 <a id="pipe-memory-buffer-qballocatorpipet"></a>
 #### Pipe (memory buffer — `qb::allocator::pipe<T>`)
 
-A dynamically resizable memory buffer used throughout qb for I/O buffering and event serialization. Distinct from the inter-actor [communication `Pipe`](#pipe-communication-channel-qbpipe). Defined in `src/qb/system/allocator/pipe.h`.
+A dynamically resizable contiguous memory buffer used throughout qb-io for stream buffering. Distinct from the inter-actor [communication `Pipe`](#pipe-communication-channel-qbpipe). Defined in `src/qb/system/allocator/pipe.h`. Its segmented sibling, `qb::allocator::segmented_pipe<T>` (`src/qb/system/allocator/segmented_pipe.h`), grows by linking a segment and never moves what it holds; it backs the event pipes (`qb::VirtualPipe`).
 
 #### RAII (Resource Acquisition Is Initialization)
 

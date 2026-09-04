@@ -16,7 +16,8 @@
  *   1. `push`/`send` placement-new the event inside the sender's outbound pipe (address A);
  *   2. `try_send` → `spsc::enqueue<_All=true>` **memcpy**s the whole bucket run into the peer's
  *      MPSC ring (address B), splitting it in two segments when it straddles the ring wrap;
- *   3. the sender rewinds its pipe cursor (`pipe::reset()` / `pipe::free()`) — **no destructor**;
+ *   3. the sender consumes the published range out of its segmented pipe
+ *      (`segmented_pipe::consume_front()` / `free_back()`) — **no destructor**;
  *   4. the consumer **memcpy**s the batch out of the ring into `_event_buffer` (address C);
  *   5. the handler runs on the copy at C, and `router::dispose` destroys it there.
  *

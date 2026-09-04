@@ -137,7 +137,7 @@ Handlers are public member functions named `on`: `void on(const EventType&)` for
 
 | Member | Signature | Delivery |
 |---|---|---|
-| `push` | `template<class _Event, class... _Args> _Event& push(ActorId const& dest, _Args&&... args) const noexcept` | Ordered; supports non-trivial members. Returns a mutable reference to the queued event that **dies at the next event queued to the same destination core** — not at end of scope ([why](../4_qb_core/messaging.md#the-reference-push-returns-dies-at-the-next-push-to-that-core)). |
+| `push` | `template<class _Event, class... _Args> _Event& push(ActorId const& dest, _Args&&... args) const noexcept` | Ordered; supports non-trivial members. Returns a mutable reference to the queued event that **stays valid until the handler that obtained it returns** — across further pushes, not across a `co_await` ([why](../4_qb_core/messaging.md#the-reference-push-returns-lives-until-your-handler-returns)). |
 | `send` | `template<class _Event, class... _Args> void send(ActorId const& dest, _Args&&... args) const noexcept` | Unordered. Trivial destructibility is compiler-enforced only for `qb::EventQOS0`-derived events; a delivered event is disposed exactly once whichever primitive queued it. |
 | `broadcast` | `template<class _Event, class... _Args> void broadcast(_Args&&... args) const noexcept` | To every actor on every core. |
 | `reply` | `void reply(Event& event) const noexcept` | Returns a received event to its source by swapping destination and source. |
@@ -459,6 +459,7 @@ Helpers: `qb::mono_now()`, `qb::wall_now()`, `qb::unix_seconds()`/`unix_millis()
 |---|---|---|
 | `qb::string<N>` | `qb/string.h` | Fixed-capacity, heap-free string; truncates past `N`. |
 | `qb::allocator::pipe<T>` | `qb/system/allocator/pipe.h` | Growable front-and-back buffer; backs I/O buffers. `pipe<char>` is the byte specialization. |
+| `qb::allocator::segmented_pipe<T>` | `qb/system/allocator/segmented_pipe.h` | Segmented FIFO that grows by linking a segment and never moves what it holds; backs the event pipes (`qb::VirtualPipe`) with a per-core `segment_pool`. |
 | `qb::unordered_map` / `unordered_set` | `qb/system/container/unordered_map.h`, `unordered_set.h` | Node-based `ska` hash tables — unconditional in every build mode, references survive a rehash. `qb::unordered_flat_map` / `unordered_flat_set` are the open-addressing variants; `icase_unordered_map` is the case-insensitive one. |
 | `qb::ring_buffer<T, N, Overwrite>` | `qb/system/container/ring_buffer.h` | Fixed-capacity circular FIFO. |
 | `qb::json` / `qb::jsonb` | `qb/json.h` | nlohmann/json aliases; `jsonb` is a distinct wrapper type. |

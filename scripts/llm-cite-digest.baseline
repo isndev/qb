@@ -12,28 +12,28 @@
 # excerpt rather than as an opaque hash.  Fields: doc <TAB> cited-spec <TAB>
 # digest <TAB> excerpt.  Keyed WITHOUT the doc's own line number, so
 # re-flowing a paragraph does not re-key the file.
-llm/qb.llm.api.md	Actor.h:1130-1140	d756f709669a	* @brief Alias of `addRefActor<T>()` — both return a phase-aware `qb:...
-llm/qb.llm.api.md	Actor.h:1149-1207	348256583ed8	/**
-llm/qb.llm.api.md	Actor.h:1209-1244	ebacec412d5d	/**
-llm/qb.llm.api.md	Actor.h:1246-1262	fdcc13b19f97	/**
-llm/qb.llm.api.md	Actor.h:1390-1399	dadd4620b634	class CoroContext {
-llm/qb.llm.api.md	Actor.h:1679-1758	72ac7be17054	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.api.md	Actor.h:1767-1770	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.api.md	Actor.h:1873-1879	fa70d7763fca	/**
-llm/qb.llm.api.md	Actor.h:1881-1885	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
-llm/qb.llm.api.md	Actor.h:1901-1912	d27c2e9e1eac	[[nodiscard]] qb::io::async::task<bool>
-llm/qb.llm.api.md	Actor.h:1943-1944	7a029450b670	template <typename _Actor>
-llm/qb.llm.api.md	Actor.h:2255-2255	a0e051d59cc7	using coro_context = CoroContext;
-llm/qb.llm.api.md	Actor.h:2263-2263	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
+llm/qb.llm.api.md	Actor.h:1136-1146	d756f709669a	* @brief Alias of `addRefActor<T>()` — both return a phase-aware `qb:...
+llm/qb.llm.api.md	Actor.h:1155-1213	348256583ed8	/**
+llm/qb.llm.api.md	Actor.h:1215-1250	ebacec412d5d	/**
+llm/qb.llm.api.md	Actor.h:1252-1268	fdcc13b19f97	/**
+llm/qb.llm.api.md	Actor.h:1396-1405	dadd4620b634	class CoroContext {
+llm/qb.llm.api.md	Actor.h:1685-1764	72ac7be17054	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.api.md	Actor.h:1773-1776	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.api.md	Actor.h:1879-1885	fa70d7763fca	/**
+llm/qb.llm.api.md	Actor.h:1887-1891	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
+llm/qb.llm.api.md	Actor.h:1907-1918	d27c2e9e1eac	[[nodiscard]] qb::io::async::task<bool>
+llm/qb.llm.api.md	Actor.h:1949-1950	7a029450b670	template <typename _Actor>
+llm/qb.llm.api.md	Actor.h:2261-2261	a0e051d59cc7	using coro_context = CoroContext;
+llm/qb.llm.api.md	Actor.h:2269-2269	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
 llm/qb.llm.api.md	Actor.h:604-621	11edeff824dc	/**
-llm/qb.llm.api.md	Actor.h:634-678	5c5465b8e08f	/**
-llm/qb.llm.api.md	Event.h:654-655	e76bd16e4192	template <typename... _Args>
-llm/qb.llm.api.md	Event.h:663-664	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.h:1183-1183	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1183-1184	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1196-1196	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1196-1198	b009dc2efdb7	Actor::spawn(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:753-776	cc12c180b3fc	template <typename _ServiceActor>
+llm/qb.llm.api.md	Actor.h:637-681	5c5465b8e08f	/**
+llm/qb.llm.api.md	Event.h:655-656	e76bd16e4192	template <typename... _Args>
+llm/qb.llm.api.md	Event.h:664-665	46b3869d9c8b	template <typename... _Args>
+llm/qb.llm.api.md	VirtualCore.h:1202-1202	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1202-1203	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1215-1215	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1215-1217	b009dc2efdb7	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:759-782	cc12c180b3fc	template <typename _ServiceActor>
 llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
 llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	crypto.h:693-701	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
@@ -47,32 +47,32 @@ llm/qb.llm.api.md	listener.h:1008-1021	31584ba4b550	inline void
 llm/qb.llm.api.md	scheduler.h:601-604	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	task.h:719-734	78c61ef4167a	await_resume() {
 llm/qb.llm.md	Actor.cpp:114-119	df9e20a73808	Actor::Actor() noexcept
-llm/qb.llm.md	Actor.cpp:300-318	94aff7135980	void
-llm/qb.llm.md	Actor.h:1103-1107	692b17120c0c	* @return A phase-aware `qb::ActorHandle<_Actor>`. The handle's `id()...
-llm/qb.llm.md	Actor.h:1127-1127	70a286fe36e6	ActorHandle<_Actor> addRefActor(_Args &&...args) const;
-llm/qb.llm.md	Actor.h:1149-1207	348256583ed8	/**
-llm/qb.llm.md	Actor.h:1207-1207	c83d000c16b8	void spawn_detached(Func &&func) const;
-llm/qb.llm.md	Actor.h:1209-1244	ebacec412d5d	/**
-llm/qb.llm.md	Actor.h:1244-1244	f9f0e3c13c7d	void spawn(Func &&func) const;
-llm/qb.llm.md	Actor.h:1246-1262	fdcc13b19f97	/**
-llm/qb.llm.md	Actor.h:1385-1391	7df8f4e2778e	* Provides a restricted interface for coroutines to interact with
-llm/qb.llm.md	Actor.h:1679-1758	72ac7be17054	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.md	Actor.h:1767-1770	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.md	Actor.h:1835-1837	1d53b2f3f947	* Thread-model: must only be dereferenced from the owning VirtualCore...
+llm/qb.llm.md	Actor.cpp:298-316	94aff7135980	void
+llm/qb.llm.md	Actor.h:1109-1113	692b17120c0c	* @return A phase-aware `qb::ActorHandle<_Actor>`. The handle's `id()...
+llm/qb.llm.md	Actor.h:1133-1133	70a286fe36e6	ActorHandle<_Actor> addRefActor(_Args &&...args) const;
+llm/qb.llm.md	Actor.h:1155-1213	348256583ed8	/**
+llm/qb.llm.md	Actor.h:1213-1213	c83d000c16b8	void spawn_detached(Func &&func) const;
+llm/qb.llm.md	Actor.h:1215-1250	ebacec412d5d	/**
+llm/qb.llm.md	Actor.h:1250-1250	f9f0e3c13c7d	void spawn(Func &&func) const;
+llm/qb.llm.md	Actor.h:1252-1268	fdcc13b19f97	/**
+llm/qb.llm.md	Actor.h:1391-1397	7df8f4e2778e	* Provides a restricted interface for coroutines to interact with
+llm/qb.llm.md	Actor.h:1685-1764	72ac7be17054	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.md	Actor.h:1773-1776	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.md	Actor.h:1841-1843	1d53b2f3f947	* Thread-model: must only be dereferenced from the owning VirtualCore...
 llm/qb.llm.md	Actor.h:321-334	5f38a59348eb	* is a coroutine (`qb::io::async::task<bool>`) it **may `co_await`** ...
 llm/qb.llm.md	Actor.h:572-588	e84dbde9b9ce	* @brief Get current time from the VirtualCore's perspective (nanosec...
-llm/qb.llm.md	Actor.h:834-839	411d83537697	* This is the primary and recommended method for sending events. Even...
-llm/qb.llm.md	Actor.h:876-882	785b2503a3c0	* @warning `noexcept`: an allocation failure while growing the pipe b...
-llm/qb.llm.md	Actor.h:891-895	838c0aeded6d	* Events sent using `send()` are not guaranteed to be received in the...
-llm/qb.llm.md	Event.h:619-632	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
+llm/qb.llm.md	Actor.h:837-842	411d83537697	* This is the primary and recommended method for sending events. Even...
+llm/qb.llm.md	Actor.h:882-888	785b2503a3c0	* @warning `noexcept`: an allocation failure while growing the pipe b...
+llm/qb.llm.md	Actor.h:897-901	838c0aeded6d	* Events sent using `send()` are not guaranteed to be received in the...
+llm/qb.llm.md	Event.h:620-633	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
 llm/qb.llm.md	ICallback.h:16-19	88e747230d39	* @warning The tick handler is executed on the `VirtualCore`'s event-...
-llm/qb.llm.md	Main.cpp:354-356	74f8f97adb96	} else if (core_factory.empty()) {
-llm/qb.llm.md	Main.cpp:527-529	0f521c2df42b	Main::core(CoreId const index) {
-llm/qb.llm.md	Pipe.h:135-150	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.cpp:1036-1043	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.h:1183-1183	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:1196-1196	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:655-667	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
+llm/qb.llm.md	Main.cpp:404-406	74f8f97adb96	} else if (core_factory.empty()) {
+llm/qb.llm.md	Main.cpp:577-579	0f521c2df42b	Main::core(CoreId const index) {
+llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
+llm/qb.llm.md	VirtualCore.cpp:1102-1109	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.h:1202-1202	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:1215-1215	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:661-673	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
 llm/qb.llm.md	async/io.h:62-67	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
 llm/qb.llm.md	async/io.h:82-83	bc5b8adc7b00	base()
 llm/qb.llm.md	async/io.h:91-95	4ab46a163948	~base() {

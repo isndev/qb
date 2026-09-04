@@ -49,9 +49,9 @@ namespace qb {
  *
  * @details
  * A `Pipe` is the underlying object that routes events from a source actor
- * to a destination actor. It wraps a `VirtualPipe` (the lock-free ring-buffer
- * segment owned by the source `VirtualCore`) together with the identity of
- * both endpoints.
+ * to a destination actor. It wraps a `VirtualPipe` (the source `VirtualCore`'s
+ * segmented outbound queue towards the destination core) together with the
+ * identity of both endpoints.
  *
  * Instances are obtained via `Actor::getPipe(dest)`. Holding a `Pipe` object
  * avoids repeated map lookups when sending several events to the same destination
@@ -115,14 +115,17 @@ public:
      *         The caller may modify event fields via this reference before the event
      *         is consumed by the destination actor.
      *
-     * @attention **The reference is invalidated by the very next event queued into this pipe** —
-     *            the pipe is a growable buffer, so a later `push`/`allocated_push` (including one
-     *            issued indirectly by `Actor::push`/`send`/`broadcast` to any actor on the same
-     *            destination core) either reallocates it or compacts it in place. Compaction is
-     *            the dangerous case: the stale reference stays inside a live allocation and
-     *            silently aliases a different event. Finish populating the event before queueing
-     *            anything else. Pinned by `PipeAllocatorContract.*` in
-     *            `tests/io/unit/core/pipe-allocator.cpp`.
+     * @attention **The reference stays valid until the handler or callback that obtained it
+     *            returns** — and no longer. The pipe is segmented (`qb::VirtualPipe`): a later
+     *            `push`/`allocated_push`, including one issued indirectly by
+     *            `Actor::push`/`send`/`broadcast` to any actor on the same destination core,
+     *            links a new segment when it needs room and never moves or compacts what an
+     *            earlier push placed. What ends the reference is the engine consuming the event,
+     *            which it only does between handlers: the next `__receive__` pass for a same-core
+     *            destination, the next `__flush_all__` for a remote one. Never keep it across a
+     *            `co_await` or in a member. Pinned by `SegmentedPipeContract.*` in
+     *            `tests/io/unit/core/segmented-pipe.cpp` and, end to end through the engine, by
+     *            `PushReferenceStability.*` in `tests/core/system/messaging/push-reference-stability.cpp`.
      *
      * @details
      * Events pushed through `Pipe::push()` are delivered in FIFO order relative to
@@ -165,7 +168,7 @@ public:
      *                 cross-core size ceiling** documented in the @warning below.
      * @param  args    Arguments forwarded to the `_Event` constructor.
      * @return Mutable reference to the newly constructed event in the pre-allocated slot.
-     *         Invalidated by the next event queued into this pipe — same contract as `push()`.
+     *         Valid until the handler or callback that obtained it returns — same contract as `push()`.
      *
      * @details
      * Use this overload instead of `push()` when the event's **effective in-pipe size**
