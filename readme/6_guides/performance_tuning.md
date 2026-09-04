@@ -163,11 +163,11 @@ The mechanics and the ordering contract are owned by [Event messaging](./../4_qb
 
 ### Allocation behavior
 
-Each source-to-destination channel is a `qb::VirtualPipe` (an alias of `qb::allocator::pipe<EventBucket>`) — a growable byte buffer that allocates at both front and back and **doubles its capacity** when it runs out of room. Two consequences for hot paths:
+Each source-to-destination channel is a `qb::VirtualPipe` (an alias of `qb::allocator::segmented_pipe<EventBucket>`) — a FIFO of 256 KB segments drawn from the core's pool: growth **links a segment** rather than copying, a consumed segment is reused by the next push while still warm, and nothing is allocated before the first push. Two consequences for hot paths:
 
 1. **Keep events small and move large data by handle.** An event is a data carrier; embed a `std::shared_ptr<T>` or `std::unique_ptr<T>` for a large buffer so only the pointer is copied into the pipe, not the payload. Use `qb::string<N>` (an inline, heap-free fixed-capacity string that truncates silently on overflow) for short strings instead of `std::string`.
 
-2. **Pre-size the pipe for large in-pipe events with `allocated_push`.** When the event's *effective in-pipe size* is large, reserve the exact space up front to avoid the doubling reallocations and copies that `push` would trigger:
+2. **Reserve trailing payload bytes with `allocated_push`.** When the event carries bytes *after* the object, reserve them with the event so they land in one contiguous range (a request wider than a segment gets a dedicated, exactly-sized segment):
 
    ```cpp
    [[nodiscard]] _Event &allocated_push(std::size_t size, _Args &&...args) const noexcept;  // Pipe.h

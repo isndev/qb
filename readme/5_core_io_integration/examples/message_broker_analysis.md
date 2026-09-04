@@ -271,7 +271,7 @@ void AcceptActor::on(qb::io::async::event::disconnected const &) {
 }
 ```
 
-`push<NewSessionEvent>(server_id)` constructs the event in the **sender's** outbound pipe for that destination and returns a reference for in-place field assignment; the framework relocates it into the recipient's mailbox afterwards (`sender pipe → peer mailbox ring → receive buffer`). Moving the socket into `evt.socket` transfers the live file descriptor; nothing is duplicated. <!-- src: qb/src/qb/core/Actor.h:841-843 -->
+`push<NewSessionEvent>(server_id)` constructs the event in the **sender's** outbound pipe for that destination and returns a reference for in-place field assignment; the framework relocates it into the recipient's mailbox afterwards (`sender pipe → peer mailbox ring → receive buffer`). Moving the socket into `evt.socket` transfers the live file descriptor; nothing is duplicated. <!-- src: qb/src/qb/core/Actor.h:844-846 -->
 
 ### ServerActor — own sessions, bridge to the topic manager
 
@@ -561,9 +561,9 @@ The connection deadline and the reconnect delay are both five seconds. Both reco
 > `ClientActor::disconnect()`, which nothing here calls, so when `InputActor` pushes
 > `qb::KillEvent` the actor would be destroyed with a five-second timer still holding `this`. An
 > `if (is_alive())` guard inside the lambda does not help — `is_alive()` is a member read
-> (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard *is* the use-after-free.
-> `spawn` puts the coroutine in the actor's cancellation scope (`qb/src/qb/core/Actor.h:1243-1244`),
-> which `Actor::kill()` cancels (`qb/src/qb/core/Actor.cpp:283-289`). Note the shape of the
+> (`qb/src/qb/core/Actor.h:632-635`), so on a destroyed actor the guard *is* the use-after-free.
+> `spawn` puts the coroutine in the actor's cancellation scope (`qb/src/qb/core/Actor.h:1249-1250`),
+> which `Actor::kill()` cancels (`qb/src/qb/core/Actor.cpp:281-287`). Note the shape of the
 > conversion: a coroutine may not touch actor state after a `co_await`, so the delay is captured by
 > value and everything that reads `_should_reconnect` or calls `connect()` moved into the
 > `ReconnectTickEvent` handler. The

@@ -107,10 +107,10 @@ template <typename _Event, typename... _Args>
 _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 ```
 
-`push<E>(dest, args...)` constructs an `E` in the pipe from this actor (the source) to `dest` and returns a **mutable reference** to it. Set any additional fields on that reference **immediately**, before queueing anything else. Use `push` unless you have a specific reason not to.
+`push<E>(dest, args...)` constructs an `E` in the pipe from this actor (the source) to `dest` and returns a **mutable reference** to it. Set any additional fields on that reference before your handler returns. Use `push` unless you have a specific reason not to.
 
-> **The returned reference dies at the very next event queued to the same destination core** — not at the end of the enclosing scope, and not at the pipe flush. The pipe is a growable buffer: the next `push`/`send`/`broadcast` resolving to that core either reallocates it (invalidating the reference) or compacts it in place, which leaves the reference aliasing a *different*, still-live event. That second case writes to valid memory, so **no allocator debugger and no sanitizer can see it** — ASan included. Never hold the reference across another send, across a helper call that might send, or across a loop iteration. Pinned by `PipeAllocatorContract.*` in `qb/tests/io/unit/core/pipe-allocator.cpp`.
-<!-- src: qb/src/qb/core/Actor.h:866-875; qb/src/qb/core/Pipe.h:118-125 -->
+> **The returned reference lives until the handler or callback that obtained it returns** — not one instruction longer, and whatever is pushed in between. The pipe is segmented: a later `push`/`send`/`broadcast` resolving to that core links a new segment when it needs room and never reallocates or compacts what an earlier push placed. The engine consumes the event only between handlers, and that is when the reference dies — so a coroutine handler must be done with it **before its first `co_await`**, and it must never be stored in a member. (Until 3.2 the pipe was contiguous and the reference died at the very next event queued to that core; code written to that rule is still correct.) Pinned by `SegmentedPipeContract.*` in `qb/tests/io/unit/core/segmented-pipe.cpp` and `PushReferenceStability.*` in `qb/tests/core/system/messaging/push-reference-stability.cpp`.
+<!-- src: qb/src/qb/core/Actor.h:869-881; qb/src/qb/core/Pipe.h:118-128 -->
 
 ```cpp
 // src: derived from qb/src/qb/core/Actor.h (push, mutable-reference idiom)
@@ -154,7 +154,7 @@ void broadcast(_Args &&...args) const noexcept;
 `broadcast<E>(args...)` delivers a copy of the event to every actor currently running across all `VirtualCore`s, with this actor as the source. It is built on the `send` path (`qb::VirtualCore::broadcast` calls `send` once per core), so it carries the same trivially-destructible expectation: broadcast plain-data or `qb::string<N>` events, not events holding `std::string`/`std::vector`. To target every actor on a single core instead, push to a `qb::BroadcastId`:
 
 ```cpp
-// src: qb/tests/core/system/messaging/messaging-api.cpp:247; qb/src/qb/core/ActorId.h:454 (BroadcastId)
+// src: qb/tests/core/system/messaging/messaging-api.cpp:247; qb/src/qb/core/ActorId.h:485 (BroadcastId)
 broadcast<SystemNotice>("shutting down");         // all actors, all cores
 push<SystemNotice>(qb::BroadcastId(core_id), ""); // all actors on one core
 ```
@@ -193,7 +193,7 @@ Three constraints follow from the implementation:
 
 | Primitive | Ordering | Event constraints | Destination | Returns |
 | --- | --- | --- | --- | --- |
-| `push<E>(dest, …)` | FIFO per source→dest | any `qb::Event` subclass | one actor | `E&` (dies at the next event queued to that core) |
+| `push<E>(dest, …)` | FIFO per source→dest | any `qb::Event` subclass | one actor | `E&` (valid until the handler returns) |
 | `to(dest).push<E>(…)` | FIFO per source→dest | any `qb::Event` subclass | one actor | `EventBuilder&` |
 | `send<E>(dest, …)` | none | trivially destructible | one actor | `void` |
 | `broadcast<E>(…)` | none | trivially destructible (uses `send` path) | all actors, all cores | `void` |
@@ -257,7 +257,7 @@ public:
 
 A single actor processes its events one at a time, on its owning `VirtualCore` thread; one `on()` call completes before the next begins for that actor. Two rules follow from how the runtime treats the event object:
 
-- **Do not retain a `push` return reference across another queued event.** It dies at the very next `push`/`send`/`broadcast` reaching the same destination core — sooner than the enclosing scope, and sooner than the pipe flush. See [`push`](#push--ordered-delivery-the-default) for why this is invisible to sanitizers.
+- **Do not retain a `push` return reference past the handler that obtained it.** It lives until that handler returns — across further pushes, but not across a `co_await` and not in a member. See [`push`](#push--ordered-delivery-the-default).
 - **Treat an event as consumed after `reply`/`forward`.** Both recycle the same object into the outbound path, so the in-handler reference must not be read or modified afterward. If you need to keep data, copy it out before the call.
 
 Conceptual flow from sender to handler:

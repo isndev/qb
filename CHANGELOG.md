@@ -9,6 +9,13 @@ policy.
 
 ### Added
 
+- **`qb::allocator::segmented_pipe<T>` + `segment_pool<T>`** (`qb/system/allocator/segmented_pipe.h`)
+  — a FIFO of fixed-size segments (256 KB, from a pool the owning `VirtualCore` keeps) that grows
+  by linking a segment behind the tail and never moves what it holds: `allocate_back(n)` is a
+  compare and a cursor add while the tail has room, a range never straddles two segments, a
+  request wider than a segment gets a dedicated exactly-sized one, and the read side walks
+  `front()` / `consume_front()` / `pop_front()` a segment at a time, each popped segment going
+  straight back to the pool. `qb::VirtualPipe` is now this type (was `allocator::pipe<EventBucket>`).
 - **`CoreInitializer::setIdleSpin()` / `Main::setIdleSpin()`** — how long an idle `latency > 0`
   core keeps polling before it parks on its mailbox, a time floor measured from its first idle
   pass (default `kDefaultIdleSpin`, 50 µs; `getIdleSpin()` reads it back). Until now the floor
@@ -25,6 +32,23 @@ policy.
 
 ### Changed
 
+- **The reference `Actor::push` / `Pipe::push` / `allocated_push` returns is valid until the
+  handler or callback that obtained it returns** — across any number of further pushes to the
+  same core — where it used to die at the very next event queued to that destination core. The
+  event pipes were one contiguous `allocator::pipe` per destination core: growth `memcpy`d
+  everything already queued and compaction `memmove`d it in place, which is what invalidated
+  the reference, and what cost a one-core burst of 1 M events 64 MB of copying plus ~26 600
+  minor page faults per run re-touching each doubling (the cliff between 100 k and 300 k
+  messages in `qb-vs-others`). With `segmented_pipe` nothing queued ever moves, so the reference
+  holds until the engine consumes the event between handlers. Code written to the old rule is
+  still correct; what remains forbidden is holding the reference across a coroutine's
+  `co_await` or in a member. Pinned by `SegmentedPipeContract.*` (unit) and
+  `PushReferenceStability.*` (through the engine, same-core, cross-core and under growth).
+- **Event pipes allocate nothing until their first push, and the per-core pool holds the high
+  water in 256 KB steps** (`segment_pool::shrink()` returns it). Every core used to allocate
+  256 KB eagerly for each of its N + 1 pipes — 68 MiB at rest on 16 cores — and each pipe
+  doubled on its own, so the peak was 2–3× the largest burst and never came back. A consumed
+  segment is the next one a push grows into, still warm in cache.
 - **The `latency > 0` park handshake is race-free.** `Mailbox::wait()` was
   `cv.wait_for(lk, latency)` with no predicate and `notify()` signalled without the mutex, so an
   enqueue landing between the consumer's empty drain and its registration on the condition

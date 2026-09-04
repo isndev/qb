@@ -175,7 +175,7 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 > member may hold no pointer into its own storage; a *short* `std::string` on libstdc++ holds
 > exactly that, because `_M_p` addresses its own inline buffer. libc++ recomputes `data()` from
 > `this`, which is why the by-value form was invisible on macOS and corrupted on Linux.
-> <!-- src: qb/src/qb/core/Actor.h:840-849 -->
+> <!-- src: qb/src/qb/core/Actor.h:843-852 -->
 > It was not hypothetical here: `ChatRoomActor` runs on core 3 and the two `ServerActor`s on core 1
 > (`examples/05-services/01-tcp-chat/server/main.cpp:63`, `:69`), and `ChatRoomActor::sendToSession()` does
 > `push<SendMessageEvent>(server_id)` (`examples/05-services/01-tcp-chat/server/ChatRoomActor.cpp:153`) — so
@@ -192,7 +192,7 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 > before relocating an event cross-core the engine scans it for a pointer into its own storage and
 > aborts with a diagnostic; the check is compiled out under `NDEBUG`, and on libc++ there is no
 > self-pointer for it to find, which is precisely why a macOS-only workflow never saw it.
-> <!-- src: qb/src/qb/core/Actor.h:850-853 -->
+> <!-- src: qb/src/qb/core/Actor.h:853-856 -->
 
 ## Server walkthrough
 
@@ -540,11 +540,11 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 > `qb::KillEvent`, the framework's default kill handling tears the actor down with the flag still
 > `true`, and a 5-second timer would still be holding `this`. Adding an `if (is_alive())` guard
 > inside such a lambda is **not** the fix: `is_alive()` is a member read
-> (`qb/src/qb/core/Actor.cpp:205-208`), so on a destroyed actor the guard *is* the use-after-free.
+> (`qb/src/qb/core/Actor.h:632-635`), so on a destroyed actor the guard *is* the use-after-free.
 >
 > `spawn` registers the coroutine in the actor's cancellation scope
-> (`qb/src/qb/core/Actor.h:1243-1244`), and `Actor::kill()` cancels that scope
-> (`qb/src/qb/core/Actor.cpp:283-289`), so the wait simply stops existing. Note that this is not a
+> (`qb/src/qb/core/Actor.h:1249-1250`), and `Actor::kill()` cancels that scope
+> (`qb/src/qb/core/Actor.cpp:281-287`), so the wait simply stops existing. Note that this is not a
 > search-and-replace: a coroutine may not touch actor state after a `co_await`, so the body captures
 > only the delay, by value, and everything that reads `_should_reconnect` or calls `connect()` moved
 > into the `ReconnectTickEvent` handler. That is the shape — roughly six extra lines per actor, not

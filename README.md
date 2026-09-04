@@ -158,7 +158,7 @@ exists:
 | Cost | Where it is documented |
 |---|---|
 | An event is `memcpy`-relocated and its source destructor never runs, so a payload must be trivially **relocatable**, not merely copyable — and C++20 has no trait for that. The debug guard that catches it sits on the cross-core hop only. | [messaging.md](./readme/4_qb_core/messaging.md) |
-| The reference `push` returns dies at the **next** push to the same destination core, not at end of scope — and in-place compaction makes that invisible to every sanitizer. | [messaging.md](./readme/4_qb_core/messaging.md) |
+| The reference `push` returns lives until your **handler returns** — across further pushes, since the pipe is segmented and never moves an event — but not across a `co_await` and never in a member. | [messaging.md](./readme/4_qb_core/messaging.md) |
 | Blocking the calling thread inside a handler freezes every actor on that core, with no diagnostic. | [async_in_actors.md](./readme/5_core_io_integration/async_in_actors.md) |
 | The runtime allocates in proportion to the square of the core count and never shrinks — 22.5 MiB at rest on 8 cores. | [buffers.md](./readme/0_foundations/buffers.md) |
 

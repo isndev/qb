@@ -57,7 +57,7 @@ The drain is also re-entrancy-guarded by an RAII flag, and it contains exception
 
 | Context | What drives the loop |
 |---|---|
-| Under `qb-core` | `qb::Main` starts one `VirtualCore` thread per core, and each calls `listener::current.run(EVRUN_NOWAIT)` once per pass, and only when there is work: the gate is `listener::has_work()` — a referenced active watcher, a pending event, an outstanding `defer()` or a ready coroutine — so a pure-actor core with no live qb-io object skips the pass entirely, and still pumps when a bare `defer()` is outstanding (`src/qb/core/VirtualCore.cpp:692-697`; `src/qb/io/async/listener.h:899-903`). |
+| Under `qb-core` | `qb::Main` starts one `VirtualCore` thread per core, and each calls `listener::current.run(EVRUN_NOWAIT)` once per pass, and only when there is work: the gate is `listener::has_work()` — a referenced active watcher, a pending event, an outstanding `defer()` or a ready coroutine — so a pure-actor core with no live qb-io object skips the pass entirely, and still pumps when a bare `defer()` is outstanding (`src/qb/core/VirtualCore.cpp:755-760`; `src/qb/io/async/listener.h:899-903`). |
 | Standalone | You call `run()`, `run_once()` or `run_until()` yourself. |
 
 Every timed API on this page takes a `qb::duration` (a `std::chrono::nanoseconds` span) or any `std::chrono::duration`, which converts implicitly. There is no `double`-seconds overload anywhere on the public surface.
@@ -94,7 +94,7 @@ That covers exactly one case, and covers it well:
 
 It does not cover the case people actually hit:
 
-- **An actor event handler** does not run under `run_ready()`. `VirtualCore::__workflow__` calls `listener::current.run(EVRUN_NOWAIT)` **first** — and `run()` is where `run_ready()` lives — and only *after that call has returned* does it reach `__flush_all__()` and `__receive__()`, which is what dispatches actor handlers (`src/qb/core/VirtualCore.cpp:695`, `:708`, `:710`). During any actor handler `in_run_ready_` is false, the guard passes, and `run_sync` proceeds: **no assertion, no throw, no log, no trace.**
+- **An actor event handler** does not run under `run_ready()`. `VirtualCore::__workflow__` calls `listener::current.run(EVRUN_NOWAIT)` **first** — and `run()` is where `run_ready()` lives — and only *after that call has returned* does it reach `__flush_all__()` and `__receive__()`, which is what dispatches actor handlers (`src/qb/core/VirtualCore.cpp:758`, `:771`, `:773`). During any actor handler `in_run_ready_` is false, the guard passes, and `run_sync` proceeds: **no assertion, no throw, no log, no trace.**
 
 ### What blocking the calling thread costs, and when it costs nothing
 
@@ -105,9 +105,9 @@ The pump runs *on whatever thread called it*. Everything therefore turns on whos
 > *Pre-engine setup: there is no actor loop yet, so we drive a coroutine to completion synchronously.*
 > — `examples/07-applications/02-auction-house/src/main.cpp:45-46`
 
-**Inside an actor handler, that thread is the `VirtualCore`.** Until the awaitable completes, this core never returns to its workflow loop: no `__flush_all__()`, no `__receive__()`, no `LoopEvent` tick, no actor reaping (`src/qb/core/VirtualCore.cpp:708-710`). Every actor on the core is frozen.
+**Inside an actor handler, that thread is the `VirtualCore`.** Until the awaitable completes, this core never returns to its workflow loop: no `__flush_all__()`, no `__receive__()`, no `LoopEvent` tick, no actor reaping (`src/qb/core/VirtualCore.cpp:771-773`). Every actor on the core is frozen.
 
-And because the core stops draining its own mailbox, peers pushing to it eventually find the ring full. A `try_send` that fails on a QoS-guaranteed event burns a bounded backoff and then makes the sender partial-bail and retry next pass, so the stall propagates outward as backpressure; a QoS-0 event is simply dropped (`src/qb/core/VirtualCore.cpp:361-374`).
+And because the core stops draining its own mailbox, peers pushing to it eventually find the ring full. A `try_send` that fails on a QoS-guaranteed event burns a bounded backoff and then makes the sender partial-bail and retry next pass, so the stall propagates outward as backpressure; a QoS-0 event is simply dropped (`src/qb/core/VirtualCore.cpp:419-432`).
 
 The failure is *hard to notice*, which is why it needs prose rather than a warning box. Watchers and coroutines keep firing inside the pump, so a sanity check that "the socket still responds" passes. The only symptom is actor latency.
 

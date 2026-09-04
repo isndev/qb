@@ -48,7 +48,7 @@ If you read nothing else here, these four are the ones that change how you write
 
 1. **`qb::duration` is `std::chrono::nanoseconds`, and a bare integer does not convert to it.** `setLatency(500)` is a compile error, not a 500-of-something. See [time.md](./time.md#qbduration-rejects-a-bare-integer).
 2. **`qb::mono_time` and `qb::wall_time` are different types, and subtracting one from the other does not compile.** That kills the whole "the timeout fired early because NTP stepped the clock" family at build time. See [time.md](./time.md#mono_time-and-wall_time-do-not-mix).
-3. **A pointer into a pipe dies at the next allocation on that pipe** — including the in-place compaction case, which stays inside a live allocation and therefore no allocator debugger can see. That is where the `Actor::push` reference rule comes from. See [buffers.md](./buffers.md#what-allocate_back-actually-does).
+3. **A pointer into a `pipe<char>` dies at the next allocation on that pipe** — including the in-place compaction case, which stays inside a live allocation and therefore no allocator debugger can see. The event pipes are `segmented_pipe`s precisely so that an event never moves: the `Actor::push` reference lives until your handler returns. See [buffers.md](./buffers.md#what-allocate_back-actually-does) and [its Events section](./buffers.md#events).
 4. **There is no lock on the message path.** Not a fast one, not an uncontended one: the engine calls the *indexed* MPSC enqueue, and the only `SpinLock` in the framework sits in the round-robin overloads the engine never uses. See [concurrency_primitives.md](./concurrency_primitives.md#two-enqueue-families--read-this-before-using).
 
 ## See also
