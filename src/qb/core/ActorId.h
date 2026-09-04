@@ -38,6 +38,7 @@
 // include from qb
 #include <qb/io.h>
 #include <qb/system/container/unordered_set.h>
+#include <qb/system/event/router.h> // router::dense_index<ActorId>
 #include <qb/utility/build_macros.h>
 #include <qb/utility/prefix.h>
 
@@ -390,6 +391,8 @@ class ActorId {
     // and operator uint32_t() together took ~10% of a dispatch-bound profile.
     template <typename T>
     friend struct std::hash;
+    template <typename T>
+    friend struct qb::router::dense_index;
 
     friend class CoreInitializer;
     friend class SharedCoreCommunication;
@@ -566,6 +569,29 @@ using core_id_set = CoreIdSet;
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 #endif
 } // namespace qb
+
+namespace qb::router {
+/**
+ * @brief The dense form of an `ActorId` is its `ServiceId` slot.
+ * @details A router only ever holds the actors of ONE `VirtualCore` — each core owns its
+ *          `router::memh<Event>` and subscribes its own actors to it — and within a core the
+ *          `ServiceId` comes lowest-free-first from `VirtualCore::ServiceIdPool`, so `sid()`
+ *          is unique among a router's live keys and stays as compact as the core's actor
+ *          count. The table compares the full id on every hit, so an event addressed to
+ *          another core's actor with the same slot is dropped exactly as the hash map dropped
+ *          it. See `router::dense_index` for the contract and the measurement behind it.
+ */
+template <>
+struct dense_index<qb::ActorId> {
+    static constexpr bool        enabled   = true;
+    static constexpr std::size_t max_index = std::numeric_limits<ServiceId>::max();
+
+    [[nodiscard]] static std::size_t
+    of(qb::ActorId const &id) noexcept {
+        return static_cast<std::size_t>(id.sid());
+    }
+};
+} // namespace qb::router
 
 namespace std {
 /**
