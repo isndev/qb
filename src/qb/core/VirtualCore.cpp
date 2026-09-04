@@ -643,8 +643,7 @@ void
 VirtualCore::__workflow__() {
     QB_LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
     while (likely(true)) {
-        _metrics._nanotimer = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
-        ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent
+        ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent; also keys the `time()` sample
 
         // Poll for pending signal (signal-handler-safe lock-free atomic read)
         // OR for a C++20 cooperative cancellation request coming from the
@@ -720,8 +719,10 @@ VirtualCore::__workflow__() {
         // register or unregister actors during dispatch (e.g. via `addRefActor`).
         {
             // One LoopEvent for the whole pass — same `now`/`iteration` for every callback,
-            // consistent with `Actor::time()`. Delivered by a direct virtual call (not routed).
-            const qb::LoopEvent                     loop_ev{_metrics._nanotimer, _loop_count};
+            // consistent with `Actor::time()` (the same per-pass sample; a pass with no
+            // registered callback and no caller never reads the clock). Delivered by a direct
+            // virtual call (not routed).
+            const qb::LoopEvent                     loop_ev{time(), _loop_count};
             thread_local std::vector<CallbackEntry> cb_snapshot;
             cb_snapshot = _callback_list;
             for (auto const &entry : cb_snapshot) {
@@ -1020,7 +1021,12 @@ VirtualCore::getCoreSet() const noexcept {
 
 uint64_t
 VirtualCore::time() const noexcept {
-    return _metrics._nanotimer;
+    // One clock read per pass at most, taken on the first call of the pass (see the field).
+    if (unlikely(_nanotimer_pass != _loop_count)) {
+        _nanotimer      = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
+        _nanotimer_pass = _loop_count;
+    }
+    return _nanotimer;
 }
 
 // `_nb_service`, `_handler` and `activation_deadline_ns` used to be defined HERE. All three are
