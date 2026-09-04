@@ -29,11 +29,11 @@ llm/qb.llm.api.md	Actor.h:604-621	11edeff824dc	/**
 llm/qb.llm.api.md	Actor.h:634-678	5c5465b8e08f	/**
 llm/qb.llm.api.md	Event.h:654-655	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:663-664	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.h:1175-1175	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1175-1176	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1188-1188	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1188-1190	b009dc2efdb7	Actor::spawn(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:745-768	cc12c180b3fc	template <typename _ServiceActor>
+llm/qb.llm.api.md	VirtualCore.h:1183-1183	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1183-1184	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1196-1196	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1196-1198	b009dc2efdb7	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:753-776	cc12c180b3fc	template <typename _ServiceActor>
 llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
 llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	crypto.h:693-701	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
@@ -43,7 +43,7 @@ llm/qb.llm.api.md	crypto.h:943-943	d0e7c7fb5535	static std::vector<unsigned char
 llm/qb.llm.api.md	crypto.h:969-986	1893285b514b	static std::string encrypt_with_metadata(const std::vector<unsigned c...
 llm/qb.llm.api.md	crypto.h:996-1000	b836147352c8	static std::vector<unsigned char> ecies_decrypt(const std::vector<uns...
 llm/qb.llm.api.md	crypto_asymmetric.cpp:718-718	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	listener.h:980-993	31584ba4b550	inline void
+llm/qb.llm.api.md	listener.h:1008-1021	31584ba4b550	inline void
 llm/qb.llm.api.md	scheduler.h:601-604	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	task.h:719-734	78c61ef4167a	await_resume() {
 llm/qb.llm.md	Actor.cpp:114-119	df9e20a73808	Actor::Actor() noexcept
@@ -66,12 +66,13 @@ llm/qb.llm.md	Actor.h:876-882	785b2503a3c0	* @warning `noexcept`: an allocation 
 llm/qb.llm.md	Actor.h:891-895	838c0aeded6d	* Events sent using `send()` are not guaranteed to be received in the...
 llm/qb.llm.md	Event.h:619-632	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
 llm/qb.llm.md	ICallback.h:16-19	88e747230d39	* @warning The tick handler is executed on the `VirtualCore`'s event-...
-llm/qb.llm.md	Main.cpp:341-343	74f8f97adb96	} else if (core_factory.empty()) {
-llm/qb.llm.md	Main.cpp:484-486	0f521c2df42b	Main::core(CoreId const index) {
+llm/qb.llm.md	Main.cpp:354-356	74f8f97adb96	} else if (core_factory.empty()) {
+llm/qb.llm.md	Main.cpp:527-529	0f521c2df42b	Main::core(CoreId const index) {
 llm/qb.llm.md	Pipe.h:135-150	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.h:1175-1175	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:1188-1188	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:648-659	ea1ffc0e035a	* @brief Get the current cached time for this VirtualCore's processin...
+llm/qb.llm.md	VirtualCore.cpp:1036-1043	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.h:1183-1183	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:1196-1196	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:655-667	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
 llm/qb.llm.md	async/io.h:62-67	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
 llm/qb.llm.md	async/io.h:82-83	bc5b8adc7b00	base()
 llm/qb.llm.md	async/io.h:91-95	4ab46a163948	~base() {
@@ -84,15 +85,15 @@ llm/qb.llm.md	config.h:265-265	1dee8b30f71e	#define QB_MAX_WRITE_BUFFER_SIZE sta
 llm/qb.llm.md	crypto.h:33-44	0e90de8e08fe	// This header used to `#error "missing OpenSSL Library"` when QB_HAS...
 llm/qb.llm.md	crypto.h:542-544	951a022022dd	* @return Vector containing the decrypted data or empty if authentica...
 llm/qb.llm.md	crypto.h:784-790	225ca9a0d77c	* Returns an empty string if the token is invalid or expired.
-llm/qb.llm.md	ev++.h:696-696	ff2366882bf0	set(const char *path, ev_tstamp interval = 0.) EV_NOEXCEPT {
+llm/qb.llm.md	ev++.h:706-706	ff2366882bf0	set(const char *path, ev_tstamp interval = 0.) EV_NOEXCEPT {
 llm/qb.llm.md	file.h:115-115	b1f6c4d76864	explicit file(std::filesystem::path const &fname, int flags = O_RDWR)...
 llm/qb.llm.md	file.h:139-139	a820f6e858fb	int open(std::filesystem::path const &fname, int flags = O_RDWR, int ...
 llm/qb.llm.md	file.h:368-368	5a73f68df7e0	[[nodiscard]] std::filesystem::path self_path();
 llm/qb.llm.md	io.h:353-379	4a7b749368bb	* @warning Despite the name, this overload does **not** defer: it sim...
 llm/qb.llm.md	io.h:581-584	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
-llm/qb.llm.md	listener.h:1032-1032	cc6b74b785e4	defer(_Func &&func) {
-llm/qb.llm.md	listener.h:965-977	9bb119dec73f	inline void
-llm/qb.llm.md	listener.h:980-993	31584ba4b550	inline void
+llm/qb.llm.md	listener.h:1008-1021	31584ba4b550	inline void
+llm/qb.llm.md	listener.h:1060-1060	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:993-1005	9bb119dec73f	inline void
 llm/qb.llm.md	patterns/request.h:100-100	fd61ad9ff46e	ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duratio...
 llm/qb.llm.md	scheduler.h:183-203	c96fefd341a2	* Drains and destroys all coroutines in the ready queue only. Coroutines
 llm/qb.llm.md	scheduler.h:406-435	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...

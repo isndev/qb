@@ -29,7 +29,7 @@ The interesting part is not the aliasing. It is that **there are two instant typ
 
 ### `qb::duration` rejects a bare integer
 
-A parameter typed `qb::duration` — `qb::CoreInitializer::setLatency(qb::duration latency = qb::duration::zero())` is the canonical one (`src/qb/core/Main.h:284`) — accepts any `std::chrono` literal whose period is finer than or equal to a nanosecond, implicitly:
+A parameter typed `qb::duration` — `qb::CoreInitializer::setLatency(qb::duration latency = qb::duration::zero())` is the canonical one (`src/qb/core/Main.h:286`) — accepts any `std::chrono` literal whose period is finer than or equal to a nanosecond, implicitly:
 
 ```cpp
 #include <qb/system/time.h>

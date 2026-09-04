@@ -160,7 +160,9 @@ int main() {
 `Main::core(idx)` throws once the engine is running, and `std::range_error` for `idx >= qb::MaxCores`
 (256). A core started with **0 actors fails startup** (`Error::NoActor`). `setLatency` takes a
 `qb::duration`: `qb::duration::zero()` = busy-spin; `>0` parks on a condition variable up to that span
-when idle.
+when idle — after polling for `setIdleSpin` (default 50 µs) since its last activity, so a prompt reply
+is still picked up on the lock-free path. A parked core does not wake for qb-io timers: a callback
+armed on it fires at the park timeout, so `latency` bounds timer precision too.
 
 `setAffinity` is best-effort, and on **Apple Silicon it does nothing at all** — silently. macOS has no
 `pthread_setaffinity_np`, so qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, a flavor
@@ -397,28 +399,29 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
-  body and answer through an event. _(`spawn_detached` Actor.h:1207 / VirtualCore.h:1175; `spawn` Actor.h:1244 /
-  VirtualCore.h:1188)_
+  body and answer through an event. _(`spawn_detached` Actor.h:1207 / VirtualCore.h:1183; `spawn` Actor.h:1244 /
+  VirtualCore.h:1196)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
-  with 0 actors fails startup. _(Main.cpp:484-486, :341-343)_
+  with 0 actors fails startup. _(Main.cpp:527-529, :354-356)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
-  `on(qb::LoopEvent const&)` invocation. Inside `onInit()` there is no pass yet, so it is the instant the
-  core was constructed — a real epoch value, but the same one for every actor on that core. It was 0 there through
+  `on(qb::LoopEvent const&)` invocation, and sampled on demand — the first call in a pass reads the clock, every
+  later one in that pass returns it, a pass nobody asks reads none. Inside `onInit()` there is no pass yet (pass 0), so it is
+  the instant the first actor on that core asked — a real epoch value, shared by every actor on that core. It was 0 there through
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:572-588; VirtualCore.h:648-659)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:572-588; VirtualCore.h:655-667; VirtualCore.cpp:1036-1043)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:66-78; async/io.h:62-67, :82-83, :91-95)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
-  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:980-993; mixin.h:63-71)_
+  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1008-1021; mixin.h:63-71)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
-  them. _(listener.h:965-977)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:353-379)_ _(listener.h:1032)_
+  them. _(listener.h:993-1005)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:353-379)_ _(listener.h:1060)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:406-435)_
@@ -453,7 +456,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; ev++.h:696)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; ev++.h:706)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:254-271)_

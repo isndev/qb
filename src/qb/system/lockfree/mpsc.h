@@ -193,6 +193,23 @@ public:
     }
 
     /**
+     * @brief Does any producer ring hold at least one unread item?
+     * @details Consumer-side query for a park/unpark decision: reads each ring's published
+     *          indices (`spsc::ringbuffer::empty()`) and nothing else — no snapshot, no lock.
+     *          Meant to be evaluated AFTER a `std::atomic_thread_fence(seq_cst)` by the consumer
+     *          that has just announced it is about to block (the Dekker half of a race-free
+     *          wait), so that a producer's enqueue is either seen here or sees the announcement.
+     * @return true if at least one ring is non-empty.
+     */
+    [[nodiscard]] bool
+    has_data() const noexcept {
+        for (auto const &producer : _producers)
+            if (!producer._ringbuffer.empty())
+                return true;
+        return false;
+    }
+
+    /**
      * @brief Process all available items from all producers, in place
      *
      * @tparam Func Type of the function to process dequeued items
@@ -444,6 +461,23 @@ public:
                 break;
         }
         return save_size - size;
+    }
+
+    /**
+     * @brief Does any producer ring hold at least one unread item?
+     * @details Consumer-side query for a park/unpark decision: reads each ring's published
+     *          indices (`spsc::ringbuffer::empty()`) and nothing else — no snapshot, no lock.
+     *          Meant to be evaluated AFTER a `std::atomic_thread_fence(seq_cst)` by the consumer
+     *          that has just announced it is about to block (the Dekker half of a race-free
+     *          wait), so that a producer's enqueue is either seen here or sees the announcement.
+     * @return true if at least one ring is non-empty.
+     */
+    [[nodiscard]] bool
+    has_data() const noexcept {
+        for (std::size_t i = 0; i < _nb_producer; ++i)
+            if (!_producers[i]._ringbuffer.empty())
+                return true;
+        return false;
     }
 
     /**

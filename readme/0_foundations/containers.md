@@ -34,7 +34,7 @@ Both are from the vendored `ska_hash` library and both are drop-in for their `st
 | Locality | one indirection per lookup | none |
 | Use when | you hold a reference, pointer or `&map[k]` across an insertion | you only ever look up and copy out |
 
-`qb::unordered_map` gives the same stability contract `std::unordered_map` does: **a rehash invalidates iterators but not references or pointers to elements** (`qb/src/qb/system/container/unordered_map.h:53-60`). That is not a nice-to-have here — the engine depends on it. `VirtualCore::ActorMap` (`src/qb/core/VirtualCore.h:158`), `Main::_registered_services` (`src/qb/core/Main.h:203`) and the event router's `_registered_events` (`src/qb/system/event/router.h:446`) are all held across insertions.
+`qb::unordered_map` gives the same stability contract `std::unordered_map` does: **a rehash invalidates iterators but not references or pointers to elements** (`qb/src/qb/system/container/unordered_map.h:53-60`). That is not a nice-to-have here — the engine depends on it. `VirtualCore::ActorMap` (`src/qb/core/VirtualCore.h:158`), `Main::_registered_services` (`src/qb/core/Main.h:204`) and the event router's `_registered_events` (`src/qb/system/event/router.h:446`) are all held across insertions.
 
 Measured on this checkout: a reference taken from a `qb::unordered_map<std::string, int>` before 10 000 further insertions — many rehashes — still reads the right value afterwards.
 

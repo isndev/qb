@@ -760,15 +760,28 @@ VirtualCore::__workflow__() {
                 break;
             }
         }
-        // Adaptive backoff: a busy iteration refills the spin credit; otherwise we
-        // burn through the remaining credit before blocking on the mailbox (2.15).
-        _metrics.carry_over();
+        // Park policy — a TIME floor, not an event-count credit. A pass is idle when it
+        // moved no event (sent, received, io) and left nothing for the next pass in the
+        // self-core pipe (an actor's callback may push to itself with no counted activity;
+        // parking over that would delay a local event by up to `latency`). The first idle
+        // pass stamps `_idle_since`; the core keeps polling until the mailbox's idle-spin
+        // floor has elapsed, then parks in `Mailbox::wait()` — which returns on data, on a
+        // producer's notify, or after `latency`. A wait that returns with nothing to do keeps
+        // the old stamp and parks again on the next pass, so an idle core does not re-spin a
+        // whole floor between two timeouts. The clock is read only on idle passes, and only
+        // when the core can park at all.
         if (_mail_box.getLatency() > qb::duration::zero()) {
-            if (likely(_metrics._spin_credit))
-                --_metrics._spin_credit;
-            else
-                _mail_box.wait();
+            if (likely(_metrics.had_activity()) || _mono_pipe_swap.size() != 0) {
+                _idle_since = qb::mono_time{};
+            } else {
+                const auto now = qb::mono_now();
+                if (_idle_since == qb::mono_time{})
+                    _idle_since = now;
+                else if (now - _idle_since >= _mail_box.getIdleSpin())
+                    _mail_box.wait();
+            }
         }
+        _metrics.reset();
     }
     // Receive and flush residual events, guaranteed to terminate without dropping anything
     // a live peer can still accept.

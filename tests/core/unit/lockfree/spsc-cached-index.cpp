@@ -160,7 +160,9 @@ TEST(SpscCachedIndex, DequeueSeesEveryPublishedElementAndRefreshesOnEmpty) {
 }
 
 TEST(SpscCachedIndex, ConsumeAllDrainsWhatWasPublishedAfterItsLastSnapshot) {
-    Ring ring;
+    // Value-initialised: the slots are indeterminate by design (a producer writes before a consumer
+    // reads), and gcc-14 cannot see that ordering through the consume_all lambda below.
+    Ring ring{};
     auto drain = [&] {
         std::vector<int> seen;
         ring.consume_all([&](int *p, std::size_t n) { seen.insert(seen.end(), p, p + n); });
@@ -189,8 +191,8 @@ TEST(SpscCachedIndex, PublicQueriesNeverUseASnapshot) {
 // ---- two threads, thousands of wraps ------------------------------------------------------------
 
 TEST(SpscCachedIndex, TwoThreadsMixedTrafficDeliverEveryElementOnceInOrder) {
-    constexpr std::size_t kSlots = 64;
-    constexpr int         kTotal = 400000; // 6250 wraps of the storage
+    constexpr std::size_t                       kSlots = 64;
+    constexpr int                               kTotal = 400000; // 6250 wraps of the storage
     qb::lockfree::spsc::ringbuffer<int, kSlots> ring;
 
     std::thread producer([&] {

@@ -157,7 +157,7 @@ Two rules keep an actor FSM correct:
   actor's coroutine scope; if you want a timer handle instead, hold a `scoped_callback` as a member so
   the actor's own destructor cancels it. See [Error handling — the two guards](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures)
   and [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
-  <!-- src: qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/core/VirtualCore.cpp:736,898 -->
+  <!-- src: qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/core/VirtualCore.cpp:742,917 -->
 
 For a larger machine, a `std::map<State, std::map<Input, Handler>>` transition table makes the
 states and transitions explicit and keeps each handler small — see the full coffee-machine FSM in
@@ -706,7 +706,7 @@ specific: `spawn` increments the very counter this handler is polling
 member-owned `scoped_callback` gives the same lifetime binding without touching the count. A bare
 `qb::io::async::callback` would give neither — its timer is owned by the loop, so it can fire after
 the actor is gone, and the `is_alive()` guard above is only valid because the *handle* is a member.
-<!-- src: qb/src/qb/core/VirtualCore.h:1188-1198, qb/src/qb/io/async/io.h:479-484 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1196-1206, qb/src/qb/io/async/io.h:479-484 -->
 
 The full coroutine contract — the dangling-closure rule, the `task<void>` type, the scheduler, and
 the safety requirements — lives on the [Coroutines](../3_qb_io/coroutines.md) page. The footgun to
@@ -729,7 +729,7 @@ context.
   cancels the watcher. See
   [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures) and
   [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
-  <!-- src: qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/core/VirtualCore.cpp:736,898 -->
+  <!-- src: qb/src/qb/core/Actor.cpp:205-208,283-289, qb/src/qb/core/VirtualCore.cpp:742,917 -->
 - **Passing a bare number as a delay.** `qb::io::async::callback(func, delay)` requires a
   `std::chrono::duration` (`std::chrono::seconds(2)`, `100ms` with `using namespace
   std::chrono_literals`), not a raw `double`.

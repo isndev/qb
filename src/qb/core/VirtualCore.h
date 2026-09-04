@@ -357,17 +357,17 @@ private:
 
     /**
      * @struct Metrics
-     * @brief Per-core event-loop instrumentation and adaptive idle-backoff state.
+     * @brief Per-pass event-loop instrumentation.
      * @details
-     * Tracks activity counters (events received, sent, I/O, bucket sizes, etc.) plus
-     * an integer `_spin_credit` used to amortize the cost of blocking waits on an
-     * empty mailbox. `_spin_credit` is seeded with the total work observed during
-     * the previous iteration whenever the loop made progress (see `carry_over()`),
-     * so a burst of activity buys a few additional lock-free polls before the core
-     * is allowed to park itself on `mailbox.wait()`.
+     * Activity counters for the CURRENT pass (events received, sent, I/O, bucket sizes);
+     * `had_activity()` is what the park policy reads at the end of the pass, and `reset()`
+     * clears them for the next one. The policy itself lives in `__workflow__` and is keyed
+     * on TIME (`_idle_since` against the mailbox's idle-spin floor), not on these counts:
+     * the 2.15–3.0 "spin credit" refilled from the previous pass's event count parked a
+     * one-event-per-pass workload after two or three empty passes, so every hop of a
+     * request/response paid an OS park + wake.
      */
     struct Metrics {
-        std::uint64_t _spin_credit        = 0; ///< Remaining lock-free polls before blocking wait.
         std::uint64_t _nb_event_io        = 0;
         std::uint64_t _nb_event_received  = 0;
         std::uint64_t _nb_bucket_received = 0;
@@ -383,20 +383,18 @@ private:
             return (_nb_event_sent + _nb_event_received + _nb_event_io + _nb_event_sent_try) != 0;
         }
 
-        /**
-         * @brief Refresh the spin credit and clear per-iteration event counters.
-         * @details
-         * Keeps `_spin_credit` at the total work observed this iteration (plus any
-         * leftover credit), so a busy loop always stays on the lock-free fast path.
-         */
+        /** @brief Clear the per-pass counters. */
         void
-        carry_over() noexcept {
-            const auto activity = _nb_event_sent + _nb_event_received + _nb_event_io + _nb_event_sent_try;
-            const auto credit   = _spin_credit + activity;
-            *this               = {};
-            _spin_credit        = credit;
+        reset() noexcept {
+            *this = {};
         }
     } _metrics;
+    // --- the park clock: when this core last found nothing to do, `mono_time{}` while busy.
+    // Stamped on the first idle pass after activity and read on every later one; the core
+    // parks (`Mailbox::wait()`) once `mono_now() - _idle_since` reaches the mailbox's idle-spin
+    // floor, and stays parked-or-parking (no re-spin) until something arrives. Only touched when
+    // the mailbox has a non-zero latency — a latency-0 core never reads the clock for this.
+    qb::mono_time _idle_since{};
     // --- the pass clock: `time()` is sampled at most ONCE per loop pass, and only when asked.
     // The loop used to read `qb::wall_now()` at the top of every pass, whether or not any
     // actor would call `time()` in it — one clock read (~20–30 ns, a vDSO/`QueryPerformance`
@@ -407,8 +405,9 @@ private:
     // actor asking there gets a real present instant, shared by every actor on the core.
     // `mutable` because `time()` is const on a per-thread object: only the owning core thread
     // calls it, so there is no data race to protect.
-    mutable std::uint64_t _nanotimer      = 0;               ///< `time()` for `_nanotimer_pass`
-    mutable std::uint64_t _nanotimer_pass = ~std::uint64_t{0}; ///< `_loop_count` the sample belongs to; never equal to a real pass until sampled
+    mutable std::uint64_t _nanotimer = 0; ///< `time()` for `_nanotimer_pass`
+    mutable std::uint64_t _nanotimer_pass =
+        ~std::uint64_t{0}; ///< `_loop_count` the sample belongs to; never equal to a real pass until sampled
     unsigned int _last_signal_generation =
         0; ///< `Main::_signal_generation` value at this core's last SignalEvent synthesis; a newer value (a fresh signal or `Main::stop()`)
            ///< re-triggers delivery. Replaces the old single-shot `_signal_consumed` latch that dropped every signal after the first.

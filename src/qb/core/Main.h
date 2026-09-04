@@ -199,6 +199,7 @@ private:
     ServiceId    _next_id;
     CoreIdSet    _affinity;
     qb::duration _latency;
+    qb::duration _idle_spin;
 
     qb::unordered_set<ServiceId>                _registered_services;
     std::vector<std::unique_ptr<IActorFactory>> _actor_factories;
@@ -280,8 +281,26 @@ public:
      * - `latency > 0`: The VirtualCore may sleep for up to this duration if idle, reducing CPU usage.
      *   This introduces a potential worst-case latency for new event processing.
      * This setting takes effect when the engine starts.
+     * @see setIdleSpin() for how long an idle core keeps polling before it takes that sleep.
      */
     CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept;
+
+    /*!
+     * @brief Set how long an idle VirtualCore keeps polling before it parks.
+     * @param idle_spin Time since the core's last activity after which it may block on its
+     *                  mailbox. Defaults to `kDefaultIdleSpin` (50 µs).
+     * @return Reference to this `CoreInitializer` for method chaining.
+     * @note
+     * Only meaningful with `latency > 0`; a `latency == 0` core never parks. The floor is what
+     * keeps a request/response exchange on the lock-free path: a core that parked the moment
+     * it found nothing would pay an OS park + wake on every hop of a ping-pong (~2–13 µs,
+     * against ~300 ns polling), because a reply always arrives a few hundred nanoseconds after
+     * the request left. `qb::duration::zero()` parks on the first idle pass (the 3.0 behaviour
+     * for a one-event-per-pass workload); a larger value trades idle CPU for a longer window in
+     * which a late reply is still picked up at polling latency.
+     * This setting takes effect when the engine starts.
+     */
+    CoreInitializer &setIdleSpin(qb::duration idle_spin = kDefaultIdleSpin) noexcept;
 
     /**
      * @brief Gets the CoreId associated with this initializer.
@@ -298,6 +317,15 @@ public:
      * @return `qb::duration` latency value. See `setLatency()` for interpretation.
      */
     [[nodiscard]] qb::duration getLatency() const noexcept;
+    /**
+     * @brief Gets the configured idle-spin floor for this core.
+     * @return `qb::duration` value. See `setIdleSpin()` for interpretation.
+     */
+    [[nodiscard]] qb::duration getIdleSpin() const noexcept;
+
+    /// Default `setIdleSpin()`: measured to hold a two-core ping-pong on the polling path on
+    /// Windows, WSL2 and Linux alike, while an idle core still parks within ~50 µs of its last event.
+    static constexpr qb::duration kDefaultIdleSpin = std::chrono::microseconds{50};
 };
 
 /**
@@ -325,47 +353,106 @@ class SharedCoreCommunication : nocopy {
     friend class Main;
     constexpr static const uint64_t MaxRingEvents = (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
+
+public:
+    /**
+     * @brief One core's inbound ring set plus its park/unpark handshake.
+     * @details The consumer (the owning `VirtualCore`) parks in `wait()` once it has been idle
+     *          for `_idle_spin`; a producer (any core's `send()`, or a `__flush_all__` that gave
+     *          up its retry budget) calls `notify()` after its enqueue. The handshake is a
+     *          Dekker pair over `_parked`:
+     *
+     *            consumer: `_parked = true; fence(seq_cst); if (has_data()) return; lock; wait`
+     *            producer: `enqueue;       fence(seq_cst); if (!_parked)  return; lock; notify`
+     *
+     *          Either the producer's enqueue is visible to the consumer's `has_data()` or the
+     *          consumer's `_parked` is visible to the producer's load — the two fences forbid the
+     *          case where both miss. The producer that does see `_parked` takes the mutex before
+     *          notifying, which orders it against the consumer's lock-then-wait: if the producer
+     *          locks first, the consumer's predicate finds the data before it ever waits; if the
+     *          consumer locks first, it is already waiting when the notify lands. Both are
+     *          load-bearing — the shipped 3.0 form (`wait_for` with no predicate, `notify_all()`
+     *          without the mutex) lost the wakeup for every enqueue landing between the empty
+     *          `consume_all` and the wait, and the core then slept the whole `_latency` (on MSVC,
+     *          a whole scheduler tick: measured ~13 ms per loss, 50–95 % of a 2-core ping-pong's
+     *          wait time). When nobody is parked, `notify()` costs one fence and one load.
+     */
     class Mailbox : public lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0> {
-        const qb::duration      _latency;
+        const qb::duration _latency;   ///< Longest single park; 0 = the consumer never parks.
+        const qb::duration _idle_spin; ///< Idle time the consumer spins through before it parks.
+        // The consumer's "I am about to block" flag. Its own line: producers read it on every
+        // enqueue, the consumer writes it only around a park, and nothing else may share it.
+        alignas(QB_LOCKFREE_CACHELINE_BYTES) std::atomic<bool> _parked{false};
         std::mutex              _mtx;
         std::condition_variable _cv;
 
+        // The Dekker fence, once for both halves. gcc's -fsanitize=thread does not MODEL a
+        // fence (it still emits it) and says so with -Wtsan at every use. That blindness costs
+        // nothing here: TSan reports data races on non-atomic memory through happens-before,
+        // and every object the handshake touches — `_parked`, the ring indices, the slots they
+        // publish with release/acquire — is either atomic or ordered by one, so a fence TSan
+        // cannot see produces neither a false report nor a lost one. A store-load reordering,
+        // the bug class the fence exists for, is outside what TSan can observe with or without
+        // it. clang's TSan models seq_cst fences and warns about nothing.
+        static void
+        seq_cst_fence() noexcept {
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtsan"
+#endif
+            std::atomic_thread_fence(std::memory_order_seq_cst);
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+        }
+
     public:
-        explicit Mailbox(std::size_t const nb_producer, qb::duration const latency)
+        explicit Mailbox(std::size_t const nb_producer, qb::duration const latency, qb::duration const idle_spin)
             : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer)
-            , _latency(latency) {}
+            , _latency(latency)
+            , _idle_spin(idle_spin) {}
 
         /**
-         * @brief Waits for a notification on this mailbox, up to its configured latency.
+         * @brief Park the consumer until data is enqueued, `notify()` lands, or `_latency` elapses.
          * @ingroup Engine
-         * @details If the mailbox is configured with a non-zero latency (`_latency > 0`),
-         *          this method blocks the calling thread (typically a VirtualCore's event loop)
-         *          using a `std::condition_variable` for a duration up to `_latency` nanoseconds,
-         *          or until `notify()` is called.
-         *          If `_latency` is 0, this method returns immediately (effectively a no-op for waiting).
-         *          This is used by VirtualCores to sleep when idle, reducing CPU usage.
+         * @details Consumer side of the handshake described on the class. Returns at once — without
+         *          touching the mutex — if a producer has already published something; otherwise
+         *          blocks for at most `_latency`, re-checking `has_data()` on every wake so a spurious
+         *          one cannot return early with an empty ring set. A no-op when `_latency` is 0.
+         * @note Only the owning core's thread may call this.
          */
         void
         wait() noexcept {
-            if (_latency > qb::duration::zero()) {
+            if (_latency <= qb::duration::zero())
+                return;
+            _parked.store(true, std::memory_order_relaxed);
+            seq_cst_fence();
+            if (!has_data()) {
                 std::unique_lock lk(_mtx);
-                _cv.wait_for(lk, _latency);
+                _cv.wait_for(lk, _latency, [this] { return has_data(); });
             }
+            _parked.store(false, std::memory_order_relaxed);
         }
 
         /**
-         * @brief Notifies a waiting thread (VirtualCore) that an event might be available in this mailbox.
+         * @brief Wake the consumer if it is parked; producer side of the handshake.
          * @ingroup Engine
-         * @details If the mailbox is configured with a non-zero latency (`_latency > 0`),
-         *          this method signals the `std::condition_variable` associated with this mailbox.
-         *          This wakes up a VirtualCore thread that might be sleeping in the `wait()` method,
-         *          prompting it to check the mailbox for new events.
-         *          If `_latency` is 0, this method is a no-op.
+         * @details Call AFTER the enqueue whose data the consumer must see. Costs one fence and one
+         *          load on the common (nobody parked) path; takes the mutex only when the consumer
+         *          has announced a park, which is what makes the wake-up impossible to lose. A no-op
+         *          when `_latency` is 0.
          */
         void
         notify() noexcept {
-            if (_latency > qb::duration::zero())
-                _cv.notify_all();
+            if (_latency <= qb::duration::zero())
+                return;
+            seq_cst_fence();
+            if (!_parked.load(std::memory_order_relaxed))
+                return;
+            {
+                std::lock_guard lk(_mtx);
+            }
+            _cv.notify_one();
         }
 
         /**
@@ -377,8 +464,20 @@ class SharedCoreCommunication : nocopy {
         getLatency() const noexcept {
             return _latency;
         }
+
+        /**
+         * @brief Get the idle-spin floor for this mailbox's consumer.
+         * @ingroup Engine
+         * @return How long the consumer keeps polling after its last activity before it parks.
+         *         Meaningless when `getLatency()` is 0.
+         */
+        [[nodiscard]] qb::duration
+        getIdleSpin() const noexcept {
+            return _idle_spin;
+        }
     };
 
+private:
     const CoreSet                         _core_set;
     std::vector<std::unique_ptr<Mailbox>> _mail_boxes;
     // Per-core "has left __workflow__" flag, indexed by RESOLVED core index (parallel to
@@ -641,6 +740,15 @@ public:
      * @attention This function is only available before the engine is running.
      */
     void setLatency(qb::duration latency = qb::duration::zero());
+
+    /*!
+     * @brief Set the idle-spin floor for all VirtualCores.
+     * @ingroup Engine
+     * @param idle_spin Time an idle core keeps polling before it parks; see `CoreInitializer::setIdleSpin()`.
+     * @details Applies to every core, overriding any per-core value set earlier via `core(id).setIdleSpin()`.
+     * @attention This function is only available before the engine is running.
+     */
+    void setIdleSpin(qb::duration idle_spin = CoreInitializer::kDefaultIdleSpin);
 
     /*!
      * @brief Get the set of `CoreId`s that are currently configured to be used by the engine.

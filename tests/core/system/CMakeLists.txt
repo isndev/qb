@@ -33,6 +33,9 @@ qb_add_test(MODULE qb-core TIER system NAME sigterm-shutdown SOURCES engine/sigt
 # wedge (a KillEvent-only no_default_events actor cannot be stopped), so it detaches one engine
 # thread on purpose -- see the file header. Bounded, and it is what the corrected docs rest on.
 qb_add_test(MODULE qb-core TIER system NAME no-default-events SOURCES engine/no-default-events.cpp DEPENDS ${PROJECT_NAME} LABELS signal serial)
+# core-park-policy measures WHEN a latency>0 core parks, with a qb-io timer as its clock; a loaded
+# host stretches every figure, so it runs alone.
+qb_add_test(MODULE qb-core TIER system NAME core-park-policy SOURCES engine/core-park-policy.cpp DEPENDS ${PROJECT_NAME} LABELS serial)
 # engine-io-smoke drives the LOGGING BACKEND itself -- it points the global logger at a throwaway
 # temp path with qb::io::log::init() and reads the rolled files back. That namespace, and nanolog
 # behind it, only exist when QB_WITH_LOGGING is ON, and the test uses them unguarded, so with
