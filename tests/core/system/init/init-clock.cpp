@@ -11,16 +11,17 @@
  * @brief `Actor::time()` / `Actor::now()` are a real instant inside `onInit()`, not zero.
  *
  * `Actor::time()` is documented as "nanoseconds since the epoch", cached once per loop pass. The
- * cache is `VirtualCore::_metrics._nanotimer`, refreshed at the top of `__workflow__`
- * (`VirtualCore.cpp:644`) — but `onInit()` runs BEFORE the first pass (`Main.cpp:348` drives
- * `__init__actors__`, `:355` enters the loop). Through 3.0.0 the field was value-initialised to 0,
- * so every `onInit()` in the tree read `time() == 0`: an elapsed-time subtraction there yielded
- * the entire UNIX epoch, and `now()` was the epoch itself. Nothing said so anywhere.
+ * cache is `VirtualCore::_nanotimer`, keyed on the pass counter and sampled by the first `time()`
+ * call of a pass — but `onInit()` runs BEFORE the first pass (`Main.cpp:348` drives
+ * `__init__actors__`, `:355` enters the loop). Through 3.0.0 the cache was refreshed only at the
+ * top of `__workflow__` and value-initialised to 0, so every `onInit()` in the tree read
+ * `time() == 0`: an elapsed-time subtraction there yielded the entire UNIX epoch, and `now()` was
+ * the epoch itself. Nothing said so anywhere.
  *
- * The field is now seeded at `VirtualCore` construction (`VirtualCore.h:377`), which is the first
- * moment the core exists and is still before any actor is constructed. This pins the property that
- * matters to a user — the value is a plausible present instant, and it is the same one every actor
- * on that core sees — without pinning the mechanism.
+ * The sample is now taken on demand, and the construction + `onInit()` phase is pass 0 like any
+ * other: the first actor to ask reads the clock, and every actor on that core sees that instant.
+ * This pins the property that matters to a user — the value is a plausible present instant, and
+ * it is the same one every actor on that core sees — without pinning the mechanism.
  *
  * The lower bound is deliberately crude (2020-01-01) rather than "close to now": a tight window
  * would make this a flaky clock-skew test instead of a zero-value test.

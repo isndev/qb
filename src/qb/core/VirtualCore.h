@@ -374,7 +374,6 @@ private:
         std::uint64_t _nb_event_sent_try  = 0;
         std::uint64_t _nb_event_sent      = 0;
         std::uint64_t _nb_bucket_sent     = 0;
-        std::uint64_t _nanotimer          = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now())); ///< seeded: onInit precedes pass 1
 
         /**
          * @brief Any evidence of work performed or attempted during this iteration?
@@ -389,18 +388,27 @@ private:
          * @details
          * Keeps `_spin_credit` at the total work observed this iteration (plus any
          * leftover credit), so a busy loop always stays on the lock-free fast path.
-         * `_nanotimer` is intentionally preserved across iterations.
          */
         void
         carry_over() noexcept {
             const auto activity = _nb_event_sent + _nb_event_received + _nb_event_io + _nb_event_sent_try;
-            const auto ts       = _nanotimer;
             const auto credit   = _spin_credit + activity;
             *this               = {};
             _spin_credit        = credit;
-            _nanotimer          = ts;
         }
     } _metrics;
+    // --- the pass clock: `time()` is sampled at most ONCE per loop pass, and only when asked.
+    // The loop used to read `qb::wall_now()` at the top of every pass, whether or not any
+    // actor would call `time()` in it — one clock read (~20–30 ns, a vDSO/`QueryPerformance`
+    // call either way) on a pass that can otherwise be under 100 ns. The sample is keyed on
+    // `_loop_count`, so the first `time()` of a pass reads the clock and every later one in
+    // the same pass returns that value; a pass nobody asks costs nothing. Pass 0 is the
+    // construction + `onInit()` phase (`_loop_count` is 0 until the loop's first pass), so an
+    // actor asking there gets a real present instant, shared by every actor on the core.
+    // `mutable` because `time()` is const on a per-thread object: only the owning core thread
+    // calls it, so there is no data race to protect.
+    mutable std::uint64_t _nanotimer      = 0;               ///< `time()` for `_nanotimer_pass`
+    mutable std::uint64_t _nanotimer_pass = ~std::uint64_t{0}; ///< `_loop_count` the sample belongs to; never equal to a real pass until sampled
     unsigned int _last_signal_generation =
         0; ///< `Main::_signal_generation` value at this core's last SignalEvent synthesis; a newer value (a fresh signal or `Main::stop()`)
            ///< re-triggers delivery. Replaces the old single-shot `_signal_consumed` latch that dropped every signal after the first.
@@ -649,11 +657,12 @@ public:
      * @ingroup Engine
      * @return `uint64_t` timestamp in nanoseconds since epoch.
      * @details
-     * This timestamp is updated once at the beginning of each iteration of the VirtualCore's
-     * main processing loop. All actors running on this core during that single iteration
-     * will see the same value when calling `Actor::time()` (which internally calls this).
-     * This is optimized for performance within a loop iteration but means it does not update
-     * with true nanosecond precision *during* a single actor's event handling.
+     * The clock is read at most once per iteration of the VirtualCore's main processing
+     * loop — on the first call to `time()` in that iteration — and every later call in the
+     * same iteration returns the same value. All actors running on this core during that
+     * single iteration therefore see the same value from `Actor::time()` (which internally
+     * calls this), and an iteration in which nobody asks reads no clock at all. It does not
+     * update with true nanosecond precision *during* a single actor's event handling.
      * For a continuously updating high-precision clock, use `qb::wall_now()`.
      */
     [[nodiscard]] uint64_t time() const noexcept;
