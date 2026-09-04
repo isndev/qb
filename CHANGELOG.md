@@ -32,8 +32,16 @@ policy.
   at 300 000 messages: 246–293 lost wakeups on Linux (1 ms each) and 48–2849 on Windows, where
   MSVC's `wait_for` rounds up to the 15.6 ms scheduler tick. The handshake is a Dekker pair over
   a cache-line-aligned `_parked` flag with `seq_cst` fences on both sides, the producer taking
-  the mutex before it notifies and the consumer waiting on `has_data()`. Both halves are no-ops
-  at latency 0.
+  the mutex before it notifies and the consumer waiting on `has_data()`. At latency 0 `wait()`
+  returns at once and `notify()` is only its fence.
+- **`Mailbox::notify()` issues its `seq_cst` fence in spin mode too.** On x86 that fence is an
+  `mfence`, which drains the producer's store buffer, so the event just enqueued becomes visible
+  to a spinning consumer now rather than whenever the buffer flushes. Measured on a two-core
+  ping-pong (interleaved A/B on a quiet host, p50 of 7 runs): Windows/MSVC 296–309 ns per
+  round-trip without it and 259–263 with it, where the spinning cell had been slower than the
+  parking one (256–272); Linux/g++-14 204–219 → 205–208, with the worst run falling from 295 to
+  215 ns. Bulk single-producer throughput (`BM_Multi_Producer_Consumer`, 1M events) is unchanged
+  at 18.6 M msg/s. arm64 is unmeasured.
 - **A core no longer parks over its own pipe.** An actor pushing to itself from a callback moved
   no counted event, so a parked core delivered that push after `latency`; the idle test now also
   requires the self-core pipe to be empty.

@@ -439,14 +439,25 @@ public:
          * @ingroup Engine
          * @details Call AFTER the enqueue whose data the consumer must see. Costs one fence and one
          *          load on the common (nobody parked) path; takes the mutex only when the consumer
-         *          has announced a park, which is what makes the wake-up impossible to lose. A no-op
-         *          when `_latency` is 0.
+         *          has announced a park, which is what makes the wake-up impossible to lose. At
+         *          `_latency` 0 only the fence runs — see the note in the body.
          */
         void
         notify() noexcept {
+            // The fence is issued in spin mode too, on purpose. It is the producer's half of the
+            // Dekker pair, so a parking mailbox needs it for correctness — but on x86 a seq_cst
+            // fence is also an `mfence`, which drains the store buffer, so the event just enqueued
+            // becomes visible to the consumer NOW rather than whenever the buffer happens to
+            // flush. Measured on a two-core ping-pong (qb-vs-others audit, axis K; interleaved
+            // A/B on a quiet host, p50 of 7 runs): Windows/MSVC 296–309 ns per round-trip
+            // without it, 259–263 with it — the spinning cell was SLOWER than the parking one
+            // (256–272) before; Linux/g++-14 204–219 → 205–208, worst run 295 → 215. It is paid
+            // once per cross-core event, after the bucket copy that already dominates: the bulk
+            // case (`BM_Multi_Producer_Consumer`, 1M events) is unchanged at 18.6 M msg/s.
+            // arm64 (`dmb ish`) is unmeasured; the macOS bench gate is the instrument.
+            seq_cst_fence();
             if (_latency <= qb::duration::zero())
                 return;
-            seq_cst_fence();
             if (!_parked.load(std::memory_order_relaxed))
                 return;
             {
