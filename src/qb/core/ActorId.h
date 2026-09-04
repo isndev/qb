@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <bitset>
 #include <cstdint>
+#include <bit>
 #include <limits>
 #include <unordered_set>
 #include <vector>
@@ -381,6 +382,12 @@ using CoreIdSet = CoreIdBitSet;
  * comparing, and validating actor IDs.
  */
 class ActorId {
+    // Every member is defined in-class, deliberately: they are one-liners called on EVERY event
+    // from code instantiated in the USER'S translation unit (the router's dispatch trampoline,
+    // `semh::route`'s hash lookup, `Event`'s default-constructed ids in `Actor::push`). Defined
+    // out of line in ActorId.cpp they were real calls into the archive there -- measured with
+    // perf on savina/counting at cores=1, g++ 14 -O3, no LTO: the constructor, is_broadcast()
+    // and operator uint32_t() together took ~10% of a dispatch-bound profile.
     template <typename T>
     friend struct std::hash;
 
@@ -395,7 +402,9 @@ private:
     CoreId    _core_id;
 
 protected:
-    ActorId(ServiceId id, CoreId index) noexcept;
+    ActorId(ServiceId id, CoreId index) noexcept
+        : _service_id(id)
+        , _core_id(index) {}
 
 public:
     static constexpr uint32_t  NotFound     = 0;
@@ -404,42 +413,61 @@ public:
     /*!
      * ActorId() == ActorId::NotFound
      */
-    ActorId() noexcept;
+    ActorId() noexcept
+        : _service_id(0)
+        , _core_id(0) {}
     /*!
      * @private
      * internal function
      */
-    ActorId(uint32_t id) noexcept;
+    ActorId(uint32_t id) noexcept {
+        *this = std::bit_cast<ActorId>(id);
+    }
 
     /**
      * @brief Conversion operator to uint32_t
      * @return The ActorId as a 32-bit unsigned integer
      */
-    [[nodiscard]] operator uint32_t() const noexcept;
+    [[nodiscard]]
+    operator uint32_t() const noexcept {
+        return std::bit_cast<uint32_t>(*this);
+    }
 
     /*!
      * @brief Get the service identifier component of this ActorId
      * @return Service identifier
      */
-    [[nodiscard]] ServiceId sid() const noexcept;
+    [[nodiscard]] ServiceId
+    sid() const noexcept {
+        return _service_id;
+    }
 
     /*!
      * @brief Get the core identifier component of this ActorId
      * @return VirtualCore identifier
      */
-    [[nodiscard]] CoreId index() const noexcept;
+    [[nodiscard]] CoreId
+    index() const noexcept {
+        return _core_id;
+    }
 
     /*!
      * @brief Check if this ActorId represents a broadcast identifier
      * @return true if ActorId is a Core broadcast id, false otherwise
      */
-    [[nodiscard]] bool is_broadcast() const noexcept;
+    [[nodiscard]] bool
+    is_broadcast() const noexcept {
+        return _service_id == BroadcastSid;
+    }
 
     /*!
      * @brief Check if this ActorId is valid (not NotFound)
      * @return true if ActorId is valid, false otherwise
      */
-    [[nodiscard]] bool is_valid() const noexcept;
+    [[nodiscard]] bool
+    is_valid() const noexcept {
+        return static_cast<uint32_t>(*this) != NotFound;
+    }
 };
 
 /**

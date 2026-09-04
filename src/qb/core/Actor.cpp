@@ -202,10 +202,8 @@ Actor::now() const noexcept {
     return qb::wall_from_unix_nanos(static_cast<std::int64_t>(time()));
 }
 
-bool
-Actor::is_alive() const noexcept {
-    return _alive;
-}
+// is_alive() is defined in-class: the router's dispatch trampoline calls it on every event
+// from the user's TU, where an out-of-line definition is a call into the archive.
 
 bool
 Actor::is_active() const noexcept {

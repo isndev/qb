@@ -115,7 +115,20 @@ public:
      *         value if `id` is not a member of the set — callers should verify
      *         membership via `raw()` before calling `resolve()`.
      */
-    [[nodiscard]] CoreId resolve(std::size_t id) const noexcept;
+    [[nodiscard]] CoreId
+    resolve(std::size_t id) const noexcept {
+        // Defined in-class: this is one of the two calls `VirtualCore::__getPipe__` makes on
+        // EVERY push from the user's TU. `resolve` is noexcept but `_set` is a fixed
+        // `std::array<uint8_t, MaxCores>`, and a CoreId is a uint16_t, so a caller can
+        // legitimately hold an out-of-range value (e.g. BroadcastId(300) or an ActorId with a
+        // core_id >= MaxCores). `_set.at(id)` would throw std::out_of_range, and a throw from a
+        // noexcept function calls std::terminate -- turning a misaddressed event into a hard
+        // process abort. Bounds-check instead: out-of-range ids resolve to 0, the same
+        // defined-but-unspecified value already returned for an in-range id that is not a
+        // member of the set (see the @return contract). The framework then routes-and-drops
+        // the misaddressed event rather than crashing.
+        return id < MaxCores ? _set[id] : static_cast<CoreId>(0);
+    }
 
     /*!
      * @brief Access the underlying set of logical `CoreId` values.
