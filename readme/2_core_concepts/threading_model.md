@@ -62,16 +62,16 @@ flowchart TB
     S -- yes --> Park["park on condition_variable up to d<br/>peer notify() wakes it"] --> Loop
 ```
 
-The loop does not park the instant it goes idle. The first pass that moved no event and left nothing in the core's own pipe stamps `_idle_since`; the core keeps polling the lock-free fast path until `setIdleSpin` has elapsed since that stamp, and only then blocks on `_mail_box.wait()` (`src/qb/core/VirtualCore.cpp:773-783`). The floor is time, not an event count: a request/response exchange whose reply lands a few hundred nanoseconds after the request left stays on the polling path instead of paying an OS park and wake on every hop, and a genuinely idle core still parks within ~50 µs. When latency is zero, that branch is skipped entirely and the loop spins. The park itself is race-free: `wait()` publishes a `_parked` flag, fences, re-checks the ring and waits on a predicate, while `notify()` fences after the enqueue and takes the mutex before it signals — the two fences forbid the enqueue-between-drain-and-wait window that the 3.0 form slept through (`src/qb/core/Main.h:425-435`, `src/qb/core/Main.h:446-456`). [The engine](../4_qb_core/engine.md) has the measured account.
+The loop does not park the instant it goes idle. The first pass that moved no event and left nothing in the core's own pipe stamps `_idle_since`; the core keeps polling the lock-free fast path until `setIdleSpin` has elapsed since that stamp, and only then blocks on `_mail_box.wait()` (`src/qb/core/VirtualCore.cpp:773-783`). The floor is time, not an event count: a request/response exchange whose reply lands a few hundred nanoseconds after the request left stays on the polling path instead of paying an OS park and wake on every hop, and a genuinely idle core still parks within ~50 µs. When latency is zero, that branch is skipped entirely and the loop spins. The park itself is race-free: `wait()` publishes a `_parked` flag, fences, re-checks the ring and waits on a predicate, while `notify()` fences after the enqueue and takes the mutex before it signals — the two fences forbid the enqueue-between-drain-and-wait window that the 3.0 form slept through (`src/qb/core/Main.h:425-435`, `src/qb/core/Main.h:446-467`). [The engine](../4_qb_core/engine.md) has the measured account.
 
 Two scopes set latency:
 
 | Call | Scope | Signature |
 | --- | --- | --- |
 | [`CoreInitializer::setLatency`](../4_qb_core/engine.md) | One core | `CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept` (`src/qb/core/Main.h:286`) |
-| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:742`) |
+| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:753`) |
 | [`CoreInitializer::setIdleSpin`](../4_qb_core/engine.md) | One core | `CoreInitializer &setIdleSpin(qb::duration idle_spin = kDefaultIdleSpin) noexcept` (`src/qb/core/Main.h:303`) |
-| [`Main::setIdleSpin`](../4_qb_core/engine.md) | Every registered core | `void setIdleSpin(qb::duration idle_spin = CoreInitializer::kDefaultIdleSpin)` (`src/qb/core/Main.h:751`) |
+| [`Main::setIdleSpin`](../4_qb_core/engine.md) | Every registered core | `void setIdleSpin(qb::duration idle_spin = CoreInitializer::kDefaultIdleSpin)` (`src/qb/core/Main.h:762`) |
 
 `Main::getLatency()` does not exist; read a single core's configured value with `engine.core(id).getLatency()`, which returns the `qb::duration` last set (`src/qb/core/Main.h:319`); `getIdleSpin()` is its twin (`src/qb/core/Main.h:324`).
 

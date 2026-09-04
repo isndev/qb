@@ -22,7 +22,8 @@
  *
  *   - `wait()` returns at once when data is already published, and after `latency` when nothing
  *     arrives (bounded on both sides: the timeout is a real timeout, not a spin);
- *   - both halves are no-ops at latency 0 — a spin-mode mailbox never touches the mutex;
+ *   - at latency 0 `wait()` returns at once and `notify()` is only its fence — a spin-mode
+ *     mailbox never parks and never touches the mutex;
  *   - `mpsc::has_data()` sees an item on ANY producer ring and nothing on an empty set;
  *   - two threads bouncing one item between two mailboxes, parking on EVERY hop (the most
  *     adversarial cadence for the race) with a latency far above the cost of a hop, never
@@ -74,13 +75,14 @@ TEST(MailboxParkHandshake, WaitTimesOutAtLatencyWhenNothingArrives) {
     EXPECT_LT(elapsed, 2s) << "and the timeout is honoured";
 }
 
-TEST(MailboxParkHandshake, ZeroLatencyIsSpinModeAndBothHalvesAreNoOps) {
+TEST(MailboxParkHandshake, ZeroLatencyIsSpinModeAndNeverParks) {
     Mailbox mb(kProducers, 0ns, 0us);
     EXPECT_EQ(mb.getLatency(), 0ns);
     const auto t0 = Clock::now();
-    for (int i = 0; i < 1000; ++i)
+    for (int i = 0; i < 1000; ++i) {
         mb.wait();
-    mb.notify();
+        mb.notify(); // only the fence: no park was announced, nothing to wake
+    }
     EXPECT_LT(Clock::now() - t0, 100ms) << "a spin-mode mailbox never parks";
 }
 

@@ -381,8 +381,8 @@ VirtualCore::__flush_all__() noexcept {
             }
 
             // Budget exhausted — surrender cleanly. The destination's consumer
-            // is woken so it runs immediately (no-op when its mailbox is in
-            // zero-latency spin mode).
+            // is woken so it runs immediately (at zero latency only the fence
+            // runs — see `Mailbox::notify()`).
             _engine.getMailBox(event.dest.index()).notify();
             pipe.reset(static_cast<std::size_t>(cur - base));
             partial = true;
