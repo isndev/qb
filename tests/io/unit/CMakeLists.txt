@@ -76,6 +76,7 @@ qb_add_test(MODULE qb-io TIER unit NAME ssl-context-value      SOURCES ssl/ssl-c
 qb_add_test(MODULE qb-io TIER unit NAME ssl-context-guards     SOURCES ssl/ssl-context-guards.cpp     DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME async-transport-traits SOURCES async/async-transport-traits.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME listener-clear-reentrant-defer SOURCES async/listener-clear-reentrant-defer.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME listener-has-work SOURCES async/listener-has-work.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME quic-adapter           SOURCES quic/quic-adapter.cpp          DEPENDS ${PROJECT_NAME} LABELS quic)
 
 # --- coroutine (pure: scheduler/awaiter/generator/channel/sync/combinator/scope/etc.) ---
