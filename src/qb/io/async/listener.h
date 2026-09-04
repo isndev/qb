@@ -745,7 +745,16 @@ public:
     inline void
     run(int flag = 0) {
         _nb_invoked_events = 0;
-        _loop.run(flag);
+        // The libev pass is gated on the loop's OWN liveness rule — `ev_run` keeps
+        // looping while `activecnt` (referenced active watchers) is non-zero, and a
+        // `NOWAIT` pass with nothing active and nothing pending would still cost a
+        // `backend_poll(0)` plus two clock reads (~300–380 ns measured, on every core
+        // tick, for the life of any core that once created a coroutine scheduler).
+        // The two counts are the loop's own, so a raw `ev_timer_start` from a
+        // coroutine awaiter, a fed `_defer_wake` event and a `loop.unref()`-ed
+        // watcher are all judged exactly as `ev_run` itself judges them.
+        if (_loop.active_count() != 0 || _loop.pending_count() != 0)
+            _loop.run(flag);
 
         // Deferred callbacks: continuations of the dispatch that just unwound.
         // Drained before coroutines so a `defer()` that wakes a coroutine is
@@ -872,6 +881,25 @@ public:
     [[nodiscard]] inline bool
     has_deferred() const noexcept {
         return !_deferred.empty();
+    }
+
+    /**
+     * @brief Whether a `run()` turn has anything to do.
+     * @return `true` if the libev loop holds a referenced active watcher or a pending
+     *         event, a `defer()`ed callback awaits its drain, or a coroutine is ready.
+     * @details The one gate a driver needs. `size()` only counts handlers registered
+     *          through this listener and cannot see a raw `ev_timer_start` from a
+     *          coroutine awaiter; `has_coro_scheduler()` says a scheduler EXISTS, not
+     *          that it has work. Both were what qb-core's `VirtualCore` used to test, so
+     *          a core that had ever touched a coroutine polled libev on every pass for
+     *          the rest of its life. This reads the loop's own `ev_active_count()` /
+     *          `ev_pending_count()` instead: a watcher the loop would deliver is a
+     *          watcher this reports, and nothing else is.
+     */
+    [[nodiscard]] inline bool
+    has_work() const noexcept {
+        return _loop.active_count() != 0 || _loop.pending_count() != 0 || !_deferred.empty()
+               || (_coro_scheduler && _coro_scheduler->has_ready());
     }
 
     /**

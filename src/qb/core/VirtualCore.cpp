@@ -684,8 +684,13 @@ VirtualCore::__workflow__() {
             }
         }
 
-        if (io::async::listener::current.has_coro_scheduler() || io::async::listener::current.size()
-            || io::async::listener::current.has_deferred()) {
+        // Pump qb-io only when its loop has something to deliver: a referenced active
+        // watcher, a pending event, a deferred callback or a ready coroutine. The gate
+        // used to be `has_coro_scheduler() || size() || has_deferred()`, and the first
+        // term is true for the rest of a core's life once any actor has spawned a
+        // coroutine — a `NOWAIT` libev pass on every tick, ~300–380 ns of poll + clock
+        // reads per pass with nothing to poll for (axis E of the qb-vs-others audit).
+        if (io::async::listener::current.has_work()) {
             // Hot path: call `listener::run` directly — no `async::run` wrapper
             // (avoids redundant checks; metrics match `nb_invoked_event()` contract).
             io::async::listener::current.run(EVRUN_NOWAIT);
