@@ -862,6 +862,15 @@ VirtualCore::push(ActorId const dest, ActorId const source, _Init &&...init) noe
 }
 //! Event Api
 
+// Inline, not in VirtualCore.cpp: `push`/`send` above are templates instantiated in the USER'S
+// translation unit, and this is the one non-template call they make per event. Out of line it
+// was a call into the archive (plus CoreSet::resolve's, now in-class too) on every push --
+// measured with perf on savina/counting, g++ 14 -O3, no LTO: ~3% of a dispatch-bound profile.
+inline VirtualPipe &
+VirtualCore::__getPipe__(CoreId const core) noexcept {
+    return _pipes[_engine._core_set.resolve(core)];
+}
+
 template <typename Tag>
 inline const ServiceId ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Tag>();
 

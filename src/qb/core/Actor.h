@@ -629,7 +629,10 @@ public:
      *          `VirtualCore` has processed its removal. It might still process events in its queue
      *          after `kill()` is called but before it's fully removed.
      */
-    [[nodiscard]] bool is_alive() const noexcept;
+    [[nodiscard]] bool
+    is_alive() const noexcept {
+        return _alive;
+    }
 
     /**
      * @brief Check if the actor is alive **and** fully activated.

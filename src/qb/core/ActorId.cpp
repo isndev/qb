@@ -23,50 +23,11 @@
  */
 
 #include <qb/core/ActorId.h>
-#include <bit> // C++20: std::bit_cast for safe type punning
 
-namespace qb {
-ActorId::ActorId() noexcept
-    : _service_id(0)
-    , _core_id(0) {}
+// Every ActorId member is defined in-class (see the note at the top of the class): the
+// accessors sit on the per-event hot path of code instantiated in the user's TU, where an
+// out-of-line definition is a call into the archive. Nothing is left to define here.
 
-ActorId::ActorId(ServiceId id, CoreId index) noexcept
-    : _service_id(id)
-    , _core_id(index) {}
-
-ActorId::ActorId(uint32_t id) noexcept {
-    // C++20: Using std::bit_cast for safe, well-defined type punning
-    // Replaces undefined behavior from reinterpret_cast strict aliasing violation
-    *this = std::bit_cast<ActorId>(id);
-}
-
-ActorId::
-operator uint32_t() const noexcept {
-    // C++20: std::bit_cast provides well-defined conversion without UB
-    return std::bit_cast<uint32_t>(*this);
-}
-
-ServiceId
-ActorId::sid() const noexcept {
-    return _service_id;
-}
-
-CoreId
-ActorId::index() const noexcept {
-    return _core_id;
-}
-
-bool
-ActorId::is_broadcast() const noexcept {
-    return _service_id == BroadcastSid;
-}
-
-bool
-ActorId::is_valid() const noexcept {
-    return static_cast<uint32_t>(*this) != NotFound;
-}
-
-} // namespace qb
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::ActorId const &id) {

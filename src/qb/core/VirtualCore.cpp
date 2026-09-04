@@ -132,10 +132,8 @@ VirtualCore::unregisterEvents(ActorId const id) const noexcept {
     _router.unsubscribe(id);
 }
 
-VirtualPipe &
-VirtualCore::__getPipe__(CoreId const core) noexcept {
-    return _pipes[_engine._core_set.resolve(core)];
-}
+// __getPipe__ is defined inline at the tail of VirtualCore.h: it is called on every push
+// from the user's TU (see the note there).
 
 void
 VirtualCore::__receive_events__(std::span<EventBucket> events) {
