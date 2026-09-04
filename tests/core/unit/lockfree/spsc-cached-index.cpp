@@ -188,6 +188,72 @@ TEST(SpscCachedIndex, PublicQueriesNeverUseASnapshot) {
     EXPECT_TRUE(ring.empty());
 }
 
+// ---- write_room: the producer-side room query behind a bulk run publish ------------------------
+//
+// `SharedCoreCommunication::send_run` asks the ring once how many slots it can take RIGHT NOW,
+// cuts its run of whole events at that count, and then relies on `enqueue<true>` of at most
+// that many slots never refusing. Both halves are pinned here: the count is exact after a
+// refresh (never an over-estimate, never a stale under-estimate when the snapshot cannot prove
+// the request), and the all-or-nothing enqueue that follows it succeeds.
+
+TEST(SpscCachedIndex, WriteRoomReportsTheExactFreeCountAndAnEnqueueOfItCannotFail) {
+    Ring ring;
+    EXPECT_EQ(ring.write_room(kCap), kCap);
+    EXPECT_EQ(ring.write_room(kCap + 5), kCap) << "capped at the capacity, never above it";
+    EXPECT_EQ(ring.write_room(3), kCap) << "the answer is the room, not the request";
+
+    const int five[5] = {1, 2, 3, 4, 5};
+    ASSERT_EQ(ring.enqueue(five, 5), 5u);
+    EXPECT_EQ(ring.write_room(kCap), kCap - 5);
+
+    // The consumer frees two slots the producer snapshot cannot see: asking for more than the
+    // snapshot proves refreshes, and the answer is the REAL room.
+    int out[8];
+    ASSERT_EQ(ring.dequeue(out, 2), 2u);
+    const std::size_t room = ring.write_room(kCap);
+    EXPECT_EQ(room, kCap - 3);
+
+    // What write_room promised, enqueue<true> takes whole.
+    const int fill[8] = {10, 11, 12, 13, 14, 15, 16, 17};
+    EXPECT_EQ(ring.enqueue(fill, room), room);
+    EXPECT_EQ(ring.write_room(1), 0u) << "full";
+    EXPECT_EQ(ring.enqueue(fill, 1), 0u);
+
+    // The order survives the run cut: 3,4,5 then the fill.
+    ASSERT_EQ(ring.dequeue(out, 8), 8u);
+    EXPECT_EQ(out[0], 3);
+    EXPECT_EQ(out[2], 5);
+    EXPECT_EQ(out[3], 10);
+    EXPECT_EQ(out[7], 14);
+}
+
+TEST(SpscCachedIndex, WriteRoomIsASafeUnderEstimateUntilAskedForMore) {
+    Ring      ring;
+    const int five[5] = {1, 2, 3, 4, 5};
+    ASSERT_EQ(ring.enqueue(five, 5), 5u);
+    ASSERT_EQ(ring.write_room(kCap), kCap - 5); // snapshot: 3 free
+
+    int out[8];
+    ASSERT_EQ(ring.dequeue(out, 5), 5u); // now 8 free, snapshot still says 3
+
+    // A request the snapshot covers is answered from it — correct, and an under-estimate that
+    // can only refuse room, never grant room that does not exist.
+    EXPECT_EQ(ring.write_room(2), 3u);
+    EXPECT_EQ(ring.write_room(3), 3u);
+    // One it cannot cover forces the refresh and sees all eight.
+    EXPECT_EQ(ring.write_room(4), kCap);
+}
+
+TEST(SpscCachedIndex, WriteRoomOnTheDynamicRingHonoursItsRuntimeCapacity) {
+    DynRing ring(5);
+    EXPECT_EQ(ring.write_room(100), 5u);
+    const int three[3] = {1, 2, 3};
+    ASSERT_EQ(ring.enqueue(three, 3), 3u);
+    EXPECT_EQ(ring.write_room(100), 2u);
+    EXPECT_EQ(ring.enqueue(three, 2), 2u);
+    EXPECT_EQ(ring.write_room(1), 0u);
+}
+
 // ---- two threads, thousands of wraps ------------------------------------------------------------
 
 TEST(SpscCachedIndex, TwoThreadsMixedTrafficDeliverEveryElementOnceInOrder) {

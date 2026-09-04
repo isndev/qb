@@ -194,6 +194,26 @@ protected:
     }
 
     /**
+     * @brief Producer side: slots writable RIGHT NOW, refreshing the read-index snapshot only
+     *        when the snapshot cannot prove @p wanted
+     *
+     * The primitive behind a bulk producer that sizes its write to the ring: ask for the run it
+     * would like to write, and receive either at least that (proved from the producer's own line)
+     * or the refreshed truth. A subsequent `enqueue<true>` of at most the returned count cannot
+     * fail — the consumer only ever frees slots. The snapshot policy is the same as `enqueue`'s,
+     * so calling this before an `enqueue` costs no cross-line read the `enqueue` would not have
+     * paid itself.
+     *
+     * @param wanted Number of slots the caller needs the answer to be at least
+     * @param max_size Maximum size of the buffer
+     * @return Number of slots available for writing (a safe under-estimate unless refreshed)
+     */
+    [[nodiscard]] size_t
+    write_room(size_t const wanted, size_t const max_size) noexcept {
+        return producer_available(write_index_.load(std::memory_order_relaxed), wanted, max_size);
+    }
+
+    /**
      * @brief Consumer side: elements readable at @p read_index, refreshing the write-index
      *        snapshot only when the snapshot cannot prove @p wanted elements
      *
@@ -441,6 +461,16 @@ class ringbuffer : public internal::ringbuffer<T> {
 
 public:
     /**
+     * @brief Producer side: slots writable right now — see `internal::ringbuffer::write_room`
+     * @param wanted Number of slots the caller needs the answer to be at least
+     * @return Number of slots a following `enqueue<true>` of that many cannot fail on
+     */
+    [[nodiscard]] size_t
+    write_room(size_t const wanted) noexcept {
+        return internal::ringbuffer<T>::write_room(wanted, max_size);
+    }
+
+    /**
      * @brief Enqueue a single element into the buffer
      *
      * @param t Element to enqueue
@@ -546,6 +576,16 @@ public:
     explicit ringbuffer(size_t const max_size)
         : max_size_(max_size + 1)
         , array_(new T[max_size + 1]) {}
+
+    /**
+     * @brief Producer side: slots writable right now — see `internal::ringbuffer::write_room`
+     * @param wanted Number of slots the caller needs the answer to be at least
+     * @return Number of slots a following `enqueue<true>` of that many cannot fail on
+     */
+    [[nodiscard]] size_t
+    write_room(size_t const wanted) noexcept {
+        return internal::ringbuffer<T>::write_room(wanted, max_size_);
+    }
 
     /**
      * @brief Enqueue a single element into the buffer
