@@ -43,6 +43,7 @@ qb_add_test(MODULE qb-core TIER unit NAME time           SOURCES system/time.cpp
 qb_add_test(MODULE qb-core TIER unit NAME time-edge      SOURCES system/time-edge.cpp        DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME parse          SOURCES system/parse.cpp            DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-core TIER unit NAME event-router   SOURCES system/event-router.cpp     DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER unit NAME event-router-dense SOURCES system/event-router-dense.cpp DEPENDS ${PROJECT_NAME})
 
 # --- patterns (pure-logic helpers: resilience math, dedup map, worker-pool) --
 qb_add_test(MODULE qb-core TIER unit NAME circuit-breaker        SOURCES patterns/circuit-breaker.cpp        DEPENDS ${PROJECT_NAME} LABELS patterns)

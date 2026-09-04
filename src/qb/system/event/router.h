@@ -29,8 +29,14 @@
 #ifndef QB_EVENT_ROUTER_H
 #define QB_EVENT_ROUTER_H
 
+#include <algorithm>
+#include <cassert>
+#include <concepts>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <type_traits>
+#include <utility>
 #include <vector>
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
@@ -50,7 +56,165 @@ namespace qb::router {
 //            id_handler_type source;
 //        };
 
+/**
+ * @brief Customisation point: how a router key maps onto a small dense integer.
+ *
+ * @details The two lookups on the per-event dispatch path — event id → resolver in `memh`,
+ * handler id → handler in `semh` — used to be two `qb::unordered_map` finds: hash, bucket walk,
+ * node dereference, then a virtual `resolve()` between them. Measured on savina/counting at
+ * one core (the purest same-core dispatch there is: push + pipe + `consume_all` + route), a
+ * qb event cost ~27 ns on MSVC 19.51 and ~40 ns on g++ 14 against a 3 ns raw-thread floor;
+ * `perf` put the two lookups at the top of the profile once the accessors had been inlined.
+ *
+ * Both keys are ALREADY dense integers: `EventId` is assigned from a counter
+ * (`Event::type_to_id`), and a `VirtualCore`'s handlers are its own actors, whose `ServiceId`
+ * slots come lowest-free-first from a bitset pool. A router keyed on such an id can be a
+ * vector indexed by it — one bounds check and one load where the map cost five dependent
+ * ones — without giving up the generic routers: a key with no dense form (the router unit
+ * test keys events on `const char *`) keeps the hash map, selected at compile time.
+ *
+ * Specialise for a key type to enable the dense table. **Contract:** `of(k)` is at most
+ * `max_index`, and two keys that can be subscribed on ONE router at the same time yield
+ * different indices — the table stores the full key beside the slot and compares it on every
+ * hit, so a key that shares an index with a live subscriber is a MISS (never a misdelivery),
+ * and `subscribe()` asserts the collision in a debug build. Unsigned integers of at most 16
+ * bits are dense by identity; `qb::ActorId` is dense by `sid()` (ActorId.h), which is unique
+ * among the actors of one core and a router only ever holds one core's actors.
+ *
+ * @tparam Key The router key type (`_RawEvent::id_type` or `_RawEvent::id_handler_type`)
+ */
+template <typename Key>
+struct dense_index {
+    static constexpr bool enabled = false;
+};
+
+template <typename Key>
+requires(std::unsigned_integral<Key> && !std::same_as<Key, bool> && sizeof(Key) <= 2)
+struct dense_index<Key> {
+    static constexpr bool        enabled   = true;
+    static constexpr std::size_t max_index = std::numeric_limits<Key>::max();
+
+    [[nodiscard]] static constexpr std::size_t
+    of(Key const key) noexcept {
+        return static_cast<std::size_t>(key);
+    }
+};
+
 namespace internal {
+
+/**
+ * @brief The router's key → value table: a vector indexed by `dense_index<Key>::of()` when
+ *        the key has a dense form, a `qb::unordered_map` otherwise. Same four operations
+ *        either way, so the routers below are written once.
+ *
+ * @details The dense table grows geometrically on `insert_or_assign` (a core spawning actors
+ * one at a time subscribes one new id per spawn; an exact `resize` there would be quadratic)
+ * and never shrinks — `erase` clears the slot, and the pool's lowest-free-first policy hands
+ * that slot back to the next actor, so the table stays as compact as the id space it mirrors.
+ *
+ * @tparam Key   The key type
+ * @tparam Value The stored value; `Value{}` is what an erased slot holds
+ */
+template <typename Key, typename Value>
+class key_table {
+    static constexpr bool dense = dense_index<Key>::enabled;
+
+    struct Slot {
+        Key   key{};
+        Value value{};
+        bool  used = false;
+    };
+
+    using Dense  = std::vector<Slot>;
+    using Sparse = qb::unordered_map<Key, Value>;
+
+    std::conditional_t<dense, Dense, Sparse> _table;
+
+public:
+    key_table()  = default;
+    ~key_table() = default;
+
+    /**
+     * @brief Look a key up
+     * @return A pointer to the stored value, or `nullptr` if the key is not present
+     */
+    [[nodiscard]] Value *
+    find(Key const &key) noexcept {
+        if constexpr (dense) {
+            const auto idx = dense_index<Key>::of(key);
+            if (likely(idx < _table.size())) {
+                auto &slot = _table[idx];
+                if (likely(slot.used && slot.key == key))
+                    return &slot.value;
+            }
+            return nullptr;
+        } else {
+            const auto it = _table.find(key);
+            return likely(it != _table.end()) ? &it->second : nullptr;
+        }
+    }
+
+    [[nodiscard]] Value const *
+    find(Key const &key) const noexcept {
+        return const_cast<key_table *>(this)->find(key);
+    }
+
+    /**
+     * @brief Store a value under a key, replacing any value already there
+     */
+    void
+    insert_or_assign(Key const &key, Value value) {
+        if constexpr (dense) {
+            const auto idx = dense_index<Key>::of(key);
+            assert(idx <= dense_index<Key>::max_index && "dense_index<Key>::of() exceeds max_index");
+            if (idx >= _table.size()) {
+                _table.reserve(std::max<std::size_t>(idx + 1, _table.size() * 2));
+                _table.resize(idx + 1);
+            }
+            auto &slot = _table[idx];
+            assert((!slot.used || slot.key == key) && "dense_index<Key>: two live keys share one index");
+            slot.key   = key;
+            slot.value = std::move(value);
+            slot.used  = true;
+        } else {
+            _table.insert_or_assign(key, std::move(value));
+        }
+    }
+
+    /**
+     * @brief Remove a key; a no-op if it is not present
+     */
+    void
+    erase(Key const &key) noexcept {
+        if constexpr (dense) {
+            if (auto *const value = find(key)) {
+                auto &slot = _table[dense_index<Key>::of(key)];
+                *value     = Value{};
+                slot.used  = false;
+            }
+        } else {
+            _table.erase(key);
+        }
+    }
+
+    /**
+     * @brief Visit every present entry as `f(key, value)`, in index order for a dense table
+     * @warning `f` must not insert into or erase from THIS table (see the broadcast snapshot in
+     *          `semh::route` for why, and for the idiom).
+     */
+    template <typename Func>
+    void
+    for_each(Func &&f) const {
+        if constexpr (dense) {
+            for (auto const &slot : _table)
+                if (slot.used)
+                    f(slot.key, slot.value);
+        } else {
+            for (auto const &it : _table)
+                f(it.first, it.second);
+        }
+    }
+};
 
 /**
  * @brief Base policy for event handling
@@ -166,7 +330,7 @@ class semh : public internal::EventPolicy {
     using _EventId   = typename _RawEvent::id_type;
     using _HandlerId = typename _RawEvent::id_handler_type;
 
-    qb::unordered_map<_HandlerId, _Handler *> _subscribed_handlers;
+    internal::key_table<_HandlerId, _Handler *> _subscribed_handlers;
 
 public:
     semh() = default;
@@ -189,15 +353,14 @@ public:
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
                 // Snapshot before dispatch: a handler may (un)subscribe on this
-                // map mid-broadcast (e.g. spawning an actor), which rehashes and
-                // reallocates the release flat map (ska) and invalidates a live
-                // iterator. See the heterogeneous route() below for the full
+                // table mid-broadcast (e.g. spawning an actor), which grows the
+                // dense vector (or rehashes the hash-map fallback) and invalidates
+                // a live iterator. See the heterogeneous route() below for the full
                 // rationale; handlers are not destroyed until end-of-frame and
                 // invoke() re-checks is_alive(), so the snapshot stays valid.
                 static thread_local std::vector<_Handler *> bcast_snapshot;
                 const std::size_t                           base = bcast_snapshot.size();
-                for (auto &it : _subscribed_handlers)
-                    bcast_snapshot.push_back(it.second);
+                _subscribed_handlers.for_each([](auto const &, _Handler *const handler) { bcast_snapshot.push_back(handler); });
                 const std::size_t end = bcast_snapshot.size();
                 for (std::size_t i = base; i < end; ++i)
                     invoke(*bcast_snapshot[i], event);
@@ -210,9 +373,8 @@ public:
             }
         }
 
-        const auto &it = _subscribed_handlers.find(event.dest);
-        if (likely(it != _subscribed_handlers.cend()))
-            invoke(*it->second, event);
+        if (auto *const handler = _subscribed_handlers.find(event.dest); likely(handler != nullptr))
+            invoke(**handler, event);
 
         if constexpr (_CleanEvent)
             dispose(event);
@@ -225,8 +387,7 @@ public:
      */
     void
     subscribe(_Handler &handler) noexcept {
-        _subscribed_handlers.erase(handler.id());
-        _subscribed_handlers.insert({handler.id(), &handler});
+        _subscribed_handlers.insert_or_assign(handler.id(), &handler);
     }
 
     /**
@@ -289,7 +450,7 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
         }
     }
 
-    qb::unordered_map<_HandlerId, Entry> _subscribed_handlers;
+    internal::key_table<_HandlerId, Entry> _subscribed_handlers;
 
 public:
     semh()           = default;
@@ -309,13 +470,13 @@ public:
     route(_RawEvent &event) const noexcept {
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
-                // A handler invoked here may (un)subscribe on THIS map — e.g.
+                // A handler invoked here may (un)subscribe on THIS table — e.g.
                 // spawning an actor registers KillEvent, inserting a new entry.
-                // With the release flat map (ska) that insert rehashes and
-                // REALLOCATES the entry array, invalidating a live range-for
-                // iterator (heap-use-after-free — invisible to the debug
-                // std::unordered_map used by the sanitizer presets, so it only
-                // bites in release). Snapshot the targets first, then dispatch:
+                // That insert can grow the dense vector (and, on the hash-map
+                // fallback, rehash the release flat map), REALLOCATING the entry
+                // array under a live range-for iterator (heap-use-after-free —
+                // invisible to the debug std::unordered_map the sanitizer presets
+                // used to select, so it only bit in release). Snapshot first, then dispatch:
                 // handlers are not destroyed until end-of-frame (removal is
                 // deferred) and the trampoline re-checks is_alive(), so the
                 // snapshotted pointers stay valid. A thread_local buffer with
@@ -323,8 +484,7 @@ public:
                 // correct (each nested route pushes/pops its own [base,end)).
                 static thread_local std::vector<Entry> bcast_snapshot;
                 const std::size_t                      base = bcast_snapshot.size();
-                for (const auto &it : _subscribed_handlers)
-                    bcast_snapshot.push_back(it.second);
+                _subscribed_handlers.for_each([](auto const &, Entry const &entry) { bcast_snapshot.push_back(entry); });
                 const std::size_t end = bcast_snapshot.size();
                 for (std::size_t i = base; i < end; ++i) {
                     // `subscribe()` always sets both fields atomically, so the
@@ -345,10 +505,9 @@ public:
             }
         }
 
-        const auto &it = _subscribed_handlers.find(event.getDestination());
-        if (likely(it != _subscribed_handlers.cend())) {
-            const auto  dispatch = it->second.dispatch;
-            auto *const target   = it->second.handler;
+        if (auto *const entry = _subscribed_handlers.find(event.getDestination()); likely(entry != nullptr)) {
+            const auto  dispatch = entry->dispatch;
+            auto *const target   = entry->handler;
             QB_ASSUME(dispatch != nullptr);
             dispatch(target, event);
         }
@@ -366,7 +525,7 @@ public:
     template <typename _Handler>
     void
     subscribe(_Handler &handler) noexcept {
-        _subscribed_handlers[handler.id()] = Entry{static_cast<void *>(&handler), &dispatch_trampoline<_Handler>};
+        _subscribed_handlers.insert_or_assign(handler.id(), Entry{static_cast<void *>(&handler), &dispatch_trampoline<_Handler>});
     }
 
     /**
@@ -582,7 +741,7 @@ private:
         }
     };
 
-    qb::unordered_map<_EventId, std::unique_ptr<IEventResolver>> _registered_events;
+    internal::key_table<_EventId, std::unique_ptr<IEventResolver>> _registered_events;
 
 public:
     memh()           = default;
@@ -598,12 +757,11 @@ public:
     template <typename _Func>
     void
     route(_RawEvent &event, _Func const &onError) const {
-        const auto &it = _registered_events.find(event.getID());
-        if (likely(it != _registered_events.cend())) {
+        if (auto *const entry = _registered_events.find(event.getID()); likely(entry != nullptr)) {
             // Registered entries always own a valid unique_ptr; materialise the
             // raw pointer into a local so `QB_ASSUME` sees a side-effect-free
             // predicate (Clang's `-Wassume`) and can elide the null check.
-            auto *const resolver = it->second.get();
+            auto *const resolver = entry->get();
             QB_ASSUME(resolver != nullptr);
             resolver->resolve(event);
         } else {
@@ -620,13 +778,13 @@ public:
     template <typename _Event>
     void
     subscribe(_Handler &handler) {
-        const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
-        if (it == _registered_events.cend()) {
+        const auto id = _RawEvent::template type_to_id<_Event>();
+        if (auto *const entry = _registered_events.find(id)) {
+            dynamic_cast<EventResolver<_Event> *>(entry->get())->subscribe(handler);
+        } else {
             auto resolver = std::make_unique<EventResolver<_Event>>();
             resolver->subscribe(handler);
-            _registered_events.emplace(_RawEvent::template type_to_id<_Event>(), std::move(resolver));
-        } else {
-            dynamic_cast<EventResolver<_Event> *>(it->second.get())->subscribe(handler);
+            _registered_events.insert_or_assign(id, std::move(resolver));
         }
     }
 
@@ -639,9 +797,8 @@ public:
     template <typename _Event>
     void
     unsubscribe(_Handler &handler) const {
-        auto const &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
-        if (it != _registered_events.cend())
-            it->second->unsubscribe(handler.id());
+        if (auto *const entry = _registered_events.find(_RawEvent::template type_to_id<_Event>()))
+            (*entry)->unsubscribe(handler.id());
     }
 
     /**
@@ -661,8 +818,7 @@ public:
      */
     void
     unsubscribe(_HandlerId const &id) const {
-        for (auto const &it : _registered_events)
-            it.second->unsubscribe(id);
+        _registered_events.for_each([&id](auto const &, auto const &resolver) { resolver->unsubscribe(id); });
     }
 };
 
@@ -746,11 +902,11 @@ private:
      *          retried on the next event.
      *
      *          Not synchronised, deliberately: `memh` is already a single-threaded-per-instance
-     *          class (`_registered_events` is a plain map mutated by `subscribe`/`unsubscribe`);
+     *          class (`_registered_events` is a plain table mutated by `subscribe`/`unsubscribe`);
      *          the `static` disposer map was its *only* shared state. Each `VirtualCore` owns its
      *          own router and touches it exclusively from its own thread.
      */
-    mutable qb::unordered_map<_EventId, IDisposer *> _disposer_cache;
+    mutable internal::key_table<_EventId, IDisposer *> _disposer_cache;
 
     /**
      * @brief Resolve the disposer for @p id, consulting the shared map at most once per type.
@@ -758,8 +914,8 @@ private:
      */
     [[nodiscard]] IDisposer *
     find_disposer(_EventId const &id) const {
-        if (const auto it = _disposer_cache.find(id); likely(it != _disposer_cache.cend()))
-            return it->second;
+        if (auto *const cached = _disposer_cache.find(id); likely(cached != nullptr))
+            return *cached;
 
         IDisposer *resolved = nullptr;
         {
@@ -770,7 +926,7 @@ private:
         // Only memoise a hit: a miss means the type's disposer has not been registered yet, and
         // caching the null would make this router blind to it forever.
         if (resolved)
-            _disposer_cache.emplace(id, resolved);
+            _disposer_cache.insert_or_assign(id, resolved);
         return resolved;
     }
 
@@ -836,7 +992,7 @@ private:
         }
     };
 
-    qb::unordered_map<_EventId, std::unique_ptr<IEventResolver>> _registered_events;
+    internal::key_table<_EventId, std::unique_ptr<IEventResolver>> _registered_events;
 
 public:
     /**
@@ -868,13 +1024,12 @@ public:
     template <typename _Func>
     void
     route(_RawEvent &event, _Func const &onError) const {
-        const auto &it = _registered_events.find(event.getID());
-        if (likely(it != _registered_events.cend())) {
+        if (auto *const entry = _registered_events.find(event.getID()); likely(entry != nullptr)) {
             // Every entry inserted via `subscribe()` owns a valid resolver:
             // materialise the raw pointer into a local so `QB_ASSUME` sees a
             // side-effect-free predicate and can elide the null check around
             // the virtual call (finding 2.17).
-            auto *const resolver = it->second.get();
+            auto *const resolver = entry->get();
             QB_ASSUME(resolver != nullptr);
             resolver->resolve(event);
         } else {
@@ -933,13 +1088,13 @@ public:
     subscribe(_Handler &handler) {
         static const SafeDispose<_Event> o{};
 
-        const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
-        if (it == _registered_events.cend()) {
+        const auto id = _RawEvent::template type_to_id<_Event>();
+        if (auto *const entry = _registered_events.find(id)) {
+            dynamic_cast<EventResolver<_Event> *>(entry->get())->subscribe(handler);
+        } else {
             auto resolver = std::make_unique<EventResolver<_Event>>();
             resolver->subscribe(handler);
-            _registered_events.emplace(_RawEvent::template type_to_id<_Event>(), std::move(resolver));
-        } else {
-            dynamic_cast<EventResolver<_Event> *>(it->second.get())->subscribe(handler);
+            _registered_events.insert_or_assign(id, std::move(resolver));
         }
     }
 
@@ -953,9 +1108,8 @@ public:
     template <typename _Event, typename _Handler>
     void
     unsubscribe(_Handler const &handler) const {
-        auto const &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
-        if (it != _registered_events.cend())
-            it->second->unsubscribe(handler.id());
+        if (auto *const entry = _registered_events.find(_RawEvent::template type_to_id<_Event>()))
+            (*entry)->unsubscribe(handler.id());
     }
 
     /**
@@ -977,8 +1131,7 @@ public:
      */
     void
     unsubscribe(_HandlerId const &id) const {
-        for (auto const &it : _registered_events)
-            it.second->unsubscribe(id);
+        _registered_events.for_each([&id](auto const &, auto const &resolver) { resolver->unsubscribe(id); });
     }
 };
 
