@@ -23,6 +23,6 @@
 # finding.  Corrected to :980-993 when the docs moved into this repo.  When re-verifying an
 # entry, read the cited lines — do not trust the note.
 
-llm/qb.llm.md	listener.h:980-993	correct: `ensure_not_inside_ready_drain` is qb/src/qb/io/async/listener.h:980-993 and the std::logic_error for async::run/run_once/run_until inside a handler is thrown at :989. The rule's inferred subject `run_sync` is only named in a neighbouring @note at :805.
+llm/qb.llm.md	listener.h:1008-1021	correct: `ensure_not_inside_ready_drain` is qb/src/qb/io/async/listener.h:1008-1021 and the std::logic_error for async::run/run_once/run_until inside a handler is thrown at :1017. The rule's inferred subject `run_sync` is only named in a neighbouring @note at :814. RE-KEYED from :980-993 by the perf/core-hot-path shift (listener::has_work + the gated libev pass grew listener.h); re-read at the new coordinates, not offset.
 llm/qb.llm.md	config.h:251-251	correct: QB_MAX_READ_BUFFER_SIZE is qb/src/qb/io/config.h:251. The rule's inferred subject `not_ok` belongs to the sibling target base.h:276, not to this one.
 llm/qb.llm.md	ssl/context.h:128-128	correct: `class QB_API Context` is qb/src/qb/io/tcp/ssl/context.h:128. `SSL_CTX_free` is named in passing as the thing you must NOT call. RE-KEYED from :127-127 by the formatting sweep, which added one line above the class; the declaration was re-read at the new coordinate, not offset.

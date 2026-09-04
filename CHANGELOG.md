@@ -7,7 +7,62 @@ policy.
 
 ## [Unreleased]
 
-Nothing yet. Entries land here as they are merged, and move under a version heading when that version is tagged.
+### Added
+
+- **`CoreInitializer::setIdleSpin()` / `Main::setIdleSpin()`** — how long an idle `latency > 0`
+  core keeps polling before it parks on its mailbox, a time floor measured from its first idle
+  pass (default `kDefaultIdleSpin`, 50 µs; `getIdleSpin()` reads it back). Until now the floor
+  was an event-count credit refilled from the previous pass, which parked a one-event-per-pass
+  workload after two or three empty passes: every hop of a two-core request/response exchange
+  paid an OS park + wake (measured 2–13 µs against ~300 ns of polling). `setIdleSpin(0)` restores
+  the park-on-first-idle-pass behaviour.
+- **`listener::has_work()`** — whether a qb-io `run()` turn has anything to do, read from the
+  loop's own `ev_active_count()` / `ev_pending_count()` plus the deferred queue and the coroutine
+  scheduler's ready list. `VirtualCore` uses it to gate its libev pass; consumers driving a
+  listener with `EVRUN_NOWAIT` get the same gate.
+- **`mpsc::ringbuffer::has_data()`** — does any producer ring hold an item; the predicate of the
+  mailbox park.
+
+### Changed
+
+- **The `latency > 0` park handshake is race-free.** `Mailbox::wait()` was
+  `cv.wait_for(lk, latency)` with no predicate and `notify()` signalled without the mutex, so an
+  enqueue landing between the consumer's empty drain and its registration on the condition
+  variable was never seen and the core slept the whole latency. Measured on a two-core ping-pong
+  at 300 000 messages: 246–293 lost wakeups on Linux (1 ms each) and 48–2849 on Windows, where
+  MSVC's `wait_for` rounds up to the 15.6 ms scheduler tick. The handshake is a Dekker pair over
+  a cache-line-aligned `_parked` flag with `seq_cst` fences on both sides, the producer taking
+  the mutex before it notifies and the consumer waiting on `has_data()`. Both halves are no-ops
+  at latency 0.
+- **A core no longer parks over its own pipe.** An actor pushing to itself from a callback moved
+  no counted event, so a parked core delivered that push after `latency`; the idle test now also
+  requires the self-core pipe to be empty.
+- **`VirtualCore` polls libev only when the loop has work**, instead of on every pass once the
+  core had ever touched a coroutine or registered a handler.
+- **`Actor::time()` samples the clock on demand, once per pass**, keyed on the pass index,
+  instead of unconditionally at the top of every pass.
+- **`spsc::ringbuffer` lays its producer and consumer indices out on separate cache lines and
+  each side keeps a private snapshot of the peer's index**, so an uncontended push or pop
+  touches one line and re-reads the peer only when its snapshot says full or empty.
+
+### Fixed
+
+- **The start barrier yields once it has spun.** `Main::__wait__all__cores__ready()` and the
+  calling thread's wait in `Main::start(true)` spun on the ready counter without ever yielding,
+  so an engine started with more cores than CPUs — `hardware_concurrency()` ignores affinity
+  masks and cgroup quotas — made the last core to initialise compete for a CPU against every
+  core already waiting for it. Under ThreadSanitizer that is a hang, not a delay: on a 24-vCPU
+  WSL2, 23 spinning acquire loads held TSan's atomics lock in read mode continuously, the 24th
+  core's `fetch_add` never got in, and `MainLifecycle.StopMultiCoreGracefulNoError` ran past its
+  600 s timeout at any CPU count. Both loops spin 1024 times and then `yield()`; the same test
+  completes in 2 s and the signal variant went from 61 s to 2 s.
+
+### Known limitation
+
+- A parked core does not consult qb-io's timer deadlines: a `qb::io::async::callback` armed on a
+  `latency > 0` core that has parked fires when the park times out, so `latency` bounds timer
+  precision on that core. Pinned by `core-park-policy`; an engine that learns io deadlines must
+  move that expectation with it.
 
 ## [3.1.0] - 2026-08-30
 

@@ -99,8 +99,7 @@ TEST_F(ListenerHasWork, IdleLoopReportsNoWorkAndRunSkipsLibev) {
 TEST_F(ListenerHasWork, IdleCoroutineSchedulerIsNotWork) {
     (void) listener::current.coro_scheduler();
     ASSERT_TRUE(listener::current.has_coro_scheduler());
-    EXPECT_FALSE(listener::current.has_work())
-        << "a scheduler that exists but has nothing ready is the old gate's false positive";
+    EXPECT_FALSE(listener::current.has_work()) << "a scheduler that exists but has nothing ready is the old gate's false positive";
     const unsigned before = iterations();
     listener::current.run(EVRUN_NOWAIT);
     EXPECT_EQ(iterations(), before);
@@ -124,9 +123,7 @@ TEST_F(ListenerHasWork, RawLibevTimerTheListenerNeverCountedIsStillWork) {
     // What a coroutine awaiter does: ev_timer_start straight on the loop. `size()` stays 0.
     std::atomic<int> fired{0};
     ev_timer         t;
-    ev_timer_init(
-        &t, [](struct ev_loop *, ev_timer *w, int) { ++*static_cast<std::atomic<int> *>(w->data); }, 0.001,
-        0.0);
+    ev_timer_init(&t, [](struct ev_loop *, ev_timer *w, int) { ++*static_cast<std::atomic<int> *>(w->data); }, 0.001, 0.0);
     t.data = &fired;
     ev_timer_start(raw_loop(), &t);
     EXPECT_EQ(listener::current.size(), 0u) << "the listener does not know about it";

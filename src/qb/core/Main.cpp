@@ -29,6 +29,7 @@
 #include <qb/core/Main.h>
 #include <qb/core/VirtualCore.h>
 #include <qb/io/async/listener.h>
+#include <thread>
 
 namespace qb {
 
@@ -41,7 +42,8 @@ CoreInitializer::CoreInitializer(CoreId const index)
     // acquire edge before this constructor runs.
     , _next_id(static_cast<ServiceId>(VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1))
     , _affinity{index}
-    , _latency{} {}
+    , _latency{}
+    , _idle_spin{kDefaultIdleSpin} {}
 
 CoreInitializer::~CoreInitializer() noexcept {
     clear();
@@ -72,6 +74,12 @@ CoreInitializer::setLatency(qb::duration const latency) noexcept {
     return *this;
 }
 
+CoreInitializer &
+CoreInitializer::setIdleSpin(qb::duration const idle_spin) noexcept {
+    _idle_spin = idle_spin;
+    return *this;
+}
+
 CoreId
 CoreInitializer::getIndex() const noexcept {
     return _index;
@@ -85,6 +93,11 @@ CoreInitializer::getAffinity() const noexcept {
 qb::duration
 CoreInitializer::getLatency() const noexcept {
     return _latency;
+}
+
+qb::duration
+CoreInitializer::getIdleSpin() const noexcept {
+    return _idle_spin;
 }
 
 // !CoreInitializer
@@ -126,7 +139,7 @@ SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_
         flag.store(false, std::memory_order_relaxed); // no core has stopped yet
     for (const auto &[index, initializer] : core_initializers) {
         const auto nb_producers               = _core_set.getNbCore();
-        _mail_boxes[_core_set.resolve(index)] = std::make_unique<Mailbox>(nb_producers, initializer.getLatency());
+        _mail_boxes[_core_set.resolve(index)] = std::make_unique<Mailbox>(nb_producers, initializer.getLatency(), initializer.getIdleSpin());
     }
 }
 
@@ -366,12 +379,29 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     }
 }
 
+// The start barrier: every core arrives here once its actors are initialised and leaves when
+// all `nb_core` have. A ONE-SHOT rendezvous, so it spins briefly for the common case (peers a
+// few microseconds apart) and then YIELDS its time slice — a barrier that only ever spins is
+// wrong for the case where the arrivals outnumber the CPUs: with `hardware_concurrency()`
+// cores (which ignores affinity masks and cgroup quotas, so a container sees the host's count)
+// plus the calling thread's own spin in `start(true)`, the last core to arrive competes for a
+// CPU against every core already waiting for it. Measured under TSan on a 24-vCPU WSL2 (HEAD,
+// before this change): 23 spinners held TSan's atomics lock in read mode continuously, the
+// 24th core's `fetch_add` — a writer on that lock — never got in, and
+// `MainLifecycle.StopMultiCoreGracefulNoError` hung past its 600 s timeout at ANY CPU count
+// (`taskset -c 0-1` included). A release build is only slower there, by whole scheduler
+// quanta; this makes the barrier converge in the yield cadence instead.
 bool
 Main::__wait__all__cores__ready(std::size_t const nb_core, std::atomic<uint64_t> &sync_start) noexcept {
+    constexpr unsigned kSpinsBeforeYield = 1024;
     sync_start.fetch_add(1, std::memory_order_acq_rel);
-    uint64_t ret = 0;
+    uint64_t ret   = 0;
+    unsigned spins = 0;
     do {
-        spin_loop_pause();
+        if (++spins < kSpinsBeforeYield)
+            spin_loop_pause();
+        else
+            std::this_thread::yield();
         ret = sync_start.load(std::memory_order_acquire);
     } while (ret < nb_core);
     return ret < VirtualCore::Error::BadInit;
@@ -381,6 +411,12 @@ void
 Main::setLatency(qb::duration const latency) {
     for (auto &initializer : _core_initializers | std::views::values)
         initializer.setLatency(latency);
+}
+
+void
+Main::setIdleSpin(qb::duration const idle_spin) {
+    for (auto &initializer : _core_initializers | std::views::values)
+        initializer.setIdleSpin(idle_spin);
 }
 
 qb::CoreIdSet
@@ -431,9 +467,16 @@ Main::start(bool async) noexcept {
     }
 
     if (async) {
-        uint64_t ret = 0;
+        // Same cadence as the cores' own barrier: this thread is one more competitor for a CPU
+        // while the last core is still initialising, so it must not spin without yielding.
+        constexpr unsigned kSpinsBeforeYield = 1024;
+        uint64_t           ret               = 0;
+        unsigned           spins             = 0;
         do {
-            spin_loop_pause();
+            if (++spins < kSpinsBeforeYield)
+                spin_loop_pause();
+            else
+                std::this_thread::yield();
             ret = _sync_start.load(std::memory_order_acquire);
         } while (ret < _cores.size());
         Main::install_default_signals();

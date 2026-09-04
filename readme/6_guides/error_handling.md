@@ -40,7 +40,7 @@ The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` t
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
-> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". **Both store the same `VirtualCore::Error::ExceptionThrown`** (`src/qb/core/Main.cpp:356-366`), so a non-`std::exception` throw does not terminate the process — that handler exists precisely to stop it escaping a `noexcept` function. Throw `std::exception` subtypes anyway: only that arm can log *what* was thrown.
+> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". **Both store the same `VirtualCore::Error::ExceptionThrown`** (`src/qb/core/Main.cpp:369-379`), so a non-`std::exception` throw does not terminate the process — that handler exists precisely to stop it escaping a `noexcept` function. Throw `std::exception` subtypes anyway: only that arm can log *what* was thrown.
 
 ```mermaid
 flowchart TD
@@ -417,7 +417,7 @@ The correct primitive for "continue **after the current event handler returns**,
 Use it when a handler must do something that is unsafe inline — above all, destroy or replace the very object it is running on:
 
 ```cpp
-// src: qb/src/qb/io/async/listener.h:1032 (qb::io::async::defer), :813 (listener::defer)
+// src: qb/src/qb/io/async/listener.h:1060 (qb::io::async::defer), :822 (listener::defer)
 void on(event::disconnected const &) {
     // Reconnect = destroy the current connection and build a new one. Doing it
     // inline here (still inside this handler's dispatch) frees `this` mid-call —
