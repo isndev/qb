@@ -331,7 +331,7 @@ A queue with exactly one producer and one consumer (`qb::lockfree::spsc::ringbuf
 <a id="pipe-memory-buffer-qballocatorpipet"></a>
 #### Pipe (memory buffer — `qb::allocator::pipe<T>`)
 
-A dynamically resizable contiguous memory buffer used throughout qb-io for stream buffering. Distinct from the inter-actor [communication `Pipe`](#pipe-communication-channel-qbpipe). Defined in `src/qb/system/allocator/pipe.h`. Its segmented sibling, `qb::allocator::segmented_pipe<T>` (`src/qb/system/allocator/segmented_pipe.h`), grows by linking a segment and never moves what it holds; it backs the event pipes (`qb::VirtualPipe`).
+A dynamically resizable contiguous memory buffer used throughout qb-io for stream buffering. Distinct from the inter-actor [communication `Pipe`](#pipe-communication-channel-qbpipe). Defined in `src/qb/system/allocator/pipe.h`. Its segmented sibling, `qb::allocator::segmented_pipe<T>` (`src/qb/system/allocator/segmented_pipe.h`), grows by linking a segment and never moves what it holds; it backs the event pipes (`qb::VirtualPipe`). Its segments are carved from 2 MB slabs held by the process-wide `qb::allocator::slab_cache` (`src/qb/system/allocator/slab.h`).
 
 #### RAII (Resource Acquisition Is Initialization)
 

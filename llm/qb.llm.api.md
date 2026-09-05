@@ -265,7 +265,7 @@ Service-to-service event.
 *   `[T<_Args...>] struct AskData : WithoutData<_Args...> {}` — likewise `AskData<>` _(`Event.h:664-665`)_.
 *   `[T<_Args...>] struct FillEvent : WithData<_Args...> { FillEvent(); explicit FillEvent(_Args&&...); }`
 
-Aliases: `using VirtualPipe = allocator::segmented_pipe<EventBucket>;` — a segmented FIFO (256 KB segments from a per-core `segment_pool`) that never moves a queued event; `Actor::push`'s returned reference is valid until the handler that obtained it returns.
+Aliases: `using VirtualPipe = allocator::segmented_pipe<EventBucket>;` — a segmented FIFO (256 KB segments from a per-core `segment_pool`, carved eight to a 2 MB slab from the process-wide `allocator::slab_cache`) that never moves a queued event; `Actor::push`'s returned reference is valid until the handler that obtained it returns.
 
 ### Concepts (`<qb/core/Actor.h>`)
 `event_type`, `actor_type`, `service_type`, `callback_type`, `trivial_event` (= `event_type` + trivially-destructible), `event_qos0_type`, `service_event_type` — constrain template params.

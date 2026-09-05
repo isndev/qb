@@ -239,11 +239,11 @@ Two related options affect diagnostics rather than the file logger: `QB_STDOUT_L
 
 `qb::Main::start()` installs handlers for **both** `SIGINT` and `SIGTERM` automatically (in both async and synchronous modes). The handler is async-signal-safe: it sets an internal `_signal_pending` flag — and bumps a `_signal_generation` counter so a repeat signal is re-delivered — that each `VirtualCore` polls every loop iteration, so the write is observed within the configured mailbox latency and the engine shuts down gracefully.
 
-<!-- src: qb/src/qb/core/Main.cpp:343-350 (onSignal), :614-625 (install_default_signals registers SIGINT + SIGTERM), :502 (sync start path), :532 (async start path) -->
+<!-- src: qb/src/qb/core/Main.cpp:344-351 (onSignal), :624-635 (install_default_signals registers SIGINT + SIGTERM), :520 (sync start path), :542 (async start path) -->
 
 On POSIX the handler is installed with `sigaction` (no `SA_RESETHAND`, with `SA_RESTART`), so a *second* `SIGINT` still triggers the graceful path rather than the historical System-V behavior of resetting to default and terminating the process. On Windows, `std::signal` is used.
 
-<!-- src: qb/src/qb/core/Main.cpp:593-611 (install_signal incl. comment + sigaction body) -->
+<!-- src: qb/src/qb/core/Main.cpp:603-621 (install_signal incl. comment + sigaction body) -->
 
 To shut down on additional signals — typically `SIGTERM` under an init system or container orchestrator — register them after constructing the engine:
 
@@ -267,13 +267,13 @@ int main() {
 
 The three signal entry points are static and `noexcept`: `registerSignal(signum)` routes the signal to the graceful-shutdown handler, `unregisterSignal(signum)` restores the OS default disposition (`SIG_DFL`), and `ignoreSignal(signum)` sets `SIG_IGN`.
 
-<!-- src: qb/src/qb/core/Main.cpp:656-669 (registerSignal / unregisterSignal / ignoreSignal) -->
+<!-- src: qb/src/qb/core/Main.cpp:666-679 (registerSignal / unregisterSignal / ignoreSignal) -->
 
 > **Both** `SIGINT` and `SIGTERM` are registered automatically by `start()`, so the signal most container runtimes and service managers send on shutdown already gets the graceful drain — you do not need to register it. `registerSignal()` is for the non-terminal signals (`SIGHUP`, `SIGUSR1`, …), which are delivered as a `qb::SignalEvent` but do **not** kill anything unless you override `on(qb::SignalEvent &)`.
 
 `qb::Main::stop()` is itself async-signal-safe and may be called from a signal handler; it sets the same pending flag and leaves the heavier `std::stop_source` broadcast to `~Main()` / `join()` where normal thread synchronization is safe.
 
-<!-- src: qb/src/qb/core/Main.cpp:547-556 (stop) -->
+<!-- src: qb/src/qb/core/Main.cpp:557-566 (stop) -->
 
 **Checklist**
 
@@ -335,7 +335,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:535-539 (LOG_CRIT/stderr on init failure), :542-545 (hasError), qb/src/qb/io/async/io.h:1298-1301,2613-2616 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:716,722,735 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:555-559 (LOG_CRIT/stderr on init failure), :552-555 (hasError), qb/src/qb/io/async/io.h:1298-1301,2613-2616 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:716,722,735 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

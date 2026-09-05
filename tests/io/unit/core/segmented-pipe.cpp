@@ -23,8 +23,10 @@
  * back is a leak the destructor of the pool cannot see.
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <set>
 #include <utility>
 #include <vector>
@@ -32,6 +34,11 @@
 #include <gtest/gtest.h>
 
 #include <qb/system/allocator/segmented_pipe.h>
+#include <qb/system/allocator/slab.h>
+
+#if defined(__linux__)
+#include <sys/utsname.h>
+#endif
 
 namespace {
 
@@ -456,21 +463,313 @@ TEST(SegmentedPipeOwnership, RecycleBackCopiesIntoStableRange) {
 // =============================================================================
 
 /**
- * @test The default segment is 256 KB of items with a one-item header, and the header fits the
- *       allocation's alignment — the geometry `VirtualPipe` gets.
+ * @test The default segment is 256 KB of items with a one-item header and a 64-slot stagger, and
+ *       the header fits the allocation's alignment — the geometry `VirtualPipe` gets. The
+ *       guaranteed capacity is the raw one minus the widest stagger (63 lines): with 32-byte
+ *       items a line is two items, so 126 of them.
  */
 TEST(SegmentedPipeGeometry, DefaultSegmentIs256KB) {
     using engine_pipe           = qb::allocator::segmented_pipe<Item>;
+    using engine_pool           = engine_pipe::pool_type;
     constexpr std::size_t items = (256u * 1024u) / sizeof(Item);
-    EXPECT_EQ(engine_pipe::segment_capacity, items - 1);
+    static_assert(engine_pool::line_items == 64 / sizeof(Item));
+    static_assert(engine_pool::stagger_slots == 64);
+    static_assert(engine_pool::stagger_stride == 27);
+    static_assert(engine_pool::stagger_slot(0) == 0, "the first carved segment is unstaggered");
+    static_assert(engine_pool::stagger_slot(45) == 63, "the widest stagger is reached");
+    static_assert(engine_pool::max_stagger == 63 * engine_pool::line_items);
+    EXPECT_EQ(engine_pipe::segment_capacity, items - 1 - engine_pool::max_stagger);
     engine_pipe::pool_type pool;
     {
         engine_pipe p(pool);
         Item *const r = p.allocate_back(engine_pipe::segment_capacity);
         EXPECT_EQ(reinterpret_cast<std::uintptr_t>(r) % alignof(Item), 0u);
         EXPECT_EQ(p.segments(), 1u);
+        // The first carved segment has stagger 0, so it holds the raw capacity: the widest
+        // stagger's worth still fits, and only the item after that links the next segment.
+        (void) p.allocate_back(engine_pool::max_stagger);
+        EXPECT_EQ(p.segments(), 1u) << "the unstaggered first segment holds the raw capacity";
         (void) p.allocate_back(1);
         EXPECT_EQ(p.segments(), 2u) << "one item past a full segment links the next";
     }
     EXPECT_EQ(pool.outstanding(), 0u);
+}
+
+// =============================================================================
+// STAGGER: consecutive segments never share a page offset
+// =============================================================================
+
+/**
+ * @test The `i`-th segment a pool carves starts `(i * 27) % 64` cache lines after its header, so
+ *       two consecutive segments — what the two pipes of one core hold — sit 27 lines apart in
+ *       their low twelve address bits, item `k` of one never 4K-aliases item `k` of the other,
+ *       and no item near `k` does either: any two of six consecutively carved segments are at
+ *       least 7 lines apart, circularly, so the reply's store never lands on the load the
+ *       receive loop issues next. Every segment still accepts the guaranteed
+ *       `segment_capacity` in ONE range (a request that wide is pooled, never dedicated), and a
+ *       dedicated segment carries no stagger.
+ */
+TEST(SegmentedPipeStagger, ConsecutiveSegmentsDifferInPageOffset) {
+    using engine_pipe = qb::allocator::segmented_pipe<Item>;
+    using engine_pool = engine_pipe::pool_type;
+    static_assert(engine_pool::stagger_slots > 1, "the default geometry must be able to stagger");
+    engine_pool pool;
+    {
+        engine_pipe                 p(pool);
+        std::vector<std::uintptr_t> starts;
+        std::set<std::uintptr_t>    page_offsets;
+        constexpr std::size_t       slots = engine_pool::stagger_slots;
+        for (std::size_t i = 0; i < slots; ++i) {
+            // Exactly one segment per request: the guaranteed width fills a segment whatever its
+            // stagger, so the next request links the next carved segment.
+            Item *const r = p.allocate_back(engine_pipe::segment_capacity);
+            starts.push_back(reinterpret_cast<std::uintptr_t>(r));
+            page_offsets.insert(reinterpret_cast<std::uintptr_t>(r) % 4096u);
+            EXPECT_EQ(p.segments(), i + 1) << "request " << i << " must link exactly one segment";
+        }
+        EXPECT_EQ(page_offsets.size(), slots) << "every stagger slot must land on a distinct page offset";
+        for (std::size_t i = 1; i < slots; ++i) {
+            // Stagger advances by 27 cache lines per carved segment (mod a page), on top of the
+            // segment stride: 27 forward, or 37 back, is 1728 bytes either way modulo 4096.
+            EXPECT_EQ((starts[i] - starts[i - 1]) % 4096u, 27u * 64u) << "segments " << i - 1 << " and " << i;
+        }
+        for (std::size_t i = 0; i < slots; ++i) {
+            for (std::size_t k = 1; k <= 5 && i + k < slots; ++k) {
+                // Circular distance in lines between two segments carved up to five apart.
+                auto const a = (starts[i] % 4096u) / 64u, b = (starts[i + k] % 4096u) / 64u;
+                auto const d = a > b ? a - b : b - a;
+                EXPECT_GE(std::min(d, 64u - d), 7u) << "segments " << i << " and " << i + k;
+            }
+        }
+        // Every segment holds `segment_capacity` plus whatever its own stagger left of the widest
+        // one: the tail (slot 37 of 64) still takes that much in place, and one item more links
+        // a new segment.
+        constexpr std::size_t spare = engine_pool::max_stagger - engine_pool::stagger_slot(slots - 1) * engine_pool::line_items;
+        static_assert(spare > 0);
+        (void) p.allocate_back(spare);
+        EXPECT_EQ(p.segments(), slots);
+        (void) p.allocate_back(1);
+        EXPECT_EQ(p.segments(), slots + 1);
+    }
+    EXPECT_EQ(pool.outstanding(), 0u);
+    {
+        // A dedicated segment is exact and unstaggered: its range starts right after the header.
+        engine_pipe p(pool);
+        Item *const r = p.allocate_back(engine_pipe::segment_capacity + 1);
+        EXPECT_EQ(reinterpret_cast<std::uintptr_t>(r) % alignof(Item), 0u);
+        EXPECT_EQ(p.segments(), 1u);
+        p.pop_front();
+        EXPECT_EQ(p.segments(), 0u) << "a dedicated segment is freed, not kept resident";
+    }
+    EXPECT_EQ(pool.outstanding(), 0u);
+}
+
+/**
+ * @test The stagger survives the pool round trip: a segment released and re-acquired keeps the
+ *       stagger it was carved with, so a pipe that empties and refills every pass — the swap pair
+ *       of a `VirtualCore` — keeps its two segments on distinct page offsets for ever, whichever
+ *       pipe holds which.
+ */
+TEST(SegmentedPipeStagger, StaggerIsAPropertyOfTheSegmentNotThePipe) {
+    using engine_pipe = qb::allocator::segmented_pipe<Item>;
+    engine_pipe::pool_type pool;
+    {
+        engine_pipe a(pool), b(pool);
+        auto const  off = [](Item const *const r) {
+            return reinterpret_cast<std::uintptr_t>(r) % 4096u;
+        };
+        auto const oa = off(a.allocate_back(1));
+        auto const ob = off(b.allocate_back(1));
+        EXPECT_NE(oa, ob) << "the two pipes' first segments must not share a page offset";
+        for (int pass = 0; pass < 8; ++pass) {
+            // Consume both, swap them (what `__receive__` does), refill: the offsets must stay the
+            // same two values, exchanged or not, never collapse onto one.
+            a.pop_front();
+            b.pop_front();
+            a.swap(b);
+            auto const na = off(a.allocate_back(1));
+            auto const nb = off(b.allocate_back(1));
+            EXPECT_NE(na, nb) << "pass " << pass;
+            EXPECT_TRUE((na == oa && nb == ob) || (na == ob && nb == oa)) << "pass " << pass;
+        }
+    }
+    EXPECT_EQ(pool.outstanding(), 0u);
+}
+
+/**
+ * @test A geometry too small to stagger degrades to a single slot: the test geometry (15 items
+ *       of 32 bytes after the header) cannot spare a quarter of itself, so every segment starts
+ *       right after its header and `segment_capacity` is the raw capacity, unchanged.
+ */
+TEST(SegmentedPipeStagger, TooSmallToStaggerMeansNoStagger) {
+    static_assert(pool_t::stagger_slots == 1);
+    static_assert(pool_t::max_stagger == 0);
+    static_assert(pool_t::segment_capacity == pool_t::raw_capacity);
+    static_assert(kCap == kSegmentItems - 1);
+    pool_t pool;
+    {
+        pipe_t     p(pool);
+        auto const first  = reinterpret_cast<std::uintptr_t>(p.allocate_back(kCap));
+        auto const second = reinterpret_cast<std::uintptr_t>(p.allocate_back(kCap));
+        EXPECT_EQ(p.segments(), 2u);
+        EXPECT_EQ((second - first) % pool_t::segment_bytes, 0u) << "no stagger: segments differ by whole strides only";
+    }
+    EXPECT_EQ(pool.outstanding(), 0u);
+}
+
+// =============================================================================
+// SLABS: where standard segments come from, and where they go back to
+// =============================================================================
+
+/**
+ * @test A pool carves its standard segments out of one 2 MB slab from the process-wide
+ *       `slab_cache`, hands the slab back WHOLE when it is destroyed, and the next pool gets that
+ *       same slab from the cache without a new mapping. This is the warm-across-engines half of
+ *       finding 9.11's A/B: the second engine of a process must not re-fault its pipes.
+ */
+TEST(SegmentedPipeSlab, PoolCarvesFromASlabAndReturnsItToTheCache) {
+    using cache = qb::allocator::slab_cache;
+    static_assert(pool_t::segments_per_slab == cache::slab_bytes / (kSegmentItems * sizeof(Item)));
+    auto const cached_before   = cache::cached();
+    auto const mappings_before = cache::mappings();
+    auto const mappings_after  = cached_before == 0 ? mappings_before + 1 : mappings_before;
+    void      *slab            = nullptr;
+    {
+        pool_t                   pool;
+        pipe_t                   p(pool);
+        std::set<std::uintptr_t> starts;
+        for (std::uint64_t i = 0; i < 50 * kCap; ++i) {
+            Item *const r = push_run(p, 1, i);
+            starts.insert(reinterpret_cast<std::uintptr_t>(r) & ~static_cast<std::uintptr_t>(pool_t::segment_bytes - 1));
+        }
+        EXPECT_EQ(p.segments(), 50u);
+        EXPECT_EQ(pool.slabs(), 1u) << "50 segments of " << pool_t::segment_bytes << " B fit one slab";
+        // Every segment sits at a segment_bytes multiple inside one slab_bytes-sized window.
+        ASSERT_EQ(starts.size(), 50u) << "segments do not overlap";
+        auto const lo = *starts.begin(), hi = *starts.rbegin();
+        EXPECT_LT(hi - lo, cache::slab_bytes);
+        slab = reinterpret_cast<void *>(lo);
+        EXPECT_EQ(cache::cached(), cached_before == 0 ? 0u : cached_before - 1)
+            << "the slab came from the cache when one was there, from a fresh mapping otherwise";
+        EXPECT_EQ(cache::mappings(), mappings_after);
+        p.release_all();
+        EXPECT_EQ(pool.outstanding(), 0u);
+        EXPECT_EQ(pool.retained(), 50u);
+    }
+    // Pool gone: its slab is on the cache's free list, still mapped.
+    auto const cached_now = cache::cached();
+    EXPECT_GE(cached_now, 1u);
+    {
+        pool_t      pool;
+        pipe_t      p(pool);
+        Item *const r = push_run(p, 1, 0);
+        EXPECT_EQ(cache::cached(), cached_now - 1) << "the new pool reused a cached slab";
+        EXPECT_EQ(cache::mappings(), mappings_after) << "no new mapping";
+        auto const base = reinterpret_cast<std::uintptr_t>(r) & ~static_cast<std::uintptr_t>(pool_t::segment_bytes - 1);
+        EXPECT_EQ(reinterpret_cast<void *>(base), slab) << "LIFO: the slab the previous pool just released";
+        p.release_all();
+    }
+    EXPECT_EQ(cache::cached(), cached_now);
+}
+
+/**
+ * @test `shrink()` releases a slab only when NONE of its segments is lent: one live pipe holding
+ *       one segment pins the slab, its retained siblings stay retained, and the slab goes back
+ *       the moment the last lent segment does. A second slab that is entirely free goes at once:
+ *       the walk is per slab, not all-or-nothing.
+ */
+TEST(SegmentedPipeSlab, ShrinkReleasesOnlyWhollyFreeSlabs) {
+    using cache                    = qb::allocator::slab_cache;
+    constexpr std::size_t per_slab = pool_t::segments_per_slab;
+    pool_t                pool;
+    pipe_t                a(pool), b(pool);
+    // `a` fills the first slab entirely and spills into a second; `b` then takes one more.
+    for (std::uint64_t i = 0; i < per_slab * kCap; ++i)
+        (void) push_run(a, 1, i);
+    EXPECT_EQ(a.segments(), per_slab);
+    EXPECT_EQ(pool.slabs(), 1u);
+    (void) push_run(a, 1, 0);
+    EXPECT_EQ(pool.slabs(), 2u) << "one segment past a slab carves the next";
+    (void) push_run(b, 1, 0);
+    // Drain `a` completely: its per_slab + 1 segments are retained, `b`'s one is lent.
+    a.release_all();
+    EXPECT_EQ(pool.retained(), per_slab + 1);
+    EXPECT_EQ(pool.outstanding(), 1u);
+    auto const cached_before = cache::cached();
+    pool.shrink();
+    EXPECT_EQ(pool.slabs(), 1u) << "the wholly free first slab went back; b's slab is pinned";
+    EXPECT_EQ(cache::cached(), cached_before + 1);
+    EXPECT_EQ(pool.retained(), 1u) << "a's segment in the pinned slab stays retained";
+    EXPECT_EQ(pool.outstanding(), 1u);
+    // The pinned slab keeps serving.
+    (void) push_run(b, 1, 1);
+    EXPECT_EQ(pool.slabs(), 1u);
+    b.release_all();
+    EXPECT_EQ(pool.outstanding(), 0u);
+    pool.shrink();
+    EXPECT_EQ(pool.slabs(), 0u);
+    EXPECT_EQ(pool.retained(), 0u);
+    EXPECT_EQ(cache::cached(), cached_before + 2);
+}
+
+/**
+ * @test `slab_cache::trim()` unmaps exactly the cached slabs and never a lent one, and the
+ *       platform geometry holds: 2 MB slabs, aligned to 2 MB on POSIX (the huge-page
+ *       precondition) and to the 64 KB allocation granularity on Windows; on a Linux kernel
+ *       that has `MADV_POPULATE_WRITE` (5.14+) a fresh slab reports itself prefaulted.
+ */
+TEST(SegmentedPipeSlab, TrimUnmapsCachedSlabsOnlyAndGeometryHolds) {
+    using cache = qb::allocator::slab_cache;
+    EXPECT_EQ(cache::slab_bytes, 2u * 1024u * 1024u);
+#if defined(_WIN32) || defined(_WIN64)
+    EXPECT_EQ(cache::alignment(), 64u * 1024u);
+#else
+    EXPECT_EQ(cache::alignment(), cache::slab_bytes);
+#endif
+    pool_t      pool;
+    pipe_t      p(pool);
+    Item *const r = push_run(p, 1, 0);
+    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(r) % alignof(Item), 0u);
+    // The first segment carved from a slab starts AT the slab, and its items follow the one-item
+    // header (`segment_header` is three words, `Item` is 32 bytes) — so the first item sits one
+    // `Item` past a slab-aligned address.
+    EXPECT_EQ((reinterpret_cast<std::uintptr_t>(r) - sizeof(Item)) % cache::alignment(), 0u);
+    // Make sure at least one slab is cached, then trim: only the cached ones go.
+    {
+        pool_t other;
+        pipe_t q(other);
+        (void) push_run(q, 1, 0);
+        q.release_all();
+    }
+    auto const cached = cache::cached();
+    ASSERT_GE(cached, 1u);
+    auto const mapped = cache::mapped();
+    EXPECT_EQ(cache::trim(), cached);
+    EXPECT_EQ(cache::cached(), 0u);
+    EXPECT_EQ(cache::mapped(), mapped - cached);
+    EXPECT_EQ(cache::trim(), 0u);
+    // The lent slab is untouched: its segment is still writable and its pool still whole.
+    r->value = 42;
+    EXPECT_EQ(p.front().data()->value, 42u);
+    EXPECT_EQ(pool.slabs(), 1u);
+    p.release_all();
+    EXPECT_EQ(pool.outstanding(), 0u);
+#if defined(__linux__)
+    // The cache is empty after the trim, so this pool maps a fresh slab: the flag reflects THIS
+    // kernel. Read it against the kernel's own version.
+    {
+        pool_t fresh;
+        pipe_t q(fresh);
+        (void) push_run(q, 1, 0);
+        q.release_all();
+    }
+    struct utsname u{};
+    ASSERT_EQ(::uname(&u), 0);
+    int major = 0, minor = 0;
+    ASSERT_EQ(std::sscanf(u.release, "%d.%d", &major, &minor), 2);
+    if (major > 5 || (major == 5 && minor >= 14))
+        EXPECT_TRUE(cache::prefaulted()) << "kernel " << u.release << " has MADV_POPULATE_WRITE";
+    else
+        std::printf("[   note   ] kernel %s predates MADV_POPULATE_WRITE; slabs fault on first touch\n", u.release);
+#endif
 }

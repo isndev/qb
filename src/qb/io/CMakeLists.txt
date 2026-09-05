@@ -81,6 +81,7 @@ project(qb-io
 # Define the library using the new qb framework functions
 set(IO_SOURCES
         cpu.cpp
+        slab.cpp
         io.cpp
         quic.cpp
 )

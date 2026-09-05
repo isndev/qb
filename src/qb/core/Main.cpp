@@ -23,6 +23,7 @@
  */
 
 #include <cassert>
+#include <chrono>
 #include <csignal>
 #include <cstring>
 #include <iostream>
@@ -429,31 +430,48 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     }
 }
 
-// The start barrier: every core arrives here once its actors are initialised and leaves when
-// all `nb_core` have. A ONE-SHOT rendezvous, so it spins briefly for the common case (peers a
-// few microseconds apart) and then YIELDS its time slice — a barrier that only ever spins is
-// wrong for the case where the arrivals outnumber the CPUs: with `hardware_concurrency()`
-// cores (which ignores affinity masks and cgroup quotas, so a container sees the host's count)
-// plus the calling thread's own spin in `start(true)`, the last core to arrive competes for a
-// CPU against every core already waiting for it. Measured under TSan on a 24-vCPU WSL2 (HEAD,
-// before this change): 23 spinners held TSan's atomics lock in read mode continuously, the
-// 24th core's `fetch_add` — a writer on that lock — never got in, and
+// The start barrier's wait, shared by the cores (`__wait__all__cores__ready`) and by the
+// calling thread in `start(true)`: a ONE-SHOT rendezvous that spins briefly for the common case
+// (peers a few microseconds apart), then YIELDS its time slice, then SLEEPS in short quanta.
+// A barrier that only ever spins is wrong for the case where the arrivals outnumber the CPUs:
+// with `hardware_concurrency()` cores (which ignores affinity masks and cgroup quotas, so a
+// container sees the host's count) plus the calling thread's own wait, the last core to arrive
+// competes for a CPU against every core already waiting for it. Measured under TSan on a
+// 24-vCPU WSL2 before the yield: 23 spinners held TSan's atomics lock in read mode
+// continuously, the 24th core's `fetch_add` — a writer on that lock — never got in, and
 // `MainLifecycle.StopMultiCoreGracefulNoError` hung past its 600 s timeout at ANY CPU count
-// (`taskset -c 0-1` included). A release build is only slower there, by whole scheduler
-// quanta; this makes the barrier converge in the yield cadence instead.
-bool
-Main::__wait__all__cores__ready(std::size_t const nb_core, std::atomic<uint64_t> &sync_start) noexcept {
-    constexpr unsigned kSpinsBeforeYield = 1024;
-    sync_start.fetch_add(1, std::memory_order_acq_rel);
-    uint64_t ret   = 0;
-    unsigned spins = 0;
+// (`taskset -c 0-1` included). And a barrier that only ever YIELDS is not enough either when
+// there is nobody to yield to: with one CPU per waiter, `yield()` returns at once and the
+// waiters' acquire loads keep re-taking that same lock, so the last core's every atomic op
+// during its init is a writer queueing behind 23 readers — measured on the same host, the
+// multi-core lifecycle tests ranged from 0.1 s to 30 s per run, on nothing but the scheduler's
+// mood. A 50 µs sleep after the yield phase leaves the lock idle between polls, the last core
+// initialises at full speed, and an engine whose cores arrive more than ~100 µs apart pays at
+// most one quantum once. A release build never notices any of it: a load is a cache hit there.
+namespace {
+void
+wait_sync_start(std::atomic<uint64_t> &sync_start, std::size_t const nb_core, uint64_t &ret) noexcept {
+    constexpr unsigned kSpinsBeforeYield  = 1024;
+    constexpr unsigned kYieldsBeforeSleep = 256;
+    constexpr auto     kSleepQuantum      = std::chrono::microseconds{50};
+    unsigned           spins              = 0;
     do {
         if (++spins < kSpinsBeforeYield)
             spin_loop_pause();
-        else
+        else if (spins < kSpinsBeforeYield + kYieldsBeforeSleep)
             std::this_thread::yield();
+        else
+            std::this_thread::sleep_for(kSleepQuantum);
         ret = sync_start.load(std::memory_order_acquire);
     } while (ret < nb_core);
+}
+} // namespace
+
+bool
+Main::__wait__all__cores__ready(std::size_t const nb_core, std::atomic<uint64_t> &sync_start) noexcept {
+    sync_start.fetch_add(1, std::memory_order_acq_rel);
+    uint64_t ret = 0;
+    wait_sync_start(sync_start, nb_core, ret);
     return ret < VirtualCore::Error::BadInit;
 }
 
@@ -518,17 +536,9 @@ Main::start(bool async) noexcept {
 
     if (async) {
         // Same cadence as the cores' own barrier: this thread is one more competitor for a CPU
-        // while the last core is still initialising, so it must not spin without yielding.
-        constexpr unsigned kSpinsBeforeYield = 1024;
-        uint64_t           ret               = 0;
-        unsigned           spins             = 0;
-        do {
-            if (++spins < kSpinsBeforeYield)
-                spin_loop_pause();
-            else
-                std::this_thread::yield();
-            ret = _sync_start.load(std::memory_order_acquire);
-        } while (ret < _cores.size());
+        // while the last core is still initialising, so it must not spin without backing off.
+        uint64_t ret = 0;
+        wait_sync_start(_sync_start, _cores.size(), ret);
         Main::install_default_signals();
     }
 

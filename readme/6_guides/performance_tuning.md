@@ -163,7 +163,7 @@ The mechanics and the ordering contract are owned by [Event messaging](./../4_qb
 
 ### Allocation behavior
 
-Each source-to-destination channel is a `qb::VirtualPipe` (an alias of `qb::allocator::segmented_pipe<EventBucket>`) — a FIFO of 256 KB segments drawn from the core's pool: growth **links a segment** rather than copying, a consumed segment is reused by the next push while still warm, and nothing is allocated before the first push. Two consequences for hot paths:
+Each source-to-destination channel is a `qb::VirtualPipe` (an alias of `qb::allocator::segmented_pipe<EventBucket>`) — a FIFO of 256 KB segments drawn from the core's pool: growth **links a segment** rather than copying, a consumed segment is reused by the next push while still warm, and nothing is allocated before the first push. The pool carves its segments from 2 MB slabs that a process-wide `slab_cache` obtains from the platform — huge-page-backed and prefaulted on Linux, kept mapped when a core gives them back — so growth costs one page fault per 2 MB rather than one per 4 KB, and nothing at all from the second engine of a process onward (`slab_cache::trim()` hands the idle slabs back to the OS if a process wants its footprint down between bursts). Two consequences for hot paths:
 
 1. **Keep events small and move large data by handle.** An event is a data carrier; embed a `std::shared_ptr<T>` or `std::unique_ptr<T>` for a large buffer so only the pointer is copied into the pipe, not the payload. Use `qb::string<N>` (an inline, heap-free fixed-capacity string that truncates silently on overflow) for short strings instead of `std::string`.
 
