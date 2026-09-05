@@ -903,11 +903,22 @@ socket::init_client(std::string const &hostname) noexcept {
 
 int
 socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
-    auto ret = tcp::socket::n_connect(ep);
-    if (ret != 0 && !socket_no_error(qb::io::socket::get_last_errno()))
+    const auto ret = tcp::socket::n_connect(ep);
+    // Read the connect's errno BEFORE minting the SSL state, and hand it back AFTER. On Windows the
+    // thread's last-error (WSAGetLastError) is the same slot every successful Win32 call may clear,
+    // and OpenSSL's one-time library init runs inside the process's FIRST SSL_CTX_new() — measured:
+    // that call, and only that one, turned a pending WSAEWOULDBLOCK into 0. A caller that reads
+    // get_last_errno() after a -1 from here (async::tcp::connector::run() does, to tell "in
+    // progress" from "failed") therefore saw 0 for the first TLS client connect of a process and
+    // reported it as a failure. POSIX errno is untouched by the same calls, which is why nothing
+    // else ever saw it.
+    const int err = qb::io::socket::get_last_errno();
+    if (ret != 0 && !socket_no_error(err))
         return ret;
     if (setup_client_ssl(hostname) != 0)
         return SocketStatus::Error;
+    if (ret != 0)
+        qb::io::socket::set_last_errno(err);
     return ret;
 }
 

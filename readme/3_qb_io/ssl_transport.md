@@ -194,7 +194,7 @@ Key behaviors verified in the header:
   nothing in qb; to tell a verification failure apart, read `SSL_get_verify_result()` or
   the OpenSSL error queue.
   <!-- src: qb/src/qb/io/system/sys__socket.h:1567-1571 (SocketStatus enumerators) -->
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:788-799 (connect return gate), :904-912 (n_connect), :724-750 (handCheck) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:788-799 (connect return gate), :904-923 (n_connect), :724-750 (handCheck) -->
 - **Handshake progress.** `handshake_status()` returns `1` when the TLS handshake is
   complete, `0` when OpenSSL needs more socket readiness (`WANT_READ`/`WANT_WRITE`), and
   `-1` on a fatal error. `handshake_complete()` reports whether it finished successfully.
@@ -206,7 +206,7 @@ Key behaviors verified in the header:
   (`WANT_READ` / `WANT_WRITE`) or the handshake is still in progress. That is the inverse of
   `tcp::socket::read`, where `0` means the peer closed. The header's `@return` block says
   otherwise and is wrong.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:987-992 (orderly shutdown returns -1), :997-999 (WANT_* returns 0), :1004 (handshake in progress returns 0) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:998-1003 (orderly shutdown returns -1), :1008-1010 (WANT_* returns 0), :1015 (handshake in progress returns 0) -->
 - **Read drains less than requested.** Because OpenSSL can hold already-decrypted
   application data internally, generic streaming code should use `transport::stcp`, which
   handles `SSL_pending()` for you (see [The stcp transport](#the-stcp-transport)).
@@ -215,7 +215,7 @@ Key behaviors verified in the header:
   auto-created client context is put into quiet-shutdown mode at connect time
   (`SSL_set_quiet_shutdown`), which makes that the deliberate behaviour rather than an
   omission — but a peer that requires a graceful TLS closure will see an abrupt one.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:969-973 (disconnect), :881 (SSL_set_quiet_shutdown) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:980-984 (disconnect), :881 (SSL_set_quiet_shutdown) -->
 
 #### Secure by default
 
@@ -268,7 +268,7 @@ handle and are silent no-ops without one, which is the trap on this table:
 
 `disable_session_resumption()` and `set_session()` are mutually exclusive when deferred; the last call wins.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1299-1305 (set_verify_callback needs a handle), :1307-1313 (set_verify_depth), :1287 (sni deferred), :1296 (alpn deferred), :1130-1131 (resumption deferred, drops the session), :1144 (ocsp deferred), :1256-1257 (session deferred), :1123 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:754 (disable_session_resumption), :765 (request_ocsp_stapling), :799 (set_session), :822 (set_sni_hostname), :834 (set_alpn_protocols), :844 (set_verify_callback), :852 (set_verify_depth), :871 (set_insecure) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1310-1316 (set_verify_callback needs a handle), :1318-1324 (set_verify_depth), :1298 (sni deferred), :1307 (alpn deferred), :1141-1142 (resumption deferred, drops the session), :1155 (ocsp deferred), :1267-1268 (session deferred), :1134 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:754 (disable_session_resumption), :765 (request_ocsp_stapling), :799 (set_session), :822 (set_sni_hostname), :834 (set_alpn_protocols), :844 (set_verify_callback), :852 (set_verify_depth), :871 (set_insecure) -->
 
 #### Introspection and sessions
 
@@ -278,7 +278,7 @@ After a successful handshake the socket exposes `get_negotiated_cipher_suite()`,
 connected flag and return nothing before that. `get_last_ssl_error_string()` does **not**:
 it needs only an `SSL` handle, which is what makes it the accessor to reach for after a
 *failed* handshake.
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1044 (cipher suite gates on _connected), :1076, :1085, :1094, :1151, :1107-1109 (error string gates only on the handle) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1055 (cipher suite gates on _connected), :1087, :1096, :1105, :1162, :1118-1120 (error string gates only on the handle) -->
 
 `get_session()` returns a `qb::io::ssl::Session` for client-side resumption. The caller
 owns it and must release it with `qb::io::ssl::free_session()`. Setting a session does not
@@ -548,7 +548,7 @@ command (RSA-2048, `CN=localhost`, 365-day validity, with a `subjectAltName` so 
 verification can pass for `localhost`) is:
 
 ```bash
-# src: qb/tests/io/system/CMakeLists.txt:106-108
+# src: qb/tests/io/system/CMakeLists.txt:107-109
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
     -days 365 -nodes \
     -subj "/CN=localhost/O=QB Tests/C=US" \

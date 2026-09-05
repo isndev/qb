@@ -569,8 +569,8 @@ public:
      * @param ep The `qb::io::endpoint` of the remote server.
      * @param hostname Hostname (or IP literal) used for BOTH Server Name Indication **and the
      *                 certificate verification target**. See the warning below before omitting it.
-     * @return 0 if TCP connection is in progress or succeeded (SSL handshake follows via `connected()`).
-     *         Non-zero error code on immediate TCP connection failure.
+     * @return 0 if the TCP connect completed at once; -1 if it is pending, with `get_last_errno()` reporting
+     *         in-progress (preserved across the SSL setup), or on failure, with the connect's own error.
      * @details Sets up SNI and the verification target if `hostname` is provided. After this call, use
      *          event loop mechanisms to wait for socket writability, then call `connected()` to
      *          perform/complete the SSL handshake.

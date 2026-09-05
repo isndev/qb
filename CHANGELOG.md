@@ -120,6 +120,21 @@ policy.
 
 ### Fixed
 
+- **The first non-blocking TLS connect of a process no longer reads as a failure on Windows.**
+  `ssl::socket::n_connect(endpoint, hostname)` returned the TCP connect's -1 ("in progress") and
+  then minted the SSL state; the process's first `SSL_CTX_new()` runs OpenSSL's one-time library
+  init, whose successful Win32 calls clear the thread's last-error slot — measured with a probe,
+  that call and only that one turned a pending `WSAEWOULDBLOCK` into 0. Every caller reads
+  `get_last_errno()` after the return to tell "in progress" from "failed":
+  `async::tcp::connector::run()` saw 0, `socket_no_error(0)` is false, and the first TLS client
+  connect of a process was delivered as a failure — on POSIX `errno` is untouched by the same
+  calls, so nothing else could see it. `n_connect` now captures the connect's errno before the SSL
+  setup and restores it before returning. Surfaced by `verify-windows.ps1` on the 3.2 candidate:
+  `ssl-socket-loopback`'s `NonBlockingConnectVariantsPrepareSslState` failed with
+  `n_connect result=-1 errno=0` exactly when `--gtest_shuffle` drew it first (1 of 5 presets that
+  run; 5/5 in isolation, 0/N after any prior TLS connect). `ssl-first-connect-errno` pins it: one
+  test alone in its binary, so it is the process's first SSL operation on every platform whatever
+  the shuffle seed.
 - **A sanitized build no longer links a system GoogleTest.** Under `QB_SANITIZE` the
   `FIND_PACKAGE_ARGS` system-first lookup is not offered for GoogleTest (nor Google Benchmark):
   the pinned tag is built with the same sanitizer flags as every other target. A system package
