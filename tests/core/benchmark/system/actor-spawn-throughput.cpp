@@ -189,7 +189,7 @@ BM_ActorSpawn_BroadcastKill(benchmark::State &state) {
 }
 
 void
-ArgsActors(benchmark::internal::Benchmark *b) {
+ArgsActors(benchmark::Benchmark *b) {
     // Shapes from the system suites: 1024 (actor-add kill) and 2048 (actor-dependency spawn),
     // plus smaller points for the registration-cost curve.
     for (std::int64_t n : {128, 512, 1024, 2048})

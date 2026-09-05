@@ -51,7 +51,7 @@ multicast_consumer_core_for_index(std::size_t const consumer_index, std::uint32_
  * because \c 0 * 10 stays \c 0 and Google Benchmark registration hangs forever.
  */
 inline void
-apply_pipeline_multicast_args(::benchmark::internal::Benchmark *b) {
+apply_pipeline_multicast_args(::benchmark::Benchmark *b) {
     const auto nb_core = cappedBenchmarkCores();
     const int  max_j   = static_cast<int>(nb_core) * 10;
 
@@ -81,7 +81,7 @@ apply_pipeline_multicast_args(::benchmark::internal::Benchmark *b) {
  * (no divisibility constraint, unlike the fan-out multicast bench).
  */
 inline void
-apply_pipeline_chain_args(::benchmark::internal::Benchmark *b) {
+apply_pipeline_chain_args(::benchmark::Benchmark *b) {
     constexpr std::int64_t kDeliveryBudget = 1'500'000; // bounded hops per cell
     constexpr std::int64_t kMinSamples     = 20'000;    // enough for a stable latency mean
     constexpr std::int64_t kMaxSamples     = 400'000;

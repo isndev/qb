@@ -114,11 +114,11 @@ Consequences worth knowing:
 
 Fetched dependencies build cleanly from source with CMake, so qb can resolve them system-first and fall back to a pinned-tag source build. Three dependencies are fetchable: **GoogleTest**, **Google Benchmark**, and **zlib**.
 
-- **GoogleTest** — resolved in `qbFetchGoogleDeps.cmake:53-128`, only when `QB_BUILD_TESTS` is ON (the default). Cache options are forced before the fetch: `BUILD_GMOCK=ON`, `INSTALL_GTEST=OFF`, and the gtest/gmock self-tests off (`qbFetchGoogleDeps.cmake:61-64`). On MSVC, `gtest_force_shared_crt=ON` (`qbFetchGoogleDeps.cmake:58-60`). When built from source under Clang/AppleClang, qb adds `-Wno-character-conversion` to the `gtest` target to silence a third-party `char8_t` warning (`qbFetchGoogleDeps.cmake:120-123`).
-- **Google Benchmark** — resolved in `qbFetchGoogleDeps.cmake:133-168`, only when `QB_BUILD_BENCHMARKS` is ON (off by default). Cache options forced before the fetch: `BENCHMARK_ENABLE_TESTING=OFF`, `BENCHMARK_DOWNLOAD_DEPENDENCIES=OFF` (`qbFetchGoogleDeps.cmake:138-139`).
+- **GoogleTest** — resolved in `qbFetchGoogleDeps.cmake:62-142`, only when `QB_BUILD_TESTS` is ON (the default). Under `QB_SANITIZE` the system package is not a candidate at all: a GoogleTest compiled without the sanitizer disagrees with the instrumented TUs on libc++'s container annotations, and AddressSanitizer reports a `container-overflow` that is not one — so the pinned tag is built with the same flags as every other target (`qbFetchGoogleDeps.cmake:53-61,109-112`); `QB_USE_SYSTEM_GTEST=ON` still forces the system package, with a warning saying what that buys (`qbFetchGoogleDeps.cmake:65-67`). Cache options are forced before the fetch: `BUILD_GMOCK=ON`, `INSTALL_GTEST=OFF`, and the gtest/gmock self-tests off (`qbFetchGoogleDeps.cmake:73-76`). On MSVC, `gtest_force_shared_crt=ON` (`qbFetchGoogleDeps.cmake:70-72`). When built from source under Clang/AppleClang, qb adds `-Wno-character-conversion` to the `gtest` target to silence a third-party `char8_t` warning (`qbFetchGoogleDeps.cmake:134-137`).
+- **Google Benchmark** — resolved in `qbFetchGoogleDeps.cmake:147-189`, only when `QB_BUILD_BENCHMARKS` is ON (off by default). Cache options forced before the fetch: `BENCHMARK_ENABLE_TESTING=OFF`, `BENCHMARK_DOWNLOAD_DEPENDENCIES=OFF` (`qbFetchGoogleDeps.cmake:157-158`).
 - **zlib** — resolved in `qbDependencies.cmake:155-220`, only when `QB_WITH_COMPRESSION` is ON (the default). zlib is searched with `find_package(ZLIB QUIET)` first; if absent and `QB_DEPS_FETCH_FALLBACK` is ON, it is built from `madler/zlib` at `QB_ZLIB_GIT_TAG`. Because `madler/zlib` exposes `zlib`/`zlibstatic` but no `ZLIB::ZLIB` target, qb normalizes an `ZLIB::ZLIB` alias (`qbDependencies.cmake:172-180`). Resolving zlib defines `QB_HAS_COMPRESSION=1`; if it is requested but cannot be found or built, the build warns and forces `QB_WITH_COMPRESSION` off (`qbDependencies.cmake:217-219`).
 
-> Note: GoogleTest and Google Benchmark integrate `find_package` into the fetch through `FIND_PACKAGE_ARGS` (`qbFetchGoogleDeps.cmake:96-107,146-158`), so `QB_DEPS_FETCH_FALLBACK=OFF` makes them ignore the system entirely and always build from the pinned tag. zlib uses an explicit `find_package`-then-`FetchContent` sequence, so for zlib, `QB_DEPS_FETCH_FALLBACK=OFF` means "use the system package if present, otherwise disable compression" — it never reaches the source build. See [Resolution policy](#resolution-policy-qb_deps_fetch_fallback) for the exact behavior.
+> Note: GoogleTest and Google Benchmark integrate `find_package` into the fetch through `FIND_PACKAGE_ARGS` (`qbFetchGoogleDeps.cmake:108-121,165-179`), so `QB_DEPS_FETCH_FALLBACK=OFF` makes them ignore the system entirely and always build from the pinned tag. zlib uses an explicit `find_package`-then-`FetchContent` sequence, so for zlib, `QB_DEPS_FETCH_FALLBACK=OFF` means "use the system package if present, otherwise disable compression" — it never reaches the source build. See [Resolution policy](#resolution-policy-qb_deps_fetch_fallback) for the exact behavior.
 
 ### System-only dependencies
 
@@ -150,7 +150,7 @@ A `QB_HAS_*` flag drives the corresponding `QB_HAS_*=1` compile definition on qb
 | `QB_DEPS_FETCH_FALLBACK=OFF` | **Always build the pinned tag from source** — the system package is ignored (no `FIND_PACKAGE_ARGS`). | Use the system package if present; otherwise compression is disabled (no source build is attempted). |
 | `QB_USE_SYSTEM_GTEST=ON` / `QB_USE_SYSTEM_BENCHMARK=ON` | Force `find_package(... CONFIG REQUIRED)` — require a system package, never fetch; configuration fails if missing. | (not applicable) |
 
-The mechanism: for GoogleTest and Google Benchmark, qb appends `FIND_PACKAGE_ARGS QUIET GLOBAL NAMES <pkg>` to the `FetchContent_Declare` **only when `QB_DEPS_FETCH_FALLBACK` is ON** (`qbFetchGoogleDeps.cmake:96-99,146-149`). With the argument present, `FetchContent_MakeAvailable` tries `find_package` first and falls back to the source build; without it, it always builds from source. The `QB_USE_SYSTEM_*` switches short-circuit this entirely with an explicit `find_package(... CONFIG REQUIRED)` (`qbFetchGoogleDeps.cmake:54-56,134-136`).
+The mechanism: for GoogleTest and Google Benchmark, qb appends `FIND_PACKAGE_ARGS QUIET GLOBAL NAMES <pkg>` to the `FetchContent_Declare` **only when `QB_DEPS_FETCH_FALLBACK` is ON** (`qbFetchGoogleDeps.cmake:108-113,165-170`). With the argument present, `FetchContent_MakeAvailable` tries `find_package` first and falls back to the source build; without it, it always builds from source. The `QB_USE_SYSTEM_*` switches short-circuit this entirely with an explicit `find_package(... CONFIG REQUIRED)` (`qbFetchGoogleDeps.cmake:63-68,153-155`).
 
 `QUIET` and `GLOBAL` are part of that argument list deliberately. CMake adds both by itself when they are absent — `QUIET` always, `GLOBAL` because qb sets `CMAKE_FIND_PACKAGE_TARGETS_GLOBAL` (`qbFetchGoogleDeps.cmake:48`) so that the imported targets stay visible inside the `qbm/*` subdirectories — but CMake 3.24.0 through 3.28.x splice them in with `list()` rather than `string()`, which joins them to the preceding bracket-quoted token with a `;` instead of a space and makes CMake fail to parse its own generated code:
 
@@ -171,13 +171,13 @@ Four advanced cache variables pin the Git tag (or SHA) used for source builds (`
 | Variable | Default | Applies to |
 |---|---|---|
 | `QB_GOOGLETEST_GIT_TAG` | `v1.15.2` | GoogleTest source build |
-| `QB_GOOGLEBENCHMARK_GIT_TAG` | `v1.9.2` | Google Benchmark source build |
+| `QB_GOOGLEBENCHMARK_GIT_TAG` | `v1.9.5` | Google Benchmark source build |
 | `QB_ZLIB_GIT_TAG` | `v1.3.1` | zlib fallback source build |
 
 Override at configure time:
 
 ```bash
-# src: derived from qb/cmake/qbConfig.cmake:116-121 + qbFetchGoogleDeps.cmake:101-107
+# src: derived from qb/cmake/qbConfig.cmake:116-121 + qbFetchGoogleDeps.cmake:115-121
 cmake -B build -S . -DQB_GOOGLETEST_GIT_TAG=v1.14.0
 ```
 
@@ -186,7 +186,7 @@ cmake -B build -S . -DQB_GOOGLETEST_GIT_TAG=v1.14.0
 The default already prefers a system package when present. To **require** a system GoogleTest/Benchmark and fail (never fetch) when it is absent:
 
 ```bash
-# src: derived from qb/cmake/qbFetchGoogleDeps.cmake:54-56,134-136
+# src: derived from qb/cmake/qbFetchGoogleDeps.cmake:63-68,153-155
 cmake -B build -S . \
   -DQB_USE_SYSTEM_GTEST=ON \
   -DQB_USE_SYSTEM_BENCHMARK=ON
@@ -210,7 +210,7 @@ In every case, QUIC additionally requires `QB_HAS_SSL` — without OpenSSL, QUIC
 
 ## Source layout of fetched dependencies
 
-When a fetchable dependency is built from source, `FetchContent` places its tree under the build directory, for example `build/_deps/googletest-src`, `build/_deps/googlebenchmark-src`, and `build/_deps/zlib-src` (the exact path follows the `FetchContent` naming convention). A system package, by contrast, leaves no `_deps` entry — the per-dependency status message states which path was taken (`qbFetchGoogleDeps.cmake:110-114,160-164`).
+When a fetchable dependency is built from source, `FetchContent` places its tree under the build directory, for example `build/_deps/googletest-src`, `build/_deps/googlebenchmark-src`, and `build/_deps/zlib-src` (the exact path follows the `FetchContent` naming convention). A system package, by contrast, leaves no `_deps` entry — the per-dependency status message states which path was taken (`qbFetchGoogleDeps.cmake:124-128,181-185`).
 
 ## Offline and CI builds
 

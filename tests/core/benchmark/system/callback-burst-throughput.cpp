@@ -150,7 +150,7 @@ BM_ProducerBurst_OneWay(benchmark::State &state) {
 }
 
 void
-ApplyBurstArgs(benchmark::internal::Benchmark *b) {
+ApplyBurstArgs(benchmark::Benchmark *b) {
     const auto             cap    = qb::bench::cappedBenchmarkCores();
     constexpr std::int64_t kTotal = 500000;
     b->Args({kTotal, 0, 0});

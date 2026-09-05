@@ -128,7 +128,7 @@ BM_AllocVsPush_BigMsg(benchmark::State &state) {
 }
 
 void
-ApplyAllocPushArgs(benchmark::internal::Benchmark *b) {
+ApplyAllocPushArgs(benchmark::Benchmark *b) {
     const auto             cap    = qb::bench::cappedBenchmarkCores();
     constexpr std::int64_t kCount = 200000;
     // Sweep the extra pre-allocation hint handed to allocated_push (regular push ignores it).

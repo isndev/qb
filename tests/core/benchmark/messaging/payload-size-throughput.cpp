@@ -160,7 +160,7 @@ BM_PayloadPingPong_XCore(benchmark::State &state) {
 
 template <std::size_t ExtraWords>
 void
-ApplyPayloadTtls(benchmark::internal::Benchmark *b) {
+ApplyPayloadTtls(benchmark::Benchmark *b) {
     static constexpr std::int64_t kTtls[] = {4096, 16384, 65536, 262144};
     for (std::int64_t const t : kTtls) {
         if (ExtraWords >= 127 && t > 65536)

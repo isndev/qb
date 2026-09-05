@@ -147,7 +147,7 @@ These three are summarized here and documented in full, with the pinned tags and
 |---|---|---|
 | `QB_DEPS_FETCH_FALLBACK` | bool; `ON` | Build fetchable deps (GoogleTest, Google Benchmark, zlib) from source when not found on the system. `OFF` means system-only for those (`qbConfig.cmake:111`). |
 | `QB_USE_SYSTEM_GTEST` / `QB_USE_SYSTEM_BENCHMARK` | bool; `OFF` | Force `find_package(... CONFIG REQUIRED)`; never fetch (`qbConfig.cmake:113-114`). |
-| `QB_GOOGLETEST_GIT_TAG` / `QB_GOOGLEBENCHMARK_GIT_TAG` / `QB_ZLIB_GIT_TAG` | string (advanced cache); `v1.15.2` / `v1.9.2` / `v1.3.1` | Pin the fetched source revision (`qbConfig.cmake:116-118`). |
+| `QB_GOOGLETEST_GIT_TAG` / `QB_GOOGLEBENCHMARK_GIT_TAG` / `QB_ZLIB_GIT_TAG` | string (advanced cache); `v1.15.2` / `v1.9.5` / `v1.3.1` | Pin the fetched source revision (`qbConfig.cmake:116-118`). |
 
 Always check the root `CMakeLists.txt` and `qb/cmake/` for the most current and complete option list for your checkout.
 

@@ -50,9 +50,21 @@ set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL TRUE)
 # -----------------------------------------------------------------------------
 # GoogleTest
 # -----------------------------------------------------------------------------
+# A sanitized build instruments its test framework too. A system GoogleTest is compiled without
+# the sanitizer, and libc++'s container annotations then disagree between the library's TUs and
+# ours: `GTestIsInitialized()` copies the argv vector that `GetArgvs()` built inside the library,
+# and AddressSanitizer reports a container-overflow that is not one -- measured on macOS 26.6 /
+# AppleClang 21 with Homebrew googletest: 3 of 372 root `sanitize` tests aborted, intermittently
+# (heap layout decides), and the same binaries pass with detect_container_overflow=0. Under
+# QB_SANITIZE the system package is therefore not offered as a candidate: FetchContent builds the
+# pinned tag with the same flags as every other target. QB_USE_SYSTEM_GTEST=ON still forces the
+# system package, and says what that buys.
 if(QB_BUILD_TESTS)
     if(QB_USE_SYSTEM_GTEST)
         find_package(GTest CONFIG REQUIRED)
+        if(QB_SANITIZE)
+            qb_warning_message("QB_USE_SYSTEM_GTEST=ON under QB_SANITIZE='${QB_SANITIZE}': the system GoogleTest is not instrumented, expect sanitizer false positives at the library boundary")
+        endif()
         qb_status_message("Google Test: system package (QB_USE_SYSTEM_GTEST=ON)")
     else()
         if(MSVC)
@@ -94,8 +106,10 @@ if(QB_BUILD_TESTS)
         # on 3.29+; it only stops 3.24-3.28 from corrupting it. Verified configuring on
         # 3.24.4 / 3.25.3 / 3.26.6 / 3.27.9 / 3.28.6 / 3.29.0 / 3.30.9 / 3.31.9 / 4.0.3 / 4.1.2.
         set(_gtest_fp_args "")
-        if(QB_DEPS_FETCH_FALLBACK)
+        if(QB_DEPS_FETCH_FALLBACK AND NOT QB_SANITIZE)
             set(_gtest_fp_args FIND_PACKAGE_ARGS QUIET GLOBAL NAMES GTest)
+        elseif(QB_SANITIZE)
+            qb_status_message("Google Test: system package not considered under QB_SANITIZE='${QB_SANITIZE}' (it would not be instrumented)")
         endif()
 
         FetchContent_Declare(
@@ -131,8 +145,13 @@ endif()
 # Google Benchmark
 # -----------------------------------------------------------------------------
 if(QB_BUILD_BENCHMARKS)
+    # 1.9.5 is the floor because it is the release where `benchmark::Benchmark` became public --
+    # the benchmark sources name that type. Before 1.9.5 the registration object existed only
+    # as `benchmark::internal::Benchmark` (measured on the v1.9.2, v1.9.3 and v1.9.4 headers),
+    # and from 1.9.5 that spelling is a deprecated alias. The floor equals the pinned tag, so a
+    # system package older than the pin is never used in its place: it falls back to the fetch.
     if(QB_USE_SYSTEM_BENCHMARK)
-        find_package(benchmark CONFIG REQUIRED)
+        find_package(benchmark 1.9.5 CONFIG REQUIRED)
         qb_status_message("Google Benchmark: system package (QB_USE_SYSTEM_BENCHMARK=ON)")
     else()
         set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
@@ -144,8 +163,10 @@ if(QB_BUILD_BENCHMARKS)
         # offending ';' lands after the longer content name `googlebenchmark`). Full mechanism
         # in the GoogleTest block; do not "simplify" this back.
         set(_benchmark_fp_args "")
-        if(QB_DEPS_FETCH_FALLBACK)
-            set(_benchmark_fp_args FIND_PACKAGE_ARGS QUIET GLOBAL NAMES benchmark)
+        if(QB_DEPS_FETCH_FALLBACK AND NOT QB_SANITIZE)
+            set(_benchmark_fp_args FIND_PACKAGE_ARGS 1.9.5 QUIET GLOBAL NAMES benchmark)
+        elseif(QB_SANITIZE)
+            qb_status_message("Google Benchmark: system package not considered under QB_SANITIZE='${QB_SANITIZE}' (it would not be instrumented)")
         endif()
 
         FetchContent_Declare(

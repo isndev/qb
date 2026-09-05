@@ -82,7 +82,7 @@ does enable benchmarks — the two files are not the same file.
 | `QB_USE_SYSTEM_GTEST` | `OFF` | Require a system GoogleTest (`find_package(GTest CONFIG REQUIRED)`); never fetch. |
 | `QB_USE_SYSTEM_BENCHMARK` | `OFF` | Require a system Google Benchmark (`find_package(benchmark CONFIG REQUIRED)`); never fetch. |
 | `QB_GOOGLETEST_GIT_TAG` | `v1.15.2` | Git tag (or SHA) for the `FetchContent` googletest build. Advanced. |
-| `QB_GOOGLEBENCHMARK_GIT_TAG` | `v1.9.2` | Git tag (or SHA) for the `FetchContent` googlebenchmark build. Advanced. |
+| `QB_GOOGLEBENCHMARK_GIT_TAG` | `v1.9.5` | Git tag (or SHA) for the `FetchContent` googlebenchmark build. Advanced. |
 | `QB_ZLIB_GIT_TAG` | `v1.3.1` | Git tag (or SHA) for the `FetchContent` zlib fallback build. Advanced. |
 | `QB_USE_SYSTEM_NLOHMANN` | `AUTO` | Tri-state. `AUTO` probes for a system nlohmann_json (>= 3.11) then fetches; `ON` requires one and fails early if absent; `OFF` always fetches. An **installable** build (`QB_INSTALL=ON`, which is the standalone default) needs a real system copy either way — a fetched target is in no export set, so that combination is a configure-time error. |
 | `QB_NLOHMANN_GIT_TAG` | `v3.12.0` | Git tag (or SHA) for the `FetchContent` nlohmann_json fallback. Advanced. |

@@ -140,7 +140,7 @@ BM_MessagingApi_OneWay(benchmark::State &state) {
 }
 
 void
-ArgsMessagingApiCores(benchmark::internal::Benchmark *b) {
+ArgsMessagingApiCores(benchmark::Benchmark *b) {
     const auto cap = qb::bench::cappedBenchmarkCores();
     for (int n : {100000, 500000, 1000000}) {
         // De-dup the candidate consumer cores so colliding rows (e.g. cap-1 == 1 when cap == 2)

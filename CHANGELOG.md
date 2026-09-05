@@ -39,6 +39,14 @@ policy.
 
 ### Changed
 
+- **Google Benchmark floor is 1.9.5** (`QB_BUILD_BENCHMARKS=ON` only): the pinned fetch moves
+  `v1.9.2` → `v1.9.5`, and a system package is accepted only from 1.9.5 — the release that made
+  `benchmark::Benchmark` public. The benchmark sources name that public type; until now they
+  named `benchmark::internal::Benchmark`, which 1.9.5 deprecates, and the benchmark targets
+  carried a `-Wno-error=deprecated-declarations` / `/wd4996` exemption so that a 1.9.5 system
+  package and a 1.9.2 fetch could both compile (19 warnings per build on a 1.9.5 host). The
+  exemption is gone: `-Werror` applies to benchmark targets exactly as it does to tests. A host
+  whose system package is older falls back to the fetch, as before.
 - **The reference `Actor::push` / `Pipe::push` / `allocated_push` returns is valid until the
   handler or callback that obtained it returns** — across any number of further pushes to the
   same core — where it used to die at the very next event queued to that destination core. The
@@ -112,6 +120,16 @@ policy.
 
 ### Fixed
 
+- **A sanitized build no longer links a system GoogleTest.** Under `QB_SANITIZE` the
+  `FIND_PACKAGE_ARGS` system-first lookup is not offered for GoogleTest (nor Google Benchmark):
+  the pinned tag is built with the same sanitizer flags as every other target. A system package
+  is compiled without the sanitizer, and libc++'s container annotations then disagree between
+  its TUs and ours — `GTestIsInitialized()` copies the argv vector `GetArgvs()` built inside the
+  library, and AddressSanitizer reports a `container-overflow` that is not one. Measured on
+  macOS 26.6 / AppleClang 21 with Homebrew googletest: 3 of 372 root `sanitize` tests aborted,
+  intermittently (heap layout decides), and the same binaries pass with
+  `detect_container_overflow=0`. `QB_USE_SYSTEM_GTEST=ON` still forces the system package and
+  now warns under a sanitizer.
 - **The start barrier yields once it has spun.** `Main::__wait__all__cores__ready()` and the
   calling thread's wait in `Main::start(true)` spun on the ready counter without ever yielding,
   so an engine started with more cores than CPUs — `hardware_concurrency()` ignores affinity

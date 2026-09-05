@@ -138,7 +138,7 @@ BM_CoreDistance_PingPong(benchmark::State &state) {
 }
 
 void
-ArgsCoreDistanceGrid(benchmark::internal::Benchmark *b) {
+ArgsCoreDistanceGrid(benchmark::Benchmark *b) {
     const auto cap = qb::bench::cappedBenchmarkCores();
     const auto ttl = 1ull << 14;
     for (std::uint32_t p = 0; p < cap; ++p) {

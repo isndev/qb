@@ -749,19 +749,15 @@ function(qb_add_benchmark)
         target_compile_options(${BENCH_NAME} PRIVATE $<$<CONFIG:Release>:/GL->)
     endif()
 
-    # Deprecations warn but do not fail HERE only. Benchmark targets are the one place that
-    # compiles against google-benchmark's headers, and its API name for the registration object
-    # differs by version: the pinned FetchContent build (QB_GOOGLEBENCHMARK_GIT_TAG, v1.9.2) knows
-    # only `benchmark::internal::Benchmark`, while newer system packages
-    # (-DQB_USE_SYSTEM_BENCHMARK=ON, which CI uses) deprecate that spelling in favour of
-    # `benchmark::Benchmark` — an alias v1.9.2 does not have. No single spelling compiles warning-
-    # free under both, so promoting a THIRD-PARTY deprecation to an error just makes the build
-    # depend on which benchmark package the machine happens to provide. Our own -Werror still
-    # applies to every other warning in these targets, and to all test targets unchanged.
+    # -Werror applies to benchmark targets exactly as it does to tests. Google Benchmark's
+    # registration object is named by its public spelling, `benchmark::Benchmark`, which is
+    # what every accepted package provides: qbFetchGoogleDeps.cmake floors the system package at
+    # 1.9.5 -- the release that made the name public -- and pins the fetched tag to the same
+    # version. (Until then the sources named `benchmark::internal::Benchmark`, and these targets
+    # carried a deprecation exemption so that a 1.9.5 system package and a 1.9.2 fetch could
+    # both compile; the floor retired both the spelling and the exemption.)
     target_compile_options(${BENCH_NAME} PRIVATE
         $<$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang>:-Wno-c2y-extensions>
-        $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-Wno-error=deprecated-declarations>
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4996>
     )
     
     if(TARGET benchmark::benchmark)

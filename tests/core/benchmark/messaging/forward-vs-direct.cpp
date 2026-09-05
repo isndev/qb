@@ -175,7 +175,7 @@ BM_ForwardVsDirect_PingPong(benchmark::State &state) {
 }
 
 void
-ApplyForwardReplyArgs(benchmark::internal::Benchmark *b) {
+ApplyForwardReplyArgs(benchmark::Benchmark *b) {
     const auto cap = qb::bench::cappedBenchmarkCores();
     const auto t   = 1ull << 14;
     b->Args({static_cast<std::int64_t>(t), 0, 0});

@@ -119,7 +119,7 @@ BM_FanIn_OneWayPush(benchmark::State &state) {
 }
 
 void
-ArgsFanIn(benchmark::internal::Benchmark *b) {
+ArgsFanIn(benchmark::Benchmark *b) {
     const auto cap = qb::bench::cappedBenchmarkCores();
     for (std::int64_t same : {0, 1}) {
         const std::uint32_t pmax = std::min<std::uint32_t>(cap, 8u);

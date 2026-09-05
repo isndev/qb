@@ -100,7 +100,7 @@ BM_Engine_Lifecycle(benchmark::State &state) {
 }
 
 void
-ArgsCores(benchmark::internal::Benchmark *b) {
+ArgsCores(benchmark::Benchmark *b) {
     const auto cap = qb::bench::cappedBenchmarkCores();
     for (std::uint32_t c = 1u; c <= cap; ++c)
         b->Args({static_cast<std::int64_t>(c)});

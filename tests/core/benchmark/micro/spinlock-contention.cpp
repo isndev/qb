@@ -129,7 +129,7 @@ BM_SpinLock_Contended(benchmark::State &state) {
 }
 
 void
-ArgsContended(benchmark::internal::Benchmark *b) {
+ArgsContended(benchmark::Benchmark *b) {
     const auto cap = qb::bench::cappedBenchmarkCores();
     for (std::uint32_t t = 1u; t <= std::min<std::uint32_t>(8u, cap); t *= 2u)
         b->Args({static_cast<std::int64_t>(t)});

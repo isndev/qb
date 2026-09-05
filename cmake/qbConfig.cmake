@@ -114,7 +114,7 @@ option(QB_USE_SYSTEM_GTEST "Require a system GTest (find_package CONFIG REQUIRED
 option(QB_USE_SYSTEM_BENCHMARK "Require a system Google Benchmark (find_package CONFIG REQUIRED), never fetch" OFF)
 
 set(QB_GOOGLETEST_GIT_TAG "v1.15.2" CACHE STRING "Git tag (or SHA) for FetchContent googletest")
-set(QB_GOOGLEBENCHMARK_GIT_TAG "v1.9.2" CACHE STRING "Git tag (or SHA) for FetchContent googlebenchmark")
+set(QB_GOOGLEBENCHMARK_GIT_TAG "v1.9.5" CACHE STRING "Git tag (or SHA) for FetchContent googlebenchmark")
 set(QB_ZLIB_GIT_TAG "v1.3.1" CACHE STRING "Git tag (or SHA) for the FetchContent zlib fallback build")
 set(QB_NLOHMANN_GIT_TAG "v3.12.0" CACHE STRING "Git tag (or SHA) for the FetchContent nlohmann_json fallback")
 mark_as_advanced(QB_GOOGLETEST_GIT_TAG QB_GOOGLEBENCHMARK_GIT_TAG QB_ZLIB_GIT_TAG

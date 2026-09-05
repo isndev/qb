@@ -181,7 +181,7 @@ BM_Ask_Scatter(benchmark::State &state) {
 }
 
 void
-ApplyScatterArgs(benchmark::internal::Benchmark *b) {
+ApplyScatterArgs(benchmark::Benchmark *b) {
     for (std::int64_t n : {2, 4, 8})
         b->Args({n});
 }

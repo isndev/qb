@@ -200,7 +200,7 @@ run_mpsc_fan_in(std::size_t const nb_producers, std::uint64_t const total, std::
  * × dequeue_batch {1,16,64}.
  */
 inline void
-apply_mpsc_fan_in_args(::benchmark::internal::Benchmark *b) {
+apply_mpsc_fan_in_args(::benchmark::Benchmark *b) {
     const auto         cap       = qb::bench::cappedBenchmarkCores();
     const std::int64_t totals[]  = {200'000, 1'000'000};
     const std::int64_t batches[] = {1, 16, 64};

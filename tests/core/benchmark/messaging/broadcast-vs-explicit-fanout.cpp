@@ -169,7 +169,7 @@ BM_Fanout_Deliveries(benchmark::State &state) {
 }
 
 void
-ApplyFanoutExplicitArgs(benchmark::internal::Benchmark *b) {
+ApplyFanoutExplicitArgs(benchmark::Benchmark *b) {
     const auto              cap    = qb::bench::cappedBenchmarkCores();
     constexpr std::uint64_t kTotal = 500000;
     const std::uint32_t     nmax   = std::min<std::uint32_t>(8u, std::max(2u, cap));
@@ -182,7 +182,7 @@ ApplyFanoutExplicitArgs(benchmark::internal::Benchmark *b) {
 }
 
 void
-ApplyFanoutBroadcastArgs(benchmark::internal::Benchmark *b) {
+ApplyFanoutBroadcastArgs(benchmark::Benchmark *b) {
     const auto              cap    = qb::bench::cappedBenchmarkCores();
     constexpr std::uint64_t kTotal = 500000;
     if (cap <= 1u) {
