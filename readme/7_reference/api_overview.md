@@ -460,6 +460,7 @@ Helpers: `qb::mono_now()`, `qb::wall_now()`, `qb::unix_seconds()`/`unix_millis()
 | `qb::string<N>` | `qb/string.h` | Fixed-capacity, heap-free string; truncates past `N`. |
 | `qb::allocator::pipe<T>` | `qb/system/allocator/pipe.h` | Growable front-and-back buffer; backs I/O buffers. `pipe<char>` is the byte specialization. |
 | `qb::allocator::segmented_pipe<T>` | `qb/system/allocator/segmented_pipe.h` | Segmented FIFO that grows by linking a segment and never moves what it holds; backs the event pipes (`qb::VirtualPipe`) with a per-core `segment_pool`. |
+| `qb::allocator::slab_cache` | `qb/system/allocator/slab.h` | Process-wide free list of 2 MB slabs from the platform (huge-page-backed and prefaulted on Linux 5.14+); `segment_pool` carves its segments from them, `trim()` returns idle slabs to the OS. |
 | `qb::unordered_map` / `unordered_set` | `qb/system/container/unordered_map.h`, `unordered_set.h` | Node-based `ska` hash tables — unconditional in every build mode, references survive a rehash. `qb::unordered_flat_map` / `unordered_flat_set` are the open-addressing variants; `icase_unordered_map` is the case-insensitive one. |
 | `qb::ring_buffer<T, N, Overwrite>` | `qb/system/container/ring_buffer.h` | Fixed-capacity circular FIFO. |
 | `qb::json` / `qb::jsonb` | `qb/json.h` | nlohmann/json aliases; `jsonb` is a distinct wrapper type. |

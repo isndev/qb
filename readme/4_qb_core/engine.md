@@ -30,9 +30,9 @@ flowchart TB
 
 Between them sits **`SharedCoreCommunication`**, which `Main` owns and no application code names. It holds the `CoreSet`, one `Mailbox` per used core, and one atomic "has stopped" flag per core (`src/qb/core/Main.h:492-500`). A `Mailbox` is a `qb::lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>` (`src/qb/system/lockfree/mpsc.h`) plus the condition variable used by the latency path. The matching send side lives inside each `VirtualCore`: one `qb::VirtualPipe` per destination core, plus one for itself. [Inter-actor messaging](./messaging.md#the-address-is-the-route) narrates a single event through both.
 
-A *core index* is a logical `qb::CoreId`, not a CPU. The valid range is `0 … qb::MaxCores - 1` (256); `core(index)` with a larger index throws `std::range_error`, and the `qb::NoAffinity` sentinel is `CoreId` max, deliberately above `MaxCores`, so it can never be mistaken for one (`src/qb/core/Main.cpp:587-588`; `src/qb/core/Main.h:104`).
+A *core index* is a logical `qb::CoreId`, not a CPU. The valid range is `0 … qb::MaxCores - 1` (256); `core(index)` with a larger index throws `std::range_error`, and the `qb::NoAffinity` sentinel is `CoreId` max, deliberately above `MaxCores`, so it can never be mistaken for one (`src/qb/core/Main.cpp:597-598`; `src/qb/core/Main.h:104`).
 
-`qb::Main()` registers **no** cores. A core comes into existence the first time you call `core(index)` or `addActor(index, …)` for it; there is no default population from hardware concurrency (`src/qb/core/Main.cpp:576-590`).
+`qb::Main()` registers **no** cores. A core comes into existence the first time you call `core(index)` or `addActor(index, …)` for it; there is no default population from hardware concurrency (`src/qb/core/Main.cpp:586-600`).
 
 ## Configuration: `CoreInitializer`, and what `addActor` returns
 
@@ -48,14 +48,14 @@ if (!builder)                                   // == builder.valid()
 const std::vector<qb::ActorId> ids = builder.idList();   // creation order, NotFound for a failure
 ```
 
-`CoreInitializer::builder()` returns an `ActorBuilder` whose `addActor` chains; `idList()` gives the created ids in creation order as a `qb::Main::ActorIdList` (a `std::vector<qb::ActorId>`), and `valid()` — also reachable through `explicit operator bool` — reports whether every add on that builder reserved an id (`src/qb/core/Main.h:128-195`; `src/qb/core/Main.cpp:107-122`).
+`CoreInitializer::builder()` returns an `ActorBuilder` whose `addActor` chains; `idList()` gives the created ids in creation order as a `qb::Main::ActorIdList` (a `std::vector<qb::ActorId>`), and `valid()` — also reachable through `explicit operator bool` — reports whether every add on that builder reserved an id (`src/qb/core/Main.h:128-195`; `src/qb/core/Main.cpp:108-123`).
 
-**`addActor` does not construct the actor.** It reserves an `ActorId`, stores a `TActorFactory` holding your decayed constructor arguments, and returns the id immediately (`src/qb/core/Main.h:893-918`). The object is built much later, on the worker thread, when `start()` calls `factory->create()` (`src/qb/core/Main.cpp:407-408`). Two consequences you can see from the call site:
+**`addActor` does not construct the actor.** It reserves an `ActorId`, stores a `TActorFactory` holding your decayed constructor arguments, and returns the id immediately (`src/qb/core/Main.h:893-918`). The object is built much later, on the worker thread, when `start()` calls `factory->create()` (`src/qb/core/Main.cpp:408-409`). Two consequences you can see from the call site:
 
 - **String literals become `std::string`** and every other argument is decayed and stored by value, because the factory has to outlive the call. Anything matching the `reference_wrapper_type` concept is preserved as-is (`src/qb/core/Actor.h:2087-2121`, `:2146-2155`).
 - **A valid id is not a promise that the actor will exist.** `qb::ActorId::NotFound` (`0`, the default-constructed id — test it with `is_valid()`) comes back only when the *reservation* fails: a second `ServiceActor` of a type already on that core, or `_next_id` reaching `ServiceId` max. An `onInit()` that later fails is reported through `hasError()`, never by changing the id you already have (`src/qb/core/Main.h:897-915`; `src/qb/core/ActorId.h:470-471`).
 
-The reservation and the real allocation are two different counters, and three things make them line up. `CoreInitializer::_next_id` starts at `_nb_service + 1` (`src/qb/core/Main.cpp:43`) and hands out `ActorId(_next_id++, index)`; on the worker, `Actor`'s constructor calls `VirtualCore::__generate_id__()`, which draws the *lowest free* slot from a per-core bitset pool seeded at exactly the same value (`src/qb/core/VirtualCore.cpp:109`, `:119-127`); and the worker constructs **every** registered actor before it runs a single `onInit()` (`src/qb/core/Main.cpp:407-411`), so nothing else can draw from that pool in between. Same seed, same order, one at a time — so the id you were handed is the id the actor gets. Service actors sidestep both: `ServiceActor<Tag>::ServiceIndex` is assigned once per tag at static-init time and is *below* the pool's floor, which is why a service id is stable, deterministic (the first one is `1`) and never recycled (`src/qb/core/VirtualCore.h:1060-1074`; `src/qb/core/VirtualCore.cpp:1003-1007`).
+The reservation and the real allocation are two different counters, and three things make them line up. `CoreInitializer::_next_id` starts at `_nb_service + 1` (`src/qb/core/Main.cpp:44`) and hands out `ActorId(_next_id++, index)`; on the worker, `Actor`'s constructor calls `VirtualCore::__generate_id__()`, which draws the *lowest free* slot from a per-core bitset pool seeded at exactly the same value (`src/qb/core/VirtualCore.cpp:109`, `:119-127`); and the worker constructs **every** registered actor before it runs a single `onInit()` (`src/qb/core/Main.cpp:408-412`), so nothing else can draw from that pool in between. Same seed, same order, one at a time — so the id you were handed is the id the actor gets. Service actors sidestep both: `ServiceActor<Tag>::ServiceIndex` is assigned once per tag at static-init time and is *below* the pool's floor, which is why a service id is stable, deterministic (the first one is `1`) and never recycled (`src/qb/core/VirtualCore.h:1060-1074`; `src/qb/core/VirtualCore.cpp:1013-1017`).
 
 Everything on `CoreInitializer` is **pre-start only**. Once the engine is running, `core(index)` throws:
 
@@ -63,7 +63,7 @@ Everything on `CoreInitializer` is **pre-start only**. Once the engine is runnin
 if (_is_running)
     throw std::runtime_error("Cannot access to CoreInitializers while engine is running");
 ```
-<!-- src: qb/src/qb/core/Main.cpp:578-579 -->
+<!-- src: qb/src/qb/core/Main.cpp:588-589 -->
 
 To create an actor after startup, do it from inside a running actor with `addRefActor<T>()` (or its alias `addRefHandle<T>()`), which lands on the *same* core — see [Writing actors](./actor.md#children-addrefactor-and-actorhandlet).
 
@@ -94,7 +94,7 @@ wait() noexcept {
 
 `qb::duration` is `std::chrono::nanoseconds`, so pass a chrono value — `std::chrono::nanoseconds(500'000)`, `std::chrono::microseconds(500)`, `qb::duration::zero()` — never a bare integer ([the time vocabulary](../0_foundations/time.md)). Calling `setLatency` more than once on a core is safe; the last value wins.
 
-A producer that enqueues into a mailbox calls `notify()` afterwards (`src/qb/core/Main.cpp:229`; the budget-exhausted flush at `src/qb/core/VirtualCore.cpp:444`). The two halves are a Dekker handshake, not a bare signal: `wait()` publishes a `_parked` flag, fences, re-checks the rings and only then sleeps — with `has_data()` as the predicate — while `notify()` fences, reads the flag, and takes the mutex before `notify_one()` when the consumer has announced a park (`src/qb/core/Main.h:425-435`; `src/qb/core/Main.h:446-467`). That is what makes a wake-up impossible to lose: the 3.0 form (`wait_for` with no predicate, `notify_all` outside the lock) slept the whole latency whenever an enqueue landed between the consumer's empty drain and its registration on the condition variable — measured on a two-core ping-pong, 246–293 lost wakeups per 300 000 messages on Linux and up to 2849 on Windows, where MSVC's `wait_for` rounds to the 15.6 ms scheduler tick. At zero latency `wait()` returns at once and `notify()` is only its fence — kept on purpose: on x86 a `seq_cst` fence drains the producer's store buffer, so the event just enqueued becomes visible to the spinning consumer now rather than whenever the buffer flushes. Measured on the same two-core ping-pong (interleaved A/B on a quiet host, p50 of 7 runs), the spinning cell was *slower* than the parking one without it on Windows — 296–309 ns per round-trip against 256–272 — and lands at 259–263 ns with it; on Linux the p50 is a wash (204–219 → 205–208) and the worst run falls from 295 to 215 ns, while bulk single-producer throughput is unchanged; the fence is paid once per cross-core event, after the bucket copy that already dominates. The latency and the idle-spin floor are fixed at mailbox construction from the `CoreInitializer` and read back with `getLatency()` / `getIdleSpin()` (`src/qb/core/Main.cpp:142`; `src/qb/core/Main.h:486-488`; `src/qb/core/Main.h:486-488`).
+A producer that enqueues into a mailbox calls `notify()` afterwards (`src/qb/core/Main.cpp:230`; the budget-exhausted flush at `src/qb/core/VirtualCore.cpp:454`). The two halves are a Dekker handshake, not a bare signal: `wait()` publishes a `_parked` flag, fences, re-checks the rings and only then sleeps — with `has_data()` as the predicate — while `notify()` fences, reads the flag, and takes the mutex before `notify_one()` when the consumer has announced a park (`src/qb/core/Main.h:425-435`; `src/qb/core/Main.h:446-467`). That is what makes a wake-up impossible to lose: the 3.0 form (`wait_for` with no predicate, `notify_all` outside the lock) slept the whole latency whenever an enqueue landed between the consumer's empty drain and its registration on the condition variable — measured on a two-core ping-pong, 246–293 lost wakeups per 300 000 messages on Linux and up to 2849 on Windows, where MSVC's `wait_for` rounds to the 15.6 ms scheduler tick. At zero latency `wait()` returns at once and `notify()` is only its fence — kept on purpose: on x86 a `seq_cst` fence drains the producer's store buffer, so the event just enqueued becomes visible to the spinning consumer now rather than whenever the buffer flushes. Measured on the same two-core ping-pong (interleaved A/B on a quiet host, p50 of 7 runs), the spinning cell was *slower* than the parking one without it on Windows — 296–309 ns per round-trip against 256–272 — and lands at 259–263 ns with it; on Linux the p50 is a wash (204–219 → 205–208) and the worst run falls from 295 to 215 ns, while bulk single-producer throughput is unchanged; the fence is paid once per cross-core event, after the bucket copy that already dominates. The latency and the idle-spin floor are fixed at mailbox construction from the `CoreInitializer` and read back with `getLatency()` / `getIdleSpin()` (`src/qb/core/Main.cpp:143`; `src/qb/core/Main.h:486-488`; `src/qb/core/Main.h:486-488`).
 
 A core does not park the moment it finds nothing to do. It keeps polling for an **idle-spin floor** — a span of TIME, `CoreInitializer::setIdleSpin()`, 50 µs by default — measured from the first pass that found nothing, and parks only once that floor has elapsed:
 
@@ -112,24 +112,24 @@ if (_mail_box.getLatency() > qb::duration::zero()) {
 }
 _metrics.reset();
 ```
-<!-- src: qb/src/qb/core/VirtualCore.cpp:839-849 -->
+<!-- src: qb/src/qb/core/VirtualCore.cpp:849-859 -->
 
 A pass is idle when it moved no event — sent, received or I/O — **and** left nothing in the core's own pipe: an actor's tick callback may push to itself, which counts as no activity, and parking over that would delay a local event by up to `latency`. The first idle pass stamps `_idle_since`; a wait that times out keeps the stamp, so an idle core parks again on the next pass rather than re-spinning a whole floor between two timeouts; the clock is read only on idle passes, and only when the core can park at all (`src/qb/core/VirtualCore.h:396-401`). Until 3.0 this was an integer **spin credit** refilled from the previous pass's event count, which parked a one-event-per-pass workload after two or three empty passes — every hop of a request/response paid an OS park and wake (axis A of the qb-vs-others audit). A floor in time is indifferent to how many events a pass carries: a ping-pong whose hops take a few microseconds never reaches it, and a genuinely idle core still yields its CPU after 50 µs. `setIdleSpin(0)` parks on the first idle pass; a larger floor keeps a burst-then-quiet core polling longer (`src/qb/core/Main.h:303`; `src/qb/core/Main.h:328`).
 
 > **A parked core does not consult qb-io's deadlines.** `wait()` returns on data, on a producer's `notify()`, or after `latency` — a qb-io timer armed on a `latency > 0` core fires late by up to that span once the core has parked. Size `setLatency` for the slowest wake-up the core's timers can tolerate, or keep such cores at zero latency. `tests/core/system/engine/core-park-policy.cpp` pins the current contract.
 
-> **`Main::setLatency` is a blanket overwrite, not a default.** It loops every registered core and calls `setLatency` on each, last write wins (`src/qb/core/Main.cpp:461-464`); `Main::setIdleSpin` does the same for the floor (`src/qb/core/Main.cpp:467-470`). Pairing either with per-core tuning clobbers whatever you set before it. Use one or the other, or call the global one first.
+> **`Main::setLatency` is a blanket overwrite, not a default.** It loops every registered core and calls `setLatency` on each, last write wins (`src/qb/core/Main.cpp:479-482`); `Main::setIdleSpin` does the same for the floor (`src/qb/core/Main.cpp:485-488`). Pairing either with per-core tuning clobbers whatever you set before it. Use one or the other, or call the global one first.
 
 ## Affinity is a request, and on macOS it is a different request
 
-`setAffinity(CoreIdSet)` asks the OS to run the worker only on the listed CPUs. `qb::NoAffinity` is `std::numeric_limits<CoreId>::max()`, deliberately above `qb::MaxCores`; ids at or above that bound are filtered out before any OS call is made, so `CoreIdSet{qb::NoAffinity}` is the explicit, well-defined way to say "no pinning" and is exactly equivalent to an empty set (`src/qb/core/Main.h:104`; `src/qb/core/VirtualCore.cpp:471-474`). `qb::CoreIdBitSet` applies the same filter at insertion, so an out-of-range id never even reaches the set (`src/qb/core/ActorId.h:123-131`).
+`setAffinity(CoreIdSet)` asks the OS to run the worker only on the listed CPUs. `qb::NoAffinity` is `std::numeric_limits<CoreId>::max()`, deliberately above `qb::MaxCores`; ids at or above that bound are filtered out before any OS call is made, so `CoreIdSet{qb::NoAffinity}` is the explicit, well-defined way to say "no pinning" and is exactly equivalent to an empty set (`src/qb/core/Main.h:104`; `src/qb/core/VirtualCore.cpp:481-484`). `qb::CoreIdBitSet` applies the same filter at insertion, so an out-of-range id never even reaches the set (`src/qb/core/ActorId.h:123-131`).
 
-It is best-effort in the ordinary sense — a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` logs a warning and **never** fails core init, because a logical `CoreId` need not name a physical CPU (`src/qb/core/VirtualCore.cpp:496-497`). It is also best-effort in a sharper sense that a successful return will not tell you:
+It is best-effort in the ordinary sense — a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` logs a warning and **never** fails core init, because a logical `CoreId` need not name a physical CPU (`src/qb/core/VirtualCore.cpp:506-507`). It is also best-effort in a sharper sense that a successful return will not tell you:
 
 - **macOS has no `pthread_setaffinity_np`.** qb supplies one that calls `thread_policy_set(THREAD_AFFINITY_POLICY)` (`src/qb/core/VirtualCore.cpp:77-93`). On **Apple Silicon** that flavour is not implemented: every call answers `KERN_NOT_SUPPORTED`, and the shim deliberately reports *success* for that code — otherwise every core of every run would warn. Nothing is pinned, silently.
 - Where macOS does implement it (Intel), the header calls the policy experimental and a scheduler **hint**: threads sharing an affinity *tag* are placed to share an L2 cache. qb passes the `CoreId` as that tag, so `setAffinity(3)` means "group me with other tag-3 threads", not "pin me to CPU 3".
 - The shim honours only the **first** real id in the set, so a multi-core `CoreIdSet` narrows to its lowest member there.
-- A Windows **GNU** build applies no affinity at all — the code path is `#warning`-ed out (`src/qb/core/VirtualCore.cpp:511-513`).
+- A Windows **GNU** build applies no affinity at all — the code path is `#warning`-ed out (`src/qb/core/VirtualCore.cpp:521-523`).
 
 Do not infer placement from a call that returned. Ask `qb::CPU::ThreadPinningSupported()` (`src/qb/system/cpu.h:189`), which is a runtime probe and is therefore also right for an x86_64 binary under Rosetta 2. The full account is on `qb::NoAffinity` (`src/qb/core/Main.h:73-96`).
 
@@ -141,17 +141,17 @@ engine.join();    // block until every worker has terminated
 return engine.hasError() ? 1 : 0;
 ```
 
-`start(true)` spawns one `qb::jthread` per registered core and then waits until the shared counter reaches the core count — 1024 spins, then `yield()` per poll, because the calling thread is one more competitor for a CPU while the last core initialises (`hardware_concurrency()` ignores affinity masks and cgroup quotas, so an engine can have more cores than CPUs); `start(false)` promotes the **calling thread** to the last worker, so `start()` itself blocks until shutdown and no `join()` is needed (`src/qb/core/Main.cpp:500-517`, `:519-533`). The two modes install the signal handlers at the only point each of them can: asynchronously, right after the barrier; synchronously, immediately *before* the calling thread is consumed, since it will not come back until shutdown.
+`start(true)` spawns one `qb::jthread` per registered core and then waits until the shared counter reaches the core count — 1024 spins, then 256 `yield()`s, then a 50 µs `sleep_for` per poll, because the calling thread is one more competitor for a CPU while the last core initialises (`hardware_concurrency()` ignores affinity masks and cgroup quotas, so an engine can have more cores than CPUs); `start(false)` promotes the **calling thread** to the last worker, so `start()` itself blocks until shutdown and no `join()` is needed (`src/qb/core/Main.cpp:518-535`, `:537-543`). The two modes install the signal handlers at the only point each of them can: asynchronously, right after the barrier; synchronously, immediately *before* the calling thread is consumed, since it will not come back until shutdown.
 
-Each worker, in `Main::start_thread`, does this in order (`src/qb/core/Main.cpp:368-430`):
+Each worker, in `Main::start_thread`, does this in order (`src/qb/core/Main.cpp:369-431`):
 
 1. Construct the `VirtualCore` on its own stack, wire the engine's `qb::stop_token`, and publish `VirtualCore::_handler = &core` — the `thread_local` every `Actor` member forwards through.
-2. Arm an `ExitGuard` whose destructor marks this core stopped *and* nulls `_handler`. It fires on every exit path including an exception escaping `__workflow__` — without it, peers would keep treating a crashed core as live and the shutdown drain would hang `join()` forever (`src/qb/core/Main.cpp:385-396`).
+2. Arm an `ExitGuard` whose destructor marks this core stopped *and* nulls `_handler`. It fires on every exit path including an exception escaping `__workflow__` — without it, peers would keep treating a crashed core as live and the shutdown drain would hang `join()` forever (`src/qb/core/Main.cpp:386-397`).
 3. `__init__(affinity)` — apply the affinity request.
-4. Refuse a registered core with **zero** actor factories: `Error::NoActor` (`src/qb/core/Main.cpp:404-406`).
+4. Refuse a registered core with **zero** actor factories: `Error::NoActor` (`src/qb/core/Main.cpp:405-407`).
 5. `factory->create()` and `appendActor(...)` for each registered actor — construction only, no init.
 6. `__init__actors__()` — call `onInit()` on every actor, in creation order, driving each coroutine to its first `co_await` or its `co_return`.
-7. `__wait__all__cores__ready` — `fetch_add(1)` on the shared counter, then poll until it reaches the core count — 1024 spins, then `yield()` per poll, so a core that arrives after every CPU is already taken by a waiting peer still gets a slice to arrive on (under TSan the pure spin was a hang, not a delay: `MainLifecycle.StopMultiCoreGracefulNoError` past 600 s on a 24-vCPU host).
+7. `__wait__all__cores__ready` — `fetch_add(1)` on the shared counter, then poll until it reaches the core count — 1024 spins, then 256 `yield()`s, then a 50 µs `sleep_for` per poll, so a core that arrives after every CPU is already taken by a waiting peer still gets a slice to arrive on, and the waiters' polls leave the counter alone between quanta (under TSan the pure spin was a hang, not a delay — `MainLifecycle.StopMultiCoreGracefulNoError` past 600 s on a 24-vCPU host — and the yield alone left the same tests anywhere between 0.1 s and 30 s, because with one CPU per waiter `yield()` returns at once and the polls' acquire loads kept starving the last core's every atomic op under TSan's atomics lock; with the sleep they take 100 ms, every run).
 8. `__workflow__()`.
 
 That single counter carries two things at once, which is why the error codes start at `1 << 9`:
@@ -163,7 +163,7 @@ static_assert(static_cast<uint64_t>(qb::MaxCores) < static_cast<uint64_t>(BadIni
 ```
 <!-- src: qb/src/qb/core/VirtualCore.h:139-141 -->
 
-A value below `BadInit` is a clean ready-count; anything at or above it is a failure. A failing core **stores** its error code over the counter, which both trips `hasError()` and releases every other core's barrier — so one bad core aborts the whole start rather than leaving the rest spinning (`src/qb/core/Main.cpp:444-458`, `:535-538`).
+A value below `BadInit` is a clean ready-count; anything at or above it is a failure. A failing core **stores** its error code over the counter, which both trips `hasError()` and releases every other core's barrier — so one bad core aborts the whole start rather than leaving the rest spinning (`src/qb/core/Main.cpp:470-476`, `:535-538`).
 
 ### The four error codes, and which path raises which
 
@@ -181,18 +181,18 @@ enum Error : uint64_t {
 
 | Code | Raised when |
 |---|---|
-| `BadInit` | `VirtualCore::__init__` returned false, or `start()` was called with no core registered at all (`src/qb/core/Main.cpp:485-489`) |
+| `BadInit` | `VirtualCore::__init__` returned false, or `start()` was called with no core registered at all (`src/qb/core/Main.cpp:503-507`) |
 | `NoActor` | a core was registered with `core(n)` but given no actor |
 | `BadActorInit` | an actor's `onInit()` resolved to `false` — **including the case where it threw** |
 | `ExceptionThrown` | an exception escaped anywhere else in `start_thread`: an actor **constructor**, or a handler once the core is running |
 
-The `onInit()`-throws case is worth stating exactly, because it is easy to guess wrong. `__drive_init__` is `noexcept` and catches the exception itself, logs it, and reports `InitOutcome::ReadyFalse` (`src/qb/core/VirtualCore.cpp:564-576`). It therefore lands on `BadActorInit`, identically to a clean `co_return false`. `ExceptionThrown` is reserved for a throw that actually escapes — a throwing constructor during `create()`, or a handler throwing inside `__workflow__`.
+The `onInit()`-throws case is worth stating exactly, because it is easy to guess wrong. `__drive_init__` is `noexcept` and catches the exception itself, logs it, and reports `InitOutcome::ReadyFalse` (`src/qb/core/VirtualCore.cpp:574-586`). It therefore lands on `BadActorInit`, identically to a clean `co_return false`. `ExceptionThrown` is reserved for a throw that actually escapes — a throwing constructor during `create()`, or a handler throwing inside `__workflow__`.
 
-Only the boolean is public. `hasError()` reads the barrier counter and compares it against `BadInit`; the individual code is visible only in the log (`src/qb/core/Main.cpp:542-545`). **`join()` returning does not mean success** — always check.
+Only the boolean is public. `hasError()` reads the barrier counter and compares it against `BadInit`; the individual code is visible only in the log (`src/qb/core/Main.cpp:552-555`). **`join()` returning does not mean success** — always check.
 
 ## The loop pass
 
-One iteration of `__workflow__`, in the order it happens (`src/qb/core/VirtualCore.cpp:706-848`):
+One iteration of `__workflow__`, in the order it happens (`src/qb/core/VirtualCore.cpp:716-858`):
 
 ```mermaid
 flowchart TD
@@ -213,11 +213,11 @@ flowchart TD
 
 Five things read off that ordering, and each is a question people actually ask:
 
-- **`Actor::time()` is constant for a whole pass, and sampled on demand.** It forwards to `VirtualCore::time()`, which reads `qb::unix_nanos(qb::wall_now())` on the FIRST call of a pass — keyed on `_loop_count` — and returns that sample to every later call in the same pass (`src/qb/core/VirtualCore.cpp:1102-1109`; `src/qb/core/VirtualCore.h:412-414`). Every actor on the core sees the same value in the same pass, and so does `qb::LoopEvent::now`; a pass in which nobody asks reads no clock at all (until 3.0 every pass paid one read at step 1, asked or not). For a moving clock read `qb::wall_now()` directly; `Actor::now()` is the same cached instant as a `qb::wall_time`.
-- **A `qb::ICallback` tick happens *after* the flush**, so events a tick pushes wait for the *next* pass to leave the core. Events pushed from an ordinary handler in step 6 also miss step 5, for the same reason. One `qb::LoopEvent` is built for the whole pass and handed to every registered callback by a direct virtual call — it is not a routed event and has no source or destination (`src/qb/core/VirtualCore.cpp:784-788`; `src/qb/core/ICallback.h:65-80`).
+- **`Actor::time()` is constant for a whole pass, and sampled on demand.** It forwards to `VirtualCore::time()`, which reads `qb::unix_nanos(qb::wall_now())` on the FIRST call of a pass — keyed on `_loop_count` — and returns that sample to every later call in the same pass (`src/qb/core/VirtualCore.cpp:1112-1119`; `src/qb/core/VirtualCore.h:412-414`). Every actor on the core sees the same value in the same pass, and so does `qb::LoopEvent::now`; a pass in which nobody asks reads no clock at all (until 3.0 every pass paid one read at step 1, asked or not). For a moving clock read `qb::wall_now()` directly; `Actor::now()` is the same cached instant as a `qb::wall_time`.
+- **A `qb::ICallback` tick happens *after* the flush**, so events a tick pushes wait for the *next* pass to leave the core. Events pushed from an ordinary handler in step 6 also miss step 5, for the same reason. One `qb::LoopEvent` is built for the whole pass and handed to every registered callback by a direct virtual call — it is not a routed event and has no source or destination (`src/qb/core/VirtualCore.cpp:794-798`; `src/qb/core/ICallback.h:65-80`).
 - **`listener::run` comes before the actor dispatch, not around it.** That is the whole mechanism behind the `run_sync` rule: an actor handler runs at step 6, after `run()` has returned, so the scheduler's re-entrancy guard is not armed and blocking there freezes the rest of the pass. [The async runtime](../3_qb_io/async_system.md#run_sync-and-run_for-block-the-calling-thread) owns that rule; [Async in actors](../5_core_io_integration/async_in_actors.md) narrates the two call chains side by side.
-- **Step 3 is gated on the loop's own liveness.** `listener::has_work()` — a referenced active watcher, a pending event, an outstanding `defer()`, or a ready coroutine (`src/qb/io/async/listener.h:899-903`; `src/qb/core/VirtualCore.cpp:755-760`). A pure-actor core with no live qb-io object skips the loop entirely. The gate used to be `has_coro_scheduler() || size() || has_deferred()`, and its first term is true for the rest of a core's life once any actor has spawned a coroutine — a `NOWAIT` libev pass on every tick with nothing to poll for.
-- **The loop ends when the last actor is reaped**, not on a flag: `if (_actors.empty()) break;` (`src/qb/core/VirtualCore.cpp:822-824`). An engine whose actors never call `kill()` runs forever, by design.
+- **Step 3 is gated on the loop's own liveness.** `listener::has_work()` — a referenced active watcher, a pending event, an outstanding `defer()`, or a ready coroutine (`src/qb/io/async/listener.h:899-903`; `src/qb/core/VirtualCore.cpp:765-768`). A pure-actor core with no live qb-io object skips the loop entirely. The gate used to be `has_coro_scheduler() || size() || has_deferred()`, and its first term is true for the rest of a core's life once any actor has spawned a coroutine — a `NOWAIT` libev pass on every tick with nothing to poll for.
+- **The loop ends when the last actor is reaped**, not on a flag: `if (_actors.empty()) break;` (`src/qb/core/VirtualCore.cpp:832-834`). An engine whose actors never call `kill()` runs forever, by design.
 
 ### Reaping is a drain, not a sweep
 
@@ -231,15 +231,15 @@ while (!_actor_to_remove.empty()) {
         removeActor(actor);
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.cpp:815-820 -->
+<!-- src: qb/src/qb/core/VirtualCore.cpp:825-830 -->
 
-It terminates because only user code refills the set and each actor can be removed at most once — after an id leaves `_actors`, `removeActor` destroys nothing. Pinned by `KillDuringReap.ActorKilledFromAnotherDestructorIsStillReaped` (`qb/tests/core/system/lifecycle/kill-during-reap.cpp`). A callback whose actor was killed earlier **in the same pass** is skipped rather than ticked one last time, because the tick loop consults `_actor_to_remove` before every call (`src/qb/core/VirtualCore.cpp:799-800`).
+It terminates because only user code refills the set and each actor can be removed at most once — after an id leaves `_actors`, `removeActor` destroys nothing. Pinned by `KillDuringReap.ActorKilledFromAnotherDestructorIsStillReaped` (`qb/tests/core/system/lifecycle/kill-during-reap.cpp`). A callback whose actor was killed earlier **in the same pass** is skipped rather than ticked one last time, because the tick loop consults `_actor_to_remove` before every call (`src/qb/core/VirtualCore.cpp:809-810`).
 
 ## Backpressure: why the flush always terminates
 
 Cores can fill each other's mailboxes. If core A and core B both hold full outbound pipes for each other *and* their inbound mailboxes are full, neither can progress without first reading its own mailbox — so an unbounded retry inside `try_send` would deadlock. The invariant that replaces it is: **every pass of `__flush_all__` terminates in bounded time.**
 
-A failed `try_send` falls into one of four cases, tested in this order (`src/qb/core/VirtualCore.cpp:308-461`):
+A failed `try_send` falls into one of four cases, tested in this order (`src/qb/core/VirtualCore.cpp:318-471`):
 
 | Case | Test | Action |
 |---|---|---|
@@ -248,11 +248,11 @@ A failed `try_send` falls into one of four cases, tested in this order (`src/qb/
 | Best-effort | `state.bits.qos == 0` | drop it **without** disposing — this is the drop path the `EventQOS0` `static_assert` protects |
 | Guaranteed | otherwise | bounded backoff, then a partial flush |
 
-The backoff is monotonic and its two thresholds are compile-time constants — `kFlushSpinAttempts = 64` and `kFlushYieldAttempts = 512`, `static_assert`ed in that order (`src/qb/core/VirtualCore.cpp:283-285`). After the first `try_send` fails, the retry loop runs a budget of 512 further attempts (`src/qb/core/VirtualCore.cpp:420-432`):
+The backoff is monotonic and its two thresholds are compile-time constants — `kFlushSpinAttempts = 64` and `kFlushYieldAttempts = 512`, `static_assert`ed in that order (`src/qb/core/VirtualCore.cpp:293-295`). After the first `try_send` fails, the retry loop runs a budget of 512 further attempts (`src/qb/core/VirtualCore.cpp:430-442`):
 
 - attempts `1 … 63` — `qb::spin_loop_pause()` between tries, a CPU hint with no scheduler involvement;
 - attempts `64 … 512` — `std::this_thread::yield()`, giving the peer's consumer a slot;
-- budget exhausted — **partial flush**: `notify()` the destination's mailbox, `pipe.consume_front(cur - seg.data())` so the unsent tail stays queued in order at the head of its segment, and return to the workflow (`src/qb/core/VirtualCore.cpp:441-452`).
+- budget exhausted — **partial flush**: `notify()` the destination's mailbox, `pipe.consume_front(cur - seg.data())` so the unsent tail stays queued in order at the head of its segment, and return to the workflow (`src/qb/core/VirtualCore.cpp:451-462`).
 
 The caller then runs `__receive__`, which frees room in *this* core's mailbox for its peers, so the next pass makes progress. That is what closes the cycle: no cross-core deadlock, no starvation, and no event silently reordered — the tail keeps its place in the FIFO.
 
@@ -275,13 +275,13 @@ sequenceDiagram
     Note over W: actors drain, get reaped, _actors empties<br/>the loop exits into the residual drain
 ```
 
-`Main::start()` calls `Main::install_default_signals()`, which installs handlers for **both** `SIGINT` and `SIGTERM` through `sigaction`, so Ctrl-C and the signal a container runtime or service manager sends both unwind every actor through the ordinary `kill()` path (`src/qb/core/Main.cpp:636-654`). You do not need to register either yourself. `sigaction` rather than `std::signal` is deliberate: under the historical System V semantics `std::signal` resets the disposition after the first delivery, so a second Ctrl-C would terminate the process instead of shutting it down again (`src/qb/core/Main.cpp:593-611`).
+`Main::start()` calls `Main::install_default_signals()`, which installs handlers for **both** `SIGINT` and `SIGTERM` through `sigaction`, so Ctrl-C and the signal a container runtime or service manager sends both unwind every actor through the ordinary `kill()` path (`src/qb/core/Main.cpp:646-664`). You do not need to register either yourself. `sigaction` rather than `std::signal` is deliberate: under the historical System V semantics `std::signal` resets the disposition after the first delivery, so a second Ctrl-C would terminate the process instead of shutting it down again (`src/qb/core/Main.cpp:603-621`).
 
-The handler itself does the minimum a signal handler may: store the signum, then bump a generation counter with release ordering. Both are `std::atomic` and both are `static_assert`ed lock-free (`src/qb/core/Main.cpp:337-350`).
+The handler itself does the minimum a signal handler may: store the signum, then bump a generation counter with release ordering. Both are `std::atomic` and both are `static_assert`ed lock-free (`src/qb/core/Main.cpp:338-351`).
 
-The generation is what makes the mechanism repeatable. `_signal_pending` holds only the *latest* signum and is never cleared during a run, so a per-core "already consumed" latch would drop every signal after the first — a `SIGHUP` reload followed by a `SIGTERM`, or `Main::stop()` after any earlier signal, would leave the engine unstoppable. Each core re-synthesises whenever the generation advances past the one it last delivered (`src/qb/core/VirtualCore.cpp:721-747`). Signals **coalesce**: two raised between two passes deliver one event carrying the later signum.
+The generation is what makes the mechanism repeatable. `_signal_pending` holds only the *latest* signum and is never cleared during a run, so a per-core "already consumed" latch would drop every signal after the first — a `SIGHUP` reload followed by a `SIGTERM`, or `Main::stop()` after any earlier signal, would leave the engine unstoppable. Each core re-synthesises whenever the generation advances past the one it last delivered (`src/qb/core/VirtualCore.cpp:731-757`). Signals **coalesce**: two raised between two passes deliver one event carrying the later signum.
 
-`Main::stop()` is the same path with a synthetic `SIGINT`, and is safe from any thread including a signal handler (`src/qb/core/Main.cpp:547-556`). The C++20 `qb::stop_source` is the third: `~Main` requests it, workers observe it through their `stop_token`, and each synthesises a virtual `SIGINT` once — a signal-free shutdown that works identically on platforms with no POSIX signals (`src/qb/core/Main.cpp:357-366`; `src/qb/core/VirtualCore.cpp:722`, `:736-740`).
+`Main::stop()` is the same path with a synthetic `SIGINT`, and is safe from any thread including a signal handler (`src/qb/core/Main.cpp:557-566`). The C++20 `qb::stop_source` is the third: `~Main` requests it, workers observe it through their `stop_token`, and each synthesises a virtual `SIGINT` once — a signal-free shutdown that works identically on platforms with no POSIX signals (`src/qb/core/Main.cpp:358-367`; `src/qb/core/VirtualCore.cpp:732`, `:746-750`).
 
 ### Terminal versus delivered
 
@@ -293,7 +293,7 @@ if (event.signum == SIGINT || event.signum == SIGTERM)
 ```
 <!-- src: qb/src/qb/core/Actor.cpp:186-187 -->
 
-A `SIGHUP` or `SIGUSR1` is delivered and ignored by the default handler — those are the config-reload and stats-dump cases. To act on one, declare your own `on(qb::SignalEvent const&)` and inspect `event.signum`; call `kill()` there if that signal should stop the actor. `unregisterSignal` restores the OS default, `ignoreSignal` sets `SIG_IGN` (the usual reason being `SIGPIPE` on a network server) (`src/qb/core/Main.cpp:656-669`).
+A `SIGHUP` or `SIGUSR1` is delivered and ignored by the default handler — those are the config-reload and stats-dump cases. To act on one, declare your own `on(qb::SignalEvent const&)` and inspect `event.signum`; call `kill()` there if that signal should stop the actor. `unregisterSignal` restores the OS default, `ignoreSignal` sets `SIG_IGN` (the usual reason being `SIGPIPE` on a network server) (`src/qb/core/Main.cpp:666-679`).
 
 ### The residual drain, and the flag it turns on
 
@@ -309,17 +309,17 @@ for (;;) {
 }
 _engine.mark_core_stopped(_resolved_index);
 ```
-<!-- src: qb/src/qb/core/VirtualCore.cpp:867-876 -->
+<!-- src: qb/src/qb/core/VirtualCore.cpp:877-886 -->
 
-Each pass keeps receiving (so live peers can still deliver *to* us) and keeps flushing. A pipe is abandoned only once its destination has published its "stopped" flag — it has left its own workflow and will never drain its mailbox again, so that residue can never arrive. Those events are disposed through the disposer registry rather than merely dropped, because nobody else will ever free a non-trivial payload for them (`src/qb/core/VirtualCore.cpp:882-922`). A pipe to a **live but backpressured** peer is retried, never dropped.
+Each pass keeps receiving (so live peers can still deliver *to* us) and keeps flushing. A pipe is abandoned only once its destination has published its "stopped" flag — it has left its own workflow and will never drain its mailbox again, so that residue can never arrive. Those events are disposed through the disposer registry rather than merely dropped, because nobody else will ever free a non-trivial payload for them (`src/qb/core/VirtualCore.cpp:892-932`). A pipe to a **live but backpressured** peer is retried, never dropped.
 
 The stopped flag is published *after* the final receive and flush, which is exactly the right order: from that instant this core no longer drains its mailbox, so peers must stop sending to it (`src/qb/core/Main.h:494-500`).
 
-One window remains open by construction: a peer's last cross-core flush can land in a mailbox *after* that core's final `__receive__` but *before* it publishes the flag. Nobody will drain it. `Main::join()` closes it — after every worker has joined, and therefore single-threaded, it sweeps every mailbox and disposes what is left (`src/qb/core/Main.cpp:558-574`). That sweep must copy events out of the ring rather than walk it in place, so it calls the scratch-buffer overload `consume_all(func, scratch, chunk)` and not the in-place `consume_all(func)`: a saturated ring wraps, and the in-place walk would hand the functor two disjoint segments, tearing any multi-bucket event straddling the wrap (`src/qb/core/Main.cpp:291-328`).
+One window remains open by construction: a peer's last cross-core flush can land in a mailbox *after* that core's final `__receive__` but *before* it publishes the flag. Nobody will drain it. `Main::join()` closes it — after every worker has joined, and therefore single-threaded, it sweeps every mailbox and disposes what is left (`src/qb/core/Main.cpp:568-584`). That sweep must copy events out of the ring rather than walk it in place, so it calls the scratch-buffer overload `consume_all(func, scratch, chunk)` and not the in-place `consume_all(func)`: a saturated ring wraps, and the in-place walk would hand the functor two disjoint segments, tearing any multi-bucket event straddling the wrap (`src/qb/core/Main.cpp:292-329`).
 
 ### RAII is the backstop
 
-`~Main` calls `_stop_source.request_stop()` and then `join()`; the workers are `qb::jthread`s — an alias for `std::jthread` where the standard library provides it, and qb's own fallback otherwise — so even a `Main` you neither stopped nor joined shuts down when it goes out of scope, because each `jthread` destructor requests a stop and joins (`src/qb/core/Main.cpp:357-366`; `src/qb/utility/compat.h:52-66`). Explicit `stop()`/`join()` are for controlling *when*. The `qb::stop_source` / `qb::stop_token` pair is also usable programmatically, which is the signal-free path a Windows service or an embedded host wants.
+`~Main` calls `_stop_source.request_stop()` and then `join()`; the workers are `qb::jthread`s — an alias for `std::jthread` where the standard library provides it, and qb's own fallback otherwise — so even a `Main` you neither stopped nor joined shuts down when it goes out of scope, because each `jthread` destructor requests a stop and joins (`src/qb/core/Main.cpp:358-367`; `src/qb/utility/compat.h:52-66`). Explicit `stop()`/`join()` are for controlling *when*. The `qb::stop_source` / `qb::stop_token` pair is also usable programmatically, which is the signal-free path a Windows service or an embedded host wants.
 
 ## A complete engine, start to finish
 

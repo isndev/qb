@@ -685,8 +685,10 @@ struct FillEvent : public WithData<_Args...> {
  * The outbound event queue of a `VirtualCore`: one per destination core, plus the self-core
  * pair. An `allocator::segmented_pipe` of `EventBucket`s — it grows by linking a 256 KB
  * segment, never copies or compacts what it holds, hands consumed segments back to the core's
- * `segment_pool`, and keeps every queued event at the address it was constructed at until the
- * segment holding it is consumed. That last property is what makes the reference
+ * `segment_pool` (which carves them eight to a 2 MB slab drawn from the process-wide
+ * `allocator::slab_cache`, huge-page-backed and prefaulted where the kernel can), and keeps
+ * every queued event at the address it was constructed at until the segment holding it is
+ * consumed. That last property is what makes the reference
  * `Actor::push()` / `Pipe::push()` return stable for the rest of the handler that obtained it.
  * The same-thread-only contract of the underlying type is met by construction: a `VirtualCore`
  * touches only its own pipes, and the cross-core hop is the mailbox ring, which copies out of

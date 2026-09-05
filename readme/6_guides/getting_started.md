@@ -346,7 +346,7 @@ A non-zero exit code means `engine.hasError()` reported a core that terminated o
 - **Do not block in a handler or callback.** `on(...)` handlers and `qb::io::async::callback` bodies run on the core's event-loop thread; a blocking call stalls every actor on that core. Use the async surface in [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) instead.
 - **Subscribe with `registerEvent<T>` in `onInit()`, not your constructor.** `onInit()` is the documented initialization hook: it runs once the actor is fully appended to its core, and `co_return false` from it aborts creation cleanly. A constructor cannot signal initialization failure that way.
 
-<!-- src: qb/src/qb/core/Main.cpp:577-579 (Main::core throws while running), :404-406 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:114-125 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:334-336 (onInit is where registerEvent belongs) -->
+<!-- src: qb/src/qb/core/Main.cpp:587-589 (Main::core throws while running), :405-407 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:114-125 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:334-336 (onInit is where registerEvent belongs) -->
 
 ## Where to go next
 

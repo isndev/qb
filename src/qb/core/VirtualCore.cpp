@@ -154,6 +154,14 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
                                  "oversized event); aborting batch");
             break;
         }
+        // Read the width ONCE, before the handler runs. A handler's reply is a byte copy of
+        // this very event into the outbound pipe; re-reading `bucket_size` after the call is
+        // a load trailing that store by a few instructions, and when the two pipes' segments
+        // share their low twelve address bits (carved on a fixed stride out of aligned slabs,
+        // they all did) it lands on the 4 KB offset the reply was just written to and memory
+        // disambiguation stalls it behind the store (4K aliasing): 12% of savina/big at one
+        // core, measured. `segment_pool` staggers its segments too; this removes the reload.
+        const std::size_t width = event->bucket_size;
         // Activation gate: while the destination actor is still Activating (an
         // `onInit()` performed a `co_await`), defer its inbound *unicast business*
         // events into the actor's FIFO stash — replayed in order once it becomes
@@ -190,8 +198,8 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
                         _router.dispose(*event);
                 }
                 ++_metrics._nb_event_received;
-                _metrics._nb_bucket_received += event->bucket_size;
-                i += event->bucket_size;
+                _metrics._nb_bucket_received += width;
+                i += width;
                 continue;
             }
         }
@@ -207,8 +215,8 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
                                   << event.getSource());
         });
         ++_metrics._nb_event_received;
-        _metrics._nb_bucket_received += event->bucket_size;
-        i += event->bucket_size;
+        _metrics._nb_bucket_received += width;
+        i += width;
     }
 }
 
@@ -228,10 +236,12 @@ VirtualCore::__receive__() {
     // are routed, so a handler pushing to this same core grows into the segment that was just
     // read -- warm in L2 -- rather than into fresh memory; a sustained burst then stays
     // cache-resident whatever its size. An event's reference is valid for exactly the handler
-    // it is routed to, which is the contract Actor::push documents.
+    // it is routed to, which is the contract Actor::push documents. `front()` is empty exactly
+    // when the pipe is, so it is the loop's only test: a one-event pass -- a ping-pong -- is one
+    // range, one pop, one empty range, with no separate emptiness check paid twice.
     _mono_pipe->swap(_mono_pipe_swap);
-    while (!_mono_pipe->empty()) {
-        __receive_events__(_mono_pipe->front());
+    for (auto run = _mono_pipe->front(); !run.empty(); run = _mono_pipe->front()) {
+        __receive_events__(run);
         _mono_pipe->pop_front();
     }
     // global_core_events. `consume_all(func, scratch, chunk)`, not `dequeue(T*, n)`: the third
@@ -308,7 +318,7 @@ VirtualCore::__flush_all__() noexcept {
     for (auto &pipe : _pipes) {
         // Skip the self-core pipe (local delivery bypasses the mailbox layer)
         // and any empty outbound pipe.
-        if (pipe_idx == _resolved_index || !pipe.size()) {
+        if (pipe_idx == _resolved_index || pipe.empty()) {
             ++pipe_idx;
             continue;
         }
@@ -885,7 +895,7 @@ VirtualCore::__dispose_residual_to_stopped_cores__() noexcept {
     for (auto &pipe : _pipes) {
         // The self-core pipe is delivered locally (never via the mailbox) and is already
         // drained by __receive__; an empty pipe has nothing pending.
-        if (pipe_idx == _resolved_index || !pipe.size()) {
+        if (pipe_idx == _resolved_index || pipe.empty()) {
             ++pipe_idx;
             continue;
         }

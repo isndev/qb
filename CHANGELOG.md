@@ -16,6 +16,13 @@ policy.
   request wider than a segment gets a dedicated exactly-sized one, and the read side walks
   `front()` / `consume_front()` / `pop_front()` a segment at a time, each popped segment going
   straight back to the pool. `qb::VirtualPipe` is now this type (was `allocator::pipe<EventBucket>`).
+- **`qb::allocator::slab_cache`** (`qb/system/allocator/slab.h`, `qb/io/slab.cpp`) — the
+  process-wide source of the pool's memory: 2 MB slabs mapped by the platform (`mmap` trimmed to
+  a 2 MB boundary on POSIX, `VirtualAlloc` on Windows), on Linux `madvise(MADV_HUGEPAGE)`d and
+  populated in one `MADV_POPULATE_WRITE` pass (5.14+), carved eight standard segments to a slab,
+  and kept on a free list when a pool gives them back so the next engine or core draws memory
+  that is already mapped and faulted. `trim()` returns the cached slabs to the OS. Cold path
+  only — one acquire per eight segments of growth, never per event.
 - **`CoreInitializer::setIdleSpin()` / `Main::setIdleSpin()`** — how long an idle `latency > 0`
   core keeps polling before it parks on its mailbox, a time floor measured from its first idle
   pass (default `kDefaultIdleSpin`, 50 µs; `getIdleSpin()` reads it back). Until now the floor
@@ -45,10 +52,36 @@ policy.
   `co_await` or in a member. Pinned by `SegmentedPipeContract.*` (unit) and
   `PushReferenceStability.*` (through the engine, same-core, cross-core and under growth).
 - **Event pipes allocate nothing until their first push, and the per-core pool holds the high
-  water in 256 KB steps** (`segment_pool::shrink()` returns it). Every core used to allocate
-  256 KB eagerly for each of its N + 1 pipes — 68 MiB at rest on 16 cores — and each pipe
-  doubled on its own, so the peak was 2–3× the largest burst and never came back. A consumed
-  segment is the next one a push grows into, still warm in cache.
+  water in 2 MB slabs** (`segment_pool::shrink()` returns whole idle slabs to the cache,
+  `slab_cache::trim()` returns the cache to the OS). Every core used to allocate 256 KB eagerly
+  for each of its N + 1 pipes — 68 MiB at rest on 16 cores — and each pipe doubled on its own,
+  so the peak was 2–3× the largest burst and never came back. A consumed segment is the next
+  one a push grows into, still warm in cache. Slabs, not `malloc`, because the A/B measured
+  where the residual went: with segments from the heap a fresh engine's 1 M-event one-core
+  burst still took 15 640 minor page faults — every 4 KB of every segment — which on WSL2 was
+  ~15 ms of a 20 ms run; a slab is faulted once per 2 MB, in the kernel, and never again for
+  the life of the process.
+- **The receive loop reads an event's width once, before its handler runs, and the pool
+  staggers its segments.** Segments carved on a fixed stride out of aligned slabs all start at
+  the same offset within a 4 KB page, so item `k` of the pipe being drained and item `k` of the
+  pipe being filled share their low twelve address bits — and a reply IS a byte copy of the
+  received event into the outbound pipe at the same index. The loop then re-read
+  `bucket_size` from the event to advance, a load trailing a store to an address the core
+  cannot tell apart from it until the store commits (Intel's 4K aliasing); measured on
+  `savina/big` at one core, that one stall per event doubled the run against the malloc-laid
+  pipes it replaced (52 → 107 ms per rep, that reload alone 12% of the samples). The width is
+  now read once, ahead of the handler, and `segment_pool` gives the `i`-th segment it carves a
+  stagger of `(i * 27) % 64` cache lines so consecutive segments — the swap pair of a core —
+  never share a page offset, which also covers a handler that touches the event after
+  `reply()`. The stride is 27 and not 1 because a one-line stagger moves the store onto the
+  NEXT event's load for one-line events, measured at +8% on the same benchmark. The receive
+  loop is driven by `front()` alone — a range that is empty exactly when the pipe is — rather
+  than testing `empty()` before and after each range. Same-core round trips end up faster than
+  before the segmented pipe (Linux/g++-14, median of 5 interleaved launches: big 52.7 → 52.2 ms,
+  ping-pong 67.7 → 64.2 ms; ten-launch census, ns per message: thread-ring 37.7 → 35.6 at one
+  core and 110.6 → 105.5 across two, big 21.9 → 21.4). Windows/MSVC keeps its one-core
+  ping-pong level within 1% (77.2 → 78.0 ns per round trip, median of 24 interleaved launches,
+  distributions overlapping) while every burst cell there is 2–4× faster.
 - **The `latency > 0` park handshake is race-free.** `Mailbox::wait()` was
   `cv.wait_for(lk, latency)` with no predicate and `notify()` signalled without the mutex, so an
   enqueue landing between the consumer's empty drain and its registration on the condition
@@ -87,7 +120,13 @@ policy.
   WSL2, 23 spinning acquire loads held TSan's atomics lock in read mode continuously, the 24th
   core's `fetch_add` never got in, and `MainLifecycle.StopMultiCoreGracefulNoError` ran past its
   600 s timeout at any CPU count. Both loops spin 1024 times and then `yield()`; the same test
-  completes in 2 s and the signal variant went from 61 s to 2 s.
+  completes in 2 s and the signal variant went from 61 s to 2 s. **And then it sleeps**: with
+  one CPU per waiter there is nobody to yield to, `yield()` returns at once, and the polls'
+  acquire loads still starved the last core's every atomic op behind 23 readers of TSan's
+  atomics lock — the three multi-core lifecycle tests measured anywhere from 0.1 s to 30 s per
+  run on the same host. After 256 yields the poll sleeps 50 µs between loads (one shared
+  `wait_sync_start` for both loops); the tests take 100 ms, every run, and an engine whose
+  cores arrive more than ~100 µs apart pays at most one quantum, once.
 
 ### Known limitation
 

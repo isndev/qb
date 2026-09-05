@@ -146,7 +146,7 @@ struct QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT EventBucket { uint32_t __raw__[…]; }
 | that ceiling, in bytes | 65 472 | 65 408 |
 | a default `pipe<EventBucket>` at rest | 256 KiB | 512 KiB |
 
-An event wider than the ceiling can never be enqueued into a peer mailbox, because the ring enqueue is all-or-nothing. The flush does not retry it: it logs at `LOG_CRIT`, disposes the event and skips it (`src/qb/core/VirtualCore.cpp:395-398`). That is the practical face of "keep events small" — the number is 1023 buckets, and it comes from here.
+An event wider than the ceiling can never be enqueued into a peer mailbox, because the ring enqueue is all-or-nothing. The flush does not retry it: it logs at `LOG_CRIT`, disposes the event and skips it (`src/qb/core/VirtualCore.cpp:405-408`). That is the practical face of "keep events small" — the number is 1023 buckets, and it comes from here.
 
 Doubling the cache line also doubles every pipe's resting allocation, which is the other half of the [pipe memory profile](./buffers.md#memory-it-grows-and-it-does-not-come-back).
 
