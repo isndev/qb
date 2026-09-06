@@ -54,15 +54,15 @@ this page only states what the patterns depend on.
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
   `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1226-1228`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1268`, `:1782-1786`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1268`, `:1795-1799`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
-  `qb/src/qb/core/Actor.h:1396,1414,1424,1433,1440,1448`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:1694-1695,1708-1710,1737-1739`). **Never capture `this` past a `co_await`** — capture by
+  `qb/src/qb/core/Actor.h:1409,1427,1437,1446,1453,1461`) plus the scope token and cancellation-aware `sleep`
+  (`qb/src/qb/core/Actor.h:1707-1708,1721-1723,1750-1752`). **Never capture `this` past a `co_await`** — capture by
   value (`qb/src/qb/core/Actor.h:1230-1232`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
   (`qb/src/qb/core/Event.h:582-583`); `qb::AskEvent` derives from it for the request/response API
-  (`qb/src/qb/core/Actor.h:1462`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
+  (`qb/src/qb/core/Actor.h:1475`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
   discovery (`qb/src/qb/core/Event.h:605,624`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
   (inside `onInit()`), so the whole library works during init

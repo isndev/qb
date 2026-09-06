@@ -1243,6 +1243,7 @@ template <typename Func>
 void
 Actor::spawn_detached(Func &&func) const {
     __resolve_coro_scheduler__();
+    __ensure_coro_counter__(); // lazily allocate the shared counter on first use.
 
     active_coroutines_->fetch_add(1, std::memory_order_relaxed);
     CoroContext ctx(this);
@@ -1257,6 +1258,7 @@ void
 Actor::spawn(Func &&func) const {
     __resolve_coro_scheduler__();
     __ensure_coro_scope__(); // lazily allocate the real cancellation token on first use.
+    __ensure_coro_counter__();
 
     active_coroutines_->fetch_add(1, std::memory_order_relaxed);
     // ScopedCoroContext carries the actor id + a copy of the scope token; the wrapper

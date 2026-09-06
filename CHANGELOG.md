@@ -77,6 +77,17 @@ policy.
   `VirtualCore::ActorMap` is no longer an example of the node-map pointer-stability contract
   (readme `containers.md`), because it never needed it: the actor lives behind its `unique_ptr`.
 
+- **An actor's coroutine counter is allocated on its first `spawn`, not in its constructor.**
+  `Actor::active_coroutines_` (the `shared_ptr<atomic<size_t>>` the RAII guard decrements after
+  the actor is gone) was a `make_shared` in every `Actor::Actor()` and a release in every
+  destructor, whether or not the actor ever spawned a coroutine. Measured on savina/fib (one
+  short-lived actor per node, none of them spawning) that pair was ~30 % of an actor's lifetime
+  cost. It is now created by `__ensure_coro_counter__()` on the first `spawn()` /
+  `spawn_detached()`, like `_coro_scope` already was, so the hot path is one predicted-not-taken
+  null check before the `fetch_add`. savina/fib n=23 on Linux/g++-14 goes **8.34 ms to 7.3 ms** on
+  two cores and **14.9 ms to 11.3 ms** on one; `has_active_coroutines()` and
+  `active_coroutine_count()` answer `false` / `0` for a counter that was never allocated. Suite
+  green on Linux release, ASan and TSan (191/191).
 - **Google Benchmark floor is 1.9.5** (`QB_BUILD_BENCHMARKS=ON` only): the pinned fetch moves
   `v1.9.2` → `v1.9.5`, and a system package is accepted only from 1.9.5 — the release that made
   `benchmark::Benchmark` public. The benchmark sources name that public type; until now they

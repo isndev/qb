@@ -1346,13 +1346,26 @@ private:
      * after the actor is destroyed (the shared_ptr keeps the counter alive
      * until the last orphaned coroutine frame is destroyed).
      *
-     * @note Eagerly allocated in the Actor constructor (finding 2.12) — this
-     *       trades one heap allocation per actor construction for the removal
-     *       of a `nullptr` check on every `spawn_detached()` hot path. A single
-     *       `make_shared` is a negligible cost compared to the rest of actor
-     *       construction and guarantees branch-predicted coroutine spawning.
+     * @note Allocated on the FIRST `spawn()` / `spawn_detached()`, like `_coro_scope`
+     *       below — an actor that never spawns a coroutine pays nothing. It used to be
+     *       eagerly `make_shared`d in the constructor (finding 2.12) to spare the spawn
+     *       path one null check, on the reasoning that a `make_shared` is negligible next
+     *       to the rest of actor construction; measured on a dynamic topology
+     *       (savina/fib, 57 313 actors born and dead in one window, `perf` on Linux) that
+     *       allocation and its release were the single largest cost of an actor lifetime
+     *       — one `malloc`, one `free` and two atomic refcount ops per actor, ~30 % of the
+     *       core's time — against a predicted-not-taken branch per spawn.
      */
-    mutable std::shared_ptr<std::atomic<std::size_t>> active_coroutines_ = std::make_shared<std::atomic<std::size_t>>(0);
+    mutable std::shared_ptr<std::atomic<std::size_t>> active_coroutines_{};
+
+    /**
+     * @brief Allocate `active_coroutines_` on first use (cold path of `spawn*`).
+     */
+    void
+    __ensure_coro_counter__() const {
+        if (unlikely(!active_coroutines_))
+            active_coroutines_ = std::make_shared<std::atomic<std::size_t>>(0);
+    }
 
     /**
      * @brief Per-actor coroutine cancellation scope (lazy, empty by default).

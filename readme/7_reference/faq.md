@@ -104,7 +104,7 @@ Yes — through two entry points, `spawn()` (recommended) and `spawn_detached()`
 A spawned coroutine runs in an isolated context and **must not touch actor state after a `co_await`**: the actor may be destroyed while the coroutine is suspended, so dereferencing `this` or an actor member after suspension is undefined behavior. The rules:
 
 - Copy every value you need **by value before the first `co_await`**. Never capture `this` or a reference to an actor member.
-- After suspension, communicate only through the `CoroContext` argument. `ctx.push<Event>(args…)` posts an event back to the spawning actor itself; `ctx.push_to<Event>(dest, args…)` posts to another actor by id (`qb/src/qb/core/Actor.h:1408-1414` and `:1423-1424`). Both are safe even after the spawning actor has died — events addressed to a dead actor are dropped by the router. `ctx.id()` and `ctx.time()` are also safe (`qb/src/qb/core/Actor.h:1439-1440` and `:1448`).
+- After suspension, communicate only through the `CoroContext` argument. `ctx.push<Event>(args…)` posts an event back to the spawning actor itself; `ctx.push_to<Event>(dest, args…)` posts to another actor by id (`qb/src/qb/core/Actor.h:1421-1427` and `:1436-1437`). Both are safe even after the spawning actor has died — events addressed to a dead actor are dropped by the router. `ctx.id()` and `ctx.time()` are also safe (`qb/src/qb/core/Actor.h:1452-1453` and `:1461`).
 - Keep coroutines short-lived; a long-running coroutine widens the window in which the actor can die underneath it.
 
 ```cpp
