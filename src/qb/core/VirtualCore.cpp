@@ -107,6 +107,14 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     // atomic load is relaxed because every writer publishes through the
     // magic-static acquire edge of `Actor::registerIndex<Tag>()` (2.3).
     _ids.init(static_cast<ServiceId>(_nb_service.load(std::memory_order_relaxed) + 1));
+    // The five default events resolve through the actor registry, not a handler table: install
+    // their resolvers now, before any actor can register one (`memh::install` must precede the
+    // first `subscribe<E>` for that type, and `registerEvent<E>` never subscribes a default one).
+    // `*this` is a stack object on the worker thread (Main.cpp, `VirtualCore core(...)`) and is
+    // never moved, so the reference each resolver keeps is good for the router's lifetime.
+    [this]<typename... E>(std::tuple<E...> *) {
+        (_router.install<E>(std::make_unique<DefaultEventResolver<E>>(*this)), ...);
+    }(static_cast<default_events_t *>(nullptr));
 }
 
 VirtualCore::~VirtualCore() noexcept = default;

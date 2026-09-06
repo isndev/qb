@@ -105,7 +105,7 @@ The default constructor also subscribes to five system events — `KillEvent`, `
 
 ### `no_default_events` — and the one line you must not forget
 
-For pools of short-lived actors where five router insertions per actor are measurable, pass the tag:
+To opt out of the five default handlers, pass the tag. Note what it no longer buys: since 3.2 a default event's subscription is a dispatch pointer in the actor itself (`Actor::_default_on`), found by the core's `DefaultEventResolver<E>` from the destination id, so there is no router insertion to skip — the tag is for an actor that must NOT react to one of them, not for a pool of short-lived actors.
 
 ```cpp
 class ComputeTask : public qb::Actor {

@@ -168,6 +168,7 @@ Coroutines (C++20) — `spawn` is the default; `spawn_detached` is the low-level
 *   use: `registerEvent<MyEvent>(*this);` in `onInit`, then `void on(const MyEvent& e) { reply(...); }`.
 
 Tag: `struct no_default_events_t{}; inline constexpr no_default_events_t no_default_events{};` — pass to the protected ctor to opt out of default handlers.
+Default-event set: `using default_events_t = std::tuple<KillEvent, SignalEvent, UnregisterCallbackEvent, PingEvent, RequireEvent>;`, `template <typename E> inline constexpr int default_event_index` (−1 when `E` is not one of them; cvref stripped, a type DERIVED from one is not one), `template <typename E> concept is_default_event`. Since 3.2 these five dispatch through the actor registry: `registerEvent<E>` for such an `E` stores a dispatch pointer in the actor instead of a router-table entry, so opting out saves nothing measurable — the tag is semantic.
 
 #### `class qb::Actor::EventBuilder`
 Returned by `Actor::to()`. Copyable, not default-constructible.

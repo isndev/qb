@@ -941,13 +941,25 @@ private:
         return resolved;
     }
 
+public:
     /**
      * @brief Interface for event resolution
      *
      * Abstracts the process of resolving and handling events of different types.
+     * Public so an owner can `install<_Event>()` a resolver of its own for a type whose handlers
+     * it keeps elsewhere — `VirtualCore` does this for the five default actor events, which it
+     * dispatches through its actor registry instead of a per-type handler table.
      */
     class IEventResolver {
     public:
+        /**
+         * @param owns_handlers true for a resolver whose handlers live in this router and are
+         *        removed through `unsubscribe(id)`; false for an installed resolver that keeps
+         *        no handler of its own, which `unsubscribe(id)` then never visits and
+         *        `subscribe<_Event>()` refuses to treat as an `EventResolver<_Event>`.
+         */
+        explicit IEventResolver(bool owns_handlers = true) noexcept
+            : owns_handlers(owns_handlers) {}
         virtual ~IEventResolver() = default;
 
         /**
@@ -963,8 +975,11 @@ private:
          * @param id The ID of the handler to unsubscribe
          */
         virtual void unsubscribe(_HandlerId const &id) = 0;
+
+        const bool owns_handlers;
     };
 
+private:
     /**
      * @brief Concrete event resolver for a specific event type
      *
@@ -1004,6 +1019,16 @@ private:
     };
 
     internal::key_table<_EventId, std::unique_ptr<IEventResolver>> _registered_events;
+
+    /**
+     * @brief The resolvers that hold handlers — every `EventResolver<_Event>` this router created,
+     *        in creation order, and none of the installed ones.
+     * @details `unsubscribe(id)` walks this instead of the whole table: a handler's removal must
+     *          visit every table it might be in, and the installed resolvers are by definition
+     *          tables it is in nowhere. Raw pointers are safe because the table never erases a
+     *          resolver and a `unique_ptr`'s pointee does not move when the dense vector grows.
+     */
+    std::vector<IEventResolver *> _owning;
 
 public:
     /**
@@ -1102,13 +1127,45 @@ public:
         const auto id = _RawEvent::template type_to_id<_Event>();
         if (auto *const entry = _registered_events.find(id)) {
             // Same invariant as the typed memh's subscribe above: the table is keyed by the
-            // exact event type and only ever holds `EventResolver<_Event>` under that key.
+            // exact event type and only ever holds `EventResolver<_Event>` under that key —
+            // unless the owner `install()`ed its own resolver there, in which case subscribing
+            // through the table is the owner's mistake (the recast below would be UB), not a
+            // routing decision this router can make for it.
+            assert((*entry)->owns_handlers
+                   && "memh::subscribe<_Event>: an installed resolver owns this event type; "
+                      "register its handlers through the owner, not the router");
             static_cast<EventResolver<_Event> *>(entry->get())->subscribe(handler);
         } else {
             auto resolver = std::make_unique<EventResolver<_Event>>();
             resolver->subscribe(handler);
+            _owning.push_back(resolver.get());
             _registered_events.insert_or_assign(id, std::move(resolver));
         }
+    }
+
+    /**
+     * @brief Install a caller-owned resolver for `_Event`, replacing any resolver under that key.
+     * @tparam _Event The event type the resolver answers for.
+     * @param resolver Resolves every `_Event` routed here; `route()` calls it exactly as it calls
+     *        an `EventResolver<_Event>`, with `_CleanEvent` disposal being the resolver's own
+     *        business. Its `owns_handlers` decides whether `unsubscribe(id)` visits it.
+     * @details Registers `_Event`'s disposer on the shared map like `subscribe()` does, so an
+     *          installed type is disposable on every core. Must be called before the first
+     *          `subscribe<_Event>()` on this router — replacing a resolver that already holds
+     *          handlers drops those handlers on the floor, and the assertion in `subscribe()`
+     *          only guards the other order.
+     */
+    template <typename _Event>
+    void
+    install(std::unique_ptr<IEventResolver> resolver) {
+        static const SafeDispose<_Event> o{};
+
+        assert(resolver != nullptr && "memh::install<_Event>: null resolver");
+        const auto id = _RawEvent::template type_to_id<_Event>();
+        assert(_registered_events.find(id) == nullptr && "memh::install<_Event>: a resolver for this event type already exists");
+        if (resolver->owns_handlers)
+            _owning.push_back(resolver.get());
+        _registered_events.insert_or_assign(id, std::move(resolver));
     }
 
     /**
@@ -1144,7 +1201,8 @@ public:
      */
     void
     unsubscribe(_HandlerId const &id) const {
-        _registered_events.for_each([&id](auto const &, auto const &resolver) { resolver->unsubscribe(id); });
+        for (IEventResolver *const resolver : _owning)
+            resolver->unsubscribe(id);
     }
 };
 

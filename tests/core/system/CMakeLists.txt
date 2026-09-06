@@ -33,6 +33,9 @@ qb_add_test(MODULE qb-core TIER system NAME sigterm-shutdown SOURCES engine/sigt
 # wedge (a KillEvent-only no_default_events actor cannot be stopped), so it detaches one engine
 # thread on purpose -- see the file header. Bounded, and it is what the corrected docs rest on.
 qb_add_test(MODULE qb-core TIER system NAME no-default-events SOURCES engine/no-default-events.cpp DEPENDS ${PROJECT_NAME} LABELS signal serial)
+# default-event-registry pins what the five default events must still do now that they dispatch
+# through the actor registry (3.2, QB-174) instead of five per-type handler tables.
+qb_add_test(MODULE qb-core TIER system NAME default-event-registry SOURCES engine/default-event-registry.cpp DEPENDS ${PROJECT_NAME})
 # core-park-policy measures WHEN a latency>0 core parks, with a qb-io timer as its clock; a loaded
 # host stretches every figure, so it runs alone.
 qb_add_test(MODULE qb-core TIER system NAME core-park-policy SOURCES engine/core-park-policy.cpp DEPENDS ${PROJECT_NAME} LABELS serial)

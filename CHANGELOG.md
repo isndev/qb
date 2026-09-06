@@ -91,6 +91,38 @@ policy.
   two cores and **14.9 ms to 11.3 ms** on one; `has_active_coroutines()` and
   `active_coroutine_count()` answer `false` / `0` for a counter that was never allocated. Suite
   green on Linux release, ASan and TSan (191/191).
+
+- **The five default events dispatch through the actor registry, not through per-type handler
+  tables.** `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent` and `RequireEvent`
+  (`qb::default_events_t`) cost every actor five `key_table` inserts at construction and, at
+  removal, a walk of EVERY resolver on the core to erase them â€” five tables of 65 536 Ã— 32-byte
+  slots per core whose key set was exactly "the live actors", which `VirtualCore::ActorMap` already
+  is. `perf` on savina/fib (57 312 actor lifetimes per repetition, one core) put `registerEvent`
+  Ã— 7 at ~29 % and `unregisterEvents` at ~12 % of a 200 ns lifetime. `registerEvent<E>` for a
+  default `E` now stores a dispatch pointer in the actor itself (`Actor::_default_on[k]`, a
+  non-virtual trampoline that recasts to the registering type and checks `is_alive()`), and
+  `VirtualCore` installs one `DefaultEventResolver<E>` per default event into its router
+  (`router::memh::install`, new), which answers a unicast from `__actor_slot__(dest)` â€” the bounds
+  check and id compare every lookup already pays â€” and a broadcast from a snapshot of the registry,
+  so a handler that spawns actors cannot invalidate the walk. `memh::unsubscribe(id)` walks only the
+  resolvers that own handlers (`_owning`), which is what makes `unregisterEvents` targeted; an
+  installed resolver declares `owns_handlers = false` and `subscribe<E>()` on its type asserts
+  rather than recasting it. Every contract the tables gave is pinned by
+  `qb-core-test-system-default-event-registry`: a pushed default reaches the base handler of an
+  actor that never mentioned it; a derived class that re-registers one REPLACES the base handler
+  (the supervisor pattern); `unregisterEvent<E>` and `qb::no_default_events` both drop the event
+  silently; a broadcast reaches every live actor and not one spawned by a handler during it; a
+  `ServiceActor` is reached through the same slot. Measured in one quiet session per host, 9
+  repetitions + 2 warmup, `develop` `a6663641` â†’ this line, p50 per repetition: savina/fib
+  **6.96 â†’ 5.21 ms** at two cores and **10.98 â†’ 8.48 ms** at one on WSL2 Debian/g++-14 (âˆ’25 % /
+  âˆ’22 %; a second pass 5.31 / 8.62), **10.18 â†’ 7.03 ms** and **15.73 â†’ 11.03 ms** on
+  Windows/MSVC 19.51 (âˆ’31 % / âˆ’30 %; second pass 7.10 / 11.48); savina/chameneos, which creates
+  its 101 actors outside the window, is unchanged within its spread on both hosts (10.7 / 6.5 ms
+  WSL2, 12.2â€“13.4 / 7.1 ms Windows). `qb::no_default_events` is therefore a semantic choice now,
+  not a saving. New public names: `qb::default_events_t`, `qb::default_event_index<E>` (âˆ’1 for
+  any other type; cvref stripped; a type DERIVED from a default event is its own event type),
+  `qb::is_default_event<E>`. Suite green on Linux release (371/371), ASan+UBSan and TSan (192/192),
+  Windows/MSVC release (188/188).
 - **Google Benchmark floor is 1.9.5** (`QB_BUILD_BENCHMARKS=ON` only): the pinned fetch moves
   `v1.9.2` → `v1.9.5`, and a system package is accepted only from 1.9.5 — the release that made
   `benchmark::Benchmark` public. The benchmark sources name that public type; until now they

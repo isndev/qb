@@ -279,6 +279,88 @@ private:
     };
     using AvailableIdList = ServiceIdPool;
 
+    /**
+     * @brief The dispatch stored in `Actor::_default_on` for a default event registered by `_Actor`.
+     * @details Same contract as `router::semh::dispatch_trampoline`: recast to the registering
+     *          type, skip a handler that is no longer alive, call `on(event)`. A default event is
+     *          never virtual — `Actor::on(KillEvent const &)` and its siblings are plain members —
+     *          so this pointer is what lets a derived class that re-registers one replace the base
+     *          handler, exactly as the table entry it replaces did.
+     */
+    template <typename _Actor, typename _Event>
+    static void
+    default_trampoline(Actor &base, Event &raw) noexcept {
+        auto &actor = static_cast<_Actor &>(base);
+        if (actor.is_alive())
+            actor.on(reinterpret_cast<_Event &>(raw));
+    }
+
+    /**
+     * @brief The router's resolver for one of the five default events (`qb::default_events_t`),
+     *        answering from the actor registry instead of a per-type handler table.
+     * @details Installed into `_router` once per default event by the constructor, so `route()`
+     *          reaches it through the same single table lookup and virtual call as any
+     *          `EventResolver<E>`. From there a unicast is `__actor_slot__(dest)` — the bounds
+     *          check, the slot load and the `id()` compare every registry lookup already pays —
+     *          then the actor's own `_default_on[k]`; a broadcast walks the registry up to its
+     *          high-water mark. What it replaces, per actor lifetime: five `key_table` inserts
+     *          (32-byte slot, bounds and resize check each) at construction and a walk of every
+     *          resolver on the core at removal. It owns no handlers, so `unsubscribe(id)` never
+     *          visits it: the dispatch pointers die with the actor.
+     *
+     *          Broadcast semantics match `semh::route`: the live actors are snapshotted first,
+     *          because a handler may spawn an actor and `appendActor` may then grow `_actors`
+     *          under the walk; removal is deferred to end-of-frame, so a snapshotted pointer stays
+     *          valid, and the trampoline re-checks `is_alive()`. The dispatch pointer is read at
+     *          call time rather than snapshotted, so an actor that unregisters mid-broadcast is
+     *          not called. Disposal follows `router::internal::EventPolicy::dispose`: the payload
+     *          is destroyed when the event was not kept alive by a handler.
+     */
+    template <typename _Event>
+    class DefaultEventResolver final : public router::memh<Event>::IEventResolver {
+        static constexpr int k = default_event_index<_Event>;
+        static_assert(k >= 0, "DefaultEventResolver: not one of qb::default_events_t");
+
+        VirtualCore const &_core;
+
+        static void
+        dispatch(Actor &actor, _Event &event) noexcept {
+            if (auto *const fn = actor._default_on[static_cast<std::size_t>(k)]; likely(fn != nullptr))
+                fn(actor, event);
+        }
+
+    public:
+        explicit DefaultEventResolver(VirtualCore const &core) noexcept
+            : router::memh<Event>::IEventResolver(false)
+            , _core(core) {}
+
+        void
+        resolve(Event &raw) const final {
+            auto      &event = reinterpret_cast<_Event &>(raw);
+            const auto dest  = event.getDestination();
+            if (dest.is_broadcast()) {
+                static thread_local std::vector<Actor *> snapshot;
+                const std::size_t                        base = snapshot.size();
+                for (auto const &slot : _core._actors)
+                    if (Actor *const actor = slot.get())
+                        snapshot.push_back(actor);
+                const std::size_t end = snapshot.size();
+                for (std::size_t i = base; i < end; ++i)
+                    dispatch(*snapshot[i], event);
+                snapshot.resize(base);
+            } else if (Actor *const actor = _core.__actor_slot__(dest)) {
+                dispatch(*actor, event);
+            }
+            if constexpr (!std::is_trivially_destructible_v<_Event>) {
+                if (!event.is_alive())
+                    event.~_Event();
+            }
+        }
+
+        void
+        unsubscribe(ActorId const &) final {}
+    };
+
     //! Types
 
 private:
@@ -752,14 +834,24 @@ VirtualCore::registerEvent(_Actor &actor) noexcept {
     if (unlikely(!actor.id().is_valid()))
         return;
     QB_LOG_VERB("Actor(" << actor.id() << ") subscribed to " << ActorProxy::getName<_Event>());
-    _router.subscribe<_Event>(actor);
+    if constexpr (is_default_event<_Event>) {
+        // The five default events dispatch through the actor registry (`qb::default_events_t`):
+        // the subscription is the actor's own dispatch pointer, and the resolver the constructor
+        // installed for `_Event` finds it by `sid`. Nothing to insert, nothing to remove later.
+        actor._default_on[static_cast<std::size_t>(default_event_index<_Event>)] = &default_trampoline<_Actor, std::remove_cvref_t<_Event>>;
+    } else {
+        _router.subscribe<_Event>(actor);
+    }
 }
 
 template <typename _Event, typename _Actor>
 void
 VirtualCore::unregisterEvent(_Actor &actor) noexcept {
     QB_LOG_VERB("Actor(" << actor.id() << ") unsubscribed to " << ActorProxy::getName<_Event>());
-    _router.unsubscribe<_Event>(actor);
+    if constexpr (is_default_event<_Event>)
+        actor._default_on[static_cast<std::size_t>(default_event_index<_Event>)] = nullptr;
+    else
+        _router.unsubscribe<_Event>(actor);
 }
 
 template <typename _Actor, typename... _Init>

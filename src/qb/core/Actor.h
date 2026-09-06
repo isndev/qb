@@ -26,6 +26,7 @@
 #define QB_ACTOR_H
 #include <algorithm>
 #include <any>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -73,7 +74,9 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * @ingroup Actor
  * @details
  * Pass `qb::no_default_events` to the protected `Actor` constructor for a lightweight actor that registers no system
- * events — meant for pools of short-lived actors where the router bookkeeping is a measurable overhead.
+ * events — meant for pools of short-lived actors that want none of the five. Since the default events dispatch
+ * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
+ * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
  * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:677`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
@@ -84,6 +87,49 @@ struct no_default_events_t {
 
 /** @brief Inline constexpr tag value; see `qb::no_default_events_t`. @ingroup Actor */
 QB_ABI_ANCHOR inline constexpr no_default_events_t no_default_events{};
+
+/**
+ * @brief The five system events every `qb::Actor` subscribes to on construction, in the order the
+ *        actor stores their handlers.
+ * @ingroup Actor
+ * @details
+ * These five are not routed through the per-core event table at all. Each actor carries one
+ * dispatch pointer per default event (`Actor::_default_on`) and the core resolves them through its
+ * actor registry — the same `sid`-indexed slot every other lookup already uses — so registering
+ * them costs five pointer stores per actor instead of five dense-table inserts (32 bytes and a
+ * bounds/resize check apiece), and unregistering them at removal costs nothing at all: the
+ * pointers die with the actor. Everything else an actor registers still goes through the table.
+ * Measured on savina/fib (57 312 actor lifetimes per repetition) the five default subscriptions
+ * and their removal were ~40 % of the 200 ns an actor lifetime cost after the dense table landed.
+ *
+ * The order is load-bearing only for `default_event_index`; nothing else depends on it.
+ */
+using default_events_t = std::tuple<KillEvent, SignalEvent, UnregisterCallbackEvent, PingEvent, RequireEvent>;
+
+namespace detail {
+template <typename E, typename Tuple, std::size_t... I>
+constexpr int
+default_event_index_of(std::index_sequence<I...>) noexcept {
+    int index = -1;
+    ((std::is_same_v<E, std::tuple_element_t<I, Tuple>> ? (index = static_cast<int>(I), 0) : 0), ...);
+    return index;
+}
+} // namespace detail
+
+/**
+ * @brief Position of `E` in `qb::default_events_t`, or -1 when `E` is not a default event.
+ * @ingroup Actor
+ * @details cv-ref qualifiers on `E` are ignored. A type DERIVED from a default event (e.g. a
+ *          `struct MyKill : qb::KillEvent`) is not one — it has its own type id and is routed
+ *          through the event table like any user event.
+ */
+template <typename E>
+inline constexpr int default_event_index =
+    detail::default_event_index_of<std::remove_cvref_t<E>, default_events_t>(std::make_index_sequence<std::tuple_size_v<default_events_t>>{});
+
+/** @brief Satisfied by exactly the five types in `qb::default_events_t`. @ingroup Actor */
+template <typename E>
+concept is_default_event = (default_event_index<E> >= 0);
 
 /**
  * @brief Concept for event types that derive from qb::Event
@@ -248,6 +294,19 @@ class Actor : nocopy {
     std::uint32_t id_type    = 0u;
 
     /**
+     * @brief Dispatch pointer for the corresponding default event, or nullptr while unregistered.
+     * @details Signature of `VirtualCore::default_trampoline<_Actor, _Event>`, which recasts to the
+     *          registering `_Actor` type and calls its `on(_Event &)` — so a derived class that
+     *          re-registers a default event with its own type (`registerEvent<qb::KillEvent>(*this)`
+     *          from `onInit()`) replaces the base handler exactly as it did through the table.
+     *          Indexed by `qb::default_event_index<E>`. Written only by `VirtualCore::registerEvent`
+     *          / `unregisterEvent`, read only by the core's `DefaultEventResolver<E>` on the owning
+     *          thread; all five are nullptr for an actor built with `qb::no_default_events`.
+     */
+    using DefaultDispatch = void (*)(Actor &, Event &) noexcept;
+    std::array<DefaultDispatch, std::tuple_size_v<default_events_t>> _default_on{};
+
+    /**
      * @brief Check if this actor is of a specific type
      *
      * @tparam _Type The type to check against
@@ -300,8 +359,8 @@ protected:
      * **`qb::SignalEvent`** — `Main::stop()` and the terminal signals arrive only as one — plus `qb::KillEvent` if a
      * peer will kill this actor by pushing one. See the @warning on `qb::no_default_events_t`.
      *
-     * Intended for high-throughput scenarios where actors are short-lived and the
-     * five default subscriptions per actor become measurable overhead.
+     * Intended for pools of short-lived actors that want none of the five; see `qb::default_events_t`
+     * for why the subscriptions themselves are no longer the cost they were.
      */
     explicit Actor(no_default_events_t tag) noexcept;
 

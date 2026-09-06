@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <limits>
+#include <memory>
 #include <new>
 #include <qb/system/event/router.h>
 #include <type_traits>
@@ -449,6 +450,84 @@ TYPED_TEST(DenseMemh, DisposesOnMissAndOnHit) {
     miss_event->dest = DenseId{3000, 1};
     router.route(*miss_event, on_error);
     EXPECT_EQ(DisposeEvent::destroyed, 2u);
+}
+
+// ---------------------------------------------------------------------------------------------
+// memh<_, _, void>::install — a caller-owned resolver under one event id
+// ---------------------------------------------------------------------------------------------
+//
+// The engine installs one of these per default actor event (`VirtualCore::DefaultEventResolver`)
+// so that KillEvent & co. resolve through the actor registry instead of a per-type table. The
+// router's side of that contract is what is asserted here: an installed resolver receives every
+// event of its type through the same `route()` as a subscribed one, `unsubscribe(id)` never
+// visits a resolver that owns no handlers (and DOES still visit the ones that do), and a
+// resolver installed as owning is walked like any other.
+
+using VoidMemh = qb::router::memh<RawEvent, true, void>;
+
+struct CountingResolver final : VoidMemh::IEventResolver {
+    std::size_t resolved     = 0;
+    std::size_t unsubscribed = 0;
+
+    explicit CountingResolver(bool owns) noexcept
+        : VoidMemh::IEventResolver(owns) {}
+    void
+    resolve(RawEvent &) const final {
+        ++const_cast<CountingResolver *>(this)->resolved;
+    }
+    void
+    unsubscribe(DenseId const &) final {
+        ++unsubscribed;
+    }
+};
+
+TEST(DenseMemhInstall, InstalledResolverReceivesItsTypeThroughRoute) {
+    VoidMemh  router;
+    FakeActor a(1);
+    auto      owned    = std::make_unique<CountingResolver>(false);
+    auto     *resolver = owned.get();
+    router.install<HitEvent>(std::move(owned));
+    router.subscribe<OtherEvent>(a);
+
+    std::size_t errors   = 0;
+    const auto  on_error = [&errors](RawEvent const &) {
+        ++errors;
+    };
+    HitEvent h;
+    h.dest = DenseId{4242, 7}; // no actor anywhere: the resolver, not a table, decides
+    router.route(h, on_error);
+    HitEvent bcast;
+    bcast.dest = DenseId{kBroadcast, 0};
+    router.route(bcast, on_error);
+    OtherEvent o;
+    o.dest = a.id();
+    router.route(o, on_error);
+
+    EXPECT_EQ(errors, 0u);
+    EXPECT_EQ(resolver->resolved, 2u); // unicast and broadcast alike land on it
+    EXPECT_EQ(a.other_hits, 1u);       // the table beside it is untouched
+}
+
+TEST(DenseMemhInstall, UnsubscribeByIdSkipsAResolverThatOwnsNoHandlers) {
+    VoidMemh  router;
+    FakeActor a(1);
+    auto      silent_owned = std::make_unique<CountingResolver>(false);
+    auto      owning_owned = std::make_unique<CountingResolver>(true);
+    auto     *silent       = silent_owned.get();
+    auto     *owning       = owning_owned.get();
+    router.install<HitEvent>(std::move(silent_owned));
+    router.install<DisposeEvent>(std::move(owning_owned));
+    router.subscribe<OtherEvent>(a);
+
+    router.unsubscribe(a.id());
+    router.unsubscribe(DenseId{9, 9});
+
+    EXPECT_EQ(silent->unsubscribed, 0u); // owns nothing: never visited
+    EXPECT_EQ(owning->unsubscribed, 2u); // installed as owning: walked like an EventResolver
+    OtherEvent o;                        // and the ordinary table was walked too
+    o.dest = a.id();
+    router.route(o, [](RawEvent const &) { FAIL() << "OtherEvent stays registered"; });
+    EXPECT_EQ(a.other_hits, 0u);
 }
 
 } // namespace event_router_dense_test

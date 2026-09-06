@@ -28,7 +28,7 @@ Owned by [Mastering `qb::Actor`](./actor.md).
 | Graceful termination | `kill()` | Marks the actor for removal; the owning `VirtualCore` finishes the in-flight handler before destruction. |
 | Liveness query | `is_alive()` / `is_active()` | `is_alive()` is `true` until `kill()` takes effect; `is_active()` also requires a completed `onInit()` (false during the Activating window). |
 | RAII destruction | `virtual ~Actor()` | Runs only after the actor is fully removed from its core; member RAII cleanup is safe here. |
-| Lightweight actors | `qb::no_default_events` | Constructor tag that skips the five default system-event subscriptions (`KillEvent`, `SignalEvent`, `PingEvent`, `UnregisterCallbackEvent`, `RequireEvent`). |
+| Opting out of the default handlers | `qb::no_default_events` | Constructor tag that skips the five default system-event handlers (`KillEvent`, `SignalEvent`, `PingEvent`, `UnregisterCallbackEvent`, `RequireEvent`). Since 3.2 a semantic choice, not a saving: a default event dispatches through the actor registry, not a per-type table, so there is no subscription to skip. |
 | Identity and timing accessors | `id()`, `getIndex()`, `getName()`, `getCoreSet()`, `time()`, `now()` | Read-only accessors; `time()` returns a `uint64_t` nanosecond count cached once per loop iteration, and `now()` returns the same instant as a `qb::wall_time` — prefer `now()` with the `std::chrono` time vocabulary. |
 
 Actor creation entry points:
