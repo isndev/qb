@@ -55,7 +55,10 @@ policy.
   `perf` put nanolog's encoder, its writer thread and the `ostream` behind it at the top of the
   savina/fib profile once the table growth above was fixed: **178 ms → 28 ms** per repetition at one
   core (CAF 66 ms, raw-thread floor 1.7 ms on the same host), and a real application creating actors
-  at that rate paid the same. `qb::io::log::setLevel(qb::io::log::Level::VERBOSE)` shows them again.
+  at that rate paid the same — shipped **3.1.0** measured in the same quiet session at its defaults
+  is **159 ms** per repetition on WSL2/g++-14 and **459 ms** on Windows/MSVC (515 819 lines, 60.9 MB
+  of `qb.1.log` per repetition, counted) where this line measures 7.6 and 10.5 ms.
+  `qb::io::log::setLevel(qb::io::log::Level::VERBOSE)` shows them again.
 
 - **The per-core actor registry is a dense vector, and the kill queue is a vector too.**
   `VirtualCore::ActorMap` was `qb::unordered_map<ActorId, std::unique_ptr<Actor>>` and
