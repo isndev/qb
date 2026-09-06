@@ -47,6 +47,16 @@ policy.
 
 ### Changed
 
+- **Per-actor lifecycle log lines are VERBOSE, not INFO.** `New <actor>`, `Delete <actor>`,
+  `Actor(<id>) subscribed to <Event>` / `unsubscribed to`, `activating` / `activated` and the
+  destroyed-with-pending-coroutines line moved from `QB_LOG_INFO` to `QB_LOG_VERB`; the per-core
+  `Init Success` / `Stopped normally` lines stay at INFO. A release build (`QB_WITH_LOGGING=ON`,
+  default; level INFO under `NDEBUG`) wrote nine lines to `./qb.1.log` for every actor created —
+  `perf` put nanolog's encoder, its writer thread and the `ostream` behind it at the top of the
+  savina/fib profile once the table growth above was fixed: **178 ms → 28 ms** per repetition at one
+  core (CAF 66 ms, raw-thread floor 1.7 ms on the same host), and a real application creating actors
+  at that rate paid the same. `qb::io::log::setLevel(qb::io::log::Level::VERBOSE)` shows them again.
+
 - **Google Benchmark floor is 1.9.5** (`QB_BUILD_BENCHMARKS=ON` only): the pinned fetch moves
   `v1.9.2` → `v1.9.5`, and a system package is accepted only from 1.9.5 — the release that made
   `benchmark::Benchmark` public. The benchmark sources name that public type; until now they
@@ -182,6 +192,17 @@ policy.
   `run(EVRUN_NOWAIT)` now; `Semaphore/512` reads 36.7 µs on Windows where it read 127.
 
 ### Fixed
+
+- **The dense dispatch table no longer reallocates on every new actor id.** `router::key_table`
+  grew with `reserve(max(idx + 1, size() * 2))` on each insert — one element past what the previous
+  doubling had left — so every subscription of a NEW id copied the whole table: O(n) per
+  `registerEvent`, O(n²) per core, times one table per event type. Invisible to every static-topology
+  test and benchmark (the tables reach their size once and stay there) and catastrophic to a dynamic
+  one: savina/fib (57 313 actors born and dead inside one window, seven subscriptions each) measured
+  **43.2 s** on Windows/MSVC and the equivalent on Linux against CAF's 86 ms, super-linear in the live
+  count. The table now grows by CAPACITY (`reserve` only when `idx >= capacity()`, doubling it) —
+  178 ms on the same run, linear again. Introduced on `develop` with the dense tables (axis I); never
+  shipped.
 
 - **The first non-blocking TLS connect of a process no longer reads as a failure on Windows.**
   `ssl::socket::n_connect(endpoint, hostname)` returned the TCP connect's -1 ("in progress") and

@@ -607,7 +607,7 @@ VirtualCore::__begin_activation__(Actor &actor, qb::io::async::task<bool> &&init
     act.init        = std::move(init);
     act.deadline_ns = activation_deadline_ns ? now + activation_deadline_ns : 0; // 0 ⇒ no deadline
     _activating.emplace(actor.id(), std::move(act));
-    QB_LOG_INFO(actor << " activating (async onInit in flight)");
+    QB_LOG_VERB(actor << " activating (async onInit in flight)");
 }
 
 bool
@@ -702,7 +702,7 @@ VirtualCore::__pump_activations__() noexcept {
         }
         // Success: flip Active, then replay the stashed inbound unicast FIFO.
         ait->second->_activated = true;
-        QB_LOG_INFO(*ait->second << " activated");
+        QB_LOG_VERB(*ait->second << " activated");
         for (auto &buckets : act.stash) {
             auto *ev             = reinterpret_cast<Event *>(buckets.data());
             ev->state.bits.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
@@ -990,7 +990,7 @@ VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) no
     }
     if (initActor(actor, doInit).is_valid()) {
         _actors.emplace(id, std::move(actor_ptr));
-        QB_LOG_INFO("New " << actor);
+        QB_LOG_VERB("New " << actor);
         return id;
     }
     return ActorId::NotFound;
@@ -1026,12 +1026,12 @@ VirtualCore::removeActor(ActorId const id) noexcept {
             if (actor->has_coro_scope())
                 // Scoped coroutines were just cancelled — they unwind on the next loop
                 // iteration. A non-zero count here is expected and safe.
-                QB_LOG_INFO(*actor << " destroyed with " << actor->active_coroutine_count() << " scoped coroutine(s) pending cancellation");
+                QB_LOG_VERB(*actor << " destroyed with " << actor->active_coroutine_count() << " scoped coroutine(s) pending cancellation");
             else
                 QB_LOG_WARN(*actor << " destroyed with " << actor->active_coroutine_count()
                                    << " active coroutines - coroutines must not access actor state!");
         }
-        QB_LOG_INFO("Delete " << *actor);
+        QB_LOG_VERB("Delete " << *actor);
         _actors.erase(it);
         // Only non-service ids are recycled into the pool: a ServiceActor's
         // id is assigned at static init (see 2.3) and must remain reserved

@@ -168,7 +168,14 @@ public:
             const auto idx = dense_index<Key>::of(key);
             assert(idx <= dense_index<Key>::max_index && "dense_index<Key>::of() exceeds max_index");
             if (idx >= _table.size()) {
-                _table.reserve(std::max<std::size_t>(idx + 1, _table.size() * 2));
+                // Grow by CAPACITY, never by size: `reserve(size() * 2)` on every insert asked
+                // for one more element than the previous doubling had left, so each new id
+                // reallocated and copied the whole table -- O(n) per subscribe, O(n^2) per
+                // core, times one table per event type. savina/fib (57 313 actors born and
+                // dead in one window, seven subscriptions each) measured 43 s where CAF
+                // measures 86 ms; with this branch it is the pool's O(1) again.
+                if (idx >= _table.capacity())
+                    _table.reserve(std::max<std::size_t>(idx + 1, _table.capacity() * 2));
                 _table.resize(idx + 1);
             }
             auto &slot = _table[idx];

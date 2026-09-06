@@ -474,3 +474,35 @@ TEST(EventRouting, MemhDisposerMemoStaysCorrectAcrossRepeatedRoutes) {
 
     EXPECT_EQ(TestDestroyEvent::_count, kRoutes) << "each unrouted event must have its payload disposed exactly once";
 }
+
+// The dense table grows GEOMETRICALLY under one-id-at-a-time subscription -- a core spawning
+// actors subscribes one new sid per spawn, and the previous growth rule reserved
+// `max(idx + 1, size() * 2)` on every insert: one past what the last doubling left, so every
+// new id reallocated and copied the whole table. O(n) per subscribe, O(n^2) per core, one table
+// per event type; savina/fib (57 313 actors born and dead in one window) measured 43 s where
+// CAF measures 86 ms. The oracle is the address of slot 0's value: it moves on every
+// reallocation, so 60 000 sequential inserts must move it O(log n) times, never O(n).
+TEST(EventRouting, DenseKeyTableGrowsGeometricallyUnderSequentialInserts) {
+    qb::router::internal::key_table<std::uint16_t, int> table;
+    table.insert_or_assign(std::uint16_t{0}, 1);
+    const int              *anchor   = table.find(std::uint16_t{0});
+    std::size_t             moves    = 0;
+    constexpr std::uint32_t kInserts = 60000u;
+    for (std::uint32_t i = 1; i < kInserts; ++i) {
+        table.insert_or_assign(static_cast<std::uint16_t>(i), static_cast<int>(i));
+        const int *now = table.find(std::uint16_t{0});
+        ASSERT_NE(now, nullptr);
+        if (now != anchor) {
+            ++moves;
+            anchor = now;
+        }
+    }
+    EXPECT_LE(moves, 32u) << "the dense table reallocated " << moves << " times for " << kInserts
+                          << " sequential inserts: growth is by size, not by capacity, and every subscription "
+                             "of a new id copies the whole table";
+    for (std::uint32_t i = 0; i < kInserts; i += 997) {
+        const int *v = table.find(static_cast<std::uint16_t>(i));
+        ASSERT_NE(v, nullptr);
+        EXPECT_EQ(*v, static_cast<int>(i == 0 ? 1 : i));
+    }
+}

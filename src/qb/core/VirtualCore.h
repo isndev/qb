@@ -708,14 +708,14 @@ VirtualCore::registerEvent(_Actor &actor) noexcept {
     // sent to a default/NotFound ActorId.
     if (unlikely(!actor.id().is_valid()))
         return;
-    QB_LOG_INFO("Actor(" << actor.id() << ") subscribed to " << ActorProxy::getName<_Event>());
+    QB_LOG_VERB("Actor(" << actor.id() << ") subscribed to " << ActorProxy::getName<_Event>());
     _router.subscribe<_Event>(actor);
 }
 
 template <typename _Event, typename _Actor>
 void
 VirtualCore::unregisterEvent(_Actor &actor) noexcept {
-    QB_LOG_INFO("Actor(" << actor.id() << ") unsubscribed to " << ActorProxy::getName<_Event>());
+    QB_LOG_VERB("Actor(" << actor.id() << ") unsubscribed to " << ActorProxy::getName<_Event>());
     _router.unsubscribe<_Event>(actor);
 }
 

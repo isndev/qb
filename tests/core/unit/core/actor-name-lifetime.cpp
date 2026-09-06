@@ -13,9 +13,9 @@
  *
  * `Actor::name` is a bare `const char *`, set once from `ActorProxy::getName<T>()` and read
  * back by `Actor::getName()` and by both `operator<<(…, Actor const&)` overloads — which is
- * what `VirtualCore::removeActor()` streams (`QB_LOG_INFO("Delete " << *actor)`). Under
- * `QB_WITH_LOGGING` that read is live: nanolog's default level is 0, so `is_logged(INFO)` is
- * true and the actor really is formatted.
+ * what `VirtualCore::removeActor()` streams (`QB_LOG_VERB("Delete " << *actor)`). Under
+ * `QB_WITH_LOGGING` that read is live whenever the level admits VERBOSE — a non-`NDEBUG`
+ * build, or `qb::io::log::setLevel(VERBOSE)` — and the actor really is formatted.
  *
  * On MSVC that pointer is `typeid(T).name()` — static storage, valid for the whole program,
  * the same contract `Event.h` documents for its type-name registry ("a link-time constant
