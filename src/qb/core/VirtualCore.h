@@ -153,12 +153,36 @@ private:
     /// Widest event a destination mailbox ring can ever accept — see VirtualCore.cpp.
     static constexpr std::size_t kMaxDeliverableBuckets = SharedCoreCommunication::MaxRingEvents;
     // Types
-    using Mailbox         = SharedCoreCommunication::Mailbox;
-    using EventBuffer     = std::array<EventBucket, MaxRingEvents>;
-    using ActorMap        = qb::unordered_map<ActorId, std::unique_ptr<Actor>>;
-    using CallbackMap     = qb::unordered_map<ActorId, ICallback *>;
-    using PipeMap         = std::vector<VirtualPipe>;
-    using RemoveActorList = qb::unordered_set<ActorId>;
+    using Mailbox     = SharedCoreCommunication::Mailbox;
+    using EventBuffer = std::array<EventBucket, MaxRingEvents>;
+    /**
+     * @brief The actor registry: one slot per service id, indexed by `ActorId::sid()`.
+     * @details A dense vector, not a hash map. Every id this core hands out comes from
+     * `ServiceIdPool` -- a 16-bit index the pool recycles lowest-first -- so the registry
+     * is a direct-mapped table: `_actors[sid]` is the actor, `nullptr` is an empty slot,
+     * and `__actor_slot__()` is the one lookup (an O(1) index plus an id compare that
+     * refuses another core's id). The node-based `qb::unordered_map` it replaces cost one
+     * `malloc` + one `free` and two hashed probes per actor lifetime; savina/fib creates and
+     * destroys 57 313 actors inside one measured window, where that was measurable. Actor
+     * addresses are unchanged by growth -- the actor lives on the heap behind its
+     * `unique_ptr`; only the slot moves -- so every raw pointer `findActor<T>()` ever
+     * handed out stays as valid as it was. The live count is `_actor_count`: the vector's
+     * `size()` is the highest sid ever seen plus one, not the population.
+     */
+    using ActorMap    = std::vector<std::unique_ptr<Actor>>;
+    using CallbackMap = qb::unordered_map<ActorId, ICallback *>;
+    using PipeMap     = std::vector<VirtualPipe>;
+    /**
+     * @brief The kill queue: ids `killActor()` received since the last reap, in order.
+     * @details A vector, not a set. `Actor::kill()` is the only producer and it enqueues
+     * an id at most once -- it returns early when `_alive` is already false -- so the
+     * set's deduplication was paying a hashed node allocation per kill for an invariant the
+     * producer already holds. The reap loop swaps the queue into `_actor_remove_batch` and
+     * walks the batch, so a `kill()` issued from a destructor lands in a fresh queue and
+     * never in the vector being walked (see `_actor_remove_batch`).
+     */
+    using RemoveActorList = std::vector<ActorId>;
+    using DyingActorSet   = qb::unordered_set<ActorId>;
 
     /**
      * @class ServiceIdPool
@@ -277,6 +301,7 @@ private:
     // actors management
     AvailableIdList _ids;
     ActorMap        _actors;
+    std::size_t     _actor_count = 0; ///< live slots in `_actors` (its size() is the sid high-water mark)
     CallbackMap     _actor_callbacks;
     /**
      * @brief Flat, cache-friendly snapshot of registered callbacks.
@@ -284,14 +309,17 @@ private:
      * Maintained in sync with `_actor_callbacks` on register / unregister so the
      * workflow loop can iterate without rebuilding a thread-local vector on every
      * iteration (finding 2.6). Each entry pairs the callback pointer (owned by the
-     * actor instance) with the actor id, so the workflow loop can skip the
-     * callback of an actor that was killed earlier in the *same* dispatch pass
-     * (consistent with the event-kill path, which skips the whole callback phase
-     * via `_actor_to_remove`).
+     * actor instance) with the actor itself and its id, so the workflow loop can skip
+     * the callback of an actor that was killed earlier in the *same* dispatch pass by
+     * reading `actor->is_alive()` -- `Actor::kill()` is the only writer of that flag,
+     * and the object is guaranteed to outlive the pass (destruction is deferred to the
+     * reap phase). Consistent with the event-kill path, which skips the whole callback
+     * phase via `_actor_to_remove`.
      */
     struct CallbackEntry {
-        ICallback *cb;
-        ActorId    id;
+        ICallback   *cb;
+        Actor const *actor;
+        ActorId      id;
     };
     std::vector<CallbackEntry> _callback_list;
     RemoveActorList            _actor_to_remove;
@@ -300,10 +328,9 @@ private:
      * @details
      * `removeActor()` destroys the actor, which runs arbitrary user code (its destructor,
      * and any referenced actor it owns). That code may `kill()` a *different* actor, which
-     * re-enters `killActor()` → `_actor_to_remove.insert()`. Iterating `_actor_to_remove`
-     * directly therefore mutates the container mid-iteration: a growth rehash of
-     * `qb::unordered_set` rebuilds the bucket array and invalidates every live iterator
-     * (node-based storage keeps *references* valid, not iterators), and even where the
+     * re-enters `killActor()` → `_actor_to_remove.push_back()`. Iterating `_actor_to_remove`
+     * directly therefore mutates the container mid-iteration: a growth reallocation of the
+     * vector moves every element and invalidates every live iterator, and even where the
      * iterator survives, an id landing behind the cursor is silently dropped by the
      * subsequent `clear()`, leaving a `!is_alive()` actor in `_actors` forever so the core
      * never terminates. Neither half depends on the build mode. The loop swaps into this buffer
@@ -340,7 +367,7 @@ private:
         std::vector<std::vector<EventBucket>> stash;               ///< FIFO of byte-copied inbound unicast events
     };
     qb::unordered_map<ActorId, Activation> _activating;
-    RemoveActorList                        _dying_with_frame; ///< killed while their onInit frame was still suspended
+    DyingActorSet                          _dying_with_frame; ///< killed while their onInit frame was still suspended
 
     /// Per-actor stash cap: a wedged-in-init actor must not OOM the core.
     static constexpr std::size_t kActivationStashCap = 4096u;
@@ -587,6 +614,22 @@ private:
     [[nodiscard]] bool isActorAlive(ActorId id) const noexcept;
 
     void killActor(ActorId id) noexcept;
+    /**
+     * @brief The registry lookup: the actor registered on THIS core under exactly `id`.
+     * @return The actor, or `nullptr` for an empty slot, a sid past the high-water mark, or
+     *         an id whose core index is not this core's (the slot is keyed by sid alone, so
+     *         the compare is what keeps a foreign id from resolving to a local actor).
+     * @details Phase-blind: hands back Activating and killed-not-yet-reaped actors alike.
+     *          The phase gates live in the callers (`findActor`, `isActorAlive`).
+     */
+    [[nodiscard]] Actor *
+    __actor_slot__(ActorId const id) const noexcept {
+        const std::size_t sid = id._service_id;
+        if (sid >= _actors.size())
+            return nullptr;
+        Actor *const raw = _actors[sid].get();
+        return (raw != nullptr && raw->id() == id) ? raw : nullptr;
+    }
 
     template <typename _Actor>
     void registerCallback(_Actor &actor) noexcept;
@@ -740,10 +783,9 @@ _Actor *
 VirtualCore::findActor(ActorId const id) const noexcept {
     if (!id.is_valid())
         return nullptr;
-    const auto it = _actors.find(id);
-    if (it == _actors.end())
+    Actor *raw = __actor_slot__(id);
+    if (raw == nullptr)
         return nullptr;
-    Actor *raw = it->second.get();
     // Phase-aware: an actor whose async `onInit()` is still in flight (Activating) is NOT
     // yet handed out — a handle resolves it only once `is_active()`. For the sync-init
     // majority `is_active() == is_alive()`, so this is unchanged for them.
@@ -759,8 +801,8 @@ VirtualCore::findActor(ActorId const id) const noexcept {
 template <typename _ServiceActor>
 _ServiceActor *
 VirtualCore::getService() const noexcept {
-    const auto &it = _actors.find(ActorId(_ServiceActor::ServiceIndex, _index));
-    if (it == _actors.end()) {
+    Actor *const raw = __actor_slot__(ActorId(_ServiceActor::ServiceIndex, _index));
+    if (raw == nullptr) {
         QB_LOG_CRIT("Failed to get Service[" << typeid(_ServiceActor).name() << "]"
                                              << " in Core(" << _index << ")"
                                              << " : does not exist");
@@ -778,7 +820,7 @@ VirtualCore::getService() const noexcept {
     // kills itself from a handler stays reachable for the rest of that turn — and both are
     // the caller's problem: what you get back may be mid-init or dying. Ask it (an event, or
     // `co_await qb::ask(...)`) rather than reading its state if that matters.
-    return dynamic_cast<_ServiceActor *>(it->second.get());
+    return dynamic_cast<_ServiceActor *>(raw);
 }
 
 template <typename _Actor>
@@ -792,7 +834,7 @@ VirtualCore::registerCallback(_Actor &actor) noexcept {
     auto [it, inserted] = _actor_callbacks.insert({actor.id(), &actor});
     if (inserted) {
         // Maintain the flat snapshot for the workflow loop (2.6).
-        _callback_list.push_back({&actor, actor.id()});
+        _callback_list.push_back({&actor, &actor, actor.id()});
     }
 }
 

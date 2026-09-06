@@ -787,7 +787,11 @@ public:
     subscribe(_Handler &handler) {
         const auto id = _RawEvent::template type_to_id<_Event>();
         if (auto *const entry = _registered_events.find(id)) {
-            dynamic_cast<EventResolver<_Event> *>(entry->get())->subscribe(handler);
+            // The entry keyed by `type_to_id<_Event>()` was created by this function with
+            // `EventResolver<_Event>` and nothing else ever writes the table: a static_cast
+            // is exact, and the RTTI walk it replaces ran once per subscription -- seven
+            // per actor -- in an actor's lifetime cost.
+            static_cast<EventResolver<_Event> *>(entry->get())->subscribe(handler);
         } else {
             auto resolver = std::make_unique<EventResolver<_Event>>();
             resolver->subscribe(handler);
@@ -1097,7 +1101,9 @@ public:
 
         const auto id = _RawEvent::template type_to_id<_Event>();
         if (auto *const entry = _registered_events.find(id)) {
-            dynamic_cast<EventResolver<_Event> *>(entry->get())->subscribe(handler);
+            // Same invariant as the typed memh's subscribe above: the table is keyed by the
+            // exact event type and only ever holds `EventResolver<_Event>` under that key.
+            static_cast<EventResolver<_Event> *>(entry->get())->subscribe(handler);
         } else {
             auto resolver = std::make_unique<EventResolver<_Event>>();
             resolver->subscribe(handler);

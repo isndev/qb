@@ -392,7 +392,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   event even for a same-core `push`; `qb::string<N>`, `std::vector` and smart pointers are fine.
   _(VirtualCore.cpp `__flush_all__`; segmented_pipe.h `recycle_back`)_
 - **`reply`/`forward` consume the event and need a non-const `on(Event&)`;** broadcast events can't be
-  replied/forwarded. _(Actor.cpp:416-434)_
+  replied/forwarded. _(Actor.cpp:421-439)_
 - **`addRefActor<T>()` returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`);**
   `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating,
   after a failed init, or once it died — never a dangling pointer. Send to `handle.id()` any time; gate
@@ -403,8 +403,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
-  body and answer through an event. _(`spawn_detached` Actor.h:1213 / VirtualCore.h:1202; `spawn` Actor.h:1250 /
-  VirtualCore.h:1215)_
+  body and answer through an event. _(`spawn_detached` Actor.h:1213 / VirtualCore.h:1244; `spawn` Actor.h:1250 /
+  VirtualCore.h:1257)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
@@ -416,7 +416,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:572-588; VirtualCore.h:661-673; VirtualCore.cpp:1135-1142)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:572-588; VirtualCore.h:704-716; VirtualCore.cpp:1144-1151)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:62-67, :82-83, :91-95)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor

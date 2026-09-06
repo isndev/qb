@@ -523,7 +523,7 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
 #endif
 #endif
     }
-    _actor_to_remove.reserve(_actors.size());
+    _actor_to_remove.reserve(_actor_count);
     // Publish this thread's io loop to the mailbox so a producer can end a park taken INSIDE
     // it (`Mailbox::wait(listener &)`, below in `__workflow__`). Before the start barrier,
     // hence before any peer can enqueue — and withdrawn by `Main::start_thread`'s exit guard
@@ -537,9 +537,10 @@ VirtualCore::__init__actors__() {
     // Snapshot the actor pointers first: driving an `onInit()` may itself create
     // referenced actors (`addRefActor`), mutating `_actors` mid-iteration.
     std::vector<Actor *> actors_to_init;
-    actors_to_init.reserve(_actors.size());
-    for (const auto &actor : _actors | std::views::values)
-        actors_to_init.push_back(actor.get());
+    actors_to_init.reserve(_actor_count);
+    for (const auto &slot : _actors)
+        if (slot)
+            actors_to_init.push_back(slot.get());
     for (auto *actor : actors_to_init) {
         qb::io::async::task<bool> init = actor->onInit();
         switch (__drive_init__(*actor, init)) {
@@ -656,9 +657,9 @@ VirtualCore::__pump_activations__() noexcept {
             // (its cancellation-aware awaiters throw `cancelled_error`); it then reports
             // `done()` on a later pump and is finalized as a failure below.
             act.cancelling = true;
-            if (const auto ait = _actors.find(id); ait != _actors.end()) {
-                QB_LOG_WARN(*ait->second << " activation deadline expired — cancelling onInit");
-                ait->second->__cancel_coro_scope__();
+            if (Actor *const actor = __actor_slot__(id)) {
+                QB_LOG_WARN(*actor << " activation deadline expired — cancelling onInit");
+                actor->__cancel_coro_scope__();
             }
         }
     }
@@ -681,8 +682,8 @@ VirtualCore::__pump_activations__() noexcept {
         // Free the onInit frame now that it has fully unwound (no awaiter references it).
         act.init = qb::io::async::task<bool>{};
 
-        const auto ait = _actors.find(id);
-        if (dying || !ok || ait == _actors.end()) {
+        Actor *const actor = __actor_slot__(id);
+        if (dying || !ok || actor == nullptr) {
             // Killed during init, failed init, or already gone → complete teardown now
             // (the deferred-destroy: the actor outlived its own coroutine frame).
             // Dispose the never-replayed stash so any non-trivial event payload (std::string /
@@ -693,16 +694,16 @@ VirtualCore::__pump_activations__() noexcept {
                 auto *ev = reinterpret_cast<Event *>(buckets.data());
                 _router.dispose(*ev);
             }
-            if (ait != _actors.end()) {
+            if (actor != nullptr) {
                 if (!dying && !ok)
-                    QB_LOG_CRIT(*ait->second << " async onInit failed — removing");
+                    QB_LOG_CRIT(*actor << " async onInit failed — removing");
                 removeActor(id);
             }
             continue;
         }
         // Success: flip Active, then replay the stashed inbound unicast FIFO.
-        ait->second->_activated = true;
-        QB_LOG_VERB(*ait->second << " activated");
+        actor->_activated = true;
+        QB_LOG_VERB(*actor << " activated");
         for (auto &buckets : act.stash) {
             auto *ev             = reinterpret_cast<Event *>(buckets.data());
             ev->state.bits.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
@@ -719,7 +720,7 @@ VirtualCore::__pump_activations__() noexcept {
 
 void
 VirtualCore::__workflow__() {
-    QB_LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
+    QB_LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actor_count) << " actor(s)");
     while (likely(true)) {
         ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent; also keys the `time()` sample
 
@@ -778,7 +779,7 @@ VirtualCore::__workflow__() {
         // deadlines / finish deferred destroys). empty()-guarded: free when idle.
         if (unlikely(!_activating.empty())) {
             __pump_activations__();
-            if (unlikely(_actors.empty()))
+            if (unlikely(_actor_count == 0))
                 break; // the last actor was an activating-then-dying one
         }
 
@@ -810,8 +811,10 @@ VirtualCore::__workflow__() {
                 // removeActors phase below — so this is purely a semantics fix:
                 // a killed actor must not get another tick, matching the
                 // event-kill path which skips the whole callback phase. The
-                // empty() fast-path keeps the common (nothing killed) case free.
-                if (likely(_actor_to_remove.empty()) || !_actor_to_remove.count(entry.id))
+                // empty() fast-path keeps the common (nothing killed) case free;
+                // `is_alive()` is the kill flag itself (`Actor::kill()` is its only
+                // writer), read off an object the reap below has not reached yet.
+                if (likely(_actor_to_remove.empty()) || entry.actor->is_alive())
                     entry.cb->on(loop_ev);
             }
         }
@@ -819,22 +822,22 @@ VirtualCore::__workflow__() {
         if (unlikely(!_actor_to_remove.empty())) {
         removeActors:
             // Reap dead actors. `removeActor()` destroys the actor, running user code that may `kill()`
-            // ANOTHER actor and so re-enter `killActor()` → `_actor_to_remove.insert()`. The scratch
-            // buffer keeps that re-entrant insert off the container being iterated (a growth rehash of
-            // the release flat set reallocates its entries and invalidates a live iterator) and keeps
+            // ANOTHER actor and so re-enter `killActor()` → `_actor_to_remove.push_back()`. The scratch
+            // buffer keeps that re-entrant push off the container being iterated (a growth
+            // reallocation of the vector moves its elements and invalidates a live iterator) and keeps
             // late kills from being discarded by the clear (which stranded a `!is_alive()` actor in
-            // `_actors`, so `_actors.empty()` never held and the core never terminated). Terminates:
-            // only that user code refills the set and it runs at most once per actor — once an id has
+            // `_actors`, so the live count never reached zero and the core never terminated). Terminates:
+            // only that user code refills the queue and it runs at most once per actor — once an id has
             // left `_actors`, `removeActor()` destroys nothing — so a pass that destroys nothing ends it.
             // Pinned by `KillDuringReap.ActorKilledFromAnotherDestructorIsStillReaped`.
             while (!_actor_to_remove.empty()) {
                 _actor_remove_batch.clear();
                 _actor_remove_batch.swap(_actor_to_remove);
-                for (auto const &actor : _actor_remove_batch)
+                for (auto const actor : _actor_remove_batch)
                     removeActor(actor);
             }
             _actor_remove_batch.clear(); // drop the last batch's ids (capacity is kept for reuse)
-            if (_actors.empty()) {
+            if (_actor_count == 0) {
                 break;
             }
         }
@@ -984,12 +987,18 @@ VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) no
     const ActorId id    = actor.id();
     // Reject duplicates *before* driving `onInit()`: a suspended (async) init must never
     // coexist with an append failure, otherwise its still-live frame would be orphaned.
-    if (unlikely(_actors.find(id) != _actors.end())) {
+    if (unlikely(__actor_slot__(id) != nullptr)) {
         QB_LOG_CRIT("Error Cannot add Service Actor multiple times" << actor);
         return ActorId::NotFound;
     }
     if (initActor(actor, doInit).is_valid()) {
-        _actors.emplace(id, std::move(actor_ptr));
+        // Direct-mapped by sid; grow the slot table geometrically (never past the 16-bit id
+        // space) so a burst of fresh ids costs O(1) amortised, not one reallocation each.
+        const std::size_t sid = id._service_id;
+        if (sid >= _actors.size())
+            _actors.resize(std::min<std::size_t>(std::max<std::size_t>(sid + 1, _actors.size() * 2), ServiceIdPool::kBits + 1));
+        _actors[sid] = std::move(actor_ptr);
+        ++_actor_count;
         QB_LOG_VERB("New " << actor);
         return id;
     }
@@ -1004,8 +1013,8 @@ VirtualCore::removeActor(ActorId const id) noexcept {
     // frame reports `done()`. Re-entry from the pump (after the frame unwound and the
     // activation was dropped) falls straight through to the normal teardown below.
     if (const auto ait = _activating.find(id); unlikely(ait != _activating.end())) {
-        if (const auto act = _actors.find(id); act != _actors.end())
-            act->second->__cancel_coro_scope__();
+        if (Actor *const act = __actor_slot__(id))
+            act->__cancel_coro_scope__();
         if (!ait->second.init.done()) {
             _dying_with_frame.insert(id);
             return;
@@ -1015,9 +1024,8 @@ VirtualCore::removeActor(ActorId const id) noexcept {
     }
     __unregisterCallback(id);
     unregisterEvents(id);
-    const auto it = _actors.find(id);
-    if (it != _actors.end()) {
-        auto &actor = it->second;
+    if (__actor_slot__(id) != nullptr) {
+        auto &actor = _actors[id._service_id]; // the owning slot; reset() below runs ~Actor()
         // Catch-all cancel-on-destroy: every destruction path funnels through here
         // (kill, onInit failure, engine shutdown). Cancelling the scope wakes scoped
         // coroutines so they unwind cleanly; idempotent with kill()'s cancel.
@@ -1032,7 +1040,8 @@ VirtualCore::removeActor(ActorId const id) noexcept {
                                    << " active coroutines - coroutines must not access actor state!");
         }
         QB_LOG_VERB("Delete " << *actor);
-        _actors.erase(it);
+        actor.reset(); // ~Actor() runs here; the slot stays, empty, for the id's next owner
+        --_actor_count;
         // Only non-service ids are recycled into the pool: a ServiceActor's
         // id is assigned at static init (see 2.3) and must remain reserved
         // for the lifetime of the process to keep `ServiceIndex` stable.
@@ -1047,16 +1056,16 @@ bool
 VirtualCore::isActorAlive(ActorId const id) const noexcept {
     if (!id.is_valid())
         return false;
-    const auto it = _actors.find(id);
+    Actor const *const actor = __actor_slot__(id);
     // Same phase oracle as findActor<T>(): an actor whose async onInit() is still in flight is
     // addressable but not yet active, and one that has been killed is skipped even though its
     // destruction is deferred to the reap phase.
-    return it != _actors.end() && it->second->is_active();
+    return actor != nullptr && actor->is_active();
 }
 
 void
 VirtualCore::killActor(ActorId const id) noexcept {
-    _actor_to_remove.insert(id);
+    _actor_to_remove.push_back(id);
 }
 void
 VirtualCore::__unregisterCallback(ActorId const id) noexcept {

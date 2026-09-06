@@ -397,6 +397,11 @@ Actor::is_actor_alive(ActorId const id) const noexcept {
 
 void
 Actor::kill() const noexcept {
+    // Idempotent: the second kill() of one actor has nothing left to do, and returning here
+    // is what lets the core keep its kill queue as a plain vector -- one entry per actor,
+    // no set to deduplicate against. `_alive` has no other writer.
+    if (!_alive)
+        return;
     _alive = false;
     // Cancel-on-kill: wake any scoped coroutine awaiting a cancellation-aware op so it
     // unwinds promptly instead of blocking on a long timeout/I/O. Idempotent + no-op if

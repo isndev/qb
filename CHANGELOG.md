@@ -57,6 +57,26 @@ policy.
   core (CAF 66 ms, raw-thread floor 1.7 ms on the same host), and a real application creating actors
   at that rate paid the same. `qb::io::log::setLevel(qb::io::log::Level::VERBOSE)` shows them again.
 
+- **The per-core actor registry is a dense vector, and the kill queue is a vector too.**
+  `VirtualCore::ActorMap` was `qb::unordered_map<ActorId, std::unique_ptr<Actor>>` and
+  `_actor_to_remove` a `qb::unordered_set<ActorId>`; every actor lifetime paid two hashed inserts,
+  two hashed erases, a node `malloc`/`free`, and every `findActor` / `isActorAlive` / pump lookup a
+  hashed probe. The registry is now `std::vector<std::unique_ptr<Actor>>` indexed by the id's
+  16-bit service slot (`__actor_slot__(id)` is an index plus an id compare, so a recycled slot
+  never answers for its previous tenant), grown by doubling and capped at `ServiceIdPool::kBits + 1`,
+  with `_actor_count` as the live count; `killActor` is one `push_back` (an actor's `kill()` now
+  returns early once `_alive` is false, so an id is enqueued at most once and the queue needs no
+  set semantics), and `_dying_with_frame` keeps the set it needs. The router's `subscribe` also
+  drops a `dynamic_cast` per subscription: `_registered_events` is keyed by the event's type id, so
+  the entry it finds IS an `EventResolver<_Event>` and a `static_cast` says the same thing without
+  the RTTI walk. Measured on the same quiet Linux session (WSL2 Debian, g++ 14.2 `-O3`, two pinned
+  cores), savina/fib n=23 — 57 313 actors created and destroyed inside one window — went from
+  **15.4 ms to 8.34 ms** per repetition (p50 of 9, three interleaved A/B runs each within 1 %; CAF
+  1.1.0 37.4 ms, raw-thread floor 3.53 ms on that session), and a static-topology shape
+  (savina/chameneos) is unchanged at 10.8 ms. Suite green on Linux release, ASan and TSan (191/191).
+  `VirtualCore::ActorMap` is no longer an example of the node-map pointer-stability contract
+  (readme `containers.md`), because it never needed it: the actor lives behind its `unique_ptr`.
+
 - **Google Benchmark floor is 1.9.5** (`QB_BUILD_BENCHMARKS=ON` only): the pinned fetch moves
   `v1.9.2` → `v1.9.5`, and a system package is accepted only from 1.9.5 — the release that made
   `benchmark::Benchmark` public. The benchmark sources name that public type; until now they
