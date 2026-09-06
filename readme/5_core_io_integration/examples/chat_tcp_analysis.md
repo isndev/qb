@@ -544,7 +544,7 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 >
 > `spawn` registers the coroutine in the actor's cancellation scope
 > (`qb/src/qb/core/Actor.h:1249-1250`), and `Actor::kill()` cancels that scope
-> (`qb/src/qb/core/Actor.cpp:281-287`), so the wait simply stops existing. Note that this is not a
+> (`qb/src/qb/core/Actor.cpp:399-405`), so the wait simply stops existing. Note that this is not a
 > search-and-replace: a coroutine may not touch actor state after a `co_await`, so the body captures
 > only the delay, by value, and everything that reads `_should_reconnect` or calls `connect()` moved
 > into the `ReconnectTickEvent` handler. That is the shape — roughly six extra lines per actor, not

@@ -150,6 +150,36 @@ policy.
 - **`spsc::ringbuffer` lays its producer and consumer indices out on separate cache lines and
   each side keeps a private snapshot of the peer's index**, so an uncontended push or pop
   touches one line and re-reads the peer only when its snapshot says full or empty.
+- **The `qb::ask` and coroutine hot paths allocate nothing per operation that a cancel would
+  not need.** `cancellation_token::cancel()` fires its callbacks in place and
+  `remove_on_cancel()` neuters an entry rather than erasing it while the walk is live, which
+  makes the guarantee every awaiter relied on — *a callback never runs after `remove_on_cancel`
+  returned, even mid-cancel* — hold without help; the `std::shared_ptr<bool>` liveness flag
+  that `ask_awaiter`, `cancellation_awaiter`, the semaphore park, `discovery_awaiter` and
+  `stream_next_awaiter` each carried into their callback (one control block plus a closure over
+  `std::function`'s small buffer, per `qb::ask`, per park, per `check_cancelled`) is gone.
+  `ask_awaiter` holds its token by reference — `qb::ask()` is its only construction site and
+  the by-value context lives in the same frame — and registers its response type once per
+  thread per `E` instead of per ask. The per-core ask table is a flat open-addressing map
+  (Fibonacci hash, linear probing, backward-shift deletion) rather than an `unordered_map`, and
+  the coroutine scheduler's three `std::unordered_set<void*>` (`in_flight_`, `owned_frames_`,
+  `suspended_coroutines_`) and its `std::deque` ready queue are a `flat_ptr_set` and a
+  power-of-two `ready_ring` — MSVC's deque block is one 16-byte item, so every push was a
+  `malloc`. Measured quiet-host, alternating A/B, medians of five: ask round-trip
+  879–919 → 734–743 ns same-core on Windows/MSVC (WSL2/g++-14 990 → 902), `ask_all` over 8
+  responders 7.44 → 4.18 µs (WSL2 4.86 → 3.42), `spawn` latency at 1000 in flight 270 → 185 µs
+  (WSL2 378 → 152), 512 parked coroutines released through a semaphore / mutex / rwlock / latch
+  2.7–3.7× faster on both platforms, `parallel_map` 1024/32 541 → 366 µs (WSL2 215 → 121),
+  `shared_task` fan-out 512 143 → 53 µs (WSL2 49.2 → 20.4). Nothing on the per-item
+  `async_stream` path changed and its cells move ±3–9 % in both directions across the two
+  compilers.
+- **Two coroutine benchmark harness defects fixed, so those cells now measure the work.** Six
+  actor harnesses summed a mean-RTT counter with `kAvgIterations` semantics they never asked
+  for (`record_mean_rtt_counter` in `shared/BenchmarkIterationSink.h` is the one accumulator
+  now), and the four qb-io coroutine harnesses' `drain_until` pumped with `run_for(1ms)`, which
+  slept a millisecond per trip (~5 ms at Windows' timer granularity) *including* the trip that
+  had just satisfied the predicate — every cell reported 5–6 ms wall and 0 CPU time. The pump is
+  `run(EVRUN_NOWAIT)` now; `Semaphore/512` reads 36.7 µs on Windows where it read 127.
 
 ### Fixed
 

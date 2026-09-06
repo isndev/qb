@@ -104,8 +104,7 @@ run_topology_benchmark(benchmark::State &state, TopologyMetrics const &metrics, 
 
         const auto lat                    = qb::bench::last_latency_stats_snapshot();
         state.counters["latency_samples"] = static_cast<double>(lat.samples);
-        if (lat.samples)
-            state.counters["mean_rtt_ns"] = benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
+        qb::bench::record_mean_rtt_counter(state, lat);
     }
 }
 

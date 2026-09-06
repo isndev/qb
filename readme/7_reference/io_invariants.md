@@ -105,7 +105,7 @@ registry, or as a member — never relocate them.
   (`src/qb/io/async/coroutine/utils.h:288`, `:228`). A second, deeper
   per-scheduler `in_run_ready_` guard inside `run_ready()` itself asserts in
   debug and returns `0` in release should a nested drain still be reached
-  (`src/qb/io/async/coroutine/scheduler.h:520-529`).
+  (`src/qb/io/async/coroutine/scheduler.h:656-665`).
 - `input` / `io` add a second, single-thread re-entrance guard: `on(event::io)`
   returns immediately when `_on_message` is already set, preventing recursive
   message processing within the same thread
@@ -289,14 +289,14 @@ with I/O lifetime are:
 
 - The entire layer is **strictly mono-thread (cooperative)**. One
   `CoroutineScheduler` belongs to exactly one thread — the VirtualCore worker or
-  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:153-157`).
+  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:154-158`).
   Resuming or pushing from another thread is undefined behavior; cross-thread
   wake-ups go through the actor mailbox.
 - A `thread_local` scheduler is established automatically when a
   `qb::io::async::listener` is created on the thread. `schedule_via_current()`
   asserts in debug and silently no-ops in release if no scheduler exists,
   leaving any queued waiter permanently unresumed
-  (`src/qb/io/async/coroutine/scheduler.h:887-901`).
+  (`src/qb/io/async/coroutine/scheduler.h:1104-1118`).
 - **Awaiters must remain alive until `await_resume()`**
   (`src/qb/io/async/coroutine/awaiter.h:30-33`). Never create a temporary
   awaiter that goes out of scope before resumption; watchers are stopped in
@@ -305,16 +305,16 @@ with I/O lifetime are:
 - `~CoroutineScheduler` destroys only the ready-queue and deferred-completed
   frames it owns. **Suspended frames are intentionally leaked**, because their
   libev watchers still reference them
-  (`src/qb/io/async/coroutine/scheduler.h:190-194`). **Stop the event loop
+  (`src/qb/io/async/coroutine/scheduler.h:342-346`). **Stop the event loop
   before destroying the scheduler**, or those watchers fire against freed
   frames.
 - `spawn()` takes ownership of the coroutine handle and runs it to completion
   even if the original `task` object is destroyed
-  (`src/qb/io/async/coroutine/scheduler.h:263-278`). Pass a callable to `spawn`
+  (`src/qb/io/async/coroutine/scheduler.h:415-430`). Pass a callable to `spawn`
   **without invoking it** (`spawn(f)`, not `spawn(f())`): creating a coroutine
   from a temporary lambda with reference or loop-variable captures dangles after
   the first suspension. `spawn(Callable)` moves the closure into an owning frame
-  (`src/qb/io/async/coroutine/scheduler.h:429-435`).
+  (`src/qb/io/async/coroutine/scheduler.h:569-575`).
 
 ---
 

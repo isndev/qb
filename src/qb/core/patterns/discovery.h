@@ -96,7 +96,6 @@ struct discovery_awaiter {
     std::uint64_t                              id;
     ev_timer                                   timer{};
     bool                                       timer_started = false;
-    std::shared_ptr<bool>                      alive         = std::make_shared<bool>(true);
     qb::io::async::cancellation_token::id_type cancel_id     = 0;
 
     discovery_awaiter(std::shared_ptr<discovery_state> s, qb::duration t, std::uint64_t i)
@@ -106,8 +105,6 @@ struct discovery_awaiter {
     discovery_awaiter(const discovery_awaiter &)            = delete;
     discovery_awaiter &operator=(const discovery_awaiter &) = delete;
     ~discovery_awaiter() {
-        if (alive)
-            *alive = false;
         stop_timer();
         st->token.remove_on_cancel(cancel_id);
         qb::detail::ask_unregister(id); // idempotent; covers a destroy-without-resume (matches ask_awaiter)
@@ -128,11 +125,7 @@ struct discovery_awaiter {
             ev_timer_start(loop, &timer);
             timer_started = true;
         }
-        auto a    = alive;
-        cancel_id = st->token.on_cancel([this, a]() {
-            if (*a)
-                st->wake();
-        });
+        cancel_id = st->token.on_cancel([this]() { st->wake(); });
     }
     void
     await_resume() {

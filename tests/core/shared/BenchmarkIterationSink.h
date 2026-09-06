@@ -32,6 +32,7 @@
 
 #include <cstdint>
 #include <mutex>
+#include <benchmark/benchmark.h>
 
 #include "BenchmarkCores.h"
 
@@ -62,6 +63,24 @@ record_last_latency(double mean_ns, std::uint64_t samples) {
 last_latency_stats_snapshot() {
     const std::scoped_lock lock(g_last_latency_mutex);
     return g_last_latency_stats;
+}
+
+/**
+ * @brief Publish the run's mean round-trip as the `mean_rtt_ns` counter, once per iteration.
+ * @details ACCUMULATES under `kAvgIterations`, so the reported figure is the mean of the
+ *          per-iteration means. Every latency harness used to assign a fresh
+ *          `Counter(mean, kAvgIterations)` each iteration: that overwrote the value with the
+ *          LAST iteration's mean and then had Google Benchmark divide it by the iteration
+ *          count — a reported 59 ns for a measured 1337 ns `qb::ask` round trip at 23
+ *          iterations, only visible once someone ran `--benchmark_min_time=1x`.
+ */
+inline void
+record_mean_rtt_counter(benchmark::State &state, LastLatencyStats const &lat) {
+    if (!lat.samples)
+        return;
+    auto &c = state.counters["mean_rtt_ns"];
+    c.flags = benchmark::Counter::kAvgIterations;
+    c.value += lat.mean_round_trip_ns;
 }
 
 } // namespace qb::bench

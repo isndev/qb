@@ -1511,7 +1511,8 @@ struct ask_slot_guard {
 
 /**
  * @brief Register an event type as ask-correlated (carries `AskEvent::correlation_id`).
- * @details Called once per exchange type by `qb::ask<E>`, on the asker's worker thread. The
+ * @details Called once per exchange type per worker thread by `qb::ask<E>` (the registry is
+ *          thread_local, and so is the awaiter's "already registered" guard). The
  *          activation dispatch gate consults this set so an in-flight ask **reply** can reach
  *          an actor that is still *Activating* (a `co_await qb::ask(...)` inside `onInit`)
  *          instead of being stashed — which would deadlock the init on its own reply.
@@ -1543,28 +1544,36 @@ void ask_register_type(qb::Event::id_type type) noexcept;
  */
 template <typename E>
 struct ask_awaiter {
-    ask_slot                          slot{};
-    std::uint64_t                     id;
-    qb::duration                      timeout;
-    qb::io::async::cancellation_token token;
-    std::optional<E>                  result;
-    std::coroutine_handle<>           cont;
-    ev_timer                          timer{};
-    bool                              timer_started               = false;
+    ask_slot      slot{};
+    std::uint64_t id;
+    qb::duration  timeout;
+    /// The asker's scope token, by REFERENCE: the only construction site is `qb::ask()`, whose
+    /// by-value `ctx` parameter lives in the same coroutine frame as this awaiter and outlives it.
+    /// A by-value copy cost an atomic refcount pair per ask for nothing.
+    const qb::io::async::cancellation_token &token;
+    std::optional<E>                         result;
+    std::coroutine_handle<>                  cont;
+    ev_timer                                 timer{};
+    bool                                     timer_started        = false;
     enum class kind { pending, ok, timed_out, cancelled } outcome = kind::pending;
-    std::shared_ptr<bool>                      alive              = std::make_shared<bool>(true);
     qb::io::async::cancellation_token::id_type cancel_id          = 0; ///< scope on_cancel reg; removed in finish().
 
-    ask_awaiter(std::uint64_t aid, qb::ActorId owner, qb::duration t, qb::io::async::cancellation_token tok)
+    ask_awaiter(std::uint64_t aid, qb::ActorId owner, qb::duration t, const qb::io::async::cancellation_token &tok)
         : id(aid)
         , timeout(t)
-        , token(std::move(tok)) {
+        , token(tok) {
         slot.owner   = owner;
         slot.self    = this;
         slot.deliver = &ask_awaiter::deliver_thunk;
         // Make this exchange type recognisable to the activation gate (asker's core), so an
         // in-onInit ask's reply is delivered here instead of stashed (which would deadlock).
-        ask_register_type(qb::Event::type_to_id<E>());
+        // The registry is per worker thread, so one hash-set insert per thread per E is all it
+        // ever needs — not one per ask.
+        static thread_local bool type_registered = false;
+        if (!type_registered) {
+            ask_register_type(qb::Event::type_to_id<E>());
+            type_registered = true;
+        }
     }
     ask_awaiter(const ask_awaiter &)            = delete;
     ask_awaiter(ask_awaiter &&)                 = delete;
@@ -1591,9 +1600,11 @@ struct ask_awaiter {
             ev_timer_start(loop, &timer);
             timer_started = true;
         }
-        auto a    = alive;
-        cancel_id = token.on_cancel([this, a]() {
-            if (*a && !slot.done) {
+        // Bare `this`: `finish()` deregisters the hook before this frame can go away, and the
+        // token guarantees a removed callback never fires — even from inside `cancel()`'s walk
+        // (see `cancellation_token::cancel`). No heap-allocated liveness flag per ask.
+        cancel_id = token.on_cancel([this]() {
+            if (!slot.done) {
                 slot.done = true;
                 outcome   = kind::cancelled;
                 qb::io::async::schedule_via_current(cont);
@@ -1615,8 +1626,6 @@ struct ask_awaiter {
     }
 
     ~ask_awaiter() {
-        if (alive)
-            *alive = false;
         finish();
     }
 

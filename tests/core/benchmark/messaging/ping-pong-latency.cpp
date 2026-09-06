@@ -148,8 +148,7 @@ record_latency_counters(benchmark::State &state) {
 
     const auto lat                    = qb::bench::last_latency_stats_snapshot();
     state.counters["latency_samples"] = static_cast<double>(lat.samples);
-    if (lat.samples)
-        state.counters["mean_rtt_ns"] = benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
+    qb::bench::record_mean_rtt_counter(state, lat);
 }
 
 // Build a mono/cross-core actor ping-pong into `main` (pong on `pong_core`).

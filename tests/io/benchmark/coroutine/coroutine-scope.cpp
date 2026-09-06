@@ -58,7 +58,11 @@ drain_until(Predicate &&pred, std::chrono::milliseconds timeout = 5s) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (!pred() && std::chrono::steady_clock::now() < deadline) {
         coro_scheduler().run_ready();
-        qb::io::async::run_for(1ms);
+        // Non-blocking pump: fire what is due, resume what is ready, never sleep. The previous
+        // `run_for(1ms)` slept 1 ms per trip (~5 ms at Windows' timer granularity) even on the
+        // trip that had just satisfied the predicate, so every cell measured the sleep, not the
+        // work (0 CPU-time per iteration was the tell).
+        qb::io::async::run(EVRUN_NOWAIT);
     }
 }
 

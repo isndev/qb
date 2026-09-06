@@ -17,14 +17,14 @@ llm/qb.llm.api.md	Actor.h:1155-1213	348256583ed8	/**
 llm/qb.llm.api.md	Actor.h:1215-1250	ebacec412d5d	/**
 llm/qb.llm.api.md	Actor.h:1252-1268	fdcc13b19f97	/**
 llm/qb.llm.api.md	Actor.h:1396-1405	dadd4620b634	class CoroContext {
-llm/qb.llm.api.md	Actor.h:1685-1764	72ac7be17054	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.api.md	Actor.h:1773-1776	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.api.md	Actor.h:1879-1885	fa70d7763fca	/**
-llm/qb.llm.api.md	Actor.h:1887-1891	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
-llm/qb.llm.api.md	Actor.h:1907-1918	d27c2e9e1eac	[[nodiscard]] qb::io::async::task<bool>
-llm/qb.llm.api.md	Actor.h:1949-1950	7a029450b670	template <typename _Actor>
-llm/qb.llm.api.md	Actor.h:2261-2261	a0e051d59cc7	using coro_context = CoroContext;
-llm/qb.llm.api.md	Actor.h:2269-2269	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
+llm/qb.llm.api.md	Actor.h:1694-1773	72ac7be17054	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.api.md	Actor.h:1782-1785	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.api.md	Actor.h:1888-1894	fa70d7763fca	/**
+llm/qb.llm.api.md	Actor.h:1896-1900	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
+llm/qb.llm.api.md	Actor.h:1916-1927	d27c2e9e1eac	[[nodiscard]] qb::io::async::task<bool>
+llm/qb.llm.api.md	Actor.h:1958-1959	7a029450b670	template <typename _Actor>
+llm/qb.llm.api.md	Actor.h:2270-2270	a0e051d59cc7	using coro_context = CoroContext;
+llm/qb.llm.api.md	Actor.h:2278-2278	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
 llm/qb.llm.api.md	Actor.h:604-621	11edeff824dc	/**
 llm/qb.llm.api.md	Actor.h:637-681	5c5465b8e08f	/**
 llm/qb.llm.api.md	Event.h:655-656	e76bd16e4192	template <typename... _Args>
@@ -44,10 +44,10 @@ llm/qb.llm.api.md	crypto.h:969-986	1893285b514b	static std::string encrypt_with_
 llm/qb.llm.api.md	crypto.h:996-1000	b836147352c8	static std::vector<unsigned char> ecies_decrypt(const std::vector<uns...
 llm/qb.llm.api.md	crypto_asymmetric.cpp:718-718	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
 llm/qb.llm.api.md	listener.h:1133-1146	31584ba4b550	inline void
-llm/qb.llm.api.md	scheduler.h:601-604	1cdfb1dc422b	[[nodiscard]] bool
+llm/qb.llm.api.md	scheduler.h:737-740	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	task.h:719-734	78c61ef4167a	await_resume() {
-llm/qb.llm.md	Actor.cpp:114-119	df9e20a73808	Actor::Actor() noexcept
-llm/qb.llm.md	Actor.cpp:298-316	94aff7135980	void
+llm/qb.llm.md	Actor.cpp:232-237	df9e20a73808	Actor::Actor() noexcept
+llm/qb.llm.md	Actor.cpp:416-434	94aff7135980	void
 llm/qb.llm.md	Actor.h:1109-1113	692b17120c0c	* @return A phase-aware `qb::ActorHandle<_Actor>`. The handle's `id()...
 llm/qb.llm.md	Actor.h:1133-1133	70a286fe36e6	ActorHandle<_Actor> addRefActor(_Args &&...args) const;
 llm/qb.llm.md	Actor.h:1155-1213	348256583ed8	/**
@@ -56,9 +56,9 @@ llm/qb.llm.md	Actor.h:1215-1250	ebacec412d5d	/**
 llm/qb.llm.md	Actor.h:1250-1250	f9f0e3c13c7d	void spawn(Func &&func) const;
 llm/qb.llm.md	Actor.h:1252-1268	fdcc13b19f97	/**
 llm/qb.llm.md	Actor.h:1391-1397	7df8f4e2778e	* Provides a restricted interface for coroutines to interact with
-llm/qb.llm.md	Actor.h:1685-1764	72ac7be17054	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.md	Actor.h:1773-1776	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.md	Actor.h:1841-1843	1d53b2f3f947	* Thread-model: must only be dereferenced from the owning VirtualCore...
+llm/qb.llm.md	Actor.h:1694-1773	72ac7be17054	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.md	Actor.h:1782-1785	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.md	Actor.h:1850-1852	1d53b2f3f947	* Thread-model: must only be dereferenced from the owning VirtualCore...
 llm/qb.llm.md	Actor.h:321-334	5f38a59348eb	* is a coroutine (`qb::io::async::task<bool>`) it **may `co_await`** ...
 llm/qb.llm.md	Actor.h:572-588	e84dbde9b9ce	* @brief Get current time from the VirtualCore's perspective (nanosec...
 llm/qb.llm.md	Actor.h:837-842	411d83537697	* This is the primary and recommended method for sending events. Even...
@@ -95,8 +95,8 @@ llm/qb.llm.md	listener.h:1118-1130	9bb119dec73f	inline void
 llm/qb.llm.md	listener.h:1133-1146	31584ba4b550	inline void
 llm/qb.llm.md	listener.h:1185-1185	cc6b74b785e4	defer(_Func &&func) {
 llm/qb.llm.md	patterns/request.h:100-100	fd61ad9ff46e	ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duratio...
-llm/qb.llm.md	scheduler.h:183-203	c96fefd341a2	* Drains and destroys all coroutines in the ready queue only. Coroutines
-llm/qb.llm.md	scheduler.h:406-435	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
+llm/qb.llm.md	scheduler.h:335-355	c96fefd341a2	* Drains and destroys all coroutines in the ready queue only. Coroutines
+llm/qb.llm.md	scheduler.h:546-575	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
 llm/qb.llm.md	ssl/context.h:128-128	3b96c5ab4fe6	class QB_API Context {
 llm/qb.llm.md	ssl/socket.h:464-464	37e2ac1caed3	explicit socket(qb::io::ssl::Context ctx) noexcept;
 llm/qb.llm.md	ssl/socket.h:84-84	111eae84930c	SSL_CTX *create_client_context(const SSL_METHOD *method);

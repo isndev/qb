@@ -26,9 +26,9 @@
 
 #include <cassert>
 #include <coroutine>
-#include <deque>
+#include <cstdint>
+#include <cstdlib>
 #include <memory>
-#include <unordered_set>
 #include <vector>
 #include <qb/ev/ev++.h>
 // Same guard as qb/io/async/event/base.h: ev.h's fallback lookup for the generated ev_config.h is
@@ -41,11 +41,12 @@ QB_EV_CONFIG_H=<qb/ev/ev_config.h> definition, or the include directory carrying
 // No <mutex>, no atomics: the scheduler is strictly mono-thread. Every
 // caller — libev callbacks, coroutine bodies after `resume()`, awaiters'
 // `await_suspend`, or `schedule_via_current` — runs on the VirtualCore
-// (or listener) thread that owns this scheduler. We replaced the original
-// lock-free MPSC queue by a plain `std::deque` (Finding 2.B.10): one
-// allocation per ~8 nodes vs. one allocation per node, no atomics, no
-// cache-line contention, and ~2x less overhead on the hot path
-// `schedule_resume -> pop` according to the coroutine benchmark harness.
+// (or listener) thread that owns this scheduler. Finding 2.B.10 replaced
+// the original lock-free MPSC queue by a plain `std::deque` (no atomics, no
+// cache-line contention, ~2x less overhead on `schedule_resume -> pop`); the
+// deque and the three `std::unordered_set`s beside it are now a ring buffer
+// and flat open-addressing sets, so a steady-state resume allocates nothing
+// on any standard library (MSVC's deque block held ONE 16-byte item).
 // <atomic> kept only for #ifdef QB_DEBUG_COROUTINES next_id in task.h.
 
 /** Enable scheduler/listener lifecycle debug traces (destructor, register_suspended, clear, reset).
@@ -159,15 +160,166 @@ struct scheduler_deleter {
  *   thread wake-ups are needed (e.g. a background worker completing a
  *   promise), post a message via the `Actor` mailbox instead — that is
  *   the dedicated MPSC path in qb-core.
- * - Internally: `ready_queue_` is a `std::deque<ready_item>` (no atomics,
- *   no mutex), `in_flight_` and `suspended_coroutines_` are plain
- *   `std::unordered_set<void*>`.
+ * - Internally: `ready_queue_` is a growable ring buffer of `ready_item`
+ *   (no atomics, no mutex), `in_flight_`, `owned_frames_` and
+ *   `suspended_coroutines_` are open-addressing `detail::flat_ptr_set`s —
+ *   none of them allocates on the steady-state resume path.
  * - `run_ready()` must not be called re-entrantly (see the `in_run_ready_`
  *   guard inside the implementation).
  * - Use separate scheduler instances per thread.
  *
  * @ingroup Coroutine
  */
+namespace detail {
+
+/**
+ * @brief Open-addressing set of non-null pointers for the scheduler's bookkeeping.
+ * @details `std::unordered_set<void*>` costs a node allocation per insert, a free per erase
+ *          and a pointer chase per lookup — paid once per coroutine resume (`in_flight_`) and
+ *          once per suspend (`suspended_coroutines_`). This is a flat power-of-two array with
+ *          linear probing on a Fibonacci hash of the address, **backward-shift deletion** (no
+ *          tombstones, so a probe never runs past the cluster it started in) and doubling at
+ *          50 % load; it never shrinks and allocates only when it doubles. `nullptr` marks an
+ *          empty slot, which is why only non-null pointers are stored. Mono-thread.
+ */
+class flat_ptr_set {
+public:
+    flat_ptr_set()                                = default;
+    flat_ptr_set(const flat_ptr_set &)            = delete;
+    flat_ptr_set &operator=(const flat_ptr_set &) = delete;
+    ~flat_ptr_set() {
+        std::free(_tab);
+    }
+
+    [[nodiscard]] std::size_t
+    size() const noexcept {
+        return _count;
+    }
+    [[nodiscard]] bool
+    empty() const noexcept {
+        return _count == 0;
+    }
+    [[nodiscard]] std::size_t
+    count(void *p) const noexcept {
+        return locate(p) != npos ? 1 : 0;
+    }
+
+    /// @return `true` if `p` was inserted, `false` if it was already present (or null).
+    bool
+    insert(void *p) {
+        if (!p)
+            return false;
+        if ((_count + 1) * 2 > _cap)
+            grow();
+        std::size_t i = home(p);
+        for (;; i = (i + 1) & _mask) {
+            void *const s = _tab[i];
+            if (!s)
+                break;
+            if (s == p)
+                return false;
+        }
+        _tab[i] = p;
+        ++_count;
+        return true;
+    }
+
+    /// @return The number of elements removed (0 or 1), like `std::unordered_set::erase`.
+    std::size_t
+    erase(void *p) noexcept {
+        std::size_t i = locate(p);
+        if (i == npos)
+            return 0;
+        // Backward shift: pull every later entry of the same probe cluster one step back if
+        // its home slot lies at or before the hole, so the cluster stays gap-free.
+        for (std::size_t j = i;;) {
+            j             = (j + 1) & _mask;
+            void *const s = _tab[j];
+            if (!s)
+                break;
+            const std::size_t k = home(s);
+            if (((i - k) & _mask) < ((j - k) & _mask)) {
+                _tab[i] = s;
+                i       = j;
+            }
+        }
+        _tab[i] = nullptr;
+        --_count;
+        return 1;
+    }
+
+    void
+    clear() noexcept {
+        if (_count) {
+            for (std::size_t i = 0; i < _cap; ++i)
+                _tab[i] = nullptr;
+            _count = 0;
+        }
+    }
+
+    template <typename F>
+    void
+    for_each(F &&f) const {
+        for (std::size_t i = 0; i < _cap; ++i)
+            if (_tab[i])
+                f(_tab[i]);
+    }
+
+private:
+    static constexpr std::size_t npos = ~std::size_t{0};
+
+    [[nodiscard]] std::size_t
+    home(void *p) const noexcept {
+        // Frames are at least 16-byte aligned: drop the always-zero low bits before mixing.
+        const auto key = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)) >> 4;
+        return static_cast<std::size_t>((key * 0x9E3779B97F4A7C15ull) >> _shift);
+    }
+
+    [[nodiscard]] std::size_t
+    locate(void *p) const noexcept {
+        if (!_tab || !p)
+            return npos;
+        for (std::size_t i = home(p);; i = (i + 1) & _mask) {
+            void *const s = _tab[i];
+            if (s == p)
+                return i;
+            if (!s)
+                return npos;
+        }
+    }
+
+    void
+    grow() {
+        void **const      old     = _tab;
+        const std::size_t old_cap = _cap;
+        _cap                      = _cap ? _cap * 2 : 32;
+        _mask                     = _cap - 1;
+        _shift                    = 64;
+        for (std::size_t c = _cap; c > 1; c >>= 1)
+            --_shift;
+        _tab = static_cast<void **>(std::calloc(_cap, sizeof(void *)));
+        if (!_tab)
+            std::abort(); // bookkeeping that cannot degrade: a lost entry is a double resume or a leak
+        for (std::size_t n = 0; n < old_cap; ++n) {
+            if (!old[n])
+                continue;
+            std::size_t i = home(old[n]);
+            while (_tab[i])
+                i = (i + 1) & _mask;
+            _tab[i] = old[n];
+        }
+        std::free(old);
+    }
+
+    void      **_tab   = nullptr;
+    std::size_t _cap   = 0;
+    std::size_t _mask  = 0;
+    unsigned    _shift = 64;
+    std::size_t _count = 0;
+};
+
+} // namespace detail
+
 class CoroutineScheduler {
 public:
     /**
@@ -337,14 +489,8 @@ public:
         // If the helper was already woken (its timer fired in this same tick) it can
         // be sitting in the ready queue + in-flight set. Scrub both before freeing
         // the frame so the next run_ready() does not pop a destroyed handle.
-        if (in_flight_.erase(addr) != 0) {
-            for (auto it = ready_queue_.begin(); it != ready_queue_.end();) {
-                if (it->handle && it->handle.address() == addr)
-                    it = ready_queue_.erase(it);
-                else
-                    ++it;
-            }
-        }
+        if (in_flight_.erase(addr) != 0)
+            ready_queue_.erase_if([addr](const ready_item &it) { return it.handle && it.handle.address() == addr; });
         // Defensive: a frame queued for deferred destruction has already completed
         // (so callers' done-flag guard would skip it), but never let it be freed twice.
         for (auto it = frames_to_destroy_.begin(); it != frames_to_destroy_.end();) {
@@ -392,14 +538,8 @@ public:
         // Ready-queue scan is O(n); only pay it when the frame is actually in-flight
         // (its watcher fired and scheduled it this tick). A merely-parked frame is in
         // `suspended_coroutines_` only — the erase above is enough.
-        if (in_flight_.erase(addr) != 0) {
-            for (auto it = ready_queue_.begin(); it != ready_queue_.end();) {
-                if (it->handle && it->handle.address() == addr)
-                    it = ready_queue_.erase(it);
-                else
-                    ++it;
-            }
-        }
+        if (in_flight_.erase(addr) != 0)
+            ready_queue_.erase_if([addr](const ready_item &it) { return it.handle && it.handle.address() == addr; });
     }
 
     /**
@@ -453,10 +593,8 @@ public:
     schedule_resume(std::coroutine_handle<> handle) {
         if (!handle || handle.done())
             return;
-        void *addr = handle.address();
-        if (in_flight_.count(addr))
+        if (!in_flight_.insert(handle.address()))
             return; // dedup: already queued
-        in_flight_.insert(addr);
         ready_queue_.push_back({handle, false});
     }
 
@@ -473,16 +611,14 @@ public:
     enqueue_for_later(std::coroutine_handle<> handle) {
         if (!handle || handle.done())
             return;
-        void *addr = handle.address();
         // Finding 2.B.1: without this dedup, calling `enqueue_for_later`
         // twice for the same handle (e.g. a `yield` loop that re-yields)
         // inserts one entry in `in_flight_` (set is idempotent) but pushes
         // **two** queue nodes — the coroutine would be resumed twice while
         // the first resume is still on the stack, which is UB per the
         // coroutine single-resume contract.
-        if (in_flight_.count(addr))
+        if (!in_flight_.insert(handle.address()))
             return;
-        in_flight_.insert(addr);
         ready_queue_.push_back({handle, false});
     }
 
@@ -605,7 +741,7 @@ public:
 
     /**
      * @brief Get the number of pending coroutines.
-     * @return Exact size of the ready queue (O(1), mono-thread deque).
+     * @return Exact size of the ready queue (O(1), mono-thread ring buffer).
      */
     [[nodiscard]] std::size_t
     pending_count() const noexcept {
@@ -725,7 +861,9 @@ public:
         // (the symptom: an abandoned coroutine_scope whose worker is parked on a
         // non-cancellable sleep when the scope is torn down — `cancel_all` cannot
         // wake a plain sleep(), so the worker tree is still parked at reset).
-        std::vector<void *> owned_roots(owned_frames_.begin(), owned_frames_.end());
+        std::vector<void *> owned_roots;
+        owned_roots.reserve(owned_frames_.size());
+        owned_frames_.for_each([&owned_roots](void *addr) { owned_roots.push_back(addr); });
         // SAFETY INVARIANT: clear owned_frames_ BEFORE the cascade. Destroying a root runs awaiter
         // destructors that may call cancel_spawned() on sibling frames; with owned_frames_ already
         // empty those calls hit the `owned_frames_.erase(addr)==0` gate and no-op, so the snapshot
@@ -752,7 +890,9 @@ public:
         // non-owned continuation chains (e.g. a leaf whose root is a live task<T>
         // elsewhere). Destroy them as before so no watcher survives into the next
         // test/listener lifetime.
-        std::vector<void *> to_destroy(suspended_coroutines_.begin(), suspended_coroutines_.end());
+        std::vector<void *> to_destroy;
+        to_destroy.reserve(suspended_coroutines_.size());
+        suspended_coroutines_.for_each([&to_destroy](void *addr) { to_destroy.push_back(addr); });
         suspended_coroutines_.clear();
         for (void *addr : to_destroy) {
             owned_frames_.erase(addr); // defensive — should already be gone
@@ -797,18 +937,95 @@ private:
     // owned=false for continuations - they destroy themselves
     struct ready_item {
         std::coroutine_handle<> handle;
-        bool                    owned;
+        bool                    owned = false;
     };
 
-    // Finding 2.B.10: plain std::deque — mono-thread access, no atomics,
-    // no mutex. std::deque allocates a block of nodes per chunk (~512 bytes
-    // on libc++/libstdc++) which amortises allocation cost vs. the previous
-    // per-node MPSC queue.
-    std::deque<ready_item> ready_queue_;
+    /**
+     * @brief The ready queue: a power-of-two ring buffer that grows and never shrinks.
+     * @details Finding 2.B.10 replaced a per-node MPSC queue with `std::deque`, which amortises
+     *          allocation on libstdc++/libc++ (512-byte blocks) — but MSVC's deque block is 16
+     *          bytes, exactly one `ready_item`, so every `push_back` was a heap allocation and
+     *          every `pop_front` a free, on every coroutine resume. A ring buffer allocates only
+     *          when it doubles. Mono-thread access, no atomics, no mutex. `erase_if` is the
+     *          O(n) scrub `cancel_spawned` / `forget` need (rare: a frame torn down while queued)
+     *          and compacts in place so `size()` / `empty()` stay exact for `has_ready()`.
+     */
+    class ready_ring {
+    public:
+        ready_ring()                              = default;
+        ready_ring(const ready_ring &)            = delete;
+        ready_ring &operator=(const ready_ring &) = delete;
+        ~ready_ring() {
+            delete[] buf_;
+        }
+        [[nodiscard]] bool
+        empty() const noexcept {
+            return size_ == 0;
+        }
+        [[nodiscard]] std::size_t
+        size() const noexcept {
+            return size_;
+        }
+        [[nodiscard]] const ready_item &
+        front() const noexcept {
+            return buf_[head_ & mask_];
+        }
+        void
+        pop_front() noexcept {
+            ++head_;
+            --size_;
+        }
+        void
+        push_back(ready_item item) {
+            if (size_ == cap_)
+                grow();
+            buf_[(head_ + size_) & mask_] = item;
+            ++size_;
+        }
+        void
+        clear() noexcept {
+            head_ = size_ = 0;
+        }
+        template <typename Pred>
+        void
+        erase_if(Pred pred) noexcept {
+            std::size_t w = head_;
+            for (std::size_t r = head_, end = head_ + size_; r != end; ++r) {
+                const ready_item &it = buf_[r & mask_];
+                if (pred(it))
+                    continue;
+                if (w != r)
+                    buf_[w & mask_] = it;
+                ++w;
+            }
+            size_ = w - head_;
+        }
+
+    private:
+        void
+        grow() {
+            const std::size_t ncap = cap_ ? cap_ * 2 : 64;
+            auto             *nbuf = new ready_item[ncap];
+            for (std::size_t n = 0; n < size_; ++n)
+                nbuf[n] = buf_[(head_ + n) & mask_];
+            delete[] buf_;
+            buf_  = nbuf;
+            cap_  = ncap;
+            mask_ = ncap - 1;
+            head_ = 0;
+        }
+        ready_item *buf_  = nullptr;
+        std::size_t cap_  = 0;
+        std::size_t mask_ = 0;
+        std::size_t head_ = 0; ///< Free-running; `& mask_` is exact because 2^64 is a multiple of `cap_`.
+        std::size_t size_ = 0;
+    };
+
+    ready_ring ready_queue_;
 
     // Deduplication set: prevents double-scheduling of the same handle.
     // Accessed only from the VirtualCore thread — no mutex needed.
-    std::unordered_set<void *> in_flight_;
+    detail::flat_ptr_set in_flight_;
 
     // Frames the scheduler OWNS and must destroy when they complete (those
     // handed over by spawn(), which detaches the task<T>). The per-ready_item
@@ -817,11 +1034,11 @@ private:
     // suspends once and then completes would otherwise never be destroyed —
     // a frame leak on every spawn that awaits. This set is the authoritative
     // ownership record; run_ready() destroys a completed handle iff it is here.
-    std::unordered_set<void *> owned_frames_;
+    detail::flat_ptr_set owned_frames_;
 
     // Handles currently suspended (waiting on I/O or timers).
     // Accessed only from the VirtualCore thread — no mutex needed.
-    std::unordered_set<void *> suspended_coroutines_;
+    detail::flat_ptr_set suspended_coroutines_;
 
     // Detached (spawned) frames that reached final_suspend and must be destroyed
     // by the scheduler on the current run_ready() drain. A completing detached

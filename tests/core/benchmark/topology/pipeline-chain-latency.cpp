@@ -93,8 +93,7 @@ BM_Pipeline_Chain_Latency(benchmark::State &state) {
         state.counters["deliveries_per_s"]    = benchmark::Counter(deliveries, benchmark::Counter::kIsIterationInvariantRate);
         const auto lat                        = qb::bench::last_latency_stats_snapshot();
         state.counters["latency_samples"]     = static_cast<double>(lat.samples);
-        if (lat.samples)
-            state.counters["mean_rtt_ns"] = benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
+        qb::bench::record_mean_rtt_counter(state, lat);
     }
 }
 

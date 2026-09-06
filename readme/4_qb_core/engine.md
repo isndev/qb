@@ -52,7 +52,7 @@ const std::vector<qb::ActorId> ids = builder.idList();   // creation order, NotF
 
 **`addActor` does not construct the actor.** It reserves an `ActorId`, stores a `TActorFactory` holding your decayed constructor arguments, and returns the id immediately (`src/qb/core/Main.h:1014-1039`). The object is built much later, on the worker thread, when `start()` calls `factory->create()` (`src/qb/core/Main.cpp:415-416`). Two consequences you can see from the call site:
 
-- **String literals become `std::string`** and every other argument is decayed and stored by value, because the factory has to outlive the call. Anything matching the `reference_wrapper_type` concept is preserved as-is (`src/qb/core/Actor.h:2087-2121`, `:2146-2155`).
+- **String literals become `std::string`** and every other argument is decayed and stored by value, because the factory has to outlive the call. Anything matching the `reference_wrapper_type` concept is preserved as-is (`src/qb/core/Actor.h:2096-2130`, `:2155-2164`).
 - **A valid id is not a promise that the actor will exist.** `qb::ActorId::NotFound` (`0`, the default-constructed id — test it with `is_valid()`) comes back only when the *reservation* fails: a second `ServiceActor` of a type already on that core, or `_next_id` reaching `ServiceId` max. An `onInit()` that later fails is reported through `hasError()`, never by changing the id you already have (`src/qb/core/Main.h:1018-1036`; `src/qb/core/ActorId.h:470-471`).
 
 The reservation and the real allocation are two different counters, and three things make them line up. `CoreInitializer::_next_id` starts at `_nb_service + 1` (`src/qb/core/Main.cpp:44`) and hands out `ActorId(_next_id++, index)`; on the worker, `Actor`'s constructor calls `VirtualCore::__generate_id__()`, which draws the *lowest free* slot from a per-core bitset pool seeded at exactly the same value (`src/qb/core/VirtualCore.cpp:109`, `:119-127`); and the worker constructs **every** registered actor before it runs a single `onInit()` (`src/qb/core/Main.cpp:415-419`), so nothing else can draw from that pool in between. Same seed, same order, one at a time — so the id you were handed is the id the actor gets. Service actors sidestep both: `ServiceActor<Tag>::ServiceIndex` is assigned once per tag at static-init time and is *below* the pool's floor, which is why a service id is stable, deterministic (the first one is `1`) and never recycled (`src/qb/core/VirtualCore.h:1060-1074`; `src/qb/core/VirtualCore.cpp:1036-1040`).
@@ -299,7 +299,7 @@ The generation is what makes the mechanism repeatable. `_signal_pending` holds o
 if (event.signum == SIGINT || event.signum == SIGTERM)
     kill();
 ```
-<!-- src: qb/src/qb/core/Actor.cpp:186-187 -->
+<!-- src: qb/src/qb/core/Actor.cpp:304-305 -->
 
 A `SIGHUP` or `SIGUSR1` is delivered and ignored by the default handler — those are the config-reload and stats-dump cases. To act on one, declare your own `on(qb::SignalEvent const&)` and inspect `event.signum`; call `kill()` there if that signal should stop the actor. `unregisterSignal` restores the OS default, `ignoreSignal` sets `SIG_IGN` (the usual reason being `SIGPIPE` on a network server) (`src/qb/core/Main.cpp:673-686`).
 

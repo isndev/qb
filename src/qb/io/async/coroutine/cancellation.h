@@ -103,6 +103,7 @@ public:
     // cancel() and on_cancel() are always called on the same VirtualCore thread.
     struct state {
         bool    cancelled{false};
+        bool    firing{false}; ///< `cancel()` is walking `callbacks` in place (see remove_on_cancel).
         id_type next_id{0};
         // Keyed callbacks so a completing awaiter can DEREGISTER itself (remove_on_cancel)
         // instead of leaving a dead entry behind. Without this a long-lived (actor-scope)
@@ -143,16 +144,37 @@ public:
      * Must be called on the same VirtualCore thread as the coroutines using
      * this token. For cross-thread cancellation, send a qb actor event to the
      * owning thread and call cancel() from its event handler.
+     *
+     * @details The callbacks are fired **in place**, not from a moved-out copy, so a
+     *          `remove_on_cancel(id)` issued while they fire (by an awaiter that a previous
+     *          callback tore down) still finds its entry and neuters it. That is the contract
+     *          every awaiter relies on: *a callback is never invoked after `remove_on_cancel`
+     *          returned*, even mid-`cancel()`. Before this held, each awaiter carried a
+     *          `std::shared_ptr<bool>` liveness flag captured into its callback — one heap
+     *          control block plus a 24-byte closure (over `std::function`'s small-buffer size
+     *          on libstdc++, a second allocation) on EVERY `qb::ask`, semaphore park and
+     *          `check_cancelled`, paid whether or not anything was ever cancelled.
      */
     void
     cancel() {
-        if (_state && !_state->cancelled) {
-            _state->cancelled = true;
-            auto callbacks    = std::move(_state->callbacks);
-            for (auto &cb : callbacks)
-                if (cb.second)
-                    cb.second();
+        if (!_state || _state->cancelled)
+            return;
+        // A callback may release the last reference to the token object (`this`); the
+        // shared state must outlive the walk regardless.
+        auto  keep   = _state;
+        auto &st     = *keep;
+        st.cancelled = true;
+        st.firing    = true;
+        // Index loop: `on_cancel` on an already-cancelled token fires inline and never
+        // appends, so the vector cannot reallocate under the walk, and `remove_on_cancel`
+        // nulls an entry rather than erasing it while `firing` is set.
+        for (std::size_t i = 0; i < st.callbacks.size(); ++i) {
+            auto fn = std::move(st.callbacks[i].second);
+            if (fn)
+                fn();
         }
+        st.firing = false;
+        st.callbacks.clear();
     }
 
     bool
@@ -191,6 +213,10 @@ public:
      * @param id The id returned by `on_cancel` (a `0` id is ignored).
      * @details Idempotent and O(n) over the (normally tiny) live-callback set; safe to call
      *          after cancellation fired (the entry is already gone → no-op). Same-thread only.
+     *          Called from INSIDE `cancel()`'s walk (an awaiter torn down by an earlier
+     *          callback deregistering itself) it neuters the entry in place instead of
+     *          erasing it, so the walk's indices stay valid and the callback never runs —
+     *          which is what lets an awaiter capture a bare `this` in its callback.
      */
     void
     remove_on_cancel(id_type id) const noexcept {
@@ -199,6 +225,10 @@ public:
         auto &cbs = _state->callbacks;
         for (auto it = cbs.begin(); it != cbs.end(); ++it) {
             if (it->first == id) {
+                if (_state->firing) {
+                    it->second = nullptr; // `cancel()` is iterating: keep the slot, drop the callable.
+                    return;
+                }
                 *it = std::move(cbs.back()); // swap-with-back: order is irrelevant on cancel.
                 cbs.pop_back();
                 return;
@@ -257,12 +287,9 @@ public:
 struct cancellation_awaiter {
     cancellation_token      token;
     std::coroutine_handle<> _handle;
-    // Shared liveness flag: the on_cancel callback outlives this awaiter inside
-    // the token's callback list. If the awaiting coroutine frame is destroyed
-    // while still suspended here (e.g. a when_any loser or scope cancellation),
-    // a later cancel() would otherwise call schedule_via_current() on a freed
-    // handle. The destructor clears the flag so the stale callback no-ops.
-    std::shared_ptr<bool>       _alive     = std::make_shared<bool>(true);
+    // No liveness flag: the destructor's `remove_on_cancel` guarantees the callback never
+    // runs after this awaiter is gone, even when the teardown happens INSIDE `cancel()`'s
+    // walk (a when_any loser reclaimed by an earlier callback) — see `cancellation_token::cancel`.
     cancellation_token::id_type _cancel_id = 0; ///< on_cancel registration, deregistered on teardown.
 
     // Explicit constructor: the user-declared destructor below makes this type a
@@ -279,11 +306,7 @@ struct cancellation_awaiter {
     void
     await_suspend(std::coroutine_handle<> h) {
         _handle    = h;
-        auto alive = _alive;
-        _cancel_id = token.on_cancel([h, alive]() {
-            if (*alive)
-                schedule_via_current(h);
-        });
+        _cancel_id = token.on_cancel([h]() { schedule_via_current(h); });
     }
 
     void
@@ -292,9 +315,8 @@ struct cancellation_awaiter {
     }
 
     ~cancellation_awaiter() {
-        if (_alive)
-            *_alive = false;
-        // Deregister so a normally-completed wait leaves no dead callback on a long-lived token.
+        // Deregister so a normally-completed wait leaves no dead callback on a long-lived token,
+        // and so a callback still parked in the token can never touch a freed frame.
         token.remove_on_cancel(_cancel_id);
     }
 };

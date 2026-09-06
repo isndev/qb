@@ -47,7 +47,11 @@ drain_until(Predicate &&predicate, std::chrono::milliseconds timeout) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (!predicate() && std::chrono::steady_clock::now() < deadline) {
         coro_scheduler().run_ready();
-        qb::io::async::run_for(1ms);
+        // Non-blocking pump: fire what is due, resume what is ready, never sleep. The previous
+        // `run_for(1ms)` slept 1 ms per trip (~5 ms at Windows' timer granularity) even on the
+        // trip that had just satisfied the predicate, so every cell measured the sleep, not the
+        // work (0 CPU-time per iteration was the tell).
+        qb::io::async::run(EVRUN_NOWAIT);
     }
 }
 
@@ -224,9 +228,9 @@ BM_Coroutine_NestedAwait(benchmark::State &state) {
 
 } // namespace
 
-// UseRealTime(): even though complete_immediately() arms no timer, drain_until()
-// pumps qb::io::async::run_for(1ms), which blocks on wall-clock in libev — so the
-// measured region includes real time the CPU-time clock would under-count.
+// UseRealTime(): the timer-driven cases (sleep / chain / pipeline) wait on wall-clock
+// inside the libev loop, so the measured region must include real time the CPU-time
+// clock would under-count.
 BENCHMARK(BM_Coroutine_SpawnImmediate)
     ->Args({100})
     ->Args({1000})

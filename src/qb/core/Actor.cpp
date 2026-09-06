@@ -22,8 +22,9 @@
  * @ingroup Core
  */
 
+#include <cstdint>
+#include <cstdlib>
 #include <map>
-#include <unordered_map>
 #include <unordered_set>
 #include <qb/core/Actor.h>
 #include <qb/core/VirtualCore.h> // also carries Actor's template bodies (was qb/core/Actor.tpp)
@@ -39,8 +40,130 @@ namespace qb {
 // ---------------------------------------------------------------------------
 namespace detail {
 namespace {
-thread_local std::unordered_map<std::uint64_t, ask_slot *> tls_ask_slots;
-thread_local std::uint64_t                                 tls_ask_counter = 0;
+/**
+ * @brief The pending-ask registry: an open-addressing hash table `id → slot`, one per worker thread.
+ * @details Every `qb::ask` registers on suspend and deregisters on resume, so this is the one
+ *          container on the ask hot path. A node-based `std::unordered_map` paid a heap
+ *          allocation and a free per ask plus a pointer chase per lookup; this table is a single
+ *          flat array of 16-byte entries — linear probing on a Fibonacci hash of the id, no
+ *          allocation once warm (it doubles at 50 % load and never shrinks), and **backward-shift
+ *          deletion** so an erase leaves no tombstone and a lookup never probes further than the
+ *          longest cluster. Ids are per-core sequential (`ask_next_id`), which the multiplicative
+ *          hash spreads uniformly; id 0 is reserved (never an ask) and marks an empty entry.
+ *          Strictly mono-thread, like everything else in here.
+ */
+class ask_table {
+public:
+    ask_table()                             = default;
+    ask_table(const ask_table &)            = delete;
+    ask_table &operator=(const ask_table &) = delete;
+    ~ask_table() {
+        std::free(_tab);
+    }
+
+    void
+    insert(std::uint64_t const id, ask_slot *slot) {
+        if ((_count + 1) * 2 > _cap)
+            grow();
+        std::size_t i = home(id);
+        for (;;) {
+            auto &e = _tab[i];
+            if (e.id == 0)
+                break;
+            if (e.id == id) { // re-registration of a live id: refresh the slot (matches map semantics)
+                e.slot = slot;
+                return;
+            }
+            i = (i + 1) & _mask;
+        }
+        _tab[i] = {id, slot};
+        ++_count;
+    }
+
+    [[nodiscard]] ask_slot *
+    find(std::uint64_t const id) const noexcept {
+        const std::size_t i = locate(id);
+        return i == npos ? nullptr : _tab[i].slot;
+    }
+
+    void
+    erase(std::uint64_t const id) noexcept {
+        std::size_t i = locate(id);
+        if (i == npos)
+            return;
+        // Backward shift: pull every later entry of the same probe cluster one step back if
+        // its home slot lies at or before the hole, so the cluster stays gap-free.
+        for (std::size_t j = i;;) {
+            j = (j + 1) & _mask;
+            if (_tab[j].id == 0)
+                break;
+            const std::size_t k = home(_tab[j].id);
+            if (((i - k) & _mask) < ((j - k) & _mask)) {
+                _tab[i] = _tab[j];
+                i       = j;
+            }
+        }
+        _tab[i] = {};
+        --_count;
+    }
+
+private:
+    struct entry {
+        std::uint64_t id   = 0;
+        ask_slot     *slot = nullptr;
+    };
+    static constexpr std::size_t npos = ~std::size_t{0};
+
+    [[nodiscard]] std::size_t
+    home(std::uint64_t const id) const noexcept {
+        return static_cast<std::size_t>((id * 0x9E3779B97F4A7C15ull) >> _shift);
+    }
+
+    [[nodiscard]] std::size_t
+    locate(std::uint64_t const id) const noexcept {
+        if (!_tab || !id)
+            return npos;
+        for (std::size_t i = home(id);; i = (i + 1) & _mask) {
+            const auto &e = _tab[i];
+            if (e.id == id)
+                return i;
+            if (e.id == 0)
+                return npos;
+        }
+    }
+
+    void
+    grow() {
+        entry *const      old     = _tab;
+        const std::size_t old_cap = _cap;
+        _cap                      = _cap ? _cap * 2 : 64;
+        _mask                     = _cap - 1;
+        _shift                    = 64;
+        for (std::size_t c = _cap; c > 1; c >>= 1)
+            --_shift;
+        _tab = static_cast<entry *>(std::calloc(_cap, sizeof(entry)));
+        if (!_tab)
+            std::abort(); // the ask registry cannot degrade: an unregistered slot is a lost reply
+        for (std::size_t n = 0; n < old_cap; ++n) {
+            if (old[n].id == 0)
+                continue;
+            std::size_t i = home(old[n].id);
+            while (_tab[i].id != 0)
+                i = (i + 1) & _mask;
+            _tab[i] = old[n];
+        }
+        std::free(old);
+    }
+
+    entry      *_tab   = nullptr;
+    std::size_t _cap   = 0;
+    std::size_t _mask  = 0;
+    unsigned    _shift = 64;
+    std::size_t _count = 0;
+};
+
+thread_local ask_table     tls_ask_slots;
+thread_local std::uint64_t tls_ask_counter = 0;
 // Set of event type-ids known to derive from AskEvent (i.e. carry `correlation_id`),
 // populated lazily by `qb::ask<E>`. Lets the activation gate recognise an ask reply
 // without RTTI and read `correlation_id` at the AskEvent base offset safely.
@@ -65,7 +188,7 @@ ask_next_id(qb::ActorId const owner) noexcept {
 
 void
 ask_register(std::uint64_t const id, ask_slot *slot) noexcept {
-    tls_ask_slots[id] = slot;
+    tls_ask_slots.insert(id, slot);
 }
 
 void
@@ -75,12 +198,7 @@ ask_unregister(std::uint64_t const id) noexcept {
 
 bool
 ask_deliver(std::uint64_t const id, ActorId const owner, Event &resp) noexcept {
-    if (!id)
-        return false;
-    auto it = tls_ask_slots.find(id);
-    if (it == tls_ask_slots.end())
-        return false;
-    ask_slot *slot = it->second;
+    ask_slot *slot = tls_ask_slots.find(id); // id 0 ("not an ask") is a miss by construction
     // Only the owning actor may resolve its slot, and only once.
     if (!slot || slot->done || !slot->deliver || !(slot->owner == owner))
         return false;

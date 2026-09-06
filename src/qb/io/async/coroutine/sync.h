@@ -179,7 +179,6 @@ public:
         cancellation_token          token;
         waiter_node                 node;
         cancellation_token::id_type cancel_id = 0;
-        std::shared_ptr<bool>       alive     = std::make_shared<bool>(true);
         std::shared_ptr<bool>       _sem_alive; ///< semaphore liveness; skip retract when false
         bool                        _completed = false;
         bool                        _parked    = false;
@@ -190,9 +189,7 @@ public:
             , token(std::move(t)) {}
 
         ~cancel_acquire_awaiter() {
-            if (alive)
-                *alive = false; // neuter a callback still parked in the token after we are gone
-            token.remove_on_cancel(cancel_id);
+            token.remove_on_cancel(cancel_id); // a callback still parked in the token never fires after this
             if (!_parked || _resumed || !_sem_alive || !*_sem_alive)
                 return;
             // Destroyed while still queued/granted but never resumed (an OUTER when_any/race loser
@@ -233,10 +230,9 @@ public:
             _sem_alive = sem.park_alive();
             _parked    = true;
             sem._waiters.push_back(&node);
-            auto a    = alive;
-            cancel_id = token.on_cancel([this, a]() {
-                if (!*a || node.granted || node.cancelled)
-                    return; // gone, already granted, or already retracted
+            cancel_id = token.on_cancel([this]() {
+                if (node.granted || node.cancelled)
+                    return; // already granted, or already retracted
                 node.cancelled = true;
                 sem.remove_waiter(&node); // retract so release() will not hand us a permit
                 schedule_via_current(node.h);

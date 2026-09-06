@@ -161,7 +161,6 @@ struct stream_next_awaiter {
     ev_timer                                   timer{};
     bool                                       timer_started = false;
     bool                                       timed_out     = false;
-    std::shared_ptr<bool>                      alive         = std::make_shared<bool>(true);
     qb::io::async::cancellation_token::id_type cancel_id     = 0;
     std::coroutine_handle<>                    parked{}; ///< handle we stored in st->waiter (cleared on teardown)
 
@@ -188,10 +187,8 @@ struct stream_next_awaiter {
             ev_timer_start(loop, &timer);
             timer_started = true;
         }
-        auto a    = alive;
-        cancel_id = st->token.on_cancel([this, a]() {
-            if (*a)
-                st->wake(); // await_resume will see token cancelled and throw
+        cancel_id = st->token.on_cancel([this]() {
+            st->wake(); // await_resume will see token cancelled and throw
         });
     }
 
@@ -218,8 +215,6 @@ struct stream_next_awaiter {
     }
 
     ~stream_next_awaiter() {
-        if (alive)
-            *alive = false;
         stop_timer();
         st->token.remove_on_cancel(cancel_id);
         // Destroyed while still parked (await_resume never ran — e.g. a when_any/race loser reclaim

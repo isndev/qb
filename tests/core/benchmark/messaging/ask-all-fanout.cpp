@@ -140,8 +140,7 @@ record_scatter_counters(benchmark::State &state, std::uint32_t const responders)
     state.counters["asks_issued_per_s"] =
         benchmark::Counter(static_cast<double>(kBenchIters) * static_cast<double>(responders), benchmark::Counter::kIsIterationInvariantRate);
     state.counters["latency_samples"] = static_cast<double>(lat.samples);
-    if (lat.samples)
-        state.counters["mean_rtt_ns"] = benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
+    qb::bench::record_mean_rtt_counter(state, lat);
 }
 
 template <ScatterMode Mode>

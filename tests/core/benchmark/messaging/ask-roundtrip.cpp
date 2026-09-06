@@ -125,8 +125,7 @@ record_ask_counters(benchmark::State &state) {
     const auto lat                      = qb::bench::last_latency_stats_snapshot();
     state.counters["round_trips_per_s"] = benchmark::Counter(static_cast<double>(kBenchAsks), benchmark::Counter::kIsIterationInvariantRate);
     state.counters["latency_samples"]   = static_cast<double>(lat.samples);
-    if (lat.samples)
-        state.counters["mean_rtt_ns"] = benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
+    qb::bench::record_mean_rtt_counter(state, lat);
 }
 
 void
