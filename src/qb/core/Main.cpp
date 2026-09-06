@@ -386,7 +386,14 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     struct ExitGuard {
         SharedCoreCommunication &com;
         CoreId                   idx;
+        VirtualCore             &core;
         ~ExitGuard() {
+            // Withdraw the io loop the core published to its mailbox (`VirtualCore::__init__`)
+            // before this thread's `listener::current` is destroyed: a producer that saw the
+            // core parked inside its loop must find either a live listener or none. Under the
+            // mailbox mutex, so a `wake()` already in flight completes first. Idempotent, and
+            // harmless when init never got as far as publishing.
+            core._mail_box.detach_loop();
             com.mark_core_stopped(idx);
             // `core` is a stack local; leaving `_handler` pointing at it dangles
             // once this returns. Matters for start(false), where the caller's own
@@ -394,7 +401,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
             // Actor ctor only asserts non-null). Fires on every exit path.
             VirtualCore::_handler = nullptr;
         }
-    } exit_guard{params.shared_com, core._resolved_index};
+    } exit_guard{params.shared_com, core._resolved_index, core};
 
     try {
         // Init VirtualCore

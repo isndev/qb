@@ -271,11 +271,11 @@ endif ()
 # ----------------------------------------------------------------------------
 # Watcher families
 # ----------------------------------------------------------------------------
-# ON standalone, OFF embedded, and the asymmetry is the point: an embedder that uses six watcher
+# ON standalone, OFF embedded, and the asymmetry is the point: an embedder that uses seven watcher
 # families should not pay for fourteen, and a library published to strangers must not silently
 # ship without half of them. Flip it explicitly if you want the other answer.
 option(QB_EV_WATCHERS_FULL
-       "Build every libev watcher family (idle, prepare, check, fork, child, async, embed)"
+       "Build every libev watcher family (idle, prepare, check, fork, child, embed; async is always on)"
        ${QB_EV_STANDALONE})
 if (QB_EV_WATCHERS_FULL)
     set(QB_EV_IDLE_ENABLE 1)
@@ -299,10 +299,16 @@ else ()
     set(QB_EV_CHECK_ENABLE 0)
     set(QB_EV_FORK_ENABLE 0)
     set(QB_EV_CHILD_ENABLE 0)
-    set(QB_EV_ASYNC_ENABLE 0)
+    # The async watcher is the seventh family qb uses: a VirtualCore that owns io watchers
+    # parks INSIDE its loop (`ev_run(EVRUN_ONCE)`) and a producer on another thread ends that
+    # park with `ev_async_send` -- the one libev entry point that is safe to call against a
+    # concurrent `ev_run`. Without it a parked core answered a readable socket only when its
+    # latency timeout expired. Three exported symbols (`ev_async_start/stop/send`); the pipe
+    # they need is the signal pipe, created on first use.
+    set(QB_EV_ASYNC_ENABLE 1)
     set(QB_EV_EMBED_ENABLE 0)
 endif ()
-message(STATUS "[qev] watcher families: ${QB_EV_WATCHERS_FULL} (full=all fourteen, off=qb's six)")
+message(STATUS "[qev] watcher families: ${QB_EV_WATCHERS_FULL} (full=all fourteen, off=qb's seven)")
 
 # ----------------------------------------------------------------------------
 # Generate configuration header (public)

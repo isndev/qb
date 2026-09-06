@@ -10,7 +10,7 @@ An actor's thread is not its own — it is the `VirtualCore`, and every other ac
 
 Every `VirtualCore` runs a single thread that drives exactly one `qb::io::async::listener` event loop. Actors assigned to that core and the async I/O objects bound to its loop share that thread; thread safety comes from isolation, not locks. Because the same thread interleaves message handling and loop callbacks, two invariants govern everything below:
 
-- **No sharing across threads.** An I/O object — client, server, session, watcher, timer — created on one core's loop must not be touched from another. Cross-core communication goes through events (`push`/`broadcast`), never through a shared pointer to live I/O state. <!-- src: qb/src/qb/io/async/listener.h:66-67,69-81 -->
+- **No sharing across threads.** An I/O object — client, server, session, watcher, timer — created on one core's loop must not be touched from another. Cross-core communication goes through events (`push`/`broadcast`), never through a shared pointer to live I/O state. <!-- src: qb/src/qb/io/async/listener.h:67-68,70-82 -->
 - **No blocking the loop.** While a handler or a callback runs, nothing else on that core can be dispatched. A blocking call inside it freezes the whole core until it returns. <!-- src: qb/src/qb/core/ICallback.h:163-165 -->
 
 Within a core there are no data races to defend against — that is the point of the model. The price is the second rule, and the rest of this page is about paying it.
@@ -23,9 +23,9 @@ This is the comparison that matters, and it is a comparison of *stacks*, not of 
 
 ```
 VirtualCore::__workflow__                          ← pass N
- ├─ listener::current.run(EVRUN_NOWAIT)            step 3 (VirtualCore.cpp:768)
- ├─ __flush_all__()                                step 5 (VirtualCore.cpp:781)
- └─ __receive__()                                  step 6 (VirtualCore.cpp:783)
+ ├─ listener::current.run(EVRUN_NOWAIT)            step 3 (VirtualCore.cpp:773)
+ ├─ __flush_all__()                                step 5 (VirtualCore.cpp:786)
+ └─ __receive__()                                  step 6 (VirtualCore.cpp:788)
      └─ your on(RequestEvent&)
          └─ spawn([...](auto ctx) -> task<void> { ... });
             └─ registers a frame with the core's scheduler and RETURNS
@@ -120,7 +120,7 @@ spawn([this](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 });
 ```
 
-`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is owned by the core's `listener`, one per `VirtualCore`, but it is **not** built when the listener is: `listener::coro_scheduler()` creates it on first access. `spawn` / `spawn_detached` bind to whichever scheduler is current on the calling thread and fall back to that accessor when none exists yet, so both require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1274-1276,1310-1311; qb/src/qb/io/async/listener.h:909,913-920; qb/src/qb/core/Actor.cpp:238-261 -->
+`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is owned by the core's `listener`, one per `VirtualCore`, but it is **not** built when the listener is: `listener::coro_scheduler()` creates it on first access. `spawn` / `spawn_detached` bind to whichever scheduler is current on the calling thread and fall back to that accessor when none exists yet, so both require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1274-1276,1310-1311; qb/src/qb/io/async/listener.h:1034,1038-1045; qb/src/qb/core/Actor.cpp:238-261 -->
 
 What a `kill()` does to a coroutine that is already parked is on [Writing actors](../4_qb_core/actor.md#killed-while-parked) (the actor-lifecycle half) and [C++20 coroutines](../3_qb_io/coroutines.md#safe-integration-with-qbactor) (which awaiters are cancellation-aware).
 
@@ -135,7 +135,7 @@ namespace qb::io::async {
     void defer(_Func &&func);          // tail of this loop turn — never re-entrant
 }
 ```
-<!-- src: qb/src/qb/io/async/listener.h:1060 (async::defer); qb/src/qb/io/async/listener.h:822 (listener::defer) -->
+<!-- src: qb/src/qb/io/async/listener.h:1185 (async::defer); qb/src/qb/io/async/listener.h:851 (listener::defer) -->
 
 Captured state is released when the callback fires or when the loop is torn down, whichever comes first, so a `shared_ptr` capture is leak-free. Same-thread only. `defer()` does **not** keep the actor alive — the liveness guard below applies to it exactly as it does to a delayed `callback`.
 
@@ -181,7 +181,7 @@ qb::io::async::callback([this, task_id]() {
 Two arguments are commonly offered for the guard, and neither holds:
 
 - *"The callback runs on the actor's own core, so capturing `this` is safe — there is no cross-thread access."* This answers the wrong question. The hazard is **lifetime**, not threading; running on the right thread says nothing about whether the object still exists.
-- *"The guard covers the killed-but-not-yet-reaped window, which is the one that matters."* Backwards for a *delayed* callback. `kill()` only flags, but `VirtualCore` reaps in the same or the next loop turn — it unregisters the actor's callbacks and destroys it right there. A 5-second timer fires long after the reap. The guard covers microseconds; the hazard window is the whole delay. <!-- src: qb/src/qb/core/VirtualCore.cpp:815,993 -->
+- *"The guard covers the killed-but-not-yet-reaped window, which is the one that matters."* Backwards for a *delayed* callback. `kill()` only flags, but `VirtualCore` reaps in the same or the next loop turn — it unregisters the actor's callbacks and destroys it right there. A 5-second timer fires long after the reap. The guard covers microseconds; the hazard window is the whole delay. <!-- src: qb/src/qb/core/VirtualCore.cpp:820,1016 -->
 
 **The fix is to bind the delay to the actor's lifetime instead of guarding after the fact.** `Actor::spawn` runs a coroutine under the actor's cancellation scope, and `kill()` cancels that scope, so a pending `ctx.sleep` unwinds rather than resuming into a destroyed actor:
 
@@ -454,7 +454,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
 - **Passing a `double` as a delay.** `callback`, `with_timeout` and `connect` take `qb::duration` (a `std::chrono` span), never seconds-as-`double`. Write `5s` or `std::chrono::milliseconds(200)`; a bare integer does not compile. <!-- src: qb/src/qb/system/time.h:90 -->
 - **Touching `this` after the actor died.** A delayed `callback` outlives its actor, and `is_alive()` inside the closure does not save you — reading `_alive` on a destroyed actor *is* the invalid access. Bind the delay to the actor instead: `spawn` + `co_await ctx.sleep(...)` + a self-addressed event, or own a `scoped_callback` handle as a member so the destructor cancels it. <!-- src: qb/src/qb/core/Actor.h:632-635 -->
 - **Accessing actor state after `co_await`.** Copy state by value before the first suspension and use only the `CoroContext` afterwards.
-- **Sharing I/O objects across cores.** An async object is bound to one core's loop. Never hand it to another thread; move a socket into an event instead. <!-- src: qb/src/qb/io/async/listener.h:66-67,69-81 -->
+- **Sharing I/O objects across cores.** An async object is bound to one core's loop. Never hand it to another thread; move a socket into an event instead. <!-- src: qb/src/qb/io/async/listener.h:67-68,70-82 -->
 - **Blocking the loop at all.** A synchronous `read`, a `sleep`, a mutex wait, or an unbounded computation in a handler, a callback or an `on(qb::LoopEvent const&)` tick freezes the entire core. Defer it, chunk it, or offload it to a worker actor.
 
 ## See also

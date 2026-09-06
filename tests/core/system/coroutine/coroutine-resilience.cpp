@@ -20,8 +20,9 @@
  *     - succeeds on the first try (no spurious retry);
  *     - succeeds after N transient timeouts (the flaky dependency eventually answers);
  *     - exhausts its attempts and throws `timeout_error` (and asks EXACTLY max_attempts times);
- *     - GROWS its backoff between attempts — proven by the responder's own VirtualCore arrival
- *       timestamps (gap 2->3 strictly exceeds gap 1->2 under multiplier 2.0), not by a sleep;
+ *     - GROWS its backoff between attempts — proven by the responder's own arrival timestamps
+ *       (each gap is at least the ask timeout plus that attempt's backoff, a LOWER bound the
+ *       engine's timers can only overshoot), not by a sleep;
  *     - a kill aborts the retry loop with `cancelled_error`.
  *
  *   ask_guarded (CircuitBreaker-protected ask)
@@ -91,6 +92,17 @@ constexpr auto kRecoveryAskTimeout = 2s;
 constexpr auto   kBackoff    = 20ms;
 constexpr double kMultiplier = 2.0;
 constexpr auto   kMaxBackoff = 320ms;
+
+/// How far under `kAskTimeout + backoff_n` an inter-arrival gap may measure and still pass
+/// (BackoffGrowsBetweenAttempts). It must stay STRICTLY below `kBackoff`: an engine whose backoff
+/// never grows arrives every 60ms, and the third bound (`40 + 80 - slack`) rejects that only while
+/// `slack < 20ms`. What it absorbs: the same-core delivery delay between the retry's send and the
+/// responder's handler (microseconds), and the event loop's clock TICK -- on Windows the loop reads
+/// `GetSystemTimeAsFileTime`, which advances once per system tick (1ms inside a qb process,
+/// `sys__socket.cpp`'s `timeBeginPeriod(1)`), so a timer armed late in a tick fires up to one tick
+/// early against the steady clock (measured: gap0 59.35ms on a 60ms nominal). 10ms is ten of those
+/// ticks and half the smallest step the bound must still distinguish.
+constexpr auto kGapSlack = 10ms;
 
 /// Delay before the kill-then-stop driver fires (interrupts an in-flight ask) and then stops.
 constexpr auto kKillAfter = 25ms;
@@ -210,22 +222,32 @@ TEST(ActorAskRetry, ExhaustsAndThrowsTimeout) {
 //      cannot be perturbed by the runner. This is the primary oracle for "the backoff grows".
 //
 //   2. BackoffGrowsBetweenAttempts — that the ENGINE actually applies it, via the arrival timeline.
-//      This one is a wall-clock measurement and is only as good as its margin, so it compares the
-//      WIDEST available span rather than adjacent gaps. See the note on that test.
+//      This one is a clock measurement, so it asserts only what load can never falsify: each gap
+//      is AT LEAST the ask timeout plus that attempt's backoff. A timer never fires early, and a
+//      loaded runner can only make a gap LONGER. See the note on that test.
 //
-// Why the split, recorded so this is not rediscovered a third time: the arrival gaps are
-// `ask_timeout + backoff_n`, i.e. ~60/80/120ms here, so comparing ADJACENT gaps rests on a margin of
-// exactly `kBackoff` = 20ms — while the ask-timeout leg's own scheduler jitter is the same order.
-// Measured on a loaded 4-core VM (150 samples taken while the system tier ran at -j4): gap0 ranged
-// 53.2–79.9ms against a 60ms nominal, and the adjacent margin `gaps[1]-gaps[0]` fell to **0.21ms** of
-// its 20ms budget — a 1% worst case. It has since gone negative for real in a `-j4` lane
-// (83.9 vs 91.2ms). Note gap0's 53.2ms LOW: `Actor::time()` is sampled once per VirtualCore loop
-// turn, so a measured gap can come in UNDER its true elapsed time — which is also why a plain
-// "gap >= timeout + backoff" lower bound is not a valid fix here.
+// Why the split, recorded so this is not rediscovered a fourth time: the arrival gaps are
+// `ask_timeout + backoff_n`, i.e. ~60/80/120ms here, and any comparison BETWEEN gaps rests on the
+// runner not stretching one of them by more than the difference. Comparing ADJACENT gaps has a
+// margin of exactly `kBackoff` = 20ms; measured on a loaded 4-core VM (150 samples taken while the
+// system tier ran at -j4) that margin fell to **0.21ms**, and it later went negative for real in a
+// `-j4` lane (83.9 vs 91.2ms). Comparing FIRST against LAST widened the margin to 60ms — and that
+// went negative too, on the first ctest pass over a freshly built Windows tree at -j4 (four engines
+// pinning their core 0 to CPU 0): gaps of 134/210/120 ms and 176/142/162 ms, the first gap stretched
+// by 74-116 ms of runner delay on a 60 ms nominal. There is no margin a difference can be given that
+// a runner cannot exceed, which is why the assertion is a lower bound now.
 //
-// This is the second time this class has bitten this file; the first is recorded at
-// `kRecoveryAskTimeout` above. Raising the constants was rejected: it makes the test slower and
-// leaves it fragile, just less often — which is exactly what produced that earlier note.
+// The lower bound was rejected once before, for a real reason that has since been removed:
+// `Actor::time()` is sampled once per VirtualCore loop turn, so an arrival stamped with it could
+// come in UNDER its true elapsed time by the whole turn (gap0 measured 53.2ms against 60ms nominal
+// on that loaded VM). `FlakyMarket::ArrivalLog` stamps with `qb::mono_now()` read INSIDE the
+// handler now (AskResponders.h), so a gap is late only by the same-core delivery delay between the
+// retry's send and the responder's handler -- microseconds, unless the thread is preempted at that
+// exact instant, which `kGapSlack` absorbs.
+//
+// This is the third time this class has bitten this file; the first is recorded at
+// `kRecoveryAskTimeout` above. Raising the constants was rejected each time: it makes the test
+// slower and leaves it fragile, just less often — which is exactly what produced that earlier note.
 
 // The schedule `ask_retry` consumes, asserted directly — no clock, no engine, no load sensitivity.
 // `grow_backoff` is the exact call resilience.h makes between attempts, so this is the real series
@@ -305,15 +327,25 @@ TEST(ActorAskRetry, BackoffGrowsBetweenAttempts) {
 
     const auto gaps = log.gaps();
     ASSERT_EQ(gaps.size(), 3u) << "4 attempts -> 3 inter-arrival gaps";
-    // Each gap is `ask_timeout + backoff_n`; the ask-timeout leg is constant, so growth shows up as
-    // the difference between gaps. Compare the FIRST against the LAST rather than adjacent pairs:
-    // same data, same runtime, same constants, but the nominal margin is `kBackoff * 3` (60ms,
-    // 120ms vs 60ms) instead of `kBackoff` (20ms). On the loaded-VM sample above that lifts the
-    // worst observed margin from 0.21ms to 36.0ms — 60% of budget instead of 1%. The exact
-    // per-step ratio is not this test's job: BackoffScheduleGrowsAndClamps pins it without a clock.
-    EXPECT_GT(gaps[2], gaps[0]) << "the wait before attempt 4 must exceed the wait before attempt 2 (backoff grew across "
-                                   "the retry loop); gaps ms = "
-                                << (gaps[0] / 1000000.0) << ", " << (gaps[1] / 1000000.0) << ", " << (gaps[2] / 1000000.0);
+    // Each gap is `ask_timeout + backoff_n` — the ask's timeout timer, then `ctx.sleep(backoff_n)`,
+    // then the next send — and neither timer ever fires EARLY, so the engine applying the schedule
+    // is exactly "every gap reaches its own bound": 60/80/120ms nominal here. A loaded runner can
+    // only stretch a gap, never shorten one, so this cannot go red under load the way a comparison
+    // between two gaps did twice (see the note above). It still rejects every wrong engine: no
+    // backoff at all arrives every 40ms and fails the first bound, a backoff that never grows
+    // arrives every 60ms and fails the third. The exact per-step ratio is not this test's job:
+    // BackoffScheduleGrowsAndClamps pins it without a clock.
+    static_assert(kGapSlack < kBackoff, "a slack of kBackoff or more admits an engine whose backoff never grew");
+    auto backoff = qb::duration{kBackoff};
+    for (std::size_t k = 0; k < gaps.size(); ++k) {
+        const auto bound = std::chrono::duration_cast<std::chrono::nanoseconds>(kAskTimeout + backoff - kGapSlack);
+        EXPECT_GE(gaps[k], static_cast<std::uint64_t>(bound.count()))
+            << "gap " << k << " (attempt " << (k + 1) << " -> " << (k + 2) << ") must reach ask timeout + backoff_" << k << " = "
+            << std::chrono::duration_cast<std::chrono::milliseconds>(kAskTimeout + backoff).count() << "ms (minus "
+            << std::chrono::duration_cast<std::chrono::milliseconds>(kGapSlack).count() << "ms slack); gaps ms = " << (gaps[0] / 1000000.0)
+            << ", " << (gaps[1] / 1000000.0) << ", " << (gaps[2] / 1000000.0);
+        backoff = qb::detail::grow_backoff(backoff, kMultiplier, qb::duration{kMaxBackoff});
+    }
 }
 
 // --- A kill aborts the retry loop with cancelled_error -------------------------------------------

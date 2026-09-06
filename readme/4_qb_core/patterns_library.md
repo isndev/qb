@@ -154,7 +154,7 @@ spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
     ctx.push<PatternsDone>();
 });
 ```
-<!-- src: qb/tests/core/shared/AskResponders.h:57-76 (Ping, Echoer); qb/tests/core/system/coroutine/ask-patterns.cpp:172-176 (asker) -->
+<!-- src: qb/tests/core/shared/AskResponders.h:58-77 (Ping, Echoer); qb/tests/core/system/coroutine/ask-patterns.cpp:172-176 (asker) -->
 
 ### Example — absolute deadline across a chain
 
@@ -438,7 +438,7 @@ spawn([b = breaker, t, n](qb::ScopedCoroContext ctx) -> qb::io::async::task<void
     }
 });
 ```
-<!-- src: qb/tests/core/system/coroutine/coroutine-resilience.cpp:138-153 (ask_retry); qb/tests/core/system/coroutine/coroutine-resilience.cpp:400-414,449 (ask_guarded) -->
+<!-- src: qb/tests/core/system/coroutine/coroutine-resilience.cpp:150-165 (ask_retry); qb/tests/core/system/coroutine/coroutine-resilience.cpp:432-446,481 (ask_guarded) -->
 
 ### Example — rate limiter and bulkhead
 

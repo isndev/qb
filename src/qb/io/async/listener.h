@@ -34,6 +34,7 @@
 #include <stdexcept>
 #include <string>
 #include <qb/io.h> /* QB_LOG_INFO and qb logging conventions */
+#include <qb/system/time.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 #include <thread>
@@ -342,6 +343,28 @@ private:
             _defer_wake.start(0.); // next turn, never this pass
     }
 
+    // ---- Park inside the loop (qb-core's `Mailbox::wait(listener &)`) -------------
+    // A `VirtualCore` that owns io watchers used to park in a condition variable, and
+    // while it slept nothing polled its loop: a socket that became readable waited for
+    // the core's `latency` timeout (measured: p50 0.9–1.2 ms at 100 µs latency, 15.6 ms at
+    // 10 ms, against 19 µs while polling — qb-vs-others audit, axis N). `run_once_for()`
+    // parks in `ev_run(EVRUN_ONCE)` instead, so io wakes the core at poll latency, and
+    // `_wake` is how a PRODUCER on another thread ends that park after enqueuing an
+    // event: `ev_async_send` is libev's one thread-safe entry point, and the loop's own
+    // `pipe_write_wanted` / `pipe_write_skipped` fences make it airtight against the poll
+    // (a send landing before the poll is fed by the pass itself; one landing after the
+    // last pass is drained by the next `ev_run` before it can block). The watcher is
+    // `unref()`-ed once started so it never counts as work in `has_work()` / `run()`,
+    // and armed lazily — a spinning or actor-only core never creates the wake pipe.
+    ev::async _wake;
+    ev::timer _park_cap;
+    bool      _wake_armed = false;
+
+    void
+    _on_wake(ev::async &, int) noexcept {}
+    void
+    _on_park_cap(ev::timer &, int) noexcept {}
+
     // Run every callback queued BEFORE this pass; one that itself defers is left
     // for the next loop turn (the snapshot count bounds the drain and stops a
     // self-re-deferring callback from starving the loop). Never runs re-entrantly.
@@ -487,12 +510,16 @@ public:
      */
     listener()
         : _loop(_resolve_backend_flags())
-        , _defer_wake(_loop) {
+        , _defer_wake(_loop)
+        , _wake(_loop)
+        , _park_cap(_loop) {
         _defer_wake.set<listener, &listener::_on_defer_wake>(this);
         // Lowest priority: libev invokes pendings highest-priority-first, so the
         // drain lands after every other watcher pending in the same iteration.
         // Safe here — the watcher is neither active nor pending at construction.
         ev_set_priority(static_cast<ev_timer *>(&_defer_wake), EV_MINPRI);
+        _wake.set<listener, &listener::_on_wake>(this);
+        _park_cap.set<listener, &listener::_on_park_cap>(this);
     }
 
     /**
@@ -561,6 +588,8 @@ public:
             dropped.clear();
         }
         _defer_wake.stop(); // also clears a pending feed; nothing is left to drain
+        _park_cap.stop();
+        disarm_wake();
         if (_registered_head) {
             // Detach every handler but do not delete it here: async::base stores
             // a reference to the embedded event, so deleting the wrapper while
@@ -900,6 +929,102 @@ public:
     has_work() const noexcept {
         return _loop.active_count() != 0 || _loop.pending_count() != 0 || !_deferred.empty()
                || (_coro_scheduler && _coro_scheduler->has_ready());
+    }
+
+    /**
+     * @brief Arm the cross-thread wake that ends a `run_once_for()` park. Owner thread only.
+     * @details Idempotent. Starts the loop's `ev_async` watcher — which creates the loop's
+     *          wake pipe (an eventfd on Linux, a pipe on macOS, a loopback socket pair on
+     *          Windows) on first use — then `unref()`s it, so an armed listener with no other
+     *          watcher still reports `has_work() == false` and `run()` still skips the libev
+     *          pass. A driver arms it once, right before its first `run_once_for()`; a core
+     *          that never parks with io never pays for the pipe.
+     */
+    inline void
+    arm_wake() {
+        if (_wake_armed)
+            return;
+        _wake.start();
+        _loop.unref();
+        _wake_armed = true;
+    }
+
+    /**
+     * @brief Undo `arm_wake()`. Owner thread only; a no-op when not armed.
+     * @details `ref()` before the stop — an `unref()`-ed watcher stopped without its ref
+     *          would drive the loop's active count negative. Called from `clear()`, so a
+     *          listener is disarmed before its loop is destroyed.
+     */
+    inline void
+    disarm_wake() noexcept {
+        if (!_wake_armed)
+            return;
+        _loop.ref();
+        _wake.stop();
+        _wake_armed = false;
+    }
+
+    /**
+     * @brief Whether `arm_wake()` has been called and not undone.
+     */
+    [[nodiscard]] inline bool
+    is_wake_armed() const noexcept {
+        return _wake_armed;
+    }
+
+    /**
+     * @brief End a `run_once_for()` park from ANY thread. The one thread-safe call on this class.
+     * @details Wraps `ev_async_send`, which libev guarantees safe against a concurrent
+     *          `ev_run` on the owner thread. Coalesces: a second send before the loop has
+     *          consumed the first is a fenced load and a return. The caller must know the
+     *          wake is armed — `arm_wake()` happens-before any `wake()` through whatever
+     *          published the listener to the calling thread (qb-core: the mailbox's mutex).
+     *          A send that lands while the loop is NOT parked is harmless: the next `ev_run`
+     *          pass drains it before it can block (the same pass that heals a stale
+     *          `pipe_write_skipped`), costing one non-blocking iteration.
+     */
+    inline void
+    wake() noexcept {
+        _wake.send();
+    }
+
+    /**
+     * @brief One loop turn that may BLOCK, for at most `cap`, until a watcher fires or `wake()` lands.
+     * @param cap Longest time the turn may block. Non-positive: does not block.
+     * @return The number of events this turn invoked — io dispatches, deferred callbacks and
+     *         coroutine resumes, exactly what `nb_invoked_event()` reports after `run()`; a
+     *         turn ended by `wake()` alone or by the cap reports 0.
+     * @details The park half of `arm_wake()`. Runs `run(EVRUN_ONCE)` with a one-shot cap timer
+     *          armed, so the libev pass blocks in the backend poll — the loop's own liveness
+     *          rule needs a referenced active watcher to block at all, and the cap timer IS
+     *          one, which is also what makes the block bounded. The loop clock is refreshed
+     *          first: `ev_timer_start` schedules against `mn_now`, which is as stale as the
+     *          time since the last pass, and a timer scheduled against a stale clock expires
+     *          early or at once. A turn that already has something to run does not block —
+     *          a deferred callback, a ready coroutine, or an event fed to the loop since its
+     *          last pass: none of the three shortens `ev_run`'s wait (it computes the block
+     *          from watcher deadlines alone), so such a turn is a plain `run(EVRUN_NOWAIT)`.
+     *          The cap timer is stopped on every exit, an exception out of a handler included,
+     *          so a core that dies inside its park leaves no referenced watcher behind.
+     * @note Owner thread only; must be armed (`arm_wake()`) so `wake()` has a target.
+     */
+    inline std::size_t
+    run_once_for(qb::duration const cap) {
+        if (!_deferred.empty() || (_coro_scheduler && _coro_scheduler->has_ready()) || _loop.pending_count() != 0
+            || cap <= qb::duration::zero()) {
+            run(EVRUN_NOWAIT);
+            return _nb_invoked_events;
+        }
+        struct CapGuard {
+            ev::timer &cap;
+            ~CapGuard() {
+                cap.stop();
+            }
+        } const guard{_park_cap};
+        ev_now_update(_loop);
+        _park_cap.start(std::chrono::duration<double>(cap).count());
+        run(EVRUN_ONCE);
+        return _nb_invoked_events;
     }
 
     /**

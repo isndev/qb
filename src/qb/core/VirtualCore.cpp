@@ -524,6 +524,11 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
 #endif
     }
     _actor_to_remove.reserve(_actors.size());
+    // Publish this thread's io loop to the mailbox so a producer can end a park taken INSIDE
+    // it (`Mailbox::wait(listener &)`, below in `__workflow__`). Before the start barrier,
+    // hence before any peer can enqueue — and withdrawn by `Main::start_thread`'s exit guard
+    // on every exit path, before the thread's `listener::current` is destroyed.
+    _mail_box.attach_loop(&io::async::listener::current);
     return ret;
 }
 
@@ -838,20 +843,38 @@ VirtualCore::__workflow__() {
         // self-core pipe (an actor's callback may push to itself with no counted activity;
         // parking over that would delay a local event by up to `latency`). The first idle
         // pass stamps `_idle_since`; the core keeps polling until the mailbox's idle-spin
-        // floor has elapsed, then parks in `Mailbox::wait()` — which returns on data, on a
-        // producer's notify, or after `latency`. A wait that returns with nothing to do keeps
-        // the old stamp and parks again on the next pass, so an idle core does not re-spin a
-        // whole floor between two timeouts. The clock is read only on idle passes, and only
-        // when the core can park at all.
+        // floor has elapsed, then parks — which returns on data, on a producer's notify, or
+        // after `latency`. A wait that returns with nothing to do keeps the old stamp and
+        // parks again on the next pass, so an idle core does not re-spin a whole floor
+        // between two timeouts. The clock is read only on idle passes, and only when the
+        // core can park at all.
+        //
+        // WHERE it parks depends on whether the io loop has anything to deliver. With io
+        // watchers active the park is taken INSIDE the loop (`Mailbox::wait(listener &)`:
+        // `ev_run(EVRUN_ONCE)` capped at `latency`, ended by the producer through the
+        // loop's async watcher), so a socket that becomes readable wakes the core at poll
+        // latency instead of at the timeout — a cv-parked core answered io only when
+        // `latency` expired (p50 0.9–1.2 ms at 100 µs, 15.6 ms at 10 ms, against 19 µs polling;
+        // qb-vs-others audit, axis N). Io delivered by that park counts as activity: the
+        // stamp is cleared so the reply, and the request after it, are met at polling
+        // latency. A core with no io work keeps the condition-variable park, whose cost
+        // and handshake are the measured ones.
         if (_mail_box.getLatency() > qb::duration::zero()) {
             if (likely(_metrics.had_activity()) || !_mono_pipe_swap.empty()) {
                 _idle_since = qb::mono_time{};
             } else {
                 const auto now = qb::mono_now();
-                if (_idle_since == qb::mono_time{})
+                if (_idle_since == qb::mono_time{}) {
                     _idle_since = now;
-                else if (now - _idle_since >= _mail_box.getIdleSpin())
-                    _mail_box.wait();
+                } else if (now - _idle_since >= _mail_box.getIdleSpin()) {
+                    auto &loop = io::async::listener::current;
+                    if (loop.has_work()) {
+                        if (_mail_box.wait(loop))
+                            _idle_since = qb::mono_time{};
+                    } else {
+                        _mail_box.wait();
+                    }
+                }
             }
         }
         _metrics.reset();

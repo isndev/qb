@@ -350,7 +350,7 @@ endfunction()
 # CTest properties (labels, timeout, resource locks, skip-regex) and a skip-registration
 # decision. Implements dev/tests-audit/_CONVENTIONS.md §4.3/§4.5.
 #
-#   out_prefix  - results are returned as ${out_prefix}_LABELS / _TIMEOUT / _LOCKS /
+#   out_prefix  - results are returned as ${out_prefix}_LABELS / _TIMEOUT / _LOCKS / _RUN_SERIAL /
 #                 _SKIP_REGEX / _SKIP_REGISTER (TRUE if a compile-gated feature is absent).
 # Reads (one/multi-value): TIER MODULE LABELS REQUIRES TIMEOUT RESOURCE_LOCK.
 function(_qb_test_conventions out_prefix)
@@ -486,11 +486,29 @@ function(_qb_test_conventions out_prefix)
         list(APPEND _locks "qb-multicore")
     endif()
 
+    # `serial` was ALSO a label and nothing else -- six registrations carried it, two of them
+    # (core-park-policy, core-park-wake) with a comment saying the test "runs alone", and ctest
+    # scheduled every one of them next to three neighbours under the presets' `jobs: 4`. A
+    # measurement of WHEN a parked core wakes, or of how much CPU a parked core burns, taken
+    # while three other engines spin their own core 0 on the same CPU (qb pins core N to CPU N,
+    # VirtualCore.cpp:476 onwards), is a measurement of the neighbours. `RUN_SERIAL` is what the
+    # label promised: ctest starts the test only once every running test has finished and
+    # starts nothing else until it exits. The multicore lock above is not a substitute -- it
+    # serialises multicore tests against EACH OTHER, and a single-core test is outside it.
+    # Measured cost on a warm Windows `release` suite (372 tests, -j4): the six serial tests sum
+    # to 3.5 s of wall clock, so the ceiling is +3.5 s on a 50 s run; the observed delta is
+    # inside run-to-run spread (49-54 s before, see the commit that landed this).
+    set(_run_serial FALSE)
+    if("serial" IN_LIST _labels)
+        set(_run_serial TRUE)
+    endif()
+
     list(REMOVE_DUPLICATES _labels)
     list(REMOVE_DUPLICATES _locks)
     set(${out_prefix}_LABELS "${_labels}" PARENT_SCOPE)
     set(${out_prefix}_TIMEOUT "${_timeout}" PARENT_SCOPE)
     set(${out_prefix}_LOCKS "${_locks}" PARENT_SCOPE)
+    set(${out_prefix}_RUN_SERIAL "${_run_serial}" PARENT_SCOPE)
     set(${out_prefix}_SKIP_REGEX "${_skip_regex}" PARENT_SCOPE)
     set(${out_prefix}_SKIP_REGISTER "${_skip_register}" PARENT_SCOPE)
 endfunction()
@@ -689,6 +707,9 @@ function(qb_add_test)
     )
     if(_TC_LOCKS)
         set_tests_properties(${TEST_NAME} PROPERTIES RESOURCE_LOCK "${_TC_LOCKS}")
+    endif()
+    if(_TC_RUN_SERIAL)
+        set_tests_properties(${TEST_NAME} PROPERTIES RUN_SERIAL TRUE)
     endif()
     if(_TC_SKIP_REGEX)
         set_tests_properties(${TEST_NAME} PROPERTIES SKIP_REGULAR_EXPRESSION "${_TC_SKIP_REGEX}")

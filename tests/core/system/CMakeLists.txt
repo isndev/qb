@@ -36,6 +36,11 @@ qb_add_test(MODULE qb-core TIER system NAME no-default-events SOURCES engine/no-
 # core-park-policy measures WHEN a latency>0 core parks, with a qb-io timer as its clock; a loaded
 # host stretches every figure, so it runs alone.
 qb_add_test(MODULE qb-core TIER system NAME core-park-policy SOURCES engine/core-park-policy.cpp DEPENDS ${PROJECT_NAME} LABELS serial)
+# core-park-wake measures what WAKES a parked core -- a readable socket, a cross-core push into a
+# loop park, a cross-core push into a cv park -- against bounds a missed wake overshoots by the
+# whole latency; its two push cases bring up a second VirtualCore, and its CPU-time assertion
+# (parked, not polling) is meaningless on a loaded host, so it is both serial and multicore.
+qb_add_test(MODULE qb-core TIER system NAME core-park-wake   SOURCES engine/core-park-wake.cpp   DEPENDS ${PROJECT_NAME} LABELS serial requires-multicore)
 # engine-io-smoke drives the LOGGING BACKEND itself -- it points the global logger at a throwaway
 # temp path with qb::io::log::init() and reads the rolled files back. That namespace, and nanolog
 # behind it, only exist when QB_WITH_LOGGING is ON, and the test uses them unguarded, so with

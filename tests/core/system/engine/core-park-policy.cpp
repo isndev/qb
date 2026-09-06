@@ -23,10 +23,15 @@
  *   - an actor pushing to ITSELF from its tick callback is delivered on the next pass, not after
  *     `latency`: the self-core pipe is not counted as activity, and 3.0 parked over it;
  *   - inside the idle-spin floor the core keeps polling, so a 100 ms timer fires at ~100 ms;
- *   - past the floor the core parks and that same timer fires at `latency` — the current contract,
- *     recorded here so the previous case cannot pass vacuously (axis J of the audit: a parked core
- *     does not consult io deadlines; if this starts firing early, the engine learned to, and the
- *     `setLatency()` documentation must move with it);
+ *   - past the floor the core parks INSIDE ITS EVENT LOOP — it owns a timer, so `Mailbox::wait()`
+ *     takes the `listener &` form and blocks in `ev_run(EVRUN_ONCE)` under a `latency` cap — and
+ *     that same timer fires at its delay, not at `latency`: the loop park honours io deadlines
+ *     (axis N of the audit; until 3.2 the core parked on a condition variable and a parked core
+ *     consulted no io deadline, so this timer fired at the park timeout). That the core PARKED,
+ *     rather than polled its way to the deadline, is measured: the process burns almost no CPU
+ *     time across the wait, where a polling core burns the whole of it;
+ *   - the cap holds: a core parked in its loop over a far deadline wakes at `latency` and sees a
+ *     `Main::stop()` — without the cap timer the poll would sleep to the far deadline;
  *   - the configuration surface: default, per-core override, `Main`-wide fan-out, chaining.
  *
  * Every case runs the engine on the calling thread (`start(false)`) with process-global atoms and
@@ -36,15 +41,44 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <thread>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
 namespace core_park_policy_test {
 
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
+
+/// CPU time consumed by this process so far, every thread summed. The instrument that tells a
+/// parked core from a polling one: both reach the same deadline at the same wall-clock time,
+/// only one of them burns the interval. `std::clock()` cannot be it — MSVC's returns wall time.
+std::chrono::nanoseconds
+process_cpu_time() {
+#ifdef _WIN32
+    FILETIME creation{}, exit{}, kernel{}, user{};
+    if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user))
+        return {};
+    auto to_ns = [](FILETIME const &ft) {
+        const auto ticks = (static_cast<std::uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+        return std::chrono::nanoseconds{static_cast<std::int64_t>(ticks) * 100}; // 100 ns units
+    };
+    return to_ns(kernel) + to_ns(user);
+#else
+    timespec ts{};
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) != 0)
+        return {};
+    return std::chrono::seconds{ts.tv_sec} + std::chrono::nanoseconds{ts.tv_nsec};
+#endif
+}
 
 std::atomic<std::int64_t> g_pushed_at_ns{0};
 std::atomic<std::int64_t> g_seen_at_ns{0};
@@ -101,7 +135,9 @@ public:
 };
 
 /// Arms one qb-io timer in `onInit()` and ends when it fires. The timer is the probe: it fires at
-/// its delay while the core polls, and only when the park times out once the core has parked.
+/// its delay whether the core polls or has parked inside its loop, because a loop park computes
+/// its wait from the loop's own timer deadlines -- the pre-3.2 mailbox park could not, and fired
+/// it only when the park timed out.
 class TimerProbe : public qb::Actor {
     const qb::duration _delay;
 
@@ -157,27 +193,57 @@ TEST(CoreParkPolicy, InsideTheIdleSpinFloorTheCoreKeepsPolling) {
                           << std::chrono::duration_cast<std::chrono::milliseconds>(at).count() << " ms";
 }
 
-TEST(CoreParkPolicy, PastTheFloorTheCoreParksAndAnIoTimerWaitsForTheLatency) {
-    // NOT a wish, a fact: a parked core does not consult qb-io's next deadline, so a timer armed
-    // on it fires when the park times out. This is what makes the previous case load-bearing —
-    // with the floor at zero the SAME timer fires at `latency`, so "fired at ~100 ms" above is the
-    // floor doing its job, not parking never happening. If this ever fires early, the engine has
-    // learned io deadlines; move this expectation and the `setLatency()` doc together.
+TEST(CoreParkPolicy, PastTheFloorTheCoreParksInsideItsLoopAndAnIoTimerFiresAtItsDelay) {
+    // The core owns a timer, so past the floor it parks in `ev_run(EVRUN_ONCE)` rather than on
+    // its condition variable, and the timer fires at 100 ms under a 700 ms latency. Two things are
+    // asserted, because either alone passes vacuously: the deadline was honoured (a cv park would
+    // have slept to `latency`) AND the core was asleep while it waited (a floor that never parks
+    // would also fire on time). The second is CPU time: this process IS the core (`start(false)`),
+    // so across a 100 ms wait a polling core charges ~100 ms and a parked one a few hundred µs.
+    // Loose bound — a sanitizer, a loaded host and a coarse Windows tick all inflate it — but a
+    // core that polled to the deadline lands at 100%, and no amount of noise turns that into 50.
     reset_atoms();
     constexpr auto kLatency = 700ms;
     constexpr auto kTimer   = 100ms;
     qb::Main       main;
     main.core(0).setLatency(kLatency).setIdleSpin(0us);
     main.addActor<TimerProbe>(0, kTimer);
+    const auto cpu_before = process_cpu_time();
     main.start(false);
     main.join();
+    const auto cpu_spent = process_cpu_time() - cpu_before;
     EXPECT_FALSE(main.hasError());
 
     ASSERT_NE(g_fired_at_ns.load(std::memory_order_acquire), 0) << "the timer never fired";
     const auto at = delta_ns(g_armed_at_ns, g_fired_at_ns);
-    EXPECT_GE(at, kLatency - 100ms) << "a parked core woke before its latency; the timer fired after "
+    EXPECT_GE(at, kTimer - 20ms);
+    EXPECT_LT(at, kLatency - 100ms) << "the timer waited for the park timeout: the core parked over its io deadline; fired after "
                                     << std::chrono::duration_cast<std::chrono::milliseconds>(at).count() << " ms";
-    EXPECT_LT(at, 3 * kLatency) << "and the park is bounded by the latency";
+    EXPECT_LT(cpu_spent, at / 2) << "the core polled its way to the deadline instead of parking: "
+                                 << std::chrono::duration_cast<std::chrono::microseconds>(cpu_spent).count() << " us of CPU across a "
+                                 << std::chrono::duration_cast<std::chrono::microseconds>(at).count() << " us wait";
+}
+
+TEST(CoreParkPolicy, ALoopParkIsCappedByTheLatencyAndSeesStop) {
+    // A core parked in its loop over a deadline ten seconds away must still wake at `latency`,
+    // because that is when it looks at `Main::stop()`, at a peer's shutdown, at anything that is
+    // not a watcher. The cap is a one-shot timer the park arms around the blocking pass; without
+    // it this join would take the ten seconds.
+    reset_atoms();
+    constexpr auto kLatency = 300ms;
+    qb::Main       main;
+    main.core(0).setLatency(kLatency).setIdleSpin(0us);
+    main.addActor<TimerProbe>(0, qb::duration{10s});
+    main.start(true);
+    std::this_thread::sleep_for(100ms); // past the floor: the core is in its loop park by now
+    const auto stop_at = Clock::now();
+    qb::Main::stop();
+    main.join();
+    const auto took = Clock::now() - stop_at;
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_fired_at_ns.load(std::memory_order_acquire), 0) << "the ten-second timer fired";
+    EXPECT_LT(took, 5 * kLatency) << "stop() waited on the io deadline, not on the latency cap: joined after "
+                                  << std::chrono::duration_cast<std::chrono::milliseconds>(took).count() << " ms";
 }
 
 TEST(CoreParkPolicy, IdleSpinConfigurationSurface) {

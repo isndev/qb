@@ -34,7 +34,7 @@ or function, that symbol is named so you can verify it directly.
 
 - Each thread owns **exactly one** `qb::io::async::listener`, reachable through
   the `thread_local` static member `listener::current`
-  (`src/qb/io/async/listener.h:91,97`). Under `qb-core`, every `VirtualCore`
+  (`src/qb/io/async/listener.h:92,98`). Under `qb-core`, every `VirtualCore`
   worker thread has its own `listener::current`; the worker installs it before
   any I/O object is constructed on that core.
 - Every async object — `async::input<>`, `async::output<>`, `async::io<>`,
@@ -46,7 +46,7 @@ or function, that symbol is named so you can verify it directly.
   destroyed on the same thread**; the libev watcher is not cross-thread safe.
 - The listener is **never locked**. All event handlers (`on()` methods) run
   sequentially on the listener's own thread, so I/O state needs no mutex or
-  atomic (`src/qb/io/async/listener.h:74-76`). This is a strictly stronger and
+  atomic (`src/qb/io/async/listener.h:75-77`). This is a strictly stronger and
   strictly single-threaded guarantee than `std::thread`-safety: `qb-io` objects
   are *not* `std::thread`-safe, they are *thread-confined*.
 - To reach an I/O object from another thread, go through the actor mailbox
@@ -54,7 +54,7 @@ or function, that symbol is named so you can verify it directly.
   destination core dequeues and dispatches the event on its own thread.
 - On Windows, the libev epoll backend is wepoll (IOCP). The loop must not run
   on one thread while another thread closes the same loop or its epoll handle
-  (`src/qb/io/async/listener.h:79-81`). One thread per listener satisfies this
+  (`src/qb/io/async/listener.h:80-82`). One thread per listener satisfies this
   contract; do not break it on Windows even for "read-only" access.
 
 Moving an async object is also forbidden. `async::base` declares no move
@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`src/qb/io/async/listener.h:994-997`). `listener::current` is a
+  (`src/qb/io/async/listener.h:1119-1122`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -78,14 +78,14 @@ registry, or as a member — never relocate them.
 - To reset event-loop state (for example in a unit-test teardown), call
   `listener::current.clear()` directly — never via `init()`.
 - `listener::clear()` (and the destructor) **detach** watchers without
-  **deleting** them (`src/qb/io/async/listener.h:543,584-585,617-619`). Each `async::base`
+  **deleting** them (`src/qb/io/async/listener.h:570,613-614,646-648`). Each `async::base`
   still holds a reference to its embedded event, so the owning object's
   destructor performs the final unregister and delete. Deleting in `clear()`
   would leave a dangling `_async_event`.
 - `clear()` runs the loop four times with `EVRUN_NOWAIT`, not `EVRUN_ONCE`,
   because under a monotonic-clock + timerfd libev build the loop can pick a
   multi-million-second wait time when `timercnt == 0`, which would wedge thread
-  teardown (`src/qb/io/async/listener.h:606-607`). This is intentional; do not
+  teardown (`src/qb/io/async/listener.h:635-636`). This is intentional; do not
   "simplify" it to a single `EVRUN_ONCE`.
 
 ---
@@ -96,7 +96,7 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`src/qb/io/async/listener.h:1009`).
+  (`src/qb/io/async/listener.h:1134`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
   `run_for()` (`src/qb/io/async/coroutine/utils.h:285`, `:227`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
@@ -117,7 +117,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1069-1072`).
+> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1194-1197`).
 
 ---
 

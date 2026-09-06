@@ -32,10 +32,13 @@
 #include <atomic>
 #include <condition_variable>
 #include <csignal>
+#include <cstdint>
+#include <mutex>
 #include <qb/system/container/unordered_map.h>
 #include <thread>
 #include <vector>
 // include from qb
+#include <qb/io/async/listener.h>
 #include <qb/system/lockfree/mpsc.h>
 #include <qb/system/time.h>
 #include <qb/utility/compat.h>
@@ -279,7 +282,12 @@ public:
      * - `0` (default): Low latency mode. The VirtualCore spins actively, consuming 100% CPU
      *   on its assigned core, to process events with minimal delay.
      * - `latency > 0`: The VirtualCore may sleep for up to this duration if idle, reducing CPU usage.
-     *   This introduces a potential worst-case latency for new event processing.
+     *   This introduces a potential worst-case latency for new event processing. WHERE it sleeps
+     *   depends on what the core owns: a core with active qb-io watchers (sockets, timers,
+     *   `qb::io::async::callback`) parks inside its event loop, so io readiness and io timers wake
+     *   it at poll latency and `latency` only caps the park — a timer armed on such a core fires
+     *   at its delay, not at the park timeout; a core with no io watchers parks on its mailbox
+     *   condition variable. Either park ends the moment a producer enqueues an event to the core.
      * This setting takes effect when the engine starts.
      * @see setIdleSpin() for how long an idle core keeps polling before it takes that sleep.
      */
@@ -376,15 +384,37 @@ public:
      *          `consume_all` and the wait, and the core then slept the whole `_latency` (on MSVC,
      *          a whole scheduler tick: measured ~13 ms per loss, 50–95 % of a 2-core ping-pong's
      *          wait time). When nobody is parked, `notify()` costs one fence and one load.
+     *
+     *          The park has TWO shapes, chosen by the consumer per park and told apart by
+     *          `_parked`. A core whose io loop has nothing to deliver parks in the condition
+     *          variable above (`Park::Cv`). A core that owns io watchers parks INSIDE its io
+     *          loop instead (`Park::Loop`, `wait(listener &)`): the same Dekker pair, but the
+     *          block is the loop's own `ev_run(EVRUN_ONCE)` capped at `_latency`, so a socket
+     *          becoming readable ends it at poll latency rather than at the timeout — a parked
+     *          core used to answer io only when `_latency` expired (measured p50 0.9–1.2 ms at
+     *          100 µs latency, 15.6 ms at 10 ms, against 19 µs while polling; qb-vs-others
+     *          audit, axis N). The producer side stays one fence and one load until it sees a
+     *          park; a `Loop` park is ended with `listener::wake()` (libev's thread-safe
+     *          `ev_async_send`) instead of the cv, under the same mutex — which is also what
+     *          keeps the listener pointer valid: the owning core publishes it with
+     *          `attach_loop()` before it can park and clears it with `detach_loop()` under
+     *          `_mtx` on its way out, so a producer that takes the mutex either sees a live
+     *          listener or none.
      */
     class Mailbox : public lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0> {
+    public:
+        /// Which park the consumer is in, if any. See the class note.
+        enum class Park : std::uint8_t { None = 0, Cv, Loop };
+
+    private:
         const qb::duration _latency;   ///< Longest single park; 0 = the consumer never parks.
         const qb::duration _idle_spin; ///< Idle time the consumer spins through before it parks.
         // The consumer's "I am about to block" flag. Its own line: producers read it on every
         // enqueue, the consumer writes it only around a park, and nothing else may share it.
-        alignas(QB_LOCKFREE_CACHELINE_BYTES) std::atomic<bool> _parked{false};
+        alignas(QB_LOCKFREE_CACHELINE_BYTES) std::atomic<Park> _parked{Park::None};
         std::mutex              _mtx;
         std::condition_variable _cv;
+        io::async::listener    *_loop = nullptr; ///< The consumer's io loop; written under `_mtx`.
 
         // The Dekker fence, once for both halves. gcc's -fsanitize=thread does not MODEL a
         // fence (it still emits it) and says so with -Wtsan at every use. That blindness costs
@@ -425,13 +455,91 @@ public:
         wait() noexcept {
             if (_latency <= qb::duration::zero())
                 return;
-            _parked.store(true, std::memory_order_relaxed);
+            _parked.store(Park::Cv, std::memory_order_relaxed);
             seq_cst_fence();
             if (!has_data()) {
                 std::unique_lock lk(_mtx);
                 _cv.wait_for(lk, _latency, [this] { return has_data(); });
             }
-            _parked.store(false, std::memory_order_relaxed);
+            _parked.store(Park::None, std::memory_order_relaxed);
+        }
+
+        /**
+         * @brief Park the consumer INSIDE its io loop: until data is enqueued, `notify()` lands, an
+         *        io watcher fires, or `_latency` elapses.
+         * @ingroup Engine
+         * @param loop The consumer's own listener — the one `attach_loop()` published.
+         * @return Whether the loop turn delivered any event (io dispatch, deferred callback or
+         *         coroutine resume): the caller treats that as activity and re-arms its idle
+         *         spin, so a follow-up request is met at polling latency rather than by another
+         *         park. `false` when the park ended on mailbox data, on the cap, or not at all.
+         * @details The `Park::Loop` shape described on the class. Same handshake as `wait()` —
+         *          announce, fence, re-check the rings — but the block is
+         *          `listener::run_once_for(_latency)`, and the loop's wake is armed first
+         *          (idempotent; a core that never reaches this never creates the wake pipe).
+         *          The announce is a RELEASE store, not the relaxed one `wait()` uses, and
+         *          that is load-bearing: `arm_wake()` creates the wake pipe on the core's
+         *          thread, outside `_mtx`, and a producer's `wake()` reads that pipe — so the
+         *          producer's acquire re-read of `Park::Loop` under `_mtx` in `notify()` is what
+         *          orders the pipe's creation before its first use. A relaxed store is enough
+         *          for the cv park because a cv has no state the producer reads; here the
+         *          fence that follows serves the Dekker exchange only, and a fence AFTER a
+         *          store gives a reader of that store no release semantics (ThreadSanitizer
+         *          reported exactly this pair, `eventfd()` in `evpipe_init` against
+         *          `evpipe_write`, on the first park of `core-park-wake`).
+         *          The flag is reset by a guard so an io handler that throws out of the park
+         *          cannot leave `Park::Loop` published: a producer would otherwise keep waking
+         *          a listener the core is about to destroy. A no-op when `_latency` is 0.
+         * @note Only the owning core's thread may call this, and only with its own listener.
+         */
+        [[nodiscard]] bool
+        wait(io::async::listener &loop) {
+            if (_latency <= qb::duration::zero())
+                return false;
+            loop.arm_wake();
+            struct Unpark {
+                std::atomic<Park> &parked;
+                ~Unpark() {
+                    parked.store(Park::None, std::memory_order_relaxed);
+                }
+            } const unpark{_parked};
+            _parked.store(Park::Loop, std::memory_order_release);
+            seq_cst_fence();
+            if (has_data())
+                return false;
+            return loop.run_once_for(_latency) != 0;
+        }
+
+        /**
+         * @brief Publish the consumer's io loop so a producer can end a `Park::Loop` park.
+         * @ingroup Engine
+         * @details Called once by the owning core, on its own thread, before it can park —
+         *          under `_mtx`, which is what orders the pointer's publication against its
+         *          withdrawal in `detach_loop()`, so a producer holding the mutex never calls
+         *          into a listener that is being destroyed. It does NOT arm the wake: that is
+         *          lazy, on the first `wait(listener&)`, and ordered before the producer's
+         *          first `wake()` by the release/acquire pair on `_parked` documented there.
+         */
+        void
+        attach_loop(io::async::listener *const loop) {
+            std::lock_guard lk(_mtx);
+            _loop = loop;
+        }
+
+        /**
+         * @brief Withdraw the loop published by `attach_loop()`. Owning core's thread, on exit.
+         * @ingroup Engine
+         * @details Must run BEFORE the thread's `listener::current` is destroyed, on every exit
+         *          path including a throw out of `__workflow__`: a producer that took `_mtx`
+         *          before this call is still inside `wake()` on a live listener when this
+         *          blocks on the mutex; one that takes it after finds no listener and falls
+         *          back to the cv, which nothing is waiting on — harmless.
+         */
+        void
+        detach_loop() noexcept {
+            _parked.store(Park::None, std::memory_order_relaxed);
+            std::lock_guard lk(_mtx);
+            _loop = nullptr;
         }
 
         /**
@@ -458,10 +566,23 @@ public:
             seq_cst_fence();
             if (_latency <= qb::duration::zero())
                 return;
-            if (!_parked.load(std::memory_order_relaxed))
+            if (_parked.load(std::memory_order_relaxed) == Park::None)
                 return;
+            // Announced park: take the mutex, then re-read WHICH park under it. The consumer
+            // flips the flag outside the mutex, so the first load may be stale; the re-read
+            // under `_mtx` is ordered against `detach_loop()` and is what makes `_loop` safe
+            // to call, and it is an ACQUIRE because the consumer's `Park::Loop` store is a
+            // release: that pair is what makes the wake pipe `arm_wake()` created on the
+            // consumer's thread visible to `wake()` on this one. A cv park (or a stale Loop
+            // with the listener already withdrawn) is woken through the cv exactly as before
+            // — the notify outside the lock is the shipped shape, and a Loop consumer never
+            // waits on the cv, so a spurious `notify_one()` on the wrong shape is a no-op.
             {
                 std::lock_guard lk(_mtx);
+                if (_parked.load(std::memory_order_acquire) == Park::Loop && _loop) {
+                    _loop->wake();
+                    return;
+                }
             }
             _cv.notify_one();
         }

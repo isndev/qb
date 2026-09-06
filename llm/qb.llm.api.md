@@ -664,6 +664,10 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
     *   `[T<_Event,_Actor,_Args...>] _Event& registerEvent(_Actor& actor, _Args&&... args)` — wrap a libev watcher.
     *   `void unregisterEvent(IRegisteredKernelEvent* kevent)` (idempotent).
     *   `void run(int flag = 0)` — run the loop (0 / EVRUN_ONCE / EVRUN_NOWAIT), then drain coroutines.
+    *   `bool has_work() const noexcept` — whether a `run()` turn has anything to do: referenced active watchers, pending events, deferred callbacks, ready coroutines. `VirtualCore` gates its libev pass on it.
+    *   `void arm_wake()` / `void disarm_wake() noexcept` / `bool is_wake_armed() const noexcept` — owner thread only; arm the `ev_async` that lets another thread end a `run_once_for()` park (unref'd, never counts as work).
+    *   `void wake() noexcept` — end a `run_once_for()` park from ANY thread (`ev_async_send`); the one thread-safe member. Requires `arm_wake()` to have happened-before.
+    *   `std::size_t run_once_for(qb::duration cap)` — one turn that may block for at most `cap` until a watcher fires or `wake()` lands (one-shot cap timer + `EVRUN_ONCE`); a turn with deferred/ready/pending work, or `cap <= 0`, is a plain `EVRUN_NOWAIT`. → events invoked this turn. Owner thread only.
     *   `void break_one()`, `void clear()`.
     *   `std::size_t nb_invoked_event() const`, `total_events_processed() const`, `size() const`.
     *   `ev::loop_ref loop() const`, `CoroutineScheduler& coro_scheduler()`.
@@ -770,7 +774,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline socket_awaiter wait_readable(int fd)` / `wait_writable(int fd)` / `wait_for_io(int fd, int events)`.
 *   `inline CoroutineScheduler& coro_scheduler()` — listener's scheduler.
 *   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration. Throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`.
-*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1008-1021`)_.
+*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1133-1146`)_.
 *   use: `co_await qb::io::async::sleep(100ms);`
 
 ### Combinators (`combinators.h`)

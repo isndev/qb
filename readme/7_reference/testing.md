@@ -52,7 +52,7 @@ The helper derives both the executable and the CTest entry name uniformly as `<m
 | `io/tests/unit/core/uri-parse.cpp` | `MODULE qb-io TIER unit NAME uri-parse` | `qb-io-test-unit-uri-parse` |
 | `io/tests/system/coroutine/channel-lifetime.cpp` | `MODULE qb-io TIER system NAME channel-lifetime` | `qb-io-test-system-channel-lifetime` |
 
-<!-- src: qb/cmake/qbFunctions.cmake:510-517, qb/tests/io/unit/CMakeLists.txt:27 -->
+<!-- src: qb/cmake/qbFunctions.cmake:528-535, qb/tests/io/unit/CMakeLists.txt:27 -->
 
 Every test also carries CTest labels — `tier:<tier>` and `module:<module>`, plus any capability tokens from `REQUIRES` (`ssl`, `quic`, `compression`, `network`, `live`) — and a per-tier default timeout (unit 60 s, system 120 s, integration 300 s). To add a test, drop the source into the right tier/topic directory and add one `qb_add_test` line; there are no per-directory naming rules to remember.
 
@@ -68,9 +68,9 @@ cmake --build build --parallel
 
 <!-- src: qb/readme/7_reference/building.md -->
 
-When `QB_BUILD_TESTS` is `OFF`, `qb_add_test` returns early before defining any target, so no test executables and no CTest registrations exist (`qb/cmake/qbFunctions.cmake:519-522`).
+When `QB_BUILD_TESTS` is `OFF`, `qb_add_test` returns early before defining any target, so no test executables and no CTest registrations exist (`qb/cmake/qbFunctions.cmake:537-540`).
 
-Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:586-588`), not alongside the per-module build trees. After a build, list them with:
+Test executables are written to `${CMAKE_BINARY_DIR}/bin/tests` (`qb/cmake/qbFunctions.cmake:604-606`), not alongside the per-module build trees. After a build, list them with:
 
 ```bash
 ls build/bin/tests/
@@ -78,7 +78,7 @@ ls build/bin/tests/
 
 ### How GoogleTest is resolved
 
-`qb_add_test` links each test against `GTest::gtest_main` (`qb/cmake/qbFunctions.cmake:548-549`), which provides the `main()` entry point — test sources do not declare their own. GoogleTest itself is resolved once, before any test target is defined, by `qb/cmake/qbFetchGoogleDeps.cmake`, only when `QB_BUILD_TESTS` (or `QB_BUILD_BENCHMARKS`) is on. The policy is:
+`qb_add_test` links each test against `GTest::gtest_main` (`qb/cmake/qbFunctions.cmake:566-567`), which provides the `main()` entry point — test sources do not declare their own. GoogleTest itself is resolved once, before any test target is defined, by `qb/cmake/qbFetchGoogleDeps.cmake`, only when `QB_BUILD_TESTS` (or `QB_BUILD_BENCHMARKS`) is on. The policy is:
 
 - **`QB_USE_SYSTEM_GTEST=ON`** (default `OFF`) — require a system package via `find_package(GTest CONFIG REQUIRED)`; never fetch.
 - **`QB_DEPS_FETCH_FALLBACK=ON`** (the default) — use a system GoogleTest if `find_package` locates one, otherwise build the pinned tag from source through FetchContent ("system if present, else git"). The from-source path needs network access on the first configure.
@@ -88,7 +88,7 @@ The pinned tag is `QB_GOOGLETEST_GIT_TAG`, default `v1.15.2` (`qb/cmake/qbConfig
 
 ### Test resources
 
-If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the committed SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:1279-1353`). The flat `bin/tests/cert.pem` + `key.pem` pair that the tests actually load has exactly **one** producer, chosen at configure time: `generate_ssl_certs`, which writes a freshly generated self-signed `CN=localhost` pair, on any host with `openssl`; the committed pair only when that target does not exist. Two targets used to write those two names into that one directory, which made the certificate the suite tested a property of the build graph. Whichever target owns them now DECLARES them, with `BYPRODUCTS`, so they are nodes in the build graph rather than bytes some command happened to write: `ninja -t clean` removes them (it used to leave all four staged files behind, so a certificate from an earlier configuration survived a clean and could satisfy a later run), and a reintroduced second writer is a generate-time "multiple rules generate" error instead of a race. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:678-680`).
+If OpenSSL is available (`QB_HAS_SSL`), `qb_setup_test_resources` registers a `qb_copy_test_ssl_resources` target that copies the committed SSL fixture directory into `build/bin/tests/ssl` (`qb/cmake/qbFunctions.cmake:1300-1374`). The flat `bin/tests/cert.pem` + `key.pem` pair that the tests actually load has exactly **one** producer, chosen at configure time: `generate_ssl_certs`, which writes a freshly generated self-signed `CN=localhost` pair, on any host with `openssl`; the committed pair only when that target does not exist. Two targets used to write those two names into that one directory, which made the certificate the suite tested a property of the build graph. Whichever target owns them now DECLARES them, with `BYPRODUCTS`, so they are nodes in the build graph rather than bytes some command happened to write: `ninja -t clean` removes them (it used to leave all four staged files behind, so a certificate from an earlier configuration survived a clean and could satisfy a later run), and a reintroduced second writer is a generate-time "multiple rules generate" error instead of a race. Because tests look up resources relative to their working directory, they must be launched from `bin/tests` — CTest sets that working directory automatically (`qb/cmake/qbFunctions.cmake:696-698`).
 
 ### Conditional suites
 
@@ -134,7 +134,7 @@ ctest -L tier:unit          # every unit-tier test
 ctest -L module:qb-io       # every qb-io test
 ```
 
-Every test registered by `qb_add_test` carries `tier:<tier>` and `module:<module>` labels (plus any capability tags such as `ssl` or `coroutine`) and a per-tier timeout (unit 60 s, system 120 s, integration 300 s), and runs with its working directory set to `bin/tests` (`qb/cmake/qbFunctions.cmake:678-680` for the working directory, `:684-695` for the labels, timeout, resource locks and skip regex). The `-R` regular expression matches the CTest test name (which equals the target name from the table above); `-L` matches labels.
+Every test registered by `qb_add_test` carries `tier:<tier>` and `module:<module>` labels (plus any capability tags such as `ssl` or `coroutine`) and a per-tier timeout (unit 60 s, system 120 s, integration 300 s), and runs with its working directory set to `bin/tests` (`qb/cmake/qbFunctions.cmake:696-698` for the working directory, `:702-716` for the labels, timeout, resource locks, `RUN_SERIAL` and skip regex). The `-R` regular expression matches the CTest test name (which equals the target name from the table above); `-L` matches labels. Two labels also decide how ctest schedules the test, derived from the label so no call site can forget them: `requires-multicore` adds the shared `qb-multicore` `RESOURCE_LOCK`, so two engines that pin their cores to the same CPUs never run at once (`qb/cmake/qbFunctions.cmake:485-487`), and `serial` sets `RUN_SERIAL`, so a test that measures WHEN a parked core wakes or how much CPU it burns runs with nothing beside it (`qb/cmake/qbFunctions.cmake:501-504`, applied at `:711-713`).
 
 ### Running an executable directly
 
@@ -173,7 +173,7 @@ TEST(Duration, DefaultAndExplicit) {
 
 <!-- src: qb/tests/core/unit/system/time.cpp:64-72 -->
 
-A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:715,740`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:715`, `qb/src/qb/core/Main.cpp:518-523`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
+A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:836,861`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:836`, `qb/src/qb/core/Main.cpp:525-530`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
 
 ```cpp
 // A minimal actor system test.
@@ -217,7 +217,7 @@ TEST(WorkerSuite, HandlesPing) {
 
 <!-- src: qb/tests/core/system/event/service-event-ring.cpp:171-174 -->
 
-`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:243,761`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
+`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:246,882`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
 
 ### Registering the test with CMake
 

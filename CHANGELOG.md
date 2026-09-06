@@ -36,6 +36,14 @@ policy.
   listener with `EVRUN_NOWAIT` get the same gate.
 - **`mpsc::ringbuffer::has_data()`** — does any producer ring hold an item; the predicate of the
   mailbox park.
+- **`listener::run_once_for(cap)`, `arm_wake()` / `disarm_wake()` / `is_wake_armed()`, `wake()`**
+  — the park half of a qb-io loop: one `ev_run(EVRUN_ONCE)` turn that blocks in the backend poll
+  for at most `cap` (a one-shot timer keeps the loop alive and bounds the block) until a watcher
+  fires or `wake()` — `ev_async_send`, the one libev call safe against a concurrent `ev_run` —
+  lands from another thread. A turn that already has a deferred callback, a ready coroutine or a
+  pending event does not block, because `ev_run` computes its wait from watcher deadlines alone.
+  The embedded qev profile keeps the `async` family for it (`QB_EV_ASYNC_ENABLE 1`; six families
+  compiled out instead of seven — three symbols and 24 bytes of `struct ev_loop`, measured).
 
 ### Changed
 
@@ -112,6 +120,31 @@ policy.
   requires the self-core pipe to be empty.
 - **`VirtualCore` polls libev only when the loop has work**, instead of on every pass once the
   core had ever touched a coroutine or registered a handler.
+- **An idle `latency > 0` core that owns io watchers parks INSIDE its io loop, not on the
+  mailbox's condition variable.** A parked core used to be deaf to its own loop: a readable
+  socket, an accepted connection or a due `qb::io::async::callback` was answered only when the
+  `latency` timeout expired — measured p50 923 µs at `latency = 1 ms` and 9.96 ms at 10 ms on
+  Linux, 0.9–1.2 ms at 100 µs / 2.2–2.8 ms at 1 ms / 15.6 ms at 10 ms on Windows, where MSVC's
+  `wait_for` lands on the 15.6 ms scheduler tick, for a socket that was readable within
+  microseconds (qb-vs-others audit, axis N, `tools/probes/parked-io-wake.cpp`). With io watchers
+  active the core now parks in `listener::run_once_for(latency)`: the socket or timer ends the
+  park through the backend poll, and an event from another core ends it through the mailbox's
+  `notify()`, which calls `listener::wake()` when the parked side has published its loop
+  (`Mailbox::attach_loop()` at core start, withdrawn by `detach_loop()` on exit; the producer
+  re-reads the park state under the mailbox mutex, so the pointer it dereferences is never a
+  dead core's — the `Park::Loop` announce is a release store and that re-read an acquire, the
+  pair ThreadSanitizer asked for between `eventfd()` in the wake pipe's creation and its first
+  write). Same cells, after: 31 µs p50 on Linux, 24–27 µs on Windows — the busy-poll floor plus
+  one wake; a core that really slept 2 ms pays the OS wake on top (46–51 µs Linux, 62–135 µs
+  Windows), the floor every framework pays once it sleeps (qb-vs-others `docs/TUNING.md`
+  §8.2). A core with no io watchers keeps the
+  condition-variable park, and `Main::stop()` is seen at the next pass on either path, so a
+  loop park ends within `latency` of it exactly as the cv park did. Pinned by
+  `core-park-policy` (past the spin floor the core parks inside its loop and an io timer fires
+  at its own delay; a loop park is capped by the latency and sees stop) and `core-park-wake` (a
+  readable socket ends a loop park, and a cross-core push ends both a loop park and a cv park,
+  each in far less than `latency`, the process CPU time proving the core was parked rather
+  than polling).
 - **`Actor::time()` samples the clock on demand, once per pass**, keyed on the pass index,
   instead of unconditionally at the top of every pass.
 - **`spsc::ringbuffer` lays its producer and consumer indices out on separate cache lines and
@@ -160,13 +193,6 @@ policy.
   run on the same host. After 256 yields the poll sleeps 50 µs between loads (one shared
   `wait_sync_start` for both loops); the tests take 100 ms, every run, and an engine whose
   cores arrive more than ~100 µs apart pays at most one quantum, once.
-
-### Known limitation
-
-- A parked core does not consult qb-io's timer deadlines: a `qb::io::async::callback` armed on a
-  `latency > 0` core that has parked fires when the park times out, so `latency` bounds timer
-  precision on that core. Pinned by `core-park-policy`; an engine that learns io deadlines must
-  move that expectation with it.
 
 ## [3.1.0] - 2026-08-30
 

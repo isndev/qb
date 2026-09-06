@@ -42,6 +42,7 @@
 #ifndef QB_CORE_TESTS_SHARED_ASK_RESPONDERS_H
 #define QB_CORE_TESTS_SHARED_ASK_RESPONDERS_H
 
+#include <chrono>
 #include <cstdint>
 #include <vector>
 
@@ -129,10 +130,18 @@ public:
 
 /**
  * @brief Drops the first `(reply_on - 1)` requests, then answers — models transient failures.
- * @details Optionally publishes the VirtualCore arrival timestamp (`time()`, nanoseconds) of every
- *          request into a caller-owned `ArrivalLog`, so a retrying asker leaves a timeline of
- *          attempt timestamps. With exponential backoff the gap between consecutive attempts must
- *          grow; that timeline is the engine-observable oracle for "the backoff actually grew".
+ * @details Optionally publishes the arrival instant of every request into a caller-owned
+ *          `ArrivalLog`, so a retrying asker leaves a timeline of attempt timestamps. With
+ *          exponential backoff each gap between consecutive attempts is at least the ask timeout
+ *          plus that attempt's backoff; that timeline is the engine-observable oracle for "the
+ *          backoff actually grew".
+ *
+ *          The stamp is `qb::mono_now()` read INSIDE the handler, not the actor's `time()`:
+ *          `time()` is sampled once per VirtualCore loop turn, so under load a handler that runs
+ *          late in a long turn is stamped EARLY, and a gap measured from two such stamps can come in
+ *          under the elapsed time by the whole turn (measured 6.8 ms under a 60 ms nominal on a
+ *          loaded VM). A steady-clock read at the handler is late only by the same-core delivery
+ *          delay, which is microseconds unless the thread is preempted at that exact point.
  *
  *          The log is written ONLY from this responder's own core (single-thread per VirtualCore)
  *          and is meant to be read by the test thread ONLY after `qb::Main::join()` — `join()`
@@ -142,7 +151,7 @@ class FlakyMarket : public qb::Actor {
 public:
     /// Caller-owned record of request arrivals; read after `join()`. `count` mirrors `arrivals.size()`.
     struct ArrivalLog {
-        std::vector<std::uint64_t> arrivals; ///< VirtualCore timestamp (ns) of each request seen.
+        std::vector<std::uint64_t> arrivals; ///< `qb::mono_now()` (ns) at each request's handler.
 
         /// Total requests recorded.
         [[nodiscard]] std::size_t
@@ -173,7 +182,8 @@ public:
     void
     on(Ping &p) {
         if (_log)
-            _log->arrivals.push_back(time());
+            _log->arrivals.push_back(
+                static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(qb::mono_now().time_since_epoch()).count()));
         if (++_count >= _reply_on)
             qb::answer(*this, p, [](Ping const &r) { return r.seq * 2; });
         // else: drop it → the asker times out and retries after a (growing) backoff.
