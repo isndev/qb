@@ -45,7 +45,7 @@ Actor::push(ActorId const &dest, _Args &&...args) const noexcept {
 ```
 <!-- src: qb/src/qb/core/VirtualCore.h:1131-1135 -->
 
-`Actor::send` is the same one-line shape (`src/qb/core/VirtualCore.h:1137-1141`), and so is `Actor::broadcast` (`src/qb/core/VirtualCore.h:1164-1168`). So are the non-template members: `getPipe` (`src/qb/core/Actor.cpp:331-334`), `reply` and `forward` (`src/qb/core/Actor.cpp:421-439`), `time` (`src/qb/core/Actor.cpp:313-316`). No lock, no atomic, no fence appears anywhere on that path.
+`Actor::send` is the same one-line shape (`src/qb/core/VirtualCore.h:1137-1141`), and so is `Actor::broadcast` (`src/qb/core/VirtualCore.h:1164-1168`). So are the non-template members: `getPipe` (`src/qb/core/Actor.cpp:334-337`), `reply` and `forward` (`src/qb/core/Actor.cpp:424-442`), `time` (`src/qb/core/Actor.cpp:316-319`). No lock, no atomic, no fence appears anywhere on that path.
 
 ### A `Pipe` is per destination **core**, not per destination actor
 
@@ -281,7 +281,7 @@ Three consequences:
 - **Both route through `send`, not `push`,** so a replied or forwarded event carries no ordering guarantee relative to your pushes to the same destination.
 - **Both copy the received event's bytes** into a pipe (`event_wire::copy`) or the peer's mailbox, so the relocation rule applies to them unconditionally, same core or not.
 
-A broadcast event can be neither replied to nor forwarded: `Actor::reply` and `Actor::forward` test `event.dest.is_broadcast()`, log a warning and return without sending (`src/qb/core/Actor.cpp:422-428`, `:430-439`). After either call the event is consumed — do not read or modify it.
+A broadcast event can be neither replied to nor forwarded: `Actor::reply` and `Actor::forward` test `event.dest.is_broadcast()`, log a warning and return without sending (`src/qb/core/Actor.cpp:425-431`, `:433-442`). After either call the event is consumed — do not read or modify it.
 
 ## `broadcast`, and the two ways to fan out
 

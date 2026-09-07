@@ -155,7 +155,6 @@ private:
     }
 };
 
-/** @brief Register a discovery's continuation slot in the per-core registry. */
 /// Take the registry entry for a discovery owned by `owner`, bound to `st`; returns its id.
 [[nodiscard]] inline std::uint64_t
 take_discovery(discovery_state &st, qb::ActorId owner) noexcept {

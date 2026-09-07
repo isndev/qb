@@ -292,12 +292,12 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 `qb::ScopedCoroContext` is a superset of `qb::CoroContext`. On top of `push`/`push_to`/`broadcast`/
 `id`/`time` it adds the cancellation-aware surface: `sleep(qb::duration)`, `cancellation_point()`,
 `until_cancelled()`, `cancellable(task<T>&&)`, `child_token()`, `token()`, `cancelled()`.
-_(Actor.h:1855-1934)_
+_(Actor.h:1838-1917)_
 
 `Actor::context()` returns that same `ScopedCoroContext` **wherever you hold the actor** — most
 importantly inside `onInit()`, which is itself a coroutine (`task<bool>`) and gets no `ctx`
 parameter. It is also what you pass to the free functions of the patterns library:
-`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1389-1405, :1943-1946)_
+`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1389-1405, :1926-1929)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
 receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not** cancelled when the
@@ -376,7 +376,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 
 - **Actors are constructed only on a VirtualCore worker thread.** Never `new MyActor` from `main()` or
   an arbitrary thread (asserts). Use `Main::core(i).addActor<T>(...)` / `addActor<T>(core, ...)` /
-  `addRefActor<T>()`. _(Actor.cpp:232-237)_
+  `addRefActor<T>()`. _(Actor.cpp:235-240)_
 - **`onInit()` is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; it must
   `registerEvent<T>(*this)` for every handled event.** `co_return true` activates the actor; `co_return false`
   or throwing fails init and the resulting `ActorId` is invalid. While `onInit()` is suspended the actor
@@ -396,12 +396,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   event even for a same-core `push`; `qb::string<N>`, `std::vector` and smart pointers are fine.
   _(VirtualCore.cpp `__flush_all__`; Event.h `detail::event_wire::copy`)_
 - **`reply`/`forward` consume the event and need a non-const `on(Event&)`;** broadcast events can't be
-  replied/forwarded. _(Actor.cpp:421-439)_
+  replied/forwarded. _(Actor.cpp:424-442)_
 - **`addRefActor<T>()` returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`);**
   `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating,
   after a failed init, or once it died — never a dangling pointer. Send to `handle.id()` any time; gate
   direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
-  _(Actor.h:1246-1250, :1270, :2011-2013)_
+  _(Actor.h:1246-1250, :1270, :1994-1996)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);

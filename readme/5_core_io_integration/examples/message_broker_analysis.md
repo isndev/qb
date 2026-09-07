@@ -563,7 +563,7 @@ The connection deadline and the reconnect delay are both five seconds. Both reco
 > `if (is_alive())` guard inside the lambda does not help — `is_alive()` is a member read
 > (`qb/src/qb/core/Actor.h:769-772`), so on a destroyed actor the guard *is* the use-after-free.
 > `spawn` puts the coroutine in the actor's cancellation scope (`qb/src/qb/core/Actor.h:1386-1387`),
-> which `Actor::kill()` cancels (`qb/src/qb/core/Actor.cpp:399-410`). Note the shape of the
+> which `Actor::kill()` cancels (`qb/src/qb/core/Actor.cpp:402-413`). Note the shape of the
 > conversion: a coroutine may not touch actor state after a `co_await`, so the delay is captured by
 > value and everything that reads `_should_reconnect` or calls `connect()` moved into the
 > `ReconnectTickEvent` handler. The

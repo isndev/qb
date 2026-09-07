@@ -177,7 +177,7 @@ Notes on the translation:
 
 - `submit(Job)` became `push<JobEvent>(worker, …)`. The engine owns the queue; there is no `notify`.
 - `_total` lost its mutex. Only `WorkerActor::on(const JobEvent&)` reads or writes it, and that handler runs serially on one core, so the data race the lock prevented cannot occur.
-- `stop()` and the `_stop` flag became `push<qb::KillEvent>(worker)`. Every actor is auto-subscribed to `qb::KillEvent` at construction, and the default handler calls `kill()`. _(`qb/src/qb/core/Actor.cpp:238,288`; [Getting started](./getting_started.md).)_
+- `stop()` and the `_stop` flag became `push<qb::KillEvent>(worker)`. Every actor is auto-subscribed to `qb::KillEvent` at construction, and the default handler calls `kill()`. _(`qb/src/qb/core/Actor.cpp:241,291`; [Getting started](./getting_started.md).)_
 - `run()`, the loop, and `_cv.wait` are gone. The event loop inside the `VirtualCore` is the loop.
 - `std::thread` and `join()` became `engine.start()` and `engine.join()`.
 

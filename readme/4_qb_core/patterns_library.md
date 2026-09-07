@@ -54,10 +54,10 @@ this page only states what the patterns depend on.
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
   `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1363-1365`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1405`, `:1943-1947`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1405`, `:1926-1930`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
   `qb/src/qb/core/Actor.h:1547,1567,1579,1588,1595,1603`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:1855-1856,1869-1871,1898-1900`). **Never capture `this` past a `co_await`** — capture by
+  (`qb/src/qb/core/Actor.h:1838-1839,1852-1854,1881-1883`). **Never capture `this` past a `co_await`** — capture by
   value (`qb/src/qb/core/Actor.h:1367-1369`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
@@ -314,18 +314,18 @@ of a type within a time window.
 
 | Symbol | Signature | Source |
 |---|---|---|
-| `qb::ping` | `task<bool> ping(ScopedCoroContext ctx, ActorId target, qb::duration timeout = std::chrono::seconds{1})` | `discovery.h:184-196` |
-| `qb::require<_Actor>` | `task<std::vector<ActorId>> require(ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseconds{200})` | `discovery.h:216-235` |
+| `qb::ping` | `task<bool> ping(ScopedCoroContext ctx, ActorId target, qb::duration timeout = std::chrono::seconds{1})` | `discovery.h:184-194` |
+| `qb::require<_Actor>` | `task<std::vector<ActorId>> require(ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseconds{200})` | `discovery.h:214-231` |
 
 - **`ping`** sends a wildcard `PingEvent` (`type == 0`); any live actor replies. Returns `true` if
-  `target` replied within `timeout`, else `false` (`discovery.h:172-196`).
+  `target` replied within `timeout`, else `false` (`discovery.h:172-194`).
 - **`require<_Actor>`** broadcasts a typed `PingEvent` to every core and collects the `RequireEvent`
   replies for the whole window, returning the responders' ids (empty if none)
-  (`discovery.h:198-235`).
+  (`discovery.h:196-231`).
 - Replies are routed automatically by `Actor`'s default `on(RequireEvent&)` (which calls
   `resolve_require`) — **no handler boilerplate** (`qb/src/qb/core/Actor.h:603-618`). Both work
   inside `onInit()` because replies reach an *Activating* asker through the continuation registry
-  (`discovery.h:180-182`, `:206-210`). Throws `cancelled_error` on kill; never throws on timeout
+  (`discovery.h:180-182`, `:204-208`). Throws `cancelled_error` on kill; never throws on timeout
   (a timed-out `ping` returns `false`, a timed-out `require` returns the partial set)
   (`discovery.h:130-140`).
 
@@ -489,15 +489,15 @@ the asker drains them one at a time until end-of-stream.
 | `qb::StreamRequest<Chunk>` | `struct StreamRequest : qb::AskEvent { using chunk_type = Chunk; Chunk chunk{}; bool stream_done = false; }` | `streaming.h:59-64` |
 | `qb::stream<E>` | `class { stream(uint64_t, shared_ptr<…>, qb::duration); stream_next_awaiter<E> next(); }` (move-only) | `streaming.h:258-296` |
 | `qb::stream_overflow_error` | `struct stream_overflow_error : std::runtime_error` | `streaming.h:90-93` |
-| `qb::ask_stream` | `stream<E> ask_stream(ScopedCoroContext, ActorId target, E req, qb::duration timeout = std::chrono::seconds{5}, std::size_t capacity = 256)` | `streaming.h:317-337` |
-| `qb::yield_answer` | `void yield_answer(Actor &self, E const &request, typename E::chunk_type chunk)` | `streaming.h:347-354` |
-| `qb::end_stream` | `void end_stream(Actor &self, E const &request)` | `streaming.h:363-369` |
+| `qb::ask_stream` | `stream<E> ask_stream(ScopedCoroContext, ActorId target, E req, qb::duration timeout = std::chrono::seconds{5}, std::size_t capacity = 256)` | `streaming.h:317-336` |
+| `qb::yield_answer` | `void yield_answer(Actor &self, E const &request, typename E::chunk_type chunk)` | `streaming.h:346-353` |
+| `qb::end_stream` | `void end_stream(Actor &self, E const &request)` | `streaming.h:362-368` |
 
 - `ask_stream` sends the request (its `correlation_id` is the stream id) and returns a `stream<E>`.
   Drain it with `while (auto c = co_await s.next()) use(c->chunk);` — `next()` yields each chunk in
-  FIFO order, then `std::nullopt` at end-of-stream (`streaming.h:298-337`).
+  FIFO order, then `std::nullopt` at end-of-stream (`streaming.h:298-336`).
 - The responder pushes chunks with `yield_answer(self, request, chunk)` and signals completion with
-  `end_stream(self, request)` (`streaming.h:339-369`). Chunks are `AskEvent`s, so the asker routes
+  `end_stream(self, request)` (`streaming.h:338-368`). Chunks are `AskEvent`s, so the asker routes
   them via `resolve_ask(e)` in its `on(E&)` (`streaming.h:312-315`).
 - `next()` throws `timeout_error` if no chunk arrives within the **per-chunk** timeout,
   `cancelled_error` on kill, and `stream_overflow_error` if the responder outran the buffer (a loud
@@ -793,13 +793,13 @@ qb::io::async::task<bool> onInit() override {
 | Ask many, fastest reply wins (hedged) | scatter-gather | `qb::ask_any` (`scatter.h:140`) |
 | Ask many, need a majority / first `k` | scatter-gather | `qb::ask_quorum` (`scatter.h:244`) |
 | Is an actor alive? | discovery | `qb::ping` (`discovery.h:185`) |
-| Find all live actors of a type | discovery | `qb::require<T>` (`discovery.h:218`) |
+| Find all live actors of a type | discovery | `qb::require<T>` (`discovery.h:216`) |
 | Multi-step workflow with rollback | saga | `qb::run_saga` + `qb::SagaScope` (`saga.h:117,44`) |
 | Survive transient timeouts | resilience | `qb::ask_retry` (`resilience.h:427`) |
 | Fail fast when a dependency is down | resilience | `qb::ask_guarded` + `qb::CircuitBreaker` (`resilience.h:465,120`) |
 | Throttle call rate | resilience | `qb::rate_limiter` (`resilience.h:239`) |
 | Cap concurrent calls to a resource | resilience | `qb::bulkhead` (`resilience.h:331`) |
-| One request, many replies | streaming | `qb::ask_stream` + `qb::yield_answer` / `qb::end_stream` (`streaming.h:319,349,365`) |
+| One request, many replies | streaming | `qb::ask_stream` + `qb::yield_answer` / `qb::end_stream` (`streaming.h:319,348,364`) |
 | Fan an event to many subscribers (per core) | pub/sub | `qb::PubSub<Topic>` (`pubsub.h:62`) |
 | Restart child actors on failure | supervision | `qb::Supervisor` + `qb::SupervisedActor` (`supervisor.h:128,77`) |
 | Distribute work across workers | routing | `qb::WorkerPool` (`routing.h:48`) |
