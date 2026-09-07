@@ -202,7 +202,7 @@ public:
      * @return true if at least one ring is non-empty.
      */
     [[nodiscard]] bool
-    has_data() const noexcept {
+    has_data() const noexcept { // consumer thread only: `empty()` reads the consumer's private index
         for (auto const &producer : _producers)
             if (!producer._ringbuffer.empty())
                 return true;
@@ -473,7 +473,7 @@ public:
      * @return true if at least one ring is non-empty.
      */
     [[nodiscard]] bool
-    has_data() const noexcept {
+    has_data() const noexcept { // consumer thread only: `empty()` reads the consumer's private index
         for (std::size_t i = 0; i < _nb_producer; ++i)
             if (!_producers[i]._ringbuffer.empty())
                 return true;

@@ -294,6 +294,46 @@ policy.
   `dev/bench` `Mono_PingPong` 76.6 → 66.4, the one-core pipeline 42.7 → 34.6 (−19 %), the 8 × 8
   pipeline 263.5 → 228.1 (−13 %), `BM_PINGPONG` 64 actors 29.4 → 26.5. Suites: WSL2 release /
   ASan+UBSan / TSan 192/192, the Windows full gate.
+- **A cross-core hop no longer pays a miss on the producer's own index line: the SPSC ring's
+  working indices live on private lines.** `lockfree::spsc::internal::ringbuffer` kept
+  `write_index_` — the index the consumer polls — and `cached_read_index_` — the producer's
+  snapshot of the consumer's index — on ONE cache line, so every `enqueue` began by loading both
+  from the very line the peer had just been polling. On i9-12900K a snoop of that kind leaves
+  the owner's copy behind: the load was a cross-core miss on every hop, as costly as the release
+  fence behind the publish (a cpu-clock profile of the two-actor `send` round trip put 8 544
+  samples on it against 9 633 on the fence). Each side now owns two lines, each in its own
+  two-line block so no spatial-prefetch partner belongs to the peer: a PRIVATE line with the
+  working index and the snapshot (`write_index_local_` + `cached_read_index_`,
+  `read_index_local_` + `cached_write_index_`) and a PUBLISHED line with nothing but the index
+  the peer reads; `enqueue`, `dequeue`, `consume_all`, `front`, `write_room` and `empty` touch
+  only their side's private copy and *write* the published line to publish — 512 bytes of
+  header per ring instead of 128, against 64 KiB of slots, `sizeof` eight lines and `alignof`
+  two. Two new qb-vs-others probes found it: `tools/probes/xcore-hop.cpp` (two actors, one per
+  pinned core, a `push<>` or `send<>` round trip, and a `jitter_ns` option that breaks the
+  PHASE LOCK of a two-actor ping-pong — a 5 ns delay in front of the flush had moved a locked
+  round trip by +80 ns) and `tools/probes/raw-ring.cpp` (the same ring shape with no qb in the
+  loop: one load of the published index line before the store, and a launch that read ~120 ns
+  per round trip never gets below 166). Measured on qb-vs-others in one quiet session per host
+  against `develop` `2771cd67` (9 + 2, CPUs 0,2; ten-launch censuses on every 2c cell): WSL2 /
+  g++-14 ping-pong 2c-park **211.7 → 164.7 ns** per round trip (−22 %), 2c-spin 207.5 → 163.2
+  (−21 %), thread-ring 2c **115 → 80 ns** per hop (−31 %, both wait modes), chameneos 2c
+  49.1 → 45.6 (−7 %), big 2c −4 %; `dev/bench` `BM_Multi_PingPong_Latency` **253 → 203** (−20 %),
+  the 8 × 8 pipeline 322 → 264 (−18 %), `BM_PINGPONG` 64 actors / 8 cores 24.7 → 21.7, the
+  cross-core ask −4.5 %; the `xcore-hop` round trip at a random phase send 240 → 198, push
+  240 → 159. Windows / MSVC 19.51: ping-pong 2c-park **263.2 → 204.9** (−22 %), 2c-spin
+  257.0 → 206.1 (−20 %), thread-ring 2c **138.6 → 98.9** per hop (−29 %), big 2c-park −9 %,
+  chameneos 2c −5 %; `dev/bench` `Multi_PingPong` **317.8 → 245.6** (−23 %), the 8 × 8 pipeline
+  252.5 → 220.2 (−13 %), the raw-spsc reference 285.6 → 222.9. Nothing else moves, and that was
+  measured rather than assumed: every same-core cell (the self pipe is a `segmented_pipe`, not
+  this ring), the one-core `pass-cost` probe (12.9 / 17.1 / 25.0 ns → 12.7 / 17.1 / 25.0) and
+  the batched cross-core shapes — counting, fork-join, fib, bank-transaction — are level on
+  fifteen-launch censuses on both hosts after their grid cells had read +2 to +11 %. The same
+  campaign measured and parked the flush-order question (Huly QB-183: no cell beyond its
+  spread; five flush positions read 166–237 ns locked with no relation to where the flush sat,
+  and the same variant ±10 % from one binary's layout to the next), the "sequence in the slot"
+  one-line hop (~3 ns per round trip over two lines on a raw ring — not worth a ring) and
+  `movdir64b` (twice as slow: a direct store goes past the caches). Huly QB-184; qb-vs-others
+  `docs/TUNING.md` §16.
 - **`Actor::time()` samples the clock on demand, once per pass**, keyed on the pass index,
   instead of unconditionally at the top of every pass — **and a pass with no registered callback
   skips the tick phase, so it really is clock-free.** The first form of this entry (`443c5976`)
@@ -324,7 +364,9 @@ policy.
   qb-vs-others results (`qb-branch-perf-loop-clock-on-demand/`, both hosts).
 - **`spsc::ringbuffer` lays its producer and consumer indices out on separate cache lines and
   each side keeps a private snapshot of the peer's index**, so an uncontended push or pop
-  touches one line and re-reads the peer only when its snapshot says full or empty.
+  touches one line and re-reads the peer only when its snapshot says full or empty. (Completed
+  by the private working lines above: the snapshot and the working index sit on a line the
+  peer never reads, and the published index sits alone on the line it polls.)
 - **The `qb::ask` and coroutine hot paths allocate nothing per operation that a cancel would
   not need.** `cancellation_token::cancel()` fires its callbacks in place and
   `remove_on_cancel()` neuters an entry rather than erasing it while the walk is live, which

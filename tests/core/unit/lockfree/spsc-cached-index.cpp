@@ -1,17 +1,22 @@
 /**
  * @file unit/lockfree/spsc-cached-index.cpp
- * @brief The SPSC ring's two-line layout and its per-side index snapshots.
+ * @brief The SPSC ring's four-block layout and its per-side index snapshots.
  *
- * `spsc::internal::ringbuffer` gives each side ONE cache line: the index it publishes and a
- * private snapshot of the peer's index. The fast path decides "not full" / "not empty" from
- * the snapshot and re-reads the peer's line — the only cross-core `acquire` load the ring
- * performs — solely when the snapshot cannot prove it. Measured on a two-core ping-pong the
- * producer-side snapshot alone removed 17 % (Linux) to 28 % (Windows) of the round trip.
+ * `spsc::internal::ringbuffer` gives each side TWO lines, each in its own two-line block: a
+ * private line holding the working index and a snapshot of the peer's index, and a published
+ * line holding nothing but the index the peer reads. The fast path decides "not full" / "not
+ * empty" from the snapshot and re-reads the peer's published line — the only cross-core
+ * `acquire` load the ring performs — solely when the snapshot cannot prove it. Measured on a
+ * two-core ping-pong the producer-side snapshot alone removed 17 % (Linux) to 28 % (Windows)
+ * of the round trip; keeping the working index OFF the published line (so a publisher never
+ * reads the line its peer polls) took qb's two-core ping-pong from 212 to 165 ns and the
+ * cross-core ring hop from 115 to 80 ns (QB-184).
  *
  * What this file pins, and why each matters:
- *   - the LAYOUT: exactly two lines, cache-line aligned, so the derived storage starts on a
- *     third line instead of sharing `read_index_`'s (the ring's first slots did until now, and
- *     the producer writes them on every wrap while the consumer writes its index);
+ *   - the LAYOUT: exactly eight lines in four two-line blocks, block-aligned, so the derived
+ *     storage starts on a fifth block instead of sharing `read_index_`'s line (the ring's first
+ *     slots did until 3.0, and the producer writes them on every wrap while the consumer writes
+ *     its index);
  *   - a snapshot is a SAFE under-estimate: a stale one can only refuse room / elements that do
  *     exist, never grant ones that do not — every refusal below is followed by the refresh that
  *     must then succeed, in both directions and through both the single and the bulk paths;
@@ -48,32 +53,33 @@
 
 namespace {
 
-constexpr std::size_t kLine = QB_LOCKFREE_CACHELINE_BYTES;
-constexpr std::size_t kCap  = 8; // usable capacity; storage is kCap + 1 slots
-using Ring                  = qb::lockfree::spsc::ringbuffer<int, kCap>;
-using DynRing               = qb::lockfree::spsc::ringbuffer<int, 0>;
+constexpr std::size_t kLine  = QB_LOCKFREE_CACHELINE_BYTES;
+constexpr std::size_t kBlock = 2 * kLine; // a line and its spatial-prefetch partner
+constexpr std::size_t kCap   = 8;         // usable capacity; storage is kCap + 1 slots
+using Ring                   = qb::lockfree::spsc::ringbuffer<int, kCap>;
+using DynRing                = qb::lockfree::spsc::ringbuffer<int, 0>;
 
 // ---- layout ---------------------------------------------------------------------------------
 
-TEST(SpscCachedIndex, BaseIsExactlyTwoAlignedCacheLines) {
+TEST(SpscCachedIndex, BaseIsExactlyFourAlignedBlocks) {
     using Base = qb::lockfree::spsc::internal::ringbuffer<int>;
-    static_assert(sizeof(Base) == 2 * kLine);
-    static_assert(alignof(Base) == kLine);
-    static_assert(alignof(Ring) == kLine);
-    static_assert(alignof(DynRing) == kLine);
-    // The derived storage cannot start before the two index lines end.
-    static_assert(sizeof(Ring) >= 2 * kLine + (kCap + 1) * sizeof(int));
+    static_assert(sizeof(Base) == 4 * kBlock);
+    static_assert(alignof(Base) == kBlock);
+    static_assert(alignof(Ring) == kBlock);
+    static_assert(alignof(DynRing) == kBlock);
+    // The derived storage cannot start before the four index blocks end.
+    static_assert(sizeof(Ring) >= 4 * kBlock + (kCap + 1) * sizeof(int));
     SUCCEED();
 }
 
 TEST(SpscCachedIndex, HeapInstancesHonourTheAlignment) {
     auto fixed = std::make_unique<Ring>();
     auto dyn   = std::make_unique<DynRing>(kCap);
-    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(fixed.get()) % kLine, 0u);
-    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(dyn.get()) % kLine, 0u);
+    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(fixed.get()) % kBlock, 0u);
+    EXPECT_EQ(reinterpret_cast<std::uintptr_t>(dyn.get()) % kBlock, 0u);
     std::vector<Ring> v(3); // over-aligned element type through the default allocator
     for (auto &r : v)
-        EXPECT_EQ(reinterpret_cast<std::uintptr_t>(&r) % kLine, 0u);
+        EXPECT_EQ(reinterpret_cast<std::uintptr_t>(&r) % kBlock, 0u);
 }
 
 // ---- producer snapshot ----------------------------------------------------------------------

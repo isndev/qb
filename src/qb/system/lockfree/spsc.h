@@ -46,25 +46,40 @@ namespace internal {
  * the read and write index management and the memory operations required for
  * enqueueing and dequeueing elements.
  *
- * **Layout is the design.** Each side owns exactly one cache line and never writes
- * the other's:
+ * **Layout is the design.** Each side owns two lines — a PRIVATE one it reads and writes
+ * alone, and a PUBLISHED one it only ever writes, for the other side to read — and each
+ * of the four sits in its own two-line block so that no spatial-prefetch partner belongs
+ * to the peer:
  *
- * | line | owner    | published index (the other side reads it) | private snapshot of the peer's index |
- * |------|----------|--------------------------------------------|--------------------------------------|
- * | 0    | producer | `write_index_`                             | `cached_read_index_`                 |
- * | 1    | consumer | `read_index_`                              | `cached_write_index_`                |
+ * | block | owner    | private line (never touched by the peer)        | published line (the peer reads it) |
+ * |-------|----------|-------------------------------------------------|------------------------------------|
+ * | 0 / 1 | producer | `write_index_local_`, `cached_read_index_`      | `write_index_`                     |
+ * | 2 / 3 | consumer | `read_index_local_`, `cached_write_index_`      | `read_index_`                      |
  *
  * The snapshots are what make the fast path local: a producer that remembers the last
  * `read_index_` it saw can prove "not full" from its own line alone, and only re-reads
- * the consumer's line — an `acquire` load of a cache line the consumer is writing, i.e.
- * a coherence miss whenever the consumer is active — when the snapshot says full. The
- * consumer does the same in reverse for `write_index_`. On a two-core ping-pong this
- * removed 17 % (Linux) to 28 % (Windows) of the round trip. The snapshot is always a
- * SAFE under-estimate: it can only claim less room / fewer elements than really exist,
- * and a refresh is an `acquire` load like before, so the happens-before edges are the
- * ones the plain implementation had.
+ * the consumer's published line — an `acquire` load of a cache line the consumer is
+ * writing, i.e. a coherence miss whenever the consumer is active — when the snapshot
+ * says full. The consumer does the same in reverse for `write_index_`. On a two-core
+ * ping-pong this removed 17 % (Linux) to 28 % (Windows) of the round trip. The snapshot
+ * is always a SAFE under-estimate: it can only claim less room / fewer elements than
+ * really exist, and a refresh is an `acquire` load like before, so the happens-before
+ * edges are the ones the plain implementation had.
  *
- * The derived buffer storage begins on the line AFTER the two index lines: the ring's
+ * The working copies are the other half of the same rule, and they are why the published
+ * index sits ALONE on its line: the side that publishes an index must never READ the line
+ * it publishes on. Until 3.2 `write_index_` shared its line with the producer's snapshot,
+ * so every `enqueue` began by loading both from the very line the consumer was polling —
+ * and once the consumer's poll has snooped that line out of the producer's cache, that
+ * load is a cross-core miss on every hop, as costly as the release fence behind the
+ * publish (i9-12900K / WSL2 g++-14: the two carried equal shares of a cpu-clock profile of
+ * `SharedCoreCommunication::send`; a raw two-thread ring reproduced it as +45–60 ns per
+ * round trip at a random phase for ONE such load). With the working index on a private
+ * line the producer touches the published line with a store and nothing else — qb's
+ * two-core ping-pong went 212 → 165 ns per round trip and the 100-actor cross-core ring
+ * 115 → 80 ns per hop, every same-core figure unchanged (Huly QB-184).
+ *
+ * The derived buffer storage begins on the block AFTER the four index blocks: the ring's
  * first slots used to share a line with `read_index_`, which the producer writes on
  * every wrap while the consumer writes its index.
  *
@@ -76,27 +91,39 @@ class ringbuffer : public nocopy {
                                                    "because bulk enqueue/dequeue use std::memcpy");
     using size_t                            = std::size_t;
     constexpr static const size_t cacheline = QB_LOCKFREE_CACHELINE_BYTES;
-    constexpr static const size_t line_pad  = cacheline - 2 * sizeof(size_t);
+    /// A line and its spatial-prefetch partner: what each of the four index lines owns outright.
+    constexpr static const size_t block = 2 * cacheline;
     static_assert(cacheline >= 4 * sizeof(size_t), "a cache line must hold two indices with room to spare");
 
-    /* --- producer line: written ONLY by the enqueue thread --- */
-    QB_LOCKFREE_CACHELINE_ALIGNMENT std::atomic<size_t> write_index_;
-    size_t                                              cached_read_index_; // last read_index_ the producer saw
-    char                                                padding0_[line_pad]{};
-    /* --- consumer line: written ONLY by the dequeue thread --- */
-    QB_LOCKFREE_CACHELINE_ALIGNMENT std::atomic<size_t> read_index_;
-    size_t                                              cached_write_index_; // last write_index_ the consumer saw
-    char                                                padding1_[line_pad]{};
+    /* --- producer PRIVATE block: read and written by the enqueue thread, never touched by the
+     *     dequeue thread. The working write index and the snapshot of the consumer's index. --- */
+    alignas(block) size_t write_index_local_;
+    size_t cached_read_index_; // last read_index_ the producer saw
+    char   padding0_[block - 2 * sizeof(size_t)]{};
+    /* --- producer PUBLISHED block: written by the enqueue thread, polled by the dequeue thread.
+     *     The producer never READS it — see the class note. --- */
+    alignas(block) std::atomic<size_t> write_index_;
+    char padding1_[block - sizeof(size_t)]{};
+    /* --- consumer PRIVATE block: the working read index and the snapshot of the producer's. --- */
+    alignas(block) size_t read_index_local_;
+    size_t cached_write_index_; // last write_index_ the consumer saw
+    char   padding2_[block - 2 * sizeof(size_t)]{};
+    /* --- consumer PUBLISHED block: written by the dequeue thread, read by the enqueue thread
+     *     when its snapshot cannot prove room. --- */
+    alignas(block) std::atomic<size_t> read_index_;
+    char padding3_[block - sizeof(size_t)]{};
 
 protected:
     /**
      * @brief Default constructor initializing indices
      */
     ringbuffer()
-        : write_index_(0)
+        : write_index_local_(0)
         , cached_read_index_(0)
-        , read_index_(0)
-        , cached_write_index_(0) {}
+        , write_index_(0)
+        , read_index_local_(0)
+        , cached_write_index_(0)
+        , read_index_(0) {}
 
     /**
      * @brief Calculate the next index in the buffer with wrap-around handling
@@ -210,7 +237,7 @@ protected:
      */
     [[nodiscard]] size_t
     write_room(size_t const wanted, size_t const max_size) noexcept {
-        return producer_available(write_index_.load(std::memory_order_relaxed), wanted, max_size);
+        return producer_available(write_index_local_, wanted, max_size);
     }
 
     /**
@@ -245,7 +272,7 @@ protected:
      */
     bool
     enqueue(T const &t, T *buffer, size_t const max_size) {
-        const size_t write_index = write_index_.load(std::memory_order_relaxed); // only written from enqueue thread
+        const size_t write_index = write_index_local_; // the producer's own copy: never the published line
         const size_t next        = next_index(write_index, max_size);
 
         if (next == cached_read_index_) {
@@ -256,6 +283,7 @@ protected:
 
         new (buffer + write_index) T(t); // copy-construct
 
+        write_index_local_ = next;
         write_index_.store(next, std::memory_order_release);
 
         return true;
@@ -274,7 +302,7 @@ protected:
     template <bool _All>
     size_t
     enqueue(const T *input_buffer, size_t input_count, T *internal_buffer, size_t const max_size) {
-        const size_t write_index = write_index_.load(std::memory_order_relaxed); // only written from push thread
+        const size_t write_index = write_index_local_; // the producer's own copy: never the published line
         const size_t avail       = producer_available(write_index, input_count, max_size);
 
         if constexpr (_All) {
@@ -303,6 +331,7 @@ protected:
                 new_write_index = 0;
         }
 
+        write_index_local_ = new_write_index;
         write_index_.store(new_write_index, std::memory_order_release);
         return input_count;
     }
@@ -318,7 +347,7 @@ protected:
      */
     size_t
     dequeue(T *output_buffer, size_t output_count, T *internal_buffer, size_t const max_size) {
-        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
+        const size_t read_index = read_index_local_; // the consumer's own copy: never the published line
         const size_t avail      = consumer_available(read_index, output_count, max_size);
 
         if (avail == 0)
@@ -344,6 +373,7 @@ protected:
                 new_read_index = 0;
         }
 
+        read_index_local_ = new_read_index;
         read_index_.store(new_read_index, std::memory_order_release);
         return output_count;
     }
@@ -370,7 +400,7 @@ protected:
     template <typename _Func>
     size_t
     consume_all(_Func const &functor, T *internal_buffer, size_t max_size) {
-        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
+        const size_t read_index = read_index_local_; // the consumer's own copy: never the published line
         const size_t avail      = consumer_available(read_index, SIZE_MAX, max_size);
 
         if (avail == 0)
@@ -396,6 +426,7 @@ protected:
                 new_read_index = 0;
         }
 
+        read_index_local_ = new_read_index;
         read_index_.store(new_read_index, std::memory_order_release);
         return output_count;
     }
@@ -408,8 +439,7 @@ protected:
      */
     const T &
     front(const T *internal_buffer) const {
-        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
-        return *(internal_buffer + read_index);
+        return *(internal_buffer + read_index_local_); // consumer side: its own copy
     }
 
     /**
@@ -420,8 +450,7 @@ protected:
      */
     T &
     front(T *internal_buffer) {
-        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
-        return *(internal_buffer + read_index);
+        return *(internal_buffer + read_index_local_); // consumer side: its own copy
     }
 
 public:
@@ -432,15 +461,20 @@ public:
      *
      * @return true if the buffer is empty, false otherwise
      */
+    /**
+     * @brief Consumer-side poll: is there nothing to dequeue right now?
+     * @details The consumer's own index comes from its private line; the producer's from the
+     *          published one — the only line of the peer's this poll ever reads. Consumer thread only.
+     */
     [[nodiscard]] bool
     empty() const noexcept {
-        return write_index_.load(std::memory_order_relaxed) == read_index_.load(std::memory_order_relaxed);
+        return write_index_.load(std::memory_order_relaxed) == read_index_local_;
     }
 };
-static_assert(sizeof(ringbuffer<int>) == 2 * QB_LOCKFREE_CACHELINE_BYTES,
-              "spsc::internal::ringbuffer must be exactly one producer line + one consumer line");
-static_assert(alignof(ringbuffer<int>) == QB_LOCKFREE_CACHELINE_BYTES,
-              "spsc::internal::ringbuffer must start on a cache line so the derived storage does too");
+static_assert(sizeof(ringbuffer<int>) == 8 * QB_LOCKFREE_CACHELINE_BYTES,
+              "spsc::internal::ringbuffer is four two-line blocks: each side's private line and published line");
+static_assert(alignof(ringbuffer<int>) == 2 * QB_LOCKFREE_CACHELINE_BYTES,
+              "spsc::internal::ringbuffer starts on a two-line block so the derived storage does too");
 
 } // namespace internal
 
