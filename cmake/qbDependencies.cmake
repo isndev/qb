@@ -607,7 +607,22 @@ endfunction()
 # -----------------------------------------------------------------------------
 # Feature Definitions
 # -----------------------------------------------------------------------------
-# Set compile definitions based on available dependencies
+# Set compile definitions based on available dependencies.
+#
+# QB_WITH_<x> is the REQUEST after detection has had its say (a miss above flips the
+# option OFF), QB_HAS_<x> is what was actually found. qbConfig.cmake used to emit the
+# QB_WITH_ pair from the raw option before this file ran, so an OpenSSL-less host that
+# left the default ON compiled every TU -- and exported every consumer -- with
+# QB_WITH_SSL=1 while printing "SSL: OFF" (measured on Windows/MSVC with neither library
+# discoverable: 177 compile lines carrying both, 0 carrying QB_HAS_SSL=1). Emitted here,
+# the two names cannot disagree.
+if(QB_WITH_SSL)
+    list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_SSL=1")
+endif()
+if(QB_WITH_COMPRESSION)
+    list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_COMPRESSION=1")
+endif()
+
 if(QB_HAS_SSL)
     list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_SSL=1")
 endif()

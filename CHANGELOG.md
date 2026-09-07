@@ -330,6 +330,19 @@ policy.
 
 ### Fixed
 
+- **A build whose OpenSSL or zlib was not found no longer compiles as if it had been.**
+  `qb_initialize_project_configuration()` emitted `QB_WITH_SSL=1` / `QB_WITH_COMPRESSION=1` from the
+  raw options BEFORE `qbDependencies.cmake` looked for the libraries, and a miss there only flipped
+  the option OFF for the summary — so a host without OpenSSL that left the default ON compiled
+  every TU, and exported to every consumer of the installed package, with `QB_WITH_SSL=1` while
+  the configure printed `SSL: OFF` (measured on Windows/MSVC with neither library discoverable:
+  177 compile lines carrying both definitions, 0 carrying `QB_HAS_SSL=1`). qb's own sources gate on
+  `QB_HAS_*` and were right; anything reading the documented `QB_WITH_*` name was lied to — qbm-http's
+  `body-uncompress-malformed` test `#include <zlib.h>`s under it, which is a compile error in exactly
+  that degraded build. The two definitions are now emitted next to the `QB_HAS_*` ones, after
+  detection, from the value the summary prints (0 of either in the same configure); that test
+  reads `QB_HAS_COMPRESSION` like the rest of the tree.
+
 - **The dense dispatch table no longer reallocates on every new actor id.** `router::key_table`
   grew with `reserve(max(idx + 1, size() * 2))` on each insert — one element past what the previous
   doubling had left — so every subscription of a NEW id copied the whole table: O(n) per

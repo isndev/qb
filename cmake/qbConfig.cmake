@@ -461,12 +461,12 @@ macro(qb_initialize_project_configuration)
     if(QB_WITH_LOGGING)
         list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_LOGGING=1")
     endif()
-    if(QB_WITH_SSL)
-        list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_SSL=1")
-    endif()
-    if(QB_WITH_COMPRESSION)
-        list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_COMPRESSION=1")
-    endif()
+    # QB_WITH_SSL=1 / QB_WITH_COMPRESSION=1 are NOT emitted here. This macro runs before
+    # qbDependencies.cmake looks for OpenSSL and zlib, and a miss there turns the option
+    # OFF (`set(QB_WITH_SSL OFF)`) -- so a definition taken from the raw option lands on
+    # every TU and in the exported usage requirements while the configure summary says
+    # "SSL: OFF". They are appended in qbDependencies.cmake's feature-definitions block,
+    # after detection, from the value the summary prints.
     if(QB_DEBUG_MEMORY)
         list(APPEND QB_COMPILE_DEFINITIONS "QB_DEBUG_MEMORY=1")
     endif()
