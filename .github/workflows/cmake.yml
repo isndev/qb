@@ -122,7 +122,11 @@ jobs:
             -DQB_BUILD_EXAMPLES=ON
             -DQB_BUILD_BENCHMARKS=ON
             -DQB_USE_SYSTEM_GTEST=ON
-            -DQB_USE_SYSTEM_BENCHMARK=ON
+            # Not QB_USE_SYSTEM_BENCHMARK=ON: that switch is find_package(benchmark 1.9.5 REQUIRED),
+            # and Ubuntu 24.04's libbenchmark-dev is 1.8.3 -- six red runs (f0da4e32..9814c2a1)
+            # after the floor moved to 1.9.5 in 148a9ccf. The default path considers the system
+            # package first and falls back to the pinned v1.9.5 fetch when it is under the floor,
+            # which is the behaviour the docs promise and what this lane now exercises.
             -DQB_ENABLE_NATIVE_ARCH=OFF
           )
 

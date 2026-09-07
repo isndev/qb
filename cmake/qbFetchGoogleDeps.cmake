@@ -147,9 +147,9 @@ endif()
 if(QB_BUILD_BENCHMARKS)
     # 1.9.5 is the floor because it is the release where `benchmark::Benchmark` became public --
     # the benchmark sources name that type. Before 1.9.5 the registration object existed only
-    # as `benchmark::internal::Benchmark` (measured on the v1.9.2, v1.9.3 and v1.9.4 headers),
-    # and from 1.9.5 that spelling is a deprecated alias. The floor equals the pinned tag, so a
-    # system package older than the pin is never used in its place: it falls back to the fetch.
+    # as `benchmark::internal::Benchmark` (measured on v1.9.2/3/4), from 1.9.5 a deprecated alias.
+    # The floor equals the pinned tag: on the default path an older system package falls back to
+    # the fetch; under the forced switch it is a configure ERROR (Ubuntu 24.04 ships 1.8.3).
     if(QB_USE_SYSTEM_BENCHMARK)
         find_package(benchmark 1.9.5 CONFIG REQUIRED)
         qb_status_message("Google Benchmark: system package (QB_USE_SYSTEM_BENCHMARK=ON)")

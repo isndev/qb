@@ -250,7 +250,7 @@ numbers:
 | `qb-coverage-xml` | gcovr | Cobertura XML |
 | `qb-coverage-html` | gcovr | HTML report |
 
-<!-- src: qb/CMakeLists.txt:269-295, qb/cmake/CodeCoverage.cmake -->
+<!-- src: qb/CMakeLists.txt:280-306, qb/cmake/CodeCoverage.cmake -->
 
 The exclusion list filters out system headers, benchmarks, modules, the vendored forks, examples, and the test sources themselves so the report reflects framework code (`qb/CMakeLists.txt:221-239`). A typical run:
 

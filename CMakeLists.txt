@@ -215,9 +215,9 @@ elseif (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
     if (LCOV_PATH AND GCOV_PATH AND QB_COVERAGE_KIND STREQUAL "gcov")
         qb_status_message("Code coverage enabled")
 
-        # '*vendor*' alongside '*modules*': the forks (qev, uuid, nanolog, ska_hash) moved under
-        # src/qb/vendor/. Without it they would start counting towards qb's coverage figure --
-        # libev's ev.c alone is several thousand lines of third-party-derived C.
+        # src/qb/vendor/ holds the header-only forks (uuid, nanolog, ska_hash), excluded so they do
+        # not count towards qb's figure. The event loop is NOT there any more: it moved to
+        # src/qb/ev/ (it is qb-io's own engine, not a re-pulled copy) and stays in scope.
         set(COVERAGE_LCOV_EXCLUDES
                 '/usr/*'
                 '*benchmark*'
@@ -238,9 +238,20 @@ elseif (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
                 '.*benchmark.*'
         )
 
+        # --merge-mode-functions: gcovr (>= 6) asserts when two TUs disagree on a function's start
+        # line, and Ubuntu 24.04's gcc-14 (14.2.0-4ubuntu2) makes them disagree. Measured on the
+        # coverage lane's exact tree (196 TUs, gcovr 7.0): 132 TUs place ev.h's static inline
+        # ev_watcher_active_ at its line 361, ONE (tests/io/unit/coroutine/generator-sync.cpp)
+        # at 360 -- the four inline accessors of that header are all one line early in that TU,
+        # because libcpp resumes ev.h at line 79 instead of 80 after the computed
+        # `#include QB_EV_CONFIG_H` (visible with -E, so it is the preprocessor's line map, not
+        # gcov's). Debian's gcc-14 (14.2.0-19) resumes at 80 in the same TU. merge-use-line-min
+        # keeps the report where the other 132 TUs put it; the default (strict) mode is what
+        # turned the lane red for four pushes (22c9bf6e..9814c2a1).
         set(COVERAGE_GCOVR_ARGS
                 --gcov-ignore-parse-errors=all
                 --gcov-ignore-errors=source_not_found
+                --merge-mode-functions=merge-use-line-min
         )
 
         set(QB_COVERAGE_DEPENDENCIES qb-core)
