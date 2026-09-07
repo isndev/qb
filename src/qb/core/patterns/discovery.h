@@ -156,15 +156,16 @@ private:
 };
 
 /** @brief Register a discovery's continuation slot in the per-core registry. */
-inline void
-register_discovery(std::uint64_t id, discovery_state &st, qb::ActorId owner) noexcept {
+/// Take the registry entry for a discovery owned by `owner`, bound to `st`; returns its id.
+[[nodiscard]] inline std::uint64_t
+take_discovery(discovery_state &st, qb::ActorId owner) noexcept {
     st.slot.owner   = owner;
     st.slot.done    = false;
     st.slot.self    = &st;
     st.slot.deliver = &discovery_state::deliver_thunk;
-    qb::detail::ask_register(id, &st.slot);
     // Make `RequireEvent` recognisable to the activation gate so replies reach an Activating asker.
     qb::detail::ask_register_type(qb::Event::template type_to_id<qb::RequireEvent>());
+    return qb::detail::ask_take(owner, &st.slot);
 }
 
 } // namespace detail
@@ -183,15 +184,13 @@ register_discovery(std::uint64_t id, discovery_state &st, qb::ActorId owner) noe
  */
 [[nodiscard]] inline qb::io::async::task<bool>
 ping(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout = std::chrono::seconds{1}) {
-    auto st                       = std::make_shared<detail::discovery_state>();
-    st->single                    = true;
-    st->token                     = ctx.token();
-    const auto                 id = qb::detail::ask_next_id(ctx.id()); // takes the registry entry the id names
-    qb::detail::ask_slot_guard guard{id};                              // release it if anything below throws before the awaiter takes over
-    detail::register_discovery(id, *st, ctx.id());
+    auto st                      = std::make_shared<detail::discovery_state>();
+    st->single                   = true;
+    st->token                    = ctx.token();
+    const auto                id = detail::take_discovery(*st, ctx.id()); // takes (and binds) the registry entry
+    detail::discovery_awaiter aw{st, timeout, id};                     // built BEFORE the send: its dtor gives the entry back if push_to throws
     ctx.template push_to<qb::PingEvent>(target, std::uint32_t{0}, id); // type 0 = wildcard liveness
-    guard.release();                                                   // the awaiter (its dtor unregisters) owns the slot from here
-    co_await detail::discovery_awaiter{st, timeout, id};
+    co_await aw;
     co_return !st->found.empty();
 }
 
@@ -216,15 +215,13 @@ ping(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout = std::
 template <typename _Actor>
 [[nodiscard]] qb::io::async::task<std::vector<qb::ActorId>>
 require(qb::ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseconds{200}) {
-    auto st                       = std::make_shared<detail::discovery_state>();
-    st->single                    = false;
-    st->token                     = ctx.token();
-    const auto                 id = qb::detail::ask_next_id(ctx.id()); // takes the registry entry the id names
-    qb::detail::ask_slot_guard guard{id};                              // release it if anything below throws before the awaiter takes over
-    detail::register_discovery(id, *st, ctx.id());
+    auto st                      = std::make_shared<detail::discovery_state>();
+    st->single                   = false;
+    st->token                    = ctx.token();
+    const auto                id = detail::take_discovery(*st, ctx.id()); // takes (and binds) the registry entry
+    detail::discovery_awaiter aw{st, timeout, id}; // built BEFORE the send: its dtor gives the entry back if broadcast throws
     ctx.template broadcast<qb::PingEvent>(static_cast<std::uint32_t>(qb::type_id<_Actor>()), id);
-    guard.release(); // the awaiter (its dtor unregisters) owns the slot from here
-    co_await detail::discovery_awaiter{st, timeout, id};
+    co_await aw;
     std::vector<qb::ActorId> out;
     out.reserve(st->found.size());
     for (auto const &[type, src] : st->found) {

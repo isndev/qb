@@ -41,7 +41,7 @@
 #include <utility>
 #include <qb/core/Actor.h>
 #include <qb/io/async/coroutine.h> // cancellation_token / timeout_error / schedule_via_current
-#include "request.h"               // qb::detail::ask_next_id / ask_loop / to_ev_seconds reuse
+#include "request.h"               // qb::detail::ask_take / ask_loop / to_ev_seconds reuse
 
 namespace qb {
 
@@ -317,23 +317,22 @@ private:
 template <stream_event_type E>
 [[nodiscard]] stream<E>
 ask_stream(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout = std::chrono::seconds{5}, std::size_t capacity = 256) {
-    const std::uint64_t        id = qb::detail::ask_next_id(ctx.id()); // takes the registry entry the id names
-    qb::detail::ask_slot_guard guard{id};                              // release it if anything below throws before the stream owns it
-    auto                       st = std::make_shared<detail::stream_state<E>>(capacity ? capacity : std::size_t{1});
-    st->token                     = ctx.token();
-    // Register a multi-shot continuation slot so chunks are delivered uniformly (active or
-    // Activating) by the same registry/gate as ask.
+    auto st   = std::make_shared<detail::stream_state<E>>(capacity ? capacity : std::size_t{1});
+    st->token = ctx.token();
+    // A multi-shot continuation slot, so chunks are delivered uniformly (active or Activating)
+    // by the same registry/gate as ask. Taken and bound in one call; the `stream` built next
+    // owns the entry from there, so a `push_to` that throws is covered by its destructor.
     st->slot.owner   = ctx.id();
     st->slot.done    = false;
     st->slot.self    = st.get();
     st->slot.deliver = &detail::stream_state<E>::deliver_thunk;
-    qb::detail::ask_register(id, &st->slot);
     qb::detail::ask_register_type(qb::Event::template type_to_id<E>());
+    const std::uint64_t id = qb::detail::ask_take(ctx.id(), &st->slot);
+    stream<E>           out{id, std::move(st), timeout};
 
     req.correlation_id = id;
     ctx.template push_to<E>(target, std::move(req)); // send to target, source = asker
-    guard.release();                                 // the stream now owns the slot (its dtor cleans up)
-    return stream<E>{id, std::move(st), timeout};
+    return out;
 }
 
 /**

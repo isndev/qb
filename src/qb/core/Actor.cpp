@@ -22,7 +22,6 @@
  * @ingroup Core
  */
 
-#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <map>
@@ -56,9 +55,11 @@ namespace {
  *          — the low bits index this table directly, the generation is the entry's reuse count
  *          at the time it was taken (a stale id, one whose entry has since been released, misses
  *          on the compare), and the high 16 bits name the owning core, as before, so an id can
- *          never resolve an entry of another core's table. Take = pop the free list, look-up =
- *          index + compare, release = push; no multiply, no probe, no allocation once warm (the
- *          table doubles when the free list runs dry and never shrinks). The free list is FIFO,
+ *          never resolve an entry of another core's table. Take = pop the free list AND bind the
+ *          owner's slot (one call, not a take followed by a register: `perf` priced every
+ *          out-of-line trip through here, TLS guard included, at about as much as the work it
+ *          did), look-up = index + compare, release = push; no multiply, no probe, no allocation
+ *          once warm (the table doubles when the free list runs dry and never shrinks). The free list is FIFO,
  *          not LIFO, on purpose: it spreads reuse across every free entry, so a generation
  *          advances once per `free_count` asks rather than once per ask and a 26-bit generation
  *          wraps after ~2^26 × 63 asks on a warm table — and a wrapped stale id would still have
@@ -79,9 +80,10 @@ public:
         std::free(_tab);
     }
 
-    /// Take a free entry for an ask owned by an actor of core `core`; returns its correlation id.
+    /// Take a free entry for an ask owned by an actor of core `core`, bound to the owner's
+    /// `slot` (which may be null: such an entry resolves nothing); returns its correlation id.
     [[nodiscard]] std::uint64_t
-    take(std::uint16_t const core) {
+    take(std::uint16_t const core, ask_slot *slot) {
         if (_free_head == none)
             grow();
         const std::uint32_t i = _free_head;
@@ -90,17 +92,8 @@ public:
         if (_free_head == none)
             _free_tail = none;
         e.next = busy;
-        e.slot = nullptr;
+        e.slot = slot;
         return (static_cast<std::uint64_t>(core) << 48) | (static_cast<std::uint64_t>(e.gen) << slot_bits) | i;
-    }
-
-    /// Bind the awaiter's slot to the entry `id` names. The id must be taken and not released.
-    void
-    bind(std::uint64_t const id, ask_slot *slot) noexcept {
-        entry *const e = live(id);
-        assert(e && "ask_register: id not taken from this core's registry (or already released)");
-        if (e)
-            e->slot = slot;
     }
 
     [[nodiscard]] ask_slot *
@@ -182,7 +175,7 @@ thread_local std::unordered_set<Event::id_type> tls_ask_types;
 } // namespace
 
 std::uint64_t
-ask_next_id(qb::ActorId const owner) noexcept {
+ask_take(qb::ActorId const owner, ask_slot *slot) noexcept {
     // The id names the OWNER actor's core index in its high 16 bits, so correlation
     // ids are globally unique across VirtualCores: two cores' independent registries
     // would otherwise hand out identical (generation, slot) pairs, and `ask_deliver`
@@ -191,14 +184,10 @@ ask_next_id(qb::ActorId const owner) noexcept {
     // event of the wrong type (type confusion). `ask_deliver` refuses an id whose
     // core is not the delivering actor's before it even indexes the table. The low
     // 48 bits locate the entry (see ask_table); 0 stays reserved for "not an ask".
-    // The entry is TAKEN here, before the request is sent: `ask_register` binds the
-    // awaiter to it once the coroutine suspends, `ask_unregister` gives it back.
-    return tls_ask_slots.take(owner.index());
-}
-
-void
-ask_register(std::uint64_t const id, ask_slot *slot) noexcept {
-    tls_ask_slots.bind(id, slot);
+    // The entry is taken AND bound here, before the request is sent — its owner (the
+    // awaiter, the discovery awaiter, the `stream`) already exists, and that owner's
+    // destructor is what gives the entry back, through `ask_unregister`, on every path.
+    return tls_ask_slots.take(owner.index(), slot);
 }
 
 void

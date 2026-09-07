@@ -198,7 +198,7 @@ sequenceDiagram
     participant H as Asker on(E&)
 
     Co->>Ctx: co_await qb::ask(ctx, target, req, timeout)
-    Note over Ctx: ask_next_id() → req.correlation_id
+    Note over Ctx: ask_take() → req.correlation_id
     Ctx->>R: push_to<E>(target, req)
     Note over Co: suspend on ask_awaiter (arms one ev_timer)
     R->>R: on(E&) → qb::answer(*this, e, fn)

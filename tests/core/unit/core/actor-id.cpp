@@ -30,7 +30,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <qb/core/Actor.h> // qb::detail::ask_next_id & co — the correlation-id codec and the pending-ask registry
+#include <qb/core/Actor.h> // qb::detail::ask_take & co — the correlation-id codec and the pending-ask registry
 #include <qb/core/ActorId.h>
 
 using qb::ActorId;
@@ -118,7 +118,7 @@ TEST(ActorId, NonBroadcastSidIndexConstruction) {
     EXPECT_FALSE(zero.is_valid());
 }
 
-// `ask_next_id()` names the OWNER actor's core index in the high 16 bits of the id, so two
+// `ask_take()` names the OWNER actor's core index in the high 16 bits of the id, so two
 // VirtualCores' independent registries (each handing out the same (generation, slot) pairs) can
 // never produce the same id. Without it (the audited type-confusion bug), a cross-core `ask` reply
 // carrying a colliding id resolved the receiver's own pending slot and handed its `ask_awaiter<E>`
@@ -128,8 +128,8 @@ TEST(ActorId, AskCorrelationIdIsSaltedWithOwnerCoreIndex) {
     const NormalId owner_core0(5, 0);
     const NormalId owner_core7(5, 7);
 
-    const std::uint64_t id0 = qb::detail::ask_next_id(owner_core0);
-    const std::uint64_t id7 = qb::detail::ask_next_id(owner_core7);
+    const std::uint64_t id0 = qb::detail::ask_take(owner_core0, nullptr);
+    const std::uint64_t id7 = qb::detail::ask_take(owner_core7, nullptr);
 
     // High 16 bits carry the owning core index — the cross-core disambiguator.
     EXPECT_EQ(id0 >> 48, 0u);
@@ -141,7 +141,7 @@ TEST(ActorId, AskCorrelationIdIsSaltedWithOwnerCoreIndex) {
     EXPECT_NE(id7 & 0x0000FFFFFFFFFFFFull, 0u);
 
     // Same owner, successive calls: a different entry while the core bits stay put.
-    const std::uint64_t id0b = qb::detail::ask_next_id(owner_core0);
+    const std::uint64_t id0b = qb::detail::ask_take(owner_core0, nullptr);
     EXPECT_EQ(id0b >> 48, 0u);
     EXPECT_NE(id0b, id0);
 
@@ -167,9 +167,10 @@ struct probe_slot {
 } // namespace
 
 // The registry is a slot table the id indexes (`[core:16][generation:26][slot:22]`), not a hash
-// map: an entry is taken by `ask_next_id`, bound by `ask_register`, released by `ask_unregister`,
-// and a released id must MISS for ever after — including once its entry has been handed to a
-// later ask, which is what the generation is for. Driven directly on the test thread.
+// map: an entry is taken AND bound to its owner's slot by `ask_take` (one call — every owner is
+// built before the send, so there is no unbound window), released by `ask_unregister`, and a
+// released id must MISS for ever after — including once its entry has been handed to a later
+// ask, which is what the generation is for. Driven directly on the test thread.
 TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
     constexpr std::uint64_t slot_mask = (std::uint64_t{1} << 22) - 1;
     const NormalId          owner(5, 3);
@@ -177,9 +178,8 @@ TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
     const NormalId          same_sid_other_core(5, 4);
     qb::Event               resp{};
 
-    const std::uint64_t id = qb::detail::ask_next_id(owner);
     probe_slot          p{owner};
-    qb::detail::ask_register(id, &p.slot);
+    const std::uint64_t id = qb::detail::ask_take(owner, &p.slot);
 
     // Delivered to its owner, refused to anyone else — another actor of the same core, and the
     // same actor index on another core (the id's core bits do not match the delivering actor's).
@@ -199,11 +199,12 @@ TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
     // Drain the free list so the released entry is handed out again (FIFO: it is at the tail)
     // and keep going past the initial 64 entries so the table has to GROW under live ids; then
     // check the reissued id names the SAME slot under a DIFFERENT generation, and that the
-    // stale id still misses even though its slot is live again.
+    // stale id still misses even though its slot is live again — bound to `q` now, not `p`.
+    probe_slot                 q{owner};
     std::vector<std::uint64_t> taken;
     std::uint64_t              reissued = 0;
     while (!reissued || taken.size() < 200) {
-        const std::uint64_t t = qb::detail::ask_next_id(owner);
+        const std::uint64_t t = qb::detail::ask_take(owner, &q.slot);
         if ((t & slot_mask) == (id & slot_mask))
             reissued = t;
         else
@@ -213,22 +214,22 @@ TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
     EXPECT_NE(reissued, id);
     EXPECT_EQ(reissued >> 48, id >> 48);
     EXPECT_EQ((reissued >> 22) & ((std::uint64_t{1} << 26) - 1), ((id >> 22) & ((std::uint64_t{1} << 26) - 1)) + 1);
-    probe_slot q{owner};
-    qb::detail::ask_register(reissued, &q.slot);
     EXPECT_FALSE(qb::detail::ask_deliver(id, owner, resp)); // stale generation
     EXPECT_TRUE(qb::detail::ask_deliver(reissued, owner, resp));
     EXPECT_EQ(q.delivered, 1);
     EXPECT_EQ(p.delivered, 1);
 
-    // An entry taken but not yet bound (the send window) delivers nothing and releases cleanly;
-    // the table grew past its initial 64 entries above and every id stayed distinct.
+    // Every other live entry delivers to its owner exactly once and releases cleanly; the table
+    // grew past its initial 64 entries above and every id stayed distinct.
     std::sort(taken.begin(), taken.end());
     EXPECT_EQ(std::adjacent_find(taken.begin(), taken.end()), taken.end());
     EXPECT_GE(taken.size(), 200u);
     for (const auto t : taken) {
-        EXPECT_FALSE(qb::detail::ask_deliver(t, owner, resp));
+        EXPECT_TRUE(qb::detail::ask_deliver(t, owner, resp));
         qb::detail::ask_unregister(t);
+        EXPECT_FALSE(qb::detail::ask_deliver(t, owner, resp));
     }
+    EXPECT_EQ(q.delivered, 1 + static_cast<int>(taken.size()));
     qb::detail::ask_unregister(reissued);
     EXPECT_FALSE(qb::detail::ask_deliver(reissued, owner, resp));
 }

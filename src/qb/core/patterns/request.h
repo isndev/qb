@@ -98,12 +98,9 @@ using request = Request<Resp>;
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<E>
 ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) {
-    const std::uint64_t        aid = qb::detail::ask_next_id(ctx.id()); // takes the registry entry the id names
-    qb::detail::ask_slot_guard guard{aid};                              // give it back if the send throws before the awaiter owns it
-    req.correlation_id = aid;
+    qb::detail::ask_awaiter<E> aw{ctx.id(), timeout, ctx.token()}; // takes (and binds) the registry entry; its dtor gives it back
+    req.correlation_id = aw.id;
     ctx.template push_to<E>(target, std::move(req)); // send to target, source = asker
-    qb::detail::ask_awaiter<E> aw{aid, ctx.id(), timeout, ctx.token()};
-    guard.release(); // the awaiter's dtor releases the entry from here, on every exit path
     co_return co_await aw;
 }
 
@@ -137,12 +134,9 @@ ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) 
 template <ask_event_type E, typename... Args>
 [[nodiscard]] qb::io::async::task<E>
 ask(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout, Args... args) {
-    const std::uint64_t        aid = qb::detail::ask_next_id(ctx.id()); // takes the registry entry the id names
-    qb::detail::ask_slot_guard guard{aid};                              // give it back if the send throws before the awaiter owns it
+    qb::detail::ask_awaiter<E> aw{ctx.id(), timeout, ctx.token()}; // takes (and binds) the registry entry; its dtor gives it back
     E                         &req = ctx.template push_to<E>(target, std::move(args)...); // built in the pipe slot
-    req.correlation_id             = aid;
-    qb::detail::ask_awaiter<E> aw{aid, ctx.id(), timeout, ctx.token()};
-    guard.release(); // the awaiter's dtor releases the entry from here, on every exit path
+    req.correlation_id             = aw.id;
     co_return co_await aw;
 }
 

@@ -1633,38 +1633,12 @@ struct ask_slot {
     void (*deliver)(void *self, qb::Event &resp) noexcept = nullptr;
 };
 
-[[nodiscard]] std::uint64_t ask_next_id(qb::ActorId owner) noexcept;
-void                        ask_register(std::uint64_t id, ask_slot *slot) noexcept;
-void                        ask_unregister(std::uint64_t id) noexcept;
-bool                        ask_deliver(std::uint64_t id, qb::ActorId owner, qb::Event &resp) noexcept;
-[[nodiscard]] ev::loop_ref  ask_loop() noexcept;
-
-/**
- * @brief RAII rollback for a freshly-taken registry entry.
- * @details `ask_next_id` TAKES the entry its id names, and every helper then sends the request
- *          (`push_to`/`broadcast`, not `noexcept`) before the entry's RAII owner (the awaiter or
- *          the `stream`, whose dtor is what releases it) exists — a throw in that window would
- *          leak the entry, or strand a bound slot in the registry. Arm this guard right after
- *          `ask_next_id`; `release()` it once the owner has been constructed. Releasing an entry
- *          twice is a no-op by construction (the generation moves on the first release), so a
- *          guard that outlives the owner would be harmless too — it is released for the cost.
- */
-struct ask_slot_guard {
-    std::uint64_t id;
-    bool          armed = true;
-    explicit ask_slot_guard(std::uint64_t i) noexcept
-        : id(i) {}
-    ask_slot_guard(const ask_slot_guard &)            = delete;
-    ask_slot_guard &operator=(const ask_slot_guard &) = delete;
-    void
-    release() noexcept {
-        armed = false;
-    }
-    ~ask_slot_guard() {
-        if (armed)
-            ask_unregister(id);
-    }
-};
+/// Take a registry entry for an ask owned by `owner`, bound to `slot`; returns its correlation id.
+[[nodiscard]] std::uint64_t ask_take(qb::ActorId owner, ask_slot *slot) noexcept;
+/// Give the entry back. Idempotent: a released (or never taken) id is a no-op.
+void                       ask_unregister(std::uint64_t id) noexcept;
+bool                       ask_deliver(std::uint64_t id, qb::ActorId owner, qb::Event &resp) noexcept;
+[[nodiscard]] ev::loop_ref ask_loop() noexcept;
 
 /**
  * @brief Register an event type as ask-correlated (carries `AskEvent::correlation_id`).
@@ -1697,7 +1671,9 @@ void ask_register_type(qb::Event::id_type type) noexcept;
  * per call. On a hot request/response path this awaiter is leaner: it arms a single
  * `ev_timer` and **stops it immediately** on response — no spawned helper at all. It
  * lives in the ask() coroutine frame (address-stable) and is non-movable (the registry
- * holds it by address).
+ * holds it by address). Its constructor TAKES the registry entry — so `qb::ask()` builds it
+ * before it sends, and a `push_to` that throws is covered by this destructor, not by a guard —
+ * and its destructor gives the entry back on every exit path.
  */
 template <typename E>
 struct ask_awaiter {
@@ -1712,16 +1688,17 @@ struct ask_awaiter {
     std::coroutine_handle<>                  cont;
     ev_timer                                 timer{};
     bool                                     timer_started        = false;
+    bool                                     finished             = false; ///< `finish()` ran (await_resume, else the dtor)
     enum class kind { pending, ok, timed_out, cancelled } outcome = kind::pending;
     qb::io::async::cancellation_token::cancel_hook hook{}; ///< scope cancel hook; unlinked in finish().
 
-    ask_awaiter(std::uint64_t aid, qb::ActorId owner, qb::duration t, const qb::io::async::cancellation_token &tok)
-        : id(aid)
-        , timeout(t)
+    ask_awaiter(qb::ActorId owner, qb::duration t, const qb::io::async::cancellation_token &tok)
+        : timeout(t)
         , token(tok) {
         slot.owner   = owner;
         slot.self    = this;
         slot.deliver = &ask_awaiter::deliver_thunk;
+        id           = ask_take(owner, &slot); // bound from here; nothing can deliver before we suspend
         // Make this exchange type recognisable to the activation gate (asker's core), so an
         // in-onInit ask's reply is delivered here instead of stashed (which would deadlock).
         // The registry is per worker thread, so one hash-set insert per thread per E is all it
@@ -1748,7 +1725,6 @@ struct ask_awaiter {
             qb::io::async::schedule_via_current(h);
             return;
         }
-        ask_register(id, &slot);
         if (timeout.count() > 0) {
             ev_timer_init(&timer, &ask_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
             timer.data = this;
@@ -1786,6 +1762,11 @@ struct ask_awaiter {
 private:
     void
     finish() noexcept {
+        // Runs from `await_resume()` and again from the destructor; the second pass is this
+        // byte, not a second out-of-line trip through the registry (measured on the profile).
+        if (finished)
+            return;
+        finished = true;
         ask_unregister(id);
         // Unlink the scope cancel hook so a long-lived actor scope token does not retain one
         // dead node per `qb::ask` for the actor's whole life (idempotent, O(1)).
