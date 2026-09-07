@@ -110,7 +110,7 @@ _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 `push<E>(dest, args...)` constructs an `E` in the pipe from this actor (the source) to `dest` and returns a **mutable reference** to it. Set any additional fields on that reference before your handler returns. Use `push` unless you have a specific reason not to.
 
 > **The returned reference lives until the handler or callback that obtained it returns** — not one instruction longer, and whatever is pushed in between. The pipe is segmented: a later `push`/`send`/`broadcast` resolving to that core links a new segment when it needs room and never reallocates or compacts what an earlier push placed. The engine consumes the event only between handlers, and that is when the reference dies — so a coroutine handler must be done with it **before its first `co_await`**, and it must never be stored in a member. (Until 3.2 the pipe was contiguous and the reference died at the very next event queued to that core; code written to that rule is still correct.) Pinned by `SegmentedPipeContract.*` in `qb/tests/io/unit/core/segmented-pipe.cpp` and `PushReferenceStability.*` in `qb/tests/core/system/messaging/push-reference-stability.cpp`.
-<!-- src: qb/src/qb/core/Actor.h:928-940; qb/src/qb/core/Pipe.h:118-128 -->
+<!-- src: qb/src/qb/core/Actor.h:1006-1018; qb/src/qb/core/Pipe.h:118-128 -->
 
 ```cpp
 // src: derived from qb/src/qb/core/Actor.h (push, mutable-reference idiom)
@@ -187,7 +187,7 @@ Three constraints follow from the implementation:
 
 1. **Broadcast events cannot be replied to or forwarded.** If `event.getDestination()` is a broadcast id, `reply`/`forward` log a warning and drop the call (`qb/src/qb/core/Actor.cpp`).
 2. **Both route through the unordered `send` path,** not `push`. A replied or forwarded event therefore carries no ordering guarantee relative to events you `push` to the same destination.
-3. **Both byte-recycle the existing event** (`qb::VirtualCore::send(Event const&)` calls `VirtualPipe::recycle`, a raw `memcpy` into the pipe — on the same core as much as across cores), so they carry the same trivially-destructible expectation as `send`, and the relocation rule applies to them unconditionally. Reply or forward events whose members are plain data or `qb::string<N>`; copy a heap-backed payload out and `push` a fresh event instead.
+3. **Both byte-copy the existing event** (`qb::VirtualCore::send(Event const&)` relocates it with `qb::detail::event_wire::copy` into a pipe, or raw into the peer core's mailbox — on the same core as much as across cores), so they carry the same trivially-destructible expectation as `send`, and the relocation rule applies to them unconditionally. Reply or forward events whose members are plain data or `qb::string<N>`; copy a heap-backed payload out and `push` a fresh event instead.
 
 ### How the five primitives compare
 

@@ -120,7 +120,7 @@ std::swap(*reinterpret_cast<CacheLine *>(this), *reinterpret_cast<CacheLine *>(&
 
 That assertion is not decorative and the margin is not generous. Measured on this checkout: `sizeof(CacheLine)` is 64 and `sizeof(qb::allocator::pipe<EventBucket>)` is **exactly 64** — six members (`_begin`, `_end`, `_flag_front`, `_capacity`, `_factor`, `_data`) occupy 48 bytes and `alignas(64)` rounds the object up. Two more `std::size_t` members would still fit; three would not, and without the assertion the swap would exchange only the first cache line, leaving `_data` half-exchanged — a double free on one side and a leak on the other.
 
-The consumer that explains why it exists is `VirtualCore::__receive__`, which swaps the same-core pipe out before draining it. That pipe is a `segmented_pipe<EventBucket>` now (`VirtualPipe`, `src/qb/core/Event.h:698`), whose own `swap` exchanges six members and needs no byte trick because a segmented pipe is not one cache line (`src/qb/system/allocator/segmented_pipe.h:619-626`); the contiguous `pipe<T>::swap` keeps its assertion for the `pipe<T>` instances the rest of the tree holds, and the shape of the drain is unchanged:
+The consumer that explains why it exists is `VirtualCore::__receive__`, which swaps the same-core pipe out before draining it. That pipe is a `segmented_pipe<EventBucket>` now (`VirtualPipe`, `src/qb/core/Event.h:869`), whose own `swap` exchanges six members and needs no byte trick because a segmented pipe is not one cache line (`src/qb/system/allocator/segmented_pipe.h:619-626`); the contiguous `pipe<T>::swap` keeps its assertion for the `pipe<T>` instances the rest of the tree holds, and the shape of the drain is unchanged:
 
 ```cpp
 _mono_pipe->swap(_mono_pipe_swap);
@@ -129,7 +129,7 @@ for (auto run = _mono_pipe->front(); !run.empty(); run = _mono_pipe->front()) {
     _mono_pipe->pop_front();
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.cpp:250-254 -->
+<!-- src: qb/src/qb/core/VirtualCore.cpp:249-253 -->
 
 Handlers dispatched from that drain will themselves `push` to actors on this core. Those pushes land in the *other* pipe, which is now the live one, so the segment being iterated cannot grow or move underneath the loop — and each drained segment goes back to the core's pool before the next is read, so a handler's pushes land in memory that is still warm. A six-word swap buys reentrancy safety for the price of two cache-line writes.
 
@@ -168,7 +168,7 @@ p.reorder();                      // compact; view() is still "PAYLOAD", size() 
 
 ### Events
 
-`qb::VirtualPipe` is `allocator::segmented_pipe<EventBucket>` (`src/qb/core/Event.h:698`), and every `VirtualCore` owns one per destination core plus one for itself, all drawing from the core's one `segment_pool` (`src/qb/core/VirtualCore.h:379-382`, `src/qb/core/VirtualCore.cpp:232-239`). An event is measured in cache-line-sized buckets rather than bytes — 64 B by default, and [an ABI axis](./abi_and_build_fingerprint.md) — which is what keeps `bucket_size` inside the 16-bit event header. Full narrative on [Inter-actor messaging](../4_qb_core/messaging.md).
+`qb::VirtualPipe` is `allocator::segmented_pipe<EventBucket>` (`src/qb/core/Event.h:869`), and every `VirtualCore` owns one per destination core plus one for itself, all drawing from the core's one `segment_pool` (`src/qb/core/VirtualCore.h:379-382`, `src/qb/core/VirtualCore.cpp:231-237`). An event is measured in cache-line-sized buckets rather than bytes — 64 B by default, and [an ABI axis](./abi_and_build_fingerprint.md) — which is what keeps `bucket_size` inside the 16-bit event header. Full narrative on [Inter-actor messaging](../4_qb_core/messaging.md).
 
 The segmented pipe keeps the contiguous pipe's vocabulary (`allocate_back`, `free_back`, `front`, `reset`) and changes one thing: **what it holds never moves**. A segment is one 256 KB allocation (4096 buckets, the step `pipe<T>` starts from) with a header in its first bucket; the pipe is a FIFO chain of them (`src/qb/system/allocator/segmented_pipe.h:377-378`). `allocate_back(n)` is a compare and a cursor add while the tail has room (`:511-518`); when it does not, the remainder of the tail is skipped and a segment is linked behind it (`:454`) — no reallocation, no `memcpy`, no compaction, so an allocated range is always contiguous and every earlier address stays valid. A request wider than a segment gets a dedicated, exactly-sized segment that goes back to the allocator when consumed. The read side is `front()`, the head segment's live range, advanced by `consume_front(n)` (`:587`) and `pop_front()` (`:569`); a popped segment goes to the core's pool at once, so a handler pushing while the engine drains grows into the segment that was just read — still warm — rather than into fresh memory. That is what turns the memory table below from a quadratic commitment into a high-water mark: measured on the one-core counting benchmark at 1 M events, the contiguous pipe copied 64 MB it never needed to move and took 26 600 minor faults per run re-touching its doublings; the segmented one copies nothing, and — once its segments came from slabs rather than from `malloc` — faults its memory once per 2 MB rather than once per 4 KB, and not at all from the second engine of a process onward.
 

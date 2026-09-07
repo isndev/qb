@@ -23,7 +23,11 @@
  *     own distinct reply;
  *   - LATE REPLY — a reply arriving AFTER the ask timed out is delivered as unsolicited
  *     (`resolve_ask` returns false), with no double-resume / use-after-free, same-core AND cross-core;
- *   - NON-TRIVIAL payload — an owning (`shared_ptr<string>`) request round-trips intact.
+ *   - NON-TRIVIAL payload — an owning (`shared_ptr<string>`) request round-trips intact;
+ *   - EMPLACE form — `co_await qb::ask<E>(ctx, target, timeout, args...)` builds the request IN the
+ *     pipe slot: same success / timeout / cancel / cross-core contract as the by-value form, the
+ *     constructor arguments are OWNED by the task (a temporary passed to a task that is awaited
+ *     only later is still intact), and `ask_by<E>` keeps the deadline fail-fast.
  *
  * Responders come from the shared zoo `shared/AskResponders.h` (`Market` / `SilentMarket` /
  * `SlowMarket` / `Echoer`, all over the typed `Ping : Request<int>` exchange) — the single source of
@@ -638,4 +642,294 @@ TEST(ActorCoroutineAsk, AskRoundTripsNonTrivialPayload) {
     main.join();
     EXPECT_FALSE(main.hasError());
     EXPECT_TRUE(g_echo_ok.load()) << "an owning shared_ptr<string> payload must round-trip intact";
+}
+
+// ---------------------------------------------------------------------------
+// 9. The emplace form: `qb::ask<E>(ctx, target, timeout, args...)`.
+//    The request is constructed in the outgoing pipe slot from `args` — no temporary in the
+//    caller, no ABI copy, no copy into the coroutine frame. Every contract of the by-value form
+//    must hold unchanged, and two things are specific to this form: the arguments are taken BY
+//    VALUE (a `task` is lazy — a reference parameter would dangle by the time the body runs), and
+//    the explicit `<E>` is what keeps it out of the by-value overload set.
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<int>  g_emplace_price{-1};
+std::atomic<bool> g_emplace_timed_out{false};
+std::atomic<bool> g_emplace_cancelled{false};
+std::atomic<bool> g_emplace_owned_ok{false};
+std::atomic<bool> g_emplace_by_fast{false};
+std::atomic<int>  g_emplace_by_val{-1};
+std::atomic<bool> g_emplace_done{false};
+
+void
+reset_emplace_flags() {
+    g_emplace_price     = -1;
+    g_emplace_timed_out = false;
+    g_emplace_cancelled = false;
+    g_emplace_owned_ok  = false;
+    g_emplace_by_fast   = false;
+    g_emplace_by_val    = -1;
+    g_emplace_done      = false;
+}
+} // namespace
+
+class EmplaceTraderOk : public qb::Actor {
+    qb::ActorId _market;
+
+public:
+    explicit EmplaceTraderOk(qb::ActorId m)
+        : _market(m) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        registerEvent<AskDone>(*this);
+        auto mkt = _market;
+        spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            auto r          = co_await qb::ask<Ping>(ctx, mkt, 500ms, 21); // Ping(21), in place
+            g_emplace_price = r.response;                                  // 21 * 2
+            g_emplace_done  = true;
+            ctx.push<AskDone>();
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+    }
+    void
+    on(const AskDone &) {
+        push<qb::KillEvent>(_market);
+        kill();
+    }
+};
+
+TEST(ActorCoroutineAsk, EmplaceAskSucceeds) {
+    reset_emplace_flags();
+    qb::Main main;
+    auto     mkt = main.addActor<Market>(0);
+    main.addActor<EmplaceTraderOk>(0, mkt);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_emplace_price.load(), 42) << "Ping(21) built in the pipe slot, answered as 21 * 2";
+    EXPECT_TRUE(g_emplace_done.load());
+}
+
+TEST(ActorCoroutineAsk, EmplaceAskAcrossCores) {
+    if (std::thread::hardware_concurrency() < 2)
+        GTEST_SKIP() << "requires-multicore";
+    reset_emplace_flags();
+    qb::Main main;
+    auto     mkt = main.addActor<Market>(1);
+    main.addActor<EmplaceTraderOk>(0, mkt);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_emplace_price.load(), 42) << "the in-place request crossed the pipe with its correlation id";
+    EXPECT_TRUE(g_emplace_done.load());
+}
+
+class EmplaceTraderTimeout : public qb::Actor {
+    qb::ActorId _market;
+
+public:
+    explicit EmplaceTraderTimeout(qb::ActorId m)
+        : _market(m) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        auto mkt = _market;
+        spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            try {
+                co_await qb::ask<Ping>(ctx, mkt, 40ms, 7);
+            } catch (const qb::io::async::timeout_error &) {
+                g_emplace_timed_out = true;
+            }
+            g_emplace_done = true;
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorCoroutineAsk, EmplaceAskTimesOutWhenNoReply) {
+    reset_emplace_flags();
+    qb::Main main;
+    auto     mkt = main.addActor<SilentMarket>(0);
+    main.addActor<EmplaceTraderTimeout>(0, mkt);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_emplace_done.load());
+    EXPECT_TRUE(g_emplace_timed_out.load()) << "same timeout contract as the by-value form";
+    EXPECT_EQ(g_emplace_price.load(), -1);
+}
+
+class EmplaceTraderCancel : public qb::Actor {
+    qb::ActorId _market;
+
+public:
+    explicit EmplaceTraderCancel(qb::ActorId m)
+        : _market(m) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        auto mkt = _market;
+        spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            try {
+                co_await qb::ask<Ping>(ctx, mkt, 5s, 99);
+            } catch (const qb::io::async::cancelled_error &) {
+                g_emplace_cancelled = true;
+            }
+            g_emplace_done = true;
+            qb::Main::stop();
+        });
+        // Out-of-band kill while the ask is pending — same shape and same reasoning as TraderCancel.
+        qb::io::async::callback(
+            [this] {
+                if (is_alive())
+                    kill();
+            },
+            30ms);
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorCoroutineAsk, EmplaceAskCancelledOnKill) {
+    reset_emplace_flags();
+    qb::Main main;
+    auto     mkt = main.addActor<SilentMarket>(0);
+    main.addActor<EmplaceTraderCancel>(0, mkt);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_emplace_done.load());
+    EXPECT_TRUE(g_emplace_cancelled.load()) << "the scope cancel hook wakes the emplace form too";
+    EXPECT_EQ(g_emplace_price.load(), -1);
+}
+
+// The arguments are OWNED by the task. `EchoOwned` takes its payload through a constructor, the
+// task is built from a TEMPORARY in one statement and awaited in a later one; the temporary is long
+// gone when the lazy body finally runs `push_to<E>(..., std::move(args)...)`.
+struct EchoOwned : public qb::AskEvent {
+    std::shared_ptr<std::string> in;
+    std::shared_ptr<std::string> out; // filled by responder
+    explicit EchoOwned(std::shared_ptr<std::string> s)
+        : in(std::move(s)) {}
+};
+
+class OwnedEchoer : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<EchoOwned>(*this);
+        co_return true;
+    }
+    void
+    on(EchoOwned &e) {
+        e.out = std::make_shared<std::string>("reply:" + *e.in);
+        reply(e);
+    }
+};
+
+class OwnedEchoClient : public qb::Actor {
+    qb::ActorId _to;
+
+public:
+    explicit OwnedEchoClient(qb::ActorId t)
+        : _to(t) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<EchoOwned>(*this);
+        auto to = _to;
+        spawn([to](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            std::weak_ptr<std::string> probe;
+            auto                       t = [&] {
+                auto payload = std::make_shared<std::string>("hello");
+                probe        = payload;
+                return qb::ask<EchoOwned>(ctx, to, 500ms, std::move(payload)); // task NOT awaited yet
+            }();
+            // `payload` is out of scope; the task's by-value argument is the only owner left.
+            const bool alive_before = !probe.expired();
+            auto       r            = co_await std::move(t);
+            g_emplace_owned_ok      = alive_before && r.out && *r.out == "reply:hello";
+            g_emplace_done          = true;
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(EchoOwned &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorCoroutineAsk, EmplaceAskOwnsItsArguments) {
+    reset_emplace_flags();
+    qb::Main main;
+    auto     echoer = main.addActor<OwnedEchoer>(0);
+    main.addActor<OwnedEchoClient>(0, echoer);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_emplace_done.load());
+    EXPECT_TRUE(g_emplace_owned_ok.load()) << "an argument passed as a temporary must still be owned when the lazy task runs";
+}
+
+// `ask_by<E>(ctx, target, deadline, args...)`: fail-fast on a spent budget (nothing sent), reply
+// within budget otherwise — the by-value `ask_by` contract, unchanged.
+class EmplaceByAsker : public qb::Actor {
+    qb::ActorId _market;
+
+public:
+    explicit EmplaceByAsker(qb::ActorId m)
+        : _market(m) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        auto mkt = _market;
+        spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            try {
+                (void) co_await qb::ask_by<Ping>(ctx, mkt, qb::deadline{0}, 5);
+            } catch (const qb::io::async::timeout_error &) {
+                g_emplace_by_fast = true;
+            }
+            try {
+                auto r           = co_await qb::ask_by<Ping>(ctx, mkt, qb::deadline_in(ctx, 500ms), 5);
+                g_emplace_by_val = r.response;
+            } catch (...) {
+            }
+            g_emplace_done = true;
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorCoroutineAsk, EmplaceAskByHonoursTheDeadline) {
+    reset_emplace_flags();
+    qb::Main main;
+    auto     mkt = main.addActor<Market>(0);
+    main.addActor<EmplaceByAsker>(0, mkt);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_emplace_done.load());
+    EXPECT_TRUE(g_emplace_by_fast.load()) << "a spent budget fails fast before anything is built";
+    EXPECT_EQ(g_emplace_by_val.load(), 10) << "future deadline -> Ping(5) answered as 5 * 2";
 }

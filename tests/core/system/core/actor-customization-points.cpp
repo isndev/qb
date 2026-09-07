@@ -214,7 +214,8 @@ std::atomic<bool> g_fresh_counter_checked{false};
 class FreshCounterActor : public qb::Actor {
 public:
     FreshCounterActor() {
-        // Eager allocation: active_coroutines_ is a live shared_ptr the moment the ctor runs.
+        // Lazy allocation: active_coroutines_ is an EMPTY census handle until the first spawn,
+        // and both queries must answer "none" without one.
         EXPECT_FALSE(has_active_coroutines());
         EXPECT_EQ(active_coroutine_count(), 0u);
     }

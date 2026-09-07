@@ -44,6 +44,31 @@ policy.
   pending event does not block, because `ev_run` computes its wait from watcher deadlines alone.
   The embedded qev profile keeps the `async` family for it (`QB_EV_ASYNC_ENABLE 1`; six families
   compiled out instead of seven — three symbols and 24 bytes of `struct ev_loop`, measured).
+- **Emplace forms of `qb::ask` and `qb::ask_by`** (`qb/core/patterns/request.h`):
+  `co_await qb::ask<Deposit>(ctx, account, 500ms, amount, txn)` constructs the request **in its
+  pipe slot** and writes each field exactly once, where the by-value form built a temporary,
+  moved it into the pipe (a `memcpy` whose first 16-byte load sits on header fields the
+  constructor had just written with narrow stores — a store-forwarding stall on every ask), and
+  then set the correlation id on the copy. `CoroContext::push` / `push_to` now return the built
+  `E&` so the id can be set in place. `ask_by<E>(ctx, target, dl, args...)` is the deadline twin
+  and fails fast on a spent budget without building anything. Measured on savina/bank-transaction
+  (one ask per transfer, Linux/g++-14): `Account::start`'s frame — 21.7 % of the core, the
+  by-value build and its copy — left the top of the profile, and the shape's p50 moved from **9.74 / 9.60 ms** (1c spin/park, qb 3.1.0) to
+  **8.25 / 8.08 ms** before the wire work below. Tests: `ActorCoroutineAsk.EmplaceAsk*` (6).
+- **`cancellation_token::cancel_hook` + `token.link(hook)`** (`qb/io/async/coroutine/cancellation.h`):
+  an intrusive, allocation-free cancellation registration — a `{fire, ctx, prev, next}` node the
+  caller owns, linked into the token's state and unlinked on completion, fired (after being
+  detached) before any `on_cancel` callback. `ask_awaiter` uses it in place of `on_cancel`, whose
+  `std::function` + vector push was one heap allocation per ask and a linear `remove_on_cancel`
+  per completion. `link()` on an already-cancelled token fires inline and returns `false`; a hook
+  may unlink a sibling from inside its own `fire`. Tests: `CancellationToken.Hook*`,
+  `CancellationToken.LinkOn*` (9 new).
+- **`qb::detail::event_wire`** (`qb/core/Event.h`): the event header as one 16-byte unit —
+  `swap_dest_source(e)`, `set_dest(e, dest)` and `copy(dst, src, bytes)`, each composing the
+  header in one register (SSE2, NEON, or two 64-bit words) and storing it **once**, with the
+  liveness bit settled in the same store; `copy` reads the header back as exactly the bytes that
+  store wrote, then moves the tail. Layout assumptions are `static_assert`ed against `qb::Event`
+  itself. Tests: `EventWire.*` (12).
 
 ### Changed
 
@@ -81,8 +106,9 @@ policy.
   (readme `containers.md`), because it never needed it: the actor lives behind its `unique_ptr`.
 
 - **An actor's coroutine counter is allocated on its first `spawn`, not in its constructor.**
-  `Actor::active_coroutines_` (the `shared_ptr<atomic<size_t>>` the RAII guard decrements after
-  the actor is gone) was a `make_shared` in every `Actor::Actor()` and a release in every
+  `Actor::active_coroutines_` (the census the RAII guard decrements after the actor is gone — a
+  `shared_ptr<atomic<size_t>>` when this landed, `detail::coro_census_ref` since the entry below)
+  was a `make_shared` in every `Actor::Actor()` and a release in every
   destructor, whether or not the actor ever spawned a coroutine. Measured on savina/fib (one
   short-lived actor per node, none of them spawning) that pair was ~30 % of an actor's lifetime
   cost. It is now created by `__ensure_coro_counter__()` on the first `spawn()` /
@@ -95,15 +121,15 @@ policy.
 - **The five default events dispatch through the actor registry, not through per-type handler
   tables.** `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent` and `RequireEvent`
   (`qb::default_events_t`) cost every actor five `key_table` inserts at construction and, at
-  removal, a walk of EVERY resolver on the core to erase them â€” five tables of 65 536 Ã— 32-byte
+  removal, a walk of EVERY resolver on the core to erase them — five tables of 65 536 × 32-byte
   slots per core whose key set was exactly "the live actors", which `VirtualCore::ActorMap` already
   is. `perf` on savina/fib (57 312 actor lifetimes per repetition, one core) put `registerEvent`
-  Ã— 7 at ~29 % and `unregisterEvents` at ~12 % of a 200 ns lifetime. `registerEvent<E>` for a
+  × 7 at ~29 % and `unregisterEvents` at ~12 % of a 200 ns lifetime. `registerEvent<E>` for a
   default `E` now stores a dispatch pointer in the actor itself (`Actor::_default_on[k]`, a
   non-virtual trampoline that recasts to the registering type and checks `is_alive()`), and
   `VirtualCore` installs one `DefaultEventResolver<E>` per default event into its router
-  (`router::memh::install`, new), which answers a unicast from `__actor_slot__(dest)` â€” the bounds
-  check and id compare every lookup already pays â€” and a broadcast from a snapshot of the registry,
+  (`router::memh::install`, new), which answers a unicast from `__actor_slot__(dest)` — the bounds
+  check and id compare every lookup already pays — and a broadcast from a snapshot of the registry,
   so a handler that spawns actors cannot invalidate the walk. `memh::unsubscribe(id)` walks only the
   resolvers that own handlers (`_owning`), which is what makes `unregisterEvents` targeted; an
   installed resolver declares `owns_handlers = false` and `subscribe<E>()` on its type asserts
@@ -113,13 +139,13 @@ policy.
   (the supervisor pattern); `unregisterEvent<E>` and `qb::no_default_events` both drop the event
   silently; a broadcast reaches every live actor and not one spawned by a handler during it; a
   `ServiceActor` is reached through the same slot. Measured in one quiet session per host, 9
-  repetitions + 2 warmup, `develop` `a6663641` â†’ this line, p50 per repetition: savina/fib
-  **6.96 â†’ 5.21 ms** at two cores and **10.98 â†’ 8.48 ms** at one on WSL2 Debian/g++-14 (âˆ’25 % /
-  âˆ’22 %; a second pass 5.31 / 8.62), **10.18 â†’ 7.03 ms** and **15.73 â†’ 11.03 ms** on
-  Windows/MSVC 19.51 (âˆ’31 % / âˆ’30 %; second pass 7.10 / 11.48); savina/chameneos, which creates
+  repetitions + 2 warmup, `develop` `a6663641` → this line, p50 per repetition: savina/fib
+  **6.96 → 5.21 ms** at two cores and **10.98 → 8.48 ms** at one on WSL2 Debian/g++-14 (−25 % /
+  −22 %; a second pass 5.31 / 8.62), **10.18 → 7.03 ms** and **15.73 → 11.03 ms** on
+  Windows/MSVC 19.51 (−31 % / −30 %; second pass 7.10 / 11.48); savina/chameneos, which creates
   its 101 actors outside the window, is unchanged within its spread on both hosts (10.7 / 6.5 ms
-  WSL2, 12.2â€“13.4 / 7.1 ms Windows). `qb::no_default_events` is therefore a semantic choice now,
-  not a saving. New public names: `qb::default_events_t`, `qb::default_event_index<E>` (âˆ’1 for
+  WSL2, 12.2–13.4 / 7.1 ms Windows). `qb::no_default_events` is therefore a semantic choice now,
+  not a saving. New public names: `qb::default_events_t`, `qb::default_event_index<E>` (−1 for
   any other type; cvref stripped; a type DERIVED from a default event is its own event type),
   `qb::is_default_event<E>`. Suite green on Linux release (371/371), ASan+UBSan and TSan (192/192),
   Windows/MSVC release (188/188).
@@ -256,6 +282,27 @@ policy.
   slept a millisecond per trip (~5 ms at Windows' timer granularity) *including* the trip that
   had just satisfied the predicate — every cell reported 5–6 ms wall and 0 CPU time. The pump is
   `run(EVRUN_NOWAIT)` now; `Semaphore/512` reads 36.7 µs on Windows where it read 127.
+- **`reply()` / `forward()` no longer stall the copy on their own header stores.** Written as
+  `std::swap(dest, source)` + `alive = 1` + `send`, the relocation's first wide load spanned two
+  4-byte stores still in flight — measured on savina/bank-transaction, libc `memmove` was 4.3 % of
+  the core, all of it that load. Both now go through `detail::event_wire`: one 16-byte header
+  store, the copy, and only THEN the original's `alive` raised (see Fixed for why the order is
+  the contract). p50 on the shape moved **8.25 / 8.08 / 5.06 / 4.93 ms** (1c spin, 1c park, 2c
+  spin, 2c park) to **8.19 / 8.22 / 4.54 / 4.60 ms** on Linux/g++-14.
+- **The receive path writes nothing into an event before routing it.** `__receive__` and the
+  flush stored `alive = 0` into every arriving event; that byte store into a line the dispatch
+  then loads whole was 70 % of `deliver_thunk`'s first-header-load time on the same shape. An
+  event handed to any transport now carries `alive == 0` structurally — `event_wire`'s helpers
+  clear it in the header store, its `copy` clears it in the copy — so the store said nothing.
+- **An actor's coroutine census is an intrusive, single-threaded refcount, not a
+  `shared_ptr<atomic>`.** The lazily-allocated counter above is `detail::coro_census` now
+  (`{active, refs}`, `qb/core/Actor.h`) behind `detail::coro_census_ref`, which the spawn wrapper
+  copies and releases: every `spawn` was a `shared_ptr` copy — two atomic RMWs — plus an atomic
+  `fetch_add`/`fetch_sub` on the count, on a counter only ever touched from the owning core's
+  thread. Same guarantee (the count outlives the actor, the last frame frees it), zero atomics.
+  `cancellation_token`'s state took the same shape: an intrusive non-atomic `refs` in place of
+  `shared_ptr`, with explicit copy/move (`CancellationToken.RefcountFollowsCopiesAndMoves`,
+  `CancelSurvivesCallbackDroppingLastOtherHandle`).
 
 ### Fixed
 
@@ -310,6 +357,16 @@ policy.
   run on the same host. After 256 yields the poll sleeps 50 µs between loads (one shared
   `wait_sync_start` for both loops); the tests take 100 ms, every run, and an engine whose
   cores arrive more than ~100 µs apart pays at most one quantum, once.
+
+- **A cross-core `forward()` of an event already `reply()`ed delivered a copy the receiver never
+  destroyed.** `send(Event const&)`'s cross-core fast path relocates the ORIGINAL bytes into the
+  peer's mailbox, and after a `reply()` those bytes carried `alive = 1`; the receive-side
+  `alive = 0` store masked it — until that store was removed (above), when the dispatcher skipped
+  the destructor on every such copy and the payload leaked. `send` now refuses to relocate a
+  raised flag: an already-replied event takes the local pipe, whose `event_wire::copy` clears it,
+  and `reply()`/`forward()` raise the original only AFTER the copy is taken. Reply-then-forward
+  in one handler yields two owning copies, each destroyed exactly once, same core or not —
+  `RelayChain.*` (5), including both `*ReplyThenForwardFanOutDestroysBothCopies` polarities.
 
 ## [3.1.0] - 2026-08-30
 

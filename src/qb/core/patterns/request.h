@@ -105,6 +105,42 @@ ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) 
 }
 
 /**
+ * @brief `ask`, **emplace** form: the request is constructed from `args` directly in the
+ *        outgoing pipe slot, instead of being built by the caller and copied in.
+ * @ingroup Patterns
+ * @tparam E The exchange event type (an `ask_event_type`). Explicit — it cannot be deduced,
+ *           which is also what keeps this overload out of every existing `qb::ask(ctx, target,
+ *           E{...}, timeout)` call.
+ * @tparam Args Constructor arguments of `E`, taken BY VALUE and moved into the event: a `task`
+ *              is lazy, so a reference parameter here would name the caller's temporaries at a
+ *              moment they may already be gone.
+ * @param ctx The coroutine context.
+ * @param target The actor to ask.
+ * @param timeout Max time to wait. `<= 0` waits indefinitely (until reply or kill).
+ * @param args Forwarded to `E`'s constructor.
+ * @return `task<E>` resolving to the response event — identical contract to the by-value form.
+ * @details Every `qb::Event` is cache-line aligned, so the by-value form moves a ≥ 64-byte
+ *          object three times before it reaches the pipe — the caller's temporary, the ABI copy
+ *          on the stack, the coroutine frame — and the FIRST of those copies reads back, with
+ *          16-byte loads, header fields the constructor has just written with narrow stores: a
+ *          store-forwarding stall on every ask, on top of the copies. This form writes each
+ *          field exactly once, in place, and touches no temporary at all. Prefer it whenever
+ *          the request is built from a handful of values; keep the by-value form for a request
+ *          you already hold (retry loops, fan-out).
+ * @code
+ * auto r = co_await qb::ask<Deposit>(ctx, account, 500ms, amount, txn);
+ * @endcode
+ */
+template <ask_event_type E, typename... Args>
+[[nodiscard]] qb::io::async::task<E>
+ask(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout, Args... args) {
+    const std::uint64_t aid = qb::detail::ask_next_id(ctx.id());
+    E                  &req = ctx.template push_to<E>(target, std::move(args)...); // built in the pipe slot
+    req.correlation_id      = aid;
+    co_return co_await qb::detail::ask_awaiter<E>{aid, ctx.id(), timeout, ctx.token()};
+}
+
+/**
  * @struct deadline
  * @ingroup Patterns
  * @brief An **absolute** completion time (UNIX-epoch nanoseconds) shared across an ask chain.
@@ -154,6 +190,7 @@ remaining(deadline dl, qb::ScopedCoroContext ctx) noexcept {
  * auto dl = qb::deadline_in(ctx, 1s);              // whole chain must finish within 1 s
  * auto a  = co_await qb::ask_by(ctx, svc1, R1{}, dl);
  * auto b  = co_await qb::ask_by(ctx, svc2, R2{a.response}, dl); // gets only the time svc1 left
+ * auto c  = co_await qb::ask_by<R3>(ctx, svc3, dl, b.response);  // emplace form, same budget
  * @endcode
  * @see qb::ask, qb::deadline, qb::remaining
  */
@@ -164,6 +201,20 @@ ask_by(qb::ScopedCoroContext ctx, qb::ActorId target, E req, deadline dl) {
     if (left <= qb::duration::zero())
         throw qb::io::async::timeout_error{}; // budget already spent — fail fast, send nothing
     co_return co_await qb::ask<E>(ctx, target, std::move(req), left);
+}
+
+/**
+ * @brief `ask_by`, **emplace** form — the request is built in the pipe slot from `args`
+ *        (see the emplace `qb::ask`); same deadline contract as the by-value form.
+ * @ingroup Patterns
+ */
+template <ask_event_type E, typename... Args>
+[[nodiscard]] qb::io::async::task<E>
+ask_by(qb::ScopedCoroContext ctx, qb::ActorId target, deadline dl, Args... args) {
+    const qb::duration left = remaining(dl, ctx);
+    if (left <= qb::duration::zero())
+        throw qb::io::async::timeout_error{}; // budget already spent — fail fast, send nothing
+    co_return co_await qb::ask<E>(ctx, target, left, std::move(args)...);
 }
 
 /**

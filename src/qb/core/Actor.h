@@ -114,6 +114,84 @@ default_event_index_of(std::index_sequence<I...>) noexcept {
     ((std::is_same_v<E, std::tuple_element_t<I, Tuple>> ? (index = static_cast<int>(I), 0) : 0), ...);
     return index;
 }
+
+/**
+ * @brief Census of an actor's live coroutine frames, shared between the actor and every
+ *        wrapper frame it spawned; same-thread, intrusively reference-counted, NOT atomic.
+ * @details The actor, its wrapper frames and the `VirtualCore` that destroys it all live
+ *          on one thread: frames are owned by the thread-local `CoroutineScheduler`, the
+ *          actor is deleted by its own core's `removeActor`, and a frame that outlives the
+ *          actor still dies on that thread. So neither the count of live frames nor the
+ *          count of handles to this cell is ever touched concurrently, and it used to be
+ *          a `std::shared_ptr<std::atomic<std::size_t>>` anyway — two atomic RMWs per
+ *          spawn for the census, two more per handle copy. Each of those is a full fence
+ *          on x86; measured on savina/bank-transaction (one `qb::ask` per transfer, one
+ *          core) as part of the 29 % of core time that atomic refcounting on the coroutine
+ *          path cost. See `qb::io::async::cancellation_token::state::refs` for the twin.
+ */
+struct coro_census {
+    std::size_t   active{0}; ///< live wrapper frames (spawned, not yet destroyed).
+    std::uint32_t refs{1};   ///< handles to this cell: the actor's, plus one per live frame.
+};
+
+/**
+ * @brief Owning handle to a `coro_census`: copy = increment, destroy = decrement/delete.
+ *        Empty by default (an actor that never spawns allocates nothing).
+ */
+class coro_census_ref {
+    coro_census *_c{nullptr};
+
+    static void
+    release(coro_census *c) noexcept {
+        if (c && --c->refs == 0)
+            delete c;
+    }
+
+public:
+    coro_census_ref() noexcept = default;
+    /** @brief Allocate a fresh cell owned by this handle alone. */
+    static coro_census_ref
+    make() {
+        coro_census_ref r;
+        r._c = new coro_census;
+        return r;
+    }
+    coro_census_ref(const coro_census_ref &other) noexcept
+        : _c(other._c) {
+        if (_c)
+            ++_c->refs;
+    }
+    coro_census_ref(coro_census_ref &&other) noexcept
+        : _c(std::exchange(other._c, nullptr)) {}
+    coro_census_ref &
+    operator=(const coro_census_ref &other) noexcept {
+        if (other._c)
+            ++other._c->refs; // before the release, so self-assignment cannot free the cell
+        release(_c);
+        _c = other._c;
+        return *this;
+    }
+    coro_census_ref &
+    operator=(coro_census_ref &&other) noexcept {
+        if (this != &other) {
+            release(_c);
+            _c = std::exchange(other._c, nullptr);
+        }
+        return *this;
+    }
+    ~coro_census_ref() {
+        release(_c);
+    }
+
+    [[nodiscard]] explicit
+    operator bool() const noexcept {
+        return _c != nullptr;
+    }
+    [[nodiscard]] coro_census *
+    operator->() const noexcept {
+        return _c;
+    }
+};
 } // namespace detail
 
 /**
@@ -1332,7 +1410,7 @@ public:
      */
     [[nodiscard]] bool
     has_active_coroutines() const {
-        return active_coroutines_ && active_coroutines_->load(std::memory_order_relaxed) > 0;
+        return active_coroutines_ && active_coroutines_->active > 0;
     }
 
     /**
@@ -1368,7 +1446,7 @@ public:
      */
     [[nodiscard]] std::size_t
     active_coroutine_count() const {
-        return active_coroutines_ ? active_coroutines_->load(std::memory_order_relaxed) : 0;
+        return active_coroutines_ ? active_coroutines_->active : 0;
     }
 
     /**
@@ -1399,11 +1477,12 @@ private:
     mutable qb::io::async::CoroutineScheduler *coro_scheduler_ = nullptr;
 
     /**
-     * @brief Shared count of active coroutines.
+     * @brief Shared census of active coroutines (`detail::coro_census`).
      *
-     * Uses `shared_ptr` so coroutine RAII guards can safely decrement even
-     * after the actor is destroyed (the shared_ptr keeps the counter alive
-     * until the last orphaned coroutine frame is destroyed).
+     * A reference-counted cell rather than a plain member so coroutine RAII guards can
+     * safely decrement even after the actor is destroyed (the last orphaned frame's
+     * handle is what frees the cell). The count is NOT atomic: the actor, its frames and
+     * its destruction all live on the owning core's thread — see `detail::coro_census`.
      *
      * @note Allocated on the FIRST `spawn()` / `spawn_detached()`, like `_coro_scope`
      *       below — an actor that never spawns a coroutine pays nothing. It used to be
@@ -1415,7 +1494,7 @@ private:
      *       — one `malloc`, one `free` and two atomic refcount ops per actor, ~30 % of the
      *       core's time — against a predicted-not-taken branch per spawn.
      */
-    mutable std::shared_ptr<std::atomic<std::size_t>> active_coroutines_{};
+    mutable detail::coro_census_ref active_coroutines_{};
 
     /**
      * @brief Allocate `active_coroutines_` on first use (cold path of `spawn*`).
@@ -1423,7 +1502,7 @@ private:
     void
     __ensure_coro_counter__() const {
         if (unlikely(!active_coroutines_))
-            active_coroutines_ = std::make_shared<std::atomic<std::size_t>>(0);
+            active_coroutines_ = detail::coro_census_ref::make();
     }
 
     /**
@@ -1481,9 +1560,11 @@ public:
      * @tparam _Event The event type
      * @tparam Args Event constructor arguments
      * @param args Arguments to forward to event constructor
+     * @return A mutable reference to the constructed `_Event`, exactly as `Actor::push` returns
+     *         it: valid until the end of the current loop pass, for filling fields in place.
      */
     template <typename _Event, typename... Args>
-    void push(Args &&...args) const;
+    _Event &push(Args &&...args) const;
 
     /**
      * @brief Send an event to a specific destination actor
@@ -1491,9 +1572,11 @@ public:
      * @tparam Args Event constructor arguments
      * @param dest Destination actor ID
      * @param args Arguments to forward to event constructor
+     * @return A mutable reference to the constructed `_Event` (see `push`); `qb::ask`'s emplace
+     *         form writes the correlation id through it rather than copying a request in.
      */
     template <typename _Event, typename... Args>
-    void push_to(ActorId dest, Args &&...args) const;
+    _Event &push_to(ActorId dest, Args &&...args) const;
 
     /**
      * @brief Broadcast an event to every actor on all cores (source = the spawning actor).
@@ -1628,7 +1711,7 @@ struct ask_awaiter {
     ev_timer                                 timer{};
     bool                                     timer_started        = false;
     enum class kind { pending, ok, timed_out, cancelled } outcome = kind::pending;
-    qb::io::async::cancellation_token::id_type cancel_id          = 0; ///< scope on_cancel reg; removed in finish().
+    qb::io::async::cancellation_token::cancel_hook hook{}; ///< scope cancel hook; unlinked in finish().
 
     ask_awaiter(std::uint64_t aid, qb::ActorId owner, qb::duration t, const qb::io::async::cancellation_token &tok)
         : id(aid)
@@ -1672,16 +1755,13 @@ struct ask_awaiter {
             ev_timer_start(loop, &timer);
             timer_started = true;
         }
-        // Bare `this`: `finish()` deregisters the hook before this frame can go away, and the
-        // token guarantees a removed callback never fires — even from inside `cancel()`'s walk
-        // (see `cancellation_token::cancel`). No heap-allocated liveness flag per ask.
-        cancel_id = token.on_cancel([this]() {
-            if (!slot.done) {
-                slot.done = true;
-                outcome   = kind::cancelled;
-                qb::io::async::schedule_via_current(cont);
-            }
-        });
+        // Bare `this`: `finish()` unlinks the hook before this frame can go away, and the token
+        // detaches a hook before firing it, so an unlinked hook never fires — even from inside
+        // `cancel()`'s walk (see `cancellation_token::cancel`). An embedded list node, not an
+        // `on_cancel` std::function: nothing allocated and nothing scanned, per ask.
+        hook.fire = &ask_awaiter::on_cancel_hook;
+        hook.ctx  = this;
+        token.link(hook);
     }
 
     E
@@ -1705,10 +1785,9 @@ private:
     void
     finish() noexcept {
         ask_unregister(id);
-        // Deregister the scope cancel hook so a long-lived actor scope token does not retain
-        // one dead callback per `qb::ask` for the actor's whole life (idempotent).
-        token.remove_on_cancel(cancel_id);
-        cancel_id = 0;
+        // Unlink the scope cancel hook so a long-lived actor scope token does not retain one
+        // dead node per `qb::ask` for the actor's whole life (idempotent, O(1)).
+        hook.unlink();
         if (timer_started) {
             // The deadline is a one-shot ev_timer embedded directly in this
             // awaiter (which lives in the ask() coroutine frame). libev auto-stops
@@ -1733,6 +1812,16 @@ private:
         me->outcome   = kind::ok;
         me->result.emplace(std::move(static_cast<E &>(resp)));
         qb::io::async::schedule_via_current(me->cont);
+    }
+
+    static void
+    on_cancel_hook(void *self) noexcept {
+        auto *me = static_cast<ask_awaiter *>(self);
+        if (!me->slot.done) {
+            me->slot.done = true;
+            me->outcome   = kind::cancelled;
+            qb::io::async::schedule_via_current(me->cont);
+        }
     }
 
     static void

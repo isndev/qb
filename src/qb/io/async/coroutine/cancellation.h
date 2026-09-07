@@ -99,12 +99,74 @@ public:
     /// `0` means "not registered" (empty token, or fired inline because already cancelled).
     using id_type = std::uint64_t;
 
+    /**
+     * @brief Zero-allocation cancel hook: an intrusive list node the caller EMBEDS in the
+     *        object that must learn about cancellation, typically an awaiter living in a
+     *        coroutine frame that always deregisters itself on completion.
+     * @details `on_cancel` is the general, owning API — a `std::function` copied into a vector,
+     *          found again by id with a linear scan — and the right one for a callback that
+     *          genuinely lives for the token's lifetime. An awaiter is the opposite shape: it
+     *          registers on every suspension and deregisters on every completion, so on a hot
+     *          request path (`qb::ask`, one per work unit) the `std::function` construction, the
+     *          vector append and the scan-to-remove are pure overhead. `link()` / `unlink()` are
+     *          O(1) pointer splices that touch no allocator. The node must outlive its
+     *          registration (unlink before destruction) and `fire` must not throw. Hooks fire
+     *          in unspecified order relative to each other and BEFORE the `on_cancel` callbacks.
+     */
+    struct cancel_hook {
+        void (*fire)(void *ctx) noexcept = nullptr; ///< invoked once by `cancel()`, after detach.
+        void        *ctx                 = nullptr; ///< handed back to `fire`.
+        cancel_hook *prev                = nullptr;
+        cancel_hook *next                = nullptr;
+
+        /** @brief Registered on some token and not yet fired or unlinked. */
+        [[nodiscard]] bool
+        linked() const noexcept {
+            return next != nullptr;
+        }
+        /**
+         * @brief Detach from the token, O(1); idempotent, legal after the token was cancelled
+         *        (already detached) and from INSIDE a firing hook — `cancel()` detaches a node
+         *        before invoking it, so the walk never holds a pointer to a node that can go.
+         */
+        void
+        unlink() noexcept {
+            if (!next)
+                return;
+            prev->next = next;
+            next->prev = prev;
+            prev = next = nullptr;
+        }
+    };
+
     // Plain bool and no mutex: single-thread cooperative scheduler.
     // cancel() and on_cancel() are always called on the same VirtualCore thread.
     struct state {
-        bool    cancelled{false};
-        bool    firing{false}; ///< `cancel()` is walking `callbacks` in place (see remove_on_cancel).
-        id_type next_id{0};
+        state() noexcept {
+            hooks.next = hooks.prev = &hooks;
+        }
+        state(const state &)            = delete;
+        state &operator=(const state &) = delete;
+
+        /// Intrusive reference count, deliberately NOT atomic. Every copy of a token lives
+        /// and dies on the one thread that owns the state (the rule above, which every other
+        /// field of this struct already relies on), so an atomic count bought no safety and
+        /// cost a full fence per copy: a `lock`-prefixed RMW drains the store buffer on x86,
+        /// and this state used to sit behind a `std::shared_ptr`, whose count is atomic in
+        /// any process that has ever started a thread. MEASURED on savina/bank-transaction
+        /// (1000 actors, one `qb::ask` per transfer, one core, Linux x86-64, `perf`): the
+        /// `ScopedCoroContext` that `qb::ask` takes by value — one copy into the ask frame,
+        /// one release at its end — was 29 % of the core's time, 24 % on the single
+        /// `lock xadd` of `_Sp_counted_base::_M_release` alone, the hottest instruction in
+        /// the program; and every `spawn` paid three more such pairs (context into the
+        /// wrapper frame, context into the user frame, the coroutine census cell). A plain
+        /// increment is one register op.
+        std::uint32_t refs{1};
+        bool          cancelled{false};
+        bool          firing{false}; ///< `cancel()` is walking `callbacks` in place (see remove_on_cancel).
+        id_type       next_id{0};
+        /// Circular list of `cancel_hook`s, this sentinel included; empty when it points to itself.
+        cancel_hook hooks;
         // Keyed callbacks so a completing awaiter can DEREGISTER itself (remove_on_cancel)
         // instead of leaving a dead entry behind. Without this a long-lived (actor-scope)
         // token accumulated one std::function per sleep/ask/cancellable for the actor's
@@ -113,24 +175,54 @@ public:
     };
 
 private:
-    std::shared_ptr<state> _state;
+    state *_state{nullptr};
+
+    static void
+    acquire(state *s) noexcept {
+        if (s)
+            ++s->refs;
+    }
+    static void
+    release(state *s) noexcept {
+        if (s && --s->refs == 0)
+            delete s;
+    }
 
 public:
     cancellation_token()
-        : _state(std::make_shared<state>()) {}
+        : _state(new state) {}
 
     /**
      * @brief Construct an empty token: no shared state, no allocation.
      * @details Use `qb::io::async::null_token`. An empty token never cancels and is the
      *          lazy placeholder for `Actor`'s coroutine scope. @see null_token_t
      */
-    explicit cancellation_token(null_token_t) noexcept
-        : _state(nullptr) {}
+    explicit cancellation_token(null_token_t) noexcept {}
 
-    cancellation_token(const cancellation_token &)            = default;
-    cancellation_token(cancellation_token &&)                 = default;
-    cancellation_token &operator=(const cancellation_token &) = default;
-    cancellation_token &operator=(cancellation_token &&)      = default;
+    cancellation_token(const cancellation_token &other) noexcept
+        : _state(other._state) {
+        acquire(_state);
+    }
+    cancellation_token(cancellation_token &&other) noexcept
+        : _state(std::exchange(other._state, nullptr)) {}
+    cancellation_token &
+    operator=(const cancellation_token &other) noexcept {
+        acquire(other._state); // before the release, so self-assignment cannot free the state
+        release(_state);
+        _state = other._state;
+        return *this;
+    }
+    cancellation_token &
+    operator=(cancellation_token &&other) noexcept {
+        if (this != &other) {
+            release(_state);
+            _state = std::exchange(other._state, nullptr);
+        }
+        return *this;
+    }
+    ~cancellation_token() {
+        release(_state);
+    }
 
     /** @brief True iff this token owns shared state (i.e. is **not** empty). */
     [[nodiscard]] explicit
@@ -160,11 +252,19 @@ public:
         if (!_state || _state->cancelled)
             return;
         // A callback may release the last reference to the token object (`this`); the
-        // shared state must outlive the walk regardless.
-        auto  keep   = _state;
+        // shared state must outlive the walk regardless, so hold one reference of our own.
+        state *const keep = _state;
+        acquire(keep);
         auto &st     = *keep;
         st.cancelled = true;
-        st.firing    = true;
+        // Hooks first: each is detached BEFORE it fires, so a hook that unlinks itself or a
+        // sibling (an awaiter torn down by another) leaves the walk a consistent list.
+        while (st.hooks.next != &st.hooks) {
+            cancel_hook *h = st.hooks.next;
+            h->unlink();
+            h->fire(h->ctx);
+        }
+        st.firing = true;
         // Index loop: `on_cancel` on an already-cancelled token fires inline and never
         // appends, so the vector cannot reallocate under the walk, and `remove_on_cancel`
         // nulls an entry rather than erasing it while `firing` is set.
@@ -175,6 +275,7 @@ public:
         }
         st.firing = false;
         st.callbacks.clear();
+        release(keep);
     }
 
     bool
@@ -206,6 +307,30 @@ public:
         const id_type id = ++_state->next_id; // 0 reserved for "not registered".
         _state->callbacks.emplace_back(id, std::move(callback));
         return id;
+    }
+
+    /**
+     * @brief Register an embedded `cancel_hook`, O(1), no allocation.
+     * @param hook  Node owned by the caller; `hook.fire` and `hook.ctx` must be set. Must not be
+     *              linked already.
+     * @return `true` if linked; `false` if the token is empty (never cancels — nothing to do) or
+     *         already cancelled, in which case the hook was fired inline, exactly as `on_cancel`
+     *         does for a callback. Unlink with `hook.unlink()` on normal completion.
+     */
+    bool
+    link(cancel_hook &hook) const noexcept {
+        if (!_state)
+            return false;
+        if (_state->cancelled) {
+            hook.fire(hook.ctx);
+            return false;
+        }
+        cancel_hook &head = _state->hooks;
+        hook.prev         = &head;
+        hook.next         = head.next;
+        head.next->prev   = &hook;
+        head.next         = &hook;
+        return true;
     }
 
     /**
@@ -242,8 +367,12 @@ public:
             throw cancelled_error();
     }
 
-    std::shared_ptr<state>
-    get_state() const {
+    /**
+     * @brief The shared state, for introspection (tests count `callbacks`); `nullptr` for an
+     *        empty token. Non-owning: valid for as long as some token copy holds the state.
+     */
+    [[nodiscard]] state *
+    get_state() const noexcept {
         return _state;
     }
 };

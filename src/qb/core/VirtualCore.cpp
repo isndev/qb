@@ -211,7 +211,6 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
                 continue;
             }
         }
-        event->state.bits.alive = 0;
         _router.route(*event, [this](auto &event) {
             // `this` is read only by the log statement below, which compiles to nothing when
             // QB_WITH_LOGGING=OFF -- and an explicit capture that ends up unused is
@@ -713,8 +712,7 @@ VirtualCore::__pump_activations__() noexcept {
         actor->_activated = true;
         QB_LOG_VERB(*actor << " activated");
         for (auto &buckets : act.stash) {
-            auto *ev             = reinterpret_cast<Event *>(buckets.data());
-            ev->state.bits.alive = 0; // mark consumed, exactly as __receive_events__ does pre-route
+            auto *ev = reinterpret_cast<Event *>(buckets.data());
             _router.route(*ev, [this](auto &e) {
                 // See the note on the sibling handler in __receive_events__: `this` is used only
                 // by the log statement, so mark it used for the QB_WITH_LOGGING=OFF build.
@@ -1109,32 +1107,40 @@ VirtualCore::try_send(Event const &event) const noexcept {
     return _engine.send(_resolved_index, event);
 }
 
+// Same-core copies go through detail::event_wire::copy: the 16-byte header as one load (it
+// forwards from the one store reply()/forward() just made), `alive` cleared in the copy, the
+// tail moved without a libc call for a one-bucket event. See event_wire's doc block in Event.h.
+// The cross-core mailbox is a raw memcpy of the original, so an original that still says
+// `alive` (the module-facing `Actor::send(Event const &)` on an event already replied or
+// forwarded — reply()/forward() themselves clear it in their header rewrite) takes the local
+// pipe, whose copy clears it; the batched flush relocates it later exactly like a try_send miss.
 void
 VirtualCore::send(Event const &event) noexcept {
-    if (event.dest._core_id == _index || !try_send(event)) {
+    if (event.dest._core_id == _index || unlikely(event.state.bits.alive) || !try_send(event)) {
         auto &pipe = __getPipe__(event.dest._core_id);
-        pipe.recycle_back(event, event.bucket_size);
+        detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
     }
 }
 
 Event &
 VirtualCore::push(Event const &event) noexcept {
     auto &pipe = __getPipe__(event.dest._core_id);
-    return pipe.recycle_back(event, event.bucket_size);
+    // the copy clears `alive` itself, so re-pushing an already replied/forwarded event is fine
+    return detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
 }
 
 void
 VirtualCore::reply(Event &event) noexcept {
-    std::swap(event.dest, event.source);
-    event.state.bits.alive = 1;
+    detail::event_wire::swap_dest_source(event); // one 16-byte store the copy loads whole, alive 0
     send(event);
+    event.state.bits.alive = 1; // AFTER the copy: the copy — on either transport — carries 0
 }
 
 void
 VirtualCore::forward(ActorId const dest, Event &event) noexcept {
-    event.dest             = dest;
-    event.state.bits.alive = 1;
+    detail::event_wire::set_dest(event, dest);
     send(event);
+    event.state.bits.alive = 1;
 }
 //! Event Api
 

@@ -1210,15 +1210,15 @@ Actor::registerIndex() noexcept {
 // CoroContext implementation (needs VirtualCore access)
 
 template <typename _Event, typename... Args>
-void
+_Event &
 CoroContext::push(Args &&...args) const {
-    VirtualCore::_handler->template push<_Event>(actor_id_, actor_id_, std::forward<Args>(args)...);
+    return VirtualCore::_handler->template push<_Event>(actor_id_, actor_id_, std::forward<Args>(args)...);
 }
 
 template <typename _Event, typename... Args>
-void
+_Event &
 CoroContext::push_to(ActorId dest, Args &&...args) const {
-    VirtualCore::_handler->template push<_Event>(dest, actor_id_, std::forward<Args>(args)...);
+    return VirtualCore::_handler->template push<_Event>(dest, actor_id_, std::forward<Args>(args)...);
 }
 
 template <typename _Event, typename... Args>
@@ -1238,15 +1238,16 @@ Actor::resolve_ask(E &e) const noexcept {
 namespace detail {
 
 /**
- * @brief RAII guard that decrements the actor's active-coroutine counter when a
+ * @brief RAII guard that decrements the actor's active-coroutine census when a
  *        wrapper frame completes or is destroyed (even after the owning actor is
- *        gone — the shared_ptr keeps the counter alive). Shared by both spawn
- *        wrappers so the decrement logic lives in one place.
+ *        gone — the handle keeps the cell alive). Shared by both spawn wrappers so
+ *        the decrement logic lives in one place. Same thread as the increment in
+ *        `Actor::spawn*`, by construction (`detail::coro_census`), hence no atomic.
  */
 struct coro_count_guard {
-    std::shared_ptr<std::atomic<std::size_t>> c;
+    coro_census_ref c;
     ~coro_count_guard() {
-        c->fetch_sub(1, std::memory_order_relaxed);
+        --c->active;
     }
 };
 
@@ -1295,7 +1296,7 @@ void report_unhandled_coroutine_exception(ActorId owner, char const *api, std::e
  */
 template <typename Func>
 qb::io::async::task<void>
-actor_coro_wrapper(Func func, CoroContext ctx, std::shared_ptr<std::atomic<std::size_t>> counter) {
+actor_coro_wrapper(Func func, CoroContext ctx, coro_census_ref counter) {
     coro_count_guard guard{std::move(counter)};
     try {
         co_await func(ctx);
@@ -1316,7 +1317,7 @@ actor_coro_wrapper(Func func, CoroContext ctx, std::shared_ptr<std::atomic<std::
  */
 template <typename Func, typename Ctx>
 qb::io::async::task<void>
-actor_scoped_coro_wrapper(Func func, Ctx ctx, std::shared_ptr<std::atomic<std::size_t>> counter) {
+actor_scoped_coro_wrapper(Func func, Ctx ctx, coro_census_ref counter) {
     coro_count_guard guard{std::move(counter)};
     try {
         co_await func(ctx);
@@ -1335,9 +1336,9 @@ template <typename Func>
 void
 Actor::spawn_detached(Func &&func) const {
     __resolve_coro_scheduler__();
-    __ensure_coro_counter__(); // lazily allocate the shared counter on first use.
+    __ensure_coro_counter__(); // lazily allocate the shared census on first use.
 
-    active_coroutines_->fetch_add(1, std::memory_order_relaxed);
+    ++active_coroutines_->active;
     CoroContext ctx(this);
 
     // actor_coro_wrapper takes func BY VALUE → stored in the coroutine frame.
@@ -1352,7 +1353,7 @@ Actor::spawn(Func &&func) const {
     __ensure_coro_scope__(); // lazily allocate the real cancellation token on first use.
     __ensure_coro_counter__();
 
-    active_coroutines_->fetch_add(1, std::memory_order_relaxed);
+    ++active_coroutines_->active;
     // ScopedCoroContext carries the actor id + a copy of the scope token; the wrapper
     // stores it by value in the coroutine frame, so the token's shared state safely
     // outlives the actor.

@@ -29,6 +29,11 @@
  *     id/service_event_id, mark alive" contract via the public getters.
  *   - the `bucket_size` `uint16_t` truncation called out in `Pipe::allocated_push`'s @warning is
  *     reproduced as plain arithmetic (65536 buckets → 0), proving the cap is real.
+ *   - `qb::detail::event_wire` (3.2: the 16-byte header moved as ONE machine word by `reply()`,
+ *     `forward()` and every same-core copy) is driven on events whose header bytes were written
+ *     at the documented wire OFFSETS through `std::memcpy`, and read back through the public
+ *     getters — so the byte oracle and the accessor agree on where each field lives, and the
+ *     SSE2 / NEON / scalar bodies are all held to the same byte-level answer.
  *
  * Live delivery of `Pipe::push` / `allocated_push` through a real `VirtualCore` is already covered by
  * the system tier (messaging/messaging-api.cpp, event/service-event-ring.cpp,
@@ -36,7 +41,11 @@
  * layer and does not duplicate that.
  */
 
+#include <algorithm>
+#include <bit>
 #include <cstdint>
+#include <cstring>
+#include <new>
 #include <limits>
 #include <type_traits>
 
@@ -79,7 +88,8 @@ TEST(EventHeader, EventIsExactlyOneBucketAndAligned) {
 
 // ---------------------------------------------------------------------------
 // Default-constructed header state. These are the values EVERY event carries
-// on the wire before VirtualCore overwrites `alive` at consume time, so they
+// on the wire (since 3.2 nothing on the receive path writes the header: a
+// pipe copy is born with `alive == 0`, see the EventWire section), so they
 // are the real default contract — previously asserted nowhere.
 //
 // The Header union's only default member-initializer is `prot[4]`; the bitfields read it back
@@ -151,9 +161,9 @@ TEST(EventHeader, TogglingLivenessPreservesQosAcrossTheReplyForwardCycle) {
 
     qb::ServiceEvent se;
     const auto       qos_before = se.getQOS();
-    se.live(false); // __receive_events__ marks it consumed
+    se.live(false); // the state every pipe copy is born with (event_wire::copy clears it)
     EXPECT_EQ(se.getQOS(), qos_before) << "clearing the liveness bit must not touch qos";
-    se.live(true); // reply()/forward() re-enqueues it
+    se.live(true); // reply()/forward() raise it on the original once the copy is in the pipe
     EXPECT_EQ(se.getQOS(), qos_before) << "setting the liveness bit must not touch qos";
 }
 
@@ -388,6 +398,284 @@ TEST(EventHeader, PingEventCtorsSetTypeAndCorrelation) {
 TEST(EventHeader, ValueInitializedEventGetSizeIsZero) {
     qb::Event e{};
     EXPECT_EQ(e.getSize(), static_cast<std::size_t>(0)) << "a value-initialized event has bucket_size 0 -> getSize() 0";
+}
+
+// ---------------------------------------------------------------------------
+// qb::detail::event_wire — the 16-byte framework header as one machine word.
+//
+// reply() writes `dest`/`source` exchanged, forward() writes `dest` replaced — both with
+// `alive` CLEARED in the same store — and every same-core copy (send/push/reply/forward into
+// a pipe) reads the header as ONE 16-byte load and stores it with `alive` cleared again. The
+// invariant since 3.2 is that an event handed to ANY transport carries alive == 0, whatever
+// its original said (the cross-core mailbox is a raw memcpy of the rewritten original), and
+// reply()/forward() raise the ORIGINAL's flag only after the copy (VirtualCore.cpp). These
+// cases drive the three
+// primitives on a hand-laid header: each field is written at its documented wire offset with
+// std::memcpy (Event is standard-layout and trivially copyable, so the object representation
+// is the wire), then read back through the PUBLIC getters. That makes the offsets an
+// independent oracle: if event_wire and the getters disagreed on where `dest` lives, the
+// shuffle would land on the wrong lane and getDestination() would say so.
+//
+// Every assertion is on bytes, so the SSE2, NEON and scalar bodies are held to one answer.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+using qb::detail::event_wire;
+
+// The wire offsets, spelled here rather than taken from event_wire, so the test cannot inherit
+// a drift from the code under test.
+constexpr std::size_t kOffState  = 0;
+constexpr std::size_t kOffBucket = 4;
+constexpr std::size_t kOffId     = 6;
+constexpr std::size_t kOffDest   = 8;
+constexpr std::size_t kOffSource = 12;
+constexpr std::size_t kHeader    = 16;
+constexpr std::size_t kBucket    = QB_LOCKFREE_EVENT_BUCKET_BYTES;
+
+static_assert(std::is_trivially_copyable_v<Event>, "the header is driven through its object representation");
+static_assert(std::is_standard_layout_v<Event>, "the wire offsets below assume standard layout");
+
+constexpr std::uint32_t
+bits(ActorId const &a) noexcept {
+    return std::bit_cast<std::uint32_t>(a);
+}
+
+// ActorId's (ServiceId, CoreId) constructor is protected; its public u32 form is the wire word
+// itself — service id in the low half, core index in the high half (little-endian, `_service_id`
+// declared first). The oracle test below checks that reading through sid()/index().
+inline ActorId
+actor(std::uint32_t const sid, std::uint32_t const core) noexcept {
+    return ActorId(sid | (core << 16));
+}
+
+template <typename T>
+void
+poke(void *base, std::size_t off, T const &v) noexcept {
+    std::memcpy(static_cast<unsigned char *>(base) + off, &v, sizeof v);
+}
+
+// A bucket-aligned byte image large enough for `Buckets` buckets, holding one Event at 0.
+template <std::size_t Buckets>
+struct Image {
+    alignas(QB_LOCKFREE_EVENT_BUCKET_BYTES) unsigned char bytes[Buckets * kBucket];
+
+    Image() noexcept {
+        // A recognisable, position-dependent tail so a payload byte moved or dropped is visible.
+        for (std::size_t i = 0; i < sizeof bytes; ++i)
+            bytes[i] = static_cast<unsigned char>(0xA0u + (i * 7u) % 0x5Fu);
+        new (bytes) Event(); // default header: alive=0, qos=2, dest/source NotFound
+        poke(bytes, kOffBucket, static_cast<std::uint16_t>(Buckets));
+        poke(bytes, kOffId, static_cast<std::uint16_t>(0xBEEF));
+        poke(bytes, kOffDest, std::bit_cast<std::uint32_t>(actor(0x1234, 2)));
+        poke(bytes, kOffSource, std::bit_cast<std::uint32_t>(actor(0x5678, 1)));
+    }
+    Event &
+    event() noexcept {
+        return *reinterpret_cast<Event *>(bytes);
+    }
+    Event const &
+    event() const noexcept {
+        return *reinterpret_cast<Event const *>(bytes);
+    }
+    void
+    set_alive() noexcept {
+        bytes[3] |= 0x01; // Header bit 24 == bit 0 of byte 3 (little-endian), see EventHeader above
+    }
+};
+
+// Byte-equality of a range, reported with the first differing offset.
+::testing::AssertionResult
+same_bytes(unsigned char const *a, unsigned char const *b, std::size_t from, std::size_t to) {
+    for (std::size_t i = from; i < to; ++i)
+        if (a[i] != b[i])
+            return ::testing::AssertionFailure() << "byte " << i << " differs: " << int{a[i]} << " vs " << int{b[i]};
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace
+
+// The byte oracle itself: the offsets the section relies on are the ones the getters read.
+TEST(EventWire, HandLaidHeaderReadsBackThroughTheGetters) {
+    Image<1> img;
+    Event   &e = img.event();
+    EXPECT_FALSE(e.is_alive());
+    EXPECT_EQ(e.getQOS(), 2u);
+    EXPECT_EQ(e.getSize(), kBucket);
+    EXPECT_EQ(e.getID(), static_cast<qb::EventId>(0xBEEF));
+    EXPECT_EQ(bits(e.getDestination()), bits(actor(0x1234, 2)));
+    EXPECT_EQ(e.getDestination().sid(), 0x1234u);
+    EXPECT_EQ(e.getDestination().index(), 2u);
+    EXPECT_EQ(bits(e.getSource()), bits(actor(0x5678, 1)));
+    EXPECT_EQ(e.getSource().sid(), 0x5678u);
+    EXPECT_EQ(e.getSource().index(), 1u);
+    img.set_alive();
+    EXPECT_TRUE(e.is_alive()) << "byte 3 bit 0 must be the liveness bit event_wire masks";
+    EXPECT_EQ(e.getQOS(), 2u) << "raising alive through the byte must not touch qos";
+}
+
+TEST(EventWire, SwapDestSourceExchangesExactlyTheTwoIds) {
+    Image<1>       img;
+    Image<1> const before = img;
+    event_wire::swap_dest_source(img.event());
+
+    EXPECT_EQ(bits(img.event().getDestination()), bits(actor(0x5678, 1))) << "dest must take the old source";
+    EXPECT_EQ(bits(img.event().getSource()), bits(actor(0x1234, 2))) << "source must take the old dest";
+    EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffState, kOffDest)) << "state/bucket_size/id must not move";
+    EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kHeader, sizeof img.bytes)) << "payload must not move";
+
+    event_wire::swap_dest_source(img.event());
+    EXPECT_TRUE(same_bytes(img.bytes, before.bytes, 0, sizeof img.bytes)) << "swap is an involution";
+}
+
+TEST(EventWire, SwapDestSourceClearsTheLivenessBitAndNothingElseInTheStateWord) {
+    // reply() on an event whose original is already alive (replied once, or a hand-marked
+    // ServiceEvent): the rewrite must hand send() an original that says 0, because the
+    // cross-core mailbox relocates it byte for byte. qos, bucket_size and id ride through.
+    Image<1> img;
+    img.set_alive();
+    Image<1> const before = img;
+    event_wire::swap_dest_source(img.event());
+    EXPECT_FALSE(img.event().is_alive()) << "the header handed to the transport must say alive == 0";
+    EXPECT_EQ(img.event().getQOS(), 2u);
+    EXPECT_EQ(img.event().getSize(), kBucket);
+    EXPECT_EQ(img.event().getID(), static_cast<qb::EventId>(0xBEEF));
+    EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffState, 3)) << "the magic bytes must not move";
+    EXPECT_EQ(img.bytes[3], static_cast<unsigned char>(before.bytes[3] & ~0x01u)) << "only bit 24 changes";
+}
+
+TEST(EventWire, SetDestReplacesOnlyTheDestinationLane) {
+    Image<1>       img;
+    Image<1> const before = img;
+    const ActorId  target = actor(0x0042, 3);
+    event_wire::set_dest(img.event(), target);
+
+    EXPECT_EQ(bits(img.event().getDestination()), bits(target));
+    EXPECT_EQ(bits(img.event().getSource()), bits(actor(0x5678, 1))) << "forward() preserves the source";
+    EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffState, kOffDest)) << "state/bucket_size/id must not move";
+    EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffSource, sizeof img.bytes)) << "source and payload must not move";
+}
+
+TEST(EventWire, SetDestClearsTheLivenessBitAndNothingElseInTheStateWord) {
+    // forward() after reply() on the same event: the original says alive, the rewrite must not.
+    Image<1> img;
+    img.set_alive();
+    Image<1> const before = img;
+    event_wire::set_dest(img.event(), actor(0x0042, 3));
+    EXPECT_FALSE(img.event().is_alive());
+    EXPECT_EQ(img.event().getQOS(), 2u);
+    EXPECT_EQ(img.event().getSize(), kBucket);
+    EXPECT_EQ(img.event().getID(), static_cast<qb::EventId>(0xBEEF));
+    EXPECT_EQ(bits(img.event().getDestination()), bits(actor(0x0042, 3)));
+    EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffState, 3));
+    EXPECT_EQ(img.bytes[3], static_cast<unsigned char>(before.bytes[3] & ~0x01u));
+    EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffSource, sizeof img.bytes));
+}
+
+TEST(EventWire, SetDestAcceptsEveryBitPatternIncludingNotFoundAndBroadcast) {
+    // The lane insert must be a full 32-bit replace: no bit of the previous dest may survive
+    // (an OR without the AND would keep 0x1234 in the low half of an all-zero id).
+    Image<1> img;
+    event_wire::set_dest(img.event(), ActorId());
+    EXPECT_EQ(static_cast<std::uint32_t>(img.event().getDestination()), ActorId::NotFound);
+    event_wire::set_dest(img.event(), qb::BroadcastId(5));
+    EXPECT_TRUE(img.event().getDestination().is_broadcast());
+    EXPECT_EQ(img.event().getDestination().index(), 5u);
+    event_wire::set_dest(img.event(), actor(0xFFFF, 0xFFFF));
+    EXPECT_EQ(static_cast<std::uint32_t>(img.event().getDestination()), 0xFFFFFFFFu);
+    EXPECT_EQ(bits(img.event().getSource()), bits(actor(0x5678, 1)));
+}
+
+TEST(EventWire, CopyOfALiveEventIsBornDeadAndOtherwiseByteIdentical) {
+    Image<1> src;
+    src.set_alive(); // the original of a reply(): raised AFTER its own copy, then copied again by a re-push
+    Image<1> dst;
+    std::fill(std::begin(dst.bytes), std::end(dst.bytes), 0x00);
+
+    Event &copied = event_wire::copy(dst.bytes, src.event(), kBucket);
+    EXPECT_EQ(&copied, &dst.event()) << "copy() returns the copy in place";
+
+    EXPECT_FALSE(copied.is_alive()) << "an event in a pipe always carries alive == 0";
+    EXPECT_TRUE(src.event().is_alive()) << "the source is read, never written";
+    // Everything but the liveness bit is the source, byte for byte.
+    Image<1> expect = src;
+    expect.bytes[3] &= static_cast<unsigned char>(~0x01u);
+    EXPECT_TRUE(same_bytes(dst.bytes, expect.bytes, 0, sizeof dst.bytes));
+    EXPECT_EQ(copied.getQOS(), 2u);
+    EXPECT_EQ(copied.getSize(), kBucket);
+    EXPECT_EQ(copied.getID(), static_cast<qb::EventId>(0xBEEF));
+    EXPECT_EQ(bits(copied.getDestination()), bits(actor(0x1234, 2)));
+    EXPECT_EQ(bits(copied.getSource()), bits(actor(0x5678, 1)));
+}
+
+TEST(EventWire, CopyOfADeadEventIsByteIdentical) {
+    Image<1> src;
+    Image<1> dst;
+    std::fill(std::begin(dst.bytes), std::end(dst.bytes), 0xFF);
+    event_wire::copy(dst.bytes, src.event(), kBucket);
+    EXPECT_TRUE(same_bytes(dst.bytes, src.bytes, 0, sizeof dst.bytes));
+}
+
+TEST(EventWire, OneBucketCopyWritesExactlyOneBucket) {
+    // The fast path is three unrolled 16-byte moves after the header; a fourth would overrun
+    // the slot the pipe allocated. Guard the bytes past the bucket with a canary.
+    Image<1> src;
+    Image<2> dst;
+    std::fill(std::begin(dst.bytes), std::end(dst.bytes), 0xCC);
+    event_wire::copy(dst.bytes, src.event(), kBucket);
+    EXPECT_TRUE(same_bytes(dst.bytes, src.bytes, 0, kBucket));
+    for (std::size_t i = kBucket; i < sizeof dst.bytes; ++i)
+        ASSERT_EQ(dst.bytes[i], 0xCC) << "byte " << i << " past the bucket was written";
+}
+
+TEST(EventWire, MultiBucketCopyMovesTheWholeTailAndClearsAlive) {
+    // A 3-bucket event takes the memcpy tail path; the header treatment is the same.
+    Image<3> src;
+    src.set_alive();
+    Image<4> dst;
+    std::fill(std::begin(dst.bytes), std::end(dst.bytes), 0x00);
+
+    Event &copied = event_wire::copy(dst.bytes, src.event(), 3 * kBucket);
+    EXPECT_FALSE(copied.is_alive());
+    EXPECT_EQ(copied.getSize(), 3 * kBucket);
+    Image<3> expect = src;
+    expect.bytes[3] &= static_cast<unsigned char>(~0x01u);
+    EXPECT_TRUE(same_bytes(dst.bytes, expect.bytes, 0, 3 * kBucket));
+    for (std::size_t i = 3 * kBucket; i < sizeof dst.bytes; ++i)
+        ASSERT_EQ(dst.bytes[i], 0x00) << "byte " << i << " past the event was written";
+}
+
+TEST(EventWire, TwoBucketCopyIsExactOnTheBoundary) {
+    // Exactly two buckets: the tail memcpy is one full bucket, neither short nor long.
+    Image<2> src;
+    Image<3> dst;
+    std::fill(std::begin(dst.bytes), std::end(dst.bytes), 0x5A);
+    event_wire::copy(dst.bytes, src.event(), 2 * kBucket);
+    EXPECT_TRUE(same_bytes(dst.bytes, src.bytes, 0, 2 * kBucket));
+    for (std::size_t i = 2 * kBucket; i < sizeof dst.bytes; ++i)
+        ASSERT_EQ(dst.bytes[i], 0x5A) << "byte " << i << " past the event was written";
+}
+
+TEST(EventWire, ReplyShapeSwapThenCopyLeavesTheOriginalToBeRaised) {
+    // VirtualCore::reply(): swap the original's ids, copy it (the copy is dead), THEN raise
+    // the original — so the dispatcher skips the original's destructor while the copy runs
+    // its own once. Composed here without an engine, on an original that was ALREADY replied
+    // once (alive set), which is the fan-out shape the cross-core memcpy relies on.
+    Image<1> original;
+    original.set_alive();
+    Image<1> pipe;
+    event_wire::swap_dest_source(original.event());
+    EXPECT_FALSE(original.event().is_alive()) << "what send() sees";
+    Event &in_pipe = event_wire::copy(pipe.bytes, original.event(), kBucket);
+    original.set_alive();
+
+    EXPECT_TRUE(original.event().is_alive());
+    EXPECT_FALSE(in_pipe.is_alive());
+    EXPECT_EQ(bits(in_pipe.getDestination()), bits(actor(0x5678, 1))) << "the reply goes back to the source";
+    EXPECT_EQ(bits(in_pipe.getSource()), bits(actor(0x1234, 2)));
+    EXPECT_EQ(in_pipe.getID(), original.event().getID());
+    EXPECT_EQ(in_pipe.getSize(), original.event().getSize());
+    EXPECT_TRUE(same_bytes(pipe.bytes, original.bytes, kHeader, kBucket)) << "payload travels intact";
 }
 
 } // namespace
