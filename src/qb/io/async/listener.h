@@ -255,6 +255,34 @@ public:
 
 private:
     ev::dynamic_loop _loop; /**< The libev event loop */
+    // The loop's own "is there anything to do" counters, read INLINE on every pass a core
+    // takes through `has_work()` / `run()`: the referenced-active count `ev_run`'s loop
+    // condition consults, and the per-priority pending counts (`EV_NUMPRI` entries). Two
+    // addresses into the loop, taken once and valid for its lifetime (qev
+    // `ev_active_count_addr` / `ev_pending_count_addr`); the calls they replace were two
+    // out-of-line trips into libqev plus a loop over the priorities, ~10 % of a one-event
+    // core pass once nothing else in the pass read a clock (Huly QB-182). `_active_count`
+    // is the RAW counter — it reads -1 between an `unref()` and the start it pairs with,
+    // which is why `_loop_has_work()` tests it with `> 0`, exactly as `ev_active_count()`
+    // clamps it.
+    const int *_active_count;  ///< `&activecnt` of `_loop`
+    const int *_pending_count; ///< `pendingcnt[EV_NUMPRI]` of `_loop`
+
+    /// The loop's own liveness rule, read inline: a referenced active watcher, or a pending event
+    /// at any priority. What `ev_run` would find something to do for — and nothing else.
+    [[nodiscard]] bool
+    _loop_has_work() const noexcept {
+        return *_active_count > 0 || _loop_has_pending();
+    }
+
+    /// Any pending event at any priority — non-zero exactly when `ev_pending_count()` would be.
+    [[nodiscard]] bool
+    _loop_has_pending() const noexcept {
+        for (int pri = 0; pri < EV_NUMPRI; ++pri)
+            if (_pending_count[pri] != 0)
+                return true;
+        return false;
+    }
 
     // ---- Registered events (QB_IO_PLAN 2.20) --------------------------------
     // Intrusive doubly-linked list of every `IRegisteredKernelEvent *` this
@@ -510,6 +538,8 @@ public:
      */
     listener()
         : _loop(_resolve_backend_flags())
+        , _active_count(_loop.active_count_addr())
+        , _pending_count(_loop.pending_count_addr())
         , _defer_wake(_loop)
         , _wake(_loop)
         , _park_cap(_loop) {
@@ -782,7 +812,7 @@ public:
         // The two counts are the loop's own, so a raw `ev_timer_start` from a
         // coroutine awaiter, a fed `_defer_wake` event and a `loop.unref()`-ed
         // watcher are all judged exactly as `ev_run` itself judges them.
-        if (_loop.active_count() != 0 || _loop.pending_count() != 0)
+        if (_loop_has_work())
             _loop.run(flag);
 
         // Deferred callbacks: continuations of the dispatch that just unwound.
@@ -927,8 +957,7 @@ public:
      */
     [[nodiscard]] inline bool
     has_work() const noexcept {
-        return _loop.active_count() != 0 || _loop.pending_count() != 0 || !_deferred.empty()
-               || (_coro_scheduler && _coro_scheduler->has_ready());
+        return _loop_has_work() || !_deferred.empty() || (_coro_scheduler && _coro_scheduler->has_ready());
     }
 
     /**
@@ -1010,8 +1039,8 @@ public:
      */
     inline std::size_t
     run_once_for(qb::duration const cap) {
-        if (!_deferred.empty() || (_coro_scheduler && _coro_scheduler->has_ready()) || _loop.pending_count() != 0
-            || cap <= qb::duration::zero()) {
+        const bool prompt = !_deferred.empty() || (_coro_scheduler && _coro_scheduler->has_ready()) || _loop_has_pending();
+        if (prompt || cap <= qb::duration::zero()) {
             run(EVRUN_NOWAIT);
             return _nb_invoked_events;
         }

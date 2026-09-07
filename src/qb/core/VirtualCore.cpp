@@ -101,8 +101,15 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     , _mail_box(engine.getMailBox(id))
     , _event_buffer(std::make_unique<EventBuffer>())
     , _pipes(__make_pipes__(_pipe_pool, engine.getNbCore()))
-    , _mono_pipe_swap(_pipes[_resolved_index])
-    , _mono_pipe(std::make_unique<VirtualPipe>(_pipe_pool)) {
+    , _self_pipe(_pipes[_resolved_index]) {
+    // Every logical core id, member of the set or not, maps to the pipe `resolve()` names for it;
+    // `_pipes` never grows after this, so the pointers stay good for the core's lifetime.
+    for (std::size_t core = 0; core < MaxCores; ++core)
+        _pipe_of_core[core] = &_pipes[engine._core_set.resolve(core)];
+    _peer_pipes.reserve(_pipes.size() - 1);
+    for (std::size_t i = 0; i < _pipes.size(); ++i)
+        if (i != _resolved_index)
+            _peer_pipes.push_back(&_pipes[i]);
     // Seed the pool after the last statically-registered service id. The
     // atomic load is relaxed because every writer publishes through the
     // magic-static acquire edge of `Actor::registerIndex<Tag>()` (2.3).
@@ -238,18 +245,24 @@ VirtualCore::__make_pipes__(VirtualPipe::pool_type &pool, std::size_t const nb_c
 
 void
 VirtualCore::__receive__() {
-    // from same core. Swap the self-core pipe out (handlers push into the fresh one), then walk
-    // it a segment at a time. Each segment goes back to the core's pool as soon as its events
-    // are routed, so a handler pushing to this same core grows into the segment that was just
-    // read -- warm in L2 -- rather than into fresh memory; a sustained burst then stays
-    // cache-resident whatever its size. An event's reference is valid for exactly the handler
-    // it is routed to, which is the contract Actor::push documents. `front()` is empty exactly
-    // when the pipe is, so it is the loop's only test: a one-event pass -- a ping-pong -- is one
-    // range, one pop, one empty range, with no separate emptiness check paid twice.
-    _mono_pipe->swap(_mono_pipe_swap);
-    for (auto run = _mono_pipe->front(); !run.empty(); run = _mono_pipe->front()) {
-        __receive_events__(run);
-        _mono_pipe->pop_front();
+    // from same core. The self pipe is walked IN PLACE, a segment at a time, up to a fence taken
+    // here: a handler that pushes to this same core appends behind the fence, and those events
+    // are the next pass's -- exactly what the old two-pipe swap guaranteed, at the price of six
+    // loads and six stores per pass plus the handler's first push waiting on the `_wcur` the
+    // swap had just written (the longest dependency chain of a one-event pass, QB-182). Each
+    // segment ahead of the fence goes back to the core's pool as soon as its events are routed,
+    // and a drained pipe rewinds its one resident segment, so a one-event pass -- a ping-pong --
+    // reads and writes the same 64 bytes every time. An event's reference is valid for exactly
+    // the handler it is routed to, which is the contract Actor::push documents. `front(fence)`
+    // is empty exactly when the walk is over, so it is the loop's only test; the walk itself
+    // is gated on the pipe holding anything, two pointer compares on every pass of a core whose
+    // events all come from other cores -- or from nowhere, which is every idle pass.
+    if (!_self_pipe.empty()) {
+        auto fence = _self_pipe.mark();
+        for (auto run = _self_pipe.front(fence); !run.empty(); run = _self_pipe.front(fence)) {
+            __receive_events__(run);
+            _self_pipe.pop_front(fence);
+        }
     }
     // global_core_events. `consume_all(func, scratch, chunk)`, not `dequeue(T*, n)`: the third
     // argument is a PER-PRODUCER batch limit, so every peer core's ring is drained on every
@@ -267,7 +280,9 @@ VirtualCore::__receive__() {
 //    }
 
 // -----------------------------------------------------------------------------
-// __flush_all__ — structured, deadlock-free outbound pipe drain (finding 2.4).
+// __flush_all__ / __flush_pipes__ — structured, deadlock-free outbound pipe drain (finding 2.4).
+// `__flush_all__` (inline, VirtualCore.h) is the pass-time scan of the peer pipes; this is the
+// drain it enters once one of them holds events.
 // -----------------------------------------------------------------------------
 //
 // Scenario: when core A and core B *simultaneously* hold full outbound pipes
@@ -318,7 +333,7 @@ constexpr std::size_t kFlushRunBuckets = 256;
 // Separating the two cases is what keeps `__flush_all__` terminating (see below).
 
 bool
-VirtualCore::__flush_all__() noexcept {
+VirtualCore::__flush_pipes__() noexcept {
     static_assert(kFlushRunBuckets <= kMaxDeliverableBuckets, "a run must fit an empty mailbox ring");
     bool        any_work = false;
     std::size_t pipe_idx = 0;
@@ -892,7 +907,7 @@ VirtualCore::__workflow__() {
         // stamp is cleared so the reply, and the request after it, are met at polling
         // latency. A core with no io work keeps the condition-variable park, whose cost
         // and handshake are the measured ones.
-        if (likely(_metrics.had_activity()) || !_mono_pipe_swap.empty()) {
+        if (likely(_metrics.had_activity()) || !_self_pipe.empty()) {
             _idle_since = qb::mono_time{};
         } else {
             const auto now = qb::mono_now();

@@ -376,10 +376,22 @@ private:
     // destroyed in reverse order, so each pipe releases its segments into a pool that is still
     // alive. One pool per core -- a segment a receive pass has consumed is the one the next
     // push grows into, whichever of this core's pipes needs it.
-    VirtualPipe::pool_type       _pipe_pool;
-    PipeMap                      _pipes;
-    VirtualPipe                 &_mono_pipe_swap;
-    std::unique_ptr<VirtualPipe> _mono_pipe;
+    VirtualPipe::pool_type _pipe_pool;
+    PipeMap                _pipes;
+    // This core's own slot of `_pipes`: where a same-core push lands, walked in place by
+    // `__receive__` up to a fence taken at the top of the pass (`segmented_pipe::fence`).
+    VirtualPipe &_self_pipe;
+    // The outbound pipe of every logical `CoreId`, resolved ONCE at construction: `__getPipe__`
+    // is one indexed load off `this` instead of the chain it used to be — the engine's core set,
+    // its dense-index table, `_pipes`'s data pointer, then the pipe — four dependent loads on
+    // every push from the user's TU, measured as the longest dependency chain of the enqueue
+    // path (qb-vs-others pass-cost probe, QB-182). Non-member ids alias what `resolve()` gave
+    // them before (index 0), so a misaddressed event still routes-and-drops exactly as it did.
+    // 2 KB per core, at the tail of the object so the hot members above keep their lines.
+    std::array<VirtualPipe *, MaxCores> _pipe_of_core{};
+    // The outbound pipes to OTHER cores, in `_pipes` order: what `__flush_all__` scans on every
+    // pass. `_pipes` itself keeps the self slot so its index stays the dense core index.
+    std::vector<VirtualPipe *> _peer_pipes;
     // actors management
     AvailableIdList _ids;
     ActorMap        _actors;
@@ -584,6 +596,10 @@ private:
     void __receive_events__(std::span<EventBucket> events);
     void __receive__();
     bool __flush_all__() noexcept;
+    //! The drain behind `__flush_all__`: every non-empty outbound pipe published run by run,
+    //! with the backoff and the two undeliverable shapes. Out of line and only entered when
+    //! the inline scan found a pipe holding events.
+    bool __flush_pipes__() noexcept;
     //! Shutdown residual drain helper: dispose the events queued in this core's outbound
     //! pipes whose destination core has already left __workflow__ (published its "stopped"
     //! flag) and will never drain its mailbox again — those events can never be delivered, so
@@ -1013,9 +1029,23 @@ VirtualCore::push(ActorId const dest, ActorId const source, _Init &&...init) noe
 // translation unit, and this is the one non-template call they make per event. Out of line it
 // was a call into the archive (plus CoreSet::resolve's, now in-class too) on every push --
 // measured with perf on savina/counting, g++ 14 -O3, no LTO: ~3% of a dispatch-bound profile.
+// The pass-time half of the flush: on the common pass every outbound pipe is empty, and the
+// drain is a large function whose prologue, register saves and pipe walk were paid on every
+// pass to find that out (6 % of a one-event pass, QB-182). Scan the peers inline -- nothing at
+// all on a one-core engine -- and enter the drain only when a pipe holds events.
+inline bool
+VirtualCore::__flush_all__() noexcept {
+    for (auto *const pipe : _peer_pipes)
+        if (!pipe->empty())
+            return __flush_pipes__();
+    return false;
+}
+
 inline VirtualPipe &
 VirtualCore::__getPipe__(CoreId const core) noexcept {
-    return _pipes[_engine._core_set.resolve(core)];
+    // `CoreId` is 16 bits wide and `MaxCores` is 256: the bounds check keeps the same contract
+    // `CoreSet::resolve` had (an out-of-range id aliases index 0, never an out-of-bounds read).
+    return *_pipe_of_core[likely(core < MaxCores) ? core : 0];
 }
 
 template <typename Tag>

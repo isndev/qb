@@ -129,6 +129,8 @@ EV_CPP(extern "C" {)
 #ifndef EV_MAXPRI
 #define EV_MAXPRI (EV_FEATURE_CONFIG ? +2 : 0)
 #endif
+/* number of priority levels, i.e. the entry count of ev_pending_count_addr () */
+#define EV_NUMPRI (EV_MAXPRI - EV_MINPRI + 1)
 
 #ifndef EV_MULTIPLICITY
 #define EV_MULTIPLICITY EV_FEATURE_CONFIG
@@ -732,6 +734,14 @@ ev_is_default_loop (void) EV_NOEXCEPT
 
     EV_API_DECL unsigned int ev_pending_count(EV_P) EV_NOEXCEPT; /* number of pending events, if any */
     EV_API_DECL unsigned int ev_active_count(EV_P) EV_NOEXCEPT;  /* number of referenced active watchers (what keeps ev_run looping) */
+    /* embedder fast path: read-only aliases of the two counters above, valid for the loop's
+     * lifetime, so a scheduler that gates every EVRUN_NOWAIT pass on "is there anything to
+     * do" reads them inline instead of paying two calls per pass. *ev_active_count_addr is
+     * the raw referenced-active count -- it can read -1 between an ev_unref and the start it
+     * pairs with, so test it with > 0 -- and ev_pending_count_addr has EV_NUMPRI entries, one
+     * per priority, whose sum is ev_pending_count. Owner thread only, like any loop read. */
+    EV_API_DECL const int *ev_active_count_addr(EV_P) EV_NOEXCEPT;
+    EV_API_DECL const int *ev_pending_count_addr(EV_P) EV_NOEXCEPT; /* EV_NUMPRI entries */
 
     /*
      * stop/start the timer handling.

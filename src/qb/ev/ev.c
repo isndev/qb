@@ -4381,6 +4381,21 @@ ev_active_count(EV_P) EV_NOEXCEPT {
     return activecnt > 0 ? (unsigned int) activecnt : 0u;
 }
 
+/* The addresses behind the two counters, for an embedder that reads them on every pass of its
+ * own scheduler: qb's VirtualCore gates its libev pass on `ev_active_count () ||
+ * ev_pending_count ()` and measured the two calls (and the priority loop above) at ~10 % of a
+ * one-event pass once nothing else in the pass read a clock. Both live inside the loop struct,
+ * so they stay valid until ev_loop_destroy; the caller reads, never writes. */
+const int *
+ev_active_count_addr(EV_P) EV_NOEXCEPT {
+    return &activecnt;
+}
+
+const int *
+ev_pending_count_addr(EV_P) EV_NOEXCEPT {
+    return pendingcnt;
+}
+
 ecb_noinline void
 ev_invoke_pending(EV_P) {
     pendingpri = NUMPRI;

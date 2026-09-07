@@ -229,6 +229,16 @@ struct loop_ref {
         return ev_active_count(EV_AX);
     }
 
+    const int *
+    active_count_addr() const EV_NOEXCEPT {
+        return ev_active_count_addr(EV_AX);
+    }
+
+    const int *
+    pending_count_addr() const EV_NOEXCEPT {
+        return ev_pending_count_addr(EV_AX);
+    }
+
     void
     set_io_collect_interval(tstamp interval) EV_NOEXCEPT {
         ev_set_io_collect_interval(EV_AX_ interval);

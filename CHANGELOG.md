@@ -250,6 +250,50 @@ policy.
   readable socket ends a loop park, and a cross-core push ends both a loop park and a cv park,
   each in far less than `latency`, the process CPU time proving the core was parked rather
   than polling).
+- **The core's pass costs less, and every event it carries costs half.** Measured with a
+  new qb-vs-others probe (`tools/probes/pass-cost.cpp`: one actor, k self-event chains, no
+  tick, no clock inside the window) on i9-12900K / WSL2 g++-14, a pass carrying one event was
+  **14.5 ns** and each further event in the same pass **8.9 ns**; they are **12.9 ns** and
+  **4.2 ns** now. Five things, each kept only after the probe moved:
+  - `VirtualCore::__receive__` walks the self pipe **in place up to a fence** (`segmented_pipe::mark()`,
+    `front(fence &)`, `pop_front(fence &)`) instead of swapping a second pipe in: a handler's
+    same-core push lands behind the fence and is the next pass's event, exactly as before, but
+    the six loads and six stores of the swap are gone and the handler's first push no longer
+    waits on the `_wcur` the swap had just written — the longest dependency chain of a
+    one-event pass. `_mono_pipe` / `_mono_pipe_swap` are one `_self_pipe`.
+  - `__getPipe__` is one indexed load off the core (`_pipe_of_core[CoreId]`, 2 KB per core,
+    resolved once at construction) instead of the engine's core set, its dense-index table,
+    the pipe vector's data pointer, then the pipe — four dependent loads on every push from the
+    user's TU; `segmented_pipe::allocate_back_slow` is out of line (`QB_NOINLINE QB_COLD`), so
+    the fast path of a push is a leaf that saves no callee-saved register.
+  - `__flush_all__` is an inline scan of the peer pipes that enters the drain
+    (`__flush_pipes__`, the former body) only when one holds events — nothing at all on a
+    one-core engine, where the drain's prologue and pipe walk were 6 % of a pass.
+  - `listener::has_work()`, `run()` and `run_once_for()` read the loop's active and pending
+    counts inline through qev's new `ev_active_count_addr()` / `ev_pending_count_addr()`
+    (read-only aliases into the loop, taken once) instead of two calls into libqev plus a loop
+    over the priorities on every pass; `router::semh::route` keeps the broadcast walk out of
+    line (`route_broadcast`), so the unicast path — every event of a ping-pong — no longer
+    carries its snapshot vector's register pressure; `key_table::find` bounds-checks against a
+    cached slot count rather than a pointer difference divided by a 24-byte slot.
+  Measured on qb-vs-others in one quiet session per host against `develop` `0f7994e6` (9 + 2,
+  CPUs 0,2, p50): WSL2 / g++-14 ping-pong 1c-spin **28.7 → 22.6 ns** per round trip (−21 %),
+  thread-ring 1c-spin 21.1 → 17.2 per hop, fork-join 2c-park **11.1 → 8.4 ns** per message
+  (−25 %), big 1c-park 22.5 → 18.5 (−18 %), counting 1c-spin 8.9 → 8.0, ping-pong 2c-park
+  212.8 → 199.6 (−6 %) and 2c-spin 209 → 200 / 211; `dev/bench` `BM_PINGPONG` 64 actors / 1
+  core **26.5 → 21.3 ns** (−20 %), `Mono_PingPong` 63.7 → 58.5, the one-core pipeline 32.2 →
+  29.9. One cell moves the other way and is recorded as such: thread-ring 2c-spin / 2c-park
+  **+1 to +5 %** across three interleaved censuses, bisected to the flush scan alone — a
+  waiting core's idle pass is ~2 ns shorter, and the 100-actor ring's cross-core hop, unlike
+  the two-actor ping-pong's, is slower for it (the same sensitivity QB-180 measured: the idle
+  spin pass paces the cross-core exchange). Kept, because undoing it costs 0.5 ns on every
+  one-event pass and 3 ns on a four-event one; the idle-pass pacing is an axis of its own.
+  Windows / MSVC 19.51, same protocol: the probe's one-event pass **20.4 → 15.6 ns** (−24 %),
+  ping-pong 1c-spin **41.4 → 30.6** (−26 %), thread-ring 1c-spin 22.7 → 18.5 (−19 %), big 1c
+  −8 / −12 %, ping-pong 2c-park 260 → 246 / 230, thread-ring 2c +2 to +5 % (the same residual);
+  `dev/bench` `Mono_PingPong` 76.6 → 66.4, the one-core pipeline 42.7 → 34.6 (−19 %), the 8 × 8
+  pipeline 263.5 → 228.1 (−13 %), `BM_PINGPONG` 64 actors 29.4 → 26.5. Suites: WSL2 release /
+  ASan+UBSan / TSan 192/192, the Windows full gate.
 - **`Actor::time()` samples the clock on demand, once per pass**, keyed on the pass index,
   instead of unconditionally at the top of every pass — **and a pass with no registered callback
   skips the tick phase, so it really is clock-free.** The first form of this entry (`443c5976`)

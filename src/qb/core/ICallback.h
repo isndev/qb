@@ -65,9 +65,10 @@ namespace qb {
 struct LoopEvent {
     /*!
      * @brief Cached loop timestamp — nanoseconds since the Unix epoch.
-     * @details Identical to `qb::Actor::time()` for this iteration (sourced once from
-     *          `qb::wall_now()` at the top of the loop), so every callback in the same pass
-     *          observes the same value.
+     * @details Identical to `qb::Actor::time()` for this iteration — the pass's one clock
+     *          sample, taken on demand by the first `time()` of the pass or by the tick phase
+     *          that builds this event — so every callback in the same pass observes the same
+     *          value.
      */
     std::uint64_t now{0};
     /*!

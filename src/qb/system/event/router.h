@@ -129,6 +129,10 @@ class key_table {
     using Sparse = qb::unordered_map<Key, Value>;
 
     std::conditional_t<dense, Dense, Sparse> _table;
+    // The dense table's slot count, kept beside it: `find()` bounds-checks every lookup, and
+    // `_table.size()` is a pointer difference divided by `sizeof(Slot)` -- a multiply by a magic
+    // constant on every event routed when the slot is 24 bytes wide (QB-182). One load instead.
+    std::size_t _dense_size = 0;
 
 public:
     key_table()  = default;
@@ -142,7 +146,7 @@ public:
     find(Key const &key) noexcept {
         if constexpr (dense) {
             const auto idx = dense_index<Key>::of(key);
-            if (likely(idx < _table.size())) {
+            if (likely(idx < _dense_size)) {
                 auto &slot = _table[idx];
                 if (likely(slot.used && slot.key == key))
                     return &slot.value;
@@ -177,6 +181,7 @@ public:
                 if (idx >= _table.capacity())
                     _table.reserve(std::max<std::size_t>(idx + 1, _table.capacity() * 2));
                 _table.resize(idx + 1);
+                _dense_size = _table.size();
             }
             auto &slot = _table[idx];
             assert((!slot.used || slot.key == key) && "dense_index<Key>: two live keys share one index");
@@ -476,38 +481,11 @@ public:
     void
     route(_RawEvent &event) const noexcept {
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
-            if (event.getDestination().is_broadcast()) {
-                // A handler invoked here may (un)subscribe on THIS table — e.g.
-                // spawning an actor registers KillEvent, inserting a new entry.
-                // That insert can grow the dense vector (and, on the hash-map
-                // fallback, rehash the release flat map), REALLOCATING the entry
-                // array under a live range-for iterator (heap-use-after-free —
-                // invisible to the debug std::unordered_map the sanitizer presets
-                // used to select, so it only bit in release). Snapshot first, then dispatch:
-                // handlers are not destroyed until end-of-frame (removal is
-                // deferred) and the trampoline re-checks is_alive(), so the
-                // snapshotted pointers stay valid. A thread_local buffer with
-                // base/restore keeps nested broadcasts allocation-free and
-                // correct (each nested route pushes/pops its own [base,end)).
-                static thread_local std::vector<Entry> bcast_snapshot;
-                const std::size_t                      base = bcast_snapshot.size();
-                _subscribed_handlers.for_each([](auto const &, Entry const &entry) { bcast_snapshot.push_back(entry); });
-                const std::size_t end = bcast_snapshot.size();
-                for (std::size_t i = base; i < end; ++i) {
-                    // `subscribe()` always sets both fields atomically, so the
-                    // function pointer is never null for a live entry (finding
-                    // 2.17, C++23 `[[assume]]`); load into locals so the
-                    // predicate is side-effect-free.
-                    const auto  dispatch = bcast_snapshot[i].dispatch;
-                    auto *const target   = bcast_snapshot[i].handler;
-                    QB_ASSUME(dispatch != nullptr);
-                    dispatch(target, event);
-                }
-                bcast_snapshot.resize(base);
-
-                if constexpr (_CleanEvent)
-                    dispose(event);
-
+            // The broadcast walk is out of line: inlined here, its thread-local snapshot vector
+            // and loop made the unicast path -- every event of a ping-pong -- a function with a
+            // six-register prologue for one table lookup and one indirect call (QB-182).
+            if (unlikely(event.getDestination().is_broadcast())) {
+                route_broadcast<_CleanEvent>(event);
                 return;
             }
         }
@@ -518,6 +496,41 @@ public:
             QB_ASSUME(dispatch != nullptr);
             dispatch(target, event);
         }
+
+        if constexpr (_CleanEvent)
+            dispose(event);
+    }
+
+    /**
+     * @brief The broadcast half of `route()`: every subscribed handler, from a snapshot.
+     * @details A handler invoked here may (un)subscribe on THIS table — e.g. spawning an actor
+     *          registers KillEvent, inserting a new entry. That insert can grow the dense vector
+     *          (and, on the hash-map fallback, rehash the release flat map), REALLOCATING the
+     *          entry array under a live range-for iterator (heap-use-after-free — invisible to
+     *          the debug std::unordered_map the sanitizer presets used to select, so it only bit
+     *          in release). Snapshot first, then dispatch: handlers are not destroyed until
+     *          end-of-frame (removal is deferred) and the trampoline re-checks is_alive(), so
+     *          the snapshotted pointers stay valid. A thread_local buffer with base/restore
+     *          keeps nested broadcasts allocation-free and correct (each nested route
+     *          pushes/pops its own [base,end)).
+     */
+    template <bool _CleanEvent>
+    QB_NOINLINE QB_COLD void
+    route_broadcast(_RawEvent &event) const noexcept {
+        static thread_local std::vector<Entry> bcast_snapshot;
+        const std::size_t                      base = bcast_snapshot.size();
+        _subscribed_handlers.for_each([](auto const &, Entry const &entry) { bcast_snapshot.push_back(entry); });
+        const std::size_t end = bcast_snapshot.size();
+        for (std::size_t i = base; i < end; ++i) {
+            // `subscribe()` always sets both fields atomically, so the function pointer is
+            // never null for a live entry (finding 2.17, C++23 `[[assume]]`); load into
+            // locals so the predicate is side-effect-free.
+            const auto  dispatch = bcast_snapshot[i].dispatch;
+            auto *const target   = bcast_snapshot[i].handler;
+            QB_ASSUME(dispatch != nullptr);
+            dispatch(target, event);
+        }
+        bcast_snapshot.resize(base);
 
         if constexpr (_CleanEvent)
             dispose(event);

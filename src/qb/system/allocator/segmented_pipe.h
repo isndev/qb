@@ -413,6 +413,15 @@ private:
         return _head == _tail ? _wcur : _head->begin + _head->end;
     }
 
+    // Drop the head segment -- a closed one, never the tail -- back to the pool.
+    void
+    release_head() noexcept {
+        header *const next = _head->next;
+        _pool->release(_head);
+        _head = next;
+        _rcur = next->begin;
+    }
+
     // The tail becomes the only segment and is rewound; a dedicated (oversize) tail is not
     // worth keeping resident, so it is released and the pipe goes back to holding nothing.
     void
@@ -450,7 +459,10 @@ private:
     }
 
     // Slow half of allocate_back: commit the tail's live end, link a segment that can hold `n`.
-    [[nodiscard]] T *
+    // Out of line on purpose: inlined into `allocate_back`, its register pressure made every
+    // `push` a six-push / six-pop function around a fast path that needs no callee-saved
+    // register at all (measured on the enqueue path, QB-182).
+    [[nodiscard]] QB_NOINLINE QB_COLD T *
     allocate_back_slow(std::size_t const n) {
         header *const seg = _pool->acquire(n); // may throw; nothing changed yet
         if (_tail && _wcur == _tail->begin)
@@ -573,10 +585,66 @@ public:
             rewind_tail();
             return;
         }
-        header *const next = _head->next;
-        _pool->release(_head);
-        _head = next;
-        _rcur = next->begin;
+        release_head();
+    }
+
+    /**
+     * @struct fence
+     * @brief A consumption boundary: where the pipe's writes stood when `mark()` took it.
+     * @details `front(fence &)` / `pop_front(fence &)` walk the items that were live at that
+     *          instant, IN PLACE, and leave whatever is pushed after it for a later walk. That is
+     *          how a `VirtualCore` delivers exactly the events queued before a pass began while
+     *          the handlers it runs push into the same pipe — with no second pipe to swap in,
+     *          which used to cost six loads and six stores on every pass plus the same again on
+     *          the handler's first push (QB-182). The walk ends once the fence's segment is
+     *          consumed: `pop_front(fence &)` then clears `tail`, and `front()` answers empty
+     *          from there on, so a segment linked behind the fence during the walk is never
+     *          read this time round. Take a fresh fence for every walk.
+     */
+    struct fence {
+        header *tail; /**< the tail segment at `mark()`; `nullptr` once its live range is consumed */
+        T      *wcur; /**< the write cursor at `mark()`: the end of that segment's items for this walk */
+    };
+
+    /// The boundary of everything pushed so far.
+    [[nodiscard]] fence
+    mark() const noexcept {
+        return {_tail, _wcur};
+    }
+
+    /**
+     * @brief Live range of the head segment, cut at the fence when the head IS the fence's segment.
+     * @details Empty once the walk is over — the fence's segment consumed — even if items were
+     *          pushed behind the fence meanwhile. Never spans two segments.
+     */
+    [[nodiscard]] std::span<T>
+    front(fence const &f) const noexcept {
+        if (!f.tail)
+            return {};
+        return {_rcur, _head == f.tail ? f.wcur : _head->begin + _head->end};
+    }
+
+    /**
+     * @brief Consume the range `front(f)` returned.
+     * @details A whole segment ahead of the fence's goes back to the pool; the fence's own
+     *          segment is consumed up to the fence — rewound if that drained the pipe, released
+     *          if a push behind the fence had already closed it and nothing is left in it — and
+     *          the fence is retired.
+     */
+    void
+    pop_front(fence &f) noexcept {
+        if (_head != f.tail) {
+            release_head();
+            return;
+        }
+        _rcur = f.wcur;
+        if (_head == _tail) {
+            if (_rcur == _wcur)
+                rewind_tail();
+        } else if (_rcur == _head->begin + _head->end) {
+            release_head();
+        }
+        f.tail = nullptr;
     }
 
     /**

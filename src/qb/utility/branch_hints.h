@@ -99,4 +99,28 @@ unlikely(bool expr) noexcept {
 #endif
 #endif
 
+/**
+ * @def QB_NOINLINE
+ * @brief Keep a function out of line — for the SLOW half of a hot path.
+ *
+ * A fast path that inlines its own slow half inherits the slow half's register pressure: the
+ * caller saves and restores every callee-saved register the cold code needs, on every call,
+ * whether or not the cold code runs. `segmented_pipe::allocate_back` measured that shape on
+ * the enqueue path (six pushes and six pops around a fast path of a dozen instructions —
+ * qb-vs-others, QB-182). Marking the slow half `QB_NOINLINE QB_COLD` leaves the fast half a
+ * leaf that touches no callee-saved register.
+ */
+/**
+ * @def QB_COLD
+ * @brief Tell the optimiser a function is rarely executed: it is laid out away from the hot
+ *        text and its call sites are treated as unlikely. No effect on MSVC.
+ */
+#if defined(_MSC_VER) && !defined(__clang__)
+#define QB_NOINLINE __declspec(noinline)
+#define QB_COLD
+#else
+#define QB_NOINLINE __attribute__((noinline))
+#define QB_COLD __attribute__((cold))
+#endif
+
 #endif /* QB_UTILS_BRANCH_HINTS_H */
