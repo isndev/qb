@@ -53,8 +53,11 @@ policy.
   `E&` so the id can be set in place. `ask_by<E>(ctx, target, dl, args...)` is the deadline twin
   and fails fast on a spent budget without building anything. Measured on savina/bank-transaction
   (one ask per transfer, Linux/g++-14): `Account::start`'s frame — 21.7 % of the core, the
-  by-value build and its copy — left the top of the profile, and the shape's p50 moved from **9.74 / 9.60 ms** (1c spin/park, qb 3.1.0) to
-  **8.25 / 8.08 ms** before the wire work below. Tests: `ActorCoroutineAsk.EmplaceAsk*` (6).
+  by-value build and its copy — left the top of the profile, and the shape's p50 moved from
+  **9.74 / 9.60 ms** (1c spin/park, `develop` `203cfb56` — the base this work branched from,
+  NOT shipped 3.1.0, which measures 14.71 / 14.58 in the same session; the label was corrected
+  after the control was re-measured beside it) to **8.25 / 8.08 ms** before the wire work
+  below. Tests: `ActorCoroutineAsk.EmplaceAsk*` (6).
 - **`cancellation_token::cancel_hook` + `token.link(hook)`** (`qb/io/async/coroutine/cancellation.h`):
   an intrusive, allocation-free cancellation registration — a `{fire, ctx, prev, next}` node the
   caller owns, linked into the token's state and unlinked on completion, fired (after being
@@ -288,7 +291,13 @@ policy.
   the core, all of it that load. Both now go through `detail::event_wire`: one 16-byte header
   store, the copy, and only THEN the original's `alive` raised (see Fixed for why the order is
   the contract). p50 on the shape moved **8.25 / 8.08 / 5.06 / 4.93 ms** (1c spin, 1c park, 2c
-  spin, 2c park) to **8.19 / 8.22 / 4.54 / 4.60 ms** on Linux/g++-14.
+  spin, 2c park) to **8.19 / 8.22 / 4.54 / 4.60 ms** on Linux/g++-14. The whole chain, base
+  `203cfb56` → this commit, measured in ONE quiet session per host beside shipped 3.1.0
+  (qb-vs-others `docs/TUNING.md` §12): WSL2 g++-14 **9.40 / 9.44 / 5.09 / 5.02 → 8.06 / 8.80 /
+  4.56 / 4.77 ms** (3.1.0: 14.71 / 14.58 / 9.21 / 9.31), Windows MSVC **13.65 / 13.86 / 7.97 /
+  7.78 → 12.91 / 12.82 / 7.57 / 7.56** (3.1.0: 25.48 / 25.45 / 29.20 / 33.45) — −14 % / −10 %
+  at 1c / 2c spin on g++, −5 % / −5 % on MSVC, and 1.8× / 2.0× (WSL2), 2.0× / 3.9× (Windows)
+  over shipped 3.1.0.
 - **The receive path writes nothing into an event before routing it.** `__receive__` and the
   flush stored `alive = 0` into every arriving event; that byte store into a line the dispatch
   then loads whole was 70 % of `deliver_thunk`'s first-header-load time on the same shape. An
