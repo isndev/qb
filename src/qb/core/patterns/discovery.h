@@ -183,12 +183,12 @@ register_discovery(std::uint64_t id, discovery_state &st, qb::ActorId owner) noe
  */
 [[nodiscard]] inline qb::io::async::task<bool>
 ping(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout = std::chrono::seconds{1}) {
-    auto st       = std::make_shared<detail::discovery_state>();
-    st->single    = true;
-    st->token     = ctx.token();
-    const auto id = qb::detail::ask_next_id(ctx.id());
+    auto st                       = std::make_shared<detail::discovery_state>();
+    st->single                    = true;
+    st->token                     = ctx.token();
+    const auto                 id = qb::detail::ask_next_id(ctx.id()); // takes the registry entry the id names
+    qb::detail::ask_slot_guard guard{id};                              // release it if anything below throws before the awaiter takes over
     detail::register_discovery(id, *st, ctx.id());
-    qb::detail::ask_slot_guard guard{id};                              // deregister if the send throws before the awaiter takes over
     ctx.template push_to<qb::PingEvent>(target, std::uint32_t{0}, id); // type 0 = wildcard liveness
     guard.release();                                                   // the awaiter (its dtor unregisters) owns the slot from here
     co_await detail::discovery_awaiter{st, timeout, id};
@@ -216,12 +216,12 @@ ping(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout = std::
 template <typename _Actor>
 [[nodiscard]] qb::io::async::task<std::vector<qb::ActorId>>
 require(qb::ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseconds{200}) {
-    auto st       = std::make_shared<detail::discovery_state>();
-    st->single    = false;
-    st->token     = ctx.token();
-    const auto id = qb::detail::ask_next_id(ctx.id());
+    auto st                       = std::make_shared<detail::discovery_state>();
+    st->single                    = false;
+    st->token                     = ctx.token();
+    const auto                 id = qb::detail::ask_next_id(ctx.id()); // takes the registry entry the id names
+    qb::detail::ask_slot_guard guard{id};                              // release it if anything below throws before the awaiter takes over
     detail::register_discovery(id, *st, ctx.id());
-    qb::detail::ask_slot_guard guard{id}; // deregister if the broadcast throws before the awaiter takes over
     ctx.template broadcast<qb::PingEvent>(static_cast<std::uint32_t>(qb::type_id<_Actor>()), id);
     guard.release(); // the awaiter (its dtor unregisters) owns the slot from here
     co_await detail::discovery_awaiter{st, timeout, id};

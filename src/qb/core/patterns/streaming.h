@@ -317,9 +317,10 @@ private:
 template <stream_event_type E>
 [[nodiscard]] stream<E>
 ask_stream(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout = std::chrono::seconds{5}, std::size_t capacity = 256) {
-    const std::uint64_t id = qb::detail::ask_next_id(ctx.id());
-    auto                st = std::make_shared<detail::stream_state<E>>(capacity ? capacity : std::size_t{1});
-    st->token              = ctx.token();
+    const std::uint64_t        id = qb::detail::ask_next_id(ctx.id()); // takes the registry entry the id names
+    qb::detail::ask_slot_guard guard{id};                              // release it if anything below throws before the stream owns it
+    auto                       st = std::make_shared<detail::stream_state<E>>(capacity ? capacity : std::size_t{1});
+    st->token                     = ctx.token();
     // Register a multi-shot continuation slot so chunks are delivered uniformly (active or
     // Activating) by the same registry/gate as ask.
     st->slot.owner   = ctx.id();
@@ -328,7 +329,6 @@ ask_stream(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration ti
     st->slot.deliver = &detail::stream_state<E>::deliver_thunk;
     qb::detail::ask_register(id, &st->slot);
     qb::detail::ask_register_type(qb::Event::template type_to_id<E>());
-    qb::detail::ask_slot_guard guard{id}; // deregister if the send below throws (no dangling slot)
 
     req.correlation_id = id;
     ctx.template push_to<E>(target, std::move(req)); // send to target, source = asker

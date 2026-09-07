@@ -265,8 +265,13 @@ policy.
   `std::function`'s small buffer, per `qb::ask`, per park, per `check_cancelled`) is gone.
   `ask_awaiter` holds its token by reference — `qb::ask()` is its only construction site and
   the by-value context lives in the same frame — and registers its response type once per
-  thread per `E` instead of per ask. The per-core ask table is a flat open-addressing map
-  (Fibonacci hash, linear probing, backward-shift deletion) rather than an `unordered_map`, and
+  thread per `E` instead of per ask. The per-core ask table is a slot table the correlation
+  id itself indexes — `[core:16][generation:26][slot:22]`; take pops a FIFO free list, look-up
+  is an index and a generation compare, release is a push, nothing is hashed and nothing
+  allocates once the table is warm — rather than an `unordered_map` (a stale id misses on the
+  generation, and an id whose core bits are not the resolving actor's is refused before the
+  table is even indexed; it went through an open-addressing map first, which `perf` on
+  savina/bank-transaction still put at 10–12 % of the core), and
   the coroutine scheduler's three `std::unordered_set<void*>` (`in_flight_`, `owned_frames_`,
   `suspended_coroutines_`) and its `std::deque` ready queue are a `flat_ptr_set` and a
   power-of-two `ready_ring` — MSVC's deque block is one 16-byte item, so every push was a

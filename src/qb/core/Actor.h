@@ -1640,12 +1640,14 @@ bool                        ask_deliver(std::uint64_t id, qb::ActorId owner, qb:
 [[nodiscard]] ev::loop_ref  ask_loop() noexcept;
 
 /**
- * @brief RAII rollback for a freshly-registered slot.
- * @details Helpers that `ask_register` a slot and *then* send the request (`ask_stream`, `ping`,
- *          `require`) have a window where the send (`push_to`/`broadcast`, not `noexcept`) could
- *          throw before the slot's RAII owner (the `stream`/awaiter) exists — which would strand a
- *          dangling slot in the registry. Arm this guard right after `ask_register`; `release()` it
- *          once the owner has taken over. If the send throws, the guard deregisters on unwind.
+ * @brief RAII rollback for a freshly-taken registry entry.
+ * @details `ask_next_id` TAKES the entry its id names, and every helper then sends the request
+ *          (`push_to`/`broadcast`, not `noexcept`) before the entry's RAII owner (the awaiter or
+ *          the `stream`, whose dtor is what releases it) exists — a throw in that window would
+ *          leak the entry, or strand a bound slot in the registry. Arm this guard right after
+ *          `ask_next_id`; `release()` it once the owner has been constructed. Releasing an entry
+ *          twice is a no-op by construction (the generation moves on the first release), so a
+ *          guard that outlives the owner would be harmless too — it is released for the cost.
  */
 struct ask_slot_guard {
     std::uint64_t id;

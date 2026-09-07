@@ -22,6 +22,7 @@
  * @ingroup Core
  */
 
+#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <map>
@@ -34,26 +35,43 @@ namespace qb {
 
 // ---------------------------------------------------------------------------
 // ask() pattern — per-worker-thread correlation registry (Layer 3).
-// Strictly mono-thread per VirtualCore: a plain thread_local map, no locks.
+// Strictly mono-thread per VirtualCore: a plain thread_local table, no locks.
 // Slots are owned by the awaiter living in the asking coroutine's frame; the
-// registry only stores raw pointers keyed by a per-core monotonic id.
+// registry only stores raw pointers, in a slot table the correlation id indexes.
 // ---------------------------------------------------------------------------
 namespace detail {
 namespace {
 /**
- * @brief The pending-ask registry: an open-addressing hash table `id → slot`, one per worker thread.
- * @details Every `qb::ask` registers on suspend and deregisters on resume, so this is the one
- *          container on the ask hot path. A node-based `std::unordered_map` paid a heap
- *          allocation and a free per ask plus a pointer chase per lookup; this table is a single
- *          flat array of 16-byte entries — linear probing on a Fibonacci hash of the id, no
- *          allocation once warm (it doubles at 50 % load and never shrinks), and **backward-shift
- *          deletion** so an erase leaves no tombstone and a lookup never probes further than the
- *          longest cluster. Ids are per-core sequential (`ask_next_id`), which the multiplicative
- *          hash spreads uniformly; id 0 is reserved (never an ask) and marks an empty entry.
+ * @brief The pending-ask registry: a slot table the correlation id INDEXES, one per worker thread.
+ * @details Every `qb::ask` takes an entry before it sends and gives it back when it resumes, so
+ *          this is the one container on the ask hot path. It used to be a hash table keyed by a
+ *          per-core counter — a multiply and a probe per insert, per lookup and per erase, plus
+ *          the backward shift an erase pays to leave no tombstone — and `perf` on
+ *          savina/bank-transaction (1c, g++-14) put it at 10–12 % of the core. Nothing about the
+ *          id needed hashing: the registry hands the id out itself, so it can make the id SAY
+ *          where the entry is. A correlation id is
+ *
+ *              [ core index : 16 ][ generation : 26 ][ slot index : 22 ]
+ *
+ *          — the low bits index this table directly, the generation is the entry's reuse count
+ *          at the time it was taken (a stale id, one whose entry has since been released, misses
+ *          on the compare), and the high 16 bits name the owning core, as before, so an id can
+ *          never resolve an entry of another core's table. Take = pop the free list, look-up =
+ *          index + compare, release = push; no multiply, no probe, no allocation once warm (the
+ *          table doubles when the free list runs dry and never shrinks). The free list is FIFO,
+ *          not LIFO, on purpose: it spreads reuse across every free entry, so a generation
+ *          advances once per `free_count` asks rather than once per ask and a 26-bit generation
+ *          wraps after ~2^26 × 63 asks on a warm table — and a wrapped stale id would still have
+ *          to name its own owner. Id 0 stays reserved ("not an ask"): generations start at 1.
  *          Strictly mono-thread, like everything else in here.
  */
 class ask_table {
 public:
+    static constexpr unsigned      slot_bits = 22;
+    static constexpr unsigned      gen_bits  = 26;
+    static constexpr std::uint64_t slot_mask = (std::uint64_t{1} << slot_bits) - 1;
+    static constexpr std::uint32_t gen_max   = (std::uint32_t{1} << gen_bits) - 1;
+
     ask_table()                             = default;
     ask_table(const ask_table &)            = delete;
     ask_table &operator=(const ask_table &) = delete;
@@ -61,109 +79,102 @@ public:
         std::free(_tab);
     }
 
-    void
-    insert(std::uint64_t const id, ask_slot *slot) {
-        if ((_count + 1) * 2 > _cap)
+    /// Take a free entry for an ask owned by an actor of core `core`; returns its correlation id.
+    [[nodiscard]] std::uint64_t
+    take(std::uint16_t const core) {
+        if (_free_head == none)
             grow();
-        std::size_t i = home(id);
-        for (;;) {
-            auto &e = _tab[i];
-            if (e.id == 0)
-                break;
-            if (e.id == id) { // re-registration of a live id: refresh the slot (matches map semantics)
-                e.slot = slot;
-                return;
-            }
-            i = (i + 1) & _mask;
-        }
-        _tab[i] = {id, slot};
-        ++_count;
+        const std::uint32_t i = _free_head;
+        entry              &e = _tab[i];
+        _free_head            = e.next;
+        if (_free_head == none)
+            _free_tail = none;
+        e.next = busy;
+        e.slot = nullptr;
+        return (static_cast<std::uint64_t>(core) << 48) | (static_cast<std::uint64_t>(e.gen) << slot_bits) | i;
+    }
+
+    /// Bind the awaiter's slot to the entry `id` names. The id must be taken and not released.
+    void
+    bind(std::uint64_t const id, ask_slot *slot) noexcept {
+        entry *const e = live(id);
+        assert(e && "ask_register: id not taken from this core's registry (or already released)");
+        if (e)
+            e->slot = slot;
     }
 
     [[nodiscard]] ask_slot *
     find(std::uint64_t const id) const noexcept {
-        const std::size_t i = locate(id);
-        return i == npos ? nullptr : _tab[i].slot;
+        const entry *const e = live(id);
+        return e ? e->slot : nullptr;
     }
 
+    /// Give the entry back. Idempotent: a released (or never taken) id is a no-op.
     void
-    erase(std::uint64_t const id) noexcept {
-        std::size_t i = locate(id);
-        if (i == npos)
+    release(std::uint64_t const id) noexcept {
+        entry *const e = live(id);
+        if (!e)
             return;
-        // Backward shift: pull every later entry of the same probe cluster one step back if
-        // its home slot lies at or before the hole, so the cluster stays gap-free.
-        for (std::size_t j = i;;) {
-            j = (j + 1) & _mask;
-            if (_tab[j].id == 0)
-                break;
-            const std::size_t k = home(_tab[j].id);
-            if (((i - k) & _mask) < ((j - k) & _mask)) {
-                _tab[i] = _tab[j];
-                i       = j;
-            }
-        }
-        _tab[i] = {};
-        --_count;
+        e->slot = nullptr;
+        e->gen  = e->gen == gen_max ? 1 : e->gen + 1; // a stale id misses from this point on
+        push_free(static_cast<std::uint32_t>(e - _tab));
     }
 
 private:
     struct entry {
-        std::uint64_t id   = 0;
         ask_slot     *slot = nullptr;
+        std::uint32_t gen  = 1;
+        std::uint32_t next = 0; ///< free-list link while free, `busy` while taken
     };
-    static constexpr std::size_t npos = ~std::size_t{0};
+    static constexpr std::uint32_t none = ~std::uint32_t{0};
+    static constexpr std::uint32_t busy = none - 1;
 
-    [[nodiscard]] std::size_t
-    home(std::uint64_t const id) const noexcept {
-        return static_cast<std::size_t>((id * 0x9E3779B97F4A7C15ull) >> _shift);
+    [[nodiscard]] entry *
+    live(std::uint64_t const id) const noexcept {
+        const std::uint64_t i = id & slot_mask;
+        if (i >= _cap)
+            return nullptr;
+        entry *const e = _tab + i;
+        if (e->next != busy || e->gen != static_cast<std::uint32_t>((id >> slot_bits) & gen_max))
+            return nullptr;
+        return e;
     }
 
-    [[nodiscard]] std::size_t
-    locate(std::uint64_t const id) const noexcept {
-        if (!_tab || !id)
-            return npos;
-        for (std::size_t i = home(id);; i = (i + 1) & _mask) {
-            const auto &e = _tab[i];
-            if (e.id == id)
-                return i;
-            if (e.id == 0)
-                return npos;
-        }
+    void
+    push_free(std::uint32_t const i) noexcept {
+        _tab[i].next = none;
+        if (_free_tail == none)
+            _free_head = i;
+        else
+            _tab[_free_tail].next = i;
+        _free_tail = i;
     }
 
     void
     grow() {
-        entry *const      old     = _tab;
-        const std::size_t old_cap = _cap;
-        _cap                      = _cap ? _cap * 2 : 64;
-        _mask                     = _cap - 1;
-        _shift                    = 64;
-        for (std::size_t c = _cap; c > 1; c >>= 1)
-            --_shift;
-        _tab = static_cast<entry *>(std::calloc(_cap, sizeof(entry)));
-        if (!_tab)
-            std::abort(); // the ask registry cannot degrade: an unregistered slot is a lost reply
-        for (std::size_t n = 0; n < old_cap; ++n) {
-            if (old[n].id == 0)
-                continue;
-            std::size_t i = home(old[n].id);
-            while (_tab[i].id != 0)
-                i = (i + 1) & _mask;
-            _tab[i] = old[n];
+        // 2^22 entries taken on ONE core is 2^22 suspended asks; the registry cannot
+        // degrade past that (an id that names no entry is a lost reply), so it stops.
+        if (_cap > slot_mask)
+            std::abort();
+        const std::uint32_t old_cap = _cap;
+        _cap                        = _cap ? _cap * 2 : 64;
+        auto *const t               = static_cast<entry *>(std::realloc(_tab, _cap * sizeof(entry)));
+        if (!t)
+            std::abort();
+        _tab = t;
+        for (std::uint32_t i = old_cap; i < _cap; ++i) {
+            _tab[i] = entry{};
+            push_free(i);
         }
-        std::free(old);
     }
 
-    entry      *_tab   = nullptr;
-    std::size_t _cap   = 0;
-    std::size_t _mask  = 0;
-    unsigned    _shift = 64;
-    std::size_t _count = 0;
+    entry        *_tab       = nullptr;
+    std::uint32_t _cap       = 0;
+    std::uint32_t _free_head = none;
+    std::uint32_t _free_tail = none;
 };
 
-thread_local ask_table     tls_ask_slots;
-thread_local std::uint64_t tls_ask_counter = 0;
+thread_local ask_table tls_ask_slots;
 // Set of event type-ids known to derive from AskEvent (i.e. carry `correlation_id`),
 // populated lazily by `qb::ask<E>`. Lets the activation gate recognise an ask reply
 // without RTTI and read `correlation_id` at the AskEvent base offset safely.
@@ -172,33 +183,36 @@ thread_local std::unordered_set<Event::id_type> tls_ask_types;
 
 std::uint64_t
 ask_next_id(qb::ActorId const owner) noexcept {
-    // Salt the per-thread counter with the OWNER actor's core index (high 16
-    // bits) so correlation ids are globally unique across VirtualCores. Two
-    // cores' independent per-thread counters would otherwise produce identical
-    // values, and `ask_deliver` matches on (id, owner) only — a cross-core
-    // request carrying a colliding id would resolve the receiver's OWN pending
-    // slot and hand its `ask_awaiter<E>` an event of the wrong type (type
-    // confusion). Encoding the slot-owning core in the id makes a lookup on any
-    // other core miss. Low 48 bits = counter (never realistically wrapped);
-    // 0 stays reserved for "not an ask".
-    const std::uint64_t n   = ++tls_ask_counter;
-    const std::uint64_t seq = n ? n : ++tls_ask_counter;
-    return (static_cast<std::uint64_t>(owner.index()) << 48) | seq;
+    // The id names the OWNER actor's core index in its high 16 bits, so correlation
+    // ids are globally unique across VirtualCores: two cores' independent registries
+    // would otherwise hand out identical (generation, slot) pairs, and `ask_deliver`
+    // matches on (id, owner) only — a cross-core request carrying a colliding id
+    // would resolve the receiver's OWN pending slot and hand its `ask_awaiter<E>` an
+    // event of the wrong type (type confusion). `ask_deliver` refuses an id whose
+    // core is not the delivering actor's before it even indexes the table. The low
+    // 48 bits locate the entry (see ask_table); 0 stays reserved for "not an ask".
+    // The entry is TAKEN here, before the request is sent: `ask_register` binds the
+    // awaiter to it once the coroutine suspends, `ask_unregister` gives it back.
+    return tls_ask_slots.take(owner.index());
 }
 
 void
 ask_register(std::uint64_t const id, ask_slot *slot) noexcept {
-    tls_ask_slots.insert(id, slot);
+    tls_ask_slots.bind(id, slot);
 }
 
 void
 ask_unregister(std::uint64_t const id) noexcept {
-    tls_ask_slots.erase(id);
+    tls_ask_slots.release(id);
 }
 
 bool
 ask_deliver(std::uint64_t const id, ActorId const owner, Event &resp) noexcept {
-    ask_slot *slot = tls_ask_slots.find(id); // id 0 ("not an ask") is a miss by construction
+    // The core in the id is the table the entry lives in; anything else is a miss by
+    // construction (as is id 0, "not an ask", whose entry can never be taken).
+    if ((id >> 48) != owner.index())
+        return false;
+    ask_slot *slot = tls_ask_slots.find(id);
     // Only the owning actor may resolve its slot, and only once.
     if (!slot || slot->done || !slot->deliver || !(slot->owner == owner))
         return false;
