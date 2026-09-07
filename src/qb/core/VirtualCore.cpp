@@ -802,7 +802,19 @@ VirtualCore::__workflow__() {
         // single contiguous copy instead of an `unordered_map` walk. A local
         // snapshot is still required because the tick handler `on(LoopEvent&)` may
         // register or unregister actors during dispatch (e.g. via `addRefActor`).
-        {
+        // The `empty()` guard is what makes the per-pass clock lazy IN PRACTICE: the
+        // `LoopEvent` below is built from `time()`, and until the guard that was the
+        // one unconditional clock read left in a pass — `443c5976` moved the read from
+        // the top of the loop into this block and wrote that a pass nobody asks costs
+        // nothing, but a `LoopEvent` built for zero callbacks still asked. A core with
+        // no registered callback — every benchmark, every server that drives itself
+        // from io and events — paid one `clock_gettime` per pass for an event nobody
+        // received: 39.6 % of a one-core `ping-pong` profile (`perf record -e cpu-clock`,
+        // WSL2 / g++-14), ~13 ns of a ~33 ns pass. The snapshot copy sits inside the
+        // guard for the same reason. No branch hint: the predicate is a per-core
+        // constant on every pass but the one that registers or unregisters the
+        // first / last callback.
+        if (!_callback_list.empty()) {
             // One LoopEvent for the whole pass — same `now`/`iteration` for every callback,
             // consistent with `Actor::time()` (the same per-pass sample; a pass with no
             // registered callback and no caller never reads the clock). Delivered by a direct
@@ -855,8 +867,20 @@ VirtualCore::__workflow__() {
         // floor has elapsed, then parks — which returns on data, on a producer's notify, or
         // after `latency`. A wait that returns with nothing to do keeps the old stamp and
         // parks again on the next pass, so an idle core does not re-spin a whole floor
-        // between two timeouts. The clock is read only on idle passes, and only when the
-        // core can park at all.
+        // between two timeouts. The clock is read on idle passes only — a busy pass pays one
+        // store — and it is read in EVERY latency mode, a latency-0 core included, which
+        // never parks and so never uses the stamp. That read is not waste: it is what
+        // paces the idle poll. With the tick phase above no longer reading the wall clock,
+        // a spinning core's idle pass had become ~20 ns of unserialized code, and its
+        // cross-core exchange got SLOWER for it — savina/ping-pong and thread-ring 2c-spin
+        // +25 % on i9-12900K / WSL2 g++-14, ten interleaved launches each, fully separated
+        // distributions — while the one-core cells took the full gain. The idle poll needs
+        // ~10–15 ns of serialized work between two reads of the peer's ring index: an
+        // `lfence` alone (3 ns) left +7 / +14 %, `spin_loop_pause()` (33 ns here) +9 / +20 %,
+        // a bounded tight `has_data()` poll was worse than no pacing at all (+30 %), and the
+        // monotonic clock read (13 ns, `lfence; rdtsc` under the vDSO) put both cells back
+        // on the control's figure while the one-core cells stayed at −56 %. Measured, not
+        // reasoned; the census is `qb-vs-others` results `qb-branch-perf-loop-clock-on-demand/`.
         //
         // WHERE it parks depends on whether the io loop has anything to deliver. With io
         // watchers active the park is taken INSIDE the loop (`Mailbox::wait(listener &)`:
@@ -868,21 +892,19 @@ VirtualCore::__workflow__() {
         // stamp is cleared so the reply, and the request after it, are met at polling
         // latency. A core with no io work keeps the condition-variable park, whose cost
         // and handshake are the measured ones.
-        if (_mail_box.getLatency() > qb::duration::zero()) {
-            if (likely(_metrics.had_activity()) || !_mono_pipe_swap.empty()) {
-                _idle_since = qb::mono_time{};
-            } else {
-                const auto now = qb::mono_now();
-                if (_idle_since == qb::mono_time{}) {
-                    _idle_since = now;
-                } else if (now - _idle_since >= _mail_box.getIdleSpin()) {
-                    auto &loop = io::async::listener::current;
-                    if (loop.has_work()) {
-                        if (_mail_box.wait(loop))
-                            _idle_since = qb::mono_time{};
-                    } else {
-                        _mail_box.wait();
-                    }
+        if (likely(_metrics.had_activity()) || !_mono_pipe_swap.empty()) {
+            _idle_since = qb::mono_time{};
+        } else {
+            const auto now = qb::mono_now();
+            if (_idle_since == qb::mono_time{}) {
+                _idle_since = now;
+            } else if (_mail_box.getLatency() > qb::duration::zero() && now - _idle_since >= _mail_box.getIdleSpin()) {
+                auto &loop = io::async::listener::current;
+                if (loop.has_work()) {
+                    if (_mail_box.wait(loop))
+                        _idle_since = qb::mono_time{};
+                } else {
+                    _mail_box.wait();
                 }
             }
         }

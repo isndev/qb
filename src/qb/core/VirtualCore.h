@@ -502,11 +502,14 @@ private:
             *this = {};
         }
     } _metrics;
-    // --- the park clock: when this core last found nothing to do, `mono_time{}` while busy.
-    // Stamped on the first idle pass after activity and read on every later one; the core
-    // parks (`Mailbox::wait()`) once `mono_now() - _idle_since` reaches the mailbox's idle-spin
-    // floor, and stays parked-or-parking (no re-spin) until something arrives. Only touched when
-    // the mailbox has a non-zero latency — a latency-0 core never reads the clock for this.
+    // --- the idle clock: when this core last found nothing to do, `mono_time{}` while busy.
+    // Stamped on the first idle pass after activity and the clock re-read on every later one;
+    // a core with a non-zero latency parks (`Mailbox::wait()`) once `mono_now() - _idle_since`
+    // reaches the mailbox's idle-spin floor, and stays parked-or-parking (no re-spin) until
+    // something arrives. A latency-0 core never parks and never uses the stamp, but it takes
+    // the same read on each idle pass: that ~13 ns of serialized work is what paces its
+    // idle poll of the peer rings, measured in `__workflow__` (an unpaced idle pass costs the
+    // cross-core spin cells +25 %). A busy pass reads no clock in any mode.
     qb::mono_time _idle_since{};
     // --- the pass clock: `time()` is sampled at most ONCE per loop pass, and only when asked.
     // The loop used to read `qb::wall_now()` at the top of every pass, whether or not any

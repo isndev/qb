@@ -160,7 +160,7 @@ int main() {
 `start(false)` makes the calling thread the last worker and blocks until shutdown.
 `Main::core(idx)` throws once the engine is running, and `std::range_error` for `idx >= qb::MaxCores`
 (256). A core started with **0 actors fails startup** (`Error::NoActor`). `setLatency` takes a
-`qb::duration`: `qb::duration::zero()` = busy-spin; `>0` parks up to that span when idle — after
+`qb::duration`: `qb::duration::zero()` = busy-spin (an idle pass still reads the monotonic clock once: that read paces the poll of the peer rings); `>0` parks up to that span when idle — after
 polling for `setIdleSpin` (default 50 µs) since its last activity, so a prompt reply is still picked
 up on the lock-free path. WHERE it parks depends on what the core owns: with active qb-io watchers
 (sockets, timers, `async::callback`) it parks inside its event loop, so io readiness and io timers wake
@@ -407,20 +407,20 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
-  body and answer through an event. _(`spawn_detached` Actor.h:1350 / VirtualCore.h:1337; `spawn` Actor.h:1387 /
-  VirtualCore.h:1351)_
+  body and answer through an event. _(`spawn_detached` Actor.h:1350 / VirtualCore.h:1340; `spawn` Actor.h:1387 /
+  VirtualCore.h:1354)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
   with 0 actors fails startup. _(Main.cpp:594-596, :412-414)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
   `on(qb::LoopEvent const&)` invocation, and sampled on demand — the first call in a pass reads the clock, every
-  later one in that pass returns it, a pass nobody asks reads none. Inside `onInit()` there is no pass yet (pass 0), so it is
+  later one in that pass returns it, a pass nobody asks reads none — and a core with no registered callback skips the tick phase, so its `LoopEvent` does not ask either. Inside `onInit()` there is no pass yet (pass 0), so it is
   the instant the first actor on that core asked — a real epoch value, shared by every actor on that core. It was 0 there through
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:709-725; VirtualCore.h:786-798; VirtualCore.cpp:1158-1165)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:709-725; VirtualCore.h:789-801; VirtualCore.cpp:1180-1187)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:62-67, :82-83, :91-95)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor

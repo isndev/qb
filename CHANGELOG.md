@@ -251,7 +251,33 @@ policy.
   each in far less than `latency`, the process CPU time proving the core was parked rather
   than polling).
 - **`Actor::time()` samples the clock on demand, once per pass**, keyed on the pass index,
-  instead of unconditionally at the top of every pass.
+  instead of unconditionally at the top of every pass — **and a pass with no registered callback
+  skips the tick phase, so it really is clock-free.** The first form of this entry (`443c5976`)
+  moved the read rather than removing it: the `qb::LoopEvent` handed to `ICallback::on()` is built
+  from `time()`, and it was built on EVERY pass whether or not any actor would receive it, so a core
+  with zero registered callbacks — every benchmark, and every server that drives itself from io and
+  events — still paid one `clock_gettime` per pass for an event nobody received. `perf` on
+  savina/ping-pong at one core (WSL2 / g++-14, `develop` `f8eba11d`) put `__vdso_clock_gettime` at
+  **39.6 %** of the process. The snapshot copy and the `LoopEvent` now sit behind
+  `if (!_callback_list.empty())`. The half that was not obvious: with the wall clock gone, a
+  SPINNING core's idle pass shrank to ~20 ns of unserialized code and its cross-core exchange got
+  slower for it — ping-pong and thread-ring 2c-spin **+25 %** (ten interleaved launches each, fully
+  separated distributions) while every one-core cell took the full gain. The idle poll of the peer
+  rings needs ~10–15 ns of serialized work between two reads; an `lfence` alone left +7 / +14 %,
+  `spin_loop_pause()` (33 ns on i9-12900K) +9 / +20 %, a bounded tight `has_data()` poll was worse
+  than no pacing (+30 %), and the monotonic clock read the park policy already takes on an idle
+  pass — `lfence; rdtsc` under the vDSO, 13 ns — put both cells back on the control's figure. So
+  the idle clock (`_idle_since`) is now stamped on idle passes in **every** latency mode, a
+  latency-0 core included, and only the park itself stays gated on `latency > 0`; a busy pass reads
+  no clock in any mode. Measured on WSL2 / g++-14 in one quiet session against `develop`
+  `f8eba11d` (qb-vs-others, 9 + 2, CPUs 0,2, p50): ping-pong 1c-spin **65.8 → 28.3 ns** per round
+  trip (−57 %; shipped 3.1.0 measures 97.9 in the same session), thread-ring 1c-spin **38.1 →
+  17.8 ns** per hop (−53 %), 2c-park 219 → 209 / 115 → 108, 2c-spin inside the spread (15-launch
+  census: 205.6 vs 209.7 / 104.4 vs 109.3, distributions overlapping), counting level;
+  `dev/bench` `BM_Mono_PingPong_Latency` **100.2 → 62.9 ns** (−37 %), pipeline chain 10 actors / 1
+  core **65.1 → 31.8 ns** per delivery (−51 %), 8 × 8 cores 314.7 → 314.2, `Multi_PingPong` 257 vs
+  258 over eight interleaved runs, ask round trips −3 / −4 %. Windows / MSVC figures in the
+  qb-vs-others results (`qb-branch-perf-loop-clock-on-demand/`, both hosts).
 - **`spsc::ringbuffer` lays its producer and consumer indices out on separate cache lines and
   each side keeps a private snapshot of the peer's index**, so an uncontended push or pop
   touches one line and re-reads the peer only when its snapshot says full or empty.
