@@ -271,7 +271,17 @@ policy.
   allocates once the table is warm — rather than an `unordered_map` (a stale id misses on the
   generation, and an id whose core bits are not the resolving actor's is refused before the
   table is even indexed; it went through an open-addressing map first, which `perf` on
-  savina/bank-transaction still put at 10–12 % of the core), and
+  savina/bank-transaction still put at 10–12 % of the core). Take BINDS the slot in the same
+  call (`ask_take(owner, slot)`), `finish()` runs once and leaves the destructor a byte to
+  compare, and the awaiter takes its entry in its constructor, before the send — so the
+  registry is three out-of-line calls per ask rather than five, which is where the cost was
+  (`perf annotate`: the residue sat on prologue, epilogue and one `jne`, a `thread_local`
+  guard per access on g++, no miss anywhere). Measured on savina/bank-transaction
+  (`qb-vs-others`, same quiet session, control → candidate / candidate again, 9 + 2): the
+  registry 12.8 → 4.36 % of the core, 1c-spin p50 7.70 → 7.21 / 7.25 ms and 1c-park
+  7.58 → 7.30 / 7.24 on WSL2/g++-14 (≈ 9–10 ns per ask, 154 → 144 ns per transfer), 2c and
+  the `dev/bench` round trips inside their spread; on Windows/MSVC every cell is inside its
+  spread (MSVC has no per-access TLS guard to skip), and
   the coroutine scheduler's three `std::unordered_set<void*>` (`in_flight_`, `owned_frames_`,
   `suspended_coroutines_`) and its `std::deque` ready queue are a `flat_ptr_set` and a
   power-of-two `ready_ring` — MSVC's deque block is one 16-byte item, so every push was a
