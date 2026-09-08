@@ -30,6 +30,7 @@ VARx(ev_tstamp, now_floor)     /* last time we refreshed rt_time */
 
         VARx(int, backend) VARx(int, activecnt) /* total number of active events ("refcount") */
     VARx(int, iocnt)                            /* active ev_io watchers: what backend_poll has to look at (qev) */
+    VARx(unsigned int, iofed)                   /* fd events the backend fed so far (qev): the embedder's io cadence stays hot on it */
     VARx(EV_ATOMIC_T, loop_done)                /* signal by ev_break */
 
     VARx(uintptr_t, backend_fd)      /* kernel fd or (Windows epoll) HANDLE bit pattern; EV_BACKEND_FD_INVALID if none */

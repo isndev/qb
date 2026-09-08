@@ -44,7 +44,8 @@ CoreInitializer::CoreInitializer(CoreId const index)
     , _next_id(static_cast<ServiceId>(VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1))
     , _affinity{index}
     , _latency{}
-    , _idle_spin{kDefaultIdleSpin} {}
+    , _idle_spin{kDefaultIdleSpin}
+    , _io_poll_interval{kDefaultIoPollInterval} {}
 
 CoreInitializer::~CoreInitializer() noexcept {
     clear();
@@ -81,6 +82,12 @@ CoreInitializer::setIdleSpin(qb::duration const idle_spin) noexcept {
     return *this;
 }
 
+CoreInitializer &
+CoreInitializer::setIoPollInterval(qb::duration const interval) noexcept {
+    _io_poll_interval = interval;
+    return *this;
+}
+
 CoreId
 CoreInitializer::getIndex() const noexcept {
     return _index;
@@ -99,6 +106,11 @@ CoreInitializer::getLatency() const noexcept {
 qb::duration
 CoreInitializer::getIdleSpin() const noexcept {
     return _idle_spin;
+}
+
+qb::duration
+CoreInitializer::getIoPollInterval() const noexcept {
+    return _io_poll_interval;
 }
 
 // !CoreInitializer
@@ -375,6 +387,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     core.__set_stop_token__(params.stop_token);
     VirtualCore::_handler = &core;
     io::async::init();
+    io::async::listener::current.set_io_poll_interval(initializer.getIoPollInterval());
 
     // Publish this core as stopped on EVERY exit from here on — including an
     // exception escaping a callback / IO handler inside __workflow__. Normally

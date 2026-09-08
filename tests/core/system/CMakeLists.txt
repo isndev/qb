@@ -39,6 +39,8 @@ qb_add_test(MODULE qb-core TIER system NAME default-event-registry SOURCES engin
 # core-park-policy measures WHEN a latency>0 core parks, with a qb-io timer as its clock; a loaded
 # host stretches every figure, so it runs alone.
 qb_add_test(MODULE qb-core TIER system NAME core-park-policy SOURCES engine/core-park-policy.cpp DEPENDS ${PROJECT_NAME} LABELS serial)
+# core-io-poll-interval pins the plumbing of the io poll cadence's knob from the initializer to the core's listener (QB-191).
+qb_add_test(MODULE qb-core TIER system NAME core-io-poll-interval SOURCES engine/core-io-poll-interval.cpp DEPENDS ${PROJECT_NAME})
 # core-park-wake measures what WAKES a parked core -- a readable socket, a cross-core push into a
 # loop park, a cross-core push into a cv park -- against bounds a missed wake overshoots by the
 # whole latency; its two push cases bring up a second VirtualCore, and its CPU-time assertion

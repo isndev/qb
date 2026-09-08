@@ -19,6 +19,7 @@
 #define acquire_cb ((loop)->acquire_cb)
 #define activecnt ((loop)->activecnt)
 #define iocnt ((loop)->iocnt)
+#define iofed ((loop)->iofed)
 #define anfdmax ((loop)->anfdmax)
 #define anfds ((loop)->anfds)
 #define async_pending ((loop)->async_pending)
@@ -151,6 +152,7 @@
 #undef acquire_cb
 #undef activecnt
 #undef iocnt
+#undef iofed
 #undef anfdmax
 #undef anfds
 #undef async_pending

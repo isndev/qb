@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`src/qb/io/async/listener.h:1148-1151`). `listener::current` is a
+  (`src/qb/io/async/listener.h:1240-1243`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -78,14 +78,14 @@ registry, or as a member — never relocate them.
 - To reset event-loop state (for example in a unit-test teardown), call
   `listener::current.clear()` directly — never via `init()`.
 - `listener::clear()` (and the destructor) **detach** watchers without
-  **deleting** them (`src/qb/io/async/listener.h:600,643-644,676-678`). Each `async::base`
+  **deleting** them (`src/qb/io/async/listener.h:654,697-698,730-732`). Each `async::base`
   still holds a reference to its embedded event, so the owning object's
   destructor performs the final unregister and delete. Deleting in `clear()`
   would leave a dangling `_async_event`.
 - `clear()` runs the loop four times with `EVRUN_NOWAIT`, not `EVRUN_ONCE`,
   because under a monotonic-clock + timerfd libev build the loop can pick a
   multi-million-second wait time when `timercnt == 0`, which would wedge thread
-  teardown (`src/qb/io/async/listener.h:665-666`). This is intentional; do not
+  teardown (`src/qb/io/async/listener.h:719-720`). This is intentional; do not
   "simplify" it to a single `EVRUN_ONCE`.
 
 ---
@@ -96,7 +96,7 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`src/qb/io/async/listener.h:1163`).
+  (`src/qb/io/async/listener.h:1255`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
   `run_for()` (`src/qb/io/async/coroutine/utils.h:285`, `:227`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
@@ -117,7 +117,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1223-1226`).
+> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1315-1318`).
 
 ---
 
@@ -357,7 +357,7 @@ with I/O lifetime are:
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
   qev's `ev_stat` stores the narrow `const char *` it is given **without
-  copying** (`src/qb/ev/ev++.h:721`). `start()` therefore stashes
+  copying** (`src/qb/ev/ev++.h:733`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
   `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:584-585`, `:748-749`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and

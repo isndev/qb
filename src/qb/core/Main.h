@@ -203,6 +203,7 @@ private:
     CoreIdSet    _affinity;
     qb::duration _latency;
     qb::duration _idle_spin;
+    qb::duration _io_poll_interval;
 
     qb::unordered_set<ServiceId>                _registered_services;
     std::vector<std::unique_ptr<IActorFactory>> _actor_factories;
@@ -310,6 +311,23 @@ public:
      */
     CoreInitializer &setIdleSpin(qb::duration idle_spin = kDefaultIdleSpin) noexcept;
 
+    /*!
+     * @brief Set how often this core's io loop polls its backend for a QUIET socket.
+     * @param interval While the loop delivered nothing on the previous pass, a non-blocking
+     *                 pass polls the backend at most once per `interval`; the passes in between
+     *                 skip the syscall and only keep timers and pending events (Huly QB-191).
+     *                 Zero or less polls on every pass, the 3.1 behaviour. Defaults to
+     *                 `kDefaultIoPollInterval` (1 µs).
+     * @return Reference to this `CoreInitializer` for method chaining.
+     * @note A burst stays at poll latency: a pass that delivered something polls again on the
+     *       next pass whatever the interval. What a quiet socket's owner trades is at most one
+     *       interval of latency on the first byte after silence, against the backend syscall
+     *       (`epoll_wait(0)` ~80 ns, wepoll ~250 ns) on every pass of the core -- measured, the
+     *       whole of what an io pass cost over a timers-only one. A parked core always polls.
+     * This setting takes effect when the engine starts.
+     */
+    CoreInitializer &setIoPollInterval(qb::duration interval = kDefaultIoPollInterval) noexcept;
+
     /**
      * @brief Gets the CoreId associated with this initializer.
      * @return The `CoreId` (unsigned short) of the VirtualCore this initializer configures.
@@ -330,6 +348,15 @@ public:
      * @return `qb::duration` value. See `setIdleSpin()` for interpretation.
      */
     [[nodiscard]] qb::duration getIdleSpin() const noexcept;
+    /**
+     * @brief Gets the configured io poll interval for this core.
+     * @return `qb::duration` value. See `setIoPollInterval()` for interpretation.
+     */
+    [[nodiscard]] qb::duration getIoPollInterval() const noexcept;
+
+    /// Default `setIoPollInterval()`: one microsecond -- a quiet socket is looked at a thousand
+    /// times a millisecond, and a busy core spends one syscall per interval on it, not one per pass.
+    static constexpr qb::duration kDefaultIoPollInterval = std::chrono::microseconds{1};
 
     /// Default `setIdleSpin()`: measured to hold a two-core ping-pong on the polling path on
     /// Windows, WSL2 and Linux alike, while an idle core still parks within ~50 µs of its last event.

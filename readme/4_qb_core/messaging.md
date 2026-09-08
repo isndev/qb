@@ -28,11 +28,11 @@ flowchart LR
     D -->|no| F["__flush_all__ → SharedCoreCommunication::send<br/>MPSC ring enqueue into the peer's Mailbox"]
     F --> G["peer's __receive__ copies the buckets out<br/>and routes them to on(E&amp;)"]
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1020 (dest._core_id selects the pipe), qb/src/qb/core/VirtualCore.h:1051-1056 (__getPipe__), qb/src/qb/core/Main.cpp:227-232 (the ring enqueue) -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1020 (dest._core_id selects the pipe), qb/src/qb/core/VirtualCore.h:1051-1056 (__getPipe__), qb/src/qb/core/Main.cpp:239-244 (the ring enqueue) -->
 
 Nothing in that path looks an actor up by identity across a thread boundary. The sender resolves a **core**, appends bytes to a buffer it owns exclusively, and the destination core turns those bytes back into an event on its own thread. The one cross-thread structure is the mailbox ring, and it is reached only from the flush.
 
-Both buffers store the same unit. A `qb::VirtualPipe` is `qb::allocator::segmented_pipe<EventBucket>` (`src/qb/core/Event.h:869`) — a FIFO of 256 KB segments drawn from the core's `segment_pool` (`src/qb/core/VirtualCore.h:383`; the pool carves them eight to a 2 MB slab from the process-wide `slab_cache`, [Buffers](../0_foundations/buffers.md#events)), which grows by linking a segment and never moves an event once queued — and an `EventBucket` is one cache line wide — `QB_LOCKFREE_EVENT_BUCKET_BYTES`, which is `QB_LOCKFREE_CACHELINE_BYTES`, 64 bytes on common targets (`src/qb/utility/prefix.h:66-68`, `:138-140`). An event occupies a whole number of contiguous buckets and records that count in its own 16-bit header. The destination side is a `SharedCoreCommunication::Mailbox`, one per core, reached through `getMailBox(CoreId)`; it derives from `qb::lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>` — many producers, one consumer, no lock (`src/qb/core/Main.h:404`, `:636-637`, `:744`). Its idle-wait policy is a `qb::duration` set per core; [the engine page](./engine.md#latency-what-a-core-does-when-it-has-nothing-to-do) owns that.
+Both buffers store the same unit. A `qb::VirtualPipe` is `qb::allocator::segmented_pipe<EventBucket>` (`src/qb/core/Event.h:869`) — a FIFO of 256 KB segments drawn from the core's `segment_pool` (`src/qb/core/VirtualCore.h:383`; the pool carves them eight to a 2 MB slab from the process-wide `slab_cache`, [Buffers](../0_foundations/buffers.md#events)), which grows by linking a segment and never moves an event once queued — and an `EventBucket` is one cache line wide — `QB_LOCKFREE_EVENT_BUCKET_BYTES`, which is `QB_LOCKFREE_CACHELINE_BYTES`, 64 bytes on common targets (`src/qb/utility/prefix.h:66-68`, `:138-140`). An event occupies a whole number of contiguous buckets and records that count in its own 16-bit header. The destination side is a `SharedCoreCommunication::Mailbox`, one per core, reached through `getMailBox(CoreId)`; it derives from `qb::lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>` — many producers, one consumer, no lock (`src/qb/core/Main.h:431`, `:663-664`, `:771`). Its idle-wait policy is a `qb::duration` set per core; [the engine page](./engine.md#latency-what-a-core-does-when-it-has-nothing-to-do) owns that.
 
 That is also why the send API needs no handle to the runtime. `VirtualCore::_handler` is a `thread_local` pointer to "the core running on this thread" (`src/qb/core/VirtualCore.h:85`), and because actors are thread-affine it is always the right core — so `Actor::push` is one forward through it:
 
@@ -78,8 +78,8 @@ The journey of a single `push` across a core boundary, in the order it happens.
 **Later in the same loop pass, in `__flush_all__`.**
 
 8. The flush walks each non-empty outbound pipe one segment at a time — `front()` is the head segment's live range, and no event straddles two — stepping over whole events by their `bucket_size` (`src/qb/core/VirtualCore.cpp:349-375`).
-9. `try_send` → `SharedCoreCommunication::send(_resolved_index, event)`. In a debug build this first scans the event's whole bucket range for a pointer-sized word addressing that same range and aborts if it finds one (`src/qb/core/Main.cpp:207-220`).
-10. `enqueue(source_index, buckets, bucket_size)` copies the buckets into the destination mailbox's SPSC ring for *this* producer core, then `notify()` wakes a parked consumer (`src/qb/core/Main.cpp:229-231`). The producer slot is **this core's** resolved index, never `event.source` — `forward()` preserves the original sender, so deriving the slot from it would let two threads write one single-producer ring (`src/qb/core/Main.cpp:222-226`).
+9. `try_send` → `SharedCoreCommunication::send(_resolved_index, event)`. In a debug build this first scans the event's whole bucket range for a pointer-sized word addressing that same range and aborts if it finds one (`src/qb/core/Main.cpp:219-232`).
+10. `enqueue(source_index, buckets, bucket_size)` copies the buckets into the destination mailbox's SPSC ring for *this* producer core, then `notify()` wakes a parked consumer (`src/qb/core/Main.cpp:241-243`). The producer slot is **this core's** resolved index, never `event.source` — `forward()` preserves the original sender, so deriving the slot from it would let two threads write one single-producer ring (`src/qb/core/Main.cpp:234-238`).
 11. On success the pipe cursor advances past the event. Its destructor is **not** run here: the bytes now live in the ring, and the receiver owns them.
 
 **On the destination core, on its next pass.**
@@ -242,14 +242,14 @@ for (std::size_t off = 0; off + sizeof(std::uintptr_t) <= bytes; off += alignof(
         return true;
 }
 ```
-<!-- src: qb/src/qb/core/Main.cpp:194-200 -->
+<!-- src: qb/src/qb/core/Main.cpp:206-212 -->
 
-It is `#ifndef NDEBUG`, so release pays nothing (`src/qb/core/Main.cpp:207`). Two gaps follow from where it sits:
+It is `#ifndef NDEBUG`, so release pays nothing (`src/qb/core/Main.cpp:219`). Two gaps follow from where it sits:
 
 - **It never runs for same-core delivery**, which does not go through the mailbox layer at all — the exact path the table above says is *not* exempt.
 - **It looks for a word addressing the event's current bytes.** A self-pointer that an earlier pipe growth already left dangling now points at the old buffer, outside the scanned range, and passes.
 
-It is also only sound because every construction site zeroes the bucket range first. An event's range is not fully written by its payload — dead bytes inside `sizeof(E)`, tail padding, an `allocated_push` tail — and those bytes come out of a recycled buffer, so a stale value that happens to address the range makes the guard fire on a perfectly relocatable payload. That was measured at 2 runs in 30 on `qb-core-test-system-shutdown-saturation` before `prepare_event_storage` was introduced, with the offending words at offsets 40 and 56 of a 64-byte event whose live members end at 52 (`src/qb/core/Main.cpp:175-185`). Treat a clean debug run as evidence, not proof. Pinned by `RelocatablePayload.*` / `RelocatablePayloadDeathTest.*` in `qb/tests/core/system/messaging/relocatable-payload.cpp`.
+It is also only sound because every construction site zeroes the bucket range first. An event's range is not fully written by its payload — dead bytes inside `sizeof(E)`, tail padding, an `allocated_push` tail — and those bytes come out of a recycled buffer, so a stale value that happens to address the range makes the guard fire on a perfectly relocatable payload. That was measured at 2 runs in 30 on `qb-core-test-system-shutdown-saturation` before `prepare_event_storage` was introduced, with the offending words at offsets 40 and 56 of a 64-byte event whose live members end at 52 (`src/qb/core/Main.cpp:187-197`). Treat a clean debug run as evidence, not proof. Pinned by `RelocatablePayload.*` / `RelocatablePayloadDeathTest.*` in `qb/tests/core/system/messaging/relocatable-payload.cpp`.
 
 ## `reply` and `forward` reuse the event in place
 
@@ -310,7 +310,7 @@ An event's in-pipe footprint must fit the destination mailbox ring. The two cons
 
 | Constant | Value at a 64-byte bucket | What it sizes |
 |---|---|---|
-| `SharedCoreCommunication::MaxRingEvents` | `65535 / 64` = **1023** buckets (≈ 64 KiB) | each per-producer SPSC ring inside a mailbox (`src/qb/core/Main.h:362`) |
+| `SharedCoreCommunication::MaxRingEvents` | `65535 / 64` = **1023** buckets (≈ 64 KiB) | each per-producer SPSC ring inside a mailbox (`src/qb/core/Main.h:389`) |
 | `VirtualCore::MaxRingEvents` | `65536 / 64` = **1024** buckets | the per-core `EventBuffer` the receive path copies into (`src/qb/core/VirtualCore.h:156`) |
 | `VirtualCore::kMaxDeliverableBuckets` | = the first of the two, **1023** | the widest event `__flush_all__` will even attempt (`src/qb/core/VirtualCore.h:158`) |
 

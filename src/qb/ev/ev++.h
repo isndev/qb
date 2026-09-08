@@ -244,6 +244,18 @@ struct loop_ref {
         return ev_io_count(EV_AX);
     }
 
+    /* qev: the address of io_count, for a per-pass inline read (see active_count_addr) */
+    const int *
+    io_count_addr() const EV_NOEXCEPT {
+        return ev_io_count_addr(EV_AX);
+    }
+
+    /* qev: the address of the ready-fd count the backend fed so far (see ev_io_fed_addr) */
+    const unsigned int *
+    io_fed_addr() const EV_NOEXCEPT {
+        return ev_io_fed_addr(EV_AX);
+    }
+
     void
     set_io_collect_interval(tstamp interval) EV_NOEXCEPT {
         ev_set_io_collect_interval(EV_AX_ interval);

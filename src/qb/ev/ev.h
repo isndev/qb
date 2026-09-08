@@ -684,7 +684,9 @@ ev_is_default_loop (void) EV_NOEXCEPT
     /* ev_run flags values */
     enum {
         EVRUN_NOWAIT = 1, /* do not block/wait */
-        EVRUN_ONCE   = 2  /* block *once* only */
+        EVRUN_ONCE   = 2, /* block *once* only */
+        EVRUN_NOPOLL = 4  /* qev: with EVRUN_NOWAIT, skip the backend poll this pass -- timers, periodics and
+                             pending events are handled as usual; the embedder owns the io cadence */
     };
 
     /* ev_break how values */
@@ -743,6 +745,8 @@ ev_is_default_loop (void) EV_NOEXCEPT
     EV_API_DECL const int *ev_active_count_addr(EV_P) EV_NOEXCEPT;
     EV_API_DECL const int *ev_pending_count_addr(EV_P) EV_NOEXCEPT; /* EV_NUMPRI entries */
     EV_API_DECL unsigned int ev_io_count(EV_P) EV_NOEXCEPT; /* active ev_io watchers, the loop's own wake pipe excluded; 0 = ev_run skips a non-blocking poll */
+    EV_API_DECL const int *ev_io_count_addr(EV_P) EV_NOEXCEPT; /* the same count, read inline; valid until ev_loop_destroy */
+    EV_API_DECL const unsigned int *ev_io_fed_addr(EV_P) EV_NOEXCEPT; /* ready fds the backend reported so far (grows, wraps), read inline: an io cadence stays hot on it */
 
     /*
      * stop/start the timer handling.

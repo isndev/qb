@@ -224,9 +224,9 @@ A `qb-io` utility that runs a callable on the current thread. With a positive [`
 <a id="defer-qbioasyncdefer"></a>
 #### `defer` (`qb::io::async::defer`)
 
-A `qb-io` utility that queues a callable to run **once, at the tail of the current event-loop turn** — after every libev watcher for that turn has returned, so it never executes re-entrantly from inside a handler. The one correct primitive for "continue after this handler unwinds", above all when the handler must destroy or replace the object it is running on (a reconnect). No timer and no delay, unlike [`callback`](#callback-io-qbioasynccallback). Defined in `src/qb/io/async/listener.h:1214`, forwarding to the listener member at `:881`. See [Async system](../3_qb_io/async_system.md).
+A `qb-io` utility that queues a callable to run **once, at the tail of the current event-loop turn** — after every libev watcher for that turn has returned, so it never executes re-entrantly from inside a handler. The one correct primitive for "continue after this handler unwinds", above all when the handler must destroy or replace the object it is running on (a reconnect). No timer and no delay, unlike [`callback`](#callback-io-qbioasynccallback). Defined in `src/qb/io/async/listener.h:1306`, forwarding to the listener member at `:951`. See [Async system](../3_qb_io/async_system.md).
 
-The listener reports a non-empty deferred queue through `has_deferred` (`src/qb/io/async/listener.h:941`); a `VirtualCore` tick gates on it so a bare `defer()` still pumps the loop.
+The listener reports a non-empty deferred queue through `has_deferred` (`src/qb/io/async/listener.h:1033`); a `VirtualCore` tick gates on it so a bare `defer()` still pumps the loop.
 
 <a id="coro_scheduler-coroutinescheduler"></a>
 #### `coro_scheduler` / CoroutineScheduler

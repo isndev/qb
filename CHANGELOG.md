@@ -294,6 +294,38 @@ policy.
   `dev/bench` `Mono_PingPong` 76.6 → 66.4, the one-core pipeline 42.7 → 34.6 (−19 %), the 8 × 8
   pipeline 263.5 → 228.1 (−13 %), `BM_PINGPONG` 64 actors 29.4 → 26.5. Suites: WSL2 release /
   ASan+UBSan / TSan 192/192, the Windows full gate.
+- **A core polls a quiet socket on a cadence, not on every pass (qev 5.1.0 `EVRUN_NOPOLL`, Huly
+  QB-191).** A core that owns one socket ran the backend poll — `epoll_wait(0)`, wepoll's IOCP wait,
+  `kevent` — on EVERY pass, and on a quiet socket every one of those calls returned nothing: with
+  the pass at its floor an io pass cost **124 ns against 12 for a plain pass** on WSL2 g++-14
+  (the poll ~80, the rest of `ev_run` ~22), **275 against 16 on MSVC 19.51** (the IOCP wait
+  ~245). The listener polls on a cadence now: on every pass while the loop is HOT (the previous
+  pass's poll reported a ready fd — read inline off qev's new `ev_io_fed_addr()`, so a burst
+  stays at poll latency) and otherwise once per `CoreInitializer::setIoPollInterval` (1 µs by
+  default; zero = every pass, the 3.1 contract), measured on the CPU's own counter
+  (`qb::tsc_ticks`, ~5 ns, calibrated once against `mono_now()`). The passes in between run
+  `ev_run(EVRUN_NOWAIT | EVRUN_NOPOLL)`: timers, periodics and pending events exactly as before,
+  no backend call. A blocking pass — `run_once_for`, a park — always polls (there the poll IS
+  the wake), and the listener's own default stays "every pass", so a program that drives
+  `run(EVRUN_NOWAIT)` itself keeps one call, one poll; a `VirtualCore` opts its listener in at
+  thread start. Measured with the new `io-pass` probe (qb-vs-others, one pinned core, a loopback
+  TCP pair, five alternations): a pass with a quiet socket **124 → 48.5 ns** on g++ (−61 %),
+  **275 → 83** on MSVC (−70 %); the byte's wake latency on that socket p50 3.36 → 3.93 µs on g++
+  (half the interval, as designed; p99 level) and 17.7 → 18.9 on MSVC (inside the spread; the
+  same binary with the interval set to 0 reads the control on both hosts); push, the timed ask
+  and the no-watcher pass level. Tests: `tests/io/unit/async/listener-io-cadence.cpp` (the knob;
+  every pass by default; inside the interval the poll is skipped and due it runs; a delivery keeps
+  the loop hot for the next pass; timers and fed events ignore the cadence; a blocking pass
+  always polls — each mechanism disabled in turn is rejected; the fixture is a pipe on POSIX and
+  a loopback TCP pair through wepoll on Windows, where the case waits for the kernel to report
+  the byte readable before the pass it counts, since AFD does not make a loopback send readable
+  synchronously), `core-io-poll-interval.cpp` (the initializer's value reaches the core's
+  listener, zero means every pass, a millisecond is 500–2000× a microsecond in the counter's
+  ticks), qev's `test_nopoll` (unconditional floor 32 → 35) and its wepoll twin — writing which
+  found that qev's wepoll suite had never measured wepoll at all (Huly QB-194: a raw `SOCKET`
+  as fd, every case green on `fd_kill`'s `EV_ERROR`). Not done here, recorded: the `EVRUN_NOPOLL` pass still costs the loop's clock read
+  and bookkeeping (~22 ns of the 48); skipping `ev_run` altogether when no timer is due needs the
+  earliest deadline and the loop's clock readable inline, the next cut with QB-190.
 - **A request timeout is a deadline in the core's own clock, not a libev timer (Huly QB-189).**
   Every timed `ask`, `ask_stream::next()`, `ping` and `require` armed an `ev_timer`: an
   `ev_now_update` and a heap insert to arm, a heap remove to disarm, and — the part that cost —

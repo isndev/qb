@@ -3077,8 +3077,10 @@ inline_speed void
 fd_event(EV_P_ int fd, int revents) {
     ANFD *anfd = anfds + fd;
 
-    if (ecb_expect_true(!anfd->reify))
+    if (ecb_expect_true(!anfd->reify)) {
+        ++iofed; /* qev: one per ready fd the backend reported (see ev_io_fed_addr) */
         fd_event_nocheck(EV_A_ fd, revents);
+    }
 }
 
 void
@@ -4442,6 +4444,23 @@ ev_io_count(EV_P) EV_NOEXCEPT {
     return iocnt > 0 ? (unsigned int) iocnt : 0u;
 }
 
+/* The address of that count, for the embedder that reads it on every pass (the same shape as
+ * ev_active_count_addr: one load instead of a call). It is the raw counter, never negative. */
+const int *
+ev_io_count_addr(EV_P) EV_NOEXCEPT {
+    return &iocnt;
+}
+
+/* How many ready fds the backend has reported since the loop was initialised -- one per
+ * fd_event, i.e. per fd with pending events after a poll, whatever the number of watchers on
+ * it (feeds through ev_feed_fd_event are not counted: nothing was polled for them). It only
+ * ever grows, and wraps; an embedder that polls on a cadence compares it across passes to
+ * learn whether the last poll found something and stays at one-poll-per-pass while it does. */
+const unsigned int *
+ev_io_fed_addr(EV_P) EV_NOEXCEPT {
+    return &iofed;
+}
+
 ecb_noinline void
 ev_invoke_pending(EV_P) {
     pendingpri = NUMPRI;
@@ -4831,7 +4850,16 @@ ev_run(EV_P_ int flags) {
              * loop (it is started at the first signal or async watcher and never stopped) is
              * what this avoids, and an embedder whose loop went through one park keeps the
              * timers-only pass at its floor afterwards. */
-            if (ecb_expect_true(iocnt || waittime > EV_TS_CONST(0.)))
+            /* qev: EVRUN_NOPOLL -- the embedder that drives the loop from its own scheduler
+             * decides when a NON-BLOCKING pass looks at the backend at all (a quiet fd polled
+             * on every pass costs the epoll_wait / kevent / IOCP syscall, ~80-250 ns, for
+             * nothing; qb polls on a cadence and stays hot after a delivery). Timers,
+             * periodics and pending events are reified and invoked exactly as without the
+             * flag; only the poll is left out, and only when the pass would not block -- a
+             * blocking wait keeps its poll, since with no fd to wait on the poll IS the sleep
+             * and with one it is the wake. */
+            if (ecb_expect_true((iocnt || waittime > EV_TS_CONST(0.))
+                                && !((flags & EVRUN_NOPOLL) && waittime <= EV_TS_CONST(0.))))
                 backend_poll(EV_A_ waittime);
             assert((loop_done = EVBREAK_CANCEL, 1)); /* assert for side effect */
 

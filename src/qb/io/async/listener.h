@@ -268,6 +268,57 @@ private:
     const int *_active_count;  ///< `&activecnt` of `_loop`
     const int *_pending_count; ///< `pendingcnt[EV_NUMPRI]` of `_loop`
 
+    // ---- The io cadence (Huly QB-191) ------------------------------------------------
+    // A quiet fd polled on every pass costs the backend's syscall for nothing -- `epoll_wait(0)`
+    // ~80 ns on WSL2, wepoll's `GetQueuedCompletionStatusEx` ~250 ns -- on every pass of every
+    // core that owns a socket: measured, an io pass was 101 ns against 22 for a timers-only one
+    // once qev's pass reached its floor (QB-188), and every one of those passes found nothing.
+    // The poll runs on a cadence when an embedder asks for one. It runs on every pass while
+    // the loop is HOT -- the previous non-blocking pass delivered something, so a burst stays
+    // at poll latency -- and otherwise once per `io_poll_interval` (a `VirtualCore` sets 1 µs
+    // by default, `CoreInitializer::setIoPollInterval`; the listener's own default is zero =
+    // every pass, the 3.1 contract for a program driving `run(EVRUN_NOWAIT)` itself), measured
+    // on the CPU's own counter
+    // (`qb::tsc_ticks`, ~5-7 ns, calibrated once against `mono_now()` at construction). A pass
+    // in between runs `ev_run` with `EVRUN_NOPOLL`, which reifies timers and periodics and
+    // invokes pending events exactly as before and only leaves the backend call out. What a
+    // quiet socket's owner pays: at most one interval plus a pass before its byte is seen;
+    // what every other pass saves: the syscall. A blocking pass (`run_once_for`, `run(0)`)
+    // always polls -- there the poll is the wake.
+    const int          *_io_count;              ///< `&iocnt` of `_loop`: the fds a poll would look at
+    const unsigned int *_io_fed;                ///< `&iofed` of `_loop`: ready fds the backend reported so far
+    unsigned int        _io_fed_seen    = 0;    ///< `*_io_fed` after the last non-blocking pass; a difference = hot
+    std::uint64_t       _last_poll_tsc  = 0;    ///< `qb::tsc_ticks()` at the last backend poll of a non-blocking pass
+    std::uint64_t       _poll_every_tsc = 0;    ///< the interval in ticks; 0 = poll on every pass
+    double              _tsc_per_ns     = 0.;   ///< the calibration; 0 = no usable counter, poll every pass
+    bool                _io_hot         = true; ///< the previous non-blocking pass's poll reported a ready fd: poll again at once
+
+    /// Whether this non-blocking pass polls the backend (see the cadence above). Called only
+    /// when the loop has an fd to look at and the previous pass delivered nothing.
+    [[nodiscard]] bool
+    _io_poll_due() noexcept {
+        const std::uint64_t t = qb::tsc_ticks();
+        if (t - _last_poll_tsc < _poll_every_tsc)
+            return false;
+        _last_poll_tsc = t;
+        return true;
+    }
+
+    /// Calibrate `tsc_ticks()` against `mono_now()` over ~200 µs, once per listener (a fixed
+    /// tick rate is assumed: an invariant TSC on x86, the architected counter on arm64; the
+    /// portable fallback of `tsc_ticks()` IS a nanosecond clock and calibrates to 1).
+    void
+    _calibrate_tsc() noexcept {
+        const auto          m0 = qb::mono_now();
+        const std::uint64_t t0 = qb::tsc_ticks();
+        while (qb::mono_now() - m0 < std::chrono::microseconds{200}) {
+        }
+        const auto          m1 = qb::mono_now();
+        const std::uint64_t t1 = qb::tsc_ticks();
+        const auto          ns = std::chrono::duration_cast<std::chrono::nanoseconds>(m1 - m0).count();
+        _tsc_per_ns            = (ns > 0 && t1 > t0) ? static_cast<double>(t1 - t0) / static_cast<double>(ns) : 0.;
+    }
+
     /// The loop's own liveness rule, read inline: a referenced active watcher, or a pending event
     /// at any priority. What `ev_run` would find something to do for — and nothing else.
     [[nodiscard]] bool
@@ -540,9 +591,12 @@ public:
         : _loop(_resolve_backend_flags())
         , _active_count(_loop.active_count_addr())
         , _pending_count(_loop.pending_count_addr())
+        , _io_count(_loop.io_count_addr())
+        , _io_fed(_loop.io_fed_addr())
         , _defer_wake(_loop)
         , _wake(_loop)
         , _park_cap(_loop) {
+        _calibrate_tsc(); // the interval itself stays 0 (poll every pass) until an embedder sets one
         _defer_wake.set<listener, &listener::_on_defer_wake>(this);
         // Lowest priority: libev invokes pendings highest-priority-first, so the
         // drain lands after every other watcher pending in the same iteration.
@@ -812,8 +866,24 @@ public:
         // The two counts are the loop's own, so a raw `ev_timer_start` from a
         // coroutine awaiter, a fed `_defer_wake` event and a `loop.unref()`-ed
         // watcher are all judged exactly as `ev_run` itself judges them.
-        if (_loop_has_work())
-            _loop.run(flag);
+        if (_loop_has_work()) {
+            int f = flag;
+            // The io cadence (see `_io_count`): a non-blocking pass over a loop with an fd polls
+            // only when hot or due; `EVRUN_NOPOLL` keeps everything else of the pass. A hot pass
+            // stamps its poll too, so the interval counts from the LAST poll, whichever rule ran it.
+            if ((flag & EVRUN_NOWAIT) && *_io_count > 0 && _poll_every_tsc != 0) {
+                if (_io_hot)
+                    _last_poll_tsc = qb::tsc_ticks();
+                else if (!_io_poll_due())
+                    f |= EVRUN_NOPOLL;
+            }
+            _loop.run(f);
+            // The poll reported a ready fd: stay at one poll per pass for the next one (a burst
+            // is served at poll latency); a poll that found nothing, or a pass that skipped it,
+            // leaves the loop cold. Read off the loop's own counter, so a raw watcher counts.
+            _io_hot      = *_io_fed != _io_fed_seen;
+            _io_fed_seen = *_io_fed;
+        }
 
         // Deferred callbacks: continuations of the dispatch that just unwound.
         // Drained before coroutines so a `defer()` that wakes a coroutine is
@@ -908,6 +978,28 @@ public:
     [[nodiscard]] inline std::size_t
     nb_invoked_event() const {
         return _nb_invoked_events;
+    }
+
+    /**
+     * @brief How often a NON-BLOCKING `run()` over a loop that owns an fd polls the backend
+     *        while nothing was delivered on the previous pass (see the io cadence). Owner
+     *        thread only.
+     * @param interval Zero or less polls on every pass -- the listener's own default, so a
+     *        program that drives `run(EVRUN_NOWAIT)` itself keeps the 3.1 contract (one call,
+     *        one poll); a `VirtualCore` sets its core's interval from
+     *        `CoreInitializer::setIoPollInterval` (1 µs by default). Takes effect on the next
+     *        `run()`.
+     */
+    inline void
+    set_io_poll_interval(qb::duration const interval) noexcept {
+        const auto ns   = std::chrono::duration_cast<std::chrono::nanoseconds>(interval).count();
+        _poll_every_tsc = (ns > 0 && _tsc_per_ns > 0.) ? static_cast<std::uint64_t>(_tsc_per_ns * static_cast<double>(ns)) : 0;
+    }
+
+    /// The interval `set_io_poll_interval()` holds, in the CPU counter's ticks (0 = every pass).
+    [[nodiscard]] inline std::uint64_t
+    io_poll_interval_ticks() const noexcept {
+        return _poll_every_tsc;
     }
 
     /**
