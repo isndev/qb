@@ -733,7 +733,12 @@ endif ()
 if (QB_EV_BUILD_BENCHMARKS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/bench-backends.c")
     add_executable(qev-bench-backends bench/bench-backends.c)
     target_link_libraries(qev-bench-backends PRIVATE qev)
-
+endif ()
+# What one non-blocking pass costs by shape -- the instrument of the qev performance programme
+# (qb 3.2.0 milestone): an embedder pays it on every pass of a core that owns a timer or a socket.
+if (QB_EV_BUILD_BENCHMARKS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/bench-pass.c")
+    add_executable(qev-bench-pass bench/bench-pass.c)
+    target_link_libraries(qev-bench-pass PRIVATE qev)
 endif ()
 
 # ----------------------------------------------------------------------------

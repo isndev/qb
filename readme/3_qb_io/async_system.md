@@ -57,7 +57,7 @@ The drain is also re-entrancy-guarded by an RAII flag, and it contains exception
 
 | Context | What drives the loop |
 |---|---|
-| Under `qb-core` | `qb::Main` starts one `VirtualCore` thread per core, and each calls `listener::current.run(EVRUN_NOWAIT)` once per pass, and only when there is work: the gate is `listener::has_work()` — a referenced active watcher, a pending event, an outstanding `defer()` or a ready coroutine — so a pure-actor core with no live qb-io object skips the pass entirely, and still pumps when a bare `defer()` is outstanding (`src/qb/core/VirtualCore.cpp:792-795`; `src/qb/io/async/listener.h:958-961`). |
+| Under `qb-core` | `qb::Main` starts one `VirtualCore` thread per core, and each calls `listener::current.run(EVRUN_NOWAIT)` once per pass, and only when there is work: the gate is `listener::has_work()` — a referenced active watcher, a pending event, an outstanding `defer()`, a ready coroutine or a completed spawned frame still to free — so a pure-actor core with no live qb-io object skips the pass entirely, and still pumps when a bare `defer()` is outstanding (`src/qb/core/VirtualCore.cpp:792-795`; `src/qb/io/async/listener.h:958-961`). |
 | Standalone | You call `run()`, `run_once()` or `run_until()` yourself. |
 
 Every timed API on this page takes a `qb::duration` (a `std::chrono::nanoseconds` span) or any `std::chrono::duration`, which converts implicitly. There is no `double`-seconds overload anywhere on the public surface.
@@ -86,7 +86,7 @@ So while `run_sync` is running, **the loop keeps turning**: sockets are serviced
 
 ### The guard, and what it actually checks
 
-Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:288`, `:228`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1163-1175`; `src/qb/io/async/coroutine/scheduler.h:666-675`, `:737-740`). When it fires it asserts in debug and throws `std::logic_error`.
+Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:288`, `:228`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1163-1175`; `src/qb/io/async/coroutine/scheduler.h:666-675`, `:751-754`). When it fires it asserts in debug and throws `std::logic_error`.
 
 That covers exactly one case, and covers it well:
 

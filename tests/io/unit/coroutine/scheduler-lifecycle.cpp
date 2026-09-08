@@ -1244,26 +1244,69 @@ TEST_F(CoroutineSchedulerTests, CancelSpawnedScrubsDeferredDestroyEntry) {
 }
 
 /**
- * @test destroy_all_suspended() scrubs an owned root out of frames_to_destroy_
- * @brief The owned-root cascade's deferred-destroy scrub (scheduler.h:676-681) — an owned
- *        root that already reached final_suspend is BOTH in owned_frames_ and
- *        frames_to_destroy_. The cascade must erase it from frames_to_destroy_ (so the
- *        later deferred drain can never re-free it). At final_suspend the handle is `done()`,
- *        so the cascade's `!handle.done()` guard (line 683) correctly declines to destroy it
- *        — the frame is now orphaned of all scheduler bookkeeping and we reclaim it ourselves
- *        (a scheduler-owned spawn_tracked frame, no task<T> owner — the single legitimate
- *        manual destroy site).
+ * @test destroy_all_suspended() frees an owned root it scrubs out of frames_to_destroy_
+ * @brief The owned-root cascade's deferred-destroy scrub — an owned root that already reached
+ *        final_suspend is BOTH in owned_frames_ and frames_to_destroy_. The cascade erases it
+ *        from frames_to_destroy_ (so the deferred drain can never re-free it) and, because the
+ *        scheduler OWNS that frame and nothing else will ever free it, destroys it right there:
+ *        a `done()` root is exactly what a completed spawned coroutine looks like, and until
+ *        3.2 the cascade's `!handle.done()` guard declined it — a frame leaked per spawned
+ *        coroutine that completed between the last run_ready() drain and the teardown. That
+ *        window was empty while a spawned coroutine could only complete inside run_ready();
+ *        it is not any more: an `ask` reply resumes its frame inline from the handler that
+ *        routed it, so a coroutine reaches final_suspend inside a core pass, and its actor can
+ *        die in the same pass (Huly QB-185; the ask round-trip suite measured the leak under
+ *        ASan first).
  *
- * NOTE on active_count(): we resume the frame manually (h.resume()) instead of via run_ready()
+ * NOTE on the ready queue: we resume the frame manually (h.resume()) instead of via run_ready()
  * to land it in frames_to_destroy_ WITHOUT draining it (run_ready() would free it on the same
- * tick). That manual path deliberately bypasses the ready-queue pop, so the frame is still
- * sitting in the scheduler's ready queue (done(), harmless) when destroy_all_suspended() runs.
- * destroy_all_suspended() scrubs owned_frames_ + frames_to_destroy_ + suspended_coroutines_ but
- * (by contract) NOT the ready queue — in real flows run_ready() already emptied it. So
- * active_count() reflects that one stale ready entry (1, not 0); a later run_ready() would pop it,
- * see done(), and neither resume nor re-destroy it. We assert the REAL contract: the scrub left
- * frames_to_destroy_ empty so our manual destroy below is the sole, safe destroyer (no double-free).
+ * tick). That manual path bypasses the ready-queue pop, so a stale (done) ready entry for the
+ * frame survives into destroy_all_suspended(), which must scrub it too: a later run_ready()
+ * would otherwise call done() on freed memory. The contract pinned here is the whole of it —
+ * after the cascade the frame is freed, no scheduler container names it, and a run_ready()
+ * finds nothing to do.
  */
+/**
+ * @test has_work() sees a deferred frame and run_ready() frees it without resuming anything
+ * @brief A spawned coroutine that completes OUTSIDE run_ready() — an `ask` reply resumes it
+ *        inline from the handler that routed the reply (QB-185) — leaves its frame in
+ *        frames_to_destroy_ with nothing in the ready queue. `has_ready()` is false, so a
+ *        listener gating its `run()` on it would never drain the list and the frame would
+ *        wait for the teardown; `has_work()` is what `listener::has_work()` asks instead,
+ *        and it is true until a `run_ready()` turn — which resumes nothing — has freed it.
+ */
+TEST_F(CoroutineSchedulerTests, HasWorkSeesADeferredFrameAndRunReadyFreesIt) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+
+    CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+    ScopedCurrentScheduler guard{standalone};
+    EXPECT_FALSE(standalone.has_work()) << "a fresh scheduler has nothing to do";
+
+    auto h = standalone.spawn_tracked(trivial_completion_coro());
+    ASSERT_TRUE(h);
+    EXPECT_TRUE(standalone.has_ready() && standalone.has_work()) << "a spawned frame is ready, hence work";
+    EXPECT_EQ(standalone.run_ready(), 1u); // pops it, resumes it: it completes and defers its own destruction...
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "...and the same turn's drain frees it";
+    EXPECT_FALSE(standalone.has_work());
+
+    // The QB-185 shape: completion by a manual resume, i.e. outside any run_ready() turn.
+    h = standalone.spawn_tracked(trivial_completion_coro());
+    ASSERT_TRUE(h);
+    EXPECT_EQ(standalone.run_ready(0), 1u) << "bound of 0 means unbounded; the first turn only starts it";
+    // trivial_completion_coro completes on its first resume, so the frame is already freed here;
+    // land one in frames_to_destroy_ by hand instead:
+    h = standalone.spawn_tracked(trivial_completion_coro());
+    ASSERT_TRUE(h);
+    h.resume(); // -> final_suspend, deferred; still (stale) in the ready queue, not popped
+    ASSERT_TRUE(h.done());
+    EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline) << "deferred, not freed";
+    EXPECT_TRUE(standalone.has_work()) << "a frame to free is work even with nothing to resume";
+    EXPECT_EQ(standalone.run_ready(), 0u) << "the stale done() entry is popped and skipped, nothing is resumed";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "the turn's drain freed the deferred frame";
+    EXPECT_FALSE(standalone.has_work());
+    EXPECT_EQ(standalone.active_count(), 0u);
+}
+
 TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsOwnedRootFromDeferredDestroy) {
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
 
@@ -1274,28 +1317,18 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsOwnedRootFromDeferredDe
     ASSERT_TRUE(h);
     h.resume(); // -> final_suspend: owned AND in frames_to_destroy_ (NOT drained — manual resume)
     ASSERT_TRUE(h.done());
+    EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline) << "the completed frame is still allocated (deferred)";
 
-    // The cascade snapshots owned_frames_, scrubs this addr out of frames_to_destroy_
-    // (lines 676-681), then declines to destroy it because it is already done().
+    // The cascade snapshots owned_frames_, scrubs this addr out of frames_to_destroy_ AND out of
+    // the ready queue, then destroys it: the scheduler owns it and nobody else can.
     standalone.destroy_all_suspended();
-    // The owned-root cascade does not touch the ready queue, so the stale (done) ready entry left
-    // by the manual resume survives — active_count() counts it. suspended_coroutines_ is empty.
-    EXPECT_EQ(standalone.active_count(), 1u) << "manual resume left a done() entry in the ready queue; destroy_all_suspended() "
-                                                "does not scrub it (only owned/suspended/deferred bookkeeping)";
-
-    // Drain the stale ready entry BEFORE freeing the frame (the frame is still alive here). The
-    // deferred-destroy scrub emptied frames_to_destroy_, so run_ready() must NOT free this frame:
-    // it pops the entry, sees done(), and runs nothing — proving the scrub prevented a double-free.
-    // (Draining first also avoids a later run_ready() calling done() on freed memory.)
-    EXPECT_EQ(standalone.run_ready(), 0u) << "stale done() ready entry must not be resumed";
-    EXPECT_EQ(standalone.active_count(), 0u) << "ready queue drained after run_ready()";
-
-    // The frame is now removed from EVERY scheduler container but NOT freed (done-guard + the
-    // run_ready() drain above declined to free it). It is a scheduler-owned (spawn_tracked) frame
-    // with no task<T> owner, so we destroy it exactly once here — nothing else will (no double-free).
-    EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline);
-    h.destroy();
     EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "owned-root scrub path leaked the frame";
+    EXPECT_EQ(standalone.active_count(), 0u) << "the stale done() ready entry must go with the frame it names";
+
+    // Nothing is left for a drain to touch — in particular no done() call on freed memory.
+    EXPECT_EQ(standalone.run_ready(), 0u) << "nothing ready after the cascade";
+    EXPECT_EQ(standalone.active_count(), 0u);
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
 }
 
 /**

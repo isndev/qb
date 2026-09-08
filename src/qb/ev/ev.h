@@ -742,6 +742,7 @@ ev_is_default_loop (void) EV_NOEXCEPT
      * per priority, whose sum is ev_pending_count. Owner thread only, like any loop read. */
     EV_API_DECL const int *ev_active_count_addr(EV_P) EV_NOEXCEPT;
     EV_API_DECL const int *ev_pending_count_addr(EV_P) EV_NOEXCEPT; /* EV_NUMPRI entries */
+    EV_API_DECL unsigned int ev_io_count(EV_P) EV_NOEXCEPT; /* active ev_io watchers; 0 = ev_run skips a non-blocking poll */
 
     /*
      * stop/start the timer handling.

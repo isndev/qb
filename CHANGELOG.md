@@ -294,6 +294,60 @@ policy.
   `dev/bench` `Mono_PingPong` 76.6 → 66.4, the one-core pipeline 42.7 → 34.6 (−19 %), the 8 × 8
   pipeline 263.5 → 228.1 (−13 %), `BM_PINGPONG` 64 actors 29.4 → 26.5. Suites: WSL2 release /
   ASan+UBSan / TSan 192/192, the Windows full gate.
+- **A core with a timer no longer pays libev a syscall per pass — two defaults libev kept from
+  2010, fixed in qev (5.1.0, Huly QB-187).** Any core that owns one active watcher — a request
+  timeout, a `sleep`, a retry, a socket — runs `ev_run(EVRUN_NOWAIT)` on every pass, busy or
+  idle, and that call cost **297 ns** whatever the loop held (`qev/bench/bench-pass.c`, i9-12900K
+  / WSL2 g++-14): libev read its clocks through the raw `clock_gettime` syscall (~95 ns each,
+  two per pass, one more per timer arm — a workaround for glibc < 2.17's librt that the config
+  probe applied everywhere), and polled the backend even over a loop with no fd. qev now takes
+  the syscall only where libc has no `clock_gettime`, counts its active `ev_io` watchers
+  (`ev_io_count()`) and skips a poll that would not block when there is no fd. A non-blocking
+  pass over a timers-only loop is **50 ns** (−83 %), over a quiet socket 131 (−56 %),
+  `ev_now_update` 17.5 (−82 %). On qb's path (`tools/probes/ask-cost.cpp` in qb-vs-others): a
+  `co_await qb::ask<E>()` **with a 500 ms timeout** — the documented idiom, which the Savina
+  grids never exercised because `bank-transaction` asks with no timeout — went **798 → 172 ns**
+  per round trip on g++ and **1108 → 124 ns** on MSVC 19.51 (there the whole cost was wepoll's
+  poll per pass), a one-chunk `ask_stream` with a timeout 860 → 238 / 973 → 330. Same-core and
+  cross-core cells without a watcher do not move (they never reach the loop). The remaining
+  libev cost of a timed request — one clock read and the pass bookkeeping, ~40 ns per pass —
+  and the request path without a libev timer at all are the next steps of the qev programme
+  (`dev/plans/roadmaps/QEV_PERFORMANCE_ROADMAP.md`, Huly QB-186).
+- **An `ask` reply resumes the waiting coroutine on the spot (Huly QB-185).**
+  `ask_awaiter::deliver_thunk` — reached from `resolve_ask(e)` in the asker's own handler, on its
+  core, in the pass that routed the reply — used to hand the parked frame to the coroutine
+  scheduler (`schedule_via_current`: a hash-set insert for the dedup, a ready-queue push, then in
+  the next pass's `run()` the pop, the hash-set erase and the resume), while the `task<E>` the
+  ask returns already completed by symmetric transfer. The thunk now resumes the frame itself:
+  it runs to its next suspension and control comes back into the thunk, and the awaiter it
+  lives in may be gone by then (the caller's `co_await` destroys the `task<E>` once it has the
+  value), which the code states and honours — nothing of the awaiter or the slot is read after
+  the resume. The cancel and timeout paths keep the queue: they run from a token callback or a
+  timer, not from the handler. The per-type registration flag is `constinit` (a plain TLS load
+  instead of the init wrapper's call on every ask). Measured with the new `ask-cost` probe (one
+  core, a coroutine looping `co_await qb::ask<E>()` against a `reply()`ing responder, beside a
+  bare push/reply loop), five interleaved launches, i9-12900K: WSL2 g++-14 ask round trip
+  **54.0 → 46.7 ns** (−14 %) — the ask machinery over the two passes it cannot avoid 29.7 → 22.4
+  (−25 %) — the push round trip 24.4 → 24.3 (untouched); MSVC 19.51 **81.7 → 72.0** (−12 %);
+  `savina/bank-transaction`, the one grid cell built on `ask`, WSL2 2c-spin **92.4 → 84.0 ns**
+  per transfer (−9 %), 2c-park 93.2 → 88.3, 1c −2 / −3 %; MSVC 2c-park 154.7 → 147.4, 1c
+  260.8 → 250.1 (ten-launch censuses). Measured and dropped in the same pass: draining the
+  scheduler's ready coroutines right after the receive, in the same pass (for `ask_stream`'s
+  `next()`, `ping`, `require`, `ask_all`) — a null result (a one-chunk stream 107 → 105.7 ns)
+  that cost ~1 ns on every pass, because a deferred wake already ran in the next pass's io phase
+  BEFORE that pass's receive, so its push was handled in that same pass and the queue, not a
+  pass, was the price. **What the sanitizer found, and the test it left**: a spawned coroutine
+  that completes OUTSIDE `run_ready()` — now the normal shape when its last `ask` is answered —
+  parks its frame in the scheduler's deferred-destroy list, and `destroy_all_suspended()`
+  scrubbed such a root from that list "so the drain never frees it twice" and then skipped it
+  for being `done()`: 192 + 72 bytes leaked per actor whose coroutine finished in the pass it
+  died in (`ask-roundtrip` under ASan, 3 tests). The cascade frees a scrubbed root now and
+  scrubs its stale ready entry with it, and `listener::has_work()` asks the scheduler for
+  `has_work()` — a frame to free is work — so such a frame is freed on the next pass rather than
+  at teardown. Tests: `ReplyResumesTheFrameInsideTheRoutingHandler` (the continuation has run
+  by the time `resolve_ask()` returns), `LastReplyCompletesTheFrameAndKillsTheActorInTheSamePass`
+  (the leak's shape, under leak detection), `HasWorkSeesADeferredFrameAndRunReadyFreesIt`, and
+  `DestroyAllSuspendedScrubsOwnedRootFromDeferredDestroy` re-pinned to the new contract.
 - **A cross-core hop no longer pays a miss on the producer's own index line: the SPSC ring's
   working indices live on private lines.** `lockfree::spsc::internal::ringbuffer` kept
   `write_index_` — the index the consumer polls — and `cached_read_index_` — the producer's

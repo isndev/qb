@@ -957,7 +957,7 @@ public:
      */
     [[nodiscard]] inline bool
     has_work() const noexcept {
-        return _loop_has_work() || !_deferred.empty() || (_coro_scheduler && _coro_scheduler->has_ready());
+        return _loop_has_work() || !_deferred.empty() || (_coro_scheduler && _coro_scheduler->has_work());
     }
 
     /**

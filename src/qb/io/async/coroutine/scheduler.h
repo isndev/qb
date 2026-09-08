@@ -729,6 +729,20 @@ public:
     }
 
     /**
+     * @brief Anything a `run_ready()` turn would do: a coroutine to resume, or a completed
+     *        spawned frame to free.
+     * @details What `listener::has_work()` asks. The deferred-destroy list only drains at the
+     *          end of a `run_ready()` turn; a frame that reaches final_suspend outside one -- a
+     *          spawned coroutine completed by an `ask` reply resumed inline from the handler that
+     *          routed it -- would otherwise wait for the next unrelated coroutine activity, or
+     *          for the teardown, to be freed.
+     */
+    [[nodiscard]] bool
+    has_work() const {
+        return !ready_queue_.empty() || !frames_to_destroy_.empty();
+    }
+
+    /**
      * @brief Check whether this scheduler is currently draining ready coroutines.
      *
      * Used by sync bridge helpers (`run_sync`, `run_for`) to reject nested event-loop
@@ -872,15 +886,31 @@ public:
         owned_frames_.clear();
         for (void *addr : owned_roots) {
             // A root at final_suspend may also sit in frames_to_destroy_; scrub it
-            // there first so the deferred-destroy drain never frees it a second time.
+            // there first so the deferred-destroy drain never frees it a second time --
+            // and then FREE IT HERE. Such a root is `done()`, so the guard below would
+            // skip it, and with it gone from the deferred list nothing else would: a
+            // 192-byte frame leaked per spawned coroutine that completed between the last
+            // run_ready() drain and this teardown. That window was empty as long as a
+            // spawned coroutine could only complete inside run_ready(); it is not empty any
+            // more -- an `ask` reply resumes its frame inline from the handler that routed
+            // it (ask_awaiter::deliver_thunk), so a coroutine can reach final_suspend inside a
+            // core pass, and the actor it belongs to can die in that same pass.
+            bool deferred = false;
             for (auto it = frames_to_destroy_.begin(); it != frames_to_destroy_.end();) {
-                if (*it && it->address() == addr)
-                    it = frames_to_destroy_.erase(it);
-                else
+                if (*it && it->address() == addr) {
+                    it       = frames_to_destroy_.erase(it);
+                    deferred = true;
+                } else {
                     ++it;
+                }
             }
             auto handle = std::coroutine_handle<>::from_address(addr);
-            if (handle && !handle.done()) {
+            if (handle && (deferred || !handle.done())) {
+                // A stale ready entry (a root resumed by hand rather than by run_ready(), so
+                // never popped) must not outlive the frame it names: run_ready() would call
+                // done() on freed memory.
+                if (in_flight_.erase(addr) != 0)
+                    ready_queue_.erase_if([addr](const ready_item &it) { return it.handle && it.handle.address() == addr; });
                 QB_SCHED_TRACE("destroy_all_suspended destroying owned root handle=%p", (void *) addr);
                 handle.destroy();
             }

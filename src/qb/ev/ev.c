@@ -35,7 +35,14 @@
 #endif
 #endif
 
-#if HAVE_CLOCK_SYSCALL
+/* qev: config.h says the raw clock_gettime syscall compiles -- it always does on Linux -- and
+ * upstream took that as "use it", to spare glibc < 2.17 a dependency on librt. Wherever libc has
+ * a clock_gettime of its own (HAVE_CLOCK_GETTIME, i.e. every glibc since 2012, every musl,
+ * every BSD), libc's is the vDSO fast path, ~15 ns, where the trap costs ~200 ns and more under
+ * the post-2018 mitigations -- and ev_run reads the clock on every pass, ev_timer_start on every
+ * arm. Measured in qb 3.2's core: 52 % of a request/reply with a timeout was this syscall. The
+ * syscall is kept exactly where it pays: a libc with no clock_gettime to call. */
+#if HAVE_CLOCK_SYSCALL && !HAVE_CLOCK_GETTIME
 #ifndef EV_USE_CLOCK_SYSCALL
 #define EV_USE_CLOCK_SYSCALL 1
 #ifndef EV_USE_REALTIME
@@ -4396,6 +4403,15 @@ ev_pending_count_addr(EV_P) EV_NOEXCEPT {
     return pendingcnt;
 }
 
+/* The number of active ev_io watchers -- the loop's own count of what its backend poll has to
+ * look at, and the reason ev_run skips that poll when it is zero and the wait would not block
+ * (see the EVRUN_NOWAIT note at the poll). Internal watchers on fds count too: the evpipe
+ * behind signals and async watchers, the timerfd. */
+unsigned int
+ev_io_count(EV_P) EV_NOEXCEPT {
+    return iocnt > 0 ? (unsigned int) iocnt : 0u;
+}
+
 ecb_noinline void
 ev_invoke_pending(EV_P) {
     pendingpri = NUMPRI;
@@ -4755,7 +4771,14 @@ ev_run(EV_P_ int flags) {
             ++loop_count;
 #endif
             assert((loop_done = EVBREAK_RECURSE, 1)); /* assert for side effect */
-            backend_poll(EV_A_ waittime);
+            /* qev: a loop with no fd watcher has nothing the backend could report, so a poll
+             * that would not block anyway is skipped -- the EVRUN_NOWAIT pass of an embedder
+             * whose loop holds only timers (a request timeout, a retry, a sleep) otherwise
+             * costs a bare epoll_wait / kevent / wepoll syscall on every pass, ~300-700 ns,
+             * for the life of the timer. A blocking wait is kept: with no fd it IS the sleep.
+             * The evpipe (signals, async) and the timerfd are ev_io watchers, so they count. */
+            if (ecb_expect_true(iocnt || waittime > EV_TS_CONST(0.)))
+                backend_poll(EV_A_ waittime);
             assert((loop_done = EVBREAK_CANCEL, 1)); /* assert for side effect */
 
             pipe_write_wanted = 0; /* just an optimisation, no fence needed */
@@ -4961,6 +4984,7 @@ ev_io_start(EV_P_ ev_io *w) EV_NOEXCEPT {
     EV_FREQUENT_CHECK;
 
     ev_start(EV_A_(W) w, 1);
+    ++iocnt;
     array_needsize(ANFD, anfds, anfdmax, fd + 1, array_needsize_zerofill);
     wlist_add(&anfds[fd].head, (WL) w);
 
@@ -4993,6 +5017,7 @@ ev_io_stop(EV_P_ ev_io *w) EV_NOEXCEPT {
 
     wlist_del(&anfds[w->fd].head, (WL) w);
     ev_stop(EV_A_(W) w);
+    --iocnt;
 
     fd_change(EV_A_ w->fd, EV_ANFD_REIFY);
 

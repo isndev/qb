@@ -307,12 +307,12 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 `qb::ScopedCoroContext` is a superset of `qb::CoroContext`. On top of `push`/`push_to`/`broadcast`/
 `id`/`time` it adds the cancellation-aware surface: `sleep(qb::duration)`, `cancellation_point()`,
 `until_cancelled()`, `cancellable(task<T>&&)`, `child_token()`, `token()`, `cancelled()`.
-_(Actor.h:1838-1917)_
+_(Actor.h:1859-1938)_
 
 `Actor::context()` returns that same `ScopedCoroContext` **wherever you hold the actor** — most
 importantly inside `onInit()`, which is itself a coroutine (`task<bool>`) and gets no `ctx`
 parameter. It is also what you pass to the free functions of the patterns library:
-`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1389-1405, :1926-1929)_
+`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1389-1405, :1947-1950)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
 receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not** cancelled when the
@@ -416,7 +416,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating,
   after a failed init, or once it died — never a dangling pointer. Send to `handle.id()` any time; gate
   direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
-  _(Actor.h:1246-1250, :1270, :1994-1996)_
+  _(Actor.h:1246-1250, :1270, :2015-2017)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
@@ -479,7 +479,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; ev++.h:716)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; ev++.h:721)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:254-271)_
@@ -671,7 +671,7 @@ Coroutines (C++20) — `spawn` is the default; `spawn_detached` is the low-level
 *   `[T<Func>] void spawn(Func&& func) const` — **preferred**. Runs `func(qb::ScopedCoroContext)` bound to the actor's per-actor cancellation scope: killing/destroying the actor cancels the scope, so a coroutine parked on `ctx.sleep` / `ctx.cancellation_point` / `ctx.until_cancelled` / `ctx.cancellable` / any patterns-library helper wakes on the next loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly (RAII + `catch` run). Must be called from the actor's own VirtualCore thread. Pass the lambda **without** trailing `()`. An exception OTHER than `cancelled_error` escaping the body is caught by the wrapper and REPORTED on `std::cerr` (naming the actor, the API and `what()`) — it is not propagated anywhere, because a spawned coroutine has no caller; catch it in the body and answer through an event. _(`spawn` declared `Actor.h:1352-1387`, body `VirtualCore.h:1384`)_
 *   `[T<Func>] void spawn_detached(Func&& func) const` — low level. Runs `func(qb::CoroContext)` in an isolated context that is **not** cancelled on kill: it runs to completion, orphaned. Use only for fire-and-forget work that must intentionally outlive the actor. It cannot drive `qb::ask` or any patterns helper (they require a `ScopedCoroContext`; a `CoroContext` is a compile error). _(`spawn_detached` declared `Actor.h:1292-1350`, body `VirtualCore.h:1370`)_
 *   Both: MUST NOT touch actor members after any `co_await` (the actor may be destroyed mid-suspension, and the scope does **not** legalise member access — it only bounds how long the coroutine can stay parked). Capture everything by value before the first `co_await`; reply via `ctx.push<Event>()` / `ctx.push_to<Event>(dest, …)`.
-*   `[[nodiscard]] ScopedCoroContext context() const` — the same cancellation-aware context, available wherever you hold the actor and **not** only inside a `spawn()` body: use it inside `onInit()` (itself a `task<bool>` with no `ctx` parameter) and as the first argument to every patterns free function (`qb::ask(context(), …)`). Lazily allocates the scope. _(`Actor.h:1389-1405`, `:1926-1929`)_
+*   `[[nodiscard]] ScopedCoroContext context() const` — the same cancellation-aware context, available wherever you hold the actor and **not** only inside a `spawn()` body: use it inside `onInit()` (itself a `task<bool>` with no `ctx` parameter) and as the first argument to every patterns free function (`qb::ask(context(), …)`). Lazily allocates the scope. _(`Actor.h:1389-1405`, `:1947-1950`)_
 *   `[T<E>] bool resolve_ask(E& e) const noexcept` — call from `on(E&)`; returns `true` if `e` matched a pending `qb::ask` of this actor and was delivered to the waiting coroutine, `false` if unsolicited.
 *   `[[nodiscard]] bool resolve_require(RequireEvent& e) const noexcept` — the discovery counterpart of `resolve_ask`. The auto-registered `void on(RequireEvent&) noexcept` already calls it, so `co_await qb::ping` / `qb::require` need no boilerplate; an override of that handler must call it first or those coroutines never resolve. Returns `false` for a legacy `correlation_id == 0` reply or one that is not ours.
 *   `[[nodiscard]] bool has_active_coroutines() const`, `[[nodiscard]] std::size_t active_coroutine_count() const`, `[[nodiscard]] bool has_coro_scope() const noexcept` (true once `spawn()` **or** `context()` lazily allocated the scope; `spawn_detached()` never does — `VirtualCore.h:1370-1371` vs `:1384-1386`).
@@ -686,14 +686,14 @@ Returned by `Actor::to()`. Copyable, not default-constructible.
 *   use: `to(dst).push<A>().push<B>();`
 
 #### `class qb::CoroContext`
-Safe restricted context handed to `spawn_detached` coroutines (captures the actor's `ActorId` by value, survives destruction — events to a dead actor are dropped, never delivered into freed memory). The `CoroContext` class is at _(`Actor.h:1547-1556`)_; the alias `qb::coro_context` at _(`Actor.h:2414`)_.
+Safe restricted context handed to `spawn_detached` coroutines (captures the actor's `ActorId` by value, survives destruction — events to a dead actor are dropped, never delivered into freed memory). The `CoroContext` class is at _(`Actor.h:1547-1556`)_; the alias `qb::coro_context` at _(`Actor.h:2435`)_.
 *   `[T<_Event,Args...>] void push(Args&&... args)` — push to self.
 *   `[T<_Event,Args...>] void push_to(ActorId dest, Args&&... args)` — push to a given dest.
 *   `[T<_Event,Args...>] void broadcast(Args&&... args)` — broadcast to all actors on all cores (backs `qb::require`).
 *   `[[nodiscard]] ActorId id() const noexcept`, `[[nodiscard]] uint64_t time() const noexcept` (epoch nanoseconds).
 
 #### `class qb::ScopedCoroContext : public CoroContext`
-Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb::scoped_coro_context`. A **superset** of `CoroContext` that also carries the actor's cancellation token, so everything below is cancelled when the actor is killed/destroyed. This is the type every `qb::` patterns free function takes. The `ScopedCoroContext` class is at _(`Actor.h:1838-1917`)_; the alias `qb::scoped_coro_context` at _(`Actor.h:2422`)_.
+Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb::scoped_coro_context`. A **superset** of `CoroContext` that also carries the actor's cancellation token, so everything below is cancelled when the actor is killed/destroyed. This is the type every `qb::` patterns free function takes. The `ScopedCoroContext` class is at _(`Actor.h:1859-1938`)_; the alias `qb::scoped_coro_context` at _(`Actor.h:2443`)_.
 *   `[[nodiscard]] const qb::io::async::cancellation_token& token() const noexcept`, `[[nodiscard]] bool cancelled() const noexcept`.
 *   `[[nodiscard]] qb::io::async::cancellation_token child_token() const` — a fresh token cancelled with the actor scope, cancellable independently.
 *   `[[nodiscard]] task<void> sleep(qb::duration d) const` — cancellation-aware sleep; throws `cancelled_error` on cancel.
@@ -702,12 +702,12 @@ Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb
 *   `[T<T>] [[nodiscard]] auto cancellable(task<T>&& t) const` — wrap any `task<T>` so it is cancelled with the actor scope.
 
 #### `class qb::ActorHandle<_Actor>` — canonical; `qb::RefActorHandle<_Actor>` is an alias of it
-Type-safe, **phase-aware** weak reference to a same-core referenced actor, returned by `addRefActor` / `addRefHandle`. `RefActorHandle` is not a class: it is a `using` alias retained for source compatibility _(`Actor.h:2102-2103`)_. Dereference only on the owning core's thread.
+Type-safe, **phase-aware** weak reference to a same-core referenced actor, returned by `addRefActor` / `addRefHandle`. `RefActorHandle` is not a class: it is a `using` alias retained for source compatibility _(`Actor.h:2123-2124`)_. Dereference only on the owning core's thread.
 *   `[[nodiscard]] ActorId id() const noexcept` — valid the instant `addRefActor` returns, **even while the child is still Activating**, so it is always safe to `push()` to (events are stashed and replayed FIFO once the child becomes active).
 *   `[[nodiscard]] bool valid() const noexcept` — true iff the handle was constructed from a non-null actor (allocation succeeded). **Not** a liveness or readiness test.
-*   `[[nodiscard]] _Actor* get() const noexcept` — the pointer iff resolved **and** `is_active()`. `nullptr` otherwise — and "otherwise" is wider than "dead": also **while the child is still Activating** (its async `onInit()` has not completed) and after a failed init _(`Actor.h:2032-2038`)_.
-*   `[[nodiscard]] bool ready() const noexcept` — `== (get() != nullptr)`; the sync gate for the Activating window _(`Actor.h:2040-2044`)_.
-*   `[[nodiscard]] qb::io::async::task<bool> ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const` — `co_await` until the child is active; returns `false` if it did not become active in time. The async gate for the same window _(`Actor.h:2060-2071`)_.
+*   `[[nodiscard]] _Actor* get() const noexcept` — the pointer iff resolved **and** `is_active()`. `nullptr` otherwise — and "otherwise" is wider than "dead": also **while the child is still Activating** (its async `onInit()` has not completed) and after a failed init _(`Actor.h:2053-2059`)_.
+*   `[[nodiscard]] bool ready() const noexcept` — `== (get() != nullptr)`; the sync gate for the Activating window _(`Actor.h:2061-2065`)_.
+*   `[[nodiscard]] qb::io::async::task<bool> ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const` — `co_await` until the child is active; returns `false` if it did not become active in time. The async gate for the same window _(`Actor.h:2081-2092`)_.
 *   `operator->`, `operator*` — `get()` with a **debug assert** that it is ready; in a release build an unready handle is UB.
 *   `explicit operator bool` — `== ready()`.
 *   **Trap:** `auto h = addRefActor<Child>(cfg); h->method();` dereferences `nullptr` whenever `Child::onInit()` is async — debug assert, release UB. Gate the dereference on `ready()`, or `if (co_await h.ready_async(context())) h->method();`. Only the dereference needs the gate; `push(h.id(), ...)` never does.
@@ -1272,7 +1272,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `class CoroutineScheduler` — mono-thread scheduler over an `ev::loop_ref`.
     *   `void spawn(task<void>&& t)`, `[T<Callable>] void spawn(Callable fn)` — **pass the lambda WITHOUT trailing `()`** (avoids dangling-closure UB).
     *   `std::size_t run_ready(std::size_t max_count = 0)` — drain the ready queue (not re-entrant).
-    *   `[[nodiscard]] bool is_draining_ready() const noexcept` — true while inside `run_ready()`. This is the query the re-entrancy guard below tests _(`scheduler.h:737-740`)_.
+    *   `[[nodiscard]] bool is_draining_ready() const noexcept` — true while inside `run_ready()`. This is the query the re-entrancy guard below tests _(`scheduler.h:751-754`)_.
     *   `void schedule_resume(std::coroutine_handle<>)`
     *   `static CoroutineScheduler& current()`, `static CoroutineScheduler* current_ptr() noexcept`, `static void set_current(CoroutineScheduler*)`.
     *   `std::size_t active_count() const`.

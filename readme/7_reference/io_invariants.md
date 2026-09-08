@@ -296,7 +296,7 @@ with I/O lifetime are:
   `qb::io::async::listener` is created on the thread. `schedule_via_current()`
   asserts in debug and silently no-ops in release if no scheduler exists,
   leaving any queued waiter permanently unresumed
-  (`src/qb/io/async/coroutine/scheduler.h:1104-1118`).
+  (`src/qb/io/async/coroutine/scheduler.h:1134-1148`).
 - **Awaiters must remain alive until `await_resume()`**
   (`src/qb/io/async/coroutine/awaiter.h:30-33`). Never create a temporary
   awaiter that goes out of scope before resumption; watchers are stopped in
@@ -357,7 +357,7 @@ with I/O lifetime are:
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
   qev's `ev_stat` stores the narrow `const char *` it is given **without
-  copying** (`src/qb/ev/ev++.h:716`). `start()` therefore stashes
+  copying** (`src/qb/ev/ev++.h:721`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
   `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:584-585`, `:748-749`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and

@@ -1703,7 +1703,10 @@ struct ask_awaiter {
         // in-onInit ask's reply is delivered here instead of stashed (which would deadlock).
         // The registry is per worker thread, so one hash-set insert per thread per E is all it
         // ever needs — not one per ask.
-        static thread_local bool type_registered = false;
+        // `constinit`: a thread_local with dynamic initialisation is read through the TLS init
+        // wrapper (`__tls_init` on gcc), one call per ask; a constant-initialised one is a plain
+        // TLS load.
+        static constinit thread_local bool type_registered = false;
         if (!type_registered) {
             ask_register_type(qb::Event::type_to_id<E>());
             type_registered = true;
@@ -1786,6 +1789,23 @@ private:
         }
     }
 
+    // The reply's path: `resolve_ask(e)` in the asker's own handler -> `ask_deliver` -> here, on the
+    // asker's core, inside the pass that routed the reply. The waiting frame is resumed RIGHT
+    // HERE rather than queued for the scheduler: the queue cost a hash-set insert on this side, a
+    // hash-set erase and a queue pop in `run_ready()`, and the resume itself only happened in the
+    // NEXT pass's io phase -- one extra core pass on every request/reply. Measured on a one-core
+    // ask loop (qb-vs-others `tools/probes/ask-cost.cpp`, i9-12900K / WSL2 g++-14) the round
+    // trip went 54 -> 47 ns against a plain push/reply round trip of 24 (Huly QB-185).
+    // Resuming inline is the same shape the task's own completion already uses (its
+    // final_suspend transfers to the continuation symmetrically): the frame runs until its next
+    // suspension and control comes back here; any coroutine the chain completes has its frame
+    // destroyed by whoever owns it, which the scheduler defers, so nothing on this stack is freed
+    // under it -- EXCEPT this awaiter itself. It lives in the `ask` frame that `cont` runs: the
+    // frame's `co_return` hands the value to the caller, whose `co_await` then destroys the
+    // `task<E>` -- and this object with it -- before `resume()` returns. Hence nothing of `me` is
+    // read after the resume, and `ask_deliver` touches neither the slot nor the awaiter after the
+    // thunk. The cancel and timeout paths below keep going through the scheduler: they run from a
+    // token callback or a timer, not from the actor's handler.
     static void
     deliver_thunk(void *self, qb::Event &resp) noexcept {
         auto *me = static_cast<ask_awaiter *>(self);
@@ -1794,7 +1814,8 @@ private:
         me->slot.done = true;
         me->outcome   = kind::ok;
         me->result.emplace(std::move(static_cast<E &>(resp)));
-        qb::io::async::schedule_via_current(me->cont);
+        if (const auto h = me->cont; h) // bound in await_suspend, before any reply can be routed
+            h.resume();                 // `me` may be gone when this returns: see above
     }
 
     static void

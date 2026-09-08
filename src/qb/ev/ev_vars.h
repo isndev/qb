@@ -29,6 +29,7 @@ VARx(ev_tstamp, now_floor)     /* last time we refreshed rt_time */
     VARx(ev_tstamp, io_blocktime) VARx(ev_tstamp, timeout_blocktime)
 
         VARx(int, backend) VARx(int, activecnt) /* total number of active events ("refcount") */
+    VARx(int, iocnt)                            /* active ev_io watchers: what backend_poll has to look at (qev) */
     VARx(EV_ATOMIC_T, loop_done)                /* signal by ev_break */
 
     VARx(uintptr_t, backend_fd)      /* kernel fd or (Windows epoll) HANDLE bit pattern; EV_BACKEND_FD_INVALID if none */

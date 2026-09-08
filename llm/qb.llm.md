@@ -292,12 +292,12 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 `qb::ScopedCoroContext` is a superset of `qb::CoroContext`. On top of `push`/`push_to`/`broadcast`/
 `id`/`time` it adds the cancellation-aware surface: `sleep(qb::duration)`, `cancellation_point()`,
 `until_cancelled()`, `cancellable(task<T>&&)`, `child_token()`, `token()`, `cancelled()`.
-_(Actor.h:1838-1917)_
+_(Actor.h:1859-1938)_
 
 `Actor::context()` returns that same `ScopedCoroContext` **wherever you hold the actor** — most
 importantly inside `onInit()`, which is itself a coroutine (`task<bool>`) and gets no `ctx`
 parameter. It is also what you pass to the free functions of the patterns library:
-`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1389-1405, :1926-1929)_
+`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1389-1405, :1947-1950)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
 receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not** cancelled when the
@@ -401,7 +401,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating,
   after a failed init, or once it died — never a dangling pointer. Send to `handle.id()` any time; gate
   direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
-  _(Actor.h:1246-1250, :1270, :1994-1996)_
+  _(Actor.h:1246-1250, :1270, :2015-2017)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
@@ -464,7 +464,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; ev++.h:716)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; ev++.h:721)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:254-271)_

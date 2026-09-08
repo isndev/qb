@@ -933,3 +933,127 @@ TEST(ActorCoroutineAsk, EmplaceAskByHonoursTheDeadline) {
     EXPECT_TRUE(g_emplace_by_fast.load()) << "a spent budget fails fast before anything is built";
     EXPECT_EQ(g_emplace_by_val.load(), 10) << "future deadline -> Ping(5) answered as 5 * 2";
 }
+
+// ---------------------------------------------------------------------------
+// 12. The reply resumes the waiting frame INSIDE the handler that routed it (QB-185).
+//     Until 3.2 `resolve_ask` queued the frame for the scheduler and it ran in the next
+//     pass's io phase; now the continuation has run — and everything it did is visible —
+//     by the time `resolve_ask(e)` returns. Pinned here because it is the contract user
+//     handlers can now rely on, and because it is what makes the inline resume's lifetime
+//     rule (the awaiter may be gone when the thunk returns) observable.
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<int>  g_inline_seen_in_handler{0}; // continuation steps observed by the routing handler
+std::atomic<int>  g_inline_steps{0};           // continuation steps executed
+std::atomic<bool> g_inline_done{false};
+} // namespace
+
+class TraderInline : public qb::Actor {
+    qb::ActorId _market;
+
+public:
+    explicit TraderInline(qb::ActorId m)
+        : _market(m) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        registerEvent<AskDone>(*this);
+        auto mkt = _market;
+        spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            for (int i = 1; i <= 3; ++i) {
+                auto r = co_await qb::ask(ctx, mkt, Ping{i}, 500ms);
+                if (r.response == i * 2)
+                    ++g_inline_steps; // the step the routing handler must already see
+            }
+            g_inline_done = true;
+            ctx.push<AskDone>();
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        const int before = g_inline_steps.load();
+        if (resolve_ask(e)) {
+            // The continuation ran to its next suspension (or its end) inside resolve_ask.
+            if (g_inline_steps.load() == before + 1)
+                ++g_inline_seen_in_handler;
+        }
+    }
+    void
+    on(const AskDone &) {
+        push<qb::KillEvent>(_market);
+        kill();
+    }
+};
+
+TEST(ActorCoroutineAsk, ReplyResumesTheFrameInsideTheRoutingHandler) {
+    g_inline_seen_in_handler = 0;
+    g_inline_steps           = 0;
+    g_inline_done            = false;
+    qb::Main main;
+    auto     mkt = main.addActor<Market>(0);
+    main.addActor<TraderInline>(0, mkt);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_inline_done.load());
+    EXPECT_EQ(g_inline_steps.load(), 3);
+    EXPECT_EQ(g_inline_seen_in_handler.load(), 3) << "every reply's continuation must have run before resolve_ask() returned";
+}
+
+// ---------------------------------------------------------------------------
+// 13. The continuation of the LAST ask completes the spawned coroutine inside the handler,
+//     and that same handler kills the actor: the completed frame sits in the scheduler's
+//     deferred-destroy list when the actor's scope is torn down in the same pass. Two
+//     things are pinned: the work finished (the sum), and — under the sanitize preset,
+//     where this suite runs with leak detection on — the frame and the scope's token state
+//     are freed (the shape leaked 264 bytes per actor until `destroy_all_suspended()` learnt
+//     to free a scrubbed done root, QB-185).
+// ---------------------------------------------------------------------------
+namespace {
+std::atomic<int> g_lastkill_sum{0};
+} // namespace
+
+class TraderKillOnLast : public qb::Actor {
+    qb::ActorId _market;
+    int         _replies = 0;
+
+public:
+    explicit TraderKillOnLast(qb::ActorId m)
+        : _market(m) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        auto mkt = _market;
+        spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            int sum = 0;
+            for (int i = 1; i <= 4; ++i) {
+                auto r = co_await qb::ask(ctx, mkt, Ping{i}, 500ms);
+                sum += r.response;
+            }
+            g_lastkill_sum = sum; // 2+4+6+8 = 20; the frame completes right here, inside on(Ping&)
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+        if (++_replies == 4) { // the coroutine has just completed inline: kill in the same pass
+            push<qb::KillEvent>(_market);
+            kill();
+        }
+    }
+};
+
+TEST(ActorCoroutineAsk, LastReplyCompletesTheFrameAndKillsTheActorInTheSamePass) {
+    g_lastkill_sum = 0;
+    qb::Main main;
+    auto     mkt = main.addActor<Market>(0);
+    main.addActor<TraderKillOnLast>(0, mkt);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_lastkill_sum.load(), 20) << "four asks completed before the kill: 2+4+6+8";
+}

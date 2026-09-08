@@ -18,6 +18,7 @@
 #define QB_EV_WRAP_H
 #define acquire_cb ((loop)->acquire_cb)
 #define activecnt ((loop)->activecnt)
+#define iocnt ((loop)->iocnt)
 #define anfdmax ((loop)->anfdmax)
 #define anfds ((loop)->anfds)
 #define async_pending ((loop)->async_pending)
@@ -149,6 +150,7 @@
 #undef QB_EV_WRAP_H
 #undef acquire_cb
 #undef activecnt
+#undef iocnt
 #undef anfdmax
 #undef anfds
 #undef async_pending

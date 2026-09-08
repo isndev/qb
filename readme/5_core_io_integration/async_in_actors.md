@@ -194,7 +194,7 @@ void arm(int task_id) {
     });
 }
 ```
-<!-- src: qb/src/qb/core/Actor.h:1386-1387,1881-1883, qb/src/qb/core/Actor.cpp:402-413 -->
+<!-- src: qb/src/qb/core/Actor.h:1386-1387,1902-1904, qb/src/qb/core/Actor.cpp:402-413 -->
 
 Copy by value everything the body needs before the first `co_await`, and **never capture `this`**. The `ScopedCoroContext` carries the actor's `ActorId` by value, so the only way back into the actor is a `push` — which is exactly the message-back pattern, now with no member access at all. Handle the event in an ordinary `on(Event&)` handler and every state change happens on an actor the dispatcher has already proved is alive.
 
@@ -273,7 +273,7 @@ public:
 };
 ```
 
-Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1386-1387,1881-1883, qb/src/qb/core/Actor.cpp:402-413, examples/01-actors/06-doing-things-later.cpp:237-250 -->
+Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1386-1387,1902-1904, qb/src/qb/core/Actor.cpp:402-413, examples/01-actors/06-doing-things-later.cpp:237-250 -->
 
 `startOperation` takes a `qb::duration` — the canonical span type used for every timeout, delay and interval in the public API. It is an alias for `std::chrono::nanoseconds` and accepts any finer-or-equal chrono literal implicitly (`5s`, `200ms`), while rejecting a bare integer at compile time. <!-- src: qb/src/qb/system/time.h:90 -->
 
