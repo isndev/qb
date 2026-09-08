@@ -380,12 +380,12 @@ co_await qb::run_saga(ctx, [ok, silent](qb::ScopedCoroContext c, qb::SagaScope &
     });
     (void) co_await qb::ask(c, ok, SagaQ{3}, 500ms);              // step 2
     saga.on_compensate([c, silent]() -> qb::io::async::task<void> {
-        (void) co_await qb::ask(c, silent, SagaQ{4}, 500ms);      // undo step 2 (runs FIRST)
+        (void) co_await qb::ask(c, silent, SagaQ{4}, 1000ms);     // undo step 2 (runs FIRST)
     });
     (void) co_await qb::ask(c, silent, SagaQ{5}, 30ms);           // step 3 TIMES OUT → rollback
 });
 ```
-<!-- src: qb/tests/core/system/patterns/saga-cancel.cpp:103-116 -->
+<!-- src: qb/tests/core/system/patterns/saga-cancel.cpp:113-126 -->
 
 ---
 
