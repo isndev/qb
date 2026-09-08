@@ -18,9 +18,6 @@
 #define QB_EV_WRAP_H
 #define acquire_cb ((loop)->acquire_cb)
 #define activecnt ((loop)->activecnt)
-#define iocnt ((loop)->iocnt)
-#define iofed ((loop)->iofed)
-#define now_set ((loop)->now_set)
 #define anfdmax ((loop)->anfdmax)
 #define anfds ((loop)->anfds)
 #define async_pending ((loop)->async_pending)
@@ -61,7 +58,9 @@
 #define idles ((loop)->idles)
 #define invoke_cb ((loop)->invoke_cb)
 #define io_blocktime ((loop)->io_blocktime)
+#define iocnt ((loop)->iocnt)
 #define iocp ((loop)->iocp)
+#define iofed ((loop)->iofed)
 #define iouring_cq_cqes ((loop)->iouring_cq_cqes)
 #define iouring_cq_head ((loop)->iouring_cq_head)
 #define iouring_cq_ring ((loop)->iouring_cq_ring)
@@ -103,6 +102,7 @@
 #define loop_done ((loop)->loop_done)
 #define mn_now ((loop)->mn_now)
 #define now_floor ((loop)->now_floor)
+#define now_set ((loop)->now_set)
 #define origflags ((loop)->origflags)
 #define pending_w ((loop)->pending_w)
 #define pendingcnt ((loop)->pendingcnt)
@@ -152,9 +152,6 @@
 #undef QB_EV_WRAP_H
 #undef acquire_cb
 #undef activecnt
-#undef iocnt
-#undef iofed
-#undef now_set
 #undef anfdmax
 #undef anfds
 #undef async_pending
@@ -195,7 +192,9 @@
 #undef idles
 #undef invoke_cb
 #undef io_blocktime
+#undef iocnt
 #undef iocp
+#undef iofed
 #undef iouring_cq_cqes
 #undef iouring_cq_head
 #undef iouring_cq_ring
@@ -237,6 +236,7 @@
 #undef loop_done
 #undef mn_now
 #undef now_floor
+#undef now_set
 #undef origflags
 #undef pending_w
 #undef pendingcnt
