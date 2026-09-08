@@ -117,18 +117,57 @@ fail:
 #undef pipe
 #define pipe(filedes) ev_pipe(filedes)
 
+/* qev: the two clocks of a loop on Windows (Huly QB-193). libev read both from
+ * GetSystemTimeAsFileTime -- the system TICK, a memory read of KUSER_SHARED_DATA (3 ns) that
+ * steps every 1 to 15.6 ms (measured 2.2 ms here) -- and, MSVC having no clock_gettime, used it
+ * as the MONOTONIC clock too: every timer was judged at the tick's granularity, a 0-second
+ * timer started and run in the same tick did not fire, and a wall-clock jump moved the loop's
+ * idea of "now". The wall clock is GetSystemTimePreciseAsFileTime now (Windows 8+, resolved at
+ * run time so the binary still loads where only the coarse call exists), read as rarely as on
+ * every other host -- once per MIN_TIMEJUMP/2 -- and the monotonic clock is
+ * QueryPerformanceCounter: sub-microsecond, never steps back, no syscall on any Windows this
+ * decade. Both are function-pointer/scale lookups initialised on first use; the writes are
+ * idempotent, so two threads starting their loops at once cannot disagree. */
+typedef VOID(WINAPI *ev_win32_get_time_fn)(LPFILETIME);
+static ev_win32_get_time_fn ev_win32_get_time;
+
 #define EV_HAVE_EV_TIME 1
 ev_tstamp
 ev_time(void) {
     FILETIME       ft;
     ULARGE_INTEGER ui;
 
-    GetSystemTimeAsFileTime(&ft);
+    if (ecb_expect_false(!ev_win32_get_time)) {
+        ev_win32_get_time_fn fn = 0;
+        HMODULE              k32 = GetModuleHandleW(L"kernel32.dll");
+        if (k32)
+            fn = (ev_win32_get_time_fn) (void (*)(void)) GetProcAddress(k32, "GetSystemTimePreciseAsFileTime");
+        ev_win32_get_time = fn ? fn : GetSystemTimeAsFileTime;
+    }
+
+    ev_win32_get_time(&ft);
     ui.u.LowPart  = ft.dwLowDateTime;
     ui.u.HighPart = ft.dwHighDateTime;
 
     /* also, msvc cannot convert ulonglong to double... yes, it is that sucky */
     return EV_TS_FROM_USEC(((LONGLONG) (ui.QuadPart - 116444736000000000) * 1e-1));
+}
+
+#define EV_HAVE_EV_GET_CLOCK 1
+static double ev_win32_qpc_scale; /* seconds per QueryPerformanceCounter tick; 0 until first use */
+
+static ev_tstamp
+ev_win32_get_clock(void) {
+    LARGE_INTEGER c;
+
+    if (ecb_expect_false(ev_win32_qpc_scale == 0.)) {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f); /* fixed at boot; cannot fail on XP and later */
+        ev_win32_qpc_scale = 1. / (double) f.QuadPart;
+    }
+
+    QueryPerformanceCounter(&c);
+    return (ev_tstamp) ((double) c.QuadPart * ev_win32_qpc_scale);
 }
 
 #endif

@@ -65,7 +65,11 @@
 #endif
 #else
 #ifndef EV_USE_MONOTONIC
+#ifdef _WIN32
+#define EV_USE_MONOTONIC 1 /* qev: no clock_gettime, but QueryPerformanceCounter -- ev_win32.c (Huly QB-193) */
+#else
 #define EV_USE_MONOTONIC 0
+#endif
 #endif
 #ifndef EV_USE_REALTIME
 #define EV_USE_REALTIME 0
@@ -2879,9 +2883,13 @@ inline_size ev_tstamp
 get_clock(void) {
 #if EV_USE_MONOTONIC
     if (ecb_expect_true(have_monotonic)) {
+#ifdef EV_HAVE_EV_GET_CLOCK
+        return ev_win32_get_clock();
+#else
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
         return EV_TS_GET(ts);
+#endif
     }
 #endif
 
@@ -3412,6 +3420,22 @@ evpipe_init(EV_P) {
     }
 }
 
+/* qev: whether a signal handler or an ev_async_send has raised what the evpipe would carry
+ * -- read by ev_run's tail in place of a poll that did not run (see there). Both flags are
+ * EV_ATOMIC_T; the acquire fence before the call orders them against the loop's later reads
+ * of the per-watcher `sent` / `pending` fields, exactly as pipecb's own reads are. */
+inline_speed int
+evpipe_pending(EV_P) {
+    int pending = 0;
+#if EV_SIGNAL_ENABLE
+    pending |= sig_pending;
+#endif
+#if EV_ASYNC_ENABLE
+    pending |= async_pending;
+#endif
+    return pending;
+}
+
 inline_speed void
 evpipe_write(EV_P_ EV_ATOMIC_T *flag) {
     ECB_MEMORY_FENCE; /* push out the write before this function was called, acquire flag */
@@ -3887,10 +3911,14 @@ loop_init(EV_P_ unsigned int flags) EV_NOEXCEPT {
 
 #if EV_USE_MONOTONIC
         if (!have_monotonic) {
+#ifdef EV_HAVE_EV_GET_CLOCK
+            have_monotonic = 1; /* the platform clock behind get_clock cannot be absent */
+#else
             struct timespec ts;
 
             if (!clock_gettime(CLOCK_MONOTONIC, &ts))
                 have_monotonic = 1;
+#endif
         }
 #endif
 
@@ -4405,8 +4433,10 @@ ev_pending_count_addr(EV_P) EV_NOEXCEPT {
 
 /* The number of active ev_io watchers -- the loop's own count of what its backend poll has to
  * look at, and the reason ev_run skips that poll when it is zero and the wait would not block
- * (see the EVRUN_NOWAIT note at the poll). Internal watchers on fds count too: the evpipe
- * behind signals and async watchers, the timerfd. */
+ * (see the EVRUN_NOWAIT note at the poll). Internal watchers on real fds count too (the
+ * timerfd, the signalfd); the loop's own evpipe behind signal and async watchers does not --
+ * what it carries reaches the loop through flags, and counting it would re-enable the poll
+ * for the life of any loop that ever started a signal or async watcher. */
 unsigned int
 ev_io_count(EV_P) EV_NOEXCEPT {
     return iocnt > 0 ? (unsigned int) iocnt : 0u;
@@ -4701,13 +4731,30 @@ ev_run(EV_P_ int flags) {
             /* remember old timestamp for io_blocktime calculation */
             ev_tstamp prev_mn_now = mn_now;
 
-            /* update time to cancel out callback processing overhead */
-            time_update(EV_A_ EV_TS_CONST(EV_TSTAMP_HUGE));
+            /* qev: a pass that cannot block -- EVRUN_NOWAIT, what an embedder that drives the
+             * loop from its own scheduler pays on EVERY pass of a thread that owns one watcher
+             * -- skips the two things only a sleep needs. The pre-poll clock read exists to
+             * size the sleep; the post-poll read below is the one timers and callbacks see,
+             * and with no sleep between them it reads the same clock a few ns later. And the
+             * wake-up handshake: pipe_write_wanted tells a signal handler, or ev_async_send on
+             * another thread, to WRITE the evpipe because this thread is about to sleep in the
+             * backend, and the full fence after it is what makes that exchange airtight
+             * against the sleep (each side stores its flag, fences, then reads the other's).
+             * A pass that will not sleep leaves the flag 0: a sender then takes the flag path
+             * (pipe_write_skipped, and the pending flag it was called with), which the tail
+             * of this pass -- or the next one, if the store is not visible yet -- delivers
+             * without a syscall on either side. Measured (bench/bench-pass.c, i9-12900K, WSL2
+             * g++-14): a NOWAIT pass over a timers-only loop 51 -> 22 ns, over a quiet
+             * socket 132 -> 101; qb's `co_await qb::ask<E>()` with a timeout 174 -> 115. */
+            if (ecb_expect_true(!(flags & EVRUN_NOWAIT))) {
+                /* update time to cancel out callback processing overhead */
+                time_update(EV_A_ EV_TS_CONST(EV_TSTAMP_HUGE));
 
-            /* from now on, we want a pipe-wake-up */
-            pipe_write_wanted = 1;
+                /* from now on, we want a pipe-wake-up */
+                pipe_write_wanted = 1;
 
-            ECB_MEMORY_FENCE; /* make sure pipe_write_wanted is visible before we check for potential skips */
+                ECB_MEMORY_FENCE; /* make sure pipe_write_wanted is visible before we check for potential skips */
+            }
 
             if (ecb_expect_true(!(flags & EVRUN_NOWAIT || idleall || !activecnt || pipe_write_skipped))) {
                 waittime = EV_TS_CONST(MAX_BLOCKTIME);
@@ -4776,7 +4823,14 @@ ev_run(EV_P_ int flags) {
              * whose loop holds only timers (a request timeout, a retry, a sleep) otherwise
              * costs a bare epoll_wait / kevent / wepoll syscall on every pass, ~300-700 ns,
              * for the life of the timer. A blocking wait is kept: with no fd it IS the sleep.
-             * The evpipe (signals, async) and the timerfd are ev_io watchers, so they count. */
+             * The timerfd and the signalfd are ev_io watchers and count; the loop's own evpipe
+             * does NOT (ev_io_start / ev_io_stop): a byte can land on it only while
+             * pipe_write_wanted is set, i.e. around a sleep, and what that byte carries -- a
+             * signal, an async send -- is ALSO in sig_pending / async_pending, which the tail
+             * below reads directly. So the evpipe re-enabling the poll for the life of the
+             * loop (it is started at the first signal or async watcher and never stopped) is
+             * what this avoids, and an embedder whose loop went through one park keeps the
+             * timers-only pass at its floor afterwards. */
             if (ecb_expect_true(iocnt || waittime > EV_TS_CONST(0.)))
                 backend_poll(EV_A_ waittime);
             assert((loop_done = EVBREAK_CANCEL, 1)); /* assert for side effect */
@@ -4784,13 +4838,21 @@ ev_run(EV_P_ int flags) {
             pipe_write_wanted = 0; /* just an optimisation, no fence needed */
 
             ECB_MEMORY_FENCE_ACQUIRE;
-            if (pipe_write_skipped) {
+            /* qev: the pending flags beside pipe_write_skipped -- a sender that found
+             * pipe_write_wanted set clears pipe_write_skipped and writes the evpipe instead,
+             * and if that write lands after the poll returned (or no poll ran) the byte sits
+             * unread until a later poll; the flag it was written for is set before either, so
+             * reading it here delivers in this pass. The byte itself is drained by whatever
+             * poll next sees the evpipe readable, and pipecb tolerates an empty read. */
+            if (ecb_expect_false(pipe_write_skipped || evpipe_pending(EV_A))) {
                 EV_ASSERT_MSG(ev_is_active(&pipe_w), "libev: pipe_w not active, but pipe not written");
                 ev_feed_event(EV_A_ & pipe_w, EV_CUSTOM);
             }
 
-            /* update ev_rt_now, do magic */
-            time_update(EV_A_ waittime + sleeptime);
+            /* update ev_rt_now, do magic -- the one clock read of a NOWAIT pass, whose
+             * `max_block` is unknowable (the embedder ran between passes), so no jump
+             * detection on a host without a monotonic clock, as the pre-poll read had none */
+            time_update(EV_A_ flags & EVRUN_NOWAIT ? EV_TS_CONST(EV_TSTAMP_HUGE) : waittime + sleeptime);
         }
 
         /* queue pending timers and reschedule them */
@@ -4984,7 +5046,7 @@ ev_io_start(EV_P_ ev_io *w) EV_NOEXCEPT {
     EV_FREQUENT_CHECK;
 
     ev_start(EV_A_(W) w, 1);
-    ++iocnt;
+    iocnt += w != &pipe_w; /* the loop's own wake pipe is not a pollable fd to the embedder: see ev_run */
     array_needsize(ANFD, anfds, anfdmax, fd + 1, array_needsize_zerofill);
     wlist_add(&anfds[fd].head, (WL) w);
 
@@ -5017,7 +5079,7 @@ ev_io_stop(EV_P_ ev_io *w) EV_NOEXCEPT {
 
     wlist_del(&anfds[w->fd].head, (WL) w);
     ev_stop(EV_A_(W) w);
-    --iocnt;
+    iocnt -= w != &pipe_w;
 
     fd_change(EV_A_ w->fd, EV_ANFD_REIFY);
 

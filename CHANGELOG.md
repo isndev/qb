@@ -294,6 +294,37 @@ policy.
   `dev/bench` `Mono_PingPong` 76.6 → 66.4, the one-core pipeline 42.7 → 34.6 (−19 %), the 8 × 8
   pipeline 263.5 → 228.1 (−13 %), `BM_PINGPONG` 64 actors 29.4 → 26.5. Suites: WSL2 release /
   ASan+UBSan / TSan 192/192, the Windows full gate.
+- **The loop's non-blocking pass at its floor, and the evpipe no longer re-enables the poll after
+  the first park (qev 5.1.0, Huly QB-188).** The `ev_run(EVRUN_NOWAIT)` a core with one active
+  watcher runs on every pass still read the clock twice, raised libev's wake-up handshake (a
+  store plus a full memory fence, there so a producer's `ev_async_send` would write the evpipe
+  to end a sleep this pass never takes) — and counted the evpipe as a pollable fd, so the first
+  `Park::Loop` of a core, which arms the wake and creates that pipe, put the backend poll QB-187
+  had removed back on every later pass for the life of the core. A NOWAIT pass now reads the
+  clock once, leaves the handshake down (the sender's flag path delivers, and a byte written
+  around a park that lands after its poll is picked up by the next pass through the pending
+  flags), and the loop's own pipe is not counted. `qev/bench/bench-pass.c` on i9-12900K: a
+  NOWAIT pass over a timers-only loop **51 → 22 ns** on WSL2 g++-14 (over a quiet socket
+  132 → 101), 19.7 → 15.8 on MSVC. On qb's path (`ask-cost`): a `co_await qb::ask<E>()` with a
+  500 ms timeout **174 → 115 ns** per round trip on g++ (−34 %), 124 → 115 on MSVC, a
+  one-chunk timed `ask_stream` 240 → 179 / 327 → 319; the untimed ask, the push and the
+  one-core pass unchanged. Tests are qev's (`tests/test-loops.c`: a send or a signal between
+  two NOWAIT passes delivered by the very next pass with nothing to poll, 400 cross-thread
+  sends into NOWAIT-only and park-interleaved loops each delivered before the next, the evpipe
+  not counted after a park).
+- **Windows: libev's clocks were the 15.6 ms system tick, non-monotonic — every timer judged
+  at that granularity (qev 5.1.0, Huly QB-193).** `ev_win32.c` read `GetSystemTimeAsFileTime`
+  (a memory read that steps every 1–15.6 ms; 2.2 measured) as the wall clock and, MSVC having
+  no `clock_gettime`, as the monotonic clock too: an `ask` timeout, an `io::async::callback`
+  delay, a `sleep`, a retry or the park cap could fire up to 16 ms late, a 0-delay timer armed
+  and run inside one tick did not fire, and a wall-clock adjustment moved the loop's now. qev
+  reads `QueryPerformanceCounter` (sub-µs, monotonic) and `GetSystemTimePreciseAsFileTime`
+  now. Found by qev's loop suite the first time it ran on MSVC — two checks red on the shipped
+  code — green since (39 run / 0 failed / 3 skipped). The cost is stated in the open: a
+  precise read is ~16 ns where the tick was 3, so on MSVC the NOWAIT pass is 15.8 → 31 ns, a
+  timer arm 5.8 → 24 and the timed ask 115 → 166; the next steps of the qev programme take
+  the libev timer off the request path (QB-189) and hand the loop the reading qb already
+  makes (QB-190). Linux and macOS are untouched.
 - **A core with a timer no longer pays libev a syscall per pass — two defaults libev kept from
   2010, fixed in qev (5.1.0, Huly QB-187).** Any core that owns one active watcher — a request
   timeout, a `sleep`, a retry, a socket — runs `ev_run(EVRUN_NOWAIT)` on every pass, busy or
