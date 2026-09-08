@@ -95,7 +95,8 @@ struct Pipe {
     cb(struct ev_loop *, ev_io *w, int) {
         auto *self = static_cast<Pipe *>(w->data);
         char  buf[8];
-        (void) ::read(self->fds[0], buf, sizeof buf);
+        // gcc's warn_unused_result (glibc's fortified read) ignores a (void) cast; name the value.
+        [[maybe_unused]] const ssize_t drained = ::read(self->fds[0], buf, sizeof buf);
         ++self->hits;
     }
 };

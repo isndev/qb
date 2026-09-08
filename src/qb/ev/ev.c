@@ -1052,6 +1052,24 @@ static pthread_mutex_t ecb_mf_lock = PTHREAD_MUTEX_INITIALIZER;
 #define EV_WAKE_STORE_RLX(p, v) (*(p) = (v))
 #endif
 
+/* qev: clang's -fsanitize=function (inside -fsanitize=undefined, C too since clang 17) reports every
+ * watcher callback dispatch. A callback is declared against its own watcher type (EV_CB_DECLARE:
+ * void (*)(EV_P_ ev_timer *, int)) and invoked through the generic ev_watcher one (EV_CB_INVOKE) --
+ * libev's design since forever, ABI-safe everywhere because every watcher shares the ev_watcher
+ * prefix and the two pointee types differ only nominally, but "a call through a pointer to
+ * incorrect function type" for the C standard. It surfaced the day ev.c was first compiled under the
+ * sanitizer presets (Huly QB-192: 194 qb tests red on the clang lane) and cannot be fixed without
+ * retyping every callback in the public ev.h. The two dispatch functions carry the exemption; the
+ * rest of ev.c stays checked. gcc has no such sanitizer and rejects the name, hence the gate. */
+#if defined(__clang__) && defined(__has_attribute)
+#if __has_attribute(no_sanitize)
+#define EV_NO_SANITIZE_FUNCTION __attribute__((no_sanitize("function")))
+#endif
+#endif
+#ifndef EV_NO_SANITIZE_FUNCTION
+#define EV_NO_SANITIZE_FUNCTION
+#endif
+
 /*****************************************************************************/
 
 #if ECB_CPP
@@ -4430,7 +4448,7 @@ ev_loop_fork(EV_P) EV_NOEXCEPT {
 
 /*****************************************************************************/
 
-void
+EV_NO_SANITIZE_FUNCTION void
 ev_invoke(EV_P_ void *w, int revents) {
     EV_CB_INVOKE((W) w, revents);
 }
@@ -4535,7 +4553,7 @@ ev_wake_pending_addr(EV_P) EV_NOEXCEPT {
     return &pipe_write_skipped;
 }
 
-ecb_noinline void
+ecb_noinline EV_NO_SANITIZE_FUNCTION void
 ev_invoke_pending(EV_P) {
     pendingpri = NUMPRI;
 

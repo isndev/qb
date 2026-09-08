@@ -528,11 +528,17 @@ if(QB_BUILD_COVERAGE)
         qb_status_message("Coverage instrumentation enabled (LLVM source-based)")
     elseif(QB_COMPILER_GCC)
         # gcc: gcov-style instrumentation (the reference toolchain; matches CI).
+        # -fprofile-update=atomic: the counters are bumped from EVERY VirtualCore thread at once, and a
+        # plain increment races. It went unnoticed while ev.c was outside the instrumented set; the day
+        # it joined (Huly QB-192) lcov refused the report -- "Unexpected negative count '-5' for
+        # ev.c:2925" (get_clock, the hottest cross-thread line there is) -- and gcov's own advice is
+        # this flag. Correct counts, not --ignore-errors negative, which would keep the corruption.
         list(APPEND QB_COVERAGE_COMPILE_OPTS
             "-g"
             "-O0"
             "-fprofile-arcs"
             "-ftest-coverage"
+            "-fprofile-update=atomic"
         )
         list(APPEND QB_COVERAGE_LINK_OPTS "--coverage")
         set(QB_COVERAGE_KIND "gcov" CACHE INTERNAL "coverage instrumentation kind")
