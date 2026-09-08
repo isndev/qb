@@ -46,9 +46,9 @@ qb adds owners for the resources it introduces. The key invariant for every one 
 
 For an actor, RAII works because the runtime gives you a precise destruction contract. Three points define it:
 
-- **Construction is thread-affine.** An actor is constructed on the `VirtualCore` worker thread that will host it, never on the main thread. Use `Main::core(idx).addActor<T>(...)` or `addRefActor<T>(...)`; constructing an actor from an arbitrary thread asserts (the constructor checks `VirtualCore::_handler != nullptr`). (`src/qb/core/Actor.cpp:236`)
+- **Construction is thread-affine.** An actor is constructed on the `VirtualCore` worker thread that will host it, never on the main thread. Use `Main::core(idx).addActor<T>(...)` or `addRefActor<T>(...)`; constructing an actor from an arbitrary thread asserts (the constructor checks `VirtualCore::_handler != nullptr`). (`src/qb/core/Actor.cpp:389`)
 - **`onInit()` runs once, before any business event.** It runs after construction and ID assignment and is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; while suspended the actor is *Activating* (inbound unicast stashed + replayed FIFO once active, bounded by the activation deadline). `co_return false` (or an uncaught exception) aborts registration and **immediately destroys the actor** — so any resource you acquired in the constructor is released right away. What you observe depends on the creation path: a runtime `addRefActor<T>()`/`addRefHandle<T>()` hands you back an **empty handle** (`!valid()`), whereas a pre-start `addActor<T>()` whose `onInit()` fails *synchronously* at startup flags the core `BadActorInit` and the core fails to start (`Main::hasError()` is true). See [Error handling](./error_handling.md) for the full failure table. (`src/qb/core/Actor.h:491-494`, `src/qb/core/VirtualCore.cpp:571-573`, `src/qb/core/Main.cpp:419-421`, `src/qb/core/Main.cpp:560`)
-- **`kill()` flags, it does not destroy.** `kill()` sets `_alive = false` and asks the `VirtualCore` to retire the actor. The actor stops receiving *new* events but may still drain events already queued; **`~Actor()` runs later, under `VirtualCore` control**, on the same worker thread. (`src/qb/core/Actor.cpp:401-414`)
+- **`kill()` flags, it does not destroy.** `kill()` sets `_alive = false` and asks the `VirtualCore` to retire the actor. The actor stops receiving *new* events but may still drain events already queued; **`~Actor()` runs later, under `VirtualCore` control**, on the same worker thread. (`src/qb/core/Actor.cpp:554-567`)
 
 Because destruction is single-threaded and deterministic, member subobjects are destroyed in reverse declaration order after your `~MyActor()` body returns. Declare your RAII members and let the compiler-generated cleanup do the rest.
 
@@ -90,7 +90,7 @@ Write an explicit `~MyActor()` only when you need an *action* (flush a buffer, e
 
 RAII releases resources, but it cannot perform side effects that must reach *other* actors or external systems while they are still operational. Sending an event, unregistering from a manager, or notifying a peer must happen during the shutdown sequence — before `~Actor()`. The hook for that is `on(const qb::KillEvent&)`.
 
-Every actor is, by default, subscribed to `KillEvent` (along with `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`) at construction. (`src/qb/core/Actor.cpp:241-245`) Constructing with `qb::no_default_events` skips all five, in which case the derived class must register at least `SignalEvent` in `onInit()` to shut down gracefully — `Main::stop()` and the terminal signals reach an actor only as one, and the engine never sends a `KillEvent`. (`src/qb/core/Actor.h:76`)
+Every actor is, by default, subscribed to `KillEvent` (along with `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, and `RequireEvent`) at construction. (`src/qb/core/Actor.cpp:394-398`) Constructing with `qb::no_default_events` skips all five, in which case the derived class must register at least `SignalEvent` in `onInit()` to shut down gracefully — `Main::stop()` and the terminal signals reach an actor only as one, and the engine never sends a `KillEvent`. (`src/qb/core/Actor.h:76`)
 
 Override `on(const qb::KillEvent&)`, perform the side effects, then **call `kill()`** to let the runtime proceed to destruction:
 
@@ -129,8 +129,8 @@ Two rules follow from the lifecycle:
 
 Two safe patterns:
 
-- **Send events, not pointer calls.** Capture the child's `id()` and `push<Event>(child_id)`. Events to a dead actor are dropped by the router, so this never dereferences freed memory. (`src/qb/core/Actor.h:2004-2006`)
-- **Hold the phase-aware handle.** `addRefActor<T>()` (and its alias `addRefHandle<T>()`) returns a `qb::ActorHandle<T>` you can keep across event-handler boundaries. Its `get()` re-queries the owning `VirtualCore` (via `findActor`) and returns `nullptr` if the child is still Activating, failed init, or has died — never a dangling pointer; `operator->()` / `operator*()` call `get()` and assert non-null in debug builds. (`src/qb/core/VirtualCore.h:1149`)
+- **Send events, not pointer calls.** Capture the child's `id()` and `push<Event>(child_id)`. Events to a dead actor are dropped by the router, so this never dereferences freed memory. (`src/qb/core/Actor.h:2065-2067`)
+- **Hold the phase-aware handle.** `addRefActor<T>()` (and its alias `addRefHandle<T>()`) returns a `qb::ActorHandle<T>` you can keep across event-handler boundaries. Its `get()` re-queries the owning `VirtualCore` (via `findActor`) and returns `nullptr` if the child is still Activating, failed init, or has died — never a dangling pointer; `operator->()` / `operator*()` call `get()` and assert non-null in debug builds. (`src/qb/core/VirtualCore.h:1156`)
 
 ```cpp
 // src: src/qb/core/Actor.h (addRefHandle / RefActorHandle)

@@ -94,9 +94,8 @@ struct discovery_awaiter {
     std::shared_ptr<discovery_state>           st;
     qb::duration                               timeout;
     std::uint64_t                              id;
-    ev_timer                                   timer{};
-    bool                                       timer_started = false;
-    qb::io::async::cancellation_token::id_type cancel_id     = 0;
+    qb::detail::request_deadline               deadline{}; ///< the window, in the core's clock (no `ev_timer`)
+    qb::io::async::cancellation_token::id_type cancel_id = 0;
 
     discovery_awaiter(std::shared_ptr<discovery_state> s, qb::duration t, std::uint64_t i)
         : st(std::move(s))
@@ -117,14 +116,8 @@ struct discovery_awaiter {
     void
     await_suspend(std::coroutine_handle<> h) {
         st->waiter = h;
-        if (timeout.count() > 0) {
-            ev_timer_init(&timer, &discovery_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
-            timer.data = this;
-            auto loop  = qb::detail::ask_loop();
-            ev_now_update(static_cast<struct ev_loop *>(loop));
-            ev_timer_start(loop, &timer);
-            timer_started = true;
-        }
+        if (timeout.count() > 0)
+            qb::detail::deadline_arm(deadline, timeout, &discovery_awaiter::on_timeout, this);
         cancel_id = st->token.on_cancel([this]() { st->wake(); });
     }
     void
@@ -142,14 +135,11 @@ struct discovery_awaiter {
 private:
     void
     stop_timer() noexcept {
-        if (timer_started) {
-            ev_timer_stop(qb::detail::ask_loop(), &timer);
-            timer_started = false;
-        }
+        qb::detail::deadline_disarm(deadline); // idempotent
     }
     static void
-    on_timeout(struct ev_loop *, ev_timer *w, int) noexcept {
-        auto *me = static_cast<discovery_awaiter *>(w->data);
+    on_timeout(void *self) noexcept {
+        auto *me = static_cast<discovery_awaiter *>(self);
         if (me)
             me->st->wake(); // window elapsed (require) / no reply (ping)
     }

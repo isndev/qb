@@ -1660,6 +1660,80 @@ void ask_register_type(qb::Event::id_type type) noexcept;
 [[nodiscard]] bool ask_try_deliver_reply(qb::Event &ev, qb::ActorId dest) noexcept;
 
 /**
+ * @brief A request's deadline, kept by the core in its own clock -- no libev watcher (Huly QB-189).
+ * @details Every timed request (`ask`, `ask_stream::next()`, `ping`, `require`) used to arm an
+ *          `ev_timer`: an `ev_now_update` and a heap insert to arm, a heap remove to disarm, and --
+ *          the part that cost -- a referenced active watcher for the whole wait, so
+ *          `listener::has_work()` stayed true and EVERY pass of the core ran `ev_run` for the one
+ *          request in flight (22 ns a pass once qev's pass reached its floor, 31 on Windows). A
+ *          deadline is an intrusive node in its core's list (`deadline_list`), sorted by `at`:
+ *          armed from the awaiter it lives in (a precise `mono_now()` read plus a tail insert,
+ *          O(1) for the equal-timeout common case), disarmed in O(1) on reply, cancel or
+ *          teardown, and checked by the core once per pass -- against a COARSE clock first (the
+ *          scheduler tick, a memory read of ~3-5 ns), and against the precise one only when the
+ *          coarse reading cannot rule out that the earliest deadline has passed, i.e. within one
+ *          tick of it. The loop is out of the request path entirely: no watcher, no `ev_run`, and
+ *          `has_work()` is false on a core whose only "watcher" is a pending request.
+ *          Fires on the core's thread, from the pass, outside any handler; the node is unlinked
+ *          before `fire` runs, so `fire` may arm or disarm anything, itself included.
+ */
+struct request_deadline {
+    std::uint64_t     at             = 0;       ///< monotonic ns (`qb::mono_now()`'s epoch)
+    request_deadline *prev           = nullptr; ///< list links; the list is sorted by `at`
+    request_deadline *next           = nullptr;
+    void (*fire)(void *ctx) noexcept = nullptr; ///< non-null while armed
+    void *ctx                        = nullptr;
+    [[nodiscard]] bool
+    armed() const noexcept {
+        return fire != nullptr;
+    }
+};
+
+/**
+ * @brief A core's request deadlines, sorted by `at`, oldest first -- a `VirtualCore` member.
+ * @details A member rather than a thread_local so that the pass's gate (`armed()`, read on EVERY
+ *          pass of every core) is a load off the core object the pass already has in hand:
+ *          measured, an out-of-line call cost ~0.5 ns a pass on g++ and an inline thread_local
+ *          read ~1 ns on MSVC (its TLS access is four dependent loads), where a member load is
+ *          nothing. The clocks and the reference pair are documented in Actor.cpp.
+ */
+struct deadline_list {
+    request_deadline *head           = nullptr;
+    request_deadline *tail           = nullptr;
+    std::uint64_t     ref_precise_ns = 0;     ///< the last precise reading ...
+    std::uint64_t     ref_coarse_ns  = 0;     ///< ... and the coarse reading taken beside it
+    bool              have_ref       = false; ///< whether the pair above exists yet
+    [[nodiscard]] bool
+    armed() const noexcept {
+        return head != nullptr;
+    }
+};
+
+/// Arm `d` on the calling thread's core to fire `fire(ctx)` once `timeout` has elapsed on that
+/// core's clock. A `timeout` of zero or less fires on the next pass. Re-arming moves the node.
+void deadline_arm(request_deadline &d, qb::duration timeout, void (*fire)(void *) noexcept, void *ctx) noexcept;
+/// Unlink an ARMED `d` (the out-of-line half of `deadline_disarm`). Safe after the core is gone (a
+/// frame destroyed at thread teardown): the node is cleared, there is no list to unlink from.
+void deadline_disarm_armed(request_deadline &d) noexcept;
+/// Unlink `d`. Idempotent and O(1); a node that is not armed -- an untimed request's, the common
+/// case on the hot path -- costs the inline test and no call.
+inline void
+deadline_disarm(request_deadline &d) noexcept {
+    if (d.armed())
+        deadline_disarm_armed(d);
+}
+/// Whether the calling thread's core has any armed deadline (tests and diagnostics; the pass reads
+/// its own list).
+[[nodiscard]] bool deadlines_armed() noexcept;
+/// The pass hook: fire every deadline of `l` at or before now. `now_ns` is a fresh `mono_now()`
+/// reading the caller already made (an idle pass has one), or 0 -- then the coarse pre-check
+/// decides whether the precise clock is read at all.
+void deadlines_check(deadline_list &l, std::uint64_t now_ns) noexcept;
+/// Nanoseconds from `now_ns` to the earliest deadline of `l`: 0 when it is due, the maximum value
+/// when nothing is armed. What bounds a park -- the loop holds no timer for a request any more.
+[[nodiscard]] std::uint64_t deadlines_next_in(const deadline_list &l, std::uint64_t now_ns) noexcept;
+
+/**
  * @brief Single awaiter backing `qb::ask` — three wake sources
  *        (response / timeout / actor-scope cancel) guarded by one `done` flag.
  *
@@ -1668,8 +1742,9 @@ void ask_register_type(qb::Event::id_type type) noexcept;
  * `when_any` + `cancellable_sleep`. Those now reclaim their detached timeout/branch
  * tasks the instant a winner is decided (so they no longer leave a zombie timer per
  * in-flight ask), but each still spawns and tears down several helper coroutine frames
- * per call. On a hot request/response path this awaiter is leaner: it arms a single
- * `ev_timer` and **stops it immediately** on response — no spawned helper at all. It
+ * per call. On a hot request/response path this awaiter is leaner: its timeout is a
+ * `request_deadline` in the core's own clock (no libev watcher, so the loop is not run for
+ * it) and it is **disarmed on the spot** on response — no spawned helper at all. It
  * lives in the ask() coroutine frame (address-stable) and is non-movable (the registry
  * holds it by address). Its constructor TAKES the registry entry — so `qb::ask()` builds it
  * before it sends, and a `push_to` that throws is covered by this destructor, not by a guard —
@@ -1686,8 +1761,7 @@ struct ask_awaiter {
     const qb::io::async::cancellation_token &token;
     std::optional<E>                         result;
     std::coroutine_handle<>                  cont;
-    ev_timer                                 timer{};
-    bool                                     timer_started        = false;
+    request_deadline                         deadline{};                   ///< the timeout, in the core's own clock (no `ev_timer`)
     bool                                     finished             = false; ///< `finish()` ran (await_resume, else the dtor)
     enum class kind { pending, ok, timed_out, cancelled } outcome = kind::pending;
     qb::io::async::cancellation_token::cancel_hook hook{}; ///< scope cancel hook; unlinked in finish().
@@ -1728,14 +1802,8 @@ struct ask_awaiter {
             qb::io::async::schedule_via_current(h);
             return;
         }
-        if (timeout.count() > 0) {
-            ev_timer_init(&timer, &ask_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
-            timer.data = this;
-            auto loop  = ask_loop();
-            ev_now_update(static_cast<struct ev_loop *>(loop));
-            ev_timer_start(loop, &timer);
-            timer_started = true;
-        }
+        if (timeout.count() > 0)
+            deadline_arm(deadline, timeout, &ask_awaiter::on_timeout, this);
         // Bare `this`: `finish()` unlinks the hook before this frame can go away, and the token
         // detaches a hook before firing it, so an unlinked hook never fires — even from inside
         // `cancel()`'s walk (see `cancellation_token::cancel`). An embedded list node, not an
@@ -1774,19 +1842,9 @@ private:
         // Unlink the scope cancel hook so a long-lived actor scope token does not retain one
         // dead node per `qb::ask` for the actor's whole life (idempotent, O(1)).
         hook.unlink();
-        if (timer_started) {
-            // The deadline is a one-shot ev_timer embedded directly in this
-            // awaiter (which lives in the ask() coroutine frame). libev auto-stops
-            // a one-shot the instant it expires, BEFORE invoking deliver/on_timeout
-            // — leaving it inactive but still pending in `pendings[]` with
-            // `timer.data` → this (about-to-be-freed) frame. Gating the stop on
-            // `ev_is_active` would skip `clear_pending` in that window, so a later
-            // ev_invoke_pending() would dispatch into freed memory. `ev_timer_stop`
-            // always clears pending first, then no-ops if inactive — so gate on
-            // `timer_started` only. See qb/io/async/coroutine/awaiter.h for details.
-            ev_timer_stop(ask_loop(), &timer);
-            timer_started = false;
-        }
+        // The deadline lives in this awaiter (which lives in the ask() coroutine frame): unlink
+        // it before the frame can go away. Idempotent -- a fired deadline is already unlinked.
+        deadline_disarm(deadline);
     }
 
     // The reply's path: `resolve_ask(e)` in the asker's own handler -> `ask_deliver` -> here, on the
@@ -1828,9 +1886,12 @@ private:
         }
     }
 
+    // Fired by the core's pass (`deadlines_check`), outside any handler; the node is already
+    // unlinked. Keeps going through the scheduler, like the cancel path: nothing on this stack
+    // owns the frame.
     static void
-    on_timeout(struct ev_loop *, ev_timer *w, int) noexcept {
-        auto *me = static_cast<ask_awaiter *>(w->data);
+    on_timeout(void *self) noexcept {
+        auto *me = static_cast<ask_awaiter *>(self);
         if (me && !me->slot.done) {
             me->slot.done = true;
             me->outcome   = kind::timed_out;

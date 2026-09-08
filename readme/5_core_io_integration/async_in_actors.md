@@ -23,9 +23,9 @@ This is the comparison that matters, and it is a comparison of *stacks*, not of 
 
 ```
 VirtualCore::__workflow__                          ← pass N
- ├─ listener::current.run(EVRUN_NOWAIT)            step 3 (VirtualCore.cpp:795)
- ├─ __flush_all__()                                step 5 (VirtualCore.cpp:808)
- └─ __receive__()                                  step 6 (VirtualCore.cpp:810)
+ ├─ listener::current.run(EVRUN_NOWAIT)            step 3 (VirtualCore.cpp:803)
+ ├─ __flush_all__()                                step 5 (VirtualCore.cpp:816)
+ └─ __receive__()                                  step 6 (VirtualCore.cpp:818)
      └─ your on(RequestEvent&)
          └─ spawn([...](auto ctx) -> task<void> { ... });
             └─ registers a frame with the core's scheduler and RETURNS
@@ -96,7 +96,7 @@ Both return immediately and **share the same safety contract**, because a corout
 
 - **Never access actor members after a `co_await`.** The actor may have been destroyed while the coroutine was suspended; touching `this->_member` afterwards is undefined behaviour.
 - **Copy everything you need by value before the first `co_await`.** Do not capture `this` or a reference to a member.
-- **After suspension, use only the context.** `ctx.push<Event>(...)` (to the spawning actor), `ctx.push_to<Event>(dest, ...)`, `ctx.broadcast<Event>(...)`, `ctx.id()` and `ctx.time()` are safe; an event addressed to an actor that is gone finds no handler and is disposed. <!-- src: qb/src/qb/core/VirtualCore.h:1243-1261 -->
+- **After suspension, use only the context.** `ctx.push<Event>(...)` (to the spawning actor), `ctx.push_to<Event>(dest, ...)`, `ctx.broadcast<Event>(...)`, `ctx.id()` and `ctx.time()` are safe; an event addressed to an actor that is gone finds no handler and is disposed. <!-- src: qb/src/qb/core/VirtualCore.h:1250-1268 -->
 - **Keep coroutines short-lived.** The longer one runs, the wider the window in which its actor can be destroyed.
 
 ```cpp
@@ -120,7 +120,7 @@ spawn([this](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 });
 ```
 
-`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is owned by the core's `listener`, one per `VirtualCore`, but it is **not** built when the listener is: `listener::coro_scheduler()` creates it on first access. `spawn` / `spawn_detached` bind to whichever scheduler is current on the calling thread and fall back to that accessor when none exists yet, so both require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1411-1413,1447-1448; qb/src/qb/io/async/listener.h:1063,1067-1074; qb/src/qb/core/Actor.cpp:359-382 -->
+`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is owned by the core's `listener`, one per `VirtualCore`, but it is **not** built when the listener is: `listener::coro_scheduler()` creates it on first access. `spawn` / `spawn_detached` bind to whichever scheduler is current on the calling thread and fall back to that accessor when none exists yet, so both require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1411-1413,1447-1448; qb/src/qb/io/async/listener.h:1063,1067-1074; qb/src/qb/core/Actor.cpp:512-535 -->
 
 What a `kill()` does to a coroutine that is already parked is on [Writing actors](../4_qb_core/actor.md#killed-while-parked) (the actor-lifecycle half) and [C++20 coroutines](../3_qb_io/coroutines.md#safe-integration-with-qbactor) (which awaiters are cancellation-aware).
 
@@ -181,7 +181,7 @@ qb::io::async::callback([this, task_id]() {
 Two arguments are commonly offered for the guard, and neither holds:
 
 - *"The callback runs on the actor's own core, so capturing `this` is safe — there is no cross-thread access."* This answers the wrong question. The hazard is **lifetime**, not threading; running on the right thread says nothing about whether the object still exists.
-- *"The guard covers the killed-but-not-yet-reaped window, which is the one that matters."* Backwards for a *delayed* callback. `kill()` only flags, but `VirtualCore` reaps in the same or the next loop turn — it unregisters the actor's callbacks and destroys it right there. A 5-second timer fires long after the reap. The guard covers microseconds; the hazard window is the whole delay. <!-- src: qb/src/qb/core/VirtualCore.cpp:856,1068 -->
+- *"The guard covers the killed-but-not-yet-reaped window, which is the one that matters."* Backwards for a *delayed* callback. `kill()` only flags, but `VirtualCore` reaps in the same or the next loop turn — it unregisters the actor's callbacks and destroys it right there. A 5-second timer fires long after the reap. The guard covers microseconds; the hazard window is the whole delay. <!-- src: qb/src/qb/core/VirtualCore.cpp:864,1089 -->
 
 **The fix is to bind the delay to the actor's lifetime instead of guarding after the fact.** `Actor::spawn` runs a coroutine under the actor's cancellation scope, and `kill()` cancels that scope, so a pending `ctx.sleep` unwinds rather than resuming into a destroyed actor:
 
@@ -194,7 +194,7 @@ void arm(int task_id) {
     });
 }
 ```
-<!-- src: qb/src/qb/core/Actor.h:1386-1387,1902-1904, qb/src/qb/core/Actor.cpp:402-413 -->
+<!-- src: qb/src/qb/core/Actor.h:1386-1387,1963-1965, qb/src/qb/core/Actor.cpp:555-566 -->
 
 Copy by value everything the body needs before the first `co_await`, and **never capture `this`**. The `ScopedCoroContext` carries the actor's `ActorId` by value, so the only way back into the actor is a `push` — which is exactly the message-back pattern, now with no member access at all. Handle the event in an ordinary `on(Event&)` handler and every state change happens on an actor the dispatcher has already proved is alive.
 
@@ -273,7 +273,7 @@ public:
 };
 ```
 
-Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1386-1387,1902-1904, qb/src/qb/core/Actor.cpp:402-413, examples/01-actors/06-doing-things-later.cpp:237-250 -->
+Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1386-1387,1963-1965, qb/src/qb/core/Actor.cpp:555-566, examples/01-actors/06-doing-things-later.cpp:237-250 -->
 
 `startOperation` takes a `qb::duration` — the canonical span type used for every timeout, delay and interval in the public API. It is an alias for `std::chrono::nanoseconds` and accepts any finer-or-equal chrono literal implicitly (`5s`, `200ms`), while rejecting a bare integer at compile time. <!-- src: qb/src/qb/system/time.h:90 -->
 

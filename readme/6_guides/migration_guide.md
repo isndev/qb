@@ -177,7 +177,7 @@ Notes on the translation:
 
 - `submit(Job)` became `push<JobEvent>(worker, …)`. The engine owns the queue; there is no `notify`.
 - `_total` lost its mutex. Only `WorkerActor::on(const JobEvent&)` reads or writes it, and that handler runs serially on one core, so the data race the lock prevented cannot occur.
-- `stop()` and the `_stop` flag became `push<qb::KillEvent>(worker)`. Every actor is auto-subscribed to `qb::KillEvent` at construction, and the default handler calls `kill()`. _(`qb/src/qb/core/Actor.cpp:241,291`; [Getting started](./getting_started.md).)_
+- `stop()` and the `_stop` flag became `push<qb::KillEvent>(worker)`. Every actor is auto-subscribed to `qb::KillEvent` at construction, and the default handler calls `kill()`. _(`qb/src/qb/core/Actor.cpp:394,444`; [Getting started](./getting_started.md).)_
 - `run()`, the loop, and `_cv.wait` are gone. The event loop inside the `VirtualCore` is the loop.
 - `std::thread` and `join()` became `engine.start()` and `engine.join()`.
 
@@ -196,7 +196,7 @@ Cross-core `push` is delivered over a lock-free queue; the code above is unchang
 
 - **Do not block inside a handler.** A handler holds its core's event-loop thread until it returns; blocking stalls every actor on that core. Wrap blocking or long-running work (synchronous file I/O, a slow library call) in `qb::io::async::callback` so it does not freeze the loop, or restructure it as events. See [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md). _(`qb/src/qb/core/ICallback.h:16`.)_
 - **Do not share an actor's state with other threads.** The no-lock guarantee holds only because one core touches the state. Reintroducing a raw pointer, a `std::shared_ptr` to mutable data, or a global shared with non-actor code reintroduces the data race. Communicate by sending events.
-- **`addActor` can fail — and *how* depends on the path.** The pre-start `Main::addActor<T>(coreId, …)` overload does **not** run `onInit()`; it returns `qb::ActorId::NotFound` (the default-constructed, invalid ID) only when the per-core ID pool is exhausted or a duplicate service `Tag` is registered. An `onInit()` that returns `false` for a pre-start actor is detected at startup: the engine flags that core `VirtualCore::Error::BadActorInit`, the core fails to start, and you observe it via `hasError()` after the run — not through the returned ID. The runtime `addRefActor` / `addActor(…)` path is the one that *does* run `onInit()` at add time and returns an invalid ID when it returns `false`. Guard every returned ID with `is_valid()`, and gate startup with `hasError()`. _(`qb/src/qb/core/Main.h:1014-1039`, `qb/src/qb/core/Main.h:1052-1056`; `qb/src/qb/core/Main.cpp:415-421`; `qb/src/qb/core/VirtualCore.h:129`; `qb/src/qb/core/VirtualCore.cpp:1028-1049`; `qb/src/qb/core/VirtualCore.h:1141-1145`; `qb/src/qb/core/ActorId.h:413,470-471`; [Error handling](./error_handling.md).)_
+- **`addActor` can fail — and *how* depends on the path.** The pre-start `Main::addActor<T>(coreId, …)` overload does **not** run `onInit()`; it returns `qb::ActorId::NotFound` (the default-constructed, invalid ID) only when the per-core ID pool is exhausted or a duplicate service `Tag` is registered. An `onInit()` that returns `false` for a pre-start actor is detected at startup: the engine flags that core `VirtualCore::Error::BadActorInit`, the core fails to start, and you observe it via `hasError()` after the run — not through the returned ID. The runtime `addRefActor` / `addActor(…)` path is the one that *does* run `onInit()` at add time and returns an invalid ID when it returns `false`. Guard every returned ID with `is_valid()`, and gate startup with `hasError()`. _(`qb/src/qb/core/Main.h:1037-1062`, `qb/src/qb/core/Main.h:1075-1079`; `qb/src/qb/core/Main.cpp:415-421`; `qb/src/qb/core/VirtualCore.h:129`; `qb/src/qb/core/VirtualCore.cpp:1049-1070`; `qb/src/qb/core/VirtualCore.h:1148-1152`; `qb/src/qb/core/ActorId.h:413,470-471`; [Error handling](./error_handling.md).)_
 - **Add every actor before `start()`.** Actors are constructed on their worker thread when the engine starts; `addActor` must be called beforehand.
 - **A periodic task is not a `sleep` loop.** Replace a polling thread with `qb::ICallback` (`on(qb::LoopEvent const&)` runs once per loop iteration) or a one-shot `qb::io::async::callback`, both non-blocking. _(`qb/src/qb/core/ICallback.h:170` is the `on(qb::LoopEvent const&)` hook, `:94` says it runs on every loop iteration, `:16-19` is the non-blocking contract; `class ICallback` is at `:147`.)_
 
@@ -565,7 +565,7 @@ t_tpp.cpp:1:10: fatal error: 'qb/core/Actor.tpp' file not found
 ```
 
 Template bodies moved to the tail of the `.h` that declares them — except `qb::Actor`'s, which moved
-to the tail of **`VirtualCore.h`** (`qb/src/qb/core/VirtualCore.h:1109-1114`). Most of those bodies name
+to the tail of **`VirtualCore.h`** (`qb/src/qb/core/VirtualCore.h:1116-1121`). Most of those bodies name
 `VirtualCore::` in a nested-name-specifier and need a complete `qb::VirtualCore`, and `VirtualCore.h`
 already includes `Actor.h` — so `Actor.h` can never host them. The body has to go where the include
 cycle *closes*, which is a position, not a file you get to choose.

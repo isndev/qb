@@ -789,6 +789,14 @@ VirtualCore::__workflow__() {
         // term is true for the rest of a core's life once any actor has spawned a
         // coroutine — a `NOWAIT` libev pass on every tick, ~300–380 ns of poll + clock
         // reads per pass with nothing to poll for (axis E of the qb-vs-others audit).
+        // Request deadlines (`ask`, `ask_stream::next()`, `ping`, `require` with a timeout) live in
+        // the core's own clock, not in libev (Huly QB-189): a member load a pass; when a deadline
+        // is armed, a coarse clock read (~3-5 ns) and, only within a scheduler tick of the earliest
+        // one, the precise read that fires it. Before the io pump, so a fired deadline's coroutine
+        // (queued to the scheduler) resumes in THIS pass's `run()`.
+        if (_deadlines.armed())
+            detail::deadlines_check(_deadlines, 0);
+
         if (io::async::listener::current.has_work()) {
             // Hot path: call `listener::run` directly — no `async::run` wrapper
             // (avoids redundant checks; metrics match `nb_invoked_event()` contract).
@@ -911,15 +919,28 @@ VirtualCore::__workflow__() {
             _idle_since = qb::mono_time{};
         } else {
             const auto now = qb::mono_now();
+            // The idle pass's reading, handed to the deadline list for free: an idle core with a
+            // pending request fires its deadline on the precise clock, no coarse pre-check.
+            if (_deadlines.armed())
+                detail::deadlines_check(_deadlines, static_cast<std::uint64_t>(now.time_since_epoch().count()));
             if (_idle_since == qb::mono_time{}) {
                 _idle_since = now;
             } else if (_mail_box.getLatency() > qb::duration::zero() && now - _idle_since >= _mail_box.getIdleSpin()) {
                 auto &loop = io::async::listener::current;
+                // A pending request deadline bounds the park (Huly QB-189): the loop holds no
+                // timer for it any more, so neither park may outlast it -- the cap is the smaller
+                // of `latency` and the time to the earliest deadline, on the reading made above.
+                auto cap = _mail_box.getLatency();
+                if (_deadlines.armed()) {
+                    const auto left = detail::deadlines_next_in(_deadlines, static_cast<std::uint64_t>(now.time_since_epoch().count()));
+                    if (left < static_cast<std::uint64_t>(cap.count()))
+                        cap = qb::duration{static_cast<qb::duration::rep>(left)};
+                }
                 if (loop.has_work()) {
-                    if (_mail_box.wait(loop))
+                    if (_mail_box.wait(loop, cap))
                         _idle_since = qb::mono_time{};
                 } else {
-                    _mail_box.wait();
+                    _mail_box.wait(cap);
                 }
             }
         }

@@ -142,6 +142,10 @@ public:
 
 private:
     friend class Actor;
+    // The request-deadline list is reached through the thread's current core (Huly QB-189).
+    friend void detail::deadline_arm(detail::request_deadline &, qb::duration, void (*)(void *) noexcept, void *) noexcept;
+    friend void detail::deadline_disarm_armed(detail::request_deadline &) noexcept;
+    friend bool detail::deadlines_armed() noexcept;
     friend class CoroContext;
     friend class Service;
     friend class CoreInitializer;
@@ -543,6 +547,9 @@ private:
                                   ///< cannot be un-requested).
     /// Monotonic count of event-loop passes; surfaced to callbacks via `qb::LoopEvent::iteration`.
     std::uint64_t _loop_count = 0;
+    /// The request deadlines of this core (`ask`, `ask_stream::next()`, `ping`, `require` with a
+    /// timeout), in the core's own clock -- no libev watcher, checked by the pass (Huly QB-189).
+    detail::deadline_list _deadlines;
     /**
      * @brief Optional C++20 cancellation token wired from `qb::Main::_stop_source`.
      * @details

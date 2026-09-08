@@ -453,13 +453,26 @@ public:
          */
         void
         wait() noexcept {
-            if (_latency <= qb::duration::zero())
+            wait(_latency);
+        }
+
+        /**
+         * @brief `wait()` with the park bounded by `cap` instead of `_latency`.
+         * @ingroup Engine
+         * @details The core passes the smaller of `_latency` and the time to its earliest request
+         *          deadline (Huly QB-189): a timed `ask` no longer holds a libev timer that would
+         *          end the park by itself, so the park must not outlast the deadline. A `cap` of
+         *          zero or less returns at once.
+         */
+        void
+        wait(qb::duration const cap) noexcept {
+            if (cap <= qb::duration::zero())
                 return;
             _parked.store(Park::Cv, std::memory_order_relaxed);
             seq_cst_fence();
             if (!has_data()) {
                 std::unique_lock lk(_mtx);
-                _cv.wait_for(lk, _latency, [this] { return has_data(); });
+                _cv.wait_for(lk, cap, [this] { return has_data(); });
             }
             _parked.store(Park::None, std::memory_order_relaxed);
         }
@@ -494,7 +507,17 @@ public:
          */
         [[nodiscard]] bool
         wait(io::async::listener &loop) {
-            if (_latency <= qb::duration::zero())
+            return wait(loop, _latency);
+        }
+
+        /**
+         * @brief `wait(listener &)` with the park bounded by `cap` instead of `_latency` -- the
+         *        same reason as `wait(qb::duration)`: a request deadline the loop knows nothing of.
+         * @ingroup Engine
+         */
+        [[nodiscard]] bool
+        wait(io::async::listener &loop, qb::duration const cap) {
+            if (cap <= qb::duration::zero())
                 return false;
             loop.arm_wake();
             struct Unpark {
@@ -507,7 +530,7 @@ public:
             seq_cst_fence();
             if (has_data())
                 return false;
-            return loop.run_once_for(_latency) != 0;
+            return loop.run_once_for(cap) != 0;
         }
 
         /**

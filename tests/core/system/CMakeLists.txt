@@ -87,6 +87,7 @@ qb_add_test(MODULE qb-core TIER system NAME coroutine-scope    SOURCES coroutine
 # `serial`: it swaps std::cerr's streambuf to read the diagnostic back, which is process-global.
 qb_add_test(MODULE qb-core TIER system NAME coroutine-escaped-exception SOURCES coroutine/coroutine-escaped-exception.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine serial)
 qb_add_test(MODULE qb-core TIER system NAME ask-roundtrip      SOURCES coroutine/ask-roundtrip.cpp      DEPENDS ${PROJECT_NAME} LABELS coroutine requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME ask-deadlines      SOURCES coroutine/ask-deadlines.cpp      DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-core TIER system NAME ask-patterns       SOURCES coroutine/ask-patterns.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME coroutine-resilience SOURCES coroutine/coroutine-resilience.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine patterns)
 

@@ -41,7 +41,7 @@
 #include <utility>
 #include <qb/core/Actor.h>
 #include <qb/io/async/coroutine.h> // cancellation_token / timeout_error / schedule_via_current
-#include "request.h"               // qb::detail::ask_take / ask_loop / to_ev_seconds reuse
+#include "request.h"               // qb::detail::ask_take / deadline_arm reuse
 
 namespace qb {
 
@@ -152,16 +152,16 @@ struct stream_state {
 
 /**
  * @brief Awaiter backing `stream::next()` — wakes on a chunk, end-of-stream, per-chunk timeout
- *        (its own `ev_timer`) or actor-scope cancel. Mirrors `qb::detail::ask_awaiter`.
+ *        (a `request_deadline` in the core's clock, no `ev_timer`) or actor-scope cancel.
+ *        Mirrors `qb::detail::ask_awaiter`.
  */
 template <class E>
 struct stream_next_awaiter {
     std::shared_ptr<stream_state<E>>           st;
     qb::duration                               timeout;
-    ev_timer                                   timer{};
-    bool                                       timer_started = false;
-    bool                                       timed_out     = false;
-    qb::io::async::cancellation_token::id_type cancel_id     = 0;
+    qb::detail::request_deadline               deadline{};
+    bool                                       timed_out = false;
+    qb::io::async::cancellation_token::id_type cancel_id = 0;
     std::coroutine_handle<>                    parked{}; ///< handle we stored in st->waiter (cleared on teardown)
 
     stream_next_awaiter(std::shared_ptr<stream_state<E>> s, qb::duration t)
@@ -179,14 +179,8 @@ struct stream_next_awaiter {
     await_suspend(std::coroutine_handle<> h) {
         st->waiter = h;
         parked     = h;
-        if (timeout.count() > 0) {
-            ev_timer_init(&timer, &stream_next_awaiter::on_timeout, qb::detail::to_ev_seconds(timeout), 0.0);
-            timer.data = this;
-            auto loop  = qb::detail::ask_loop();
-            ev_now_update(static_cast<struct ev_loop *>(loop));
-            ev_timer_start(loop, &timer);
-            timer_started = true;
-        }
+        if (timeout.count() > 0)
+            qb::detail::deadline_arm(deadline, timeout, &stream_next_awaiter::on_timeout, this);
         cancel_id = st->token.on_cancel([this]() {
             st->wake(); // await_resume will see token cancelled and throw
         });
@@ -230,14 +224,11 @@ struct stream_next_awaiter {
 private:
     void
     stop_timer() noexcept {
-        if (timer_started) {
-            ev_timer_stop(qb::detail::ask_loop(), &timer);
-            timer_started = false;
-        }
+        qb::detail::deadline_disarm(deadline); // idempotent
     }
     static void
-    on_timeout(struct ev_loop *, ev_timer *w, int) noexcept {
-        auto *me = static_cast<stream_next_awaiter *>(w->data);
+    on_timeout(void *self) noexcept {
+        auto *me = static_cast<stream_next_awaiter *>(self);
         if (me && !me->st->done && me->st->waiter) {
             me->timed_out = true;
             me->st->wake();

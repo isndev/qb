@@ -294,6 +294,41 @@ policy.
   `dev/bench` `Mono_PingPong` 76.6 → 66.4, the one-core pipeline 42.7 → 34.6 (−19 %), the 8 × 8
   pipeline 263.5 → 228.1 (−13 %), `BM_PINGPONG` 64 actors 29.4 → 26.5. Suites: WSL2 release /
   ASan+UBSan / TSan 192/192, the Windows full gate.
+- **A request timeout is a deadline in the core's own clock, not a libev timer (Huly QB-189).**
+  Every timed `ask`, `ask_stream::next()`, `ping` and `require` armed an `ev_timer`: an
+  `ev_now_update` and a heap insert to arm, a heap remove to disarm, and — the part that cost —
+  a referenced active watcher for the whole wait, so `listener::has_work()` stayed true and
+  EVERY pass of the core ran `ev_run` for the one request in flight (22 ns a pass on g++ once
+  qev's pass reached its floor, 31 on MSVC with a precise clock). The deadline is now an
+  intrusive node in the awaiter, linked into the core's `deadline_list` (a `VirtualCore`
+  member, sorted by deadline, a tail insert for the equal-timeout common case, O(1) unlink on
+  reply, cancel or teardown), and the pass checks it: a member load when nothing is armed; when
+  something is, a COARSE clock read first (`CLOCK_MONOTONIC_COARSE`, `GetTickCount64`,
+  `CLOCK_MONOTONIC_RAW_APPROX`: the scheduler tick, ~3–5 ns) and the precise `mono_now()` only
+  within one tick of the earliest deadline, so a timeout keeps the sub-microsecond precision it
+  had and a busy core pays ~5 ns a pass for it instead of a full loop run. An idle pass hands the
+  list the reading it already makes for the park policy, and a park is bounded by the earliest
+  deadline (`Mailbox::wait(cap)` / `wait(listener &, cap)`: the loop holds no timer for the
+  request any more, so neither park may outlast it). The loop is out of the request path
+  entirely — no watcher, no `ev_run`, `has_work()` false on a core whose only "watcher" is a
+  pending request. Measured (`ask-cost`, one core, five alternations, i9-12900K): a
+  `co_await qb::ask<E>()` with a 500 ms timeout **111.6 → 67.8 ns** on WSL2 g++-14 (−39 %),
+  **157.1 → 90.1** on MSVC 19.51 (−43 %, and back under the 124 it read before the Windows
+  clock became precise), a one-chunk timed `ask_stream` 173.6 → 131.3 / 354.8 → 301.9; the
+  untimed ask 45.5 → 45.9 (ten launches, inside its spread), push and the one-core pass level,
+  `savina/bank-transaction` 2c 83.0 → 80.9 / 1c 142.9 → 144.8, ping-pong 2c 159.5 → 160.3 (ten
+  launches each: the per-pass gate is invisible). The list was first a thread_local read
+  out-of-line, then inline: the call cost ~0.5 ns on every pass on g++ (`push` 23.3 → 24.4) and
+  the inline TLS read ~1 ns on MSVC (`push` 31.6 → 33.6, four dependent loads), which is why it
+  is a core member. Tests (`tests/core/system/coroutine/ask-deadlines.cpp`, eight): a timeout
+  fires with **no libev watcher** active and leaves the list empty; a thousand replied asks arm
+  and disarm with zero watchers; deadlines fire in deadline order, not arming order; a core
+  that is never idle (an event moves on every pass) fires within two passes of the deadline,
+  counted in passes because a loaded host deschedules threads; a one-nanosecond timeout fires
+  on the NEXT pass and chains; a kill mid-wait cancels and disarms (a lingering actor keeps the
+  core alive so a stale node would be fired into); a parking core wakes for the deadline in
+  both park shapes. Each mechanism disabled in turn is rejected (the park bound: both parking
+  cases read 200 ms; the busy-pass check: the busy case fires only when its ticks stop).
 - **The loop's non-blocking pass at its floor, and the evpipe no longer re-enables the poll after
   the first park (qev 5.1.0, Huly QB-188).** The `ev_run(EVRUN_NOWAIT)` a core with one active
   watcher runs on every pass still read the clock twice, raised libev's wake-up handshake (a

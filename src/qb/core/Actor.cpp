@@ -24,11 +24,13 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <map>
 #include <unordered_set>
 #include <qb/core/Actor.h>
-#include <qb/core/VirtualCore.h> // also carries Actor's template bodies (was qb/core/Actor.tpp)
+#include <qb/core/VirtualCore.h> // also carries Actor's template bodies (was qb/core/Actor.tpp); <windows.h> on Windows
 #include <qb/io/async/listener.h>
+#include <qb/system/time.h>
 
 namespace qb {
 
@@ -172,7 +174,158 @@ thread_local ask_table tls_ask_slots;
 // populated lazily by `qb::ask<E>`. Lets the activation gate recognise an ask reply
 // without RTTI and read `correlation_id` at the AskEvent base offset safely.
 thread_local std::unordered_set<Event::id_type> tls_ask_types;
+
+/**
+ * @brief The clocks behind a core's `deadline_list` (see `request_deadline`).
+ * @details Two clocks. The PRECISE one is `qb::mono_now()` -- the vDSO `clock_gettime` on Linux,
+ *          `QueryPerformanceCounter` on Windows, `mach_absolute_time` on macOS: the TSC, ~15-20 ns
+ *          a read -- and it is what a deadline is set and fired against, so a timeout keeps the
+ *          sub-microsecond precision the libev timer had. The COARSE one is the scheduler tick --
+ *          `CLOCK_MONOTONIC_COARSE`, `GetTickCount64`, `CLOCK_MONOTONIC_RAW_APPROX`: a memory read
+ *          of the value the kernel updates on each timer interrupt, ~3-5 ns -- and its ONLY use is
+ *          the pre-check a busy pass makes: it lags the precise clock by less than one tick and
+ *          both advance at one rate, so `precise_now < ref_precise + (coarse_now - ref_coarse) +
+ *          tick`, and a pass whose bound falls before the earliest deadline reads nothing else.
+ *          Only differences of the coarse clock are ever taken (on Windows it does not even share
+ *          the precise clock's origin). The tick bound is deliberately loose -- 20 ms on Linux and
+ *          Windows (a 100 Hz jiffy, a 15.625 ms timer period), 50 ms on macOS, whose approximate
+ *          clock states no bound -- it only decides how long before a deadline the precise reads
+ *          begin, never whether a deadline is judged precisely. A platform with no coarse clock
+ *          reads the precise one on every pass, which is what the libev timer cost anyway.
+ */
+[[nodiscard]] inline std::uint64_t
+mono_ns() noexcept {
+    return static_cast<std::uint64_t>(qb::mono_now().time_since_epoch().count());
+}
+
+#if defined(__linux__)
+constexpr std::uint64_t coarse_tick_ns = 20'000'000; // CONFIG_HZ >= 100: a jiffy is at most 10 ms
+[[nodiscard]] inline std::uint64_t
+coarse_ns() noexcept {
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    return static_cast<std::uint64_t>(ts.tv_sec) * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec);
+}
+#elif defined(_WIN32)
+constexpr std::uint64_t coarse_tick_ns = 20'000'000; // the timer period is at most 15.625 ms
+[[nodiscard]] inline std::uint64_t
+coarse_ns() noexcept {
+    return static_cast<std::uint64_t>(GetTickCount64()) * 1'000'000ull;
+}
+#elif defined(__APPLE__)
+constexpr std::uint64_t coarse_tick_ns = 50'000'000; // "approximate": no stated bound, tens of ms at worst
+[[nodiscard]] inline std::uint64_t
+coarse_ns() noexcept {
+    return clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW_APPROX);
+}
+#else
+constexpr std::uint64_t coarse_tick_ns = 0; // no coarse clock: the pre-check is the precise read
+[[nodiscard]] inline std::uint64_t
+coarse_ns() noexcept {
+    return mono_ns();
+}
+#endif
+
+inline void
+deadline_unlink(deadline_list &l, request_deadline &d) noexcept {
+    if (d.prev)
+        d.prev->next = d.next;
+    else
+        l.head = d.next;
+    if (d.next)
+        d.next->prev = d.prev;
+    else
+        l.tail = d.prev;
+    d.prev = d.next = nullptr;
+}
 } // namespace
+
+void
+deadline_arm(request_deadline &d, qb::duration const timeout, void (*fire)(void *) noexcept, void *ctx) noexcept {
+    // The calling thread's core: an ask, a stream, a discovery can only be armed from an actor
+    // context, i.e. on a live core thread.
+    auto &l = VirtualCore::_handler->_deadlines;
+    if (d.armed())
+        deadline_unlink(l, d);
+    // One precise read: the deadline is absolute in the precise clock. A non-positive timeout is
+    // one nanosecond, so that a deadline armed from a firing one (`at` >= this pass's reading)
+    // fires on the NEXT pass rather than inside the check that is running.
+    const std::uint64_t now = mono_ns();
+    d.at                    = now + (timeout.count() > 0 ? static_cast<std::uint64_t>(timeout.count()) : 1u);
+    d.fire                  = fire;
+    d.ctx                   = ctx;
+    // Sorted insert from the tail: equal timeouts armed in order -- the common case -- land
+    // after the tail in O(1); a shorter one walks back past the longer ones ahead of it.
+    request_deadline *after = l.tail;
+    while (after && after->at > d.at)
+        after = after->prev;
+    d.prev = after;
+    d.next = after ? after->next : l.head;
+    if (d.next)
+        d.next->prev = &d;
+    else
+        l.tail = &d;
+    if (after)
+        after->next = &d;
+    else
+        l.head = &d;
+}
+
+void
+deadline_disarm_armed(request_deadline &d) noexcept {
+    // A frame destroyed after its core thread has withdrawn (`_handler` null: the listener's
+    // teardown runs at thread exit) has no list to leave; clearing the node is the whole job.
+    if (VirtualCore *const core = VirtualCore::_handler; core)
+        deadline_unlink(core->_deadlines, d);
+    d.prev = d.next = nullptr;
+    d.fire          = nullptr;
+    d.ctx           = nullptr;
+}
+
+bool
+deadlines_armed() noexcept {
+    const VirtualCore *const core = VirtualCore::_handler;
+    return core && core->_deadlines.armed();
+}
+
+std::uint64_t
+deadlines_next_in(const deadline_list &l, std::uint64_t const now_ns) noexcept {
+    const request_deadline *const h = l.head;
+    if (!h)
+        return ~std::uint64_t{0};
+    return h->at > now_ns ? h->at - now_ns : 0u;
+}
+
+void
+deadlines_check(deadline_list &l, std::uint64_t now_ns) noexcept {
+    if (!l.head)
+        return;
+    if (now_ns == 0) {
+        const std::uint64_t coarse = coarse_ns();
+        if (l.have_ref) {
+            // The latest the precise clock can read now (see deadline_list): if even that is
+            // before the earliest deadline, nothing can have expired -- no precise read.
+            const std::uint64_t bound = l.ref_precise_ns + (coarse - l.ref_coarse_ns) + coarse_tick_ns;
+            if (bound < l.head->at)
+                return;
+        }
+        now_ns           = mono_ns();
+        l.ref_precise_ns = now_ns;
+        l.ref_coarse_ns  = coarse;
+        l.have_ref       = true;
+    }
+    // Fire in deadline order. The node is unlinked and disarmed BEFORE its callback runs, so the
+    // callback may arm or disarm anything, itself included; the head is re-read after each.
+    while (l.head && l.head->at <= now_ns) {
+        request_deadline &d = *l.head;
+        deadline_unlink(l, d);
+        auto *const fire = d.fire;
+        void *const ctx  = d.ctx;
+        d.fire           = nullptr;
+        d.ctx            = nullptr;
+        fire(ctx);
+    }
+}
 
 std::uint64_t
 ask_take(qb::ActorId const owner, ask_slot *slot) noexcept {
