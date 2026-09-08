@@ -62,7 +62,7 @@ take(1500ms);            // the spelling that works
 take(std::chrono::duration_cast<qb::duration>(1.5s));   // or say the truncation out loud
 ```
 
-This applies wherever a parameter is spelled `qb::duration`. It does **not** apply to the handful of APIs that take a *template* `std::chrono::duration<Rep, Period>` and cast internally — `qb::io::async::callback(func, timeout)` is one (`src/qb/io/async/io.h:373-375`), so `callback(f, 1.5s)` compiles and means 1 500 000 000 ns. Both shapes reject `500`.
+This applies wherever a parameter is spelled `qb::duration`. It does **not** apply to the handful of APIs that take a *template* `std::chrono::duration<Rep, Period>` and cast internally — `qb::io::async::callback(func, timeout)` is one (`src/qb/io/async/io.h:371-373`), so `callback(f, 1.5s)` compiles and means 1 500 000 000 ns. Both shapes reject `500`.
 
 ### `mono_time` and `wall_time` do not mix
 

@@ -152,4 +152,8 @@ VARx(ev_tstamp, now_floor)     /* last time we refreshed rt_time */
         VAR(invoke_cb, ev_loop_callback invoke_cb)
 #endif
 
+    /* qev: last, so nothing above it moves -- an embedder reads several of the fields above inline
+     * on every pass, and where they fall against cache lines is measured. */
+    VARx(int, now_set) /* ev_now_set () supplied this pass's clock: the NOWAIT tail reads none */
+
 #undef VARx

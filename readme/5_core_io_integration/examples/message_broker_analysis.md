@@ -556,7 +556,7 @@ The connection deadline and the reconnect delay are both five seconds. Both reco
 > `qb::io::async::callback([this]{ … connect(); }, RECONNECT_DELAY)`. That runs the lambda on the
 > actor's core with no extra thread — but the timer belongs to the **event loop**, not to the actor:
 > the timed overload heap-allocates a `Timeout` that the listener owns and that fires whatever
-> happened to the actor meanwhile. <!-- src: qb/src/qb/io/async/io.h:389 -->
+> happened to the actor meanwhile. <!-- src: qb/src/qb/io/async/io.h:384 -->
 > This program supplies the precondition: `_should_reconnect` is cleared only by
 > `ClientActor::disconnect()`, which nothing here calls, so when `InputActor` pushes
 > `qb::KillEvent` the actor would be destroyed with a five-second timer still holding `this`. An

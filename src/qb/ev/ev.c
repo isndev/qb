@@ -500,9 +500,17 @@
 
 /* this block fixes any misconfiguration where we know we run into trouble otherwise */
 
+/* qev: not on Windows -- it has no CLOCK_MONOTONIC and no clock_gettime, and its monotonic clock
+ * is QueryPerformanceCounter (ev_win32.c, EV_HAVE_EV_GET_CLOCK, Huly QB-193). This block switched
+ * that clock off for the whole of 5.1.0's development: with EV_USE_MONOTONIC forced to 0, get_clock
+ * was ev_time, the loop's "monotonic" time was the precise SYSTEM time -- stepped by every wall-clock
+ * adjustment -- and the QPC path was dead code, which the ev_now_set test was the first to notice
+ * (Huly QB-195). */
 #ifndef CLOCK_MONOTONIC
+#ifndef _WIN32
 #undef EV_USE_MONOTONIC
 #define EV_USE_MONOTONIC 0
+#endif
 #endif
 
 #ifndef CLOCK_REALTIME
@@ -2903,6 +2911,15 @@ ev_now(EV_P) EV_NOEXCEPT {
 }
 #endif
 
+/* qev: the clock the loop's timers run on, for an embedder that supplies the loop's time
+ * (ev_now_set) or compares ev_timer_next () against a reading of its own. Before the first
+ * loop_init the monotonic probe has not run, so this reads the realtime clock then -- the
+ * same fallback get_clock itself takes; an embedder samples it after its loop exists. */
+ev_tstamp
+ev_clock_now(void) EV_NOEXCEPT {
+    return get_clock();
+}
+
 void
 ev_sleep(ev_tstamp delay) EV_NOEXCEPT {
     if (delay > EV_TS_CONST(0.)) {
@@ -4461,6 +4478,42 @@ ev_io_fed_addr(EV_P) EV_NOEXCEPT {
     return &iofed;
 }
 
+/* The number of active ev_timer watchers, read inline (the same shape as ev_io_count_addr):
+ * an embedder that decides per pass whether the loop has anything to fire skips ev_timer_next
+ * -- and the pass -- when it is 0. */
+const int *
+ev_timer_count_addr(EV_P) EV_NOEXCEPT {
+    return &timercnt;
+}
+
+/* The earliest deadline the loop holds, on the clock ev_clock_now () reads (EV_TSTAMP_HUGE --
+ * 1e13 seconds, beyond any reading -- when it holds none): the top of the timer heap, and of the periodic heap brought onto the
+ * monotonic scale when periodics are compiled in. What an embedder compares a reading of its
+ * own against before deciding that a non-blocking pass has nothing to fire: timers_reify fires
+ * a timer once the loop's time has passed its deadline, so a deadline at or before the
+ * embedder's reading is due, one after it is not. */
+ev_tstamp
+ev_timer_next(EV_P) EV_NOEXCEPT {
+    ev_tstamp at = timercnt ? ANHE_at(timers[HEAP0]) : EV_TS_CONST(EV_TSTAMP_HUGE);
+#if EV_PERIODIC_ENABLE
+    if (periodiccnt) {
+        ev_tstamp pat = ANHE_at(periodics[HEAP0]) - ev_rt_now + mn_now;
+        if (pat < at)
+            at = pat;
+    }
+#endif
+    return at;
+}
+
+/* The address of pipe_write_skipped, read inline: set by ev_async_send () (and by a signal)
+ * from any thread while no pass wanted the evpipe written -- the loop was not blocking -- and
+ * cleared by the pass that delivers it. An embedder that skips passes must run one while it
+ * is set; an embedder that runs every pass never needs it. */
+const EV_ATOMIC_T *
+ev_wake_pending_addr(EV_P) EV_NOEXCEPT {
+    return &pipe_write_skipped;
+}
+
 ecb_noinline void
 ev_invoke_pending(EV_P) {
     pendingpri = NUMPRI;
@@ -4880,7 +4933,9 @@ ev_run(EV_P_ int flags) {
             /* update ev_rt_now, do magic -- the one clock read of a NOWAIT pass, whose
              * `max_block` is unknowable (the embedder ran between passes), so no jump
              * detection on a host without a monotonic clock, as the pre-poll read had none */
-            time_update(EV_A_ flags & EVRUN_NOWAIT ? EV_TS_CONST(EV_TSTAMP_HUGE) : waittime + sleeptime);
+            if (ecb_expect_true(!(now_set && (flags & EVRUN_NOWAIT))))
+                time_update(EV_A_ flags & EVRUN_NOWAIT ? EV_TS_CONST(EV_TSTAMP_HUGE) : waittime + sleeptime);
+            now_set = 0; /* qev: a supplied clock stands for one pass (ev_now_set) */
         }
 
         /* queue pending timers and reschedule them */
@@ -4930,6 +4985,39 @@ ev_unref(EV_P) EV_NOEXCEPT {
 
 void
 ev_now_update(EV_P) EV_NOEXCEPT {
+    time_update(EV_A_ EV_TSTAMP_HUGE);
+}
+
+/* qev: the embedder hands the loop a reading of ev_clock_now () it already made, and the
+ * next EVRUN_NOWAIT pass reads no clock of its own -- its tail time_update, the one read a
+ * non-blocking pass still made after QB-188, stands down for that ONE pass (a pass that
+ * blocks always re-reads: it slept). The realtime clock follows the way time_update's fast
+ * path derives it, by the cached offset while the sample is within MIN_TIMEJUMP/2 of the last
+ * realtime read, else by a real read (and periodics are rescheduled, as there). A sample
+ * older than the loop's time is ignored: the loop's clock never steps back, whatever the
+ * embedder read. Without a monotonic clock there is nothing to supply: a plain update. */
+void
+ev_now_set(EV_P_ ev_tstamp mono) EV_NOEXCEPT {
+#if EV_USE_MONOTONIC
+    if (ecb_expect_true(have_monotonic)) {
+        if (ecb_expect_true(mono > mn_now))
+            mn_now = mono;
+
+        if (ecb_expect_true(mn_now - now_floor < EV_TS_CONST(MIN_TIMEJUMP * .5)))
+            ev_rt_now = rtmn_diff + mn_now;
+        else {
+            now_floor = mn_now;
+            ev_rt_now = ev_time();
+            rtmn_diff = ev_rt_now - mn_now;
+#if EV_PERIODIC_ENABLE
+            periodics_reschedule(EV_A);
+#endif
+        }
+
+        now_set = 1;
+        return;
+    }
+#endif
     time_update(EV_A_ EV_TSTAMP_HUGE);
 }
 

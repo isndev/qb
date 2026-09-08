@@ -779,7 +779,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline socket_awaiter wait_readable(int fd)` / `wait_writable(int fd)` / `wait_for_io(int fd, int events)`.
 *   `inline CoroutineScheduler& coro_scheduler()` — listener's scheduler.
 *   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration. Throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`.
-*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1254-1267`)_.
+*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1353-1366`)_.
 *   use: `co_await qb::io::async::sleep(100ms);`
 
 ### Combinators (`combinators.h`)

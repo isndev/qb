@@ -597,6 +597,7 @@ typedef struct stat ev_statdata;
     EV_API_DECL unsigned int ev_embeddable_backends(void) EV_NOEXCEPT;
 
     EV_API_DECL ev_tstamp ev_time(void) EV_NOEXCEPT;
+    EV_API_DECL ev_tstamp ev_clock_now(void) EV_NOEXCEPT; /* qev: the monotonic clock the loop's timers run on, for ev_now_set / ev_timer_next */
     EV_API_DECL void      ev_sleep(ev_tstamp delay) EV_NOEXCEPT; /* sleep for a while */
 
     /* Sets the allocation function to use, works like realloc.
@@ -671,6 +672,7 @@ ev_is_default_loop (void) EV_NOEXCEPT
     EV_API_DECL unsigned int ev_backend(EV_P) EV_NOEXCEPT; /* backend in use by loop */
 
     EV_API_DECL void ev_now_update(EV_P) EV_NOEXCEPT; /* update event loop time */
+    EV_API_DECL void ev_now_set(EV_P_ ev_tstamp mono) EV_NOEXCEPT; /* qev: supply this pass's time (an ev_clock_now reading); the next EVRUN_NOWAIT pass reads no clock */
 
 #if EV_WALK_ENABLE
     /* walk (almost) all watchers in the loop of a given type, invoking the */
@@ -747,6 +749,9 @@ ev_is_default_loop (void) EV_NOEXCEPT
     EV_API_DECL unsigned int ev_io_count(EV_P) EV_NOEXCEPT; /* active ev_io watchers, the loop's own wake pipe excluded; 0 = ev_run skips a non-blocking poll */
     EV_API_DECL const int *ev_io_count_addr(EV_P) EV_NOEXCEPT; /* the same count, read inline; valid until ev_loop_destroy */
     EV_API_DECL const unsigned int *ev_io_fed_addr(EV_P) EV_NOEXCEPT; /* ready fds the backend reported so far (grows, wraps), read inline: an io cadence stays hot on it */
+    EV_API_DECL const int *ev_timer_count_addr(EV_P) EV_NOEXCEPT; /* qev: active ev_timer watchers, read inline */
+    EV_API_DECL ev_tstamp ev_timer_next(EV_P) EV_NOEXCEPT; /* qev: the earliest timer (or periodic) deadline on ev_clock_now's scale; EV_TSTAMP_HUGE when none */
+    EV_API_DECL const EV_ATOMIC_T *ev_wake_pending_addr(EV_P) EV_NOEXCEPT; /* qev: a cross-thread wake (ev_async_send, a signal) no pass has delivered yet, read inline */
 
     /*
      * stop/start the timer handling.

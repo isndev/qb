@@ -200,7 +200,7 @@ Two further facts shape correct TLS lifetime management:
 
 ### `qb::io::use<>` ties transport lifetime to the actor
 
-When an actor inherits from a `qb::io::use<>` base (for example `qb::io::use<MyClient>::tcp::client<>`), the networking transport — which owns the socket — is a subobject of that base. Its lifetime is therefore the actor's lifetime: when the actor is destroyed, the base subobject is destroyed, the transport's socket destructor runs, and the descriptor is closed. You do not manage the socket directly. If you need the connection torn down *before* the rest of teardown (for instance, to flush an application-level goodbye), call `this->disconnect()` — the method the `tcp::client` base exposes — from your `on(KillEvent&)` handler; RAII still handles the final close either way. (`src/qb/io/async.h:77`, `src/qb/io/async/io.h:1255-1256`)
+When an actor inherits from a `qb::io::use<>` base (for example `qb::io::use<MyClient>::tcp::client<>`), the networking transport — which owns the socket — is a subobject of that base. Its lifetime is therefore the actor's lifetime: when the actor is destroyed, the base subobject is destroyed, the transport's socket destructor runs, and the descriptor is closed. You do not manage the socket directly. If you need the connection torn down *before* the rest of teardown (for instance, to flush an application-level goodbye), call `this->disconnect()` — the method the `tcp::client` base exposes — from your `on(KillEvent&)` handler; RAII still handles the final close either way. (`src/qb/io/async.h:77`, `src/qb/io/async/io.h:1250-1251`)
 
 See [Networking with qb-io](../3_qb_io/README.md) for the transport hierarchy.
 

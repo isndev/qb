@@ -50,7 +50,7 @@ Two caveats that the acceptor component handles for you and this loop does not: 
 
 ## A session has no `co_await read()`
 
-Nothing lets you write `auto msg = co_await session.next_message()`. Bytes arrive at the `io` base's `on(event::io const &event)` handler (`src/qb/io/async/io.h:2744`), are framed by the active protocol in `process_messages()` (`:2597`), and are delivered synchronously to your `on(Protocol::message&&)`. The read loop drains every complete frame in the buffer before returning.
+Nothing lets you write `auto msg = co_await session.next_message()`. Bytes arrive at the `io` base's `on(event::io const &event)` handler (`src/qb/io/async/io.h:2739`), are framed by the active protocol in `process_messages()` (`:2592`), and are delivered synchronously to your `on(Protocol::message&&)`. The read loop drains every complete frame in the buffer before returning.
 
 The bridge in the other direction is the one qbm's three modules use, and it is worth naming because it is the pattern: a request is written, its completion callback is stored, and an awaiter parks the coroutine until that callback fires. `async_awaiter<T>` does this generically (`src/qb/io/async/coroutine/awaiter.h:619-698`), and the modules hand-roll the same shape when they need a richer result type. See [C++20 coroutines](./coroutines.md#bridging-a-callback-api) for the mechanics and the lifetime rules.
 
@@ -78,8 +78,8 @@ This one is a **capability gap, not a documentation gap**, and it is the one mos
 
 `async::file<Derived>` is `file_watcher<Derived>` composed with `transport::file` (`src/qb/io/async/file.h:44-46`). Two things follow:
 
-- **The notification is polled.** `file_watcher::start(path, interval)` arms a libev `ev::stat` watcher, which `stat()`s the path on a timer — the default cadence is 100 ms (`src/qb/io/async/io.h:581`). It is not inotify, not FSEvents, not `kqueue`'s `EVFILT_VNODE`. Shorter intervals cost CPU proportionally.
-- **The read is synchronous.** When the watcher reports growth, `read_all()` loops `Derived.read()` until the file is drained (`src/qb/io/async/io.h:621-644`), and that read is `qb::io::sys::file::read`, an ordinary blocking descriptor read (`src/qb/io/system/file.h:166`). `transport::file::write()` is a placeholder that returns `0` and writes nothing (`src/qb/io/transport/file.h:52-55`).
+- **The notification is polled.** `file_watcher::start(path, interval)` arms a libev `ev::stat` watcher, which `stat()`s the path on a timer — the default cadence is 100 ms (`src/qb/io/async/io.h:576`). It is not inotify, not FSEvents, not `kqueue`'s `EVFILT_VNODE`. Shorter intervals cost CPU proportionally.
+- **The read is synchronous.** When the watcher reports growth, `read_all()` loops `Derived.read()` until the file is drained (`src/qb/io/async/io.h:616-639`), and that read is `qb::io::sys::file::read`, an ordinary blocking descriptor read (`src/qb/io/system/file.h:166`). `transport::file::write()` is a placeholder that returns `0` and writes nothing (`src/qb/io/transport/file.h:52-55`).
 
 On a page-cached local file the read returns without ever blocking and none of this is observable. On a cold file, a network filesystem, or a slow device, the `VirtualCore` thread stops inside `read()` — every actor on that core with it, and with no diagnostic, exactly as described for [`run_sync`](./async_system.md#run_sync-and-run_for-block-the-calling-thread).
 

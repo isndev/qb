@@ -534,7 +534,7 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 > `qb::io::async::callback([this]{ … connect(); }, RECONNECT_DELAY)`. The timed
 > `qb::io::async::callback` overload heap-allocates a `Timeout` owned by the **listener**, not by any
 > actor: it fires when the loop says so, whatever happened to the actor meanwhile.
-> <!-- src: qb/src/qb/io/async/io.h:389 -->
+> <!-- src: qb/src/qb/io/async/io.h:384 -->
 > The precondition is present in this program: `_should_reconnect` is cleared only by
 > `ClientActor::disconnect()`, which nothing here ever calls — when `InputActor` sends
 > `qb::KillEvent`, the framework's default kill handling tears the actor down with the flag still
@@ -550,7 +550,7 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 > into the `ReconnectTickEvent` handler. That is the shape — roughly six extra lines per actor, not
 > per site. Where you want a handle rather than a coroutine, hold the `std::unique_ptr` returned by
 > `qb::io::async::scoped_callback` as an actor member — destroying it cancels the pending callback.
-> <!-- src: qb/src/qb/io/async/io.h:479-484 -->
+> <!-- src: qb/src/qb/io/async/io.h:474-479 -->
 > The AddressSanitizer evidence that made this a rule was measured on a pre-3.0 example that carried the shape at eight sites — three runs of three aborted with `heap-use-after-free`, reported inside exactly such a lambda. That program was retired with the rest of the pre-3.0 examples; see [async operations inside actors](../async_in_actors.md) for the mechanism.
 
 ## Lifecycle, end to end

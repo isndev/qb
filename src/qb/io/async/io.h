@@ -121,10 +121,8 @@ public:
     explicit with_timeout(qb::duration timeout = std::chrono::seconds(3))
         : _timeout(qb::detail::to_ev_seconds(timeout))
         , _last_activity(0) {
-        if (_timeout > 0.) {
-            ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
-            this->_async_event.start(_timeout);
-        }
+        if (_timeout > 0.)
+            this->_async_event.start(_timeout); // `event::timer::start` refreshes the loop's clock first
     }
 
     /**
@@ -377,15 +375,12 @@ callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
         func();
         return;
     }
-    // libev caches the monotonic "now" at the start of each loop iteration.
-    // When the caller schedules a timer from a context that has been idle for
-    // a long time (e.g. a user thread that just returned from a blocking
-    // `sleep_for`), that cache can be arbitrarily stale, which makes the new
-    // timer expire far earlier than requested — `expire = ev_mn_now + timeout`
-    // becomes `(t_now - delta) + timeout`, triggering on the very next
-    // `ev_run`. Refreshing the cache here guarantees the requested delay is
-    // honoured regardless of how long the owning thread slept outside the loop.
-    ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
+    // libev caches the monotonic "now" at the start of each loop iteration, and a core that has
+    // nothing to fire no longer runs the loop at all (Huly QB-190), so that cache can be
+    // arbitrarily stale here -- a timer armed against it would expire early, at once in the
+    // worst case. `event::timer::start` (which `with_timeout`'s constructor calls) refreshes the
+    // loop's clock before arming, so the requested delay is honoured whatever the owning thread
+    // did since the loop last ran.
     new Timeout<_Func>(std::forward<_Func>(func), d);
 }
 

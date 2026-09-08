@@ -440,11 +440,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:62-67, :82-83, :91-95)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
-  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1254-1267; mixin.h:63-71)_
+  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1353-1366; mixin.h:63-71)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
-  them. _(listener.h:1239-1251)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:353-379)_ _(listener.h:1306)_
+  them. _(listener.h:1338-1350)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:351-377)_ _(listener.h:1405)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:546-575)_
@@ -479,7 +479,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:581-584; ev++.h:733)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:576-579; ev++.h:762)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:254-271)_
@@ -1289,7 +1289,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline socket_awaiter wait_readable(int fd)` / `wait_writable(int fd)` / `wait_for_io(int fd, int events)`.
 *   `inline CoroutineScheduler& coro_scheduler()` — listener's scheduler.
 *   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration. Throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`.
-*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1254-1267`)_.
+*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1353-1366`)_.
 *   use: `co_await qb::io::async::sleep(100ms);`
 
 ### Combinators (`combinators.h`)

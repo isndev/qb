@@ -20,6 +20,7 @@
 #define activecnt ((loop)->activecnt)
 #define iocnt ((loop)->iocnt)
 #define iofed ((loop)->iofed)
+#define now_set ((loop)->now_set)
 #define anfdmax ((loop)->anfdmax)
 #define anfds ((loop)->anfds)
 #define async_pending ((loop)->async_pending)
@@ -153,6 +154,7 @@
 #undef activecnt
 #undef iocnt
 #undef iofed
+#undef now_set
 #undef anfdmax
 #undef anfds
 #undef async_pending

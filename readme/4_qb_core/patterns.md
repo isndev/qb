@@ -41,7 +41,7 @@ The patterns also use two timing tools from `qb-io`:
   `scoped_callback` held as an actor member when you want a cancellable handle.
 - `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
   For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/time.h`).
-<!-- src: qb/src/qb/core/Actor.h:1386-1387,1963-1965, qb/src/qb/core/Actor.h:769-772, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/io/async/io.h:312-318,343 -->
+<!-- src: qb/src/qb/core/Actor.h:1386-1387,1963-1965, qb/src/qb/core/Actor.h:769-772, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/io/async/io.h:310-316,341 -->
 
 ## The patterns library (`<qb/core/patterns.h>`)
 
@@ -706,7 +706,7 @@ specific: `spawn` increments the very counter this handler is polling
 member-owned `scoped_callback` gives the same lifetime binding without touching the count. A bare
 `qb::io::async::callback` would give neither — its timer is owned by the loop, so it can fire after
 the actor is gone, and the `is_alive()` guard above is only valid because the *handle* is a member.
-<!-- src: qb/src/qb/core/VirtualCore.h:1391-1402, qb/src/qb/io/async/io.h:479-484 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1391-1402, qb/src/qb/io/async/io.h:474-479 -->
 
 The full coroutine contract — the dangling-closure rule, the `task<void>` type, the scheduler, and
 the safety requirements — lives on the [Coroutines](../3_qb_io/coroutines.md) page. The footgun to

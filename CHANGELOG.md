@@ -294,6 +294,41 @@ policy.
   `dev/bench` `Mono_PingPong` 76.6 → 66.4, the one-core pipeline 42.7 → 34.6 (−19 %), the 8 × 8
   pipeline 263.5 → 228.1 (−13 %), `BM_PINGPONG` 64 actors 29.4 → 26.5. Suites: WSL2 release /
   ASan+UBSan / TSan 192/192, the Windows full gate.
+- **A pass with nothing for the loop to do does not run the loop (qev 5.1.0 `ev_now_set`,
+  `ev_timer_next`, `ev_timer_count_addr`, `ev_wake_pending_addr`; Huly QB-190).** Once the poll was
+  on a cadence, what a non-blocking pass still paid was `ev_run` itself — its clock read, the timer
+  heap, the pending walk, ~22 ns on g++-14 and ~31 on MSVC — on every pass of every core that held
+  one far timer (a `sleep`, a retry, a keep-alive) or one quiet socket, to find nothing. The
+  listener now asks the loop inline before calling it: a pending event, a wake an `ev_async_send`
+  from another thread left while no pass was blocking, a poll the cadence is due to make, or a
+  timer within reach — and a pass with none of the four does not enter the loop. "Within reach"
+  is judged on the CPU's counter, like the cadence: the listener anchors each reading of the
+  loop's clock against `tsc_ticks()` and estimates now as the anchor plus the counter's advance
+  (a 0.1 % rate margin, 2 ms of slack, a fresh anchor every second at most), so a deadline beyond
+  the estimate costs no clock read, and one within it costs the precise read — which is then
+  handed to the loop (`ev_now_set`) so the pass that fires the timer reads no clock of its own. A
+  timer is never judged against the estimate, only against a real reading; precision is the
+  clock's, as before. Measured with the `io-pass` probe's new `timer` shape and its `pass` shape
+  (one pinned core, five alternations, quiet hosts): a busy pass with a far timer **36.6 → 26.3 ns**
+  on WSL2 g++-14 (−28 %), a pass with a quiet socket between two polls **48.0 → 27.5** (−43 %),
+  against 12.2 for a plain pass; the byte's wake latency, push, the timed ask and the no-watcher
+  pass level. MSVC: __MSVC__. What a raw `ev_timer` user must know follows from it: a loop that
+  runs only when something is due has a stale clock the rest of the time, so
+  **`event::timer::start()` / `again()` refresh the loop's clock before every arm** (~17 ns, the
+  `ev_now_update` `sleep`, `callback` and `with_timeout` already made; the C-level
+  `ev_timer_start` keeps libev's contract and leaves the refresh to the caller, as the QUIC
+  endpoint's arm now gets through the wrapper). Tests: `tests/io/unit/async/listener-timer-gate.cpp`
+  (a far timer costs no loop pass — a thousand passes, zero iterations; a timer within reach fires
+  on the first pass after its deadline; the loop's clocks stay consistent across supplied passes;
+  a pending event, a wake from another thread and a byte at the cadence's next poll each run the
+  loop; an `event::timer` armed after 30 ms of skipped passes fires 20 ms later where the raw C arm
+  fires it early — each mechanism disabled in turn is rejected), the raw-fd fixture shared with the
+  cadence test (`tests/io/shared/raw_fd_fixture.h`), qev's `test_now_set` / `test_timer_next` /
+  `test_wake_pending` (floor 35 → 48). Found on the way, in qev (Huly QB-195): on Windows the
+  `QueryPerformanceCounter` clock of QB-193 had never been compiled in — libev's "misconfiguration"
+  block forces `EV_USE_MONOTONIC` to 0 wherever `CLOCK_MONOTONIC` is undefined, and MSVC defines it
+  nowhere — so the loop's "monotonic" time was the precise system time, stepped by every wall-clock
+  adjustment; the block exempts Windows now, and a timer pass reads 31.5 → 28.6 ns there.
 - **A core polls a quiet socket on a cadence, not on every pass (qev 5.1.0 `EVRUN_NOPOLL`, Huly
   QB-191).** A core that owns one socket ran the backend poll — `epoll_wait(0)`, wepoll's IOCP wait,
   `kevent` — on EVERY pass, and on a quiet socket every one of those calls returned nothing: with
@@ -386,7 +421,9 @@ policy.
   delay, a `sleep`, a retry or the park cap could fire up to 16 ms late, a 0-delay timer armed
   and run inside one tick did not fire, and a wall-clock adjustment moved the loop's now. qev
   reads `QueryPerformanceCounter` (sub-µs, monotonic) and `GetSystemTimePreciseAsFileTime`
-  now. Found by qev's loop suite the first time it ran on MSVC — two checks red on the shipped
+  now — the first only since QB-195 (below, with QB-190): libev's misconfiguration block had
+  switched the monotonic clock back off on MSVC, and the precise system time stood in for it
+  until then. Found by qev's loop suite the first time it ran on MSVC — two checks red on the shipped
   code — green since (39 run / 0 failed / 3 skipped). The cost is stated in the open: a
   precise read is ~16 ns where the tick was 3, so on MSVC the NOWAIT pass is 15.8 → 31 ns, a
   timer arm 5.8 → 24 and the timed ask 115 → 166; the next steps of the qev programme take

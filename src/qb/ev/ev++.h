@@ -199,6 +199,11 @@ struct loop_ref {
     }
 
     void
+    now_update() EV_NOEXCEPT {
+        ev_now_update(EV_AX);
+    }
+
+    void
     ref() EV_NOEXCEPT {
         ev_ref(EV_AX);
     }
@@ -254,6 +259,30 @@ struct loop_ref {
     const unsigned int *
     io_fed_addr() const EV_NOEXCEPT {
         return ev_io_fed_addr(EV_AX);
+    }
+
+    /* qev: the number of active timers, read inline (see ev_timer_count_addr) */
+    const int *
+    timer_count_addr() const EV_NOEXCEPT {
+        return ev_timer_count_addr(EV_AX);
+    }
+
+    /* qev: the earliest timer deadline on the loop's clock, EV_TSTAMP_HUGE when none (see ev_timer_next) */
+    tstamp
+    timer_next() const EV_NOEXCEPT {
+        return ev_timer_next(EV_AX);
+    }
+
+    /* qev: a cross-thread wake no pass has delivered yet, read inline (see ev_wake_pending_addr) */
+    const EV_ATOMIC_T *
+    wake_pending_addr() const EV_NOEXCEPT {
+        return ev_wake_pending_addr(EV_AX);
+    }
+
+    /* qev: supply this pass's time -- a reading of ev_clock_now () -- so the next EVRUN_NOWAIT pass reads no clock */
+    void
+    now_set(tstamp mono) EV_NOEXCEPT {
+        ev_now_set(EV_AX_ mono);
     }
 
     void

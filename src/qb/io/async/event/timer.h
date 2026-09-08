@@ -70,6 +70,31 @@ struct timer : base<ev::timer> {
      */
     explicit timer(ev::loop_ref loop) noexcept
         : base_t(loop) {}
+
+    // A timer is armed RELATIVE to the loop's cached clock (`mn_now`), and since qb 3.2 that
+    // cache is refreshed only by the passes that run the loop: a core skips `ev_run` on every
+    // pass with nothing to fire (Huly QB-190), and it parks, so the cache can be as stale as
+    // the time since the last timer fired. Armed against a stale clock, a timer expires early
+    // by that staleness -- at once, in the worst case. So every arm through this wrapper
+    // refreshes the loop's clock first (~17 ns, one `clock_gettime` / `QueryPerformanceCounter`;
+    // the C-level `ev_timer_start` keeps libev's own contract, which leaves the refresh to the
+    // caller). `with_timeout`, `async::callback`, the QUIC endpoint and every `registerEvent<timer>`
+    // user go through here.
+    void
+    start(ev_tstamp after, ev_tstamp repeat = 0.) noexcept {
+        this->loop.now_update();
+        base_t::start(after, repeat);
+    }
+    void
+    start() noexcept {
+        this->loop.now_update();
+        base_t::start();
+    }
+    void
+    again() noexcept {
+        this->loop.now_update();
+        base_t::again();
+    }
 };
 
 /**

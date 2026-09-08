@@ -604,7 +604,7 @@ t_cube.cpp:1:10: fatal error: 'cube.h' file not found
 
 qb's libev fork is published standalone as [`isndev/qev`](https://github.com/isndev/qev), and what
 changed in 3.0 is **where its files live, not what they are called**. The 74 exported C symbols keep
-libev's own names — `ev_run`, `ev_io_start`, `struct ev_loop` (`qb/src/qb/ev/ev.h:700`) — because the
+libev's own names — `ev_run`, `ev_io_start`, `struct ev_loop` (`qb/src/qb/ev/ev.h:702`) — because the
 C API is not reformed, only namespaced by path. What separates an installed qb from an installed
 libev is everything that reaches a filesystem: the archive is `libqb-ev.a` here and `libqev.a`
 standalone, and the headers sit under `qb/ev/`.

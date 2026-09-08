@@ -79,6 +79,8 @@ qb_add_test(MODULE qb-io TIER unit NAME async-transport-traits SOURCES async/asy
 qb_add_test(MODULE qb-io TIER unit NAME listener-clear-reentrant-defer SOURCES async/listener-clear-reentrant-defer.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME listener-has-work SOURCES async/listener-has-work.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME listener-io-cadence SOURCES async/listener-io-cadence.cpp DEPENDS ${PROJECT_NAME})
+# listener-timer-gate pins the pass that does not run the loop: nothing pending, no wake, no poll, no timer within reach (QB-190).
+qb_add_test(MODULE qb-io TIER unit NAME listener-timer-gate SOURCES async/listener-timer-gate.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME quic-adapter           SOURCES quic/quic-adapter.cpp          DEPENDS ${PROJECT_NAME} LABELS quic)
 
 # --- coroutine (pure: scheduler/awaiter/generator/channel/sync/combinator/scope/etc.) ---

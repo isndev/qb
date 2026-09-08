@@ -293,6 +293,91 @@ private:
     double              _tsc_per_ns     = 0.;   ///< the calibration; 0 = no usable counter, poll every pass
     bool                _io_hot         = true; ///< the previous non-blocking pass's poll reported a ready fd: poll again at once
 
+    // ---- The pass without the loop (Huly QB-190) -----------------------------------------
+    // What a non-blocking pass still paid once the poll was on a cadence was `ev_run` itself:
+    // its clock read, the timer heap, the pending walk, ~22 ns on g++ (`bench-pass` `timer`),
+    // ~31 on MSVC -- on every pass of every core that holds one far timer (a `sleep`, a retry,
+    // a keep-alive) or one quiet socket. The loop has nothing to do on such a pass, and it can
+    // now be asked, inline: `*_pending_count` (an event fed since the last pass), the wake flag
+    // (`ev_wake_pending_addr`: an `ev_async_send` from another thread that found no park to
+    // write to), `*_timer_count` and `ev_timer_next()` (the earliest deadline, on the loop's
+    // clock). A pass that has no event pending, no wake, no poll to make and no timer within
+    // reach does not call the loop at all. "Within reach" is judged on the CPU's counter, as
+    // the io cadence is: the listener anchors a reading of the loop's clock (`ev_clock_now`)
+    // against `tsc_ticks()` whenever it makes one, and estimates now as the anchor plus the
+    // counter's advance -- with a rate margin of 0.1 % for the calibration and the kernel's
+    // slewing of the monotonic clock, a slack of 2 ms, and a fresh anchor every second at most
+    // -- so a deadline beyond the estimate is not due and costs no clock read; one within it
+    // costs the precise read, which is then HANDED to the loop (`ev_now_set`) so the pass that
+    // fires the timer reads no clock of its own: one read per pass, whoever needs it. A timer
+    // is never judged against the estimate, only against a real reading -- the estimate only
+    // decides whether to make one -- so precision is the clock's, as before.
+    // (the fields of this gate are declared with the park's, at the end of the data members: see there)
+
+    static constexpr double kTimerBoundSlackS  = 2e-3; ///< the estimate's slack before a deadline counts as within reach
+    static constexpr double kTimerBoundMarginR = 1e-3; ///< the rate margin on the counter's advance
+    static constexpr double kTimerReanchorS    = 1.;   ///< an anchor older than this is not trusted: read
+
+    /// Whether the earliest timer is due, on a real reading of the loop's clock -- made only when
+    /// the counter-based estimate says the deadline is within reach (see the block above). A
+    /// reading made here is kept for the loop (`_supply`). Called only with `*_timer_count > 0`.
+    [[nodiscard]] bool
+    _timer_due(std::uint64_t const tsc) noexcept {
+        const double next = _loop.timer_next();
+        if (_have_anchor && _tsc_per_ns > 0.) {
+            const double elapsed = static_cast<double>(tsc - _anchor_tsc) / _tsc_per_ns * 1e-9;
+            if (elapsed < kTimerReanchorS && _anchor_loop_s + elapsed * (1. + kTimerBoundMarginR) + kTimerBoundSlackS < next)
+                return false;
+        }
+        const double now = ev_clock_now();
+        _anchor_tsc      = tsc;
+        _anchor_loop_s   = now;
+        _have_anchor     = true;
+        _supply_loop_s   = now;
+        _supply          = true;
+        return next <= now;
+    }
+
+    /// The gate of a non-blocking pass: whether it runs the loop at all, and with which flags (the
+    /// io cadence adds `EVRUN_NOPOLL`; a timer within reach leaves a reading in `_supply`). OUT OF
+    /// LINE on purpose: `run()` is inlined into every core's pass, and this gate's code -- a
+    /// counter read, a call into the loop, double arithmetic -- inlined with it cost MSVC's `push`
+    /// round trip +2 ns (31 → 33, five alternations, fully separated) on a core whose pass never
+    /// enters the gate, through what the compiler did to the pass around it; as a call it is a
+    /// few loads on the passes that take it and nothing on the others (measured level).
+    [[nodiscard]] QB_NOINLINE bool
+    _nowait_gate(int &f, bool const pending) noexcept {
+        // The io cadence (see `_io_count`): a non-blocking pass over a loop with an fd polls only
+        // when hot or due; `EVRUN_NOPOLL` keeps everything else of the pass. A hot pass stamps its
+        // poll too, so the interval counts from the LAST poll, whichever rule ran it. One counter
+        // read serves the cadence and the timer gate.
+        std::uint64_t tsc  = 0;
+        bool          poll = *_io_count > 0;
+        if (poll && _poll_every_tsc != 0) {
+            tsc = qb::tsc_ticks();
+            if (_io_hot)
+                _last_poll_tsc = tsc;
+            else if (tsc - _last_poll_tsc < _poll_every_tsc) {
+                poll = false;
+                f |= EVRUN_NOPOLL;
+            } else
+                _last_poll_tsc = tsc;
+        }
+        // The pass without the loop (see `_timer_count`): nothing pending, no wake, no poll to
+        // make and no timer within reach -- the loop has nothing to do, and the pass does not call
+        // it. A timer within reach is judged on a real reading, which the loop is then handed
+        // instead of making its own.
+        if (poll || pending || *_wake_pending != 0)
+            return true;
+        if (*_timer_count == 0)
+            return false;
+        if (_tsc_per_ns <= 0.) // no usable counter: the loop's own read is the cheaper judge
+            return true;
+        if (tsc == 0)
+            tsc = qb::tsc_ticks();
+        return _timer_due(tsc);
+    }
+
     /// Whether this non-blocking pass polls the backend (see the cadence above). Called only
     /// when the loop has an fd to look at and the previous pass delivered nothing.
     [[nodiscard]] bool
@@ -438,6 +523,18 @@ private:
     ev::async _wake;
     ev::timer _park_cap;
     bool      _wake_armed = false;
+
+    // ---- The pass without the loop, its fields (see the block above `_timer_due`). Declared LAST
+    //      on purpose: `has_work()` reads `_deferred` and `_coro_scheduler` on every pass of every
+    //      core, and 48 bytes inserted before them read +2 ns on MSVC's `push` (measured, five
+    //      alternations, fully separated); after them, level.
+    const int         *_timer_count;        ///< `&timercnt` of `_loop`
+    const EV_ATOMIC_T *_wake_pending;       ///< `&pipe_write_skipped` of `_loop`: a cross-thread wake no pass delivered
+    std::uint64_t      _anchor_tsc    = 0;  ///< `tsc_ticks()` at the last reading of the loop's clock
+    double             _anchor_loop_s = 0.; ///< that reading, on the loop's clock (seconds)
+    double             _supply_loop_s = 0.; ///< a reading made for THIS pass, handed to the loop before it runs
+    bool               _have_anchor   = false;
+    bool               _supply        = false;
 
     void
     _on_wake(ev::async &, int) noexcept {}
@@ -595,7 +692,9 @@ public:
         , _io_fed(_loop.io_fed_addr())
         , _defer_wake(_loop)
         , _wake(_loop)
-        , _park_cap(_loop) {
+        , _park_cap(_loop)
+        , _timer_count(_loop.timer_count_addr())
+        , _wake_pending(_loop.wake_pending_addr()) {
         _calibrate_tsc(); // the interval itself stays 0 (poll every pass) until an embedder sets one
         _defer_wake.set<listener, &listener::_on_defer_wake>(this);
         // Lowest priority: libev invokes pendings highest-priority-first, so the
@@ -866,23 +965,23 @@ public:
         // The two counts are the loop's own, so a raw `ev_timer_start` from a
         // coroutine awaiter, a fed `_defer_wake` event and a `loop.unref()`-ed
         // watcher are all judged exactly as `ev_run` itself judges them.
-        if (_loop_has_work()) {
+        const bool pending = _loop_has_pending(); // walked once here, for the liveness rule and the gate
+        if (*_active_count > 0 || pending) {
             int f = flag;
-            // The io cadence (see `_io_count`): a non-blocking pass over a loop with an fd polls
-            // only when hot or due; `EVRUN_NOPOLL` keeps everything else of the pass. A hot pass
-            // stamps its poll too, so the interval counts from the LAST poll, whichever rule ran it.
-            if ((flag & EVRUN_NOWAIT) && *_io_count > 0 && _poll_every_tsc != 0) {
-                if (_io_hot)
-                    _last_poll_tsc = qb::tsc_ticks();
-                else if (!_io_poll_due())
-                    f |= EVRUN_NOPOLL;
+            // A non-blocking pass asks the gate (out of line, see `_nowait_gate`) whether the loop
+            // has anything to do and with which flags; a blocking pass always runs it.
+            if (!(flag & EVRUN_NOWAIT) || _nowait_gate(f, pending)) {
+                if (_supply)
+                    _loop.now_set(_supply_loop_s);
+                _loop.run(f);
+                // The poll reported a ready fd: stay at one poll per pass for the next one (a
+                // burst is served at poll latency); a poll that found nothing, or a pass that
+                // skipped it, leaves the loop cold. Read off the loop's own counter, so a raw
+                // watcher counts.
+                _io_hot      = *_io_fed != _io_fed_seen;
+                _io_fed_seen = *_io_fed;
             }
-            _loop.run(f);
-            // The poll reported a ready fd: stay at one poll per pass for the next one (a burst
-            // is served at poll latency); a poll that found nothing, or a pass that skipped it,
-            // leaves the loop cold. Read off the loop's own counter, so a raw watcher counts.
-            _io_hot      = *_io_fed != _io_fed_seen;
-            _io_fed_seen = *_io_fed;
+            _supply = false;
         }
 
         // Deferred callbacks: continuations of the dispatch that just unwound.

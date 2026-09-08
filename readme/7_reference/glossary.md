@@ -219,14 +219,14 @@ The object a `co_await` expression operates on. It exposes `await_ready()`, `awa
 <a id="callback-io-qbioasynccallback"></a>
 #### `callback` (I/O — `qb::io::async::callback`)
 
-A `qb-io` utility that runs a callable on the current thread. With a positive [`qb::duration`](#qbduration) it arms a one-shot timer on the event loop; **with no delay (or a non-positive one) it calls the callable inline and immediately — it does not schedule and does not defer.** To continue after the current handler unwinds, use [`defer`](#defer-qbioasyncdefer). Distinct from an [actor callback](#callback-actor-qbicallback). Defined in `src/qb/io/async/io.h:348,368`. See [Async system](../3_qb_io/async_system.md).
+A `qb-io` utility that runs a callable on the current thread. With a positive [`qb::duration`](#qbduration) it arms a one-shot timer on the event loop; **with no delay (or a non-positive one) it calls the callable inline and immediately — it does not schedule and does not defer.** To continue after the current handler unwinds, use [`defer`](#defer-qbioasyncdefer). Distinct from an [actor callback](#callback-actor-qbicallback). Defined in `src/qb/io/async/io.h:346,366`. See [Async system](../3_qb_io/async_system.md).
 
 <a id="defer-qbioasyncdefer"></a>
 #### `defer` (`qb::io::async::defer`)
 
-A `qb-io` utility that queues a callable to run **once, at the tail of the current event-loop turn** — after every libev watcher for that turn has returned, so it never executes re-entrantly from inside a handler. The one correct primitive for "continue after this handler unwinds", above all when the handler must destroy or replace the object it is running on (a reconnect). No timer and no delay, unlike [`callback`](#callback-io-qbioasynccallback). Defined in `src/qb/io/async/listener.h:1306`, forwarding to the listener member at `:951`. See [Async system](../3_qb_io/async_system.md).
+A `qb-io` utility that queues a callable to run **once, at the tail of the current event-loop turn** — after every libev watcher for that turn has returned, so it never executes re-entrantly from inside a handler. The one correct primitive for "continue after this handler unwinds", above all when the handler must destroy or replace the object it is running on (a reconnect). No timer and no delay, unlike [`callback`](#callback-io-qbioasynccallback). Defined in `src/qb/io/async/listener.h:1405`, forwarding to the listener member at `:1050`. See [Async system](../3_qb_io/async_system.md).
 
-The listener reports a non-empty deferred queue through `has_deferred` (`src/qb/io/async/listener.h:1033`); a `VirtualCore` tick gates on it so a bare `defer()` still pumps the loop.
+The listener reports a non-empty deferred queue through `has_deferred` (`src/qb/io/async/listener.h:1132`); a `VirtualCore` tick gates on it so a bare `defer()` still pumps the loop.
 
 <a id="coro_scheduler-coroutinescheduler"></a>
 #### `coro_scheduler` / CoroutineScheduler
