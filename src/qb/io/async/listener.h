@@ -367,7 +367,7 @@ private:
         // make and no timer within reach -- the loop has nothing to do, and the pass does not call
         // it. A timer within reach is judged on a real reading, which the loop is then handed
         // instead of making its own.
-        if (poll || pending || *_wake_pending != 0)
+        if (poll || pending || _wake_is_pending() != 0)
             return true;
         if (*_timer_count == 0)
             return false;
@@ -528,13 +528,28 @@ private:
     //      on purpose: `has_work()` reads `_deferred` and `_coro_scheduler` on every pass of every
     //      core, and 48 bytes inserted before them read +2 ns on MSVC's `push` (measured, five
     //      alternations, fully separated); after them, level.
-    const int         *_timer_count;        ///< `&timercnt` of `_loop`
-    const EV_ATOMIC_T *_wake_pending;       ///< `&pipe_write_skipped` of `_loop`: a cross-thread wake no pass delivered
-    std::uint64_t      _anchor_tsc    = 0;  ///< `tsc_ticks()` at the last reading of the loop's clock
-    double             _anchor_loop_s = 0.; ///< that reading, on the loop's clock (seconds)
-    double             _supply_loop_s = 0.; ///< a reading made for THIS pass, handed to the loop before it runs
-    bool               _have_anchor   = false;
-    bool               _supply        = false;
+    const int         *_timer_count;  ///< `&timercnt` of `_loop`
+    const EV_ATOMIC_T *_wake_pending; ///< `&pipe_write_skipped` of `_loop`: a cross-thread wake no pass delivered
+
+    // `_wake_pending` (qev's `pipe_write_skipped`) is written by a PRODUCER thread's `ev_async_send`
+    // (Huly QB-192 made that store a `__atomic` release); this inline read is on the owner thread, so
+    // it must be an atomic acquire too or ThreadSanitizer flags the pair once ev.c is instrumented.
+    // Other inline reads in the gate (`_io_fed`, `_active_count`, `_timer_count`) are owner-thread
+    // only -- written by `ev_run` on this same thread -- so they stay plain. gcc/clang only; the MSVC
+    // read is plain (no TSan there), matching qev's own `#else`.
+    [[nodiscard]] int
+    _wake_is_pending() const noexcept {
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(EV_NO_ATOMIC_BUILTINS)
+        return __atomic_load_n(_wake_pending, __ATOMIC_ACQUIRE);
+#else
+        return *_wake_pending;
+#endif
+    }
+    std::uint64_t _anchor_tsc    = 0;  ///< `tsc_ticks()` at the last reading of the loop's clock
+    double        _anchor_loop_s = 0.; ///< that reading, on the loop's clock (seconds)
+    double        _supply_loop_s = 0.; ///< a reading made for THIS pass, handed to the loop before it runs
+    bool          _have_anchor   = false;
+    bool          _supply        = false;
 
     void
     _on_wake(ev::async &, int) noexcept {}

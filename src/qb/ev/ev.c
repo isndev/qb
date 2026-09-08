@@ -1031,6 +1031,27 @@ static pthread_mutex_t ecb_mf_lock = PTHREAD_MUTEX_INITIALIZER;
 #define ECB_MEMORY_FENCE_RELAXED ECB_MEMORY_FENCE /* very heavy-handed */
 #endif
 
+/* qev (Huly QB-192): the wake protocol's cross-thread flags are hand-synchronised with
+ * ECB_MEMORY_FENCE (an asm mfence on x86) -- correct, but opaque to ThreadSanitizer, which then
+ * reports evpipe_write vs ev_run/pipecb as a data race and cannot run the fork test at all. On a
+ * compiler with the __atomic builtins (gcc, clang) the same acquire/release orders are expressed
+ * as atomics TSan understands -- lowered to __tsan_atomic*, so the race is gone -- and they cost
+ * nothing over the plain access on x86 (an acquire load / release store is a plain mov). The
+ * existing fences are LEFT in place: the atomics make this strictly more ordered, never less, so
+ * correctness is preserved by construction; the redundant fence is invisible to TSan and off the
+ * per-pass hot path (it is only on an actual cross-thread wake). Elsewhere (MSVC -- which has no
+ * TSan anyway) the access stays exactly as before. NOT the C11 `_Atomic` TYPE: that would raise
+ * qev's C99 floor and change ev_async.sent in the public ev.h. */
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(EV_NO_ATOMIC_BUILTINS)
+#define EV_WAKE_LOAD(p) __atomic_load_n((p), __ATOMIC_ACQUIRE)
+#define EV_WAKE_STORE_REL(p, v) __atomic_store_n((p), (v), __ATOMIC_RELEASE)
+#define EV_WAKE_STORE_RLX(p, v) __atomic_store_n((p), (v), __ATOMIC_RELAXED)
+#else
+#define EV_WAKE_LOAD(p) (*(p))
+#define EV_WAKE_STORE_REL(p, v) (*(p) = (v))
+#define EV_WAKE_STORE_RLX(p, v) (*(p) = (v))
+#endif
+
 /*****************************************************************************/
 
 #if ECB_CPP
@@ -2872,7 +2893,7 @@ static int ev_default_loop_ptr;
 ev_tstamp
 ev_time(void) EV_NOEXCEPT {
 #if EV_USE_REALTIME
-    if (ecb_expect_true(have_realtime)) {
+    if (ecb_expect_true(EV_WAKE_LOAD(&have_realtime))) {
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
         return EV_TS_GET(ts);
@@ -2890,7 +2911,7 @@ ev_time(void) EV_NOEXCEPT {
 inline_size ev_tstamp
 get_clock(void) {
 #if EV_USE_MONOTONIC
-    if (ecb_expect_true(have_monotonic)) {
+    if (ecb_expect_true(EV_WAKE_LOAD(&have_monotonic))) {
 #ifdef EV_HAVE_EV_GET_CLOCK
         return ev_win32_get_clock();
 #else
@@ -3447,10 +3468,10 @@ inline_speed int
 evpipe_pending(EV_P) {
     int pending = 0;
 #if EV_SIGNAL_ENABLE
-    pending |= sig_pending;
+    pending |= EV_WAKE_LOAD(&sig_pending);
 #endif
 #if EV_ASYNC_ENABLE
-    pending |= async_pending;
+    pending |= EV_WAKE_LOAD(&async_pending);
 #endif
     return pending;
 }
@@ -3459,20 +3480,20 @@ inline_speed void
 evpipe_write(EV_P_ EV_ATOMIC_T *flag) {
     ECB_MEMORY_FENCE; /* push out the write before this function was called, acquire flag */
 
-    if (ecb_expect_true(*flag))
+    if (ecb_expect_true(EV_WAKE_LOAD(flag)))
         return;
 
-    *flag = 1;
+    EV_WAKE_STORE_REL(flag, 1);
     ECB_MEMORY_FENCE_RELEASE; /* make sure flag is visible before the wakeup */
 
-    pipe_write_skipped = 1;
+    EV_WAKE_STORE_REL(&pipe_write_skipped, 1);
 
     ECB_MEMORY_FENCE; /* make sure pipe_write_skipped is visible before we check pipe_write_wanted */
 
-    if (pipe_write_wanted) {
+    if (EV_WAKE_LOAD(&pipe_write_wanted)) {
         int old_errno;
 
-        pipe_write_skipped = 0;
+        EV_WAKE_STORE_REL(&pipe_write_skipped, 0);
         ECB_MEMORY_FENCE_RELEASE;
 
         old_errno = errno; /* save errno because write will clobber it */
@@ -3528,31 +3549,31 @@ pipecb(EV_P_ ev_io *iow, int revents) {
         }
     }
 
-    pipe_write_skipped = 0;
+    EV_WAKE_STORE_RLX(&pipe_write_skipped, 0);
 
     ECB_MEMORY_FENCE; /* push out skipped, acquire flags */
 
 #if EV_SIGNAL_ENABLE
-    if (sig_pending) {
-        sig_pending = 0;
+    if (EV_WAKE_LOAD(&sig_pending)) {
+        EV_WAKE_STORE_RLX(&sig_pending, 0);
 
         ECB_MEMORY_FENCE;
 
         for (i = EV_NSIG - 1; i--;)
-            if (ecb_expect_false(signals[i].pending))
+            if (ecb_expect_false(EV_WAKE_LOAD(&signals[i].pending)))
                 ev_feed_signal_event(EV_A_ i + 1);
     }
 #endif
 
 #if EV_ASYNC_ENABLE
-    if (async_pending) {
-        async_pending = 0;
+    if (EV_WAKE_LOAD(&async_pending)) {
+        EV_WAKE_STORE_RLX(&async_pending, 0);
 
         ECB_MEMORY_FENCE;
 
         for (i = asynccnt; i--;)
-            if (asyncs[i]->sent) {
-                asyncs[i]->sent = 0;
+            if (EV_WAKE_LOAD(&asyncs[i]->sent)) {
+                EV_WAKE_STORE_RLX(&asyncs[i]->sent, 0);
                 ECB_MEMORY_FENCE_RELEASE;
                 ev_feed_event(EV_A_ asyncs[i], EV_ASYNC);
             }
@@ -3567,13 +3588,13 @@ ev_feed_signal(int signum) EV_NOEXCEPT {
 #if EV_MULTIPLICITY
     EV_P;
     ECB_MEMORY_FENCE_ACQUIRE;
-    EV_A = signals[signum - 1].loop;
+    EV_A = EV_WAKE_LOAD(&signals[signum - 1].loop);
 
     if (!EV_A)
         return;
 #endif
 
-    signals[signum - 1].pending = 1;
+    EV_WAKE_STORE_REL(&signals[signum - 1].pending, 1);
     evpipe_write(EV_A_ & sig_pending);
 }
 
@@ -3599,11 +3620,11 @@ ev_feed_signal_event(EV_P_ int signum) EV_NOEXCEPT {
     /* it is permissible to try to feed a signal to the wrong loop */
     /* or, likely more useful, feeding a signal nobody is waiting for */
 
-    if (ecb_expect_false(signals[signum].loop != EV_A))
+    if (ecb_expect_false(EV_WAKE_LOAD(&signals[signum].loop) != EV_A))
         return;
 #endif
 
-    signals[signum].pending = 0;
+    EV_WAKE_STORE_RLX(&signals[signum].pending, 0);
     ECB_MEMORY_FENCE_RELEASE;
 
     for (w = signals[signum].head; w; w = w->next)
@@ -3920,23 +3941,23 @@ loop_init(EV_P_ unsigned int flags) EV_NOEXCEPT {
         origflags = flags;
 
 #if EV_USE_REALTIME
-        if (!have_realtime) {
+        if (!EV_WAKE_LOAD(&have_realtime)) {
             struct timespec ts;
 
             if (!clock_gettime(CLOCK_REALTIME, &ts))
-                have_realtime = 1;
+                EV_WAKE_STORE_RLX(&have_realtime, 1);
         }
 #endif
 
 #if EV_USE_MONOTONIC
-        if (!have_monotonic) {
+        if (!EV_WAKE_LOAD(&have_monotonic)) {
 #ifdef EV_HAVE_EV_GET_CLOCK
-            have_monotonic = 1; /* the platform clock behind get_clock cannot be absent */
+            EV_WAKE_STORE_RLX(&have_monotonic, 1); /* the platform clock behind get_clock cannot be absent */
 #else
             struct timespec ts;
 
             if (!clock_gettime(CLOCK_MONOTONIC, &ts))
-                have_monotonic = 1;
+                EV_WAKE_STORE_RLX(&have_monotonic, 1);
 #endif
         }
 #endif
@@ -4681,7 +4702,7 @@ timers_reschedule(EV_P_ ev_tstamp adjust) {
 inline_speed void
 time_update(EV_P_ ev_tstamp max_block) {
 #if EV_USE_MONOTONIC
-    if (ecb_expect_true(have_monotonic)) {
+    if (ecb_expect_true(EV_WAKE_LOAD(&have_monotonic))) {
         int       i;
         ev_tstamp odiff = rtmn_diff;
 
@@ -4823,16 +4844,16 @@ ev_run(EV_P_ int flags) {
                 time_update(EV_A_ EV_TS_CONST(EV_TSTAMP_HUGE));
 
                 /* from now on, we want a pipe-wake-up */
-                pipe_write_wanted = 1;
+                EV_WAKE_STORE_REL(&pipe_write_wanted, 1);
 
                 ECB_MEMORY_FENCE; /* make sure pipe_write_wanted is visible before we check for potential skips */
             }
 
-            if (ecb_expect_true(!(flags & EVRUN_NOWAIT || idleall || !activecnt || pipe_write_skipped))) {
+            if (ecb_expect_true(!(flags & EVRUN_NOWAIT || idleall || !activecnt || EV_WAKE_LOAD(&pipe_write_skipped)))) {
                 waittime = EV_TS_CONST(MAX_BLOCKTIME);
 
 #if EV_USE_MONOTONIC
-                if (ecb_expect_true(have_monotonic)) {
+                if (ecb_expect_true(EV_WAKE_LOAD(&have_monotonic))) {
 #if EV_USE_TIMERFD
                     /* sleep a lot longer when we can reliably detect timejumps */
                     if (ecb_expect_true(timerfd != -1))
@@ -4916,7 +4937,7 @@ ev_run(EV_P_ int flags) {
                 backend_poll(EV_A_ waittime);
             assert((loop_done = EVBREAK_CANCEL, 1)); /* assert for side effect */
 
-            pipe_write_wanted = 0; /* just an optimisation, no fence needed */
+            EV_WAKE_STORE_RLX(&pipe_write_wanted, 0); /* just an optimisation, no fence needed */
 
             ECB_MEMORY_FENCE_ACQUIRE;
             /* qev: the pending flags beside pipe_write_skipped -- a sender that found
@@ -4925,7 +4946,7 @@ ev_run(EV_P_ int flags) {
              * unread until a later poll; the flag it was written for is set before either, so
              * reading it here delivers in this pass. The byte itself is drained by whatever
              * poll next sees the evpipe readable, and pipecb tolerates an empty read. */
-            if (ecb_expect_false(pipe_write_skipped || evpipe_pending(EV_A))) {
+            if (ecb_expect_false(EV_WAKE_LOAD(&pipe_write_skipped) || evpipe_pending(EV_A))) {
                 EV_ASSERT_MSG(ev_is_active(&pipe_w), "libev: pipe_w not active, but pipe not written");
                 ev_feed_event(EV_A_ & pipe_w, EV_CUSTOM);
             }
@@ -4999,7 +5020,7 @@ ev_now_update(EV_P) EV_NOEXCEPT {
 void
 ev_now_set(EV_P_ ev_tstamp mono) EV_NOEXCEPT {
 #if EV_USE_MONOTONIC
-    if (ecb_expect_true(have_monotonic)) {
+    if (ecb_expect_true(EV_WAKE_LOAD(&have_monotonic))) {
         if (ecb_expect_true(mono > mn_now))
             mn_now = mono;
 
@@ -5379,7 +5400,7 @@ ev_signal_start(EV_P_ ev_signal *w) EV_NOEXCEPT {
     EV_ASSERT_MSG(!signals[w->signum - 1].loop || signals[w->signum - 1].loop == loop,
                   "libev: a signal must not be attached to two different loops");
 
-    signals[w->signum - 1].loop = EV_A;
+    EV_WAKE_STORE_REL(&signals[w->signum - 1].loop, EV_A);
     ECB_MEMORY_FENCE_RELEASE;
 #endif
 
@@ -5458,7 +5479,7 @@ ev_signal_stop(EV_P_ ev_signal *w) EV_NOEXCEPT {
 
     if (!signals[w->signum - 1].head) {
 #if EV_MULTIPLICITY
-        signals[w->signum - 1].loop = 0; /* unattach from signal */
+        EV_WAKE_STORE_REL(&signals[w->signum - 1].loop, (struct ev_loop *) 0); /* unattach from signal */
 #endif
 #if EV_USE_SIGNALFD
         if (sigfd >= 0) {
@@ -6205,7 +6226,7 @@ ev_async_stop(EV_P_ ev_async *w) EV_NOEXCEPT {
 
 void
 ev_async_send(EV_P_ ev_async *w) EV_NOEXCEPT {
-    w->sent = 1;
+    EV_WAKE_STORE_REL(&w->sent, 1);
     evpipe_write(EV_A_ & async_pending);
 }
 #endif

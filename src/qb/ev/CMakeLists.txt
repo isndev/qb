@@ -484,6 +484,28 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
         )
     endif ()
 
+    # qev (Huly QB-192): when EMBEDDED, take the embedder's sanitizer AND coverage flags so the event loop is
+    # instrumented like the rest of the tree. This target sets its own compile options and never
+    # went through the embedder's qb_apply_compiler_flags(), so ev.c ran UN-instrumented under the
+    # superproject's sanitize / sanitize-thread presets -- ThreadSanitizer never saw the wake
+    # protocol's cross-thread flags (the __atomic conversion in ev.c is what keeps it race-free once
+    # it does). Standalone qev is unaffected (it has no such variables). QB_SANITIZE_*_OPTS / QB_COVERAGE_*_OPTS are set
+    # by qbCompiler.cmake, included before this add_subdirectory.
+    if (NOT QB_EV_STANDALONE)
+        if (QB_SANITIZE_COMPILE_OPTS)
+            target_compile_options(qev PRIVATE ${QB_SANITIZE_COMPILE_OPTS})
+        endif ()
+        if (QB_SANITIZE_LINK_OPTS)
+            target_link_options(qev PRIVATE ${QB_SANITIZE_LINK_OPTS})
+        endif ()
+        if (QB_COVERAGE_COMPILE_OPTS)
+            target_compile_options(qev PRIVATE ${QB_COVERAGE_COMPILE_OPTS})
+        endif ()
+        if (QB_COVERAGE_LINK_OPTS)
+            target_link_options(qev PRIVATE ${QB_COVERAGE_LINK_OPTS})
+        endif ()
+    endif ()
+
     target_link_libraries(qev PUBLIC ${PLATFORM_LIBS})
 
     set_target_properties(qev PROPERTIES
