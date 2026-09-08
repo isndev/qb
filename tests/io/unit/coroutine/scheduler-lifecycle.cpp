@@ -1153,7 +1153,7 @@ TEST_F(CoroutineSchedulerTests, DestructorDestroysOwnedReadyHandle) {
     auto              body_ptr = &body_ran;
 
     {
-        CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+        CoroutineScheduler     standalone{};
         ScopedCurrentScheduler guard{standalone};
 
         // by-value-parameter coroutine: body_ptr is copied into the frame, no dangling closure.
@@ -1187,7 +1187,7 @@ TEST_F(CoroutineSchedulerTests, DestructorDrainsDeferredDestroyFrames) {
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
 
     {
-        CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+        CoroutineScheduler     standalone{};
         ScopedCurrentScheduler guard{standalone};
 
         auto h = standalone.spawn_tracked(trivial_completion_coro());
@@ -1222,7 +1222,7 @@ TEST_F(CoroutineSchedulerTests, DestructorDrainsDeferredDestroyFrames) {
 TEST_F(CoroutineSchedulerTests, CancelSpawnedScrubsDeferredDestroyEntry) {
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
 
-    CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+    CoroutineScheduler     standalone{};
     ScopedCurrentScheduler guard{standalone};
 
     auto h = standalone.spawn_tracked(trivial_completion_coro());
@@ -1278,7 +1278,7 @@ TEST_F(CoroutineSchedulerTests, CancelSpawnedScrubsDeferredDestroyEntry) {
 TEST_F(CoroutineSchedulerTests, HasWorkSeesADeferredFrameAndRunReadyFreesIt) {
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
 
-    CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+    CoroutineScheduler     standalone{};
     ScopedCurrentScheduler guard{standalone};
     EXPECT_FALSE(standalone.has_work()) << "a fresh scheduler has nothing to do";
 
@@ -1310,7 +1310,7 @@ TEST_F(CoroutineSchedulerTests, HasWorkSeesADeferredFrameAndRunReadyFreesIt) {
 TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsOwnedRootFromDeferredDestroy) {
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
 
-    CoroutineScheduler     standalone{qb::io::async::listener::current.loop()};
+    CoroutineScheduler     standalone{};
     ScopedCurrentScheduler guard{standalone};
 
     auto h = standalone.spawn_tracked(trivial_completion_coro());

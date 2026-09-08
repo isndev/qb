@@ -149,6 +149,17 @@ jobs:
             args+=(-DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}")
           fi
 
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            # The per-backend event-loop matrix (Huly QB-81): the four backend-sensitive binaries
+            # and the anti-vacuity guard (event-loop-lifecycle) run once more per backend with
+            # QB_EV_BACKEND in their environment -- ten extra ctest entries. io_uring comes up on
+            # these hosted runners (qev's own lane measures per-backend-smoke iouring=MATCH); where
+            # a kernel or a seccomp profile refuses it, the guard makes the io_uring variant FAIL
+            # rather than let it test epoll under an io_uring name. Never measured before 3.2.0:
+            # the backend went 47x slower than epoll on a quiet socket to parity once looked at.
+            args+=("-DQB_IO_EV_TEST_BACKENDS=epoll;iouring")
+          fi
+
           cmake "${args[@]}"
 
       - name: Build

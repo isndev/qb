@@ -2,7 +2,7 @@
  * qb-io libev backend: Linux io_uring (POLL_ADD / POLL_REMOVE) + timerfd sleep.
  *
  * Goals vs. a minimal upstream-style uring glue:
- * - One libev loop / one OS thread: IORING_SETUP_SINGLE_ISSUER (+ COOP_TASKRUN when supported),
+ * - One libev loop / one OS thread: IORING_SETUP_SINGLE_ISSUER (+ COOP_TASKRUN | TASKRUN_FLAG when supported),
  *   with automatic fallback if io_uring_setup rejects those flags.
  * - No silent loss of SQEs when the submission ring is full: flush to the kernel, then retry.
  * - Correct iouring_to_submit accounting across enter / fd_event (no blanket zero at poll end).
@@ -57,6 +57,12 @@
 #endif
 #ifndef IORING_SETUP_SINGLE_ISSUER
 #define IORING_SETUP_SINGLE_ISSUER (1U << 12)
+#endif
+#ifndef IORING_SETUP_TASKRUN_FLAG
+#define IORING_SETUP_TASKRUN_FLAG (1U << 9)
+#endif
+#ifndef IORING_SQ_TASKRUN
+#define IORING_SQ_TASKRUN (1U << 2)
 #endif
 
 /* CQ-overflow handling flags (stable UAPI, but define defensively for old headers). */
@@ -360,7 +366,16 @@ iouring_cq_drain(EV_P) {
 
 static void
 iouring_poll(EV_P_ ev_tstamp timeout) {
-    if (timeout >= 0.) {
+    /* qev (Huly QB-81): arm the timerfd ONLY when this poll will sleep. The timerfd is the
+     * wake-up source of a BLOCKING wait (poll(2) on the ring fd, aligned with the earliest
+     * deadline); libev's own timers are judged on mn_now every pass and never depend on it.
+     * With `>= 0.` a non-blocking pass (timeout 0 -- qb's EVRUN_NOWAIT hot path) armed it at
+     * "now": it expired at once, its one-shot POLL_ADD completed, iouring_tfd_cb drained it and
+     * reset iouring_tfd_to to HUGE, the POLL_ADD had to be re-armed (io_uring_enter), and the
+     * next pass armed "now" again -- three syscalls per cycle, ~300k cycles/s, a quiet-socket
+     * pass measured at 1345 ns against epoll's 28.5 (47x), whatever the poll cadence. Upstream
+     * libev carries the same `>=`; nobody drives it at millions of NOWAIT passes a second. */
+    if (timeout > 0.) {
         ev_tstamp tfd_to = mn_now + timeout;
 
         if (tfd_to < iouring_tfd_to) {
@@ -443,9 +458,13 @@ iouring_poll(EV_P_ ev_tstamp timeout) {
      * in a kernel-side backlog and raise IORING_SQ_CQ_OVERFLOW. That backlog is
      * only migrated into the visible ring by an io_uring_enter(GETEVENTS); our
      * normal wakeup uses poll(2) on the ring fd and never enters for completions,
-     * so without this flush an overflow could silently stall fds. */
+     * so without this flush an overflow could silently stall fds.
+     * IORING_SQ_TASKRUN (qev QB-81) is the other reason to enter: under COOP_TASKRUN the
+     * completions of a loop spinning in user space sit in the kernel's task work until this
+     * task enters the kernel, and this flag says some do. One GETEVENTS posts them into the ring
+     * and the drain below picks them up in this same pass. */
     ECB_MEMORY_FENCE_ACQUIRE;
-    if (ecb_expect_false(*iouring_sq_flags & IORING_SQ_CQ_OVERFLOW)) {
+    if (ecb_expect_false(*iouring_sq_flags & (IORING_SQ_CQ_OVERFLOW | IORING_SQ_TASKRUN))) {
         for (;;) {
             int r;
             /* release the loop lock around the syscall, like every other
@@ -468,8 +487,16 @@ iouring_init(EV_P_ int flags) {
     (void) flags;
 
     memset(&p, 0, sizeof(p));
-    /* libev runs one thread per loop; tell the kernel when supported (fails with EINVAL on old kernels). */
-    p.flags = (unsigned) IORING_SETUP_SINGLE_ISSUER | (unsigned) IORING_SETUP_COOP_TASKRUN;
+    /* libev runs one thread per loop; tell the kernel when supported (fails with EINVAL on old kernels).
+     * COOP_TASKRUN defers the kernel's completion work to the next time THIS task enters the kernel
+     * -- no IPI into a loop that is busy -- so a loop that never makes a syscall (qev QB-81: a quiet
+     * non-blocking pass makes none) would see a ready fd only at the scheduler tick (measured: wake
+     * p50 2.0 ms, p99 4.0 ms against epoll's 4 / 15 us). TASKRUN_FLAG is its companion: the kernel
+     * raises IORING_SQ_TASKRUN in the SQ ring when such work is pending, and iouring_poll enters
+     * (GETEVENTS) exactly then -- a memory read when quiet, one syscall when something completed.
+     * Both flags or neither: the fallback below drops the whole set, back to prompt IPI delivery. */
+    p.flags = (unsigned) IORING_SETUP_SINGLE_ISSUER | (unsigned) IORING_SETUP_COOP_TASKRUN
+            | (unsigned) IORING_SETUP_TASKRUN_FLAG;
 
     iouring_fd = sys_io_uring_setup(IOURING_QUEUE_DEPTH, &p);
     if (iouring_fd < 0 && (errno == EINVAL || errno == EPERM)) {

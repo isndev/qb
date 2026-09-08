@@ -152,6 +152,24 @@ To find the best backend on a given machine, run the cross-backend stress benchm
 
 The same `QB_EV_BACKEND` values can be wired into CI test coverage via the opt-in CMake matrix `-DQB_IO_EV_TEST_BACKENDS="select;poll;…"` (see `tests/io/system/CMakeLists.txt`).
 
+#### io_uring, measured (3.2.0)
+
+qev ships an io_uring backend — a *poller* (one one-shot `POLL_ADD` per fd, re-armed on every event, a timerfd for the sleep deadline; multishot polls were evaluated and rejected because their level-triggered re-arm breaks libev's one-event-per-iteration contract). Until 3.2.0 it had never been measured against `epoll`, and it should not have been chosen: on the pass a core pays for one **quiet** socket it ran **47× slower** (1345 ns against 28.5) — a self-perpetuating syscall storm, where every non-blocking pass armed the deadline timerfd at "now", the timerfd expired at once, its completion was drained and re-armed through `io_uring_enter`, and the next pass armed it again. Three changes in `src/qb/ev/ev_iouring.c` and `ev.c` made it a peer: the timerfd is armed only for a poll that will sleep; the ring is created with `IORING_SETUP_TASKRUN_FLAG` beside `COOP_TASKRUN`, so a loop that makes no syscall at all still sees its completions (before that a ready fd was noticed at the scheduler tick, a 2 ms wake); and the backend's own timerfd watcher no longer counts as an fd the embedder registered, so a timer-only core is as cheap as under `epoll`.
+
+Measured on WSL2 (kernel 6.6, g++-14, Release, one core pinned, medians of five 2-second runs of `qvoprobe-io-pass`, three of `qvoprobe-parked-io-wake`):
+
+| what a core pays | `epoll` | `io_uring` |
+|---|---|---|
+| a pass with one quiet socket, polled once per µs (the default cadence) | 28.8 ns | **26.4 ns** |
+| the same, polled on every pass | 126.9 ns | **40.9 ns** |
+| a pass with one far timer and no socket (either cadence) | 26.5 ns | 26.4 ns |
+| a pass under a byte every 100 µs / every 10 µs (1 µs cadence) | 55.2 / 56.5 ns | **50.6 / 51.9 ns** |
+| wake-up latency of that byte, p50 / p99 (1 µs cadence) | 3.98 / 17.0 µs | 4.18 / 16.6 µs |
+| syscalls per second: quiet socket / 10k events per second | 960k `epoll_wait` / 960k | **1 / ~20k** |
+| a parked core woken by a socket, p50 / p99 | 41.6 / 137 µs | 41.3 / 161 µs |
+
+Read it as parity with a different shape. `io_uring` checks readiness by reading its memory-mapped completion ring, so a quiet pass costs no syscall at all where `epoll` pays `epoll_wait(0)`: that is the −8 % on the default cadence and the −68 % when a core polls on every pass, the one configuration in which sub-microsecond wake latency is affordable. It pays about 0.2 µs more per delivered event (one `io_uring_enter` to post the completion, one to re-arm the one-shot poll) and its blocking park needs two syscalls (`timerfd_settime`, then `poll`) against `epoll_wait`'s one, which shows in the tails. **The default stays `epoll`**: a single-digit gain at the default cadence does not justify moving every Linux deployment onto a younger backend with more kernel-version and seccomp surface. `io_uring` is the right choice for a core that polls on every pass, and it is now exercised on every Linux CI job of qb (`-DQB_IO_EV_TEST_BACKENDS=epoll;iouring`, with a guard that fails an io_uring variant the kernel refused rather than let it test `epoll` under that name).
+
 ### Messaging cost
 
 The mechanics and the ordering contract are owned by [Event messaging](./../4_qb_core/messaging.md); this section is only the performance lens.

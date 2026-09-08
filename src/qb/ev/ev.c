@@ -5175,6 +5175,26 @@ ev_io_modify(EV_P_ ev_io *w, int events) EV_NOEXCEPT {
     EV_FREQUENT_CHECK;
 }
 
+/* qev: the loop's OWN io watchers are not pollable fds to the embedder and stay out of iocnt:
+ * the wake pipe (Huly QB-188, see ev_run) and, under io_uring, the backend's deadline timerfd.
+ * Counted, that timerfd made every timer-only loop look like one holding io, so the no-poll pass
+ * of QB-187 (iocnt == 0 skips backend_poll) and the inline gate of QB-190 (io_count in the
+ * embedder's "nothing for the loop" test) never applied under io_uring -- a NOWAIT pass with one
+ * far timer measured 40.5 ns against epoll's 25.8, and qb's listener-timer-gate suite went red the
+ * day the whole suite was run on that backend (Huly QB-81). A non-blocking pass needs no timerfd
+ * (libev judges its timers on mn_now); a blocking one polls the backend regardless and submits
+ * the timerfd's POLL_ADD before it sleeps, so the exclusion changes nothing there. */
+inline_size int
+io_is_loop_own(EV_P_ ev_io *w) {
+    if (w == &pipe_w)
+        return 1;
+#if EV_USE_IOURING
+    if (w == &iouring_tfd_w)
+        return 1;
+#endif
+    return 0;
+}
+
 ecb_noinline void
 ev_io_start(EV_P_ ev_io *w) EV_NOEXCEPT {
     int fd = w->fd;
@@ -5201,7 +5221,7 @@ ev_io_start(EV_P_ ev_io *w) EV_NOEXCEPT {
     EV_FREQUENT_CHECK;
 
     ev_start(EV_A_(W) w, 1);
-    iocnt += w != &pipe_w; /* the loop's own wake pipe is not a pollable fd to the embedder: see ev_run */
+    iocnt += !io_is_loop_own(EV_A_ w); /* the loop's own watchers are not pollable fds to the embedder */
     array_needsize(ANFD, anfds, anfdmax, fd + 1, array_needsize_zerofill);
     wlist_add(&anfds[fd].head, (WL) w);
 
@@ -5234,7 +5254,7 @@ ev_io_stop(EV_P_ ev_io *w) EV_NOEXCEPT {
 
     wlist_del(&anfds[w->fd].head, (WL) w);
     ev_stop(EV_A_(W) w);
-    iocnt -= w != &pipe_w;
+    iocnt -= !io_is_loop_own(EV_A_ w);
 
     fd_change(EV_A_ w->fd, EV_ANFD_REIFY);
 
@@ -6339,7 +6359,7 @@ ev_walk(EV_P_ int types, void (*cb)(EV_P_ int type, void *w)) EV_NOEXCEPT {
                     ;
                 else
 #endif
-                    if ((ev_io *) wl != &pipe_w)
+                    if (!io_is_loop_own(EV_A_ (ev_io *) wl))
                     if (types & EV_IO)
                         cb(EV_A_ EV_IO, wl);
 

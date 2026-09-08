@@ -323,11 +323,19 @@ private:
 class CoroutineScheduler {
 public:
     /**
-     * @brief Construct with event loop
-     * @param loop The libev event loop
+     * @brief Construct a scheduler.
+     *
+     * It owns no event loop: an awaiter that suspends on libev carries the loop it arms its
+     * watcher on (`listener::current.loop()`, injected by `sleep()` / `wait_readable()`), and the
+     * scheduler only queues and resumes handles. It used to take an `ev::loop_ref` defaulting to
+     * `ev::get_default_loop()`, stored and never read -- the one effect of that default was to
+     * CREATE libev's global default loop from whichever core thread first hit the `current()`
+     * fallback (an actor's `onInit` awaiting before `__begin_activation__` sets the listener's
+     * scheduler): a loop nobody pumps, and a data race against every other core's
+     * `ev_loop_destroy`, which reads `ev_default_loop_ptr` (Huly QB-197, found by the
+     * io_uring-forced ThreadSanitizer run of QB-81).
      */
-    explicit CoroutineScheduler(ev::loop_ref loop = ev::get_default_loop())
-        : loop_(loop) {}
+    CoroutineScheduler() noexcept = default;
 
     /**
      * @brief Destructor
@@ -1080,9 +1088,6 @@ private:
     // duration of a `run_ready` call; the body of run_ready() checks this
     // up-front to refuse a nested invocation.
     bool in_run_ready_{false};
-
-    // Reference to event loop
-    ev::loop_ref loop_;
 
     // Thread-local current scheduler. `inline` + QB_ABI_ANCHOR, NOT a .cpp definition: an
     // out-of-line thread_local emits a `non-external` TLS descriptor, which gives a host and a

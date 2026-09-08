@@ -44,7 +44,7 @@ llm/qb.llm.api.md	crypto.h:969-986	1893285b514b	static std::string encrypt_with_
 llm/qb.llm.api.md	crypto.h:996-1000	b836147352c8	static std::vector<unsigned char> ecies_decrypt(const std::vector<uns...
 llm/qb.llm.api.md	crypto_asymmetric.cpp:718-718	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
 llm/qb.llm.api.md	listener.h:1368-1381	31584ba4b550	inline void
-llm/qb.llm.api.md	scheduler.h:751-754	1cdfb1dc422b	[[nodiscard]] bool
+llm/qb.llm.api.md	scheduler.h:759-762	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	task.h:719-734	78c61ef4167a	await_resume() {
 llm/qb.llm.md	Actor.cpp:388-393	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:577-595	94aff7135980	void
@@ -97,8 +97,8 @@ llm/qb.llm.md	listener.h:1420-1420	cc6b74b785e4	defer(_Func &&func) {
 llm/qb.llm.md	patterns/request.h:100-100	fd61ad9ff46e	ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duratio...
 llm/qb.llm.md	patterns/request.h:136-136	c3c9fef2ebd3	ask(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeo...
 llm/qb.llm.md	patterns/request.h:213-213	5dd60a7f715b	ask_by(qb::ScopedCoroContext ctx, qb::ActorId target, deadline dl, Ar...
-llm/qb.llm.md	scheduler.h:335-355	c96fefd341a2	* Drains and destroys all coroutines in the ready queue only. Coroutines
-llm/qb.llm.md	scheduler.h:546-575	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
+llm/qb.llm.md	scheduler.h:343-363	c96fefd341a2	* Drains and destroys all coroutines in the ready queue only. Coroutines
+llm/qb.llm.md	scheduler.h:554-583	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
 llm/qb.llm.md	ssl/context.h:128-128	3b96c5ab4fe6	class QB_API Context {
 llm/qb.llm.md	ssl/socket.h:464-464	37e2ac1caed3	explicit socket(qb::io::ssl::Context ctx) noexcept;
 llm/qb.llm.md	ssl/socket.h:84-84	111eae84930c	SSL_CTX *create_client_context(const SSL_METHOD *method);

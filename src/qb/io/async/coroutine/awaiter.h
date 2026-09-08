@@ -319,15 +319,13 @@ struct timer_awaiter : awaiter_base {
     /**
      * @brief Construct with duration
      * @param duration The time to wait
-     * @param loop The event loop the timer is armed on.
-     * @warning The default is libev's **default loop**, which is NOT necessarily the loop the
-     *          resuming scheduler pumps. `await_suspend` resumes through `CoroutineScheduler::current`
-     *          (the listener's scheduler, bound to the listener's loop); if that loop differs from
-     *          @p loop the watcher fires on a loop nobody pumps and the coroutine parks forever.
-     *          Always construct via the public `sleep()` (qb/io/async/coroutine/utils.h), which injects
-     *          `listener::current.loop()`; only pass an explicit @p loop here if it is that same loop.
+     * @param loop The event loop the timer is armed on: the one the resuming scheduler's thread
+     *             pumps, `listener::current.loop()`. Required -- it used to default to libev's
+     *             global default loop, a loop nobody pumps (the coroutine parked forever) whose lazy
+     *             creation from a core thread was a data race (Huly QB-197). Construct via the public
+     *             `sleep()` (qb/io/async/coroutine/utils.h), which injects the right loop.
      */
-    timer_awaiter(qb::duration duration, ev::loop_ref loop = ev::get_default_loop())
+    timer_awaiter(qb::duration duration, ev::loop_ref loop)
         : loop_(loop)
         , yield_only_(duration.count() <= 0) {
         if (!yield_only_) {
@@ -494,9 +492,11 @@ struct socket_awaiter : awaiter_base {
      * @brief Construct with file descriptor and events
      * @param fd The file descriptor
      * @param events Events to wait for (EV_READ, EV_WRITE)
-     * @param loop The event loop (defaults to current)
+     * @param loop The event loop the watcher is armed on: `listener::current.loop()`, injected by
+     *             `wait_readable()` / `wait_writable()` / `wait_for_io()`. Required (Huly QB-197: the
+     *             former default created libev's global default loop, unpumped and racy).
      */
-    socket_awaiter(int fd, int events, ev::loop_ref loop = ev::get_default_loop())
+    socket_awaiter(int fd, int events, ev::loop_ref loop)
         : fd_(fd)
         , events_(events)
         , loop_(loop) {
@@ -505,7 +505,7 @@ struct socket_awaiter : awaiter_base {
     }
 
 #if defined(_WIN32)
-    socket_awaiter(uintptr_t handle, int events, ev::loop_ref loop = ev::get_default_loop())
+    socket_awaiter(uintptr_t handle, int events, ev::loop_ref loop)
         : events_(events)
         , loop_(loop) {
         ev_io_init_sock(&watcher_, io_callback, handle, events);

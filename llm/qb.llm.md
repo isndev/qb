@@ -432,9 +432,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:351-377)_ _(listener.h:1420)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
-  without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:546-575)_
+  without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:554-583)_
 - **Stop the event loop before destroying a coroutine scheduler;** suspended frames are intentionally
-  leaked while their watchers reference them. _(scheduler.h:335-355)_
+  leaked while their watchers reference them. _(scheduler.h:343-363)_
 - **Time model is `std::chrono`-only on public signatures.** All timeouts/TTL/intervals/delays take
   `qb::duration` (= `std::chrono::nanoseconds`); it accepts finer-or-equal chrono literals and **rejects
   bare integers at compile time**. `qb::mono_time` (steady) is for deadlines/timers/latency, `qb::wall_time`

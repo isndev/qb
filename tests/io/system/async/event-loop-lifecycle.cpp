@@ -663,6 +663,54 @@ TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsHonoursKnownSupportedBackend) 
     }
 }
 
+// The per-backend ctest matrix (QB_IO_EV_TEST_BACKENDS, tests/io/system/CMakeLists.txt) runs a
+// handful of backend-sensitive binaries once per backend with QB_EV_BACKEND set in their
+// environment. That variable is honoured only where the backend is built in AND comes up at
+// runtime; otherwise _resolve_backend_flags degrades to auto -- correct for a user, VACUOUS for a
+// matrix variant, whose name would then promise a backend it never touches (a container's seccomp
+// profile blocking io_uring is the realistic case, and the four sensitive binaries never check).
+// So this binary is in that matrix, and this case reads the AMBIENT variable and asserts the
+// contract it lands on: unpinned, a fresh listener is on the platform's auto backend; pinned to a
+// name the matrix knows, that backend must be compiled in (else the matrix is misconfigured for
+// this platform) and a fresh listener must be ON it (else the variant is vacuous). Huly QB-81.
+TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsHonoursTheMatrixEnvironment) {
+    const char *want = std::getenv("QB_EV_BACKEND");
+
+    std::atomic<unsigned int> chosen{0};
+    std::thread               t([&chosen] {
+        async::listener probe; // ctor reads QB_EV_BACKEND as the matrix variant left it
+        chosen.store(probe.backend());
+    });
+    t.join();
+
+    if (!want || !*want || std::string(want) == "auto") {
+        EXPECT_NE(chosen.load(), 0u);
+        EXPECT_STRNE(async::listener::backend_name(chosen.load()), "unknown")
+            << "unpinned, a fresh listener must come up on a valid auto-selected backend";
+        return;
+    }
+    struct Known {
+        const char  *name;
+        unsigned int flag;
+    };
+    static constexpr Known table[] = {
+        {"select", EVBACKEND_SELECT}, {"poll", EVBACKEND_POLL},         {"epoll", EVBACKEND_EPOLL},     {"kqueue", EVBACKEND_KQUEUE},
+        {"port", EVBACKEND_PORT},     {"linuxaio", EVBACKEND_LINUXAIO}, {"iouring", EVBACKEND_IOURING}, {"io_uring", EVBACKEND_IOURING},
+    };
+    unsigned int flag = 0;
+    for (const auto &k : table)
+        if (std::string(want) == k.name)
+            flag = k.flag;
+    ASSERT_NE(flag, 0u) << "QB_EV_BACKEND='" << want << "' is not a name the matrix knows";
+    ASSERT_TRUE(ev_supported_backends() & flag) << "QB_EV_BACKEND='" << want
+                                                << "' names a backend this libev was not built with: the matrix "
+                                                   "is misconfigured for this platform, and its variant would silently test another backend";
+    EXPECT_EQ(chosen.load(), flag) << "QB_EV_BACKEND='" << want << "' is built in, yet a fresh listener came up on '"
+                                   << async::listener::backend_name(chosen.load())
+                                   << "': the runtime probe fell back to auto, and this matrix variant would test a backend "
+                                      "other than the one its name promises";
+}
+
 // An unrecognised name must degrade to EVFLAG_AUTO (the `!known` arm) without
 // throwing, yielding a real, non-"unknown" auto-selected backend.
 TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsUnknownNameFallsBackToAuto) {

@@ -1273,7 +1273,7 @@ public:
     [[nodiscard]] inline CoroutineScheduler &
     coro_scheduler() {
         if (!_coro_scheduler) {
-            _coro_scheduler = std::make_unique<CoroutineScheduler>(_loop);
+            _coro_scheduler = std::make_unique<CoroutineScheduler>();
             // Set as current for this thread
             CoroutineScheduler::set_current(_coro_scheduler.get());
         }

@@ -764,7 +764,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `class CoroutineScheduler` — mono-thread scheduler over an `ev::loop_ref`.
     *   `void spawn(task<void>&& t)`, `[T<Callable>] void spawn(Callable fn)` — **pass the lambda WITHOUT trailing `()`** (avoids dangling-closure UB).
     *   `std::size_t run_ready(std::size_t max_count = 0)` — drain the ready queue (not re-entrant).
-    *   `[[nodiscard]] bool is_draining_ready() const noexcept` — true while inside `run_ready()`. This is the query the re-entrancy guard below tests _(`scheduler.h:751-754`)_.
+    *   `[[nodiscard]] bool is_draining_ready() const noexcept` — true while inside `run_ready()`. This is the query the re-entrancy guard below tests _(`scheduler.h:759-762`)_.
     *   `void schedule_resume(std::coroutine_handle<>)`
     *   `static CoroutineScheduler& current()`, `static CoroutineScheduler* current_ptr() noexcept`, `static void set_current(CoroutineScheduler*)`.
     *   `std::size_t active_count() const`.

@@ -153,11 +153,17 @@ endif ()
 # the migrated target names. See the original block for rationale + valid backend values.
 # -----------------------------------------------------------------------------
 if (QB_IO_EV_TEST_BACKENDS)
+    # event-loop-lifecycle carries the matrix's anti-vacuity guard (Huly QB-81): its
+    # ResolveBackendFlagsHonoursTheMatrixEnvironment case reads the QB_EV_BACKEND this variant
+    # sets and FAILS if the named backend is not compiled in or did not come up at runtime --
+    # the four sensitive binaries never check, so without it a variant whose backend fell back
+    # to auto would pass while testing another backend than the one its name promises.
     set(QB_IO_BACKEND_SENSITIVE_TESTS
             qb-io-test-system-tcp-socket-loopback
             qb-io-test-system-async-bases-framing
             qb-io-test-system-async-connect-timeout
-            qb-io-test-system-session-json)
+            qb-io-test-system-session-json
+            qb-io-test-system-event-loop-lifecycle)
     foreach (_qb_tgt ${QB_IO_BACKEND_SENSITIVE_TESTS})
         if (TARGET ${_qb_tgt})
             set(_qb_lock "evmx_${_qb_tgt}")
