@@ -145,6 +145,14 @@ TEST(InitHandle, SyncChildReadyImmediately) {
 // ===========================================================================
 // 3. A broadcast KillEvent reaches a still-Activating victim and cancels its init.
 // ===========================================================================
+// The victim's sleep is the WINDOW the kill has to land in, and it is sized for a loaded host,
+// not for the mechanism: the trigger's 20 ms timer and the victim's timer sit in the same loop,
+// and if the core's thread is descheduled for longer than the window both expire in one pass --
+// the timer callbacks then run back to back in `ev_invoke_pending`, the victim's coroutine
+// resumes before the broadcast kill is even delivered, and the test fails with the mechanism
+// intact (measured once at 500 ms with two full gates saturating the box). A cancelled sleep
+// ends the test in ~20 ms whatever its length; a sleep that is NOT cancelled fails it after the
+// window -- so a long window only lengthens the failure, never the pass.
 std::atomic<bool> g_shut_started{false};
 std::atomic<bool> g_shut_completed{false};
 std::atomic<bool> g_shut_destroyed{false};
@@ -154,8 +162,8 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         g_shut_started.store(true);
-        co_await context().sleep(500ms); // cancelled by the broadcast shutdown
-        g_shut_completed.store(true);    // must NOT happen
+        co_await context().sleep(5s); // cancelled by the broadcast shutdown (the window, see above)
+        g_shut_completed.store(true); // must NOT happen
         co_return true;
     }
     ~ShutdownVictim() override {

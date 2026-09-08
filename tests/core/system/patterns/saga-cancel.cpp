@@ -28,9 +28,19 @@
  * line of compA's body, so it is a true "did we even start the next compensation" probe.
  *
  * De-flaked vs the monolith: the kill must land while compB is parked on the silent peer (after the
- * ~30ms step-3 timeout) — a generous window — and the killer arms only a BACKSTOP `stop()` so a
- * regression fails loudly via the flag assertions rather than hanging. The flags are the oracle, not
- * any wall-clock comparison.
+ * ~30ms step-3 timeout, and before compB's own ask times out) — and the killer arms only a BACKSTOP
+ * `stop()` so a regression fails loudly via the flag assertions rather than hanging. The flags are the
+ * oracle, not any wall-clock comparison.
+ *
+ * The window is sized for a LOADED host, not for the mechanism. The kill is a libev timer and the
+ * step-3 timeout a deadline the pass checks first; if the core's thread is descheduled across BOTH
+ * (a 40 ms window measured it once, on a box saturated by two full gates), they land in the same
+ * pass, the timeout's resumption is deferred to the next one, the kill cancels the scope first and
+ * compB is never reached — a failure with the mechanism intact. So the kill lands 300 ms after the
+ * timeout (a stall of that length is what it now takes) and compB's ask outlives it by another
+ * 670 ms. The run always lasts to the backstop: a kill that did NOT cancel compB shows only once
+ * compB's ask has timed out and compA has been entered, so the backstop sits past that (1.5 s,
+ * against 2 s before), and the flags are read after it.
  *
  * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
  */
@@ -109,8 +119,8 @@ public:
                     });
                     (void) co_await qb::ask(c, ok, SagaQ{3}, 500ms); // step 2 ok
                     saga.on_compensate([c, silent]() -> qb::io::async::task<void> {
-                        g_compB_started.store(true);                         // compB — runs FIRST
-                        (void) co_await qb::ask(c, silent, SagaQ{4}, 500ms); // parks (silent peer)
+                        g_compB_started.store(true);                          // compB — runs FIRST
+                        (void) co_await qb::ask(c, silent, SagaQ{4}, 1000ms); // parks (silent peer) until the kill
                     });
                     (void) co_await qb::ask(c, silent, SagaQ{5}, 30ms); // step 3 TIMES OUT → rollback
                 });
@@ -139,13 +149,14 @@ public:
     onInit() override {
         auto victim = _victim;
         // Compensation begins ~30ms (after the step-3 timeout); compB then parks on the silent peer.
-        // Kill at 70ms → compB's ask is cancelled → rollback aborts before compA. Generous window.
+        // Kill at 330ms → compB's ask is cancelled → rollback aborts before compA. The 300 ms after
+        // the timeout is the stall a loaded host may impose on the core's thread (see the header).
         // Deliberate, and NOT the `[this]`-outlives-the-actor hazard: this helper is never a kill
         // target and never kills itself, so `this` is live whenever the timer fires; and a timer still
         // pending at teardown is reclaimed by listener::clear() WITHOUT firing. Must stay out-of-band:
         // it triggers the cancel under test. Do not convert to spawn + ctx.sleep.
-        qb::io::async::callback([this, victim] { push<qb::KillEvent>(victim); }, 70ms);
-        qb::io::async::callback([] { qb::Main::stop(); }, 2s); // backstop only — never the oracle
+        qb::io::async::callback([this, victim] { push<qb::KillEvent>(victim); }, 330ms);
+        qb::io::async::callback([] { qb::Main::stop(); }, 1500ms); // backstop only — never the oracle
         co_return true;
     }
 };
