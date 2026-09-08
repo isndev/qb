@@ -57,7 +57,7 @@ VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) noexcept {
     return {__getPipe__(dest._core_id), dest, source};
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.cpp:1154-1157 -->
+<!-- src: qb/src/qb/core/VirtualCore.cpp:1158-1161 -->
 
 Two actors on the same core therefore share one outbound buffer, which is why the lifetime rule below is stated per *core* rather than per *actor*. What `getPipe`/`to` actually save is two array indexings, not a hash lookup: `_pipes` is a `PipeMap`, which is `std::vector<VirtualPipe>` (`src/qb/core/VirtualCore.h:178`, `:384`), indexed by `CoreSet::resolve`, which reads a `std::array<uint8_t, MaxCores>` (`src/qb/core/CoreSet.h:130`). The saving is real but small; reach for `to(dest)` for readability, not for throughput.
 
@@ -94,7 +94,7 @@ Two things in that sequence are worth pinning down, because they are where the s
 
 ### `is_alive()` is checked at dispatch, not at enqueue
 
-Nothing filters an event addressed to a dead actor on the way in. The actor stays in the router's handler map until `VirtualCore::removeActor` reaches `unregisterEvents(id)` at the end of the pass (`src/qb/core/VirtualCore.cpp:1089-1090`), so between `kill()` and the reap it is still a routing target. What stops it receiving is the trampoline:
+Nothing filters an event addressed to a dead actor on the way in. The actor stays in the router's handler map until `VirtualCore::removeActor` reaches `unregisterEvents(id)` at the end of the pass (`src/qb/core/VirtualCore.cpp:1093-1094`), so between `kill()` and the reap it is still a routing target. What stops it receiving is the trampoline:
 
 ```cpp
 auto &handler = *static_cast<_Handler *>(opaque_handler);
@@ -225,7 +225,7 @@ C++20 has no `is_trivially_relocatable` trait, clang's builtin rejects `std::vec
 
 | Where | What moves it | Applies to a same-core `push`? |
 |---|---|---|
-| `reply` / `forward` | both route through `VirtualCore::send(Event const&)`: same core, or a cross-core `try_send` miss, it is `detail::event_wire::copy` into a fresh pipe reservation — one 16-byte header move plus the tail (`src/qb/core/VirtualCore.cpp:1176-1181`; `src/qb/core/Event.h:693-723`); a cross-core hit is the raw mailbox copy of step 10 | **yes** |
+| `reply` / `forward` | both route through `VirtualCore::send(Event const&)`: same core, or a cross-core `try_send` miss, it is `detail::event_wire::copy` into a fresh pipe reservation — one 16-byte header move plus the tail (`src/qb/core/VirtualCore.cpp:1180-1185`; `src/qb/core/Event.h:693-723`); a cross-core hit is the raw mailbox copy of step 10 | **yes** |
 | The cross-core hop | sender pipe → mailbox ring → receive buffer: two more `memcpy`s | no |
 
 Pipe growth used to be a third: until 3.2 the contiguous pipe `memcpy`d everything it held when it grew and `memmove`d it when it compacted. The segmented pipe does neither — but the two relocations above are enough to keep the rule, so nothing about what a payload may contain has changed.
@@ -261,9 +261,9 @@ VirtualCore::reply(Event &event) noexcept {
     event.state.bits.alive = 1; // AFTER the copy: the copy — on either transport — carries 0
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.cpp:1190-1195 -->
+<!-- src: qb/src/qb/core/VirtualCore.cpp:1194-1199 -->
 
-`forward` is the same three lines with `detail::event_wire::set_dest(event, dest)` in place of the swap, and **deliberately leaves `event.source` untouched** so a downstream `reply` returns to the true client rather than to the forwarder (`src/qb/core/VirtualCore.cpp:1197-1202`). In one line: *`reply` swaps `dest` and `source`; `forward` sets a new `dest` and keeps `source`.*
+`forward` is the same three lines with `detail::event_wire::set_dest(event, dest)` in place of the swap, and **deliberately leaves `event.source` untouched** so a downstream `reply` returns to the true client rather than to the forwarder (`src/qb/core/VirtualCore.cpp:1201-1206`). In one line: *`reply` swaps `dest` and `source`; `forward` sets a new `dest` and keeps `source`.*
 
 Why a helper rather than `std::swap` on two members: the copy that follows starts with a wide load of the header, and written as two 4-byte stores just before, that load spans several in-flight stores and cannot be forwarded — the CPU stalls until they retire. Measured on savina/bank-transaction (one `qb::ask` per transfer), libc's `memmove` was 4.3 % of the core, all of it on that load over `reply()`'s swap. `detail::event_wire` (`src/qb/core/Event.h:575-724`) composes the 16-byte header in one register — SSE2, NEON, or two 64-bit words — and writes it back **once**, and `copy` reads it back as one load of exactly the bytes that store wrote, then moves the tail; its layout assumptions are `static_assert`ed against `qb::Event` itself. What it does not touch is the payload: a responder that fills its answer fields and then calls `reply()` has the same shape on the tail of the copy, and that one stall per reply is the documented cost of copy-out.
 
@@ -273,7 +273,7 @@ Why a helper rather than `std::swap` on two members: the copy that follows start
 
 - **The receive path writes nothing.** A relocated event is born dead, so the pre-3.2 `alive = 0` store at step 14 said nothing and cost a stall.
 - **Reply, then forward, the same event in one handler, and you get two owning copies**, each destroyed exactly once at the end of the handler that finally keeps it — same core or cross-core. `RelayChain.*ReplyThenForwardFanOut*` in `qb/tests/core/system/messaging/messaging-reply-forward.cpp` pins both.
-- **`send(Event const&)` refuses to relocate a raised flag.** Its cross-core fast path is the raw mailbox copy of the original bytes, which would carry the bit; an already-replied event handed back to it (`Actor::send(Event const&)` is module API) goes through the local pipe instead, whose copy clears it (`src/qb/core/VirtualCore.cpp:1176-1181`). Before 3.2 the receive-side store masked exactly this case, and the shape it hid — forward cross-core after a reply — delivered an event the receiver never destroyed.
+- **`send(Event const&)` refuses to relocate a raised flag.** Its cross-core fast path is the raw mailbox copy of the original bytes, which would carry the bit; an already-replied event handed back to it (`Actor::send(Event const&)` is module API) goes through the local pipe instead, whose copy clears it (`src/qb/core/VirtualCore.cpp:1180-1185`). Before 3.2 the receive-side store masked exactly this case, and the shape it hid — forward cross-core after a reply — delivered an event the receiver never destroyed.
 
 Three consequences:
 

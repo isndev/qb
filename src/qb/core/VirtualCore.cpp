@@ -742,6 +742,11 @@ VirtualCore::__pump_activations__() noexcept {
 void
 VirtualCore::__workflow__() {
     QB_LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actor_count) << " actor(s)");
+    // This thread's io loop, reached ONCE: `listener::current` is an inline thread_local with a
+    // non-trivial constructor, so g++ routes every access through its TLS wrapper (the init guard,
+    // `__tls_init`) -- 2.2 % of savina/ping-pong 1c for the three accesses a pass made (Huly
+    // QB-199). The object lives for the thread, and this loop is the thread.
+    auto &loop = io::async::listener::current;
     while (likely(true)) {
         ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent; also keys the `time()` sample
 
@@ -797,11 +802,11 @@ VirtualCore::__workflow__() {
         if (_deadlines.armed())
             detail::deadlines_check(_deadlines, 0);
 
-        if (io::async::listener::current.has_work()) {
+        if (loop.has_work()) {
             // Hot path: call `listener::run` directly — no `async::run` wrapper
             // (avoids redundant checks; metrics match `nb_invoked_event()` contract).
-            io::async::listener::current.run(EVRUN_NOWAIT);
-            _metrics._nb_event_io = io::async::listener::current.nb_invoked_event();
+            loop.run(EVRUN_NOWAIT);
+            _metrics._nb_event_io = loop.nb_invoked_event();
         }
 
         // Complete any async `onInit()` resumed above (replay stashes / enforce
@@ -926,7 +931,6 @@ VirtualCore::__workflow__() {
             if (_idle_since == qb::mono_time{}) {
                 _idle_since = now;
             } else if (_mail_box.getLatency() > qb::duration::zero() && now - _idle_since >= _mail_box.getIdleSpin()) {
-                auto &loop = io::async::listener::current;
                 // A pending request deadline bounds the park (Huly QB-189): the loop holds no
                 // timer for it any more, so neither park may outlast it -- the cap is the smaller
                 // of `latency` and the time to the earliest deadline, on the reading made above.

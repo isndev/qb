@@ -429,7 +429,7 @@ function(_qb_test_conventions out_prefix)
     # A `requires-multicore` test's wall clock is set by CPU AVAILABILITY, not by the work it
     # does, so the tier default -- which is sized for work -- is the wrong budget for it. The
     # reason is one line of the engine: `VirtualCore::__workflow__` only ever blocks when a
-    # latency was configured (VirtualCore.cpp:787, `if (_mail_box.getLatency() > zero())`), and
+    # latency was configured (VirtualCore.cpp:792, `if (_mail_box.getLatency() > zero())`), and
     # the default latency is zero. A multicore test therefore starts `min(hw, 8)` threads that
     # PURE-SPIN, never yielding; progress needs all of them scheduled at once, so a shortfall of
     # CPU does not slow the test proportionally, it convoys.

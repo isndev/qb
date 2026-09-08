@@ -78,6 +78,7 @@ qb_add_test(MODULE qb-core TIER system NAME messaging-oversize-event SOURCES mes
 qb_add_test(MODULE qb-core TIER system NAME messaging-relocatable-payload SOURCES messaging/relocatable-payload.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME messaging-send-nontrivial SOURCES messaging/send-nontrivial-payload.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME messaging-push-reference-stability SOURCES messaging/push-reference-stability.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+qb_add_test(MODULE qb-core TIER system NAME messaging-dispatch-batch SOURCES messaging/dispatch-batch.cpp DEPENDS ${PROJECT_NAME})
 
 # --- event ------------------------------------------------------------------
 qb_add_test(MODULE qb-core TIER system NAME service-event-ring SOURCES event/service-event-ring.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)

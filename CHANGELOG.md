@@ -75,6 +75,23 @@ policy.
 
 ### Changed
 
+- **`__workflow__` reaches `listener::current` once, not three times a pass (Huly QB-199).** It
+  is an inline thread_local with a non-trivial constructor, so g++ routes every access through its
+  TLS wrapper (the init guard, `__tls_init`): 2.2 % of savina/ping-pong 1c for `has_work()` /
+  `run()` / `nb_invoked_event()` on every pass, plus the idle path's own. One reference taken at
+  the top of the loop — the object lives for the thread, and the loop is the thread. Measured
+  alone against `develop` on WSL2 g++-14 (twelve interleaved rounds, one quiet session, 60 s of quiet after the last build):
+  ping-pong 1c **23.1 → 22.8 ns (−1.4 %, quartiles separated)**, `push` 24.03 → 24.04 and
+  `pass-cost` k = 1 12.28 → 12.31 (level); every other cell level. MSVC, which initialises TLS at
+  thread start, level everywhere (ping-pong 1c 31.4 / 31.5). Found by the QB-198 investigation — the dispatch loop
+  prefetching the actor of an event ahead on a core serving a population, which hid the miss it
+  targeted (savina/bank-transaction 1c −3.6 %) and cost everything cheaper (+6 % on a 5 ns event
+  with its gate closed, +21–25 % on a hot population of 512–1 024 actors): the out-of-order engine
+  already overlaps the misses of a dozen short, predictable handlers, and no cheap gate tells a
+  long unpredictable one from them. Measured on the new `dispatch-population` probe (qb-vs-others)
+  and not shipped; the batch test it produced (`messaging-dispatch-batch`: one batch mixing live
+  destinations, an emptied slot, a broadcast, a never-assigned sid and a mid-batch kill, delivered
+  in one pass) stays.
 - **Per-actor lifecycle log lines are VERBOSE, not INFO.** `New <actor>`, `Delete <actor>`,
   `Actor(<id>) subscribed to <Event>` / `unsubscribed to`, `activating` / `activated` and the
   destroyed-with-pending-coroutines line moved from `QB_LOG_INFO` to `QB_LOG_VERB`; the per-core
@@ -631,6 +648,57 @@ policy.
 
 ### Fixed
 
+- **`QB_EV_BACKEND=iouring` ran a quiet socket's pass 47× slower than `epoll`; it is at parity
+  now, and every Linux CI job of qb runs the suite on both (qev 5.1.0, Huly QB-81).** The env
+  variable had shipped since 3.1 with no figure behind it, and the first measurement (the
+  `io-pass` probe, one pinned core, a loopback pair) read **1345 ns against 28.5** for the pass a
+  core pays over one quiet fd — a syscall storm inside the backend (the deadline timerfd armed at
+  "now" on every non-blocking poll, expiring at once, drained and re-armed through
+  `io_uring_enter`, three syscalls a cycle at 300k cycles a second), then a ready fd noticed only
+  at the scheduler tick once the storm stopped (`COOP_TASKRUN` defers completion work to the
+  next syscall, and a quiet loop made none), then a timers-only loop that never counted as
+  timers-only (the backend's own timerfd watcher in `iocnt`, so QB-187's no-poll pass and
+  QB-190's inline gate never applied). All three are in qev's changelog; on this side the
+  backend is EXERCISED: `tests/io/system/CMakeLists.txt`'s `-DQB_IO_EV_TEST_BACKENDS` matrix gains
+  an anti-vacuity guard (`event-loop-lifecycle` joins the backend-sensitive set with a case that
+  reads the ambient `QB_EV_BACKEND` — pinned, the backend must be compiled in and a fresh
+  listener must be ON it, else a variant would test `epoll` under an io_uring name; a seccomp
+  profile refusing io_uring is the realistic case), `.github/workflows/cmake.yml` enables
+  `epoll;iouring` on every Linux job, and the whole suite was forced onto io_uring under
+  `sanitize` and `sanitize-thread`: 385/385 each, 0 fallback. Measured against `epoll` on WSL2
+  (kernel 6.6, g++-14, medians): a pass with one quiet socket at the default 1 µs cadence
+  28.8 / **26.4** ns, polled on every pass 126.9 / **40.9**, one far timer 26.5 / 26.4, wake p50
+  3.98 / 4.18 µs, a parked core woken by a socket p50 41.6 / 41.3 µs, syscalls on a quiet socket
+  960k/s against **1/s**. Parity with a different shape — no syscall on a quiet pass, ~0.2 µs more
+  per delivered event, two syscalls per park — so **`epoll` stays the default**; io_uring is the
+  right choice for a core that polls on every pass. The table and the reasoning are in
+  `readme/6_guides/performance_tuning.md` ("io_uring, measured (3.2.0)").
+- **`CoroutineScheduler::current()`'s fallback and two awaiter defaults created libev's global
+  default loop from a core thread — a data race, and a loop nobody pumps (Huly QB-197).**
+  `CoroutineScheduler` stored an `ev::loop_ref` it never read, and the one effect of its default
+  argument `ev::get_default_loop()` was to CREATE the process-wide default loop from whichever
+  core thread first took the `current()` fallback — an actor's `onInit` awaiting during the
+  first resume of `__drive_init__`, before `__begin_activation__` had set the listener's
+  scheduler as current — so ThreadSanitizer, running the whole suite on io_uring, reported the
+  read of `ev_default_loop_ptr` in another core's `ev_loop_destroy` racing that creation. The
+  member and the parameter are gone: the listener constructs its scheduler bare, the fallback
+  creates nothing global. `timer_awaiter` and `socket_awaiter` lose the same default argument —
+  the header already warned that the default loop parked the coroutine for ever, the API doc
+  lists the loop as a parameter, and every construction site injects `listener::current.loop()`.
+- **The sanitizer and coverage presets instrument the event loop at last, and its wake protocol
+  is ThreadSanitizer-clean (qev 5.1.0, Huly QB-192).** The embedded `qev` target never went through
+  `qb_apply_compiler_flags()`: 548 TUs carried `-fsanitize=thread` and `ev.c` did not, so every
+  `sanitize` / `sanitize-thread` / `coverage` run of qb had measured an uninstrumented loop
+  (0 `__tsan` hooks in `ev.c.o`; 19 `__tsan` / 25 `__asan` hooks and 389 gcov counters now). Once
+  it was, TSan found the loop's cross-thread wake flags exchanged through `volatile` accesses
+  fenced by hand — correct on every target and a race by the letter of C11 — fixed in qev with the
+  `__atomic` builtins at zero cost (codegen-identical, proven), and `listener::_wake_is_pending()`
+  reads that flag with acquire semantics on this side. The instrumentation had fallout of its
+  own, each a real defect: clang's function sanitizer rejected libev's callback dispatch
+  (exempted on the two dispatch functions), gcov counters bumped from every core thread made lcov
+  refuse the report (`-fprofile-update=atomic`), and a `(void) ::read()` in the shared fd fixture
+  that Ubuntu's fortified glibc refuses to let a cast silence. Three presets 375/375 with `ev.c`
+  inside, a hundred consecutive NOWAIT stress runs under TSan clean.
 - **A build whose OpenSSL or zlib was not found no longer compiles as if it had been.**
   `qb_initialize_project_configuration()` emitted `QB_WITH_SSL=1` / `QB_WITH_COMPRESSION=1` from the
   raw options BEFORE `qbDependencies.cmake` looked for the libraries, and a miss there only flipped
