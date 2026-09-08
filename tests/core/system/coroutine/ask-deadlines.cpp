@@ -330,7 +330,8 @@ TEST(AskDeadlines, ABusyCoreFiresOnTimeThroughTheCoarsePreCheck) {
     main.join();
     EXPECT_FALSE(main.hasError());
     EXPECT_EQ(g_timeouts.load(), 1) << "a deadline on a core that is never idle must still fire (the busy-pass check)";
-    EXPECT_GE(g_busy_passes.load(), 50u) << "the core must actually have been busy for the whole wait";
+    EXPECT_GE(g_busy_passes.load(), 10u)
+        << "the core must actually have been busy for the whole wait (~40 ticks in 20 ms under a coverage build, ~1200 at -O3)";
     std::printf("        [busy] %llu ticks, timeout fired %lld us after the arm (deadline 20 ms), %d busy passes ran past the deadline first\n",
                 static_cast<unsigned long long>(g_busy_passes.load()), static_cast<long long>(g_fire_delay_us.load()),
                 g_ticks_after_deadline.load());
