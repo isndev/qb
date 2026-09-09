@@ -663,6 +663,57 @@ report_unhandled_coroutine_exception(ActorId const owner, char const *const api,
     }
 }
 
+// The activation waiters of `ActorHandle::ready_async` (Huly QB-62). Cold, and at the END of the
+// file for the same reason `__fire_activation_waiters__` is at the end of VirtualCore.cpp: placed
+// among the hot bodies they moved every address after them.
+activation_state
+activation_wait(qb::ActorId const id, activation_waiter &w, void (*fire)(void *, bool) noexcept, void *ctx) noexcept {
+    // The calling thread's core: a handle is resolved on the core that owns the actor, and
+    // `ready_async` is awaited from an actor context on that core.
+    VirtualCore *const core = VirtualCore::_handler;
+    if (!core || !id.is_valid())
+        return activation_state::gone;
+    Actor *const actor = core->__actor_slot__(id);
+    if (actor == nullptr || !actor->is_alive())
+        return activation_state::gone; // not on this core, or killed (an Activating one included: it dies)
+    if (actor->is_active())
+        return activation_state::active;
+    const auto it = core->_activating.find(id);
+    if (it == core->_activating.end())
+        return activation_state::gone; // alive, not active, not Activating: a failed init awaiting its reap
+    // Link at the head: order among waiters is immaterial (each is resumed through the scheduler).
+    auto &head = it->second.waiters;
+    w.prev     = nullptr;
+    w.next     = head;
+    w.fire     = fire;
+    w.ctx      = ctx;
+    if (head)
+        head->prev = &w;
+    head = &w;
+    return activation_state::activating;
+}
+
+void
+activation_unwait(qb::ActorId const id, activation_waiter &w) noexcept {
+    if (!w.linked())
+        return; // fired, detached, or never linked: the common case on every exit path
+    // Still linked, so the entry still exists on this core (an entry never goes away with a
+    // linked waiter: it fires or detaches them first). A core that is gone has no entry.
+    if (VirtualCore *const core = VirtualCore::_handler; core) {
+        if (const auto it = core->_activating.find(id); it != core->_activating.end()) {
+            if (w.prev)
+                w.prev->next = w.next;
+            else
+                it->second.waiters = w.next;
+            if (w.next)
+                w.next->prev = w.prev;
+        }
+    }
+    w.prev = w.next = nullptr;
+    w.fire          = nullptr;
+    w.ctx           = nullptr;
+}
+
 } // namespace detail
 } // namespace qb
 

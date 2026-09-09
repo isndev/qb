@@ -146,6 +146,11 @@ private:
     friend void detail::deadline_arm(detail::request_deadline &, qb::duration, void (*)(void *) noexcept, void *) noexcept;
     friend void detail::deadline_disarm_armed(detail::request_deadline &) noexcept;
     friend bool detail::deadlines_armed() noexcept;
+    // The activation waiters (`ActorHandle::ready_async`) are linked into `_activating` through
+    // the thread's current core (Huly QB-62).
+    friend detail::activation_state detail::activation_wait(qb::ActorId, detail::activation_waiter &, void (*)(void *, bool) noexcept,
+                                                            void *) noexcept;
+    friend void                     detail::activation_unwait(qb::ActorId, detail::activation_waiter &) noexcept;
     friend class CoroContext;
     friend class Service;
     friend class CoreInitializer;
@@ -463,6 +468,52 @@ private:
         std::uint64_t                         deadline_ns = 0;     ///< wall-clock deadline (0 = none)
         bool                                  cancelling  = false; ///< deadline fired → scope cancelled, awaiting unwind
         std::vector<std::vector<EventBucket>> stash;               ///< FIFO of byte-copied inbound unicast events
+        /// The `ready_async` waiters on this activation (Huly QB-62): intrusive nodes living in
+        /// the waiting coroutines' frames, fired -- unlinked first -- by whichever path ends
+        /// the activation (`__fire_activation_waiters__`). An entry never disappears with a
+        /// waiter still linked: the destructor detaches what a fire did not reach, so a frame
+        /// that finishes later finds its node unlinked and touches nothing.
+        detail::activation_waiter *waiters = nullptr;
+
+        Activation() = default;
+        Activation(Activation &&rhs) noexcept
+            : init(std::move(rhs.init))
+            , deadline_ns(rhs.deadline_ns)
+            , cancelling(rhs.cancelling)
+            , stash(std::move(rhs.stash))
+            , waiters(rhs.waiters) {
+            rhs.waiters = nullptr; // the list has one owner; the map moves entries on rehash
+        }
+        Activation &
+        operator=(Activation &&rhs) noexcept {
+            if (this != &rhs) {
+                detach_waiters();
+                init        = std::move(rhs.init);
+                deadline_ns = rhs.deadline_ns;
+                cancelling  = rhs.cancelling;
+                stash       = std::move(rhs.stash);
+                waiters     = rhs.waiters;
+                rhs.waiters = nullptr;
+            }
+            return *this;
+        }
+        Activation(const Activation &)            = delete;
+        Activation &operator=(const Activation &) = delete;
+        ~Activation() {
+            detach_waiters();
+        }
+        /// Unlink every waiter WITHOUT firing it (a teardown that resumes nothing).
+        void
+        detach_waiters() noexcept {
+            for (detail::activation_waiter *w = waiters; w;) {
+                detail::activation_waiter *const next = w->next;
+                w->prev = w->next = nullptr;
+                w->fire           = nullptr;
+                w->ctx            = nullptr;
+                w                 = next;
+            }
+            waiters = nullptr;
+        }
     };
     qb::unordered_map<ActorId, Activation> _activating;
     DyingActorSet                          _dying_with_frame; ///< killed while their onInit frame was still suspended
@@ -661,6 +712,8 @@ private:
     ///         NOT dispose the original); false if it was dropped (cap overflow) and the caller
     ///         must `_router.dispose()` the original to free a non-trivial payload.
     [[nodiscard]] bool __stash_event__(ActorId dest, Event *event) noexcept;
+    /// Fire -- unlinked first -- every `ready_async` waiter of `act` with the outcome `ok`.
+    static void __fire_activation_waiters__(Activation &act, bool ok) noexcept;
     /// Per-iteration pump: complete finished inits, replay stashes, enforce deadlines.
     void __pump_activations__() noexcept;
     //! Actor Management

@@ -721,6 +721,9 @@ VirtualCore::__pump_activations__() noexcept {
                     QB_LOG_CRIT(*actor << " async onInit failed — removing");
                 removeActor(id);
             }
+            // Whoever awaited this activation learns now that it will never happen (QB-62),
+            // where the poll it replaced only ever learned it from its own timeout.
+            __fire_activation_waiters__(act, false);
             continue;
         }
         // Success: flip Active, then replay the stashed inbound unicast FIFO.
@@ -736,6 +739,9 @@ VirtualCore::__pump_activations__() noexcept {
                     QB_LOG_WARN(*this << " failed to deliver stashed event[" << qb::event_type_name(e.getID()) << '#' << e.getID() << "]");
             });
         }
+        // After the replay: a `ready_async` waiter resumes (next pass, through the scheduler)
+        // to an actor that has already seen everything queued for it while it was Activating.
+        __fire_activation_waiters__(act, true);
     }
 }
 
@@ -1087,6 +1093,8 @@ VirtualCore::removeActor(ActorId const id) noexcept {
             _dying_with_frame.insert(id);
             return;
         }
+        // Dropped here rather than by the pump: its waiters learn the outcome here (QB-62).
+        __fire_activation_waiters__(ait->second, false);
         _activating.erase(ait);
         _dying_with_frame.erase(id);
     }
@@ -1231,6 +1239,30 @@ VirtualCore::time() const noexcept {
 // knob a consumer sets before Main::start() -- and an out-of-line definition makes each of them
 // one per *image*: a host and a plugin that each statically link libqb-core.a got two, silently.
 // They are now `inline` + QB_ABI_ANCHOR in VirtualCore.h. See qb/utility/abi.h.
+// Cold, and defined AFTER the pass it is called from: placed before it, this body shifted every
+// address of the pass and read +2 % on savina/ping-pong 1c (WSL2 g++-14, 12 rounds, quartiles
+// separated) for a function the ping-pong never calls -- a layout effect, and one this placement
+// does not produce (measured, level).
+void
+VirtualCore::__fire_activation_waiters__(Activation &act, bool const ok) noexcept {
+    // Detach the whole list first, then fire: a `fire` resumes through the scheduler, never
+    // inline, but it must find its node unlinked whatever it does -- `finish()` on the awaiter
+    // reads `linked()` and would otherwise walk into a list that is being consumed.
+    detail::activation_waiter *w = act.waiters;
+    act.waiters                  = nullptr;
+    while (w) {
+        detail::activation_waiter *const next = w->next;
+        auto *const                      fire = w->fire;
+        void *const                      ctx  = w->ctx;
+        w->prev = w->next = nullptr;
+        w->fire           = nullptr;
+        w->ctx            = nullptr;
+        if (fire)
+            fire(ctx, ok);
+        w = next;
+    }
+}
+
 } // namespace qb
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &

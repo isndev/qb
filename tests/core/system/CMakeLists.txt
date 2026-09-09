@@ -147,6 +147,7 @@ qb_add_test(MODULE qb-core TIER system NAME init-multicore     SOURCES init/init
 qb_add_test(MODULE qb-core TIER system NAME init-deadline      SOURCES init/init-deadline.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine slow)
 qb_add_test(MODULE qb-core TIER system NAME init-stress        SOURCES init/init-stress.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine slow)
 qb_add_test(MODULE qb-core TIER system NAME init-handle        SOURCES init/init-handle.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME init-ready-async   SOURCES init/init-ready-async.cpp   DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-gate-edges    SOURCES init/init-gate-edges.cpp    DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-gate-disposal SOURCES init/init-gate-disposal.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 # The OTHER awaiter family in onInit: qb-io awaiters that cache their scheduler at SUSPEND time

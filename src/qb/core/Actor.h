@@ -1734,6 +1734,44 @@ void deadlines_check(deadline_list &l, std::uint64_t now_ns) noexcept;
 [[nodiscard]] std::uint64_t deadlines_next_in(const deadline_list &l, std::uint64_t now_ns) noexcept;
 
 /**
+ * @brief A waiter on an actor's activation -- what `ActorHandle::ready_async` links into the
+ *        core's *Activating* entry of the actor it waits for (Huly QB-62).
+ * @details An intrusive node, like `request_deadline`: it lives in the awaiter, which lives in the
+ *          waiting coroutine's frame, and the core's entry only holds the list head. Linked by
+ *          `activation_wait` when the target's `onInit()` is still in flight, and fired EXACTLY
+ *          ONCE -- unlinked first -- by the pass that completes that activation, with its
+ *          outcome: `true` when the actor is now active, `false` when its init failed, threw,
+ *          hit the activation deadline or was killed on the way. `ready_async` used to poll
+ *          `ready()` every millisecond through a cancellable sleep: a timer armed and disarmed a
+ *          thousand times a second for a wait the core could answer the instant it flipped the
+ *          actor active, and a failed init that was only ever reported by the timeout.
+ */
+struct activation_waiter {
+    activation_waiter *prev                   = nullptr;
+    activation_waiter *next                   = nullptr;
+    void (*fire)(void *ctx, bool ok) noexcept = nullptr; ///< non-null while linked
+    void *ctx                                 = nullptr;
+    [[nodiscard]] bool
+    linked() const noexcept {
+        return fire != nullptr;
+    }
+};
+
+/// What `activation_wait` found on the calling thread's core.
+enum class activation_state : std::uint8_t {
+    active,     ///< resolved and active: nothing to wait for
+    gone,       ///< not on this core, not alive, or its init already failed: it will never be
+    activating, ///< `onInit()` in flight: `w` is linked and will be fired once
+};
+
+/// Link `w` to the activation of `id` on the calling thread's core, unless there is nothing to
+/// wait for -- see `activation_state`. `w` is fired once, unlinked first, with the outcome.
+[[nodiscard]] activation_state activation_wait(qb::ActorId id, activation_waiter &w, void (*fire)(void *, bool) noexcept, void *ctx) noexcept;
+/// Unlink `w` from `id`'s waiters if it is still linked. Idempotent, O(1), and safe after the
+/// entry -- or the core -- is gone.
+void activation_unwait(qb::ActorId id, activation_waiter &w) noexcept;
+
+/**
  * @brief Single awaiter backing `qb::ask` — three wake sources
  *        (response / timeout / actor-scope cancel) guarded by one `done` flag.
  *
@@ -1897,6 +1935,127 @@ private:
             me->outcome   = kind::timed_out;
             qb::io::async::schedule_via_current(me->cont);
         }
+    }
+};
+
+/**
+ * @brief The awaiter behind `ActorHandle::ready_async` -- three wake sources (the activation
+ *        completing / the timeout / the waiting actor's scope cancelled), the shape of
+ *        `ask_awaiter` (Huly QB-62).
+ * @details Lives in the `ready_async` coroutine frame (address-stable, non-movable: the core's
+ *          waiter list and the deadline list hold it by address). `await_ready` asks the core
+ *          what the target is: an active actor or one that will never be answers at once,
+ *          without suspending; an Activating one links the waiter and the coroutine suspends.
+ *          The timeout is a `request_deadline` in the core's own clock -- no `ev_timer`, no
+ *          `ev_run` for it -- and the scope hook is the same embedded node `qb::ask` uses. Every
+ *          exit path (resume, timeout, cancel, a frame destroyed without resuming) goes through
+ *          `finish()`, which unlinks all three, so nothing in the core ever points at a frame
+ *          that is gone. The three wake paths resume through the scheduler: they run from the
+ *          pass or from a token callback, never from a handler that owns this frame.
+ */
+struct activation_awaiter {
+    qb::ActorId                                    target;
+    qb::duration                                   timeout;
+    const qb::io::async::cancellation_token       &token; ///< the waiter's scope, by reference (lives in the same frame)
+    std::coroutine_handle<>                        cont;
+    activation_waiter                              waiter{};
+    request_deadline                               deadline{};
+    qb::io::async::cancellation_token::cancel_hook hook{};
+    enum class kind : std::uint8_t { pending, ready, not_ready, cancelled } outcome = kind::pending;
+    bool finished                                                                   = false;
+
+    activation_awaiter(qb::ActorId t, qb::duration to, const qb::io::async::cancellation_token &tok) noexcept
+        : target(t)
+        , timeout(to)
+        , token(tok) {}
+    activation_awaiter(const activation_awaiter &)            = delete;
+    activation_awaiter(activation_awaiter &&)                 = delete;
+    activation_awaiter &operator=(const activation_awaiter &) = delete;
+
+    [[nodiscard]] bool
+    await_ready() noexcept {
+        if (token.is_cancelled()) // outcome stays `pending` -> await_resume throws cancelled
+            return true;
+        switch (activation_wait(target, waiter, &activation_awaiter::on_activation, this)) {
+            case activation_state::active:
+                outcome = kind::ready;
+                return true;
+            case activation_state::gone:
+                outcome = kind::not_ready;
+                return true;
+            case activation_state::activating:
+                return false; // linked: the pass that completes the activation fires us
+        }
+        return true;
+    }
+
+    void
+    await_suspend(std::coroutine_handle<> h) noexcept {
+        cont = h;
+        if (timeout.count() > 0)
+            deadline_arm(deadline, timeout, &activation_awaiter::on_timeout, this);
+        hook.fire = &activation_awaiter::on_cancel_hook;
+        hook.ctx  = this;
+        token.link(hook);
+    }
+
+    bool
+    await_resume() {
+        finish();
+        switch (outcome) {
+            case kind::ready:
+                return true;
+            case kind::not_ready:
+                return false;
+            default: // pending (entry-cancelled) or cancelled
+                throw qb::io::async::cancelled_error();
+        }
+    }
+
+    ~activation_awaiter() {
+        finish();
+    }
+
+private:
+    void
+    finish() noexcept {
+        if (finished)
+            return;
+        finished = true;
+        activation_unwait(target, waiter);
+        hook.unlink();
+        deadline_disarm(deadline);
+    }
+
+    // Fired by the pass that completed the target's activation (`__pump_activations__`), or by
+    // the teardown that dropped it; the node is already unlinked.
+    static void
+    on_activation(void *self, bool const ok) noexcept {
+        auto *me = static_cast<activation_awaiter *>(self);
+        if (me->outcome != kind::pending)
+            return;
+        me->outcome = ok ? kind::ready : kind::not_ready;
+        qb::io::async::schedule_via_current(me->cont);
+    }
+
+    // Fired by the core's pass (`deadlines_check`), outside any handler; the node is already
+    // unlinked. The documented contract: `false` when the actor did not become active in time.
+    static void
+    on_timeout(void *self) noexcept {
+        auto *me = static_cast<activation_awaiter *>(self);
+        if (me->outcome != kind::pending)
+            return;
+        me->outcome = kind::not_ready;
+        qb::io::async::schedule_via_current(me->cont);
+    }
+
+    static void
+    on_cancel_hook(void *self) noexcept {
+        auto *me = static_cast<activation_awaiter *>(self);
+        if (me->outcome != kind::pending)
+            return;
+        me->outcome = kind::cancelled;
+        qb::io::async::schedule_via_current(me->cont);
     }
 };
 
@@ -2130,26 +2289,28 @@ public:
      * @param ctx A cancellation-aware context (e.g. the caller's `context()`), so a kill of
      *            the waiting actor unwinds this await cleanly.
      * @param timeout Maximum time to wait. Defaults to 5 s (the activation-deadline scale).
-     * @return `true` once the actor is `ready()`; `false` if it did not become active in time
-     *         (e.g. its async init failed). Safe to call when already active (returns at once).
+     * @return `true` once the actor is `ready()`; `false` if it did not become active in time,
+     *         or as soon as it is known that it never will (its async init returned `false`,
+     *         threw, hit the activation deadline, or the actor was killed while Activating).
+     *         Safe to call when already active (returns at once, without suspending).
      * @details Lets a parent block on an async-init child before using it:
      * @code
      * auto child = addRefActor<DbWorker>(dsn);
      * push(child.id(), Warmup{});           // safe now — stashed until active
      * if (co_await child.ready_async(context())) child->serve();
      * @endcode
+     *          Event-driven (Huly QB-62): the waiting coroutine is resumed by the core pass that
+     *          completes the child's activation -- after the child's stashed events have been
+     *          replayed, so the child is caught up when the parent runs -- not by a 1 ms poll of
+     *          `ready()`. A failed init is therefore reported the moment it fails, where the
+     *          poll only ever reported it through the timeout. The timeout is a
+     *          `request_deadline` in the core's own clock, like `qb::ask`'s; a kill of the
+     *          waiting actor throws `cancelled_error` out of the await.
      */
     [[nodiscard]] qb::io::async::task<bool>
     ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const {
-        // Poll the phase oracle on the owning core; ctx.sleep is cancellation-aware so a kill
-        // of the waiting actor throws out of here instead of spinning.
-        auto           remaining = timeout;
-        constexpr auto step      = qb::duration{std::chrono::milliseconds{1}};
-        while (!ready() && remaining > qb::duration::zero()) {
-            co_await ctx.sleep(step);
-            remaining -= step;
-        }
-        co_return ready();
+        detail::activation_awaiter aw{_id, timeout, ctx.token()}; // ctx lives in this frame, and so does its token
+        co_return co_await aw;
     }
 
     /** @brief `get()` asserted ready in debug builds (deref-when-ready). */
