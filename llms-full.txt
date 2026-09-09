@@ -420,8 +420,18 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   hypervisor, a few µs on native Linux — for qb as for every framework; the floor decides how long a
   core keeps polling before it takes that sleep, so that a gap shorter than the floor never pays the
   wake and a longer one pays it once. Raise it to trade idle CPU for wake latency, lower it to trade
-  the other way; `setLatency(0)` never sleeps at all. _(Main.h:295, :312, :361-363; measured in the
+  the other way; `setLatency(0)` never sleeps at all. _(Main.h:300, :317, :366-368; measured in the
   qb-vs-others benchmark, TUNING guide §8.2)_
+- **A `setLatency` under a millisecond sleeps a millisecond and a half on Windows, and what it says
+  on Linux.** Both parks — the condition variable of a core that owns no io watcher (MSVC's `wait_for`
+  rounds to whole milliseconds) and the loop of a core that owns one (wepoll's `epoll_wait` takes
+  whole milliseconds, and the kernel adds its coalescing on top) — wake an idle core every 1.4–1.5 ms
+  at `setLatency(100us)`, 1.4–1.8 ms at `1ms`, 10.5 ms at `10ms` (measured: an idle core's wakes per
+  second). `setLatency(1us)` and `setLatency(1ms)` sleep the same there; only `setLatency(0)` goes
+  below. On Linux 5.11 or newer the same core wakes every 163 µs at `100us`, 1.07 ms at `1ms`,
+  10.05 ms at `10ms` through either park — the kernel's 50 µs timer slack plus a pass (the loop park
+  through `epoll_pwait2`; an older kernel keeps `epoll_wait`'s whole millisecond for that park, the
+  condition variable stays fine). _(measured in the qb-vs-others benchmark, TUNING guide §19)_
 - **Every event payload must be trivially *relocatable* — on `push` as much as on `send`.** The
   runtime moves events with raw `memcpy` and abandons the source without running a destructor there,
   so no member may point into its own storage. A by-value `std::string` is exactly that shape on
