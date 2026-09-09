@@ -598,7 +598,7 @@ VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexc
     // continuation and its frame is freed the instant the owning `task` is destroyed.
     h.resume();
     if (h.done()) {
-        auto &p = h.promise();
+        auto &p = qb::io::async::detail::promise_of(h);
         if (unlikely(p.has_exception())) {
             // Surface an uncaught throw as an init failure (preserves the BadActorInit
             // outcome) — but never let it escape into this noexcept owning-thread path.
@@ -698,7 +698,7 @@ VirtualCore::__pump_activations__() noexcept {
         // exception, or a deadline/kill cancellation all resolve to "not successful".
         bool ok = false;
         if (auto h = act.init.handle(); h && h.done()) {
-            auto &p = h.promise();
+            auto &p = qb::io::async::detail::promise_of(h);
             ok      = !p.has_exception() && p.value();
         }
         // Free the onInit frame now that it has fully unwound (no awaiter references it).

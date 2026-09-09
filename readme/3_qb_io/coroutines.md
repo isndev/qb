@@ -106,12 +106,12 @@ task<void> caller() {
 
 | Property | Detail | Source |
 |---|---|---|
-| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:418`, `:787` |
-| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:490-491` |
-| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:652-653`, `:671-672` |
-| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:554`, `:726-727` |
-| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:698-699` |
-| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:183` |
+| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:419`, `:788` |
+| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:491-492` |
+| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:653-654`, `:672-673` |
+| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:555`, `:727-728` |
+| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:699-700` |
+| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:184` |
 
 `await_resume()` always checks for a stored exception first and re-throws it; if the task is somehow not ready it throws `std::logic_error` rather than returning an uninitialized value. You generally never see these paths — you `co_await` the task and the result (or exception) is delivered.
 <!-- src: qb/src/qb/io/async/coroutine/task.h:718-736 -->
@@ -352,7 +352,7 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, ev)` | `socket_awaiter`, i.e. a `ev_io` watcher (`awaiter.h:465`) | fd readiness |
 | `co_await async_awaiter<T>(op)` | your callback (`awaiter.h:619`) | your callback |
 | `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:680`) | connect success, failure, or the connector's own deadline |
-| `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:699`) | the inner coroutine finishing |
+| `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:700`) | the inner coroutine finishing |
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
 | `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:76`, `:409`) | the branches |
 | `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:730`) | whichever comes first |
@@ -378,7 +378,7 @@ Every awaiter in the layer therefore carries a destructor that has to survive "d
 - **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:122-124`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:475-476`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1137-1138`); a destroyed `ch.recv()` whose sender already wrote through its result slot re-buffers the value so the message is not lost (`channel.h:349-351`).
 - **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:442-449`). Getting that order wrong is a use-after-free, which is why the source spells it out.
 
-`~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:642-645`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
+`~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:643-646`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
 
 One consequence for your own code: **a coroutine's locals are destroyed at `co_return`, not when the frame is later freed.** Anything a deferred operation needs must be owned by the frame — a parameter or a capture — not borrowed from a caller's stack.
 
@@ -823,7 +823,7 @@ for (int i = 0; i < 5; ++i) {
 ```
 
 Three rules cover every case: function parameters are copied into the coroutine frame, so passing data as an argument is always safe; the `spawn(Callable)` and `coroutine_scope::spawn(Callable)` overloads move the closure into an owning frame for you; and a coroutine local lives until `co_return`, not until the frame is destroyed. Note that a coroutine's locals are destroyed at `co_return` — not when the spawned frame is later freed — so anything a deferred operation needs must be owned by the frame (a parameter or a capture), not borrowed from a caller stack.
-<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:553-584 (spawn Callable), :969 (invoke_owned_), task.h:671-672; coroutine.h (capture-safety guidance); io_invariants Factbook scheduler.h:581 -->
+<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:553-584 (spawn Callable), :969 (invoke_owned_), task.h:672-673; coroutine.h (capture-safety guidance); io_invariants Factbook scheduler.h:581 -->
 
 > **Scheduler teardown.** `~CoroutineScheduler` destroys only ready-queue frames it owns plus deferred completed frames; *suspended* frames are intentionally left alone because their libev watchers still reference them. Stop the event loop before destroying the scheduler. The listener does this on its own destruction, so application code rarely manages it directly; in debug builds, leaked suspended frames at teardown print a one-line warning.
 <!-- src: qb/src/qb/io/async/coroutine/scheduler.h:340-368 (rationale), :369-414 (teardown, debug warning at :398-405) -->
@@ -834,13 +834,13 @@ Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it e
 
 | Macro | What it traces | Source |
 |---|---|---|
-| `QB_DEBUG_COROUTINES` | `task<T>` promise lifecycle, awaiter `on_event_ready`, timer fire | `task.h:92`, `awaiter.h:208` |
+| `QB_DEBUG_COROUTINES` | `task<T>` promise lifecycle, awaiter `on_event_ready`, timer fire | `task.h:93`, `awaiter.h:208` |
 | `QB_DEBUG_SCOPE` | `coroutine_scope` spawn / join / completion | `scope.h:42` |
 | `QB_DEBUG_CORO_LIFECYCLE` | `CoroutineScheduler` teardown, suspended-count traces | `scheduler.h:52-53` |
 | `QB_DEBUG_AGEN` | `async_generator` yield / next / suspend flow | `generator.h:35-37` |
 
 `QB_DEBUG_SCOPE` and `QB_DEBUG_CORO_LIFECYCLE` share the scheduler trace channel.
-<!-- src: qb/src/qb/io/async/coroutine/{task.h:92, awaiter.h:208, scope.h:42, scheduler.h:52-53, generator.h:35-37} -->
+<!-- src: qb/src/qb/io/async/coroutine/{task.h:93, awaiter.h:208, scope.h:42, scheduler.h:52-53, generator.h:35-37} -->
 
 ## Header reference
 

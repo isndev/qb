@@ -430,7 +430,11 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
                        COPYONLY)
     endforeach ()
 
-    if (QB_EV_STRICT_WARNINGS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    # clang-cl (Clang behind MSVC's command line) is left out: there `-Wall` is the spelling of
+    # `/Wall`, i.e. `-Weverything` -- 1 233 diagnostics on ev.c alone, none of them the strict
+    # set below (Huly QB-201). It takes the MSVC path, which is warning-clean.
+    if (QB_EV_STRICT_WARNINGS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang"
+            AND NOT CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
         # Keep the vendored event loop visible to modern compilers. The baseline is
         # intentionally warning-clean enough for day-to-day builds; the audit option
         # below enables noisier conversion/cast diagnostics for dedicated cleanups.
@@ -507,6 +511,15 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     endif ()
 
     target_link_libraries(qev PUBLIC ${PLATFORM_LIBS})
+    if (WIN32)
+        # The CRT deprecates the POSIX spellings (`dup2`, `close`) and `getenv` on every
+        # compiler that reads its headers; cl stays silent about it at the level this target
+        # builds at, clang-cl does not (four `-Wdeprecated-declarations` on ev.c, Huly QB-201).
+        # The names are the ones libev is written in, so the deprecation is declined here rather
+        # than the code rewritten -- an ev.c that only Windows's copy of differs from is not
+        # byte-shared any more.
+        target_compile_definitions(qev PRIVATE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE)
+    endif ()
 
     set_target_properties(qev PROPERTIES
             OUTPUT_NAME qev

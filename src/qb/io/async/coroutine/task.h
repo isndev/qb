@@ -78,6 +78,7 @@
 #include <array>
 #include <atomic>
 #include <coroutine>
+#include "promise_access.h" // handle_from_promise / promise_of: right for an over-aligned promise on clang-cl (QB-200)
 #include <cstddef>
 #include <cstdlib>
 #include <exception>
@@ -478,7 +479,7 @@ public:
          */
         task
         get_return_object() {
-            return task{std::coroutine_handle<promise_type>::from_promise(*this)};
+            return task{detail::handle_from_promise(*this)};
         }
 
         /**
@@ -681,7 +682,7 @@ public:
             return true;
         if (handle_.done())
             return true;
-        return handle_.promise().is_ready();
+        return detail::promise_of(handle_).is_ready();
     }
 
     /**
@@ -697,7 +698,7 @@ public:
      */
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
-        handle_.promise().continuation_ = caller;
+        detail::promise_of(handle_).continuation_ = caller;
         // Symmetric transfer: return the handle to resume
         // The compiler will resume it directly without recursion
         return handle_;
@@ -722,7 +723,7 @@ public:
         // coroutine frame → SEGV in the result-variant access). Fail loudly instead.
         if (!handle_)
             throw std::logic_error("task<T>::await_resume called on an empty/moved-from task");
-        auto &promise = handle_.promise();
+        auto &promise = detail::promise_of(handle_);
         if (promise.has_exception()) {
             std::rethrow_exception(promise.exception());
         }
@@ -822,7 +823,7 @@ public:
 
         task
         get_return_object() noexcept {
-            return task{std::coroutine_handle<promise_type>::from_promise(*this)};
+            return task{detail::handle_from_promise(*this)};
         }
 
         std::suspend_always
@@ -952,7 +953,7 @@ public:
             return true;
         if (handle_.done())
             return true;
-        return handle_.promise().is_ready();
+        return detail::promise_of(handle_).is_ready();
     }
 
     /**
@@ -968,7 +969,7 @@ public:
      */
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
-        handle_.promise().continuation_ = caller;
+        detail::promise_of(handle_).continuation_ = caller;
         // Symmetric transfer: return the handle to resume
         return handle_;
     }
@@ -979,8 +980,8 @@ public:
         // null handle is UB. Fail loudly instead of dereferencing a null frame.
         if (!handle_)
             throw std::logic_error("task<void>::await_resume called on an empty/moved-from task");
-        if (handle_.promise().has_exception()) {
-            std::rethrow_exception(handle_.promise().exception_);
+        if (detail::promise_of(handle_).has_exception()) {
+            std::rethrow_exception(detail::promise_of(handle_).exception_);
         }
     }
 

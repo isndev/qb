@@ -64,7 +64,7 @@ plain cache default cannot overwrite an existing cache entry, so that root line 
 preset: `dev`, `release`, `sanitize`, `sanitize-thread`, `coverage`, `feature-gates` and
 `relwithdebinfo` all build **zero** benchmarks. `coverage` is not an exception that switches them off —
 it only restates the `OFF` it already inherited. The single preset that turns them back on is
-`benchmarks` (`qb-dev/CMakePresets.json:128-135`). `-DQB_BUILD_BENCHMARKS=ON` on the configure line
+`benchmarks` (`qb-dev/CMakePresets.json:143-150`). `-DQB_BUILD_BENCHMARKS=ON` on the configure line
 also works, because a command-line `-D` overrides a preset's `cacheVariables`; and in a preset-free
 superproject configure `-DQB_BUILD_BENCHMARKS=OFF` is honoured as well — that is what the missing
 `FORCE` buys, and it is exactly what `QB_BUILD_TESTS` and `QB_BUILD_EXAMPLES` do **not** grant you.

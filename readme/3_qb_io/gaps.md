@@ -87,7 +87,7 @@ What to do about it, in order of preference: read the file **before** `qb::Main:
 
 ## Hostname resolution is synchronous — including inside `co_await tcp::connect`
 
-`qb::io::socket::resolve` and its `_v4` / `_v6` / `_v4to6` siblings call `getaddrinfo` directly (`src/qb/io/system/sys__socket.h:1437-1465`). `getaddrinfo` is a blocking call: on a cache miss it does network I/O and can take as long as the resolver takes.
+`qb::io::socket::resolve` and its `_v4` / `_v6` / `_v4to6` siblings call `getaddrinfo` directly (`src/qb/io/system/sys__socket.h:1438-1466`). `getaddrinfo` is a blocking call: on a cache miss it does network I/O and can take as long as the resolver takes.
 
 That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:568-572`). `run()` reaches `socket_.n_connect(remote_)` (`src/qb/io/async/tcp/connector.h:337`); and for a hostname URI that reaches `n_connect_in`, which resolves through `resolve_i` before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:169-181`, `:204-212`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread.
 

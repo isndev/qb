@@ -38,7 +38,7 @@ qb adds owners for the resources it introduces. The key invariant for every one 
 | TLS listener | `qb::io::tcp::ssl::listener` | `src/qb/io/tcp/ssl/listener.h` | Move-only; **takes ownership of the `SSL_CTX`** you pass to `init()` — it is transferred into the listener's value-semantic, reference-counted `qb::io::ssl::Context` member, which frees it when the last copy (and the last `SSL` minted from it) is gone. Not a `std::unique_ptr`. |
 
 <!-- src: src/qb/io/system/file.h:78-79 (copy deleted), :85 (move ctor), :91 (move assign), :99 (~file) -->
-<!-- src: src/qb/io/system/sys__socket.h:850,858,872,878 (copy deleted / move kept), :893 (~socket) -->
+<!-- src: src/qb/io/system/sys__socket.h:851,858,872,878 (copy deleted / move kept), :894 (~socket) -->
 <!-- src: src/qb/io/tcp/socket.h:94 (copy deleted), :99 (move ctor), :105 (move assign) -->
 <!-- src: src/qb/io/tcp/ssl/socket.h:339 (_ssl_handle unique_ptr); src/qb/io/tcp/ssl/listener.h:45 (listener _ctx is a value-semantic qb::io::ssl::Context, NOT a unique_ptr) -->
 

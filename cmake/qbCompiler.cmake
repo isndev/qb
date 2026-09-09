@@ -41,6 +41,7 @@ qb_debug_message("Configuring compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COM
 set(QB_COMPILER_MSVC FALSE)
 set(QB_COMPILER_GCC FALSE)
 set(QB_COMPILER_CLANG FALSE)
+set(QB_COMPILER_CLANG_CL FALSE)
 set(QB_COMPILER_INTEL FALSE)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
@@ -49,6 +50,17 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(QB_COMPILER_GCC TRUE)
     set(QB_COMPILER_NAME "GCC")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    # clang-cl: Clang behind MSVC's command line, ABI, CRT and STL. It takes the MSVC flag set
+    # below, not the GCC/Clang one -- measured the other way round (Huly QB-201): `-Wall` is
+    # clang-cl's spelling of `/Wall`, i.e. `-Weverything` (17 919 warnings on this tree), and
+    # `-fPIC` / `-fomit-frame-pointer` / `-ffunction-sections` are ignored with a warning each.
+    # The MSVC set it does understand, with the few clang-only exemptions added where the set
+    # is built. Worth having: on the same host, the same tree and the same CRT, clang-cl 22 ran
+    # qb's dispatch 10-18 % faster than MSVC 19.51 (qb-vs-others, QB-46).
+    set(QB_COMPILER_MSVC TRUE)
+    set(QB_COMPILER_CLANG_CL TRUE)
+    set(QB_COMPILER_NAME "clang-cl")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(QB_COMPILER_CLANG TRUE)
     set(QB_COMPILER_NAME "Clang")
@@ -183,6 +195,22 @@ if(QB_COMPILER_MSVC)
                             # itself stays enforced -- three CI legs compile this tree with
                             # -Wreturn-type and promote warnings to errors.
     )
+    if(QB_COMPILER_CLANG_CL)
+        list(APPEND QB_CXX_FLAGS_BASE
+            # `/Zc:preprocessor`, `/Zc:__cplusplus`, `/RTC1`, `/Ot`, `/Gy` name behaviour clang-cl
+            # either always has or does not offer; it accepts them and says so, once per TU.
+            "-Wno-unused-command-line-argument"
+            # `/W4` above is clang's -Wall -Wextra here, which the GCC/Clang set already tunes:
+            # the same exemptions, in clang's spelling (the MSVC `/wd` numbers above are cl's) --
+            # and AFTER `/W4` on the line, or -Wextra switches them back on.
+            "-Wno-unused-parameter"
+            "-Wno-unused-private-field"
+            "-Wno-missing-braces"
+            "-Wno-deprecated-copy"
+            "-Wno-missing-field-initializers"
+            "-Wno-unused-but-set-variable"   # `errmsg` kept for a debugger in sys__socket.cpp
+        )
+    endif()
     
     # Debug flags
     list(APPEND QB_CXX_FLAGS_DEBUG

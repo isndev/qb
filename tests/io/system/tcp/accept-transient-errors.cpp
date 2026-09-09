@@ -41,7 +41,7 @@
  *
  * Signatures relied on:
  *   transport::accept: tcp::listener& transport(); std::size_t read(); void eof() const noexcept;
- *   qb::io::socket::get_last_errno() / set_last_errno(int)  (sys__socket.h:1325-1326)
+ *   qb::io::socket::get_last_errno() / set_last_errno(int)  (sys__socket.h:1326-1327)
  *   tcp::listener::listen_v4(uint16_t, std::string) -> int(0==Done); set_nonblocking(bool); local_endpoint().
  *
  * @author qb - C++ Actor Framework

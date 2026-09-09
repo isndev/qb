@@ -130,11 +130,16 @@ if(QB_BUILD_TESTS)
         # Clang -Wcharacter-conversion on char8_t printing in gtest-printers.h (third-party).
         # Only present when gtest was built from source. The flag itself only exists on
         # newer Clang/AppleClang, so pair it with -Wno-unknown-warning-option (scoped to
-        # this third-party target) to stay silent on Clang versions that lack it.
-        if(TARGET gtest)
-            target_compile_options(gtest PRIVATE
-                $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wno-unknown-warning-option;-Wno-character-conversion>)
-        endif()
+        # these third-party targets) to stay silent on Clang versions that lack it. All FOUR
+        # targets include that header, and under clang-cl googletest's own CMake adds `-WX`
+        # (CMake reports clang-cl as MSVC): gmock and gmock_main FAILED to compile on clang 22
+        # with only gtest exempted, and took the whole suite with them (Huly QB-201).
+        foreach(_qb_gt gtest gtest_main gmock gmock_main)
+            if(TARGET ${_qb_gt})
+                target_compile_options(${_qb_gt} PRIVATE
+                    $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wno-unknown-warning-option;-Wno-character-conversion>)
+            endif()
+        endforeach()
     endif()
 
     set(QB_HAS_GTEST TRUE)

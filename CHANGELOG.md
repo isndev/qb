@@ -9,6 +9,20 @@ policy.
 
 ### Added
 
+- **clang-cl is a supported Windows toolchain: the `clang-cl` preset, 0 warnings, the suite
+  green (Huly QB-201).** LLVM's Clang behind MSVC's command line, ABI, CRT and STL, and on the
+  same host, tree and CRT it ran qb's dispatch **10–18 % faster than MSVC 19.51** (savina/ping-pong
+  1c 31.6 → 27.4 ns, big −13.6 %, fib −10 %, `pass-cost` k = 1 −9.8 %, `push` −9 %; qb-vs-others
+  `results/desktop-b67osn6-win-msvc/qb-46-clang-cl/`, QB-46 — half of the MSVC/g++ gap is codegen,
+  the other half the platform). `qbCompiler.cmake` recognises it (`CMAKE_CXX_COMPILER_ID` Clang
+  with `CMAKE_CXX_COMPILER_FRONTEND_VARIANT` MSVC) and gives it the MSVC flag set with clang's
+  exemptions: through the GCC/Clang branch it took `-Wall`, which clang-cl reads as `/Wall` =
+  `-Weverything` (17 919 warnings on this tree), plus `-fPIC` / `-fomit-frame-pointer` /
+  `-ffunction-sections` ignored with a warning each; the event loop's strict GNU warning set is
+  left out for the same reason (1 233 more on `ev.c`), its CRT deprecations of `dup2` / `close` /
+  `getenv` declined on the target; googletest's four targets carry the `-Wcharacter-conversion`
+  exemption (gmock did not even compile: its own CMake adds `-WX` under clang-cl). `cmake --preset
+  clang-cl` on Windows; `readme/7_reference/building.md` has the row.
 - **`qb::allocator::segmented_pipe<T>` + `segment_pool<T>`** (`qb/system/allocator/segmented_pipe.h`)
   — a FIFO of fixed-size segments (256 KB, from a pool the owning `VirtualCore` keeps) that grows
   by linking a segment behind the tail and never moves what it holds: `allocate_back(n)` is a
@@ -648,6 +662,24 @@ policy.
 
 ### Fixed
 
+- **clang-cl: every `task<E>` over a `qb::Event` crashed on its first `co_await` — the MSVC STL's
+  `coroutine_handle::from_promise()` / `promise()` are wrong for an over-aligned promise, and qb
+  now goes around them (Huly QB-200).** The STL implements both as
+  `__builtin_coro_promise(ptr, 0, ...)`, an alignment of zero that MSVC's own compiler ignores (it
+  lays every promise out at offset 16 of the frame, whatever its `alignas`) and that clang, which
+  lays an `alignas(64)` promise out at offset 64, turns into a handle 48 bytes into the frame:
+  `resume()` calls whatever bytes sit there. Every `qb::Event` is cache-line aligned, so every
+  `task<E>` over an event — `qb::ask`'s result, every request/reply coroutine — has an
+  over-aligned promise, and under clang-cl 22 every `ask` test died with `0xC0000005` at `-O0` as
+  at `-O2` while `coroutine-basics` (a `task<int>`) passed. Found by the QB-46 compiler A/B and
+  reproduced in thirty lines with a bare `alignas(64)` promise (delta 16 wrong, 64 right).
+  `qb/io/async/coroutine/promise_access.h` carries `detail::handle_from_promise` /
+  `detail::promise_of`, which hand the builtin `alignof(P)` on clang-cl and ARE the standard calls
+  everywhere else; the four `from_promise` and twenty-eight `promise()` of `task.h`,
+  `generator.h`, `scheduler.h` and `VirtualCore.cpp` go through them. Test
+  `qb-io-test-unit-over-aligned-promise` asserts the promise's alignment ≥ 64 first, then the
+  handle→promise round trip and a `task<Wide>` awaited sixteen times; under clang-cl the whole
+  suite is green (194/194).
 - **`QB_EV_BACKEND=iouring` ran a quiet socket's pass 47× slower than `epoll`; it is at parity
   now, and every Linux CI job of qb runs the suite on both (qev 5.1.0, Huly QB-81).** The env
   variable had shipped since 3.1 with no figure behind it, and the first measurement (the

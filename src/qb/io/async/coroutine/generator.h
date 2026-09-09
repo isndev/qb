@@ -82,7 +82,7 @@ public:
 
         auto
         get_return_object() {
-            return generator{std::coroutine_handle<promise_type>::from_promise(*this)};
+            return generator{detail::handle_from_promise(*this)};
         }
 
         std::suspend_always
@@ -191,14 +191,14 @@ public:
             // Finding 2.A.4: operator* must not dereference a null optional.
             // Callers are supposed to check `it != end()` first, but misuse
             // should fail loudly instead of silently returning garbage.
-            assert(_handle && _handle.promise().current_value.has_value() && "generator::iterator operator* on exhausted iterator");
-            return *_handle.promise().current_value;
+            assert(_handle && detail::promise_of(_handle).current_value.has_value() && "generator::iterator operator* on exhausted iterator");
+            return *detail::promise_of(_handle).current_value;
         }
 
         const T *
         operator->() const {
-            assert(_handle && _handle.promise().current_value.has_value() && "generator::iterator operator-> on exhausted iterator");
-            return &*_handle.promise().current_value;
+            assert(_handle && detail::promise_of(_handle).current_value.has_value() && "generator::iterator operator-> on exhausted iterator");
+            return &*detail::promise_of(_handle).current_value;
         }
 
     private:
@@ -207,8 +207,8 @@ public:
         // generator indistinguishable from a normally exhausted one).
         void
         rethrow_if_failed() {
-            if (_handle && _handle.promise().exception) {
-                auto ex = _handle.promise().exception;
+            if (_handle && detail::promise_of(_handle).exception) {
+                auto ex = detail::promise_of(_handle).exception;
                 _handle = nullptr; // iteration ends; do not resume a failed frame
                 std::rethrow_exception(ex);
             }
@@ -251,25 +251,25 @@ public:
         // Exception check must come BEFORE the done() check: a generator that
         // threw is also done(), and the previous order returned nullopt forever
         // without ever surfacing the stored exception.
-        if (_handle.promise().exception) {
+        if (detail::promise_of(_handle).exception) {
             // Clear as we rethrow (mirrors async_generator::next): a throw ends the stream, so a
             // consumer that catches and calls next() again must get nullopt, not the same throw.
-            std::rethrow_exception(std::exchange(_handle.promise().exception, nullptr));
+            std::rethrow_exception(std::exchange(detail::promise_of(_handle).exception, nullptr));
         }
         if (_handle.done()) {
             return std::nullopt;
         }
 
         // At initial_suspend we have no value yet; resume to first yield
-        if (!_handle.promise().current_value.has_value()) {
+        if (!detail::promise_of(_handle).current_value.has_value()) {
             _handle.resume();
-            if (_handle.promise().exception)
-                std::rethrow_exception(std::exchange(_handle.promise().exception, nullptr));
+            if (detail::promise_of(_handle).exception)
+                std::rethrow_exception(std::exchange(detail::promise_of(_handle).exception, nullptr));
             if (_handle.done())
                 return std::nullopt;
         }
 
-        auto result = _handle.promise().current_value;
+        auto result = detail::promise_of(_handle).current_value;
         _handle.resume(); // Advance past this yield so has_next() is false after
                           // the last value. If this resume throws into the
                           // promise, the exception surfaces on the NEXT call
@@ -295,7 +295,7 @@ public:
 
         auto
         get_return_object() {
-            return async_generator{std::coroutine_handle<promise_type>::from_promise(*this)};
+            return async_generator{detail::handle_from_promise(*this)};
         }
 
         std::suspend_always
@@ -427,8 +427,8 @@ public:
         // transfers into noop_coroutine() rather than our freed frame. No-op once the generator
         // already resumed us (continuation cleared/moved on) or if the generator itself is gone.
         ~next_awaiter() {
-            if (_parked && _gen_alive && *_gen_alive && handle && handle.promise().continuation == _parked)
-                handle.promise().continuation = {};
+            if (_parked && _gen_alive && *_gen_alive && handle && detail::promise_of(handle).continuation == _parked)
+                detail::promise_of(handle).continuation = {};
         }
 
         bool
@@ -464,8 +464,8 @@ public:
         std::coroutine_handle<>
         await_suspend(std::coroutine_handle<> h) noexcept {
             QB_AGEN_TRACE("next await_suspend consumer=%p gen=%p", (void *) h.address(), (void *) handle.address());
-            _parked                       = h;
-            handle.promise().continuation = h;
+            _parked                                 = h;
+            detail::promise_of(handle).continuation = h;
             return handle; // symmetric transfer — do NOT access handle after this
         }
 
@@ -482,16 +482,16 @@ public:
             // silently swallow that exception (next() would return nullopt as if the stream ended
             // cleanly) — and every consuming helper uses `while (co_await gen.next())`, so the throw
             // would never reach the caller. Rethrow first; only a clean end-of-stream returns nullopt.
-            if (handle.promise().exception) {
+            if (detail::promise_of(handle).exception) {
                 // Clear the stored exception as we rethrow it: a throw ends the stream, so a
                 // consumer that catches and (incorrectly) calls next() again must get a clean
                 // nullopt rather than the same exception re-thrown forever.
-                std::rethrow_exception(std::exchange(handle.promise().exception, nullptr));
+                std::rethrow_exception(std::exchange(detail::promise_of(handle).exception, nullptr));
             }
             if (handle.done()) {
                 return std::nullopt;
             }
-            return std::move(handle.promise().current_value);
+            return std::move(detail::promise_of(handle).current_value);
         }
     };
 

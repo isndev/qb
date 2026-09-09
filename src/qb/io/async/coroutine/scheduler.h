@@ -1209,7 +1209,7 @@ CoroutineScheduler::spawn_tracked(task<void> &&t) {
         return {};
 
     // Set this scheduler as the coroutine's scheduler
-    handle.promise().scheduler_ = this;
+    detail::promise_of(handle).scheduler_ = this;
 
     owned_frames_.insert(handle.address());
     in_flight_.insert(handle.address());

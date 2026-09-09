@@ -58,11 +58,12 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// Loopback interface name differs per OS (used for the named-interface multicast legs).
+// Loopback interface name differs per OS (used for the named-interface multicast legs, which
+// Windows has no spelling for: `[[maybe_unused]]` there, where clang-cl's -Wall would name it).
 #if defined(__APPLE__)
-constexpr const char *kLoopbackInterface = "lo0";
+[[maybe_unused]] constexpr const char *kLoopbackInterface = "lo0";
 #else
-constexpr const char *kLoopbackInterface = "lo";
+[[maybe_unused]] constexpr const char *kLoopbackInterface = "lo";
 #endif
 
 // Probe whether `::1` can be bound at all — hosts/CI images without IPv6

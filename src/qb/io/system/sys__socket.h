@@ -617,8 +617,9 @@ public:
                 // old `len() - offsetof - 1` underflowed `size_t` in that case
                 // and `assign()` then read ~4 GiB past the union. Bound the path
                 // length to what is actually present and stop at the first NUL.
-                constexpr auto off  = offsetof(struct sockaddr_un, sun_path);
-                std::size_t    span = this->len() > off ? static_cast<std::size_t>(this->len()) - off : 0u;
+                constexpr auto    off  = offsetof(struct sockaddr_un, sun_path);
+                const std::size_t have = static_cast<std::size_t>(this->len()); // socklen_t is signed on Windows: compare unsigned
+                std::size_t       span = have > off ? have - off : 0u;
                 if (span > sizeof(un_.sun_path))
                     span = sizeof(un_.sun_path);
                 n = 0;

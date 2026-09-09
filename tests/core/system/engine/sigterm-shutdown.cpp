@@ -47,8 +47,8 @@
 
 namespace {
 
-std::atomic<bool> g_running{false};
-std::atomic<int>  g_hup_seen{0};
+std::atomic<bool>                 g_running{false};
+[[maybe_unused]] std::atomic<int> g_hup_seen{0}; // read only by the SIGHUP case, which Windows has no signal for
 
 /// Stays alive forever on its own: only a signal can end this engine.
 class ForeverActor final

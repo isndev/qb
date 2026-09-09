@@ -87,6 +87,21 @@
       }
     },
     {
+      "name": "clang-cl",
+      "displayName": "Release (clang-cl)",
+      "description": "The release build with clang-cl (LLVM's Clang behind MSVC's command line, ABI, CRT and STL): on the same host and tree it ran qb's dispatch 10-18 % faster than cl 19.51 (Huly QB-46); tests enabled. Windows only.",
+      "inherits": "release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl"
+      }
+    },
+    {
       "name": "sanitize",
       "displayName": "Sanitizers (ASan + UBSan)",
       "description": "Standalone qb Debug build with AddressSanitizer and UndefinedBehaviorSanitizer.",
@@ -167,6 +182,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "clang-cl",
+      "configurePreset": "clang-cl"
     },
     {
       "name": "sanitize",
@@ -266,6 +285,17 @@
     {
       "name": "release",
       "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "timeout": 300,
+        "jobs": 4
+      }
+    },
+    {
+      "name": "clang-cl",
+      "configurePreset": "clang-cl",
       "output": {
         "outputOnFailure": true
       },
