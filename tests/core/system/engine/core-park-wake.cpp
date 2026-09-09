@@ -343,8 +343,8 @@ TEST(CoreParkWake, ASubMillisecondTimerFiresUnderAMillisecondOnACoreParkedInItsL
         GTEST_SKIP() << "the core's loop runs on " << qb::io::async::listener::backend_name(backend) << ", not epoll";
     const auto best = g_best_lateness_ns.load(std::memory_order_acquire);
     ASSERT_GE(best, 0) << "no round fired";
-    EXPECT_LT(best, 800'000) << "every round of a 200 us timer on the parked core fired at the millisecond: best lateness "
-                             << best / 1000 << " us";
+    EXPECT_LT(best, 800'000) << "every round of a 200 us timer on the parked core fired at the millisecond: best lateness " << best / 1000
+                             << " us";
 #else
     GTEST_SKIP() << "epoll_pwait2 is not in this build (Linux with glibc >= 2.35 only)";
 #endif
