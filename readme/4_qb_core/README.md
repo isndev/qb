@@ -35,7 +35,7 @@ That buys a message path with no synchronisation on it at all, and a model small
 | An event is `memcpy`-relocated — by pipe growth or compaction, by `reply`/`forward`, and again on the cross-core hop — and its source destructor never runs, so a payload must be trivially **relocatable**, not merely copyable. A same-core `push` is no exception, and C++20 has no trait for that. | [messaging.md](./messaging.md#payloads-must-be-trivially-relocatable-not-merely-copyable) |
 | The reference `push` returns lives until your **handler returns** — across further pushes, since the pipe is segmented and never moves an event — but not across a `co_await` and never in a member. | [messaging.md](./messaging.md#the-reference-push-returns-lives-until-your-handler-returns) |
 | Blocking the calling thread inside a handler freezes every actor on that core, with no diagnostic. | [async_in_actors.md](../5_core_io_integration/async_in_actors.md#the-two-call-chains) |
-| The runtime allocates in proportion to the square of the core count and never shrinks — 22.5 MiB at rest on 8 cores. | [buffers.md](../0_foundations/buffers.md#memory-it-grows-and-it-does-not-come-back) |
+| The runtime holds memory in proportion to the square of the core count: every mailbox keeps a 64 KiB inbound ring per core, touched at start — 4 MiB at rest on 8 cores, 1 GiB on 128 — and every pipe that ever carried an event keeps a 256 KiB segment in its core's pool until that core stops (measured on both hosts). | [buffers.md](../0_foundations/buffers.md#memory-it-grows-and-it-does-not-come-back) |
 
 ## Pages in this section
 
