@@ -173,7 +173,7 @@ TEST(Duration, DefaultAndExplicit) {
 
 <!-- src: qb/tests/core/unit/system/time.cpp:64-72 -->
 
-A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:894,914`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:894`, `qb/src/qb/core/Main.cpp:538-543`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
+A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:894,919`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:894`, `qb/src/qb/core/Main.cpp:538-543`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
 
 ```cpp
 // A minimal actor system test.
@@ -217,7 +217,7 @@ TEST(WorkerSuite, HandlesPing) {
 
 <!-- src: qb/tests/core/system/event/service-event-ring.cpp:171-174 -->
 
-`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:247,935`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
+`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:247,940`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
 
 ### Registering the test with CMake
 
