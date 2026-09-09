@@ -69,9 +69,9 @@ Two scopes set latency:
 | Call | Scope | Signature |
 | --- | --- | --- |
 | [`CoreInitializer::setLatency`](../4_qb_core/engine.md) | One core | `CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept` (`src/qb/core/Main.h:295`) |
-| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:962`) |
+| [`Main::setLatency`](../4_qb_core/engine.md) | Every registered core | `void setLatency(qb::duration latency = qb::duration::zero())` (`src/qb/core/Main.h:963`) |
 | [`CoreInitializer::setIdleSpin`](../4_qb_core/engine.md) | One core | `CoreInitializer &setIdleSpin(qb::duration idle_spin = kDefaultIdleSpin) noexcept` (`src/qb/core/Main.h:312`) |
-| [`Main::setIdleSpin`](../4_qb_core/engine.md) | Every registered core | `void setIdleSpin(qb::duration idle_spin = CoreInitializer::kDefaultIdleSpin)` (`src/qb/core/Main.h:971`) |
+| [`Main::setIdleSpin`](../4_qb_core/engine.md) | Every registered core | `void setIdleSpin(qb::duration idle_spin = CoreInitializer::kDefaultIdleSpin)` (`src/qb/core/Main.h:972`) |
 
 `Main::getLatency()` does not exist; read a single core's configured value with `engine.core(id).getLatency()`, which returns the `qb::duration` last set (`src/qb/core/Main.h:345`); `getIdleSpin()` is its twin (`src/qb/core/Main.h:350`).
 
