@@ -213,6 +213,44 @@ TEST(EventFieldShadow, AcceptsTheFrameworkEventBasesUsersDeriveFrom) {
 // `Event::type_to_id<T>()` on the three stamping lines; if it ever returned anything
 // else, every event would route to the wrong slot.
 // =====================================================================================
+// -- the width contract (Huly QB-61): `event_fits_ring<T>`, both polarities -------------------
+//
+// The fixtures are sized by the CEILING, never by `sizeof(qb::Event)`: the Itanium ABI lets a
+// derived class reuse the base's tail padding (its first member lands at offset 16 of the
+// 64-byte base on g++/clang) where MSVC does not (offset 64), so a payload of "ceiling minus
+// sizeof(Event) plus one" is 1023 buckets on one ABI and 1024 on the other -- measured. A payload
+// of the ceiling MINUS ONE bucket rounds to exactly the ceiling on both; a payload of the ceiling
+// PLUS ONE BYTE is past it on both (1024 buckets on g++, 1025 on MSVC), so the rejecting side
+// asserts "more than the ceiling", not one exact count.
+constexpr std::size_t kCeilingBytes = qb::detail::max_deliverable_buckets * QB_LOCKFREE_EVENT_BUCKET_BYTES;
+/** Rounds to exactly the ceiling: the widest value an event may be. */
+struct AtTheCeiling : qb::Event {
+    char bytes[kCeilingBytes - QB_LOCKFREE_EVENT_BUCKET_BYTES];
+};
+/** One byte past the ceiling: at least one more bucket than the ring can ever take. */
+struct PastTheCeiling : qb::Event {
+    char bytes[kCeilingBytes + 1];
+};
+/** Far past it: the shape a by-value blob produces. */
+struct WayPastTheCeiling : qb::Event {
+    char bytes[1u << 20];
+};
+
+TEST(EventFieldShadow, WidthPredicateAcceptsUpToTheRingCeiling) {
+    EXPECT_TRUE(d::event_fits_ring<qb::Event>);
+    EXPECT_TRUE(d::event_fits_ring<Clean>);
+    EXPECT_TRUE(d::event_fits_ring<AtTheCeiling>);
+    EXPECT_EQ((qb::allocator::getItemSize<AtTheCeiling, EventBucket>()), d::max_deliverable_buckets);
+    // The ceiling is the ring's slot count, one constant under two names.
+    EXPECT_EQ(d::max_deliverable_buckets, static_cast<std::size_t>(65535u / QB_LOCKFREE_EVENT_BUCKET_BYTES));
+}
+
+TEST(EventFieldShadow, WidthPredicateRejectsPastTheRingCeiling) {
+    EXPECT_FALSE(d::event_fits_ring<PastTheCeiling>);
+    EXPECT_FALSE(d::event_fits_ring<WayPastTheCeiling>);
+    EXPECT_GT((qb::allocator::getItemSize<PastTheCeiling, EventBucket>()), d::max_deliverable_buckets);
+}
+
 TEST(EventFieldShadow, ReturnsExactlyTheSameTypeIdAsTypeToId) {
     EXPECT_EQ(d::routing_safe_type_id<Clean>(), qb::Event::type_to_id<Clean>());
     EXPECT_EQ(d::routing_safe_type_id<Identifier>(), qb::Event::type_to_id<Identifier>());

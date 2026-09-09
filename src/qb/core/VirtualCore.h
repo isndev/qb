@@ -161,6 +161,8 @@ private:
     constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
     /// Widest event a destination mailbox ring can ever accept — see VirtualCore.cpp.
     static constexpr std::size_t kMaxDeliverableBuckets = SharedCoreCommunication::MaxRingEvents;
+    static_assert(kMaxDeliverableBuckets == detail::max_deliverable_buckets,
+                  "the runtime drop and the compile-time width check must agree on the ring's ceiling");
     // Types
     using Mailbox     = SharedCoreCommunication::Mailbox;
     using EventBuffer = std::array<EventBucket, MaxRingEvents>;

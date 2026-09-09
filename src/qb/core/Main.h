@@ -386,7 +386,9 @@ using CoreInitializerMap = qb::unordered_map<CoreId, CoreInitializer>;
 class SharedCoreCommunication : nocopy {
     friend class VirtualCore;
     friend class Main;
-    constexpr static const uint64_t MaxRingEvents = (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
+    /// The ring's slot count -- `qb::detail::max_deliverable_buckets`, the ceiling every event
+    /// type is checked against at compile time (Event.h, Huly QB-61): one constant, two names.
+    constexpr static const uint64_t MaxRingEvents = qb::detail::max_deliverable_buckets;
     //////// Types
 
 public:

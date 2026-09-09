@@ -1001,6 +1001,30 @@ inline constexpr bool hides_service_event_id = !std::is_same_v<decltype(&T::serv
 /** @} */
 
 /**
+ * @brief Widest event the cross-core mailbox ring can ever accept, in buckets: the ceiling every
+ *        enqueue sink owes (Huly QB-61).
+ * @details The single source of truth. `SharedCoreCommunication::MaxRingEvents` sizes every
+ *          per-producer SPSC ring from it and `VirtualCore::kMaxDeliverableBuckets` is it by
+ *          another name; an event wider than this is not backpressured but permanently
+ *          unsendable to another core -- `spsc::enqueue<_All = true>` is all-or-nothing -- so the
+ *          flush DROPS it with a `QB_LOG_CRIT` (VirtualCore.cpp, `__flush_pipes__`). With the
+ *          default 64-byte bucket that is 1023 buckets, ~64 KiB.
+ */
+inline constexpr std::size_t max_deliverable_buckets = (std::numeric_limits<uint16_t>::max)() / QB_LOCKFREE_EVENT_BUCKET_BYTES;
+
+/**
+ * @brief `true` when a `T` constructed by value fits the cross-core mailbox ring.
+ * @details `sizeof(T)` is known at compile time and so is the ceiling, which is why the static
+ *          half of the width contract is a compile-time error rather than the runtime drop that
+ *          used to be its only report (Huly QB-61). The trailing bytes of an `allocated_push`
+ *          are a runtime quantity and keep the runtime check. Named rather than spelled inline
+ *          in the `static_assert` so the guard is *testable in both polarities* -- see
+ *          `qb-core-test-unit-event-field-shadow`.
+ */
+template <typename T>
+inline constexpr bool event_fits_ring = allocator::getItemSize<T, EventBucket>() <= max_deliverable_buckets;
+
+/**
  * @brief Type id for `T`, refusing to route an event that hides a `qb::Event` routing field.
  * @tparam T The event type being constructed and routed.
  * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
@@ -1076,6 +1100,17 @@ routing_safe_type_id() noexcept {
     // subclass owning heap is legitimate here and is deliberately NOT rejected. See
     // `qb/tests/core/system/messaging/send-nontrivial-payload.cpp`, which pins that to a zero
     // live-object balance on every placement path.
+    // The width contract: a value of `T` must fit the cross-core mailbox ring, or the flush can
+    // only ever drop it. The runtime drop stays for the trailing bytes of an `allocated_push`;
+    // the part `sizeof` decides is decided here, at the one funnel every enqueue sink reaches.
+    static_assert(event_fits_ring<T>, "qb: this event type is WIDER than the cross-core mailbox ring (sizeof(T) exceeds "
+                                      "qb::detail::max_deliverable_buckets buckets, ~64 KiB with the default 64-byte bucket), so no "
+                                      "instance of it could ever be delivered to another core: the flush would dispose it and log a "
+                                      "QB_LOG_CRIT, and the message would be lost. Keep the event small and move the bulk behind a "
+                                      "pointer member (a std::shared_ptr<std::vector<T>> held by the receiver, see "
+                                      "Pipe::allocated_push). The offending type is the template argument of the "
+                                      "qb::detail::routing_safe_type_id<T> instantiation named below.");
+
     if constexpr (std::is_base_of_v<EventQOS0, T>) {
         static_assert(std::is_trivially_destructible_v<T>,
                       "qb: this event derives from qb::EventQOS0 but is NOT trivially destructible. A QoS-0 event is the "
