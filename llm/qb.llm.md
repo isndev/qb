@@ -387,8 +387,26 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`send<T>()` is unordered; `push<T>()` is ordered.** Trivial destructibility is a guideline on `send`
   and a `static_assert` only when `T` derives from `qb::EventQOS0` — the one kind the cross-core flush
   may DROP undisposed. A DELIVERED event is disposed exactly once whichever primitive queued it, so a
-  plain `qb::Event` owning heap is legal on both. Use `push` unless you have a specific reason.
-  _(Actor.h:974-979, :1034-1038)_
+  plain `qb::Event` owning heap is legal on both. Use `push` unless you have a specific reason — and
+  "faster" is not one: `send` hands the event to the peer's ring at once instead of the pass's batched
+  flush, which wins for ONE event with nothing behind it to batch (a request the sender then idles
+  for) and LOSES on sustained traffic (all-to-all, 120 actors: 26.1 ns per round trip against `push`'s
+  24.9, measured in the qb-vs-others benchmark, TUNING guide §9.6). _(Actor.h:974-979, :1034-1038)_
+- **An actor lives on the core where it was created, for life: qb has no migration and no
+  work-stealing.** `addActor<T>(core, ...)` is a topology decision, and the cost it decides is the
+  core crossing: a ring of actors spread `i % cores` crosses a core on EVERY hop (112 ns a hop on two
+  cores against 39 on one — the 3.2.0 candidate on g++-14 / WSL2, 154 against 45 on MSVC; shipped
+  3.1.0 read 169 against 55), while a framework that runs the receiver on the sender's worker never
+  pays it. Put the actors that talk to each other most on the
+  SAME core; spread across cores by traffic partition, not by actor count. _(measured in the qb-vs-others
+  benchmark, TUNING guide §9.4)_
+- **The idle-spin floor (`setIdleSpin`, 50 µs) is a policy, not a mechanism.** A core that really
+  SLEEPS pays what the OS charges to wake it — ~10.6 µs on Windows (tick-free), ~25 µs under WSL2's
+  hypervisor, a few µs on native Linux — for qb as for every framework; the floor decides how long a
+  core keeps polling before it takes that sleep, so that a gap shorter than the floor never pays the
+  wake and a longer one pays it once. Raise it to trade idle CPU for wake latency, lower it to trade
+  the other way; `setLatency(0)` never sleeps at all. _(Main.h:295, :312, :361-363; measured in the
+  qb-vs-others benchmark, TUNING guide §8.2)_
 - **Every event payload must be trivially *relocatable* — on `push` as much as on `send`.** The
   runtime moves events with raw `memcpy` and abandons the source without running a destructor there,
   so no member may point into its own storage. A by-value `std::string` is exactly that shape on

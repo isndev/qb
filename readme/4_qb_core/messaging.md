@@ -120,10 +120,18 @@ Every one of these is a member of `qb::Actor`, `const` and `noexcept`, and calla
 | `push<E>(dest, …)` | FIFO per source → dest | new, at the pipe **tail** | no — the receiver runs `~E()` | — | one `ActorId`, or `BroadcastId(core)` |
 | `to(dest).push<E>(…)` | same as `push` | same | no | — | one `ActorId` |
 | `getPipe(dest).allocated_push<E>(n, …)` | same as `push` | same, plus an `n`-byte tail | no | — | one `ActorId` |
-| `send<E>(dest, …)` | **none** | new, at the pipe **front**, retracted on immediate delivery | **enforced for `EventQOS0`** — those may be dropped without disposal | — | one `ActorId` |
+| `send<E>(dest, …)` | **none** | new, at the pipe tail like `push`, handed to the peer's ring at once and retracted from the pipe when that succeeds (`src/qb/core/VirtualCore.h:1037-1054`) | **enforced for `EventQOS0`** — those may be dropped without disposal | — | one `ActorId` |
 | `broadcast<E>(…)` | **none** (one `send` per core) | one per core | same as `send`, on every remote core | — | every actor on every core |
 | `reply(event)` | none (goes through `send`) | **reuses** the received event | n/a | `on(E&)` non-const | back to `event.source` |
 | `forward(dest, event)` | none (goes through `send`) | **reuses** the received event | n/a | `on(E&)` non-const | new `ActorId`, `source` preserved |
+
+**When `send` wins over `push`, measured.** `send` hands the event to the peer's ring at once instead
+of leaving it in the outbound pipe for the pass's flush. That is a win for ONE event with nothing
+behind it to batch — a request whose reply the sender then idles for — and a loss on sustained
+traffic: on the all-to-all `big` shape (120 actors, one request in flight per actor) `send<>` measured
+26.1 ns per round trip against `push<>`'s 24.9 on g++-14, because the flush of the (core, core) pipe
+still carries a batch and `send<>` gives that up, along with ordering (measured in the qb-vs-others benchmark,
+TUNING guide §9.6, Huly QB-48). `push` is the default for a reason; `send` is not its faster spelling.
 
 When in doubt the answer is `push`.
 

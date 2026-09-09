@@ -1032,8 +1032,8 @@ public:
      * @param args Arguments to forward to the constructor of `_Event`.
      * @details
      * Events sent using `send()` are not guaranteed to be received in the order they were sent,
-     * even if sent to the same destination from the same source. This method may offer slightly
-     * lower latency for same-core communication in specific scenarios but sacrifices ordering.
+     * even if sent to the same destination from the same source. It hands the event to the peer's ring
+     * at once instead of the pass's flush: a win for ONE lone event, a LOSS on sustained traffic; never "faster".
      * @note Trivial destructibility is a guideline here and a COMPILER-ENFORCED rule only for `qb::EventQOS0` — the one kind
      *       the flush may DROP undisposed. Prefer POD members or `qb::string`; a delivered event is disposed exactly once.
      * @code

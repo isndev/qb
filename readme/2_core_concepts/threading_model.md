@@ -43,13 +43,27 @@ Cross-core routing is O(1). The engine wraps the configured `CoreIdSet` in an in
 
 Within one iteration, a `VirtualCore` flushes its outbound events to peer mailboxes (`__flush_all__`) and then drains its own inbound mailbox (`__receive__`) (`src/qb/core/VirtualCore.cpp:827-829`). Outbound flushing is bounded so it cannot deadlock against a full peer mailbox: QoS-guaranteed events use a spin-then-yield backoff with partial flush, and best-effort (QoS-0) events are dropped after a single failed `try_send` (`src/qb/core/VirtualCore.cpp:440-464`). A single event spanning more `EventBucket` slots than the ring holds is a different case entirely — the destination's batched, all-or-nothing `enqueue` of `event.bucket_size` buckets fails no matter how much the peer drains (`src/qb/core/Main.cpp:241`), so retrying could never converge. The flush therefore recognises it as permanently unsendable rather than backpressured: it logs at `LOG_CRIT`, disposes the event and drops it, and keeps flushing the rest of the pipe (`src/qb/core/VirtualCore.cpp:427-437`). The ring capacity is `MaxRingEvents == std::numeric_limits<uint16_t>::max() / QB_LOCKFREE_EVENT_BUCKET_BYTES` (`src/qb/core/Main.h:394`). The inter-core flush and deadlock-recovery rules are consolidated in [Core invariants](../7_reference/core_invariants.md).
 
+### Placement is a decision, and the core crossing is its cost
+
+An actor lives on the `VirtualCore` where it was created, for its whole life: qb has no migration
+and no work-stealing, so `addActor<T>(core, …)` — or which core's `addRefActor` built a child — is a
+topology decision that the framework never revisits. What it decides is how often events cross a
+core, and that crossing is the expensive part of a hop: on the Savina `thread-ring` shape, a ring of
+actors spread `i % cores` crosses a core on every hop and measured 112 ns a hop on two cores against
+39 on one (the 3.2.0 candidate, g++-14 on WSL2; 154 against 45 on MSVC; shipped 3.1.0 read 169 against
+55), while a framework that runs the receiver on the sender's worker measures the same at one core and
+two. Put the actors that talk to each other most on
+the **same** core, and spread work across cores by traffic partition — a pipeline stage, a shard of
+keys, a group of connections — rather than by actor count. (Measured in the qb-vs-others benchmark, TUNING guide
+§9.4 and its `results/*/qb-branch-develop/` grids, Huly QB-48; a migration policy is an open 4.0 question, not a 3.2 promise.)
+
 ### Engine latency: busy-spin versus parked-idle
 
 The idle latency of a core is a `qb::duration` (`std::chrono::nanoseconds`; see [the time vocabulary](../7_reference/api_overview.md)). It controls what a `VirtualCore` does when its event loop finds no work.
 
 - `setLatency(qb::duration::zero())` — the default — puts the core in busy-spin low-latency mode: the loop never blocks and the thread holds its CPU at 100% to react with minimal delay (`src/qb/core/Main.h:283-284`).
 - `setLatency(d)` with `d > 0` lets the core park for up to `d` when idle (less when a timed request's deadline is nearer: the deadline bounds the park) — inside its io loop when it owns active qb-io watchers, so io readiness and io timers still wake it at poll latency, on a `std::condition_variable` when it owns none (`src/qb/core/Main.h:285-300`, mailbox `wait()` at `src/qb/core/Main.h:502-512`, `wait(listener &)` at `src/qb/core/Main.h:553-568`). A peer enqueuing an event calls `notify()` to wake it either way. This trades worst-case wake-up latency for lower CPU.
-- `setIdleSpin(f)` — default `kDefaultIdleSpin`, 50 µs (`src/qb/core/Main.h:368`) — is how long such a core keeps polling after its last activity before it takes that park (`src/qb/core/Main.h:317`). Meaningless at latency zero.
+- `setIdleSpin(f)` — default `kDefaultIdleSpin`, 50 µs (`src/qb/core/Main.h:368`) — is how long such a core keeps polling after its last activity before it takes that park (`src/qb/core/Main.h:317`). Meaningless at latency zero. Read it as a **policy**: a core that really sleeps pays what the OS charges to wake it — ~10.6 µs on Windows, ~25 µs under WSL2's hypervisor, a few µs on native Linux, for qb as for every framework (measured in the qb-vs-others benchmark, TUNING guide §8.2) — and the floor decides how long the core keeps polling before it takes that sleep, so that a gap shorter than the floor never pays the wake and a longer one pays it once. Raise it to trade idle CPU for wake latency, lower it to trade the other way.
 
 ```mermaid
 flowchart TB
