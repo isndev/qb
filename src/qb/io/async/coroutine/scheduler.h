@@ -362,9 +362,11 @@ public:
      *   destruction. Suspended frames at process exit are reclaimed by
      *   the OS (they are by definition not going to make progress).
      *
-     *   In debug builds we emit a one-line warning if any suspended frames
-     *   are left at teardown, so misuse of the lifecycle surfaces during
-     *   tests.
+     *   Suspended frames left at teardown are REPORTED, in every build: one
+     *   line on `qb::io::cerr` naming the count, and the count added to
+     *   `abandoned_coroutine_frames_total()` (Huly QB-84). It used to be a
+     *   debug-only `fprintf`, so a release service that recreated listeners
+     *   accumulated frames with no message and no number.
      */
     ~CoroutineScheduler() {
         QB_SCHED_TRACE("~CoroutineScheduler() begin this=%p", (void *) this);
@@ -395,14 +397,8 @@ public:
             }
         }
         frames_to_destroy_.clear();
-#ifndef NDEBUG
-        if (!suspended_coroutines_.empty()) {
-            std::fprintf(stderr,
-                         "[coro][warn] ~CoroutineScheduler() leaked %zu suspended frames — "
-                         "stop the event loop before destroying the scheduler.\n",
-                         suspended_coroutines_.size());
-        }
-#endif
+        if (const std::size_t abandoned = suspended_coroutines_.size(); abandoned != 0)
+            report_abandoned_coroutine_frames(abandoned, this);
         QB_SCHED_TRACE("  clearing suspended_coroutines_ (count=%zu), NOT destroying handles", suspended_coroutines_.size());
         suspended_coroutines_.clear();
         in_flight_.clear();

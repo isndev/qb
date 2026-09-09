@@ -22,6 +22,8 @@
  * @ingroup IO
  */
 
+#include <atomic>
+#include <cstddef>
 #include <exception>
 #include <filesystem>
 #include <string>
@@ -90,6 +92,34 @@ qb::io::async::report_detached_coroutine_exception(std::exception_ptr ep) noexce
     } catch (...) {
         // Reporting must never become the failure.
     }
+}
+
+namespace {
+// Every thread's scheduler adds to it at its own teardown, and a reader may be on any thread.
+std::atomic<std::size_t> g_abandoned_coroutine_frames{0};
+} // namespace
+
+// The same policy and the same place as the detached-exception report above: one line on
+// `qb::io::cerr` in EVERY build, never `QB_LOG_*` (which compiles to nothing without
+// QB_WITH_LOGGING -- the very silence Huly QB-84 removes), and the number kept where a test or an
+// operator can read it back after the frames are gone.
+void
+qb::io::async::report_abandoned_coroutine_frames(std::size_t const count, void const *const scheduler) noexcept {
+    g_abandoned_coroutine_frames.fetch_add(count, std::memory_order_relaxed);
+    try {
+        qb::io::cerr() << "WARNING: qb coroutine scheduler " << scheduler << " destroyed with " << count
+                       << " suspended coroutine frame(s) still parked on a watcher or a wait list -- ABANDONED, not "
+                          "destroyed (their watchers still reference them). Stop the event loop before destroying its "
+                          "scheduler. Process total so far: "
+                       << g_abandoned_coroutine_frames.load(std::memory_order_relaxed) << std::endl;
+    } catch (...) {
+        // Reporting must never become the failure.
+    }
+}
+
+std::size_t
+qb::io::async::abandoned_coroutine_frames_total() noexcept {
+    return g_abandoned_coroutine_frames.load(std::memory_order_relaxed);
 }
 
 #ifdef QB_WITH_LOGGING

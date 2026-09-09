@@ -145,6 +145,22 @@ inline void forget_frame_if_current(std::coroutine_handle<>) noexcept;
 // `qb::io::async::coro_scheduler().spawn(t)`, has no such wrapper, and is what this covers.
 void report_detached_coroutine_exception(std::exception_ptr ep) noexcept;
 
+// Defined OUT OF LINE in qb/io/logger.cpp too, for the same reasons. Called from
+// `~CoroutineScheduler` when it tears down with `count` frames still SUSPENDED -- parked on a
+// watcher or a wait list -- which it deliberately abandons rather than destroys (Finding 2.B.8:
+// their watchers still reference them, and destroying a frame under a live loop is worse than
+// leaking it). Until 3.2 that was a `fprintf` behind `#ifndef NDEBUG`: in every release build a
+// service that recreated listeners accumulated frames with no message and no number (Huly QB-84).
+// It adds `count` to the process-wide tally below and prints ONE line on `qb::io::cerr`, in every
+// build. Reaching it is a lifecycle misuse -- stop the loop before destroying its scheduler --
+// so it is never on a hot path.
+void report_abandoned_coroutine_frames(std::size_t count, void const *scheduler) noexcept;
+
+/// The number of suspended coroutine frames abandoned at scheduler teardown since the process
+/// started, every thread included: what an operator or a test reads to know a lifecycle went
+/// wrong somewhere, since the frames themselves are gone (Huly QB-84).
+[[nodiscard]] std::size_t abandoned_coroutine_frames_total() noexcept;
+
 // ============================================================================
 // Coroutine frame freelist allocator (Finding 2.A.9)
 // ============================================================================

@@ -87,6 +87,7 @@ qb_add_test(MODULE qb-io TIER unit NAME quic-adapter           SOURCES quic/quic
 qb_add_test(MODULE qb-io TIER unit NAME scheduler-lifecycle         SOURCES coroutine/scheduler-lifecycle.cpp         DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME awaiter-protocol            SOURCES coroutine/awaiter-protocol.cpp            DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME over-aligned-promise        SOURCES coroutine/over-aligned-promise.cpp        DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME scheduler-abandoned-frames  SOURCES coroutine/scheduler-abandoned-frames.cpp  DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME exception-propagation       SOURCES coroutine/exception-propagation.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine)
 # The counterpart of exception-propagation: the DETACHED path, where nothing awaits the frame so
 # nothing can rethrow, and the exception used to be destroyed with the promise in silence.
