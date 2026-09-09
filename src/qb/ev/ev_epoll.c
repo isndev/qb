@@ -192,7 +192,23 @@ epoll_poll(EV_P_ ev_tstamp timeout) {
     /* epoll wait times cannot be larger than (LONG_MAX - 999UL) / HZ msecs, which is below */
     /* the default libev max wait time, however. */
     EV_RELEASE_CB;
-    eventcnt = epoll_wait(EV_EPOLL_API_HND, epoll_events, epoll_eventmax, EV_TS_TO_MSEC(timeout));
+#if EV_USE_EPOLL_PWAIT2
+    /* qev: a blocking wait is asked for in nanoseconds (Huly QB-196). epoll_wait takes whole
+     * milliseconds and EV_TS_TO_MSEC rounds UP, so a wait bounded under a millisecond -- an
+     * embedder's park capped by a 100 us latency, a timer 200 us away -- slept a full one on this
+     * backend: measured in qb 3.2's core on WSL2 g++-14 (Linux 6.6), a 100 us timer on a parked
+     * core fired 1010 us late and a 1 ms one 110 us late, against 0.2 us on a spinning core.
+     * epoll_pwait2 (Linux >= 5.11, glibc >= 2.35) takes a timespec, and the kernel honours it to
+     * the thread's timer slack, 50 us by default (prctl PR_SET_TIMERSLACK). A non-blocking poll
+     * keeps epoll_wait: both enter the same kernel path and epoll_wait copies nothing in, so the
+     * NOWAIT pass measured at its floor (QB-188) pays nothing for this. */
+    if (epoll_have_pwait2 && timeout > EV_TS_CONST(0.)) {
+        struct timespec ts;
+        EV_TS_SET(ts, timeout);
+        eventcnt = epoll_pwait2(EV_EPOLL_API_HND, epoll_events, epoll_eventmax, &ts, 0);
+    } else
+#endif
+        eventcnt = epoll_wait(EV_EPOLL_API_HND, epoll_events, epoll_eventmax, EV_TS_TO_MSEC(timeout));
     EV_ACQUIRE_CB;
 
     if (ecb_expect_false(eventcnt < 0)) {
@@ -294,6 +310,19 @@ epoll_init(EV_P_ int flags) {
 
     epoll_eventmax = 64; /* initial number of events receivable per poll */
     epoll_events   = (struct epoll_event *) ev_malloc(sizeof(struct epoll_event) * epoll_eventmax);
+
+#if EV_USE_EPOLL_PWAIT2
+    /* qev: asked once per loop, of the kernel -- an older one (< 5.11) answers ENOSYS and the loop
+     * keeps the millisecond wait and its minimum. Answered, the minimum wait follows the select
+     * backend's microsecond: a wait shorter than the slack returns when the slack does, late by at
+     * most that and never early, so a timer a few microseconds away costs one pass, not a spin. */
+    {
+        struct timespec zero = {0, 0};
+        epoll_have_pwait2 = !(epoll_pwait2(EV_EPOLL_API_HND, epoll_events, epoll_eventmax, &zero, 0) < 0 && errno == ENOSYS);
+        if (epoll_have_pwait2)
+            backend_mintime = EV_TS_CONST(1e-6);
+    }
+#endif
 
     return EVBACKEND_EPOLL;
 }

@@ -41,6 +41,7 @@
 #define epoll_eperms ((loop)->epoll_eperms)
 #define epoll_eventmax ((loop)->epoll_eventmax)
 #define epoll_events ((loop)->epoll_events)
+#define epoll_have_pwait2 ((loop)->epoll_have_pwait2)
 #define evpipe ((loop)->evpipe)
 #define fdchangecnt ((loop)->fdchangecnt)
 #define fdchangemax ((loop)->fdchangemax)
@@ -175,6 +176,7 @@
 #undef epoll_eperms
 #undef epoll_eventmax
 #undef epoll_events
+#undef epoll_have_pwait2
 #undef evpipe
 #undef fdchangecnt
 #undef fdchangemax

@@ -7,6 +7,33 @@ policy.
 
 ## [Unreleased]
 
+### Changed
+
+- **A parked core meets a timer under a millisecond under a millisecond, on Linux (Huly
+  QB-196).** The park of a core that owns io watchers is `ev_run(EVRUN_ONCE)` capped at
+  `latency`, and its wait went through `epoll_wait`, which takes whole milliseconds and which
+  libev rounds UP -- so a `latency` of 100 µs parked a full millisecond, and a 200 µs
+  `qb::io::async::callback` on an otherwise idle core fired at the millisecond. Measured with
+  qb-vs-others' `parked-timer-wake` probe on WSL2 g++-14 (Linux 6.6): a 100 µs timer on a parked
+  core 1010 µs late at p50, a 1 ms one 110 µs late, a 5 ms one reached through 1 ms parks 357 µs
+  late, against 0.1 µs on a spinning core. qev's epoll backend now asks the kernel in nanoseconds
+  where it can -- `epoll_pwait2` (Linux 5.11, glibc 2.35), honoured to the thread's timer slack of
+  50 µs, probed once per loop with an older kernel keeping `epoll_wait` -- and the same probe,
+  re-run against `develop` in one session, says what the timer costs now (the figures are in
+  qb-vs-others' `docs/TUNING.md` §19); the non-blocking pass keeps `epoll_wait` and its measured
+  floor. The
+  fact the issue was filed on -- a Windows park capped at the 15.6 ms system tick -- was NOT what
+  the measurement found: with the box's timer resolution read at 15.625 ms, a 1 ms wepoll wait
+  returned in 1.0–1.5 ms at p50 and 2.4 ms at p99, `timeBeginPeriod(1)` changing nothing (the
+  kernel's waits are tickless; its coalescing is the +0.5–1.5 ms), and a parked core woken by a
+  socket paid 65–190 µs, deeper the longer its CPU had been idle -- the CPU's idle-state exit, the
+  same on qb at axis N and on `develop` in an interleaved A/B, so no regression since §10. Windows
+  and io_uring keep the millisecond wait; `CoreInitializer::setLatency` and the tuning guide now
+  say so. Pinned by `core-park-wake`
+  (`ASubMillisecondTimerFiresUnderAMillisecondOnACoreParkedInItsLoop`, a SKIP where the libc,
+  the kernel or the backend cannot express it) and by qev's `test-loops` (`test_epoll_ns_wait`,
+  whose negative control -- the nanosecond path switched off -- fails it at 1058 µs).
+
 ### Added
 
 - **An event type wider than the cross-core mailbox ring is refused at compile time (Huly

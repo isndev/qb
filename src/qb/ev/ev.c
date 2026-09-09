@@ -112,6 +112,17 @@
 #define EV_USE_EPOLL 0
 #endif
 
+/* qev: the libc declares epoll_pwait2 (glibc >= 2.35), so the epoll backend may ask the kernel
+ * for a wait in nanoseconds (Huly QB-196); whether the kernel answers is asked at loop init. */
+#if HAVE_EPOLL_PWAIT2 && HAVE_SYS_EPOLL_H
+#ifndef EV_USE_EPOLL_PWAIT2
+#define EV_USE_EPOLL_PWAIT2 EV_FEATURE_BACKENDS
+#endif
+#else
+#undef EV_USE_EPOLL_PWAIT2
+#define EV_USE_EPOLL_PWAIT2 0
+#endif
+
 #if HAVE_LINUX_AIO_ABI_H
 #ifndef EV_USE_LINUXAIO
 #define EV_USE_LINUXAIO 0 /* was: EV_FEATURE_BACKENDS, always off by default */
@@ -382,6 +393,14 @@
 #define EV_USE_EPOLL EV_FEATURE_BACKENDS
 #else
 #define EV_USE_EPOLL 0
+#endif
+#endif
+
+#ifndef EV_USE_EPOLL_PWAIT2
+#if defined(__linux) && defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 35))
+#define EV_USE_EPOLL_PWAIT2 EV_USE_EPOLL
+#else
+#define EV_USE_EPOLL_PWAIT2 0
 #endif
 #endif
 

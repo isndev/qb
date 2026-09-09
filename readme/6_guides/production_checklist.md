@@ -164,7 +164,7 @@ Each `VirtualCore` runs a busy loop by default. `CoreInitializer::setLatency(qb:
 - `qb::duration::zero()` (the default) — low-latency mode: the core spins, consuming a full CPU on its assigned core.
 - `latency > 0` — the core may sleep up to that duration when idle, cutting CPU use at the cost of worst-case event-handling latency. A core that owns active qb-io watchers sleeps inside its io loop, so sockets and io timers still wake it at poll latency and `latency` only caps the park; a core with no io watchers sleeps on its mailbox condition variable and wakes only for a producer's event or the timeout.
 
-<!-- src: qb/src/qb/core/Main.h:276-295 -->
+<!-- src: qb/src/qb/core/Main.h:276-300 -->
 
 ```cpp
 // src: derived from qb/src/qb/core/Main.h (CoreInitializer API)

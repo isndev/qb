@@ -62,7 +62,7 @@ VARx(ev_tstamp, now_floor)     /* last time we refreshed rt_time */
 
 #if EV_USE_EPOLL || EV_GENWRAP
         VARx(struct epoll_event *, epoll_events) VARx(int, epoll_eventmax) VARx(int *, epoll_eperms) VARx(int, epoll_epermcnt)
-            VARx(int, epoll_epermmax)
+            VARx(int, epoll_epermmax) VARx(int, epoll_have_pwait2) /* the kernel answered epoll_pwait2 at loop init: waits in nanoseconds */
 #endif
 
 #if EV_USE_LINUXAIO || EV_GENWRAP

@@ -51,6 +51,11 @@
 #else
 #include <time.h>
 #endif
+#if defined(__linux__) && EV_USE_EPOLL_PWAIT2
+#include <cerrno>
+#include <sys/epoll.h>
+#include <unistd.h>
+#endif
 
 namespace core_park_wake_test {
 
@@ -185,6 +190,48 @@ public:
     }
 };
 
+// ---- a timer under a millisecond, the granularity of the park's wait ---------------------------
+
+std::atomic<std::int64_t> g_best_lateness_ns{-1};
+std::atomic<unsigned int> g_backend{0};
+
+/// Arms one 200 µs callback from inside the previous one, twenty times, and keeps the BEST
+/// lateness (fired-at minus due-at). Its core has nothing else to do, so every wait is a park in
+/// the loop bounded by that timer -- the shape of a keep-alive, a retry or a poll under a
+/// millisecond on an otherwise idle server core.
+class SubMsTimerActor : public qb::Actor {
+    static constexpr int  kRounds = 20;
+    static constexpr auto kDelay  = 200us;
+    int                   _round  = 0;
+    Clock::time_point     _due{};
+
+    void
+    arm() {
+        _due = Clock::now() + kDelay;
+        qb::io::async::callback([this] { fired(); }, kDelay);
+    }
+    void
+    fired() {
+        const auto late = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - _due).count();
+        const auto best = g_best_lateness_ns.load(std::memory_order_acquire);
+        if (best < 0 || late < best)
+            g_best_lateness_ns.store(late, std::memory_order_release);
+        if (++_round >= kRounds) {
+            kill();
+            return;
+        }
+        arm();
+    }
+
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        g_backend.store(qb::io::async::listener::current.backend(), std::memory_order_release);
+        arm();
+        co_return true;
+    }
+};
+
 std::chrono::nanoseconds
 push_to_delivery() {
     return std::chrono::nanoseconds{g_seen_at_ns.load(std::memory_order_acquire) - g_pushed_at_ns.load(std::memory_order_acquire)};
@@ -258,6 +305,49 @@ TEST(CoreParkWake, SocketReadinessWakesACoreParkedInItsLoop) {
     qb::Main::stop();
     main.join();
     EXPECT_FALSE(main.hasError());
+}
+
+TEST(CoreParkWake, ASubMillisecondTimerFiresUnderAMillisecondOnACoreParkedInItsLoop) {
+    // A core with nothing to do but a 200 µs callback parks in its loop with that timer bounding
+    // the wait. `epoll_wait` takes whole milliseconds and libev rounds UP, so until qev asked the
+    // kernel in nanoseconds (`epoll_pwait2`, Linux >= 5.11 -- Huly QB-196) the timer fired a full
+    // millisecond late on a parked core: 1010 µs at p50, measured on WSL2 g++-14 against 0.2 µs on
+    // a spinning one. The BEST of twenty rounds is asserted: the millisecond path cannot fire
+    // before 1 ms, so one round under 800 µs is the nanosecond path and nothing else, and a loaded
+    // host only ever moves a round upward. A SKIP, never a FAIL, where the libc or the kernel has
+    // no `epoll_pwait2` and under any other backend: io_uring's wait keeps libev's millisecond
+    // minimum, Windows' wepoll takes milliseconds and the kernel adds its own coalescing on top.
+#if defined(__linux__) && EV_USE_EPOLL_PWAIT2
+    {
+        struct timespec    zero{0, 0};
+        struct epoll_event e[1];
+        const int          fd     = epoll_create1(0);
+        const int          r      = fd >= 0 ? epoll_pwait2(fd, e, 1, &zero, nullptr) : -1;
+        const bool         enosys = r < 0 && errno == ENOSYS;
+        if (fd >= 0)
+            close(fd);
+        if (enosys)
+            GTEST_SKIP() << "the kernel has no epoll_pwait2 (Linux < 5.11)";
+    }
+    reset_atoms();
+    g_best_lateness_ns.store(-1, std::memory_order_release);
+    g_backend.store(0, std::memory_order_release);
+    qb::Main main;
+    main.core(0).setLatency(500ms).setIdleSpin(0us);
+    main.addActor<SubMsTimerActor>(0);
+    main.start(false);
+    main.join();
+    ASSERT_FALSE(main.hasError());
+    const auto backend = g_backend.load(std::memory_order_acquire);
+    if (backend != EVBACKEND_EPOLL)
+        GTEST_SKIP() << "the core's loop runs on " << qb::io::async::listener::backend_name(backend) << ", not epoll";
+    const auto best = g_best_lateness_ns.load(std::memory_order_acquire);
+    ASSERT_GE(best, 0) << "no round fired";
+    EXPECT_LT(best, 800'000) << "every round of a 200 us timer on the parked core fired at the millisecond: best lateness "
+                             << best / 1000 << " us";
+#else
+    GTEST_SKIP() << "epoll_pwait2 is not in this build (Linux with glibc >= 2.35 only)";
+#endif
 }
 
 TEST(CoreParkWake, CrossCorePushWakesACoreParkedInItsLoop) {

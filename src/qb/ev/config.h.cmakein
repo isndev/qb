@@ -8,6 +8,7 @@
 #cmakedefine01 EV_USE_TIMERFD
 #cmakedefine01 EV_USE_SELECT
 #cmakedefine01 EV_USE_EPOLL
+#cmakedefine01 EV_USE_EPOLL_PWAIT2
 #cmakedefine01 EV_USE_KQUEUE
 #cmakedefine01 EV_USE_PORT
 #cmakedefine01 EV_USE_POLL
@@ -35,6 +36,7 @@
 #cmakedefine01 HAVE_CLOCK_SYSCALL
 #cmakedefine01 HAVE_DLFCN_H
 #cmakedefine01 HAVE_EPOLL_CTL
+#cmakedefine01 HAVE_EPOLL_PWAIT2
 #cmakedefine01 HAVE_EVENTFD
 #cmakedefine01 HAVE_FLOOR
 #cmakedefine01 HAVE_INOTIFY_INIT

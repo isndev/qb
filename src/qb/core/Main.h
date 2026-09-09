@@ -289,6 +289,11 @@ public:
      *   it at poll latency and `latency` only caps the park — a timer armed on such a core fires
      *   at its delay, not at the park timeout; a core with no io watchers parks on its mailbox
      *   condition variable. Either park ends the moment a producer enqueues an event to the core.
+     *   The park's wait is as fine as the loop's backend: nanoseconds under kqueue and, on Linux
+     *   5.11 or newer, under epoll (`epoll_pwait2`, honoured to the thread's timer slack of 50 µs);
+     *   whole milliseconds under io_uring and under Windows' wepoll, where the kernel's own
+     *   coalescing adds up to ~1.5 ms more -- there a `latency` or a timer under a millisecond is
+     *   met at the millisecond, and only `latency == 0` (a spinning core) goes below it.
      * This setting takes effect when the engine starts.
      * @see setIdleSpin() for how long an idle core keeps polling before it takes that sleep.
      */

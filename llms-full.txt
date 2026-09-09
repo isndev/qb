@@ -179,7 +179,7 @@ int main() {
 polling for `setIdleSpin` (default 50 µs) since its last activity, so a prompt reply is still picked
 up on the lock-free path. WHERE it parks depends on what the core owns: with active qb-io watchers
 (sockets, timers, `async::callback`) it parks inside its event loop, so io readiness and io timers wake
-it at poll latency and a callback armed on it fires at its delay — `latency` only caps the park; with
+it at poll latency and a callback armed on it fires at its delay — `latency` only caps the park (the wait is as fine as the backend: nanoseconds under kqueue and under epoll on Linux ≥ 5.11 via `epoll_pwait2`, whole milliseconds under io_uring and Windows' wepoll, where a sub-millisecond timer or `latency` is met at the millisecond); with
 no io watchers it parks on its mailbox condition variable and wakes for a producer's event or the
 timeout. Either park ends the moment another core enqueues an event to it.
 
