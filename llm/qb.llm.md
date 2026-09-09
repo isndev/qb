@@ -402,6 +402,15 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   after a failed init, or once it died — never a dangling pointer. Send to `handle.id()` any time; gate
   direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
   _(Actor.h:1246-1250, :1270, :2076-2078)_
+- **`getService<T>()` is the ONE lookup that is not phase-gated: it hands back a service whose async
+  `onInit()` is still in flight AND one that has been `kill()`ed but not yet reaped.** Deliberate — it
+  is what lets a service look itself or a peer up from inside its own `onInit()`, and what keeps a
+  service that kills itself from a handler reachable for the rest of that turn — but it means the
+  pointer says nothing about phase: `push` it an event (the dispatch gate defers to an Activating
+  target and drops to a dead one) rather than read its state, and re-check `is_active()` yourself
+  before a direct call that must not land mid-init or post-kill. Every other lookup (`findActor`,
+  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:919-942;
+  the inventory table Actor.h:774-818)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
