@@ -9,6 +9,30 @@ policy.
 
 ### Added
 
+- **An event type wider than the cross-core mailbox ring is refused at compile time (Huly
+  QB-61).** `qb::detail::event_fits_ring<T>` -- the `sizeof`-derived bucket count against
+  `qb::detail::max_deliverable_buckets`, the ring's slot count (1023 buckets, ~64 KiB with the
+  default 64-byte bucket) -- is asserted in `routing_safe_type_id<T>()`, the funnel every enqueue
+  sink reaches, with a message naming the remedy (bulk data behind a pointer member,
+  `Pipe::allocated_push`). Such an event could never be delivered cross-core: the flush disposed
+  it and logged a CRIT, and the message was lost. The runtime drop stays for the trailing bytes
+  of an `allocated_push`, a runtime quantity. `SharedCoreCommunication::MaxRingEvents` and
+  `VirtualCore::kMaxDeliverableBuckets` are that one constant, asserted equal. Both polarities
+  are pinned in `event-field-shadow` (a payload rounding to exactly the ceiling accepted, one
+  byte past it and a 1 MiB blob refused -- sized by the ceiling, never by `sizeof(qb::Event)`,
+  because the Itanium ABI reuses the base's tail padding where MSVC does not), and the
+  event-shadow negative-control battery plants the 1 MiB event at all five entry points.
+- **Abandoned coroutine frames are reported in every build, and counted (Huly QB-84).**
+  `~CoroutineScheduler` deliberately abandons frames still suspended on a watcher or a wait list
+  rather than destroy them (their watchers still reference them); until now the only trace was an
+  `fprintf` behind `#ifndef NDEBUG`. `qb::io::async::report_abandoned_coroutine_frames` -- out of
+  line in `qb/io/logger.cpp`, the placement and policy of the detached-exception report --
+  prints one WARNING line on `qb::io::cerr` and adds to
+  `qb::io::async::abandoned_coroutine_frames_total()`, the process-wide tally an operator or a
+  test reads back once the frames are gone. The lifecycle the framework drives itself
+  (`~listener`, `reset_coro_scheduler()`) runs `destroy_all_suspended()` first and so DESTROYS
+  parked frames rather than abandon them -- pinned in `scheduler-abandoned-frames` beside the
+  directly-owned scheduler the report is for.
 - **clang-cl is a supported Windows toolchain: the `clang-cl` preset, 0 warnings, the suite
   green (Huly QB-201).** LLVM's Clang behind MSVC's command line, ABI, CRT and STL, and on the
   same host, tree and CRT it ran qb's dispatch **10–18 % faster than MSVC 19.51** (savina/ping-pong
@@ -89,6 +113,28 @@ policy.
 
 ### Changed
 
+- **`ActorHandle::ready_async` is event-driven (Huly QB-62).** The waiting coroutine is resumed by
+  the core pass that ends the child's activation -- after the child's stashed events have been
+  replayed, so the child is caught up when the parent runs -- instead of polling `ready()`
+  through a 1 ms cancellable sleep, a timer armed and disarmed a thousand times a second. A child
+  whose async init FAILS (`co_return false`, a throw, the activation deadline, a kill while
+  Activating) is reported the pass it fails, where the poll only ever reported it through the
+  waiter's own timeout. The awaiter (`detail::activation_awaiter`) has the shape of
+  `ask_awaiter`: an intrusive waiter node (`detail::activation_waiter`, linked by
+  `activation_wait` into the core's Activating entry of the target and fired -- unlinked first --
+  by whichever path ends the activation), a `request_deadline` in the core's own clock for the
+  timeout (no `ev_timer`), the actor scope's embedded cancel hook for a kill of the waiter; an
+  already-active child or an invalid handle answers without suspending. An Activating entry never
+  disappears with a linked waiter (its destructor detaches, its move transfers the list).
+  `qb-core-test-system-init-ready-async`: nine cases, including the resume within two passes of
+  the init completing. Measured level on both hosts (qb-vs-others
+  `results/*/qb-branch-batch-quick-wins-3/`), after one lesson: the batch's two cold bodies placed
+  BEFORE the hot ones in VirtualCore.cpp and Actor.cpp read +2 % on savina/ping-pong 1c on g++
+  (quartiles separated) for code the ping-pong never calls; at the end of their files, +0.1 %.
+- `llm/qb.llm.md` carries, with the rules an agent reads before writing code, the invariant that
+  `getService<T>()` is the one lookup that is not phase-gated -- a service still in its async
+  `onInit()` and one killed but not yet reaped are handed out, by design -- so `push` it an event
+  rather than read its state (Huly QB-66).
 - **`__workflow__` reaches `listener::current` once, not three times a pass (Huly QB-199).** It
   is an inline thread_local with a non-trivial constructor, so g++ routes every access through its
   TLS wrapper (the init guard, `__tls_init`): 2.2 % of savina/ping-pong 1c for `has_work()` /
