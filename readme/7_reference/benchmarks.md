@@ -121,7 +121,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_BENCHMARKS=ON -B build
 cmake --build build --parallel
 ```
 
-The repository-root `CMakeLists.txt` sets `QB_BUILD_BENCHMARKS=ON` (`qb-dev/CMakeLists.txt:39`) — but **without** `FORCE`, unlike the tests and examples lines around it, so a preset that already put the variable in the cache wins. The superproject's `dev` preset does exactly that: it inherits `debug` → `base`, and `base` sets `QB_BUILD_BENCHMARKS=OFF` (`qb-dev/CMakePresets.json:21`), adding nothing of its own. **`cmake --preset dev` from the repository root therefore does not build the benchmarks** — use the `benchmarks` preset, which is `release` plus `-march=native` (`qb-dev/CMakePresets.json:143-150`), or pass the flag explicitly. In a *standalone* `qb` checkout the qb-only `dev` preset does enable them (`qb/CMakePresets.json:45-51`).
+The repository-root `CMakeLists.txt` sets `QB_BUILD_BENCHMARKS=ON` (`qb-dev/CMakeLists.txt:39`) — but **without** `FORCE`, unlike the tests and examples lines around it, so a preset that already put the variable in the cache wins. The superproject's `dev` preset does exactly that: it inherits `debug` → `base`, and `base` sets `QB_BUILD_BENCHMARKS=OFF` (`qb-dev/CMakePresets.json:21`), adding nothing of its own. **`cmake --preset dev` from the repository root therefore does not build the benchmarks** — use the `benchmarks` preset, which is `release` plus `-march=native` (`qb-dev/CMakePresets.json:128-135`), or pass the flag explicitly. In a *standalone* `qb` checkout the qb-only `dev` preset does enable them (`qb/CMakePresets.json:45-51`).
 
 ```bash
 # src: qb-dev/CMakePresets.json (benchmarks preset)
