@@ -827,7 +827,8 @@ struct CoreSpawnerParameter {
  */
 class Main {
     friend class VirtualCore;
-    constexpr static const uint64_t MaxRingEvents = (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
+    /// The same ring ceiling as `SharedCoreCommunication::MaxRingEvents`: one constant (Huly QB-61).
+    constexpr static const uint64_t MaxRingEvents = qb::detail::max_deliverable_buckets;
     //////// Types
     using Mailbox = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
 

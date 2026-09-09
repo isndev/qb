@@ -140,7 +140,7 @@ What each call does:
 
 Either way, check `engine.hasError()` after the engine stops to detect a core that terminated on an error.
 
-<!-- src: qb/src/qb/core/Main.h:867-900 -->
+<!-- src: qb/src/qb/core/Main.h:869-902 -->
 
 ## 4. A two-actor program: ping/pong
 
@@ -242,7 +242,7 @@ Notes on the new pieces:
 
 Both actors run on core 0 here. To distribute them across cores, pass a different `CoreId` to `addActor`; messages cross cores over lock-free queues with no code change. See [the threading model](../2_core_concepts/threading_model.md).
 
-<!-- src: examples/01-actors/02-messaging.cpp (the shipped request/response program this section mirrors), qb/src/qb/core/Actor.cpp:388-399,442-445, qb/src/qb/core/ActorId.h:413,470-471, qb/src/qb/core/Main.h:932 -->
+<!-- src: examples/01-actors/02-messaging.cpp (the shipped request/response program this section mirrors), qb/src/qb/core/Actor.cpp:388-399,442-445, qb/src/qb/core/ActorId.h:413,470-471, qb/src/qb/core/Main.h:934 -->
 
 ## 5. Add a non-blocking timer
 
@@ -310,7 +310,7 @@ The primitive you may have expected here, `qb::io::async::callback(func, delay)`
 
 For inactivity timeouts, coroutine-based async flows, and the full event-loop surface available to actors, see [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md).
 
-<!-- src: qb/src/qb/io/async/io.h:356-383, qb/src/qb/io/async/io.h:310-316,341,474-479, qb/src/qb/core/Actor.h:1386-1387,1963-1965, qb/src/qb/core/Actor.h:769-772, qb/src/qb/core/Actor.cpp:555-566, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:246-249 -->
+<!-- src: qb/src/qb/io/async/io.h:356-383, qb/src/qb/io/async/io.h:310-316,341,474-479, qb/src/qb/core/Actor.h:1386-1387,2122-2124, qb/src/qb/core/Actor.h:769-772, qb/src/qb/core/Actor.cpp:555-566, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:246-249 -->
 
 ## 6. Build and run
 
