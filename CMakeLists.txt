@@ -247,7 +247,7 @@ elseif (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
         # `#include QB_EV_CONFIG_H` (visible with -E, so it is the preprocessor's line map, not
         # gcov's). Debian's gcc-14 (14.2.0-19) resumes at 80 in the same TU. merge-use-line-min
         # keeps the report where the other 132 TUs put it; the default (strict) mode is what
-        # turned the lane red for four pushes (22c9bf6e..9814c2a1).
+        # turned the lane red for four pushes (00b60afe..fa1c5ce3).
         set(COVERAGE_GCOVR_ARGS
                 --gcov-ignore-parse-errors=all
                 --gcov-ignore-errors=source_not_found

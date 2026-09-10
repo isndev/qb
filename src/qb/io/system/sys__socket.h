@@ -1553,9 +1553,9 @@ operator==(const qb::io::inet::ip::endpoint &lhs,
 
 // Header-only mode pulls this header's own implementation in, the mirror image of
 // sys__socket.cpp's `#if !defined(QB_HEADER_ONLY) #include <qb/io/system/sys__socket.h>`.
-// The path was "qb/socket.cpp" from the day it was written (581094a9) and resolved to
+// The path was "qb/socket.cpp" from the day it was written (09b1d3c2) and resolved to
 // nothing: the implementation has always been the sibling sys__socket.cpp, first at
-// source/io/src/system/, since 4478d712 at src/qb/io/system/. -DQB_HEADER_ONLY therefore
+// source/io/src/system/, since 28c52f14 at src/qb/io/system/. -DQB_HEADER_ONLY therefore
 // failed with `'qb/socket.cpp' file not found` on every platform. Note this needs qb's
 // SOURCE tree on the include path -- install(FILES_MATCHING) ships only *.h/*.hpp/*.tpp/
 // *.inl, so .cpp files are absent from an installed prefix and header-only mode is a

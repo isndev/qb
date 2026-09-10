@@ -119,7 +119,7 @@ policy.
   and fails fast on a spent budget without building anything. Measured on savina/bank-transaction
   (one ask per transfer, Linux/g++-14): `Account::start`'s frame — 21.7 % of the core, the
   by-value build and its copy — left the top of the profile, and the shape's p50 moved from
-  **9.74 / 9.60 ms** (1c spin/park, `develop` `203cfb56` — the base this work branched from,
+  **9.74 / 9.60 ms** (1c spin/park, `develop` `9d4aa94c` — the base this work branched from,
   NOT shipped 3.1.0, which measures 14.71 / 14.58 in the same session; the label was corrected
   after the control was re-measured beside it) to **8.25 / 8.08 ms** before the wire work
   below. Tests: `ActorCoroutineAsk.EmplaceAsk*` (6).
@@ -246,7 +246,7 @@ policy.
   (the supervisor pattern); `unregisterEvent<E>` and `qb::no_default_events` both drop the event
   silently; a broadcast reaches every live actor and not one spawned by a handler during it; a
   `ServiceActor` is reached through the same slot. Measured in one quiet session per host, 9
-  repetitions + 2 warmup, `develop` `a6663641` → this line, p50 per repetition: savina/fib
+  repetitions + 2 warmup, `develop` `e814df06` → this line, p50 per repetition: savina/fib
   **6.96 → 5.21 ms** at two cores and **10.98 → 8.48 ms** at one on WSL2 Debian/g++-14 (−25 % /
   −22 %; a second pass 5.31 / 8.62), **10.18 → 7.03 ms** and **15.73 → 11.03 ms** on
   Windows/MSVC 19.51 (−31 % / −30 %; second pass 7.10 / 11.48); savina/chameneos, which creates
@@ -380,7 +380,7 @@ policy.
     line (`route_broadcast`), so the unicast path — every event of a ping-pong — no longer
     carries its snapshot vector's register pressure; `key_table::find` bounds-checks against a
     cached slot count rather than a pointer difference divided by a 24-byte slot.
-  Measured on qb-vs-others in one quiet session per host against `develop` `0f7994e6` (9 + 2,
+  Measured on qb-vs-others in one quiet session per host against `develop` `c42abddf` (9 + 2,
   CPUs 0,2, p50): WSL2 / g++-14 ping-pong 1c-spin **28.7 → 22.6 ns** per round trip (−21 %),
   thread-ring 1c-spin 21.1 → 17.2 per hop, fork-join 2c-park **11.1 → 8.4 ns** per message
   (−25 %), big 1c-park 22.5 → 18.5 (−18 %), counting 1c-spin 8.9 → 8.0, ping-pong 2c-park
@@ -607,7 +607,7 @@ policy.
   round trip by +80 ns) and `tools/probes/raw-ring.cpp` (the same ring shape with no qb in the
   loop: one load of the published index line before the store, and a launch that read ~120 ns
   per round trip never gets below 166). Measured on qb-vs-others in one quiet session per host
-  against `develop` `2771cd67` (9 + 2, CPUs 0,2; ten-launch censuses on every 2c cell): WSL2 /
+  against `develop` `670e9433` (9 + 2, CPUs 0,2; ten-launch censuses on every 2c cell): WSL2 /
   g++-14 ping-pong 2c-park **211.7 → 164.7 ns** per round trip (−22 %), 2c-spin 207.5 → 163.2
   (−21 %), thread-ring 2c **115 → 80 ns** per hop (−31 %, both wait modes), chameneos 2c
   49.1 → 45.6 (−7 %), big 2c −4 %; `dev/bench` `BM_Multi_PingPong_Latency` **253 → 203** (−20 %),
@@ -629,12 +629,12 @@ policy.
   `docs/TUNING.md` §16.
 - **`Actor::time()` samples the clock on demand, once per pass**, keyed on the pass index,
   instead of unconditionally at the top of every pass — **and a pass with no registered callback
-  skips the tick phase, so it really is clock-free.** The first form of this entry (`443c5976`)
+  skips the tick phase, so it really is clock-free.** The first form of this entry (`985cbb3a`)
   moved the read rather than removing it: the `qb::LoopEvent` handed to `ICallback::on()` is built
   from `time()`, and it was built on EVERY pass whether or not any actor would receive it, so a core
   with zero registered callbacks — every benchmark, and every server that drives itself from io and
   events — still paid one `clock_gettime` per pass for an event nobody received. `perf` on
-  savina/ping-pong at one core (WSL2 / g++-14, `develop` `f8eba11d`) put `__vdso_clock_gettime` at
+  savina/ping-pong at one core (WSL2 / g++-14, `develop` `43f62afe`) put `__vdso_clock_gettime` at
   **39.6 %** of the process. The snapshot copy and the `LoopEvent` now sit behind
   `if (!_callback_list.empty())`. The half that was not obvious: with the wall clock gone, a
   SPINNING core's idle pass shrank to ~20 ns of unserialized code and its cross-core exchange got
@@ -647,7 +647,7 @@ policy.
   the idle clock (`_idle_since`) is now stamped on idle passes in **every** latency mode, a
   latency-0 core included, and only the park itself stays gated on `latency > 0`; a busy pass reads
   no clock in any mode. Measured on WSL2 / g++-14 in one quiet session against `develop`
-  `f8eba11d` (qb-vs-others, 9 + 2, CPUs 0,2, p50): ping-pong 1c-spin **65.8 → 28.3 ns** per round
+  `43f62afe` (qb-vs-others, 9 + 2, CPUs 0,2, p50): ping-pong 1c-spin **65.8 → 28.3 ns** per round
   trip (−57 %; shipped 3.1.0 measures 97.9 in the same session), thread-ring 1c-spin **38.1 →
   17.8 ns** per hop (−53 %), 2c-park 219 → 209 / 115 → 108, 2c-spin inside the spread (15-launch
   census: 205.6 vs 209.7 / 104.4 vs 109.3, distributions overlapping), counting level;
@@ -712,7 +712,7 @@ policy.
   store, the copy, and only THEN the original's `alive` raised (see Fixed for why the order is
   the contract). p50 on the shape moved **8.25 / 8.08 / 5.06 / 4.93 ms** (1c spin, 1c park, 2c
   spin, 2c park) to **8.19 / 8.22 / 4.54 / 4.60 ms** on Linux/g++-14. The whole chain, base
-  `203cfb56` → this commit, measured in ONE quiet session per host beside shipped 3.1.0
+  `9d4aa94c` → this commit, measured in ONE quiet session per host beside shipped 3.1.0
   (qb-vs-others `docs/TUNING.md` §12): WSL2 g++-14 **9.40 / 9.44 / 5.09 / 5.02 → 8.06 / 8.80 /
   4.56 / 4.77 ms** (3.1.0: 14.71 / 14.58 / 9.21 / 9.31), Windows MSVC **13.65 / 13.86 / 7.97 /
   7.78 → 12.91 / 12.82 / 7.57 / 7.56** (3.1.0: 25.48 / 25.45 / 29.20 / 33.45) — −14 % / −10 %
@@ -1183,7 +1183,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   comment warns about.
 
 - **`qb::unordered_map` and `qb::unordered_set` are now unconditional aliases for
-  `ska::unordered_map` / `ska::unordered_set`.** Since 2020 (`5c94d026`) they resolved to `ska::`
+  `ska::unordered_map` / `ska::unordered_set`.** Since 2020 (`e88a597c`) they resolved to `ska::`
   under `NDEBUG` and to `std::` otherwise, which made the *identity and layout* of a public type
   depend on a build macro: `sizeof(qb::unordered_map<int,int>)` measured 32 with `NDEBUG` and 40
   without, and both templates are data members of public classes (`qb::VirtualCore`, `qb::Main`,
@@ -1811,7 +1811,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `SSL_get_verify_result()` for callers who need to tell the cases apart.
 - Three shipped `#include` directives named files that do not exist, on every platform:
   `<qb/io/async/epoll.h>` (an **installed public header**) included `"../helper.h"`, deleted in
-  `581094a9` -- the header has been uncompilable ever since, and because the missing include was
+  `09b1d3c2` -- the header has been uncompilable ever since, and because the missing include was
   also the only thing defining `__WIN__SYSTEM__`, its `#error "epoll is not available on windows"`
   guard could never fire. `qb/io/system/sys__socket.h` included `"qb/socket.cpp"` under
   `QB_HEADER_ONLY`; the implementation has always been the sibling `sys__socket.cpp`, so

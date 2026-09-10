@@ -12,7 +12,7 @@
 #      `master`, the template's branch. With `init.defaultBranch=main`, HEAD pointed at a branch
 #      that did not exist, `git reset --hard` succeeded against an unborn HEAD without writing a
 #      file, and the script printed "Created" over a directory containing nothing but `.git`.
-#      Exit 0. Fixed in 9e209efc.
+#      Exit 0. Fixed in a005d33e.
 #   3. `rm -rf "../${TEMPLATE}"` was computed relative to a user-supplied name, so a name with a
 #      separator moved the deletion one directory up onto an unrelated checkout.
 #   4. Nothing removed the half-built directory on failure, so the new guards then refused the

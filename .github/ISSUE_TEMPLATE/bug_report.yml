@@ -35,7 +35,7 @@ body:
       description: >
         A tag, or a commit id. If you are using an installed prefix, `cat <prefix>/share/qb/abi-fingerprint.txt`
         answers this and the next two questions at once — paste it and skip ahead.
-      placeholder: "v3.0.0, or 7bc7ca25, or the abi-fingerprint.txt contents"
+      placeholder: "v3.0.0, or 0f70bfb5, or the abi-fingerprint.txt contents"
     validations:
       required: true
 

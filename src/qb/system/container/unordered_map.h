@@ -61,7 +61,7 @@ using unordered_flat_map = ska::flat_hash_map<K, V, H, E, A>;
  *
  * @warning **This alias is unconditional, and must stay that way.** Until 3.0.0 it
  *          resolved to `ska::unordered_map` under `NDEBUG` and to `std::unordered_map`
- *          otherwise (added 2020-03-30 in 5c94d026, with no recorded rationale beyond
+ *          otherwise (added 2020-03-30 in e88a597c, with no recorded rationale beyond
  *          "better debugging support" — i.e. debugger pretty-printers). That made the
  *          *identity and layout* of a public type depend on a build macro:
  *          `sizeof(qb::unordered_map<int,int>)` was 32 with `NDEBUG` and 40 without,

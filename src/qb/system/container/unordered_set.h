@@ -52,7 +52,7 @@ using unordered_flat_set = ska::flat_hash_set<K, H, E, A>;
  * array, so references and pointers to elements survive a rehash.
  *
  * @warning **This alias is unconditional, and must stay that way** — same reason,
- *          same 2020-03-30 origin (5c94d026) and same measured symptom as
+ *          same 2020-03-30 origin (e88a597c) and same measured symptom as
  *          qb::unordered_map: `sizeof(qb::unordered_set<int>)` was 32 with `NDEBUG`
  *          and 40 without, while the type is a data member of public classes
  *          (`qb::Main::_registered_services`, `qb::VirtualCore::RemoveActorList`).

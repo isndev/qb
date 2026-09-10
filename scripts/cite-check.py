@@ -228,7 +228,7 @@ def resolve_prose(tok):
     `geo_commands.h:105-109` all carry an unambiguous line number, and 443 of the 1010
     citations (44%) are written that way.  Skipping them made the FIRST version of this
     check report zero violations on all four repos while a replanted wrong-line defect —
-    the real one from `qbm/pgsql` `12268dd` — sailed straight through it.  So a token with
+    the real one from `qbm/pgsql` `c9d318b` — sailed straight through it.  So a token with
     a line spec is resolved by path SUFFIX against the project's own file index, the way
     `llm-guard.py`'s Index does, and only a basename that exists nowhere here is prose.
     """
@@ -302,7 +302,7 @@ def blank_targets(spec, paths):
     nothing is a drift, and it is IN RANGE, so it survives every check this script had.
     That is the exact shape of the defect this whole extension was written for --
     `qbm/pgsql/readme/results.md` cited `transaction_coro.inl:96,128,211` where line 96 was
-    blank and 211 a bare `}` (fixed in qbm/pgsql `12268dd`).  26 more were live when the
+    blank and 211 a bare `}` (fixed in qbm/pgsql `c9d318b`).  26 more were live when the
     rule was added, in all three books that have one.  Every component of a comma list is
     checked, not just the first: `ActorId.h:403,444` had BOTH wrong and a first-component-
     only sweep reported it as one finding, hiding the second.

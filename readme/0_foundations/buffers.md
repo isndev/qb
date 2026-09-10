@@ -1,6 +1,6 @@
 # The pipe: qb's one buffer
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — ef7d3ea7
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.1.0 (C++20 default, C++23 supported) — 0cd84ee2
 
 `qb::allocator::pipe<T>` is a single growable allocation with three cursors on it. It backs every I/O stream in the framework, and the rules people trip over — why a `view()` dies at the next `put`, why draining a socket is O(1) per turn, why a stream's memory never comes back — are all consequences of those cursors rather than separate policies. The event pipes of a `VirtualCore` are its sibling, `qb::allocator::segmented_pipe<T>`: same cursor vocabulary, but growth links a segment instead of reallocating, so an event never moves once queued — [the Events section](#events) is that story.
 

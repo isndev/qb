@@ -105,7 +105,7 @@ BUILD_DIR="${BUILD_DIR:-${TMPDIR:-/tmp}/qb-installed-headers.$$}"
 # note above requires of such a header: in the sweep, or out of the package, never neither.
 EXCLUDED_HEADERS=""
 
-# qb/io/async/epoll.h was excluded here on non-Linux hosts. It was DELETED by e21e3d00 and the
+# qb/io/async/epoll.h was excluded here on non-Linux hosts. It was DELETED by 6ff0d6f2 and the
 # entry outlived it invisibly: the branch that adds it never runs on the Linux runner this job
 # uses, so only a maintainer running the gate on macOS would ever be told. Both stale entries
 # this list carried were found by its own integrity check, not by reading it.

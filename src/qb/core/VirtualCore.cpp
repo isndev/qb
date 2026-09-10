@@ -838,7 +838,7 @@ VirtualCore::__workflow__() {
         // register or unregister actors during dispatch (e.g. via `addRefActor`).
         // The `empty()` guard is what makes the per-pass clock lazy IN PRACTICE: the
         // `LoopEvent` below is built from `time()`, and until the guard that was the
-        // one unconditional clock read left in a pass — `443c5976` moved the read from
+        // one unconditional clock read left in a pass — `985cbb3a` moved the read from
         // the top of the loop into this block and wrote that a pass nobody asks costs
         // nothing, but a `LoopEvent` built for zero callbacks still asked. A core with
         // no registered callback — every benchmark, every server that drives itself

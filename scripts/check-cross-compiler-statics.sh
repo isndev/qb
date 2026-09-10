@@ -6,7 +6,7 @@
 # ---------------
 # A gcc-built consumer linked against a clang-built qb aborted with
 # "free(): invalid pointer" the first time it destroyed an EMPTY qb::unordered_map
-# whose key or value contained a std::string (fixed in 7e2eefdc).
+# whose key or value contained a std::string (fixed in cafc175a).
 #
 # When T carries libstdc++'s cxx11 ABI tag, clang appends `B5cxx11` to the mangled
 # name of a function-LOCAL STATIC and gcc does not:

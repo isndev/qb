@@ -1,0 +1,40 @@
+# No commit message names an AI: no Co-Authored-By trailer, no trailer whose key names the tool
+# (Claude-Session: ...), no "Generated with Claude Code" byline, no noreply@anthropic.com. The
+# maintainer's rule of 2026-09-07, made structural on 2026-09-10 after the whole history of the
+# eight isndev repositories was rewritten to strip 1 599 such lines. dev/githooks/pre-push refuses
+# the push locally; this lane is the server-side net for a clone without the hook (or --no-verify).
+# Only the commits of THIS push (or this pull request) are read, never the history behind them.
+name: commit-messages
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  no-attribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: refuse attribution trailers and bylines in the pushed commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="origin/${{ github.base_ref }}..HEAD"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null; then
+            range="${{ github.event.before }}..${{ github.sha }}"
+          else
+            range="${{ github.sha }} --not --remotes=origin --exclude=refs/remotes/origin/${GITHUB_REF_NAME}"
+          fi
+          echo "commits checked: $(git rev-list $range | wc -l | tr -d ' ') ($range)"
+          bad=0
+          for c in $(git rev-list $range); do
+            if git log -1 --format=%B "$c" | grep -qiE '^[[:space:]]*co-authored-by:|^[[:space:]]*[a-z-]*(claude|anthropic)[a-z-]*:|generated with \[?claude|noreply@anthropic\.com'; then
+              echo "::error::attribution trailer or byline in $c -- $(git log -1 --format=%s "$c")"; bad=1
+            fi
+          done
+          [ "$bad" -eq 0 ] && echo "no attribution in the pushed commits"
+          exit $bad

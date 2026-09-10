@@ -765,7 +765,7 @@ endif ()
 # The wepoll backend -- the fork's headline feature -- gets its own suite, REGISTERED ONLY ON
 # WINDOWS: a green "wepoll" tick on a platform that never runs wepoll would be a lie, not a
 # skip. Includes the regression test for the interest-set-modification bug that motivated the
-# fork (a live watcher widened to READ|WRITE never reached the backend, e8090ecc).
+# fork (a live watcher widened to READ|WRITE never reached the backend, 87bb2e03).
 if (QB_EV_BUILD_TESTS AND TARGET qev AND WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test-wepoll.c")
     add_executable(qev-test-wepoll tests/test-wepoll.c)
     target_link_libraries(qev-test-wepoll PRIVATE qev ws2_32)

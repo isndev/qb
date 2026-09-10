@@ -123,8 +123,8 @@ jobs:
             -DQB_BUILD_BENCHMARKS=ON
             -DQB_USE_SYSTEM_GTEST=ON
             # Not QB_USE_SYSTEM_BENCHMARK=ON: that switch is find_package(benchmark 1.9.5 REQUIRED),
-            # and Ubuntu 24.04's libbenchmark-dev is 1.8.3 -- six red runs (f0da4e32..9814c2a1)
-            # after the floor moved to 1.9.5 in 148a9ccf. The default path considers the system
+            # and Ubuntu 24.04's libbenchmark-dev is 1.8.3 -- six red runs (d1897d3c..fa1c5ce3)
+            # after the floor moved to 1.9.5 in 3da3b4d4. The default path considers the system
             # package first and falls back to the pinned v1.9.5 fetch when it is under the floor,
             # which is the behaviour the docs promise and what this lane now exercises.
             -DQB_ENABLE_NATIVE_ARCH=OFF
@@ -178,7 +178,7 @@ jobs:
   # see it either, however many rows it grows: every row compiles the whole tree with ONE
   # toolchain, and this class only exists where two of them meet in one binary.
   #
-  # What it caught (7e2eefdc): clang appends `B5cxx11` to the mangled name of a
+  # What it caught (cafc175a): clang appends `B5cxx11` to the mangled name of a
   # function-LOCAL STATIC whose type carries the cxx11 tag and gcc does not, so a
   # gcc-built consumer linked against a clang-built qb held TWO copies of ska's empty-map
   # sentinel — and deallocate_data() decides whether to free by comparing against it.
