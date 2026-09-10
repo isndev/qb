@@ -280,10 +280,10 @@ struct awaiter_base {
  * This implementation is exception-safe and prevents use-after-free
  * by stopping the watcher in await_resume() and the destructor.
  *
- * Usage:
+ * Usage (`qb::io::async::sleep(d)` in utils.h builds one on the current listener's loop for you):
  * @code
  * qb::io::async::task<void> delay() {
- *     co_await qb::io::async::timer_awaiter{std::chrono::seconds(1)};
+ *     co_await qb::io::async::timer_awaiter{std::chrono::seconds(1), qb::io::async::listener::current.loop()};
  * }
  * @endcode
  *
@@ -452,10 +452,10 @@ struct timer_awaiter : awaiter_base {
  * This implementation is exception-safe and prevents use-after-free
  * by stopping the watcher in await_resume() and the destructor.
  *
- * Usage:
+ * Usage (`wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` in utils.h spell this for you):
  * @code
  * qb::io::async::task<void> wait_for_data(int fd) {
- *     co_await qb::io::async::socket_awaiter{fd, EV_READ};
+ *     co_await qb::io::async::socket_awaiter{fd, EV_READ, qb::io::async::listener::current.loop()};
  *     // Socket is now readable
  * }
  * @endcode

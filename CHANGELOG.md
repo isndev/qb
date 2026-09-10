@@ -878,6 +878,13 @@ policy.
   and `reply()`/`forward()` raise the original only AFTER the copy is taken. Reply-then-forward
   in one handler yields two owning copies, each destroyed exactly once, same core or not —
   `RelayChain.*` (5), including both `*ReplyThenForwardFanOutDestroysBothCopies` polarities.
+- **The `timer_awaiter` and `socket_awaiter` usage examples compile again.** Their `@code`
+  blocks in `qb/io/async/coroutine/awaiter.h` still built the awaiter without the event loop
+  QB-197 made a required constructor argument, so the two examples the doc-example guard had
+  gated stopped compiling (`no matching constructor`, measured by its compiling half on
+  macOS/AppleClang 21 — the half `--check-baseline` cannot run). They pass
+  `qb::io::async::listener::current.loop()` now, exactly what `sleep()` / `wait_readable()` /
+  `wait_for_io()` inject, and each names the helper that spells it for you.
 
 ## [3.1.0] - 2026-08-30
 
