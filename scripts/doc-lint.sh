@@ -19,7 +19,7 @@
 # legitimately NAMING retired tokens to warn agents off them, which section 1's cue-less
 # scan would report as usage. scripts/llm-guard.py owns that surface.
 #
-# .cursor/ still lives at the superproject root, out of reach of a script that runs
+# .claude/ (the rules and skills) still lives at the superproject root, out of reach of a script that runs
 # INSIDE this submodule; the superproject's dev/agent/llm-guard.py covers it (and keeps
 # reading llm/ too, from where it can see qb and all three modules at once).
 #

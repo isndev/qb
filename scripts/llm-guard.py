@@ -311,14 +311,14 @@ DECL_NAME = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]{2,})\s*\(")
 # ending in a letter-initial extension — is what catches a path whose leading segment is
 # itself wrong, which a rule keyed on known roots looks straight past.
 REPO_PATH = re.compile(
-    r"(?:(?:dev|qb|qbm|llm|cmake|examples|scripts|src|tests|readme|\.cursor)/[A-Za-z0-9_.@/+-]+"
+    r"(?:(?:dev|qb|qbm|llm|cmake|examples|scripts|src|tests|readme|\.claude)/[A-Za-z0-9_.@/+-]+"
     r"|[A-Za-z0-9_.@+-]+(?:/[A-Za-z0-9_.@+-]+)+\.[A-Za-z][A-Za-z0-9]{0,5})")
 # The leading segments that make a path a CLAIM ABOUT THIS FAMILY OF REPOS rather than an
 # external reference.  `dev` is in the list precisely because it must never resolve in a public
 # repo: a published doc pointing into the private superproject is unreachable for its reader,
 # and that is what the move had to remove.
 IN_FAMILY = re.compile(
-    r"^(dev|qb|qbm|llm|cmake|examples|scripts|src|tests|readme|\.cursor)/")
+    r"^(dev|qb|qbm|llm|cmake|examples|scripts|src|tests|readme|\.claude)/")
 EXAMPLE_LINE = re.compile(r"^\s*[*\-]?\s*(use|usage|e\.g\.|example|note)\s*:", re.I)
 ILLUSTRATIVE = re.compile(r"\be\.g\.|\bfor example\b|\bpseudo-?code\b", re.I)
 MARKER = re.compile(r"Verified-against")
