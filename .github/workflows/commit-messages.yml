@@ -27,7 +27,11 @@ jobs:
                && git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null; then
             range="${{ github.event.before }}..${{ github.sha }}"
           else
-            range="${{ github.sha }} --not --exclude=refs/remotes/origin/${GITHUB_REF_NAME} --remotes=origin"
+            # a new branch: everything no OTHER remote branch reaches. The --exclude pattern of a
+            # --remotes=origin walk is spelled WITHOUT refs/remotes/ (git-rev-list(1)); spelled with
+            # it, it matched nothing, the branch excluded its own commits and the lane checked 0 --
+            # the qbm-redis negative control measured it, twice.
+            range="${{ github.sha }} --not --exclude=origin/${GITHUB_REF_NAME} --remotes=origin"
           fi
           echo "commits checked: $(git rev-list $range | wc -l | tr -d ' ') ($range)"
           bad=0
