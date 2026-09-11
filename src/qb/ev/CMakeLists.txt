@@ -688,11 +688,25 @@ endif()
     # conditional on finding it rather than a new hard dependency; the .pod is likewise absent
     # from qb's byte-shared copy of this tree, so its existence is a supported answer too.
     find_program(QB_EV_POD2MAN NAMES pod2man)
-    if (QB_EV_POD2MAN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/docs/ev.pod")
+    set(_qev_pod2man "${QB_EV_POD2MAN}")
+    if (WIN32 AND _qev_pod2man AND NOT _qev_pod2man MATCHES "\\.(exe|bat|cmd)$")
+        # Git for Windows puts `usr/bin/core_perl/pod2man` on many developers' PATH: a
+        # `#!/usr/bin/perl` script with no extension, which find_program accepts and CreateProcess
+        # cannot start -- measured 2026-09-11 (Huly QB-211): `cmake --build` died at "Generating
+        # qev.3" and took the library and the three test binaries down with it, on a tree that
+        # builds and passes 3/3 the moment that directory leaves the PATH (the CI runner's shape).
+        # Running the script through the MSYS perl beside it is no answer either: from cmd.exe its
+        # @INC is MSYS paths and it stops at "Can't locate Pod/Man.pm". The page is decorative and
+        # the library is the deliverable, so on Windows only a native pod2man (Strawberry Perl's
+        # `pod2man.bat`, say) renders it; a script is reported and the page skipped.
+        message(STATUS "[qev] pod2man at ${_qev_pod2man} is a script, not a Windows executable: the manual page is skipped")
+        set(_qev_pod2man "")
+    endif ()
+    if (_qev_pod2man AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/docs/ev.pod")
         set(_qev_man "${CMAKE_CURRENT_BINARY_DIR}/qev.3")
         add_custom_command(
             OUTPUT  "${_qev_man}"
-            COMMAND "${QB_EV_POD2MAN}" -n QEV -r "qev-${PROJECT_VERSION}"
+            COMMAND "${_qev_pod2man}" -n QEV -r "qev-${PROJECT_VERSION}"
                     -c "qev - a modernized libev fork" -s 3
                     "${CMAKE_CURRENT_SOURCE_DIR}/docs/ev.pod" > "${_qev_man}"
             DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/ev.pod"
