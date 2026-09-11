@@ -961,7 +961,7 @@ public:
      * @brief Set the default event loop latency for all VirtualCores.
      * @ingroup Engine
      * @param latency The maximum time in nanoseconds for cores to wait when idle. `0` means no wait (low latency mode).
-     * @details This sets the latency for all cores that haven\'t had a specific latency set via `CoreInitializer::setLatency()`.\n
+     * @details Overwrites every core registered so far (like `setIdleSpin()`): call it BEFORE `core(id).setLatency()`.\n
      *          See `CoreInitializer::setLatency()` for more details on latency values.
      * @attention This function is only available before the engine is running.
      */
