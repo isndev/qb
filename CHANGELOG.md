@@ -8,6 +8,32 @@ policy.
 ## [Unreleased]
 
 ### Changed
+- **The actor object lives in a per-thread size-class arena (Huly QB-212, point 1).** After the
+  3.2 registry work the actor object's own `new` / `delete` was the last heap traffic of an actor
+  lifetime -- exactly one `malloc` per actor, counted -- and on qb-vs-others' `savina/fib` (57 312
+  lifetimes per window) that pair was 27.8 % of the core on WSL2 g++-14 of a 124 ns lifetime, 179 ns
+  on Windows/MSVC whose heap is slower still. `qb::Actor` now declares class-level `operator new` /
+  `operator delete` (the usual sized, the aligned and the placement forms) over
+  `qb::allocator::thread_arena`, a new thread-private allocator: 16-byte size classes up to 1 KiB
+  with LIFO reuse per class, bump allocation from a 64 KiB first chunk then 2 MB `slab_cache` slabs
+  (huge-page-backed and prefaulted on Linux, kept mapped process-wide when a thread gives them
+  back), constant-initialised thread-local state so the hot path pays no TLS init guard, and a
+  teardown at thread exit that returns the slabs only when nothing is live -- a thread that exits
+  with a live block orphans its chunks on a reachable, counted list rather than recycle them. An
+  actor is created and destroyed on one thread by construction, so the arena needs no lock, no
+  atomics and no cross-thread free path. Larger or over-aligned actor types fall through to the
+  global allocator; a derived class that declares its own operators keeps them (the pool hook);
+  `qb::allocate_actor<T>` stays the construction hook. Measured against `develop` in one quiet
+  session per host, 12 interleaved launches, fib 1c-spin: 185.3 -> 127.2 ns (-31 %) on Windows/MSVC 19.51 and
+  129.2 -> 99.1 ns (-23 %) on WSL2 g++-14, the four fib cells all in that band (-22 to -35 %) and the other
+  seven shapes inside their spread; `dev/bench`'s actor cells -0.2 to -4 % against the same control
+  (the grids, censuses and the bench record are under qb-vs-others' `results/<host>/
+  qb-branch-perf-actor-arena/`). Pinned by the unit `thread-arena` (rounding, LIFO reuse, the
+  large and over-aligned fall-throughs, growth from the first chunk to slabs, the exit teardown
+  with and without a live block) and the engine `actor-arena` (a burst of 8000 `addRefActor`
+  lifetimes is a burst of arena blocks whose slabs return when the worker exits; an `alignas(64)`
+  actor stays aligned and unpooled; a 2 KiB actor falls through; a class with its own operators
+  keeps them).
 
 - **A parked core meets a timer under a millisecond under a millisecond, on Linux (Huly
   QB-196).** The park of a core that owns io watchers is `ev_run(EVRUN_ONCE)` capped at

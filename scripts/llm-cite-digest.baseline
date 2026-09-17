@@ -26,6 +26,7 @@ llm/qb.llm.api.md	Actor.h:2355-2358	63072e4bf152	ready_async(ScopedCoroContext c
 llm/qb.llm.api.md	Actor.h:2389-2390	7a029450b670	template <typename _Actor>
 llm/qb.llm.api.md	Actor.h:2701-2701	a0e051d59cc7	using coro_context = CoroContext;
 llm/qb.llm.api.md	Actor.h:2709-2709	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
+llm/qb.llm.api.md	Actor.h:534-555	c0770292de14	static void *
 llm/qb.llm.api.md	Actor.h:785-802	11edeff824dc	/**
 llm/qb.llm.api.md	Actor.h:818-862	5c5465b8e08f	/**
 llm/qb.llm.api.md	Event.h:826-827	e76bd16e4192	template <typename... _Args>
@@ -47,6 +48,7 @@ llm/qb.llm.api.md	crypto_asymmetric.cpp:718-718	0ac40dcef3d3	return std::make_pa
 llm/qb.llm.api.md	listener.h:1368-1381	31584ba4b550	inline void
 llm/qb.llm.api.md	scheduler.h:755-758	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	task.h:736-751	f2192a619a48	await_resume() {
+llm/qb.llm.api.md	thread_arena.h:71-175	c3e40f7440f1	class thread_arena {
 llm/qb.llm.md	Actor.cpp:388-393	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:577-595	94aff7135980	void
 llm/qb.llm.md	Actor.h:1018-1023	411d83537697	* This is the primary and recommended method for sending events. Even...
@@ -64,6 +66,7 @@ llm/qb.llm.md	Actor.h:2123-2202	72ac7be17054	class ScopedCoroContext : public Co
 llm/qb.llm.md	Actor.h:2211-2214	d1b41f340749	inline ScopedCoroContext
 llm/qb.llm.md	Actor.h:2279-2281	1d53b2f3f947	* Thread-model: must only be dereferenced from the owning VirtualCore...
 llm/qb.llm.md	Actor.h:459-472	5f38a59348eb	* is a coroutine (`qb::io::async::task<bool>`) it **may `co_await`** ...
+llm/qb.llm.md	Actor.h:534-555	c0770292de14	static void *
 llm/qb.llm.md	Actor.h:753-769	e84dbde9b9ce	* @brief Get current time from the VirtualCore's perspective (nanosec...
 llm/qb.llm.md	Actor.h:818-862	5c5465b8e08f	/**
 llm/qb.llm.md	Event.h:791-804	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
@@ -112,6 +115,7 @@ llm/qb.llm.md	ssl/socket.h:871-871	0e2c7a135bf8	void set_insecure() noexcept;
 llm/qb.llm.md	ssl/socket.h:95-95	c1d7b0697db7	SSL_CTX *create_server_context(const SSL_METHOD *method, std::filesys...
 llm/qb.llm.md	string.h:201-201	f11444169765	_size = static_cast<size_type>(std::min(size, static_cast<std::size_t...
 llm/qb.llm.md	sys__socket.cpp:254-271	8f3204ff5821	// SO_REUSEADDR means different things on POSIX and Windows, so guard...
+llm/qb.llm.md	thread_arena.h:92-127	dfd77e8c4341	allocate(std::size_t const size) {
 llm/qb.llm.md	time.h:8-25	980581677f9f	*  - `qb::duration`  — a span. Signed, nanosecond resolution (`int64`...
 llm/qb.llm.md	time.h:90-90	5ca19947bbc8	using duration = std::chrono::nanoseconds;
 llm/qb.llm.md	time.h:93-93	93d026d68ec7	using mono_time = std::chrono::steady_clock::time_point;

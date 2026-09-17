@@ -377,6 +377,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **Actors are constructed only on a VirtualCore worker thread.** Never `new MyActor` from `main()` or
   an arbitrary thread (asserts). Use `Main::core(i).addActor<T>(...)` / `addActor<T>(core, ...)` /
   `addRefActor<T>()`. _(Actor.cpp:388-393)_
+- **The actor object itself comes from its core thread's arena, not from `malloc`.** `qb::Actor` declares
+  class-level `operator new` / `operator delete` over `qb::allocator::thread_arena` -- 16-byte size classes
+  up to 1 KiB, LIFO reuse per class, chunks from `slab_cache`, no lock and no thread-local init guard on the
+  hot path -- so a spawn-and-die burst recycles its own blocks while they are still in cache. An actor type
+  above 1 KiB or with `alignas` above 16 falls through to the global allocator; a derived class that declares
+  its own `operator new` / `operator delete` hides the base's (the pool hook; `qb::allocate_actor<T>` is the
+  construction hook). Never `delete` an actor and never free one on another thread: the `VirtualCore` that
+  built it destroys it, on its own thread, in the reap phase. _(Actor.h:534-555, thread_arena.h:92-127)_
 - **`onInit()` is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; it must
   `registerEvent<T>(*this)` for every handled event.** `co_return true` activates the actor; `co_return false`
   or throwing fails init and the resulting `ActorId` is invalid. While `onInit()` is suspended the actor

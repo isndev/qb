@@ -392,6 +392,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **Actors are constructed only on a VirtualCore worker thread.** Never `new MyActor` from `main()` or
   an arbitrary thread (asserts). Use `Main::core(i).addActor<T>(...)` / `addActor<T>(core, ...)` /
   `addRefActor<T>()`. _(Actor.cpp:388-393)_
+- **The actor object itself comes from its core thread's arena, not from `malloc`.** `qb::Actor` declares
+  class-level `operator new` / `operator delete` over `qb::allocator::thread_arena` -- 16-byte size classes
+  up to 1 KiB, LIFO reuse per class, chunks from `slab_cache`, no lock and no thread-local init guard on the
+  hot path -- so a spawn-and-die burst recycles its own blocks while they are still in cache. An actor type
+  above 1 KiB or with `alignas` above 16 falls through to the global allocator; a derived class that declares
+  its own `operator new` / `operator delete` hides the base's (the pool hook; `qb::allocate_actor<T>` is the
+  construction hook). Never `delete` an actor and never free one on another thread: the `VirtualCore` that
+  built it destroys it, on its own thread, in the reap phase. _(Actor.h:534-555, thread_arena.h:92-127)_
 - **`onInit()` is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; it must
   `registerEvent<T>(*this)` for every handled event.** `co_return true` activates the actor; `co_return false`
   or throwing fails init and the resulting `ActorId` is invalid. While `onInit()` is suspended the actor
@@ -666,6 +674,7 @@ Base class for all actors. Communicate **exclusively via events**. Non-copyable.
 *   `virtual ~Actor() noexcept = default` (protected).
 *   `virtual qb::io::async::task<bool> onInit()` (protected; default `co_return true`) — async coroutine for one-time init after id assignment, before event processing; may `co_await`. `co_return true` activates the actor; `co_return false` or throwing aborts & destroys it. While suspended the actor is *Activating*. Register event handlers here.
 *   `void kill() const noexcept` — flag for removal; stops new events, drains queued, destroyed later by VirtualCore.
+*   `static void *operator new(std::size_t)`, `operator new(std::size_t, std::align_val_t)`, placement `operator new(std::size_t, void*) noexcept`, and the matching sized `operator delete(void*, std::size_t) noexcept`, aligned and placement forms — the actor object comes from the core thread's `qb::allocator::thread_arena` (16-byte size classes up to 1 KiB over `slab_cache` slabs, LIFO reuse per class; a type above 1 KiB or with `alignas` above 16 falls through to the global allocator). A derived class that declares its own `operator new` / `operator delete` hides them (the pool hook); `qb::allocate_actor<T>` stays the construction hook. Never `delete` an actor yourself _(`Actor.h:534-555`)_.
 *   Default system event handlers (overridable): `void on(const KillEvent&) noexcept` (calls `kill()`), `void on(const SignalEvent&) noexcept` (kills on **SIGINT or SIGTERM** — the two terminal signals; every *other* registered signal is deliberately non-terminal, so override this handler to act on e.g. SIGHUP/SIGUSR1), `void on(const UnregisterCallbackEvent&) noexcept`, `void on(const PingEvent&) noexcept`.
 
 Accessors:
@@ -827,7 +836,8 @@ Aliases: `using VirtualPipe = allocator::segmented_pipe<EventBucket>;` — a seg
 Worker thread running the event loop over its actors. Construction/lifecycle is engine-private; only getters are public.
 
 ### Internal actor-factory hooks (advanced, customization points)
-*   `[T<_Actor,_Args...>] [[nodiscard]] _Actor* qb::allocate_actor(_Args&&... args)` — ADL customization point for actor allocation (default `new _Actor(args...)`); plug in pools/arenas/PMR.
+*   `[T<_Actor,_Args...>] [[nodiscard]] _Actor* qb::allocate_actor(_Args&&... args)` — ADL customization point for actor CONSTRUCTION (default `new _Actor(args...)`, which reaches `Actor::operator new` and so the arena below); a pool that must own the bytes hides `operator new` / `operator delete` in the actor class instead.
+*   `class qb::allocator::thread_arena` (`<qb/system/allocator/thread_arena.h>`) — the per-thread size-class arena `Actor::operator new` draws from, all members static: `[[nodiscard]] static void *allocate(std::size_t size)` / `allocate(std::size_t size, std::size_t align)`, `static void deallocate(void *p, std::size_t size) noexcept` / the aligned form, `live()`, `chunks()`, `chunk_bytes()`, `orphaned()`; constants `granule` (16), `max_small` (1024), `classes` (64), `first_chunk_bytes` (64 KiB). A block is freed on the thread that allocated it (nothing checks it; `qb::Actor` enforces it one level up); chunks come from `::operator new` (the first, 64 KiB) then `slab_cache` (2 MB slabs), go back to the cache when the thread exits with nothing live, and are ORPHANED — kept, reachable, counted, never recycled — when it exits with a live block _(`thread_arena.h:71-175`)_.
 
 ## Patterns (`<qb/core/patterns.h>`)
 Header-only free functions / helper types over the kernel (`Actor` / `ScopedCoroContext`); the kernel holds no pattern logic. All are **core-local** (single-thread, no locking). `qb::AskEvent` (carries `correlation_id`) and `Actor::resolve_ask(e)` live in core (`<qb/core/Actor.h>`); the rest below are in `patterns/`. Snake_case aliases exist for the PascalCase types (`circuit_breaker`, `rate_limiter`, `worker_pool`, `supervisor`, …).
