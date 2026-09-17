@@ -771,9 +771,11 @@ policy.
   UBSan (LLVM issue 159571, fixed by pull request 159765 in LLVM 22 and backported to no earlier
   branch; GCC and MSVC build parameter copies as frame members, and under clang-cl the Windows ABI
   passes such arguments by reference). The new `qb::io::async::pin_frame_copy(param)` makes the copy a
-  written, escaped object with a memory-operand asm barrier -- no instruction emitted, a no-op
-  everywhere but clang on a `byval` ABI -- so the optimiser keeps it and the frame lays it out at its
-  declared alignment; the ten request-taking patterns (`ask`, `ask_by`, `ask_retry`, `ask_guarded`,
+  written, escaped object with a memory-operand asm barrier -- the asm emits no instruction, the copy
+  costs what the spill cost plus, where a pattern hands the request to an inner coroutine, one 64-byte
+  stack copy the optimiser used to forward (`ask_guarded<Ping>.resume`: four such copies instead of
+  three), and the call is a no-op everywhere but clang on a `byval` ABI -- so the optimiser keeps it
+  and the frame lays it out at its declared alignment; the ten request-taking patterns (`ask`, `ask_by`, `ask_retry`, `ask_guarded`,
   both `ask_all`, `gated_ask`, `ask_any`, `ask_quorum`, `ask_stream`) call it on their request, and
   the coroutine chapter tells a user coroutine when to do the same. Reproduced on WSL2 Debian 13 with
   clang 19.1.7: `coroutine-resilience` and `init-patterns` SIGSEGV at `-O3` on a 64-byte copy from

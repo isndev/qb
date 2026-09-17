@@ -362,11 +362,11 @@ run_sync(Awaitable &&awaitable)
  *          read of it keeps the C++ alignment — 64 for a `qb::Event`. The first aligned vector copy
  *          out of the slot faults whenever the slot's frame offset is not a multiple of the vector
  *          width the copy uses (LLVM issue #159571, fixed by PR #159765, first shipped in LLVM 22).
- *          The memory-operand asm barrier below makes the copy a written, escaped object: the
- *          optimiser keeps it, and the frame lays it out at its declared alignment. No instruction is
- *          emitted. GCC and MSVC build parameter copies as frame members with their own alignment and
- *          need nothing; under clang-cl the Windows ABI passes such arguments by reference, so the
- *          defect cannot trigger — the call is a no-op everywhere but clang on a `byval` ABI.
+ *          The memory-operand asm barrier below makes the copy a written, escaped object: the optimiser
+ *          keeps it and the frame lays it out at its declared alignment. The asm emits no instruction;
+ *          the copy costs what the spill cost, plus one 64-byte stack copy the optimiser used to forward
+ *          when a pattern hands the request to an inner coroutine. GCC and MSVC build parameter copies
+ *          as frame members at their own alignment; clang-cl passes them by reference (Windows ABI).
  * @note Every `qb::ask*` pattern calls it on its request. A user coroutine that takes an event by
  *       value and does not assign to it before its first `co_await` should do the same while it has
  *       to build with clang older than 22.
