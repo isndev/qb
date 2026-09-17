@@ -176,19 +176,24 @@ public:
     }
 
 private:
-    /// Trivially constructible, so the thread-local below is constant-initialised: no TLS
-    /// init guard on the hot path. A chunk's first `granule` bytes hold its link to the next.
+    /// Trivially constructible and value-initialised to all zeros (`st_{}` below), so the
+    /// thread-local is constant-initialised: no TLS init guard on the hot path. Deliberately
+    /// WITHOUT default member initializers: g++ treats a nested class's initializers as a
+    /// complete-class context of the ENCLOSING class too, and refuses `st_{}` inside
+    /// `thread_arena`'s body when they exist ("required before the end of its enclosing
+    /// class"); zero is the right initial value of every member anyway. A chunk's first
+    /// `granule` bytes hold its link to the next.
     struct state {
-        void       *heads[classes] = {};
-        char       *bump           = nullptr;
-        char       *end            = nullptr;
-        void       *first_chunk    = nullptr;
-        void       *slabs          = nullptr; ///< singly linked through each slab's first word
-        std::size_t live           = 0;
-        std::size_t chunk_count    = 0;
-        std::size_t slab_count     = 0;
-        bool        armed          = false; ///< the reaper thread-local exists
-        bool        reaped         = false; ///< teardown ran: chunks released or orphaned
+        void       *heads[classes]; ///< per-class free lists, null when empty
+        char       *bump;           ///< next byte of the current chunk
+        char       *end;            ///< one past the current chunk
+        void       *first_chunk;    ///< the 64 KiB chunk from `::operator new`
+        void       *slabs;          ///< singly linked through each slab's first word
+        std::size_t live;           ///< pooled blocks handed out and not yet given back
+        std::size_t chunk_count;
+        std::size_t slab_count;
+        bool        armed;  ///< the reaper thread-local exists
+        bool        reaped; ///< teardown ran: chunks released or orphaned
     };
 
     [[nodiscard]] static constexpr std::size_t
