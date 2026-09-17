@@ -16,8 +16,8 @@
  *  - **size classes of 16 bytes up to `max_small`** (`granule`, `classes`): a block is rounded
  *    up to its class and returned to that class's free list, so a burst of one actor type
  *    recycles its own blocks in LIFO order -- the block a dying actor gives back is the one the
- *    next spawn takes, still in cache. Larger objects fall through to the global allocator, with
- *    the matching sized `::operator delete`.
+ *    next spawn takes, still in cache. Larger objects fall through to the global allocator and
+ *    back through its unsized delete.
  *  - **bump allocation from chunks when a free list is empty**, never one `malloc` per block:
  *    the first chunk is 64 KiB from `::operator new` (a small engine's resting footprint stays
  *    small), every chunk after it is a 2 MB slab from `slab_cache` -- huge-page-backed and
@@ -72,7 +72,7 @@ class thread_arena {
 public:
     /// Size-class granularity and alignment of every block the arena hands out.
     static constexpr std::size_t granule = 16;
-    /// Largest size the arena pools; anything larger goes to `::operator new` (sized delete).
+    /// Largest size the arena pools; anything larger goes to `::operator new` (unsized delete).
     static constexpr std::size_t max_small = 1024;
     /// Number of size classes: `[granule, max_small]` in `granule` steps.
     static constexpr std::size_t classes = max_small / granule;
@@ -86,7 +86,10 @@ public:
     /**
      * @brief A block of at least `size` bytes, `granule`-aligned.
      * @details Pooled when `size <= max_small`; otherwise `::operator new(size)` -- pair it with
-     *          `deallocate(p, size)` either way. May throw `std::bad_alloc`.
+     *          `deallocate(p, size)` either way. May throw `std::bad_alloc`. The fall-through is
+     *          given back through the UNSIZED global delete: the sized one is absent under
+     *          `-fno-sized-deallocation` (an axis qb's ABI fingerprint builds), and the size
+     *          buys nothing here.
      */
     [[nodiscard]] static void *
     allocate(std::size_t const size) {
@@ -118,7 +121,7 @@ public:
         if (!p)
             return;
         if (size > max_small) {
-            ::operator delete(p, size);
+            ::operator delete(p); // unsized: see allocate()
             return;
         }
         state &st = state_();
@@ -146,7 +149,7 @@ public:
             deallocate(p, size);
             return;
         }
-        ::operator delete(p, size, std::align_val_t{align});
+        ::operator delete(p, std::align_val_t{align}); // unsized: see allocate()
     }
 
     /// Blocks this thread has allocated (pooled classes) and not yet given back.
@@ -263,7 +266,7 @@ private:
                 slab = next;
             }
             if (st.first_chunk)
-                ::operator delete(st.first_chunk, first_chunk_bytes);
+                ::operator delete(st.first_chunk); // unsized: see allocate()
         }
         st.slabs       = nullptr;
         st.first_chunk = nullptr;

@@ -299,7 +299,7 @@ What follows, in order, on the same pass:
 
 1. **The actor stops being called.** It is still in the router's handler map, so events addressed to it are still copied and routed — but the dispatch trampoline checks `handler.is_alive()` first, so no handler runs ([dispatch-time liveness](./messaging.md#is_alive-is-checked-at-dispatch-not-at-enqueue)).
 2. **Its `ICallback` tick is skipped** if it was killed earlier in the same pass (`src/qb/core/VirtualCore.cpp:866-870`).
-3. **The reap phase destroys it**: `removeActor(id)` unregisters the callback, unsubscribes every event type, cancels the coroutine scope again as a catch-all, and erases the `unique_ptr` — which is where `~Actor()` finally runs (`src/qb/core/VirtualCore.cpp:1082-1127`) and where the sized `operator delete` hands the block back to its size class in the thread's arena (`src/qb/system/allocator/thread_arena.h:117-127`).
+3. **The reap phase destroys it**: `removeActor(id)` unregisters the callback, unsubscribes every event type, cancels the coroutine scope again as a catch-all, and erases the `unique_ptr` — which is where `~Actor()` finally runs (`src/qb/core/VirtualCore.cpp:1082-1127`) and where the sized `operator delete` hands the block back to its size class in the thread's arena (`src/qb/system/allocator/thread_arena.h:120-134`).
 4. **A non-service id goes back to the pool.** Service ids never do, so `ServiceIndex` stays stable for the life of the process (`src/qb/core/VirtualCore.cpp:1121-1125`).
 
 `is_alive()` is `true` until step 3. Do not send events from `~Actor()`: the actor is mid-teardown and its id is about to be recycled.

@@ -384,7 +384,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   above 1 KiB or with `alignas` above 16 falls through to the global allocator; a derived class that declares
   its own `operator new` / `operator delete` hides the base's (the pool hook; `qb::allocate_actor<T>` is the
   construction hook). Never `delete` an actor and never free one on another thread: the `VirtualCore` that
-  built it destroys it, on its own thread, in the reap phase. _(Actor.h:534-555, thread_arena.h:92-127)_
+  built it destroys it, on its own thread, in the reap phase. _(Actor.h:534-555, thread_arena.h:95-134)_
 - **`onInit()` is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; it must
   `registerEvent<T>(*this)` for every handled event.** `co_return true` activates the actor; `co_return false`
   or throwing fails init and the resulting `ActorId` is invalid. While `onInit()` is suspended the actor

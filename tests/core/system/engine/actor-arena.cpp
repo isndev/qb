@@ -191,9 +191,9 @@ struct OwnAllocator final : qb::Actor {
         return ::operator new(size);
     }
     static void
-    operator delete(void *const p, std::size_t const size) noexcept {
+    operator delete(void *const p, std::size_t) noexcept {
         g_custom_delete.fetch_add(1);
-        ::operator delete(p, size);
+        ::operator delete(p); // unsized: the global sized form is absent under -fno-sized-deallocation
     }
     qb::io::async::task<bool>
     onInit() final {
