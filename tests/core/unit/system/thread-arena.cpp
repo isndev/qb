@@ -8,11 +8,11 @@
  */
 /**
  * @file tests/core/unit/system/thread-arena.cpp
- * @brief `qb::allocator::thread_arena` — the per-thread size-class arena the actor object
+ * @brief `qb::allocator::thread_arena` -- the per-thread size-class arena the actor object
  *        lives in (Huly QB-212): rounding, LIFO reuse per class, the large fall-through, the
  *        over-aligned fall-through, chunk growth from the 64 KiB first chunk to `slab_cache`
  *        slabs, and the thread-exit teardown that hands the slabs back only when nothing is
- *        live.
+ *        live -- and orphans them, reachable and counted, when something is.
  */
 
 #include <gtest/gtest.h>
@@ -31,6 +31,12 @@ namespace {
 [[nodiscard]] bool
 aligned_to(void const *const p, std::size_t const a) {
     return (reinterpret_cast<std::uintptr_t>(p) % a) == 0;
+}
+
+/// Slabs the process holds outside the cache: what a retention would move.
+[[nodiscard]] std::size_t
+slabs_in_use() noexcept {
+    return slab_cache::mapped() - slab_cache::cached();
 }
 
 } // namespace
@@ -127,15 +133,10 @@ TEST(ThreadArena, GrowthGoesFromTheFirstChunkToSlabs) {
     EXPECT_EQ(live_after_frees, 0u);
 }
 
-/// Slabs the process holds outside the cache: what a leak would move.
-[[nodiscard]] static std::size_t
-slabs_in_use() noexcept {
-    return slab_cache::mapped() - slab_cache::cached();
-}
-
 TEST(ThreadArena, AThreadThatFreedEverythingHandsItsSlabsBackToTheCacheAtExit) {
-    const std::size_t in_use_before = slabs_in_use();
-    std::size_t       slabs_taken   = 0;
+    const std::size_t in_use_before   = slabs_in_use();
+    const std::size_t orphaned_before = thread_arena::orphaned();
+    std::size_t       slabs_taken     = 0;
     std::thread([&] {
         std::vector<void *> blocks;
         for (int i = 0; i < 300; ++i) // ~300 KiB: at least one slab beyond the first chunk
@@ -146,14 +147,16 @@ TEST(ThreadArena, AThreadThatFreedEverythingHandsItsSlabsBackToTheCacheAtExit) {
     }).join();
     ASSERT_GE(slabs_taken, 1u);
     // Released, not unmapped: nothing stays in use, and the next thread (or engine) that grows
-    // takes the slabs back warm.
+    // takes the slabs back warm. Nothing was orphaned.
     EXPECT_EQ(slabs_in_use(), in_use_before);
     EXPECT_GE(slab_cache::cached(), slabs_taken);
+    EXPECT_EQ(thread_arena::orphaned(), orphaned_before);
 }
 
-TEST(ThreadArena, AThreadThatLeavesABlockLiveLeaksItsChunksInsteadOfRecyclingThem) {
-    const std::size_t in_use_before = slabs_in_use();
-    std::size_t       slabs_taken   = 0;
+TEST(ThreadArena, AThreadThatLeavesABlockLiveOrphansItsChunksInsteadOfRecyclingThem) {
+    const std::size_t in_use_before   = slabs_in_use();
+    const std::size_t orphaned_before = thread_arena::orphaned();
+    std::size_t       slabs_taken     = 0;
     std::thread([&] {
         std::vector<void *> blocks;
         for (int i = 0; i < 300; ++i)
@@ -164,7 +167,8 @@ TEST(ThreadArena, AThreadThatLeavesABlockLiveLeaksItsChunksInsteadOfRecyclingThe
     }).join();
     ASSERT_GE(slabs_taken, 1u);
     // The contract was broken (a block outlived its thread): the slabs are NOT back in the
-    // cache -- still in use from its point of view -- so the live block can never be handed to
-    // another thread through it.
+    // cache -- still in use from its point of view -- and every chunk of that thread, the first
+    // one included, sits on the orphan list: reachable, counted, never handed to another thread.
     EXPECT_EQ(slabs_in_use(), in_use_before + slabs_taken);
+    EXPECT_EQ(thread_arena::orphaned(), orphaned_before + slabs_taken + 1);
 }
