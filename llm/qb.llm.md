@@ -345,7 +345,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   does not convert and will not compile. _(patterns/request.h:100)_ When the request is built from
   a handful of values, use the **emplace** form `co_await qb::ask<E>(ctx, target, timeout, args...)`
   (`E` explicit; `ask_by<E>(ctx, target, dl, args...)` likewise): it constructs the event in the
-  pipe slot instead of copying a cache-line-aligned temporary three times. _(patterns/request.h:136,213)_
+  pipe slot instead of copying a cache-line-aligned temporary three times. _(patterns/request.h:137,215)_
   Manual fallback: store pending
   state keyed by request id; schedule a self-sent timeout via `qb::io::async::callback`; clear on
   response or timeout.
@@ -454,6 +454,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
   body and answer through an event. _(`spawn_detached` Actor.h:1394 / VirtualCore.h:1432; `spawn` Actor.h:1431 /
   VirtualCore.h:1446)_
+- **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
+  older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
+  at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
+  sanitizers never show. The call emits no instruction and is a no-op on GCC, MSVC and clang-cl; every `qb::ask*` pattern
+  opens with it. _(coroutine/utils.h:376; request.h:101, resilience.h:428)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core

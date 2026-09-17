@@ -761,6 +761,26 @@ policy.
 
 ### Fixed
 
+- **`qb::ask_guarded` crashed under clang 15–21 at `-O2`/`-O3` on x86-64 Linux and Intel macOS, and
+  every pattern that takes its request by value was one frame layout away from the same fault (Huly
+  QB-213).** LLVM folds a coroutine parameter copy the body never writes back into the caller's
+  `byval` argument slot, then spills that slot into the coroutine frame at the natural alignment of
+  the LLVM struct type (8) while every read keeps the C++ alignment (64 for a `qb::Event`): the first
+  aligned 16-byte load out of the slot faults whenever its frame offset is not a multiple of 16 -- a
+  crash that appears or vanishes with the layout, at `-O2` and above only, invisible to `-O0`, ASan and
+  UBSan (LLVM issue 159571, fixed by pull request 159765 in LLVM 22 and backported to no earlier
+  branch; GCC and MSVC build parameter copies as frame members, and under clang-cl the Windows ABI
+  passes such arguments by reference). The new `qb::io::async::pin_frame_copy(param)` makes the copy a
+  written, escaped object with a memory-operand asm barrier -- no instruction emitted, a no-op
+  everywhere but clang on a `byval` ABI -- so the optimiser keeps it and the frame lays it out at its
+  declared alignment; the ten request-taking patterns (`ask`, `ask_by`, `ask_retry`, `ask_guarded`,
+  both `ask_all`, `gated_ask`, `ask_any`, `ask_quorum`, `ask_stream`) call it on their request, and
+  the coroutine chapter tells a user coroutine when to do the same. Reproduced on WSL2 Debian 13 with
+  clang 19.1.7: `coroutine-resilience` and `init-patterns` SIGSEGV at `-O3` on a 64-byte copy from
+  frame offset 360; an IR census of the resilience test found exactly that one frame copy whose
+  claimed alignment its offset cannot satisfy, none after the pin, and the 202-test standalone suite
+  green at `-O3`. qb's Linux CI gains a clang-19 lane so the oldest clang still common on developer
+  machines keeps that shield honest.
 - **clang-cl: every `task<E>` over a `qb::Event` crashed on its first `co_await` — the MSVC STL's
   `coroutine_handle::from_promise()` / `promise()` are wrong for an over-aligned promise, and qb
   now goes around them (Huly QB-200).** The STL implements both as

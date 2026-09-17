@@ -425,6 +425,7 @@ private:
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<E>
 ask_retry(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout, qb::retry_policy policy = {}) {
+    qb::io::async::pin_frame_copy(req);                                            // QB-213: the copy stays at its own alignment on clang < 22
     const int    max_attempts = policy.max_attempts > 0 ? policy.max_attempts : 1; // doc: >= 1
     qb::duration backoff      = policy.backoff;
     for (int attempt = 1;; ++attempt) {
@@ -463,6 +464,7 @@ ask_retry(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration tim
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<E>
 ask_guarded(qb::ScopedCoroContext ctx, std::shared_ptr<qb::CircuitBreaker> breaker, qb::ActorId target, E req, qb::duration timeout) {
+    qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     assert(breaker && "qb::ask_guarded requires a non-null CircuitBreaker");
     if (!breaker->allow(ctx.time()))
         throw qb::circuit_open_error{}; // fail fast — the request is never sent

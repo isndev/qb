@@ -308,6 +308,7 @@ private:
 template <stream_event_type E>
 [[nodiscard]] stream<E>
 ask_stream(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout = std::chrono::seconds{5}, std::size_t capacity = 256) {
+    qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     auto st   = std::make_shared<detail::stream_state<E>>(capacity ? capacity : std::size_t{1});
     st->token = ctx.token();
     // A multi-shot continuation slot, so chunks are delivered uniformly (active or Activating)

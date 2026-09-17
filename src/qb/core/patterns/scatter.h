@@ -57,6 +57,7 @@ namespace qb {
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<std::vector<E>>
 ask_all(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, E req, qb::duration timeout) {
+    qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     std::vector<qb::io::async::task<E>> calls;
     calls.reserve(targets.size());
     for (auto const target : targets)
@@ -71,6 +72,7 @@ namespace detail {
 template <typename E>
 qb::io::async::task<E>
 gated_ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout, std::shared_ptr<qb::io::async::semaphore> sem) {
+    qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     co_await sem->acquire(ctx.token()); // cancel-aware: a kill while parked retracts the claim
     struct release_guard {              // free the slot on completion OR on a thrown ask
         std::shared_ptr<qb::io::async::semaphore> s;
@@ -109,6 +111,7 @@ gated_ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration tim
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<std::vector<E>>
 ask_all(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, E req, qb::duration timeout, std::size_t max_in_flight) {
+    qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     if (max_in_flight == 0 || max_in_flight >= targets.size())
         co_return co_await ask_all(ctx, std::move(targets), std::move(req), timeout); // unbounded
     auto                                sem = std::make_shared<qb::io::async::semaphore>(max_in_flight);
@@ -138,6 +141,7 @@ ask_all(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, E req, qb::
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<E>
 ask_any(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, E req, qb::duration timeout) {
+    qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     std::vector<qb::io::async::task<E>> calls;
     calls.reserve(targets.size());
     for (auto const target : targets)
@@ -242,6 +246,7 @@ struct quorum_awaiter {
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<std::vector<E>>
 ask_quorum(qb::ScopedCoroContext ctx, std::vector<qb::ActorId> targets, std::size_t k, E req, qb::duration timeout) {
+    qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     const std::size_t n = targets.size();
     if (k == 0 || n == 0)
         co_return std::vector<E>{};

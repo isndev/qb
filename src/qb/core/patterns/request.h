@@ -98,6 +98,7 @@ using request = Request<Resp>;
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<E>
 ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) {
+    qb::io::async::pin_frame_copy(req);                            // QB-213: the copy stays at its own alignment on clang < 22
     qb::detail::ask_awaiter<E> aw{ctx.id(), timeout, ctx.token()}; // takes (and binds) the registry entry; its dtor gives it back
     req.correlation_id = aw.id;
     ctx.template push_to<E>(target, std::move(req)); // send to target, source = asker
@@ -197,6 +198,7 @@ remaining(deadline dl, qb::ScopedCoroContext ctx) noexcept {
 template <ask_event_type E>
 [[nodiscard]] qb::io::async::task<E>
 ask_by(qb::ScopedCoroContext ctx, qb::ActorId target, E req, deadline dl) {
+    qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     const qb::duration left = remaining(dl, ctx);
     if (left <= qb::duration::zero())
         throw qb::io::async::timeout_error{}; // budget already spent — fail fast, send nothing

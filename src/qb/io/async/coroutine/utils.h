@@ -350,6 +350,38 @@ run_sync(Awaitable &&awaitable)
     }
 }
 
+/**
+ * @brief Keep a coroutine's by-value parameter copy in its frame, at the parameter's own alignment.
+ * @ingroup Async
+ * @tparam T The parameter type (deduced).
+ * @param copy The parameter, named as declared — call this before the coroutine's first suspension.
+ * @details A shield against an LLVM defect. Clang before 22, on an ABI that passes a large trivially
+ *          copyable argument `byval` (x86-64 SysV: Linux, macOS on Intel), folds a coroutine parameter
+ *          copy that the body never writes back into the caller's argument slot, then spills that slot
+ *          into the coroutine frame at the natural alignment of the LLVM struct type (8) while every
+ *          read of it keeps the C++ alignment — 64 for a `qb::Event`. The first aligned vector copy
+ *          out of the slot faults whenever the slot's frame offset is not a multiple of the vector
+ *          width the copy uses (LLVM issue #159571, fixed by PR #159765, first shipped in LLVM 22).
+ *          The memory-operand asm barrier below makes the copy a written, escaped object: the
+ *          optimiser keeps it, and the frame lays it out at its declared alignment. No instruction is
+ *          emitted. GCC and MSVC build parameter copies as frame members with their own alignment and
+ *          need nothing; under clang-cl the Windows ABI passes such arguments by reference, so the
+ *          defect cannot trigger — the call is a no-op everywhere but clang on a `byval` ABI.
+ * @note Every `qb::ask*` pattern calls it on its request. A user coroutine that takes an event by
+ *       value and does not assign to it before its first `co_await` should do the same while it has
+ *       to build with clang older than 22.
+ */
+template <typename T>
+inline void
+pin_frame_copy(T &copy) noexcept {
+    static_assert(!std::is_const_v<T>, "pin_frame_copy takes the parameter copy itself, never a const view of it");
+#if defined(__clang__) && !defined(_MSC_VER)
+    __asm__ __volatile__("" : "+m"(copy));
+#else
+    (void) copy;
+#endif
+}
+
 } // namespace qb::io::async
 
 #endif // QB_IO_ASYNC_COROUTINE_UTILS_H

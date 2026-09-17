@@ -828,6 +828,25 @@ Three rules cover every case: function parameters are copied into the coroutine 
 > **Scheduler teardown.** `~CoroutineScheduler` destroys only ready-queue frames it owns plus deferred completed frames; *suspended* frames are intentionally left alone because their libev watchers still reference them. Stop the event loop before destroying the scheduler. The listener does this on its own destruction (`reset_coro_scheduler()` runs `destroy_all_suspended()` first, so a frame parked on the listener's scheduler is destroyed, not abandoned); a scheduler owned directly and destroyed with frames still suspended abandons them, and says so in every build: one WARNING line on `qb::io::cerr` and the count added to `qb::io::async::abandoned_coroutine_frames_total()`, the process-wide tally (Huly QB-84).
 <!-- src: qb/src/qb/io/async/coroutine/scheduler.h:340-370 (rationale), :371-410 (teardown, the abandoned-frame report at :400-401), task.h:149-163 (report_abandoned_coroutine_frames / abandoned_coroutine_frames_total) -->
 
+## Compiler note — by-value parameters under clang older than 22
+
+A parameter taken by value is copied into the coroutine frame, which is what makes it safe (above). Clang before 22 lays that copy out wrong in one precise case. On an ABI that passes a large trivially copyable argument `byval` — x86-64 System V, so Linux and Intel macOS — when the body never *writes* the parameter, the optimiser folds the copy back into the caller's argument slot, and the coroutine pass then spills that slot into the frame at the natural alignment of the LLVM struct type (8 bytes) while every read keeps the C++ alignment (64 for a `qb::Event`). The first aligned vector copy out of the slot faults whenever the slot's frame offset is not a multiple of the vector width: a crash that appears or vanishes with the frame layout, at `-O2` and above only, and that `-O0`, ASan and UBSan do not show (LLVM issue 159571, fixed by pull request 159765 in LLVM 22, backported to no earlier branch). GCC and MSVC build parameter copies as frame members with their own alignment; under clang-cl the Windows ABI passes such arguments by reference, so the defect cannot trigger there.
+
+`qb::io::async::pin_frame_copy(param)` is the shield: a memory-operand asm barrier that makes the copy a written, escaped object, so the optimiser keeps it and the frame lays it out at its declared alignment. No instruction is emitted, and the call is a no-op everywhere but clang on a `byval` ABI. Every `qb::ask*` pattern opens with it on its request; a coroutine of yours that takes an event by value and does not assign to it before its first `co_await` should do the same while it has to build with an older clang.
+
+```cpp
+// src: derived from qb/src/qb/io/async/coroutine/utils.h:376 (pin_frame_copy), qb/src/qb/core/patterns/resilience.h:466-467 (ask_guarded)
+struct Order  : qb::Event { int amount{0}; };   // every qb::Event is 64-byte aligned
+struct Placed : qb::Event { int amount{0}; };
+
+qb::io::async::task<void> place(qb::ScopedCoroContext ctx, qb::ActorId book, Order order) {
+    qb::io::async::pin_frame_copy(order);          // first statement: the copy stays a frame member at alignof(Order)
+    co_await ctx.sleep(std::chrono::milliseconds{10});
+    ctx.push_to<Placed>(book, order.amount);       // read after the suspension: the copy the frame holds
+}
+```
+<!-- src: qb/src/qb/io/async/coroutine/utils.h:376 (pin_frame_copy); qb/src/qb/core/patterns/request.h:101 (pin_frame_copy), resilience.h:428 (pin_frame_copy), :467 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:311 (pin_frame_copy) -->
+
 ## Debug tracing
 
 Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it emits trace output to `stderr`.

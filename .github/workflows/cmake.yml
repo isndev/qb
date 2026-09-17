@@ -19,7 +19,7 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     env:
-      LLVM_VERSION: "22"
+      LLVM_VERSION: ${{ matrix.llvm_version || '22' }}
 
     strategy:
       fail-fast: false
@@ -73,6 +73,18 @@ jobs:
             cpp_compiler: clang++-22
             build_type: Release
             cxx_standard: 23
+
+          # The oldest clang still common on developer machines (Debian 13's default, apt.llvm.org on
+          # Ubuntu 24.04). Every clang before 22 lays a never-written by-value coroutine parameter out
+          # at the wrong alignment on x86-64 (LLVM issue 159571, Huly QB-213): two system tests SIGSEGV
+          # at -O3 without qb::io::async::pin_frame_copy, and this lane is what keeps that shield honest.
+          - name: ubuntu-clang19-cxx20-release
+            os: ubuntu-latest
+            c_compiler: clang-19
+            cpp_compiler: clang++-19
+            llvm_version: "19"
+            build_type: Release
+            cxx_standard: 20
 
     steps:
       - uses: actions/checkout@v6
