@@ -42,7 +42,8 @@
 #include <vector>
 // include from qb
 #include <qb/system/container/unordered_map.h>
-#include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
+#include <qb/utility/abi.h>                   /* QB_ABI_ANCHOR */
+#include <qb/system/allocator/thread_arena.h> /* Actor::operator new / delete */
 #include <qb/utility/nocopy.h>
 #include <qb/utility/type_traits.h>
 #include <qb/io/async/coroutine.h>
@@ -509,6 +510,49 @@ public:
      */
     void kill() const noexcept;
 
+    /**
+     * @}
+     */
+
+    /**
+     * @name Allocation
+     * @brief The actor object lives in its core thread's `qb::allocator::thread_arena`.
+     * @details An actor is created and destroyed on ONE thread -- its `VirtualCore`'s -- by
+     *          construction (the constructors assert it, `VirtualCore::removeActor()` runs
+     *          there), so the object's storage comes from a thread-private size-class arena:
+     *          a free-list pop and push per lifetime instead of a `malloc` / `free` pair, blocks
+     *          bump-allocated from 2 MB `slab_cache` slabs that stay mapped and warm across
+     *          engines. Measured on qb-vs-others `savina/fib` (57 312 lifetimes in one window):
+     *          that pair was 27.8 % of the core on WSL2 g++-14 (Huly QB-212). These are the
+     *          usual, aligned and placement forms; a derived class that declares its own
+     *          `operator new` / `operator delete` hides them, which is how a custom pool plugs
+     *          in beside `qb::allocate_actor<T>` (the CONSTRUCTION customization point). The
+     *          sized `operator delete` is the one `std::unique_ptr<Actor>`'s `delete` reaches
+     *          through the virtual destructor, with the dynamic type's size.
+     * @{
+     */
+    static void *
+    operator new(std::size_t const size) {
+        return qb::allocator::thread_arena::allocate(size);
+    }
+    static void *
+    operator new(std::size_t const size, std::align_val_t const align) {
+        return qb::allocator::thread_arena::allocate(size, static_cast<std::size_t>(align));
+    }
+    static void *
+    operator new(std::size_t, void *const where) noexcept {
+        return where; // placement: `new (mem) MyActor(...)` keeps compiling
+    }
+    static void
+    operator delete(void *const p, std::size_t const size) noexcept {
+        qb::allocator::thread_arena::deallocate(p, size);
+    }
+    static void
+    operator delete(void *const p, std::size_t const size, std::align_val_t const align) noexcept {
+        qb::allocator::thread_arena::deallocate(p, size, static_cast<std::size_t>(align));
+    }
+    static void
+    operator delete(void *, void *) noexcept {} // the placement form's matching delete
     /**
      * @}
      */

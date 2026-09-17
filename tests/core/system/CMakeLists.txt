@@ -164,3 +164,7 @@ qb_add_test(MODULE qb-core TIER system NAME init-io-awaiters SOURCES init/init-i
 qb_add_test(MODULE qb-core TIER system NAME init-clock         SOURCES init/init-clock.cpp         DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 
 qb_debug_message("Configured ${CMAKE_CURRENT_SOURCE_DIR} with the tiered test helper")
+# actor-arena pins that the actor object comes from its core thread's thread_arena (QB-212): a burst
+# of addRefActor lifetimes is a burst of arena blocks, the slabs return to the cache when the core
+# stops, an over-aligned or large actor falls through, a class with its own operators keeps them.
+qb_add_test(MODULE qb-core TIER system NAME actor-arena SOURCES engine/actor-arena.cpp DEPENDS ${PROJECT_NAME})

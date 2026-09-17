@@ -52,3 +52,7 @@ qb_add_test(MODULE qb-core TIER unit NAME resilience-rate-limiter SOURCES patter
 qb_add_test(MODULE qb-core TIER unit NAME resilience-bulkhead    SOURCES patterns/resilience-bulkhead.cpp    DEPENDS ${PROJECT_NAME} LABELS patterns)
 qb_add_test(MODULE qb-core TIER unit NAME idempotency-dedup-map  SOURCES patterns/idempotency-dedup-map.cpp  DEPENDS ${PROJECT_NAME} LABELS patterns)
 qb_add_test(MODULE qb-core TIER unit NAME routing-worker-pool    SOURCES patterns/routing-worker-pool.cpp    DEPENDS ${PROJECT_NAME} LABELS patterns)
+# thread-arena pins the per-thread size-class arena the actor object lives in (QB-212): rounding,
+# LIFO reuse per class, the large and over-aligned fall-throughs, chunk growth into slab_cache
+# slabs, and the thread-exit teardown that returns the slabs only when nothing is live.
+qb_add_test(MODULE qb-core TIER unit NAME thread-arena SOURCES system/thread-arena.cpp DEPENDS ${PROJECT_NAME})
