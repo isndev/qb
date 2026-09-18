@@ -19,9 +19,12 @@
  *          sync primitives 1.3-2x slower than g++ with 64-512 parked waiters, `channel::try_send` /
  *          `try_recv` 1.7-1.9x. This ring is what they use instead: a power-of-two buffer over storage
  *          aligned for `T`, doubled when full (the elements are MOVED, never copied), elements
- *          destroyed on `pop_front`, `erase_at` and destruction. Deque-shaped names, plus `operator[]`
- *          and `erase_at` for the rare cancellation retract that scans for its own entry. Single
- *          thread by contract, like everything it is used in.
+ *          destroyed on `pop_front`, `erase_at` and destruction. The cursors are pointers (`_head`,
+ *          `_tail`, `_end`), so a push or a pop is a construct or a destroy, one compare against the
+ *          end and one increment -- the same instruction budget as a deque's block cursor, which is
+ *          what keeps the try-send / try-recv loop of a channel at its libstdc++ speed. Deque-shaped
+ *          names, plus `operator[]` and `erase_at` for the rare cancellation retract that scans for
+ *          its own entry. Single thread by contract, like everything it is used in.
  * @ingroup Container
  */
 
@@ -46,9 +49,10 @@ namespace qb {
  */
 template <typename T>
 class growable_ring {
-    T          *_buf  = nullptr;
-    std::size_t _cap  = 0; ///< a power of two; 0 until the first element
-    std::size_t _head = 0;
+    T          *_buf  = nullptr; ///< the storage, `_end - _buf` slots (a power of two; 0 until the first element)
+    T          *_end  = nullptr; ///< one past the storage
+    T          *_head = nullptr; ///< the oldest element
+    T          *_tail = nullptr; ///< the next free slot
     std::size_t _size = 0;
 
     static T *
@@ -59,30 +63,41 @@ class growable_ring {
     deallocate(T *p) noexcept {
         ::operator delete(p, std::align_val_t{alignof(T)}); // unsized: the -fno-sized-deallocation axis
     }
-    [[nodiscard]] std::size_t
-    slot(std::size_t i) const noexcept {
-        return (_head + i) & (_cap - 1);
+    [[nodiscard]] T *
+    at(std::size_t i) const noexcept { // the i-th element from the head, wrapping once
+        T *p = _head + i;
+        if (p >= _end)
+            p -= (_end - _buf);
+        return p;
     }
     void
     grow() {
-        const std::size_t ncap = _cap ? _cap * 2 : 8;
+        const std::size_t cap  = static_cast<std::size_t>(_end - _buf);
+        const std::size_t ncap = cap ? cap * 2 : 8;
         T                *nb   = allocate(ncap);
         for (std::size_t i = 0; i < _size; ++i) {
-            T *src = _buf + slot(i);
+            T *src = at(i);
             std::construct_at(nb + i, std::move(*src));
             std::destroy_at(src);
         }
         deallocate(_buf);
         _buf  = nb;
-        _cap  = ncap;
-        _head = 0;
+        _end  = nb + ncap;
+        _head = nb;
+        _tail = nb + _size;
+    }
+    void
+    release() noexcept {
+        clear();
+        deallocate(_buf);
+        _buf = _end = _head = _tail = nullptr;
     }
 
 public:
     using value_type = T;
 
-    /// A forward iterator over the held elements, oldest first (index-based, so `erase_at` on the
-    /// current index and a fresh `begin()` is the way to erase while walking).
+    /// A forward iterator over the held elements, oldest first (index-based: `erase(it)` erases the
+    /// element it names and returns an iterator at the same index).
     template <bool Const>
     class basic_iterator {
         using ring_t   = std::conditional_t<Const, const growable_ring, growable_ring>;
@@ -133,6 +148,32 @@ public:
     };
     using iterator       = basic_iterator<false>;
     using const_iterator = basic_iterator<true>;
+
+    growable_ring()                                 = default;
+    growable_ring(const growable_ring &)            = delete;
+    growable_ring &operator=(const growable_ring &) = delete;
+    growable_ring(growable_ring &&o) noexcept
+        : _buf(std::exchange(o._buf, nullptr))
+        , _end(std::exchange(o._end, nullptr))
+        , _head(std::exchange(o._head, nullptr))
+        , _tail(std::exchange(o._tail, nullptr))
+        , _size(std::exchange(o._size, 0)) {}
+    growable_ring &
+    operator=(growable_ring &&o) noexcept {
+        if (this != &o) {
+            release();
+            _buf  = std::exchange(o._buf, nullptr);
+            _end  = std::exchange(o._end, nullptr);
+            _head = std::exchange(o._head, nullptr);
+            _tail = std::exchange(o._tail, nullptr);
+            _size = std::exchange(o._size, 0);
+        }
+        return *this;
+    }
+    ~growable_ring() {
+        release();
+    }
+
     iterator
     begin() noexcept {
         return {this, 0};
@@ -149,32 +190,6 @@ public:
     end() const noexcept {
         return {this, _size};
     }
-
-    growable_ring()                                 = default;
-    growable_ring(const growable_ring &)            = delete;
-    growable_ring &operator=(const growable_ring &) = delete;
-    growable_ring(growable_ring &&o) noexcept
-        : _buf(std::exchange(o._buf, nullptr))
-        , _cap(std::exchange(o._cap, 0))
-        , _head(std::exchange(o._head, 0))
-        , _size(std::exchange(o._size, 0)) {}
-    growable_ring &
-    operator=(growable_ring &&o) noexcept {
-        if (this != &o) {
-            clear();
-            deallocate(_buf);
-            _buf  = std::exchange(o._buf, nullptr);
-            _cap  = std::exchange(o._cap, 0);
-            _head = std::exchange(o._head, 0);
-            _size = std::exchange(o._size, 0);
-        }
-        return *this;
-    }
-    ~growable_ring() {
-        clear();
-        deallocate(_buf);
-    }
-
     [[nodiscard]] bool
     empty() const noexcept {
         return _size == 0;
@@ -185,32 +200,34 @@ public:
     }
     [[nodiscard]] std::size_t
     capacity() const noexcept {
-        return _cap;
+        return static_cast<std::size_t>(_end - _buf);
     }
     /// The oldest element; the ring must not be empty.
     [[nodiscard]] T &
     front() noexcept {
-        return _buf[_head];
+        return *_head;
     }
     [[nodiscard]] const T &
     front() const noexcept {
-        return _buf[_head];
+        return *_head;
     }
     /// The i-th element from the front (0 = `front()`); `i < size()`.
     [[nodiscard]] T &
     operator[](std::size_t i) noexcept {
-        return _buf[slot(i)];
+        return *at(i);
     }
     [[nodiscard]] const T &
     operator[](std::size_t i) const noexcept {
-        return _buf[slot(i)];
+        return *at(i);
     }
     template <typename... Args>
     T &
     emplace_back(Args &&...args) {
-        if (_size == _cap)
+        if (_size == static_cast<std::size_t>(_end - _buf))
             grow();
-        T *p = std::construct_at(_buf + slot(_size), std::forward<Args>(args)...);
+        T *p = std::construct_at(_tail, std::forward<Args>(args)...);
+        if (++_tail == _end)
+            _tail = _buf;
         ++_size;
         return *p;
     }
@@ -225,20 +242,24 @@ public:
     /// Destroys the oldest element; the ring must not be empty.
     void
     pop_front() noexcept {
-        std::destroy_at(_buf + _head);
-        _head = (_head + 1) & (_cap - 1);
+        std::destroy_at(_head);
+        if (++_head == _end)
+            _head = _buf;
         --_size;
     }
     /// Removes the i-th element, keeping the order of the others (moves the tail down by one).
     void
     erase_at(std::size_t i) noexcept {
         for (std::size_t j = i; j + 1 < _size; ++j)
-            _buf[slot(j)] = std::move(_buf[slot(j + 1)]);
-        std::destroy_at(_buf + slot(_size - 1));
+            *at(j) = std::move(*at(j + 1));
+        if (_tail == _buf)
+            _tail = _end;
+        --_tail;
+        std::destroy_at(_tail);
         --_size;
     }
-    /// Deque-shaped erase: removes the element the iterator names, returns an iterator at the same index
-    /// (the element that followed, or `end()`).
+    /// Deque-shaped erase: removes the element the iterator names, returns an iterator at the same
+    /// index (the element that followed, or `end()`).
     iterator
     erase(iterator it) noexcept {
         erase_at(it.index());
