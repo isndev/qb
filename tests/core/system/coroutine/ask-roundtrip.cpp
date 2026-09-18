@@ -482,10 +482,19 @@ TEST(ActorCoroutineAsk, LateReplyAfterTimeoutIsUnsolicitedAndSafe) {
 }
 
 // Cross-core variant: the timeout fires on core 0 while a reply is in flight from core 1. The slow
-// market (core 1) replies after 80ms via a scoped coroutine; the asker times out at 40ms, then the
+// market (core 1) replies after 160ms via a scoped coroutine; the asker times out at 40ms, then the
 // in-flight reply lands as unsolicited. Exercises the cross-core teardown race.
+//
+// The ordering is a wall-clock one, and an oversubscribed host can starve the asker's core past its
+// own deadline: the reply then lands BEFORE the deadline is observed, `resolve_ask` resumes the ask
+// with a value, and nothing would ever stop the engine -- this case hung for the full ctest timeout
+// (600 s) on the Windows `dev-cxx23` gate of 2026-09-18, one of 388 tests on 24 logical processors.
+// So the asker also reports that outcome (`g_xcore_reply_won`) and shuts the engine down through its
+// own handler, and the case SKIPS with the reason: the race was not exercised, nothing was wrong.
+// The 160ms reply (was 80) leaves the 40ms deadline 120ms of room before that happens.
 namespace {
 std::atomic<bool> g_xcore_late_unsolicited{false};
+std::atomic<bool> g_xcore_reply_won{false}; ///< the reply beat the deadline: the host starved core 0
 } // namespace
 
 class TraderLateCrossCore : public qb::Actor {
@@ -497,22 +506,31 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
+        registerEvent<AskDone>(*this);
         auto mkt = _market;
         spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
-                co_await qb::ask(ctx, mkt, Ping{5}, 40ms); // SlowMarket replies at 80ms → timeout first
+                co_await qb::ask(ctx, mkt, Ping{5}, 40ms); // SlowMarket replies at 160ms → timeout first
             } catch (const qb::io::async::timeout_error &) {
                 g_ask_timed_out = true;
+                co_return; // do NOT stop: wait for the in-flight cross-core reply to land as unsolicited
             }
-            // Do NOT stop yet — wait for the in-flight cross-core reply to land as unsolicited.
+            // The reply won: this core was starved past its 40ms deadline, so no unsolicited reply can
+            // come any more. End the case through the actor's own handler instead of hanging.
+            g_xcore_reply_won = true;
+            ctx.push<AskDone>();
         });
         co_return true;
     }
     void
     on(Ping &e) {
         if (resolve_ask(e))
-            return; // slot gone after timeout → false
+            return; // slot gone after timeout → false (or the reply won: the coroutine reports it)
         g_xcore_late_unsolicited = true;
+        qb::Main::stop();
+    }
+    void
+    on(const AskDone &) {
         qb::Main::stop();
     }
 };
@@ -523,15 +541,20 @@ TEST(ActorCoroutineAsk, TimeoutWhileReplyInFlightCrossCore) {
     }
     reset_flags();
     g_xcore_late_unsolicited = false;
+    g_xcore_reply_won        = false;
     qb::Main main;
-    // SlowMarket (core 1) answers seq*3 after 80ms via a scoped coroutine — the reply is mid-flight
+    // SlowMarket (core 1) answers seq*3 after 160ms via a scoped coroutine — the reply is mid-flight
     // when the asker's core-0 40ms timeout fires.
-    auto mkt = main.addActor<SlowMarket>(1, 80ms);
+    auto mkt = main.addActor<SlowMarket>(1, 160ms);
     main.addActor<TraderLateCrossCore>(0, mkt); // asker on core 0
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_TRUE(g_ask_timed_out.load()) << "the asker must time out (40ms) before the slow reply (80ms) arrives";
+    if (g_xcore_reply_won.load()) {
+        GTEST_SKIP() << "requires-multicore: the 160ms reply landed before the asker's 40ms deadline was observed -- "
+                        "the host starved core 0 past its deadline, the cross-core teardown race was not exercised";
+    }
+    EXPECT_TRUE(g_ask_timed_out.load()) << "the asker must time out (40ms) before the slow reply (160ms) arrives";
     EXPECT_TRUE(g_xcore_late_unsolicited.load())
         << "a cross-core reply arriving after the timeout must land as unsolicited, no double-resume/UAF";
 }
