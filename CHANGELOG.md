@@ -8,6 +8,35 @@ policy.
 ## [Unreleased]
 
 ### Changed
+- **The coroutine layer no longer queues in `std::deque`s: `qb::growable_ring` buffers the stream's
+  chunks, the channel's values and every parked waiter (Huly QB-215).** MSVC's STL packs
+  `sizeof(T) <= 8 ? 2 : 1` elements per deque block (16, 8 and 4 for 1-, 2- and 4-byte types), so a
+  `std::deque<E>` of 64-byte events cost a heap allocation and a free per chunk and a
+  `std::deque<std::coroutine_handle<>>` one every two parks, where libstdc++ packs 512 bytes per
+  block. Found by the ask-cost probe: its `stream` mode ran at 69 ns per chunk on Windows against
+  31 for a bare push while Linux sat at 24 vs 24 -- a factor two on one platform over identical code
+  is a data structure, not codegen -- and confirmed by qb's own benchmarks, where the sync
+  primitives with 64-512 parked waiters and the channel's try-send/try-recv ran 1.3-2x behind g++
+  while the deque-free cells sat at the ordinary MSVC ratio. `qb::growable_ring<T>`
+  (`<qb/system/container/growable_ring.h>`) is a power-of-two ring over storage aligned for `T`,
+  doubled when full with the elements moved, one allocation per doubling and none per element,
+  deque-shaped (`emplace_back`, `pop_front`, `front`, `operator[]`, iterators, `erase(it)`,
+  `erase_at`) and destroying what it still holds; `ask_stream`'s chunk buffer, `channel<T>`'s
+  value buffer and its sender / receiver / selector lists, and the waiter lists of `semaphore`,
+  `async_mutex`, `async_rw_lock` and `async_event` use it (`barrier` and `async_latch` already
+  kept a `std::vector`). Measured control `6712ef30` vs candidate, one quiet session per host,
+  same-length executable paths: on Windows/MSVC 19.51 the probe's `stream` round trip 72.3 -> 36.3
+  ns per chunk (a bare push 32), `async_mutex` -17 to -25 % and `async_rw_lock` write -16 to -22 %
+  from 8 parked coroutines up, `channel::try_send` / `try_recv` -16 to -25 %, `channel` send/recv
+  -30 % at 64 messages, the semaphore -5 to +2 %; the ask path and the push path unchanged on the
+  real harness (bank-transaction 162.7 -> 163.4 and 110.8 -> 109.0 ns per unit, ping-pong
+  30.2 -> 29.9, distributions overlapping). On WSL2 g++-14, where the deque was already amortised,
+  the probe's `stream` mode is flat (24.7 -> 24.7 ns), `channel::try_send` / `try_recv` -27 to -30 %
+  from 1024 messages up (past 64 elements a deque walks its block map on every push and pop, a ring
+  bumps a pointer) and every sync primitive sits within the +-3 % band an untouched `std::vector`
+  cell draws on the same binary.
+  `growable-ring` pins the ring: order across wrap-around and growth, one live element per held
+  item, 64-byte slots, the ordered erase.
 - **`qb::ask` no longer allocates a coroutine frame: it returns an awaitable that lives in the
   awaiting frame (Huly QB-214, the "ask frame" loss point of QB-212).** `co_await qb::ask(...)`
   used to enter a `task<E>` whose whole body was "build the awaiter, stamp, push, `co_await` it": a

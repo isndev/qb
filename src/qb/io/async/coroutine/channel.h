@@ -890,7 +890,7 @@ private:
     qb::growable_ring<send_waiter_entry>   _send_waiters;
     qb::growable_ring<recv_waiter_entry>   _recv_waiters;
     qb::growable_ring<select_waiter_entry> _select_waiters;
-    bool                            _closed = false;
+    bool                                   _closed = false;
     // Liveness token, set false by ~channel. close() resumes parked waiters via the
     // scheduler (deferred), and if the channel owner frees the channel before that
     // resume runs — e.g. a coroutine suspended on `co_await consumer.receive()` while

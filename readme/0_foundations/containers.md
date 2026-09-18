@@ -188,6 +188,20 @@ The `Overwrite` parameter is the whole policy: at capacity, `true` (the default)
 
 **It is an offered utility, not engine machinery.** Nothing in `qb/src`, the tests or the modules instantiates it; it is here for your code. Its one demonstrator is `examples/02-io/11-logging-and-metrics.cpp`, which keeps a rolling latency window in a `qb::ring_buffer<std::uint64_t, 64>` — `Overwrite = true`, so the oldest sample is evicted at capacity — and counts its live samples through the iterators for exactly the reason above. Do not read it as a description of how the engine buffers anything — the engine's queues are the [pipe](./buffers.md) and the [lock-free rings](./concurrency_primitives.md), which are different types with different contracts. It is also **not** thread-safe: single-threaded use, or your own lock.
 
+## `qb::growable_ring<T>`
+
+```cpp
+#include <qb/system/container/growable_ring.h>
+
+template <typename T>
+class growable_ring;
+```
+<!-- src: qb/src/qb/system/container/growable_ring.h:50-51 -->
+
+A growable single-thread FIFO: a power-of-two buffer over storage aligned for `T`, doubled when full (the elements are moved, never copied), one allocation per doubling and none per element. Deque-shaped — `emplace_back` / `push_back` / `pop_front` / `front` / `operator[]`, forward iterators, `erase(it)`, `erase_at(i)` (order-preserving, O(n) from `i`), `clear`, `size`, `empty`, `capacity` — and it destroys what it still holds when it goes (`qb/src/qb/system/container/growable_ring.h:50-51`, `:177-272`).
+
+**It is engine machinery, born of a measurement (Huly QB-215).** The coroutine layer queued its chunks and its parked waiters in `std::deque`s; libstdc++ packs 512 bytes per deque block, MSVC's STL packs one element per block for any type wider than 8 bytes and two for a `std::coroutine_handle<>` — a heap allocation and a free per chunk or per park on Windows. The ring is what `ask_stream` buffers its chunks in — the `queue` of its `stream_state` (`qb/src/qb/core/patterns/streaming.h:106-107`), what a `channel<T>` buffers its values and parks its senders, receivers and selectors in (`qb/src/qb/io/async/coroutine/channel.h:890-893`), and where `semaphore`, `async_mutex`, `async_rw_lock` and `async_event` park their waiters (`qb/src/qb/io/async/coroutine/sync.h:402`, `:635`, `:931-932`, `:1239`). Measured on Windows/MSVC against the deque: the ask-cost probe's `stream` mode 72 → 36 ns per chunk (a bare push is 32), `async_mutex` −17 to −25 % and `async_rw_lock` write −16 to −22 % from 8 parked coroutines up, `channel::try_send` / `try_recv` −16 to −25 %; on WSL2 g++-14, where the deque was already amortised, the probe's `stream` mode is flat (24.7 → 24.7 ns), `channel::try_send` / `try_recv` −27 to −30 % from 1024 messages up (past 64 elements a deque walks its block map on every push and pop, a ring bumps a pointer) and every sync primitive sits within the ±3 % band an untouched `std::vector` cell draws on the same binary. Single-thread by contract, like everything it sits in.
+
 ## Pitfalls
 
 - **`qb::string<N>` truncates silently.** Assigning or appending past `N` clamps; nothing throws and nothing reports it (`qb/src/qb/string.h:199-207`). This is the one that bites, because a path or a name that fits in your tests will not fit in production.

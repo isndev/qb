@@ -39,6 +39,7 @@ llm/qb.llm.api.md	VirtualCore.h:974-997	b36934211a5d	template <typename _Service
 llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
 llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	combinators.h:72-72	f1f1a4f9f866	to_task(task<T> &&t) noexcept {
+llm/qb.llm.api.md	container/growable_ring.h:51-51	6ccfe2d90a0b	class growable_ring {
 llm/qb.llm.api.md	coroutine/utils.h:376-376	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
 llm/qb.llm.api.md	crypto.h:693-701	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:704-704	9e7269fef498	enum class EnvelopeFormat {

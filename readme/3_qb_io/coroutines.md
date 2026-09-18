@@ -42,7 +42,7 @@ flowchart TB
 | Schedulers per thread | one (`thread_local`, owned by the listener) | `scheduler.h:154-158`, `utils.h:212` |
 | Concurrency model | cooperative, single-threaded | `scheduler.h:154-158` |
 | Interleaving point | `co_await` only | `scheduler.h:683-694` (Factbook) |
-| OS mutexes / atomics on the hot path | none, within one thread | `scheduler.h:41-50`, `sync.h:31-34` |
+| OS mutexes / atomics on the hot path | none, within one thread | `scheduler.h:41-50`, `sync.h:32-35` |
 | Cross-thread wake-up | route through the `qb-core` actor mailbox | `scheduler.h:159-162` |
 
 Because all coroutines on a thread share one scheduler and one event loop, only one runs at a time and another can start only at a suspension point. Mutual exclusion between two coroutines on the same thread is therefore a property of the model, not something you lock for. Pushing or resuming a coroutine from a *different* thread is undefined behavior — the scheduler holds no mutex; cross-thread signaling must go through the actor mailbox (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)).
@@ -356,9 +356,9 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
 | `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:99`, `:432`) | the branches |
 | `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:753`) | whichever comes first |
-| `co_await ch.send(v)` / `ch.recv()` | the channel's own `_send_waiters` / `_recv_waiters` deque — `send_awaiter` (`channel.h:158`), `recv_awaiter` (`:312`) | a counterparty, or `close()` |
-| `co_await ch.send_for(v, d)` / `ch.recv_for(d)` | the same deques plus a spawned `sleep` timer — `timed_recv_awaiter` (`channel.h:618`), `timed_send_awaiter` (`:728`) | a counterparty, `close()`, or the timer |
-| `co_await select(a, b, ...)` | every channel's `_select_waiters`, through `channel_select_awaiter` (`channel.h:1160`) | the first channel with data or a close |
+| `co_await ch.send(v)` / `ch.recv()` | the channel's own `_send_waiters` / `_recv_waiters` deque — `send_awaiter` (`channel.h:157`), `recv_awaiter` (`:311`) | a counterparty, or `close()` |
+| `co_await ch.send_for(v, d)` / `ch.recv_for(d)` | the same deques plus a spawned `sleep` timer — `timed_recv_awaiter` (`channel.h:617`), `timed_send_awaiter` (`:727`) | a counterparty, `close()`, or the timer |
+| `co_await select(a, b, ...)` | every channel's `_select_waiters`, through `channel_select_awaiter` (`channel.h:1159`) | the first channel with data or a close |
 | `co_await sem.acquire()` (no token) / `mtx.lock()` / `rw.lock_read()` / `lock_write()` | the primitive's own waiter deque — `acquire_awaiter` (`sync.h:101`), `lock_awaiter` (`:456`), `read_lock_awaiter` (`:682`), `write_lock_awaiter` (`:729`) | a `release()` / `unlock()` |
 | `co_await b.arrive_and_wait()` / `ev.wait()` / `latch.wait()` | the primitive's waiter list — `arrive_awaiter` (`sync.h:970`) and the two `wait_awaiter`s (`:1119`, `:1312`) | the final arrival / `set()` / the count reaching zero |
 | `co_await gen.next()` (async generator) | the generator, by symmetric transfer (`generator.h:415`) | the generator's next `co_yield` |
@@ -375,7 +375,7 @@ Every awaiter in the layer therefore carries a destructor that has to survive "d
 
 - **Watcher-backed awaiters stop the watcher unconditionally, gated only on "was it armed", never on `ev_is_active`.** A one-shot `ev_timer` is auto-stopped by libev the instant it expires — *before* its callback runs — so between expiry and dispatch it is inactive yet still sitting in `pendings[]` with `w->data` pointing at the awaiter. An active-gated stop would skip it and leave a freed watcher queued for invocation (`awaiter.h:407-426`).
 - **They scrub the scheduler's queues, not just the suspended set.** Once a watcher has fired, the frame has already moved out of `suspended_coroutines_` and *into* the ready queue and in-flight set. `unregister_suspended()` alone would leave a dangling handle for the next drain to resume; `unschedule()` → `CoroutineScheduler::forget()` clears all three (`awaiter.h:262-266`; `scheduler.h:537`).
-- **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:122-124`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:475-476`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1137-1138`); a destroyed `ch.recv()` whose sender already wrote through its result slot re-buffers the value so the message is not lost (`channel.h:349-351`).
+- **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:122-124`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:475-476`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1137-1138`); a destroyed `ch.recv()` whose sender already wrote through its result slot re-buffers the value so the message is not lost (`channel.h:348-350`).
 - **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:465-472`). Getting that order wrong is a use-after-free, which is why the source spells it out.
 
 `~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:659-662`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
@@ -481,19 +481,19 @@ auto [in_p, out_p] = make_pipeline<int, int>(            // pair of unique_ptr c
 
 `recv_for` / `send_for` are **member functions** (`ch.recv_for(timeout)` returns `task<std::optional<T>>`; `ch.send_for(value, timeout)` returns `task<bool>`). `send(value)`/`recv()` return awaiters; `recv()` yields `std::optional<T>` that is empty once the channel is closed, while `send(value)` throws `channel_closed` on a closed channel. `make_channel` and `make_pipeline` return `std::unique_ptr` so the caller owns the channel's lifetime.
 
-What `close()` does to each parked party is worth a table of its own, because the three answers differ (`channel.h:490-511`):
+What `close()` does to each parked party is worth a table of its own, because the three answers differ (`channel.h:489-510`):
 
 | Parked on | After `close()` |
 |---|---|
-| `recv()` / `recv_for()` | resumes with `std::nullopt` — never an exception, and a value still in `_buffer` is drained first (`channel.h:394-398`) |
-| `send()` | resumes and **throws `channel_closed`** (`channel.h:269-271`) |
-| `send_for()` | resumes and returns **`false`** once `_closed` — no exception (`channel.h:772-776`) |
-| `select()` | resumes with `closed == true` and an empty `value` (`channel.h:509`) |
+| `recv()` / `recv_for()` | resumes with `std::nullopt` — never an exception, and a value still in `_buffer` is drained first (`channel.h:393-397`) |
+| `send()` | resumes and **throws `channel_closed`** (`channel.h:268-270`) |
+| `send_for()` | resumes and returns **`false`** once `_closed` — no exception (`channel.h:771-775`) |
+| `select()` | resumes with `closed == true` and an empty `value` (`channel.h:508`) |
 
-`~channel()` clears its liveness flag **before** calling `close()`, and the order is load-bearing: `close()` only *schedules* the resumes, so by the time they run the channel is gone and every awaiter must be able to answer from its own state alone (`channel.h:137-143`). A parked `recv` then returns `nullopt`, a parked `send` throws, a parked `send_for` returns `false` — the same answers as a plain close, reached without touching the freed object.
+`~channel()` clears its liveness flag **before** calling `close()`, and the order is load-bearing: `close()` only *schedules* the resumes, so by the time they run the channel is gone and every awaiter must be able to answer from its own state alone (`channel.h:136-142`). A parked `recv` then returns `nullopt`, a parked `send` throws, a parked `send_for` returns `false` — the same answers as a plain close, reached without touching the freed object.
 
-`send_for` also has a **move-only caveat the header documents explicitly** above `send_for` (`channel.h:708`): its slow path stores the pending value in a `std::any`, so for a `T` that is not copy-constructible the timed path can only ever resolve as a timeout. Use a copyable payload, or `send()` with an outer `with_deadline`.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:131 (capacity default 0), :302 (send), :410 (recv), :608 (recv_for), :708 (send_for), :420/:473 (try_send/try_recv), :490 (close), :915 (make_channel), :1092 (make_pipeline), :1016/:1039/:1061 (transform/filter/collect) -->
+`send_for` also has a **move-only caveat the header documents explicitly** above `send_for` (`channel.h:707`): its slow path stores the pending value in a `std::any`, so for a `T` that is not copy-constructible the timed path can only ever resolve as a timeout. Use a copyable payload, or `send()` with an outer `with_deadline`.
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:130 (capacity default 0), :301 (send), :409 (recv), :607 (recv_for), :707 (send_for), :419/:472 (try_send/try_recv), :489 (close), :914 (make_channel), :1091 (make_pipeline), :1015/:1038/:1060 (transform/filter/collect) -->
 
 ### `select` — first ready channel wins
 
@@ -503,13 +503,13 @@ if (res.index == 0)      use(res.get<int>());
 else if (!res.closed)    use(res.get<std::string>());
 ```
 
-`select(...)` returns `select_result { size_t index; bool closed; std::any value; }`: `index` is the 0-based channel that won, `closed` is true when that channel was closed (the value is then empty), and `get<T>()` casts the received value. The immediate pass checks every channel for **data before checking any for closure**, deliberately, so a closed channel in the set cannot starve a live one (`channel.h:1167-1191`).
+`select(...)` returns `select_result { size_t index; bool closed; std::any value; }`: `index` is the 0-based channel that won, `closed` is true when that channel was closed (the value is then empty), and `get<T>()` casts the received value. The immediate pass checks every channel for **data before checking any for closure**, deliberately, so a closed channel in the set cannot starve a live one (`channel.h:1166-1190`).
 
-One asymmetry to know before you compose `select` with anything that can abandon it: a `select` that resolved *with a value* and is then destroyed before it resumes — a `when_any` loser, a cancelled scope — **drops that value** (`channel.h:1218-1230`). `recv()` and `recv_for()` re-buffer theirs instead (`channel.h:349-351`, `:653-655`); `select` cannot, because by then the channels it was watching may already be gone and the only thing it still holds is its own refcounted state.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:1139 (select_result), :1267 (select variadic), :1343 (select vector) -->
+One asymmetry to know before you compose `select` with anything that can abandon it: a `select` that resolved *with a value* and is then destroyed before it resumes — a `when_any` loser, a cancelled scope — **drops that value** (`channel.h:1217-1229`). `recv()` and `recv_for()` re-buffer theirs instead (`channel.h:348-350`, `:652-654`); `select` cannot, because by then the channels it was watching may already be gone and the only thing it still holds is its own refcounted state.
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:1138 (select_result), :1266 (select variadic), :1342 (select vector) -->
 
 > A `channel<T>` is single-thread only. Its destructor clears an internal liveness flag *before* closing, so a parked sender or receiver whose frame is torn down does not touch freed channel memory. `channel_range` (and `async_stream::from_channel`) drain non-blocking and stop at the first empty slot — use [`async_stream`](#async-streams) for true async iteration, and prefer `from_channel_shared` to avoid the borrowed-reference lifetime trap.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:137-143 (dtor clears _alive before close), :923-926 (channel_range does not suspend, Factbook); stream.h:98/:110 -->
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:136-142 (dtor clears _alive before close), :922-925 (channel_range does not suspend, Factbook); stream.h:98/:110 -->
 
 ## Structured concurrency: `coroutine_scope`
 
