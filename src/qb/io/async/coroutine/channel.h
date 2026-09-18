@@ -29,14 +29,13 @@
 // NOTE: No <mutex> — the channel is used exclusively within a single qb-io
 // thread under the cooperative scheduler. "Multi-Producer" here means multiple
 // coroutines; they are all on the same thread and never run concurrently.
+#include <qb/system/container/growable_ring.h>
 #include <qb/system/time.h> // qb::duration
 #include <any>              // std::any / std::any_cast — the type-erased slot in every waiter
 #include <chrono>
-#include <deque>
 #include <exception>
 #include <memory>
 #include <optional>
-#include <queue>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -214,7 +213,7 @@ public:
             }
             // 3. Buffer
             if (ch._buffer.size() < ch._capacity) {
-                ch._buffer.push(std::move(value));
+                ch._buffer.push_back(std::move(value));
                 _completed = true;
                 return true;
             }
@@ -246,7 +245,7 @@ public:
                 return;
             }
             if (ch._buffer.size() < ch._capacity) {
-                ch._buffer.push(std::move(value));
+                ch._buffer.push_back(std::move(value));
                 _completed = true;
                 schedule_via_current(h);
             } else {
@@ -284,7 +283,7 @@ public:
                     if (ch.offer_to_select_waiter(std::move(value)))
                         _completed = true;
                     if (!_completed) {
-                        ch._buffer.push(std::move(value));
+                        ch._buffer.push_back(std::move(value));
                         _completed = true;
                     }
                 }
@@ -348,14 +347,14 @@ public:
             // Not in the queue ⇒ a sender/buffer-drain already handed us a value. Reclaimed before
             // consuming it → return it to the channel so the message is not lost.
             if (!_resumed && _result.has_value())
-                ch._buffer.push(std::move(*_result));
+                ch._buffer.push_back(std::move(*_result));
         }
 
         [[nodiscard]] bool
         await_ready() {
             if (!ch._buffer.empty()) {
                 _result = std::move(ch._buffer.front());
-                ch._buffer.pop();
+                ch._buffer.pop_front();
                 ch.wake_one_sender();
                 return true;
             }
@@ -368,7 +367,7 @@ public:
         await_suspend(std::coroutine_handle<> h) {
             if (!ch._buffer.empty()) {
                 _result = std::move(ch._buffer.front());
-                ch._buffer.pop();
+                ch._buffer.pop_front();
                 ch.wake_one_sender();
                 schedule_via_current(h);
             } else if (ch._closed) {
@@ -393,7 +392,7 @@ public:
             // If woken by close() while data is still in the buffer, drain it.
             if (!_result && !ch._buffer.empty()) {
                 _result = std::move(ch._buffer.front());
-                ch._buffer.pop();
+                ch._buffer.pop_front();
                 ch.wake_one_sender();
             }
             return std::move(_result);
@@ -433,7 +432,7 @@ public:
         if (offer_to_select_waiter(value))
             return true;
         if (_buffer.size() < _capacity) {
-            _buffer.push(value);
+            _buffer.push_back(value);
             return true;
         }
         return false;
@@ -459,7 +458,7 @@ public:
         if (offer_to_select_waiter(std::move(value)))
             return true;
         if (_buffer.size() < _capacity) {
-            _buffer.push(std::move(value));
+            _buffer.push_back(std::move(value));
             return true;
         }
         return false;
@@ -473,7 +472,7 @@ public:
     try_recv() {
         if (!_buffer.empty()) {
             T value = std::move(_buffer.front());
-            _buffer.pop();
+            _buffer.pop_front();
             wake_one_sender();
             return value;
         }
@@ -543,7 +542,7 @@ public:
         // Fast path: value already in buffer
         if (!_buffer.empty()) {
             T val = std::move(_buffer.front());
-            _buffer.pop();
+            _buffer.pop_front();
             wake_one_sender();
             state->resolve(idx, std::any(std::move(val)));
             return;
@@ -652,7 +651,7 @@ public:
                 // `offer_to_select_waiter` — so the branch is provably dead, not merely untaken.
                 if constexpr (std::is_copy_constructible_v<T>) {
                     if (!_resumed && state && _ch_alive && *_ch_alive && state->winner != 1 && !state->closed && state->value.has_value())
-                        ch._buffer.push(std::any_cast<T>(std::move(state->value)));
+                        ch._buffer.push_back(std::any_cast<T>(std::move(state->value)));
                 }
             }
 
@@ -792,7 +791,7 @@ public:
                 // Hand off to the first non-stale select waiter (resolve() schedules its outer).
                 if (ch.offer_to_select_waiter(std::move(val)))
                     return true;
-                ch._buffer.push(std::move(val));
+                ch._buffer.push_back(std::move(val));
                 return true;
             }
         };
@@ -887,10 +886,10 @@ private:
         }
     }
 
-    std::queue<T>                   _buffer;
-    std::deque<send_waiter_entry>   _send_waiters;
-    std::deque<recv_waiter_entry>   _recv_waiters;
-    std::deque<select_waiter_entry> _select_waiters;
+    qb::growable_ring<T>                   _buffer;
+    qb::growable_ring<send_waiter_entry>   _send_waiters;
+    qb::growable_ring<recv_waiter_entry>   _recv_waiters;
+    qb::growable_ring<select_waiter_entry> _select_waiters;
     bool                            _closed = false;
     // Liveness token, set false by ~channel. close() resumes parked waiters via the
     // scheduler (deferred), and if the channel owner frees the channel before that

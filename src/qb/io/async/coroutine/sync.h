@@ -28,6 +28,7 @@
 #include "cancellation.h" // cancellation_token / cancelled_error (cancellable acquire)
 #include "task.h"
 #include "utils.h"
+#include <qb/system/container/growable_ring.h>
 // NOTE: No <mutex> needed — all primitives below are used exclusively within
 // a single qb-io thread whose coroutines are cooperatively scheduled.
 // Only one coroutine runs at a time; a suspension point (co_await) is the only
@@ -35,7 +36,6 @@
 // without any OS-level lock. Adding std::mutex would only add overhead with
 // zero benefit.
 #include <cassert>
-#include <deque>
 #include <memory>
 
 namespace qb::io::async {
@@ -378,9 +378,9 @@ private:
     /// Retract a still-queued waiter (cancelled before being granted). O(n) over the (tiny) queue.
     void
     remove_waiter(waiter_node *n) noexcept {
-        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
-            if (*it == n) {
-                _waiters.erase(it);
+        for (std::size_t i = 0; i < _waiters.size(); ++i) {
+            if (_waiters[i] == n) {
+                _waiters.erase_at(i);
                 return;
             }
         }
@@ -396,11 +396,11 @@ private:
         return _alive;
     }
 
-    size_t                    _permits;
-    size_t                    _available;
-    size_t                    _held = 0; /**< Permits currently held by acquirers (over-release guard). */
-    std::deque<waiter_node *> _waiters;
-    std::shared_ptr<bool>     _alive; ///< lazily allocated on first park; set false in dtor
+    size_t                           _permits;
+    size_t                           _available;
+    size_t                           _held = 0; /**< Permits currently held by acquirers (over-release guard). */
+    qb::growable_ring<waiter_node *> _waiters;
+    std::shared_ptr<bool>            _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================
@@ -613,9 +613,9 @@ private:
     ///         the queue (already woken/handed the lock by unlock(), or already resumed).
     bool
     remove_parked(std::coroutine_handle<> h) noexcept {
-        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
-            if (*it == h) {
-                _waiters.erase(it);
+        for (std::size_t i = 0; i < _waiters.size(); ++i) {
+            if (_waiters[i] == h) {
+                _waiters.erase_at(i);
                 return true;
             }
         }
@@ -631,9 +631,9 @@ private:
         return _alive;
     }
 
-    bool                                _locked = false;
-    std::deque<std::coroutine_handle<>> _waiters;
-    std::shared_ptr<bool>               _alive; ///< lazily allocated on first park; set false in dtor
+    bool                                       _locked = false;
+    qb::growable_ring<std::coroutine_handle<>> _waiters;
+    std::shared_ptr<bool>                      _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================
@@ -907,10 +907,10 @@ private:
     /// Retract a still-queued waiter handle from one of the wait lists. O(n), tiny queue.
     /// @return true if found+erased (still parked); false if absent (already woken/admitted, or resumed).
     static bool
-    erase_handle(std::deque<std::coroutine_handle<>> &q, std::coroutine_handle<> h) noexcept {
-        for (auto it = q.begin(); it != q.end(); ++it) {
-            if (*it == h) {
-                q.erase(it);
+    erase_handle(qb::growable_ring<std::coroutine_handle<>> &q, std::coroutine_handle<> h) noexcept {
+        for (std::size_t i = 0; i < q.size(); ++i) {
+            if (q[i] == h) {
+                q.erase_at(i);
                 return true;
             }
         }
@@ -926,11 +926,11 @@ private:
         return _alive;
     }
 
-    bool                                _write_locked = false;
-    size_t                              _readers      = 0;
-    std::deque<std::coroutine_handle<>> _read_waiters;
-    std::deque<std::coroutine_handle<>> _write_waiters;
-    std::shared_ptr<bool>               _alive; ///< lazily allocated on first park; set false in dtor
+    bool                                       _write_locked = false;
+    size_t                                     _readers      = 0;
+    qb::growable_ring<std::coroutine_handle<>> _read_waiters;
+    qb::growable_ring<std::coroutine_handle<>> _write_waiters;
+    std::shared_ptr<bool>                      _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================
@@ -1033,9 +1033,9 @@ private:
     /// Retract a still-queued waiter handle (a reclaimed non-final arrival). O(n), tiny queue.
     void
     erase_handle(std::coroutine_handle<> h) noexcept {
-        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
-            if (*it == h) {
-                _waiters.erase(it);
+        for (std::size_t i = 0; i < _waiters.size(); ++i) {
+            if (_waiters[i] == h) {
+                _waiters.erase(_waiters.begin() + static_cast<std::ptrdiff_t>(i));
                 return;
             }
         }
@@ -1217,9 +1217,9 @@ private:
     /// @return true if found+erased (still parked); false if absent (already woken by set(), or resumed).
     bool
     erase_handle(std::coroutine_handle<> h) noexcept {
-        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
-            if (*it == h) {
-                _waiters.erase(it);
+        for (std::size_t i = 0; i < _waiters.size(); ++i) {
+            if (_waiters[i] == h) {
+                _waiters.erase_at(i);
                 return true;
             }
         }
@@ -1234,10 +1234,10 @@ private:
         return _alive;
     }
 
-    bool                                _signaled;
-    bool                                _auto_reset;
-    std::deque<std::coroutine_handle<>> _waiters;
-    std::shared_ptr<bool>               _alive; ///< lazily allocated on first park; set false in dtor
+    bool                                       _signaled;
+    bool                                       _auto_reset;
+    qb::growable_ring<std::coroutine_handle<>> _waiters;
+    std::shared_ptr<bool>                      _alive; ///< lazily allocated on first park; set false in dtor
 };
 
 // =============================================================================
@@ -1359,9 +1359,9 @@ private:
     /// Retract a still-queued waiter handle (a reclaimed waiter). O(n), tiny queue.
     void
     erase_handle(std::coroutine_handle<> h) noexcept {
-        for (auto it = _waiters.begin(); it != _waiters.end(); ++it) {
-            if (*it == h) {
-                _waiters.erase(it);
+        for (std::size_t i = 0; i < _waiters.size(); ++i) {
+            if (_waiters[i] == h) {
+                _waiters.erase(_waiters.begin() + static_cast<std::ptrdiff_t>(i));
                 return;
             }
         }

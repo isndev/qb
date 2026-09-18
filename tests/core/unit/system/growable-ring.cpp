@@ -8,18 +8,22 @@
  */
 
 /**
- * @file unit/patterns/stream-chunk-ring.cpp
- * @brief `qb::detail::chunk_ring<E>`, the stream's chunk buffer (Huly QB-215): FIFO order across
- *        wrap-around and growth, element lifetimes, slot alignment.
+ * @file unit/system/growable-ring.cpp
+ * @brief `qb::growable_ring<T>` (Huly QB-215), the FIFO behind the stream's chunk buffer, the
+ *        channel's buffer and the coroutine sync waiter lists: FIFO order across wrap-around and
+ *        growth, element lifetimes, slot alignment, the ordered erase.
  *
- * The ring replaced a `std::deque<E>` whose MSVC block holds one element for any type wider than
- * 8 bytes (an allocation per chunk on Windows). Pure container arithmetic, no engine: unit tier.
+ * The ring replaced `std::deque`s whose MSVC block holds one element for any type wider than 8
+ * bytes (an allocation per chunk or entry on Windows). Pure container arithmetic, no engine: unit
+ * tier.
  *   - ORDER: pushes and pops interleaved past the first capacity (8) keep FIFO order through the
  *     wrap-around and through a doubling, with the exact count at every step;
- *   - LIFETIMES: a counting element proves one live object per held chunk, none after `pop_front`,
- *     none after the ring is destroyed with chunks still inside, and that growth MOVES (no copies);
+ *   - LIFETIMES: a counting element proves one live object per held item, none after `pop_front`,
+ *     none after the ring is destroyed with items still inside, and that growth MOVES (no copies);
  *   - ALIGNMENT: a 64-byte-aligned element (the shape of a `qb::Event`) sits at a 64-byte-aligned
- *     address in every slot, before and after growth.
+ *     address in every slot, before and after growth;
+ *   - ERASE: `erase_at` removes one element in the middle and keeps the order of the others,
+ *     across the wrap-around (the cancellation retract of a parked waiter).
  */
 
 #include <gtest/gtest.h>
@@ -48,6 +52,18 @@ struct Counted {
         ++live;
         ++moves;
     }
+    Counted &
+    operator=(const Counted &o) {
+        v = o.v;
+        ++copies;
+        return *this;
+    }
+    Counted &
+    operator=(Counted &&o) noexcept {
+        v = o.v;
+        ++moves;
+        return *this;
+    }
     ~Counted() {
         --live;
     }
@@ -60,8 +76,8 @@ struct alignas(64) Wide {
 
 } // namespace
 
-TEST(ChunkRing, FifoOrderAcrossWrapAroundAndGrowth) {
-    qb::detail::chunk_ring<int> r;
+TEST(GrowableRing, FifoOrderAcrossWrapAroundAndGrowth) {
+    qb::growable_ring<int> r;
     EXPECT_TRUE(r.empty());
     EXPECT_EQ(r.size(), 0u);
     int next_in = 0, next_out = 0;
@@ -93,10 +109,10 @@ TEST(ChunkRing, FifoOrderAcrossWrapAroundAndGrowth) {
     }
 }
 
-TEST(ChunkRing, LifetimesAndMoveOnGrowth) {
+TEST(GrowableRing, LifetimesAndMoveOnGrowth) {
     Counted::live = Counted::copies = Counted::moves = 0;
     {
-        qb::detail::chunk_ring<Counted> r;
+        qb::growable_ring<Counted> r;
         for (int i = 0; i < 8; ++i)
             r.emplace_back(Counted{i}); // temporary moved in, then destroyed: live == held
         EXPECT_EQ(Counted::live, 8);
@@ -120,8 +136,8 @@ TEST(ChunkRing, LifetimesAndMoveOnGrowth) {
     EXPECT_EQ(Counted::copies, 0);
 }
 
-TEST(ChunkRing, SlotsKeepTheElementAlignment) {
-    qb::detail::chunk_ring<Wide> r;
+TEST(GrowableRing, SlotsKeepTheElementAlignment) {
+    qb::growable_ring<Wide> r;
     for (std::uint64_t i = 0; i < 40; ++i) { // 8 -> 16 -> 32 -> 64: three doublings
         r.emplace_back(Wide{i, {}});
         EXPECT_EQ(reinterpret_cast<std::uintptr_t>(&r.front()) % 64, 0u);
@@ -132,4 +148,34 @@ TEST(ChunkRing, SlotsKeepTheElementAlignment) {
         r.pop_front();
     }
     EXPECT_TRUE(r.empty());
+}
+
+TEST(GrowableRing, EraseAtKeepsOrderAcrossWrapAround) {
+    qb::growable_ring<int> r;
+    for (int i = 0; i < 6; ++i)
+        r.emplace_back(int{i});
+    for (int i = 0; i < 4; ++i)
+        r.pop_front(); // head at 4: the next pushes wrap around the 8-slot ring
+    for (int i = 6; i < 11; ++i)
+        r.emplace_back(int{i}); // holds 4 5 6 7 8 9 10
+    ASSERT_EQ(r.size(), 7u);
+    r.erase_at(2);            // drop 6
+    r.erase_at(0);            // drop 4
+    r.erase_at(r.size() - 1); // drop 10
+    std::vector<int> got;
+    while (!r.empty()) {
+        got.push_back(r.front());
+        r.pop_front();
+    }
+    EXPECT_EQ(got, (std::vector<int>{5, 7, 8, 9}));
+    Counted::live = 0;
+    {
+        qb::growable_ring<Counted> c;
+        for (int i = 0; i < 5; ++i)
+            c.emplace_back(Counted{i});
+        c.erase_at(1);
+        EXPECT_EQ(Counted::live, 4) << "erase_at destroys exactly one element";
+        EXPECT_EQ(c[1].v, 2);
+    }
+    EXPECT_EQ(Counted::live, 0);
 }

@@ -56,6 +56,7 @@ qb_add_test(MODULE qb-core TIER unit NAME routing-worker-pool    SOURCES pattern
 # LIFO reuse per class, the large and over-aligned fall-throughs, chunk growth into slab_cache
 # slabs, and the thread-exit teardown that returns the slabs only when nothing is live.
 qb_add_test(MODULE qb-core TIER unit NAME thread-arena SOURCES system/thread-arena.cpp DEPENDS ${PROJECT_NAME})
-# stream-chunk-ring pins the stream chunk buffer that replaced std::deque (QB-215): FIFO order across wrap-around
-# and growth, one live element per held chunk (moved on growth, destroyed on pop and with the ring), 64-byte slots.
-qb_add_test(MODULE qb-core TIER unit NAME stream-chunk-ring SOURCES patterns/stream-chunk-ring.cpp DEPENDS ${PROJECT_NAME})
+# growable-ring pins the FIFO ring that replaced the std::deques of the stream buffer, the channel and the coroutine
+# sync waiter lists (QB-215): order across wrap-around and growth, one live element per held item (moved on growth,
+# destroyed on pop / erase_at / with the ring), 64-byte slots, the ordered erase.
+qb_add_test(MODULE qb-core TIER unit NAME growable-ring SOURCES system/growable-ring.cpp DEPENDS ${PROJECT_NAME})
