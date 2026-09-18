@@ -59,6 +59,29 @@ namespace qb::io::async {
 // when_all - Wait for all coroutines
 // =============================================================================
 
+namespace detail {
+/**
+ * @brief The task behind an awaitable handed to a combinator: a `task<T>` as it is, anything that
+ *        converts to one (the frame-free `qb::ask_operation`, through its `task_type`) converted.
+ * @details `when_all`, `when_any`, `race` and `coro_with_timeout` store, spawn and reclaim their
+ *          branches as tasks; this is the one place that normalisation happens, so a caller writes
+ *          `when_all(qb::ask(...), qb::ask(...))` and pays the wrapper frame only there.
+ */
+template <typename T>
+[[nodiscard]] task<T>
+to_task(task<T> &&t) noexcept {
+    return std::move(t);
+}
+template <typename Op>
+requires requires { typename Op::task_type; }
+[[nodiscard]] typename Op::task_type
+to_task(Op &&op) {
+    return std::move(op); // the conversion operator, an rvalue only
+}
+template <typename T>
+using to_task_t = decltype(detail::to_task(std::declval<T>()));
+} // namespace detail
+
 /**
  * @brief Awaiter that waits for all tasks to complete (variadic version)
  * @tparam Tasks Types of tasks to wait for
@@ -197,7 +220,7 @@ public:
 template <typename... Tasks>
 auto
 when_all(Tasks... tasks) {
-    return when_all_awaiter<Tasks...>(std::move(tasks)...);
+    return when_all_awaiter<detail::to_task_t<Tasks>...>(detail::to_task(std::move(tasks))...);
 }
 
 // when_all(vector<task<T>>): shared state + free function run_one so the index
@@ -556,7 +579,7 @@ public:
 template <typename... Tasks>
 auto
 when_any(Tasks... tasks) {
-    return when_any_awaiter<Tasks...>(std::move(tasks)...);
+    return when_any_awaiter<detail::to_task_t<Tasks>...>(detail::to_task(std::move(tasks))...);
 }
 
 // Vector version: same lifetime rule as when_all_vector — shared state and
@@ -1017,6 +1040,17 @@ public:
 inline auto
 coro_with_timeout(task<void> &&t, qb::duration timeout) {
     return timeout_awaiter<void>(std::move(t), timeout);
+}
+
+/**
+ * @brief `coro_with_timeout` over an awaitable that converts to a task (a `qb::ask_operation`).
+ * @ingroup Coroutine
+ */
+template <typename Op>
+requires requires { typename Op::task_type; }
+auto
+coro_with_timeout(Op &&op, qb::duration timeout) {
+    return coro_with_timeout(detail::to_task(std::move(op)), timeout);
 }
 
 // =============================================================================

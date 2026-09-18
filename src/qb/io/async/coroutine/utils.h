@@ -367,7 +367,7 @@ run_sync(Awaitable &&awaitable)
  *          the copy costs what the spill cost, plus one 64-byte stack copy the optimiser used to forward
  *          when a pattern hands the request to an inner coroutine. GCC and MSVC build parameter copies
  *          as frame members at their own alignment; clang-cl passes them by reference (Windows ABI).
- * @note Every `qb::ask*` pattern calls it on its request. A user coroutine that takes an event by
+ * @note Every `qb::ask*` pattern coroutine calls it on its request. A user coroutine that takes an event by
  *       value and does not assign to it before its first `co_await` should do the same while it has
  *       to build with clang older than 22.
  */

@@ -168,3 +168,7 @@ qb_debug_message("Configured ${CMAKE_CURRENT_SOURCE_DIR} with the tiered test he
 # of addRefActor lifetimes is a burst of arena blocks, the slabs return to the cache when the core
 # stops, an over-aligned or large actor falls through, a class with its own operators keeps them.
 qb_add_test(MODULE qb-core TIER system NAME actor-arena SOURCES engine/actor-arena.cpp DEPENDS ${PROJECT_NAME})
+# request-operation pins the surface of the frame-free `qb::ask` (QB-214): direct await, laziness of a stored
+# operation, the task<E> conversion (the ask_all shape), the variadic combinators and coro_with_timeout over
+# operations (when_any reclaiming a parked loser), the emplace form, the timeout.
+qb_add_test(MODULE qb-core TIER system NAME request-operation SOURCES patterns/request-operation.cpp DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)

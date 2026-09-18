@@ -26,8 +26,12 @@
 #ifndef QB_CORE_PATTERNS_REQUEST_H
 #define QB_CORE_PATTERNS_REQUEST_H
 
+#include <cassert>
 #include <concepts>
+#include <coroutine>
 #include <cstdint>
+#include <optional>
+#include <tuple>
 #include <utility>
 #include <qb/core/Actor.h>
 #include <qb/io/async/coroutine.h>
@@ -78,6 +82,171 @@ template <class Resp>
 using request = Request<Resp>;
 
 /**
+ * @class ask_operation
+ * @ingroup Patterns
+ * @brief What `qb::ask` returns: the exchange as an awaitable that lives in the CALLER's coroutine
+ *        frame — no coroutine frame of its own (Huly QB-214).
+ * @tparam E The exchange event type (an `ask_event_type`).
+ * @details `co_await qb::ask(...)` used to enter a `task<E>` coroutine whose whole body was "build
+ *          the awaiter, stamp, push, `co_await` the awaiter": every ask paid a pooled frame (allocate
+ *          and free), the initial suspend and the symmetric transfer into that frame, a `co_return`
+ *          moving the 64-byte reply into the promise's `variant`, the final suspend and the transfer
+ *          back, and a second move of the reply out of the `variant`. This object IS the exchange —
+ *          the context, the target, the request and the timeout, plus the `ask_awaiter` engaged in
+ *          place by `await_suspend()` — and a prvalue of it is built straight into the awaiting
+ *          frame. Nothing is sent until it is `co_await`ed (the laziness of `task` is kept):
+ *          `await_ready()` is the scope's cancel flag, so a cancelled scope sends nothing and
+ *          `await_resume()` throws `cancelled_error` at once; `await_suspend()` takes the registry
+ *          entry, stamps `correlation_id`, pushes the request and arms the deadline and the cancel
+ *          hook; `await_resume()` hands the reply over with a single move. It converts implicitly to
+ *          `task<E>` (rvalues only) for the shapes that need a task — `task<E> t = qb::ask(...)`,
+ *          `calls.emplace_back(qb::ask(...))` behind `when_all(std::vector<task<E>>)` — and the
+ *          variadic `when_all` / `when_any` / `race` and `coro_with_timeout` take it directly.
+ *          Move-constructible until it is awaited (the registry holds the engaged awaiter by
+ *          address), never copyable.
+ * @see qb::ask, qb::ask_emplace_operation, qb::detail::ask_awaiter
+ */
+template <ask_event_type E>
+class ask_operation {
+    qb::ScopedCoroContext                     _ctx;
+    qb::ActorId                               _target;
+    qb::duration                              _timeout;
+    E                                         _req;
+    std::optional<qb::detail::ask_awaiter<E>> _aw; ///< engaged by `await_suspend()`; address-stable from there
+
+public:
+    using value_type = E;                      ///< what `co_await` yields
+    using task_type  = qb::io::async::task<E>; ///< the task this converts to
+
+    ask_operation(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout)
+        : _ctx(std::move(ctx))
+        , _target(target)
+        , _timeout(timeout)
+        , _req(std::move(req)) {}
+    ask_operation(const ask_operation &)            = delete;
+    ask_operation &operator=(const ask_operation &) = delete;
+    ask_operation &operator=(ask_operation &&)      = delete;
+    /// Movable only while not yet awaited: the registry holds the engaged awaiter by address.
+    ask_operation(ask_operation &&o) noexcept
+        : _ctx(std::move(o._ctx))
+        , _target(o._target)
+        , _timeout(o._timeout)
+        , _req(std::move(o._req)) {
+        assert(!o._aw && "qb::ask: an ask_operation cannot be moved once awaited");
+    }
+
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return _ctx.token().is_cancelled(); // a cancelled scope sends nothing: await_resume() throws
+    }
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        auto &aw            = _aw.emplace(_ctx.id(), _timeout, _ctx.token()); // takes (and binds) the registry entry
+        _req.correlation_id = aw.id;
+        _ctx.template push_to<E>(_target, std::move(_req)); // send to target, source = asker
+        aw.await_suspend(h);                                // deadline + scope cancel hook (or resume at once if cancelled)
+    }
+    E
+    await_resume() {
+        if (!_aw)
+            throw qb::io::async::cancelled_error(); // await_ready() was true: nothing was sent
+        return _aw->await_resume();
+    }
+    /// The `task<E>` form, for a shape that needs a task: the same exchange inside one pooled frame.
+    operator task_type() &&;
+};
+
+/**
+ * @class ask_emplace_operation
+ * @ingroup Patterns
+ * @brief What the emplace `qb::ask<E>(ctx, target, timeout, args...)` returns: `ask_operation` with
+ *        the constructor arguments held instead of a built request — the event is constructed in
+ *        the pipe slot by `await_suspend()`, nothing is copied at all (Huly QB-214).
+ * @tparam E The exchange event type (an `ask_event_type`).
+ * @tparam Args The constructor arguments, held by value (moved in, moved out into the slot).
+ * @see qb::ask, qb::ask_operation
+ */
+template <ask_event_type E, typename... Args>
+class ask_emplace_operation {
+    qb::ScopedCoroContext                     _ctx;
+    qb::ActorId                               _target;
+    qb::duration                              _timeout;
+    std::tuple<Args...>                       _args;
+    std::optional<qb::detail::ask_awaiter<E>> _aw; ///< engaged by `await_suspend()`; address-stable from there
+
+public:
+    using value_type = E;                      ///< what `co_await` yields
+    using task_type  = qb::io::async::task<E>; ///< the task this converts to
+
+    ask_emplace_operation(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout, Args... args)
+        : _ctx(std::move(ctx))
+        , _target(target)
+        , _timeout(timeout)
+        , _args(std::move(args)...) {}
+    ask_emplace_operation(const ask_emplace_operation &)            = delete;
+    ask_emplace_operation &operator=(const ask_emplace_operation &) = delete;
+    ask_emplace_operation &operator=(ask_emplace_operation &&)      = delete;
+    /// Movable only while not yet awaited: the registry holds the engaged awaiter by address.
+    ask_emplace_operation(ask_emplace_operation &&o) noexcept
+        : _ctx(std::move(o._ctx))
+        , _target(o._target)
+        , _timeout(o._timeout)
+        , _args(std::move(o._args)) {
+        assert(!o._aw && "qb::ask: an ask_emplace_operation cannot be moved once awaited");
+    }
+
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return _ctx.token().is_cancelled(); // a cancelled scope sends nothing: await_resume() throws
+    }
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        auto &aw           = _aw.emplace(_ctx.id(), _timeout, _ctx.token()); // takes (and binds) the registry entry
+        E    &req          = std::apply([this](Args &...a) -> E             &{ return _ctx.template push_to<E>(_target, std::move(a)...); },
+                                        _args); // built in the pipe slot
+        req.correlation_id = aw.id;
+        aw.await_suspend(h); // deadline + scope cancel hook (or resume at once if cancelled)
+    }
+    E
+    await_resume() {
+        if (!_aw)
+            throw qb::io::async::cancelled_error(); // await_ready() was true: nothing was sent
+        return _aw->await_resume();
+    }
+    /// The `task<E>` form, for a shape that needs a task: the same exchange inside one pooled frame.
+    operator task_type() &&;
+};
+
+namespace detail {
+/// The `task<E>` behind `ask_operation`'s conversion: one pooled frame around the frame-free exchange.
+template <ask_event_type E>
+[[nodiscard]] qb::io::async::task<E>
+ask_task(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) {
+    qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
+    co_return co_await qb::ask_operation<E>(std::move(ctx), target, std::move(req), timeout);
+}
+/// The `task<E>` behind `ask_emplace_operation`'s conversion.
+template <ask_event_type E, typename... Args>
+[[nodiscard]] qb::io::async::task<E>
+ask_emplace_task(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout, Args... args) {
+    (qb::io::async::pin_frame_copy(args), ...); // QB-213: an over-aligned argument stays at its own alignment
+    co_return co_await qb::ask_emplace_operation<E, Args...>(std::move(ctx), target, timeout, std::move(args)...);
+}
+} // namespace detail
+
+template <ask_event_type E>
+ask_operation<E>::
+operator qb::io::async::task<E>() && {
+    return detail::ask_task<E>(std::move(_ctx), _target, std::move(_req), _timeout);
+}
+template <ask_event_type E, typename... Args>
+ask_emplace_operation<E, Args...>::
+operator qb::io::async::task<E>() && {
+    return std::apply([this](Args &...a) { return detail::ask_emplace_task<E, Args...>(std::move(_ctx), _target, _timeout, std::move(a)...); },
+                      _args);
+}
+
+/**
  * @brief Native request/response: send `req` to `target` and `co_await` the reply.
  * @ingroup Patterns
  * @tparam E The exchange event type (an `ask_event_type`).
@@ -85,7 +254,8 @@ using request = Request<Resp>;
  * @param target The actor to ask.
  * @param req The request event (its response fields are filled by the responder).
  * @param timeout Max time to wait. `<= 0` waits indefinitely (until reply or kill).
- * @return `task<E>` resolving to the response event.
+ * @return An `ask_operation<E>`: `co_await` it for the response event — it lives in your frame, no
+ *         coroutine frame of its own — or let it convert to a `task<E>` where a task is needed.
  * @throws qb::io::async::timeout_error if no reply arrives in time.
  * @throws qb::io::async::cancelled_error if the actor is killed while waiting.
  * @details Correlation, timeout and cancel-on-kill are handled by a single awaiter (no detached
@@ -96,13 +266,9 @@ using request = Request<Resp>;
  * @endcode
  */
 template <ask_event_type E>
-[[nodiscard]] qb::io::async::task<E>
+[[nodiscard]] ask_operation<E>
 ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) {
-    qb::io::async::pin_frame_copy(req);                            // QB-213: the copy stays at its own alignment on clang < 22
-    qb::detail::ask_awaiter<E> aw{ctx.id(), timeout, ctx.token()}; // takes (and binds) the registry entry; its dtor gives it back
-    req.correlation_id = aw.id;
-    ctx.template push_to<E>(target, std::move(req)); // send to target, source = asker
-    co_return co_await aw;
+    return ask_operation<E>(std::move(ctx), target, std::move(req), timeout); // a prvalue: built in the caller's frame
 }
 
 /**
@@ -112,17 +278,17 @@ ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) 
  * @tparam E The exchange event type (an `ask_event_type`). Explicit — it cannot be deduced,
  *           which is also what keeps this overload out of every existing `qb::ask(ctx, target,
  *           E{...}, timeout)` call.
- * @tparam Args Constructor arguments of `E`, taken BY VALUE and moved into the event: a `task`
- *              is lazy, so a reference parameter here would name the caller's temporaries at a
- *              moment they may already be gone.
+ * @tparam Args Constructor arguments of `E`, taken BY VALUE and moved into the event: the
+ *              operation is lazy, so a reference parameter here would name the caller's
+ *              temporaries at a moment they may already be gone.
  * @param ctx The coroutine context.
  * @param target The actor to ask.
  * @param timeout Max time to wait. `<= 0` waits indefinitely (until reply or kill).
  * @param args Forwarded to `E`'s constructor.
- * @return `task<E>` resolving to the response event — identical contract to the by-value form.
+ * @return An `ask_emplace_operation<E, Args...>` — identical contract to the by-value form.
  * @details Every `qb::Event` is cache-line aligned, so the by-value form moves a ≥ 64-byte
- *          object three times before it reaches the pipe — the caller's temporary, the ABI copy
- *          on the stack, the coroutine frame — and the FIRST of those copies reads back, with
+ *          object twice before it reaches the pipe — the caller's temporary into the operation,
+ *          the operation into the pipe slot — and the FIRST of those copies reads back, with
  *          16-byte loads, header fields the constructor has just written with narrow stores: a
  *          store-forwarding stall on every ask, on top of the copies. This form writes each
  *          field exactly once, in place, and touches no temporary at all. Prefer it whenever
@@ -133,12 +299,9 @@ ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration timeout) 
  * @endcode
  */
 template <ask_event_type E, typename... Args>
-[[nodiscard]] qb::io::async::task<E>
+[[nodiscard]] ask_emplace_operation<E, Args...>
 ask(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout, Args... args) {
-    qb::detail::ask_awaiter<E> aw{ctx.id(), timeout, ctx.token()}; // takes (and binds) the registry entry; its dtor gives it back
-    E                         &req = ctx.template push_to<E>(target, std::move(args)...); // built in the pipe slot
-    req.correlation_id             = aw.id;
-    co_return co_await aw;
+    return ask_emplace_operation<E, Args...>(std::move(ctx), target, timeout, std::move(args)...); // a prvalue: built in the caller's frame
 }
 
 /**
