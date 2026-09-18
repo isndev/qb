@@ -34,8 +34,8 @@
 
 #include <concepts>
 #include <cstdint>
-#include <deque>
 #include <memory>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -102,9 +102,93 @@ namespace detail {
  *          never sets `slot.done`, so every chunk keeps arriving until the stream deregisters.
  *          Single-producer/single-consumer, single-thread: no locking.
  */
+/**
+ * @class chunk_ring
+ * @ingroup Patterns
+ * @brief The stream's chunk buffer: a growable single-consumer FIFO over storage aligned for `E`,
+ *        doubled up to the stream's capacity -- one allocation per doubling, none per chunk
+ *        (Huly QB-215).
+ * @details It replaces a `std::deque<E>`. libstdc++ packs 512 bytes per deque block (eight 64-byte
+ *          events); MSVC's STL packs ONE element per block for any type wider than 8 bytes, so each
+ *          chunk cost a heap allocation and a free on Windows -- the ask-cost probe's `stream` mode
+ *          measured 69 ns per chunk there against 31 for a bare push, while Linux sat at 24 vs 24.
+ *          Chunks are held by value; growth moves them (an event is trivially relocatable by
+ *          contract and copyable by `stream_event_type`); what is still held when the stream goes
+ *          is destroyed with it. Deque-shaped names, so `stream_state` reads as before.
+ */
+template <class E>
+class chunk_ring {
+    E          *_buf  = nullptr;
+    std::size_t _cap  = 0; ///< a power of two; 0 until the first chunk
+    std::size_t _head = 0;
+    std::size_t _size = 0;
+
+    static E *
+    allocate(std::size_t n) {
+        return static_cast<E *>(::operator new(n * sizeof(E), std::align_val_t{alignof(E)}));
+    }
+    static void
+    deallocate(E *p) noexcept {
+        ::operator delete(p, std::align_val_t{alignof(E)}); // unsized: the -fno-sized-deallocation axis
+    }
+    void
+    grow() {
+        const std::size_t ncap = _cap ? _cap * 2 : 8;
+        E                *nb   = allocate(ncap);
+        for (std::size_t i = 0; i < _size; ++i) {
+            E *src = _buf + ((_head + i) & (_cap - 1));
+            std::construct_at(nb + i, std::move(*src));
+            std::destroy_at(src);
+        }
+        deallocate(_buf);
+        _buf  = nb;
+        _cap  = ncap;
+        _head = 0;
+    }
+
+public:
+    chunk_ring()                              = default;
+    chunk_ring(const chunk_ring &)            = delete;
+    chunk_ring &operator=(const chunk_ring &) = delete;
+    ~chunk_ring() {
+        clear();
+        deallocate(_buf);
+    }
+    [[nodiscard]] bool
+    empty() const noexcept {
+        return _size == 0;
+    }
+    [[nodiscard]] std::size_t
+    size() const noexcept {
+        return _size;
+    }
+    [[nodiscard]] E &
+    front() noexcept {
+        return _buf[_head]; // callers check empty() first
+    }
+    void
+    emplace_back(E &&e) {
+        if (_size == _cap)
+            grow();
+        std::construct_at(_buf + ((_head + _size) & (_cap - 1)), std::move(e));
+        ++_size;
+    }
+    void
+    pop_front() noexcept {
+        std::destroy_at(_buf + _head);
+        _head = (_head + 1) & (_cap - 1);
+        --_size;
+    }
+    void
+    clear() noexcept {
+        while (_size)
+            pop_front();
+    }
+};
+
 template <class E>
 struct stream_state {
-    std::deque<E>                     queue;           ///< chunks awaiting consumption (bounded by `cap`)
+    chunk_ring<E>                     queue;           ///< chunks awaiting consumption (bounded by `cap`)
     std::size_t                       cap;             ///< max buffered chunks before overflow
     bool                              done    = false; ///< end_stream received (or terminal overflow)
     bool                              dropped = false; ///< a chunk overflowed the buffer
