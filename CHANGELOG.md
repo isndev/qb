@@ -8,6 +8,36 @@ policy.
 ## [Unreleased]
 
 ### Changed
+- **`qb::ask` no longer allocates a coroutine frame: it returns an awaitable that lives in the
+  awaiting frame (Huly QB-214, the "ask frame" loss point of QB-212).** `co_await qb::ask(...)`
+  used to enter a `task<E>` whose whole body was "build the awaiter, stamp, push, `co_await` it": a
+  pooled frame allocated and freed per ask, the initial suspend and the transfer into it, a
+  `co_return` moving the 64-byte reply into the promise's `variant`, the final suspend and the
+  transfer back, a second move out of the `variant`. Both forms of `qb::ask` now return the
+  exchange itself as an awaitable -- `qb::ask_operation<E>`, `qb::ask_emplace_operation<E, Args...>`
+  -- a prvalue built into the caller's frame that holds the context, the target, the request (or
+  the constructor arguments) and the timeout, engages the `ask_awaiter` in place at
+  `await_suspend()` and hands the reply over with one move. Nothing is sent until it is awaited
+  (the laziness of `task` is kept) and a cancelled scope sends nothing, throwing `cancelled_error`
+  at once. Source-compatible: the operation converts implicitly to `task<E>` (rvalues), so
+  `task<E> t = qb::ask(...)` and `calls.emplace_back(qb::ask(...))` behind
+  `when_all(std::vector<task<E>>)` keep compiling, and the variadic `when_all` / `when_any` / `race`
+  and `coro_with_timeout` take it directly (a `detail::to_task` normalisation); only code that
+  names the return type as exactly `task<E>` in a concept or a `decltype` sees the change.
+  Measured control `7296ac8d` vs candidate, one quiet session per host, same-length executable
+  paths: the ask-cost probe's round trip 45.2 -> 35.6 ns on WSL2 g++-14 (the ask mechanics above
+  a bare push/reply 21.5 -> 12.4 ns, -43 %) and 64.0 -> 48.5 ns on Windows/MSVC 19.51
+  (33 -> 16 ns above push, -51 %); qb-vs-others `savina/bank-transaction` 136 -> 97 ns
+  per unit 1c-spin (-29 %), 141 -> 99 1c-park (-30 %), 82 -> 73 2c-spin (-12 %), 84 -> 73 2c-park
+  (-12 %) on WSL2 and 229 -> 161 (-30 %), 232 -> 163 (-30 %), 142 -> 106 (-25 %), 143 -> 109
+  (-24 %) on Windows, 12 interleaved launches per cell, every distribution disjoint; `dev/bench`
+  ask-roundtrip same-core 5.5 -> 5.1 ms, cross-core 14.5 -> 14.3; the ask-free anchors and every
+  ask-free cell that moved in a grid pass re-censused flat on both hosts. The bank-transaction
+  harness itself detected the emplace form through a concept keyed on the exact `task<Deposit>`
+  return type and, with the candidate, fell back silently to the by-value form wrapped in a task
+  (+17 % on every config): it now detects by callability and returns what `qb::ask` returns -- the
+  very concept shape the documentation now warns against. `request-operation` pins every shape of
+  the new type against the running engine.
 - **The actor object lives in a per-thread size-class arena (Huly QB-212, point 1).** After the
   3.2 registry work the actor object's own `new` / `delete` was the last heap traffic of an actor
   lifetime -- exactly one `malloc` per actor, counted -- and on qb-vs-others' `savina/fib` (57 312
@@ -775,8 +805,9 @@ policy.
   costs what the spill cost plus, where a pattern hands the request to an inner coroutine, one 64-byte
   stack copy the optimiser used to forward (`ask_guarded<Ping>.resume`: four such copies instead of
   three), and the call is a no-op everywhere but clang on a `byval` ABI -- so the optimiser keeps it
-  and the frame lays it out at its declared alignment; the ten request-taking patterns (`ask`, `ask_by`, `ask_retry`, `ask_guarded`,
-  both `ask_all`, `gated_ask`, `ask_any`, `ask_quorum`, `ask_stream`) call it on their request, and
+  and the frame lays it out at its declared alignment; the nine request-taking pattern coroutines (`ask_by`, `ask_retry`, `ask_guarded`,
+  both `ask_all`, `gated_ask`, `ask_any`, `ask_quorum`, `ask_stream`) call it on their request -- `ask`
+  itself stopped being a coroutine in this release (Changed, QB-214) -- and
   the coroutine chapter tells a user coroutine when to do the same. Reproduced on WSL2 Debian 13 with
   clang 19.1.7: `coroutine-resilience` and `init-patterns` SIGSEGV at `-O3` on a 64-byte copy from
   frame offset 360; an IR census of the resilience test found exactly that one frame copy whose

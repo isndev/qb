@@ -342,13 +342,18 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   (`qb::AskEvent`/`qb::Request<Resp>`, responder `qb::answer`, asker `resolve_ask`) over hand-rolled
   pending-state. `qb::ask` is a **free function** and its first parameter is a `qb::ScopedCoroContext` —
   the `ctx` of a `spawn()` body, or `context()` anywhere else. A `CoroContext` from `spawn_detached`
-  does not convert and will not compile. _(patterns/request.h:100)_ When the request is built from
+  does not convert and will not compile. _(patterns/request.h:270)_ When the request is built from
   a handful of values, use the **emplace** form `co_await qb::ask<E>(ctx, target, timeout, args...)`
   (`E` explicit; `ask_by<E>(ctx, target, dl, args...)` likewise): it constructs the event in the
-  pipe slot instead of copying a cache-line-aligned temporary three times. _(patterns/request.h:137,215)_
+  pipe slot instead of copying a cache-line-aligned temporary three times. _(patterns/request.h:303,378)_
   Manual fallback: store pending
   state keyed by request id; schedule a self-sent timeout via `qb::io::async::callback`; clear on
   response or timeout.
+- **`qb::ask` is an awaitable, not a coroutine (3.2)** — `co_await qb::ask(...)` costs no coroutine frame: the
+  operation (`qb::ask_operation<E>`; `qb::ask_emplace_operation<E, Args...>` for the emplace form) is built in your
+  frame, sends nothing until awaited, and converts to `task<E>` where a task is needed (`task<E> t = qb::ask(...)`,
+  `emplace_back` into a `std::vector<task<E>>`; the variadic `when_all` / `when_any` / `race` and `coro_with_timeout`
+  take it as is). Never constrain on the return type being exactly `task<E>`. _(request.h:110, :170; combinators.h:66)_
 - **Patterns library** (`<qb/core/patterns.h>`, header-only over the kernel — narrative home
   `qb/readme/4_qb_core/patterns_library.md`; signatures in qb.llm.api.md "Patterns"; recipes in the
   cookbook) — request/response (`ask`, `answer`, `ask_by`/`deadline`), discovery (`ping`,
@@ -458,7 +463,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
   sanitizers never show. The call emits no instruction and is a no-op on GCC, MSVC and clang-cl; every `qb::ask*` pattern
-  opens with it. _(coroutine/utils.h:376; request.h:101, resilience.h:428)_
+  coroutine opens with it (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:376; request.h:225, resilience.h:428)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core

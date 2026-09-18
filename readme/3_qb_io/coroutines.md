@@ -254,7 +254,7 @@ std::vector<task<int>> work;
 for (int i = 0; i < 8; ++i) work.push_back(compute(i));
 std::vector<int> results = co_await when_all(std::move(work));
 ```
-<!-- src: qb/src/qb/io/async/coroutine/combinators.h:199 (variadic), :309 (vector) -->
+<!-- src: qb/src/qb/io/async/coroutine/combinators.h:222 (variadic), :332 (vector) -->
 
 ### `when_any` / `race` — first to finish wins
 
@@ -270,7 +270,7 @@ co_await race(network_task(), local_cache_task());
 ```
 
 `when_any_result::get<T>()` casts the winning value (and re-throws if the winner threw). On win, the losing branches are **reclaimed (cancelled)** — the scheduler tears down each loser, stopping its timers and dropping its result — so nothing lingers in the background.
-<!-- src: qb/src/qb/io/async/coroutine/combinators.h:321 (when_any_result), :558 (when_any), :1042 (race) -->
+<!-- src: qb/src/qb/io/async/coroutine/combinators.h:344 (when_any_result), :581 (when_any), :1076 (race) -->
 
 ### `coro_with_timeout` — deadline wrapper
 
@@ -285,10 +285,10 @@ try {
 
 `coro_with_timeout(task<T>&&, qb::duration)` returns `T` and **throws `timeout_error`** on timeout — it does not return an `std::optional`. On timeout the inner task keeps running in the background until it finishes naturally; its result is then dropped.
 
-The awaiter arms a **raw self-stopping `ev_timer`** rather than spawning a `co_await sleep()` helper, deliberately: a spawned helper would leave one parked frame plus one armed watcher per in-flight call for the full timeout duration — the `ev_timer` lives in the awaiter's shared state instead (`combinators.h:700-730`). It is non-copyable and non-movable for the same reason — the watcher's `data` pointer refers to the state it owns.
+The awaiter arms a **raw self-stopping `ev_timer`** rather than spawning a `co_await sleep()` helper, deliberately: a spawned helper would leave one parked frame plus one armed watcher per in-flight call for the full timeout duration — the `ev_timer` lives in the awaiter's shared state instead (`combinators.h:723-753`). It is non-copyable and non-movable for the same reason — the watcher's `data` pointer refers to the state it owns.
 
-Note the asymmetry between the timeout path and the teardown path, because it is easy to read as a contradiction. A **timeout** resolves the race in `resolve_timeout()` and leaves the inner task alone (`combinators.h:744-749`). A **destroyed awaiter** — this call was itself a `when_any` loser, or its scope was cancelled — tears the inner task down: it destroys the spawned runner, `forget`s the inner frame and drops it (`combinators.h:811-828`). For a genuinely interruptible deadline, use `with_deadline(op, tp, token)` instead.
-<!-- src: qb/src/qb/io/async/coroutine/combinators.h:883 (coro_with_timeout returns T), :856 (throws timeout_error), :816-818 (inner task is not interrupted) -->
+Note the asymmetry between the timeout path and the teardown path, because it is easy to read as a contradiction. A **timeout** resolves the race in `resolve_timeout()` and leaves the inner task alone (`combinators.h:767-772`). A **destroyed awaiter** — this call was itself a `when_any` loser, or its scope was cancelled — tears the inner task down: it destroys the spawned runner, `forget`s the inner frame and drops it (`combinators.h:834-851`). For a genuinely interruptible deadline, use `with_deadline(op, tp, token)` instead.
+<!-- src: qb/src/qb/io/async/coroutine/combinators.h:906 (coro_with_timeout returns T), :879 (throws timeout_error), :839-841 (inner task is not interrupted) -->
 
 ## Cancellation
 
@@ -354,8 +354,8 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:680`) | connect success, failure, or the connector's own deadline |
 | `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:716`) | the inner coroutine finishing |
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
-| `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:76`, `:409`) | the branches |
-| `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:730`) | whichever comes first |
+| `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:99`, `:432`) | the branches |
+| `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:753`) | whichever comes first |
 | `co_await ch.send(v)` / `ch.recv()` | the channel's own `_send_waiters` / `_recv_waiters` deque — `send_awaiter` (`channel.h:158`), `recv_awaiter` (`:312`) | a counterparty, or `close()` |
 | `co_await ch.send_for(v, d)` / `ch.recv_for(d)` | the same deques plus a spawned `sleep` timer — `timed_recv_awaiter` (`channel.h:618`), `timed_send_awaiter` (`:728`) | a counterparty, `close()`, or the timer |
 | `co_await select(a, b, ...)` | every channel's `_select_waiters`, through `channel_select_awaiter` (`channel.h:1160`) | the first channel with data or a close |
@@ -376,7 +376,7 @@ Every awaiter in the layer therefore carries a destructor that has to survive "d
 - **Watcher-backed awaiters stop the watcher unconditionally, gated only on "was it armed", never on `ev_is_active`.** A one-shot `ev_timer` is auto-stopped by libev the instant it expires — *before* its callback runs — so between expiry and dispatch it is inactive yet still sitting in `pendings[]` with `w->data` pointing at the awaiter. An active-gated stop would skip it and leave a freed watcher queued for invocation (`awaiter.h:407-426`).
 - **They scrub the scheduler's queues, not just the suspended set.** Once a watcher has fired, the frame has already moved out of `suspended_coroutines_` and *into* the ready queue and in-flight set. `unregister_suspended()` alone would leave a dangling handle for the next drain to resume; `unschedule()` → `CoroutineScheduler::forget()` clears all three (`awaiter.h:262-266`; `scheduler.h:537`).
 - **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:122-124`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:475-476`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1137-1138`); a destroyed `ch.recv()` whose sender already wrote through its result slot re-buffers the value so the message is not lost (`channel.h:349-351`).
-- **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:442-449`). Getting that order wrong is a use-after-free, which is why the source spells it out.
+- **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:465-472`). Getting that order wrong is a use-after-free, which is why the source spells it out.
 
 `~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:659-662`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
 
@@ -384,7 +384,7 @@ One consequence for your own code: **a coroutine's locals are destroyed at `co_r
 
 ### One notable inconsistency
 
-`when_any`'s two overloads deliver a winning branch's exception differently. The variadic form **carries** it in `when_any_result::exception` and rethrows only when you call `get<T>()` or `rethrow_if_exception()` (`combinators.h:324`, `:328`, `:347`). The `std::vector<task<T>>` overload **rethrows directly** from `await_resume` (`combinators.h:600-601`). Same situation, opposite delivery.
+`when_any`'s two overloads deliver a winning branch's exception differently. The variadic form **carries** it in `when_any_result::exception` and rethrows only when you call `get<T>()` or `rethrow_if_exception()` (`combinators.h:347`, `:351`, `:370`). The `std::vector<task<T>>` overload **rethrows directly** from `await_resume` (`combinators.h:623-624`). Same situation, opposite delivery.
 
 `with_retry_until` has a similar edge: unlike both `with_retry` overloads it has **no** `try`/`catch`, so a throwing factory propagates immediately with no retry at all, and its `retry_exhausted` carries a null `last_error` (`retry.h:348-382`).
 
@@ -757,7 +757,7 @@ public:
 ```
 
 `CoroContext` exposes exactly five members: `push<Event>(args…)` (send an event to the spawning actor — i.e. to `self`), `push_to<Event>(dest, args…)` (send to a specific `ActorId`), `broadcast<Event>(args…)` (fan out to every actor on all cores, mirroring `Actor::broadcast` — this is how `qb::require` sends its discovery ping), `id()`, and `time()`. Events sent to a now-dead actor are ignored, so the context is safe to use after any suspension. A `spawn` coroutine instead receives a `qb::ScopedCoroContext`, which derives from `CoroContext` and adds cancellation-aware operations (`sleep`, `until_cancelled`, `cancellation_point`, `cancellable`). For request/reply, use the free helper `qb::ask(ctx, target, Event{...}, timeout)` (declared in `qb/core/patterns/request.h`): it sends `Event` to `target` and `co_return`s the same `Event` filled in by the responder's `reply()` — e.g. `auto r = co_await qb::ask(ctx, target, PriceQuery{"BTC"}, 500ms);`. `has_active_coroutines()` reports whether the actor still has spawned coroutines in flight.
-<!-- src: qb/src/qb/core/Actor.h:1591 (class CoroContext), :1611 (push), :1623 (push_to), :1632 (broadcast), :1647 (time), :2123 (ScopedCoroContext), :1431 (spawn), :1394 (spawn_detached); qb/src/qb/core/patterns/request.h:100 (ask free helper); qb/src/qb/core/Actor.cpp:513,534 (__resolve_coro_scheduler__ debug-asserts a TLS scheduler) -->
+<!-- src: qb/src/qb/core/Actor.h:1591 (class CoroContext), :1611 (push), :1623 (push_to), :1632 (broadcast), :1647 (time), :2123 (ScopedCoroContext), :1431 (spawn), :1394 (spawn_detached); qb/src/qb/core/patterns/request.h:270 (ask free helper); qb/src/qb/core/Actor.cpp:513,534 (__resolve_coro_scheduler__ debug-asserts a TLS scheduler) -->
 
 | Rule | Reason | Source |
 |---|---|---|
@@ -832,7 +832,7 @@ Three rules cover every case: function parameters are copied into the coroutine 
 
 A parameter taken by value is copied into the coroutine frame, which is what makes it safe (above). Clang before 22 lays that copy out wrong in one precise case. On an ABI that passes a large trivially copyable argument `byval` — x86-64 System V, so Linux and Intel macOS — when the body never *writes* the parameter, the optimiser folds the copy back into the caller's argument slot, and the coroutine pass then spills that slot into the frame at the natural alignment of the LLVM struct type (8 bytes) while every read keeps the C++ alignment (64 for a `qb::Event`). The first aligned vector copy out of the slot faults whenever the slot's frame offset is not a multiple of the vector width: a crash that appears or vanishes with the frame layout, at `-O2` and above only, and that `-O0`, ASan and UBSan do not show (LLVM issue 159571, fixed by pull request 159765 in LLVM 22, backported to no earlier branch). GCC and MSVC build parameter copies as frame members with their own alignment; under clang-cl the Windows ABI passes such arguments by reference, so the defect cannot trigger there.
 
-`qb::io::async::pin_frame_copy(param)` is the shield: a memory-operand asm barrier that makes the copy a written, escaped object, so the optimiser keeps it and the frame lays it out at its declared alignment. The asm emits no instruction; the copy costs what the spill cost, plus one 64-byte stack copy the optimiser used to forward when a pattern hands the request to an inner coroutine — and the call is a no-op everywhere but clang on a `byval` ABI. Every `qb::ask*` pattern opens with it on its request; a coroutine of yours that takes an event by value and does not assign to it before its first `co_await` should do the same while it has to build with an older clang.
+`qb::io::async::pin_frame_copy(param)` is the shield: a memory-operand asm barrier that makes the copy a written, escaped object, so the optimiser keeps it and the frame lays it out at its declared alignment. The asm emits no instruction; the copy costs what the spill cost, plus one 64-byte stack copy the optimiser used to forward when a pattern hands the request to an inner coroutine — and the call is a no-op everywhere but clang on a `byval` ABI. Every `qb::ask*` pattern coroutine opens with it on its request (`qb::ask` itself is an awaitable, not a coroutine, since 3.2); a coroutine of yours that takes an event by value and does not assign to it before its first `co_await` should do the same while it has to build with an older clang.
 
 ```cpp
 // src: derived from qb/src/qb/io/async/coroutine/utils.h:376 (pin_frame_copy), qb/src/qb/core/patterns/resilience.h:466-467 (ask_guarded)
@@ -845,7 +845,7 @@ qb::io::async::task<void> place(qb::ScopedCoroContext ctx, qb::ActorId book, Ord
     ctx.push_to<Placed>(book, order.amount);       // read after the suspension: the copy the frame holds
 }
 ```
-<!-- src: qb/src/qb/io/async/coroutine/utils.h:376 (pin_frame_copy); qb/src/qb/core/patterns/request.h:101 (pin_frame_copy), resilience.h:428 (pin_frame_copy), :467 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:311 (pin_frame_copy) -->
+<!-- src: qb/src/qb/io/async/coroutine/utils.h:376 (pin_frame_copy); qb/src/qb/core/patterns/request.h:225 (pin_frame_copy), resilience.h:428 (pin_frame_copy), :467 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:311 (pin_frame_copy) -->
 
 ## Debug tracing
 
