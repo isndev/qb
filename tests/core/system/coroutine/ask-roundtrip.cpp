@@ -74,6 +74,13 @@ std::atomic<int>  g_ask_price{-1};
 std::atomic<bool> g_ask_timed_out{false};
 std::atomic<bool> g_ask_cancelled{false};
 std::atomic<bool> g_trader_body_done{false};
+/// A happy-path ask threw -- on a starved host its budget runs out before the reply lands. Every
+/// trader below reaches its shutdown on that path too and the case FAILS with `kAskThrew`, where a
+/// `join()` that never returned used to cost the whole ctest timeout (the Windows `dev-cxx23` gate of
+/// 2026-09-18 spent 600 s in one such case).
+std::atomic<bool>     g_ask_threw{false};
+constexpr const char *kAskThrew = "a happy-path ask threw: the host starved a core past the ask's budget, so the case "
+                                  "cannot judge its invariant -- reported instead of hanging";
 
 void
 reset_flags() {
@@ -81,6 +88,7 @@ reset_flags() {
     g_ask_timed_out    = false;
     g_ask_cancelled    = false;
     g_trader_body_done = false;
+    g_ask_threw        = false;
 }
 } // namespace
 
@@ -105,10 +113,14 @@ public:
         registerEvent<AskDone>(*this);
         auto mkt = _market;
         spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            auto r             = co_await qb::ask(ctx, mkt, Ping{21}, 500ms);
-            g_ask_price        = r.response; // 21 * 2, round-tripped through qb::answer
-            g_trader_body_done = true;
-            ctx.push<AskDone>(); // shut down via the actor's own handler, cleanly
+            try {
+                auto r             = co_await qb::ask(ctx, mkt, Ping{21}, 5s);
+                g_ask_price        = r.response; // 21 * 2, round-tripped through qb::answer
+                g_trader_body_done = true;
+            } catch (const std::exception &) {
+                g_ask_threw = true; // a starved host: the case reports it, the engine still stops
+            }
+            ctx.push<AskDone>(); // shut down via the actor's own handler, cleanly, on every path
         });
         co_return true;
     }
@@ -124,6 +136,7 @@ public:
 };
 
 TEST(ActorCoroutineAsk, AskSucceeds) {
+    g_ask_threw = false;
     reset_flags();
     qb::Main main;
     auto     mkt = main.addActor<Market>(0);
@@ -131,6 +144,7 @@ TEST(ActorCoroutineAsk, AskSucceeds) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_EQ(g_ask_price.load(), 42) << "21 * 2, round-tripped through qb::answer";
     EXPECT_TRUE(g_trader_body_done.load()) << "the asker coroutine must have resolved and run to completion";
 }
@@ -273,6 +287,7 @@ TEST(ActorCoroutineAsk, AskCancelledOnKillCrossCore) {
 //    correlation registry and awaiter are core-local; only request+reply cross.
 // ---------------------------------------------------------------------------
 TEST(ActorCoroutineAsk, AskAcrossCores) {
+    g_ask_threw = false;
     if (std::thread::hardware_concurrency() < 2) {
         GTEST_SKIP() << "requires-multicore: needs >= 2 cores to place asker and responder on distinct cores";
     }
@@ -283,6 +298,7 @@ TEST(ActorCoroutineAsk, AskAcrossCores) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_EQ(g_ask_price.load(), 42) << "round-tripped across cores: 21 * 2";
     EXPECT_TRUE(g_trader_body_done.load()) << "the body coroutine ran to completion across cores";
 }
@@ -306,13 +322,17 @@ public:
         registerEvent<AskDone>(*this);
         auto mkt = _market;
         spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            int sum = 0;
-            for (int i = 1; i <= 5; ++i) {
-                auto r = co_await qb::ask(ctx, mkt, Ping{i}, 500ms);
-                sum += r.response; // i * 2
+            try {
+                int sum = 0;
+                for (int i = 1; i <= 5; ++i) {
+                    auto r = co_await qb::ask(ctx, mkt, Ping{i}, 5s);
+                    sum += r.response; // i * 2
+                }
+                g_seq_sum = sum; // 2+4+6+8+10 = 30
+            } catch (const std::exception &) {
+                g_ask_threw = true;
             }
-            g_seq_sum = sum; // 2+4+6+8+10 = 30
-            ctx.push<AskDone>();
+            ctx.push<AskDone>(); // on every path
         });
         co_return true;
     }
@@ -328,6 +348,7 @@ public:
 };
 
 TEST(ActorCoroutineAsk, SequentialCrossCoreAsks) {
+    g_ask_threw = false;
     if (std::thread::hardware_concurrency() < 2) {
         GTEST_SKIP() << "requires-multicore: needs >= 2 cores to place asker and responder on distinct cores";
     }
@@ -338,6 +359,7 @@ TEST(ActorCoroutineAsk, SequentialCrossCoreAsks) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_EQ(g_seq_sum.load(), 30) << "five back-to-back asks: 2+4+6+8+10";
 }
 
@@ -362,9 +384,13 @@ public:
         auto mkt = _market;
         for (int i = 0; i < 3; ++i) {
             spawn([mkt, i](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-                auto r     = co_await qb::ask(ctx, mkt, Ping{(i + 1) * 10}, 500ms);
-                g_multi[i] = r.response;
-                if (g_multi_done.fetch_add(1) == 2)
+                try {
+                    auto r     = co_await qb::ask(ctx, mkt, Ping{(i + 1) * 10}, 5s);
+                    g_multi[i] = r.response;
+                } catch (const std::exception &) {
+                    g_ask_threw = true;
+                }
+                if (g_multi_done.fetch_add(1) == 2) // the third arrival stops the engine, on every path
                     qb::Main::stop();
             });
         }
@@ -377,6 +403,7 @@ public:
 };
 
 TEST(ActorCoroutineAsk, ConcurrentAsksResolveDistinctly) {
+    g_ask_threw = false;
     g_multi[0] = g_multi[1] = g_multi[2] = 0;
     g_multi_done                         = 0;
     qb::Main main;
@@ -385,6 +412,7 @@ TEST(ActorCoroutineAsk, ConcurrentAsksResolveDistinctly) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_EQ(g_multi[0].load(), 20) << "ask(10) → 20";
     EXPECT_EQ(g_multi[1].load(), 40) << "ask(20) → 40";
     EXPECT_EQ(g_multi[2].load(), 60) << "ask(30) → 60";
@@ -642,11 +670,15 @@ public:
         registerEvent<Echo>(*this);
         auto to = _to;
         spawn([to](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            Echo req;
-            req.in    = std::make_shared<std::string>("hello");
-            auto r    = co_await qb::ask(ctx, to, std::move(req), 500ms);
-            g_echo_ok = (r.out && *r.out == "reply:hello");
-            qb::Main::stop();
+            try {
+                Echo req;
+                req.in    = std::make_shared<std::string>("hello");
+                auto r    = co_await qb::ask(ctx, to, std::move(req), 5s);
+                g_echo_ok = (r.out && *r.out == "reply:hello");
+            } catch (const std::exception &) {
+                g_ask_threw = true;
+            }
+            qb::Main::stop(); // on every path
         });
         co_return true;
     }
@@ -657,13 +689,15 @@ public:
 };
 
 TEST(ActorCoroutineAsk, AskRoundTripsNonTrivialPayload) {
-    g_echo_ok = false;
+    g_ask_threw = false;
+    g_echo_ok   = false;
     qb::Main main;
     auto     echoer = main.addActor<StringEchoer>(0);
     main.addActor<EchoClient>(0, echoer);
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_TRUE(g_echo_ok.load()) << "an owning shared_ptr<string> payload must round-trip intact";
 }
 
@@ -709,10 +743,14 @@ public:
         registerEvent<AskDone>(*this);
         auto mkt = _market;
         spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            auto r          = co_await qb::ask<Ping>(ctx, mkt, 500ms, 21); // Ping(21), in place
-            g_emplace_price = r.response;                                  // 21 * 2
-            g_emplace_done  = true;
-            ctx.push<AskDone>();
+            try {
+                auto r          = co_await qb::ask<Ping>(ctx, mkt, 5s, 21); // Ping(21), in place
+                g_emplace_price = r.response;                               // 21 * 2
+                g_emplace_done  = true;
+            } catch (const std::exception &) {
+                g_ask_threw = true;
+            }
+            ctx.push<AskDone>(); // on every path
         });
         co_return true;
     }
@@ -728,6 +766,7 @@ public:
 };
 
 TEST(ActorCoroutineAsk, EmplaceAskSucceeds) {
+    g_ask_threw = false;
     reset_emplace_flags();
     qb::Main main;
     auto     mkt = main.addActor<Market>(0);
@@ -735,11 +774,13 @@ TEST(ActorCoroutineAsk, EmplaceAskSucceeds) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_EQ(g_emplace_price.load(), 42) << "Ping(21) built in the pipe slot, answered as 21 * 2";
     EXPECT_TRUE(g_emplace_done.load());
 }
 
 TEST(ActorCoroutineAsk, EmplaceAskAcrossCores) {
+    g_ask_threw = false;
     if (std::thread::hardware_concurrency() < 2)
         GTEST_SKIP() << "requires-multicore";
     reset_emplace_flags();
@@ -749,6 +790,7 @@ TEST(ActorCoroutineAsk, EmplaceAskAcrossCores) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_EQ(g_emplace_price.load(), 42) << "the in-place request crossed the pipe with its correlation id";
     EXPECT_TRUE(g_emplace_done.load());
 }
@@ -984,13 +1026,17 @@ public:
         registerEvent<AskDone>(*this);
         auto mkt = _market;
         spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            for (int i = 1; i <= 3; ++i) {
-                auto r = co_await qb::ask(ctx, mkt, Ping{i}, 500ms);
-                if (r.response == i * 2)
-                    ++g_inline_steps; // the step the routing handler must already see
+            try {
+                for (int i = 1; i <= 3; ++i) {
+                    auto r = co_await qb::ask(ctx, mkt, Ping{i}, 5s);
+                    if (r.response == i * 2)
+                        ++g_inline_steps; // the step the routing handler must already see
+                }
+                g_inline_done = true;
+            } catch (const std::exception &) {
+                g_ask_threw = true;
             }
-            g_inline_done = true;
-            ctx.push<AskDone>();
+            ctx.push<AskDone>(); // on every path
         });
         co_return true;
     }
@@ -1011,6 +1057,7 @@ public:
 };
 
 TEST(ActorCoroutineAsk, ReplyResumesTheFrameInsideTheRoutingHandler) {
+    g_ask_threw              = false;
     g_inline_seen_in_handler = 0;
     g_inline_steps           = 0;
     g_inline_done            = false;
@@ -1020,6 +1067,7 @@ TEST(ActorCoroutineAsk, ReplyResumesTheFrameInsideTheRoutingHandler) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_TRUE(g_inline_done.load());
     EXPECT_EQ(g_inline_steps.load(), 3);
     EXPECT_EQ(g_inline_seen_in_handler.load(), 3) << "every reply's continuation must have run before resolve_ask() returned";
@@ -1049,16 +1097,28 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
+        registerEvent<AskDone>(*this); // the exception path only: a starved host must not hang the case
         auto mkt = _market;
         spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             int sum = 0;
-            for (int i = 1; i <= 4; ++i) {
-                auto r = co_await qb::ask(ctx, mkt, Ping{i}, 500ms);
-                sum += r.response;
+            try {
+                for (int i = 1; i <= 4; ++i) {
+                    auto r = co_await qb::ask(ctx, mkt, Ping{i}, 5s);
+                    sum += r.response;
+                }
+            } catch (const std::exception &) {
+                g_ask_threw = true;
+                ctx.push<AskDone>();
+                co_return;
             }
             g_lastkill_sum = sum; // 2+4+6+8 = 20; the frame completes right here, inside on(Ping&)
         });
         co_return true;
+    }
+    void
+    on(const AskDone &) {
+        push<qb::KillEvent>(_market);
+        kill();
     }
     void
     on(Ping &e) {
@@ -1071,6 +1131,7 @@ public:
 };
 
 TEST(ActorCoroutineAsk, LastReplyCompletesTheFrameAndKillsTheActorInTheSamePass) {
+    g_ask_threw    = false;
     g_lastkill_sum = 0;
     qb::Main main;
     auto     mkt = main.addActor<Market>(0);
@@ -1078,5 +1139,6 @@ TEST(ActorCoroutineAsk, LastReplyCompletesTheFrameAndKillsTheActorInTheSamePass)
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_EQ(g_lastkill_sum.load(), 20) << "four asks completed before the kill: 2+4+6+8";
 }
