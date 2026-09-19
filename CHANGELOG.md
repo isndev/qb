@@ -1216,6 +1216,20 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   is reported `N/A` and counted separately — never as a pass.
 
 ### Changed
+- **BREAKING — the `ag_` prefix on the coroutine sequence helpers is gone, with no alias** (recorded
+  2026-09-20, from `qb/io/async/coroutine/generator.h`): `ag_take` / `ag_collect` became `take` /
+  `collect_to_vector` over both generator kinds; the EAGER `ag_map` / `ag_filter` became
+  `map_to_vector` / `filter_to_vector`, while the lazy `async_stream::map` / `filter` keep the plain
+  names.
+- **BREAKING — the mpsc functor drain is `consume_all(func[, scratch, chunk])`, was
+  `dequeue(func, ret, size)`** (recorded 2026-09-20, from `qb/system/lockfree/mpsc.h`): the old
+  spelling read as a bounded sibling of `dequeue(T *, size)` and is not, it drains every producer.
+- **BREAKING — `async_stream::reduce(seed, f)`, was `reduce(f, initial)`, and the accumulator is no
+  longer pinned to the element type** (recorded 2026-09-20, from `qb/io/async/coroutine/stream.h`):
+  it matches the free `reduce(gen, init, reducer)`, `std::accumulate` and `std::ranges::fold_left`.
+- **`qb::unordered_map` / `qb::unordered_set` carry `contains(k)`** (recorded 2026-09-20, from
+  `qb/system/container/unordered_map.h`): a qb addition to the vendored ska fork, which predates
+  C++20 -- the one place the drop-in-for-`std::unordered_map` promise used to fail.
 
 - **`QB_ENABLE_NATIVE_ARCH`'s documented default was the inverse of the code, across the readme
   books, `INSTALL.md`, `README.md` and the `.cursor/` rules and skills.** The option is
