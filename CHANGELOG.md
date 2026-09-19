@@ -119,112 +119,6 @@ policy.
   the kernel or the backend cannot express it) and by qev's `test-loops` (`test_epoll_ns_wait`,
   whose negative control -- the nanosecond path switched off -- fails it at 1058 µs).
 
-### Added
-
-- **An event type wider than the cross-core mailbox ring is refused at compile time (Huly
-  QB-61).** `qb::detail::event_fits_ring<T>` -- the `sizeof`-derived bucket count against
-  `qb::detail::max_deliverable_buckets`, the ring's slot count (1023 buckets, ~64 KiB with the
-  default 64-byte bucket) -- is asserted in `routing_safe_type_id<T>()`, the funnel every enqueue
-  sink reaches, with a message naming the remedy (bulk data behind a pointer member,
-  `Pipe::allocated_push`). Such an event could never be delivered cross-core: the flush disposed
-  it and logged a CRIT, and the message was lost. The runtime drop stays for the trailing bytes
-  of an `allocated_push`, a runtime quantity. `SharedCoreCommunication::MaxRingEvents` and
-  `VirtualCore::kMaxDeliverableBuckets` are that one constant, asserted equal. Both polarities
-  are pinned in `event-field-shadow` (a payload rounding to exactly the ceiling accepted, one
-  byte past it and a 1 MiB blob refused -- sized by the ceiling, never by `sizeof(qb::Event)`,
-  because the Itanium ABI reuses the base's tail padding where MSVC does not), and the
-  event-shadow negative-control battery plants the 1 MiB event at all five entry points.
-- **Abandoned coroutine frames are reported in every build, and counted (Huly QB-84).**
-  `~CoroutineScheduler` deliberately abandons frames still suspended on a watcher or a wait list
-  rather than destroy them (their watchers still reference them); until now the only trace was an
-  `fprintf` behind `#ifndef NDEBUG`. `qb::io::async::report_abandoned_coroutine_frames` -- out of
-  line in `qb/io/logger.cpp`, the placement and policy of the detached-exception report --
-  prints one WARNING line on `qb::io::cerr` and adds to
-  `qb::io::async::abandoned_coroutine_frames_total()`, the process-wide tally an operator or a
-  test reads back once the frames are gone. The lifecycle the framework drives itself
-  (`~listener`, `reset_coro_scheduler()`) runs `destroy_all_suspended()` first and so DESTROYS
-  parked frames rather than abandon them -- pinned in `scheduler-abandoned-frames` beside the
-  directly-owned scheduler the report is for.
-- **clang-cl is a supported Windows toolchain: the `clang-cl` preset, 0 warnings, the suite
-  green (Huly QB-201).** LLVM's Clang behind MSVC's command line, ABI, CRT and STL, and on the
-  same host, tree and CRT it ran qb's dispatch **10–18 % faster than MSVC 19.51** (savina/ping-pong
-  1c 31.6 → 27.4 ns, big −13.6 %, fib −10 %, `pass-cost` k = 1 −9.8 %, `push` −9 %; qb-vs-others
-  `results/desktop-b67osn6-win-msvc/qb-46-clang-cl/`, QB-46 — half of the MSVC/g++ gap is codegen,
-  the other half the platform). `qbCompiler.cmake` recognises it (`CMAKE_CXX_COMPILER_ID` Clang
-  with `CMAKE_CXX_COMPILER_FRONTEND_VARIANT` MSVC) and gives it the MSVC flag set with clang's
-  exemptions: through the GCC/Clang branch it took `-Wall`, which clang-cl reads as `/Wall` =
-  `-Weverything` (17 919 warnings on this tree), plus `-fPIC` / `-fomit-frame-pointer` /
-  `-ffunction-sections` ignored with a warning each; the event loop's strict GNU warning set is
-  left out for the same reason (1 233 more on `ev.c`), its CRT deprecations of `dup2` / `close` /
-  `getenv` declined on the target; googletest's four targets carry the `-Wcharacter-conversion`
-  exemption (gmock did not even compile: its own CMake adds `-WX` under clang-cl). `cmake --preset
-  clang-cl` on Windows; `readme/7_reference/building.md` has the row.
-- **`qb::allocator::segmented_pipe<T>` + `segment_pool<T>`** (`qb/system/allocator/segmented_pipe.h`)
-  — a FIFO of fixed-size segments (256 KB, from a pool the owning `VirtualCore` keeps) that grows
-  by linking a segment behind the tail and never moves what it holds: `allocate_back(n)` is a
-  compare and a cursor add while the tail has room, a range never straddles two segments, a
-  request wider than a segment gets a dedicated exactly-sized one, and the read side walks
-  `front()` / `consume_front()` / `pop_front()` a segment at a time, each popped segment going
-  straight back to the pool. `qb::VirtualPipe` is now this type (was `allocator::pipe<EventBucket>`).
-- **`qb::allocator::slab_cache`** (`qb/system/allocator/slab.h`, `qb/io/slab.cpp`) — the
-  process-wide source of the pool's memory: 2 MB slabs mapped by the platform (`mmap` trimmed to
-  a 2 MB boundary on POSIX, `VirtualAlloc` on Windows), on Linux `madvise(MADV_HUGEPAGE)`d and
-  populated in one `MADV_POPULATE_WRITE` pass (5.14+), carved eight standard segments to a slab,
-  and kept on a free list when a pool gives them back so the next engine or core draws memory
-  that is already mapped and faulted. `trim()` returns the cached slabs to the OS. Cold path
-  only — one acquire per eight segments of growth, never per event.
-- **`CoreInitializer::setIdleSpin()` / `Main::setIdleSpin()`** — how long an idle `latency > 0`
-  core keeps polling before it parks on its mailbox, a time floor measured from its first idle
-  pass (default `kDefaultIdleSpin`, 50 µs; `getIdleSpin()` reads it back). Until now the floor
-  was an event-count credit refilled from the previous pass, which parked a one-event-per-pass
-  workload after two or three empty passes: every hop of a two-core request/response exchange
-  paid an OS park + wake (measured 2–13 µs against ~300 ns of polling). `setIdleSpin(0)` restores
-  the park-on-first-idle-pass behaviour.
-- **`listener::has_work()`** — whether a qb-io `run()` turn has anything to do, read from the
-  loop's own `ev_active_count()` / `ev_pending_count()` plus the deferred queue and the coroutine
-  scheduler's ready list. `VirtualCore` uses it to gate its libev pass; consumers driving a
-  listener with `EVRUN_NOWAIT` get the same gate.
-- **`mpsc::ringbuffer::has_data()`** — does any producer ring hold an item; the predicate of the
-  mailbox park.
-- **`listener::run_once_for(cap)`, `arm_wake()` / `disarm_wake()` / `is_wake_armed()`, `wake()`**
-  — the park half of a qb-io loop: one `ev_run(EVRUN_ONCE)` turn that blocks in the backend poll
-  for at most `cap` (a one-shot timer keeps the loop alive and bounds the block) until a watcher
-  fires or `wake()` — `ev_async_send`, the one libev call safe against a concurrent `ev_run` —
-  lands from another thread. A turn that already has a deferred callback, a ready coroutine or a
-  pending event does not block, because `ev_run` computes its wait from watcher deadlines alone.
-  The embedded qev profile keeps the `async` family for it (`QB_EV_ASYNC_ENABLE 1`; six families
-  compiled out instead of seven — three symbols and 24 bytes of `struct ev_loop`, measured).
-- **Emplace forms of `qb::ask` and `qb::ask_by`** (`qb/core/patterns/request.h`):
-  `co_await qb::ask<Deposit>(ctx, account, 500ms, amount, txn)` constructs the request **in its
-  pipe slot** and writes each field exactly once, where the by-value form built a temporary,
-  moved it into the pipe (a `memcpy` whose first 16-byte load sits on header fields the
-  constructor had just written with narrow stores — a store-forwarding stall on every ask), and
-  then set the correlation id on the copy. `CoroContext::push` / `push_to` now return the built
-  `E&` so the id can be set in place. `ask_by<E>(ctx, target, dl, args...)` is the deadline twin
-  and fails fast on a spent budget without building anything. Measured on savina/bank-transaction
-  (one ask per transfer, Linux/g++-14): `Account::start`'s frame — 21.7 % of the core, the
-  by-value build and its copy — left the top of the profile, and the shape's p50 moved from
-  **9.74 / 9.60 ms** (1c spin/park, `develop` `9d4aa94c` — the base this work branched from,
-  NOT shipped 3.1.0, which measures 14.71 / 14.58 in the same session; the label was corrected
-  after the control was re-measured beside it) to **8.25 / 8.08 ms** before the wire work
-  below. Tests: `ActorCoroutineAsk.EmplaceAsk*` (6).
-- **`cancellation_token::cancel_hook` + `token.link(hook)`** (`qb/io/async/coroutine/cancellation.h`):
-  an intrusive, allocation-free cancellation registration — a `{fire, ctx, prev, next}` node the
-  caller owns, linked into the token's state and unlinked on completion, fired (after being
-  detached) before any `on_cancel` callback. `ask_awaiter` uses it in place of `on_cancel`, whose
-  `std::function` + vector push was one heap allocation per ask and a linear `remove_on_cancel`
-  per completion. `link()` on an already-cancelled token fires inline and returns `false`; a hook
-  may unlink a sibling from inside its own `fire`. Tests: `CancellationToken.Hook*`,
-  `CancellationToken.LinkOn*` (9 new).
-- **`qb::detail::event_wire`** (`qb/core/Event.h`): the event header as one 16-byte unit —
-  `swap_dest_source(e)`, `set_dest(e, dest)` and `copy(dst, src, bytes)`, each composing the
-  header in one register (SSE2, NEON, or two 64-bit words) and storing it **once**, with the
-  liveness bit settled in the same store; `copy` reads the header back as exactly the bytes that
-  store wrote, then moves the tail. Layout assumptions are `static_assert`ed against `qb::Event`
-  itself. Tests: `EventWire.*` (12).
-
-### Changed
-
 - **`ActorHandle::ready_async` is event-driven (Huly QB-62).** The waiting coroutine is resumed by
   the core pass that ends the child's activation -- after the child's stashed events have been
   replayed, so the child is caught up when the parent runs -- instead of polling `ready()`
@@ -817,6 +711,110 @@ policy.
   `cancellation_token`'s state took the same shape: an intrusive non-atomic `refs` in place of
   `shared_ptr`, with explicit copy/move (`CancellationToken.RefcountFollowsCopiesAndMoves`,
   `CancelSurvivesCallbackDroppingLastOtherHandle`).
+
+### Added
+
+- **An event type wider than the cross-core mailbox ring is refused at compile time (Huly
+  QB-61).** `qb::detail::event_fits_ring<T>` -- the `sizeof`-derived bucket count against
+  `qb::detail::max_deliverable_buckets`, the ring's slot count (1023 buckets, ~64 KiB with the
+  default 64-byte bucket) -- is asserted in `routing_safe_type_id<T>()`, the funnel every enqueue
+  sink reaches, with a message naming the remedy (bulk data behind a pointer member,
+  `Pipe::allocated_push`). Such an event could never be delivered cross-core: the flush disposed
+  it and logged a CRIT, and the message was lost. The runtime drop stays for the trailing bytes
+  of an `allocated_push`, a runtime quantity. `SharedCoreCommunication::MaxRingEvents` and
+  `VirtualCore::kMaxDeliverableBuckets` are that one constant, asserted equal. Both polarities
+  are pinned in `event-field-shadow` (a payload rounding to exactly the ceiling accepted, one
+  byte past it and a 1 MiB blob refused -- sized by the ceiling, never by `sizeof(qb::Event)`,
+  because the Itanium ABI reuses the base's tail padding where MSVC does not), and the
+  event-shadow negative-control battery plants the 1 MiB event at all five entry points.
+- **Abandoned coroutine frames are reported in every build, and counted (Huly QB-84).**
+  `~CoroutineScheduler` deliberately abandons frames still suspended on a watcher or a wait list
+  rather than destroy them (their watchers still reference them); until now the only trace was an
+  `fprintf` behind `#ifndef NDEBUG`. `qb::io::async::report_abandoned_coroutine_frames` -- out of
+  line in `qb/io/logger.cpp`, the placement and policy of the detached-exception report --
+  prints one WARNING line on `qb::io::cerr` and adds to
+  `qb::io::async::abandoned_coroutine_frames_total()`, the process-wide tally an operator or a
+  test reads back once the frames are gone. The lifecycle the framework drives itself
+  (`~listener`, `reset_coro_scheduler()`) runs `destroy_all_suspended()` first and so DESTROYS
+  parked frames rather than abandon them -- pinned in `scheduler-abandoned-frames` beside the
+  directly-owned scheduler the report is for.
+- **clang-cl is a supported Windows toolchain: the `clang-cl` preset, 0 warnings, the suite
+  green (Huly QB-201).** LLVM's Clang behind MSVC's command line, ABI, CRT and STL, and on the
+  same host, tree and CRT it ran qb's dispatch **10–18 % faster than MSVC 19.51** (savina/ping-pong
+  1c 31.6 → 27.4 ns, big −13.6 %, fib −10 %, `pass-cost` k = 1 −9.8 %, `push` −9 %; qb-vs-others
+  `results/desktop-b67osn6-win-msvc/qb-46-clang-cl/`, QB-46 — half of the MSVC/g++ gap is codegen,
+  the other half the platform). `qbCompiler.cmake` recognises it (`CMAKE_CXX_COMPILER_ID` Clang
+  with `CMAKE_CXX_COMPILER_FRONTEND_VARIANT` MSVC) and gives it the MSVC flag set with clang's
+  exemptions: through the GCC/Clang branch it took `-Wall`, which clang-cl reads as `/Wall` =
+  `-Weverything` (17 919 warnings on this tree), plus `-fPIC` / `-fomit-frame-pointer` /
+  `-ffunction-sections` ignored with a warning each; the event loop's strict GNU warning set is
+  left out for the same reason (1 233 more on `ev.c`), its CRT deprecations of `dup2` / `close` /
+  `getenv` declined on the target; googletest's four targets carry the `-Wcharacter-conversion`
+  exemption (gmock did not even compile: its own CMake adds `-WX` under clang-cl). `cmake --preset
+  clang-cl` on Windows; `readme/7_reference/building.md` has the row.
+- **`qb::allocator::segmented_pipe<T>` + `segment_pool<T>`** (`qb/system/allocator/segmented_pipe.h`)
+  — a FIFO of fixed-size segments (256 KB, from a pool the owning `VirtualCore` keeps) that grows
+  by linking a segment behind the tail and never moves what it holds: `allocate_back(n)` is a
+  compare and a cursor add while the tail has room, a range never straddles two segments, a
+  request wider than a segment gets a dedicated exactly-sized one, and the read side walks
+  `front()` / `consume_front()` / `pop_front()` a segment at a time, each popped segment going
+  straight back to the pool. `qb::VirtualPipe` is now this type (was `allocator::pipe<EventBucket>`).
+- **`qb::allocator::slab_cache`** (`qb/system/allocator/slab.h`, `qb/io/slab.cpp`) — the
+  process-wide source of the pool's memory: 2 MB slabs mapped by the platform (`mmap` trimmed to
+  a 2 MB boundary on POSIX, `VirtualAlloc` on Windows), on Linux `madvise(MADV_HUGEPAGE)`d and
+  populated in one `MADV_POPULATE_WRITE` pass (5.14+), carved eight standard segments to a slab,
+  and kept on a free list when a pool gives them back so the next engine or core draws memory
+  that is already mapped and faulted. `trim()` returns the cached slabs to the OS. Cold path
+  only — one acquire per eight segments of growth, never per event.
+- **`CoreInitializer::setIdleSpin()` / `Main::setIdleSpin()`** — how long an idle `latency > 0`
+  core keeps polling before it parks on its mailbox, a time floor measured from its first idle
+  pass (default `kDefaultIdleSpin`, 50 µs; `getIdleSpin()` reads it back). Until now the floor
+  was an event-count credit refilled from the previous pass, which parked a one-event-per-pass
+  workload after two or three empty passes: every hop of a two-core request/response exchange
+  paid an OS park + wake (measured 2–13 µs against ~300 ns of polling). `setIdleSpin(0)` restores
+  the park-on-first-idle-pass behaviour.
+- **`listener::has_work()`** — whether a qb-io `run()` turn has anything to do, read from the
+  loop's own `ev_active_count()` / `ev_pending_count()` plus the deferred queue and the coroutine
+  scheduler's ready list. `VirtualCore` uses it to gate its libev pass; consumers driving a
+  listener with `EVRUN_NOWAIT` get the same gate.
+- **`mpsc::ringbuffer::has_data()`** — does any producer ring hold an item; the predicate of the
+  mailbox park.
+- **`listener::run_once_for(cap)`, `arm_wake()` / `disarm_wake()` / `is_wake_armed()`, `wake()`**
+  — the park half of a qb-io loop: one `ev_run(EVRUN_ONCE)` turn that blocks in the backend poll
+  for at most `cap` (a one-shot timer keeps the loop alive and bounds the block) until a watcher
+  fires or `wake()` — `ev_async_send`, the one libev call safe against a concurrent `ev_run` —
+  lands from another thread. A turn that already has a deferred callback, a ready coroutine or a
+  pending event does not block, because `ev_run` computes its wait from watcher deadlines alone.
+  The embedded qev profile keeps the `async` family for it (`QB_EV_ASYNC_ENABLE 1`; six families
+  compiled out instead of seven — three symbols and 24 bytes of `struct ev_loop`, measured).
+- **Emplace forms of `qb::ask` and `qb::ask_by`** (`qb/core/patterns/request.h`):
+  `co_await qb::ask<Deposit>(ctx, account, 500ms, amount, txn)` constructs the request **in its
+  pipe slot** and writes each field exactly once, where the by-value form built a temporary,
+  moved it into the pipe (a `memcpy` whose first 16-byte load sits on header fields the
+  constructor had just written with narrow stores — a store-forwarding stall on every ask), and
+  then set the correlation id on the copy. `CoroContext::push` / `push_to` now return the built
+  `E&` so the id can be set in place. `ask_by<E>(ctx, target, dl, args...)` is the deadline twin
+  and fails fast on a spent budget without building anything. Measured on savina/bank-transaction
+  (one ask per transfer, Linux/g++-14): `Account::start`'s frame — 21.7 % of the core, the
+  by-value build and its copy — left the top of the profile, and the shape's p50 moved from
+  **9.74 / 9.60 ms** (1c spin/park, `develop` `9d4aa94c` — the base this work branched from,
+  NOT shipped 3.1.0, which measures 14.71 / 14.58 in the same session; the label was corrected
+  after the control was re-measured beside it) to **8.25 / 8.08 ms** before the wire work
+  below. Tests: `ActorCoroutineAsk.EmplaceAsk*` (6).
+- **`cancellation_token::cancel_hook` + `token.link(hook)`** (`qb/io/async/coroutine/cancellation.h`):
+  an intrusive, allocation-free cancellation registration — a `{fire, ctx, prev, next}` node the
+  caller owns, linked into the token's state and unlinked on completion, fired (after being
+  detached) before any `on_cancel` callback. `ask_awaiter` uses it in place of `on_cancel`, whose
+  `std::function` + vector push was one heap allocation per ask and a linear `remove_on_cancel`
+  per completion. `link()` on an already-cancelled token fires inline and returns `false`; a hook
+  may unlink a sibling from inside its own `fire`. Tests: `CancellationToken.Hook*`,
+  `CancellationToken.LinkOn*` (9 new).
+- **`qb::detail::event_wire`** (`qb/core/Event.h`): the event header as one 16-byte unit —
+  `swap_dest_source(e)`, `set_dest(e, dest)` and `copy(dst, src, bytes)`, each composing the
+  header in one register (SSE2, NEON, or two 64-bit words) and storing it **once**, with the
+  liveness bit settled in the same store; `copy` reads the header back as exactly the bytes that
+  store wrote, then moves the tail. Layout assumptions are `static_assert`ed against `qb::Event`
+  itself. Tests: `EventWire.*` (12).
 
 ### Fixed
 
