@@ -1826,20 +1826,20 @@ void activation_unwait(qb::ActorId id, activation_waiter &w) noexcept;
  * in-flight ask), but each still spawns and tears down several helper coroutine frames
  * per call. On a hot request/response path this awaiter is leaner: its timeout is a
  * `request_deadline` in the core's own clock (no libev watcher, so the loop is not run for
- * it) and it is **disarmed on the spot** on response — no spawned helper at all. It
- * lives in the ask() coroutine frame (address-stable) and is non-movable (the registry
- * holds it by address). Its constructor TAKES the registry entry — so `qb::ask()` builds it
- * before it sends, and a `push_to` that throws is covered by this destructor, not by a guard —
- * and its destructor gives the entry back on every exit path.
+ * it) and it is **disarmed on the spot** on response — no spawned helper at all. It lives
+ * inside the `ask_operation` the caller awaits — in the CALLER's frame since QB-214, engaged
+ * by `await_suspend()`, address-stable from there — and is non-movable (the registry holds it
+ * by address). Its constructor TAKES the registry entry, so the operation builds it before it
+ * sends, and its destructor gives the entry back on every exit path.
  */
 template <typename E>
 struct ask_awaiter {
     ask_slot      slot{};
     std::uint64_t id;
     qb::duration  timeout;
-    /// The asker's scope token, by REFERENCE: the only construction site is `qb::ask()`, whose
-    /// by-value `ctx` parameter lives in the same coroutine frame as this awaiter and outlives it.
-    /// A by-value copy cost an atomic refcount pair per ask for nothing.
+    /// The asker's scope token, by REFERENCE: the construction sites are `ask_operation` and
+    /// `ask_emplace_operation`, whose `_ctx` member is declared before this awaiter and so outlives
+    /// it. A by-value copy cost an atomic refcount pair per ask for nothing.
     const qb::io::async::cancellation_token &token;
     std::optional<E>                         result;
     std::coroutine_handle<>                  cont;
@@ -1940,12 +1940,12 @@ private:
     // final_suspend transfers to the continuation symmetrically): the frame runs until its next
     // suspension and control comes back here; any coroutine the chain completes has its frame
     // destroyed by whoever owns it, which the scheduler defers, so nothing on this stack is freed
-    // under it -- EXCEPT this awaiter itself. It lives in the `ask` frame that `cont` runs: the
-    // frame's `co_return` hands the value to the caller, whose `co_await` then destroys the
-    // `task<E>` -- and this object with it -- before `resume()` returns. Hence nothing of `me` is
-    // read after the resume, and `ask_deliver` touches neither the slot nor the awaiter after the
-    // thunk. The cancel and timeout paths below keep going through the scheduler: they run from a
-    // token callback or a timer, not from the actor's handler.
+    // under it -- EXCEPT this awaiter itself. It lives in the `ask_operation` temporary of the
+    // frame that `cont` runs: `await_resume()` moves the value out and the end of the caller's
+    // full expression destroys the operation, this object with it, before `resume()` returns.
+    // Hence nothing of `me` is read after the resume, and `ask_deliver` touches neither the slot
+    // nor the awaiter after the thunk. The cancel and timeout paths below keep going through the
+    // scheduler: they run from a token callback or a timer, not from the actor's handler.
     static void
     deliver_thunk(void *self, qb::Event &resp) noexcept {
         auto *me = static_cast<ask_awaiter *>(self);
