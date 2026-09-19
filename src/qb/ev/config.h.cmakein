@@ -14,7 +14,6 @@
 #cmakedefine01 EV_USE_POLL
 #cmakedefine01 EV_USE_LINUXAIO
 #cmakedefine01 EV_USE_IOURING
-#cmakedefine01 EV_USE_WSAPOLL
 
 /* Feature presence flags.
  *
@@ -77,11 +76,10 @@
 
 /* Watcher families.
  *
- * ev.h pins seven of these to 0 in its own `#ifndef` defaults -- idle, prepare, check, fork,
- * child, async, embed -- with libev's original `EV_FEATURE_WATCHERS` expression demoted to a
- * trailing comment. That is qb's profile: qb-io uses io, timer, periodic, signal, stat and
- * cleanup and nothing else, and the seven it does not use are 16 symbols of dead weight on every
- * consumer's link line.
+ * ev.h's own `#ifndef` defaults are libev's (every family follows EV_FEATURE_WATCHERS), so a
+ * build with no configuration header gets the whole library. This header is what narrows it:
+ * qb's profile keeps io, timer, periodic, signal, stat, cleanup and async and nothing else, and
+ * the six it does not use are 16 symbols of dead weight on every consumer's link line.
  *
  * It is the wrong default for a library someone else links. Measured on the 5.0 export: the
  * standalone archive built under qb's profile carries 57 symbols and NONE of those seven

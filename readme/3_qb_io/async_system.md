@@ -304,7 +304,7 @@ public:
 - **`start(std::filesystem::path const&, qb::duration interval = 100ms)`** begins watching (`src/qb/io/async/io.h:576`, `:740`). `interval` is libev's polling cadence — shorter is more responsive and costs more CPU. **This is polling, not inotify/FSEvents**; `ev::stat` `stat()`s the path on a timer.
 - **The watcher owns the path string.** `ev_stat` stores the path *pointer* without copying it, so `start()` copies the path into a member `std::string` that lives as long as the watcher (`src/qb/io/async/io.h:575-579`, member at `:664`). You may safely pass a temporary.
 - **`disconnect()`** stops the watcher (`src/qb/io/async/io.h:590`).
-- **The payload** carries `attr` (the current `ev_statdata`) and `prev` (the previous snapshot), both members of the libev watcher (`src/qb/ev/ev.h:455-456`). `attr.st_nlink == 0` means the path is gone.
+- **The payload** carries `attr` (the current `ev_statdata`) and `prev` (the previous snapshot), both members of the libev watcher (`src/qb/ev/ev.h:462-463`). `attr.st_nlink == 0` means the path is gone.
 
 The difference between the two: `file_watcher` also **reads and frames file content** (`do_read == true`, `src/qb/io/async/io.h:502`). When the watched file grows, its internal handler calls `read_all()` (`src/qb/io/async/io.h:616`), which loops `read()` → the active `IProtocol`'s `getMessageSize()`/`onMessage()` → `flush()` until the file is drained, enforcing `max_message_size()` on the way. `directory_watcher` (`do_read == false`) only forwards the notification. `async::file<Derived>` (`src/qb/io/async/file.h`) composes `file_watcher` with `transport::file`.
 

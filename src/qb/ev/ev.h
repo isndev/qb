@@ -136,6 +136,13 @@ EV_CPP(extern "C" {)
 #define EV_MULTIPLICITY EV_FEATURE_CONFIG
 #endif
 
+/* The watcher-family defaults below are libev's: every family follows EV_FEATURE_WATCHERS unless
+ * the configuration header included above says otherwise. The generated ev_config.h always does
+ * (qb's embedded profile keeps seven families; the standalone library builds every one), so these
+ * fallbacks only decide for a build that carries NO configuration header -- an autotools build, or
+ * a consumer that lost the define -- and such a build must get libev, not a reduced qb profile.
+ * Until 5.1 the seven families qb does not use were pinned to 0 here, which shipped an autotools
+ * libqev without idle, prepare, check, fork, child, async and embed. */
 #ifndef EV_PERIODIC_ENABLE
 #define EV_PERIODIC_ENABLE EV_FEATURE_WATCHERS
 #endif
@@ -145,19 +152,19 @@ EV_CPP(extern "C" {)
 #endif
 
 #ifndef EV_PREPARE_ENABLE
-#define EV_PREPARE_ENABLE 0 /* EV_FEATURE_WATCHERS */
+#define EV_PREPARE_ENABLE EV_FEATURE_WATCHERS
 #endif
 
 #ifndef EV_CHECK_ENABLE
-#define EV_CHECK_ENABLE 0 /* EV_FEATURE_WATCHERS */
+#define EV_CHECK_ENABLE EV_FEATURE_WATCHERS
 #endif
 
 #ifndef EV_IDLE_ENABLE
-#define EV_IDLE_ENABLE 0 /* EV_FEATURE_WATCHERS */
+#define EV_IDLE_ENABLE EV_FEATURE_WATCHERS
 #endif
 
 #ifndef EV_FORK_ENABLE
-#define EV_FORK_ENABLE 0 /* EV_FEATURE_WATCHERS */
+#define EV_FORK_ENABLE EV_FEATURE_WATCHERS
 #endif
 
 #ifndef EV_CLEANUP_ENABLE
@@ -172,16 +179,16 @@ EV_CPP(extern "C" {)
 #ifdef _WIN32
 #define EV_CHILD_ENABLE 0
 #else
-#define EV_CHILD_ENABLE 0 /* EV_FEATURE_WATCHERS */
+#define EV_CHILD_ENABLE EV_FEATURE_WATCHERS
 #endif
 #endif
 
 #ifndef EV_ASYNC_ENABLE
-#define EV_ASYNC_ENABLE 0 /* EV_FEATURE_WATCHERS */
+#define EV_ASYNC_ENABLE EV_FEATURE_WATCHERS
 #endif
 
 #ifndef EV_EMBED_ENABLE
-#define EV_EMBED_ENABLE 0 /* EV_FEATURE_WATCHERS */
+#define EV_EMBED_ENABLE EV_FEATURE_WATCHERS
 #endif
 
 #ifndef EV_WALK_ENABLE

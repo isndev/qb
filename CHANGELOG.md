@@ -8,6 +8,11 @@ policy.
 ## [Unreleased]
 
 ### Changed
+- **The embedded event loop's `ev.h` defaults are libev's again** (qev 5.1.0): a translation unit
+  that includes `<qb/ev/ev.h>` without the generated `ev_config.h` the `qb::ev` target carries
+  now gets libev's full watcher set rather than qb's reduced profile. qb's own builds and every
+  consumer of the `qb::ev` target are unchanged: the configuration header is included first and
+  decides. The Linux aio backend is compiled in only on request (`QB_EV_USE_LINUXAIO`).
 - **The coroutine layer no longer queues in `std::deque`s: `qb::growable_ring` buffers the stream's
   chunks, the channel's values and every parked waiter (Huly QB-215).** MSVC's STL packs
   `sizeof(T) <= 8 ? 2 : 1` elements per deque block (16, 8 and 4 for 1-, 2- and 4-byte types), so a

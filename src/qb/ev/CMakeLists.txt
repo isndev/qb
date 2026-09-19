@@ -79,6 +79,9 @@ endif ()
 # ev_run use MAX_BLOCKTIME2 when timerfd is active and timercnt==0, which stalls
 # epoll_wait (regression #1 on event I/O tests). Opt in with -D QB_EV_USE_TIMERFD=ON.
 option(QB_EV_USE_TIMERFD "Enable qev timerfd (time-jump detection; affects idle waittime)" OFF)
+# Default OFF, as upstream libev: the aio backend is experimental there, never recommended by
+# ev_recommended_backends(), and the mere presence of <linux/aio_abi.h> used to compile it in.
+option(QB_EV_USE_LINUXAIO "Compile the Linux aio backend in (opt-in, as in libev)" OFF)
 option(QB_EV_STRICT_WARNINGS "Build bundled qev with strict compiler warnings" ON)
 # Default OFF, and that default is a fix, not a taste. event.c is libev's *libevent
 # compatibility* layer, and it exports 24 upstream libevent C symbols under their real,
@@ -189,7 +192,6 @@ set(EV_USE_KQUEUE 0)
 set(EV_USE_PORT 0)
 set(EV_USE_LINUXAIO 0)
 set(EV_USE_IOURING 0)
-set(EV_USE_WSAPOLL 0)
 set(EV_USE_INOTIFY 0)
 set(EV_USE_EVENTFD 0)
 set(EV_USE_SIGNALFD 0)
@@ -228,7 +230,10 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             set(EV_USE_EPOLL_PWAIT2 1)
         endif ()
     endif ()
-    if (HAVE_LINUX_AIO_ABI_H AND HAVE_LINUX_FS_H AND HAVE_EPOLL_CTL AND HAVE_SYS_EPOLL_H)
+    # libev keeps the Linux aio backend off by default (ev.c: "always off by default"; it is
+    # experimental upstream and ev_recommended_backends() never picks it), and so does qev: the
+    # headers being present used to compile it in, which is not the default a libev user expects.
+    if (QB_EV_USE_LINUXAIO AND HAVE_LINUX_AIO_ABI_H AND HAVE_LINUX_FS_H AND HAVE_EPOLL_CTL AND HAVE_SYS_EPOLL_H)
         set(EV_USE_LINUXAIO 1)
     endif ()
     if (HAVE_INOTIFY_INIT AND HAVE_SYS_INOTIFY_H)
@@ -750,6 +755,10 @@ if (QB_EV_BUILD_TESTS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tes
     enable_testing()
     add_executable(qev-test-watchers tests/test-watchers.c)
     target_link_libraries(qev-test-watchers PRIVATE qev)
+    # The suite compiles under both profiles and its per-family cases vanish under the reduced
+    # one, so a green run never proved the standalone library was whole. With the full profile
+    # asked for, the test refuses to compile against a library missing a family.
+    target_compile_definitions(qev-test-watchers PRIVATE QEV_EXPECT_FULL_WATCHERS=$<BOOL:${QB_EV_WATCHERS_FULL}>)
     # PRIVATE source dir: the test is an INTERNAL consumer and includes "ev.h" quote-relative,
     # the same way ev.c does. A public consumer writes <qev/ev.h> instead.
     # No private source-dir include: the test consumes qev through its PUBLIC interface, so it
