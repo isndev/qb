@@ -160,7 +160,7 @@ A prebuilt prefix records its own configuration in **`share/qb/abi-fingerprint.t
 $ cat /your/prefix/share/qb/abi-fingerprint.txt
 # qb ABI + configuration fingerprint of THIS installed prefix.
 # ...
-qb-abi qb=3.0.0 cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1
+qb-abi qb=<version> cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1
 cxx_standard=20 compiler=AppleClang-21.0.0.21000101 build_type=Release shared_libs=OFF
 ssl=TRUE compression=TRUE quic=TRUE argon2=TRUE
 unordered_map=ska nlohmann=3.12.0
@@ -197,6 +197,56 @@ cmake -DCMAKE_BUILD_TYPE=Release \
 ```
 
 See [production_checklist.md](./readme/6_guides/production_checklist.md) before shipping.
+
+## Scaffolding a project or a module
+
+Two bash scripts render the public templates ([`qb-sample-project`](https://github.com/isndev/qb-sample-project),
+[`qb-sample-module`](https://github.com/isndev/qb-sample-module)) under the name you pass:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-project.sh -o qb-new-project.sh
+bash qb-new-project.sh MyProject          # a project: ./build/bin/MyProject, a ctest suite, a CI workflow
+curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-module.sh -o qb-new-module.sh
+bash qb-new-module.sh mymodule            # a qbm module, run from your project's qbm/ directory
+```
+
+`MyProject` is substituted into the CMake project and target names, the C++ namespaces, the include
+guards and the directory names, so nothing is renamed by hand; the name is validated first
+(`[A-Za-z][A-Za-z0-9_-]*` for a project, `[a-z][a-z0-9_]*` for a module, which becomes the
+`qbm-<name>` target and the `qbm::<name>` namespace) and anything else exits 2. Each script creates
+nothing outside the directory it names, refuses to run if that name is taken, aborts on the first
+failed step and removes what it made if it does not finish. The result is a fresh git repository with
+one commit and no remote. Both are bash (`set -euo pipefail`) and shell out to `git` only: on Windows
+run them from WSL or Git Bash; nothing else in qb's build needs a shell.
+
+**Which qb the generated tree builds against is decided by the script, not stored in the template.**
+Each script carries the version of the qb it ships with (`QB_SHIPPED_VERSION`, asserted equal to
+`QB_FRAMEWORK_VERSION` in `cmake/qbConfig.cmake` by `scripts/check-scaffold-consistency.sh`) and
+writes the matching `v<version>` tag as the qb ref of the generated `CMakeLists.txt`, which fetches
+qb and the qbm modules with `FetchContent` at the first configure — no submodule to initialise. The
+template revision resolves against the same version: an explicit `QB_TEMPLATE_REF` wins, then the
+template's `v<version>` tag, then its default branch, reported as a fallback. The script prints the
+template ref and the qb ref it wrote, and why. Two overrides exist: `QB_TEMPLATE_DIR=<path>` renders
+from a local template checkout, `QB_REF=<ref>` overrides the qb ref written into the tree; and
+`-DFETCHCONTENT_SOURCE_DIR_QB=/path/to/qb` at configure time builds the generated project against a
+checkout you already have. The URL the script is fetched from selects the pairing:
+`.../qb/main/script/...` is the released line, `.../qb/<tag>/script/...` pins one release.
+
+A generated module ships its public headers under `src/qbm/<name>/`, a tiered `tests/` suite
+registered with `qb_register_module_test()`, and a superbuild root that builds and runs those tests
+with no further setup:
+
+```bash
+cmake -S .github/ci/superbuild -B build
+cmake --build build --parallel --target qbm-mymodule-tests
+ctest --test-dir build -L module:qbm-mymodule
+```
+
+A qbm module cannot be configured standalone — it calls `qb_register_module()` and `qb_add_test()`,
+development-time helpers an installed qb does not ship — so `.github/ci/superbuild/CMakeLists.txt`
+is the same answer qbm-http, qbm-pgsql and qbm-redis give: a minimal root that adds a qb *source*
+tree first and the module second. The generated one defaults its paths and fetches qb, so it works
+with no arguments on a machine that has no qb checkout.
 
 ## Troubleshooting
 

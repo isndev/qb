@@ -204,7 +204,7 @@ echo "== 2b. Cross-repo URL check (repo name + git ref of absolute isndev links)
 # They differ on purpose: the artefact name has to be unambiguous on a link line, while the repo
 # name carries the org's qb-* grouping and says at a glance who maintains this fork of an
 # otherwise unmaintained library. Only the repo name belongs in this list.
-ISNDEV_REPOS='qb qb-dev qev qb-examples qbm-http qbm-pgsql qbm-redis qb-sample-project qb-sample-module'
+ISNDEV_REPOS='qb qb-dev qev qb-examples qbm-http qbm-pgsql qbm-redis qb-sample-project qb-sample-module qb-vs-others'
 while read -r f; do
   grep -oE 'https://github\.com/isndev/[A-Za-z0-9_.+-]+(/(blob|tree|raw)/[^/)" ]+)?' "$f" 2>/dev/null \
     | while IFS= read -r u; do

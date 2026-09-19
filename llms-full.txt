@@ -1,4 +1,4 @@
-# qb Actor Framework (QBAF) — full agent documentation
+# qb Actor Framework — full agent documentation
 
 > Concatenation of this repository's `llm/` agent docs, in one file, for an agent
 > that wants the whole surface in a single fetch. The index is `llms.txt`.
