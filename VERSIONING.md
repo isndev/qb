@@ -6,12 +6,13 @@ qb follows [Semantic Versioning 2.0.0](https://semver.org/). The version is defi
 `cmake/qbConfig.cmake` (`QB_FRAMEWORK_VERSION`) and consumed by `project()` in `CMakeLists.txt` — that
 file is the single source of truth, and every other version string in the tree is a copy of it.
 
-**`main` is exactly the last release and `develop` is the next one.** `QB_FRAMEWORK_VERSION` on
-`main` is the version of the latest tag; on `develop` it is the version the next train will cut,
-which is why a build from `develop` advertises a version that is not tagged yet. The release train
-(`dev/agent/release-gate.sh --ship` in the development superproject) is the only thing that bumps
-it, rolls the `[Unreleased]` section of [CHANGELOG.md](./CHANGELOG.md), fast-forwards `main` and
-tags; the `[Unreleased]` section decides whether the next release is a patch, a minor or a major.
+**`main` is exactly the last release and `develop` is the next one.** `QB_FRAMEWORK_VERSION` is
+the version of the latest tag on both branches: `develop` is the next version by content, not by
+number, and a build from it advertises the last released version until the train bumps it. The
+release train (`dev/agent/release-gate.sh --ship` in the development superproject) is the only
+thing that bumps it, rolls the `[Unreleased]` section of [CHANGELOG.md](./CHANGELOG.md),
+fast-forwards `main` and tags; the `[Unreleased]` section decides whether the next release is a
+patch, a minor or a major.
 
 The qbm modules (`qbm-http`, `qbm-pgsql`, `qbm-redis`) carry the framework version rather than
 versions of their own. They are not standalone-configurable, so a module version can only ever mean
