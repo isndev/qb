@@ -823,6 +823,10 @@ policy.
 
 ### Fixed
 
+- **The embedded loop's shared object carries the qev version** (`src/qb/ev/CMakeLists.txt`,
+  byte-shared with isndev/qev): a `BUILD_SHARED_LIBS=ON` build derived the library `VERSION` as
+  libtool's current.age.revision with age and revision pinned to 0, naming every release of a
+  major line `libqev.so.5.0.0`; it is `PROJECT_VERSION` now, SONAME `libqev.so.5`.
 - **`qb::ask_guarded` crashed under clang 15–21 at `-O2`/`-O3` on x86-64 Linux and Intel macOS, and
   every pattern that takes its request by value was one frame layout away from the same fault (Huly
   QB-213).** LLVM folds a coroutine parameter copy the body never writes back into the caller's
@@ -1011,6 +1015,16 @@ policy.
   cross-platform actor code (`on(SignalEvent)` with `SIGTERM`) needs no `#ifdef`. An
   explicit `registerSignal(SIGBREAK)` still delivers `SIGBREAK` untranslated. CTRL_CLOSE
   grants ~5 s before the OS kills the process; the engine teardown fits well inside.
+
+## [3.0.1] - 2026-08-29
+
+### Changed
+
+- **Lockstep patch with the qb 3.0.1 train**, cut for qb-examples (a failed bind reported success
+  in three programs, Huly QB-4). In this repository: the byte-shared `src/qb/ev/CMakeLists.txt`
+  registers the loop's own tests the way qev does; `scripts/gen-llms-txt.py` strips HTML comments
+  by scanning rather than by regex; `scripts/ci-install-linux-dependencies.sh` installs
+  `software-properties-common` only where the archive has it; two auction-house citations re-keyed.
 
 ## [3.0.0] - 2026-08-20
 
@@ -2163,6 +2177,8 @@ is broad, so entries are grouped rather than exhaustive.
 - QUIC: connection-limit denial-of-service mitigation, fail-closed RNG, and flow-control hardening.
 - async/transport and crypto paths hardened to fail closed under malformed or hostile input.
 
-[Unreleased]: https://github.com/isndev/qb/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/isndev/qb/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/isndev/qb/compare/v3.0.1...v3.1.0
+[3.0.1]: https://github.com/isndev/qb/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/isndev/qb/compare/v2.6.0...v3.0.0
 [2.6.0]: https://github.com/isndev/qb/releases/tag/v2.6.0

@@ -49,10 +49,13 @@ endif ()
 # ----------------------------------------------------------------------------
 # Versioning (keep in sync with ev.h EV_VERSION_MAJOR / EV_VERSION_MINOR)
 # ----------------------------------------------------------------------------
+# LIBEV_VERSION is what config.h.cmakein stamps into EV_VERSION. The shared object carries
+# the project version itself (libqev.so.MAJOR.MINOR.PATCH, SONAME libqev.so.MAJOR): the
+# libtool-style current.age.revision this block used to derive pinned age and revision to 0,
+# so every release in a major line produced a libqev.so.MAJOR.0.0 -- a 5.1.0 archive would
+# have carried a file named 5.0.0. Makefile.am's VERSION_INFO derives the same file name
+# for the autotools build (current = MAJOR + MINOR, revision = PATCH, age = MINOR).
 set(LIBEV_VERSION ${PROJECT_VERSION})
-set(LIBEV_VERSION_CURRENT ${PROJECT_VERSION_MAJOR})
-set(LIBEV_VERSION_AGE 0)
-set(LIBEV_VERSION_REVISION 0)
 
 # ----------------------------------------------------------------------------
 # Options
@@ -537,8 +540,8 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     set_target_properties(qev PROPERTIES
             OUTPUT_NAME qev
             POSITION_INDEPENDENT_CODE ${BUILD_PIC_STATIC_LIBS}
-            VERSION ${LIBEV_VERSION_CURRENT}.${LIBEV_VERSION_AGE}.${LIBEV_VERSION_REVISION}
-            SOVERSION ${LIBEV_VERSION_CURRENT}
+            VERSION ${PROJECT_VERSION}
+            SOVERSION ${PROJECT_VERSION_MAJOR}
             WINDOWS_EXPORT_ALL_SYMBOLS ON
     )
 

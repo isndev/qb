@@ -113,7 +113,7 @@ registry, or as a member — never relocate them.
   protection, not cross-thread synchronization.
 
 > **`run_once()` footgun.** The bundled libev disables timerfd by default — the
-> `QB_EV_USE_TIMERFD` CMake option is `OFF` (`src/qb/ev/CMakeLists.txt:81`).
+> `QB_EV_USE_TIMERFD` CMake option is `OFF` (`src/qb/ev/CMakeLists.txt:84`).
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
