@@ -269,7 +269,7 @@ typedef EV_TSTAMP_T ev_tstamp;
     /*****************************************************************************/
 
 #define EV_VERSION_MAJOR 5
-#define EV_VERSION_MINOR 0
+#define EV_VERSION_MINOR 1
 
     /* eventmask, revents, events... */
     enum {

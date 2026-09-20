@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 project(qev
-        VERSION 5.0.0
+        VERSION 5.1.0
         DESCRIPTION "A modernized, cross-platform fork of libev (source-compatible ev_* API)"
         HOMEPAGE_URL "https://github.com/isndev/qev"
         LANGUAGES C)
