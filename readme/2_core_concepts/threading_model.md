@@ -50,7 +50,7 @@ and no work-stealing, so `addActor<T>(core, …)` — or which core's `addRefAct
 topology decision that the framework never revisits. What it decides is how often events cross a
 core, and that crossing is the expensive part of a hop: on the Savina `thread-ring` shape, a ring of
 actors spread `i % cores` crosses a core on every hop and measured 112 ns a hop on two cores against
-39 on one (the 3.2.0 candidate, g++-14 on WSL2; 154 against 45 on MSVC; shipped 3.1.0 read 169 against
+39 on one (3.2.0, measured at its release candidate, g++-14 on WSL2; 154 against 45 on MSVC; 3.1.0 read 169 against
 55), while a framework that runs the receiver on the sender's worker measures the same at one core and
 two. Put the actors that talk to each other most on
 the **same** core, and spread work across cores by traffic partition — a pipeline stage, a shard of

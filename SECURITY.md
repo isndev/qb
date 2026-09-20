@@ -12,8 +12,9 @@ policy delivers is worse than one that promises less.
 
 | Version | Supported |
 |---------|-----------|
-| 3.0.x   | Yes       |
-| 2.6.x   | No — superseded by 3.0; fixes ship in the 3.0 series |
+| the latest minor of the 3 series (the [latest release](https://github.com/isndev/qb/releases/latest)) | Yes |
+| earlier 3.x minors | No — a fix ships in the latest minor, which is source-compatible within the series |
+| 2.6.x   | No — superseded by 3.0; fixes ship in the 3 series |
 | < 2.0   | No        |
 
 Note that 3.0 is a **major** release with source-breaking changes, so "upgrade to the supported

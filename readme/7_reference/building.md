@@ -293,7 +293,7 @@ Read the archive's own side with either of:
 
 ```bash
 nm -g <prefix>/lib/libqb-io.a | grep qb_abi          # one symbol per axis
-strings <prefix>/lib/libqb-io.a | grep '^qb-abi '    # qb-abi qb=3.0.0 cacheline=64 exceptions=1 …
+strings <prefix>/lib/libqb-io.a | grep '^qb-abi '    # qb-abi qb=<version> cacheline=64 exceptions=1 …
 ```
 
 ### One instance per process

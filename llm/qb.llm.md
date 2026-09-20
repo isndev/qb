@@ -408,7 +408,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **An actor lives on the core where it was created, for life: qb has no migration and no
   work-stealing.** `addActor<T>(core, ...)` is a topology decision, and the cost it decides is the
   core crossing: a ring of actors spread `i % cores` crosses a core on EVERY hop (112 ns a hop on two
-  cores against 39 on one — the 3.2.0 candidate on g++-14 / WSL2, 154 against 45 on MSVC; shipped
+  cores against 39 on one — 3.2.0 measured at its release candidate on g++-14 / WSL2, 154 against 45 on MSVC;
   3.1.0 read 169 against 55), while a framework that runs the receiver on the sender's worker never
   pays it. Put the actors that talk to each other most on the
   SAME core; spread across cores by traffic partition, not by actor count. _(measured in the qb-vs-others

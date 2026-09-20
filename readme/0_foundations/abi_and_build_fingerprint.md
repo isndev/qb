@@ -46,11 +46,11 @@ The archive's side of the story is one command away, and needs no demangler:
 
 ```sh
 nm -g <prefix>/lib/libqb-io.a | grep qb_abi        # -> _qb_abi_cacheline_64
-strings <prefix>/lib/libqb-io.a | grep '^qb-abi '  # -> qb-abi qb=3.0.0 cacheline=64 exceptions=1 …
+strings <prefix>/lib/libqb-io.a | grep '^qb-abi '  # -> qb-abi qb=<version> cacheline=64 exceptions=1 …
 ```
 <!-- src: qb/src/qb/utility/abi.h:47-50 -->
 
-Both were run here against the object that defines them; the second prints `qb-abi qb=3.0.0 cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1`, which is the answer to "what was this built with?" in one line. The definitions live in `qb/src/qb/io/abi.cpp:46-50`, so every archive carries them.
+Both were run here against the object that defines them; the second prints `qb-abi qb=<version> cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1` (the version being the one the archive was built from), which is the answer to "what was this built with?" in one line. The definitions live in `qb/src/qb/io/abi.cpp:46-50`, so every archive carries them.
 
 **There is no opt-out macro, deliberately.** Every axis below is a configuration in which the two sides are provably unsound together; the fix is to rebuild qb with the same setting, not to silence the check (`qb/src/qb/utility/abi.h:58-60`).
 
