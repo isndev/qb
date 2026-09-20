@@ -4,18 +4,26 @@
 
 <p align="center"><img src="./resources/logo.svg" width="180px" alt="qb Actor Framework logo" /></p>
 
-qb is a C++20 framework for concurrent and distributed systems built on the actor model. It pairs
+qb is a C++20 framework for concurrent and distributed systems, built on the actor model. It pairs
 share-nothing actors with a non-blocking I/O runtime and native C++20 coroutines, so application code
 says *what* happens on each message while the runtime owns scheduling, multicore placement and I/O.
 It is also measured: against CAF and SObjectizer on the Savina suite, qb is the fastest of the three
-in every one of the 64 cells on each of four hosts, and at or under a raw-thread floor in most
-two-core cells — the numbers, the protocol and the losses are [below](#measured).
+in every cell on each of four hosts, and at or under a raw-thread floor in most two-core cells. The
+numbers are [below](#measured); the protocol, the raw documents and the losses are public, in
+[qb-vs-others](https://github.com/isndev/qb-vs-others).
 
+[![CI](https://github.com/isndev/qb/actions/workflows/cmake.yml/badge.svg?branch=main)](https://github.com/isndev/qb/actions/workflows/cmake.yml)
+[![Release](https://img.shields.io/github/v/release/isndev/qb?display_name=tag)](https://github.com/isndev/qb/releases/latest)
 [![C++20/23](https://img.shields.io/badge/C%2B%2B-20%2F23-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![CMake](https://img.shields.io/badge/CMake-3.24+-blue.svg)](https://cmake.org/)
 [![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](#platforms-and-toolchains)
 [![Architectures](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-lightgrey.svg)](#platforms-and-toolchains)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
+
+**Contents** — [Hello, actor](#hello-actor) · [The model in four pictures](#the-model-in-four-pictures) ·
+[Ask, and await the answer](#ask-another-actor-and-await-the-answer) · [Everyday idioms](#everyday-idioms) ·
+[Why qb](#why-qb) · [Measured](#measured) · [Install](#install) · [Platforms](#platforms-and-toolchains) ·
+[What is in the box](#what-is-in-the-box) · [Build options](#build-options) · [Documentation](#documentation)
 
 ## Hello, actor
 
@@ -62,91 +70,35 @@ plain data, `std::unique_ptr`, `std::shared_ptr` and `std::vector` are all fine.
 `is_trivially_relocatable`, so there is no compile-time check —
 [Inter-actor messaging](./readme/4_qb_core/messaging.md) has the mechanism and its debug-only guard.
 
-## Ask another actor, and await the answer
+## The model in four pictures
 
-Request/reply is a free function and a `co_await`. The awaitable lives in the caller's frame: no
-coroutine frame is allocated for the ask, the timeout is a deadline in the core's own clock, and the
-reply comes back through the ordinary handler.
-
-```cpp
-#include <qb/main.h>
-#include <qb/actor.h>
-#include <qb/core/patterns.h>
-
-struct Quote : qb::Request<int> {             // the reply type is the template argument
-    int symbol{0};
-    explicit Quote(int s) : symbol(s) {}
-};
-
-class Market : public qb::Actor {
-public:
-    qb::io::async::task<bool> onInit() override { registerEvent<Quote>(*this); co_return true; }
-    void on(Quote &q) { qb::answer(*this, q, [](Quote const &r) { return r.symbol * 100; }); }
-};
-
-class Trader : public qb::Actor {
-    qb::ActorId _market;
-public:
-    explicit Trader(qb::ActorId market) : _market(market) {}
-    qb::io::async::task<bool> onInit() override {
-        registerEvent<Quote>(*this);
-        auto market = _market;                // capture by value, never `this`
-        spawn([market](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            auto reply = co_await qb::ask<Quote>(ctx, market, std::chrono::milliseconds{500}, 42);
-            qb::io::cout() << "quote " << reply.response << '\n';
-            ctx.push_to<qb::KillEvent>(market);   // the two of us are done
-            ctx.push<qb::KillEvent>();
-        });
-        co_return true;
-    }
-    void on(Quote &q) { resolve_ask(q); }     // routes the reply to the waiting coroutine
-};
-
-int main() {
-    qb::Main engine;
-    auto market = engine.addActor<Market>(0);
-    engine.addActor<Trader>(1, market);       // a second core: the reply crosses a thread
-    engine.start();
-    engine.join();
-    return engine.hasError() ? 1 : 0;
-}
-```
-
-`qb::ask` throws `timeout_error` if the deadline passes and `cancelled_error` if the actor is killed
-while waiting; a reply that lands after the timeout reaches `on(Quote &)` as an ordinary, unsolicited
-event, which is what `resolve_ask` returning `false` means. Streams (`qb::ask_stream`), scatter-gather
-(`qb::ask_all`, `qb::ask_any`), discovery (`qb::require<T>`) and deadlines shared across a chain
-(`qb::ask_by`) are in the [pattern library](./readme/4_qb_core/patterns_library.md).
-
-## The model in three pictures
-
-**One thread per VirtualCore.** A `qb::VirtualCore` is a worker thread that owns its actors and drives
-exactly one event loop. The loop polls sockets, fires timers, resumes coroutines and dispatches your
-handlers, in the same pass and the same thread. The only cross-thread channel is the mailbox.
+**One process, one thread per core.** A `qb::VirtualCore` is a worker thread that owns its actors
+and drives exactly one event loop. The loop polls sockets, fires timers, resumes coroutines and
+dispatches your handlers, in the same pass and on the same thread. The only cross-thread channel is
+the mailbox, one lock-free ring per producer core; nothing else in the runtime is shared.
 
 ```mermaid
 flowchart TB
-    subgraph VC0["VirtualCore 0 — one worker thread"]
-        direction TB
-        A0["your actors — one event at a time, in order"]
-        C0["qb-core: scheduling · mailboxes · actor lifecycle"]
-        I0["qb-io: one event loop — sockets · timers · files · coroutines"]
-        A0 --> C0 --> I0
+    subgraph proc["qb::Main — one process, one thread per VirtualCore"]
+        direction LR
+        subgraph c0["VirtualCore 0"]
+            direction TB
+            a0["actors<br/>one event at a time, in order"] --> s0["qb-core<br/>dispatch · pipes · lifecycle"] --> l0["qb-io · one event loop<br/>sockets · timers · coroutines"]
+        end
+        subgraph c1["VirtualCore 1"]
+            direction TB
+            a1["actors<br/>one event at a time, in order"] --> s1["qb-core<br/>dispatch · pipes · lifecycle"] --> l1["qb-io · one event loop<br/>sockets · timers · coroutines"]
+        end
+        s0 <-- "lock-free mailboxes<br/>the only cross-thread channel" --> s1
     end
-    subgraph VC1["VirtualCore 1 — one worker thread"]
-        direction TB
-        A1["your actors"]
-        C1["qb-core"]
-        I1["qb-io"]
-        A1 --> C1 --> I1
-    end
-    VC0 <-- "lock-free MPSC mailboxes — the only cross-thread channel" --> VC1
+    proc --> os["the OS readiness API — epoll · kqueue · wepoll · io_uring"]
 ```
 
 **Where an event goes.** A `qb::ActorId` is `{ServiceId, CoreId}` in 32 bits, and the core half *is*
 the routing decision: a send resolves the destination core and appends bytes to a buffer dedicated to
 it. Nothing looks an actor up across a thread boundary, and the actor state path carries no lock, no
-atomic and no fence.
+atomic and no fence. `push` is ordered per sender and receiver; `send` is unordered and reserved for
+one-off notices.
 
 ```mermaid
 flowchart LR
@@ -174,6 +126,163 @@ sequenceDiagram
     L-->>S: the reply lands (or the timer fires, or the socket is readable)
     S-->>H: resumed on the same thread, no lock taken
 ```
+
+**An actor's life.** `addActor` reserves an id and returns; the actor is constructed on its core's
+thread, and `onInit()` runs once. If that coroutine suspends, the actor is *Activating*: unicast events
+for it are stashed and replayed in order when it activates, broadcasts and kills still reach it, and an
+init that returns `false`, throws or outlives its deadline (5 s by default) removes the actor before it
+processes a message — reported by `Main::hasError()`, never thrown. `kill()`, or a `KillEvent` from
+anyone, ends it: the handler calls already queued for it are skipped, its coroutine scope is cancelled,
+and the destructor runs on the same thread. `Main::join()` returns when every actor has stopped.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Constructed: addActor, on the core's own thread
+    Constructed --> Active: onInit() returns true
+    Constructed --> Activating: onInit() co_awaits
+    Activating --> Active: resumes true — stashed events replayed in order
+    Activating --> Gone: false, a throw, or the init deadline
+    Constructed --> Gone: onInit() returns false or throws
+    Active --> Gone: kill(), a KillEvent, or the engine stopping
+    Gone --> [*]: destructor, on the same thread
+```
+
+The long form of each picture: [threading model](./readme/2_core_concepts/threading_model.md),
+[messaging](./readme/4_qb_core/messaging.md), [coroutines](./readme/3_qb_io/coroutines.md),
+[the actor](./readme/4_qb_core/actor.md).
+
+## Ask another actor, and await the answer
+
+Request/reply is a free function and a `co_await`. The awaitable lives in the caller's frame: no
+coroutine frame is allocated for the ask, the timeout is a deadline in the core's own clock, and the
+reply comes back through the ordinary handler.
+
+```cpp
+#include <qb/main.h>
+#include <qb/actor.h>
+#include <qb/core/patterns.h>
+
+using namespace std::chrono_literals;
+
+// A request names its reply type: a Quote is answered with an int.
+struct Quote : qb::Request<int> {
+    int symbol{0};
+    explicit Quote(int s) : symbol(s) {}
+};
+
+// The responder: an ordinary handler that answers in place.
+class Market : public qb::Actor {
+public:
+    qb::io::async::task<bool> onInit() override {
+        registerEvent<Quote>(*this);
+        co_return true;
+    }
+    void on(Quote &q) {
+        qb::answer(*this, q, [](Quote const &r) { return r.symbol * 100; });
+    }
+};
+
+// The requester: asks from a coroutine, awaits the answer, then stops both actors.
+class Trader : public qb::Actor {
+    qb::ActorId _market;
+
+public:
+    explicit Trader(qb::ActorId market) : _market(market) {}
+
+    qb::io::async::task<bool> onInit() override {
+        registerEvent<Quote>(*this);                    // the reply arrives as a Quote
+        spawn([market = _market](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            auto reply = co_await qb::ask<Quote>(ctx, market, 500ms, 42);
+            qb::io::cout() << "quote " << reply.response << '\n';
+            ctx.push_to<qb::KillEvent>(market);          // the two of us are done
+            ctx.push<qb::KillEvent>();
+        });
+        co_return true;
+    }
+    void on(Quote &q) { resolve_ask(q); }               // hands the reply to the waiting co_await
+};
+
+int main() {
+    qb::Main engine;
+    auto market = engine.addActor<Market>(0);
+    engine.addActor<Trader>(1, market);                 // core 1: the reply crosses a thread
+    engine.start();
+    engine.join();
+    return engine.hasError() ? 1 : 0;
+}
+```
+
+The lambda captures the id by value and never `this`: the actor may be destroyed while the coroutine
+is suspended, and the context is the only legal way back to it. `qb::ask` throws `timeout_error` if
+the deadline passes and `cancelled_error` if the actor is killed while waiting; a reply that lands
+after the timeout reaches `on(Quote &)` as an ordinary, unsolicited event, which is what `resolve_ask`
+returning `false` means. Streams (`qb::ask_stream`), scatter-gather (`qb::ask_all`, `qb::ask_any`),
+discovery (`qb::require<T>`) and deadlines shared across a chain (`qb::ask_by`) are in the
+[pattern library](./readme/4_qb_core/patterns_library.md).
+
+## Everyday idioms
+
+Three things every service needs, in the shape the runtime wants them. Each excerpt is taken from a
+program that compiles and runs against this release.
+
+**A delay, an interval.** A wait that touches the actor is a coroutine sleep bound to the actor's
+cancellation scope — never a blocking call, never a loop-owned timer that holds `this`:
+
+```cpp
+class Ticker : public qb::Actor {
+    int _ticks{0};
+
+    void arm(std::chrono::milliseconds every) {
+        spawn([every](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(every);              // a real timer; cancelled if the actor is killed
+            ctx.push<Tick>();                       // back on the actor, in on(Tick const &)
+        });
+    }
+
+public:
+    qb::io::async::task<bool> onInit() override {
+        registerEvent<Tick>(*this);
+        arm(10ms);
+        co_return true;
+    }
+    void on(Tick const &) {
+        qb::io::cout() << "tick " << ++_ticks << '\n';
+        if (_ticks < 3) arm(10ms);                  // re-arm: a delay becomes an interval
+    }
+};
+```
+
+**Work on every pass.** `qb::ICallback` is the every-turn hook, not a timer: `on(qb::LoopEvent const &)`
+runs each time the core's loop turns, microseconds apart, and the whole core waits on it.
+
+```cpp
+class Sampler : public qb::Actor, public qb::ICallback {
+    int _passes{0};
+
+public:
+    qb::io::async::task<bool> onInit() override {
+        registerCallback(*this);                    // on(LoopEvent) runs every turn of the core's loop
+        co_return true;
+    }
+    void on(qb::LoopEvent const &) override {       // fast and non-blocking: the whole core waits on it
+        if (++_passes == 1000) { qb::io::cout() << "1000 passes\n"; unregisterCallback(); }
+    }
+};
+```
+
+**Find actors, address everyone.** Ids travel through constructors, discovery is a `co_await`, and a
+broadcast reaches every actor on every core:
+
+```cpp
+auto found = co_await qb::require<Ticker>(context(), 200ms);   // every live Ticker, on any core
+broadcast<Stop>();                                             // to every actor on every core
+```
+
+A `qb::ServiceActor<Tag>` is the one-per-core form of an actor reached by type rather than by id:
+`getService<T>()` finds it on the same core, and `getServiceId<Tag>(core)` computes its id for any
+core with no lookup at all. Every idiom above is a running program in
+[qb-examples](https://github.com/isndev/qb-examples), tier `01-actors`.
 
 ## Why qb
 
@@ -206,13 +315,13 @@ exists:
 
 ## Measured
 
-The comparison lives in its own repository, [qb-vs-others](https://github.com/isndev/qb-vs-others):
+The comparison lives in its own public repository, [qb-vs-others](https://github.com/isndev/qb-vs-others):
 qb, [CAF](https://github.com/actor-framework/actor-framework) 1.1.0 and
 [SObjectizer](https://github.com/stiffstream/sobjectizer) 5.8.5.1 on the
 [Savina](https://github.com/shamsimam/savina) shapes, every framework built from source in one
 project under one set of flags, every worker pinned through its own public API, every cell verified
-by the harness, and a raw `std::thread` + SPSC-ring **floor** that is not a framework and is never
-ranked as one. Its `FAIRNESS.md` is the deliverable; the tables are what it produced.
+by the harness — a framework that loses one message in a million produces no timing at all — and a
+raw `std::thread` + SPSC-ring **floor** that is not a framework and is never ranked as one.
 
 One core, spin, nanoseconds per unit — qb, the second-fastest framework, the floor (WSL2 Debian 13
 g++ 14.2 and Windows 11 MSVC 19.51 on one i9-12900K, pinned, 9 repetitions + 2 warm-up, one quiet
@@ -249,8 +358,20 @@ whose floor is a bare function call (qb pays 7–22 ns per unit for the mailbox,
 dispatch, 2.4–2.7× a floor of a few nanoseconds); `fib`, an actor created and destroyed per unit, and
 `bank-transaction`, an `ask` round trip per transfer, at 3–4× their floors even after the actor arena
 and the frame-free ask of 3.2; and MSVC against g++ on the same source, +28 % at one core, half of
-which clang-cl recovers. The full account is `docs/TUNING.md` in that repository, §13.5 and §13.9,
-and each host's `results/<host>/README.md` carries its own session, controls and censuses.
+which clang-cl recovers.
+
+**Everything else is in the benchmark repository, and it is public.** Read the protocol first,
+[FAIRNESS.md](https://github.com/isndev/qb-vs-others/blob/main/FAIRNESS.md) — the checksum every
+cell must reproduce, the pinning, the one-build rule, what the numbers cannot tell you. Then every
+table, regenerated from the JSON it summarises ([REPORT.md](https://github.com/isndev/qb-vs-others/blob/main/REPORT.md));
+the configuration sweeps, the findings qb took from the field and where it still loses
+([docs/TUNING.md](https://github.com/isndev/qb-vs-others/blob/main/docs/TUNING.md)); what each
+framework offers, cited to its source ([docs/FEATURES.md](https://github.com/isndev/qb-vs-others/blob/main/docs/FEATURES.md));
+the right of reply, under which a correct, idiomatic, faster implementation replaces ours and the
+tables are regenerated even when that makes qb lose ([docs/CHALLENGE.md](https://github.com/isndev/qb-vs-others/blob/main/docs/CHALLENGE.md));
+and each host's session, controls and censuses under `results/<host>/`. qb's own micro-benchmarks,
+62 Google Benchmark binaries under `QB_BUILD_BENCHMARKS`, are described in
+[benchmarks.md](./readme/7_reference/benchmarks.md).
 
 ## Install
 
@@ -310,13 +431,19 @@ prove it. Thread pinning is best-effort: `setAffinity` asks the OS and a refusal
 Apple Silicon nothing is pinned — branch on `qb::CPU::ThreadPinningSupported()`, never on the call
 returning ([the engine](./readme/4_qb_core/engine.md)).
 
-## Two libraries, three modules, one loop
+## What is in the box
 
-- **`qb-io`** — the runtime: an event loop, non-blocking TCP/UDP/SSL/QUIC transports, a protocol
-  layer, C++20 coroutines, timers, file watching, and utilities (time, crypto, compression,
-  containers). It has no reference to actors and stands on its own in any event-driven C++20 program.
-- **`qb-core`** — the actor engine on top of it: lightweight actors, a typed event system with
-  ordered delivery, multicore scheduling, lock-free inter-core messaging.
+- **`qb-io`** — the runtime, with no reference to actors: one event loop per thread
+  (`qb::io::async::listener`); TCP, UDP, TLS, QUIC and file transports; protocol framing (text, JSON,
+  handshake, or your own `AProtocol`); C++20 coroutines (`task<T>`, `spawn`, awaitable I/O and
+  timers, `async_generator`, `channel<T>`); timers and file watchers; and the utilities — `qb::crypto`
+  (hashing, AEAD, key derivation, asymmetric), `qb::jwt`, `qb::gzip` and `qb::deflate`, `qb::json`
+  (nlohmann), `qb::io::uri`, UUIDs, lock-free SPSC and MPSC rings, `qb::string<N>`. It stands on its
+  own in any event-driven C++20 program ([features](./readme/3_qb_io/features.md),
+  [utilities](./readme/3_qb_io/utilities.md)).
+- **`qb-core`** — the actor engine on top of it: lightweight actors, a typed event system with ordered
+  delivery, multicore scheduling, lock-free inter-core messaging, service actors, and the pattern
+  library (`ask`, `ask_stream`, `ask_all`, `ask_any`, `require`, `ping`).
 - **[qbm-http](https://github.com/isndev/qbm-http)**, **[qbm-pgsql](https://github.com/isndev/qbm-pgsql)**,
   **[qbm-redis](https://github.com/isndev/qbm-redis)** — HTTP/1.1, HTTP/2, HTTP/3 and WebSocket;
   PostgreSQL; Redis. Each is something an actor *composes*, not a client it calls: `qb::http::Server<>`
@@ -325,13 +452,21 @@ returning ([the engine](./readme/4_qb_core/engine.md)).
 - **[qev](https://github.com/isndev/qev)** — the event loop, a maintained libev fork (kqueue,
   epoll with `epoll_pwait2`, io_uring, a real epoll on Windows through wepoll), published on its own
   under libev's API and held byte-identical with the copy qb embeds.
-- **[qb-examples](https://github.com/isndev/qb-examples)** — 97 runnable programs in seven tiers,
-  each with a checked header block and an expected output, run as part of the release gate.
+- **[qb-examples](https://github.com/isndev/qb-examples)** — about a hundred runnable programs in
+  seven tiers (99 on Linux, 97 on Windows), each with a checked header block and an expected output,
+  run as part of the release gate.
 
 ```cmake
 qb_load_modules("${CMAKE_CURRENT_SOURCE_DIR}/qbm")   # the modules live under qbm/<name>
 target_link_libraries(my_app PRIVATE qbm::http)
 ```
+
+**Scope, stated plainly.** Actors live in one process; other processes are reached through the
+transports and the modules, and there is no transparent remoting, no persistent mailbox and no
+supervision tree — a parent holds a child through `addRefActor` and reads its handle only once it is
+`ready()`. Inside the process, delivery is in order per sender and receiver with `push`, unordered
+and cheaper for a lone notice with `send`, and an event wider than the mailbox ring is a compile
+error: bulk data travels behind a pointer, not by value.
 
 ## Build options
 
@@ -365,6 +500,13 @@ and an installable build needs the system copy. The complete list is
   the contract you owe the runtime and the one it owes you, each cited to what enforces it — and
   [Asynchronous work inside an actor](./readme/5_core_io_integration/async_in_actors.md), the
   `co_await` and `run_sync` call chains side by side against the loop pass.
+- **Learn by example:** [qb-examples](https://github.com/isndev/qb-examples), from
+  [`01-actors`](https://github.com/isndev/qb-examples/tree/main/01-actors) to
+  [`07-applications`](https://github.com/isndev/qb-examples/tree/main/07-applications). Start with
+  [`01-hello-actor.cpp`](https://github.com/isndev/qb-examples/blob/main/01-actors/01-hello-actor.cpp),
+  then [`06-doing-things-later.cpp`](https://github.com/isndev/qb-examples/blob/main/01-actors/06-doing-things-later.cpp)
+  and the [auction house](https://github.com/isndev/qb-examples/tree/main/07-applications/02-auction-house),
+  a whole application on the modules.
 - **For coding agents:** [`llms.txt`](./llms.txt) (the index and the five rules that decide whether
   generated qb code is correct) and [`llms-full.txt`](./llms-full.txt) (the mental model and the
   deterministic API reference, ~34k tokens), generated from `llm/` and checked in CI. Over MCP with
