@@ -23,12 +23,17 @@
  *   - ALIGNMENT: a 64-byte-aligned element (the shape of a `qb::Event`) sits at a 64-byte-aligned
  *     address in every slot, before and after growth;
  *   - ERASE: `erase_at` removes one element in the middle and keeps the order of the others,
- *     across the wrap-around (the cancellation retract of a parked waiter).
+ *     across the wrap-around (the cancellation retract of a parked waiter);
+ *   - GROWTH SAFETY (Huly QB-218): an argument that names an element of the ring survives the
+ *     growth it triggers; a `T` whose move may throw is copied on growth and a throw midway leaves
+ *     the ring exactly as it was, every element destroyed once; `operator[]` over a wrapped ring.
  */
 
 #include <gtest/gtest.h>
 #include <qb/core/patterns.h>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace {
@@ -178,4 +183,88 @@ TEST(GrowableRing, EraseAtKeepsOrderAcrossWrapAround) {
         EXPECT_EQ(c[1].v, 2);
     }
     EXPECT_EQ(Counted::live, 0);
+}
+
+/// A `T` whose move constructor is NOT noexcept: the ring copies it on growth (`std::move_if_noexcept`),
+/// and the copy throws when `throw_at` copies have been made -- the shape that used to double-destroy.
+struct Fragile {
+    static inline int live     = 0;
+    static inline int copies   = 0;
+    static inline int throw_at = -1; ///< the copy that throws (-1: never)
+    int               v;
+    explicit Fragile(int x)
+        : v(x) {
+        ++live;
+    }
+    Fragile(const Fragile &o)
+        : v(o.v) {
+        if (throw_at >= 0 && copies == throw_at)
+            throw std::runtime_error("copy refused");
+        ++copies;
+        ++live;
+    }
+    Fragile(Fragile &&o) // not noexcept: the ring must not move it on growth
+        : v(o.v) {
+        ++live;
+    }
+    ~Fragile() {
+        --live;
+    }
+};
+
+TEST(GrowableRing, AnArgumentNamingAnElementSurvivesTheGrowthItTriggers) {
+    qb::growable_ring<std::string> r;
+    for (int i = 0; i < 8; ++i)
+        r.emplace_back(std::string(48, static_cast<char>('a' + i))); // past the SSO: a moved-from one goes empty
+    ASSERT_EQ(r.size(), r.capacity()) << "the next push grows";
+    r.push_back(r.front()); // the argument refers to the element the growth is about to move
+    ASSERT_EQ(r.size(), 9u);
+    EXPECT_EQ(r[8], std::string(48, 'a'));
+    EXPECT_EQ(r[0], std::string(48, 'a')) << "the source was moved to the new storage, not moved from";
+    r.emplace_back(r[3]); // the emplace form, with an element in the middle
+    EXPECT_EQ(r[9], std::string(48, 'd'));
+}
+
+TEST(GrowableRing, AThrowingCopyOnGrowthLeavesTheRingIntact) {
+    Fragile::live = Fragile::copies = 0;
+    Fragile::throw_at               = -1;
+    {
+        qb::growable_ring<Fragile> r;
+        for (int i = 0; i < 8; ++i)
+            r.emplace_back(i); // built in place: no copy, no move
+        EXPECT_EQ(Fragile::live, 8);
+        EXPECT_EQ(Fragile::copies, 0);
+        Fragile::throw_at = 3; // the fourth copy of the growth throws
+        EXPECT_THROW(r.emplace_back(8), std::runtime_error);
+        Fragile::throw_at = -1;
+        EXPECT_EQ(r.size(), 8u) << "the append that failed appended nothing";
+        EXPECT_EQ(Fragile::live, 8) << "the three copies built before the throw were destroyed, the originals kept";
+        for (int i = 0; i < 8; ++i)
+            ASSERT_EQ(r[i].v, i) << "the elements are what they were";
+        r.emplace_back(8); // the same growth, no throw: copies this time, then the originals are destroyed
+        EXPECT_EQ(r.size(), 9u);
+        EXPECT_EQ(Fragile::live, 9);
+        for (int i = 0; i < 9; ++i)
+            ASSERT_EQ(r[i].v, i);
+    }
+    EXPECT_EQ(Fragile::live, 0) << "every element destroyed exactly once";
+}
+
+TEST(GrowableRing, IndexingWrapsAcrossTheStorageEnd) {
+    qb::growable_ring<int> r;
+    for (int i = 0; i < 8; ++i)
+        r.emplace_back(int{i});
+    for (int i = 0; i < 5; ++i)
+        r.pop_front(); // head at slot 5 of 8
+    for (int i = 8; i < 13; ++i)
+        r.emplace_back(int{i}); // 5 6 7 | 8 9 10 11 12 wrapped to the front, ring full
+    ASSERT_EQ(r.size(), 8u);
+    ASSERT_EQ(r.capacity(), 8u);
+    for (std::size_t i = 0; i < r.size(); ++i)
+        EXPECT_EQ(r[i], 5 + static_cast<int>(i)) << "index " << i;
+    const auto &cr = r;
+    EXPECT_EQ(cr[7], 12);
+    r.emplace_back(int{13}); // grows: the wrapped run is laid out straight in the new storage
+    for (std::size_t i = 0; i < r.size(); ++i)
+        EXPECT_EQ(r[i], 5 + static_cast<int>(i)) << "index " << i << " after growth";
 }

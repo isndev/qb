@@ -7,7 +7,42 @@ policy.
 
 ## [Unreleased]
 
-Nothing yet. Entries land here as they are merged, and move under a version heading when that version is tagged.
+### Fixed
+
+- **The scaffolders printed `warning: refs/tags/vX.Y.Z <sha> is not a commit!` before anything
+  else (Huly QB-235).** `qb-new-project.sh` and `qb-new-module.sh` fetched the template with
+  `git clone --depth 1 --branch <tag>`, and on an ANNOTATED tag -- what the template repositories
+  carry -- Git 2.53 warns before performing the checkout anyway. The scaffold was correct; the
+  first line a new user read said otherwise. The template is fetched by ref into a fresh
+  repository and checked out detached (`git init` + `git fetch --depth 1 <url> <ref>` +
+  `git checkout --detach FETCH_HEAD`), which is silent and lands on the same commit for a tag as
+  for a branch; the default-branch fallback is unchanged.
+- **A use-after-free of an actor object is visible again under AddressSanitizer (Huly QB-217).**
+  Since the actor object moved into `qb::allocator::thread_arena` (3.2.0), a freed block went to
+  its free list with nothing poisoned: a read through a dangling actor pointer -- a `this` captured
+  by a loop-owned timed callback, an `ActorHandle` read without its gate, a `getService<T>()`
+  pointer kept too long -- read the recycled block in silence (or the next actor of the same class)
+  where `malloc` had given a `heap-use-after-free` with three stacks. In an AddressSanitizer build
+  the arena now poisons every block it holds (a freed block with its link word, a chunk's
+  unreserved tail) and unpoisons a block as it hands it out, so that read reports
+  `use-after-poison` with the access stack; the chunks are unpoisoned before they go back to the
+  slab cache. No other build carries a byte of it (`thread_arena::poisons_free_blocks` says which).
+  Test: `ActorArenaPoison.AReadThroughAReapedActorIsReportedAsUseAfterPoison`, a death test
+  registered in ASan builds only, which reports "failed to die" with the poisoning removed.
+- **`qb::growable_ring` -- three edges of the container behind the coroutine queues (Huly QB-218).**
+  Growth moved each element and destroyed its source as it went, so a move constructor that threw
+  left the ring counting elements that no longer existed (a double destruction when it went); a
+  `T` whose move may throw is now copied on growth (`std::move_if_noexcept`, the `std::vector`
+  rule) into storage built before the old elements are destroyed, and a throw midway leaves the
+  ring as it was -- every type the tree queues is nothrow-movable and takes the single pass it
+  always did. An `emplace_back` whose argument named an element of the ring (`r.push_back(r.front())`)
+  dangled across the growth it triggered; the value is built first now. `operator[]` formed
+  `_head + i` past the storage before folding it back, out of bounds in the standard's terms and
+  invisible to every sanitizer; it decides the wrap on distances. The storage never shrinks, which
+  is now written where the type is; the +6.5 % the stream's chunk reads on macOS/libc++ (whose deque
+  never paid the per-element allocation MSVC's did) is recorded in the header with the trade it
+  buys. Tests: `AnArgumentNamingAnElementSurvivesTheGrowthItTriggers`,
+  `AThrowingCopyOnGrowthLeavesTheRingIntact`, `IndexingWrapsAcrossTheStorageEnd`.
 
 ## [3.2.0] - 2026-09-21
 

@@ -172,3 +172,9 @@ qb_add_test(MODULE qb-core TIER system NAME actor-arena SOURCES engine/actor-are
 # operation, the task<E> conversion (the ask_all shape), the variadic combinators and coro_with_timeout over
 # operations (when_any reclaiming a parked loser), the emplace form, the timeout.
 qb_add_test(MODULE qb-core TIER system NAME request-operation SOURCES patterns/request-operation.cpp DEPENDS ${PROJECT_NAME} LABELS patterns coroutine)
+# actor-arena-poison exists in an AddressSanitizer build only (Huly QB-217): the arena poisons a block on its
+# free list under ASan, and this death test reads a reaped actor through the pointer its constructor leaked --
+# the report must say use-after-poison. A capability gate, not a skip: elsewhere there is nothing to observe.
+if(QB_SANITIZE MATCHES "address")
+    qb_add_test(MODULE qb-core TIER system NAME actor-arena-poison SOURCES engine/actor-arena-poison.cpp DEPENDS ${PROJECT_NAME})
+endif()

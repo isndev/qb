@@ -39,7 +39,7 @@ llm/qb.llm.api.md	VirtualCore.h:974-997	b36934211a5d	template <typename _Service
 llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
 llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	combinators.h:72-72	f1f1a4f9f866	to_task(task<T> &&t) noexcept {
-llm/qb.llm.api.md	container/growable_ring.h:51-51	6ccfe2d90a0b	class growable_ring {
+llm/qb.llm.api.md	container/growable_ring.h:60-60	6ccfe2d90a0b	class growable_ring {
 llm/qb.llm.api.md	coroutine/utils.h:376-376	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
 llm/qb.llm.api.md	crypto.h:693-701	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:704-704	9e7269fef498	enum class EnvelopeFormat {
@@ -53,7 +53,7 @@ llm/qb.llm.api.md	request.h:110-110	34270c98a08c	class ask_operation {
 llm/qb.llm.api.md	request.h:170-170	54e40aa6bc8d	class ask_emplace_operation {
 llm/qb.llm.api.md	scheduler.h:755-758	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	task.h:736-751	f2192a619a48	await_resume() {
-llm/qb.llm.api.md	thread_arena.h:71-179	0937f3bc0c95	class thread_arena {
+llm/qb.llm.api.md	thread_arena.h:93-215	ea8135f03b7e	class thread_arena {
 llm/qb.llm.md	Actor.cpp:388-393	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:577-595	94aff7135980	void
 llm/qb.llm.md	Actor.h:1018-1023	411d83537697	* This is the primary and recommended method for sending events. Even...
@@ -126,7 +126,7 @@ llm/qb.llm.md	ssl/socket.h:871-871	0e2c7a135bf8	void set_insecure() noexcept;
 llm/qb.llm.md	ssl/socket.h:95-95	c1d7b0697db7	SSL_CTX *create_server_context(const SSL_METHOD *method, std::filesys...
 llm/qb.llm.md	string.h:201-201	f11444169765	_size = static_cast<size_type>(std::min(size, static_cast<std::size_t...
 llm/qb.llm.md	sys__socket.cpp:254-271	8f3204ff5821	// SO_REUSEADDR means different things on POSIX and Windows, so guard...
-llm/qb.llm.md	thread_arena.h:95-134	651dc523024d	allocate(std::size_t const size) {
+llm/qb.llm.md	thread_arena.h:125-170	1e7eb599b710	allocate(std::size_t const size) {
 llm/qb.llm.md	time.h:8-25	980581677f9f	*  - `qb::duration`  — a span. Signed, nanosecond resolution (`int64`...
 llm/qb.llm.md	time.h:90-90	5ca19947bbc8	using duration = std::chrono::nanoseconds;
 llm/qb.llm.md	time.h:93-93	93d026d68ec7	using mono_time = std::chrono::steady_clock::time_point;

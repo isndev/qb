@@ -41,6 +41,15 @@
  *    safe failure; a use-after-free through a recycled slab is not, and an unreachable chunk
  *    would read as a leak to a checker. A `deallocate()` that arrives after teardown is a no-op
  *    for the same reason.
+ *  - **under AddressSanitizer a free block is poisoned.** `deallocate()` writes the link and
+ *    poisons the whole block, `allocate()` unpoisons a block before it reads the link, a chunk is
+ *    poisoned as it is taken and unpoisoned as it is given back (Huly QB-217). Without this the
+ *    arena took the sanitizer's best report away: a `this` captured by a loop-owned timed
+ *    callback, an `ActorHandle` read without its gate, a `getService<T>()` pointer kept too
+ *    long -- each read the recycled block in silence (or the next actor of the same class),
+ *    where `malloc` had given a `heap-use-after-free` with three stacks. They read
+ *    `use-after-poison` now, with the access stack. No effect on any other build: the calls do
+ *    not exist there, and the orphan list keeps its chunks poisoned on purpose.
  *
  * Single-threaded by contract: a block is freed on the thread that allocated it. Nothing here
  * checks it (the check would cost the thing this file exists to remove); `qb::Actor` enforces it
@@ -60,6 +69,19 @@
 #include <new>
 #include <qb/system/allocator/slab.h>
 #include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
+
+// The sanitizer's poison calls, in an AddressSanitizer build only -- detected the way Event.cpp
+// does it: gcc and MSVC define __SANITIZE_ADDRESS__, clang answers __has_feature.
+#if defined(__SANITIZE_ADDRESS__)
+#define QB_THREAD_ARENA_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define QB_THREAD_ARENA_ASAN 1
+#endif
+#endif
+#ifdef QB_THREAD_ARENA_ASAN
+#include <sanitizer/asan_interface.h>
+#endif
 
 namespace qb::allocator {
 
@@ -82,6 +104,14 @@ public:
     static_assert(granule >= sizeof(void *), "a free block must hold its free-list link");
     static_assert(first_chunk_bytes > max_small + granule, "the first chunk must hold the largest block");
     static_assert(slab_cache::slab_bytes > max_small + granule, "a slab must hold the largest block");
+    /// True in an AddressSanitizer build: a block on a free list, or reserved in a chunk and not
+    /// yet handed out, is poisoned, so a touch through a dangling actor pointer is reported as a
+    /// use-after-poison (the file comment). `false` everywhere else, where nothing is emitted.
+#ifdef QB_THREAD_ARENA_ASAN
+    static constexpr bool poisons_free_blocks = true;
+#else
+    static constexpr bool poisons_free_blocks = false;
+#endif
 
     /**
      * @brief A block of at least `size` bytes, `granule`-aligned.
@@ -98,6 +128,8 @@ public:
         const std::size_t idx = class_of(size);
         state            &st  = state_();
         if (void *const p = st.heads[idx]) {
+            if constexpr (poisons_free_blocks)
+                unpoison(p, (idx + 1) * granule); // the link word sits inside the poisoned block
             st.heads[idx] = *static_cast<void **>(p);
             ++st.live;
             return p;
@@ -107,6 +139,8 @@ public:
             refill(st);
         void *const p = st.bump;
         st.bump += bytes;
+        if constexpr (poisons_free_blocks)
+            unpoison(p, bytes); // reserved from a chunk poisoned whole when it was taken
         ++st.live;
         return p;
     }
@@ -131,6 +165,8 @@ public:
         *static_cast<void **>(p) = st.heads[idx];
         st.heads[idx]            = p;
         --st.live;
+        if constexpr (poisons_free_blocks)
+            poison(p, (idx + 1) * granule); // link word included: allocate() unpoisons before reading it
     }
 
     /**
@@ -213,6 +249,21 @@ private:
         return st_;
     }
 
+    /// The sanitizer's poison calls; empty outside an AddressSanitizer build (and never called
+    /// there: every call site sits under `if constexpr (poisons_free_blocks)`).
+    static void
+    poison([[maybe_unused]] void *const p, [[maybe_unused]] std::size_t const n) noexcept {
+#ifdef QB_THREAD_ARENA_ASAN
+        __asan_poison_memory_region(p, n);
+#endif
+    }
+    static void
+    unpoison([[maybe_unused]] void *const p, [[maybe_unused]] std::size_t const n) noexcept {
+#ifdef QB_THREAD_ARENA_ASAN
+        __asan_unpoison_memory_region(p, n);
+#endif
+    }
+
     /// Runs at thread exit, after every `VirtualCore` of the thread is gone.
     struct reaper {
         ~reaper() noexcept {
@@ -248,6 +299,8 @@ private:
         }
         st.bump = chunk + granule; // the link word stays untouched by blocks
         st.end  = chunk + bytes;
+        if constexpr (poisons_free_blocks)
+            poison(st.bump, bytes - granule); // every block leaves it through allocate(), which unpoisons
         ++st.chunk_count;
     }
 
@@ -258,15 +311,22 @@ private:
             head = nullptr;
         st.bump = st.end = nullptr;
         if (st.live != 0) {
-            orphan(st); // a block outlives its thread: keep the chunks, never recycle them
+            orphan(st); // a block outlives its thread: keep the chunks, never recycle them (poisoned, under ASan)
         } else {
+            // Addressable again before the next owner takes them: the cache hands a slab to any
+            // pool, and the global allocator's own bookkeeping owns the first chunk.
             for (void *slab = st.slabs; slab;) {
                 void *const next = *static_cast<void **>(slab);
+                if constexpr (poisons_free_blocks)
+                    unpoison(static_cast<char *>(slab) + granule, slab_cache::slab_bytes - granule);
                 slab_cache::release(slab);
                 slab = next;
             }
-            if (st.first_chunk)
+            if (st.first_chunk) {
+                if constexpr (poisons_free_blocks)
+                    unpoison(static_cast<char *>(st.first_chunk) + granule, first_chunk_bytes - granule);
                 ::operator delete(st.first_chunk); // unsized: see allocate()
+            }
         }
         st.slabs       = nullptr;
         st.first_chunk = nullptr;

@@ -24,7 +24,13 @@
  *          end and one increment -- the same instruction budget as a deque's block cursor, which is
  *          what keeps the try-send / try-recv loop of a channel at its libstdc++ speed. Deque-shaped
  *          names, plus `operator[]` and `erase_at` for the rare cancellation retract that scans for
- *          its own entry. Single thread by contract, like everything it is used in.
+ *          its own entry. Single thread by contract, like everything it is used in. The storage
+ *          never shrinks: a ring that held a burst keeps that capacity until it is destroyed (a
+ *          deque gave its blocks back), the trade every primitive it sits in accepts -- they live
+ *          and die with their owner. Measured on the third standard library (Huly QB-218):
+ *          macOS/libc++ packs 4096 bytes per deque block and never paid the per-element
+ *          allocation, so the stream's chunk reads +6.5 % there (19.8 -> 21.1 ns) where MSVC read
+ *          69 -> 31; one container for three STLs, no allocation per element, is the trade kept.
  * @ingroup Container
  */
 
@@ -44,7 +50,10 @@ namespace qb {
  * @class growable_ring
  * @ingroup Container
  * @brief A growable single-thread FIFO ring of `T`: no allocation per element.
- * @tparam T The element type; moved on growth, so move-constructible. `erase_at` needs it
+ * @tparam T The element type; moved on growth, so move-constructible -- through
+ *           `std::move_if_noexcept`, the `std::vector` rule: a `T` whose move constructor may
+ *           throw is copied instead when it can be, and the ring is intact after a throw (a
+ *           move-only `T` with a throwing move gets the basic guarantee). `erase_at` needs it
  *           move-assignable.
  */
 template <typename T>
@@ -65,26 +74,58 @@ class growable_ring {
     }
     [[nodiscard]] T *
     at(std::size_t i) const noexcept { // the i-th element from the head, wrapping once
-        T *p = _head + i;
-        if (p >= _end)
-            p -= (_end - _buf);
-        return p;
+        // The wrap is decided on distances, never by forming `_head + i` past `_end` and folding
+        // it back: that pointer is out of bounds in the standard's terms even when it is never
+        // dereferenced, and no sanitizer would say so. Same budget: one compare, one add.
+        const auto room = static_cast<std::size_t>(_end - _head);
+        return i < room ? _head + i : _buf + (i - room);
     }
     void
     grow() {
         const std::size_t cap  = static_cast<std::size_t>(_end - _buf);
         const std::size_t ncap = cap ? cap * 2 : 8;
         T                *nb   = allocate(ncap);
-        for (std::size_t i = 0; i < _size; ++i) {
-            T *src = at(i);
-            std::construct_at(nb + i, std::move(*src));
-            std::destroy_at(src);
+        if constexpr (std::is_nothrow_move_constructible_v<T>) {
+            // Every element type the tree queues (coroutine handles, waiter entries, event
+            // chunks): relocate as it goes, one move and one destroy per element.
+            for (std::size_t i = 0; i < _size; ++i) {
+                T *src = at(i);
+                std::construct_at(nb + i, std::move(*src));
+                std::destroy_at(src);
+            }
+        } else {
+            // A `T` whose move may throw: build the new storage first (copies when `T` is
+            // copyable, the `std::vector` rule) and destroy the old elements only once every new
+            // one exists. A throw midway destroys what was built, frees the new storage and leaves
+            // the ring as it was. The single pass above destroyed each source right after moving
+            // it, so a throw left `_size` counting elements that no longer existed: a double
+            // destruction when the ring went (Huly QB-218).
+            std::size_t built = 0;
+            try {
+                for (; built < _size; ++built)
+                    std::construct_at(nb + built, std::move_if_noexcept(*at(built)));
+            } catch (...) {
+                std::destroy_n(nb, built);
+                deallocate(nb);
+                throw;
+            }
+            for (std::size_t i = 0; i < _size; ++i)
+                std::destroy_at(at(i));
         }
         deallocate(_buf);
         _buf  = nb;
         _end  = nb + ncap;
         _head = nb;
         _tail = nb + _size;
+    }
+    template <typename... Args>
+    T &
+    place(Args &&...args) { // the slot at `_tail` is free: construct there, advance
+        T *p = std::construct_at(_tail, std::forward<Args>(args)...);
+        if (++_tail == _end)
+            _tail = _buf;
+        ++_size;
+        return *p;
     }
     void
     release() noexcept {
@@ -220,16 +261,18 @@ public:
     operator[](std::size_t i) const noexcept {
         return *at(i);
     }
+    /// Appends an element built from `args`. An argument may name an element of this ring
+    /// (`r.push_back(r.front())`): when the append has to grow the storage, the value is built
+    /// BEFORE the growth moves what the argument refers to (one extra move per doubling).
     template <typename... Args>
     T &
     emplace_back(Args &&...args) {
-        if (_size == static_cast<std::size_t>(_end - _buf))
+        if (_size == static_cast<std::size_t>(_end - _buf)) {
+            T v(std::forward<Args>(args)...);
             grow();
-        T *p = std::construct_at(_tail, std::forward<Args>(args)...);
-        if (++_tail == _end)
-            _tail = _buf;
-        ++_size;
-        return *p;
+            return place(std::move(v));
+        }
+        return place(std::forward<Args>(args)...);
     }
     void
     push_back(const T &v) {

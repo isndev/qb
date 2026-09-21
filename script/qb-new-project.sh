@@ -316,7 +316,14 @@ fi
 if [ -z "${TEMPLATE_SOURCE}" ]; then
     TEMPLATE_SOURCE="${WORK_DIR}/template"
     if [ -n "${TEMPLATE_REF}" ]; then
-        git clone --quiet --depth 1 --branch "${TEMPLATE_REF}" "${TEMPLATE_URL}" "${TEMPLATE_SOURCE}"
+        # Not `git clone --branch <ref>`: on an ANNOTATED tag -- what the templates carry -- Git 2.53
+        # prints "warning: refs/tags/<ref> <sha> is not a commit!" before the checkout it performs
+        # anyway, and that is the first line a new user reads (Huly QB-235). A fetch of the ref
+        # (a tag or a branch name, peeled by the fetch) and a detached checkout of FETCH_HEAD are
+        # silent, and land on the same commit.
+        git init --quiet "${TEMPLATE_SOURCE}"
+        git -C "${TEMPLATE_SOURCE}" fetch --quiet --depth 1 "${TEMPLATE_URL}" "${TEMPLATE_REF}"
+        git -C "${TEMPLATE_SOURCE}" checkout --quiet --detach FETCH_HEAD
     else
         git clone --quiet --depth 1 "${TEMPLATE_URL}" "${TEMPLATE_SOURCE}"
         TEMPLATE_REF=$(git -C "${TEMPLATE_SOURCE}" rev-parse --abbrev-ref HEAD)
