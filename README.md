@@ -311,7 +311,7 @@ exists:
 | An event is `memcpy`-relocated and its source destructor never runs, so a payload must be trivially **relocatable**, not merely copyable — and C++20 has no trait for that. | [messaging.md](./readme/4_qb_core/messaging.md) |
 | The reference `push` returns lives until your **handler returns** — across further pushes, since the pipe is segmented and never moves an event — but not across a `co_await` and never in a member. | [buffers.md](./readme/0_foundations/buffers.md) |
 | Blocking the calling thread inside a handler freezes every actor on that core, with no diagnostic. | [async_in_actors.md](./readme/5_core_io_integration/async_in_actors.md) |
-| The runtime allocates in proportion to the square of the core count and never shrinks — 22.5 MiB at rest on 8 cores. | [buffers.md](./readme/0_foundations/buffers.md) |
+| The runtime allocates in proportion to the square of the core count and never shrinks — about 4.5 MiB at rest on 8 cores, 20–21 MiB once every pipe has carried an event, 1.26 GiB in that state on 64. | [buffers.md](./readme/0_foundations/buffers.md) |
 
 ## Measured
 
@@ -370,7 +370,7 @@ framework offers, cited to its source ([docs/FEATURES.md](https://github.com/isn
 the right of reply, under which a correct, idiomatic, faster implementation replaces ours and the
 tables are regenerated even when that makes qb lose ([docs/CHALLENGE.md](https://github.com/isndev/qb-vs-others/blob/main/docs/CHALLENGE.md));
 and each host's session, controls and censuses under `results/<host>/`. qb's own micro-benchmarks,
-62 Google Benchmark binaries under `QB_BUILD_BENCHMARKS`, are described in
+45 Google Benchmark binaries under `QB_BUILD_BENCHMARKS` (62 with the three modules'), are described in
 [benchmarks.md](./readme/7_reference/benchmarks.md).
 
 ## Install
@@ -421,7 +421,7 @@ ctest --test-dir build --output-on-failure
 
 | OS | Architectures | Compilers | Standard library | Event loop backend | Verified by |
 |---|---|---|---|---|---|
-| Linux | x86-64, arm64 | GCC 14, Clang 19 and 22 | libstdc++ | epoll (default); io_uring at parity, opt-in; a parked core wakes under a millisecond on Linux ≥ 5.11 | CI, every push, `epoll` and `iouring` |
+| Linux | x86-64, arm64 | GCC 14, Clang 19 and 22 | libstdc++ | epoll (default); io_uring at parity, opt-in; a parked core wakes under a millisecond on Linux ≥ 5.11 | CI on every push (x86-64, `epoll` and `iouring`); arm64 on the development superproject's self-hosted runner, every push there |
 | macOS | Apple Silicon, x86-64 | Apple Clang | libc++ | kqueue | CI, every push |
 | Windows | x86-64 | MSVC 19.5x, clang-cl | MSVC STL | wepoll over IOCP | the maintainer's gate before each release (`dev/agent/verify-windows.ps1`); the hosted CI job is disabled on purpose, and [INSTALL.md](./INSTALL.md#supported-toolchains) says why |
 

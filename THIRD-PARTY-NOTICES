@@ -34,8 +34,8 @@ marked "in-header" and have no separate file — the notice travels with the cod
 
    Upstream    http://software.schmorp.de/pkg/libev.html
    Author      Marc Alexander Lehmann <libev@schmorp.de>
-   Version     fork version qb-ev 5.0.0 (src/qb/ev/CMakeLists.txt, and
-               EV_VERSION_MAJOR/MINOR = 5/0 in qev.h). The upstream libev release
+   Version     fork version qb-ev 5.1.0 (src/qb/ev/CMakeLists.txt, and
+               EV_VERSION_MAJOR/MINOR = 5/1 in qev.h). The upstream libev release
                this was forked from is NOT recorded anywhere in the tree: the
                fork renumbered libev's own EV_VERSION macros to its 5.0, so that
                macro no longer identifies an upstream version. Copyright years in
