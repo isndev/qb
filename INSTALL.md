@@ -1,4 +1,4 @@
-<!-- Verified-against: qb 3.2.0 (C++20 default, C++23 supported) -->
+<!-- Verified-against: qb 3.2.1 (C++20 default, C++23 supported) -->
 
 # Installation
 

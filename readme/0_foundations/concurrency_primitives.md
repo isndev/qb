@@ -1,6 +1,6 @@
 # Concurrency primitives
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.2.0 (C++20 default, C++23 supported) — 0cd84ee2
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 3.2.1 (C++20 default, C++23 supported) — 0cd84ee2
 
 The lock-free building blocks under `qb/system/lockfree` — the SPSC ring buffer, the sharded MPSC ring built on it, an unbounded MPSC queue and a TTAS spinlock — plus the CPU facilities in `qb/system/cpu.h` they rest on, and the threading contract you must honour to use any of them directly.
 

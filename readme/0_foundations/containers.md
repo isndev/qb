@@ -1,6 +1,6 @@
 # Containers
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.2.0 (C++20 default, C++23 supported) — 0cd84ee2
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.2.1 (C++20 default, C++23 supported) — 0cd84ee2
 
 The four container families qb adds to the standard library: the node-stable hash map and set the engine holds references into, their flat open-addressing counterparts, the case-insensitive wrappers HTTP headers and query strings use, and `qb::string<N>` — the inline fixed-capacity string that makes an event relocatable.
 
