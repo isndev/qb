@@ -1,4 +1,29 @@
-# Line endings.
+# Line endings: LF in the repository AND in every working tree, on every platform (Huly QB-237).
+#
+# git's Windows default is core.autocrlf=true, which checks every text file out CRLF while the
+# stored blob stays LF. On 2026-09-20, the day of the 3.2.0 train, that bit four times in scripts
+# written on macOS or Linux that read or rewrite a file in text mode, or look for a line end with
+# a bare `\n` -- each fixed where it bit (qev-release.sh's stdout, a battery's needle, the release
+# gate's version bump, a perl plant) while the class stayed open for as long as a Windows working
+# tree differed byte for byte from the stored tree. `eol=lf` takes precedence over core.autocrlf,
+# so this one line closes it for every clone; `text=auto` still leaves content git detects as
+# binary alone, and the formats below are named so that a heuristic never decides for them. The
+# narrower rules further down predate this line and each records the defect that pinned it first;
+# they are redundant with it now and are kept as the history of why.
+* text=auto eol=lf
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.gz   binary
+*.der  binary
+*.p12  binary
+*.pfx  binary
+
+# Shell scripts.
 #
 # A shell script must be LF IN THE WORKING TREE, on every platform. git's Windows default is
 # core.autocrlf=true, which checks them out CRLF -- and a CRLF shell script is not a cosmetic
