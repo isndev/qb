@@ -742,7 +742,7 @@ context.
 - **Treating `require<T>()` as a live registry.** It is a one-shot ping answered only by actors
   alive at that instant. Presence *is* the status — `qb::RequireEvent` carries only `type` and the
   inherited `correlation_id`, and there is **no status field** to test. Re-issue it to rediscover,
-  and detect deaths through your own protocol. (`qb/src/qb/core/Event.h:795`)
+  and detect deaths through your own protocol. (`qb/src/qb/core/Event.h:794`)
 - **Calling a `getService<T>()` pointer's mutating methods.** A direct call runs synchronously and
   bypasses the queue — a re-entrancy hazard. Send an event to the service's `id()` instead.
 

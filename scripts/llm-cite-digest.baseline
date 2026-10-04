@@ -29,8 +29,8 @@ llm/qb.llm.api.md	Actor.h:2709-2709	bd93422ca84b	using scoped_coro_context = Sco
 llm/qb.llm.api.md	Actor.h:534-555	c0770292de14	static void *
 llm/qb.llm.api.md	Actor.h:785-802	11edeff824dc	/**
 llm/qb.llm.api.md	Actor.h:818-862	5c5465b8e08f	/**
-llm/qb.llm.api.md	Event.h:826-827	e76bd16e4192	template <typename... _Args>
-llm/qb.llm.api.md	Event.h:835-836	46b3869d9c8b	template <typename... _Args>
+llm/qb.llm.api.md	Event.h:825-826	e76bd16e4192	template <typename... _Args>
+llm/qb.llm.api.md	Event.h:834-835	46b3869d9c8b	template <typename... _Args>
 llm/qb.llm.api.md	VirtualCore.h:1440-1440	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
 llm/qb.llm.api.md	VirtualCore.h:1440-1441	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
 llm/qb.llm.api.md	VirtualCore.h:1454-1454	0a7c96426fa0	Actor::spawn(Func &&func) const {
@@ -74,7 +74,7 @@ llm/qb.llm.md	Actor.h:459-472	5f38a59348eb	* is a coroutine (`qb::io::async::tas
 llm/qb.llm.md	Actor.h:534-555	c0770292de14	static void *
 llm/qb.llm.md	Actor.h:753-769	e84dbde9b9ce	* @brief Get current time from the VirtualCore's perspective (nanosec...
 llm/qb.llm.md	Actor.h:818-862	5c5465b8e08f	/**
-llm/qb.llm.md	Event.h:791-804	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
+llm/qb.llm.md	Event.h:790-803	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
 llm/qb.llm.md	ICallback.h:16-19	88e747230d39	* @warning The tick handler is executed on the `VirtualCore`'s event-...
 llm/qb.llm.md	Main.cpp:432-434	74f8f97adb96	} else if (core_factory.empty()) {
 llm/qb.llm.md	Main.cpp:615-617	0f521c2df42b	Main::core(CoreId const index) {

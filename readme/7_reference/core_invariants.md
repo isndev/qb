@@ -51,7 +51,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 
 ### Identity
 
-- Each event type has a stable 16-bit `qb::TypeId` assigned at first use through a magic-static, atomically incremented counter (`qb::type_id<T>()`, `src/qb/core/Event.h:99,251-257,338-342`). `ServiceActor<Tag>` indices are allocated once under that same magic-static guarantee, with a mutex guarding the shared service-id map insertion, so the id is unique and valid even under concurrent first use (`src/qb/core/VirtualCore.h:1299-1309`).
+- Each event type has a stable 16-bit `qb::TypeId` assigned at first use through a magic-static, atomically incremented counter (`qb::type_id<T>()`, `src/qb/core/Event.h:98,250-256,337-341`). `ServiceActor<Tag>` indices are allocated once under that same magic-static guarantee, with a mutex guarding the shared service-id map insertion, so the id is unique and valid even under concurrent first use (`src/qb/core/VirtualCore.h:1299-1309`).
 - A `type_id<T>()` value is stable within a single process run but is **not** stable across runs. Do not persist it.
 
 ### Identifiers
@@ -67,7 +67,7 @@ The consequence is that `qb-core` carries no `std::mutex` on the message path. T
 | `send<Event>(dest, args...)` | **unordered** | trivially destructible — enforced for `EventQOS0`, a guideline otherwise | order is irrelevant and you have measured a need to skip ordering |
 | `broadcast<Event>(args...)` | per-core independent | any event type | fan-out to every active core |
 
-- `push<Event>()` (`src/qb/core/Actor.h:1069`) guarantees ordered delivery to the same destination from the same source (`src/qb/core/Actor.h:1018-1020`, mirrored by `qb::Pipe::push`, `src/qb/core/Pipe.h:130-133`). It returns a mutable reference to the event in the pipe; **that reference lives until the handler or callback that obtained it returns**, whatever is queued in between — the pipe is segmented (`qb::VirtualPipe`, `src/qb/core/Event.h:869`), so a later `push`/`send`/`broadcast` to that core links a segment when it needs room and never reallocates or compacts what an earlier push placed. The engine consumes the event between handlers, which is when the reference dies: finish with it before a coroutine's first `co_await`, and never keep it in a member (`src/qb/core/Actor.h:1050-1062`).
+- `push<Event>()` (`src/qb/core/Actor.h:1069`) guarantees ordered delivery to the same destination from the same source (`src/qb/core/Actor.h:1018-1020`, mirrored by `qb::Pipe::push`, `src/qb/core/Pipe.h:130-133`). It returns a mutable reference to the event in the pipe; **that reference lives until the handler or callback that obtained it returns**, whatever is queued in between — the pipe is segmented (`qb::VirtualPipe`, `src/qb/core/Event.h:868`), so a later `push`/`send`/`broadcast` to that core links a segment when it needs room and never reallocates or compacts what an earlier push placed. The engine consumes the event between handlers, which is when the reference dies: finish with it before a coroutine's first `co_await`, and never keep it in a member (`src/qb/core/Actor.h:1050-1062`).
 - `send<Event>()` is unordered and **requires trivially-destructible events for the EventQOS0-derived (`QoS < 2`) path** — the assertion lives in `qb::detail::routing_safe_type_id<T>` (`src/qb/core/Event.h`), which every enqueue sink calls, plus the older one in `VirtualCore::fill_event` (`src/qb/core/VirtualCore.h:1031-1033`). Such events holding `std::string`, `std::vector`, and similar non-trivial members are rejected at compile time on all four spellings — `push`, `send`, `to(dest).push` and `getPipe(dest).allocated_push`. Until the check moved, the last two were unguarded and their payloads leaked on the drop path. `qb::string<N>` and POD payloads are fine. Prefer `push()` unless you have measured a need.
 
 > The 16-bit `EventId` keeps an event's metadata (`state`, `bucket_size`, `id`, `dest`, `source`) within one cacheline. This is a deliberate trade-off; do not assume room for a wider id.
@@ -84,7 +84,7 @@ The runtime relocates events with raw `memcpy`: it copies the bytes to a new add
 
 The requirement is **not** scoped to cross-core delivery. Two independent relocations exist:
 
-- `reply`/`forward` byte-copy the received event into a pipe with `detail::event_wire::copy` (`src/qb/core/Event.h:693-723`), same core or not — the copy is born with `alive == 0`, the original is raised after it, and the dispatcher destroys only the copy;
+- `reply`/`forward` byte-copy the received event into a pipe with `detail::event_wire::copy` (`src/qb/core/Event.h:692-722`), same core or not — the copy is born with `alive == 0`, the original is raised after it, and the dispatcher destroys only the copy;
 - the cross-core hop copies the event twice more (sender pipe → peer mailbox ring → receive buffer).
 
 (Until 3.2 there was a third — the contiguous pipe `memcpy`d what it held on growth and `memmove`d it on compaction, on the sending core's own events too. The segmented pipe never moves an event, but the two above keep the requirement exactly as it was.)

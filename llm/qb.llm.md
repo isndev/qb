@@ -370,7 +370,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   every coroutine discovery on that actor hangs until its timeout. (Exactly `resolve_ask`'s rule.)
   There is **no `status` field**: presence *is* the status — a dead actor never replies. Prefer
   `co_await qb::require<Target>(context(), timeout)`, which correlates the replies for you.
-  _(Event.h:791-804)_
+  _(Event.h:790-803)_
 - **reply vs forward** — both reuse the received event (require a non-const `on(Event&)` handler).
   `reply(e)` swaps dest↔source; `forward(dest, e)` keeps the original source. Neither works on
   broadcast events (dropped). After the call the event is consumed — do not touch it.

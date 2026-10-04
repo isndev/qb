@@ -37,22 +37,17 @@ namespace qb::io::transport {
  * This class implements a transport layer for file operations by extending
  * the generic `qb::io::stream` class, specializing it with `qb::io::sys::file`
  * as the underlying I/O mechanism. It provides buffered read and write operations
- * for local files through the stream interface.
+ * for local files through the stream interface: `read()` fills `in()` and `write()`
+ * commits `out()`, both through the descriptor's ordinary BLOCKING `read`/`write` --
+ * a local file has no readiness to wait for. Off the event loop of an actor that
+ * must not stall, do the I/O before the engine starts or on a thread you own.
+ *
+ * @note Until 3.3 this class overrode `write()` with a placeholder that returned 0
+ *       and wrote nothing, hiding the working `stream<sys::file>::write()` it
+ *       inherits: a caller that published and wrote got silent success and an
+ *       unchanged file (Huly QB-82).
  */
-class file : public stream<io::sys::file> {
-public:
-    /**
-     * @brief Write data to the file
-     * @return Always returns 0 as file writes are handled separately
-     *
-     * This method is a placeholder as file writing is handled through
-     * other mechanisms in the file implementation.
-     */
-    [[nodiscard]] int
-    write() noexcept {
-        return 0;
-    }
-};
+class file : public stream<io::sys::file> {};
 
 } // namespace qb::io::transport
 

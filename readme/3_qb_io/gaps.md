@@ -72,14 +72,14 @@ Use the callback surface, and if you want coroutine ergonomics on top of it, par
 
 Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, one per signal raised (repeats of the same signal between two passes coalesce), which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:1246-1279`). That is the supported path, and it is an actor-tier concern.
 
-## File I/O is polled metadata plus a blocking read
+## File I/O is watched metadata plus a blocking read
 
 This one is a **capability gap, not a documentation gap**, and it is the one most likely to bite on a `VirtualCore`.
 
 `async::file<Derived>` is `file_watcher<Derived>` composed with `transport::file` (`src/qb/io/async/file.h:44-46`). Two things follow:
 
-- **The notification is polled.** `file_watcher::start(path, interval)` arms a libev `ev::stat` watcher, which `stat()`s the path on a timer — the default cadence is 100 ms (`src/qb/io/async/io.h:576`). It is not inotify, not FSEvents, not `kqueue`'s `EVFILT_VNODE`. Shorter intervals cost CPU proportionally.
-- **The read is synchronous.** When the watcher reports growth, `read_all()` loops `Derived.read()` until the file is drained (`src/qb/io/async/io.h:616-639`), and that read is `qb::io::sys::file::read`, an ordinary blocking descriptor read (`src/qb/io/system/file.h:166`). `transport::file::write()` is a placeholder that returns `0` and writes nothing (`src/qb/io/transport/file.h:52-55`).
+- **The notification is a `stat()` comparison — inotify-woken on Linux, polled elsewhere.** `file_watcher::start(path, interval)` arms a libev `ev::stat` watcher, which compares two `stat()`s of the path. On Linux qev also adds an inotify watch: for a path on a filesystem libev knows to be local — ext2/3/4, xfs, btrfs, tmpfs, ramfs, jfs, reiserfs, fat, ntfs — a change wakes the loop at once and `interval` is not used (`infy_add` in `src/qb/ev/ev.c`); on any other filesystem (overlayfs, NFS, CIFS, 9p, FUSE, ZFS, …) inotify still catches local writes and the path is also `stat()`ed every `interval` for what it cannot see, and where inotify cannot be set up at all (the per-user watch limit, say) it is polling alone. On macOS and Windows it is always polling: one `stat()` per `interval`, 100 ms by default (`src/qb/io/async/io.h:576`), and libev raises any interval under ~0.107 s to that floor (`MIN_STAT_INTERVAL`, applied in `ev_stat_start`). Where it polls, a shorter interval costs CPU proportionally. Nowhere does the event carry an inotify, FSEvents or `ReadDirectoryChangesW` record: it is the previous and the current `stat`.
+- **The read is synchronous.** When the watcher reports growth, `read_all()` loops `Derived.read()` until the file is drained (`src/qb/io/async/io.h:616-639`), and that read is `qb::io::sys::file::read`, an ordinary blocking descriptor read (`src/qb/io/system/file.h:166`). `transport::file::write()` is just as synchronous: it commits `out()` with the descriptor's ordinary blocking `write` (`src/qb/io/stream.h:453-466`) -- until 3.3 an override made it a placeholder that returned `0` and wrote nothing.
 
 On a page-cached local file the read returns without ever blocking and none of this is observable. On a cold file, a network filesystem, or a slow device, the `VirtualCore` thread stops inside `read()` — every actor on that core with it, and with no diagnostic, exactly as described for [`run_sync`](./async_system.md#run_sync-and-run_for-block-the-calling-thread).
 

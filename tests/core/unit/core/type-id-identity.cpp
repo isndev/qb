@@ -32,6 +32,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <string_view>
@@ -428,3 +429,39 @@ TEST(TypeIdIdentity, StorageDurationCheckIsCompiledOutHere) {
                  << "); the contract still holds, it is just not diagnosed in this build.";
 }
 #endif
+
+// -------------------------------------------------------------------------------------------
+// The 16-bit id space is GUARDED (Huly QB-60). Until 3.3 a registration past 65535 wrapped the
+// counter onto 0 (the 'unregistered' sentinel) and then onto 1 (qb::KillEvent): a user event
+// aliased onto KillEvent reached the kill handler, with no diagnostic. register_type_id now
+// stops the process naming the type. Both cases run in a death-test child, so the parent's
+// counter is never touched: the boundary id 65535 is still handed out, the next one is refused.
+// The child is re-executed ("threadsafe", like the storage-duration case above: the logger's
+// thread is already running) and reports through std::_Exit, which skips the atexit handlers --
+// std::exit would run LeakSanitizer's exit check under ASan, and turn a pass into exit status 1.
+// -------------------------------------------------------------------------------------------
+namespace type_id_identity_test {
+struct LastIdProbeEvent : qb::Event {};
+struct OneTooManyProbeEvent : qb::Event {};
+} // namespace type_id_identity_test
+
+TEST(TypeIdIdentityDeathTest, TheLastIdIsStillHandedOut) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_EXIT(
+        {
+            qb::detail::_type_id_counter.store(std::numeric_limits<qb::TypeId>::max() - 1, std::memory_order_relaxed);
+            const auto id = qb::type_id<type_id_identity_test::LastIdProbeEvent>();
+            std::_Exit(id == std::numeric_limits<qb::TypeId>::max() ? 0 : 1);
+        },
+        ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TypeIdIdentityDeathTest, AnExhaustedIdSpaceStopsInsteadOfAliasingAFrameworkId) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_DEATH(
+        {
+            qb::detail::_type_id_counter.store(std::numeric_limits<qb::TypeId>::max(), std::memory_order_relaxed);
+            (void) qb::type_id<type_id_identity_test::OneTooManyProbeEvent>();
+        },
+        "type-id space is exhausted");
+}

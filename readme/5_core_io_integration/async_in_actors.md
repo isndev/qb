@@ -427,7 +427,7 @@ public:
 
 ## Blocking file I/O from an actor
 
-Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling thread, and an actor's thread is its whole `VirtualCore`. This is a genuine capability gap rather than an oversight — `async::file` watches metadata by polling and then performs a blocking read, and [what has no coroutine form](../3_qb_io/gaps.md#file-io-is-polled-metadata-plus-a-blocking-read) explains why. Three patterns keep the core responsive, in increasing order of isolation:
+Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling thread, and an actor's thread is its whole `VirtualCore`. This is a genuine capability gap rather than an oversight — `async::file` watches metadata — inotify-woken on a local Linux filesystem, polled everywhere else — and then performs a blocking read, and [what has no coroutine form](../3_qb_io/gaps.md#file-io-is-watched-metadata-plus-a-blocking-read) explains why. Three patterns keep the core responsive, in increasing order of isolation:
 
 1. **Wrap the blocking call in `async::callback`** (suitable for infrequent, non-critical I/O). The callback still blocks the core *for its own turn*, but it keeps the blocking work out of the actor's message-handling path. When the I/O finishes, `push` a result event back to the requester. This is what the `qb-example-services-file-pipeline` worker does. <!-- src: examples/05-services/03-file-pipeline/file_worker.h:112 -->
 

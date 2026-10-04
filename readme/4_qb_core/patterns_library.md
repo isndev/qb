@@ -61,12 +61,12 @@ this page only states what the patterns depend on.
   value (`qb/src/qb/core/Actor.h:1411-1413`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
-  (`qb/src/qb/core/Event.h:753-754`); `qb::AskEvent` derives from it for the request/response API
+  (`qb/src/qb/core/Event.h:752-753`); `qb::AskEvent` derives from it for the request/response API
   (`qb/src/qb/core/Actor.h:1661`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
-  discovery (`qb/src/qb/core/Event.h:776,795`). Because the id sits at a uniform offset, the
+  discovery (`qb/src/qb/core/Event.h:775,794`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
   (inside `onInit()`), so the whole library works during init
-  (`qb/src/qb/core/Event.h:746-750`).
+  (`qb/src/qb/core/Event.h:745-749`).
 
 ### Cancellation, timeout and failure — the common contract
 
@@ -785,7 +785,7 @@ public:
 The awaitable patterns work during actor activation: obtain the context with `Actor::context()` and
 `co_await` directly in `onInit()`. Replies reach the still-*Activating* asker through the
 continuation registry (`qb/src/qb/core/Actor.h:1433-1449`,
-`qb/src/qb/core/Event.h:746-750`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
+`qb/src/qb/core/Event.h:745-749`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
 `ask_any`, `ask_guarded`, `ask_quorum`, `ask_by`, `run_saga` and `rate_limiter` all inside `onInit()`
 (`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,260,295,327,367,398,503`).
 

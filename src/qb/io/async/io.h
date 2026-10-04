@@ -567,8 +567,8 @@ public:
     /**
      * @brief Starts watching a file for attribute changes.
      * @param fpath Path to the file to watch.
-     * @param ts Polling interval in seconds. Libev uses this to check for changes.
-     *           A smaller interval means more responsive but higher CPU usage. Default is 0.1 seconds.
+     * @param interval How often the path is stat()ed where it is POLLED: macOS, Windows, and a Linux filesystem libev
+     *           does not know to be local (on a local one inotify wakes the watcher and this is unused). Floor ~0.107 s.
      * @details Initializes and starts the underlying `ev::stat` watcher for the specified file.
      *          The `on(event::file&)` handler will be called when changes are detected.
      */
@@ -732,7 +732,7 @@ public:
     /**
      * @brief Starts watching a directory for attribute changes.
      * @param fpath Path to the directory to watch.
-     * @param ts Polling interval in seconds for checking changes. Default is 0.1 seconds.
+     * @param interval How often the path is stat()ed where it is polled -- see `file_watcher::start`. Default 100 ms.
      * @details Initializes and starts the underlying `ev::stat` watcher for the specified directory path.
      *          The `on(event::file&)` handler will be called when changes to the directory's attributes are detected.
      */

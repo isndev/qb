@@ -23,6 +23,24 @@ policy.
   core reads ONE value per pass where it read the pending slot and polled the stop token; and it no
   longer re-enters the signal branch on every pass for the rest of a run after its first signal,
   which the old slot (never cleared) made it do.
+- **`qb::io::transport::file::write()` writes (Huly QB-82).** The class overrode `write()` with a
+  placeholder that returned `0` and wrote nothing, hiding the working `stream<sys::file>::write()` it
+  inherits: a caller that published bytes and wrote them got a success-shaped `0` and an unchanged
+  file. The override is gone; `write()` commits `out()` through the descriptor's ordinary blocking
+  `write`, as `read()` already did through `read`, and returns the byte count (negative on error).
+- **The 16-bit event/service type-id space can no longer wrap onto the framework's own ids (Huly
+  QB-60).** `TypeId` is `uint16_t`, and a 65536th distinct registered type wrapped the counter onto
+  `0` (the 'unregistered' sentinel), the next onto `1` -- `qb::KillEvent`, whose handler then
+  received the aliased user event -- with no diagnostic. Registration now checks the counter under
+  its lock and, when the space is exhausted, prints which type could not be registered and aborts.
+  The check runs once per type, never on the event path.
+- **The file watchers' docs no longer say `ev::stat` is never inotify (Huly QB-204).** On Linux qev's
+  `ev_stat` adds an inotify watch: for a path on a filesystem libev knows to be local a change wakes the
+  loop at once and the `interval` argument is unused; on any other Linux filesystem inotify catches local
+  writes and the path is also `stat()`ed every `interval`; macOS and Windows poll. The event is two
+  `stat`s everywhere. `readme/3_qb_io/gaps.md` (its section is now "File I/O is watched metadata plus a
+  blocking read"), `async_system.md`, `async_in_actors.md`, the `file_watcher` / `directory_watcher`
+  parameter docs (which also named a parameter `ts` that is `interval`) and the API sheet say so.
 
 ## [3.2.1] - 2026-09-24
 

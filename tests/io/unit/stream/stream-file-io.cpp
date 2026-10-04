@@ -23,7 +23,7 @@
  *   - output stream: publish + write commits to disk (verified via std::ifstream), for both a
  *     string and a std::vector source;
  *   - bidirectional stream: write then re-open + read the same bytes back;
- *   - transport::file: its overridden write() is a deliberate no-op returning 0 (writing is done via
+ *   - transport::file: write() commits the published bytes to the file (Huly QB-82 -- it used to be
  *     the underlying sys::file), while read() pulls bytes into the inherited input buffer;
  *   - error path: read/write on a stream wrapping a closed (default-constructed) sys::file return < 0;
  *   - stream chaining: file → istream buffer → ostream → file, byte-for-byte;
@@ -221,36 +221,33 @@ TEST_F(StreamFileIoTest, FileBidirectionalStream) {
 // =============================================================================
 
 /**
- * @test transport::file::write() is a deliberate no-op (returns 0); read() fills the input buffer.
- * @brief Salvaged from FileTransport, de-masked and corrected. The original test masked the fact
- *        that `transport::file` overrides `write()` to ALWAYS return 0 (writing is handled via the
- *        underlying sys::file, not the stream's write()): its `if(write_result<=0) cout<<Warning`
- *        branch silently skipped the verification, so the no-op behaviour was never asserted. Here we
- *        assert the contract directly — publish() buffers the bytes but write() commits nothing and
- *        returns 0 — and separately exercise the working read() path the adapter inherits.
+ * @test transport::file::write() commits the published bytes to the file; read() fills the input buffer.
+ * @brief Until 3.3 `transport::file` overrode `write()` with a placeholder that ALWAYS returned 0 and
+ *        wrote nothing, hiding the working `stream<sys::file>::write()` it inherits -- silent success
+ *        over an unchanged file, and this test once pinned that as a contract (Huly QB-82). It asserts
+ *        the opposite now: the bytes reach the disk, the return is their count, nothing stays pending.
+ *        The read() path the adapter inherits is exercised separately.
  */
-TEST_F(StreamFileIoTest, FileTransportWriteIsNoopAndReadFillsBuffer) {
+TEST_F(StreamFileIoTest, FileTransportWriteCommitsAndReadFillsBuffer) {
     const std::filesystem::path path = test_dir / "transport.txt";
 
-    // ---- write() is a no-op returning 0 -------------------------------------
+    // ---- write() commits the published bytes --------------------------------
+    const std::string write_content = "Transport file test";
     {
         qb::io::sys::file file;
-        ASSERT_GE(file.open(path, O_WRONLY | O_CREAT, 0644), 0);
+        ASSERT_GE(file.open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644), 0);
 
         qb::io::transport::file transport;
         transport.transport() = std::move(file);
 
-        const std::string write_content = "Transport file test";
         ASSERT_NE(transport.publish(write_content.c_str(), write_content.size()), nullptr);
         EXPECT_EQ(transport.pendingWrite(), write_content.size());
 
-        // The overridden write() commits nothing and returns 0; pending data is unchanged.
-        EXPECT_EQ(transport.write(), 0) << "transport::file::write() is a documented no-op";
-        EXPECT_EQ(transport.pendingWrite(), write_content.size());
+        EXPECT_EQ(transport.write(), static_cast<int>(write_content.size())) << "write() must commit every published byte";
+        EXPECT_EQ(transport.pendingWrite(), 0u);
         transport.close();
     }
-    // Nothing was written through the adapter's write().
-    EXPECT_EQ(std::filesystem::file_size(path), 0u);
+    EXPECT_EQ(slurp(path), write_content) << "the bytes written through transport::file must be on disk";
 
     // ---- read() fills the inherited input buffer ----------------------------
     // Seed the file directly, then read it back through the adapter.

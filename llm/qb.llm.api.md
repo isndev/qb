@@ -265,8 +265,8 @@ Service-to-service event.
 
 #### Event templates
 *   `[T<_Args...>] struct WithData : Event { std::tuple<_Args...> data; explicit WithData(_Args&&...); }`
-*   `[T<_Args...>] class WithoutData : Event {}` — a **template** (`_Args...` is a placeholder, unused): spell it `WithoutData<>`, never bare `WithoutData` _(`Event.h:826-827`)_.
-*   `[T<_Args...>] struct AskData : WithoutData<_Args...> {}` — likewise `AskData<>` _(`Event.h:835-836`)_.
+*   `[T<_Args...>] class WithoutData : Event {}` — a **template** (`_Args...` is a placeholder, unused): spell it `WithoutData<>`, never bare `WithoutData` _(`Event.h:825-826`)_.
+*   `[T<_Args...>] struct AskData : WithoutData<_Args...> {}` — likewise `AskData<>` _(`Event.h:834-835`)_.
 *   `[T<_Args...>] struct FillEvent : WithData<_Args...> { FillEvent(); explicit FillEvent(_Args&&...); }`
 
 Aliases: `using VirtualPipe = allocator::segmented_pipe<EventBucket>;` — a segmented FIFO (256 KB segments from a per-core `segment_pool`, carved eight to a 2 MB slab from the process-wide `allocator::slab_cache`) that never moves a queued event; `Actor::push`'s returned reference is valid until the handler that obtained it returns.
@@ -640,7 +640,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
     *   `char* publish(const char* data, std::size_t size) noexcept`, `char* publish_to(const identity& to, const char* data, std::size_t size) noexcept` (rejected with EMSGSIZE if `> MaxDatagramSize`).
 *   `class qb::io::transport::accept` — acceptor transport wrapping `io::tcp::listener`; `read()` accepts into `_accepted_io` (transient errors remapped to EWOULDBLOCK), `getAccepted()` → new `tcp::socket`. `is_secure() == false`.
 *   `class qb::io::transport::saccept` — secure variant wrapping `io::tcp::ssl::listener`; `getAccepted()` → `ssl::socket`. `is_secure() == true`.
-*   `class qb::io::transport::file : public stream<io::sys::file>` — file transport; `write()` is a no-op returning 0.
+*   `class qb::io::transport::file : public stream<io::sys::file>` — file transport; `read()` fills `in()`, `write()` commits `out()` (both blocking descriptor calls; until 3.3 `write()` was a placeholder returning 0).
 
 ### Protocol framing (`<qb/io/protocol/...>`)
 
@@ -704,7 +704,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
     *   `[T<_Func>] void defer(_Func&& func)` — run **at the tail of the current loop turn** (next tick, no delay, no timer). The primitive for "continue after this handler unwinds" (e.g. a reconnect that frees+recreates its connection). Never runs re-entrantly; captured state released on fire or on loop teardown.
     *   `[T<_Func,Rep,Period>] auto scoped_callback(_Func&& func, std::chrono::duration<Rep,Period> timeout)` → `std::unique_ptr<ScopedTimeout<...>>` — hot-path timer variant; destroying/reusing the ptr cancels.
     *   use: `qb::io::async::callback([]{ … }, 200ms);` (timer) · `qb::io::async::defer([]{ … });` (next turn).
-*   `[T] class file_watcher<_Derived> : public base<..., event::file>` — watch a file, read/parse new content via an owned protocol. `do_read = true`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`, `switch_protocol<P>(...)`, `read_all()`. The watcher copies the path into an owned `std::string _watched_path` for its lifetime — `ev_stat` stores the path **pointer** without copying, so the string must outlive the watcher.
+*   `[T] class file_watcher<_Derived> : public base<..., event::file>` — watch a file, read/parse new content via an owned protocol. `do_read = true`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`, `switch_protocol<P>(...)`, `read_all()`. `interval` is the `stat()` cadence only where the path is polled (macOS, Windows, a non-local Linux filesystem; floor ~0.107 s) — on a local Linux filesystem inotify wakes the watcher and `interval` is unused; the event is two `stat`s either way. The watcher copies the path into an owned `std::string _watched_path` for its lifetime — `ev_stat` stores the path **pointer** without copying, so the string must outlive the watcher.
 *   `[T] class directory_watcher<_Derived> : public base<..., event::file>` — directory attribute changes (no content read). `do_read = false`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`. Same owned-`_watched_path` invariant as `file_watcher`.
 *   `[T] class file<_Derived> : public file_watcher<_Derived>, qb::io::transport::file` (`<qb/io/async/file.h>`) — async file handler; auto-attaches `_Derived::Protocol`.
 

@@ -276,7 +276,7 @@ These transports back `qb::io::use<...>::udp::client` and `qb::io::use<...>::udp
 ### Where `transport::stcp`, `transport::file`, and QUIC fit
 
 - **`transport::stcp`** (`qb/io/transport/stcp.h`) is `stream<tcp::ssl::socket>` with `is_secure() == true`. It overrides `read()` to drain OpenSSL's internal buffer via `SSL_pending()` after each socket read, so decrypted application bytes are not stranded. See [Secure (SSL/TLS) transport](./ssl_transport.md).
-- **`transport::file`** (`qb/io/transport/file.h`) is `stream<sys::file>` for buffered local-file I/O; its `write()` is a no-op placeholder because file writes are driven through other mechanisms. Filesystem watching is covered in [the asynchronous I/O model](./async_system.md).
+- **`transport::file`** (`qb/io/transport/file.h`) is `stream<sys::file>` for buffered local-file I/O: `read()` fills `in()` and `write()` commits `out()`, both through the descriptor's ordinary blocking calls. (Until 3.3 an override made `write()` a placeholder that returned `0` and wrote nothing.) Filesystem watching is covered in [the asynchronous I/O model](./async_system.md).
 - **QUIC** is not a `stream`-based transport. It is a reactor-driven endpoint over UDP; see [QUIC transport](./quic_transport.md).
 
 ### Transport comparison
@@ -287,7 +287,7 @@ These transports back `qb::io::use<...>::udp::client` and `qb::io::use<...>::udp
 | `transport::udp` | `stream<udp::socket>` | `udp::socket` | no | datagram (message-oriented) | per-datagram source/dest; `has_reset_on_pending_read` |
 | `transport::stcp` | `stream<tcp::ssl::socket>` | `tcp::ssl::socket` | yes | byte stream | drains `SSL_pending()` after each socket read |
 | `transport::accept` / `saccept` | — (used as an `_IO_` type, not a `stream`) | `tcp::listener` | n/a | one connection per `read()` | remaps transient accept errors to `EWOULDBLOCK` |
-| `transport::file` | `stream<sys::file>` | `sys::file` | no | byte stream | local file I/O; `write()` is a no-op placeholder |
+| `transport::file` | `stream<sys::file>` | `sys::file` | no | byte stream | local file I/O; blocking `read()` / `write()` |
 
 ## Examples
 

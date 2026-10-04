@@ -185,7 +185,7 @@ Three things bypass the gate entirely (`src/qb/core/VirtualCore.cpp:180-220`):
 
 - **broadcasts**, so a system-wide notice still reaches an Activating actor;
 - **any `KillEvent`**, so an Activating actor stays killable and its in-flight `onInit()` can be unwound;
-- **the reply to a `qb::ask` this actor issued from inside its own `onInit()`** — stashing that would deadlock the init on its own reply. The gate recognises it without RTTI, because every correlated reply derives from `qb::CorrelatedEvent` as its first base, so `correlation_id` sits at a fixed offset (`src/qb/core/Event.h:743-755`).
+- **the reply to a `qb::ask` this actor issued from inside its own `onInit()`** — stashing that would deadlock the init on its own reply. The gate recognises it without RTTI, because every correlated reply derives from `qb::CorrelatedEvent` as its first base, so `correlation_id` sits at a fixed offset (`src/qb/core/Event.h:742-754`).
 
 The surfaces that observe the phase do **not** all behave the same, and that is deliberate:
 
