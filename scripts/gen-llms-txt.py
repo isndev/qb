@@ -413,7 +413,7 @@ def check(write: bool, stats: bool) -> int:
             fail = 1
     if write:
         for rel, data in (("llms.txt", want_txt), ("llms-full.txt", want_full)):
-            with open(os.path.join(ROOT, rel), "w", encoding="utf-8") as fh:
+            with open(os.path.join(ROOT, rel), "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(data)
         print("  wrote llms.txt (%d links) and llms-full.txt (%d bytes)"
               % (len(links), len(want_full)))

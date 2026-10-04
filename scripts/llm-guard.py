@@ -851,7 +851,7 @@ def main() -> int:
                   f"(expected >= {min_dig}); the parser has stopped matching the corpus and "
                   f"recording now would erase the baseline")
             return 1
-        with open(a.digest_baseline, "w", encoding="utf-8") as fh:
+        with open(a.digest_baseline, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(
                 "# llm-cite-digest.baseline -- what every line-cited range in llm/ SAID when\n"
                 "# it was last verified.  Regenerate with:\n"
