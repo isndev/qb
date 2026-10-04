@@ -421,7 +421,7 @@ ctest --test-dir build --output-on-failure
 
 | OS | Architectures | Compilers | Standard library | Event loop backend | Verified by |
 |---|---|---|---|---|---|
-| Linux | x86-64, arm64 | GCC 14, Clang 19 and 22 | libstdc++ | epoll (default); io_uring at parity, opt-in; a parked core wakes under a millisecond on Linux ≥ 5.11 | CI on every push (x86-64, `epoll` and `iouring`); arm64 on the development superproject's self-hosted runner, every push there |
+| Linux | x86-64, arm64 | GCC 14, Clang 19 and 22 | libstdc++ | epoll (default); io_uring at parity, opt-in; a parked core wakes under a millisecond on Linux ≥ 5.11 | CI on every push, x86-64 and arm64, `epoll` and `iouring` |
 | macOS | Apple Silicon, x86-64 | Apple Clang | libc++ | kqueue | CI, every push |
 | Windows | x86-64 | MSVC 19.5x, clang-cl | MSVC STL | wepoll over IOCP | the maintainer's gate before each release (`dev/agent/verify-windows.ps1`); the hosted CI job is disabled on purpose, and [INSTALL.md](./INSTALL.md#supported-toolchains) says why |
 

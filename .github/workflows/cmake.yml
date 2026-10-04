@@ -86,6 +86,18 @@ jobs:
             build_type: Release
             cxx_standard: 20
 
+          # Linux arm64, native (Huly QB-249). Until 2026-10-03 the development superproject's lanes
+          # ran on an arm64 guest and were this project's only Linux arm64 coverage; they moved to
+          # x86-64 runners that day, so the row lives here now, on GitHub's hosted arm64 image. Same
+          # toolchain and the same per-backend event-loop matrix as the x86-64 gcc row: the arm64
+          # memory model is weaker, and the cross-core paths are where that shows.
+          - name: ubuntu-arm64-gcc-cxx20-release
+            os: ubuntu-24.04-arm
+            c_compiler: gcc-14
+            cpp_compiler: g++-14
+            build_type: Release
+            cxx_standard: 20
+
     steps:
       - uses: actions/checkout@v6
         with:
