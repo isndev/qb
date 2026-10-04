@@ -264,3 +264,186 @@ TEST(SignalShutdown, ConsoleBreakLandsAsSigtermViaTheBridge) {
            "install_default_signals() is not translating it to SIGTERM";
 }
 #endif // _WIN32
+
+// ---------------------------------------------------------------------------------------------
+// Huly QB-65 -- a signal raised AFTER a terminal one, before the core's next pass, must not hide it.
+//
+// Up to 3.2.1 the engine kept ONE pending-signal slot: Main::stop() and the signal handler both
+// overwrote it, and each core delivered only the signum it held at its next pass. A SIGTERM (or a
+// stop()) followed by a registered non-terminal signal before that pass therefore reached every
+// actor as the non-terminal one alone, and the engine never stopped -- a supervisor's SIGTERM
+// racing a log-rotation SIGHUP is enough. One generation per signal number delivers both.
+//
+// The two signals are raised from INSIDE a pass of the only core (a LoopEvent callback), so both
+// land after that pass's signal check and before the next one: deterministic, where two raises
+// from another thread would race the pass.
+// ---------------------------------------------------------------------------------------------
+namespace sigterm_shutdown_test {
+
+#ifdef _WIN32
+// MSVC's <csignal> has no SIGUSR1/SIGHUP. SIGBREAK registered EXPLICITLY (after start(), so the
+// default set's console bridge does not translate it to SIGTERM) is delivered untranslated, and is
+// non-terminal for the default handler -- the Windows shape of "a reload signal".
+constexpr int kNonTerminal = SIGBREAK;
+#else
+constexpr int kNonTerminal = SIGUSR1;
+#endif
+
+std::atomic<bool> g_started{false}; // main.start() has returned: the default signal set is installed
+std::atomic<bool> g_fire{false};    // armed by the test thread once its own registration is done
+
+class DoubleRaiseActor final
+    : public qb::Actor
+    , public qb::ICallback {
+    bool const _stop_first;
+
+public:
+    explicit DoubleRaiseActor(bool stop_first) noexcept
+        : _stop_first(stop_first) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerCallback(*this);
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        g_running.store(true, std::memory_order_relaxed);
+        if (g_fire.exchange(false, std::memory_order_acq_rel)) {
+            if (_stop_first)
+                qb::Main::stop();
+            else
+                std::raise(SIGTERM);
+            std::raise(kNonTerminal);
+        }
+    }
+};
+
+/// Starts an engine whose only actor raises SIGTERM (or calls stop()) and then kNonTerminal in one
+/// pass; reports whether the engine stopped on its own within `budget`. A failing run is stopped
+/// by hand afterwards, so the next case starts clean.
+[[nodiscard]] bool
+engine_stops_after_double_raise(bool stop_first, std::chrono::seconds budget) {
+    g_running.store(false, std::memory_order_relaxed);
+    g_started.store(false, std::memory_order_relaxed);
+    g_fire.store(false, std::memory_order_relaxed);
+    auto done   = std::make_shared<std::promise<void>>();
+    auto future = done->get_future();
+
+    std::thread([done, stop_first] {
+        qb::Main main;
+        main.addActor<DoubleRaiseActor>(0, stop_first);
+        main.start();
+        g_started.store(true, std::memory_order_release);
+        main.join();
+        done->set_value();
+    }).detach();
+
+    const auto up_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!(g_started.load(std::memory_order_acquire) && g_running.load(std::memory_order_relaxed))
+           && std::chrono::steady_clock::now() < up_deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    if (!g_started.load() || !g_running.load())
+        return false;
+
+    qb::Main::registerSignal(kNonTerminal); // after start(): stays untranslated, stays non-terminal
+    g_fire.store(true, std::memory_order_release);
+    const bool stopped = future.wait_for(budget) == std::future_status::ready;
+    if (!stopped) {
+        qb::Main::stop(); // the defect left the engine running: stop it for the next case
+        (void) future.wait_for(std::chrono::seconds(10));
+    }
+    qb::Main::unregisterSignal(kNonTerminal);
+    return stopped;
+}
+
+} // namespace sigterm_shutdown_test
+
+TEST(SignalShutdown, ATerminalSignalIsNotHiddenByALaterNonTerminalOne) {
+    EXPECT_TRUE(sigterm_shutdown_test::engine_stops_after_double_raise(false, std::chrono::seconds(10)))
+        << "SIGTERM followed, before the core's next pass, by a registered non-terminal signal did not "
+           "shut the engine down: the later signal hid the terminal one (Huly QB-65)";
+}
+
+TEST(SignalShutdown, StopIsNotHiddenByALaterSignal) {
+    EXPECT_TRUE(sigterm_shutdown_test::engine_stops_after_double_raise(true, std::chrono::seconds(10)))
+        << "Main::stop() followed, before the core's next pass, by a registered non-terminal signal did "
+           "not shut the engine down: the signal hid the stop (Huly QB-65)";
+}
+
+// Two DIFFERENT non-terminal signals raised in one pass are both delivered, once each. POSIX only:
+// Windows has a single non-terminal signal to register (SIGBREAK).
+#ifndef _WIN32
+namespace sigterm_shutdown_test {
+
+std::atomic<int> g_usr1_seen{0};
+std::atomic<int> g_usr2_seen{0};
+
+class FanOutActor final
+    : public qb::Actor
+    , public qb::ICallback {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerCallback(*this);
+        registerEvent<qb::SignalEvent>(*this); // rebind the slot to FanOutActor::on (see ReloadActor)
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        g_running.store(true, std::memory_order_relaxed);
+        if (g_fire.exchange(false, std::memory_order_acq_rel)) {
+            std::raise(SIGUSR1);
+            std::raise(SIGUSR2);
+        }
+    }
+    void
+    on(qb::SignalEvent const &event) noexcept {
+        if (event.signum == SIGUSR1)
+            g_usr1_seen.fetch_add(1, std::memory_order_relaxed);
+        if (event.signum == SIGUSR2)
+            g_usr2_seen.fetch_add(1, std::memory_order_relaxed);
+        qb::Actor::on(event); // both non-terminal: the engine keeps running
+    }
+};
+
+} // namespace sigterm_shutdown_test
+
+TEST(SignalShutdown, TwoDifferentSignalsInOnePassAreBothDelivered) {
+    using namespace sigterm_shutdown_test;
+    g_running.store(false);
+    g_started.store(false);
+    g_fire.store(false);
+    g_usr1_seen.store(0);
+    g_usr2_seen.store(0);
+    auto done   = std::make_shared<std::promise<void>>();
+    auto future = done->get_future();
+    std::thread([done] {
+        qb::Main main;
+        main.addActor<FanOutActor>(0);
+        main.start();
+        g_started.store(true, std::memory_order_release);
+        main.join();
+        done->set_value();
+    }).detach();
+
+    const auto up_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!(g_started.load(std::memory_order_acquire) && g_running.load(std::memory_order_relaxed))
+           && std::chrono::steady_clock::now() < up_deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    ASSERT_TRUE(g_started.load() && g_running.load()) << "the engine never came up";
+
+    qb::Main::registerSignal(SIGUSR1);
+    qb::Main::registerSignal(SIGUSR2);
+    g_fire.store(true, std::memory_order_release);
+    const auto seen_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while ((g_usr1_seen.load() == 0 || g_usr2_seen.load() == 0) && std::chrono::steady_clock::now() < seen_deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    EXPECT_EQ(g_usr1_seen.load(), 1) << "SIGUSR1 must be delivered once";
+    EXPECT_EQ(g_usr2_seen.load(), 1) << "SIGUSR2, raised in the same pass, must be delivered too (Huly QB-65)";
+
+    qb::Main::stop();
+    EXPECT_TRUE(future.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+    qb::Main::unregisterSignal(SIGUSR1);
+    qb::Main::unregisterSignal(SIGUSR2);
+}
+#endif // !_WIN32

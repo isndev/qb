@@ -753,46 +753,23 @@ VirtualCore::__workflow__() {
     // `__tls_init`) -- 2.2 % of savina/ping-pong 1c for the three accesses a pass made (Huly
     // QB-199). The object lives for the thread, and this loop is the thread.
     auto &loop = io::async::listener::current;
+    // The signal generation this core last scanned, as a LOCAL: the pass compares it against the
+    // global one in a register. Compared with the member, the check paid a memory operand on every
+    // pass (+0.25 ns on the qb-vs-others pass-cost probe at k = 1, WSL2 g++-14, Huly QB-65).
+    unsigned int scanned_generation = _last_signal_generation;
     while (likely(true)) {
         ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent; also keys the `time()` sample
 
-        // Poll for pending signal (signal-handler-safe lock-free atomic read)
-        // OR for a C++20 cooperative cancellation request coming from the
-        // engine's `std::stop_source` (finding 2.17 — jthread/stop_token).
-        // The stop_token path is checked only when no signal is already pending
-        // so the existing signum semantics are preserved: we synthesise a
-        // virtual SIGINT to reuse the same shutdown plumbing (SignalEvent
-        // broadcast + actors' `onSignal` / `kill()` chain).
-        // Steady state carries no pending signal, so keep the hot path at exactly one relaxed load +
-        // the stop-token check (the pre-existing cost) and pull the generation load into the cold
-        // shutdown branch below — an atomic load per loop pass is not free on this hot path.
-        const auto pending_signal = Main::_signal_pending.load(std::memory_order_relaxed);
-        const bool stop_requested = _stop_token.stop_possible() && _stop_token.stop_requested();
-        if (unlikely(pending_signal != 0 || stop_requested)) {
-            // Cold (shutdown only). A single per-core "consumed" latch used to drop every signal after
-            // the first — leaving the engine unstoppable after e.g. a SIGHUP reload, a double Ctrl-C,
-            // or Main::stop() after an earlier signal. Re-synthesize on every newly-raised signal
-            // (Main::_signal_generation advanced) and once for the cooperative stop_token latch.
-            // Signals COALESCE to the latest generation: the single _signal_pending slot holds only the
-            // most recent signum, so two signals between loop passes deliver one event carrying the latest
-            // — sufficient for the lifecycle/shutdown contract (no per-signum fan-out guarantee).
-            // Acquire the generation, then re-load the signum under it so (generation, signum) stay
-            // coherent — pairs with the release bump in onSignal()/stop().
-            const auto signal_generation = Main::_signal_generation.load(std::memory_order_acquire);
-            const auto signum            = Main::_signal_pending.load(std::memory_order_relaxed);
-            const bool new_signal        = (signum != 0) && (signal_generation != _last_signal_generation);
-            if (new_signal || (stop_requested && !_stop_delivered)) {
-                if (new_signal)
-                    _last_signal_generation = signal_generation;
-                if (stop_requested)
-                    _stop_delivered = true;
-                SignalEvent sig_event;
-                fill_event<SignalEvent>(sig_event, BroadcastId(_index), BroadcastId(_index));
-                sig_event.signum = (signum != 0) ? signum : SIGINT;
-                auto &pipe       = __getPipe__(_index);
-                pipe.recycle_back(sig_event, sig_event.bucket_size);
-            }
-        }
+        // Signals, Main::stop() and the C++20 cooperative stop (finding 2.17 -- jthread/stop_token)
+        // all advance ONE global generation: the signal handler and stop() after bumping their
+        // signal's slot, ~Main after request_stop(). So the steady-state pass reads ONE relaxed load
+        // and compares it with a register -- cheaper than before Huly QB-65, which read a pending-signal
+        // slot AND polled the stop token's state on every pass. A moved generation sends the core to
+        // the cold scan (out of line), which delivers one SignalEvent per signal raised since and the
+        // cooperative stop's virtual SIGINT; a scanned generation costs nothing on later passes, where
+        // the old slot, never cleared, sent every pass after a first SIGHUP into the cold branch.
+        if (unlikely(Main::_signal_generation.load(std::memory_order_relaxed) != scanned_generation))
+            scanned_generation = __deliver_signals__();
 
         // Pump qb-io only when its loop has something to deliver: a referenced active
         // watcher, a pending event, a deferred callback or a ready coroutine. The gate
@@ -1261,6 +1238,44 @@ VirtualCore::__fire_activation_waiters__(Activation &act, bool const ok) noexcep
             fire(ctx, ok);
         w = next;
     }
+}
+
+// Cold, and defined at the end of the file for the same layout reason as the function above: the
+// pass calls it only when a signal was raised or a stop requested.
+unsigned int
+VirtualCore::__deliver_signals__() noexcept {
+    auto const deliver = [this](int const signum) noexcept {
+        SignalEvent sig_event;
+        fill_event<SignalEvent>(sig_event, BroadcastId(_index), BroadcastId(_index));
+        sig_event.signum = signum;
+        __getPipe__(_index).recycle_back(sig_event, sig_event.bucket_size);
+    };
+    bool delivered_sigint = false;
+    // Acquire pairs with the release bump in Main::onSignal() / Main::stop() / ~Main: every slot
+    // raised, and the stop request made, before the generation read here are visible below. A slot
+    // raised after that read is seen now or on the next pass (the generation will have moved again)
+    // -- never lost, and never delivered twice, because `_signal_seen` records what was delivered.
+    const auto generation     = Main::_signal_generation.load(std::memory_order_acquire);
+    const bool stop_requested = _stop_token.stop_possible() && _stop_token.stop_requested();
+    if (generation != _last_signal_generation) {
+        _last_signal_generation = generation;
+        for (std::size_t signum = 1; signum < Main::SignalSlots; ++signum) {
+            const auto raised = Main::_signal_raised[signum].load(std::memory_order_relaxed);
+            if (raised == _signal_seen[signum])
+                continue;
+            _signal_seen[signum] = raised;
+            deliver(static_cast<int>(signum));
+            delivered_sigint = delivered_sigint || signum == static_cast<std::size_t>(SIGINT);
+        }
+    }
+    // The cooperative stop (~Main's request_stop()) is a virtual SIGINT, delivered once -- unless this
+    // very scan has just delivered a real one. Returned: the generation scanned, for the pass's copy.
+    if (stop_requested && !_stop_delivered) {
+        _stop_delivered = true;
+        if (!delivered_sigint)
+            deliver(SIGINT);
+    }
+    return _last_signal_generation;
 }
 
 } // namespace qb

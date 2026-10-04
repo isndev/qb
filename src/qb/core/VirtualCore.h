@@ -594,8 +594,8 @@ private:
     mutable std::uint64_t _nanotimer_pass =
         ~std::uint64_t{0}; ///< `_loop_count` the sample belongs to; never equal to a real pass until sampled
     unsigned int _last_signal_generation =
-        0; ///< `Main::_signal_generation` value at this core's last SignalEvent synthesis; a newer value (a fresh signal or `Main::stop()`)
-           ///< re-triggers delivery. Replaces the old single-shot `_signal_consumed` latch that dropped every signal after the first.
+        0; ///< `Main::_signal_generation` at this core's last signal scan (the pass compares a register copy of it with ONE relaxed
+           ///< load); a newer value -- a signal, `Main::stop()` or ~Main's stop request -- sends the core to `__deliver_signals__`.
     bool _stop_delivered = false; ///< One-way latch: whether this core has delivered the cooperative `stop_token`'s synthetic SIGINT (the token
                                   ///< cannot be un-requested).
     /// Monotonic count of event-loop passes; surfaced to callbacks via `qb::LoopEvent::iteration`.
@@ -606,12 +606,16 @@ private:
     /**
      * @brief Optional C++20 cancellation token wired from `qb::Main::_stop_source`.
      * @details
-     * When a cancellation is requested (either via `~Main()` or an explicit
-     * `qb::stop_source::request_stop()`), the workflow synthesises a virtual
-     * `SIGINT` in the next iteration, providing a signal-free shutdown path
-     * that also works on platforms without a POSIX signal mechanism.
+     * When a cancellation is requested (by `~Main()`, which then advances the
+     * signal generation the pass reads), the next signal scan synthesises a
+     * virtual `SIGINT`, providing a signal-free shutdown path that also works
+     * on platforms without a POSIX signal mechanism. The pass never polls the
+     * token itself (Huly QB-65).
      */
     qb::stop_token _stop_token;
+    /// Per signal number, the `Main::_signal_raised` generation this core last delivered (Huly QB-65).
+    /// Read only by the cold `__deliver_signals__`, and declared LAST so it moves no member the pass reads.
+    std::array<unsigned int, Main::SignalSlots> _signal_seen{};
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -622,7 +626,7 @@ private:
      * @param token The `qb::stop_token` produced by the owning `Main`
      *              instance's `qb::stop_source`.
      * @details Must be called by the worker thread function before entering
-     *          `__workflow__`. The token is polled once per iteration.
+     *          `__workflow__`. The token is read by the signal scan, when the signal generation moves.
      */
     void __set_stop_token__(qb::stop_token token) noexcept;
 
@@ -718,6 +722,10 @@ private:
     static void __fire_activation_waiters__(Activation &act, bool ok) noexcept;
     /// Per-iteration pump: complete finished inits, replay stashes, enforce deadlines.
     void __pump_activations__() noexcept;
+    /// Cold (the signal generation moved): one `SignalEvent` per signal raised since this core's last
+    /// scan, in ascending signum order, and the cooperative stop's synthetic SIGINT once. Returns the
+    /// generation scanned, for the pass's register copy.
+    QB_NOINLINE QB_COLD unsigned int __deliver_signals__() noexcept;
     //! Actor Management
 
 private:

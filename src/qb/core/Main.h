@@ -29,9 +29,11 @@
 
 #ifndef QB_MAIN_H
 #define QB_MAIN_H
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <csignal>
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <qb/system/container/unordered_map.h>
@@ -812,9 +814,9 @@ struct CoreSpawnerParameter {
     /**
      * @brief C++20 stop token wired to the engine's `qb::stop_source`.
      * @details
-     * Each worker polls it from its event loop. Combined with the legacy
-     * `Main::_signal_pending` path, it provides a deterministic, signal-free
-     * cancellation channel (e.g. when `Main` is destroyed without any POSIX
+     * Each worker polls it from its event loop. Combined with the signal path
+     * (`Main::_signal_raised` / `Main::_signal_generation`), it provides a deterministic,
+     * signal-free cancellation channel (e.g. when `Main` is destroyed without any POSIX
      * signal being delivered).
      */
     qb::stop_token stop_token;
@@ -837,13 +839,24 @@ class Main {
     //////// Types
     using Mailbox = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
 
-    static std::atomic<std::sig_atomic_t> _signal_pending;
-    /// Bumped by `onSignal()` and `stop()` on every raised signal. `_signal_pending` only holds the
-    /// LATEST signum and is never cleared during a run, so a per-core "already consumed" latch would
-    /// drop every signal after the first (a SIGHUP reload then SIGTERM, or `stop()` after any earlier
-    /// signal, left the engine unstoppable). Each `VirtualCore` re-synthesizes its `SignalEvent`
-    /// whenever this generation advances past the one it last delivered — so distinct AND repeated
-    /// signals are all delivered. Must stay lock-free for signal-handler safety (asserted in Main.cpp).
+#if defined(NSIG)
+    /// One slot per signal number the platform defines (`NSIG`: 65 on Linux, 32 on macOS, 23 on Windows).
+    static constexpr std::size_t SignalSlots = NSIG;
+#else
+    static constexpr std::size_t SignalSlots = 65;
+#endif
+    /// One generation per signal number, bumped by `onSignal()` -- and by `stop()` for SIGINT -- each
+    /// time that signal is raised (Huly QB-65). A core delivers one `SignalEvent` per signal whose
+    /// generation moved since its last scan, in ascending signum order, so two DIFFERENT signals raised
+    /// between two passes are both delivered: a non-terminal one raised after a SIGTERM or a `stop()`
+    /// can no longer hide it. The single `_signal_pending` slot this replaces held only the LATEST
+    /// signum, so a registered SIGHUP landing after a SIGTERM left every core delivering SIGHUP alone
+    /// and the engine running. Repeats of the SAME signal between two passes coalesce into one event,
+    /// as POSIX standard signals do.
+    static std::array<std::atomic<unsigned int>, SignalSlots> _signal_raised;
+    /// Bumped (release) after the slot of every raised signal: the ONE value the pass reads (relaxed)
+    /// to decide whether to scan the slots at all. Both stay lock-free for signal-handler safety
+    /// (asserted in Main.cpp).
     static std::atomic<unsigned int> _signal_generation;
 
     std::atomic<uint64_t> _sync_start;
@@ -1043,7 +1056,7 @@ using engine = Main;
 // The `#include "Actor.h"` below is deliberate in BOTH its presence and its position.
 //   * Presence: the bodies need `TActorFactory` (Actor.h:2095), the `service_type` concept
 //     (Actor.h:110) and `Service` (Actor.h:1722). Main.h's own DECLARATIONS need none of
-//     them -- `IActorFactory` is forward-declared at Main.h:49 -- which is why this header
+//     them -- `IActorFactory` is forward-declared at Main.h:51 -- which is why this header
 //     still compiles alone and why the include was never needed above.
 //   * Position: at the tail, not in the include block at the top. Main.h is one of the most
 //     densely cited headers in the readme book (31 `Main.h:NNN` citations across seven

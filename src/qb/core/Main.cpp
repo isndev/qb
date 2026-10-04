@@ -347,18 +347,21 @@ SharedCoreCommunication::getNbCore() const noexcept {
 }
 // !SharedCoreCommunication
 
-static_assert(std::atomic<std::sig_atomic_t>::is_always_lock_free, "Main signal flag must stay lock-free to remain signal-handler-safe");
-static_assert(std::atomic<unsigned int>::is_always_lock_free, "Main signal generation must stay lock-free to remain signal-handler-safe");
+static_assert(std::atomic<unsigned int>::is_always_lock_free, "Main signal generations must stay lock-free to remain signal-handler-safe");
 
-std::atomic<std::sig_atomic_t> Main::_signal_pending{0};
-std::atomic<unsigned int>      Main::_signal_generation{0};
+std::array<std::atomic<unsigned int>, Main::SignalSlots> Main::_signal_raised{};
+std::atomic<unsigned int>                                Main::_signal_generation{0};
 
 void
 Main::onSignal(int const signum) noexcept {
-    _signal_pending.store(signum, std::memory_order_relaxed);
-    // Advance the generation (release) AFTER publishing the signum so a core that observes the new
-    // generation (acquire) also observes the new signum. This is what lets every core re-deliver a
-    // signal even when `_signal_pending` already held one — see Main::_signal_generation.
+    static_assert(static_cast<std::size_t>(SIGINT) < SignalSlots && static_cast<std::size_t>(SIGTERM) < SignalSlots,
+                  "the terminal signals must have a slot");
+    // Signal-handler context: lock-free atomic read-modify-writes only. The signal's own slot first,
+    // then the global generation with release ordering, so a core that observes the new generation
+    // (acquire) also observes the slot -- see Main::_signal_raised. A signum outside the slots (none
+    // the platform defines) still advances the generation: the scan finds nothing new, as before.
+    if (signum > 0 && static_cast<std::size_t>(signum) < SignalSlots)
+        _signal_raised[static_cast<std::size_t>(signum)].fetch_add(1u, std::memory_order_relaxed);
     _signal_generation.fetch_add(1u, std::memory_order_release);
 }
 
@@ -374,6 +377,10 @@ Main::~Main() noexcept {
         // join automatically, but requesting here shortens the shutdown path
         // for workers that are currently parking on a high-latency mailbox.
         _stop_source.request_stop();
+        // ...and move the signal generation, which is the ONE value a core's pass reads: the scan it
+        // triggers finds the token requested and delivers the virtual SIGINT (Huly QB-65). The
+        // request above happens-before this release, so the core's acquire sees it.
+        _signal_generation.fetch_add(1u, std::memory_order_release);
         join();
     }
 }
@@ -527,7 +534,8 @@ Main::start(bool async) noexcept {
     }
 
     _is_running = true;
-    _signal_pending.store(0, std::memory_order_relaxed);
+    for (auto &slot : _signal_raised)
+        slot.store(0, std::memory_order_relaxed);
     _signal_generation.store(0, std::memory_order_relaxed); // fresh cores start at generation 0
 
     _shared_com = std::make_unique<SharedCoreCommunication>(_core_initializers);
@@ -579,9 +587,9 @@ Main::stop() noexcept {
     // This path is documented as signal-handler-safe. C++ permits plain
     // lock-free atomic operations in signal handlers; the static_assert above
     // keeps that contract explicit.
-    _signal_pending.store(SIGINT, std::memory_order_relaxed);
-    // Bump the generation like onSignal() so stop() is honoured even after an earlier signal was
-    // already delivered (otherwise a prior SIGHUP/SIGINT would leave the engine unstoppable).
+    // A SIGINT raised by hand: its slot, then the generation, exactly like onSignal() -- so stop() is
+    // honoured after any earlier signal, and a signal raised after it cannot hide it (Huly QB-65).
+    _signal_raised[static_cast<std::size_t>(SIGINT)].fetch_add(1u, std::memory_order_relaxed);
     _signal_generation.fetch_add(1u, std::memory_order_release);
 }
 

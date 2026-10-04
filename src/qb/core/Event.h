@@ -1030,7 +1030,7 @@ inline constexpr bool event_fits_ring = allocator::getItemSize<T, EventBucket>()
  * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
  *         compile-time only and this compiles to the same load as the call it replaced).
  * @details Called from the three -- and, measured, only three -- sites that stamp the routing
- *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:789) and
+ *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:797) and
  *          `Pipe::push` / `Pipe::allocated_push` (Pipe.h:307, :333). The two `Pipe` bodies do
  *          NOT call `fill_event`; they duplicate it, so a guard placed only in `fill_event`
  *          would miss `Actor::to(dest).push<E>()` and `allocated_push<E>()` entirely.
@@ -1082,7 +1082,7 @@ routing_safe_type_id() noexcept {
 
     // The OTHER contract every enqueue sink owes, and the one that used to be checked at only
     // one of the three. `VirtualCore::fill_event` has carried this assertion since 2.x
-    // (VirtualCore.h:794-796), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
+    // (VirtualCore.h:802-804), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
     // `Pipe::allocated_push` duplicate `fill_event` rather than calling it, so
     // `getPipe(dest).push<E>()` and `.allocated_push<E>()` were not -- exactly the gap the
     // routing-field guard above was written to close for the header fields. MEASURED on this

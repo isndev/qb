@@ -95,16 +95,16 @@ auto *const raw = pipe.allocate_back(BUCKET_SIZE);
 if (dest._core_id != _index && try_send(data))
     pipe.free_back(BUCKET_SIZE);
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1037-1055 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1045-1063 -->
 
 Read that as a narrative and the whole `push` / `send` contract falls out:
 
-- `push` calls `allocate_back` (`src/qb/core/VirtualCore.h:1080`). The event joins the FIFO stream at the tail and is delivered in the next flush, **in order** with everything already queued to that core.
+- `push` calls `allocate_back` (`src/qb/core/VirtualCore.h:1088`). The event joins the FIFO stream at the tail and is delivered in the next flush, **in order** with everything already queued to that core.
 - `send` also calls `allocate_back`, attempts an immediate cross-core delivery, and on success **retracts the allocation** with `free_back` — exact, because nothing was queued between the two calls, so the reservation is still the tail. The event never enters the stream at all, so it can arrive *before* events queued earlier by `push` — that is the unordered contract, stated as a mechanism rather than a rule.
 - If the immediate attempt fails, or the destination is this same core, the retraction does not happen and the event stays in the pipe, at the tail, to be flushed normally.
-- The retraction is a cursor move, not a destructor call. Nothing runs `~T()` on that storage. That is why the same call site `static_assert`s that a `QoS < 2` event is trivially destructible (`src/qb/core/VirtualCore.h:1023-1025`): a non-trivial destructor would simply never run.
+- The retraction is a cursor move, not a destructor call. Nothing runs `~T()` on that storage. That is why the same call site `static_assert`s that a `QoS < 2` event is trivially destructible (`src/qb/core/VirtualCore.h:1031-1033`): a non-trivial destructor would simply never run.
 
-Two typed conveniences wrap the raw allocators for callers that do not need this control: `allocate_back<U>(args...)` and `allocate<U>(args...)` compute the bucket count for `U`, reserve it and placement-new in one step (`qb/src/qb/system/allocator/pipe.h:402-407`, `:452-457`); `allocate_size<U>(extra, args...)` reserves the object plus a trailing run of elements (`:418-423`). The event path deliberately does *not* use them — it allocates raw, prepares the whole bucket range to a deterministic value, and only then placement-news, because the cross-core relocation guard scans every byte of that range (`src/qb/core/VirtualCore.h:1077-1081`).
+Two typed conveniences wrap the raw allocators for callers that do not need this control: `allocate_back<U>(args...)` and `allocate<U>(args...)` compute the bucket count for `U`, reserve it and placement-new in one step (`qb/src/qb/system/allocator/pipe.h:402-407`, `:452-457`); `allocate_size<U>(extra, args...)` reserves the object plus a trailing run of elements (`:418-423`). The event path deliberately does *not* use them — it allocates raw, prepares the whole bucket range to a deterministic value, and only then placement-news, because the cross-core relocation guard scans every byte of that range (`src/qb/core/VirtualCore.h:1085-1089`).
 
 ## `pipe<T>::swap` — one cache line, and why it is asserted
 

@@ -7,7 +7,22 @@ policy.
 
 ## [Unreleased]
 
-Nothing yet. Entries land here as they are merged, and move under a version heading when that version is tagged.
+### Fixed
+
+- **A shutdown could be lost to a signal raised right after it (Huly QB-65).** The engine kept ONE
+  pending-signal slot: `Main::stop()` and the process signal handler both overwrote it, and each
+  core delivered only the signum it held at its next pass. A `SIGTERM` (or a `stop()`) followed,
+  before that pass, by a signal the program had registered itself -- a `SIGHUP` reload, a `SIGUSR1`
+  stats dump, both the documented uses of `registerSignal` -- reached every actor as the
+  non-terminal signal alone, and the engine kept running until the supervisor escalated to
+  `SIGKILL`. Each signal number now has its own generation, bumped by the handler (and by `stop()`
+  for `SIGINT`); a core delivers one `SignalEvent` per signal raised since its last pass, in
+  ascending signum order, so the terminal one is never hidden. Repeats of the same signal between
+  two passes still coalesce into one event, as POSIX standard signals do. The pass got lighter:
+  `stop()`, the signals and `~Main`'s stop request now all advance one global generation, so a
+  core reads ONE value per pass where it read the pending slot and polled the stop token; and it no
+  longer re-enters the signal branch on every pass for the rest of a run after its first signal,
+  which the old slot (never cleared) made it do.
 
 ## [3.2.1] - 2026-09-24
 
