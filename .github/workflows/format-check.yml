@@ -50,7 +50,7 @@ jobs:
       # above and for the same reason: pure Python, no toolchain, whole tree rather than the
       # diff (the directive can be in a header this PR does not touch but re-includes).
       # qb only; qbm's copies run from the superproject's dev/agent/verify.sh.
-      - name: Headers - no #include is processed inside a namespace
+      - name: 'Headers - no #include is processed inside a namespace'
         run: ./scripts/check-namespace-scoped-includes.py --min-includes 2900
 
       - name: Install LLVM tools
@@ -58,95 +58,73 @@ jobs:
           ./scripts/ci-install-linux-dependencies.sh --profile format-check
           "clang-format-${LLVM_VERSION}" --version
 
-      # SCOPE — clang-format is diff-scoped ON PURPOSE, and this is the measurement behind it.
+      # SCOPE — the WHOLE tree, since 2026-10-04 (Huly QB-10).
       #
-      # Note first what is NOT diff-scoped: the four Python guards above all sweep the whole
-      # tree and carry floors. Only the clang-format leg below looks at changed files, so the
-      # blast radius of this decision is formatting alone.
+      # This leg used to check only the files a push or a pull request changed. A whole-tree gate
+      # was first rejected on data: measured at 3.0.0 over this exact scope (429 files), 56 already
+      # failed — 13%, spread through real source (14 in src/qb/io, 9 in src/qb/core) — so flipping
+      # then would have made the lane red on its first run. The sweep that followed reformatted
+      # every one of them in a single mechanical commit, proven whitespace-only at token level, and
+      # the superproject's `dev/agent/check-format.sh --census` has measured 0 non-conformant in
+      # scope ever since (465 files when this was flipped). The precondition this comment used to
+      # set — "land the reformat, confirm 0 fail, THEN flip to `git ls-files` and give it a floor" —
+      # was met, and the flip was the maintainer's call: taken. A diff-scoped run PROVED NOTHING
+      # ABOUT UNTOUCHED FILES and could pass having checked none; this one checks every file in
+      # scope and refuses to pass over fewer than the floor below (a moved directory or a broken
+      # glob would otherwise read as a clean tree). The floor is the qb line of the superproject's
+      # `dev/agent/format-backlog.baseline`.
       #
-      # A whole-tree formatting gate was once rejected on data: measured at 3.0.0 over this exact
-      # scope (429 files), 56 already failed — 13%, spread through real source (14 in src/qb/io,
-      # 9 in src/qb/core) rather than parked in a vendored corner. Flipping this leg then would
-      # have made the lane red on its first run.
-      #
-      # THAT BACKLOG IS NOW ZERO. The sweep this comment used to ask for has landed: every one of
-      # the 52 files still failing at the time was reformatted in a single mechanical commit,
-      # proven whitespace-only at token level, and `dev/agent/check-format.sh --census` now
-      # measures 0 non-conformant of 429 in scope. The precondition the old text set out — "land
-      # the reformat as its own commit, confirm 0 of 429 fail, THEN flip this leg to
-      # `git ls-files` and give it a floor" — is therefore met, and flipping is a one-line change
-      # to the step below plus a floor. It is deliberately NOT done here: it is a policy change to
-      # what this lane gates, and it is the maintainer's call, not a side effect of a cleanup.
-      #
-      # Until it is flipped, the honest caveat stands and the green tick does not convey it:
-      # THIS STEP PROVES NOTHING ABOUT UNTOUCHED FILES. A run that reports success may have
-      # checked a single file, or — via the branch below — none at all. Whole-tree coverage today
-      # comes from `dev/agent/check-format.sh`'s census leg, which is local and ceilinged, and
-      # from the pre-push hook in `dev/githooks/`.
-      #
-      # The exclusion below drops UPSTREAM-DERIVED trees. `src/qb/vendor/` was always excluded;
+      # The exclusion drops UPSTREAM-DERIVED trees. `src/qb/vendor/` was always excluded;
       # `not-qb/` and `src/qbm/<mod>/vendor/` were added when the sweep found qbm-http's vendored
       # llhttp inside the census. Formatting it would falsify the invariant its own header states —
       # "Vendored from llhttp 9.2.1 ... Only the symbol prefix differs; the parser is upstream's" —
       # and destroy the ability to diff against upstream. Those two alternatives are a measured
       # no-op for qb, which has neither directory; they are here so this regex and
-      # `check-format.sh`'s stay byte-identical, which is what makes the local gate answer the
-      # same question this lane does.
+      # `check-format.sh`'s stay byte-identical, which is what makes the local census answer the
+      # same question this lane does — and the same regex runs in the format-check lanes of the
+      # three qbm repositories and qb-examples.
       #
       # `src/qb/ev/` is the event loop, promoted OUT of vendor/ in 3.0 because qb maintains it and
-      # publishes it as isndev/qb-ev. It stays excluded anyway, and the reason is the same one: it is
+      # publishes it as isndev/qev. It stays excluded anyway, and the reason is the same one: it is
       # a derived work of libev and of wepoll, whose retained copyright notices and per-file
       # derivation map are the licence compliance. The exclusion tracks PROVENANCE, not the name of
       # a directory. It also stays byte-identical to the standalone repo's copy — see
       # `dev/agent/check-qev-identity.py` — and a formatter that ran on one tree and not the other
       # would break that by construction.
-      - name: Collect changed C++ files
-        id: changed
+      - name: Collect the C++ files in scope
+        id: scope
         shell: bash
         env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
+          SCOPE_FLOOR: "400"
         run: |
           set -euo pipefail
-
-          zero_sha="0000000000000000000000000000000000000000"
-          if [ -n "${PR_BASE_SHA:-}" ]; then
-            range="${PR_BASE_SHA}...${HEAD_SHA}"
-          elif [ -n "${BEFORE_SHA:-}" ] && [ "${BEFORE_SHA}" != "${zero_sha}" ]; then
-            range="${BEFORE_SHA}...${HEAD_SHA}"
-          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-            range="HEAD^...HEAD"
-          else
-            range="HEAD"
-          fi
-
-          files="$(
-            git diff --name-only --diff-filter=ACMRT "${range}" -- \
+          git ls-files -- \
               '*.h' '*.hh' '*.hpp' '*.hxx' \
               '*.c' '*.cc' '*.cpp' '*.cxx' \
               '*.ipp' '*.tpp' |
-            grep -Ev '^(build|modules|not-qb|src/qb/ev|src/qb/vendor|src/qbm/[a-z0-9_]+/vendor)/' || true
-          )"
+            grep -Ev '^(build|modules|not-qb|src/qb/ev|src/qb/vendor|src/qbm/[a-z0-9_]+/vendor)/' > "${RUNNER_TEMP}/format-scope.txt" || true
+          n="$(grep -c . "${RUNNER_TEMP}/format-scope.txt" || true)"
+          echo "files in scope: ${n} (floor ${SCOPE_FLOOR})"
+          if [ "${n}" -lt "${SCOPE_FLOOR}" ]; then
+            echo "::error::only ${n} C++ files in the format-check scope, under the floor of ${SCOPE_FLOOR} -- a broken glob or a moved tree would otherwise pass as a clean census of nothing"
+            exit 1
+          fi
 
-          {
-            echo "files<<EOF"
-            echo "${files}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Check formatting
-        if: steps.changed.outputs.files != ''
+      - name: Check formatting (whole tree)
         shell: bash
-        env:
-          CHANGED_FILES: ${{ steps.changed.outputs.files }}
         run: |
           set -euo pipefail
-          while IFS= read -r file; do
-            [ -n "${file}" ] || continue
-            "clang-format-${LLVM_VERSION}" --dry-run --Werror "${file}"
-          done <<< "${CHANGED_FILES}"
-
-      - name: Nothing to check
-        if: steps.changed.outputs.files == ''
-        run: echo "No changed C++ files matched the format-check scope."
+          : > "${RUNNER_TEMP}/format-offenders.txt"
+          xargs -P "$(nproc)" -I{} sh -c \
+            '"clang-format-$0" --dry-run --Werror "$1" >/dev/null 2>&1 || printf "%s\n" "$1"' \
+            "${LLVM_VERSION}" {} < "${RUNNER_TEMP}/format-scope.txt" > "${RUNNER_TEMP}/format-offenders.txt"
+          bad="$(grep -c . "${RUNNER_TEMP}/format-offenders.txt" || true)"
+          if [ "${bad}" -ne 0 ]; then
+            echo "::error::${bad} file(s) are not clang-format-${LLVM_VERSION} clean:"
+            sort "${RUNNER_TEMP}/format-offenders.txt" | while IFS= read -r f; do
+              echo "  ${f}"
+              "clang-format-${LLVM_VERSION}" --dry-run --Werror "${f}" 2>&1 | head -20 || true
+            done
+            exit 1
+          fi
+          echo "all $(grep -c . "${RUNNER_TEMP}/format-scope.txt") files in scope are clang-format-${LLVM_VERSION} clean"
