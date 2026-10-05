@@ -78,7 +78,7 @@ Two practical rules follow. First, sending an event never throws, so you cannot 
 | `onInit()` throws at startup | Caught inside `__drive_init__`; converted to an init failure | Core flagged `BadActorInit` (not `ExceptionThrown`); core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
 | `push`/`send` to a dead or unknown `ActorId` | Silent | Event dropped; sender keeps running | Nobody — design an explicit ack/timeout if you need to know |
 | Peer closes, socket error, protocol violation | `on(event::disconnected&&)` | Connection disposed; event delivered to the I/O component | The actor's `disconnected` handler |
-| Callback exception (`async::callback`, `scoped_callback`) | Swallowed | Caught by an internal `catch (...)`. `async::callback`'s `Timeout` (`src/qb/io/async/io.h:209`) then deletes itself; `scoped_callback`'s `ScopedTimeout` (`src/qb/io/async/io.h:405`) does **not** — it is owned by its handle and only marks itself fired | Nobody — see [the callback footgun](#the-asynccallback-lifetime-footgun) |
+| Callback exception (`async::callback`, `scoped_callback`) | Swallowed | Caught by an internal `catch (...)`. `async::callback`'s `Timeout` (`src/qb/io/async/io.h:210`) then deletes itself; `scoped_callback`'s `ScopedTimeout` (`src/qb/io/async/io.h:406`) does **not** — it is owned by its handle and only marks itself fired | Nobody — see [the callback footgun](#the-asynccallback-lifetime-footgun) |
 
 ## Actor-level error management
 
@@ -382,7 +382,7 @@ qb::io::async::callback([this]() {
 **2. Own the timer with `scoped_callback`** so it is cancelled deterministically when the actor dies. `scoped_callback` returns `std::unique_ptr<ScopedTimeout<…>>`; store it as an actor member. When the actor is destroyed, the member's destructor stops the watcher and releases its registration, so the callback can never run after the actor is gone:
 
 ```cpp
-// src: qb/src/qb/io/async/io.h:405 (class ScopedTimeout), :465, :481 (scoped_callback overloads)
+// src: qb/src/qb/io/async/io.h:406 (class ScopedTimeout), :466, :482 (scoped_callback overloads)
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <chrono>

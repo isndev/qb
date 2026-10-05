@@ -480,14 +480,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   continuously-updating value use `qb::wall_now()` /
   `qb::unix_nanos(qb::wall_now())`. _(Actor.h:753-769; VirtualCore.h:875-887; VirtualCore.cpp:1205-1212)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
-  object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:62-67, :82-83, :91-95)_
+  object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:63-68, :83-84, :92-96)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
   drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1368-1381; mixin.h:63-71)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
   them. _(listener.h:1353-1365)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:351-377)_ _(listener.h:1420)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:352-378)_ _(listener.h:1420)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:550-579)_
@@ -522,7 +522,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:576-579; ev++.h:762)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:577-580; ev++.h:762)_
+- **Reusing one io object for the next connection** (a client that is itself the io of every connection it
+  opens): `disconnect()` defers `dispose()` to the watcher's next dispatch — a `start()` or `reset_io_state()`
+  before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&)` (debug
+  assertions). A standalone client that needs the teardown done when it returns calls the protected
+  `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
+  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2160-2189, :2630-2637, :3007-3011)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:254-271)_

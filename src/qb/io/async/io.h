@@ -29,6 +29,7 @@
 #ifndef QB_IO_ASYNC_IO_H
 #define QB_IO_ASYNC_IO_H
 
+#include <cassert>
 #include <filesystem>
 #include <memory>
 #include <new>
@@ -2109,12 +2110,20 @@ public:
      * @brief Starts bidirectional asynchronous I/O operations.
      * @details Sets the transport to non-blocking mode and starts listening for read events (`EV_READ`).
      *          Resets any previous disconnection reason (`_reason = 0`) and system error (`_system_error = 0`).
-     *          Write events (`EV_WRITE`) are automatically enabled when data is published via `publish()` or `operator<<`.
+     *          Write events (`EV_WRITE`) are automatically enabled when data is published via `publish()` or `operator<<`
+     *          -- and at once when `out()` already holds data published before `start()` (Huly QB-202).
      *
      * @note **Usage:** This method should be called after setting up the transport (e.g., after `connect()` or `accept()`)
      *       and optionally setting a protocol via `switch_protocol()`. Once started, the component will automatically
      *       read data from the transport and process messages through the active protocol, and write buffered data
      *       when the transport becomes writable.
+     *
+     * @note **Reusing the object for its next connection.** Not while a `disconnect()` is pending: its `dispose()` is
+     *       deferred to this watcher's next dispatch, and a `start()` before it cancels it -- the restart clears the
+     *       event `disconnect()` fed and `_reason` is zeroed, so `on(event::disconnected&)` never runs. Not from inside
+     *       `on(event::disconnected&)` either: on a standalone client `dispose()` stops the watcher as soon as that
+     *       handler returns. Both are debug assertions. Clear what the previous connection left with
+     *       `reset_for_reconnect()` before installing the next transport (Huly QB-202).
      *
      * @note **Actor Integration:** When used within a `qb::Actor`, this is typically called in `onInit()` or after
      *       establishing a connection. The component will then automatically trigger `on(event::io&)` events
@@ -2149,6 +2158,17 @@ public:
      */
     void
     start() noexcept {
+        // The reuse contract (Huly QB-202), checked where a violation is still visible: a pending
+        // disconnect() would be cancelled by the restart below (its EV_UNDEF cleared, `_reason`
+        // zeroed), and a start() made from on(event::disconnected&) is undone by the stop() that
+        // dispose() runs as soon as that handler returns. Debug-only; both are caller errors.
+        assert(!(_reason != 0 && !_is_disposed)
+               && "io::start() while a disconnect() is pending: its dispose() has not run yet -- wait for "
+                  "on(event::disconnected&)");
+        if constexpr (!_Derived::has_server)
+            assert(!(_is_disposed && this->_async_event.is_active())
+                   && "io::start() from inside dispose(): the watcher is stopped as soon as "
+                      "on(event::disconnected&) returns");
         // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into
         // `anfds[-1]` (the debug assert is compiled out in release → OOB, CWE-787). start() is
         // "begin I/O on a connected transport"; if the transport is not open, no-op. Gated on
@@ -2161,7 +2181,11 @@ public:
         _reason       = 0;
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
-        this->_async_event.start(Derived.transport().native_handle(), EV_READ);
+        // What was published before start() leaves now (Huly QB-202): publish() asked for EV_WRITE on
+        // a stopped watcher, and arming EV_READ alone overwrote it -- a command a reconnecting client
+        // re-issued during the disconnect, or a session constructor's greeting, then waited for the
+        // NEXT publish() to leave. A start() with nothing to write arms EV_READ alone, as before.
+        this->_async_event.start(Derived.transport().native_handle(), Derived.pendingWrite() ? EV_READ | EV_WRITE : EV_READ);
     }
 
     /**
@@ -2560,6 +2584,11 @@ public:
      * @note This method is safe to call multiple times; subsequent calls will update the reason code
      *       but the disconnection process will only occur once.
      *
+     * @note **The teardown is deferred.** `dispose()` -- and with it `on(event::disconnected&)` -- runs when the
+     *       loop next dispatches this watcher, not before `disconnect()` returns. An object reused for its next
+     *       connection must let it run first (`start()` and `reset_io_state()` assert it in debug), or -- a
+     *       standalone client -- complete it on the spot with `disconnect_now()` (Huly QB-202).
+     *
      * @note **Reason `0` caveat.** Explicit `disconnect(0)` is remapped to
      *       `disconnect_reason::user_initiated` because `_reason == 0` is the internal
      *       sentinel for "not disconnecting". Use the `disconnect(disconnect_reason)`
@@ -2577,6 +2606,34 @@ public:
     void
     disconnect(event::disconnect_reason reason) noexcept {
         disconnect(static_cast<int>(reason));
+    }
+
+protected:
+    /**
+     * @brief Disconnects, and completes the teardown before returning whenever the io dispatch is
+     *        not on the stack -- for a standalone client that must have failed its requests by then.
+     * @details `disconnect()` defers `dispose()` to the watcher's next dispatch. A client that is ITSELF
+     *          the io of every connection it opens cannot leave it pending: a connect() completing first
+     *          (libev invokes pending watchers last-in, first-out) restarts the watcher, which drops the
+     *          event `disconnect()` fed, and the teardown -- `on(event::disconnected&)` included -- never
+     *          runs (Huly QB-202). Called from inside this object's message loop (a protocol handler, with
+     *          the io dispatch on the stack), the teardown cannot run there: the event it fed runs it right after
+     *          that dispatch returns, in the same pass, before any connect() can complete. It never runs a loop pass,
+     *          so no other watcher and no coroutine is resumed under the caller -- a nested
+     *          `EVRUN_NOWAIT` pass would re-enter the coroutine scheduler when called from a coroutine.
+     * @pre A standalone client: a server-associated session's `dispose()` hands it to its server
+     *      (compile-time error). Not from this object's other io hooks (`on(event::pending_read&)`,
+     *      `on(event::eof&)`, `on(event::eos&)`, `on(event::pending_write&)`): the dispatch that called
+     *      them continues after they return. The handlers `dispose()` calls must not throw.
+     */
+    void
+    disconnect_now(int reason = static_cast<int>(event::disconnect_reason::user_initiated)) noexcept {
+        static_assert(!_Derived::has_server, "io::disconnect_now(): standalone clients only -- a server-associated session's dispose() "
+                                             "hands it to its server");
+
+        disconnect(reason);
+        if (!_on_message)
+            dispose();
     }
 
 private:
@@ -2907,13 +2964,50 @@ protected:
      *
      * @pre The old async event must be stopped and the old transport socket closed
      *      before calling this — typically done from within the reconnect setup path.
+     *      Not while a `disconnect()` is pending (debug assertion): zeroing `_reason` under the
+     *      event it fed makes the watcher's next dispatch skip the teardown, and the disconnection
+     *      is lost (Huly QB-202).
      */
     void
     reset_io_state() noexcept {
+        assert(!(_reason != 0 && !_is_disposed)
+               && "io::reset_io_state() while a disconnect() is pending: its dispose() has not run yet -- wait "
+                  "for on(event::disconnected&)");
         _is_disposed  = false;
         _on_message   = false;
         _reason       = 0;
         _system_error = 0;
+    }
+
+    /**
+     * @brief Clears what the previous connection left before this object serves the next one: both
+     *        buffers and the protocols.
+     * @details For an object that is ITSELF the io of every connection it opens -- a client that
+     *          reconnects (qbm-http's HTTP/2 client, qbm-pgsql's `Database`) rather than building a
+     *          new io per connection. `dispose()` and `start()` never touch the buffers: what the
+     *          previous transport left unflushed in `out()` or unparsed in `in()` would otherwise be
+     *          the first bytes of the next connection (measured on the HTTP/2 client: a request pushed
+     *          and disconnected in the same tick went out ahead of the connection preface, and the
+     *          server closed the session -- Huly QB-103). The previous connection's protocols go too
+     *          (`clear_protocols()`: switch the next one in afterwards).
+     *
+     *          The dispose latches are left to `start()`, which clears them as the next transport goes
+     *          live: until then this object is not connected, and a `disconnect()` issued while the
+     *          next connection is being set up has nothing to tear down (Huly QB-202).
+     *
+     *          Call it where the next connection is set up, before its transport is installed -- never
+     *          from inside a protocol's handler, as it destroys the protocol that is running.
+     *
+     * @note A client that serializes requests straight into `out()` and lets a failing callback
+     *       re-issue one during the disconnect (qbm-redis) cannot clear `out()` at reconnect -- the
+     *       re-issued request is already there. It drops the dead connection's bytes where it fails
+     *       their requests instead, in `on(event::disconnected&)`, and keeps what was queued since.
+     */
+    void
+    reset_for_reconnect() {
+        Derived.in().reset();
+        Derived.out().reset();
+        clear_protocols();
     }
 };
 

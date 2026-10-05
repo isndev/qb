@@ -7,6 +7,17 @@ policy.
 
 ## [Unreleased]
 
+### Added
+
+- **`io<>` helpers and checks for a client that is ITSELF the io of every connection it opens (Huly QB-202).**
+  `reset_for_reconnect()` clears both buffers and the protocols before the next transport is installed --
+  `dispose()` and `start()` never touched the buffers, so what the previous connection left in `out()` was the
+  first thing the next one sent. `disconnect_now()` (standalone clients) completes the teardown before it returns,
+  without a loop pass -- or, from inside a protocol handler, as soon as that handler returns -- so a `connect()`
+  issued right after cannot overtake it. Both are protected, like `reset_io_state()`. `start()` and
+  `reset_io_state()` now assert in debug that no `disconnect()` is pending, and `start()` that it is not called
+  from inside `dispose()`: each cancelled the teardown in silence.
+
 ### Fixed
 
 - **A shutdown could be lost to a signal raised right after it (Huly QB-65).** The engine kept ONE
@@ -41,6 +52,10 @@ policy.
   `stat`s everywhere. `readme/3_qb_io/gaps.md` (its section is now "File I/O is watched metadata plus a
   blocking read"), `async_system.md`, `async_in_actors.md`, the `file_watcher` / `directory_watcher`
   parameter docs (which also named a parameter `ts` that is `interval`) and the API sheet say so.
+- **`io<>::start()` no longer drops what was published before it (Huly QB-202).** `publish()` asks for `EV_WRITE`
+  on a watcher that is not running yet, and `start()` armed `EV_READ` alone over it, so the bytes waited for the
+  next `publish()`: a command a reconnecting client re-issued during the disconnect never left. `start()` now arms
+  writing at once when `out()` already holds data; a `start()` with nothing to write is unchanged.
 
 ## [3.2.1] - 2026-09-24
 

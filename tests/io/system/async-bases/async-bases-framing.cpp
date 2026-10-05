@@ -36,6 +36,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -466,6 +467,21 @@ public:
         reset_io_state();
     }
 
+    // reset_for_reconnect() is protected, like reset_io_state(): the client that reuses itself calls it.
+    void
+    reset_for_next_connection() {
+        reset_for_reconnect();
+    }
+
+    // disconnect_now() is protected too: the standalone client that needs its teardown done calls it.
+    void
+    disconnect_now_for_test(int reason = 1) noexcept {
+        disconnect_now(reason);
+    }
+
+    // When set, on(disconnected) calls start() -- from inside dispose(), the misuse QB-202 asserts.
+    bool restart_on_disconnected = false;
+
     void
     force_read_overflow() noexcept {
         _force_read_overflow = true;
@@ -558,6 +574,8 @@ public:
     on(qb::io::async::event::disconnected &&event) noexcept {
         ++disconnected_events;
         last_disconnect_reason = event.reason;
+        if (restart_on_disconnected)
+            base().start();
     }
 
     void
@@ -617,9 +635,12 @@ public:
 };
 
 class DisconnectingDuplexProtocol : public qb::io::async::AProtocol<PipeDuplexProbe> {
+    bool _now; // disconnect_now() instead of disconnect(): inside the message loop the two must agree
+
 public:
-    explicit DisconnectingDuplexProtocol(PipeDuplexProbe &io) noexcept
-        : AProtocol(io) {}
+    explicit DisconnectingDuplexProtocol(PipeDuplexProbe &io, bool now = false) noexcept
+        : AProtocol(io)
+        , _now(now) {}
 
     std::size_t
     getMessageSize() noexcept final {
@@ -630,7 +651,10 @@ public:
     onMessage(std::size_t size) noexcept final {
         _io.messages.emplace_back(_io.in().begin(), size);
         _io.publish(std::string_view{"bye!"});
-        _io.disconnect(77);
+        if (_now)
+            _io.disconnect_now_for_test(77);
+        else
+            _io.disconnect(77);
     }
 
     void
@@ -1141,3 +1165,179 @@ TEST_F(AsyncIoBaseTest, DuplexWriteErrorsDistinguishWouldBlockFromHardFailure) {
         EXPECT_FALSE(session.base().is_connected());
     }
 }
+
+// -------------------------------------------------------------------------------------------
+// An io object reused for its NEXT connection (Huly QB-202) -- the shape of every client that is
+// itself the io of the connections it opens (qbm-http's HTTP/2 client, qbm-pgsql, qbm-redis).
+// dispose() and start() never touch the buffers: a reply published and disconnected in the same
+// tick stays in out(), and the next start() on the same object sends it first -- on the HTTP/2
+// client that put a request ahead of the connection preface. reset_for_reconnect() leaves nothing
+// of the previous connection -- buffers, protocol -- and start() clears the dispose latches.
+// -------------------------------------------------------------------------------------------
+TEST_F(AsyncIoBaseTest, DuplexResetForReconnectLeavesNothingOfThePreviousConnection) {
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.base().start();
+
+    session.base().publish(std::string_view{"stale"}); // queued, never flushed: the teardown runs first
+    auto *partial = session.in().allocate_back(2);     // and half a frame read, never framed
+    std::memcpy(partial, "ha", 2);
+    session.base().disconnect();
+    run_nowait_iterations();
+    ASSERT_EQ(session.dispose_events, 1u);
+    ASSERT_EQ(session.pendingWrite(), 5u) << "dispose() keeps out(): the defect's precondition";
+    ASSERT_EQ(session.pendingRead(), 2u) << "dispose() keeps in(): the defect's precondition";
+
+    session.reset_for_next_connection();
+    EXPECT_EQ(session.pendingWrite(), 0u);
+    EXPECT_EQ(session.pendingRead(), 0u);
+    EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
+    EXPECT_FALSE(session.base().is_connected()) << "the dispose latches are start()'s to clear, not the reset's";
+
+    // The next connection on the same object (the same socket stands in for a new transport):
+    // only what IT publishes reaches the peer -- "stalenext" was the defect.
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.base().start();
+    EXPECT_TRUE(session.base().is_connected()) << "start() clears the dispose latches";
+    session.base().publish(std::string_view{"next"});
+    run_nowait_iterations();
+    std::array<char, 16> buffer{};
+    const auto           read = pair.peer.read(buffer.data(), buffer.size());
+    ASSERT_EQ(read, 4);
+    EXPECT_EQ(std::string_view(buffer.data(), 4), "next");
+}
+
+// What was published BEFORE start() leaves with it (Huly QB-202): publish() asks for EV_WRITE on a
+// watcher that is not running yet, and start() used to arm EV_READ alone over it -- the bytes then
+// waited for the next publish(). That is the shape of a command a reconnecting client re-issued
+// during the disconnect, and of a greeting published in a session constructor.
+TEST_F(AsyncIoBaseTest, DuplexStartSendsWhatWasPublishedBeforeIt) {
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.base().publish(std::string_view{"early"});
+    ASSERT_EQ(session.pendingWrite(), 5u);
+
+    session.base().start();
+    run_nowait_iterations();
+    EXPECT_EQ(session.pendingWrite(), 0u) << "the bytes published before start() must have left";
+
+    pair.peer.set_nonblocking(true); // a regression must fail here, not hang the test on a blocking read
+    std::array<char, 16> buffer{};
+    const auto           read = pair.peer.read(buffer.data(), buffer.size());
+    ASSERT_EQ(read, 5);
+    EXPECT_EQ(std::string_view(buffer.data(), 5), "early");
+}
+
+// disconnect_now() (Huly QB-202): the teardown a standalone client needs done before its disconnect
+// returns -- so that a connect() issued right after cannot overtake it. Outside the message loop it
+// runs in the call, with no loop pass; from inside a protocol handler it cannot (the io dispatch is
+// on the stack) and behaves exactly as disconnect() does there: the reply drains as far as the socket
+// takes it at once, and the teardown runs in the same pass, right after that dispatch returns.
+TEST_F(AsyncIoBaseTest, DuplexDisconnectNowTearsDownBeforeReturning) {
+    {
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+        session.base().start();
+
+        session.disconnect_now_for_test(42);
+        EXPECT_EQ(session.disconnected_events, 1u) << "no loop pass ran: the teardown must have happened in the call";
+        EXPECT_EQ(session.dispose_events, 1u);
+        EXPECT_EQ(session.last_disconnect_reason, 42);
+        EXPECT_FALSE(session.base().is_connected());
+
+        run_nowait_iterations();
+        EXPECT_EQ(session.disconnected_events, 1u) << "the event the call fed must not tear down a second time";
+    }
+
+    {
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<DisconnectingDuplexProtocol>(session, true), nullptr);
+        session.base().start();
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        run_nowait_iterations();
+
+        EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
+        EXPECT_EQ(session.pendingWrite(), 0u);
+        EXPECT_EQ(session.disconnected_events, 1u);
+        EXPECT_EQ(session.last_disconnect_reason, 77);
+        std::array<char, 8> buffer{};
+        const auto          read = pair.peer.read(buffer.data(), buffer.size());
+        ASSERT_EQ(read, 4);
+        EXPECT_EQ(std::string_view(buffer.data(), 4), "bye!") << "from a handler, the reply drains first, as with disconnect()";
+    }
+
+    {
+        // The drain never holds the teardown back: when the reply cannot leave (the socket would
+        // block), the event disconnect() fed is the last one pending, libev runs it right after the
+        // handler's dispatch returns, and it tears down in the SAME pass -- nothing a connect() could
+        // complete in between.
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<DisconnectingDuplexProtocol>(session, true), nullptr);
+        session.force_write_would_block();
+        session.base().start();
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
+
+        for (int pass = 0; pass < 100 && session.messages.empty(); ++pass)
+            qb::io::async::run(EVRUN_NOWAIT);
+        ASSERT_EQ(session.messages, (std::vector<std::string>{"data"}));
+        ASSERT_EQ(session.pendingWrite(), 4u) << "the reply could not leave: the case this block is about";
+        EXPECT_EQ(session.disconnected_events, 1u) << "the pass that ran the handler must also have run the teardown";
+        EXPECT_EQ(session.last_disconnect_reason, 77);
+        EXPECT_FALSE(session.base().is_connected());
+    }
+}
+
+#ifndef NDEBUG
+// The reuse contract is asserted in debug (Huly QB-202). Each statement below is a caller error a
+// release build turns into a lost disconnection, in silence: a start() or a reset_io_state() under a
+// pending disconnect() zeroes `_reason` before its deferred dispose() runs, and a start() from
+// inside on(disconnected) is undone by the stop() dispose() runs right after it. The child is
+// re-executed ("threadsafe"); the patterns are substrings of the assertions' own text.
+TEST(AsyncIoBaseDeathTest, StartWhileADisconnectIsPendingIsRefused) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_DEATH(
+        {
+            qb::io::async::init();
+            auto            pair = make_stream_pair();
+            PipeDuplexProbe session{pair.probe};
+            session.base().start();
+            session.base().disconnect();
+            session.base().start();
+        },
+        "io::start.. while a disconnect");
+}
+
+TEST(AsyncIoBaseDeathTest, ResetIoStateWhileADisconnectIsPendingIsRefused) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_DEATH(
+        {
+            qb::io::async::init();
+            auto            pair = make_stream_pair();
+            PipeDuplexProbe session{pair.probe};
+            session.base().start();
+            session.base().disconnect();
+            session.reset_state();
+        },
+        "io::reset_io_state.. while a disconnect");
+}
+
+TEST(AsyncIoBaseDeathTest, StartFromInsideDisposeIsRefused) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_DEATH(
+        {
+            qb::io::async::init();
+            auto            pair = make_stream_pair();
+            PipeDuplexProbe session{pair.probe};
+            session.restart_on_disconnected = true;
+            session.base().start();
+            session.base().disconnect();
+            run_nowait_iterations();
+        },
+        "io::start.. from inside dispose");
+}
+#endif
