@@ -155,6 +155,9 @@ private:
     friend class Service;
     friend class CoreInitializer;
     friend class Main;
+    // The router's report of a unicast it could not deliver reaches the dead-letter path through
+    // the thread's current core (Huly QB-163).
+    friend void Event::__undelivered__(Event &) noexcept;
     template <typename>
     friend class ActorHandle; // RefActorHandle is an alias of ActorHandle
     ////////////
@@ -336,8 +339,10 @@ private:
 
         static void
         dispatch(Actor &actor, _Event &event) noexcept {
-            if (auto *const fn = actor._default_on[static_cast<std::size_t>(k)]; likely(fn != nullptr))
+            if (auto *const fn = actor._default_on[static_cast<std::size_t>(k)]; likely(fn != nullptr)) [[likely]]
                 fn(actor, event);
+            else [[unlikely]]
+                Event::__undelivered__(event); // an actor that opted out of this default event
         }
 
     public:
@@ -359,8 +364,10 @@ private:
                 for (std::size_t i = base; i < end; ++i)
                     dispatch(*snapshot[i], event);
                 snapshot.resize(base);
-            } else if (Actor *const actor = _core.__actor_slot__(dest)) {
+            } else if (Actor *const actor = _core.__actor_slot__(dest)) [[likely]] {
                 dispatch(*actor, event);
+            } else [[unlikely]] {
+                Event::__undelivered__(event); // no actor under this id
             }
             if constexpr (!std::is_trivially_destructible_v<_Event>) {
                 if (!event.is_alive())
@@ -522,6 +529,8 @@ private:
 
     /// Per-actor stash cap: a wedged-in-init actor must not OOM the core.
     static constexpr std::size_t kActivationStashCap = 4096u;
+    /// Dead letters logged one by one before the log thins out to one line per power of two.
+    static constexpr std::uint64_t kDeadLetterLogFirst = 16u;
 
 public:
     /**
@@ -628,6 +637,11 @@ private:
     // backpressure paths and declared after everything the pass reads, for the same reason.
     std::uint64_t _nb_send_blocked  = 0; ///< publish attempts that found the destination's mailbox full
     std::uint64_t _nb_event_dropped = 0; ///< best-effort (QoS-0) events discarded on backpressure
+    // The dead letters (Huly QB-163): counted by reason, and handed to the handler the core's
+    // `CoreInitializer` installed, if any. Touched only when an event reaches no actor.
+    std::uint64_t                                _nb_dead_letters = 0;
+    std::array<std::uint64_t, DeadLetterReasons> _nb_dead_letters_by_reason{};
+    DeadLetterHandler                            _dead_letter_handler;
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -729,7 +743,20 @@ private:
     /// @return true if the event was taken into the stash (ownership transferred — the caller must
     ///         NOT dispose the original); false if it was dropped (cap overflow) and the caller
     ///         must `_router.dispose()` the original to free a non-trivial payload.
-    [[nodiscard]] bool __stash_event__(ActorId dest, Event *event) noexcept;
+    /// Out of line on purpose: since its overflow log became a `__dead_letter__` call (Huly QB-163)
+    /// it is small enough for MSVC to inline into `__receive_events__`, whose loop then spilled its
+    /// index to the stack -- a load and a store per event received (+3 % on the one-core big cell
+    /// and on the pass-cost probe, measured).
+    [[nodiscard]] QB_NOINLINE bool __stash_event__(ActorId dest, Event *event) noexcept;
+    /// The ONE path of an event that reaches no actor (Huly QB-163): count it by reason, log it
+    /// -- the first 16 of the core, then at powers of two -- and hand its metadata to the
+    /// installed `DeadLetterHandler`. Cold and OUT OF LINE -- inlined into the receive loop's
+    /// not-found branch, its handler call, try/catch and log gave that loop a 376-byte frame and
+    /// its spills: +3..6 % on the one-core pass and push probes (measured). The caller disposes.
+    QB_NOINLINE QB_COLD void __dead_letter__(Event const &event, DeadLetterReason reason) noexcept;
+    /// Why a unicast found no handler: `unhandled` when a live actor holds the destination id,
+    /// `not_found` otherwise (never existed, removed, or killed earlier in the pass).
+    [[nodiscard]] QB_NOINLINE QB_COLD DeadLetterReason __undelivered_reason__(ActorId dest) const noexcept;
     /// Fire -- unlinked first -- every `ready_async` waiter of `act` with the outcome `ok`.
     static void __fire_activation_waiters__(Activation &act, bool ok) noexcept;
     /// Per-iteration pump: complete finished inits, replay stashes, enforce deadlines.
@@ -1387,7 +1414,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:506`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:504`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

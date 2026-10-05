@@ -117,12 +117,17 @@ extra_for_buckets(std::size_t buckets) noexcept {
     return buckets * QB_LOCKFREE_EVENT_BUCKET_BYTES - sizeof(BigEvent);
 }
 
+/// Dead letters the SENDING core reported as `oversize` (Huly QB-163): the flush that drops the
+/// event is core 0's.
+std::atomic<int> g_oversize_reported{0};
+
 /// Run one cross-core case; returns false if the engine failed to terminate in `budget`.
 [[nodiscard]] bool
 run_case(std::size_t extra, std::chrono::seconds budget) {
-    g_big           = 0;
-    g_tail          = 0;
-    g_payload_alive = 0;
+    g_big               = 0;
+    g_tail              = 0;
+    g_payload_alive     = 0;
+    g_oversize_reported = 0;
     // The engine runs on its own thread: a wedged join() must fail this test, not hang the
     // suite. std::async's future would block in its destructor, so use a detached thread
     // plus a promise.
@@ -130,7 +135,11 @@ run_case(std::size_t extra, std::chrono::seconds budget) {
     auto future = done->get_future();
     std::thread([extra, done] {
         qb::Main main;
-        auto     rcv = main.addActor<OvRecv>(1);
+        main.core(0).setDeadLetterHandler([](qb::DeadLetter const &letter) {
+            if (letter.reason == qb::DeadLetterReason::oversize)
+                g_oversize_reported.fetch_add(1);
+        });
+        auto rcv = main.addActor<OvRecv>(1);
         main.addActor<OvSend>(0, rcv, extra);
         main.start();
         main.join();
@@ -149,6 +158,7 @@ TEST(OversizeEvent, MaxSizedEventIsDeliveredCrossCore) {
     ASSERT_TRUE(run_case(extra_for_buckets(kMaxBuckets), std::chrono::seconds(30))) << "engine did not terminate for a ring-sized event";
     EXPECT_EQ(g_big.load(), 1) << "an event of exactly " << kMaxBuckets << " buckets must fit the mailbox ring";
     EXPECT_EQ(g_tail.load(), 1);
+    EXPECT_EQ(g_oversize_reported.load(), 0) << "a delivered event is no dead letter";
 }
 
 // One bucket more can never be enqueued — the engine must still terminate, and the
@@ -167,4 +177,5 @@ TEST(OversizeEvent, OversizedEventDoesNotWedgeTheEngine) {
     // exactly once (via the router's type-erased disposer), not leak it and not double-free it.
     EXPECT_EQ(g_payload_alive.load(), 0) << "the undeliverable event's payload was not disposed — dropping it must free "
                                             "its heap exactly like every other terminal path";
+    EXPECT_EQ(g_oversize_reported.load(), 1) << "the drop is a dead letter, reported by the sending core as `oversize`";
 }

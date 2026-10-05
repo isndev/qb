@@ -45,6 +45,7 @@
 #include <qb/system/time.h>
 #include <qb/utility/compat.h>
 #include "CoreSet.h"
+#include "DeadLetter.h"
 #include "Event.h"
 
 namespace qb {
@@ -200,12 +201,13 @@ public:
     };
 
 private:
-    const CoreId _index;
-    ServiceId    _next_id;
-    CoreIdSet    _affinity;
-    qb::duration _latency;
-    qb::duration _idle_spin;
-    qb::duration _io_poll_interval;
+    const CoreId      _index;
+    ServiceId         _next_id;
+    CoreIdSet         _affinity;
+    qb::duration      _latency;
+    qb::duration      _idle_spin;
+    qb::duration      _io_poll_interval;
+    DeadLetterHandler _dead_letter_handler; ///< handed to the core at thread start (Huly QB-163)
 
     qb::unordered_set<ServiceId>                _registered_services;
     std::vector<std::unique_ptr<IActorFactory>> _actor_factories;
@@ -334,6 +336,22 @@ public:
      * This setting takes effect when the engine starts.
      */
     CoreInitializer &setIoPollInterval(qb::duration interval = kDefaultIoPollInterval) noexcept;
+
+    /*!
+     * @brief Install the handler this core calls for every event that reaches no actor.
+     * @param handler Called on this core's thread, once per dead letter, with its metadata (type
+     *                id, source, destination, core, `qb::DeadLetterReason`) -- never the event.
+     *                An empty handler removes a previous one.
+     * @return Reference to this `CoreInitializer` for method chaining.
+     * @details Every dead letter is counted in the core's `qb::CoreStats` and logged (the first 16
+     *          of a core, then one line at each power of two), handler or not; the handler is for
+     *          what a program wants beyond that -- a metric, an alert, a test assertion. It runs in
+     *          the middle of the core's pass: keep it short, and synchronise what it captures if
+     *          several cores share it. An exception escaping it is contained and logged.
+     *          This setting takes effect when the engine starts.
+     * @see qb::DeadLetter, qb::DeadLetterReason, qb::Actor::getCoreStats()
+     */
+    CoreInitializer &setDeadLetterHandler(DeadLetterHandler handler) noexcept;
 
     /**
      * @brief Gets the CoreId associated with this initializer.

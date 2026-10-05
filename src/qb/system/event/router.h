@@ -229,6 +229,22 @@ public:
 };
 
 /**
+ * @brief An event type that wants to hear of a unicast the router could not deliver (Huly QB-163).
+ * @details `qb::Event` declares `static void __undelivered__(Event &) noexcept`: the router calls it
+ *          from the branch that drops a unicast with no handler subscribed under the destination id
+ *          -- cold already, and out of line. Any other event type leaves the router exactly as it
+ *          compiled before. The dispatch that skips a handler whose `is_alive()` is false (an actor
+ *          killed earlier in the pass, not yet reaped) reports nothing, deliberately: that branch sits
+ *          in the trampoline every event runs through, instantiated in the user's translation unit,
+ *          and a call there moved GCC's inlining of the handler -- +4 % on the one-core pass probe,
+ *          measured -- for a window that closes at the reap, after which the id is `not_found` here.
+ */
+template <typename _Event>
+concept reports_undelivered = requires(_Event &event) {
+    { _Event::__undelivered__(event) } noexcept;
+};
+
+/**
  * @brief Base policy for event handling
  *
  * Defines common event handling operations like invocation and disposal.
@@ -385,8 +401,10 @@ public:
             }
         }
 
-        if (auto *const handler = _subscribed_handlers.find(event.dest); likely(handler != nullptr))
+        if (auto *const handler = _subscribed_handlers.find(event.dest); likely(handler != nullptr)) [[likely]]
             invoke(**handler, event);
+        else if constexpr (internal::reports_undelivered<_RawEvent>) [[unlikely]]
+            _RawEvent::__undelivered__(event);
 
         if constexpr (_CleanEvent)
             dispose(event);
@@ -490,13 +508,18 @@ public:
             }
         }
 
-        if (auto *const entry = _subscribed_handlers.find(event.getDestination()); likely(entry != nullptr)) {
+        if (auto *const entry = _subscribed_handlers.find(event.getDestination()); likely(entry != nullptr)) [[likely]] {
             const auto  dispatch = entry->dispatch;
             auto *const target   = entry->handler;
             QB_ASSUME(dispatch != nullptr);
             dispatch(target, event);
+        } else if constexpr (internal::reports_undelivered<_RawEvent>) [[unlikely]] {
+            // No handler under this id: a stale, unknown or never-subscribed destination (Huly
+            // QB-163). The attributes are for MSVC, which ignores `likely()` and lays blocks out
+            // in source order: without them this call sat between the dispatch and the epilogue,
+            // and every delivered event jumped over it (+5 % one-core ping-pong, measured).
+            _RawEvent::__undelivered__(event);
         }
-
         if constexpr (_CleanEvent)
             dispose(event);
     }

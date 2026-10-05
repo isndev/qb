@@ -183,3 +183,8 @@ endif()
 # into a blocked core is published or dropped (the sink receives exactly the published), a QoS-2 burst loses
 # nothing and reports its backpressure, io callbacks and passes are counted.
 qb_add_test(MODULE qb-core TIER system NAME core-stats SOURCES engine/core-stats.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+# dead-letters pins the dead-letter path (Huly QB-163): every event that reaches no actor is counted and reported
+# with its exact reason -- not_found / unhandled whichever router path dropped it, a removed actor's id (the
+# same-pass window before its reap stays unreported, and a broadcast reports nothing), a failed async init's stash,
+# a full stash, the residue for a stopped core -- and a throwing handler is contained.
+qb_add_test(MODULE qb-core TIER system NAME dead-letters SOURCES engine/dead-letters.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)

@@ -4,7 +4,7 @@
  *
  * THE DEFECT THIS PINS. `qb::Event` keeps its routing header in private members --
  * `state`, `bucket_size`, `id`, `dest`, `source` (Event.h:414-419) -- and `ServiceEvent`
- * adds two public ones, `forward` and `service_event_id` (Event.h:531-532). The three
+ * adds two public ones, `forward` and `service_event_id` (Event.h:550-551). The three
  * sites that stamp that header (`VirtualCore::fill_event`, `Pipe::push`,
  * `Pipe::allocated_push`) write through a value of the DERIVED type, so a user event
  * declaring its own member of the same name hides the base one. Measured before the fix

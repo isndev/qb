@@ -30,14 +30,15 @@ llm/qb.llm.api.md	Actor.h:535-556	c0770292de14	static void *
 llm/qb.llm.api.md	Actor.h:753-773	6d433ed7aa37	/**
 llm/qb.llm.api.md	Actor.h:809-826	11edeff824dc	/**
 llm/qb.llm.api.md	Actor.h:842-886	5c5465b8e08f	/**
-llm/qb.llm.api.md	CoreStats.h:49-73	f7d9a0f16d2b	struct CoreStats {
-llm/qb.llm.api.md	Event.h:825-826	e76bd16e4192	template <typename... _Args>
-llm/qb.llm.api.md	Event.h:834-835	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.h:1002-1025	b36934211a5d	template <typename _ServiceActor>
-llm/qb.llm.api.md	VirtualCore.h:1463-1463	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1463-1464	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1477-1477	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1477-1479	b009dc2efdb7	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	CoreStats.h:51-80	2da19fd4886f	struct CoreStats {
+llm/qb.llm.api.md	DeadLetter.h:42-61	a6bc410ac76b	enum class DeadLetterReason : std::uint8_t {
+llm/qb.llm.api.md	Event.h:844-845	e76bd16e4192	template <typename... _Args>
+llm/qb.llm.api.md	Event.h:853-854	46b3869d9c8b	template <typename... _Args>
+llm/qb.llm.api.md	VirtualCore.h:1029-1052	b36934211a5d	template <typename _ServiceActor>
+llm/qb.llm.api.md	VirtualCore.h:1490-1490	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1490-1491	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1504-1504	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1504-1506	b009dc2efdb7	Actor::spawn(Func &&func) const {
 llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
 llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	combinators.h:72-72	f1f1a4f9f866	to_task(task<T> &&t) noexcept {
@@ -77,20 +78,21 @@ llm/qb.llm.md	Actor.h:535-556	c0770292de14	static void *
 llm/qb.llm.md	Actor.h:753-773	6d433ed7aa37	/**
 llm/qb.llm.md	Actor.h:776-793	c8539992454c	* @brief Get current time from the VirtualCore's perspective (nanosec...
 llm/qb.llm.md	Actor.h:842-886	5c5465b8e08f	/**
-llm/qb.llm.md	CoreStats.h:49-73	f7d9a0f16d2b	struct CoreStats {
-llm/qb.llm.md	Event.h:790-803	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
+llm/qb.llm.md	CoreStats.h:51-80	2da19fd4886f	struct CoreStats {
+llm/qb.llm.md	DeadLetter.h:42-61	a6bc410ac76b	enum class DeadLetterReason : std::uint8_t {
+llm/qb.llm.md	Event.h:809-822	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
 llm/qb.llm.md	ICallback.h:16-19	88e747230d39	* @warning The tick handler is executed on the `VirtualCore`'s event-...
-llm/qb.llm.md	Main.cpp:432-434	74f8f97adb96	} else if (core_factory.empty()) {
-llm/qb.llm.md	Main.cpp:615-617	0f521c2df42b	Main::core(CoreId const index) {
-llm/qb.llm.md	Main.h:302-302	5130406e8b76	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
-llm/qb.llm.md	Main.h:319-319	1bf8f0dd34f5	CoreInitializer &setIdleSpin(qb::duration idle_spin = kDefaultIdleSpi...
-llm/qb.llm.md	Main.h:368-370	8e039460f53f	/// Default `setIdleSpin()`: measured to hold a two-core ping-pong on...
+llm/qb.llm.md	Main.cpp:439-441	74f8f97adb96	} else if (core_factory.empty()) {
+llm/qb.llm.md	Main.cpp:622-624	0f521c2df42b	Main::core(CoreId const index) {
+llm/qb.llm.md	Main.h:304-304	5130406e8b76	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
+llm/qb.llm.md	Main.h:321-321	1bf8f0dd34f5	CoreInitializer &setIdleSpin(qb::duration idle_spin = kDefaultIdleSpi...
+llm/qb.llm.md	Main.h:386-388	8e039460f53f	/// Default `setIdleSpin()`: measured to hold a two-core ping-pong on...
 llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.cpp:1217-1224	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.h:1002-1025	b36934211a5d	template <typename _ServiceActor>
-llm/qb.llm.md	VirtualCore.h:1463-1463	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:1477-1477	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:887-899	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
+llm/qb.llm.md	VirtualCore.cpp:1220-1227	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.h:1029-1052	b36934211a5d	template <typename _ServiceActor>
+llm/qb.llm.md	VirtualCore.h:1490-1490	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:1504-1504	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:914-926	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
 llm/qb.llm.md	async/io.h:64-69	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
 llm/qb.llm.md	async/io.h:84-85	bc5b8adc7b00	base()
 llm/qb.llm.md	async/io.h:93-97	4ab46a163948	~base() {

@@ -97,16 +97,16 @@ if (dest._core_id != _index && try_send(data)) {
     // ... and count it as sent: no flush will ever see it
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1065-1086 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1092-1113 -->
 
 Read that as a narrative and the whole `push` / `send` contract falls out:
 
-- `push` calls `allocate_back` (`src/qb/core/VirtualCore.h:1111`). The event joins the FIFO stream at the tail and is delivered in the next flush, **in order** with everything already queued to that core.
+- `push` calls `allocate_back` (`src/qb/core/VirtualCore.h:1138`). The event joins the FIFO stream at the tail and is delivered in the next flush, **in order** with everything already queued to that core.
 - `send` also calls `allocate_back`, attempts an immediate cross-core delivery, and on success **retracts the allocation** with `free_back` — exact, because nothing was queued between the two calls, so the reservation is still the tail. The event never enters the stream at all, so it can arrive *before* events queued earlier by `push` — that is the unordered contract, stated as a mechanism rather than a rule.
 - If the immediate attempt fails, or the destination is this same core, the retraction does not happen and the event stays in the pipe, at the tail, to be flushed normally.
-- The retraction is a cursor move, not a destructor call. Nothing runs `~T()` on that storage. That is why the same call site `static_assert`s that a `QoS < 2` event is trivially destructible (`src/qb/core/VirtualCore.h:1051-1053`): a non-trivial destructor would simply never run.
+- The retraction is a cursor move, not a destructor call. Nothing runs `~T()` on that storage. That is why the same call site `static_assert`s that a `QoS < 2` event is trivially destructible (`src/qb/core/VirtualCore.h:1078-1080`): a non-trivial destructor would simply never run.
 
-Two typed conveniences wrap the raw allocators for callers that do not need this control: `allocate_back<U>(args...)` and `allocate<U>(args...)` compute the bucket count for `U`, reserve it and placement-new in one step (`qb/src/qb/system/allocator/pipe.h:402-407`, `:452-457`); `allocate_size<U>(extra, args...)` reserves the object plus a trailing run of elements (`:418-423`). The event path deliberately does *not* use them — it allocates raw, prepares the whole bucket range to a deterministic value, and only then placement-news, because the cross-core relocation guard scans every byte of that range (`src/qb/core/VirtualCore.h:1108-1112`).
+Two typed conveniences wrap the raw allocators for callers that do not need this control: `allocate_back<U>(args...)` and `allocate<U>(args...)` compute the bucket count for `U`, reserve it and placement-new in one step (`qb/src/qb/system/allocator/pipe.h:402-407`, `:452-457`); `allocate_size<U>(extra, args...)` reserves the object plus a trailing run of elements (`:418-423`). The event path deliberately does *not* use them — it allocates raw, prepares the whole bucket range to a deterministic value, and only then placement-news, because the cross-core relocation guard scans every byte of that range (`src/qb/core/VirtualCore.h:1135-1139`).
 
 ## `pipe<T>::swap` — one cache line, and why it is asserted
 
@@ -122,7 +122,7 @@ std::swap(*reinterpret_cast<CacheLine *>(this), *reinterpret_cast<CacheLine *>(&
 
 That assertion is not decorative and the margin is not generous. Measured on this checkout: `sizeof(CacheLine)` is 64 and `sizeof(qb::allocator::pipe<EventBucket>)` is **exactly 64** — six members (`_begin`, `_end`, `_flag_front`, `_capacity`, `_factor`, `_data`) occupy 48 bytes and `alignas(64)` rounds the object up. Two more `std::size_t` members would still fit; three would not, and without the assertion the swap would exchange only the first cache line, leaving `_data` half-exchanged — a double free on one side and a leak on the other.
 
-The consumer that explained why it existed was `VirtualCore::__receive__`, which used to swap the same-core pipe out before draining it. That pipe is a `segmented_pipe<EventBucket>` now (`VirtualPipe`, `src/qb/core/Event.h:868`), whose own `swap` exchanges six members and needs no byte trick because a segmented pipe is not one cache line (`src/qb/system/allocator/segmented_pipe.h:687-694`) — and since 3.2 the drain does not swap at all. It walks the one self pipe **in place, up to a fence** taken at the top of the pass (`segmented_pipe::mark()`, `front(fence &)`, `pop_front(fence &)`, `src/qb/system/allocator/segmented_pipe.h:604-645`):
+The consumer that explained why it existed was `VirtualCore::__receive__`, which used to swap the same-core pipe out before draining it. That pipe is a `segmented_pipe<EventBucket>` now (`VirtualPipe`, `src/qb/core/Event.h:887`), whose own `swap` exchanges six members and needs no byte trick because a segmented pipe is not one cache line (`src/qb/system/allocator/segmented_pipe.h:687-694`) — and since 3.2 the drain does not swap at all. It walks the one self pipe **in place, up to a fence** taken at the top of the pass (`segmented_pipe::mark()`, `front(fence &)`, `pop_front(fence &)`, `src/qb/system/allocator/segmented_pipe.h:604-645`):
 
 ```cpp
 if (!_self_pipe.empty()) {
@@ -133,7 +133,7 @@ if (!_self_pipe.empty()) {
     }
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.cpp:260-266 -->
+<!-- src: qb/src/qb/core/VirtualCore.cpp:257-263 -->
 
 Handlers dispatched from that drain will themselves `push` to actors on this core. Those pushes land *behind the fence* — in the tail segment past the write cursor the fence recorded, or in a segment linked after it — so the range being iterated never grows or moves underneath the loop, and they are the next pass's events, exactly as they were when they landed in the other pipe of a swap. Each drained segment ahead of the fence goes back to the core's pool before the next is read, and a pipe drained to its fence rewinds its one resident segment, so a one-event pass reads and writes the same 64 bytes every time. The swap had cost six loads and six stores per pass, and the handler's first push then waited on the `_wcur` the swap had just written — the longest dependency chain of a one-event pass, measured with the qb-vs-others pass-cost probe: with the fence, one self-event pass went 14.5 → 12.7 ns and the marginal cost of each further event in the same pass 8.9 → 4.2 ns. The contiguous `pipe<T>::swap` keeps its assertion for the `pipe<T>` instances the rest of the tree holds.
 
@@ -172,7 +172,7 @@ p.reorder();                      // compact; view() is still "PAYLOAD", size() 
 
 ### Events
 
-`qb::VirtualPipe` is `allocator::segmented_pipe<EventBucket>` (`src/qb/core/Event.h:868`), and every `VirtualCore` owns one per destination core plus one for itself, all drawing from the core's one `segment_pool` (`src/qb/core/VirtualCore.h:390-394`, `src/qb/core/VirtualCore.cpp:238-244`). An event is measured in cache-line-sized buckets rather than bytes — 64 B by default, and [an ABI axis](./abi_and_build_fingerprint.md) — which is what keeps `bucket_size` inside the 16-bit event header. Full narrative on [Inter-actor messaging](../4_qb_core/messaging.md).
+`qb::VirtualPipe` is `allocator::segmented_pipe<EventBucket>` (`src/qb/core/Event.h:887`), and every `VirtualCore` owns one per destination core plus one for itself, all drawing from the core's one `segment_pool` (`src/qb/core/VirtualCore.h:397-401`, `src/qb/core/VirtualCore.cpp:235-241`). An event is measured in cache-line-sized buckets rather than bytes — 64 B by default, and [an ABI axis](./abi_and_build_fingerprint.md) — which is what keeps `bucket_size` inside the 16-bit event header. Full narrative on [Inter-actor messaging](../4_qb_core/messaging.md).
 
 The segmented pipe keeps the contiguous pipe's vocabulary (`allocate_back`, `free_back`, `front`, `reset`) and changes one thing: **what it holds never moves**. A segment is one 256 KB allocation (4096 buckets, the step `pipe<T>` starts from) with a header in its first bucket; the pipe is a FIFO chain of them (`src/qb/system/allocator/segmented_pipe.h:377-378`). `allocate_back(n)` is a compare and a cursor add while the tail has room (`:523-530`); when it does not, the remainder of the tail is skipped and a segment is linked behind it (`:466`) — no reallocation, no `memcpy`, no compaction, so an allocated range is always contiguous and every earlier address stays valid. A request wider than a segment gets a dedicated, exactly-sized segment that goes back to the allocator when consumed. The read side is `front()`, the head segment's live range, advanced by `consume_front(n)` (`:655`) and `pop_front()` (`:581`); a popped segment goes to the core's pool at once, so a handler pushing while the engine drains grows into the segment that was just read — still warm — rather than into fresh memory. That is what turns the memory table below from a quadratic commitment into a high-water mark: measured on the one-core counting benchmark at 1 M events, the contiguous pipe copied 64 MB it never needed to move and took 26 600 minor faults per run re-touching its doublings; the segmented one copies nothing, and — once its segments came from slabs rather than from `malloc` — faults its memory once per 2 MB rather than once per 4 KB, and not at all from the second engine of a process onward.
 
@@ -218,7 +218,7 @@ That is a deliberate trade — a steady-state server pays no allocator traffic a
 |---|---|---|---|
 | `segmented_pipe<EventBucket>` | `N × (N + 1)` | 0 B at rest | one per destination core per core, plus one same-core pipe per core — by construction, none allocates before its first push (`src/qb/system/allocator/segmented_pipe.h:394`); each core's pool then holds its high water in 2 MB slabs of eight 256 KB segments, so a core that has pushed anything holds at least one slab (until 3.2 this row was `pipe<EventBucket>` at 262 144 B each, allocated eagerly, on every pipe of every core) |
 | mailbox producer slot | `N × N` | 65 728 B | one SPSC ring per sender, per destination mailbox |
-| per-core receive buffer | `N` | 65 536 B | one `_event_buffer` per core — a `std::array<EventBucket, 1024>` behind a `unique_ptr` (`src/qb/core/VirtualCore.h:384`) |
+| per-core receive buffer | `N` | 65 536 B | one `_event_buffer` per core — a `std::array<EventBucket, 1024>` behind a `unique_ptr` (`src/qb/core/VirtualCore.h:391`) |
 
 | Cores | Pipes (3.1, eager) | Pipes (3.2, at rest) | Mailboxes | Buffers | Total at rest (3.2) |
 |---|---|---|---|---|---|

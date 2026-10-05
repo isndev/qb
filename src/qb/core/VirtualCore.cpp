@@ -219,14 +219,11 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
             }
         }
         _router.route(*event, [this](auto &event) {
-            // `this` is read only by the log statement below, which compiles to nothing when
-            // QB_WITH_LOGGING=OFF -- and an explicit capture that ends up unused is
-            // -Wunused-lambda-capture on Apple clang. Keep the capture (the ON build needs it)
-            // and mark it used, rather than warning in every logging-off build.
-            static_cast<void>(this);
+            // No actor on this core registered the type. A broadcast reaching such a core is
+            // normal; a unicast is a dead letter (Huly QB-163) -- the destination is alive and
+            // handles no such event, or it is not there at all.
             if (!event.getDestination().is_broadcast())
-                QB_LOG_WARN(*this << " failed to send event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] sent from "
-                                  << event.getSource());
+                __dead_letter__(event, __undelivered_reason__(event.getDestination()));
         });
         ++_metrics._nb_event_received;
         _metrics._nb_bucket_received += width;
@@ -430,6 +427,7 @@ VirtualCore::__flush_pipes__() noexcept {
                                       << " buckets exceeds the " << kMaxDeliverableBuckets
                                       << "-bucket mailbox ring, so it can never be delivered cross-core. Keep events small and move bulk "
                                          "data behind a pointer member (see Pipe::allocated_push).");
+                    __dead_letter__(event, DeadLetterReason::oversize);
                     _router.dispose(event);
                     cur += event.bucket_size;
                     continue;
@@ -649,8 +647,7 @@ VirtualCore::__stash_event__(ActorId const dest, Event *event) noexcept {
         // A wedged-in-init actor must not OOM the core: drop the overflow and fail the
         // activation on the next pump by forcing its deadline to expire now. Report `false`
         // so the caller disposes the dropped event's payload (it is not taken into the stash).
-        QB_LOG_WARN(*this << " activation stash full for actor(" << dest.index() << "." << dest.sid() << "); dropping event["
-                          << qb::event_type_name(event->getID()) << '#' << event->getID() << "] and failing activation");
+        __dead_letter__(*event, DeadLetterReason::stash_overflow);
         it->second.deadline_ns = 1; // already in the past ⇒ pump cancels + fails it
         return false;
     }
@@ -715,6 +712,7 @@ VirtualCore::__pump_activations__() noexcept {
             // here (drop path) — the raw `vector<EventBucket>` teardown would free bytes only.
             for (auto &buckets : act.stash) {
                 auto *ev = reinterpret_cast<Event *>(buckets.data());
+                __dead_letter__(*ev, DeadLetterReason::init_failed);
                 _router.dispose(*ev);
             }
             if (actor != nullptr) {
@@ -733,11 +731,8 @@ VirtualCore::__pump_activations__() noexcept {
         for (auto &buckets : act.stash) {
             auto *ev = reinterpret_cast<Event *>(buckets.data());
             _router.route(*ev, [this](auto &e) {
-                // See the note on the sibling handler in __receive_events__: `this` is used only
-                // by the log statement, so mark it used for the QB_WITH_LOGGING=OFF build.
-                static_cast<void>(this);
                 if (!e.getDestination().is_broadcast())
-                    QB_LOG_WARN(*this << " failed to deliver stashed event[" << qb::event_type_name(e.getID()) << '#' << e.getID() << "]");
+                    __dead_letter__(e, __undelivered_reason__(e.getDestination()));
             });
         }
         // After the replay: a `ready_async` waiter resumes (next pass, through the scheduler)
@@ -1004,6 +999,7 @@ VirtualCore::__dispose_residual_to_stopped_cores__() noexcept {
                 // forever — stop draining this pipe instead (mirrors __receive_events__).
                 if (unlikely(bsz == 0))
                     break;
+                __dead_letter__(event, DeadLetterReason::peer_stopped);
                 _router.dispose(event);
                 cur += bsz;
             }
@@ -1077,8 +1073,15 @@ VirtualCore::removeActor(ActorId const id) noexcept {
             _dying_with_frame.insert(id);
             return;
         }
-        // Dropped here rather than by the pump: its waiters learn the outcome here (QB-62).
+        // Dropped here rather than by the pump: its waiters learn the outcome here (QB-62), and its
+        // stash dies here -- disposed as on the pump's failure path (until 3.3 this erase freed the
+        // stashed bytes without running a single event destructor), and reported (QB-163).
         __fire_activation_waiters__(ait->second, false);
+        for (auto &buckets : ait->second.stash) {
+            auto *ev = reinterpret_cast<Event *>(buckets.data());
+            __dead_letter__(*ev, DeadLetterReason::init_failed);
+            _router.dispose(*ev);
+        }
         _activating.erase(ait);
         _dying_with_frame.erase(id);
     }
@@ -1290,21 +1293,67 @@ VirtualCore::__deliver_signals__() noexcept {
     return _last_signal_generation;
 }
 
+// The dead-letter path (Huly QB-163): cold, out of line, at the end of the file for the same layout
+// reason -- reached only when an event finds no actor, never on a pass that delivers.
+void
+VirtualCore::__dead_letter__(Event const &event, DeadLetterReason const reason) noexcept {
+    const auto n = ++_nb_dead_letters;
+    ++_nb_dead_letters_by_reason[static_cast<std::size_t>(reason)];
+    // The first 16 of the core, then one line at each power of two: a flood of stale ids leaves a
+    // bounded trace with the running count, and no clock is read. `oversize` has its own CRIT at
+    // the flush, with the remedy.
+    if (reason != DeadLetterReason::oversize && (n <= kDeadLetterLogFirst || std::has_single_bit(n))) {
+        QB_LOG_WARN(*this << " dead letter #" << n << " (" << dead_letter_reason_name(reason) << "): event["
+                          << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
+                          << event.getDestination()
+                          << (n == kDeadLetterLogFirst ? " -- further dead letters are logged at each power of two" : ""));
+    }
+    if (_dead_letter_handler) {
+        const DeadLetter letter{event.getID(), event.getSource(), event.getDestination(), _index, reason};
+        try {
+            _dead_letter_handler(letter);
+        } catch ([[maybe_unused]] std::exception const &e) {
+            QB_LOG_CRIT(*this << " dead-letter handler threw: " << e.what() << " -- contained, the core carries on");
+        } catch (...) {
+            QB_LOG_CRIT(*this << " dead-letter handler threw a non-standard exception -- contained, the core carries on");
+        }
+    }
+}
+
+DeadLetterReason
+VirtualCore::__undelivered_reason__(ActorId const dest) const noexcept {
+    Actor const *const actor = __actor_slot__(dest);
+    return actor != nullptr && actor->is_alive() ? DeadLetterReason::unhandled : DeadLetterReason::not_found;
+}
+
 // Cold (asked, never driven by the pass) and at the end of the file for the same layout reason.
 CoreStats
 VirtualCore::getCoreStats() const noexcept {
     CoreStats s;
-    s.loop_passes      = _loop_count;
-    s.events_received  = _metrics._nb_event_received;
-    s.buckets_received = _metrics._nb_bucket_received;
-    s.events_sent      = _metrics._nb_event_sent;
-    s.buckets_sent     = _metrics._nb_bucket_sent;
-    s.sends_blocked    = _nb_send_blocked;
-    s.events_dropped   = _nb_event_dropped;
+    s.loop_passes            = _loop_count;
+    s.events_received        = _metrics._nb_event_received;
+    s.buckets_received       = _metrics._nb_bucket_received;
+    s.events_sent            = _metrics._nb_event_sent;
+    s.buckets_sent           = _metrics._nb_bucket_sent;
+    s.sends_blocked          = _nb_send_blocked;
+    s.events_dropped         = _nb_event_dropped;
+    s.dead_letters           = _nb_dead_letters;
+    s.dead_letters_by_reason = _nb_dead_letters_by_reason;
     // The loop's own cumulative count, the one the park policy reads: it includes the callbacks an
     // idle core's park ran.
     s.io_events = io::async::listener::current.total_events_processed();
     return s;
+}
+
+// The router's report of a unicast it could not deliver (`router::internal::reports_undelivered`).
+// A broadcast that skipped a dead handler delivered to the others: nothing to report. A thread
+// that runs no core (a router used outside the engine) reports nowhere.
+void
+Event::__undelivered__(Event &event) noexcept {
+    VirtualCore *const core = VirtualCore::_handler;
+    if (core == nullptr || event.getDestination().is_broadcast())
+        return;
+    core->__dead_letter__(event, core->__undelivered_reason__(event.getDestination()));
 }
 
 } // namespace qb

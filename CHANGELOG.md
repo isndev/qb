@@ -35,9 +35,47 @@ policy.
   said something false: a direct cross-core send was counted nowhere -- every reply of a two-core ping-pong -- and an
   `EventQOS0` dropped on a full mailbox was counted as sent. The idle policy decides exactly as before. Pinned by
   `tests/core/system/engine/core-stats.cpp`, conservations exact; it is also the first system test of the QoS-0 drop.
+- **Dead letters: every event that reaches no actor is counted, logged and reported with its reason (Huly QB-163,
+  QB-52).** `qb::DeadLetter` (`<qb/core/DeadLetter.h>`): type id, source, destination, core and a
+  `qb::DeadLetterReason` -- `not_found`, `unhandled`, `stash_overflow`, `init_failed`, `oversize`, `peer_stopped` --
+  never the event. `CoreInitializer::setDeadLetterHandler()` installs a per-core `std::function` the core calls on
+  its own thread (a throw from it is contained and logged), and `CoreStats` gains `dead_letters` and
+  `dead_letters_by_reason`. Until 3.3 the engine logged ONE of these shapes -- a unicast whose type no actor of the
+  core had registered -- and dropped the others in silence: a unicast to a dead or unknown id whose type some actor
+  of the core handles (the common shape of a stale id), a default event to an unknown id, the stash of a failed
+  asynchronous `onInit()`, the residue for a stopped core. The router reports from the branch that already dropped a
+  unicast with no handler, through a static hook of `qb::Event` found by a concept and called out of line -- a router
+  over any other event type compiles as before -- and the reason is decided in the cold path. One window stays
+  unreported, by measurement: an event of a type the actor handles, reaching it after it was killed earlier in the
+  same pass and before its reap, is skipped by the dispatch trampoline every event runs through, and a report there
+  moved GCC's inlining of the handler (+4 % on the one-core pass probe); once the actor is reaped, the same id is
+  `not_found`. The delivered path pays nothing for the reports, measured on both hosts (MSVC 19.51, g++-14): the
+  Savina one- and two-core cells and the pass, ask and push probes are level with the tree before -- once MSVC was
+  told the not-found branch is `[[unlikely]]` (it had laid the report between the handler call and the epilogue) and
+  `__stash_event__` was kept out of line (shrunk, it began to inline into the receive loop and spill its index).
+  Pinned by `tests/core/system/engine/dead-letters.cpp`, the oversize probe and the activation-gate disposal test.
+
+### Changed
+
+- **Undelivered events are logged with their reason, and the log thins out (Huly QB-163).** The WARN `failed to send
+  event[...]` for a unicast whose type no actor of the core registered, and the per-event `activation stash full`
+  WARN, become one dead-letter line -- `dead letter #N (<reason>): event[...] from ... to ...` -- written for the
+  first 16 dead letters of a core and then at each power of two, with the running count: a flood of stale ids used to
+  write one WARN per event. The oversize drop keeps its CRIT and its remedy. Every dead letter is counted whatever the
+  log level (`CoreStats::dead_letters`), and a `DeadLetterHandler` sees each one.
+- **`Event::getDestination()` and `getSource()` copy the id as one 32-bit read (Huly QB-163).** Copied member by
+  member, the two 16-bit halves of a `qb::ActorId` were re-packed by g++'s `-O3` block vectorizer into a vector
+  register as soon as the router's not-found branch called out of line, and the service id that indexes the handler
+  table came back out through `movd` + `pextrw` on every event routed (+1.3 % on the one-core push probe). The
+  signature and the value are unchanged; the router now loads the destination once.
 
 ### Fixed
 
+- **The stash of an actor killed in the pass its asynchronous `onInit()` completed is destroyed (Huly QB-163).** An
+  `ask` reply resumes the init inline, inside the receive, so the frame can be done before the pump of the next pass
+  finalises the activation; a `KillEvent` right behind the reply then reached the reap first, and `removeActor` erased
+  the activation -- and the events stashed for it -- without running one destructor: every early event leaked its
+  payload. They are disposed and reported as `init_failed` dead letters, like on every other failed-activation path.
 - **A shutdown could be lost to a signal raised right after it (Huly QB-65).** The engine kept ONE
   pending-signal slot: `Main::stop()` and the process signal handler both overwrote it, and each
   core delivered only the signum it held at its next pass. A `SIGTERM` (or a `stop()`) followed,

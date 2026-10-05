@@ -40,7 +40,7 @@ The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` t
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
-> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". **Both store the same `VirtualCore::Error::ExceptionThrown`** (`src/qb/core/Main.cpp:447-457`), so a non-`std::exception` throw does not terminate the process — that handler exists precisely to stop it escaping a `noexcept` function. Throw `std::exception` subtypes anyway: only that arm can log *what* was thrown.
+> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". **Both store the same `VirtualCore::Error::ExceptionThrown`** (`src/qb/core/Main.cpp:454-464`), so a non-`std::exception` throw does not terminate the process — that handler exists precisely to stop it escaping a `noexcept` function. Throw `std::exception` subtypes anyway: only that arm can log *what* was thrown.
 
 ```mermaid
 flowchart TD
@@ -65,7 +65,7 @@ Several framework operations are marked `noexcept` and therefore cannot signal f
 | `Actor::on(KillEvent const&)` | `void on(KillEvent const&) noexcept` | The default kill path is `noexcept`. |
 | `IProtocol::not_ok()` / `ok()` / `reset()` | all `noexcept` | `not_ok()`/`reset()` mutate state, `ok()` queries it; none can fail. |
 
-Two practical rules follow. First, sending an event never throws, so you cannot use `try`/`catch` around `push()` to detect a bad destination — sending to a dead or nonexistent `ActorId` is silently dropped, not an error (see [Failure modes at a glance](#failure-modes-at-a-glance)). Second, if you override a handler the framework calls in a `noexcept` context, do not let it throw: an exception crossing a `noexcept` boundary is an immediate `std::terminate`, bypassing even the `start_thread` catch.
+Two practical rules follow. First, sending an event never throws, so you cannot use `try`/`catch` around `push()` to detect a bad destination — sending to a dead or nonexistent `ActorId` is dropped, not an error — the receiving core reports it as a **dead letter** (counted, logged, handed to its `DeadLetterHandler`), but the sender learns nothing (see [Failure modes at a glance](#failure-modes-at-a-glance) and [Dead letters](#dead-letters-what-reached-no-actor)). Second, if you override a handler the framework calls in a `noexcept` context, do not let it throw: an exception crossing a `noexcept` boundary is an immediate `std::terminate`, bypassing even the `start_thread` catch.
 
 ### Failure modes at a glance
 
@@ -76,9 +76,36 @@ Two practical rules follow. First, sending an event never throws, so you cannot 
 | `onInit()` returns `false` at runtime (`addRefActor`) | Actor not added | Actor destroyed immediately; never processes events | The code calling `addRefActor` (returns an invalid handle/id) |
 | `onInit()` returns `false` at startup (pre-start `addActor`) | Core flagged `BadActorInit` | Core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
 | `onInit()` throws at startup | Caught inside `__drive_init__`; converted to an init failure | Core flagged `BadActorInit` (not `ExceptionThrown`); core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
-| `push`/`send` to a dead or unknown `ActorId` | Silent | Event dropped; sender keeps running | Nobody — design an explicit ack/timeout if you need to know |
+| `push`/`send` to a dead or unknown `ActorId`, or to an actor with no handler for the type | A dead letter on the receiving core | Event dropped and disposed; sender keeps running | The receiving core: `getCoreStats().dead_letters`, a WARN line (the first 16, then one per power of two), its `DeadLetterHandler` — never the sender; design an explicit ack/timeout if the sender must know |
 | Peer closes, socket error, protocol violation | `on(event::disconnected&&)` | Connection disposed; event delivered to the I/O component | The actor's `disconnected` handler |
 | Callback exception (`async::callback`, `scoped_callback`) | Swallowed | Caught by an internal `catch (...)`. `async::callback`'s `Timeout` (`src/qb/io/async/io.h:211`) then deletes itself; `scoped_callback`'s `ScopedTimeout` (`src/qb/io/async/io.h:407`) does **not** — it is owned by its handle and only marks itself fired | Nobody — see [the callback footgun](#the-asynccallback-lifetime-footgun) |
+
+### Dead letters: what reached no actor
+
+An event that reaches no actor is a **dead letter**, and since 3.3 every one of them is accounted for by the core that gave up on it (Huly QB-163). Until then the engine logged one shape — a unicast whose type no actor of the core had registered — and dropped the others in silence, among them the commonest: a unicast to a dead or unknown id whose type *some* actor of the core handles, which is exactly what a stale `ActorId` looks like. The reason travels with the letter, as a `qb::DeadLetterReason` (`src/qb/core/DeadLetter.h:42-61`):
+
+| Reason | What happened |
+|---|---|
+| `not_found` | No live actor holds the destination id on its core: it never existed, or it was removed — the stale-id and kill/message-race signal |
+| `unhandled` | The destination is alive but handles no event of that type: a `registerEvent<E>(*this)` that was never made |
+| `stash_overflow` | The destination was in its asynchronous `onInit()` and its stash of early events was full; the activation fails with it |
+| `init_failed` | The event was stashed for an actor whose asynchronous `onInit()` then failed, threw, timed out or was killed: discarded unreplayed |
+| `oversize` | Wider than the cross-core mailbox ring (the tail of a `Pipe::allocated_push`): it could never be delivered |
+| `peer_stopped` | Still queued for a core that had already stopped when this core shut down |
+
+Three things happen to each one, on the core that dropped it: it is counted (`getCoreStats().dead_letters`, and `dead_letters_by_reason` indexed by the reason), it is logged as a WARN — the first 16 of the core one by one, then one line at each power of two with the running count, so a flood of stale ids leaves a bounded trace and no clock is read — and its metadata (type id, source, destination, core, reason; never the event, which is disposed) goes to the core's `qb::DeadLetterHandler`, installed before `start()`:
+
+```cpp
+qb::Main engine;
+for (qb::CoreId c = 0; c < 2; ++c)
+    engine.core(c).setDeadLetterHandler([](qb::DeadLetter const &d) {
+        // the core's own thread, mid-pass: short, and synchronised if several cores share it
+        qb::io::cout() << "dead letter on core " << d.core << ": " << qb::event_type_name(d.event_id) << " to "
+                       << d.destination << " (" << qb::dead_letter_reason_name(d.reason) << ")" << std::endl;
+    });
+```
+
+An exception that escapes the handler is contained and logged; the core carries on. One window is deliberately left unreported: an event of a type the actor handles, reaching it after it was killed earlier in the SAME pass and before its reap, is skipped by the dispatch without a report — the trampoline every event runs through stays untouched (a call in it cost +4 % on the one-core pass probe), and once the actor is reaped the same id is `not_found`. Two things are deliberately not dead letters: a broadcast that skips a dead actor (it reached the others), and an `EventQOS0` dropped on a full mailbox — that is its contract, counted in `events_dropped`. And one gap is structural: an event already published into the mailbox of a core that then stops is disposed when the engine is torn down, after every core is gone, so no core reports it. The SENDER never learns of a dead letter: when delivery matters to it, an acknowledgement and a timeout are still the design. Every reason is pinned by `qb/tests/core/system/engine/dead-letters.cpp`.
 
 ## Actor-level error management
 
@@ -444,7 +471,7 @@ Decision table:
 - **Letting an exception escape a handler.** It stops every actor on the core, not just the one that threw. Catch recoverable failures locally; reserve uncaught throws for genuinely unrecoverable invariant violations where stopping the core is acceptable.
 - **Throwing across a `noexcept` boundary.** A throw from `push`'s OOM path, a `noexcept` handler, or a `noexcept` override calls `std::terminate` and bypasses even `start_thread`'s catch. Keep `noexcept` code non-throwing.
 - **Throwing a non-`std::exception` type.** It is caught — the worker boundary has a `catch (...)` beside the `catch (const std::exception &)` and both flag `ExceptionThrown` — but only the typed arm can log *what* was thrown, so the crash report names nothing. Throw standard exception types.
-- **Treating `push` failure as catchable.** Sending is `noexcept` and never reports a bad destination. A message to a dead or unknown `ActorId` is dropped silently. If delivery matters, design an explicit acknowledgement plus a timeout.
+- **Treating `push` failure as catchable.** Sending is `noexcept` and never reports a bad destination to the SENDER. A message to a dead or unknown `ActorId` is dropped — and since 3.3 reported as a dead letter by the core that received it — but nothing comes back. If delivery matters, design an explicit acknowledgement plus a timeout.
 - **Relying on a callback exception to signal anything.** `async::callback` swallows exceptions and its timer self-deletes anyway (`scoped_callback`'s does not, but it swallows them just the same). Report via an event or owned state instead.
 - **Fire-and-forget callbacks that capture `this`.** A deferred `callback()` can run after the actor is destroyed, dereferencing freed memory. Guard with `is_alive()` and, for actor-lifetime timers, own the timer with `scoped_callback`.
 - **Reusing a `not_ok()` protocol.** `not_ok()` is irreversible and `reset()` does not clear it. To continue on the same transport, install a new protocol with `switch_protocol`.

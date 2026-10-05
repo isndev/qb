@@ -468,18 +468,25 @@ public:
     /*!
      * @brief Get the destination actor ID
      * @return ID of the destination actor that should receive this event
+     * @details The copy is ONE 32-bit read (`std::bit_cast`), not a member-wise one. Copied member
+     *          by member, the two 16-bit halves were re-packed by g++'s -O3 block vectorizer into a
+     *          vector register as soon as a router branch called out of line (Huly QB-163), and the
+     *          service id that indexes the handler table came back out through `movd` + `pextrw`
+     *          on every event routed (+1.3 % on the one-core push probe, measured).
      */
     [[nodiscard]] inline id_handler_type
     getDestination() const noexcept {
-        return dest;
+        static_assert(sizeof(id_handler_type) == sizeof(std::uint32_t));
+        return std::bit_cast<id_handler_type>(std::bit_cast<std::uint32_t>(dest));
     }
     /*!
      * @brief Get the source actor ID
      * @return ID of the source actor that sent this event
+     * @details One 32-bit read, for the reason given on `getDestination()`.
      */
     [[nodiscard]] inline id_handler_type
     getSource() const noexcept {
-        return source;
+        return std::bit_cast<id_handler_type>(std::bit_cast<std::uint32_t>(source));
     }
     /*!
      * @brief Get the size of the event in bytes
@@ -489,6 +496,18 @@ public:
     getSize() const noexcept {
         return static_cast<std::size_t>(bucket_size) * QB_LOCKFREE_EVENT_BUCKET_BYTES;
     }
+
+    /**
+     * @private
+     * @brief The router's report of a unicast it could not deliver: no handler subscribed under
+     *        the destination id.
+     * @details Called only from that already-cold branch of `qb::router::semh::route` (and the
+     *          default events' resolver), found by `qb::router::internal::reports_undelivered` -- a router over any
+     *          other event type compiles exactly as before. Out of line (VirtualCore.cpp): it hands
+     *          the event to the calling core's dead-letter path (Huly QB-163), and does nothing on a
+     *          thread that runs no core. The event is disposed by the router afterwards, as before.
+     */
+    static QB_NOINLINE QB_COLD void __undelivered__(Event &event) noexcept;
 };
 
 /*!
@@ -510,7 +529,7 @@ event_type_name(Event::id_type const id) noexcept {
  * @brief An alias OF `qb::Event`, not a distinct type — and QoS is a drop policy, not a dispatch priority.
  * @details `qb::Event`'s own header already encodes `qos = 2` (:414), so this names the base class itself. The field is
  * read in exactly ONE place and as a BINARY gate: the cross-core flush drops a `qos == 0` event on backpressure and
- * retries every other one (`VirtualCore.cpp:348`). Events drain FIFO whatever their QoS; nothing is processed "before".
+ * retries every other one (`VirtualCore.cpp:345`). Events drain FIFO whatever their QoS; nothing is processed "before".
  * @ingroup EventCore
  */
 using EventQOS2 = Event;
@@ -1029,7 +1048,7 @@ inline constexpr bool event_fits_ring = allocator::getItemSize<T, EventBucket>()
  * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
  *         compile-time only and this compiles to the same load as the call it replaced).
  * @details Called from the three -- and, measured, only three -- sites that stamp the routing
- *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:809) and
+ *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:836) and
  *          `Pipe::push` / `Pipe::allocated_push` (Pipe.h:307, :333). The two `Pipe` bodies do
  *          NOT call `fill_event`; they duplicate it, so a guard placed only in `fill_event`
  *          would miss `Actor::to(dest).push<E>()` and `allocated_push<E>()` entirely.
@@ -1081,7 +1100,7 @@ routing_safe_type_id() noexcept {
 
     // The OTHER contract every enqueue sink owes, and the one that used to be checked at only
     // one of the three. `VirtualCore::fill_event` has carried this assertion since 2.x
-    // (VirtualCore.h:814-816), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
+    // (VirtualCore.h:841-843), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
     // `Pipe::allocated_push` duplicate `fill_event` rather than calling it, so
     // `getPipe(dest).push<E>()` and `.allocated_push<E>()` were not -- exactly the gap the
     // routing-field guard above was written to close for the header fields. MEASURED on this
@@ -1093,7 +1112,7 @@ routing_safe_type_id() noexcept {
     // WHY ONLY EventQOS0. QoS is a binary backpressure policy, not a priority. A `qos == 0`
     // event is the one thing the cross-core flush is allowed to DISCARD when a peer's mailbox is
     // full, and it discards it WITHOUT disposing it -- one `if (!event.state.bits.qos)` and a
-    // `continue`, with no `_router.dispose()` (VirtualCore.cpp:348-356). Every other event is
+    // `continue`, with no `_router.dispose()` (VirtualCore.cpp:345-353). Every other event is
     // retried, and every event that is actually DELIVERED has its destructor run exactly once by
     // the receiving core whichever primitive queued it -- which is why a plain `qb::Event`
     // subclass owning heap is legitimate here and is deliberately NOT rejected. See

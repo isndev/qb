@@ -27,7 +27,9 @@
 #ifndef QB_CORE_STATS_H
 #define QB_CORE_STATS_H
 
+#include <array>
 #include <cstdint>
+#include "DeadLetter.h"
 
 namespace qb {
 
@@ -66,6 +68,11 @@ struct CoreStats {
     /// `qb::EventQOS0` events discarded because the destination's mailbox was full, as their
     /// contract allows. No other event is ever discarded on backpressure.
     std::uint64_t events_dropped = 0;
+    /// Events that reached no actor -- dead letters, whatever the reason; the sum of
+    /// `dead_letters_by_reason`. Each one also reaches the core's `qb::DeadLetterHandler`, if any.
+    std::uint64_t dead_letters = 0;
+    /// `dead_letters` split by `qb::DeadLetterReason`, indexed by its value.
+    std::array<std::uint64_t, DeadLetterReasons> dead_letters_by_reason{};
     /// qb-io callbacks the core's loop ran: watcher callbacks, deferred callbacks and coroutine
     /// resumes, including those an idle core's park delivered
     /// (`qb::io::async::listener::total_events_processed()`).

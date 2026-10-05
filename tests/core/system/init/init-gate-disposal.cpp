@@ -196,4 +196,92 @@ TEST(ActivationGateDisposal, ManyInInitAsksLeaveNoLivePayloads) {
     EXPECT_EQ(g_live.load(std::memory_order_relaxed), 0) << "one payload leaked per in-init ask reply";
 }
 
+// ---------------------------------------------------------------------------
+// 3. Killed in the very pass its async onInit completed. The ask reply resumes the init INLINE,
+//    inside the receive, so the frame is done before the pump of the next pass finalises the
+//    activation -- and a KillEvent right behind the reply reaches the reap first. `removeActor`
+//    then erased the activation, and with it the stash, without running one event destructor
+//    (Huly QB-163): every early event leaked its payload. It is disposed now, and each one is
+//    reported as an `init_failed` dead letter.
+// ---------------------------------------------------------------------------
+constexpr int    kEarly = 5;
+std::atomic<int> g_early_reported{0};
+
+struct EarlyEvent : qb::Event {
+    KeepsHeapOnMove payload{};
+};
+
+class RepliesThenKills : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Exchange>(*this);
+        co_return true;
+    }
+    void
+    on(Exchange &e) {
+        const auto asker = e.getSource();
+        reply(e);                   // next pass: resumes the asker's onInit inline, to completion
+        push<qb::KillEvent>(asker); // same batch, right behind the reply
+        kill();
+    }
+};
+
+class AsksWithEarlyMail : public qb::Actor {
+    qb::ActorId _peer;
+
+public:
+    explicit AsksWithEarlyMail(qb::ActorId peer)
+        : _peer(peer) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Exchange>(*this);
+        registerEvent<EarlyEvent>(*this);
+        static_cast<void>(co_await qb::ask(context(), _peer, Exchange{}, 2s));
+        co_return true;
+    }
+    void
+    on(Exchange &) {}
+    void
+    on(EarlyEvent const &) {
+        ADD_FAILURE() << "a stashed event was replayed to an actor killed before its activation finished";
+    }
+};
+
+class EarlyMail : public qb::Actor {
+    qb::ActorId _target;
+
+public:
+    explicit EarlyMail(qb::ActorId target)
+        : _target(target) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        for (int i = 0; i < kEarly; ++i)
+            push<EarlyEvent>(_target); // arrives while the target is Activating: stashed
+        kill();
+        co_return true;
+    }
+};
+
+TEST(ActivationGateDisposal, TheStashOfAnActorKilledInThePassItsInitCompletedIsDestroyed) {
+    g_live.store(0, std::memory_order_relaxed);
+    g_early_reported.store(0, std::memory_order_relaxed);
+    {
+        qb::Main main;
+        main.core(0).setDeadLetterHandler([](qb::DeadLetter const &letter) {
+            if (letter.reason == qb::DeadLetterReason::init_failed)
+                g_early_reported.fetch_add(1, std::memory_order_relaxed);
+        });
+        const auto responder = main.addActor<RepliesThenKills>(0);
+        const auto asker     = main.addActor<AsksWithEarlyMail>(0, responder);
+        main.addActor<EarlyMail>(0, asker);
+        main.start(false);
+        main.join();
+        EXPECT_FALSE(main.hasError());
+    }
+    EXPECT_EQ(g_live.load(std::memory_order_relaxed), 0)
+        << "the stash of an actor killed in the pass its init completed was freed without its destructors";
+    EXPECT_EQ(g_early_reported.load(std::memory_order_relaxed), kEarly) << "each stashed event is an init_failed dead letter";
+}
+
 } // namespace

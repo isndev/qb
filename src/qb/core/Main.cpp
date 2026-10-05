@@ -113,6 +113,12 @@ CoreInitializer::getIoPollInterval() const noexcept {
     return _io_poll_interval;
 }
 
+CoreInitializer &
+CoreInitializer::setDeadLetterHandler(DeadLetterHandler handler) noexcept {
+    _dead_letter_handler = std::move(handler); // a move: the copy, if any, was the caller's
+    return *this;
+}
+
 // !CoreInitializer
 
 // CoreInitializer::ActorBuilder
@@ -395,6 +401,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     VirtualCore::_handler = &core;
     io::async::init();
     io::async::listener::current.set_io_poll_interval(initializer.getIoPollInterval());
+    core._dead_letter_handler = std::move(initializer._dead_letter_handler); // before any actor runs (Huly QB-163)
 
     // Publish this core as stopped on EVERY exit from here on — including an
     // exception escaping a callback / IO handler inside __workflow__. Normally
