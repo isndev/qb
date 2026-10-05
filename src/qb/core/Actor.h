@@ -47,6 +47,7 @@
 #include <qb/utility/nocopy.h>
 #include <qb/utility/type_traits.h>
 #include <qb/io/async/coroutine.h>
+#include "CoreStats.h"
 #include "Event.h"
 #include "ICallback.h"
 #include "Pipe.h"
@@ -79,7 +80,7 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
  * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
- * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:677`); nothing in the engine ever sends a `KillEvent`.
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:678`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
@@ -750,6 +751,28 @@ public:
     [[nodiscard]] const CoreIdSet &getCoreSet() const noexcept;
 
     /**
+     * @brief What this actor's `VirtualCore` has done since it started -- a copy of its counters.
+     * @return A `qb::CoreStats` snapshot: loop passes, events received and sent (with their size in
+     *         buckets), publish attempts that met a full mailbox, `qb::EventQOS0` events dropped on
+     *         backpressure, qb-io callbacks run.
+     * @details Every count is cumulative and monotonic; two snapshots give a rate. The counters
+     *          belong to the core and are plain integers its thread writes, so a snapshot is
+     *          always of the CALLING actor's own core, taken between two events. To see every
+     *          core, ask one actor per core for its snapshot -- `qb::ask_all` over a responder on
+     *          each core is the shape.
+     * @code
+     * // void on(qb::LoopEvent const &ev) {
+     * //     if (ev.iteration % 1'000'000 == 0) {
+     * //         auto const s = getCoreStats();
+     * //         qb::io::cout() << "core " << getIndex() << ": " << s.events_received << " in, "
+     * //                        << s.events_sent << " out, " << s.sends_blocked << " blocked" << std::endl;
+     * //     }
+     * // }
+     * @endcode
+     */
+    [[nodiscard]] CoreStats getCoreStats() const noexcept;
+
+    /**
      * @brief Get current time from the VirtualCore's perspective (nanoseconds since epoch).
      * @return `uint64_t` timestamp in nanoseconds.
      * @details This value is optimized and cached/updated by the `VirtualCore` at the beginning of each processing loop. Thus,
@@ -763,8 +786,9 @@ public:
      * @endcode
      * @note This time is primarily for relative measurements or logging within an actor's turn.
      * @note For a continuously updating, high-precision timestamp, use `qb::unix_nanos(qb::wall_now())` from `<qb/system/time.h>`.
-     * @note Inside `onInit()` there is no pass yet, so the value is the instant the owning `VirtualCore` was CONSTRUCTED
-     * (`VirtualCore.h:377` seeds it); through 3.0.0 that field was still 0 there, so `onInit()` read a zero timestamp.
+     * @note Inside `onInit()` the loop has not run yet: construction and `onInit()` are pass 0, so the first `time()` there
+     * reads the clock and every actor initialised on that core in the same phase sees that instant. Through 3.0.0 only the
+     * loop refreshed the value, so `onInit()` read a zero timestamp.
      */
     [[nodiscard]] uint64_t time() const noexcept;
 

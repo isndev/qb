@@ -29,7 +29,7 @@
 
 /* The loop's C++ wrapper declares a TOP-LEVEL `ev` namespace, because it is libev's and libev's
  * consumers write `ev::io`. qb re-exports it as `qb::ev` so that qb's own public API -- notably
- * `qb::Actor::ask_loop()`, whose return type is `ev::loop_ref` (Actor.h:1479) -- can name a type
+ * `qb::Actor::ask_loop()`, whose return type is `ev::loop_ref` (Actor.h:1503) -- can name a type
  * inside qb's namespace instead of pointing consumers at a global one qb does not own. It is an
  * ALIAS, not a second namespace: `qb::ev::io` and `::ev::io` are the same type, so nothing that
  * already compiles stops compiling, and a consumer migrating from libev keeps `ev::io` too. */

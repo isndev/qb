@@ -607,7 +607,12 @@ Actor::push(Event const &event) const noexcept {
 
 bool
 Actor::try_send(Event const &event) const noexcept {
-    return VirtualCore::_handler->try_send(event);
+    VirtualCore *const core = VirtualCore::_handler;
+    if (!core->try_send(event))
+        return false;
+    ++core->_metrics._nb_event_sent; // a mailbox publish no flush will count (Huly QB-162)
+    core->_metrics._nb_bucket_sent += event.bucket_size;
+    return true;
 }
 
 uint64_t
@@ -715,6 +720,12 @@ activation_unwait(qb::ActorId const id, activation_waiter &w) noexcept {
 }
 
 } // namespace detail
+
+// Cold (an actor asks for it), so at the end of the file with the other bodies the event path never calls.
+CoreStats
+Actor::getCoreStats() const noexcept {
+    return VirtualCore::_handler->getCoreStats();
+}
 } // namespace qb
 
 #ifdef QB_WITH_LOGGING

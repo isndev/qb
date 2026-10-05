@@ -23,6 +23,18 @@ policy.
   protected `on(Evt)` whose class does not befriend `has_method_on` (befriending the dispatching base is not
   enough), and an `on(Evt&)` where the gate probes an rvalue. The gated events are derived from the framework's own
   gates; it runs in the format-check lane over qb, and over the modules and the examples from the superproject.
+- **`Actor::getCoreStats()`: what a core has done since it started (Huly QB-162, QB-50).** A copy of a new
+  `qb::CoreStats` (`<qb/core/CoreStats.h>`, through `<qb/actor.h>`): loop passes, events received, events published
+  into another core's mailbox (with their size in buckets), publish attempts that met a full mailbox
+  (`sends_blocked`, the backpressure signal), `EventQOS0` events dropped on backpressure, qb-io callbacks run. Every
+  count is cumulative and monotonic; the snapshot is of the caller's own core, and a view across cores is asked for
+  (`qb::ask_all`), never read. The counters are the ones the idle policy already kept: they accumulate now instead of
+  being cleared at the end of every pass, and the io count is the loop's own, read instead of stored after every io
+  pump -- so the pass stores less than it did, and the one addition to the event path is the count of a direct
+  cross-core `send` / `reply` / `forward`. Two of those counts
+  said something false: a direct cross-core send was counted nowhere -- every reply of a two-core ping-pong -- and an
+  `EventQOS0` dropped on a full mailbox was counted as sent. The idle policy decides exactly as before. Pinned by
+  `tests/core/system/engine/core-stats.cpp`, conservations exact; it is also the first system test of the QoS-0 drop.
 
 ### Fixed
 

@@ -539,36 +539,44 @@ private:
 
     /**
      * @struct Metrics
-     * @brief Per-pass event-loop instrumentation.
+     * @brief The core's event counters, cumulative since it started.
      * @details
-     * Activity counters for the CURRENT pass (events received, sent, I/O, bucket sizes);
-     * `had_activity()` is what the park policy reads at the end of the pass, and `reset()`
-     * clears them for the next one. The policy itself lives in `__workflow__` and is keyed
-     * on TIME (`_idle_since` against the mailbox's idle-spin floor), not on these counts:
-     * the 2.15–3.0 "spin credit" refilled from the previous pass's event count parked a
-     * one-event-per-pass workload after two or three empty passes, so every hop of a
-     * request/response paid an OS park + wake.
+     * Events received and sent and their sizes, counted where they happen and never cleared.
+     * Two readers: the park policy in `__workflow__`, which compares `activity()` with the value
+     * it read at the end of the previous pass (a pass is idle when the sum did not move), and
+     * `Actor::getCoreStats()`, which copies them out (Huly QB-162). Until 3.3 they were per-pass
+     * counts that a `reset()` zeroed at the end of every pass -- six counters a pass, and nothing
+     * cumulative left to read -- and the io count among them was stored after every io pump. The
+     * loop counts its own callbacks (`listener::total_events_processed()`) and the pass reads that
+     * instead: the store, kept as a cumulative `+=`, cost the coroutine round trip of the
+     * qb-vs-others ask probe 2.5 ns on MSVC (+5 %, beyond what moving the code alone moves it).
+     * The policy itself is keyed on TIME (`_idle_since` against the mailbox's idle-spin floor),
+     * not on these counts: the 2.15–3.0 "spin credit" refilled from the previous pass's event
+     * count parked a one-event-per-pass workload after two or three empty passes, so every hop
+     * of a request/response paid an OS park + wake.
      */
     struct Metrics {
-        std::uint64_t _nb_event_io        = 0;
         std::uint64_t _nb_event_received  = 0;
         std::uint64_t _nb_bucket_received = 0;
-        std::uint64_t _nb_event_sent_try  = 0;
-        std::uint64_t _nb_event_sent      = 0;
+        std::uint64_t _nb_event_sent_try  = 0; ///< flush attempts, published or not: read by `activity()` only
+        std::uint64_t _nb_event_sent      = 0; ///< published into a peer's mailbox, by the flush or directly by `send`
         std::uint64_t _nb_bucket_sent     = 0;
 
         /**
-         * @brief Any evidence of work performed or attempted during this iteration?
+         * @brief The evidence of work: a sum that moves on every pass that received an event,
+         *        attempted a flush or ran an io callback.
+         * @param io The loop's own cumulative count of the callbacks it ran.
+         * @details `_nb_event_sent` is not in it, and need not be: every flush path counts its
+         *          attempt in `_nb_event_sent_try` as well, and a direct `send` -- counted in
+         *          `_nb_event_sent` only -- runs inside a handler or an io callback, which count,
+         *          or inside a tick, which never did. One difference from the per-pass test it
+         *          replaced: io that a park delivered moves the sum on the NEXT pass. The park
+         *          that delivered it has already cleared `_idle_since`, so a quiet core takes its
+         *          idle stamp one pass later -- nanoseconds, against a 50 µs floor.
          */
-        [[nodiscard]] bool
-        had_activity() const noexcept {
-            return (_nb_event_sent + _nb_event_received + _nb_event_io + _nb_event_sent_try) != 0;
-        }
-
-        /** @brief Clear the per-pass counters. */
-        void
-        reset() noexcept {
-            *this = {};
+        [[nodiscard]] std::uint64_t
+        activity(std::uint64_t const io) const noexcept {
+            return _nb_event_received + _nb_event_sent_try + io;
         }
     } _metrics;
     // --- the idle clock: when this core last found nothing to do, `mono_time{}` while busy.
@@ -616,6 +624,10 @@ private:
     /// Per signal number, the `Main::_signal_raised` generation this core last delivered (Huly QB-65).
     /// Read only by the cold `__deliver_signals__`, and declared LAST so it moves no member the pass reads.
     std::array<unsigned int, Main::SignalSlots> _signal_seen{};
+    // The cold counters of `Actor::getCoreStats()` (Huly QB-162), moved only on the flush's
+    // backpressure paths and declared after everything the pass reads, for the same reason.
+    std::uint64_t _nb_send_blocked  = 0; ///< publish attempts that found the destination's mailbox full
+    std::uint64_t _nb_event_dropped = 0; ///< best-effort (QoS-0) events discarded on backpressure
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -885,6 +897,14 @@ public:
      * For a continuously updating high-precision clock, use `qb::wall_now()`.
      */
     [[nodiscard]] uint64_t time() const noexcept;
+
+    /*!
+     * @brief This core's cumulative counters, copied out -- what `Actor::getCoreStats()` returns.
+     * @ingroup Engine
+     * @return A `qb::CoreStats` snapshot. Call it from this core's own thread: the counters are
+     *         plain integers the core writes as it runs.
+     */
+    [[nodiscard]] CoreStats getCoreStats() const noexcept;
 };
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
@@ -1057,9 +1077,12 @@ VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) noe
     // Delivered straight into the peer's ring: give the tail range back. Nothing was queued in
     // between, so this is the last allocation and `free_back` is exact. A `send` the ring could
     // not take stays queued at the tail, behind earlier pushes -- `send` is unordered, and
-    // the flush delivers it with the rest.
-    if (dest._core_id != _index && try_send(data))
+    // the flush delivers it with the rest, and counts it then; this path counts its own.
+    if (dest._core_id != _index && try_send(data)) {
         pipe.free_back(BUCKET_SIZE);
+        ++_metrics._nb_event_sent;
+        _metrics._nb_bucket_sent += BUCKET_SIZE;
+    }
 }
 
 template <typename T, typename... _Init>
@@ -1364,7 +1387,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:505`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:506`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

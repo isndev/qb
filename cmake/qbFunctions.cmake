@@ -429,7 +429,7 @@ function(_qb_test_conventions out_prefix)
     # A `requires-multicore` test's wall clock is set by CPU AVAILABILITY, not by the work it
     # does, so the tier default -- which is sized for work -- is the wrong budget for it. The
     # reason is one line of the engine: `VirtualCore::__workflow__` only ever blocks when a
-    # latency was configured (VirtualCore.cpp:792, `if (_mail_box.getLatency() > zero())`), and
+    # latency was configured (its park policy, `_mail_box.getLatency() > qb::duration::zero()`), and
     # the default latency is zero. A multicore test therefore starts `min(hw, 8)` threads that
     # PURE-SPIN, never yielding; progress needs all of them scheduled at once, so a shortfall of
     # CPU does not slow the test proportionally, it convoys.
@@ -460,7 +460,7 @@ function(_qb_test_conventions out_prefix)
 
     # `requires-multicore` was a LABEL and nothing else -- it described the test without
     # scheduling it. qb PINS each VirtualCore to a CPU (SetThreadAffinityMask on Windows,
-    # pthread_setaffinity_np elsewhere, VirtualCore.cpp:431,444) and always to the LOW core
+    # pthread_setaffinity_np elsewhere, in `VirtualCore::__init__`) and always to the LOW core
     # indices, so N concurrent multicore tests do not spread over the machine: they land on the
     # same handful of CPUs. NINETEEN tests carry the label -- eighteen in a QB_WITH_LOGGING=OFF
     # build, since engine-io-smoke is registered conditionally -- and the test presets run
@@ -491,7 +491,7 @@ function(_qb_test_conventions out_prefix)
     # scheduled every one of them next to three neighbours under the presets' `jobs: 4`. A
     # measurement of WHEN a parked core wakes, or of how much CPU a parked core burns, taken
     # while three other engines spin their own core 0 on the same CPU (qb pins core N to CPU N,
-    # VirtualCore.cpp:476 onwards), is a measurement of the neighbours. `RUN_SERIAL` is what the
+    # in `VirtualCore::__init__`), is a measurement of the neighbours. `RUN_SERIAL` is what the
     # label promised: ctest starts the test only once every running test has finished and
     # starts nothing else until it exits. The multicore lock above is not a substitute -- it
     # serialises multicore tests against EACH OTHER, and a single-core test is outside it.

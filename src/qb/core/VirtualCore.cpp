@@ -431,19 +431,19 @@ VirtualCore::__flush_pipes__() noexcept {
                                       << "-bucket mailbox ring, so it can never be delivered cross-core. Keep events small and move bulk "
                                          "data behind a pointer member (see Pipe::allocated_push).");
                     _router.dispose(event);
-                    ++_metrics._nb_event_sent;
-                    _metrics._nb_bucket_sent += event.bucket_size;
                     cur += event.bucket_size;
                     continue;
                 }
 
+                // From here the destination's mailbox is full: backpressure, counted for
+                // `Actor::getCoreStats()` once per failed attempt (Huly QB-162).
+                ++_nb_send_blocked;
                 if (!event.state.bits.qos) {
                     // Best-effort event: dropped on backpressure (preserves the
                     // original fire-and-forget semantics for QoS-0 events such as
-                    // metrics or heartbeats). The "sent" counter is advanced to
-                    // remain consistent with the previous behaviour.
-                    ++_metrics._nb_event_sent;
-                    _metrics._nb_bucket_sent += event.bucket_size;
+                    // metrics or heartbeats). Counted as dropped, not as sent: it
+                    // was counted "sent" until 3.3, which made the two read the same.
+                    ++_nb_event_dropped;
                     cur += event.bucket_size;
                     continue;
                 }
@@ -456,6 +456,7 @@ VirtualCore::__flush_pipes__() noexcept {
                         sent = true;
                         break;
                     }
+                    ++_nb_send_blocked;
                     if (attempt < kFlushSpinAttempts) {
                         qb::spin_loop_pause();
                     } else {
@@ -757,6 +758,10 @@ VirtualCore::__workflow__() {
     // global one in a register. Compared with the member, the check paid a memory operand on every
     // pass (+0.25 ns on the qb-vs-others pass-cost probe at k = 1, WSL2 g++-14, Huly QB-65).
     unsigned int scanned_generation = _last_signal_generation;
+    // `_metrics.activity()` at the end of the previous pass, a LOCAL for the same reason: the
+    // counters accumulate (Huly QB-162), and a pass is idle when their sum did not move. What it
+    // replaced cleared six per-pass counters at the end of every pass.
+    std::uint64_t activity_mark = _metrics.activity(loop.total_events_processed());
     while (likely(true)) {
         ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent; also keys the `time()` sample
 
@@ -787,9 +792,9 @@ VirtualCore::__workflow__() {
 
         if (loop.has_work()) {
             // Hot path: call `listener::run` directly — no `async::run` wrapper
-            // (avoids redundant checks; metrics match `nb_invoked_event()` contract).
+            // (avoids redundant checks). It counts the callbacks it runs; the park policy
+            // reads that count at the end of the pass (`total_events_processed()`).
             loop.run(EVRUN_NOWAIT);
-            _metrics._nb_event_io = loop.nb_invoked_event();
         }
 
         // Complete any async `onInit()` resumed above (replay stashes / enforce
@@ -871,9 +876,10 @@ VirtualCore::__workflow__() {
             }
         }
         // Park policy — a TIME floor, not an event-count credit. A pass is idle when it
-        // moved no event (sent, received, io) and left nothing for the next pass in the
-        // self-core pipe (an actor's callback may push to itself with no counted activity;
-        // parking over that would delay a local event by up to `latency`). The first idle
+        // moved no event (received, io, a flush attempt: the `activity()` sum stood still)
+        // and left nothing for the next pass in the self-core pipe (an actor's callback may
+        // push to itself with no counted activity; parking over that would delay a local
+        // event by up to `latency`). The first idle
         // pass stamps `_idle_since`; the core keeps polling until the mailbox's idle-spin
         // floor has elapsed, then parks — which returns on data, on a producer's notify, or
         // after `latency`. A wait that returns with nothing to do keeps the old stamp and
@@ -903,7 +909,8 @@ VirtualCore::__workflow__() {
         // stamp is cleared so the reply, and the request after it, are met at polling
         // latency. A core with no io work keeps the condition-variable park, whose cost
         // and handshake are the measured ones.
-        if (likely(_metrics.had_activity()) || !_self_pipe.empty()) {
+        const std::uint64_t activity = _metrics.activity(loop.total_events_processed());
+        if (likely(activity != activity_mark) || !_self_pipe.empty()) {
             _idle_since = qb::mono_time{};
         } else {
             const auto now = qb::mono_now();
@@ -931,7 +938,7 @@ VirtualCore::__workflow__() {
                 }
             }
         }
-        _metrics.reset();
+        activity_mark = activity;
     }
     // Receive and flush residual events, guaranteed to terminate without dropping anything
     // a live peer can still accept.
@@ -1166,7 +1173,12 @@ VirtualCore::send(Event const &event) noexcept {
     if (event.dest._core_id == _index || unlikely(event.state.bits.alive) || !try_send(event)) {
         auto &pipe = __getPipe__(event.dest._core_id);
         detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
+        return;
     }
+    // Published straight into the peer's ring: the flush will never see it, so it is counted
+    // here (Huly QB-162) -- every reply of a cross-core exchange takes this path.
+    ++_metrics._nb_event_sent;
+    _metrics._nb_bucket_sent += event.bucket_size;
 }
 
 Event &
@@ -1276,6 +1288,23 @@ VirtualCore::__deliver_signals__() noexcept {
             deliver(SIGINT);
     }
     return _last_signal_generation;
+}
+
+// Cold (asked, never driven by the pass) and at the end of the file for the same layout reason.
+CoreStats
+VirtualCore::getCoreStats() const noexcept {
+    CoreStats s;
+    s.loop_passes      = _loop_count;
+    s.events_received  = _metrics._nb_event_received;
+    s.buckets_received = _metrics._nb_bucket_received;
+    s.events_sent      = _metrics._nb_event_sent;
+    s.buckets_sent     = _metrics._nb_bucket_sent;
+    s.sends_blocked    = _nb_send_blocked;
+    s.events_dropped   = _nb_event_dropped;
+    // The loop's own cumulative count, the one the park policy reads: it includes the callbacks an
+    // idle core's park ran.
+    s.io_events = io::async::listener::current.total_events_processed();
+    return s;
 }
 
 } // namespace qb

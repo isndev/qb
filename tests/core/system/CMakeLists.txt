@@ -178,3 +178,8 @@ qb_add_test(MODULE qb-core TIER system NAME request-operation SOURCES patterns/r
 if(QB_SANITIZE MATCHES "address")
     qb_add_test(MODULE qb-core TIER system NAME actor-arena-poison SOURCES engine/actor-arena-poison.cpp DEPENDS ${PROJECT_NAME})
 endif()
+# core-stats pins Actor::getCoreStats() (Huly QB-162): every count conserves -- a cross-core exchange
+# counts each push and each direct reply once, same-core traffic is received and never sent, a QoS-0 burst
+# into a blocked core is published or dropped (the sink receives exactly the published), a QoS-2 burst loses
+# nothing and reports its backpressure, io callbacks and passes are counted.
+qb_add_test(MODULE qb-core TIER system NAME core-stats SOURCES engine/core-stats.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)

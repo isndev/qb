@@ -892,14 +892,14 @@ using service_event = ServiceEvent;
 // ============================================================================================
 // Concepts over the event hierarchy declared above.
 //
-// `service_event_type` lived at Actor.h:141-142 through 2.6.0. It moved here in 3.0 because
+// `service_event_type` lived at Actor.h:142-143 through 2.6.0. It moved here in 3.0 because
 // Pipe.h needs it: Pipe's template bodies now sit at the tail of Pipe.h (they shipped as
-// Pipe.tpp), and Pipe.h is included FROM Actor.h:50 -- 91 lines before Actor.h declared the
+// Pipe.tpp), and Pipe.h is included FROM Actor.h:51 -- 91 lines before Actor.h declared the
 // concept. It cannot be reached from there. Event.h is where it belongs anyway: the concept
 // constrains `ServiceEvent`, which is declared above at :487, and it needs nothing from
 // `qb::Actor`. Every consumer keeps seeing it, since Actor.h includes this header.
 //
-// `event_qos0_type` deliberately stays at Actor.h:134. Only VirtualCore's bodies use it, and
+// `event_qos0_type` deliberately stays at Actor.h:135. Only VirtualCore's bodies use it, and
 // they sit in VirtualCore.h, which has a complete Actor.h. Moving it too would be churn.
 //
 // The declaration is placed after the closing brace above, not spliced into the namespace
@@ -1029,7 +1029,7 @@ inline constexpr bool event_fits_ring = allocator::getItemSize<T, EventBucket>()
  * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
  *         compile-time only and this compiles to the same load as the call it replaced).
  * @details Called from the three -- and, measured, only three -- sites that stamp the routing
- *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:797) and
+ *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:809) and
  *          `Pipe::push` / `Pipe::allocated_push` (Pipe.h:307, :333). The two `Pipe` bodies do
  *          NOT call `fill_event`; they duplicate it, so a guard placed only in `fill_event`
  *          would miss `Actor::to(dest).push<E>()` and `allocated_push<E>()` entirely.
@@ -1081,7 +1081,7 @@ routing_safe_type_id() noexcept {
 
     // The OTHER contract every enqueue sink owes, and the one that used to be checked at only
     // one of the three. `VirtualCore::fill_event` has carried this assertion since 2.x
-    // (VirtualCore.h:802-804), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
+    // (VirtualCore.h:814-816), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
     // `Pipe::allocated_push` duplicate `fill_event` rather than calling it, so
     // `getPipe(dest).push<E>()` and `.allocated_push<E>()` were not -- exactly the gap the
     // routing-field guard above was written to close for the header fields. MEASURED on this

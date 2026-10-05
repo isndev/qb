@@ -274,7 +274,7 @@ using pipe = Pipe;
 //   * `<qb/system/event/router.h>` for `router::ensure_disposer`. `router` appears nowhere in
 //     Pipe's declarations -- it is a body-only dependency, so the include belongs next to the
 //     bodies. router.h pulls nothing from qb/core, so there is no cycle either way.
-//   * the `service_event_type` concept, which lived at Actor.h:141-142 and was unreachable
+//   * the `service_event_type` concept, which lived at Actor.h:142-143 and was unreachable
 //     from here: Actor.h includes THIS header at its line 50, 91 lines before it declared the
 //     concept. It now lives at Event.h:695, which Pipe.h already includes at :41.
 // Both are position problems, not file-extension problems -- which is the whole reason a `.tpp`
