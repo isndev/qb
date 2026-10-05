@@ -147,7 +147,7 @@ template <>
 pipe<char> &pipe<char>::put<json>(const json &c);
 }
 ```
-<!-- src: qb/src/qb/json.h:285-287 -->
+<!-- src: qb/src/qb/json.h:286-287 -->
 
 That single hook is how qb's own JSON — and, in the modules, every HTTP request, response, chunk, multipart body and WebSocket frame — gets written into an output buffer: each is an explicit `pipe<char>::put<T>` specialisation declared next to its own type. Declaring one is what makes `out() << my_type` work anywhere in the framework, because `operator<<` on `pipe<char>` is defined as `put` (`qb/src/qb/system/allocator/pipe.h:760-764`).
 

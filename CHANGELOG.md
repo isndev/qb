@@ -96,6 +96,18 @@ policy.
   -- the non-const lvalue form, which never binds the rvalue those events are dispatched as, so a handler written
   from it is never called. They now read `on(event::X&&)`.
 
+### Documentation
+
+- **Book citations re-derived where the strengthened guards found them wrong (Huly QB-254).** Five ranges started
+  on the blank line above the block they meant (`0_foundations/buffers.md`, `6_guides/getting_started.md`,
+  `migration_guide.md`, `production_checklist.md` twice), and the seven slash-joined `src:` comments of
+  `3_qb_io/coroutines.md` carried 18 wrong elements -- the second of every `/:` pair was read by no guard --
+  among them `scoped_write_lock`, `with_semaphore`, `with_lock` and six `async_stream` methods cited on their doc
+  comments. `scripts/cite-check.py` (shared by the four repos) now reads what it skipped: a blank target in the
+  `src:` form, a range whose first line is blank, a bare basename with a line spec, slash-joined line lists, a
+  citation inside a token that does not parse whole, and another project's file against the sibling checkout in the
+  superproject; `scripts/llm-guard.py` no longer drops the second element of a `/:` pair.
+
 ## [3.2.1] - 2026-09-24
 
 ### Fixed

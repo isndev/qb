@@ -438,7 +438,7 @@ co_await with_lock(mtx,     [] { return do_sync_work(); });
 ```
 
 Notes grounded in the headers: the mutex methods are `lock()` / `unlock()` / `scoped_lock()`; the read/write lock exposes `lock_read()` / `lock_write()` / `unlock_read()` / `unlock_write()` plus the RAII `scoped_read_lock()` / `scoped_write_lock()`. `async_event(bool auto_reset = false, bool initially_set = false)`. `with_semaphore` and `with_lock` take a *synchronous* callable and return its result (they `co_return f()`), not a task factory. Over-releasing a semaphore is a no-op; unlocking an unheld mutex or rw-lock asserts in debug builds.
-<!-- src: qb/src/qb/io/async/coroutine/sync.h:257 (acquire), :372 (scoped_acquire), :507 (lock), :530 (unlock), :597 (scoped_lock), :895/:905 (scoped_read/write_lock), :785/:803 (unlock_read/write), :1019 (arrive_and_wait), :1100 (async_event ctor), :1183 (set), :1292 (count_down), :1439/:1474 (with_semaphore/with_lock), :290/:535 (no-op / assert) -->
+<!-- src: qb/src/qb/io/async/coroutine/sync.h:257 (acquire), :372 (scoped_acquire), :507 (lock), :530 (unlock), :597 (scoped_lock), :895/:901 (scoped_read/write_lock), :785/:799 (unlock_read/write), :1019 (arrive_and_wait), :1100 (async_event ctor), :1183 (set), :1292 (count_down), :1438/:1469 (with_semaphore/with_lock), :290/:531 (no-op / assert) -->
 
 Two properties are worth spelling out because they are the reason these primitives exist at all rather than `std::mutex` and friends. **The rw-lock is writer-preferring**: a reader is admitted only when no writer holds *and* `_write_waiters` is empty (`sync.h:712`), so a steady stream of readers cannot starve a writer. And **`semaphore::acquire(cancellation_token)` is the one cancellation-aware primitive in the whole layer** (`sync.h:268`) — everything else here is woken only by a matching `release()`, `unlock()`, `set()` or arrival. `with_semaphore` uses the *non*-token overload (`sync.h:1440`).
 
@@ -493,7 +493,7 @@ What `close()` does to each parked party is worth a table of its own, because th
 `~channel()` clears its liveness flag **before** calling `close()`, and the order is load-bearing: `close()` only *schedules* the resumes, so by the time they run the channel is gone and every awaiter must be able to answer from its own state alone (`channel.h:136-142`). A parked `recv` then returns `nullopt`, a parked `send` throws, a parked `send_for` returns `false` — the same answers as a plain close, reached without touching the freed object.
 
 `send_for` also has a **move-only caveat the header documents explicitly** above `send_for` (`channel.h:707`): its slow path stores the pending value in a `std::any`, so for a `T` that is not copy-constructible the timed path can only ever resolve as a timeout. Use a copyable payload, or `send()` with an outer `with_deadline`.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:130 (capacity default 0), :301 (send), :409 (recv), :607 (recv_for), :707 (send_for), :419/:472 (try_send/try_recv), :489 (close), :914 (make_channel), :1091 (make_pipeline), :1015/:1038/:1060 (transform/filter/collect) -->
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:130 (capacity default 0), :301 (send), :409 (recv), :607 (recv_for), :707 (send_for), :419/:472 (try_send/try_recv), :489 (close), :914 (make_channel), :1091 (make_pipeline), :1015/:1037/:1059 (transform/filter/collect) -->
 
 ### `select` — first ready channel wins
 
@@ -619,7 +619,7 @@ One property is worth relying on: **`take(gen, n)` pulls exactly `min(n, size(ge
 more.** The limit is tested before the source is resumed. Over `iota` an extra pull would cost nothing,
 which is exactly why the opposite behaviour survived for so long; over a source whose body reads a row, a
 token or a socket byte, that pull is a side effect nobody asked for.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:77 (generator), :112 (await_transform deleted), :513 (collect_to_vector lvalue), :540 (collect_to_vector rvalue), :567 (from_range), :608 (from_iterator), :623 (iota), range/repeat (:640/:655) -->
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:77 (generator), :112 (await_transform deleted), :513 (collect_to_vector lvalue), :540 (collect_to_vector rvalue), :566 (from_range), :607 (from_iterator), :622 (iota), range/repeat (:639/:654) -->
 
 ### Asynchronous `async_generator<T>`
 
@@ -686,7 +686,7 @@ auto zipped = zip(stream_of_ints, stream_of_strings);             // pairs
 ```
 
 The numeric source is `range_stream(start, end)` (there is no `async_stream<T>::range`). `merge_streams` takes a `std::vector<async_stream<T>>`; `zip(a, b)` yields `async_stream<std::pair<T, U>>`; `reduce(f, initial)` takes the reducer then the seed; `for_each` also accepts a callable returning `task<void>` for an async sink.
-<!-- src: qb/src/qb/io/async/coroutine/stream.h:98/:110/:118 (from_channel/_shared/_vector), :884 (range_stream), :833 (interval), :692 (merge_streams), :745 (zip), :156/:173/:190/:206 (map/filter/take/skip), :392/:400/:408/:417/:425/:434/:443/:452/:462 (for_each/collect/first/reduce/count/any/all/find/drain_to) -->
+<!-- src: qb/src/qb/io/async/coroutine/stream.h:98/:110/:118 (from_channel/_shared/_vector), :884 (range_stream), :833 (interval), :692 (merge_streams), :745 (zip), :156/:173/:190/:206 (map/filter/take/skip), :392/:400/:408/:439/:447/:456/:465/:474/:484 (for_each/collect/first/reduce/count/any/all/find/drain_to) -->
 
 ## Safe integration with `qb::Actor`
 

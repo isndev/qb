@@ -169,6 +169,24 @@ UNKNOWN_EXT = re.compile(r"(?<![\w./+\-])([A-Za-z0-9_][\w./+\-]*\.([A-Za-z][A-Za
 # whose remainder is not itself inside a project is superproject-owned: another project, SKIP.
 SUPER_OWNED = re.compile(r"^(?!qb/|qbm/|examples/|llm/|dev/|cmake/)")
 
+# ANOTHER PROJECT'S FILE (Huly QB-254). A module's README and book cite qb's tree --
+# `qb/cmake/qbConfig.cmake:140`, `qb/src/qb/io/async/coroutine/utils.h:278` -- and those were
+# SKIPPED whatever they said: `qbConfig.cmake:140` had become a blank line and passed. A project
+# checked out on its own cannot see the other (its CI has nothing to resolve them against, so it
+# still skips them); inside the superproject the sibling is RIGHT THERE, so it is checked: range,
+# blank target, all of it. The superproject is the nearest ancestor holding both `qb/` and
+# `qbm/`, found from the tree like PREFIX is -- a layout that does not match finds none.
+def _find_super(root):
+    d = os.path.dirname(root)
+    while True:
+        if os.path.isdir(os.path.join(d, "qb", "src")) and os.path.isdir(os.path.join(d, "qbm")):
+            return d
+        up = os.path.dirname(d)
+        if up == d:
+            return None
+        d = up
+SUPER = _find_super(ROOT)
+
 # Anti-vacuous floor, PER PROJECT — four projects are four surfaces, and one shared number
 # lets one surface silently absorb another's collapse.  A sweep that parses 0 citations
 # because a readme/ directory moved passes every other check in this file while proving
@@ -261,7 +279,11 @@ def resolve_in_project(tok):
             return c, n
     m = OTHER_PROJ.match(p)
     if m and not p.startswith(PREFIX):
-        return "SKIP", None                              # other project's file
+        if SUPER:                                        # the sibling is here: check it
+            c = os.path.join(SUPER, p)
+            n = nlines(c)
+            return (c, n) if n is not None else (None, None)
+        return "SKIP", None                              # other project's file, not checked out
     if p.startswith(PREFIX):
         return None, None                                # ours, but gone
     # A module-internal relative path (tests/…, src/…, include/…, etc.) that did not
@@ -306,6 +328,11 @@ def blank_targets(spec, paths):
     rule was added, in all three books that have one.  Every component of a comma list is
     checked, not just the first: `ActorId.h:403,444` had BOTH wrong and a first-component-
     only sweep reported it as one finding, hiding the second.
+
+    A RANGE that STARTS on a blank line is the same drift one line wide (Huly QB-254):
+    `redis.h:1734-1745` opened on the blank line above the `#ifdef QB_HAS_SSL` block it meant,
+    and only single-line components were looked at. A range may END on, or span, a blank line --
+    a block and the line after it -- but a citation names the line it starts at.
     """
     if len(paths) != 1:
         return []                                        # ambiguous: cannot say which file
@@ -315,9 +342,10 @@ def blank_targets(spec, paths):
     out = []
     for part in spec.split(","):
         part = part.strip()
-        if not part.isdigit():
+        first = part.partition("-")[0].strip()
+        if not first.isdigit():
             continue
-        k = int(part)
+        k = int(first)
         if 1 <= k <= len(src) and not src[k - 1].strip():
             out.append(part)
     return out
@@ -345,6 +373,41 @@ if "--no-prose" in sys.argv: do_prose = False
 
 problems = []
 prose_seen = 0
+
+# A citation INSIDE a src: token that does not parse whole -- `derived from qb/src/.../utils.h:376`,
+# `io_invariants Factbook scheduler.h:577`, `{task.h:93`, `socket.h:498-505 )`: every one of them was
+# skipped silently, the token matching neither PATHLINE nor RANGEONLY (Huly QB-254). Each embedded
+# citation is read and checked exactly as if it had been written alone.
+SRC_EMBEDDED = re.compile(r"(?<![\w./+\-])([A-Za-z0-9_][\w./+\-]*\." + EXT + r"):(\d+(?:-\d+)?)")
+
+def check_src_cite(rel, ln, path, spec):
+    """Check one `path[:spec]` of a src: body; return the (abspath, nlines) a continuation binds to.
+
+    A BARE basename with a line spec is a citation, not a hint word: the prose form learnt that
+    (see resolve_prose) and this form never did, so `key_commands.h:137` in a src: body went
+    unchecked (Huly QB-254). It resolves by suffix here too -- ambiguous ones are in range for ANY
+    candidate, as in the prose form -- and its target line must not be blank.
+    """
+    ab, n = resolve_in_project(path)
+    if ab == "SKIP" and spec and "/" not in path:
+        kind, sizes, paths = resolve_prose(path)
+        if kind == "AMBIG":
+            for b in bad_spec(spec, sizes):
+                problems.append((rel, ln, f"BAD RANGE {path}:{b}"))
+            return ("AMBIG", None)
+        if kind == "OK":
+            ab, n = paths[0], sizes[0]
+        elif kind == "MISS":
+            ab, n = None, None
+    if ab is None:
+        problems.append((rel, ln, f"MISSING {path}"))
+    elif ab != "SKIP" and spec:
+        for b in bad_ranges(spec, n):
+            problems.append((rel, ln, f"BAD RANGE {path}:{b}"))
+        for b in blank_targets(spec, [ab]):
+            problems.append((rel, ln, f"BLANK LINE {path}:{b} — the cited line is empty, "
+                                      f"so the citation has drifted"))
+    return (ab, n)
 for md in doc_files():
     rel = os.path.relpath(md, ROOT)
     for ln, line in enumerate(open(md, encoding="utf-8", errors="replace"), 1):
@@ -353,6 +416,10 @@ for md in doc_files():
             body = m.group(1).strip()
             if not body or "src:" in body: continue
             nohint = re.sub(r"\([^)]*\)", "", body)
+            # A slash-joined line list (`string_commands.h:165/568`, `stream.h:98/:110`) is a comma
+            # list: it matched neither PATHLINE nor RANGEONLY and the whole token was skipped -- its
+            # `/568` sat on a blank line, unseen (Huly QB-254).
+            nohint = re.sub(r"(?<=\d)/:?(?=\d)", ",", nohint)
             for chunk in re.split(r"[;]", nohint):
                 cur = None
                 for tok in chunk.strip().rstrip(".,").split(","):
@@ -360,16 +427,24 @@ for md in doc_files():
                     if not tok: continue
                     pm = PATHLINE.match(tok)
                     if pm:
-                        ab, n = resolve_in_project(pm.group(1))
-                        cur = (ab, n)
-                        if ab is None:
-                            problems.append((rel, ln, f"MISSING {pm.group(1)}"))
-                        elif ab != "SKIP" and pm.group(2):
-                            for b in bad_ranges(pm.group(2), n):
-                                problems.append((rel, ln, f"BAD RANGE {pm.group(1)}:{b}"))
-                    elif RANGEONLY.match(tok) and cur and cur[0] not in (None, "SKIP"):
-                        for b in bad_ranges(tok, cur[1]):
-                            problems.append((rel, ln, f"BAD RANGE (cont) :{b}"))
+                        cur = check_src_cite(rel, ln, pm.group(1), pm.group(2))
+                    elif RANGEONLY.match(tok):
+                        if cur and cur[0] not in (None, "SKIP", "AMBIG"):
+                            for b in bad_ranges(tok, cur[1]):
+                                problems.append((rel, ln, f"BAD RANGE (cont) :{b}"))
+                            for b in blank_targets(tok, [cur[0]]):
+                                problems.append((rel, ln, f"BLANK LINE (cont) :{b} — the cited "
+                                                          f"line is empty, so the citation has drifted"))
+                    else:
+                        embedded = SRC_EMBEDDED.findall(tok)
+                        for path, spec in embedded:
+                            cur = check_src_cite(rel, ln, path, spec)
+                        if not embedded and re.search(r"\." + EXT + r":\d", tok):
+                            # The parser's own confidence check, as UNKNOWN_EXT is for the prose
+                            # form: a token that LOOKS like a citation and yields none is reported,
+                            # never skipped -- that silence is how `:165/568` went unread.
+                            problems.append((rel, ln, f"UNPARSED src: token `{tok}` — a citation "
+                                                      f"shape this checker cannot read"))
 
         # ---- the prose form ------------------------------------------------------
         if not do_prose:

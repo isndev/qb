@@ -598,8 +598,13 @@ def check_doc(path, idx, tol, max_occ, want_ver, ver_src,
                 prior = [p for s, e, p in full if e <= m.start()]
                 if not prior:
                     continue
-                if m.start() > 0 and line[m.start() - 1] not in " ,;(`" and \
-                        not (line[m.start()] == "/" and line[m.start() - 1].isdigit()):
+                # Slash-joined to the previous one, with or without its own colon
+                # (`types.h:336/348`, `sync.h:895/:905`): the `/:` form was matched and then
+                # DROPPED here, so the second of every such pair was read by nothing (Huly QB-254).
+                slash_joined = (line[m.start()] == "/" and line[m.start() - 1].isdigit()) or \
+                    (line[m.start()] == ":" and m.start() > 1 and line[m.start() - 1] == "/"
+                     and line[m.start() - 2].isdigit())
+                if m.start() > 0 and line[m.start() - 1] not in " ,;(`" and not slash_joined:
                     continue
                 cites.append((prior[-1], int(m.group(1)),
                               int(m.group(2) or m.group(1)), m.end(), m.start()))
