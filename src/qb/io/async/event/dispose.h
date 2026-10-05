@@ -40,8 +40,8 @@ namespace qb::io::async::event {
  * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this event is triggered
  *       during the I/O component's cleanup phase, which occurs before the actor's destructor.
  *       This allows actors to perform final cleanup of I/O-related resources. The sequence is:
- *       1. `on(event::disconnected&)` is called (if connection was active)
- *       2. `on(event::dispose&)` is called (final cleanup hook)
+ *       1. `on(event::disconnected&&)` is called (if connection was active)
+ *       2. `on(event::dispose&&)` is called (final cleanup hook)
  *       3. I/O component destructor runs (unregisters from listener)
  *       4. Actor destructor runs (if actor is being destroyed)
  *

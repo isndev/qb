@@ -168,19 +168,26 @@ registry, or as a member — never relocate them.
   `async::tcp::acceptor`, `async::input`/`output`/`io`) and the user's
   `_Derived` class is resolved **at compile time** via CRTP plus trait
   predicates such as `qb::has_on<T, Event>`
-  (`src/qb/utility/type_traits.h:802`).
+  (`src/qb/utility/type_traits.h:827`).
 - The framework dispatches most lifecycle events as **rvalues** — for example
   `event::disconnected` is delivered with `std::move`. A user handler must use a
   compatible signature: `on(event::X&&)` or `on(const event::X&)`. A plain
   `on(event::X&)` (non-const lvalue reference) will not bind and is treated as
-  *no override* (`src/qb/utility/type_traits.h:843`).
+  *no override* (`src/qb/utility/type_traits.h:868`).
+- A `private` or `protected` handler is just as invisible unless its class
+  befriends the detector — `friend struct has_method_on<Self, void, Event>;` —
+  because the detection is written in that struct, not in the base that
+  dispatches: befriending the base is not enough. `qb::has_own_on` reads the same
+  struct (`_qb_detect_own`, `src/qb/utility/type_traits.h:744-753`), so one
+  friend declaration serves both (Huly QB-252). `qb/scripts/check-handler-access.py`
+  refuses both shapes, the lvalue handler and the unbefriended private one.
 - When a CRTP base needs to decide whether `_Derived` **genuinely overrides** a
   handler (rather than merely inheriting the base fallback), use
   `qb::has_own_on<Derived, Base, Event>`
-  (`src/qb/utility/type_traits.h:912`), **not** `qb::has_on`. `has_on`
+  (`src/qb/utility/type_traits.h:920`), **not** `qb::has_on`. `has_on`
   evaluates `true` for the inherited overload, so using it to drive a
   `static_cast<Derived&>(*this).on(e)` re-dispatch produces silent infinite
-  recursion (`src/qb/utility/type_traits.h:802`).
+  recursion (`src/qb/utility/type_traits.h:827`).
 
 ---
 

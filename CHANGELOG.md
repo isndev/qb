@@ -17,6 +17,12 @@ policy.
   issued right after cannot overtake it. Both are protected, like `reset_io_state()`. `start()` and
   `reset_io_state()` now assert in debug that no `disconnect()` is pending, and `start()` that it is not called
   from inside `dispose()`: each cancelled the teardown in silence.
+- **`scripts/check-handler-access.py`: an optional-event handler its gate cannot see is refused (Huly QB-252).**
+  The framework dispatches `disconnected`, `eos`, `pending_read`, `dispose`, ... only when `qb::has_on`,
+  `has_method_on` or `qb::has_own_on` sees the handler, and two shapes hide it with no diagnostic: a private or
+  protected `on(Evt)` whose class does not befriend `has_method_on` (befriending the dispatching base is not
+  enough), and an `on(Evt&)` where the gate probes an rvalue. The gated events are derived from the framework's own
+  gates; it runs in the format-check lane over qb, and over the modules and the examples from the superproject.
 
 ### Fixed
 
@@ -56,6 +62,17 @@ policy.
   on a watcher that is not running yet, and `start()` armed `EV_READ` alone over it, so the bytes waited for the
   next `publish()`: a command a reconnecting client re-issued during the disconnect never left. `start()` now arms
   writing at once when `out()` already holds data; a `start()` with nothing to write is unchanged.
+- **`qb::has_own_on` sees a private handler whose class befriends the detector (Huly QB-252).** The acceptor and
+  `tcp::server` route `event::disconnected` to their derived class through it, and it ran in a `qb::detail`
+  function no friend declaration reaches: a private `on(event::disconnected&&)` was reported absent even with
+  `friend struct has_method_on<Self, void, Evt>;` -- the declaration that makes `qb::has_on` see it. The acceptor
+  then threw "Acceptor has been disconnected"; the event loop contains a handler's exception, and this one left
+  `dispose()` before it stopped the watcher, so the listening socket stayed armed on a disposed acceptor and a client
+  waiting in the backlog made every loop pass dispatch it. `has_own_on` now reads the same `has_method_on` struct as
+  `qb::has_on`: one friend declaration serves both. `qb/utility/type_traits.h` also includes the `<string>` it uses.
+- **The io bases' documentation named the lifecycle handlers `on(event::disconnected&)`, `on(event::eos&)`, ...**
+  -- the non-const lvalue form, which never binds the rvalue those events are dispatched as, so a handler written
+  from it is never called. They now read `on(event::X&&)`.
 
 ## [3.2.1] - 2026-09-24
 

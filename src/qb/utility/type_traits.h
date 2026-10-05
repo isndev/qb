@@ -21,6 +21,7 @@
 #define QB_TYPE_TRAITS_H
 #include <concepts>
 #include <ranges>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -701,51 +702,75 @@ struct expand {
 // ----------------------------------------------------------------------------
 // QB_DEFINE_METHOD_TRAIT — variadic method with optional return type constraint
 // ----------------------------------------------------------------------------
-// The detection requires-expression lives INSIDE has_method_##name (a struct in the global
+// The detection requires-expressions live INSIDE has_method_##name (a struct in the global
 // namespace) on purpose. A class that keeps its name() handlers private grants the detector
-// access with `friend struct has_method_##name<Self, void, Evt>;`. Access for a
-// requires-expression is checked in the scope where it is *written*: writing it here means
-// that friendship is honoured. A named concept in namespace qb would be checked in qb's scope
-// (never a friend), so on conformant compilers (MSVC) it cannot see private handlers and
-// silently reports false — which disables `if constexpr`-gated event dispatch (e.g. HTTP
-// keep-alive's eos handler). The qb::has_##name concepts therefore only *read* the
-// friend-computed value and add no access requirement of their own.
+// access with `friend struct has_method_##name<Self, void, Evt>;` (one per event), or with
+// `template <typename, typename, typename...> friend struct ::has_method_##name;` (all of them).
+// Access for a requires-expression is checked in the scope where it is *written*: writing it
+// here means that friendship is honoured. A named concept in namespace qb would be checked in
+// qb's scope (never a friend), so it cannot see private handlers and silently reports false —
+// which disables `if constexpr`-gated event dispatch: the handler is never called, with no
+// diagnostic. Befriending the CRTP base that dispatches is NOT enough — detection does not run
+// there (Huly QB-252). The qb::has_##name concepts therefore only *read* the friend-computed
+// value and add no access requirement of their own; qb::has_own_on reads _qb_detect_own().
 //   Ret=void → existence only; Ret≠void → exact return (same_as<Ret>).
-//   Befriend with `friend struct has_method_##name<Self, void, Evt>;` for private name().
-#define QB_DEFINE_METHOD_TRAIT(name)                                          \
-    template <typename C, typename Ret, typename... Args>                     \
-    struct has_method_##name {                                                \
-        static constexpr bool                                                 \
-        _qb_detect() noexcept {                                               \
-            if constexpr (std::is_void_v<Ret>)                                \
-                return requires(C &c) {                                       \
-                    { c.name(std::declval<Args>()...) };                      \
-                };                                                            \
-            else                                                              \
-                return requires(C &c) {                                       \
-                    { c.name(std::declval<Args>()...) } -> std::same_as<Ret>; \
-                };                                                            \
-        }                                                                     \
-        static constexpr bool value = _qb_detect();                           \
-        using value_type            = bool;                                   \
-        using type                  = std::bool_constant<value>;              \
-        constexpr                                                             \
-        operator bool() const noexcept {                                      \
-            return value;                                                     \
-        }                                                                     \
-        constexpr bool                                                        \
-        operator()() const noexcept {                                         \
-            return value;                                                     \
-        }                                                                     \
-    };                                                                        \
-    namespace qb {                                                            \
-    /** Concept: C& has .name(Args...) callable, any return type. */          \
-    template <typename C, typename... Args>                                   \
-    concept has_##name = ::has_method_##name<C, void, Args...>::value;        \
-    /** Concept: C& has .name(Args...) returning exactly Ret. */              \
-    template <typename C, typename Ret, typename... Args>                     \
-    concept has_##name##_r = ::has_method_##name<C, Ret, Args...>::value;     \
-    } /* namespace qb */                                                      \
+namespace qb::detail {
+// Overload-resolution probe for _qb_detect_own(): only viable when its argument binds to
+// `void(Base::*)(Args&&...)` through an *implicit* pointer-to-member conversion. A base->derived
+// PMF conversion is implicit; the reverse (derived->base) is not. Hence `&C::name` binds here iff
+// C's name(Args&&...) IS Base's inherited one — C declared none of its own, which would name-hide
+// Base's overload set. Detects an override WITHOUT comparing PMF *values*: GCC rejects both
+// constexpr PMF `!=` and cast-PMF template arguments, so value comparison is not portable.
+template <typename Base, typename... Args>
+void inherited_member_probe(void (Base::*)(Args &&...));
+} // namespace qb::detail
+
+#define QB_DEFINE_METHOD_TRAIT(name)                                                             \
+    template <typename C, typename Ret, typename... Args>                                        \
+    struct has_method_##name {                                                                   \
+        static constexpr bool                                                                    \
+        _qb_detect() noexcept {                                                                  \
+            if constexpr (std::is_void_v<Ret>)                                                   \
+                return requires(C &c) {                                                          \
+                    { c.name(std::declval<Args>()...) };                                         \
+                };                                                                               \
+            else                                                                                 \
+                return requires(C &c) {                                                          \
+                    { c.name(std::declval<Args>()...) } -> std::same_as<Ret>;                    \
+                };                                                                               \
+        }                                                                                        \
+        template <typename Base>                                                                 \
+        static constexpr bool                                                                    \
+        _qb_detect_own() noexcept {                                                              \
+            if constexpr (requires(C &c) { c.name(std::declval<Args const &>()...); })           \
+                return true;                                                                     \
+            else if constexpr (                                                                  \
+                requires { static_cast<void (C::*)(Args && ...)>(&C::name); }                    \
+                && !requires { ::qb::detail::inherited_member_probe<Base, Args...>(&C::name); }) \
+                return true;                                                                     \
+            else                                                                                 \
+                return false;                                                                    \
+        }                                                                                        \
+        static constexpr bool value = _qb_detect();                                              \
+        using value_type            = bool;                                                      \
+        using type                  = std::bool_constant<value>;                                 \
+        constexpr                                                                                \
+        operator bool() const noexcept {                                                         \
+            return value;                                                                        \
+        }                                                                                        \
+        constexpr bool                                                                           \
+        operator()() const noexcept {                                                            \
+            return value;                                                                        \
+        }                                                                                        \
+    };                                                                                           \
+    namespace qb {                                                                               \
+    /** Concept: C& has .name(Args...) callable, any return type. */                             \
+    template <typename C, typename... Args>                                                      \
+    concept has_##name = ::has_method_##name<C, void, Args...>::value;                           \
+    /** Concept: C& has .name(Args...) returning exactly Ret. */                                 \
+    template <typename C, typename Ret, typename... Args>                                        \
+    concept has_##name##_r = ::has_method_##name<C, Ret, Args...>::value;                        \
+    } /* namespace qb */                                                                         \
     static_assert(true, "require trailing semicolon")
 
 // ----------------------------------------------------------------------------
@@ -856,40 +881,20 @@ QB_DEFINE_TYPE_TRAIT(Protocol);
 // @tparam Base CRTP base that itself defines `on(Evt...)` (e.g. the
 //              framework class performing the dispatch).
 // @tparam Evt  Event parameter type (without cv/ref qualifiers).
+//
+// The detection is `has_method_on<D, void, Evt>::_qb_detect_own<Base>()`, written
+// inside the struct QB_DEFINE_METHOD_TRAIT generates, so the friend declaration
+// that lets qb::has_on see a private `on(Evt)` lets this one see it too. It used
+// to run in a qb::detail function no friend declaration reaches: a private
+// handler was reported absent and the dispatch fell back — the acceptor threw
+// "Acceptor has been disconnected" instead of calling it (Huly QB-252). Two
+// shapes, both portable across GCC/Clang/MSVC and correct when D is `final`:
+//   (2) a const lvalue-reference overload — absent from Base by contract, so
+//       its presence on D is necessarily a user-defined handler;
+//   (1) `on(Evt&&)` that D declares itself: `&D::on` is a valid
+//       `void(D::*)(Evt&&)` and does NOT bind to `void(Base::*)(Evt&&)`
+//       (qb::detail::inherited_member_probe).
 // ----------------------------------------------------------------------------
-
-namespace qb::detail {
-
-// Overload-resolution probe: only viable when its argument binds to
-// `void(Base::*)(Evt&&)` through an *implicit* pointer-to-member conversion.
-// A base->derived PMF conversion is implicit; the reverse (derived->base) is
-// not. Hence `&D::on` binds here iff D's `on(Evt&&)` IS Base's inherited one —
-// i.e. D did not declare its own (which would name-hide Base's overload set).
-// This lets us detect an override WITHOUT comparing PMF *values*: GCC rejects
-// both constexpr PMF `!=` and cast-PMF template arguments, so value comparison
-// is not portable (it only ever compiled under Clang/MSVC).
-template <typename Base, typename Evt>
-void inherited_on_probe(void (Base::*)(Evt &&));
-
-template <typename D, typename Base, typename Evt>
-consteval bool
-compute_has_own_on() {
-    // (2) const lvalue-reference overload — absent from Base by contract, so
-    //     its presence on D is necessarily a user-defined handler.
-    if constexpr (requires(D &d, const Evt &ev) { d.on(ev); })
-        return true;
-    // (1) rvalue-reference signature — D carries its own `on(Evt&&)` iff it
-    //     declares one (so `&D::on` is a valid `void(D::*)(Evt&&)`) AND that
-    //     handler is not merely Base's inherited one (so `&D::on` does NOT
-    //     implicitly bind to `void(Base::*)(Evt&&)`). Portable across
-    //     GCC/Clang/MSVC and correct even when D is `final`.
-    else if constexpr (requires { static_cast<void (D::*)(Evt &&)>(&D::on); } && !requires { inherited_on_probe<Base, Evt>(&D::on); })
-        return true;
-    else
-        return false;
-}
-
-} // namespace qb::detail
 
 namespace qb {
 
@@ -901,6 +906,9 @@ namespace qb {
  * `static_cast<D&>(*this).on(e)` from within @p Base — otherwise the
  * redispatch turns into infinite recursion for users that do not override.
  *
+ * A private handler is seen when @p D befriends the detector, exactly as for
+ * qb::has_on: `friend struct has_method_on<D, void, Evt>;`.
+ *
  * @tparam D    Derived (user) class.
  * @tparam Base Direct CRTP base that declares an `on(Evt&&)` fallback.
  * @tparam Evt  Event type to route.
@@ -909,7 +917,7 @@ namespace qb {
  * @ingroup TypeTraits
  */
 template <typename D, typename Base, typename Evt>
-inline constexpr bool has_own_on = detail::compute_has_own_on<D, Base, Evt>();
+inline constexpr bool has_own_on = ::has_method_on<D, void, Evt>::template _qb_detect_own<Base>();
 
 } // namespace qb
 

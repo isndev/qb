@@ -598,8 +598,8 @@ public:
      * @details This method is typically called from the `on(event::file&)` handler when a change
      *          is detected (e.g. file size increased). It repeatedly calls `_Derived::read()` to fill the input buffer,
      *          then processes messages via `_protocol->getMessageSize()` and `_protocol->onMessage()`.
-     *          It also invokes `_Derived::eof()` and potentially `_Derived::on(event::pending_read&)`
-     *          or `_Derived::on(event::eof&)` based on the read outcome and buffer state.
+     *          It also invokes `_Derived::eof()` and potentially `_Derived::on(event::pending_read&&)`
+     *          or `_Derived::on(event::eof&&)` based on the read outcome and buffer state.
      *
      * @note **Error Handling:** If this method returns `-1`, the `on(event::file&)` handler will stop
      *       the watcher and close the file. The error is not propagated via an event, but the watcher
@@ -677,7 +677,7 @@ private:
      *  - If any critical error occurs (e.g., `lseek` fails after size decrease, `read_all()` returns < 0), it stops the watcher and closes.
      */
     void
-    on(event::file const &event) {
+    on(event::file const &event) { // handler-access: the listener's watcher callback, not a gated dispatch
         int ret = 0;
 
         // forward event to Derived if desired
@@ -768,7 +768,7 @@ private:
      *          Any further action based on directory attribute changes is the responsibility of the derived class.
      */
     void
-    on(event::file const &event) {
+    on(event::file const &event) { // handler-access: the listener's watcher callback, not a gated dispatch
         // forward event to Derived if desired
         if constexpr (qb::has_on<_Derived, event::file>) {
             Derived.on(event);
@@ -1213,7 +1213,7 @@ public:
      *          leading to the invocation of the `dispose()` method for cleanup.
      *
      * @note **Actor Integration:** When used within a `qb::Actor`, calling `disconnect()` will trigger
-     *       `on(event::disconnected&)` if implemented, allowing the actor to handle the disconnection
+     *       `on(event::disconnected&&)` if implemented, allowing the actor to handle the disconnection
      *       gracefully (e.g., attempt reconnection, notify other actors, or call `kill()`).
      *
      * @note **Example Usage:**
@@ -1456,9 +1456,9 @@ protected:
      * @brief Disposes of resources and finalizes disconnection for the input component.
      * @details This method is called internally when an I/O error occurs or when `disconnect()`
      *          is explicitly initiated. It ensures cleanup happens only once by checking the `_is_disposed` flag.
-     *          If `_Derived` implements `on(event::disconnected&)`, this method is called with the stored `_reason`.
+     *          If `_Derived` implements `on(event::disconnected&&)`, this method is called with the stored `_reason`.
      *          If `_Derived::has_server` is true (typically for server-side sessions), it notifies the server of the disconnection.
-     *          Otherwise, if `_Derived` implements `on(event::dispose&)`, that method is called as a final cleanup hook.
+     *          Otherwise, if `_Derived` implements `on(event::dispose&&)`, that method is called as a final cleanup hook.
      *          The base class (`async::base`) destructor will handle unregistering the `event::io` watcher.
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. Actors should handle `event::disconnected` to
@@ -1844,7 +1844,7 @@ public:
      *          leading to the invocation of `dispose()` for cleanup.
      *
      * @note **Actor Integration:** When used within a `qb::Actor`, calling `disconnect()` will trigger
-     *       `on(event::disconnected&)` if implemented, allowing the actor to handle the disconnection
+     *       `on(event::disconnected&&)` if implemented, allowing the actor to handle the disconnection
      *       gracefully (e.g., attempt reconnection, notify other actors, or call `kill()`).
      *
      * @note This method is safe to call multiple times; subsequent calls will update the reason code
@@ -1882,8 +1882,8 @@ private:
      * 2. If an OS-level write error occurs (write returns < 0), calls `dispose()`.
      * 3. If all pending data is written (`_Derived::pendingWrite()` returns 0), the `event::io` watcher is
      *    typically set to `EV_NONE` (to stop listening for write readiness until more data is published),
-     *    and `_Derived::on(event::eos&)` is triggered if implemented by the derived class.
-     * 4. If data is still pending in the output buffer after the write attempt, `_Derived::on(event::pending_write&)`
+     *    and `_Derived::on(event::eos&&)` is triggered if implemented by the derived class.
+     * 4. If data is still pending in the output buffer after the write attempt, `_Derived::on(event::pending_write&&)`
      *    is triggered if implemented, indicating how many bytes remain.
      * If `_reason` is set (due to a `disconnect()` call) or other unhandled conditions occur, it calls `dispose()`.
      */
@@ -1952,9 +1952,9 @@ protected:
      * @brief Disposes of resources and finalizes disconnection for the output component.
      * @details This method is called internally when an I/O error occurs or when `disconnect()`
      *          is explicitly initiated. It ensures cleanup happens only once by checking `_is_disposed`.
-     *          If `_Derived` implements `on(event::disconnected&)`, this method is called with the stored `_reason`.
+     *          If `_Derived` implements `on(event::disconnected&&)`, this method is called with the stored `_reason`.
      *          If `_Derived::has_server` is true, it notifies the server. Otherwise, if `_Derived` implements
-     *          `on(event::dispose&)`, that method is called for final cleanup.
+     *          `on(event::dispose&&)`, that method is called for final cleanup.
      *          The base class (`async::base`) destructor handles unregistering the `event::io` watcher.
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. Actors should handle `event::disconnected` to
@@ -2120,8 +2120,8 @@ public:
      *
      * @note **Reusing the object for its next connection.** Not while a `disconnect()` is pending: its `dispose()` is
      *       deferred to this watcher's next dispatch, and a `start()` before it cancels it -- the restart clears the
-     *       event `disconnect()` fed and `_reason` is zeroed, so `on(event::disconnected&)` never runs. Not from inside
-     *       `on(event::disconnected&)` either: on a standalone client `dispose()` stops the watcher as soon as that
+     *       event `disconnect()` fed and `_reason` is zeroed, so `on(event::disconnected&&)` never runs. Not from inside
+     *       `on(event::disconnected&&)` either: on a standalone client `dispose()` stops the watcher as soon as that
      *       handler returns. Both are debug assertions. Clear what the previous connection left with
      *       `reset_for_reconnect()` before installing the next transport (Huly QB-202).
      *
@@ -2160,15 +2160,15 @@ public:
     start() noexcept {
         // The reuse contract (Huly QB-202), checked where a violation is still visible: a pending
         // disconnect() would be cancelled by the restart below (its EV_UNDEF cleared, `_reason`
-        // zeroed), and a start() made from on(event::disconnected&) is undone by the stop() that
+        // zeroed), and a start() made from on(event::disconnected&&) is undone by the stop() that
         // dispose() runs as soon as that handler returns. Debug-only; both are caller errors.
         assert(!(_reason != 0 && !_is_disposed)
                && "io::start() while a disconnect() is pending: its dispose() has not run yet -- wait for "
-                  "on(event::disconnected&)");
+                  "on(event::disconnected&&)");
         if constexpr (!_Derived::has_server)
             assert(!(_is_disposed && this->_async_event.is_active())
                    && "io::start() from inside dispose(): the watcher is stopped as soon as "
-                      "on(event::disconnected&) returns");
+                      "on(event::disconnected&&) returns");
         // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into
         // `anfds[-1]` (the debug assert is compiled out in release → OOB, CWE-787). start() is
         // "begin I/O on a connected transport"; if the transport is not open, no-op. Gated on
@@ -2578,13 +2578,13 @@ public:
      *          leading to the invocation of `dispose()` for cleanup.
      *
      * @note **Actor Integration:** When used within a `qb::Actor`, calling `disconnect()` will trigger
-     *       `on(event::disconnected&)` if implemented, allowing the actor to handle the disconnection
+     *       `on(event::disconnected&&)` if implemented, allowing the actor to handle the disconnection
      *       gracefully (e.g., attempt reconnection, notify other actors, or call `kill()`).
      *
      * @note This method is safe to call multiple times; subsequent calls will update the reason code
      *       but the disconnection process will only occur once.
      *
-     * @note **The teardown is deferred.** `dispose()` -- and with it `on(event::disconnected&)` -- runs when the
+     * @note **The teardown is deferred.** `dispose()` -- and with it `on(event::disconnected&&)` -- runs when the
      *       loop next dispatches this watcher, not before `disconnect()` returns. An object reused for its next
      *       connection must let it run first (`start()` and `reset_io_state()` assert it in debug), or -- a
      *       standalone client -- complete it on the spot with `disconnect_now()` (Huly QB-202).
@@ -2615,15 +2615,15 @@ protected:
      * @details `disconnect()` defers `dispose()` to the watcher's next dispatch. A client that is ITSELF
      *          the io of every connection it opens cannot leave it pending: a connect() completing first
      *          (libev invokes pending watchers last-in, first-out) restarts the watcher, which drops the
-     *          event `disconnect()` fed, and the teardown -- `on(event::disconnected&)` included -- never
+     *          event `disconnect()` fed, and the teardown -- `on(event::disconnected&&)` included -- never
      *          runs (Huly QB-202). Called from inside this object's message loop (a protocol handler, with
      *          the io dispatch on the stack), the teardown cannot run there: the event it fed runs it right after
      *          that dispatch returns, in the same pass, before any connect() can complete. It never runs a loop pass,
      *          so no other watcher and no coroutine is resumed under the caller -- a nested
      *          `EVRUN_NOWAIT` pass would re-enter the coroutine scheduler when called from a coroutine.
      * @pre A standalone client: a server-associated session's `dispose()` hands it to its server
-     *      (compile-time error). Not from this object's other io hooks (`on(event::pending_read&)`,
-     *      `on(event::eof&)`, `on(event::eos&)`, `on(event::pending_write&)`): the dispatch that called
+     *      (compile-time error). Not from this object's other io hooks (`on(event::pending_read&&)`,
+     *      `on(event::eof&&)`, `on(event::eos&&)`, `on(event::pending_write&&)`): the dispatch that called
      *      them continues after they return. The handlers `dispose()` calls must not throw.
      */
     void
@@ -2894,8 +2894,8 @@ protected:
     /**
      * @brief Disposes of resources and finalizes disconnection for the I/O component.
      * @details Ensures cleanup happens only once (via `_is_disposed`).
-     *          Triggers `_Derived::on(event::disconnected&)` (with `_reason`)
-     *          or `_Derived::on(event::dispose&)` based on derived class capabilities and server association.
+     *          Triggers `_Derived::on(event::disconnected&&)` (with `_reason`)
+     *          or `_Derived::on(event::dispose&&)` based on derived class capabilities and server association.
      *          This is the primary cleanup point before the `async::base` destructor unregisters the watcher.
      *
      * @note **Important: Difference between server-associated and standalone clients:**
@@ -2908,21 +2908,21 @@ protected:
      *
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. The sequence is:
-     *       1. `on(event::disconnected&)` is called if implemented, allowing the actor to handle the disconnection
+     *       1. `on(event::disconnected&&)` is called if implemented, allowing the actor to handle the disconnection
      *          (e.g., attempt reconnection, notify other actors, or call `kill()` if termination is required).
-     *       2. `on(event::dispose&)` is called if implemented, providing a final cleanup hook before destruction.
+     *       2. `on(event::dispose&&)` is called if implemented, providing a final cleanup hook before destruction.
      *       3. The base class destructor unregisters the event watcher from the listener.
-     *       Actors should implement `on(event::disconnected&)` to handle connection loss gracefully.
+     *       Actors should implement `on(event::disconnected&&)` to handle connection loss gracefully.
      *
-     * @warning **Self-destruction must happen ONLY in `on(event::dispose&)`, never in
-     *          `on(event::disconnected&)`.** For a self-managed standalone client, `dispose()`
-     *          still touches `this` after `on(event::disconnected&)` returns (it stops the
-     *          watcher and then fires `on(event::dispose&)`), so freeing the object from
-     *          `on(event::disconnected&)` (e.g. `delete this`) leaves the rest of `dispose()`
-     *          operating on freed memory (use-after-free). `on(event::dispose&)` is the last
+     * @warning **Self-destruction must happen ONLY in `on(event::dispose&&)`, never in
+     *          `on(event::disconnected&&)`.** For a self-managed standalone client, `dispose()`
+     *          still touches `this` after `on(event::disconnected&&)` returns (it stops the
+     *          watcher and then fires `on(event::dispose&&)`), so freeing the object from
+     *          `on(event::disconnected&&)` (e.g. `delete this`) leaves the rest of `dispose()`
+     *          operating on freed memory (use-after-free). `on(event::dispose&&)` is the last
      *          hook and nothing in the framework touches `this` after it returns — that is the
      *          one safe place to delete a self-owned object. (Actors are unaffected: `kill()`
-     *          defers destruction, so calling it from `on(event::disconnected&)` is safe.)
+     *          defers destruction, so calling it from `on(event::disconnected&&)` is safe.)
      */
     void
     dispose() {
@@ -2972,7 +2972,7 @@ protected:
     reset_io_state() noexcept {
         assert(!(_reason != 0 && !_is_disposed)
                && "io::reset_io_state() while a disconnect() is pending: its dispose() has not run yet -- wait "
-                  "for on(event::disconnected&)");
+                  "for on(event::disconnected&&)");
         _is_disposed  = false;
         _on_message   = false;
         _reason       = 0;
@@ -3001,7 +3001,7 @@ protected:
      * @note A client that serializes requests straight into `out()` and lets a failing callback
      *       re-issue one during the disconnect (qbm-redis) cannot clear `out()` at reconnect -- the
      *       re-issued request is already there. It drops the dead connection's bytes where it fails
-     *       their requests instead, in `on(event::disconnected&)`, and keeps what was queued since.
+     *       their requests instead, in `on(event::disconnected&&)`, and keeps what was queued since.
      */
     void
     reset_for_reconnect() {

@@ -53,6 +53,14 @@ jobs:
       - name: 'Headers - no #include is processed inside a namespace'
         run: ./scripts/check-namespace-scoped-includes.py --min-includes 2900
 
+      # A handler its gate cannot see is skipped with no diagnostic (Huly QB-252): a private or
+      # protected on(Evt) whose class does not befriend the detector -- befriending the base that
+      # dispatches is not enough -- or an on(Evt &) no gate can bind. Same phase as the three
+      # above: pure Python, no toolchain, whole tree. qb only; qbm's and the examples' run from
+      # the superproject's dev/agent/verify.sh.
+      - name: Handlers - every gated on() is one its gate can see
+        run: ./scripts/check-handler-access.py
+
       - name: Install LLVM tools
         run: |
           ./scripts/ci-install-linux-dependencies.sh --profile format-check

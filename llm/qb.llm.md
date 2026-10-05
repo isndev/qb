@@ -228,7 +228,7 @@ class Session : public qb::io::async::with_timeout<Session> {
 
 Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. Declare
 `using Protocol = ...;` and implement `on(Protocol::message&&)` plus I/O events
-(`on(event::disconnected&)`, etc.). Verified helper shapes (`_Derived` is your type):
+(`on(event::disconnected&&)`, etc. — never `on(event::X&)`, see the handler rule below). Verified helper shapes (`_Derived` is your type):
 
 - TCP: `qb::io::use<T>::tcp::client<Server=void>`, `::tcp::server<Session>`, `::tcp::acceptor`,
   `::tcp::io_handler<Session>`.
@@ -525,10 +525,15 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   hand `ev::stat` a temporary's `c_str()`. _(io.h:577-580; ev++.h:762)_
 - **Reusing one io object for the next connection** (a client that is itself the io of every connection it
   opens): `disconnect()` defers `dispose()` to the watcher's next dispatch — a `start()` or `reset_io_state()`
-  before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&)` (debug
+  before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
   installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2160-2189, :2630-2637, :3007-3011)_
+- **An optional I/O handler the detection cannot see is never called — silently.** `disconnected`, `eos`,
+  `pending_read`, `dispose`, ... are dispatched under `if constexpr (qb::has_on<D, Evt>)`: it probes an RVALUE, so
+  take `on(Evt&&)` or `on(Evt const&)`, never `on(Evt&)`; and it is access-checked inside the `has_method_on` struct,
+  so a private or protected handler needs `friend struct has_method_on<Self, void, Evt>;` — befriending the base that
+  dispatches is NOT enough. `qb::has_own_on` (acceptor, `tcp::server`) reads the same struct (`_qb_detect_own`). _(type_traits.h:744-753, :920)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:254-271)_

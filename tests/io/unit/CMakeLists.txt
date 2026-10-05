@@ -105,5 +105,6 @@ qb_add_test(MODULE qb-io TIER unit NAME sibling-api-parity         SOURCES corou
 qb_add_test(MODULE qb-io TIER unit NAME generator-async             SOURCES coroutine/generator-async.cpp             DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME cancellation-token          SOURCES coroutine/cancellation-token.cpp          DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME retry-policy                SOURCES coroutine/retry-policy.cpp                DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME handler-detection SOURCES async/handler-detection.cpp DEPENDS ${PROJECT_NAME})
 
 qb_debug_message("Configured qb-io unit tests")
