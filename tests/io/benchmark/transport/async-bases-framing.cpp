@@ -202,7 +202,10 @@ BM_Framing_ReadFrameDrain(benchmark::State &state) {
 
         last_frames  = session.frames_delivered;
         last_payload = session.payload_bytes;
-        benchmark::DoNotOptimize(last_frames);
+        // No benchmark::DoNotOptimize(last_frames): both counters are consumed by the check after the loop,
+        // and Google Benchmark 1.9's GCC form, `asm volatile("" : "+m,r"(value))`, is miscompiled here at -O3
+        // (g++-14): the copy came back as a stack address, the check failed, and the benchmark reported an
+        // error instead of a measurement on every GCC build. Measured, not inferred.
     }
 
     // One out-of-loop correctness assert: every frame must have been delivered.
