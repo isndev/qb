@@ -769,7 +769,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `class CoroutineScheduler` — mono-thread scheduler over an `ev::loop_ref`.
     *   `void spawn(task<void>&& t)`, `[T<Callable>] void spawn(Callable fn)` — **pass the lambda WITHOUT trailing `()`** (avoids dangling-closure UB).
     *   `std::size_t run_ready(std::size_t max_count = 0)` — drain the ready queue (not re-entrant).
-    *   `[[nodiscard]] bool is_draining_ready() const noexcept` — true while inside `run_ready()`. This is the query the re-entrancy guard below tests _(`scheduler.h:755-758`)_.
+    *   `[[nodiscard]] bool is_draining_ready() const noexcept` — true while inside `run_ready()`. This is the query the re-entrancy guard below tests. A `run_ready()` called while it is true — a `listener::run()` nested inside a drain, as `Redis::await()` runs from a coroutine body — resumes nothing and returns 0, leaving the coroutines to the enclosing drain (Huly QB-253) _(`scheduler.h:755-758`)_.
     *   `void schedule_resume(std::coroutine_handle<>)`
     *   `static CoroutineScheduler& current()`, `static CoroutineScheduler* current_ptr() noexcept`, `static void set_current(CoroutineScheduler*)`.
     *   `std::size_t active_count() const`.
@@ -784,7 +784,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline socket_awaiter wait_readable(int fd)` / `wait_writable(int fd)` / `wait_for_io(int fd, int events)`.
 *   `inline CoroutineScheduler& coro_scheduler()` — listener's scheduler.
 *   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration. Throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`.
-*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1368-1381`)_.
+*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1377-1390`)_.
 *   `[T] inline void pin_frame_copy(T& copy) noexcept` — keep a by-value coroutine parameter's frame copy at its own alignment: a memory-operand asm barrier on clang (no instruction emitted), a no-op on GCC, MSVC and clang-cl. Shields LLVM issue 159571 (clang older than 22 on a `byval` ABI — x86-64 Linux / Intel macOS — spills a never-written parameter copy at alignment 8 and reads it at 64). Call it before the first suspension of a coroutine that takes an event by value and never assigns to it; every `qb::ask*` pattern coroutine does (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:376)_
 *   use: `co_await qb::io::async::sleep(100ms);`
 

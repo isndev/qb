@@ -164,8 +164,8 @@ struct scheduler_deleter {
  *   (no atomics, no mutex), `in_flight_`, `owned_frames_` and
  *   `suspended_coroutines_` are open-addressing `detail::flat_ptr_set`s —
  *   none of them allocates on the steady-state resume path.
- * - `run_ready()` must not be called re-entrantly (see the `in_run_ready_`
- *   guard inside the implementation).
+ * - A `run_ready()` nested in a drain resumes nothing and returns 0 (see the
+ *   `in_run_ready_` guard inside the implementation).
  * - Use separate scheduler instances per thread.
  *
  * @ingroup Coroutine
@@ -640,31 +640,31 @@ public:
      */
     std::size_t
     run_ready(std::size_t max_count = 0) {
-        // Finding 2.D.1: `run_ready()` must never be called re-entrantly —
-        // from inside a coroutine body, from an awaiter's `await_suspend`,
-        // or transitively via `listener::run()` invoked by user code that
-        // is itself executing under a previous `run_ready()` frame. Doing
-        // so would:
+        // Finding 2.D.1: a drain NESTED in a drain resumes nothing and returns 0.
+        // It is reached legitimately: library code that pumps the loop from a
+        // coroutine body -- `Redis::await()`, `Transaction::await()` -- runs
+        // `listener::run()`, and so this function, under the drain that resumed
+        // that body. The coroutines such a pass makes ready stay queued, and the
+        // enclosing drain resumes them once the running coroutine yields.
+        // Proceeding instead would:
         //   1. Double-resume a handle that the outer frame already popped
         //      (since `in_flight_.erase` has already happened for it).
         //   2. Destroy handles while the outer frame still holds a local
         //      reference to them (`handle` on the stack).
         //   3. Break `max_count`-based fairness accounting.
         //
-        // We guard the invariant with a per-scheduler boolean rather than a
-        // thread_local so that the diagnostic is scoped to the actual
-        // misuse — this also plays nicely with tests that create multiple
-        // schedulers on one thread. In release we stay silent and simply
-        // return 0 to stop the cascade, which is strictly safer than
-        // marching on.
+        // The flag is per scheduler rather than thread_local, so tests that
+        // create several schedulers on one thread stay independent. Until 3.3
+        // this branch asserted in a debug build, so a nested pass aborted there
+        // and only release had the defined behaviour (Huly QB-253). The test
+        // lives here and not in `listener::run()`, deliberately: that body is
+        // inlined into `VirtualCore::__workflow__`, and a condition added to it
+        // reshaped the whole hot loop (+3 % on the pure actor pass, measured).
+        // The blocking pumps still refuse this context, earlier and loudly:
+        // `run_sync`, `run_for` and `async::run` and its siblings go through
+        // `ensure_not_inside_ready_drain()`, which asserts in debug and throws
+        // `std::logic_error` -- `is_draining_ready()` is the query it asks.
         if (in_run_ready_) {
-#ifndef NDEBUG
-            assert(!in_run_ready_
-                   && "run_ready() called re-entrantly — "
-                      "likely from run_sync() / run_for() invoked inside a "
-                      "coroutine or actor handler. That is forbidden (see "
-                      "qb-io coroutine invariants).");
-#endif
             return 0;
         }
         struct ReentrancyGuard {

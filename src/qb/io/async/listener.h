@@ -963,7 +963,9 @@ public:
      * This call blocks or returns based on the flag and event activity.
      * It also resets the `_nb_invoked_events` counter before running.
      *
-     * After processing libev events, any ready coroutines are also executed.
+     * After processing libev events, any ready coroutines are also executed -- unless this pass
+     * is nested inside a coroutine drain (library code draining the loop from a coroutine body,
+     * `Redis::await()`, `Transaction::await()`): that drain resumes them (Huly QB-253).
      *
      * @param flag The libev run flag (e.g., `EVRUN_NOWAIT` to check once and return,
      *             `EVRUN_ONCE` to wait for and process one event block, `0` for default blocking run).
@@ -1026,6 +1028,13 @@ public:
         // 64k coroutines in one turn is already pathological), so normal latency is untouched
         // and only the self-feeding shape is affected. `run_ready()`'s own default stays
         // unbounded for the teardown drains that genuinely must empty the queue.
+        //
+        // A pass NESTED inside a drain -- library code draining the loop from a coroutine body,
+        // `Redis::await()`, `Transaction::await()` -- resumes no coroutine: `run_ready()` returns 0
+        // when its scheduler is already draining, and that drain resumes what this pass made ready
+        // once the running coroutine yields (Huly QB-253). The test lives there, not here: this
+        // body is inlined into `VirtualCore::__workflow__`, and a condition added to it reshaped
+        // that whole hot loop. The watchers and deferred callbacks above have run either way.
         if (_coro_scheduler) {
             std::size_t coro_count = _coro_scheduler->run_ready(kMaxCoroutineResumesPerTurn);
             _nb_invoked_events += coro_count;

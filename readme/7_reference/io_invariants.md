@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`src/qb/io/async/listener.h:1354-1357`). `listener::current` is a
+  (`src/qb/io/async/listener.h:1363-1366`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -96,16 +96,21 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`src/qb/io/async/listener.h:1369`).
+  (`src/qb/io/async/listener.h:1378`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
   `run_for()` (`src/qb/io/async/coroutine/utils.h:285`, `:227`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
   `ensure_not_inside_ready_drain()` on entry, so a re-entrant call asserts in
   debug and throws `std::logic_error` in release
   (`src/qb/io/async/coroutine/utils.h:288`, `:228`). A second, deeper
-  per-scheduler `in_run_ready_` guard inside `run_ready()` itself asserts in
-  debug and returns `0` in release should a nested drain still be reached
-  (`src/qb/io/async/coroutine/scheduler.h:660-669`).
+  per-scheduler `in_run_ready_` guard inside `run_ready()` itself makes a
+  nested drain a no-op: it resumes nothing and returns `0`
+  (`src/qb/io/async/coroutine/scheduler.h:667-669`). That is what the member
+  `listener::run()` meets when it is nested inside a drain — the library
+  drains `Redis::await()` and `Transaction::await()` run one from a coroutine
+  body: the pass runs its watchers and deferred callbacks and leaves the
+  coroutines it made ready to the enclosing drain. Until 3.3 the guard
+  asserted, and a debug build aborted there (Huly QB-253).
 - `input` / `io` add a second, single-thread re-entrance guard: `on(event::io)`
   returns immediately when `_on_message` is already set, preventing recursive
   message processing within the same thread
@@ -117,7 +122,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1429-1432`).
+> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1438-1441`).
 
 ---
 

@@ -70,6 +70,17 @@ policy.
   `dispose()` before it stopped the watcher, so the listening socket stayed armed on a disposed acceptor and a client
   waiting in the backlog made every loop pass dispatch it. `has_own_on` now reads the same `has_method_on` struct as
   `qb::has_on`: one friend declaration serves both. `qb/utility/type_traits.h` also includes the `<string>` it uses.
+- **A loop pass nested inside a coroutine drain no longer aborts a debug build (Huly QB-253).** Library code that
+  drains the event loop from a coroutine body -- qbm-redis's `Redis::await()`, qbm-pgsql's `Transaction::await()`
+  and, until this release, its `disconnect()` -- calls `listener::current.run()` while
+  `CoroutineScheduler::run_ready()` is on the stack, and `run()` ends by calling `run_ready()` again, whose
+  re-entrancy guard asserted in a debug build and returned `0` in release. A nested `run_ready()` now returns `0` by
+  definition: the pass runs its watchers and deferred callbacks and leaves the coroutines it made ready to the
+  enclosing drain, which resumes them once the running coroutine yields -- what release did. The blocking pumps
+  (`run_sync`, `run_for`, `async::run` and its siblings) still refuse that context, earlier, with a
+  `std::logic_error`. Release code is unchanged: the test sits in the scheduler rather than in `listener::run()`
+  because a condition there, inlined into `VirtualCore::__workflow__`, reshaped the hot loop and cost the pure
+  actor pass 3 % (measured). Pinned by `NestedListenerPassLeavesCoroutinesToTheEnclosingDrain`.
 - **The io bases' documentation named the lifecycle handlers `on(event::disconnected&)`, `on(event::eos&)`, ...**
   -- the non-const lvalue form, which never binds the rvalue those events are dispatched as, so a handler written
   from it is never called. They now read `on(event::X&&)`.

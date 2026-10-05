@@ -49,7 +49,9 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
@@ -883,6 +885,34 @@ TEST_F(CoroutineSchedulerTests, IsDrainingReadyReflectsRunReadyWindow) {
     sched.run_ready();
     EXPECT_TRUE(saw_draining.load()) << "is_draining_ready() should be true inside a run_ready() drain";
     EXPECT_FALSE(sched.is_draining_ready()) << "draining flag must clear after run_ready() returns";
+}
+
+/**
+ * @test A listener pass run from inside a coroutine leaves coroutines to the enclosing drain (Huly QB-253)
+ * @brief Library code drains the loop from a coroutine body -- `Redis::await()`, `Transaction::await()`, and
+ *        qbm-pgsql's `disconnect()` until 3.3 -- through `listener::current.run()`, which called `run_ready()`
+ *        re-entrantly: an abort in a debug build (the guard's assert), a silent 0 in release. The nested
+ *        run_ready() now returns 0 by definition: the pass runs the watchers and deferred callbacks and the
+ *        enclosing drain resumes what it made ready, after the running coroutine. The debug abort is the defect.
+ */
+TEST_F(CoroutineSchedulerTests, NestedListenerPassLeavesCoroutinesToTheEnclosingDrain) {
+    auto                    &sched = coro_scheduler();
+    std::vector<std::string> order;
+    auto                     order_ptr = &order;
+    sched.spawn([order_ptr]() -> task<void> {
+        defer([order_ptr] { order_ptr->push_back("deferred callback"); });
+        coro_scheduler().spawn([order_ptr]() -> task<void> {
+            order_ptr->push_back("sibling coroutine");
+            co_return;
+        });
+        listener::current.run(EVRUN_NOWAIT); // what a library drain does from a coroutine body
+        order_ptr->push_back("after the nested pass");
+        co_return;
+    });
+
+    sched.run_ready();
+    EXPECT_EQ(order, (std::vector<std::string>{"deferred callback", "after the nested pass", "sibling coroutine"}))
+        << "the nested pass runs the deferred callback, resumes no coroutine, and the enclosing drain resumes the sibling";
 }
 
 // =============================================================================
