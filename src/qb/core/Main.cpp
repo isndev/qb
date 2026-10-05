@@ -119,6 +119,17 @@ CoreInitializer::setDeadLetterHandler(DeadLetterHandler handler) noexcept {
     return *this;
 }
 
+CoreInitializer &
+CoreInitializer::setPassTiming(bool const enabled) noexcept {
+    _pass_timing = enabled;
+    return *this;
+}
+
+bool
+CoreInitializer::getPassTiming() const noexcept {
+    return _pass_timing;
+}
+
 // !CoreInitializer
 
 // CoreInitializer::ActorBuilder
@@ -402,6 +413,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     io::async::init();
     io::async::listener::current.set_io_poll_interval(initializer.getIoPollInterval());
     core._dead_letter_handler = std::move(initializer._dead_letter_handler); // before any actor runs (Huly QB-163)
+    core._pass_timing         = initializer.getPassTiming();                 // read once, by __workflow__ (Huly QB-165)
 
     // Publish this core as stopped on EVERY exit from here on — including an
     // exception escaping a callback / IO handler inside __workflow__. Normally

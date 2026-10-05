@@ -512,4 +512,56 @@ TEST(CalendarInterval, LosslessAndExtractEpochFold) {
     EXPECT_EQ(qb::calendar_interval(1, 2, us{11045000000LL}).to_string(), "1 mon 2 days 03:04:05");
 }
 
+// --- qb::detail::TimingRecorder: the gauge of a core's passes and a listener's dispatches -------
+// (Huly QB-165) Synthetic instants, so the one-second buckets of the sliding worst case are exact.
+
+qb::mono_time
+mono_at(std::chrono::milliseconds const since_epoch) {
+    return qb::mono_time{} + since_epoch;
+}
+
+TEST(TimingRecorder, NothingRecordedIsAllZero) {
+    const qb::detail::TimingRecorder r;
+    const auto                       s = r.snapshot(mono_at(std::chrono::milliseconds{10'000}));
+    EXPECT_EQ(s.count, 0u);
+    EXPECT_EQ(s.total, qb::duration::zero());
+    EXPECT_EQ(s.last, qb::duration::zero());
+    EXPECT_EQ(s.max, qb::duration::zero());
+    EXPECT_EQ(s.recent_max, qb::duration::zero());
+}
+
+TEST(TimingRecorder, CountsSumsAndKeepsTheLastAndTheLongest) {
+    using ms = std::chrono::milliseconds;
+    qb::detail::TimingRecorder r;
+    r.record(mono_at(ms{10'000}), mono_at(ms{10'005}));
+    r.record(mono_at(ms{10'100}), mono_at(ms{10'130}));
+    r.record(mono_at(ms{10'200}), mono_at(ms{10'202}));
+    const auto s = r.snapshot(mono_at(ms{10'300}));
+    EXPECT_EQ(s.count, 3u);
+    EXPECT_EQ(s.total, ms{37});
+    EXPECT_EQ(s.last, ms{2});
+    EXPECT_EQ(s.max, ms{30});
+    EXPECT_EQ(s.recent_max, ms{30});
+}
+
+TEST(TimingRecorder, TheRecentWorstCaseCoversTheCurrentAndThePreviousSecondOnly) {
+    using ms = std::chrono::milliseconds;
+    qb::detail::TimingRecorder r;
+    r.record(mono_at(ms{10'400}), mono_at(ms{10'430}));            // 30 ms, ends in second 10
+    r.record(mono_at(ms{11'100}), mono_at(ms{11'102}));            //  2 ms, ends in second 11
+    EXPECT_EQ(r.snapshot(mono_at(ms{11'500})).recent_max, ms{30}); // seconds 10 and 11
+    EXPECT_EQ(r.snapshot(mono_at(ms{12'500})).recent_max, ms{2});  // seconds 11 and 12: the stall has aged out
+    EXPECT_EQ(r.snapshot(mono_at(ms{13'500})).recent_max, ms{0});  // nothing ended in 12 or 13
+    EXPECT_EQ(r.snapshot(mono_at(ms{13'500})).max, ms{30});        // the all-time worst stays
+}
+
+TEST(TimingRecorder, AGapOfSecondsDropsTheStaleBucket) {
+    using ms = std::chrono::milliseconds;
+    qb::detail::TimingRecorder r;
+    r.record(mono_at(ms{10'000}), mono_at(ms{10'050}));           // 50 ms in second 10
+    r.record(mono_at(ms{15'000}), mono_at(ms{15'003}));           // the next span ends five seconds later
+    EXPECT_EQ(r.snapshot(mono_at(ms{15'010})).recent_max, ms{3}); // second 14 saw nothing; 10 is not "previous"
+    EXPECT_EQ(r.snapshot(mono_at(ms{15'010})).max, ms{50});
+}
+
 } // namespace

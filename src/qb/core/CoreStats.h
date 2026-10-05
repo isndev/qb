@@ -29,6 +29,7 @@
 
 #include <array>
 #include <cstdint>
+#include <qb/system/time.h>
 #include "DeadLetter.h"
 
 namespace qb {
@@ -77,6 +78,11 @@ struct CoreStats {
     /// resumes, including those an idle core's park delivered
     /// (`qb::io::async::listener::total_events_processed()`).
     std::uint64_t io_events = 0;
+    /// How long the core's passes take, the park excluded: everything a pass runs -- io, flush, receive and the
+    /// handlers, callbacks, the reap. Measured only on a core whose `qb::CoreInitializer::setPassTiming()` was set
+    /// (two monotonic clock reads a pass); all zero otherwise. `recent_max` is the stall gauge: the longest pass of
+    /// the last one to two seconds (Huly QB-165).
+    TimingStats pass_time{};
 };
 
 } // namespace qb

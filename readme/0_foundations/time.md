@@ -29,7 +29,7 @@ The interesting part is not the aliasing. It is that **there are two instant typ
 
 ### `qb::duration` rejects a bare integer
 
-A parameter typed `qb::duration` — `qb::CoreInitializer::setLatency(qb::duration latency = qb::duration::zero())` is the canonical one (`src/qb/core/Main.h:304`) — accepts any `std::chrono` literal whose period is finer than or equal to a nanosecond, implicitly:
+A parameter typed `qb::duration` — `qb::CoreInitializer::setLatency(qb::duration latency = qb::duration::zero())` is the canonical one (`src/qb/core/Main.h:305`) — accepts any `std::chrono` literal whose period is finer than or equal to a nanosecond, implicitly:
 
 ```cpp
 #include <qb/system/time.h>
@@ -263,6 +263,8 @@ void process() {
 `LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction (`qb/src/qb/system/time.h:769-790`). Its two members are declared in an order that is load-bearing rather than stylistic: the timer's callback reads `_reason` when it fires on destruction, and members are destroyed in reverse declaration order, so `_timer` must be declared *last* to be destroyed *first*, while `_reason` is still alive (`qb/src/qb/system/time.h:784-789`).
 
 `qb::tsc_ticks()` reads the raw CPU timestamp counter (`rdtsc`, `cntvct_el0`, or a `high_resolution_clock` fallback). It is **not a clock**: monotonic per core, very high resolution, uncalibrated, and not comparable to either `mono_time` or `wall_time`. Use it for single-thread micro-benchmark deltas and nothing else (`qb/src/qb/system/time.h:683-707`).
+
+`qb::TimingStats` is what qb reports about a sequence of spans it timed: how many (`count`), their sum (`total`), the most recent (`last`), the longest since timing began (`max`), and `recent_max`, the longest that ended in the current or the previous whole second of the monotonic clock — a sliding worst case over one to two seconds, so a stall stays visible to a monitor that polls once a second and then ages out. Two places fill it, both opt-in: a core's passes (`qb::CoreStats::pass_time`, `CoreInitializer::setPassTiming()`) and a listener's watcher dispatch (`listener::dispatch_timing()`). Every field is zero when nothing was timed (Huly QB-165).
 
 ## The one seam where a raw `double` touches time
 

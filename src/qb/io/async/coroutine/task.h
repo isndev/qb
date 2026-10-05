@@ -140,7 +140,7 @@ inline void forget_frame_if_current(std::coroutine_handle<>) noexcept;
 // awaits the frame, so `await_resume()` (the only place that rethrows) never runs and the
 // exception dies with the promise. `Actor::spawn` / `spawn_detached` already report through
 // `qb::detail::report_unhandled_coroutine_exception` because their wrapper coroutines CATCH
-// (VirtualCore.h:1197-1204, 1218-1226) and therefore leave the wrapper promise clean — so they do
+// (VirtualCore.h:1205-1212, 1226-1234) and therefore leave the wrapper promise clean — so they do
 // not reach here and cannot double-report. The free-function path,
 // `qb::io::async::coro_scheduler().spawn(t)`, has no such wrapper, and is what this covers.
 void report_detached_coroutine_exception(std::exception_ptr ep) noexcept;

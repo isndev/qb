@@ -741,8 +741,9 @@ VirtualCore::__pump_activations__() noexcept {
     }
 }
 
+template <bool _Timed>
 void
-VirtualCore::__workflow__() {
+VirtualCore::__workflow_loop__() {
     QB_LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actor_count) << " actor(s)");
     // This thread's io loop, reached ONCE: `listener::current` is an inline thread_local with a
     // non-trivial constructor, so g++ routes every access through its TLS wrapper (the init guard,
@@ -759,6 +760,11 @@ VirtualCore::__workflow__() {
     std::uint64_t activity_mark = _metrics.activity(loop.total_events_processed());
     while (likely(true)) {
         ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent; also keys the `time()` sample
+        // A timed core (Huly QB-165) stamps its pass here and closes it before the park policy: the
+        // pass is timed, never the park. Absent from the untimed instantiation.
+        [[maybe_unused]] qb::mono_time pass_start{};
+        if constexpr (_Timed)
+            pass_start = qb::mono_now();
 
         // Signals, Main::stop() and the C++20 cooperative stop (finding 2.17 -- jthread/stop_token)
         // all advance ONE global generation: the signal handler and stop() after bumping their
@@ -904,11 +910,16 @@ VirtualCore::__workflow__() {
         // stamp is cleared so the reply, and the request after it, are met at polling
         // latency. A core with no io work keeps the condition-variable park, whose cost
         // and handshake are the measured ones.
+        [[maybe_unused]] qb::mono_time pass_end{};
+        if constexpr (_Timed) {
+            pass_end = qb::mono_now();
+            _pass_recorder.record(pass_start, pass_end);
+        }
         const std::uint64_t activity = _metrics.activity(loop.total_events_processed());
         if (likely(activity != activity_mark) || !_self_pipe.empty()) {
             _idle_since = qb::mono_time{};
         } else {
-            const auto now = qb::mono_now();
+            const auto now = _Timed ? pass_end : qb::mono_now(); // a timed pass has just read it
             // The idle pass's reading, handed to the deadline list for free: an idle core with a
             // pending request fires its deadline on the precise clock, no coarse pre-check.
             if (_deadlines.armed())
@@ -965,6 +976,17 @@ VirtualCore::__workflow__() {
     _engine.mark_core_stopped(_resolved_index);
 
     QB_LOG_INFO(*this << " Stopped normally");
+}
+
+void
+VirtualCore::__workflow__() {
+    // Pass timing is opt-in, and decided once (Huly QB-165): two instantiations of one loop, so an
+    // untimed core runs the code it always ran -- the timing is not a branch in its pass, it is
+    // absent from it.
+    if (unlikely(_pass_timing))
+        __workflow_loop__<true>();
+    else
+        __workflow_loop__<false>();
 }
 
 bool
@@ -1342,6 +1364,9 @@ VirtualCore::getCoreStats() const noexcept {
     // The loop's own cumulative count, the one the park policy reads: it includes the callbacks an
     // idle core's park ran.
     s.io_events = io::async::listener::current.total_events_processed();
+    // Timed cores only (Huly QB-165): the sliding worst case is judged against the clock of the ask.
+    if (_pass_timing)
+        s.pass_time = _pass_recorder.snapshot(qb::mono_now());
     return s;
 }
 

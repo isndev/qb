@@ -421,7 +421,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   hypervisor, a few µs on native Linux — for qb as for every framework; the floor decides how long a
   core keeps polling before it takes that sleep, so that a gap shorter than the floor never pays the
   wake and a longer one pays it once. Raise it to trade idle CPU for wake latency, lower it to trade
-  the other way; `setLatency(0)` never sleeps at all. _(Main.h:304, :321, :386-388; measured in the
+  the other way; `setLatency(0)` never sleeps at all. _(Main.h:305, :322, :405-407; measured in the
   qb-vs-others benchmark, TUNING guide §8.2)_
 - **A `setLatency` under a millisecond sleeps a millisecond and a half on Windows, and what it says
   on Linux.** Both parks — the condition variable of a core that owns no io watcher (MSVC's `wait_for`
@@ -453,15 +453,15 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   pointer says nothing about phase: `push` it an event (the dispatch gate defers to an Activating
   target and drops to a dead one) rather than read its state, and re-check `is_active()` yourself
   before a direct call that must not land mid-init or post-kill. Every other lookup (`findActor`,
-  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1029-1052;
+  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1037-1060;
   the inventory table Actor.h:842-886)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
-  body and answer through an event. _(`spawn_detached` Actor.h:1418 / VirtualCore.h:1490; `spawn` Actor.h:1455 /
-  VirtualCore.h:1504)_
+  body and answer through an event. _(`spawn_detached` Actor.h:1418 / VirtualCore.h:1498; `spawn` Actor.h:1455 /
+  VirtualCore.h:1512)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
@@ -470,7 +470,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
-  with 0 actors fails startup. _(Main.cpp:622-624, :439-441)_
+  with 0 actors fails startup. _(Main.cpp:634-636, :451-453)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
   `on(qb::LoopEvent const&)` invocation, and sampled on demand — the first call in a pass reads the clock, every
   later one in that pass returns it, a pass nobody asks reads none — and a core with no registered callback skips the tick phase, so its `LoopEvent` does not ask either. Inside `onInit()` there is no pass yet (pass 0), so it is
@@ -478,12 +478,17 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:776-793; VirtualCore.h:914-926; VirtualCore.cpp:1220-1227)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:776-793; VirtualCore.h:922-934; VirtualCore.cpp:1242-1249)_
 - **`getCoreStats()` reads the CALLER's own core; a view across cores is asked for, never read.** It returns a copy of
   `qb::CoreStats` — cumulative counters the core's thread writes and never resets: passes, events received, events
   published into another core's mailbox, publishes that met a full mailbox, `EventQOS0` drops, io callbacks.
   Same-core traffic is received and never "sent", and a counter moves after the event it counts was handled. Nothing
-  is shared or atomic: to see every core, ask one responder per core (`qb::ask_all`). _(Actor.h:753-773; CoreStats.h:51-80)_
+  is shared or atomic: to see every core, ask one responder per core (`qb::ask_all`). _(Actor.h:753-773; CoreStats.h:52-86)_
+- **A blocking handler shows in the pass time -- on a core that times its passes.** `CoreInitializer::setPassTiming()`
+  (off by default, decided at thread start) fills `CoreStats::pass_time`, a `qb::TimingStats` of the core's passes
+  with the park excluded: `recent_max`, the longest pass of the last one to two seconds, is the stall gauge. It costs
+  two monotonic clock reads a pass; an untimed core reads no extra clock. A bare listener times its watcher dispatch
+  with `listener::set_dispatch_timing()` instead.
 - **An event that reaches no actor is a DEAD LETTER, reported by the core that dropped it -- never to the sender.** A
   unicast to a dead or unknown id (`not_found`), to a live actor with no handler for the type
   (`unhandled`), the stash of a failed async `onInit()` (`stash_overflow`, `init_failed`), an oversize tail (`oversize`),
@@ -497,11 +502,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:64-69, :84-85, :93-97)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
-  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1377-1390; mixin.h:63-71)_
+  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1423-1436; mixin.h:63-71)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
-  them. _(listener.h:1362-1374)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:353-379)_ _(listener.h:1429)_
+  them. _(listener.h:1408-1420)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:353-379)_ _(listener.h:1475)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:550-579)_

@@ -810,6 +810,76 @@ from_ev_seconds(double seconds) noexcept {
 
 } // namespace detail
 
+// ---------------------------------------------------------------------------
+// Timed spans: a core's passes, a listener's dispatches (Huly QB-165)
+// ---------------------------------------------------------------------------
+
+/*!
+ * @brief What a sequence of timed spans took: how many, their sum, the last one, the longest since timing began
+ *        and the longest of the last one to two seconds.
+ * @details Filled for a core's passes (`qb::CoreStats::pass_time`, opted into with
+ *          `qb::CoreInitializer::setPassTiming()`) and for a listener's watcher dispatches
+ *          (`qb::io::async::listener::dispatch_timing()`). Every field is zero when nothing was timed.
+ * @ingroup Time
+ */
+struct TimingStats {
+    std::uint64_t count = 0; ///< spans timed
+    duration      total{};   ///< their sum
+    duration      last{};    ///< the most recent one
+    duration      max{};     ///< the longest since timing began
+    /// The longest span that ended in the current or the previous whole second of the monotonic clock: a sliding
+    /// worst case over the last one to two seconds -- what a stall reads as for a second or two after it happened.
+    duration recent_max{};
+};
+
+namespace detail {
+
+/// Feeds a `qb::TimingStats`, the sliding worst case kept as two one-second buckets of the monotonic clock: the
+/// bucket the last span ended in and the one before it. One thread, no allocation, a few instructions a span.
+class TimingRecorder {
+    TimingStats  _stats;
+    std::int64_t _second = -2; ///< the bucket `_second_max` belongs to; -2: none yet (`+ 1` is no real second)
+    duration     _second_max{};
+    duration     _previous_max{}; ///< the bucket just before `_second`
+
+    [[nodiscard]] static std::int64_t
+    second_of(mono_time const t) noexcept {
+        return static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::seconds>(t.time_since_epoch()).count());
+    }
+
+public:
+    void
+    record(mono_time const start, mono_time const end) noexcept {
+        const duration span = end - start;
+        ++_stats.count;
+        _stats.total += span;
+        _stats.last = span;
+        if (span > _stats.max)
+            _stats.max = span;
+        if (const std::int64_t second = second_of(end); second != _second) {
+            _previous_max = second == _second + 1 ? _second_max : duration::zero();
+            _second_max   = duration::zero();
+            _second       = second;
+        }
+        if (span > _second_max)
+            _second_max = span;
+    }
+
+    /// The stats as of `now`: the sliding worst case keeps only the buckets of `now`'s second and the one before.
+    [[nodiscard]] TimingStats
+    snapshot(mono_time const now) const noexcept {
+        TimingStats        s = _stats;
+        const std::int64_t n = second_of(now);
+        if (n == _second)
+            s.recent_max = _second_max > _previous_max ? _second_max : _previous_max;
+        else if (n == _second + 1)
+            s.recent_max = _second_max;
+        return s;
+    }
+};
+
+} // namespace detail
+
 } // namespace qb
 
 #endif // QB_SYSTEM_TIME_H

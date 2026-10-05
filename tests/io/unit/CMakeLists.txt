@@ -106,5 +106,8 @@ qb_add_test(MODULE qb-io TIER unit NAME generator-async             SOURCES coro
 qb_add_test(MODULE qb-io TIER unit NAME cancellation-token          SOURCES coroutine/cancellation-token.cpp          DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME retry-policy                SOURCES coroutine/retry-policy.cpp                DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME handler-detection SOURCES async/handler-detection.cpp DEPENDS ${PROJECT_NAME})
+# listener-dispatch-timing pins listener::set_dispatch_timing (Huly QB-165): a timed bare listener shows a slow
+# callback as its longest dispatch, an untimed one reports zero, and turning it off leaves the stats alone.
+qb_add_test(MODULE qb-io TIER unit NAME listener-dispatch-timing SOURCES async/listener-dispatch-timing.cpp DEPENDS ${PROJECT_NAME})
 
 qb_debug_message("Configured qb-io unit tests")

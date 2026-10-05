@@ -1033,8 +1033,9 @@ public:
         // `Redis::await()`, `Transaction::await()` -- resumes no coroutine: `run_ready()` returns 0
         // when its scheduler is already draining, and that drain resumes what this pass made ready
         // once the running coroutine yields (Huly QB-253). The test lives there, not here: this
-        // body is inlined into `VirtualCore::__workflow__`, and a condition added to it reshaped
-        // that whole hot loop. The watchers and deferred callbacks above have run either way.
+        // body is inlined into the core's loop (`VirtualCore::__workflow_loop__`), and a condition
+        // added to it reshaped that whole hot loop. The watchers and deferred callbacks above have
+        // run either way.
         if (_coro_scheduler) {
             std::size_t coro_count = _coro_scheduler->run_ready(kMaxCoroutineResumesPerTurn);
             _nb_invoked_events += coro_count;
@@ -1315,6 +1316,51 @@ public:
         _coro_scheduler.reset();
         QB_LISTENER_TRACE("reset_coro_scheduler() end");
     }
+
+    /**
+     * @brief Time this loop's watcher dispatch: the callbacks one libev iteration runs -- sockets,
+     *        timers, signals, the cross-thread wake -- each iteration one span, into
+     *        `dispatch_timing()`. Owner thread only (Huly QB-165).
+     * @details Off by default, and off costs nothing: libev calls its dispatch through the same
+     *          function pointer either way, and timing only swaps it for one that reads the
+     *          monotonic clock around libev's own. The deferred callbacks and the coroutine
+     *          resumes `run()` drains after the dispatch are not part of it. Under qb-core,
+     *          `CoreInitializer::setPassTiming()` times the core's whole pass instead.
+     * @param enabled true to time the dispatch from now on; false to stop (the stats are kept).
+     */
+    void
+    set_dispatch_timing(bool const enabled) noexcept {
+        if (enabled) {
+            ev_set_userdata(_loop, this);
+            ev_set_invoke_pending_cb(_loop, &listener::_timed_invoke_pending);
+        } else {
+            ev_set_invoke_pending_cb(_loop, &ev_invoke_pending);
+        }
+    }
+
+    /**
+     * @brief What the timed watcher dispatches took (`set_dispatch_timing()`): how many, their
+     *        sum, the last, the longest and the longest of the last one to two seconds.
+     * @return All zero when the dispatch was never timed.
+     */
+    [[nodiscard]] TimingStats
+    dispatch_timing() const noexcept {
+        return _dispatch_recorder.snapshot(qb::mono_now());
+    }
+
+private:
+    // Watcher-dispatch timing (Huly QB-165): installed in place of libev's `ev_invoke_pending` only
+    // while timing is on. Not noexcept, like the default it replaces: what a callback lets escape
+    // goes where it went before. Cold, so at the end of the object.
+    static void
+    _timed_invoke_pending(struct ev_loop *loop) {
+        auto *const self  = static_cast<listener *>(ev_userdata(loop));
+        const auto  start = qb::mono_now();
+        ev_invoke_pending(loop);
+        self->_dispatch_recorder.record(start, qb::mono_now());
+    }
+
+    qb::detail::TimingRecorder _dispatch_recorder;
 };
 
 /**

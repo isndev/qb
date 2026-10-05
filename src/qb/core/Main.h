@@ -208,6 +208,7 @@ private:
     qb::duration      _idle_spin;
     qb::duration      _io_poll_interval;
     DeadLetterHandler _dead_letter_handler; ///< handed to the core at thread start (Huly QB-163)
+    bool              _pass_timing = false; ///< time the core's passes (Huly QB-165)
 
     qb::unordered_set<ServiceId>                _registered_services;
     std::vector<std::unique_ptr<IActorFactory>> _actor_factories;
@@ -353,6 +354,19 @@ public:
      */
     CoreInitializer &setDeadLetterHandler(DeadLetterHandler handler) noexcept;
 
+    /*!
+     * @brief Time this core's passes, the park excluded, into `qb::CoreStats::pass_time`.
+     * @param enabled true to time them; false -- every core's default -- leaves the loop untimed.
+     * @return Reference to this `CoreInitializer` for method chaining.
+     * @details A timed core reads the monotonic clock twice a pass and records the last pass, the
+     *          longest, their sum and the longest of the last one to two seconds -- the gauge a stall
+     *          (a blocking handler, a long callback) shows in. An untimed core reads no clock it would
+     *          not have read anyway: the choice is made once, at thread start, between two
+     *          instantiations of the core's loop. This setting takes effect when the engine starts.
+     * @see qb::CoreStats::pass_time, qb::TimingStats, qb::Actor::getCoreStats()
+     */
+    CoreInitializer &setPassTiming(bool enabled = true) noexcept;
+
     /**
      * @brief Gets the CoreId associated with this initializer.
      * @return The `CoreId` (unsigned short) of the VirtualCore this initializer configures.
@@ -378,6 +392,11 @@ public:
      * @return `qb::duration` value. See `setIoPollInterval()` for interpretation.
      */
     [[nodiscard]] qb::duration getIoPollInterval() const noexcept;
+    /**
+     * @brief Whether this core times its passes.
+     * @return The value `setPassTiming()` set; false by default.
+     */
+    [[nodiscard]] bool getPassTiming() const noexcept;
 
     /// Default `setIoPollInterval()`: one microsecond -- a quiet socket is looked at a thousand
     /// times a millisecond, and a busy core spends one syscall per interval on it, not one per pass.

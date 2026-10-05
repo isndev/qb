@@ -54,6 +54,16 @@ policy.
   told the not-found branch is `[[unlikely]]` (it had laid the report between the handler call and the epilogue) and
   `__stash_event__` was kept out of line (shrunk, it began to inline into the receive loop and spill its index).
   Pinned by `tests/core/system/engine/dead-letters.cpp`, the oversize probe and the activation-gate disposal test.
+- **Pass timing: how long a core's passes take, the park excluded, on a core that asks (Huly QB-165).**
+  `CoreInitializer::setPassTiming()` fills `CoreStats::pass_time`, a new `qb::TimingStats` (`<qb/system/time.h>`):
+  count, total, last, max, and `recent_max` -- the longest pass of the last one to two seconds, the gauge a handler
+  that blocks its core shows in, for a second or two after it happened. A timed core reads the monotonic clock twice
+  a pass; an untimed one -- every core's default -- reads no extra clock: `__workflow__` picks one of two
+  instantiations of the loop at thread start, and the untimed one was measured level with the loop before it on both
+  hosts. A bare listener times its watcher dispatch instead: `listener::set_dispatch_timing()` swaps libev's
+  `ev_invoke_pending` for one that reads the clock around it, `dispatch_timing()` reports it; off, libev's own
+  dispatch runs through the same pointer. Pinned by `tests/core/system/engine/pass-timing.cpp`,
+  `tests/io/unit/async/listener-dispatch-timing.cpp` and the recorder's cases in `tests/core/unit/system/time.cpp`.
 
 ### Changed
 

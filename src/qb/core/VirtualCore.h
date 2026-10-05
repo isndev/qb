@@ -642,6 +642,10 @@ private:
     std::uint64_t                                _nb_dead_letters = 0;
     std::array<std::uint64_t, DeadLetterReasons> _nb_dead_letters_by_reason{};
     DeadLetterHandler                            _dead_letter_handler;
+    // Pass timing (Huly QB-165): chosen once, at thread start, from `CoreInitializer::setPassTiming`;
+    // only the timed instantiation of the loop touches the recorder.
+    bool                   _pass_timing = false;
+    detail::TimingRecorder _pass_recorder;
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -703,6 +707,10 @@ private:
     bool __init__(CoreIdSet const &cores);
     bool __init__actors__();
     void __workflow__();
+    /// The core's loop and its residual drain. `__workflow__` picks the instantiation once (Huly
+    /// QB-165): the untimed one is the loop every core ran before; the timing exists only in the other.
+    template <bool _Timed>
+    void __workflow_loop__();
     //! Workflow
 
     // Actor Management
