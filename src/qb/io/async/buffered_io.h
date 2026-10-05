@@ -13,6 +13,7 @@
 #include <qb/io/config.h>
 #include <qb/io/async/event/all.h>
 #include <qb/io/async/protocol.h>
+#include <qb/io/async/teardown.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 
@@ -316,13 +317,15 @@ public:
         _is_disposed = true;
 
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
-            if (_system_error != 0) {
-                auto evt = event::disconnected::with_error(_reason, _system_error);
-                derived().on(std::move(evt));
-            } else {
-                auto evt = event::disconnected{_reason};
-                derived().on(std::move(evt));
-            }
+            detail::run_teardown_hook("on(event::disconnected)", [this] {
+                if (_system_error != 0) {
+                    auto evt = event::disconnected::with_error(_reason, _system_error);
+                    derived().on(std::move(evt));
+                } else {
+                    auto evt = event::disconnected{_reason};
+                    derived().on(std::move(evt));
+                }
+            });
         }
 
         if constexpr (requires { _Derived::has_server; }) {
@@ -332,12 +335,16 @@ public:
                 else
                     derived().server().disconnected(derived().id());
             } else if constexpr (qb::has_on<_Derived, event::dispose>) {
-                auto evt = event::dispose{};
-                derived().on(std::move(evt));
+                detail::run_teardown_hook("on(event::dispose)", [this] {
+                    auto evt = event::dispose{};
+                    derived().on(std::move(evt));
+                });
             }
         } else if constexpr (qb::has_on<_Derived, event::dispose>) {
-            auto evt = event::dispose{};
-            derived().on(std::move(evt));
+            detail::run_teardown_hook("on(event::dispose)", [this] {
+                auto evt = event::dispose{};
+                derived().on(std::move(evt));
+            });
         }
     }
 

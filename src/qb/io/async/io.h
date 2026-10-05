@@ -41,6 +41,7 @@
 #include "event/all.h"
 #include "listener.h"
 #include "protocol.h"
+#include "teardown.h"
 
 // Modern C++: member check macros replaced by traits in qb/utility/type_traits.h
 // - qb::has_type_Protocol<T>
@@ -1459,7 +1460,8 @@ protected:
      *          If `_Derived` implements `on(event::disconnected&&)`, this method is called with the stored `_reason`.
      *          If `_Derived::has_server` is true (typically for server-side sessions), it notifies the server of the disconnection.
      *          Otherwise, if `_Derived` implements `on(event::dispose&&)`, that method is called as a final cleanup hook.
-     *          The base class (`async::base`) destructor will handle unregistering the `event::io` watcher.
+     *          A hook that throws is contained and logged (`detail::run_teardown_hook`): the steps after it still run
+     *          (Huly QB-256). The base class (`async::base`) destructor will handle unregistering the `event::io` watcher.
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. Actors should handle `event::disconnected` to
      *       perform cleanup and potentially call `kill()` if the connection loss requires actor termination.
@@ -1472,13 +1474,15 @@ protected:
         _is_disposed = true;
 
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
-            if (_system_error != 0) {
-                auto evt = event::disconnected::with_error(_reason, _system_error);
-                Derived.on(std::move(evt));
-            } else {
-                auto evt = event::disconnected{_reason};
-                Derived.on(std::move(evt));
-            }
+            detail::run_teardown_hook("on(event::disconnected)", [this] {
+                if (_system_error != 0) {
+                    auto evt = event::disconnected::with_error(_reason, _system_error);
+                    Derived.on(std::move(evt));
+                } else {
+                    auto evt = event::disconnected{_reason};
+                    Derived.on(std::move(evt));
+                }
+            });
         }
 
         if constexpr (_Derived::has_server) {
@@ -1486,8 +1490,10 @@ protected:
         } else {
             this->_async_event.stop();
             if constexpr (qb::has_on<_Derived, event::dispose>) {
-                auto evt__dispose = event::dispose{};
-                Derived.on(std::move(evt__dispose));
+                detail::run_teardown_hook("on(event::dispose)", [this] {
+                    auto evt__dispose = event::dispose{};
+                    Derived.on(std::move(evt__dispose));
+                });
             }
         }
     }
@@ -1954,7 +1960,8 @@ protected:
      *          is explicitly initiated. It ensures cleanup happens only once by checking `_is_disposed`.
      *          If `_Derived` implements `on(event::disconnected&&)`, this method is called with the stored `_reason`.
      *          If `_Derived::has_server` is true, it notifies the server. Otherwise, if `_Derived` implements
-     *          `on(event::dispose&&)`, that method is called for final cleanup.
+     *          `on(event::dispose&&)`, that method is called for final cleanup. A hook that throws is contained and
+     *          logged (`detail::run_teardown_hook`): the steps after it still run (Huly QB-256).
      *          The base class (`async::base`) destructor handles unregistering the `event::io` watcher.
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. Actors should handle `event::disconnected` to
@@ -1967,13 +1974,15 @@ protected:
         _is_disposed = true;
 
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
-            if (_system_error != 0) {
-                auto evt = event::disconnected::with_error(_reason, _system_error);
-                Derived.on(std::move(evt));
-            } else {
-                auto evt = event::disconnected{_reason};
-                Derived.on(std::move(evt));
-            }
+            detail::run_teardown_hook("on(event::disconnected)", [this] {
+                if (_system_error != 0) {
+                    auto evt = event::disconnected::with_error(_reason, _system_error);
+                    Derived.on(std::move(evt));
+                } else {
+                    auto evt = event::disconnected{_reason};
+                    Derived.on(std::move(evt));
+                }
+            });
         }
 
         if constexpr (_Derived::has_server) {
@@ -1981,8 +1990,10 @@ protected:
         } else {
             this->_async_event.stop();
             if constexpr (qb::has_on<_Derived, event::dispose>) {
-                auto evt__dispose = event::dispose{};
-                Derived.on(std::move(evt__dispose));
+                detail::run_teardown_hook("on(event::dispose)", [this] {
+                    auto evt__dispose = event::dispose{};
+                    Derived.on(std::move(evt__dispose));
+                });
             }
         }
     }
@@ -2619,12 +2630,13 @@ protected:
      *          runs (Huly QB-202). Called from inside this object's message loop (a protocol handler, with
      *          the io dispatch on the stack), the teardown cannot run there: the event it fed runs it right after
      *          that dispatch returns, in the same pass, before any connect() can complete. It never runs a loop pass,
-     *          so no other watcher and no coroutine is resumed under the caller -- a nested
-     *          `EVRUN_NOWAIT` pass would re-enter the coroutine scheduler when called from a coroutine.
+     *          so no other watcher, deferred callback or coroutine runs under the caller -- which a nested
+     *          `EVRUN_NOWAIT` pass would do.
      * @pre A standalone client: a server-associated session's `dispose()` hands it to its server
      *      (compile-time error). Not from this object's other io hooks (`on(event::pending_read&&)`,
      *      `on(event::eof&&)`, `on(event::eos&&)`, `on(event::pending_write&&)`): the dispatch that called
-     *      them continues after they return. The handlers `dispose()` calls must not throw.
+     *      them continues after they return. A hook `dispose()` calls that throws is contained and logged
+     *      there, so this stays `noexcept` (Huly QB-256).
      */
     void
     disconnect_now(int reason = static_cast<int>(event::disconnect_reason::user_initiated)) noexcept {
@@ -2897,6 +2909,8 @@ protected:
      *          Triggers `_Derived::on(event::disconnected&&)` (with `_reason`)
      *          or `_Derived::on(event::dispose&&)` based on derived class capabilities and server association.
      *          This is the primary cleanup point before the `async::base` destructor unregisters the watcher.
+     *          A hook that throws is contained and logged (`detail::run_teardown_hook`), and the teardown
+     *          completes: the watcher is stopped, or the session handed back to its server (Huly QB-256).
      *
      * @note **Important: Difference between server-associated and standalone clients:**
      *       - **Server-associated clients** (`has_server = true`): Created via `accept()` on a server.
@@ -2931,13 +2945,15 @@ protected:
         _is_disposed = true;
 
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
-            if (_system_error != 0) {
-                auto evt = event::disconnected::with_error(_reason, _system_error);
-                Derived.on(std::move(evt));
-            } else {
-                auto evt = event::disconnected{_reason};
-                Derived.on(std::move(evt));
-            }
+            detail::run_teardown_hook("on(event::disconnected)", [this] {
+                if (_system_error != 0) {
+                    auto evt = event::disconnected::with_error(_reason, _system_error);
+                    Derived.on(std::move(evt));
+                } else {
+                    auto evt = event::disconnected{_reason};
+                    Derived.on(std::move(evt));
+                }
+            });
         }
 
         if constexpr (_Derived::has_server) {
@@ -2948,8 +2964,10 @@ protected:
             // This is critical for clients created via connect() to avoid processing events after disconnect
             this->_async_event.stop(); // Stop the watcher to prevent further events
             if constexpr (qb::has_on<_Derived, event::dispose>) {
-                auto evt__dispose = event::dispose{};
-                Derived.on(std::move(evt__dispose));
+                detail::run_teardown_hook("on(event::dispose)", [this] {
+                    auto evt__dispose = event::dispose{};
+                    Derived.on(std::move(evt__dispose));
+                });
             }
         }
     }

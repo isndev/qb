@@ -216,15 +216,22 @@ public:
         ++eof_events;
     }
 
+    // Huly QB-256: both teardown hooks throw, after counting.
+    bool throw_in_teardown = false;
+
     void
-    on(qb::io::async::event::disconnected &&event) noexcept {
+    on(qb::io::async::event::disconnected &&event) {
         ++disconnected_events;
         last_disconnect_reason = event.reason;
+        if (throw_in_teardown)
+            throw std::runtime_error("probe: on(disconnected) threw");
     }
 
     void
-    on(qb::io::async::event::dispose &&) noexcept {
+    on(qb::io::async::event::dispose &&) {
         ++dispose_events;
+        if (throw_in_teardown)
+            throw std::runtime_error("probe: on(dispose) threw");
     }
 };
 
@@ -381,15 +388,22 @@ public:
         ++eos_events;
     }
 
+    // Huly QB-256: both teardown hooks throw, after counting.
+    bool throw_in_teardown = false;
+
     void
-    on(qb::io::async::event::disconnected &&event) noexcept {
+    on(qb::io::async::event::disconnected &&event) {
         ++disconnected_events;
         last_disconnect_reason = event.reason;
+        if (throw_in_teardown)
+            throw std::runtime_error("probe: on(disconnected) threw");
     }
 
     void
-    on(qb::io::async::event::dispose &&) noexcept {
+    on(qb::io::async::event::dispose &&) {
         ++dispose_events;
+        if (throw_in_teardown)
+            throw std::runtime_error("probe: on(dispose) threw");
     }
 };
 
@@ -570,17 +584,24 @@ public:
         ++eos_events;
     }
 
+    // Huly QB-256: both teardown hooks throw, after counting.
+    bool throw_in_teardown = false;
+
     void
-    on(qb::io::async::event::disconnected &&event) noexcept {
+    on(qb::io::async::event::disconnected &&event) {
         ++disconnected_events;
         last_disconnect_reason = event.reason;
         if (restart_on_disconnected)
             base().start();
+        if (throw_in_teardown)
+            throw std::runtime_error("probe: on(disconnected) threw");
     }
 
     void
-    on(qb::io::async::event::dispose &&) noexcept {
+    on(qb::io::async::event::dispose &&) {
         ++dispose_events;
+        if (throw_in_teardown)
+            throw std::runtime_error("probe: on(dispose) threw");
     }
 };
 
@@ -708,6 +729,15 @@ void
 run_nowait_iterations(int count = 16) {
     for (int i = 0; i < count; ++i)
         qb::io::async::run(EVRUN_NOWAIT);
+}
+
+/// Run `passes` non-blocking loop passes; return how many events they dispatched.
+std::size_t
+dispatched_over(int passes) {
+    std::size_t events = 0;
+    for (int i = 0; i < passes; ++i)
+        events += static_cast<std::size_t>(qb::io::async::run(EVRUN_NOWAIT));
+    return events;
 }
 
 } // namespace
@@ -1290,6 +1320,83 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectNowTearsDownBeforeReturning) {
         EXPECT_EQ(session.last_disconnect_reason, 77);
         EXPECT_FALSE(session.base().is_connected());
     }
+}
+
+// A teardown hook that throws (Huly QB-256). dispose() runs the derived class's
+// on(event::disconnected&&) and then steps nothing may skip -- a standalone object's watcher stopped,
+// on(event::dispose&&) fired -- and a hook that threw skipped them. The listener contained the
+// exception, so nothing crashed: the watcher stayed armed on a disposed io, and a ready socket then
+// dispatched it on every pass while dispose() returned at once. In each case both hooks throw; the
+// teardown must complete anyway, and the socket must wake nothing afterwards.
+
+TEST_F(AsyncIoBaseTest, InputTeardownCompletesWhenItsHooksThrow) {
+    auto           pair = make_stream_pair();
+    PipeInputProbe input{pair.probe};
+    ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input), nullptr);
+    input.throw_in_teardown = true;
+    input.base().start();
+
+    input.base().disconnect(0);
+    run_nowait_iterations();
+    EXPECT_EQ(input.disconnected_events, 1u);
+    EXPECT_EQ(input.dispose_events, 1u) << "on(dispose) must run after a throwing on(disconnected)";
+    EXPECT_FALSE(input.base().is_connected());
+
+    ASSERT_EQ(pair.peer.write("data", 4), 4);
+    EXPECT_EQ(dispatched_over(20), 0u) << "the watcher must be stopped: bytes for a disposed input wake nothing";
+}
+
+TEST_F(AsyncIoBaseTest, OutputTeardownCompletesWhenItsHooksThrow) {
+    auto            pair = make_stream_pair();
+    PipeOutputProbe output{pair.probe};
+    output.throw_in_teardown = true;
+    output.force_write_would_block(); // the bytes stay queued: the watcher is armed for writing
+    output.base().start();
+    output.base().publish(std::string_view{"abcd"});
+
+    output.base().disconnect(0);
+    run_nowait_iterations();
+    EXPECT_EQ(output.disconnected_events, 1u);
+    EXPECT_EQ(output.dispose_events, 1u) << "on(dispose) must run after a throwing on(disconnected)";
+    EXPECT_FALSE(output.base().is_connected());
+
+    EXPECT_EQ(dispatched_over(20), 0u) << "the watcher must be stopped: a writable socket wakes nothing";
+}
+
+TEST_F(AsyncIoBaseTest, DuplexTeardownCompletesWhenItsHooksThrow) {
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.throw_in_teardown = true;
+    session.base().start();
+
+    session.base().disconnect(0);
+    run_nowait_iterations();
+    EXPECT_EQ(session.disconnected_events, 1u);
+    EXPECT_EQ(session.dispose_events, 1u) << "on(dispose) must run after a throwing on(disconnected)";
+    EXPECT_FALSE(session.base().is_connected());
+
+    ASSERT_EQ(pair.peer.write("data", 4), 4);
+    EXPECT_EQ(dispatched_over(20), 0u) << "the watcher must be stopped: bytes for a disposed io wake nothing";
+}
+
+// disconnect_now() is noexcept and runs dispose() in the call: a hook that escaped it would end the
+// process in std::terminate.
+TEST_F(AsyncIoBaseTest, DuplexDisconnectNowCompletesWhenItsHooksThrow) {
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.throw_in_teardown = true;
+    session.base().start();
+
+    session.disconnect_now_for_test(42);
+    EXPECT_EQ(session.disconnected_events, 1u);
+    EXPECT_EQ(session.dispose_events, 1u) << "on(dispose) must run after a throwing on(disconnected)";
+    EXPECT_EQ(session.last_disconnect_reason, 42);
+    EXPECT_FALSE(session.base().is_connected());
+
+    ASSERT_EQ(pair.peer.write("data", 4), 4);
+    EXPECT_EQ(dispatched_over(20), 0u) << "the watcher must be stopped: bytes for a disposed io wake nothing";
 }
 
 #ifndef NDEBUG

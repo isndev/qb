@@ -81,6 +81,17 @@ policy.
   `std::logic_error`. Release code is unchanged: the test sits in the scheduler rather than in `listener::run()`
   because a condition there, inlined into `VirtualCore::__workflow__`, reshaped the hot loop and cost the pure
   actor pass 3 % (measured). Pinned by `NestedListenerPassLeavesCoroutinesToTheEnclosingDrain`.
+- **An io object's teardown completes when one of its hooks throws (Huly QB-256).** `dispose()` -- in `input<>`,
+  `output<>`, `io<>` and `buffered_io<>` -- runs the derived class's `on(event::disconnected&&)`, then stops a
+  standalone object's watcher or hands a session back to its server, and fires `on(event::dispose&&)`. A hook that
+  threw skipped all of it. The listener contained the exception, so nothing crashed, and the object was left half
+  torn down: a session stayed in its server's table for good, and a watcher stayed armed on a disposed io, so a
+  readable socket -- a peer's EOF, a client waiting in an acceptor's backlog -- dispatched it on every loop pass while
+  `dispose()` returned at once. From `disconnect_now()`, which is `noexcept`, the throw ended in `std::terminate`.
+  Both hooks now run through `detail::run_teardown_hook` (`qb/io/async/teardown.h`), which contains and logs what
+  they throw (WARN, with `what()`), and the teardown completes. The acceptor's fallback for a class with no
+  `on(event::disconnected)` of its own threw `std::runtime_error("Acceptor has been disconnected")` -- exactly that
+  path; it now logs a CRIT line, as `tcp::server`'s does.
 - **The io bases' documentation named the lifecycle handlers `on(event::disconnected&)`, `on(event::eos&)`, ...**
   -- the non-const lvalue form, which never binds the rvalue those events are dispatched as, so a handler written
   from it is never called. They now read `on(event::X&&)`.

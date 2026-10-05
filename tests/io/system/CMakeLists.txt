@@ -180,3 +180,6 @@ if (QB_IO_EV_TEST_BACKENDS)
     endforeach ()
     qb_status_message("Per-backend ev test matrix ENABLED: [${QB_IO_EV_TEST_BACKENDS}]")
 endif ()
+
+# A teardown completes when a handler throws, or when an acceptor has none (Huly QB-256).
+qb_add_test(MODULE qb-io TIER system NAME teardown-throwing-handlers SOURCES tcp/teardown-throwing-handlers.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)

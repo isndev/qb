@@ -156,14 +156,14 @@ namespace qb::io::async {
 
 Key facts, each verified against the header:
 
-- **The delay is a `std::chrono` duration, not a `double`.** Pass `200ms`, `std::chrono::seconds(5)`, or any `std::chrono::duration`. There is no seconds-as-`double` overload. <!-- src: qb/src/qb/io/async/io.h:371-373 -->
-- **A non-positive (or absent) delay fires inline, immediately.** `callback(f)` and `callback(f, d)` with `d <= 0` invoke `func()` synchronously at the call site — they do *not* defer to the next iteration. To run after the current handler unwinds, use `defer(f)`; do not reach for `callback(f, 1ms)`, which only hides the re-entrancy behind a timer. <!-- src: qb/src/qb/io/async/io.h:347-363,367-368,375-377 -->
+- **The delay is a `std::chrono` duration, not a `double`.** Pass `200ms`, `std::chrono::seconds(5)`, or any `std::chrono::duration`. There is no seconds-as-`double` overload. <!-- src: qb/src/qb/io/async/io.h:372-374 -->
+- **A non-positive (or absent) delay fires inline, immediately.** `callback(f)` and `callback(f, d)` with `d <= 0` invoke `func()` synchronously at the call site — they do *not* defer to the next iteration. To run after the current handler unwinds, use `defer(f)`; do not reach for `callback(f, 1ms)`, which only hides the re-entrancy behind a timer. <!-- src: qb/src/qb/io/async/io.h:348-364,368-369,376-378 -->
 - **The callback runs on the same `VirtualCore`** that scheduled it, so it may touch that actor's state — but only if the actor is still alive when it fires.
 - **Fire-and-forget.** The scheduled `Timeout<F>` is heap-allocated and deletes itself after firing; there is no handle to cancel it. When you need cancellation, use `scoped_callback`.
 
 ### Capture safety: the actor may be gone
 
-A delayed callback can outlive the actor that scheduled it, and **no guard written inside the lambda can repair that**. The `Timeout<F>` allocated by `callback(func, delay)` is registered as a *loop-owned* object: the listener owns it, it deletes itself when it fires, and nothing binds it to any `qb::Actor`. It fires when the loop says so, whatever happened to the actor meanwhile. <!-- src: qb/src/qb/io/async/io.h:311-317,342 -->
+A delayed callback can outlive the actor that scheduled it, and **no guard written inside the lambda can repair that**. The `Timeout<F>` allocated by `callback(func, delay)` is registered as a *loop-owned* object: the listener owns it, it deletes itself when it fires, and nothing binds it to any `qb::Actor`. It fires when the loop says so, whatever happened to the actor meanwhile. <!-- src: qb/src/qb/io/async/io.h:312-318,343 -->
 
 So the check that looks like the remedy is itself the defect:
 
@@ -328,7 +328,7 @@ public:
 };
 ```
 
-`ScopedTimeout` exposes `cancel()` and `fired()`. As with `callback`, a non-positive duration fires inline at construction. The trade-off: `scoped_callback` is cancellable and owned by you; `callback` is fire-and-forget and self-cleaning. Owning the handle as an actor member is also the strongest form of the liveness guard, because the actor's own destructor cancels the watcher. <!-- src: qb/src/qb/io/async/io.h:429-433,424-427; qb/src/qb/io/async/io.h:406,411-420 -->
+`ScopedTimeout` exposes `cancel()` and `fired()`. As with `callback`, a non-positive duration fires inline at construction. The trade-off: `scoped_callback` is cancellable and owned by you; `callback` is fire-and-forget and self-cleaning. Owning the handle as an actor member is also the strongest form of the liveness guard, because the actor's own destructor cancels the watcher. <!-- src: qb/src/qb/io/async/io.h:430-434,425-428; qb/src/qb/io/async/io.h:407,412-421 -->
 
 ## `with_timeout<T>` — inactivity, not a deadline
 
@@ -349,10 +349,10 @@ public:
 
 Mechanics, verified against the header:
 
-- The constructor takes a `qb::duration` and **defaults to `std::chrono::seconds(3)`**. A value `<= 0` starts disabled. <!-- src: qb/src/qb/io/async/io.h:122-125 -->
+- The constructor takes a `qb::duration` and **defaults to `std::chrono::seconds(3)`**. A value `<= 0` starts disabled. <!-- src: qb/src/qb/io/async/io.h:123-126 -->
 - `updateTimeout()` records "now" as the last-activity time; call it from handlers that count as activity to push the deadline forward. It does not re-arm the watcher, so it is cheap enough to call on every byte received.
-- When the configured span elapses with no `updateTimeout()`, the mixin invokes `_Derived::on(qb::io::async::event::timer const&)`. The canonical handler signature takes the event by `const &`. <!-- src: qb/src/qb/io/async/io.h:183-184; qb/tests/io/system/async/timer-timeout.cpp:91 -->
-- `setTimeout(d)` reconfigures and restarts the timer; `setTimeout(qb::duration::zero())` stops it. <!-- src: qb/src/qb/io/async/io.h:147-156 -->
+- When the configured span elapses with no `updateTimeout()`, the mixin invokes `_Derived::on(qb::io::async::event::timer const&)`. The canonical handler signature takes the event by `const &`. <!-- src: qb/src/qb/io/async/io.h:184-185; qb/tests/io/system/async/timer-timeout.cpp:91 -->
+- `setTimeout(d)` reconfigures and restarts the timer; `setTimeout(qb::duration::zero())` stops it. <!-- src: qb/src/qb/io/async/io.h:148-157 -->
 
 ```cpp
 // Session actor that self-terminates after 30s of inactivity.

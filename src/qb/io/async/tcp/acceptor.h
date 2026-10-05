@@ -63,18 +63,21 @@ public:
      * `on(event::disconnected ...)` (detected via `qb::has_own_on`, which
      * distinguishes a real user override from the one merely inherited from
      * this acceptor through CRTP — the naive `qb::has_on` would always be
-     * `true` and cause infinite recursion). Otherwise a `std::runtime_error`
-     * is raised so the listener can propagate the fatal condition upward.
+     * `true` and cause infinite recursion). Otherwise the event is logged at
+     * `QB_LOG_CRIT` severity, as `tcp::server` does. It used to throw
+     * `std::runtime_error` "so the listener can propagate the fatal condition
+     * upward", but the listener contains what a handler throws: nothing went
+     * upward, and the throw left `dispose()` before it stopped the listening
+     * watcher (Huly QB-256).
      *
      * @param e The disconnection event
-     * @throws std::runtime_error If the derived class doesn't handle disconnection
      */
     void
     on(event::disconnected &&e) {
         if constexpr (qb::has_own_on<_Derived, acceptor, event::disconnected>)
             static_cast<_Derived &>(*this).on(std::forward<event::disconnected>(e));
         else
-            throw std::runtime_error("Acceptor has been disconnected");
+            QB_LOG_CRIT("Acceptor disconnected (reason=" << e.reason << ")");
     }
 
 public:

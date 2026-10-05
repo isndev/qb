@@ -333,7 +333,7 @@ public:
   (`_ctx = ssl::Context::adopt(ctx)`, `src/qb/io/tcp/ssl/listener.cpp:38-42`). Neither makes
   `~listener()` free anything — its body is empty; the `SSL_CTX` goes when the last `Context`
   copy and the last minted `SSL` are gone. Call either **before** `listen()`.
-  <!-- src: qb/src/qb/io/tcp/ssl/listener.cpp:30 (empty destructor), :38-42 (adopt), :44-47 (init(Context)); qb/src/qb/io/async/tcp/acceptor.h:160 (the acceptor's call) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/listener.cpp:30 (empty destructor), :38-42 (adopt), :44-47 (init(Context)); qb/src/qb/io/async/tcp/acceptor.h:163 (the acceptor's call) -->
 - **`adopt` and `share` mark the context client-role.** A raw `SSL_CTX` brought in that way
   is treated as a client context, so a later `.alpn(...)` on it configures the *client offer*,
   not the server's selection list — a server that adopts a raw context and then calls `.alpn()`
