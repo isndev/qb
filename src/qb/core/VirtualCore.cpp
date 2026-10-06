@@ -22,8 +22,13 @@
  * @ingroup Core
  */
 
+#include <algorithm>
+#include <atomic>
 #include <climits>
+#include <cstddef>
+#include <new>
 #include <ostream>
+#include <thread>
 #include <qb/core/VirtualCore.h>
 #include <qb/event.h>
 #include <qb/io/async/listener.h>
@@ -122,6 +127,10 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     [this]<typename... E>(std::tuple<E...> *) {
         (_router.install<E>(std::make_unique<DefaultEventResolver<E>>(*this)), ...);
     }(static_cast<default_events_t *>(nullptr));
+    // The death watch's control events (Huly QB-51) are this core's to resolve, never an actor's.
+    [this]<typename... C>(std::tuple<C...> *) {
+        (_router.install<C>(std::make_unique<WatchControlResolver<C>>(*this)), ...);
+    }(static_cast<std::tuple<detail::WatchRequest, detail::UnwatchRequest, detail::WatchDown, detail::CoreStopping> *>(nullptr));
 }
 
 VirtualCore::~VirtualCore() noexcept = default;
@@ -694,10 +703,12 @@ VirtualCore::__pump_activations__() noexcept {
         const bool dying = _dying_with_frame.erase(id) != 0;
         // Read the init verdict (frame is done): a clean `co_return false`, a thrown
         // exception, or a deadline/kill cancellation all resolve to "not successful".
-        bool ok = false;
+        bool ok    = false;
+        bool threw = false;
         if (auto h = act.init.handle(); h && h.done()) {
             auto &p = qb::io::async::detail::promise_of(h);
-            ok      = !p.has_exception() && p.value();
+            threw   = p.has_exception();
+            ok      = !threw && p.value();
         }
         // Free the onInit frame now that it has fully unwound (no awaiter references it).
         act.init = qb::io::async::task<bool>{};
@@ -718,7 +729,13 @@ VirtualCore::__pump_activations__() noexcept {
             if (actor != nullptr) {
                 if (!dying && !ok)
                     QB_LOG_CRIT(*actor << " async onInit failed — removing");
-                removeActor(id);
+                // What its watchers are told (Huly QB-51): killed during its init; failed -- a
+                // `co_return false`, or the deadline's cancellation, which unwinds the frame through
+                // an exception of its own; or threw.
+                removeActor(id, dying            ? DownReason::killed
+                                : act.cancelling ? DownReason::init_failed
+                                : threw          ? DownReason::init_threw
+                                                 : DownReason::init_failed);
             }
             // Whoever awaited this activation learns now that it will never happen (QB-62),
             // where the poll it replaced only ever learned it from its own timeout.
@@ -1042,9 +1059,12 @@ VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
         switch (__drive_init__(actor, init)) {
             case InitOutcome::ReadyTrue:
                 break; // completed synchronously → already active (identical to before)
-            case InitOutcome::ReadyFalse:
-                removeActor(actor.id());
+            case InitOutcome::ReadyFalse: {
+                const auto h     = init.handle();
+                const bool threw = h && qb::io::async::detail::promise_of(h).has_exception();
+                removeActor(actor.id(), threw ? DownReason::init_threw : DownReason::init_failed);
                 return ActorId::NotFound;
+            }
             case InitOutcome::Suspended:
                 // Dynamic (`addRefActor`) async init: the actor exists and is addressable
                 // now, but is not yet active. Its id is returned as VALID; inbound unicast
@@ -1082,7 +1102,7 @@ VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) no
 }
 
 void
-VirtualCore::removeActor(ActorId const id) noexcept {
+VirtualCore::removeActor(ActorId const id, DownReason const reason) noexcept {
     // Deferred destroy (the actor must outlive its own coroutine frame): if its
     // `onInit()` frame is still suspended, cancel the scope so the frame unwinds, mark
     // the actor dying, and let `__pump_activations__` complete the teardown once the
@@ -1132,6 +1152,10 @@ VirtualCore::removeActor(ActorId const id) noexcept {
         // for the lifetime of the process to keep `ServiceIndex` stable.
         if (id._service_id > _nb_service.load(std::memory_order_relaxed))
             _ids.release(id._service_id);
+        // Death watch (Huly QB-51), after the destructor: a watcher learns the actor is gone, not
+        // going. Both tables are empty on a core where nobody watches, which is the whole cost.
+        if (unlikely(!_watchers_of.empty() || !_watching.empty()))
+            __on_actor_down__(id, reason);
     }
 }
 
@@ -1319,6 +1343,8 @@ VirtualCore::__deliver_signals__() noexcept {
 // reason -- reached only when an event finds no actor, never on a pass that delivers.
 void
 VirtualCore::__dead_letter__(Event const &event, DeadLetterReason const reason) noexcept {
+    if (unlikely(__is_watch_control__(event.getID())))
+        return; // the death watch's own bookkeeping, which its protocol answers (Huly QB-51): never a letter
     const auto n = ++_nb_dead_letters;
     ++_nb_dead_letters_by_reason[static_cast<std::size_t>(reason)];
     // The first 16 of the core, then one line at each power of two: a flood of stale ids leaves a
@@ -1379,6 +1405,184 @@ Event::__undelivered__(Event &event) noexcept {
     if (core == nullptr || event.getDestination().is_broadcast())
         return;
     core->__dead_letter__(event, core->__undelivered_reason__(event.getDestination()));
+}
+
+// Death watch (Huly QB-51): cold, at the end of the file -- reached by `watch()` / `unwatch()`, by the
+// control events and by the removal of an actor that watches or is watched, never by a pass that
+// does none of these.
+//
+// One rule carries it: a watch is a record on its watcher's core, opened once and closed once -- by
+// its one answer (`__on_watch_down__`), by `unwatch()` or by the watcher's removal. Every answer --
+// the target's core's (`killed`, `init_failed`, `init_threw`, `unknown`) or the watcher's own core's
+// (`core_stopped`, `unknown`) -- travels as a `detail::WatchDown` carrying the watch's ticket, and
+// becomes a `DownEvent` only where it closes that record: two answers to one watch deliver one,
+// none follows `unwatch()`, and none closes a later watch of the same, reused, id.
+void
+VirtualCore::__watch__(ActorId const watcher, ActorId const target) noexcept {
+    if (target == watcher)
+        return; // watching oneself would announce a death to the dead
+    auto &open = _watching[watcher];
+    if (std::ranges::any_of(open, [target](WatchEntry const &w) { return w.peer == target; }))
+        return; // open already: its one answer is on its way, or will be
+    const std::uint64_t ticket = ++_watch_tickets;
+    open.push_back({target, ticket});
+    const CoreId core = target._core_id;
+    if (core == _index) {
+        __register_watch__(target, watcher, ticket);
+        return;
+    }
+    if (!_engine._core_set.raw().contains(core)) {
+        push<detail::WatchDown>(watcher, target, DownReason::unknown, ticket); // no such core: no actor holds the id
+        return;
+    }
+    // Pairs with the fence of a core that has stopped (`__announce_stop__`): either this load sees
+    // that core stopped, or that core sees the flag and announces its stop to this one, which
+    // answers the watch (`__on_core_stopping__`) -- never neither. The flag is stored once:
+    // its line holds the engine's mailbox table, read by every cross-core send. Release/acquire
+    // makes the store that set it happen before this fence either way.
+    if (!_engine._cross_core_watch.load(std::memory_order_acquire))
+        _engine._cross_core_watch.store(true, std::memory_order_release);
+    SharedCoreCommunication::seq_cst_fence();
+    if (_engine.is_core_stopped(_engine._core_set.resolve(core)))
+        push<detail::WatchDown>(watcher, target, DownReason::core_stopped, ticket); // nobody there to ask
+    else
+        push<detail::WatchRequest>(BroadcastId(core), watcher, target, ticket);
+}
+
+void
+VirtualCore::__unwatch__(ActorId const watcher, ActorId const target) noexcept {
+    const auto it = _watching.find(watcher);
+    if (it == _watching.end() || std::erase_if(it->second, [target](WatchEntry const &w) { return w.peer == target; }) == 0)
+        return; // not open: never watched, or answered already
+    if (it->second.empty())
+        _watching.erase(it);
+    const CoreId core = target._core_id;
+    if (core == _index)
+        __unregister_watch__(target, watcher);
+    else if (_engine._core_set.raw().contains(core) && !_engine.is_core_stopped(_engine._core_set.resolve(core)))
+        push<detail::UnwatchRequest>(BroadcastId(core), watcher, target);
+}
+
+void
+VirtualCore::__register_watch__(ActorId const target, ActorId const watcher, std::uint64_t const ticket) noexcept {
+    // An actor killed but not yet reaped still holds its slot: registering then is right, its
+    // removal at the end of this pass answers. No actor at all: it never existed or is gone.
+    if (__actor_slot__(target) == nullptr) {
+        push<detail::WatchDown>(watcher, target, DownReason::unknown, ticket);
+        return;
+    }
+    // One registration per watcher: its core opens one watch of an actor at a time, and a withdrawal
+    // reaches this core before the next request (one ordered pipe).
+    auto &watchers = _watchers_of[target];
+    if (const auto at = std::ranges::find(watchers, watcher, &WatchEntry::peer); at != watchers.end())
+        at->ticket = ticket;
+    else
+        watchers.push_back({watcher, ticket});
+}
+
+void
+VirtualCore::__unregister_watch__(ActorId const target, ActorId const watcher) noexcept {
+    const auto it = _watchers_of.find(target);
+    if (it == _watchers_of.end())
+        return;
+    std::erase_if(it->second, [watcher](WatchEntry const &w) { return w.peer == watcher; });
+    if (it->second.empty())
+        _watchers_of.erase(it);
+}
+
+void
+VirtualCore::__on_watch_down__(ActorId const watcher, ActorId const target, DownReason const reason, std::uint64_t const ticket) noexcept {
+    const auto it = _watching.find(watcher);
+    if (it == _watching.end() || std::erase_if(it->second, [&](WatchEntry const &w) { return w.peer == target && w.ticket == ticket; }) == 0)
+        return; // withdrawn by unwatch(), answered already, or its watcher is gone
+    if (it->second.empty())
+        _watching.erase(it);
+    // Delivered now, in the step that closed the watch: a handler that watches the id again opens
+    // a new watch. Built as `push` builds an event in a pipe slot -- the storage a pipe slot spans,
+    // prepared, then the header -- so a `reply()` or `forward()` of it copies defined bytes.
+    constexpr std::size_t        bytes = allocator::getItemSize<DownEvent, EventBucket>() * sizeof(EventBucket);
+    alignas(DownEvent) std::byte storage[bytes];
+    detail::prepare_event_storage(storage, bytes);
+    auto &down = *new (storage) DownEvent(target, reason);
+    fill_event(down, watcher, target);
+    _router.route(down, [this](auto &event) {
+        // No actor of this core registered `DownEvent`: the watcher's dead letter, like any event.
+        __dead_letter__(event, __undelivered_reason__(event.getDestination()));
+    });
+}
+
+void
+VirtualCore::__on_core_stopping__(CoreId const core) noexcept {
+    // Every answer `core` sent was received before this notice (one ordered pipe): a watch still
+    // open on it is one it never received. Answered through the same `WatchDown` as any other, so
+    // a watch answered already but not yet delivered (stashed for an activating watcher, or seen
+    // stopped by `__watch__`) still delivers one `DownEvent`.
+    for (auto const &[watcher, open] : _watching)
+        for (WatchEntry const &w : open)
+            if (w.peer._core_id == core)
+                push<detail::WatchDown>(watcher, w.peer, DownReason::core_stopped, w.ticket);
+}
+
+void
+VirtualCore::__announce_stop__(SharedCoreCommunication &engine, CoreId const index) noexcept {
+    // A watch that reaches this core from now on is never answered here. The fence pairs with the
+    // one in `__watch__`: a watcher's core either sees this core stopped and answers at once, or
+    // this load sees its flag and the notice goes out -- never neither.
+    SharedCoreCommunication::seq_cst_fence();
+    if (likely(!engine._cross_core_watch.load(std::memory_order_relaxed)))
+        return;
+    const CoreId                            resolved = engine._core_set.resolve(index);
+    constexpr std::size_t                   bytes    = allocator::getItemSize<detail::CoreStopping, EventBucket>() * sizeof(EventBucket);
+    alignas(detail::CoreStopping) std::byte storage[bytes];
+    detail::prepare_event_storage(storage, bytes);
+    auto &notice = *new (storage) detail::CoreStopping();
+    for (const auto core : engine._core_set.raw()) {
+        if (core == index)
+            continue;
+        fill_event(notice, BroadcastId(core), BroadcastId(index));
+        // Straight into that core's mailbox, behind all this core sent it before: after a normal
+        // stop its pipes to running cores are empty; after an exception, what they held was never
+        // sent and is not sent now -- the watches it would have answered are answered by this.
+        // A full ring empties as its core receives; a core that stops meanwhile needs no notice.
+        while (!engine.is_core_stopped(engine._core_set.resolve(core)) && !engine.send(resolved, notice))
+            std::this_thread::yield();
+    }
+}
+
+bool
+VirtualCore::__is_watch_control__(EventId const id) noexcept {
+    return id == Event::type_to_id<detail::WatchRequest>() || id == Event::type_to_id<detail::UnwatchRequest>()
+           || id == Event::type_to_id<detail::WatchDown>() || id == Event::type_to_id<detail::CoreStopping>();
+}
+
+void
+VirtualCore::__on_actor_down__(ActorId const id, DownReason const reason) noexcept {
+    // Its watchers: one answer each. A watcher of this core already killed, not yet reaped, is
+    // skipped -- its own removal closes its watches.
+    if (const auto it = _watchers_of.find(id); it != _watchers_of.end()) {
+        const std::vector<WatchEntry> watchers = std::move(it->second);
+        _watchers_of.erase(it);
+        for (WatchEntry const &w : watchers) {
+            if (w.peer._core_id == _index) {
+                Actor const *const actor = __actor_slot__(w.peer);
+                if (actor == nullptr || !actor->is_alive())
+                    continue;
+            }
+            push<detail::WatchDown>(w.peer, id, reason, w.ticket);
+        }
+    }
+    // Its own watches: closed and withdrawn, so a long-lived target never accumulates dead watchers.
+    if (const auto it = _watching.find(id); it != _watching.end()) {
+        const std::vector<WatchEntry> open = std::move(it->second);
+        _watching.erase(it);
+        for (WatchEntry const &w : open) {
+            const CoreId core = w.peer._core_id;
+            if (core == _index)
+                __unregister_watch__(w.peer, id);
+            else if (_engine._core_set.raw().contains(core) && !_engine.is_core_stopped(_engine._core_set.resolve(core)))
+                push<detail::UnwatchRequest>(BroadcastId(core), id, w.peer);
+        }
+    }
 }
 
 } // namespace qb

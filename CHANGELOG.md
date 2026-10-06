@@ -64,6 +64,36 @@ policy.
   `ev_invoke_pending` for one that reads the clock around it, `dispatch_timing()` reports it; off, libev's own
   dispatch runs through the same pointer. Pinned by `tests/core/system/engine/pass-timing.cpp`,
   `tests/io/unit/async/listener-dispatch-timing.cpp` and the recorder's cases in `tests/core/unit/system/time.cpp`.
+- **Death watch: `Actor::watch()` / `unwatch()` and `qb::DownEvent` -- learn that another actor is gone, whatever ended
+  it (Huly QB-51).** `watch(id)`, from any actor, of an actor on any core, is answered by exactly one
+  `qb::DownEvent{watched, reason}` (`<qb/core/DeathWatch.h>`, through `<qb/actor.h>`): after the watched actor's
+  destructor ran -- `killed`, `init_failed` (its `onInit()` returned false or missed its activation deadline),
+  `init_threw` -- at once with `unknown` for an id no actor holds, and `core_stopped` when its core had stopped or
+  ended on an exception. `unwatch(id)` closes the watch: no `DownEvent` of it arrives afterwards, not even one already
+  on its way. Until 3.3 an actor learned of a death only if the dying one said so, or from a health check's timeout.
+  A watch is a record on the watcher's core, closed once by its one answer, by `unwatch()` or by the watcher's
+  removal; every answer carries the watch's ticket and becomes the `DownEvent` only where it closes that record, so
+  two answers deliver one and an answer about an id's previous holder never closes a later watch of the reused id. A
+  request travels to the target's CORE, not to the actor, so an actor still in its `onInit()` cannot stash it and
+  lose it with a failed init. Once a watch has crossed cores, a core that stops tells every core still running, as
+  the last thing its thread does -- after it was marked stopped and destroyed with its actors, on a normal stop, a
+  failed start or an exception -- and a store-load fence on each side guarantees that a watch reaching it too late is
+  answered (`core_stopped`) by the watcher's own core. The death watch's own events are never dead letters. Nobody
+  pays for it who does not use it: no pass reads anything, and removing an actor tests two empty tables -- measured
+  level on both hosts (MSVC 19.51, g++-14): the Savina one- and two-core cells, `fib` among them (it creates and
+  destroys 57 312 actors a repetition), and the pass, ask and push probes; the two cells that read +1..2 % on one
+  host were placement -- a code-layout lottery on MSVC (`fib`, family medians +0.6 / +0.9 % against layout variants
+  of the control spanning 4 %) and both sides built at 64-byte alignment on g++ (pass-cost +0.08 %). Pinned by
+  `tests/core/system/engine/death-watch.cpp` (20 cases, a 200-round race against a core's stop among them), which
+  catches each of six defects planted one at a time.
+- **`qb::Supervisor` watch mode: `qb::supervision::watch` restarts a child gone for any reason (Huly QB-51).** The
+  constructor's new last argument (`qb::supervision::cooperative` by default, the 3.2 contract) makes the supervisor
+  watch every child it spawns: a child killed by someone else, or whose `onInit()` failed, is restarted by its
+  `DownEvent`, and one whose `onInit()` fails synchronously -- `spawn_child` returns an invalid id -- on the next
+  pass. A child that calls `stop()` is still restarted once: the supervisor unwatches a child before it replaces it,
+  so the death of the outgoing child is never taken for its replacement's, which most likely reuses its id -- a
+  double restart, and an orphaned child, that the three strategies' watch-mode tests count, and catch when the
+  unwatch is taken out.
 
 ### Changed
 
@@ -81,6 +111,15 @@ policy.
 
 ### Fixed
 
+- **`qb::Supervisor` no longer kills an unrelated actor after it gives up on a child (Huly QB-51).** Past its
+  restart-intensity cap the supervisor escalated and kept the dead child's id in its slot. Ids are reused -- the next
+  actor spawned on the core typically took that one -- and the supervisor's teardown, a `KillEvent` to every child it
+  remembered, killed that actor; a sibling's restart would have too. Found by `examples/04-patterns/02-supervisor`, the
+  next phase's supervisor being the actor killed; present since `qb::Supervisor` shipped in 3.0, reproduced on the
+  tree before this change. A slot given up on now holds no child -- `child(slot)` answers an invalid id -- and in
+  watch mode its child is unwatched, whose late `DownEvent` would otherwise have escalated a second time. Pinned by
+  `AGivenUpSlotHoldsNoStaleIdCooperative` and `...InWatchMode`, both failing without the fix. A child that dies
+  silently in cooperative mode still leaves its id behind, which the watch mode closes.
 - **The stash of an actor killed in the pass its asynchronous `onInit()` completed is destroyed (Huly QB-163).** An
   `ask` reply resumes the init inline, inside the receive, so the frame can be done before the pump of the next pass
   finalises the activation; a `KillEvent` right behind the reply then reached the reap first, and `removeActor` erased
@@ -158,6 +197,12 @@ policy.
 
 ### Documentation
 
+- **`6_guides/error_handling.md`'s supervision section rewritten with death watch (Huly QB-51).** It said qb-core
+  ships no supervisor (`qb::Supervisor` has shipped since 3.0), and its liveness example armed
+  `qb::io::async::callback([this] ...)` with an `is_alive()` guard -- the shape the API rules forbid, the guard being the
+  use-after-free once the timer outlives the actor. It now teaches death watch for an actor that is gone, a
+  `qb::ping` loop in a `spawn()`ed coroutine -- cancelled with its actor -- for one that is stuck, and the watch mode of
+  `qb::Supervisor`; the failure table, the summary and the FAQ say the same.
 - **Book citations re-derived where the strengthened guards found them wrong (Huly QB-254).** Five ranges started
   on the blank line above the block they meant (`0_foundations/buffers.md`, `6_guides/getting_started.md`,
   `migration_guide.md`, `production_checklist.md` twice), and the seven slash-joined `src:` comments of

@@ -58,7 +58,7 @@
  * neutralising the fix and re-running disproved it: the whole binary wedged and had to be killed.
  * The reason is the second half of the finding, and nothing in this file can route around it.
  * `WatchdogActor` broadcasts a `KillEvent`; a `KillEvent` does reach an Activating actor (the gate
- * lets it through, VirtualCore.cpp:173) and does cancel its coro scope — but a `connect_awaiter`
+ * lets it through, VirtualCore.cpp:182) and does cancel its coro scope — but a `connect_awaiter`
  * parked on a plain completion callback registers with no cancellation token, so the frame never
  * reaches `done()`, `_activating` never empties, the core never leaves `__workflow__`, and
  * `Main::join()` blocks for ever. The engine has no in-band way to end that run, which is exactly

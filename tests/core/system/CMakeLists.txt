@@ -192,3 +192,7 @@ qb_add_test(MODULE qb-core TIER system NAME dead-letters SOURCES engine/dead-let
 # a stall inside a handler as its longest and recent-worst pass; the park is not a pass; an untimed core reports zero.
 # serial: it measures how long passes take, and a neighbour's load stretches them.
 qb_add_test(MODULE qb-core TIER system NAME pass-timing SOURCES engine/pass-timing.cpp DEPENDS ${PROJECT_NAME} LABELS serial)
+# death-watch pins Actor::watch (Huly QB-51): one DownEvent after the destructor, same core and across cores; an id
+# with no actor answers unknown, a stopped core core_stopped; init failures say why; unwatch and a watcher that dies
+# first deliver nothing (no dead letter anywhere); a recycled id can be watched again; shutdown with watches in place.
+qb_add_test(MODULE qb-core TIER system NAME death-watch SOURCES engine/death-watch.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)

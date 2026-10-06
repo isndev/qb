@@ -48,6 +48,7 @@
 #include <qb/utility/type_traits.h>
 #include <qb/io/async/coroutine.h>
 #include "CoreStats.h"
+#include "DeathWatch.h"
 #include "Event.h"
 #include "ICallback.h"
 #include "Pipe.h"
@@ -80,7 +81,7 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
  * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
- * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:675`); nothing in the engine ever sends a `KillEvent`.
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:684`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
@@ -510,6 +511,31 @@ public:
      *       and `~Actor()` call occur later, managed by the `VirtualCore`.
      */
     void kill() const noexcept;
+
+    /**
+     * @brief Watch another actor: receive one `qb::DownEvent` when it is gone (Huly QB-51).
+     * @param target The actor to watch, on any core.
+     * @details Every watch is answered once, with a `qb::DownReason`: after the target's destructor
+     *          ran, whatever ended it -- a `kill()`, an `onInit()` that failed or threw, the
+     *          engine's shutdown; at once for an id that holds no actor (`unknown`); and with
+     *          `core_stopped` when the target's core stopped before the watch reached it, even at
+     *          the very moment it stops, or ended on an exception that escaped a handler there.
+     *          Register the event (`registerEvent<qb::DownEvent>(*this)`) to receive it. Watching
+     *          an actor already watched is a no-op until the answer arrives; watching oneself is
+     *          ignored. The watch ends with the watcher: a watcher that dies first is never
+     *          notified, and its watches are withdrawn. Costs nothing to an actor nobody watches,
+     *          nor to any pass.
+     * @note Ids are reused once their actor is gone: an id watched again before the `DownEvent` of
+     *       its previous holder arrived is answered by that event.
+     */
+    void watch(ActorId target) const noexcept;
+
+    /**
+     * @brief Stop watching `target` (`watch()`); a no-op if it was not watched, or already answered.
+     * @details No `qb::DownEvent` of that watch arrives after the call, not even one already on
+     *          its way.
+     */
+    void unwatch(ActorId target) const noexcept;
 
     /**
      * @}

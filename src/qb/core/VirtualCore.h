@@ -59,6 +59,7 @@
 #include <qb/system/time.h>
 #include <qb/utility/compat.h>
 #include "Actor.h"
+#include "DeathWatch.h"
 #include "Event.h"
 #include "ICallback.h"
 #include "Main.h"
@@ -379,6 +380,45 @@ private:
         unsubscribe(ActorId const &) final {}
     };
 
+    /**
+     * @brief The router's resolver for a death-watch control event (Huly QB-51): a request, its
+     *        withdrawal, an answer on its way to a watcher or a stopping core's notice, each
+     *        handled by the receiving core itself, never by an actor.
+     * @details Installed by the constructor, beside the default events' resolvers, so a control
+     *          event from any core finds it whether or not this core ever watched anything.
+     */
+    /// One end of a watch (Huly QB-51): the actor at the other end, and the watch's ticket.
+    struct WatchEntry {
+        ActorId       peer;
+        std::uint64_t ticket;
+    };
+
+    template <typename _Control>
+    class WatchControlResolver final : public router::memh<Event>::IEventResolver {
+        VirtualCore &_core;
+
+    public:
+        explicit WatchControlResolver(VirtualCore &core) noexcept
+            : router::memh<Event>::IEventResolver(false)
+            , _core(core) {}
+
+        void
+        resolve(Event &raw) const final {
+            auto &event = reinterpret_cast<_Control &>(raw);
+            if constexpr (std::is_same_v<_Control, detail::WatchRequest>)
+                _core.__register_watch__(event.target, event.getSource(), event.ticket);
+            else if constexpr (std::is_same_v<_Control, detail::UnwatchRequest>)
+                _core.__unregister_watch__(event.target, event.getSource());
+            else if constexpr (std::is_same_v<_Control, detail::WatchDown>)
+                _core.__on_watch_down__(event.getDestination(), event.getSource(), event.reason, event.ticket);
+            else
+                _core.__on_core_stopping__(event.getSource()._core_id);
+        }
+
+        void
+        unsubscribe(ActorId const &) final {}
+    };
+
     //! Types
 
 private:
@@ -646,6 +686,14 @@ private:
     // only the timed instantiation of the loop touches the recorder.
     bool                   _pass_timing = false;
     detail::TimingRecorder _pass_recorder;
+    // Death watch (Huly QB-51). `_watchers_of`: who watches each actor of this core, from any core.
+    // `_watching`: the watches each actor of this core holds open, on any core -- one entry per
+    // watch, closed by its one answer (`__on_watch_down__`), by `unwatch()` or by the watcher's
+    // removal. Touched by `watch()` / `unwatch()`, by the control events and by the removal of an
+    // actor that is in either -- never by the pass.
+    qb::unordered_map<ActorId, std::vector<WatchEntry>> _watchers_of;
+    qb::unordered_map<ActorId, std::vector<WatchEntry>> _watching;
+    std::uint64_t                                       _watch_tickets = 0; ///< the last ticket a watch of this core got
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -728,7 +776,8 @@ private:
      * @return ID of the added actor or Invalid ID if addition failed
      */
     [[nodiscard]] ActorId appendActor(std::unique_ptr<Actor> actor, bool doInit = false) noexcept;
-    void                  removeActor(ActorId id) noexcept;
+    /// Destroy an actor; `reason` is what its watchers are told (Huly QB-51).
+    void removeActor(ActorId id, DownReason reason = DownReason::killed) noexcept;
 
     // --- Asynchronous initialization driver (the *Activating* phase) ---------
     /// Outcome of driving an actor's `onInit()` coroutine once.
@@ -765,6 +814,33 @@ private:
     /// Why a unicast found no handler: `unhandled` when a live actor holds the destination id,
     /// `not_found` otherwise (never existed, removed, or killed earlier in the pass).
     [[nodiscard]] QB_NOINLINE QB_COLD DeadLetterReason __undelivered_reason__(ActorId dest) const noexcept;
+    /// Death watch (Huly QB-51), on the watcher's core: open the watch -- one record, answered once
+    /// -- and register it with the target's core, directly when it is this one and by a
+    /// `detail::WatchRequest` otherwise; answer it at once when no core can hold the target.
+    QB_NOINLINE QB_COLD void __watch__(ActorId watcher, ActorId target) noexcept;
+    /// Close a watch `__watch__` opened and withdraw it from the target's core; a no-op for a
+    /// watch not open (never opened, or answered already).
+    QB_NOINLINE QB_COLD void __unwatch__(ActorId watcher, ActorId target) noexcept;
+    /// On the target's core: register the watch, or answer it (`DownReason::unknown`) when no actor
+    /// holds `target`.
+    QB_NOINLINE QB_COLD void __register_watch__(ActorId target, ActorId watcher, std::uint64_t ticket) noexcept;
+    /// On the target's core: forget `watcher`.
+    QB_NOINLINE QB_COLD void __unregister_watch__(ActorId target, ActorId watcher) noexcept;
+    /// On the watcher's core: the answer to a watch (`detail::WatchDown`) -- close the watch and
+    /// deliver its `DownEvent`, or drop the answer when that watch is not open any more.
+    QB_NOINLINE QB_COLD void __on_watch_down__(ActorId watcher, ActorId target, DownReason reason, std::uint64_t ticket) noexcept;
+    /// On every core still running: `core` has stopped -- answer the watches still open on it.
+    QB_NOINLINE QB_COLD void __on_core_stopping__(CoreId core) noexcept;
+    /// After a core's thread is done with it -- the core marked stopped, then destroyed with its
+    /// actors, whatever ended it: a normal stop, a failed start, an exception that unwound it --
+    /// and once a watch has crossed cores: tell every core still running (`detail::CoreStopping`).
+    /// Static: it runs after the core object is gone (`Main::start_thread`).
+    QB_NOINLINE QB_COLD static void __announce_stop__(SharedCoreCommunication &engine, CoreId index) noexcept;
+    /// Whether an event is one of the death watch's control events -- never a dead letter.
+    [[nodiscard]] static bool __is_watch_control__(EventId id) noexcept;
+    /// `removeActor`'s death-watch half, after the destructor: tell the watchers of `id` it is gone,
+    /// and withdraw the watches `id` itself held.
+    QB_NOINLINE QB_COLD void __on_actor_down__(ActorId id, DownReason reason) noexcept;
     /// Fire -- unlinked first -- every `ready_async` waiter of `act` with the outcome `ok`.
     static void __fire_activation_waiters__(Activation &act, bool ok) noexcept;
     /// Per-iteration pump: complete finished inits, replay stashes, enforce deadlines.
@@ -1422,7 +1498,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:504`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:513`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

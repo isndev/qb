@@ -2,19 +2,20 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.2.1 (C++20 default, C++23 supported)
 
-How qb propagates, contains, and reports failure: the exception policy, the `VirtualCore` fail-stop boundary, supervision patterns you build yourself, asynchronous I/O error events, and the `async::callback` lifetime rules.
+How qb propagates, contains, and reports failure: the exception policy, the `VirtualCore` fail-stop boundary, death watch and supervision, asynchronous I/O error events, and the `async::callback` lifetime rules.
 
 **Prerequisites:** [Getting started](./getting_started.md), [Core concepts](../2_core_concepts/README.md) — **See also:** [Core invariants](../7_reference/core_invariants.md), [I/O invariants](../7_reference/io_invariants.md), [The async system](../3_qb_io/async_system.md), [Resource management](./resource_management.md)
 
 ## Summary
 
-qb does not implement an Erlang-style supervision tree. It gives you three things and expects you to compose the rest:
+qb does not implement an Erlang-style supervision tree. It gives you four things and expects you to compose the rest:
 
 1. **Isolation.** Actors share no state, so a logic error in one actor cannot corrupt another actor's data.
 2. **A fail-stop boundary.** An exception that escapes an actor handler is *not* caught per-actor. It unwinds the worker thread, stopping every actor on that `VirtualCore`. The engine records the failure; `qb::Main::hasError()` reports it after the run ends.
 3. **Typed I/O error events.** Network and protocol failures arrive as `qb::io::async::event::disconnected`, not as exceptions.
+4. **Death watch** (since 3.3). `watch()` any actor, on any core: one `qb::DownEvent` arrives once it is gone, after its destructor ran, whatever ended it.
 
-Everything above the boundary — health checks, restart, escalation — is application code built from ordinary actors, events, and timers. This page documents the boundary precisely, then the patterns you build on top of it.
+Everything above that — restart, escalation, health checks — is built from ordinary actors and events, with `qb::Supervisor` shipping the restart strategies. This page documents the boundary precisely, then what you build on top of it.
 
 The single most consequential rule: **an uncaught exception does not crash one actor — it stops the whole core.** Design handlers so that a throw is either impossible or caught locally.
 
@@ -40,7 +41,7 @@ The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` t
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
-> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". **Both store the same `VirtualCore::Error::ExceptionThrown`** (`src/qb/core/Main.cpp:466-476`), so a non-`std::exception` throw does not terminate the process — that handler exists precisely to stop it escaping a `noexcept` function. Throw `std::exception` subtypes anyway: only that arm can log *what* was thrown.
+> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". **Both store the same `VirtualCore::Error::ExceptionThrown`** (`src/qb/core/Main.cpp:476-486`), so a non-`std::exception` throw does not terminate the process — that handler exists precisely to stop it escaping a `noexcept` function. Throw `std::exception` subtypes anyway: only that arm can log *what* was thrown.
 
 ```mermaid
 flowchart TD
@@ -77,6 +78,7 @@ Two practical rules follow. First, sending an event never throws, so you cannot 
 | `onInit()` returns `false` at startup (pre-start `addActor`) | Core flagged `BadActorInit` | Core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
 | `onInit()` throws at startup | Caught inside `__drive_init__`; converted to an init failure | Core flagged `BadActorInit` (not `ExceptionThrown`); core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
 | `push`/`send` to a dead or unknown `ActorId`, or to an actor with no handler for the type | A dead letter on the receiving core | Event dropped and disposed; sender keeps running | The receiving core: `getCoreStats().dead_letters`, a WARN line (the first 16, then one per power of two), its `DeadLetterHandler` — never the sender; design an explicit ack/timeout if the sender must know |
+| A watched actor ends, whatever ended it | One `qb::DownEvent{watched, reason}` to each watcher, after its destructor | Nothing else changes; the watcher decides | Each actor that called `watch()` on it — see [Supervision](#supervision) |
 | Peer closes, socket error, protocol violation | `on(event::disconnected&&)` | Connection disposed; event delivered to the I/O component | The actor's `disconnected` handler |
 | Callback exception (`async::callback`, `scoped_callback`) | Swallowed | Caught by an internal `catch (...)`. `async::callback`'s `Timeout` (`src/qb/io/async/io.h:211`) then deletes itself; `scoped_callback`'s `ScopedTimeout` (`src/qb/io/async/io.h:407`) does **not** — it is owned by its handle and only marks itself fired | Nobody — see [the callback footgun](#the-asynccallback-lifetime-footgun) |
 
@@ -176,9 +178,9 @@ struct ValidationResult : qb::Event {
 
 ### Self-termination with `kill()`
 
-If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:502-512`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
+If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:503-513`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
 
-`kill()` does not notify anyone. If a supervisor needs to know, `push` a notification event to it *before* calling `kill()` (see [Supervision](#supervision-you-build-yourself)).
+`kill()` notifies the actor's watchers — each gets one `qb::DownEvent{…, killed}`, after the destructor ran — and nobody else. To tell a supervisor *why*, `push` it a notification *before* calling `kill()` (see [Supervision](#supervision)).
 
 ## The `VirtualCore` fail-stop boundary
 
@@ -211,96 +213,81 @@ if (main.hasError()) {
 
 > **Note.** `hasError()` is only meaningful after the run has stopped — after `main.start(false)` returns, or after the thread you joined from `main.start(true)` has been joined. It reflects the start barrier, not a live per-iteration health signal.
 
-## Supervision you build yourself
+## Supervision
 
-qb-core ships no built-in supervisor hierarchy. You assemble supervision from the primitives you already have: actors, events, and timers. The two building blocks are *liveness detection* and *recovery*.
+qb has no Erlang-style supervision *tree*, but it ships the pieces one is made of: a way to learn that an actor is **gone** (death watch, since 3.3), a way to learn that one is **stuck** (a health check), and a supervisor that restarts children by a strategy, with restart intensity and escalation (`qb::Supervisor`). What a failure means for your application — restart, delegate, degrade, escalate — stays your policy.
 
-### Liveness: health-check with a timeout
+### Learning that an actor is gone: death watch
 
-A supervisor periodically pings its workers and expects a prompt pong. It arms a timeout per ping; if the pong does not arrive in time, the worker is presumed lost. The timeout is scheduled with `qb::io::async::callback`, and the supervisor self-sends a check event when it fires.
+`watch(id)`, from any actor, of an actor on any core, is answered by exactly one `qb::DownEvent{watched, reason}` — after the watched actor's destructor ran, whatever ended it: `killed`, `init_failed`, `init_threw`; at once with `unknown` for an id no actor holds; `core_stopped` when its core had stopped, or ended on an exception (`src/qb/core/DeathWatch.h:36-56`). Register `qb::DownEvent`, or the answer is an `unhandled` dead letter.
 
 ```cpp
-// Supervision skeleton — liveness via ping/pong with a per-ping timeout.
 #include <qb/actor.h>
-#include <qb/io/async.h>
-#include <qb/string.h>
-#include <chrono>
-#include <map>
-#include <string_view>
+#include <qb/io.h>
 #include <utility>
 #include <vector>
 
-struct PingWorker  : qb::Event {};
-struct PongWorker  : qb::Event {};
-struct TimeoutCheck : qb::Event {                        // supervisor self-send
-    qb::ActorId worker;
-    explicit TimeoutCheck(qb::ActorId w) : worker(w) {}
+class WorkerOwner : public qb::Actor {
+    std::vector<qb::ActorId> _workers;
+
+public:
+    explicit WorkerOwner(std::vector<qb::ActorId> workers) : _workers(std::move(workers)) {}
+
+    qb::io::async::task<bool> onInit() override {
+        registerEvent<qb::DownEvent>(*this);
+        for (auto const w : _workers)
+            watch(w);                         // any core; nothing to arm, nothing to time out
+        co_return true;
+    }
+
+    void on(qb::DownEvent const &e) {         // once per worker, after its destructor ran
+        qb::io::cout() << "worker " << e.watched << " is gone: " << qb::down_reason_name(e.reason) << "\n";
+        // policy: restart it, hand its work to a peer, escalate -- see "Recovery strategies"
+    }
 };
+```
+
+The rest of the contract — `unwatch()` is final even for an answer already on its way, ids are reused so a replacement's predecessor must be unwatched before the replacement is watched, a watcher that dies first is never told — is in [Writing actors](../4_qb_core/actor.md#death-watch-learning-that-another-actor-is-gone). Before 3.3 the only ways to learn of a death were the dying actor's own report and a health check with a timeout; both remain useful, for what death watch cannot see.
+
+### Learning that an actor is stuck: a health check
+
+Death watch reports death. An actor that is alive but stuck — a handler in an endless loop, a blocking call — answers nothing, and neither does anything else on its core, so no notification can come from there. Ask instead, from another core, with a deadline: `co_await qb::ping(ctx, id, timeout)` answers `false` when no reply came in time (`src/qb/core/patterns/discovery.h:174-175`).
+
+```cpp
+struct Unresponsive : qb::Event {
+    qb::ActorId worker;
+    explicit Unresponsive(qb::ActorId w) : worker(w) {}
+};
+
+// in onInit(): every 5 s, ping each worker; one that does not answer within 1 s is reported
+spawn([workers = _workers](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+    for (;;) {
+        co_await ctx.sleep(std::chrono::seconds(5));
+        for (auto const w : workers)
+            if (!co_await qb::ping(ctx, w, std::chrono::seconds(1)))
+                ctx.push<Unresponsive>(w);    // handled like a DownEvent, by the same policy
+    }
+});
+```
+
+The loop belongs to the actor: killing the actor cancels its sleep and its ping (`cancelled_error`), so nothing of it runs after the destructor — the property a `qb::io::async::callback([this] …)` timer cannot have (see [the callback footgun](#the-asynccallback-lifetime-footgun)).
+
+### Explicit failure reporting by workers
+
+Death watch tells a supervisor *that* a worker is gone; only the worker can say *why*. A worker that detects an unrecoverable internal fault — even one it catches — can `push` its reason to its supervisor before leaving, then `kill()` itself. Its watchers still get their `DownEvent` (`killed`); the report is what turns it into a diagnosis.
+
+```cpp
 struct WorkerError : qb::Event {
     qb::string<128> detail;
     explicit WorkerError(qb::string<128> d) : detail(std::move(d)) {}
 };
 
-class WorkerSupervisor : public qb::Actor {
-    std::map<qb::ActorId, qb::mono_time> _pending;   // worker -> ping time
-    std::vector<qb::ActorId>             _workers;
-    static constexpr auto                kPingTimeout = std::chrono::seconds(5);
-
-public:
-    qb::io::async::task<bool> onInit() override {
-        registerEvent<PongWorker>(*this);
-        registerEvent<TimeoutCheck>(*this);
-        registerEvent<WorkerError>(*this);
-        co_return true;
-    }
-
-    void pingAndArm(qb::ActorId worker) {
-        push<PingWorker>(worker);
-        _pending[worker] = qb::mono_now();
-        qb::io::async::callback(
-            [this, worker]() {
-                if (this->is_alive())                 // guard: the supervisor may have died
-                    this->push<TimeoutCheck>(this->id(), worker);
-            },
-            kPingTimeout);
-    }
-
-    void on(const PongWorker &event) {
-        _pending.erase(event.getSource());            // alive — clear the pending ping
-    }
-
-    void on(const TimeoutCheck &event) {
-        if (_pending.count(event.worker)) {           // pong never arrived
-            _pending.erase(event.worker);
-            handleFailure(event.worker, "ping timeout");
-        }
-    }
-
-    void on(const WorkerError &event) {
-        handleFailure(event.getSource(), event.detail.c_str());
-    }
-
-    void handleFailure(qb::ActorId worker, std::string_view reason) {
-        // Recovery strategy goes here — see below.
-        (void) worker;
-        (void) reason;
-    }
-};
-```
-
-The `is_alive()` guard inside the callback is not optional; it is the contract that makes the callback safe to run after the supervisor itself has been killed. The reasons are in [the callback footgun](#the-asynccallback-lifetime-footgun).
-
-### Explicit failure reporting by workers
-
-A worker that detects an unrecoverable internal fault — even one it catches — should tell its supervisor before leaving. `push` a `WorkerError` to the supervisor, then `kill()` itself. This converts a silent stop into an observed one, which the supervisor can act on immediately instead of waiting for the next ping to time out.
-
-```cpp
 void Worker::on(const DoWork &event) {
     try {
         // ... work that may fail ...
     } catch (const std::exception &ex) {
-        push<WorkerError>(_supervisor, ex.what());   // tell the supervisor first
-        kill();                                       // then leave
+        push<WorkerError>(_supervisor, ex.what());   // say why
+        kill();                                       // then leave: the watchers are told too
     }
 }
 ```
@@ -309,12 +296,12 @@ void Worker::on(const DoWork &event) {
 
 On a detected failure the supervisor picks a policy:
 
-- **Restart.** Create a fresh instance with `addActor` / `addRefActor`. The new actor's `onInit()` is responsible for re-establishing state (reload from a store, query siblings, or start clean). A restarted actor gets a new `ActorId`; update any routing tables.
+- **Restart.** Create a fresh instance with `addActor` / `addRefActor`. The new actor's `onInit()` is responsible for re-establishing state (reload from a store, query siblings, or start clean). It is a new actor even when its id is the old one's — ids are reused — so unwatch the old id before watching the new actor, and update any routing tables.
 - **Delegate.** Reassign the failed worker's pending work to a healthy peer in the pool.
 - **Escalate.** If a worker fails repeatedly, or the failure is structural, notify a higher-level manager or alerting actor instead of restarting in a loop.
 - **Degrade or stop.** If a critical dependency is gone, stop dependent actors or switch the subsystem into a reduced-capability mode rather than serving incorrect results.
 
-qb does not pick for you. The composition — which workers, which timeout, restart-versus-escalate, how many retries — is application policy.
+`qb::Supervisor` implements the first and the third for children it spawns: `one_for_one`, `one_for_all` or `rest_for_one`, a restart-intensity cap that calls `on_escalate()`, and — with `qb::supervision::watch` as its last constructor argument — a watch on every child, so a child gone for any reason is restarted, not only one that called `stop()` (`src/qb/core/patterns/supervisor.h:51-60`; [the patterns library](../4_qb_core/patterns_library.md)). The rest — which workers, which timeout, restart versus escalate — is application policy.
 
 ## Asynchronous I/O errors
 
@@ -475,7 +462,8 @@ Decision table:
 - **Relying on a callback exception to signal anything.** `async::callback` swallows exceptions and its timer self-deletes anyway (`scoped_callback`'s does not, but it swallows them just the same). Report via an event or owned state instead.
 - **Fire-and-forget callbacks that capture `this`.** A deferred `callback()` can run after the actor is destroyed, dereferencing freed memory. Guard with `is_alive()` and, for actor-lifetime timers, own the timer with `scoped_callback`.
 - **Reusing a `not_ok()` protocol.** `not_ok()` is irreversible and `reset()` does not clear it. To continue on the same transport, install a new protocol with `switch_protocol`.
-- **Reading `hasError()` mid-run.** It reflects the start barrier and is only meaningful after the engine has stopped. For live health, build supervision with ping/pong and timeouts.
+- **Reading `hasError()` mid-run.** It reflects the start barrier and is only meaningful after the engine has stopped. For live health, `watch()` the actors you depend on (one `DownEvent` when one is gone) and `co_await qb::ping` the ones that might be stuck — see [Supervision](#supervision).
+- **Watching a replacement while its predecessor's answer is on its way.** Ids are reused, and watching an id already watched is a no-op until its answer arrives: that answer — about the predecessor — would answer the new watch. `unwatch()` the outgoing actor before watching its replacement.
 
 ## See also
 

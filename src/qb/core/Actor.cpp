@@ -634,7 +634,7 @@ namespace detail {
 // until a program calls `qb::io::log::init()`. So on its own it would leave this report missing
 // in ordinary builds, which is the very failure being fixed. `qb::io::cerr()` is qb's own
 // mutex-guarded stderr (`qb/io.h:163`), always compiled, and is what the engine already uses to
-// announce a failed core init (`Main.cpp:497`). Nothing here is on a hot path: reaching this
+// announce a failed core init (`Main.cpp:507`). Nothing here is on a hot path: reaching this
 // function at all means a coroutine body threw.
 void
 report_unhandled_coroutine_exception(ActorId const owner, char const *const api, std::exception_ptr ep) noexcept {
@@ -725,6 +725,17 @@ activation_unwait(qb::ActorId const id, activation_waiter &w) noexcept {
 CoreStats
 Actor::getCoreStats() const noexcept {
     return VirtualCore::_handler->getCoreStats();
+}
+
+// Death watch (Huly QB-51): cold, called when an actor decides to watch, at the end for the same reason.
+void
+Actor::watch(ActorId const target) const noexcept {
+    VirtualCore::_handler->__watch__(id(), target);
+}
+
+void
+Actor::unwatch(ActorId const target) const noexcept {
+    VirtualCore::_handler->__unwatch__(id(), target);
 }
 } // namespace qb
 

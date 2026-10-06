@@ -12,7 +12,7 @@
  *
  * `Actor::time()` is documented as "nanoseconds since the epoch", cached once per loop pass. The
  * cache is `VirtualCore::_nanotimer`, keyed on the pass counter and sampled by the first `time()`
- * call of a pass — but `onInit()` runs BEFORE the first pass (`Main.cpp:438` drives
+ * call of a pass — but `onInit()` runs BEFORE the first pass (`Main.cpp:448` drives
  * `__init__actors__`, `:419` enters the loop). Through 3.0.0 the cache was refreshed only at the
  * top of `__workflow__` and value-initialised to 0, so every `onInit()` in the tree read
  * `time() == 0`: an elapsed-time subtraction there yielded the entire UNIX epoch, and `now()` was

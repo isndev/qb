@@ -453,7 +453,7 @@ returning ([the engine](./readme/4_qb_core/engine.md)).
   epoll with `epoll_pwait2`, io_uring, a real epoll on Windows through wepoll), published on its own
   under libev's API and held byte-identical with the copy qb embeds.
 - **[qb-examples](https://github.com/isndev/qb-examples)** — about a hundred runnable programs in
-  seven tiers (99 on Linux, 97 on Windows), each with a checked header block and an expected output,
+  seven tiers (100 on Linux, 98 on Windows), each with a checked header block and an expected output,
   run as part of the release gate.
 
 ```cmake
@@ -464,7 +464,8 @@ target_link_libraries(my_app PRIVATE qbm::http)
 **Scope, stated plainly.** Actors live in one process; other processes are reached through the
 transports and the modules, and there is no transparent remoting, no persistent mailbox and no
 supervision tree — a parent holds a child through `addRefActor` and reads its handle only once it is
-`ready()`. Inside the process, delivery is in order per sender and receiver with `push`, unordered
+`ready()`, any actor can `watch()` another and is told once it is gone, and `qb::Supervisor` restarts
+children by a strategy. Inside the process, delivery is in order per sender and receiver with `push`, unordered
 and cheaper for a lone notice with `send`, and an event wider than the mailbox ring is a compile
 error: bulk data travels behind a pointer, not by value.
 

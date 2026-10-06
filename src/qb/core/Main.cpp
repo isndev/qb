@@ -404,7 +404,17 @@ Main::~Main() noexcept {
 
 void
 Main::start_thread(CoreSpawnerParameter const &params) noexcept {
-    auto       &initializer = params.initializer;
+    auto &initializer = params.initializer;
+    // Death watch (Huly QB-51): once this core is marked stopped (`exit_guard`) and destroyed with
+    // its actors, whatever ended it, tell the cores still running -- if a watch ever crossed cores.
+    // Declared first, so it runs last.
+    struct StopNotice {
+        SharedCoreCommunication &com;
+        CoreId                   index;
+        ~StopNotice() {
+            VirtualCore::__announce_stop__(com, index);
+        }
+    } stop_notice{params.shared_com, initializer.getIndex()};
     VirtualCore core(initializer.getIndex(), params.shared_com);
     // Wire the engine-wide `qb::stop_token` so `__workflow__` can observe
     // cooperative cancellation requests issued via `qb::stop_source`.

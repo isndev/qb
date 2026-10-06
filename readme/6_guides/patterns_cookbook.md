@@ -2,7 +2,7 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.2.1 (C++20 default, C++23 supported)
 
-Task-oriented recipes for the interactions you reach for most often: one-shot and periodic timers, request/reply, actor-scoped coroutines, coroutine `ask`, typed request/response with scatter-gather and saga, resilient ask (retry & circuit breaker), worker pools and pub/sub, supervision and restart strategies, broadcast fan-out, multi-stage pipelines, and graceful shutdown — each a complete, compilable snippet.
+Task-oriented recipes for the interactions you reach for most often: one-shot and periodic timers, request/reply, actor-scoped coroutines, coroutine `ask`, typed request/response with scatter-gather and saga, resilient ask (retry & circuit breaker), worker pools and pub/sub, supervision and restart strategies, death watch, broadcast fan-out, multi-stage pipelines, and graceful shutdown — each a complete, compilable snippet.
 
 **Prerequisites:** [Writing actors with `qb::Actor`](../4_qb_core/actor.md), [Event messaging](../4_qb_core/messaging.md) — **See also:** [Actor patterns](../4_qb_core/patterns.md), [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md), [Error handling and resilience](./error_handling.md)
 
@@ -53,7 +53,7 @@ event handled in an ordinary `on()`.** Use a bare `callback` only for work that 
 outlive its actor. See [the `async::callback` lifetime rules](./error_handling.md) and
 [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone) for
 the full contract.
-<!-- src: qb/src/qb/core/Actor.h:1454-1455,2190-2192, qb/src/qb/core/Actor.h:837-840, qb/src/qb/core/Actor.cpp:562-568, qb/src/qb/io/async/io.h:312-318,343 -->
+<!-- src: qb/src/qb/core/Actor.h:1480-1481,2216-2218, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:562-568, qb/src/qb/io/async/io.h:312-318,343 -->
 
 ## Recipe: one-shot timer
 
@@ -731,15 +731,55 @@ Strategies: `one_for_one` (restart just the failed child), `one_for_all` (restar
 
 **Pitfalls.**
 
-- Supervision is **cooperative and per-core**: a child must call `stop()` (or
+- Supervision is **cooperative by default, and per-core**: a child must call `stop()` (or
   `notify_supervisor_down()`) to be restarted — a child that dies silently (e.g. a failed `onInit`) is
-  not auto-detected. Children are `addRefActor` referenced actors on the supervisor's core.
+  not auto-detected. Pass `qb::supervision::watch` as the last constructor argument
+  (`Supervisor(strategy, count, max_restarts, window, qb::supervision::watch)`) and the supervisor also
+  watches every child ([death watch](#recipe-death-watch-learn-that-an-actor-is-gone)), so a child gone
+  for any reason is restarted — once, even when it did call `stop()`. Children are `addRefActor`
+  referenced actors on the supervisor's core.
 - `max_restarts` bounds the restart intensity; past it, `on_escalate()` runs instead of restarting
   (escalate by killing the supervisor, alerting, etc.) — otherwise a crash-looping child restarts forever.
   By default the cap is **cumulative** over the supervisor's life; pass a `restart_window`
   (`Supervisor(strategy, count, max_restarts, window)`) to count it as a sliding window ("N within T").
 - Killing the supervisor (a `KillEvent`) tears down its children first — they are never orphaned.
   `Main::stop()` / `SIGINT` already broadcasts to every actor, so children stop there too.
+
+## Recipe: death watch (learn that an actor is gone)
+
+**Task.** Know when an actor you depend on has died — whatever ended it, on whatever core — without
+its cooperation and without a timeout.
+
+`watch()` it and register `qb::DownEvent`: one `DownEvent{watched, reason}` arrives, after the watched
+actor's destructor ran (since 3.3).
+
+```cpp
+class Client : public qb::Actor {
+    qb::ActorId _server;
+public:
+    explicit Client(qb::ActorId server) : _server(server) {}
+    qb::io::async::task<bool> onInit() override {
+        registerEvent<qb::DownEvent>(*this);   // or the answer is an `unhandled` dead letter
+        watch(_server);                        // any core
+        co_return true;
+    }
+    void on(qb::DownEvent const &e) {          // once; e.watched == _server
+        qb::io::cout() << "server gone: " << qb::down_reason_name(e.reason) << "\n";
+        kill();
+    }
+};
+```
+
+**Pitfalls.**
+
+- Every watch is answered exactly once: `killed`, `init_failed`, `init_threw`, `unknown` (no actor held
+  the id when the watch arrived) or `core_stopped`. Watching an actor already watched is a no-op until
+  that answer arrives.
+- `unwatch(id)` guarantees no `DownEvent` of that watch afterwards, even one already on its way.
+- Ids are reused: the replacement you spawn for a dead actor is likely to get its id. Unwatch the
+  outgoing actor before you watch its replacement, or the old answer answers the new watch.
+- Death watch tells you an actor is *gone*, not that it is *stuck*: for a live actor that stopped
+  answering, `co_await qb::ping(ctx, id, timeout)`.
 
 ## Recipe: broadcast fan-out
 

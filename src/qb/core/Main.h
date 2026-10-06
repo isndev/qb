@@ -433,6 +433,28 @@ class SharedCoreCommunication : nocopy {
     /// The ring's slot count -- `qb::detail::max_deliverable_buckets`, the ceiling every event
     /// type is checked against at compile time (Event.h, Huly QB-61): one constant, two names.
     constexpr static const uint64_t MaxRingEvents = qb::detail::max_deliverable_buckets;
+
+    // The Dekker fence, for both halves of each handshake: a mailbox's park (`Mailbox`, below)
+    // and the death watch's stop notice (`VirtualCore::__watch__` / `__announce_stop__`, Huly
+    // QB-51). gcc's -fsanitize=thread does not MODEL a fence (it still emits it) and says so with
+    // -Wtsan at every use. That blindness costs nothing here: TSan reports data races on
+    // non-atomic memory through happens-before, and every object the handshakes touch — `_parked`,
+    // the ring indices, the slots they publish with release/acquire, the stopped flags and the
+    // watch flag — is either atomic or ordered by one, so a fence TSan cannot see produces neither
+    // a false report nor a lost one. A store-load reordering, the bug class the fence exists for,
+    // is outside what TSan can observe with or without it. clang's TSan models seq_cst fences and
+    // warns about nothing.
+    static void
+    seq_cst_fence() noexcept {
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtsan"
+#endif
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+    }
     //////// Types
 
 public:
@@ -488,26 +510,6 @@ public:
         std::mutex              _mtx;
         std::condition_variable _cv;
         io::async::listener    *_loop = nullptr; ///< The consumer's io loop; written under `_mtx`.
-
-        // The Dekker fence, once for both halves. gcc's -fsanitize=thread does not MODEL a
-        // fence (it still emits it) and says so with -Wtsan at every use. That blindness costs
-        // nothing here: TSan reports data races on non-atomic memory through happens-before,
-        // and every object the handshake touches — `_parked`, the ring indices, the slots they
-        // publish with release/acquire — is either atomic or ordered by one, so a fence TSan
-        // cannot see produces neither a false report nor a lost one. A store-load reordering,
-        // the bug class the fence exists for, is outside what TSan can observe with or without
-        // it. clang's TSan models seq_cst fences and warns about nothing.
-        static void
-        seq_cst_fence() noexcept {
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wtsan"
-#endif
-            std::atomic_thread_fence(std::memory_order_seq_cst);
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-        }
 
     public:
         explicit Mailbox(std::size_t const nb_producer, qb::duration const latency, qb::duration const idle_spin)
@@ -715,6 +717,10 @@ private:
     // backpressured LIVE core (keep retrying — its __receive__ frees space) from one that has
     // GONE (dispose the residue that can never be delivered).
     std::vector<std::atomic<bool>> _core_stopped;
+    // Death watch (Huly QB-51): set once a watch has crossed cores. From then on a core that stops
+    // tells every core still running (`detail::CoreStopping`), so a watch that reached it too late
+    // is answered by the watcher's own core; an engine that never watched across cores sends nothing.
+    std::atomic<bool> _cross_core_watch{false};
 
 public:
     SharedCoreCommunication() = delete;
@@ -1091,8 +1097,8 @@ using engine = Main;
 // header extension in qb.
 //
 // The `#include "Actor.h"` below is deliberate in BOTH its presence and its position.
-//   * Presence: the bodies need `TActorFactory` (Actor.h:2119), the `service_type` concept
-//     (Actor.h:111) and `Service` (Actor.h:1746). Main.h's own DECLARATIONS need none of
+//   * Presence: the bodies need `TActorFactory` (Actor.h:2145), the `service_type` concept
+//     (Actor.h:112) and `Service` (Actor.h:1772). Main.h's own DECLARATIONS need none of
 //     them -- `IActorFactory` is forward-declared at Main.h:51 -- which is why this header
 //     still compiles alone and why the include was never needed above.
 //   * Position: at the tail, not in the include block at the top. Main.h is one of the most
@@ -1108,7 +1114,7 @@ using engine = Main;
 //   * NOT VirtualCore.h. Main.tpp used to pull it, and nothing here needs it: `Main::addActor`
 //     goes through `core(cid)`, a `CoreInitializer` declared above. Adding it would also make
 //     `<qb/core/Main.h>` alone drag <windows.h>/WIN32_LEAN_AND_MEAN/NOMINMAX into every TU,
-//     and it would close a cycle (VirtualCore.h:64 includes this header).
+//     and it would close a cycle (VirtualCore.h:65 includes this header).
 //
 // TEMPLATES ONLY, and the reason outlives the extension: this header is reached both by
 // libqb-core's single amalgamated TU and by every consumer TU, and the include guard stops

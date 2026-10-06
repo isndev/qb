@@ -37,9 +37,9 @@ public:
 Four things are already true of that class and worth stating before anything else:
 
 - **It has an identity before it has a body.** `qb::Actor`'s default constructor draws the id in its member-initialiser list, so `id()` is already valid in *your* constructor's body (`src/qb/core/Actor.cpp:388-399`).
-- **It is not copyable.** `Actor` derives from `qb::nocopy` (`src/qb/core/Actor.h:325`).
+- **It is not copyable.** `Actor` derives from `qb::nocopy` (`src/qb/core/Actor.h:326`).
 - **It lives on exactly one thread for its whole life** and never migrates, which is why none of its members needs a lock.
-- **`onInit()` is a coroutine.** The declaration returns `qb::io::async::task<bool>`, so `co_await` is legal from the actor's first moment of life (`src/qb/core/Actor.h:493-496`). The common case never suspends and pays nothing for the option.
+- **`onInit()` is a coroutine.** The declaration returns `qb::io::async::task<bool>`, so `co_await` is legal from the actor's first moment of life (`src/qb/core/Actor.h:494-497`). The common case never suspends and pays nothing for the option.
 
 ## Identity, and why nothing needs a lock
 
@@ -48,9 +48,9 @@ Four things are already true of that class and worth stating before anything els
 ```cpp
     mutable bool _alive = true;
 ```
-<!-- src: qb/src/qb/core/Actor.h:355 -->
+<!-- src: qb/src/qb/core/Actor.h:356 -->
 
-Single-writer, single-reader, both always on the one owning thread — remote senders enqueue a `KillEvent`, they never flip the flag. No atomic, no fence, no lock (`src/qb/core/Actor.h:333-354`). `mutable` is what lets `kill()` be `const`, so a handler that received its event by const reference can still terminate its actor. The activation flag `_activated` has the identical contract (`src/qb/core/Actor.h:356-373`).
+Single-writer, single-reader, both always on the one owning thread — remote senders enqueue a `KillEvent`, they never flip the flag. No atomic, no fence, no lock (`src/qb/core/Actor.h:334-355`). `mutable` is what lets `kill()` be `const`, so a handler that received its event by const reference can still terminate its actor. The activation flag `_activated` has the identical contract (`src/qb/core/Actor.h:357-374`).
 
 **External code must not read `_alive`.** It is not synchronised, and a cross-thread read is a data race. To test whether some other actor is still there, use a `qb::ActorHandle<T>` or `is_actor_alive(id)` — both re-query the owning core.
 
@@ -58,18 +58,18 @@ Single-writer, single-reader, both always on the one owning thread — remote se
 |---|---|---|
 | `id()` | `qb::ActorId` | system-wide unique; valid from the constructor body onward |
 | `getIndex()` | `qb::CoreId` | the `VirtualCore` hosting this actor |
-| `getName()` | `std::string_view` | demangled class name on GCC/Clang, mangled elsewhere; the pointer is deliberately immortal (`src/qb/core/Actor.h:2464-2513`) |
+| `getName()` | `std::string_view` | demangled class name on GCC/Clang, mangled elsewhere; the pointer is deliberately immortal (`src/qb/core/Actor.h:2490-2539`) |
 | `getCoreSet()` | `const qb::CoreIdSet&` | every core the engine was started with |
 | `getCoreStats()` | `qb::CoreStats` | a copy of the hosting core's cumulative counters — received, published to other cores, blocked, dropped, io, passes; the caller's core only ([the engine](./engine.md#counting-what-a-core-has-done)) |
 | `time()` | `uint64_t` | nanoseconds since the epoch, **cached once per loop pass** |
-| `now()` | `qb::wall_time` | the same cached instant as a `std::chrono` time point — prefer this (`src/qb/core/Actor.h:801`) |
+| `now()` | `qb::wall_time` | the same cached instant as a `std::chrono` time point — prefer this (`src/qb/core/Actor.h:827`) |
 | `is_alive()` | `bool` | `_alive` only; `true` until the reap |
 | `is_active()` | `bool` | `_alive && _activated` — the phase oracle |
 | `is_actor_alive(id)` | `bool` | same-core only; one hash lookup, no `dynamic_cast` |
 
-`time()` does not move inside a handler. It is the `VirtualCore`'s per-pass timestamp, so `assert(t1 == time())` holds across any amount of work in one handler (`src/qb/core/Actor.h:775-793`). For a moving clock read `qb::unix_nanos(qb::wall_now())` from `<qb/system/time.h>`.
+`time()` does not move inside a handler. It is the `VirtualCore`'s per-pass timestamp, so `assert(t1 == time())` holds across any amount of work in one handler (`src/qb/core/Actor.h:801-819`). For a moving clock read `qb::unix_nanos(qb::wall_now())` from `<qb/system/time.h>`.
 
-`is_actor_alive(id)` exists for bookkeeping that stores bare ids — a subscriber list, a routing table — and must drop entries whose actor is gone. It is **same-core by construction**: an actor map belongs to its own `VirtualCore` and is not synchronised, so `false` for a *remote* id is not evidence of anything. For cross-core liveness, ask (`co_await qb::ping(...)`) (`src/qb/core/Actor.h:1142-1163`).
+`is_actor_alive(id)` exists for bookkeeping that stores bare ids — a subscriber list, a routing table — and must drop entries whose actor is gone. It is **same-core by construction**: an actor map belongs to its own `VirtualCore` and is not synchronised, so `false` for a *remote* id is not evidence of anything. For cross-core liveness, ask (`co_await qb::ping(...)`) (`src/qb/core/Actor.h:1168-1189`).
 
 ## The life of an actor
 
@@ -102,7 +102,7 @@ Actor::Actor() noexcept
 
 So construct actors only through `Main::addActor<T>(core, …)`, `Main::core(idx).addActor<T>(…)`, a `builder()`, or `addRefActor<T>()` from inside another actor on the same core. `new MyActor` on the main thread trips the assertion in a debug build and dereferences a null `_handler` in a release one.
 
-Where the object's bytes come from is part of the same contract. `Actor` declares its own `operator new` / `operator delete` (`src/qb/core/Actor.h:535-556`), and they draw from the core thread's `qb::allocator::thread_arena` (`src/qb/system/allocator/thread_arena.h:93`): 16-byte size classes up to 1 KiB, each with a LIFO free list, filled by bump allocation from a 64 KiB first chunk and then from 2 MB `slab_cache` slabs — so a spawn-and-die burst recycles its own blocks while they are still in cache, with no lock, no atomic and no thread-local init guard on the path. It was measured into existence on qb-vs-others' `fib` (57 312 actor lifetimes per window, Huly QB-212), where the actor object's `malloc` / `free` had become the last heap traffic of an actor's lifetime and 27.8 % of the core: the lifetime went 185.3 -> 127.2 ns (-31 %) on Windows/MSVC and 129.2 -> 99.1 ns (-23 %) on WSL2 g++-14 (1c-spin, 12 interleaved launches each). An actor type larger than 1 KiB or with `alignas` above 16 falls through to the global allocator; a derived class that declares its own `operator new` / `operator delete` hides the base's, which is how a custom pool plugs in beside `qb::allocate_actor<T>` (the *construction* customization point). The block goes back on the same thread, in the reap phase below; a thread that exits while one of its blocks is still live keeps its chunks on a reachable orphan list rather than recycle them.
+Where the object's bytes come from is part of the same contract. `Actor` declares its own `operator new` / `operator delete` (`src/qb/core/Actor.h:561-582`), and they draw from the core thread's `qb::allocator::thread_arena` (`src/qb/system/allocator/thread_arena.h:93`): 16-byte size classes up to 1 KiB, each with a LIFO free list, filled by bump allocation from a 64 KiB first chunk and then from 2 MB `slab_cache` slabs — so a spawn-and-die burst recycles its own blocks while they are still in cache, with no lock, no atomic and no thread-local init guard on the path. It was measured into existence on qb-vs-others' `fib` (57 312 actor lifetimes per window, Huly QB-212), where the actor object's `malloc` / `free` had become the last heap traffic of an actor's lifetime and 27.8 % of the core: the lifetime went 185.3 -> 127.2 ns (-31 %) on Windows/MSVC and 129.2 -> 99.1 ns (-23 %) on WSL2 g++-14 (1c-spin, 12 interleaved launches each). An actor type larger than 1 KiB or with `alignas` above 16 falls through to the global allocator; a derived class that declares its own `operator new` / `operator delete` hides the base's, which is how a custom pool plugs in beside `qb::allocate_actor<T>` (the *construction* customization point). The block goes back on the same thread, in the reap phase below; a thread that exits while one of its blocks is still live keeps its chunks on a reachable orphan list rather than recycle them.
 
 The default constructor also subscribes to five system events — `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`, `RequireEvent` (`src/qb/core/Actor.cpp:394-398`). That is where the framework's own machinery comes from: `Main::stop()` reaches you through `SignalEvent`, `unregisterCallback()` through `UnregisterCallbackEvent`, and `co_await qb::ping/require` through the `PingEvent`/`RequireEvent` pair.
 
@@ -134,9 +134,9 @@ public:
     void on(qb::SignalEvent const &) { kill(); }
 };
 ```
-<!-- src: qb/src/qb/core/Actor.h:432-445; qb/src/qb/core/Actor.cpp:413-418 -->
+<!-- src: qb/src/qb/core/Actor.h:433-446; qb/src/qb/core/Actor.cpp:413-418 -->
 
-The tag constructor's body is empty on purpose (`src/qb/core/Actor.cpp:416-417`). **The line you must not forget is `SignalEvent`, not `KillEvent`** — the distinction is not pedantry, it is the difference between a program that stops and one that does not. `Main::stop()` sends nothing: it bumps SIGINT's generation and the global one, and each `VirtualCore` then synthesises a `qb::SignalEvent` for the actors it owns (`src/qb/core/Main.cpp:605-613`, `src/qb/core/VirtualCore.cpp:1284-1289`). Nothing in the engine ever constructs a `qb::KillEvent`; that type is for a *peer* to kill you with. An actor holding only a `KillEvent` subscription therefore ignores `Main::stop()` and every signal, its core never empties, and `Main::join()` never returns — with no diagnostic. Register both if peers will also kill you directly. Pinned by `NoDefaultEvents.*` (`qb/tests/core/system/engine/no-default-events.cpp`), whose second case asserts the `KillEvent`-only actor really is unstoppable.
+The tag constructor's body is empty on purpose (`src/qb/core/Actor.cpp:416-417`). **The line you must not forget is `SignalEvent`, not `KillEvent`** — the distinction is not pedantry, it is the difference between a program that stops and one that does not. `Main::stop()` sends nothing: it bumps SIGINT's generation and the global one, and each `VirtualCore` then synthesises a `qb::SignalEvent` for the actors it owns (`src/qb/core/Main.cpp:615-623`, `src/qb/core/VirtualCore.cpp:1308-1313`). Nothing in the engine ever constructs a `qb::KillEvent`; that type is for a *peer* to kill you with. An actor holding only a `KillEvent` subscription therefore ignores `Main::stop()` and every signal, its core never empties, and `Main::join()` never returns — with no diagnostic. Register both if peers will also kill you directly. Pinned by `NoDefaultEvents.*` (`qb/tests/core/system/engine/no-default-events.cpp`), whose second case asserts the `KillEvent`-only actor really is unstoppable.
 
 ### `onInit()`: a coroutine from the first moment of life
 
@@ -159,15 +159,15 @@ qb::io::async::task<bool> onInit() override {
 }
 ```
 
-`co_return true` activates the actor; `co_return false` **or an uncaught exception** fails it, and the actor is removed without ever processing a message (`src/qb/core/VirtualCore.cpp:589-616`). Both are pinned, on the synchronous and the suspended path alike, by `InitLifecycle.SyncOnInitReturnsFalseWithoutCoAwait`, `…SyncOnInitThrowsWithoutCoAwait`, `…AsyncInitFailureRemovesActor` and `…ExceptionAfterSuspensionFailsInit` (`qb/tests/core/system/init/init-lifecycle.cpp`).
+`co_return true` activates the actor; `co_return false` **or an uncaught exception** fails it, and the actor is removed without ever processing a message (`src/qb/core/VirtualCore.cpp:598-625`). Both are pinned, on the synchronous and the suspended path alike, by `InitLifecycle.SyncOnInitReturnsFalseWithoutCoAwait`, `…SyncOnInitThrowsWithoutCoAwait`, `…AsyncInitFailureRemovesActor` and `…ExceptionAfterSuspensionFailsInit` (`qb/tests/core/system/init/init-lifecycle.cpp`).
 
-Use `context()` rather than a bare `qb::io::async::sleep`. It returns a `qb::ScopedCoroContext` carrying this actor's cancellation scope, so a kill during init throws `cancelled_error` and unwinds the frame cleanly instead of leaving it parked (`src/qb/core/Actor.h:1457-1473`, `:2146-2150`).
+Use `context()` rather than a bare `qb::io::async::sleep`. It returns a `qb::ScopedCoroContext` carrying this actor's cancellation scope, so a kill during init throws `cancelled_error` and unwinds the frame cleanly instead of leaving it parked (`src/qb/core/Actor.h:1483-1499`, `:2172-2176`).
 
-**The common case costs nothing.** `__drive_init__` resumes the coroutine exactly once. If it runs to `co_return` without suspending — no `co_await` anywhere — the verdict is read immediately and the frame is freed; none of the activation machinery below is entered (`src/qb/core/VirtualCore.cpp:590-616`).
+**The common case costs nothing.** `__drive_init__` resumes the coroutine exactly once. If it runs to `co_return` without suspending — no `co_await` anywhere — the verdict is read immediately and the frame is freed; none of the activation machinery below is entered (`src/qb/core/VirtualCore.cpp:599-625`).
 
 ### Activating: what is deferred, what is withheld, what is not
 
-If `onInit()` *does* suspend, the actor enters the **Activating** phase. Its still-live frame is moved into the core's `_activating` map, `_activated` flips to `false`, and a deadline is armed (`src/qb/core/VirtualCore.cpp:618-633`).
+If `onInit()` *does* suspend, the actor enters the **Activating** phase. Its still-live frame is moved into the core's `_activating` map, `_activated` flips to `false`, and a deadline is armed (`src/qb/core/VirtualCore.cpp:627-642`).
 
 ```cpp
 actor._activated = false;
@@ -176,13 +176,13 @@ Activation act;
 act.init        = std::move(init);
 act.deadline_ns = activation_deadline_ns ? now + activation_deadline_ns : 0; // 0 ⇒ no deadline
 ```
-<!-- src: qb/src/qb/core/VirtualCore.cpp:626-630 -->
+<!-- src: qb/src/qb/core/VirtualCore.cpp:635-639 -->
 
-`qb::VirtualCore::activation_deadline_ns` defaults to **5 s** and is a public knob you set *before* `Main::start()`; `0` disables the bound, which also removes the mutual-init deadlock guard (`src/qb/core/VirtualCore.h:536-544`). When it expires the core cancels the actor's coroutine scope so the init unwinds, and the activation is finalised as a failure on a later pass (`src/qb/core/VirtualCore.cpp:675-684`).
+`qb::VirtualCore::activation_deadline_ns` defaults to **5 s** and is a public knob you set *before* `Main::start()`; `0` disables the bound, which also removes the mutual-init deadlock guard (`src/qb/core/VirtualCore.h:576-584`). When it expires the core cancels the actor's coroutine scope so the init unwinds, and the activation is finalised as a failure on a later pass (`src/qb/core/VirtualCore.cpp:684-693`).
 
-While Activating, a unicast **business** event addressed to this actor is byte-copied into a per-actor FIFO stash and replayed in order once it activates — deferred, not dropped. The stash is capped at 4096 events; overflowing it drops the event as a `stash_overflow` dead letter, disposes its payload and forces the activation to fail on the next pump rather than letting a wedged init exhaust the core's memory (`src/qb/core/VirtualCore.h:531`; `src/qb/core/VirtualCore.cpp:640-661`).
+While Activating, a unicast **business** event addressed to this actor is byte-copied into a per-actor FIFO stash and replayed in order once it activates — deferred, not dropped. The stash is capped at 4096 events; overflowing it drops the event as a `stash_overflow` dead letter, disposes its payload and forces the activation to fail on the next pump rather than letting a wedged init exhaust the core's memory (`src/qb/core/VirtualCore.h:571`; `src/qb/core/VirtualCore.cpp:649-670`).
 
-Three things bypass the gate entirely (`src/qb/core/VirtualCore.cpp:180-220`):
+Three things bypass the gate entirely (`src/qb/core/VirtualCore.cpp:189-229`):
 
 - **broadcasts**, so a system-wide notice still reaches an Activating actor;
 - **any `KillEvent`**, so an Activating actor stays killable and its in-flight `onInit()` can be unwound;
@@ -201,7 +201,7 @@ The surfaces that observe the phase do **not** all behave the same, and that is 
 | inbound-event dispatch gate | `VirtualCore::_activating` membership | **deferred**, not withheld |
 | `ActorHandle<T>::id()`, `push` / `send` / `broadcast` / `to()` | *nothing* | usable immediately |
 
-<!-- src: qb/src/qb/core/Actor.h:849-884 -->
+<!-- src: qb/src/qb/core/Actor.h:875-910 -->
 
 A `false` from any of the gated ones is therefore not, on its own, evidence that the actor is gone. Over a `co_await` in a peer's `onInit()` it may simply be early.
 
@@ -220,7 +220,7 @@ void on(QueryEvent &ev) {              // non-const: reply() reuses the object
 
 `ev.getSource()` is the sender; `ev.getDestination()` is the id it was routed to. Dispatch is by exact type: a handler for a base class is **not** called for a derived event, because the router keys on `type_id<E>()` of the type that was pushed.
 
-> **The five built-in handlers are not `virtual`.** `Actor::on(KillEvent const&)`, `on(SignalEvent const&)`, `on(UnregisterCallbackEvent const&)`, `on(PingEvent const&)` and `on(RequireEvent&)` are plain members (`src/qb/core/Actor.h:594`, `:622`, `:633`, `:646`, `:655`) — the router dispatches through a per-handler-type trampoline, not a vtable, so it does not need them to be. Declaring your own therefore **hides** the base one by name; do not write `override`, which will not compile. If you replace `on(KillEvent const&)`, call `kill()` at the end of your body — the base version's whole job is that one call (`src/qb/core/Actor.cpp:442-445`). If you replace `on(SignalEvent const&)`, call `Actor::on(event)` explicitly for the terminal signals, or handle `SIGINT`/`SIGTERM` yourself.
+> **The five built-in handlers are not `virtual`.** `Actor::on(KillEvent const&)`, `on(SignalEvent const&)`, `on(UnregisterCallbackEvent const&)`, `on(PingEvent const&)` and `on(RequireEvent&)` are plain members (`src/qb/core/Actor.h:620`, `:648`, `:659`, `:672`, `:681`) — the router dispatches through a per-handler-type trampoline, not a vtable, so it does not need them to be. Declaring your own therefore **hides** the base one by name; do not write `override`, which will not compile. If you replace `on(KillEvent const&)`, call `kill()` at the end of your body — the base version's whole job is that one call (`src/qb/core/Actor.cpp:442-445`). If you replace `on(SignalEvent const&)`, call `Actor::on(event)` explicitly for the terminal signals, or handle `SIGINT`/`SIGTERM` yourself.
 
 ```cpp
 void on(qb::KillEvent const &) {              // no `override`
@@ -229,7 +229,7 @@ void on(qb::KillEvent const &) {              // no `override`
 }
 ```
 
-`registerEvent<E>(*this)` is normally called from `onInit()`, but constructor-body registration works too (the id is already assigned) and so does registration at runtime from any handler. What `onInit()` uniquely offers is the failure path: `co_return false` aborts before the actor sees a single message. `unregisterEvent<E>(*this)` stops delivery of one type; `qb::Actor`'s removal from the router happens automatically at the reap (`src/qb/core/VirtualCore.h:1251-1267`; `src/qb/core/VirtualCore.cpp:146-148`).
+`registerEvent<E>(*this)` is normally called from `onInit()`, but constructor-body registration works too (the id is already assigned) and so does registration at runtime from any handler. What `onInit()` uniquely offers is the failure path: `co_return false` aborts before the actor sees a single message. `unregisterEvent<E>(*this)` stops delivery of one type; `qb::Actor`'s removal from the router happens automatically at the reap (`src/qb/core/VirtualCore.h:1327-1343`; `src/qb/core/VirtualCore.cpp:155-157`).
 
 ### Steady state: sending
 
@@ -280,7 +280,7 @@ The tick fires once per `VirtualCore` pass, **after** the core has flushed its o
 
 > **The tick runs on the `VirtualCore` thread, like everything else.** It must be fast and non-blocking: no mutex wait, no synchronous I/O, no `sleep` (`src/qb/core/ICallback.h:164-170`). Its rate follows the core's load and its `CoreInitializer::setLatency` setting (`src/qb/core/ICallback.h:141-143`).
 
-`unregisterCallback()` with no argument routes through a `UnregisterCallbackEvent` pushed to yourself, so it takes effect on a later pass; the typed `unregisterCallback(*this)` removes the entry immediately (`src/qb/core/Actor.cpp:507-510`; `src/qb/core/VirtualCore.cpp:1169-1172`, `:1155-1167`; `src/qb/core/VirtualCore.h:1245-1249`).
+`unregisterCallback()` with no argument routes through a `UnregisterCallbackEvent` pushed to yourself, so it takes effect on a later pass; the typed `unregisterCallback(*this)` removes the entry immediately (`src/qb/core/Actor.cpp:507-510`; `src/qb/core/VirtualCore.cpp:1193-1196`, `:1179-1191`; `src/qb/core/VirtualCore.h:1321-1325`).
 
 ### `kill()` flags; the destructor runs later
 
@@ -294,32 +294,72 @@ Actor::kill() const noexcept {
 ```
 <!-- src: qb/src/qb/core/Actor.cpp:554-567 -->
 
-Three effects, none of which is destruction. The flag flips, the actor's coroutine cancellation scope is cancelled (a no-op if it never spawned a scoped coroutine), and the id joins `_actor_to_remove`. `killActor` is one `push_back` onto the kill queue — a plain vector, because `kill()` returns early on an already-dead actor and so enqueues an id at most once (`src/qb/core/VirtualCore.cpp:1151-1153`).
+Three effects, none of which is destruction. The flag flips, the actor's coroutine cancellation scope is cancelled (a no-op if it never spawned a scoped coroutine), and the id joins `_actor_to_remove`. `killActor` is one `push_back` onto the kill queue — a plain vector, because `kill()` returns early on an already-dead actor and so enqueues an id at most once (`src/qb/core/VirtualCore.cpp:1175-1177`).
 
 What follows, in order, on the same pass:
 
 1. **The actor stops being called.** It is still in the router's handler map, so events addressed to it are still copied and routed — but the dispatch trampoline checks `handler.is_alive()` first, so no handler runs ([dispatch-time liveness](./messaging.md#is_alive-is-checked-at-dispatch-not-at-enqueue)).
-2. **Its `ICallback` tick is skipped** if it was killed earlier in the same pass (`src/qb/core/VirtualCore.cpp:849-853`).
-3. **The reap phase destroys it**: `removeActor(id)` unregisters the callback, unsubscribes every event type, cancels the coroutine scope again as a catch-all, and erases the `unique_ptr` — which is where `~Actor()` finally runs (`src/qb/core/VirtualCore.cpp:1084-1136`) and where the sized `operator delete` hands the block back to its size class in the thread's arena (`src/qb/system/allocator/thread_arena.h:154-170`).
-4. **A non-service id goes back to the pool.** Service ids never do, so `ServiceIndex` stays stable for the life of the process (`src/qb/core/VirtualCore.cpp:1130-1134`).
+2. **Its `ICallback` tick is skipped** if it was killed earlier in the same pass (`src/qb/core/VirtualCore.cpp:866-870`).
+3. **The reap phase destroys it**: `removeActor(id)` unregisters the callback, unsubscribes every event type, cancels the coroutine scope again as a catch-all, and erases the `unique_ptr` — which is where `~Actor()` finally runs (`src/qb/core/VirtualCore.cpp:1104-1160`) and where the sized `operator delete` hands the block back to its size class in the thread's arena (`src/qb/system/allocator/thread_arena.h:154-170`).
+4. **A non-service id goes back to the pool.** Service ids never do, so `ServiceIndex` stays stable for the life of the process (`src/qb/core/VirtualCore.cpp:1150-1154`).
+5. **Its watchers are told.** Each actor that `watch()`ed it is sent one `qb::DownEvent{id, killed}`, from here, by `__on_actor_down__` — after the destructor, the id back in the pool ([death watch](#death-watch-learning-that-another-actor-is-gone); `src/qb/core/VirtualCore.cpp:1155-1158`).
 
 `is_alive()` is `true` until step 3. Do not send events from `~Actor()`: the actor is mid-teardown and its id is about to be recycled.
 
-There is exactly one case where destruction is *deferred past* the reap. If the actor is killed while its `onInit()` frame is still suspended, `removeActor` cancels the scope, records the id in `_dying_with_frame` and **returns without destroying anything** — the actor must outlive its own coroutine frame. Teardown completes on a later pass, once the frame reports `done()` (`src/qb/core/VirtualCore.cpp:1084-1109`, `:687-727`). Pinned by `InitLifecycle.KillDuringInitCancelsAndDestroysCleanly`.
+There is exactly one case where destruction is *deferred past* the reap. If the actor is killed while its `onInit()` frame is still suspended, `removeActor` cancels the scope, records the id in `_dying_with_frame` and **returns without destroying anything** — the actor must outlive its own coroutine frame. Teardown completes on a later pass, once the frame reports `done()` (`src/qb/core/VirtualCore.cpp:1104-1129`, `:696-744`). Pinned by `InitLifecycle.KillDuringInitCancelsAndDestroysCleanly`.
+
+## Death watch: learning that another actor is gone
+
+`kill()` tells nobody, and neither does the destructor. Since 3.3 an actor can ask to be told: `watch(id)`, from any actor, of an actor on any core, and one `qb::DownEvent` arrives — `watched`, the id, and `reason`, a `qb::DownReason` (`src/qb/core/Actor.h:515-538`; `src/qb/core/DeathWatch.h:36-56`, `:79-96`):
+
+| Reason | When |
+|---|---|
+| `killed` | `kill()`, a `KillEvent`, the engine's shutdown — after its destructor ran |
+| `init_failed` | its `onInit()` returned `false`, or did not complete before its activation deadline |
+| `init_threw` | its `onInit()` threw |
+| `unknown` | no actor held the id when the watch reached its core: it never existed, or it was already gone |
+| `core_stopped` | its core had stopped when the watch reached it — or ended on an exception, taking its actors with it |
+
+```cpp
+class Owner : public qb::Actor {
+    qb::ActorId _worker;
+public:
+    explicit Owner(qb::ActorId worker) : _worker(worker) {}
+    qb::io::async::task<bool> onInit() override {
+        registerEvent<qb::DownEvent>(*this);   // or the answer is an `unhandled` dead letter
+        watch(_worker);                        // on any core
+        co_return true;
+    }
+    void on(qb::DownEvent const &e) {          // once, after the worker's destructor ran
+        qb::io::cout() << e.watched << " is gone: " << qb::down_reason_name(e.reason) << "\n";
+    }
+};
+```
+
+What it guarantees, and what holds each guarantee up:
+
+- **One answer per watch, after the destructor.** A watch is a record on the watcher's core, opened by `watch()` and closed once — by its answer, by `unwatch()`, or by the watcher's own removal. The watched actor's core answers from `removeActor`, whose `__on_actor_down__` runs after the destructor ran and the id was released (`src/qb/core/VirtualCore.cpp:1155-1158`, `:1558-1586`). Every answer travels as an internal `detail::WatchDown` carrying the watch's ticket, a number the watcher's core gave it, and becomes the `DownEvent` only where it closes the record holding that ticket (`src/qb/core/VirtualCore.cpp:1493-1512`): two answers to one watch deliver one.
+- **`unwatch()` is final.** It closes the record (`__unwatch__`), so no `DownEvent` of that watch arrives afterwards, not even one already on its way (`src/qb/core/VirtualCore.cpp:1452-1464`).
+- **Ids are reused.** The actor you spawn to replace a dead one is likely to get its id. Watching an id already watched is a no-op until the answer arrives, so to watch a replacement while its predecessor's answer may still be on its way, unwatch the predecessor first: the old answer then carries a ticket no open watch holds, and is dropped. `qb::Supervisor` does exactly that in watch mode.
+- **Every watch is answered, a core that stops included.** A watch of an actor on another core travels to that core as a request addressed to the core, not to the actor (`__watch__`), so an actor still in its `onInit()` cannot stash it and lose it with a failed init (`src/qb/core/VirtualCore.cpp:1420-1450`). A request that reaches a core after its last receive is answered by the watcher's own core: once a watch has crossed cores, a core that stops tells every core still running, as the last thing its thread does — after it was marked stopped and destroyed with its actors (`src/qb/core/Main.cpp:408-417`, `src/qb/core/VirtualCore.cpp:1526-1550`). A store-load fence on each side guarantees that either the watcher sees the stop, or the stopping core sees the watch.
+- **The watch dies with the watcher.** A watcher that dies first is never told, and its watches are withdrawn from their targets' cores, so a long-lived actor never collects dead watchers (`src/qb/core/VirtualCore.cpp:1558-1586`).
+- **Nobody pays for what nobody uses.** No pass reads anything. Removing an actor costs a test of two empty tables on a core where nobody watches; the stop notice goes out only once a watch has crossed cores; and the death watch's own events are never dead letters (`src/qb/core/VirtualCore.cpp:1346-1347`).
+
+Death watch reports *death*. An actor that is alive but stuck answers nothing — and its whole core with it — so that question is a health check, `co_await qb::ping(ctx, id, timeout)`. The two together, and `qb::Supervisor`'s watch mode, are in [Error handling](../6_guides/error_handling.md#supervision). Pinned by `qb/tests/core/system/engine/death-watch.cpp`; the tour is `examples/01-actors/13-death-watch.cpp`.
 
 ## Children: `addRefActor` and `ActorHandle<T>`
 
-`addRefActor<T>(args...)` creates an actor on the **same** core and returns a `qb::ActorHandle<T>` (`RefActorHandle<T>` is an alias; so is the method `addRefHandle<T>`, which differs only in being `[[nodiscard]]` — `addRefActor` deliberately is not, because creating a self-managing child you only ever talk to by events is a first-class use) (`src/qb/core/Actor.h:1333-1352`). The child manages its own lifecycle; the parent does not own it.
+`addRefActor<T>(args...)` creates an actor on the **same** core and returns a `qb::ActorHandle<T>` (`RefActorHandle<T>` is an alias; so is the method `addRefHandle<T>`, which differs only in being `[[nodiscard]]` — `addRefActor` deliberately is not, because creating a self-managing child you only ever talk to by events is a first-class use) (`src/qb/core/Actor.h:1359-1378`). The child manages its own lifecycle; the parent does not own it.
 
 ```cpp
-// src: derived from qb/src/qb/core/Actor.h:1325-1329 (addRefActor's own example)
+// src: derived from qb/src/qb/core/Actor.h:1351-1355 (addRefActor's own example)
 auto helper = addRefActor<HelperActor>(cfg);   // qb::ActorHandle<HelperActor>
 push<TaskEvent>(helper.id(), task_data);        // always safe — stashed if it is still Activating
 if (helper.ready())                             // sync-init child: ready at once
     helper->doSomething();
 ```
 
-The handle never dangles. It stores the `ActorId` and resolves the pointer **on demand** through `VirtualCore::findActor<T>()`, which is phase-aware, so `get()` / `operator->` / `operator*` return `nullptr` while the child is Activating, after a failed init, and once it has been destroyed (`src/qb/core/VirtualCore.h:1275-1290`, `:1017-1035`).
+The handle never dangles. It stores the `ActorId` and resolves the pointer **on demand** through `VirtualCore::findActor<T>()`, which is phase-aware, so `get()` / `operator->` / `operator*` return `nullptr` while the child is Activating, after a failed init, and once it has been destroyed (`src/qb/core/VirtualCore.h:1351-1366`, `:1093-1111`).
 
 | Member | Behaviour |
 |---|---|
@@ -327,16 +367,16 @@ The handle never dangles. It stores the `ActorId` and resolves the pointer **on 
 | `valid()` | the handle was constructed from a non-null actor |
 | `get()` / `operator bool` / `ready()` | the pointer, or `nullptr`/`false` unless the actor is **active** |
 | `operator->` / `operator*` | `get()` with a debug `assert` that it resolved |
-| `ready_async(ctx, timeout = 5s)` | `co_await`-able, event-driven: resumed by the pass that ends the child's activation; `true` once ready, `false` on timeout or as soon as the init is known to have failed (`src/qb/core/Actor.h:2379-2382`) |
+| `ready_async(ctx, timeout = 5s)` | `co_await`-able, event-driven: resumed by the pass that ends the child's activation; `true` once ready, `false` on timeout or as soon as the init is known to have failed (`src/qb/core/Actor.h:2405-2408`) |
 
 Two rules the type cannot enforce:
 
-- **Only dereference from the owning core's thread.** `get()` reads the `thread_local` `VirtualCore::_handler`, which is null off any worker thread and points at the *wrong* core elsewhere, so it simply returns `nullptr` (`src/qb/core/VirtualCore.h:1275-1290`). There is no thread-identity check anywhere: what `operator->` and `operator*` carry is a generic non-null debug `assert` that also fires after the actor dies, and release builds carry nothing at all — so cross-thread misuse is a silent null dereference (`src/qb/core/Actor.h:2384-2398`).
+- **Only dereference from the owning core's thread.** `get()` reads the `thread_local` `VirtualCore::_handler`, which is null off any worker thread and points at the *wrong* core elsewhere, so it simply returns `nullptr` (`src/qb/core/VirtualCore.h:1351-1366`). There is no thread-identity check anywhere: what `operator->` and `operator*` carry is a generic non-null debug `assert` that also fires after the actor dies, and release builds carry nothing at all — so cross-thread misuse is a silent null dereference (`src/qb/core/Actor.h:2410-2424`).
 - **Prefer `push(handle.id(), …)` over `handle->method()`.** A direct call bypasses the mailbox, the ordering guarantee and the one-event-at-a-time discipline the whole model rests on.
 
 ## Services: one per core, per tag
 
-`qb::ServiceActor<Tag>` is a singleton per `VirtualCore` per `Tag`. The `Tag` must be a **complete** type — `struct MyTag {};` first, because `ServiceActor<struct MyTag>` only *declares* it and the index reaches `typeid(Tag)` (`src/qb/core/Actor.h:2252-2275`).
+`qb::ServiceActor<Tag>` is a singleton per `VirtualCore` per `Tag`. The `Tag` must be a **complete** type — `struct MyTag {};` first, because `ServiceActor<struct MyTag>` only *declares* it and the index reaches `typeid(Tag)` (`src/qb/core/Actor.h:2278-2301`).
 
 ```cpp
 // src: derived from qb/tests/core/system/actor/actor-add.cpp (TestServiceActor / CheckServiceActor)
@@ -366,10 +406,10 @@ public:
 };
 ```
 
-`getServiceId<Tag>(core)` computes a service's deterministic `ActorId` on any core **without proving anything exists there** — it is pure arithmetic over the registered index. `getService<T>()` is the one that actually looks (`src/qb/core/VirtualCore.h:1331-1346`).
+`getServiceId<Tag>(core)` computes a service's deterministic `ActorId` on any core **without proving anything exists there** — it is pure arithmetic over the registered index. `getService<T>()` is the one that actually looks (`src/qb/core/VirtualCore.h:1407-1422`).
 
 > **`getService<T>()` is deliberately not phase-gated, so a non-null pointer is not proof the service is usable.** It consults neither `is_active()` nor `is_alive()`. It hands the pointer back while the service's own async `onInit()` is still in flight, **and** after the service has been `kill()`ed but not yet reaped. That is exactly what lets a service look itself, or a peer service, up from inside its own `onInit()` — the common bootstrap pattern, and the reason the gate is absent rather than forgotten. The cost is on the caller: what you get back may be mid-init or dying. It matters most for the pattern the example above uses, caching the raw pointer as a member for the actor's lifetime. If you need an initialisation guarantee, *ask* the service — `push` an event, or `co_await qb::ask(...)` — instead of touching its state.
-<!-- src: qb/src/qb/core/Actor.h:809-823; qb/src/qb/core/VirtualCore.h:1037-1060 -->
+<!-- src: qb/src/qb/core/Actor.h:835-849; qb/src/qb/core/VirtualCore.h:1113-1136 -->
 
 `actor-add.cpp` pins all three positions of that contract: `getService<TestServiceActor>()` is `nullptr` in the service's own constructor (it is not in `_actors` yet), is exactly `this` inside its `onInit()`, and is non-null to a peer on the same core (`qb/tests/core/system/actor/actor-add.cpp:69-104`).
 
@@ -382,7 +422,7 @@ An actor drives a coroutine on its own core's loop with `spawn` (recommended) or
 A coroutine's frame outlives the statement that created it. It does **not** outlive the actor — the actor may be destroyed while the coroutine is parked, and nothing in either `spawn` waits for it. So:
 
 - **Capture everything you need by value before the first `co_await`.** Never capture `this` or a reference to a member.
-- **After a suspension, reach the actor system only through the context.** `ctx.push<E>(...)` (to the spawning actor), `ctx.push_to<E>(dest, ...)`, `ctx.broadcast<E>(...)`, `ctx.id()`, `ctx.time()` — all safe, because the context holds the `ActorId` **by value**, never a pointer (`src/qb/core/Actor.h:1615-1672`).
+- **After a suspension, reach the actor system only through the context.** `ctx.push<E>(...)` (to the spawning actor), `ctx.push_to<E>(dest, ...)`, `ctx.broadcast<E>(...)`, `ctx.id()`, `ctx.time()` — all safe, because the context holds the `ActorId` **by value**, never a pointer (`src/qb/core/Actor.h:1641-1698`).
 - **Keep them short.** The longer the coroutine runs, the wider the window in which its actor can vanish.
 
 ```cpp
@@ -406,19 +446,19 @@ spawn([this](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 });
 ```
 
-The machinery that makes the *frame* safe is worth knowing, because it is what the rule leans on. `spawn` does not hand your lambda to the scheduler; it hands it to a wrapper coroutine that takes `func` and `ctx` **by value**, so a temporary lambda's closure lives inside the frame rather than in the dead caller's stack (`src/qb/core/VirtualCore.h:1458-1492`). The active-coroutine census is a reference-counted cell (`detail::coro_census`) rather than a plain member precisely so the RAII guard can decrement it after the actor is gone — the last orphaned frame's handle frees it. Neither count is atomic: the actor, its frames and its destruction all live on the owning core's thread (`src/qb/core/Actor.h:1547-1574`).
+The machinery that makes the *frame* safe is worth knowing, because it is what the rule leans on. `spawn` does not hand your lambda to the scheduler; it hands it to a wrapper coroutine that takes `func` and `ctx` **by value**, so a temporary lambda's closure lives inside the frame rather than in the dead caller's stack (`src/qb/core/VirtualCore.h:1534-1568`). The active-coroutine census is a reference-counted cell (`detail::coro_census`) rather than a plain member precisely so the RAII guard can decrement it after the actor is gone — the last orphaned frame's handle frees it. Neither count is atomic: the actor, its frames and its destruction all live on the owning core's thread (`src/qb/core/Actor.h:1573-1600`).
 
 ### Killed while parked
 
-The actor side of that is three lines and one omission. `kill()` cancels the actor's coroutine scope, and `removeActor` cancels it again as a catch-all, so *every* destruction path — kill, failed init, engine shutdown — signals the token exactly once or twice and never zero times (`src/qb/core/Actor.cpp:562-565`; `src/qb/core/VirtualCore.cpp:1114-1117`).
+The actor side of that is three lines and one omission. `kill()` cancels the actor's coroutine scope, and `removeActor` cancels it again as a catch-all, so *every* destruction path — kill, failed init, engine shutdown — signals the token exactly once or twice and never zero times (`src/qb/core/Actor.cpp:562-565`; `src/qb/core/VirtualCore.cpp:1134-1137`).
 
-**The omission is that nothing waits.** `removeActor` looks at `has_active_coroutines()`, logs what it sees, and destroys the actor anyway: a `VERBOSE` line when the actor had a scope — those coroutines were just cancelled and will unwind on the next pass — and a `WARN` when it did not, because those are unbounded (`src/qb/core/VirtualCore.cpp:1118-1126`). `has_active_coroutines()` and `active_coroutine_count()` are there so you can look before deciding to `kill()` (`src/qb/core/Actor.h:1479-1481`, `:1515-1518`).
+**The omission is that nothing waits.** `removeActor` looks at `has_active_coroutines()`, logs what it sees, and destroys the actor anyway: a `VERBOSE` line when the actor had a scope — those coroutines were just cancelled and will unwind on the next pass — and a `WARN` when it did not, because those are unbounded (`src/qb/core/VirtualCore.cpp:1138-1146`). `has_active_coroutines()` and `active_coroutine_count()` are there so you can look before deciding to `kill()` (`src/qb/core/Actor.h:1505-1507`, `:1541-1544`).
 
-Whether the signal actually reaches the coroutine is a property of the awaiter it is parked on, and [C++20 coroutines](../3_qb_io/coroutines.md#safe-integration-with-qbactor) owns that distinction with the full inventory. In one line: an awaiter registered on the scope token — through `on_cancel` for everything `ScopedCoroContext` offers, through an embedded `cancel_hook` for `qb::ask` — wakes on the next pass and throws `cancelled_error`; anything else is listening to nothing and simply finishes on its own schedule. `spawn`'s wrapper swallows that `cancelled_error`, because a scoped coroutine being torn down is expected rather than an error (`src/qb/core/VirtualCore.h:1479-1492`); `spawn_detached`'s does the same, though for a different reason — its coroutine never joined the scope, so a `cancelled_error` there can only come from a token the caller manages themselves, which is their control flow rather than a failure (`src/qb/core/VirtualCore.h:1458-1470`). **Every other exception is reported.** Both wrappers end in a `catch (...)` that names the actor, the API and the `what()` on `std::cerr` — through `qb::io::cerr`, since `QB_LOG_CRIT` compiles to nothing unless the build asked for logging. Until 3.0 they did not: a spawned body has no continuation and no `task<>` owner, so its `exception_ptr` sat in a promise the scheduler then destroyed, and the throw vanished without a trace at any log level. Reporting changes nothing else — the frame still unwinds, RAII still runs, and the engine keeps going (`qb/tests/core/system/coroutine/coroutine-escaped-exception.cpp`).
+Whether the signal actually reaches the coroutine is a property of the awaiter it is parked on, and [C++20 coroutines](../3_qb_io/coroutines.md#safe-integration-with-qbactor) owns that distinction with the full inventory. In one line: an awaiter registered on the scope token — through `on_cancel` for everything `ScopedCoroContext` offers, through an embedded `cancel_hook` for `qb::ask` — wakes on the next pass and throws `cancelled_error`; anything else is listening to nothing and simply finishes on its own schedule. `spawn`'s wrapper swallows that `cancelled_error`, because a scoped coroutine being torn down is expected rather than an error (`src/qb/core/VirtualCore.h:1555-1568`); `spawn_detached`'s does the same, though for a different reason — its coroutine never joined the scope, so a `cancelled_error` there can only come from a token the caller manages themselves, which is their control flow rather than a failure (`src/qb/core/VirtualCore.h:1534-1546`). **Every other exception is reported.** Both wrappers end in a `catch (...)` that names the actor, the API and the `what()` on `std::cerr` — through `qb::io::cerr`, since `QB_LOG_CRIT` compiles to nothing unless the build asked for logging. Until 3.0 they did not: a spawned body has no continuation and no `task<>` owner, so its `exception_ptr` sat in a promise the scheduler then destroyed, and the throw vanished without a trace at any log level. Reporting changes nothing else — the frame still unwinds, RAII still runs, and the engine keeps going (`qb/tests/core/system/coroutine/coroutine-escaped-exception.cpp`).
 
 Either way the coroutine survives its actor safely, because the frame owns everything it needs: your closure and the context by value, the counter behind a `shared_ptr`, and the cancellation token as a copied handle whose shared state outlives the actor. An event it pushes afterwards finds no subscribed handler and is disposed — it goes nowhere, rather than anywhere bad.
 
-`Actor::context()` gives you the same `ScopedCoroContext` a `spawn` body receives, wherever you hold the actor — most usefully inside `onInit()`, which is what makes a `co_await` during init cancellable (`src/qb/core/Actor.h:2235-2239`). The scope itself is allocated lazily on first use, so an actor that never spawns a scoped coroutine pays nothing (`src/qb/core/Actor.h:1576-1585`).
+`Actor::context()` gives you the same `ScopedCoroContext` a `spawn` body receives, wherever you hold the actor — most usefully inside `onInit()`, which is what makes a `co_await` during init cancellable (`src/qb/core/Actor.h:2261-2265`). The scope itself is allocated lazily on first use, so an actor that never spawns a scoped coroutine pays nothing (`src/qb/core/Actor.h:1602-1611`).
 
 ## Pitfalls
 

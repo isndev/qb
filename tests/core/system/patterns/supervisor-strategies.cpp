@@ -108,7 +108,8 @@ class SpawnCoordinator : public qb::Actor {
     struct Settle : public qb::Event {};
 
     const int                _initial;
-    const int                _stop_at_acks; // 0 ⇒ settle-then-stop mode
+    const int                _stop_at_acks;  // 0 ⇒ settle-then-stop mode
+    const int                _settle_passes; // how many passes the settle lasts
     qb::ActorId              _sup;
     std::vector<std::size_t> _crash_slots;
     std::vector<qb::ActorId> _last_id; // last id reported per slot
@@ -119,9 +120,10 @@ class SpawnCoordinator : public qb::Actor {
     bool                     _settling = false;
 
 public:
-    SpawnCoordinator(int initial, std::size_t slots, std::vector<std::size_t> crash_slots, int stop_at_acks)
+    SpawnCoordinator(int initial, std::size_t slots, std::vector<std::size_t> crash_slots, int stop_at_acks, int settle_passes = 5)
         : _initial(initial)
         , _stop_at_acks(stop_at_acks)
+        , _settle_passes(settle_passes)
         , _crash_slots(std::move(crash_slots))
         , _last_id(slots, qb::ActorId{})
         , _slot_acks(slots, 0) {}
@@ -179,7 +181,7 @@ public:
     on(const Settle &) {
         // A few mailbox passes give a spurious restart's ack time to land (and bump g_spawns/g_acks)
         // before we stop — turning "no restart" into a positive, non-vacuous assertion.
-        if (++_settle < 5) {
+        if (++_settle < _settle_passes) {
             push<Settle>(id());
             return;
         }
@@ -220,8 +222,8 @@ class TestSupervisor : public qb::Supervisor {
 
 public:
     TestSupervisor(qb::restart_strategy strat, std::size_t count, qb::ActorId coord, unsigned max_restarts = 0,
-                   qb::duration window = qb::duration::zero())
-        : qb::Supervisor(strat, count, max_restarts, window)
+                   qb::duration window = qb::duration::zero(), qb::supervision mode = qb::supervision::cooperative)
+        : qb::Supervisor(strat, count, max_restarts, window, mode)
         , _coord(coord) {}
 
     qb::io::async::task<bool>
@@ -531,8 +533,8 @@ class FailSupervisor : public qb::Supervisor {
     qb::ActorId _coord;
 
 public:
-    explicit FailSupervisor(qb::ActorId coord)
-        : qb::Supervisor(qb::restart_strategy::one_for_one, 2, 0)
+    explicit FailSupervisor(qb::ActorId coord, qb::supervision mode = qb::supervision::cooperative, unsigned max_restarts = 0)
+        : qb::Supervisor(qb::restart_strategy::one_for_one, 2, max_restarts, qb::duration::zero(), mode)
         , _coord(coord) {}
 
 protected:
@@ -656,8 +658,8 @@ class CoopSupervisor : public qb::Supervisor {
     qb::ActorId _coord;
 
 public:
-    explicit CoopSupervisor(qb::ActorId coord)
-        : qb::Supervisor(qb::restart_strategy::one_for_one, 2, 0)
+    explicit CoopSupervisor(qb::ActorId coord, qb::supervision mode = qb::supervision::cooperative)
+        : qb::Supervisor(qb::restart_strategy::one_for_one, 2, 0, qb::duration::zero(), mode)
         , _coord(coord) {}
     qb::io::async::task<bool>
     onInit() override {
@@ -692,4 +694,241 @@ TEST(ActorSupervisor, ChildDiesWithoutStopNotRestarted) {
     EXPECT_FALSE(main.hasError());
     EXPECT_EQ(g_spawns.load(), 2) << "2 initial; the child died without stop() → no ChildDown → no restart";
     EXPECT_FALSE(g_slot_replaced.load()) << "no restart happened";
+}
+
+// ===========================================================================
+// 9. qb::supervision::watch (Huly QB-51): the supervisor watches its children, so a child that is
+//    gone WITHOUT stop() is restarted too -- the twins of cases 8 and 6, and a synchronous failure.
+// ===========================================================================
+TEST(ActorSupervisor, ChildDiesWithoutStopRestartedInWatchMode) {
+    reset_globals();
+    qb::Main main;
+    // 2 initial acks -> crash slot 1 (a self-kill, no stop()) -> its DownEvent restarts it -> 3rd ack.
+    auto coord = main.addActor<SpawnCoordinator>(0, /*initial*/ 2, 2, std::vector<std::size_t>{1},
+                                                 /*stop_at_acks*/ 3);
+    main.addActor<CoopSupervisor>(0, coord, qb::supervision::watch);
+
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_spawns.load(), 3) << "2 initial + the restart its DownEvent caused";
+    EXPECT_TRUE(g_slot_replaced.load()) << "the slot was re-spawned";
+}
+
+// The three strategies again, in watch mode: a child that stop()s is restarted by its ChildDown, and
+// its replacement -- or a sibling's -- most likely reuses its id. Settling 50 passes instead of
+// stopping at the expected count, a second restart (the outgoing child's DownEvent taken for its
+// replacement) would show as an extra spawn.
+static void
+run_strategy_watching(qb::restart_strategy strat, std::size_t child_count, std::vector<std::size_t> crash_slots, int expected_spawns) {
+    reset_globals();
+    qb::Main main;
+
+    auto coord = main.addActor<SpawnCoordinator>(0, static_cast<int>(child_count), child_count, std::move(crash_slots),
+                                                 /*stop_at_acks*/ 0, /*settle_passes*/ 50);
+    main.addActor<TestSupervisor>(0, strat, child_count, coord, 0u, qb::duration::zero(), qb::supervision::watch);
+
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_spawns.load(), expected_spawns) << "spawn total = initial + restarts, each restart once";
+    EXPECT_EQ(g_acks.load(), expected_spawns);
+    EXPECT_TRUE(g_slot_replaced.load());
+}
+
+TEST(ActorSupervisor, OneForOneRestartsOnceInWatchMode) {
+    run_strategy_watching(qb::restart_strategy::one_for_one, 3, {1}, 4);
+}
+
+TEST(ActorSupervisor, OneForAllRestartsOnceInWatchMode) {
+    run_strategy_watching(qb::restart_strategy::one_for_all, 3, {1}, 6);
+}
+
+TEST(ActorSupervisor, RestForOneRestartsOnceInWatchMode) {
+    run_strategy_watching(qb::restart_strategy::rest_for_one, 3, {1}, 5);
+}
+
+TEST(ActorSupervisor, SupervisedAsyncInitChildFailsInitRestartedInWatchMode) {
+    reset_globals();
+    qb::Main main;
+    // Both children fail their async init; each DownEvent (init_failed) restarts its slot until the
+    // cap: 2 initial + 2 restarts = 4 acks, then settle. The restarted children fail too, past the cap.
+    auto coord = main.addActor<SpawnCoordinator>(0, /*initial*/ 4, 2, std::vector<std::size_t>{},
+                                                 /*stop_at_acks*/ 0);
+    main.addActor<FailSupervisor>(0, coord, qb::supervision::watch, /*max_restarts*/ 2u);
+
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_spawns.load(), 4) << "2 initial + 2 restarts (the cap); cooperative mode stops at 2";
+}
+
+namespace {
+// Acks, then fails SYNCHRONOUSLY: addRefActor hands the supervisor an invalid id.
+class FailingSyncWorker : public qb::SupervisedActor {
+    qb::ActorId _coord;
+    std::size_t _slot;
+
+public:
+    FailingSyncWorker(qb::ActorId sup, std::size_t slot, std::uint64_t gen, qb::ActorId coord)
+        : qb::SupervisedActor(sup, slot, gen)
+        , _coord(coord)
+        , _slot(slot) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        g_spawns.fetch_add(1);
+        push<SpawnAck>(_coord, _slot, id(), supervisor());
+        co_return false; // synchronous failure: the child never exists
+    }
+};
+
+class SyncFailSupervisor : public qb::Supervisor {
+    qb::ActorId _coord;
+
+public:
+    explicit SyncFailSupervisor(qb::ActorId coord)
+        : qb::Supervisor(qb::restart_strategy::one_for_one, 1, /*max_restarts*/ 3, qb::duration::zero(), qb::supervision::watch)
+        , _coord(coord) {}
+
+protected:
+    qb::ActorId
+    spawn_child(std::size_t slot, std::uint64_t gen) override {
+        return addRefActor<FailingSyncWorker>(id(), slot, gen, _coord).id();
+    }
+    void
+    on_escalate() override {
+        g_escalated.store(true);
+    }
+};
+} // namespace
+
+TEST(ActorSupervisor, SyncInitFailureRestartedNextPassInWatchMode) {
+    reset_globals();
+    qb::Main main;
+    // One slot whose child always fails synchronously: 1 spawn + 3 restarts (each a deferred
+    // ChildDown, never a recursion), then the cap escalates.
+    auto coord = main.addActor<SpawnCoordinator>(0, /*initial*/ 4, 1, std::vector<std::size_t>{},
+                                                 /*stop_at_acks*/ 0);
+    main.addActor<SyncFailSupervisor>(0, coord);
+
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_spawns.load(), 4) << "1 spawn + 3 restarts (the cap)";
+    EXPECT_TRUE(g_escalated.load()) << "the 4th failure is past the cap";
+}
+
+// ===========================================================================
+// 10. A slot the supervisor gives up on holds no child (Huly QB-51; found by
+//     examples/04-patterns/02-supervisor). Ids are reused: the dead child's id went to the next actor
+//     spawned, and the supervisor's teardown -- a KillEvent to every child it remembered -- killed that
+//     unrelated actor. And in watch mode, one death escalates once, not once per notification.
+// ===========================================================================
+namespace {
+std::atomic<int>  g_escalations{0};
+std::atomic<bool> g_id_reused{false};
+std::atomic<bool> g_bystander_alive{false};
+
+struct GaveUp : public qb::Event {};
+
+// One slot, one restart allowed: the second death of its child escalates.
+class GivingUpSupervisor : public qb::Supervisor {
+    qb::ActorId _director;
+
+public:
+    GivingUpSupervisor(qb::ActorId director, qb::supervision mode)
+        : qb::Supervisor(qb::restart_strategy::one_for_one, 1, /*max_restarts*/ 1, qb::duration::zero(), mode)
+        , _director(director) {}
+
+protected:
+    qb::ActorId
+    spawn_child(std::size_t slot, std::uint64_t gen) override {
+        return addRefActor<TestWorker>(id(), slot, gen, _director).id();
+    }
+    void
+    on_escalate() override {
+        ++g_escalations;
+        push<GaveUp>(_director);
+    }
+};
+
+// Nothing to do with the supervisor: it must outlive the supervisor's teardown.
+class Bystander : public qb::Actor {};
+
+// Crashes every child once (two deaths: one restart, then the escalation), spawns a bystander that
+// reuses the dead child's id, kills the supervisor, and checks 20 passes later who is still alive.
+class Director : public qb::Actor {
+    struct Tick : public qb::Event {};
+
+    const qb::supervision _mode;
+    qb::ActorId           _sup;
+    qb::ActorId           _last_child;
+    qb::ActorId           _bystander;
+    int                   _settle = 0;
+
+public:
+    explicit Director(qb::supervision mode)
+        : _mode(mode) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<SpawnAck>(*this);
+        registerEvent<GaveUp>(*this);
+        registerEvent<Tick>(*this);
+        _sup = addRefActor<GivingUpSupervisor>(id(), _mode).id();
+        co_return true;
+    }
+    void
+    on(SpawnAck const &e) {
+        _last_child = e.who;
+        push<Crash>(e.who);
+    }
+    void
+    on(GaveUp const &) {
+        if (_bystander.is_valid())
+            return; // a second escalation is the defect the count reports; do not stack the scenario
+        _bystander  = addRefActor<Bystander>().id();
+        g_id_reused = _bystander == _last_child;
+        push<qb::KillEvent>(_sup); // its teardown kills its children -- and must not kill the bystander
+        push<Tick>(id());
+    }
+    void
+    on(Tick const &) {
+        if (++_settle < 20) {
+            push<Tick>(id());
+            return;
+        }
+        g_bystander_alive = is_actor_alive(_bystander);
+        qb::Main::stop();
+        kill();
+    }
+};
+
+void
+run_giving_up(qb::supervision const mode) {
+    reset_globals();
+    g_escalations     = 0;
+    g_id_reused       = false;
+    g_bystander_alive = false;
+    qb::Main main;
+    main.addActor<Director>(0, mode);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_spawns.load(), 2) << "1 initial + 1 restart, then the cap";
+    EXPECT_EQ(g_escalations.load(), 1) << "one death past the cap, one escalation";
+    ASSERT_TRUE(g_id_reused.load()) << "the case needs the bystander to reuse the dead child's id";
+    EXPECT_TRUE(g_bystander_alive.load()) << "the supervisor's teardown killed an actor that reused its dead child's id";
+}
+} // namespace
+
+TEST(ActorSupervisor, AGivenUpSlotHoldsNoStaleIdCooperative) {
+    run_giving_up(qb::supervision::cooperative);
+}
+
+TEST(ActorSupervisor, AGivenUpSlotHoldsNoStaleIdInWatchMode) {
+    run_giving_up(qb::supervision::watch);
 }

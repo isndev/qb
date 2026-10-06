@@ -16,5 +16,5 @@
 // VirtualCore.h is what drags <windows.h> into a TU. Since 3.0 they live at the tail of
 // VirtualCore.h (was core/Actor.tpp), so that is what an umbrella includes to be self-sufficient.
 #include "core/VirtualCore.h"
-// Pipe.h has carried Pipe's own template bodies since 3.0 (was core/Pipe.tpp); Actor.h:51
+// Pipe.h has carried Pipe's own template bodies since 3.0 (was core/Pipe.tpp); Actor.h:52
 // already pulled it, so there is nothing left to add here.

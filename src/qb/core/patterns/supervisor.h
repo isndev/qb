@@ -49,6 +49,17 @@ enum class restart_strategy {
 };
 
 /**
+ * @enum supervision
+ * @ingroup Patterns
+ * @brief How a `Supervisor` learns that a child is down.
+ */
+enum class supervision {
+    cooperative, ///< Only from the child's `ChildDown` (`SupervisedActor::stop()`): the 3.2 contract.
+    watch        ///< Also by watching every child (`qb::Actor::watch`, Huly QB-51): a child that dies
+                 ///< without `stop()` -- a failed `onInit()`, a `kill()` -- is restarted too.
+};
+
+/**
  * @struct ChildDown
  * @ingroup Patterns
  * @brief Sent by a supervised child to its `Supervisor` when it terminates.
@@ -122,8 +133,16 @@ using supervised_actor = SupervisedActor;
  * intensity** (the conventional "N restarts within T" rule). Killing the supervisor itself
  * (a `KillEvent`) tears down all its children first, so they are never orphaned; `Main::stop()` /
  * `SIGINT` already broadcasts to every actor, children included.
- * @note Cooperative: a child that dies without calling `stop()` (e.g. a failed `onInit`) is not
- *       auto-detected — supervision keys off the `ChildDown` notification.
+ * @note Cooperative by default: a child that dies without calling `stop()` (e.g. a failed
+ *       `onInit`) is not auto-detected — supervision keys off the `ChildDown` notification. With
+ *       `qb::supervision::watch` the supervisor also watches each child and restarts one that is
+ *       gone for any reason (a `qb::DownEvent`); a child whose `onInit()` fails synchronously, so
+ *       that `spawn_child` returns an invalid id, is restarted on the next pass. Pair it with
+ *       `max_restarts`: a child that always fails would otherwise be restarted forever. In
+ *       cooperative mode a child that dies silently also leaves its id in its slot: ids are reused,
+ *       so a sibling's restart or the supervisor's own teardown can then kill whatever actor reuses
+ *       it -- one more reason for the watch mode. A slot the supervisor gives up on (escalation)
+ *       forgets its child in either mode.
  */
 class Supervisor : public qb::Actor {
 public:
@@ -133,17 +152,22 @@ public:
      * @param max_restarts Restart-intensity cap (0 = unlimited); `on_escalate()` fires past it.
      * @param restart_window If non-zero, `max_restarts` is counted only over the trailing
      *        `restart_window` (sliding-window intensity); if zero (default), it is cumulative.
+     * @param mode `cooperative` (default) restarts on `ChildDown` only; `watch` also restarts a
+     *        child that is gone without calling `stop()`.
      */
     Supervisor(qb::restart_strategy strategy, std::size_t child_count, unsigned max_restarts = 0,
-               qb::duration restart_window = qb::duration::zero()) noexcept
+               qb::duration restart_window = qb::duration::zero(), qb::supervision mode = qb::supervision::cooperative) noexcept
         : _strategy(strategy)
         , _count(child_count)
         , _max_restarts(max_restarts)
-        , _window(restart_window) {}
+        , _window(restart_window)
+        , _mode(mode) {}
 
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::ChildDown>(*this);
+        if (_mode == qb::supervision::watch)
+            registerEvent<qb::DownEvent>(*this);
         // Rebind KillEvent to THIS type so on(KillEvent) (child teardown) runs instead of the
         // base Actor::on(KillEvent) bound at construction.
         registerEvent<qb::KillEvent>(*this);
@@ -158,23 +182,22 @@ public:
     on(qb::ChildDown &e) {
         if (e.slot >= _count || e.generation != _gen[e.slot])
             return; // stale or unknown notification — ignore
-        if (_max_restarts && over_restart_limit()) {
-            on_escalate();
-            return;
-        }
-        record_restart();
-        switch (_strategy) {
-            case qb::restart_strategy::one_for_one:
-                ++_gen[e.slot];
-                start_slot(e.slot);
-                break;
-            case qb::restart_strategy::one_for_all:
-                restart_slots(0, _count, e.slot);
-                break;
-            case qb::restart_strategy::rest_for_one:
-                restart_slots(e.slot, _count, e.slot);
-                break;
-        }
+        child_down(e.slot);
+    }
+
+    /**
+     * @brief `qb::supervision::watch`: a watched child is gone, whatever ended it.
+     * @details A child is unwatched before it is replaced, so a `DownEvent` here is about the
+     *          current child of a slot -- never one restarted already, by its `ChildDown` or by a
+     *          sibling's restart, even when the replacement reuses its id.
+     */
+    void
+    on(qb::DownEvent &e) {
+        for (std::size_t slot = 0; slot < _children.size(); ++slot)
+            if (_children[slot] == e.watched) {
+                child_down(slot);
+                return;
+            }
     }
 
     /**
@@ -194,7 +217,7 @@ public:
         kill();
     }
 
-    /** @brief Current child id at `slot` (invalid id if out of range). */
+    /** @brief Current child id at `slot`; invalid if out of range, or once the slot was given up on (escalated). */
     [[nodiscard]] qb::ActorId
     child(std::size_t slot) const {
         return slot < _children.size() ? _children[slot] : qb::ActorId{};
@@ -223,9 +246,48 @@ protected:
     on_escalate() {}
 
 private:
+    /// The restart both notifications share, for the child currently in `slot`.
+    void
+    child_down(std::size_t const slot) {
+        if (_max_restarts && over_restart_limit()) {
+            // Not restarted: the slot holds no child from here on. Ids are reused, and the dead
+            // child's may already name another actor -- one this supervisor's teardown or a sibling's
+            // restart would otherwise kill. In watch mode, an answer about it still on its way would
+            // escalate a second time.
+            if (_mode == qb::supervision::watch && _children[slot].is_valid())
+                this->unwatch(_children[slot]);
+            _children[slot] = qb::ActorId{};
+            on_escalate();
+            return;
+        }
+        record_restart();
+        switch (_strategy) {
+            case qb::restart_strategy::one_for_one:
+                ++_gen[slot];
+                start_slot(slot);
+                break;
+            case qb::restart_strategy::one_for_all:
+                restart_slots(0, _count, slot);
+                break;
+            case qb::restart_strategy::rest_for_one:
+                restart_slots(slot, _count, slot);
+                break;
+        }
+    }
+
     void
     start_slot(std::size_t i) {
+        // Watch mode: the outgoing child is unwatched first. Its id is likely its replacement's (ids
+        // are reused), and the answer about it still on its way must not be taken for the new one.
+        if (_mode == qb::supervision::watch && _children[i].is_valid())
+            this->unwatch(_children[i]);
         _children[i] = spawn_child(i, _gen[i]);
+        if (_mode != qb::supervision::watch)
+            return;
+        if (_children[i].is_valid())
+            this->watch(_children[i]);
+        else // its onInit() failed synchronously: down already -- restarted next pass, never recursively
+            this->template push<qb::ChildDown>(this->id(), i, _gen[i]);
     }
 
     /// Is the restart-intensity cap exceeded? Cumulative when `_window == 0`, else over the
@@ -259,13 +321,14 @@ private:
                 this->template push<qb::KillEvent>(_children[j]); // stop the survivor (no ChildDown)
         }
         for (std::size_t j = from; j < to; ++j)
-            _children[j] = spawn_child(j, _gen[j]);
+            start_slot(j);
     }
 
     qb::restart_strategy       _strategy;
     std::size_t                _count;
     unsigned                   _max_restarts;
     qb::duration               _window; ///< 0 = cumulative cap; >0 = sliding-window intensity.
+    qb::supervision            _mode;   ///< how a child's end is learned
     unsigned                   _restarts = 0;
     std::vector<qb::ActorId>   _children;
     std::vector<std::uint64_t> _gen;
