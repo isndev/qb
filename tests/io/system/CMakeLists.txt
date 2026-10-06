@@ -190,3 +190,7 @@ qb_add_test(MODULE qb-io TIER system NAME teardown-throwing-handlers SOURCES tcp
 # forms, past a refused address and within an attempt's share of the deadline past a silent one; a socket handed
 # over open gets one attempt; TLS falls back on TCP only and a TLS failure is final; the blocking twins.
 qb_add_test(MODULE qb-io TIER system NAME connect-fallback SOURCES tcp/connect-fallback.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+
+# A listener's TLS context replaced while it serves (Huly QB-205): the next accept presents the new certificate,
+# a connection accepted before keeps its own, a context that failed to load is refused.
+qb_add_test(MODULE qb-io TIER system NAME tls-context-reload SOURCES tls/tls-context-reload.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)

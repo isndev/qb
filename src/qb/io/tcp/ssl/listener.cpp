@@ -46,6 +46,16 @@ listener::init(qb::io::ssl::Context ctx) noexcept {
     _ctx = std::move(ctx);
 }
 
+bool
+listener::reload_context(qb::io::ssl::Context ctx) noexcept {
+    if (!ctx)
+        return false; // a renewal that failed to load keeps the certificate being served
+    // The connections already accepted hold their own reference on the previous SSL_CTX (SSL_new up-refs it):
+    // dropping ours here frees it only with the last of them.
+    _ctx = std::move(ctx);
+    return true;
+}
+
 ssl::socket
 listener::accept() const noexcept {
     auto sock = tcp::listener::accept();

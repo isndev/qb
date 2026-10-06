@@ -30,6 +30,19 @@ namespace qb::io::ssl {
 
 namespace {
 
+// The reason OpenSSL queued for the call that just failed, appended to `what` -- "SSL_CTX_use_PrivateKey_file
+// failed for key.pem: key values mismatch" says what a renewal got wrong, where "failed for key.pem" alone sends
+// the reader to check a file that is there -- and the thread's error queue emptied, so the entries of a refused
+// configuration are not left behind on the thread that goes on serving.
+std::string
+ctx_with_reason(std::string what) {
+    const unsigned long code = ERR_peek_last_error();
+    if (const char *reason = code != 0 ? ERR_reason_error_string(code) : nullptr)
+        what.append(": ").append(reason);
+    ERR_clear_error();
+    return what;
+}
+
 // ---------------------------------------------------------------------------
 // Per-SSL_CTX state, attached via ex-data. Holds the typed callbacks and the
 // server ALPN wire buffer at a stable heap address reachable from any SSL.
@@ -302,14 +315,14 @@ Context::share(SSL_CTX *raw) noexcept {
 Context &
 Context::min_version(TlsVersion v) {
     if (usable() && SSL_CTX_set_min_proto_version(_ctx.get(), ctx_ossl_version(v)) != 1)
-        fail("SSL_CTX_set_min_proto_version failed");
+        fail(ctx_with_reason("SSL_CTX_set_min_proto_version failed"));
     return *this;
 }
 
 Context &
 Context::max_version(TlsVersion v) {
     if (usable() && SSL_CTX_set_max_proto_version(_ctx.get(), ctx_ossl_version(v)) != 1)
-        fail("SSL_CTX_set_max_proto_version failed");
+        fail(ctx_with_reason("SSL_CTX_set_max_proto_version failed"));
     return *this;
 }
 
@@ -337,14 +350,14 @@ Context::trust(std::filesystem::path ca_file_or_dir) {
     const bool      is_dir = std::filesystem::is_directory(resolved, ec);
     const auto      s      = resolved.string();
     if (SSL_CTX_load_verify_locations(_ctx.get(), is_dir ? nullptr : s.c_str(), is_dir ? s.c_str() : nullptr) != 1)
-        fail("SSL_CTX_load_verify_locations failed for " + s);
+        fail(ctx_with_reason("SSL_CTX_load_verify_locations failed for " + s));
     return *this;
 }
 
 Context &
 Context::trust_system() {
     if (usable() && SSL_CTX_set_default_verify_paths(_ctx.get()) != 1)
-        fail("SSL_CTX_set_default_verify_paths failed");
+        fail(ctx_with_reason("SSL_CTX_set_default_verify_paths failed"));
     return *this;
 }
 
@@ -355,11 +368,11 @@ Context::identity(std::filesystem::path cert, std::filesystem::path key) {
     const auto cert_s = qb::io::sys::resolve_resource(cert).string();
     const auto key_s  = qb::io::sys::resolve_resource(key).string();
     if (SSL_CTX_use_certificate_file(_ctx.get(), cert_s.c_str(), SSL_FILETYPE_PEM) <= 0)
-        fail("SSL_CTX_use_certificate_file failed for " + cert_s);
+        fail(ctx_with_reason("SSL_CTX_use_certificate_file failed for " + cert_s));
     else if (SSL_CTX_use_PrivateKey_file(_ctx.get(), key_s.c_str(), SSL_FILETYPE_PEM) <= 0)
-        fail("SSL_CTX_use_PrivateKey_file failed for " + key_s);
+        fail(ctx_with_reason("SSL_CTX_use_PrivateKey_file failed for " + key_s));
     else if (SSL_CTX_check_private_key(_ctx.get()) <= 0)
-        fail("SSL_CTX_check_private_key failed (cert/key mismatch)");
+        fail(ctx_with_reason("SSL_CTX_check_private_key failed (cert/key mismatch)"));
     return *this;
 }
 
@@ -383,7 +396,7 @@ Context::alpn(std::vector<std::string> protocols) {
     } else {
         // Client: offer the protocol list (SSL_CTX_set_alpn_protos returns 0 on success).
         if (SSL_CTX_set_alpn_protos(_ctx.get(), wire.data(), static_cast<unsigned int>(wire.size())) != 0)
-            fail("SSL_CTX_set_alpn_protos failed");
+            fail(ctx_with_reason("SSL_CTX_set_alpn_protos failed"));
     }
     return *this;
 }
@@ -391,21 +404,21 @@ Context::alpn(std::vector<std::string> protocols) {
 Context &
 Context::ciphers(std::string tls12_list) {
     if (usable() && SSL_CTX_set_cipher_list(_ctx.get(), tls12_list.c_str()) != 1)
-        fail("SSL_CTX_set_cipher_list failed");
+        fail(ctx_with_reason("SSL_CTX_set_cipher_list failed"));
     return *this;
 }
 
 Context &
 Context::ciphersuites(std::string tls13_list) {
     if (usable() && SSL_CTX_set_ciphersuites(_ctx.get(), tls13_list.c_str()) != 1)
-        fail("SSL_CTX_set_ciphersuites failed");
+        fail(ctx_with_reason("SSL_CTX_set_ciphersuites failed"));
     return *this;
 }
 
 Context &
 Context::curves(std::string groups) {
     if (usable() && SSL_CTX_set1_curves_list(_ctx.get(), groups.c_str()) != 1)
-        fail("SSL_CTX_set1_curves_list failed");
+        fail(ctx_with_reason("SSL_CTX_set1_curves_list failed"));
     return *this;
 }
 
@@ -416,29 +429,29 @@ Context::dh_params(std::filesystem::path pem) {
     const auto native = qb::io::sys::resolve_resource(pem).string();
     BIO       *bio    = BIO_new_file(native.c_str(), "r");
     if (!bio) {
-        fail("dh_params: cannot open " + native);
+        fail(ctx_with_reason("dh_params: cannot open " + native));
         return *this;
     }
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
     EVP_PKEY *pkey = PEM_read_bio_Parameters(bio, nullptr);
     BIO_free(bio);
     if (!pkey) {
-        fail("dh_params: PEM_read_bio_Parameters failed for " + native);
+        fail(ctx_with_reason("dh_params: PEM_read_bio_Parameters failed for " + native));
         return *this;
     }
     if (SSL_CTX_set0_tmp_dh_pkey(_ctx.get(), pkey) != 1) {
         EVP_PKEY_free(pkey);
-        fail("dh_params: SSL_CTX_set0_tmp_dh_pkey failed"); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        fail(ctx_with_reason("dh_params: SSL_CTX_set0_tmp_dh_pkey failed")); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 #else
     DH *dh = PEM_read_bio_DHparams(bio, nullptr, nullptr, nullptr);
     BIO_free(bio);
     if (!dh) {
-        fail("dh_params: PEM_read_bio_DHparams failed for " + native);
+        fail(ctx_with_reason("dh_params: PEM_read_bio_DHparams failed for " + native));
         return *this;
     }
     if (SSL_CTX_set_tmp_dh(_ctx.get(), dh) != 1)
-        fail("dh_params: SSL_CTX_set_tmp_dh failed");
+        fail(ctx_with_reason("dh_params: SSL_CTX_set_tmp_dh failed"));
     DH_free(dh);
 #endif
     return *this;

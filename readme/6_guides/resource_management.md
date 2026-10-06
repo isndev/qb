@@ -166,7 +166,7 @@ If the parent needs its referenced children gone when it stops, it must send eac
 `SSL_CTX` is the one place where ownership splits, so it deserves explicit attention.
 
 - **Helper-created contexts are caller-owned.** `qb::io::ssl::create_client_context(method)` and `qb::io::ssl::create_server_context(method, cert_path, key_path)` each return a raw `SSL_CTX*` (or `nullptr` on failure) that **you must free with `SSL_CTX_free()`** unless you hand the context off (see below). (`src/qb/io/tcp/ssl/socket.h:81-84`, `:92-95`)
-- **A listener you hand it to takes ownership.** `qb::io::tcp::ssl::listener::init(SSL_CTX*)` transfers your single reference into the listener's value-semantic `qb::io::ssl::Context` member (`Context::adopt`, no up-ref), which frees the `SSL_CTX` when the last copy of it is gone. Once you call `init()`, do **not** call `SSL_CTX_free()` yourself — that is a double-free. Call `init()` before `listen()`. Prefer the `init(qb::io::ssl::Context)` overload: no raw context lifetime to manage at all. (`src/qb/io/tcp/ssl/listener.h:102-107`, `:115`; `src/qb/io/tcp/ssl/listener.cpp:38-42`)
+- **A listener you hand it to takes ownership.** `qb::io::tcp::ssl::listener::init(SSL_CTX*)` transfers your single reference into the listener's value-semantic `qb::io::ssl::Context` member (`Context::adopt`, no up-ref), which frees the `SSL_CTX` when the last copy of it is gone. Once you call `init()`, do **not** call `SSL_CTX_free()` yourself — that is a double-free. Call `init()` before `listen()`. Prefer the `init(qb::io::ssl::Context)` overload: no raw context lifetime to manage at all. (`src/qb/io/tcp/ssl/listener.h:102-108`, `:119`; `src/qb/io/tcp/ssl/listener.cpp:38-42`)
 
 The transport-based server pattern below is the common case, and the suite itself uses the value-semantic form: the context is passed straight into the transport's listener, which shares it with every accepted connection.
 
@@ -183,7 +183,7 @@ server.transport().init(ssl::Context::server("cert.pem", "key.pem"));
 // Server, raw escape hatch (use ONE of the two, not both): create_server_context
 // returns an owned SSL_CTX*; init() transfers that single reference into the
 // listener's Context, so there is still no SSL_CTX_free here.
-// src: qb/src/qb/io/tcp/ssl/listener.h:107
+// src: qb/src/qb/io/tcp/ssl/listener.h:108
 // server.transport().init(ssl::create_server_context(
 //     TLS_server_method(), "cert.pem", "key.pem"));
 

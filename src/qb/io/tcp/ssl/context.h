@@ -199,7 +199,7 @@ public:
 
     /** @brief Whether the context is usable (has an `SSL_CTX` and no recorded config error). */
     [[nodiscard]] bool ok() const noexcept;
-    /** @brief The first configuration error recorded, or an empty string if `ok()`. */
+    /** @brief The first configuration error recorded, with OpenSSL's reason when it gave one; empty if `ok()`. */
     [[nodiscard]] std::string error() const;
     /** @brief `ok()`. Lets a `Context` be tested directly: `if (ctx) { ... }`. */
     [[nodiscard]] explicit

@@ -590,6 +590,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
   free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:128; ssl/socket.h:464, :885, :84, :95)_
+- **A certificate is renewed with `listener.reload_context(ctx)` (3.3), on the thread that accepts.** The next
+  accept presents it, every open connection keeps its own. Build the replacement WHOLE through `Context` (cert, key,
+  ALPN, verification: what the listener's raw setters wrote into the old one does not carry over); `false` means it
+  failed to load and the old certificate goes on serving. Never rewrite the served context in place through
+  `native()`: copies of a `Context` share one `SSL_CTX`, possibly across cores. _(ssl/listener.h:121-149)_
 - **Filesystem paths are `std::filesystem::path` and resource paths self-locate.** `sys::file::open`/ctor,
   `file_to_pipe`/`pipe_to_file::open`, the SSL cert/key/CA/DH helpers (`create_server_context`,
   `load_ca_certificates`/`load_ca_directory`/`configure_mtls_server_context`/`configure_client_certificate`/`configure_dh_parameters_server`),

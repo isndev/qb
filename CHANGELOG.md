@@ -127,8 +127,28 @@ policy.
   first address that answers, with the fallback below; `host` is TLS's SNI and verification name. The form for addresses
   resolved off the loop: `co_await offload(...)` around `qb::io::socket::resolve_v4`, then connect. With them,
   `qb::io::tcp::resolve_endpoints` and `qb::io::tcp::connect_attempt_budget`.
+- **A certificate renewed without a restart: `tcp::ssl::listener::reload_context(Context)` (Huly QB-205).** The
+  connections accepted after the call present the new context -- a renewed certificate, with whatever ALPN,
+  verification and ciphers it carries -- and every connection accepted before keeps the one it was minted from,
+  established or with its handshake still to run: an `SSL` holds a reference on its `SSL_CTX`, so nothing is
+  dropped. A context that is not `ok()` -- missing files, a certificate and a key that do not match -- is refused
+  with `false` and the listener goes on serving the certificate it had; `init(Context)` stays the setup call,
+  installing what it is given. It runs on the thread that accepts; loading the files can run on the offload pool.
+  The raw setters' configuration of the previous context does not carry over, and a session resumed after the
+  reload gets a full handshake. Pinned by `tests/io/system/tls/tls-context-reload.cpp` (two certificates generated
+  in memory, every handshake pumped from one thread so "accepted before, handshaken after" is an order, not a
+  race), which catches a reload that changes nothing and one that installs a falsy context; a reload that rewrites
+  the served context in place is caught only by its identity check, since OpenSSL copies the certificate into each
+  `SSL` at accept -- its harm is the race with the other holders of the context, which no single-thread test shows.
 
 ### Changed
+
+- **A `qb::io::ssl::Context` that refuses a configuration says why (Huly QB-205).** `error()` named the OpenSSL call
+  and the file -- `SSL_CTX_use_PrivateKey_file failed for key.pem` -- and nothing of what was wrong with it; it now
+  ends with the reason OpenSSL queued, `...: key values mismatch` for a certificate and a key that do not belong
+  together, the half-finished renewal `reload_context` refuses. The thread's OpenSSL error queue is emptied after
+  a refused call instead of keeping its entries (the socket layer clears it before each TLS operation already, so
+  no I/O misread them). The error strings are messages, not an API: nothing in qb matched on them.
 
 - **A connect by name tries every address, not the first (Huly QB-164).** Each connect that resolves a host name -- the
   async connector (callback, coroutine, STARTTLS) and the blocking and non-blocking socket connects -- used to stop at

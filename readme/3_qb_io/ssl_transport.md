@@ -32,7 +32,7 @@ The whole slice compiles only when the build was configured with OpenSSL availab
 ownership conventions: they are move-only, and the listener holds a **refcounted**
 `ssl::Context` rather than owning the raw `SSL_CTX` outright — `~listener()` frees nothing,
 and the `SSL_CTX` dies when the last `Context` copy *and* the last `SSL` minted from it are
-gone (`src/qb/io/tcp/ssl/listener.cpp:30`; `src/qb/io/tcp/ssl/context.cpp:174`).
+gone (`src/qb/io/tcp/ssl/listener.cpp:30`; `src/qb/io/tcp/ssl/context.cpp:187`).
 
 ```mermaid
 flowchart TB
@@ -313,6 +313,7 @@ public:
 
     void init(qb::io::ssl::Context ctx) noexcept;   // preferred — no raw lifetime to manage
     void init(SSL_CTX *ctx) noexcept;               // escape hatch; adopts the caller's ref
+    [[nodiscard]] bool reload_context(qb::io::ssl::Context ctx) noexcept;   // 3.3: a renewal, for the next accepts
 
     ssl::socket accept() const noexcept;
     int         accept(ssl::socket &socket) const noexcept;
@@ -323,23 +324,24 @@ public:
     // set_cipher_list, set_supported_alpn_protocols, enable_session_caching, ...
 };
 ```
-<!-- src: qb/src/qb/io/tcp/ssl/listener.h:44 (class listener), :45 (the Context member), :85-96 (move-only), :107 (init), :146 (ssl_handle), :152 (context) -->
-<!-- src: qb/src/qb/io/tcp/ssl/listener.h:44-341 (the whole class, `class QB_API listener` to its closing brace) -->
+<!-- src: qb/src/qb/io/tcp/ssl/listener.h:44 (class listener), :45 (the Context member), :85-96 (move-only), :108 (init), :180 (ssl_handle), :186 (context) -->
+<!-- src: qb/src/qb/io/tcp/ssl/listener.h:44-375 (the whole class, `class QB_API listener` to its closing brace) -->
 
 - **Two `init` overloads, and the `Context` one is the one to use.** `init(ssl::Context)`
   takes the value-semantic handle and has no lifetime to manage
-  (`src/qb/io/tcp/ssl/listener.h:115`); it is what `async::tcp::acceptor::listen_no_start()`
+  (`src/qb/io/tcp/ssl/listener.h:119`); it is what `async::tcp::acceptor::listen_no_start()`
   calls, and what the TLS round-trip test uses. `init(SSL_CTX*)` is the escape hatch: it
   **adopts** the caller's single reference into the refcounted holder
   (`_ctx = ssl::Context::adopt(ctx)`, `src/qb/io/tcp/ssl/listener.cpp:38-42`). Neither makes
   `~listener()` free anything — its body is empty; the `SSL_CTX` goes when the last `Context`
-  copy and the last minted `SSL` are gone. Call either **before** `listen()`.
+  copy and the last minted `SSL` are gone. Call either **before** `listen()`; to replace the context
+  of a listener that is accepting, `reload_context()` ([below](#renewing-the-certificate-while-serving)).
   <!-- src: qb/src/qb/io/tcp/ssl/listener.cpp:30 (empty destructor), :38-42 (adopt), :44-47 (init(Context)); qb/src/qb/io/async/tcp/acceptor.h:163 (the acceptor's call) -->
 - **`adopt` and `share` mark the context client-role.** A raw `SSL_CTX` brought in that way
   is treated as a client context, so a later `.alpn(...)` on it configures the *client offer*,
   not the server's selection list — a server that adopts a raw context and then calls `.alpn()`
   gets the wrong behaviour with no diagnostic. Build server contexts with
-  `ssl::Context::server(cert, key)` instead. (`src/qb/io/tcp/ssl/context.cpp:285`, `:295`.)
+  `ssl::Context::server(cert, key)` instead. (`src/qb/io/tcp/ssl/context.cpp:298`, `:308`.)
 - **Accept.** Both `accept()` overloads first perform a plain TCP accept, then create an
   `SSL` object from `_ctx` and associate it with the accepted descriptor. The returned
   (or filled) `ssl::socket` still needs its handshake driven — by `connected()` /
@@ -479,6 +481,45 @@ The server-side handshake is driven by the async machinery as each connection is
 you never call `SSL_accept` directly. For listeners that need mTLS, protocol pinning, or
 specific cipher policy, configure the context (or the listener's forwarding methods) before
 `listen()`.
+
+## Renewing the certificate while serving
+
+A certificate expires; a server that must restart to present the renewed one drops every
+connection it holds. Since 3.3 the listener takes a replacement context while it serves
+(Huly QB-205):
+
+```cpp
+// src: derived from qb/src/qb/io/tcp/ssl/listener.h:121-149 (reload_context)
+// On the server's own thread -- the actor or the loop that accepts -- once the files are renewed:
+auto renewed = qb::io::ssl::Context::server(cert_path, key_path).alpn({"h2", "http/1.1"});
+if (!server.transport().reload_context(renewed))
+    QB_LOG_WARN("certificate renewal refused: " << renewed.error());   // the previous one still serves
+```
+
+- **The next accept presents it; every open connection keeps its own.** `accept()` mints each
+  connection's `SSL` from the listener's context, and an `SSL` holds a reference on the `SSL_CTX`
+  it came from. A connection accepted before the reload -- established, or with its handshake not
+  yet run -- finishes with the previous certificate, and the previous context is freed with the
+  last of them. Nothing is dropped, nothing is renegotiated.
+- **A renewal that failed to load is refused.** `reload_context` returns `false` and changes nothing
+  when the context is not `ok()`: missing files, or a certificate and key that do not match -- the
+  half-finished renewal. The server goes on presenting the certificate it had; `init(Context)`, by
+  contrast, installs whatever it is given and is meant for the setup before `listen()`.
+- **Build the replacement whole.** The listener's raw setters (`configure_mtls`, `set_cipher_list`,
+  `set_supported_alpn_protocols`, `enable_session_caching`, ...) wrote into the previous context, and a
+  new one does not inherit them: give the replacement its ALPN, verification and cipher policy through
+  `Context`, as the snippet does. Sessions resumed after the reload get a full handshake, since the
+  session cache and the ticket keys belong to the new context.
+- **One thread.** Call it where the listener accepts -- nothing synchronizes it with `accept()`, like
+  every other member. Loading the files is the slow part and may run elsewhere: build the `Context`
+  inside `co_await qb::io::async::offload(...)` and reload with the result. Never rewrite the served
+  context in place through `native()` instead: copies of a `Context` share one `SSL_CTX`, possibly
+  across cores, and an in-place change races every one of them.
+
+A complete, runnable program lives in the corpus — `examples/02-io/13-tls-certificate-renewal.cpp`:
+it renews a working copy of a certificate in two steps, holds a session open across the renewal,
+and has a client that trusts only the renewed certificate refused before it and accepted after.
+<!-- src: qb/src/qb/io/tcp/ssl/listener.cpp:49-57 (reload_context: refuses a falsy context, then swaps), :64, :83 (each accept overload mints its SSL from the current context); qb/src/qb/io/tcp/ssl/listener.h:128-135 (who keeps which context), :136-139 (the owning thread) -->
 
 ## Building an SSL client
 

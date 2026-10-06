@@ -101,18 +101,52 @@ public:
      *            `qb::io::ssl::create_server_context()` or directly with OpenSSL functions.
      *            The listener takes over the caller's single reference (transferred into its internal
      *            `qb::io::ssl::Context`; the caller must NOT `SSL_CTX_free` it afterwards).
-     * @note Must be called before `listen()`. Prefer the `init(qb::io::ssl::Context)` overload below —
-     *       no raw context lifetime to manage.
+     * @note Call it before `listen()`. Prefer the `init(qb::io::ssl::Context)` overload below —
+     *       no raw context lifetime to manage — and `reload_context()` to replace the context of a
+     *       listener that is already accepting.
      */
     void init(SSL_CTX *ctx) noexcept;
 
     /**
-     * @brief Initialize (or replace) the listener's TLS context from a value-semantic `qb::io::ssl::Context`.
+     * @brief Initialize the listener's TLS context from a value-semantic `qb::io::ssl::Context`.
      * @param ctx The server context (e.g. `qb::io::ssl::Context::server(cert, key).alpn({"h2"})`), shared by
      *            reference count with every accepted connection. Preferred over `init(SSL_CTX*)` — no raw
      *            `SSL_CTX` lifetime to manage, fail-closed via `context().ok()`.
+     * @note It installs `ctx` as given, a falsy one included: the caller checks `context().ok()` before
+     *       `listen()`, as `async::tcp::acceptor::listen_no_start()` does. To replace the context of a listener
+     *       that is already accepting, use `reload_context()`, which refuses a context that failed to load.
      */
     void init(qb::io::ssl::Context ctx) noexcept;
+
+    /**
+     * @brief Replace the TLS context for the connections accepted from now on: a certificate renewed
+     *        without a restart (Huly QB-205).
+     * @param ctx The replacement server context, built WHOLE -- certificate and key, ALPN, verification,
+     *            callbacks (e.g. `qb::io::ssl::Context::server(cert, key).alpn({"h2"})`).
+     * @return true when `ctx` is installed; false when it is not `ok()` -- a renewal whose files failed to
+     *         load or to match -- and then the listener keeps its context and goes on serving its certificate.
+     * @details The next `accept()` mints its `SSL` from `ctx`. A connection accepted before -- established,
+     *          or with its handshake still to run -- keeps the context it was minted from: its `SSL` holds a
+     *          reference on that `SSL_CTX`, freed with the last such connection. Two consequences. A session
+     *          resumed after the reload gets a full handshake: the session cache and the ticket keys are the
+     *          new context's. And what this listener's raw setters (`configure_mtls`, `set_cipher_list`,
+     *          `set_supported_alpn_protocols`, `enable_session_caching`, ...) wrote into the previous context
+     *          does not carry over: configure the replacement through `Context`, or apply them again after
+     *          the reload, before the next accept.
+     * @note Call it on the thread that runs this listener's accepts -- the actor or the loop that owns the
+     *       server -- like every other member: nothing synchronizes it with `accept()`. Reading the new files
+     *       may run elsewhere (`co_await qb::io::async::offload(...)` around `Context::server(cert, key)`);
+     *       the reload itself runs on the owning thread.
+     *
+     * @code
+     * qb::io::tcp::ssl::listener listener{qb::io::ssl::Context::server("cert.pem", "key.pem")};
+     * // ... the files are renewed: the next accept presents the new certificate, every open connection keeps its own
+     * if (!listener.reload_context(qb::io::ssl::Context::server("cert.pem", "key.pem"))) {
+     *     // the new files failed to load: the listener goes on serving the previous certificate
+     * }
+     * @endcode
+     */
+    [[nodiscard]] bool reload_context(qb::io::ssl::Context ctx) noexcept;
 
     /**
      * @brief Accept a new secure connection and return it as a new `ssl::socket`.

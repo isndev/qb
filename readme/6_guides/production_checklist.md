@@ -122,7 +122,7 @@ When a server binds its listening port (`socket::pserve`), the address-reuse opt
 
 - [ ] Confirm `QB_WITH_SSL=1` is in the production build (OpenSSL was found at configure time).
 - [ ] No stray `set_insecure()` calls in shipped code paths.
-- [ ] Certificate and key paths resolve at deploy time (relative paths resolve against the cwd then the executable's directory via `resolve_resource`; absolute paths are used verbatim); certificate rotation is operationalized.
+- [ ] Certificate and key paths resolve at deploy time (relative paths resolve against the cwd then the executable's directory via `resolve_resource`; absolute paths are used verbatim); certificate rotation is operationalized: after each renewal the server calls `listener.reload_context(...)` (3.3) on its own thread -- no restart, no dropped connection -- and alerts when it returns `false` (the renewed files failed to load; the previous certificate still serves). See [Renewing the certificate while serving](../3_qb_io/ssl_transport.md#renewing-the-certificate-while-serving).
 - [ ] If you accept client certificates, mTLS is configured with `SSL_VERIFY_PEER` (or stricter).
 - [ ] On Windows, expect a second instance bound to an in-use port to fail at bind (`SO_EXCLUSIVEADDRUSE`), not start shadowed.
 
