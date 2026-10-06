@@ -764,7 +764,7 @@ public:
 | Event handlers stay `void on(Event&)` | `registerEvent` requires a `void` handler; a `task<void> on(Event&)` breaks actor dispatch | `Actor.h:1010` |
 | Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1481`, `:1444` |
 | Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:1403-1405`, `:1461-1462`; examples/03-coroutines/02-actor-coroutines.cpp:138 |
-| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is reported as a dead letter and disposed instead of delivered | `Actor.h:1660-1661` (`push`), `:1672-1673` (`push_to`); `qb/src/qb/system/event/router.h:511-524` (no handler → dead letter, dispose, no dispatch) |
+| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is reported as a dead letter and disposed instead of delivered | `Actor.h:1660-1661` (`push`), `:1672-1673` (`push_to`); `qb/src/qb/system/event/router.h:513-528` (no handler → dead letter, dispose, no dispatch) |
 | Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:1399-1401` |
 
 `spawn()` and `spawn_detached()` must be called on the actor's own `VirtualCore` thread (each debug-asserts that a thread-local scheduler exists). They are the only supported way to use coroutines inside an actor — `run`, `run_for` and `run_sync` block that thread, and [the framework's guard does not fire from a handler](./async_system.md#the-guard-and-what-it-actually-checks).

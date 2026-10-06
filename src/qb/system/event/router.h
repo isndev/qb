@@ -403,8 +403,10 @@ public:
 
         if (auto *const handler = _subscribed_handlers.find(event.dest); likely(handler != nullptr)) [[likely]]
             invoke(**handler, event);
-        else if constexpr (internal::reports_undelivered<_RawEvent>) [[unlikely]]
-            _RawEvent::__undelivered__(event);
+        else [[unlikely]] {
+            if constexpr (internal::reports_undelivered<_RawEvent>)
+                _RawEvent::__undelivered__(event);
+        }
 
         if constexpr (_CleanEvent)
             dispose(event);
@@ -513,12 +515,14 @@ public:
             auto *const target   = entry->handler;
             QB_ASSUME(dispatch != nullptr);
             dispatch(target, event);
-        } else if constexpr (internal::reports_undelivered<_RawEvent>) [[unlikely]] {
+        } else [[unlikely]] {
             // No handler under this id: a stale, unknown or never-subscribed destination (Huly
             // QB-163). The attributes are for MSVC, which ignores `likely()` and lays blocks out
             // in source order: without them this call sat between the dispatch and the epilogue,
-            // and every delivered event jumped over it (+5 % one-core ping-pong, measured).
-            _RawEvent::__undelivered__(event);
+            // and every delivered event jumped over it (+5 % one-core ping-pong, measured). On the
+            // `else`, not on the `if constexpr` inside it: clang refuses a likelihood there.
+            if constexpr (internal::reports_undelivered<_RawEvent>)
+                _RawEvent::__undelivered__(event);
         }
         if constexpr (_CleanEvent)
             dispose(event);
