@@ -192,8 +192,9 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 | `transport/async-bases-framing.cpp` | `async-bases-framing` | The read→frame→`onMessage`→drain loop of the async I/O bases. |
 | `transport/tcp-loopback-echo.cpp` | `tcp-loopback-echo` | Plain-TCP loopback echo round-trip throughput (no TLS, daemon-free). |
 | `coroutine/sync-primitives.cpp` | `sync-primitives` | The qb-io coroutine synchronization primitives (`semaphore`, `async_mutex`, `async_rw_lock`, `async_latch`). |
+| `coroutine/offload-roundtrip.cpp` | `offload-roundtrip` | What a `co_await offload(...)` costs: one round trip loop → pool thread → loop, on a polling and on a parked loop, and a burst through the pool (3.3). |
 
-<!-- src: qb/tests/io/benchmark/CMakeLists.txt:36-53 -->
+<!-- src: qb/tests/io/benchmark/CMakeLists.txt:36-54 -->
 
 Build and run them the same way as the core benchmarks — each is a standard Google Benchmark binary that accepts the usual flags:
 

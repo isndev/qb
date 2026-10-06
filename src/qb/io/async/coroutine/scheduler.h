@@ -156,10 +156,10 @@ struct scheduler_deleter {
  *   I/O thread that constructed it. Every entry point (`spawn`,
  *   `schedule_resume`, `enqueue_for_later`, `run_ready`, dtor) assumes
  *   that thread.
- * - Pushing from a **different** thread is undefined behavior. If cross-
- *   thread wake-ups are needed (e.g. a background worker completing a
- *   promise), post a message via the `Actor` mailbox instead — that is
- *   the dedicated MPSC path in qb-core.
+ * - Pushing from a **different** thread is undefined behavior. A call that
+ *   must run on another thread is `offload(fn, args...)` (offload.h): it
+ *   resumes the coroutine back on this thread. Any other cross-thread wake-up
+ *   posts a message via the `Actor` mailbox, qb-core's dedicated MPSC path.
  * - Internally: `ready_queue_` is a growable ring buffer of `ready_item`
  *   (no atomics, no mutex), `in_flight_`, `owned_frames_` and
  *   `suspended_coroutines_` are open-addressing `detail::flat_ptr_set`s —
@@ -587,9 +587,9 @@ public:
      *
      * Thread Safety (Finding 2.B.9): **must** be called from the thread
      * that owns this scheduler — typically the VirtualCore worker or the
-     * I/O listener thread. Cross-thread wake-ups are NOT supported; use
-     * the Actor mailbox instead if you need to signal a coroutine from a
-     * different thread.
+     * I/O listener thread. Cross-thread wake-ups are NOT supported: a call
+     * made on another thread is `offload(fn, args...)` (offload.h); any other
+     * signal to a coroutine from a different thread goes through the mailbox.
      *
      * @param handle The coroutine handle to resume
      */

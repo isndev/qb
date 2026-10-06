@@ -453,7 +453,7 @@ returning ([the engine](./readme/4_qb_core/engine.md)).
   epoll with `epoll_pwait2`, io_uring, a real epoll on Windows through wepoll), published on its own
   under libev's API and held byte-identical with the copy qb embeds.
 - **[qb-examples](https://github.com/isndev/qb-examples)** — about a hundred runnable programs in
-  seven tiers (100 on Linux, 98 on Windows), each with a checked header block and an expected output,
+  seven tiers (101 on Linux, 99 on Windows), each with a checked header block and an expected output,
   run as part of the release gate.
 
 ```cmake

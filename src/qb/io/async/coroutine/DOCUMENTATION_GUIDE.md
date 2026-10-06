@@ -42,6 +42,7 @@ interleaving point is `co_await`. This means:
 | `generator.h`    | `generator<T>`, `async_generator<T>`, `for_each()`, `collect_to_vector()`, `map_to_vector()`, `filter_to_vector()`, `reduce()` |
 | `stream.h`       | `async_stream<T>` — functional stream pipeline                                                                  |
 | `retry.h`        | `retry_policy`, `with_retry()`, `with_retry_until()`, `make_retryable()`                                        |
+| `offload.h`      | `offload()` — a blocking call on the process-wide pool, resumed on its loop; `set_offload_threads()`, `current_offload_stats()` |
 | `coroutine.h`    | Umbrella include for all of the above                                                                           |
 
 ---

@@ -196,3 +196,7 @@ qb_add_test(MODULE qb-core TIER system NAME pass-timing SOURCES engine/pass-timi
 # with no actor answers unknown, a stopped core core_stopped; init failures say why; unwatch and a watcher that dies
 # first deliver nothing (no dead letter anywhere); a recycled id can be watched again; shutdown with watches in place.
 qb_add_test(MODULE qb-core TIER system NAME death-watch SOURCES engine/death-watch.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+# coroutine-offload pins ScopedCoroContext::offload (Huly QB-69): a kill ends the WAIT, not the call -- the killed
+# actor's coroutine unwinds with cancelled_error while its call still runs, nothing after its co_await runs, and the
+# call's result is discarded on the core when it returns. The qb-io half is qb-io-test-system-offload.
+qb_add_test(MODULE qb-core TIER system NAME coroutine-offload SOURCES coroutine/coroutine-offload.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)

@@ -238,6 +238,7 @@
 #include "coroutine/generator.h"    // generator<T> with co_yield
 #include "coroutine/stream.h"       // async_stream<T> transformations
 #include "coroutine/shared_task.h"  // shared_task<T> — multi-consumer result
+#include "coroutine/offload.h"      // offload(fn, args...) — a blocking call on the pool, resumed here
 
 /**
  * @namespace qb::io::async

@@ -4,6 +4,8 @@
 
 `qb-io` has a full coroutine layer, and most of it is not connected to the network stack. Four capabilities have **no** `co_await` spelling — accept, QUIC, signals, and file I/O — and three more are synchronous in a way a coroutine cannot hide: hostname resolution, key derivation, and compression. This page names each one, gives the structural reason, and says what to do instead. Read it before you go looking for an awaiter that is not there.
 
+What changed in 3.3 is the remedy for the blocking ones. A blocking file read, a `getaddrinfo`, a KDF and a compression are still synchronous calls, but [`co_await offload(fn, args...)`](./coroutines.md#offloading-blocking-work) now runs any of them on a small pool and resumes the coroutine on its own loop, which keeps turning meanwhile — the hand-rolled "thread you own" this page used to prescribe, built in.
+
 **Prerequisites:** [C++20 coroutines](./coroutines.md) · [The async runtime](./async_system.md) — **See also:** [Transports](./transports.md) · [QUIC](./quic_transport.md) · [qb-io utilities](./utilities.md)
 
 ## What *does* have a coroutine form
@@ -17,6 +19,7 @@ The complete list, and it is short. Everything else in `qb-io` reaches coroutine
 | `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:759` |
 | `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:944` |
 | `co_await async_awaiter<T>(start_op)` | whatever callback you hand it | `coroutine/awaiter.h:619` |
+| `co_await offload(fn, args...)` | a pool thread running the call; the coroutine resumes on its own loop | `coroutine/offload.h:299` |
 
 Everything above `wait_readable` in the stack — sessions, servers, acceptors, the QUIC endpoint — is **callback-driven by construction**, and the bridge back into a coroutine is `async_awaiter<T>` or a hand-rolled awaiter of the same shape. That is not an accident of implementation: a session's bytes belong to a protocol, and a protocol's `onMessage()` is a `void` function called from inside the read loop. There is no point in that chain where the framework could suspend on your behalf without deciding *which* message you were waiting for.
 
@@ -83,7 +86,7 @@ This one is a **capability gap, not a documentation gap**, and it is the one mos
 
 On a page-cached local file the read returns without ever blocking and none of this is observable. On a cold file, a network filesystem, or a slow device, the `VirtualCore` thread stops inside `read()` — every actor on that core with it, and with no diagnostic, exactly as described for [`run_sync`](./async_system.md#run_sync-and-run_for-block-the-calling-thread).
 
-What to do about it, in order of preference: read the file **before** `qb::Main::start()`, where the thread is yours; or read it on a thread you own and deliver the contents to the actor as an event; or accept the stall knowingly for a small, warm, local file. `qb::io::sys::file_to_pipe` (`src/qb/io/system/file.h`) is the one-call form for the first two.
+What to do about it, in order of preference: read the file **before** `qb::Main::start()`, where the thread is yours; or read it on the offload pool — `co_await ctx.offload(...)` from the actor's coroutine, the contents handed back as a value ([Offloading blocking work](./coroutines.md#offloading-blocking-work)); or accept the stall knowingly for a small, warm, local file. `qb::io::sys::file_to_pipe` (`src/qb/io/system/file.h`) is the one-call read for the first two.
 
 ## Hostname resolution is synchronous — including inside `co_await tcp::connect`
 
@@ -94,7 +97,19 @@ That matters more than it first appears, because the resolution is on the **coro
 There is no asynchronous resolver in the tree, so the honest options are:
 
 - Connect to an **endpoint** rather than a hostname where you can. `n_connect(endpoint const&)` performs no lookup (`src/qb/io/tcp/socket.cpp:186`), and `qb::io::endpoint::as_in(host, port)` accepts a numeric address.
-- Resolve once, at startup, on a thread you own, and cache the `endpoint`.
+- Resolve on the offload pool, then connect to the numeric address it returns — the lookup blocks a pool thread, not the loop:
+
+  ```cpp
+  // src: derived from qb/src/qb/io/async/coroutine/offload.h:299 (offload), qb/src/qb/io/system/sys__socket.h:1377 (resolve)
+  auto endpoints = co_await qb::io::async::offload(
+      [](std::string host, unsigned short port) {
+          std::vector<qb::io::endpoint> out;
+          qb::io::socket::resolve(out, host.c_str(), port);   // getaddrinfo, on a pool thread
+          return out;
+      },
+      std::string{"example.com"}, static_cast<unsigned short>(443));
+  ```
+- Resolve once, at startup, and cache the `endpoint`.
 - Accept the stall where the thread is yours to block — a `main()`, a CLI, a test fixture.
 
 ## Cryptography and compression are CPU work on the calling thread
@@ -103,17 +118,17 @@ Neither is asynchronous and neither can be, because neither is waiting for anyth
 
 Key derivation is the case worth stating explicitly: PBKDF2, HKDF and Argon2 are *deliberately* slow, and their cost is a parameter the caller chooses. An iteration count sized for a login endpoint is milliseconds of wall time on the core, per call. Compression and decompression scale with payload size the same way.
 
-The remedy is the same shape as for file I/O: do it before the engine starts, do it on a thread you own and hand the result back through the actor mailbox, or size the work so the stall is acceptable. See [qb-io utilities](./utilities.md) for the surfaces themselves.
+The remedy is the same shape as for file I/O: do it before the engine starts, run it on the offload pool — `co_await ctx.offload(...)`, the derived key or the compressed bytes handed back as a value — or size the work so the stall is acceptable. See [qb-io utilities](./utilities.md) for the surfaces themselves.
 
 ## The shape of the rule
 
 Everything on this page reduces to one question, and it is the same question [`run_sync`](./async_system.md#the-rule) asks: **whose thread is this?**
 
-Outside the engine — a `main()`, a test, a CLI, a setup step — the thread is yours, blocking it is honest, and the absence of an awaiter costs you nothing but syntax. Inside an actor the thread is a `VirtualCore` shared with every actor on it, and each of these gaps becomes a latency source that no test will show you, because the loop keeps turning and the socket keeps answering while your actors do not.
+Outside the engine — a `main()`, a test, a CLI, a setup step — the thread is yours, blocking it is honest, and the absence of an awaiter costs you nothing but syntax. Inside an actor the thread is a `VirtualCore` shared with every actor on it, and each of these gaps becomes a latency source that no test will show you, because the loop keeps turning and the socket keeps answering while your actors do not. `offload` changes whose thread blocks: the pool's, never the core's.
 
 ## See also
 
-- [C++20 coroutines](./coroutines.md) — the awaitables that *do* exist, and what each one does on cancellation.
+- [C++20 coroutines](./coroutines.md) — the awaitables that *do* exist, what each one does on cancellation, and [`offload`](./coroutines.md#offloading-blocking-work) for a call that blocks.
 - [The async runtime](./async_system.md) — the loop turn, and why blocking the calling thread inside an actor costs what it costs.
 - [Transports](./transports.md) — the callback components that cover accept, sessions and servers.
 - [Native QUIC and HTTP/3 transport](./quic_transport.md) — the callback surface QUIC does have.

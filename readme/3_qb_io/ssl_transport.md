@@ -548,7 +548,7 @@ command (RSA-2048, `CN=localhost`, 365-day validity, with a `subjectAltName` so 
 verification can pass for `localhost`) is:
 
 ```bash
-# src: qb/tests/io/system/CMakeLists.txt:107-109
+# src: qb/tests/io/system/CMakeLists.txt:108-110
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
     -days 365 -nodes \
     -subj "/CN=localhost/O=QB Tests/C=US" \

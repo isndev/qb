@@ -79,6 +79,7 @@ generate_random_uuid() {
 #include "compression.cpp"
 #endif
 #include "async/listener.cpp"
+#include "async/offload.cpp"
 #include "stream.cpp"
 #include "udp/socket.cpp"
 

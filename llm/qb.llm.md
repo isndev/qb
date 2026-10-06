@@ -224,6 +224,37 @@ class Session : public qb::io::async::with_timeout<Session> {
 };
 ```
 
+### A call that blocks — `offload` (3.3)
+
+A coroutine suspends only at `co_await`. A call that BLOCKS — a cold file read, `getaddrinfo`, a KDF
+sized for a login endpoint, the compression of megabytes — holds the loop thread, and under `qb-core`
+every actor of the core with it. Run it on the offload pool instead; the coroutine resumes on its own
+loop, which keeps turning meanwhile. _(offload.h:24-40, :299)_
+
+```cpp
+#include <qb/io/async.h>
+// standalone qb-io (or a spawn_detached body): a pool thread runs the call, this loop turns on
+auto n = co_await qb::io::async::offload([](std::vector<char> b) { return b.size(); }, std::move(bytes));
+// inside an actor's spawn() / context(): the actor-scoped form -- a kill ends the WAIT at once
+auto h = co_await ctx.offload([](std::uint64_t x) { return x * 6364136223846793005ULL; }, std::uint64_t{42});
+```
+
+- **Values in, values out.** `fn` and `args` are decayed and COPIED at the call (like `std::thread`),
+  invoked on a pool thread and destroyed there; the result is a value — a reference result does not
+  compile — handed back by `co_await`, which also rethrows what the call threw. _(offload.h:202-213)_
+- **The callable runs on ANOTHER thread.** No `this`, no actor, no qb-io object, no coroutine, nothing
+  the loop owns — and `listener::current` inside it is the POOL thread's. Capture values only.
+- **A running call is never interrupted.** A frame destroyed while its call runs (a `when_any` loser, a
+  cancelled scope, a killed actor's `ctx.offload`) is not resumed: the result is destroyed on the loop and
+  counted in `offload_stats::discarded`. A bare `offload` inside an actor is NOT woken by a kill — it
+  waits on, as a bare `sleep` does — so inside an actor write `ctx.offload`. _(Actor.h:2282-2285)_
+- The pool is process-wide and starts with the first `offload` (no thread before it), two threads unless
+  `qb::io::async::set_offload_threads(n)` ran first (`false` once started);
+  `qb::io::async::current_offload_stats()` reads `threads` / `submitted` / `completed` / `discarded` /
+  `queued` without starting it. _(offload.h:107-130)_ A loop with an offload in flight counts as busy
+  (`has_work()`): a `VirtualCore` parks INSIDE it and the pool's `ev_async` send ends the park.
+  _(offload.h:49-59)_
+
 ### Network actors via `qb::io::use<>`
 
 Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. Declare
@@ -291,13 +322,14 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 
 `qb::ScopedCoroContext` is a superset of `qb::CoroContext`. On top of `push`/`push_to`/`broadcast`/
 `id`/`time` it adds the cancellation-aware surface: `sleep(qb::duration)`, `cancellation_point()`,
-`until_cancelled()`, `cancellable(task<T>&&)`, `child_token()`, `token()`, `cancelled()`.
-_(Actor.h:2173-2252)_
+`until_cancelled()`, `cancellable(task<T>&&)`, `offload(fn, args...)` (3.3: a blocking call on the
+offload pool, whose wait a kill ends — see "A call that blocks"), `child_token()`, `token()`,
+`cancelled()`. _(Actor.h:2173-2286)_
 
 `Actor::context()` returns that same `ScopedCoroContext` **wherever you hold the actor** — most
 importantly inside `onInit()`, which is itself a coroutine (`task<bool>`) and gets no `ctx`
 parameter. It is also what you pass to the free functions of the patterns library:
-`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1483-1499, :2261-2264)_
+`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1483-1499, :2294-2297)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
 receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not** cancelled when the
@@ -402,6 +434,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `registerEvent<T>(*this)` for every handled event.** `co_return true` activates the actor; `co_return false`
   or throwing fails init and the resulting `ActorId` is invalid. While `onInit()` is suspended the actor
   is *Activating*. _(Actor.h:461-474)_
+- **An `offload` callable runs on a pool thread, not on the loop.** Capturing `this`, an actor member,
+  a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
+  the call values and take its result back by `co_await`. A running call cannot be interrupted, and a
+  bare `offload` in an actor's coroutine is not woken by the actor's kill: `ctx.offload` is.
+  _(offload.h:24-40; Actor.h:2282-2285)_
 - **`push`/`send`/`broadcast` and the messaging hot path are `noexcept`.** A throw across that boundary
   (e.g. OOM growing the pipe, or a throwing event constructor) calls `std::terminate()`. Keep events
   small and allocation-light. _(Actor.h:1113-1119; Pipe.h:138-153)_
@@ -450,7 +487,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating,
   after a failed init, or once it died — never a dangling pointer. Send to `handle.id()` any time; gate
   direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
-  _(Actor.h:1340-1344, :1364, :2329-2331)_
+  _(Actor.h:1340-1344, :1364, :2362-2364)_
 - **`getService<T>()` is the ONE lookup that is not phase-gated: it hands back a service whose async
   `onInit()` is still in flight AND one that has been `kill()`ed but not yet reaped.** Deliberate — it
   is what lets a service look itself or a peer up from inside its own `onInit()`, and what keeps a

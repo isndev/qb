@@ -43,9 +43,9 @@ flowchart TB
 | Concurrency model | cooperative, single-threaded | `scheduler.h:154-158` |
 | Interleaving point | `co_await` only | `scheduler.h:683-694` (Factbook) |
 | OS mutexes / atomics on the hot path | none, within one thread | `scheduler.h:41-50`, `sync.h:32-35` |
-| Cross-thread wake-up | route through the `qb-core` actor mailbox | `scheduler.h:159-162` |
+| Cross-thread wake-up | route through the `qb-core` actor mailbox; a call made on another thread: `offload` | `scheduler.h:159-162`; `offload.h:49-59` |
 
-Because all coroutines on a thread share one scheduler and one event loop, only one runs at a time and another can start only at a suspension point. Mutual exclusion between two coroutines on the same thread is therefore a property of the model, not something you lock for. Pushing or resuming a coroutine from a *different* thread is undefined behavior — the scheduler holds no mutex; cross-thread signaling must go through the actor mailbox (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)).
+Because all coroutines on a thread share one scheduler and one event loop, only one runs at a time and another can start only at a suspension point. Mutual exclusion between two coroutines on the same thread is therefore a property of the model, not something you lock for. Pushing or resuming a coroutine from a *different* thread is undefined behavior — the scheduler holds no mutex; cross-thread signaling must go through the actor mailbox (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)). The one crossing the layer makes for you is [`offload`](#offloading-blocking-work): the call runs on a pool thread, and the coroutine is resumed back on its own.
 <!-- src: qb/src/qb/io/async/coroutine/scheduler.h:152-162 -->
 
 ## Quick start (standalone)
@@ -239,6 +239,44 @@ task<void> connect_to(qb::io::uri remote) {
 `connect<Transport>(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` defaults to `transport::tcp`. A zero timeout means no deadline.
 <!-- src: qb/src/qb/io/async/tcp/connector.h:757-761 (connect factory), :736-737 (await_resume std::optional<Socket_>) -->
 
+## Offloading blocking work
+
+A coroutine suspends only at `co_await`. A call that **blocks** — a read of a cold file, `getaddrinfo`, a key derivation sized for a login endpoint, the compression of a large payload — suspends nothing: it holds the loop thread, and every other coroutine, timer and socket of that thread waits with it ([what has no coroutine form](./gaps.md) names the usual ones). Since 3.3, `co_await offload(fn, args...)` moves such a call to a small pool and suspends the coroutine until it has returned:
+
+```cpp
+// src: derived from examples/03-coroutines/15-offloading-blocking-work.cpp
+#include <qb/io/async.h>
+#include <thread>
+using namespace qb::io::async;
+using namespace std::chrono_literals;
+
+int blocking_call(int x) {                        // stands for any call that blocks its thread
+    std::this_thread::sleep_for(300ms);
+    return x * 2;
+}
+
+task<int> handler() {
+    int r = co_await offload(blocking_call, 21);  // a pool thread blocks; this loop keeps turning
+    co_return r;                                  // resumed on this loop, with 42
+}
+```
+
+The example measures it beside a 5 ms heartbeat: called inline, the 300 ms call is the heartbeat's worst gap; offloaded, the worst gap stays one tick.
+
+The contract of `offload` is four rules (`qb/src/qb/io/async/coroutine/offload.h:24-40`):
+
+1. **Values in, values out.** The callable and its arguments are copied at the call, like `std::thread`'s; the pool invokes `std::invoke(std::move(fn), std::move(args)...)` and destroys them there, right after the call (`run()`, `qb/src/qb/io/async/coroutine/offload.h:202-213`). The result is a value — a callable returning a reference does not compile — handed back by `co_await`.
+2. **The callable runs on another thread.** It must not touch an actor, a qb-io object, a coroutine or anything the awaiting loop owns. Inside it, `listener::current` is the *pool* thread's listener, not the awaiting loop's.
+3. **The coroutine resumes on the thread that awaited**, in a turn of its loop, never on a pool thread. An exception the callable throws is rethrown by `co_await`.
+4. **A running call cannot be interrupted.** If the waiting frame is destroyed while it runs — a `when_any` loser, a cancelled scope — the call goes to its end, its result is destroyed on the awaiting loop, `offload_stats::discarded` counts it, and nothing is resumed (`~offload_awaiter`, `qb/src/qb/io/async/coroutine/offload.h:271-277`).
+
+The pool is one per process and starts with the first `offload` — no thread exists before it. It runs two threads unless `set_offload_threads(n)` said otherwise first (the call answers `false` once the pool has started), serves an unbounded FIFO queue, and is stopped at process exit: a queued call is dropped, a running one finishes, so an offload still running then delays the exit. `current_offload_stats()` reads its counters — `threads`, `submitted`, `completed`, `discarded`, `queued` — without starting it (`qb/src/qb/io/async/coroutine/offload.h:107-130`).
+
+How the resume crosses threads, and what that costs a loop that never offloads: each thread that awaits an offload gets a completion port, its own `ev_async` watcher on that thread's loop, started while an offload of the thread is in flight and stopped once none is (`qb/src/qb/io/async/offload.cpp:47-49`). A pool thread hands the finished call back in `complete()`, under the port's mutex, so it never sends to a loop that is being destroyed (`qb/src/qb/io/async/offload.cpp:87-106`); the watcher's callback, `on_complete`, schedules the coroutine on the loop's own scheduler (`qb/src/qb/io/async/offload.cpp:289-308`). While started, the watcher is a referenced active watcher: the loop counts as busy (`has_work()`), a `VirtualCore` keeps pumping it and parks *inside* it, where the pool's send ends the park, and a blocking `async::run()` returns only once the offload has completed — as it would for a pending timer. A thread that never calls `offload` has no port, no watcher and no pipe, and no existing path of the loop changed to make room for one.
+
+Inside an actor, write `ctx.offload(fn, args...)` (`ScopedCoroContext::offload`, `qb/src/qb/core/Actor.h:2282`): the same call, scoped to the actor, so a kill wakes the wait at once with `cancelled_error` rather than leaving the coroutine parked until the call returns — see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor).
+<!-- src: qb/src/qb/io/async/coroutine/offload.h:299 (offload), :124 (set_offload_threads), :130 (current_offload_stats); qb/src/qb/io/async/offload.cpp:73-76 (begin), :87-106 (complete), :289-308 (on_complete) -->
+
 ## Combinators
 
 `coroutine/combinators.h` composes several tasks into one awaitable.
@@ -352,6 +390,7 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, ev)` | `socket_awaiter`, i.e. a `ev_io` watcher (`awaiter.h:465`) | fd readiness |
 | `co_await async_awaiter<T>(op)` | your callback (`awaiter.h:619`) | your callback |
 | `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:680`) | connect success, failure, or the connector's own deadline |
+| `co_await offload(fn, args...)` | the thread's offload port: an `ev_async` the pool sends (`offload.h:49-59`) | the call returning on a pool thread — a running call is never interrupted |
 | `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:716`) | the inner coroutine finishing |
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
 | `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:99`, `:432`) | the branches |
@@ -369,7 +408,7 @@ Two entries deserve a sentence of their own. **`coro_with_timeout` does not inte
 
 ### The other way a parked coroutine ends: its frame is destroyed
 
-Since almost nothing is cancellation-aware, the mechanism that actually reclaims a parked coroutine in this framework is **structural**: someone destroys the frame, and the awaiter's destructor cleans up on the way out. That is what `coroutine_scope`'s cancel policy, `when_any`'s loser reclaim, and `Actor::kill()` all ultimately do.
+Since almost nothing is cancellation-aware, the mechanism that actually reclaims a parked coroutine in this framework is **structural**: someone destroys the frame, and the awaiter's destructor cleans up on the way out. That is what `coroutine_scope`'s cancel policy and `when_any`'s loser reclaim do, and what `Actor::kill()` does through the context's cancellation-aware operations — `ctx.cancellable(t)` and `ctx.offload(...)` destroy the inner frame they wrapped. The kill destroys no frame by itself: a spawned coroutine parked on anything else is neither woken nor reclaimed by it (see [below](#safe-integration-with-qbactor)).
 
 Every awaiter in the layer therefore carries a destructor that has to survive "destroyed while still parked", and they are worth knowing as a family because the pattern is the same each time:
 
@@ -771,7 +810,7 @@ public:
 
 One corollary of [the cancellation table](#every-awaitable-and-what-cancellation-does-to-it) applies specifically here, and it is the sharpest thing on this page. `kill()` cancels the actor's coroutine scope, which **signals the token** — by itself that stops nothing.
 
-A coroutine parked on a cancellation-aware operation unwinds promptly, because that awaiter registered a hook. All four of the context's own operations qualify: `ctx.sleep(d)` is `cancellable_sleep` (`src/qb/core/Actor.h:2218`), `ctx.until_cancelled()` is `check_cancelled` (`src/qb/core/Actor.h:2239`), `ctx.cancellable(t)` is `make_cancellable` (`src/qb/core/Actor.h:2251`), and `qb::ask` links an embedded `cancel_hook` on the same token — no `std::function`, nothing allocated, unlinked in O(1) when the reply lands (`src/qb/core/Actor.h:1945`). `ctx.cancellation_point()` is a near relative rather than a member of that set: it returns a `yield_or_cancel` that hands the loop a turn and throws if the token fired while it was away (`src/qb/core/Actor.h:2229`), so it is prompt inside a loop but cannot be woken out of a long wait.
+A coroutine parked on a cancellation-aware operation unwinds promptly, because that awaiter registered a hook. All five of the context's own operations qualify: `ctx.sleep(d)` is `cancellable_sleep` (`src/qb/core/Actor.h:2218`), `ctx.until_cancelled()` is `check_cancelled` (`src/qb/core/Actor.h:2239`), `ctx.cancellable(t)` is `make_cancellable` (`src/qb/core/Actor.h:2251`), `ctx.offload(fn, args...)` is `make_cancellable` over an [`offload`](#offloading-blocking-work) — the kill ends the wait, the call runs on to its end on the pool and its result is discarded on the core (`src/qb/core/Actor.h:2282-2285`), and `qb::ask` links an embedded `cancel_hook` on the same token — no `std::function`, nothing allocated, unlinked in O(1) when the reply lands (`src/qb/core/Actor.h:1945`). `ctx.cancellation_point()` is a near relative rather than a member of that set: it returns a `yield_or_cancel` that hands the loop a turn and throws if the token fired while it was away (`src/qb/core/Actor.h:2229`), so it is prompt inside a loop but cannot be woken out of a long wait.
 
 A coroutine parked on **anything else** is listening to nothing. It is neither woken nor unwound; it resumes when its own operation finishes, into a world where its actor is gone. The `CoroContext` makes that safe rather than fatal — an event addressed to a dead actor finds no handler and is disposed — but the work is not cancelled, and whatever it holds is not released until it completes. **To be interruptible, an unwrapped await must be wrapped**: `ctx.cancellable(op)`, `with_deadline(op, deadline, ctx.token())`, or a `when_any` against `ctx.until_cancelled()`.
 <!-- src: qb/src/qb/core/Actor.cpp:532; qb/src/qb/io/async/listener.h:1424 (ensure_not_inside_ready_drain) -->
@@ -870,6 +909,7 @@ Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it e
 | `coroutine/scheduler.h` | `CoroutineScheduler`, `schedule_via_current` |
 | `coroutine/awaiter.h` | `awaiter_base`, `timer_awaiter`, `socket_awaiter`, `async_awaiter<T>` |
 | `coroutine/utils.h` | `sleep`, `wait_readable` / `wait_writable` / `wait_for_io`, `coro_scheduler`, `run_for`, `run_sync` |
+| `coroutine/offload.h` | `offload`, `offload_awaiter<R>`, `set_offload_threads`, `current_offload_stats`, `offload_stats` |
 | `coroutine/combinators.h` | `when_all`, `when_any`, `race`, `coro_with_timeout`, `timeout_error`, `when_any_result` |
 | `coroutine/cancellation.h` | `cancellation_token`, `cancelled_error`, `check_cancelled`, `yield_or_cancel`, `make_cancellable`, `cancellable_sleep`, `with_deadline` |
 | `coroutine/sync.h` | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`, `with_semaphore`, `with_lock` |

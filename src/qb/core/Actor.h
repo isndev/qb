@@ -2250,6 +2250,39 @@ public:
     cancellable(qb::io::async::task<T> &&t) const {
         return qb::io::async::make_cancellable(std::move(t), _scope);
     }
+
+    /**
+     * @brief `qb::io::async::offload(fn, args...)` scoped to the actor: run `fn(args...)` on the
+     *        offload pool, and wake at once with `cancelled_error` if the actor is killed meanwhile.
+     * @param fn   A callable; copied (decayed) here and destroyed on the pool thread after the call.
+     * @param args Its arguments; copied (decayed) here, moved into the call.
+     * @return An awaitable yielding the callable's result (or rethrowing its exception) on this
+     *         actor's core -- or throwing `qb::io::async::cancelled_error` once the actor is killed.
+     * @details A call cannot be interrupted: a killed actor's call runs to its end on the pool, and
+     *          its result is destroyed on this core, never handed to anyone. What the kill changes is
+     *          the WAIT: the coroutine unwinds now, not when the call returns. The bare
+     *          `qb::io::async::offload` keeps waiting through a kill, as a bare `sleep` does. The rules
+     *          of `offload` apply: values in and out, and the callable touches nothing of the actor or
+     *          its core -- it runs on another thread (qb/io/async/coroutine/offload.h).
+     * @code
+     * spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+     *     const auto h = co_await ctx.offload(
+     *         [](std::uint64_t x) {   // a CPU-bound loop, on a pool thread: the core runs on meanwhile
+     *             for (int i = 0; i < 10'000'000; ++i)
+     *                 x = x * 6364136223846793005ULL + 1442695040888963407ULL;
+     *             return x;
+     *         },
+     *         std::uint64_t{42});
+     *     qb::io::cout() << "hash " << h << '\n';   // back on this core, the actor alive
+     * });
+     * @endcode
+     */
+    template <typename F, typename... Args>
+    [[nodiscard]] auto
+    offload(F &&fn, Args &&...args) const {
+        return cancellable(
+            qb::io::async::detail::offload_as_task(qb::io::async::detail::make_offload_job(std::forward<F>(fn), std::forward<Args>(args)...)));
+    }
 };
 
 /**

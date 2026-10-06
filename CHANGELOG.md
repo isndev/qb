@@ -94,6 +94,32 @@ policy.
   so the death of the outgoing child is never taken for its replacement's, which most likely reuses its id -- a
   double restart, and an orphaned child, that the three strategies' watch-mode tests count, and catch when the
   unwatch is taken out.
+- **`co_await qb::io::async::offload(fn, args...)`: a call that blocks runs on a pool, and the coroutine resumes on
+  its own loop (Huly QB-69).** A blocking file read, a `getaddrinfo`, a KDF sized for a login endpoint, the
+  compression of megabytes: on a qb-io loop each held the thread -- under qb-core, every actor of the core -- and the
+  book's remedy was a thread of your own and an event back. `offload` (`<qb/io/async/coroutine/offload.h>`, through
+  `<qb/io/async.h>`) copies the callable and its arguments at the call, runs it on a process-wide pool, destroys it
+  there, and hands the result -- a value, never a reference -- back by `co_await` on the thread that awaited, rethrowing
+  what the call threw. The pool is qb-io's first worker threads, confined: none exists before the first `offload`, two
+  by default (`set_offload_threads(n)` before that), FIFO; `current_offload_stats()` reads its counters. A running
+  call is never interrupted: a frame destroyed while it runs is not resumed, its result is destroyed on its loop and
+  counted `discarded`. Inside an actor, `ScopedCoroContext::offload` is the form: a kill ends the wait at once with
+  `cancelled_error` (a bare `offload`, like a bare `sleep`, waits through a kill). Each awaiting thread gets a
+  completion port, its own `ev_async` on its loop, started while an offload of the thread is in flight: the loop
+  counts as busy then, so a `VirtualCore` parks inside it and the pool's send ends the park, and the send is made
+  under the port's mutex, which keeps it off a loop being destroyed. No existing path changed to make room for it --
+  `has_work()`, the non-blocking pass's gate and the park already treat a referenced `ev_async` and a cross-thread
+  send as work. Nobody pays for it who does not call it: no instruction of the hot path changed -- the linked
+  qb-vs-others binaries compared function by function on g++-14 (the core, the loop, the mailbox and the scheduler
+  only moved, by multiples of 64 bytes) and every recompiled function on MSVC 19.51 (18 898 identical, 298 new) --
+  and the Savina cells and the pass, ask and push probes measured level on both hosts (`fib` one-core +1.4 % on g++
+  was placement: -0.3 % with both sides built at 64-byte alignment). A round trip costs 1.7 µs on a polling MSVC loop
+  and 12.4 µs on a parked one, 13.3 and 26.8 µs on WSL2, where a pool thread's wake from its condition variable is
+  the cost; a burst through the two threads, 0.48 and 1.07 µs an offload
+  (`tests/io/benchmark/coroutine/offload-roundtrip.cpp`). Pinned by `tests/io/system/coroutine/offload.cpp` (nine cases, on the per-backend matrix),
+  `tests/core/system/coroutine/coroutine-offload.cpp` and a case of `core-park-wake.cpp`, which catch each of eleven
+  defects planted one at a time; `examples/03-coroutines/15-offloading-blocking-work.cpp` measures a 5 ms heartbeat
+  beside a 300 ms call: inline, its worst gap is the call; offloaded, one tick.
 
 ### Changed
 
@@ -212,6 +238,13 @@ policy.
   `src:` form, a range whose first line is blank, a bare basename with a line spec, slash-joined line lists, a
   citation inside a token that does not parse whole, and another project's file against the sibling checkout in the
   superproject; `scripts/llm-guard.py` no longer drops the second element of a `/:` pair.
+- **The qb-io book: a call that blocks, and what an actor's kill does to a parked coroutine (Huly QB-69).**
+  `3_qb_io/coroutines.md` gains "Offloading blocking work"; `gaps.md`'s remedies for a blocking file read, a DNS
+  lookup, a KDF and a compression -- "a thread you own" -- are `offload` now, with a resolve-on-the-pool recipe;
+  `async_system.md` names the pool as the one set of threads qb-io starts. And one sentence of `coroutines.md` was
+  wrong: it listed `Actor::kill()` among what destroys a parked frame. A kill cancels the actor's scope, which wakes
+  the cancellation-aware operations of its context -- `ctx.cancellable` and `ctx.offload` destroy the frame they
+  wrapped -- and destroys nothing else: a spawned coroutine parked on anything else is neither woken nor reclaimed.
 
 ## [3.2.1] - 2026-09-24
 

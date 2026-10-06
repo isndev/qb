@@ -12,6 +12,8 @@
 
 That single design choice is where qb-io's thread safety comes from. There is no mutex, no atomic and no work-stealing anywhere in the reactor. A `listener` and every object registered with it belong to exactly one thread, and objects reach each other only because they are on the same thread. Under `qb-core` a `VirtualCore` *is* a thread, therefore it is a listener, therefore everything on this page is per-core.
 
+The one set of threads qb-io starts itself is the offload pool (3.3), and it is confined by construction: [`co_await offload(fn, args...)`](./coroutines.md#offloading-blocking-work) runs a call there and hands the result back to the loop that awaited it, through that thread's own `ev_async` — the pool never touches a loop, a watcher or anything registered on one. No pool thread exists before the first `offload` of the process.
+
 Three consequences follow immediately, and all three are load-bearing:
 
 - **An I/O object may not be shared across threads.** Not "should not" — the watcher it registered lives in another thread's loop, and stopping or restarting it from here corrupts libev's per-fd bookkeeping. On Windows the epoll backend is wepoll (IOCP), which additionally requires the whole loop lifecycle to stay on one thread (`src/qb/io/async/listener.h:80-82`).
@@ -399,7 +401,7 @@ Both counters include deferred callbacks and coroutine resumes, not just libev w
 - **`on(event::X&)` silently never fires.** Use `on(event::X&&)` or `on(event::X const&)` for everything except the `with_timeout` timer, which is delivered as an lvalue.
 - **`EVRUN_ONCE` can park for a very long time** under a timerfd-enabled libev build with no heap timers. Pump with `run_until` or `run(EVRUN_NOWAIT)`.
 - **Every timed API takes `qb::duration` or another `std::chrono::duration`, never a bare number.** `setTimeout(500)` does not compile, and there is no `double`-seconds overload to fall back on — see [the time vocabulary](../0_foundations/time.md#qbduration-rejects-a-bare-integer).
-- **One thread per listener.** Never share I/O objects, watchers or the loop across threads. If two threads must talk, the actor mailbox is the one legal channel.
+- **One thread per listener.** Never share I/O objects, watchers or the loop across threads. If two threads must talk, the actor mailbox is the channel; for a call that must run off the loop, [`offload`](./coroutines.md#offloading-blocking-work) is.
 
 ## See also
 

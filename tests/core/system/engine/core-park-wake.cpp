@@ -17,11 +17,13 @@
  * sits well under it. A core parks in one of two places (`Mailbox::wait()` in `Main.h`):
  *
  *   - INSIDE ITS EVENT LOOP when it owns active qb-io watchers — `ev_run(EVRUN_ONCE)` under a
- *     `latency` cap. Two things must end that park: io readiness (a socket becoming readable
+ *     `latency` cap. Three things must end that park: io readiness (a socket becoming readable
  *     wakes the core at poll latency, where until 3.2 it waited for the park timeout — the
  *     qb-vs-others audit measured p50 1.1 ms at 100 µs latency, 15 ms at 10 ms, against 19 µs
- *     while polling; axis N) and a producer's `notify()` — which cannot signal a condition
- *     variable the core is not waiting on, so it sends the loop's `ev_async` instead;
+ *     while polling; axis N), a producer's `notify()` — which cannot signal a condition
+ *     variable the core is not waiting on, so it sends the loop's `ev_async` instead — and an
+ *     offload returning on a pool thread, which sends its own port's `ev_async` (3.3, Huly QB-69:
+ *     a core with an offload in flight owns that referenced watcher, so it parks in its loop);
  *   - ON ITS MAILBOX CONDITION VARIABLE when it owns none, where `notify()` signals the cv.
  *
  * The producer chooses between the two under the mailbox mutex, from the consumer's published
@@ -394,6 +396,65 @@ TEST(CoreParkWake, CrossCorePushWakesACoreParkedOnItsMailbox) {
     const auto delay = push_to_delivery();
     EXPECT_LT(delay, kLatency / 4) << "the push waited for the park timeout: delivered after "
                                    << std::chrono::duration_cast<std::chrono::milliseconds>(delay).count() << " ms";
+}
+
+// ---- an offload returning on a pool thread ------------------------------------------------------
+
+std::atomic<int>          g_offload_rounds{0};
+std::atomic<std::int64_t> g_offload_worst_ns{-1};
+
+/// Awaits `kRounds` offloads one after the other, each a 20 ms call on the pool, and keeps the
+/// WORST delay between a call returning (stamped on the pool thread) and its coroutine resuming on
+/// this core. The core has nothing else to do: between two returns it parks, in its loop, and only
+/// the pool's send can end that park before the cap.
+class OffloadingActor : public qb::Actor {
+public:
+    static constexpr int kRounds = 10;
+
+    qb::io::async::task<bool>
+    onInit() override {
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            for (int i = 0; i < kRounds; ++i) {
+                const std::int64_t returned_at = co_await ctx.offload([] {
+                    std::this_thread::sleep_for(20ms);
+                    return now_ns();
+                });
+                const std::int64_t late        = now_ns() - returned_at;
+                if (late > g_offload_worst_ns.load(std::memory_order_acquire))
+                    g_offload_worst_ns.store(late, std::memory_order_release);
+                g_offload_rounds.fetch_add(1, std::memory_order_acq_rel);
+            }
+            ctx.push<qb::KillEvent>();
+        });
+        co_return true;
+    }
+};
+
+TEST(CoreParkWake, AnOffloadReturningOnThePoolWakesACoreParkedInItsLoop) {
+    // Each resume must follow its call's return by a tenth of the 500 ms cap at most -- a wake
+    // that fell through to the cap is 500 ms late on its own -- and across the rounds the process
+    // (this core and a pool thread that sleeps) must have charged well under the wall time, or the
+    // core polled while it waited instead of parking.
+    g_offload_rounds.store(0, std::memory_order_release);
+    g_offload_worst_ns.store(-1, std::memory_order_release);
+    constexpr auto kLatency = 500ms;
+    qb::Main       main;
+    main.core(0).setLatency(kLatency).setIdleSpin(0us);
+    main.addActor<OffloadingActor>(0);
+    const auto cpu_before  = process_cpu_time();
+    const auto wall_before = Clock::now();
+    main.start(false);
+    main.join();
+    const auto wall = Clock::now() - wall_before;
+    const auto cpu  = process_cpu_time() - cpu_before;
+    EXPECT_FALSE(main.hasError());
+    ASSERT_EQ(g_offload_rounds.load(std::memory_order_acquire), OffloadingActor::kRounds) << "an offload never resumed";
+    const auto worst = std::chrono::nanoseconds{g_offload_worst_ns.load(std::memory_order_acquire)};
+    EXPECT_LT(worst, kLatency / 10) << "an offload's resume waited for the park cap: "
+                                    << std::chrono::duration_cast<std::chrono::milliseconds>(worst).count() << " ms after its call returned";
+    EXPECT_LT(cpu, wall / 2) << "the core polled while its offloads ran instead of parking: "
+                             << std::chrono::duration_cast<std::chrono::microseconds>(cpu).count() << " us of CPU across "
+                             << std::chrono::duration_cast<std::chrono::microseconds>(wall).count() << " us";
 }
 
 } // namespace core_park_wake_test
