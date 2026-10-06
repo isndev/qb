@@ -822,9 +822,10 @@ public: /// portable connect APIs
     QB__DECL int pconnect_n(const endpoint &ep, const qb::duration &wtimeout, u_short local_port = 0);
     QB__DECL int pconnect_n(const endpoint &ep, u_short local_port = 0);
 
-    // easy to create a tcp ipv4 or ipv6 server socket.
+    // easy to create a tcp ipv4 or ipv6 server socket; `share_port` sets SO_REUSEPORT before the bind and fails with
+    // ENOPROTOOPT where the system has none (Windows) -- see reuse_port().
     QB__DECL int pserve(const char *addr, u_short port);
-    QB__DECL int pserve(const endpoint &ep);
+    QB__DECL int pserve(const endpoint &ep, bool share_port = false);
 
 public:
     /**
@@ -1197,7 +1198,22 @@ public:
     QB__DECL int        set_keepalive(int flag = 1, int idle = 7200, int interval = 75, int probes = 10);
     QB__DECL static int set_keepalive(socket_type s, int flag, int idle, int interval, int probes);
 
+    /**
+     * @brief Set `SO_REUSEADDR`: on POSIX, bind a port whose previous connections linger in TIME_WAIT.
+     * @note Since 3.3 it sets `SO_REUSEADDR` only. It set `SO_REUSEPORT` too, which lets ANOTHER socket bind the
+     *       same port: that is `reuse_port()`, asked for by name (Huly QB-78). On Windows `SO_REUSEADDR` binds over
+     *       a socket already bound -- a listener must not use it, and `pserve` does not.
+     */
     QB__DECL void reuse_address(bool reuse);
+
+    /**
+     * @brief Set `SO_REUSEPORT` (before `bind`): sockets that all set it may bind the same address and port.
+     * @return false where the system has no such option (Windows), or when `setsockopt` refused it.
+     * @details On Linux the kernel then balances incoming connections across the listening sockets -- one
+     *          listener per core shards the accept with no hand-off. macOS and the BSDs allow the shared bind
+     *          without balancing (FreeBSD's balancing variant is `SO_REUSEPORT_LB`).
+     */
+    QB__DECL bool reuse_port(bool reuse);
 
     QB__DECL void exclusive_address(bool exclusive);
 

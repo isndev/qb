@@ -140,6 +140,15 @@ policy.
   race), which catches a reload that changes nothing and one that installs a falsy context; a reload that rewrites
   the served context in place is caught only by its identity check, since OpenSSL copies the certificate into each
   `SSL` at accept -- its harm is the race with the other holders of the context, which no single-thread test shows.
+- **One listener per core on one port: `tcp::listen_options{.reuse_port = true}` (Huly QB-78).** Every `listen`
+  overload takes it (a defaulted last parameter), and `socket::reuse_port(bool)` is its low-level twin; both set
+  `SO_REUSEPORT` before the bind. On Linux the kernel balances the accept across the listeners sharing the port --
+  one per `VirtualCore`, each accepting and serving its own connections with no hand-off; macOS and the BSDs share
+  the bind without balancing; Windows has no such option and a listen that asks for it fails with `ENOPROTOOPT`,
+  its socket closed, instead of binding a port no one else may take. Pinned by
+  `tests/io/system/tcp/listen-reuse-port.cpp` (two listeners share a port only when both asked; on Linux 64
+  connections over two listeners land on both), which catches six defects planted one at a time across Windows
+  and Linux; `examples/05-services/05-sharded-accept` measures the distribution over four cores.
 - **OCSP stapling, typed on `qb::io::ssl::Context` (Huly QB-83).** `on_ocsp_staple(fn(servername) -> DER)` staples
   the response a server returns (an empty vector staples none); `on_ocsp_response(fn(OcspContext&) -> bool)` makes
   every connection of a client context ask for a staple and judges it -- `false` fails the handshake -- through a
@@ -153,6 +162,12 @@ policy.
   with `tls-context-reload.cpp` moved to `tests/io/shared/tls_pump.h`.
 
 ### Changed
+
+- **`socket::reuse_address(true)` no longer shares the port (Huly QB-78).** It set `SO_REUSEPORT` beside
+  `SO_REUSEADDR` where the system has it, so a caller asking to rebind a port in `TIME_WAIT` also let any other
+  socket that set `SO_REUSEPORT` bind the same port, unasked. It sets `SO_REUSEADDR` only; sharing is
+  `reuse_port(true)` or `listen_options{.reuse_port = true}`. Nothing in qb called it (`pserve` sets its own
+  option), so only an explicit caller of this low-level member sees the change.
 
 - **A `qb::io::ssl::Context` that refuses a configuration says why (Huly QB-205).** `error()` named the OpenSSL call
   and the file -- `SSL_CTX_use_PrivateKey_file failed for key.pem` -- and nothing of what was wrong with it; it now

@@ -186,9 +186,9 @@ Only a descriptor the `connect` over a list opens itself is replaced between two
 
 | Method | Returns | Purpose |
 |---|---|---|
-| `listen(endpoint const&)` / `listen(uri const&)` | `int` | Open, bind, and listen on an endpoint or URI; backlog is `SOMAXCONN`. |
-| `listen_v4(port, host = "0.0.0.0")` | `int` | Listen on an IPv4 address. |
-| `listen_v6(port, host = "::")` | `int` | Listen on an IPv6 address. |
+| `listen(endpoint const&, listen_options const& = {})` / `listen(uri const&, listen_options const& = {})` | `int` | Open, bind, and listen on an endpoint or URI; backlog is `SOMAXCONN`. |
+| `listen_v4(port, host = "0.0.0.0", listen_options const& = {})` | `int` | Listen on an IPv4 address. |
+| `listen_v6(port, host = "::", listen_options const& = {})` | `int` | Listen on an IPv6 address. |
 | `listen_un(std::filesystem::path const&)` | `int` | Listen on a Unix domain socket (requires `QB_ENABLE_UDS`). |
 | `accept()` | `tcp::socket` | Accept one connection and return it as a new socket; the result is not open on error. |
 | `accept(tcp::socket& sock)` | `int` | Accept into an existing socket object; `0` on success. |
@@ -197,6 +197,8 @@ Only a descriptor the `connect` over a list opens itself is replaced between two
 A blocking listener blocks in `accept()`; a non-blocking listener (`set_nonblocking(true)`) returns an error such as `EWOULDBLOCK` when no connection is queued, and is typically driven by the event loop.
 
 The server-side bind sets a platform-correct address-reuse option. On POSIX it sets `SO_REUSEADDR`, so a restarted listener can rebind its port immediately while old connections linger in `TIME_WAIT`. On Windows it instead sets `SO_EXCLUSIVEADDRUSE`: binding a port already in active use fails fast with `WSAEADDRINUSE`, and no other process can hijack (silently shadow) the port — Windows already allows rebinding `TIME_WAIT` ports with no option set, and its `SO_REUSEADDR` has hijack semantics that would let a second bind succeed yet never accept.
+
+**Sharing a port, by name (3.3).** `listen_options{.reuse_port = true}` sets `SO_REUSEPORT` between the socket's creation and its bind (`src/qb/io/tcp/listener.h:32-46`). Every listener that asks shares the port; one that did not ask is refused it, so two unrelated servers still never share one by accident. On Linux the kernel balances incoming connections across the listeners that share the port -- one listener per `VirtualCore`, each accepting and serving its own connections, with no acceptor handing sockets to another core. macOS and the BSDs share the bind without balancing. Windows has no such option, and a listen that asks for it fails with `ENOPROTOOPT` rather than binding a port nobody else may take (`src/qb/io/system/sys__socket.cpp:281-288`). The low-level twin is `socket::reuse_port(bool)`; `socket::reuse_address(bool)` sets `SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too, sharing the port of whoever called it without saying so (`src/qb/io/system/sys__socket.h:1201-1216`). A complete run is `examples/05-services/05-sharded-accept`: four cores, one port, the distribution measured.
 
 <!-- src: qb/src/qb/io/tcp/listener.h -->
 

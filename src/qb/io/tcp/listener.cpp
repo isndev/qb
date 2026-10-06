@@ -27,19 +27,19 @@
 namespace qb::io::tcp {
 
 int
-listener::listen(io::endpoint const &ep) noexcept {
-    const auto ret = pserve(ep);
+listener::listen(io::endpoint const &ep, listen_options const &opts) noexcept {
+    const auto ret = pserve(ep, opts.reuse_port);
     if (!ret && ep.af() != AF_UNIX)
         set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
     return ret;
 }
 
 int
-listener::listen(io::uri const &u) noexcept {
+listener::listen(io::uri const &u, listen_options const &opts) noexcept {
     switch (u.af()) {
         case AF_INET:
         case AF_INET6:
-            return listen(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
+            return listen(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()), opts);
         case AF_UNIX:
             const auto path = std::string(u.path()) + std::string(u.host());
             return listen_un(path.c_str());
@@ -48,13 +48,13 @@ listener::listen(io::uri const &u) noexcept {
 }
 
 int
-listener::listen_v4(uint16_t port, std::string const &host) noexcept {
-    return listen(io::endpoint().as_in(host.c_str(), port));
+listener::listen_v4(uint16_t port, std::string const &host, listen_options const &opts) noexcept {
+    return listen(io::endpoint().as_in(host.c_str(), port), opts);
 }
 
 int
-listener::listen_v6(uint16_t port, std::string const &host) noexcept {
-    return listen(io::endpoint().as_in(host.c_str(), port));
+listener::listen_v6(uint16_t port, std::string const &host, listen_options const &opts) noexcept {
+    return listen(io::endpoint().as_in(host.c_str(), port), opts);
 }
 
 int

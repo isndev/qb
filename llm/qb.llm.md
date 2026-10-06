@@ -590,6 +590,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
   free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:471, :892, :84, :95)_
+- **A port is shared only by name (3.3): `listen(ep, qb::io::tcp::listen_options{.reuse_port = true})`.**
+  _(tcp/listener.h:32-46)_ Every listener that asks shares the port and, on Linux, the kernel balances the accept
+  across them -- one listener per core, each serving its own connections. Windows refuses the listen with
+  `ENOPROTOOPT`, from `reuse_port` _(sys__socket.cpp:281-288)_; `socket::reuse_address` sets `SO_REUSEADDR` only.
 - **OCSP goes through the Context too (3.3): `on_ocsp_staple` (server) / `on_ocsp_response` (client).** The
   client check asks every server for a staple and judges it through `OcspContext` (`response()` DER, `native()`
   for `OCSP_basic_verify`); `false` fails the handshake, an empty response means nothing was stapled. A typed

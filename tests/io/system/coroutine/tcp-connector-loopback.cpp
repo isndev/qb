@@ -55,7 +55,7 @@
  *
  * `read_until_data` below is NOT part of that family and is deliberately left alone: it polls the
  * socket the connector yields, and `n_connect` -> `socket::connect_n(s, ep)` sets that socket
- * non-blocking and never restores it (sys__socket.cpp:789-793), so its `qb::mono_now() < deadline`
+ * non-blocking and never restores it (sys__socket.cpp:798-802), so its `qb::mono_now() < deadline`
  * is genuinely reachable.
  *
  * @ingroup Tests

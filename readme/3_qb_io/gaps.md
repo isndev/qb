@@ -90,7 +90,7 @@ What to do about it, in order of preference: read the file **before** `qb::Main:
 
 ## Hostname resolution is synchronous — including inside `co_await tcp::connect`
 
-`qb::io::socket::resolve` and its `_v4` / `_v6` / `_v4to6` siblings call `getaddrinfo` directly (`src/qb/io/system/sys__socket.h:1438-1466`). `getaddrinfo` is a blocking call: on a cache miss it does network I/O and can take as long as the resolver takes.
+`qb::io::socket::resolve` and its `_v4` / `_v6` / `_v4to6` siblings call `getaddrinfo` directly (`src/qb/io/system/sys__socket.h:1454-1482`). `getaddrinfo` is a blocking call: on a cache miss it does network I/O and can take as long as the resolver takes.
 
 That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:734-738`). `run()` resolves a hostname URI with `tcp::resolve_endpoints` (`src/qb/io/async/tcp/connector.h:518`), which walks `resolve_i` for every address of the URI's family before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:75-85`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread. What the connector does with the list since 3.3 is the other half: it tries the addresses in order, and one that refuses, fails or does not answer within its share of the deadline gives way to the next (Huly QB-164) -- a dead address in a DNS round-robin no longer fails the connect.
 
@@ -100,7 +100,7 @@ There is no asynchronous resolver in the tree, so the honest options are:
 - Resolve on the offload pool, then connect to the addresses it returns, with the same fallback -- the lookup blocks a pool thread, not the loop:
 
   ```cpp
-  // src: derived from qb/src/qb/io/async/coroutine/offload.h:299 (offload), qb/src/qb/io/system/sys__socket.h:1388 (resolve_v4), qb/src/qb/io/async/tcp/connector.h:1009 (connect over a list)
+  // src: derived from qb/src/qb/io/async/coroutine/offload.h:299 (offload), qb/src/qb/io/system/sys__socket.h:1404 (resolve_v4), qb/src/qb/io/async/tcp/connector.h:1009 (connect over a list)
   auto endpoints = co_await qb::io::async::offload(
       [](std::string host, unsigned short port) {
           std::vector<qb::io::endpoint> out;

@@ -29,6 +29,22 @@
 
 namespace qb::io::tcp {
 
+/**
+ * @struct listen_options
+ * @ingroup TCP
+ * @brief What a listening socket is given between its creation and its bind (Huly QB-78).
+ */
+struct listen_options {
+    /**
+     * @brief Share the port with every other listener that asks for it (`SO_REUSEPORT`).
+     * @details On Linux the kernel balances incoming connections across the listeners that share the port --
+     *          one listener per `VirtualCore`, the accept sharded with no hand-off. macOS and the BSDs allow the
+     *          shared bind without balancing. Windows has no such option: a listen that asks for it fails with
+     *          `ENOPROTOOPT` (`WSAENOPROTOOPT`). Without it, a second listener on a port in use fails to bind.
+     */
+    bool reuse_port = false;
+};
+
 /*!
  * @class listener
  * @ingroup TCP
@@ -66,8 +82,9 @@ public:
      * @details This method first opens a socket with the address family of the endpoint,
      *          then binds to the endpoint and starts listening for incoming connections.
      *          Default backlog is `SOMAXCONN`.
+     * @param opts What the socket is given before its bind: `reuse_port` (see `listen_options`).
      */
-    int listen(io::endpoint const &ep) noexcept;
+    int listen(io::endpoint const &ep, listen_options const &opts = {}) noexcept;
 
     /**
      * @brief Start listening on an endpoint specified by a URI.
@@ -75,8 +92,9 @@ public:
      * @return 0 on success, or a non-zero error code on failure.
      * @details Parses the URI to determine the address and port, then calls the appropriate
      *          `listen_v4`, `listen_v6`, or `listen_un` method.
+     * @param opts What the socket is given before its bind (`listen_options`; ignored for a Unix-domain URI).
      */
-    int listen(io::uri const &uri) noexcept;
+    int listen(io::uri const &uri, listen_options const &opts = {}) noexcept;
 
     /**
      * @brief Start listening on a specific IPv4 address and port.
@@ -85,7 +103,7 @@ public:
      *             Defaults to "0.0.0.0".
      * @return 0 on success, or a non-zero error code on failure.
      */
-    int listen_v4(uint16_t port, std::string const &host = "0.0.0.0") noexcept;
+    int listen_v4(uint16_t port, std::string const &host = "0.0.0.0", listen_options const &opts = {}) noexcept;
 
     /**
      * @brief Start listening on a specific IPv6 address and port.
@@ -94,7 +112,7 @@ public:
      *             Defaults to "::".
      * @return 0 on success, or a non-zero error code on failure.
      */
-    int listen_v6(uint16_t port, std::string const &host = "::") noexcept;
+    int listen_v6(uint16_t port, std::string const &host = "::", listen_options const &opts = {}) noexcept;
 
     /**
      * @brief Start listening on a Unix domain socket.

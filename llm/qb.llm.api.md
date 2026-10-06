@@ -532,7 +532,7 @@ RFC 3986 URI. Parsed on construction.
 
 ### Low-level socket (`<qb/io/system/sys__socket.h>`)
 *   `using qb::io::socket_type = int` (POSIX) / `SOCKET` (Windows) (from config.h).
-*   `class qb::io::socket` — cross-platform move-only socket wrapper. Lifecycle: `open`/`reopen`/`close`/`is_open`/`native_handle`/`release_handle`. I/O: `send`/`recv`/`sendto`/`recvfrom`, timed `send_n`/`recv_n`/`connect_n`/`handle_read_ready`/`handle_write_ready` taking `qb::duration`. Connect/serve: `pconnect`/`xpconnect`/`pserve`, `bind`/`listen`/`accept`/`accept_n`. Options: `set_optval`/`get_optval`/`ioctl`/`set_keepalive`/`reuse_address(bool)`/`exclusive_address(bool)`. Static: `resolve*`/`getipsv`/`traverse_local_address`/`get_last_errno`.
+*   `class qb::io::socket` — cross-platform move-only socket wrapper. Lifecycle: `open`/`reopen`/`close`/`is_open`/`native_handle`/`release_handle`. I/O: `send`/`recv`/`sendto`/`recvfrom`, timed `send_n`/`recv_n`/`connect_n`/`handle_read_ready`/`handle_write_ready` taking `qb::duration`. Connect/serve: `pconnect`/`xpconnect`/`pserve`, `bind`/`listen`/`accept`/`accept_n`. Options: `set_optval`/`get_optval`/`ioctl`/`set_keepalive`/`reuse_address(bool)` (`SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too)/`bool reuse_port(bool)` (since 3.3: `SO_REUSEPORT`, `false` + `ENOPROTOOPT` on Windows)/`exclusive_address(bool)`; `pserve(const endpoint&, bool share_port = false)`. Static: `resolve*`/`getipsv`/`traverse_local_address`/`get_last_errno`.
     *   `pserve` sets `SO_REUSEADDR` on POSIX but `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`): on Windows an in-use bind fails fast with `WSAEADDRINUSE` (no silent hijack/shadowing of an already-bound port), while POSIX keeps the TIME_WAIT-rebind behavior.
 *   `struct qb::io::inet::ip::endpoint` (alias surface `qb::io::endpoint`) — address-family-agnostic socket address (union of sockaddr/in/in6/un). Builders `as_in`/`as_un`/`as_is`; accessors `af()`, `port()`, `addr_v4()`, `ip()`, `to_string()`; `explicit operator bool` (`af()!=AF_UNSPEC`); `operator<`/`operator==`.
 *   `enum qb::io::SocketStatus { Error = -1, Done, CertificateError };`
@@ -557,7 +557,8 @@ Reliable stream socket (IPv4/IPv6/Unix). `constexpr is_secure() == false`. Re-ex
 
 #### `class qb::io::tcp::listener : private qb::io::socket`
 TCP listener. `constexpr is_secure() == false`.
-*   `int listen(const io::endpoint&) noexcept` / `listen(const io::uri&)` / `int listen_v4(uint16_t port, const std::string& host = "0.0.0.0") noexcept` / `listen_v6(uint16_t port, const std::string& host = "::")` / `listen_un(const std::filesystem::path& path)` (default backlog SOMAXCONN).
+*   `int listen(const io::endpoint&, const listen_options& = {}) noexcept` / `listen(const io::uri&, const listen_options& = {})` / `int listen_v4(uint16_t port, const std::string& host = "0.0.0.0", const listen_options& = {}) noexcept` / `listen_v6(uint16_t port, const std::string& host = "::", const listen_options& = {})` / `listen_un(const std::filesystem::path& path)` (default backlog SOMAXCONN).
+*   `struct qb::io::tcp::listen_options { bool reuse_port = false; }` (since 3.3, Huly QB-78) — `reuse_port`: share the port with every listener that asks (`SO_REUSEPORT`, set before the bind). Linux balances the accept across them (one listener per `VirtualCore`, no hand-off); macOS/BSDs share without balancing; Windows: the listen FAILS with `ENOPROTOOPT`. A listener that did not ask is refused the port.
 *   `tcp::socket accept() const noexcept` / `int accept(tcp::socket& sock) const noexcept` (0 on success).
 *   `int disconnect() const noexcept`
 

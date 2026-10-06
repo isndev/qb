@@ -247,7 +247,7 @@ socket::pserve(const char *addr, u_short port) {
     return this->pserve(endpoint{addr, port});
 }
 int
-socket::pserve(const endpoint &ep) {
+socket::pserve(const endpoint &ep, bool share_port) {
     if (!this->reopen(ep.af()))
         return -1;
 
@@ -277,6 +277,15 @@ socket::pserve(const endpoint &ep) {
     // Linux behaviour the tests assume and is a no-op for a specific address like "::1".
     if (ep.af() == AF_INET6)
         set_optval(IPPROTO_IPV6, IPV6_V6ONLY, 0);
+
+    // Sharing the port is asked for by name and refused honestly: where the system cannot share it (Windows),
+    // the listen fails with ENOPROTOOPT instead of binding a port nobody else may take (Huly QB-78).
+    if (share_port && !this->reuse_port(true)) {
+        const int err = get_last_errno();
+        this->close();
+        set_last_errno(err);
+        return -1;
+    }
 
     int n = this->bind(ep);
     if (n != 0)
@@ -1050,12 +1059,18 @@ socket::set_keepalive(socket_type s, int flag, int idle, int interval, int probe
 
 void
 socket::reuse_address(bool reuse) {
-    int optval = reuse ? 1 : 0;
+    // All operating systems have 'SO_REUSEADDR'. SO_REUSEPORT is reuse_port()'s: sharing a port is asked for by name.
+    this->set_optval(SOL_SOCKET, SO_REUSEADDR, reuse ? 1 : 0);
+}
 
-    // All operating systems have 'SO_REUSEADDR'
-    this->set_optval(SOL_SOCKET, SO_REUSEADDR, optval);
-#if defined(SO_REUSEPORT) // macos,ios,linux,android
-    this->set_optval(SOL_SOCKET, SO_REUSEPORT, optval);
+bool
+socket::reuse_port(bool reuse) {
+#if defined(SO_REUSEPORT) && !defined(_WIN32) // linux, android, macos, ios, the BSDs
+    return this->set_optval(SOL_SOCKET, SO_REUSEPORT, reuse ? 1 : 0) == 0;
+#else
+    (void) reuse;
+    set_last_errno(ENOPROTOOPT);
+    return false;
 #endif
 }
 

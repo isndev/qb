@@ -198,3 +198,7 @@ qb_add_test(MODULE qb-io TIER system NAME tls-context-reload SOURCES tls/tls-con
 # OCSP through qb::io::ssl::Context's typed callbacks (Huly QB-83): the staple reaches the client check byte for byte,
 # the check decides, every typed callback that throws fails closed, a typed callback and its raw setter share one slot.
 qb_add_test(MODULE qb-io TIER system NAME tls-ocsp-callbacks SOURCES tls/tls-ocsp-callbacks.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+
+# SO_REUSEPORT asked for by name (Huly QB-78): reuse_address shares no port any more, reuse_port and the listen option
+# share one only when every listener asked, Windows refuses with ENOPROTOOPT, and Linux balances the accept.
+qb_add_test(MODULE qb-io TIER system NAME listen-reuse-port SOURCES tcp/listen-reuse-port.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
