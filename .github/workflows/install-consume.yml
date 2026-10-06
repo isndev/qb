@@ -39,7 +39,8 @@ jobs:
           cmake -S . -B build-install -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PWD/_prefix" \
-            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
+            -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON
           cmake --build build-install --parallel
           cmake --install build-install
 

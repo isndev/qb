@@ -270,6 +270,18 @@ constexpr const char *const GZIP = "gzip";
 constexpr const char *const DEFLATE = "deflate";
 
 /**
+ * @brief Identifier for the zstd compression algorithm (`Content-Encoding: zstd`, RFC 8878)
+ * @note Registered only in a build with `QB_WITH_ZSTD` (`QB_HAS_ZSTD`); `supported(ZSTD)` says which (Huly QB-79).
+ */
+constexpr const char *const ZSTD = "zstd";
+
+/**
+ * @brief Identifier for the brotli compression algorithm (`Content-Encoding: br`, RFC 7932)
+ * @note Registered only in a build with `QB_WITH_BROTLI` (`QB_HAS_BROTLI`); `supported(BROTLI)` says which (Huly QB-79).
+ */
+constexpr const char *const BROTLI = "br";
+
+/**
  * @brief Check if a specific compression algorithm is supported
  * @param algorithm Name of the algorithm to check
  * @return true if the algorithm is supported, false otherwise
@@ -340,6 +352,24 @@ std::unique_ptr<compress_provider> make_gzip_compressor(int compressionLevel, in
  * @return Unique pointer to a deflate compressor provider
  */
 std::unique_ptr<compress_provider> make_deflate_compressor(int compressionLevel, int method, int strategy, int memLevel);
+
+/**
+ * @brief Create a zstd compressor at a given level (Huly QB-79)
+ * @param level zstd compression level (1 fastest .. 19, up to 22 with `--ultra`-sized windows; 3 is zstd's default);
+ *              negative levels trade ratio for speed
+ * @return The provider, or nullptr in a build without `QB_HAS_ZSTD`
+ * @throws std::runtime_error If zstd refuses the level
+ */
+std::unique_ptr<compress_provider> make_zstd_compressor(int level = 3);
+
+/**
+ * @brief Create a brotli compressor (Huly QB-79)
+ * @param quality brotli quality (0 fastest .. 11 smallest); 5 suits dynamic responses, 11 static assets
+ * @param window_bits base-2 logarithm of the window (10 .. 24)
+ * @return The provider, or nullptr in a build without `QB_HAS_BROTLI`
+ * @throws std::runtime_error If brotli refuses a parameter
+ */
+std::unique_ptr<compress_provider> make_brotli_compressor(int quality = 5, int window_bits = 22);
 
 } // namespace builtin
 

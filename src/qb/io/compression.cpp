@@ -34,6 +34,13 @@
 #undef compress
 #endif
 #endif
+#if defined(QB_HAS_COMPRESSION) && defined(QB_HAS_ZSTD)
+#include <zstd.h>
+#endif
+#if defined(QB_HAS_COMPRESSION) && defined(QB_HAS_BROTLI)
+#include <brotli/decode.h>
+#include <brotli/encode.h>
+#endif
 #define _XPLATSTR(x) x
 
 static bool
@@ -181,9 +188,12 @@ public:
             throw std::runtime_error("Decompressor not properly initialized");
         }
 
-        if (m_state == Z_STREAM_END || !input_size) {
+        // An empty input is not "nothing to do": inflate may still hold output the previous call had no room for
+        // (a match copy cut by a full buffer). Only a finished stream returns at once; an empty call with nothing
+        // pending comes back from inflate as Z_BUF_ERROR, which is not an error, and produces nothing.
+        if (m_state == Z_STREAM_END) {
             input_bytes_processed = 0;
-            done                  = (m_state == Z_STREAM_END);
+            done                  = true;
             return 0;
         }
 
@@ -279,6 +289,273 @@ public:
     {}
 };
 
+// zstd and brotli (Huly QB-79) honour the provider contract the zlib pair defines above: an `is_last` call finishes
+// the stream and is repeated until `done`; a call without `is_last` flushes what the input produced; a decompress
+// call with no input still hands back output an earlier call had no room for; a finished stream returns at once.
+#if defined(QB_HAS_ZSTD)
+static const std::string g_zstd_name(algorithm::ZSTD);
+
+class zstd_compressor final : public compress_provider {
+public:
+    explicit zstd_compressor(int level)
+        : m_ctx(ZSTD_createCCtx()) {
+        if (!m_ctx)
+            throw std::runtime_error("Failed to create a zstd compression context");
+        const std::size_t r = ZSTD_CCtx_setParameter(m_ctx, ZSTD_c_compressionLevel, level);
+        if (ZSTD_isError(r)) {
+            ZSTD_freeCCtx(m_ctx);
+            throw std::runtime_error(std::string("zstd refused compression level ") + std::to_string(level) + ": " + ZSTD_getErrorName(r));
+        }
+    }
+
+    zstd_compressor(const zstd_compressor &)            = delete;
+    zstd_compressor &operator=(const zstd_compressor &) = delete;
+
+    ~zstd_compressor() override {
+        ZSTD_freeCCtx(m_ctx);
+    }
+
+    const std::string &
+    algorithm() const override {
+        return g_zstd_name;
+    }
+
+    std::size_t
+    compress(const uint8_t *input, std::size_t input_size, uint8_t *output, std::size_t output_size, operation_hint hint,
+             std::size_t &input_bytes_processed, bool &done) override {
+        if (m_done || (hint != operation_hint::is_last && !input_size)) {
+            input_bytes_processed = 0;
+            done                  = m_done;
+            return 0;
+        }
+        ZSTD_inBuffer           in{input, input_size, 0};
+        ZSTD_outBuffer          out{output, output_size, 0};
+        const ZSTD_EndDirective mode      = (hint == operation_hint::is_last) ? ZSTD_e_end : ZSTD_e_flush;
+        const std::size_t       remaining = ZSTD_compressStream2(m_ctx, &out, &in, mode);
+        if (ZSTD_isError(remaining))
+            throw std::runtime_error(std::string("zstd compression error: ") + ZSTD_getErrorName(remaining));
+        input_bytes_processed = in.pos;
+        m_done                = (mode == ZSTD_e_end && remaining == 0 && in.pos == in.size);
+        done                  = m_done;
+        return out.pos;
+    }
+
+    void
+    reset() override {
+        ZSTD_CCtx_reset(m_ctx, ZSTD_reset_session_only);
+        m_done = false;
+    }
+
+private:
+    ZSTD_CCtx *m_ctx;
+    bool       m_done = false;
+};
+
+class zstd_decompressor final : public decompress_provider {
+public:
+    zstd_decompressor()
+        : m_ctx(ZSTD_createDCtx()) {
+        if (!m_ctx)
+            throw std::runtime_error("Failed to create a zstd decompression context");
+    }
+
+    zstd_decompressor(const zstd_decompressor &)            = delete;
+    zstd_decompressor &operator=(const zstd_decompressor &) = delete;
+
+    ~zstd_decompressor() override {
+        ZSTD_freeDCtx(m_ctx);
+    }
+
+    const std::string &
+    algorithm() const override {
+        return g_zstd_name;
+    }
+
+    std::size_t
+    decompress(const uint8_t *input, std::size_t input_size, uint8_t *output, std::size_t output_size, operation_hint,
+               std::size_t &input_bytes_processed, bool &done) override {
+        if (m_done) {
+            input_bytes_processed = 0;
+            done                  = true;
+            return 0;
+        }
+        ZSTD_inBuffer     in{input, input_size, 0};
+        ZSTD_outBuffer    out{output, output_size, 0};
+        const std::size_t r = ZSTD_decompressStream(m_ctx, &out, &in);
+        if (ZSTD_isError(r))
+            throw std::runtime_error(std::string("zstd decompression error: ") + ZSTD_getErrorName(r));
+        input_bytes_processed = in.pos;
+        m_done                = (r == 0); // a frame fully decoded AND flushed
+        done                  = m_done;
+        return out.pos;
+    }
+
+    void
+    reset() override {
+        ZSTD_DCtx_reset(m_ctx, ZSTD_reset_session_only);
+        m_done = false;
+    }
+
+private:
+    ZSTD_DCtx *m_ctx;
+    bool       m_done = false;
+};
+#endif // QB_HAS_ZSTD
+
+#if defined(QB_HAS_BROTLI)
+static const std::string g_brotli_name(algorithm::BROTLI);
+
+class brotli_compressor final : public compress_provider {
+public:
+    brotli_compressor(int quality, int window_bits)
+        : m_quality(quality)
+        , m_window_bits(window_bits) {
+        open();
+    }
+
+    brotli_compressor(const brotli_compressor &)            = delete;
+    brotli_compressor &operator=(const brotli_compressor &) = delete;
+
+    ~brotli_compressor() override {
+        BrotliEncoderDestroyInstance(m_state);
+    }
+
+    const std::string &
+    algorithm() const override {
+        return g_brotli_name;
+    }
+
+    std::size_t
+    compress(const uint8_t *input, std::size_t input_size, uint8_t *output, std::size_t output_size, operation_hint hint,
+             std::size_t &input_bytes_processed, bool &done) override {
+        if (m_done || (hint != operation_hint::is_last && !input_size && !m_flushing)) {
+            input_bytes_processed = 0;
+            done                  = m_done;
+            return 0;
+        }
+        // brotli refuses a change of operation, or a longer input, while a flush or the finish is still draining: a
+        // flush that did not fit goes on draining -- fed only what is left of ITS input -- before anything else, and
+        // once the finish has begun every call finishes.
+        BrotliEncoderOperation op   = BROTLI_OPERATION_FLUSH;
+        std::size_t            feed = input_size;
+        if (m_flushing)
+            feed = (std::min) (input_size, m_flush_left);
+        else if (m_finishing || hint == operation_hint::is_last) {
+            op          = BROTLI_OPERATION_FINISH;
+            m_finishing = true;
+        }
+        std::size_t    avail_in  = feed;
+        const uint8_t *next_in   = input;
+        std::size_t    avail_out = output_size;
+        uint8_t       *next_out  = output;
+        if (!BrotliEncoderCompressStream(m_state, op, &avail_in, &next_in, &avail_out, &next_out, nullptr))
+            throw std::runtime_error("brotli compression error");
+        input_bytes_processed = feed - avail_in;
+        if (op == BROTLI_OPERATION_FLUSH) {
+            m_flush_left = avail_in;
+            m_flushing   = avail_in > 0 || BrotliEncoderHasMoreOutput(m_state);
+        }
+        m_done = (op == BROTLI_OPERATION_FINISH && BrotliEncoderIsFinished(m_state));
+        done   = m_done;
+        return output_size - avail_out;
+    }
+
+    void
+    reset() override {
+        // brotli has no reset: a fresh encoder with the same parameters
+        BrotliEncoderDestroyInstance(m_state);
+        m_state = nullptr;
+        open();
+        m_done       = false;
+        m_flushing   = false;
+        m_finishing  = false;
+        m_flush_left = 0;
+    }
+
+private:
+    void
+    open() {
+        m_state = BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
+        if (!m_state)
+            throw std::runtime_error("Failed to create a brotli encoder");
+        if (!BrotliEncoderSetParameter(m_state, BROTLI_PARAM_QUALITY, static_cast<uint32_t>(m_quality))
+            || !BrotliEncoderSetParameter(m_state, BROTLI_PARAM_LGWIN, static_cast<uint32_t>(m_window_bits))) {
+            BrotliEncoderDestroyInstance(m_state);
+            m_state = nullptr;
+            throw std::runtime_error("brotli refused quality " + std::to_string(m_quality) + " / window " + std::to_string(m_window_bits));
+        }
+    }
+
+    BrotliEncoderState *m_state = nullptr;
+    int                 m_quality;
+    int                 m_window_bits;
+    bool                m_done       = false;
+    bool                m_flushing   = false; ///< a flush is still draining
+    bool                m_finishing  = false; ///< the finish has begun
+    std::size_t         m_flush_left = 0;     ///< what the draining flush has not taken of its own input
+};
+
+class brotli_decompressor final : public decompress_provider {
+public:
+    brotli_decompressor() {
+        open();
+    }
+
+    brotli_decompressor(const brotli_decompressor &)            = delete;
+    brotli_decompressor &operator=(const brotli_decompressor &) = delete;
+
+    ~brotli_decompressor() override {
+        BrotliDecoderDestroyInstance(m_state);
+    }
+
+    const std::string &
+    algorithm() const override {
+        return g_brotli_name;
+    }
+
+    std::size_t
+    decompress(const uint8_t *input, std::size_t input_size, uint8_t *output, std::size_t output_size, operation_hint,
+               std::size_t &input_bytes_processed, bool &done) override {
+        if (m_done) {
+            input_bytes_processed = 0;
+            done                  = true;
+            return 0;
+        }
+        std::size_t               avail_in  = input_size;
+        const uint8_t            *next_in   = input;
+        std::size_t               avail_out = output_size;
+        uint8_t                  *next_out  = output;
+        const BrotliDecoderResult r         = BrotliDecoderDecompressStream(m_state, &avail_in, &next_in, &avail_out, &next_out, nullptr);
+        if (r == BROTLI_DECODER_RESULT_ERROR)
+            throw std::runtime_error(std::string("brotli decompression error: ")
+                                     + BrotliDecoderErrorString(BrotliDecoderGetErrorCode(m_state)));
+        input_bytes_processed = input_size - avail_in;
+        m_done                = (r == BROTLI_DECODER_RESULT_SUCCESS);
+        done                  = m_done;
+        return output_size - avail_out;
+    }
+
+    void
+    reset() override {
+        BrotliDecoderDestroyInstance(m_state);
+        m_state = nullptr;
+        open();
+        m_done = false;
+    }
+
+private:
+    void
+    open() {
+        m_state = BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
+        if (!m_state)
+            throw std::runtime_error("Failed to create a brotli decoder");
+    }
+
+    BrotliDecoderState *m_state = nullptr;
+    bool                m_done  = false;
+};
+#endif // QB_HAS_BROTLI
+
 #endif // QB_HAS_COMPRESSION
 
 // Generic internal implementation of the compress_factory API
@@ -335,26 +612,46 @@ private:
     std::function<std::unique_ptr<decompress_provider>()> _make_decompressor;
 };
 
-// "Private" algorithm-to-factory tables for namespace static helpers
-static const std::vector<std::shared_ptr<compress_factory>> g_compress_factories
+// "Private" algorithm-to-factory tables for namespace static helpers. The order is the server's preference where a
+// client leaves the choice to it (qbm-http answers `Accept-Encoding: *` with the first): gzip and deflate first, so a
+// build with the opt-in codecs (Huly QB-79) negotiates exactly what it did before unless a client asks for them.
+static const std::vector<std::shared_ptr<compress_factory>> g_compress_factories = [] {
+    std::vector<std::shared_ptr<compress_factory>> factories;
 #if defined(QB_HAS_COMPRESSION)
-    = {std::make_shared<generic_compress_factory>(algorithm::GZIP,
-                                                  []() -> std::unique_ptr<compress_provider> { return std::make_unique<gzip_compressor>(); }),
-       std::make_shared<generic_compress_factory>(
-           algorithm::DEFLATE, []() -> std::unique_ptr<compress_provider> { return std::make_unique<deflate_compressor>(); })};
-#else  // QB_HAS_COMPRESSION
-    ;
+    factories.push_back(std::make_shared<generic_compress_factory>(
+        algorithm::GZIP, []() -> std::unique_ptr<compress_provider> { return std::make_unique<gzip_compressor>(); }));
+    factories.push_back(std::make_shared<generic_compress_factory>(
+        algorithm::DEFLATE, []() -> std::unique_ptr<compress_provider> { return std::make_unique<deflate_compressor>(); }));
+#if defined(QB_HAS_ZSTD)
+    factories.push_back(std::make_shared<generic_compress_factory>(
+        algorithm::ZSTD, []() -> std::unique_ptr<compress_provider> { return std::make_unique<zstd_compressor>(3); }));
+#endif
+#if defined(QB_HAS_BROTLI)
+    factories.push_back(std::make_shared<generic_compress_factory>(
+        algorithm::BROTLI, []() -> std::unique_ptr<compress_provider> { return std::make_unique<brotli_compressor>(5, 22); }));
+#endif
 #endif // QB_HAS_COMPRESSION
+    return factories;
+}();
 
-static const std::vector<std::shared_ptr<decompress_factory>> g_decompress_factories
+static const std::vector<std::shared_ptr<decompress_factory>> g_decompress_factories = [] {
+    std::vector<std::shared_ptr<decompress_factory>> factories;
 #if defined(QB_HAS_COMPRESSION)
-    = {std::make_shared<generic_decompress_factory>(
-           algorithm::GZIP, 500, []() -> std::unique_ptr<decompress_provider> { return std::make_unique<gzip_decompressor>(); }),
-       std::make_shared<generic_decompress_factory>(
-           algorithm::DEFLATE, 500, []() -> std::unique_ptr<decompress_provider> { return std::make_unique<deflate_decompressor>(); })};
-#else  // QB_HAS_COMPRESSION
-    ;
+    factories.push_back(std::make_shared<generic_decompress_factory>(
+        algorithm::GZIP, 500, []() -> std::unique_ptr<decompress_provider> { return std::make_unique<gzip_decompressor>(); }));
+    factories.push_back(std::make_shared<generic_decompress_factory>(
+        algorithm::DEFLATE, 500, []() -> std::unique_ptr<decompress_provider> { return std::make_unique<deflate_decompressor>(); }));
+#if defined(QB_HAS_ZSTD)
+    factories.push_back(std::make_shared<generic_decompress_factory>(
+        algorithm::ZSTD, 500, []() -> std::unique_ptr<decompress_provider> { return std::make_unique<zstd_decompressor>(); }));
+#endif
+#if defined(QB_HAS_BROTLI)
+    factories.push_back(std::make_shared<generic_decompress_factory>(
+        algorithm::BROTLI, 500, []() -> std::unique_ptr<decompress_provider> { return std::make_unique<brotli_decompressor>(); }));
+#endif
 #endif // QB_HAS_COMPRESSION
+    return factories;
+}();
 
 bool
 supported() {
@@ -460,6 +757,27 @@ make_deflate_compressor(int compressionLevel, int method, int strategy, int memL
     (void) memLevel;
     return std::unique_ptr<compress_provider>();
 #endif // QB_HAS_COMPRESSION
+}
+
+std::unique_ptr<compress_provider>
+make_zstd_compressor(int level) {
+#if defined(QB_HAS_COMPRESSION) && defined(QB_HAS_ZSTD)
+    return std::make_unique<zstd_compressor>(level);
+#else
+    (void) level;
+    return std::unique_ptr<compress_provider>();
+#endif
+}
+
+std::unique_ptr<compress_provider>
+make_brotli_compressor(int quality, int window_bits) {
+#if defined(QB_HAS_COMPRESSION) && defined(QB_HAS_BROTLI)
+    return std::make_unique<brotli_compressor>(quality, window_bits);
+#else
+    (void) quality;
+    (void) window_bits;
+    return std::unique_ptr<compress_provider>();
+#endif
 }
 } // namespace builtin
 

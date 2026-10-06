@@ -159,6 +159,10 @@ option(QB_BUILD_COVERAGE "Enable code coverage instrumentation (Debug builds onl
 option(QB_WITH_LOGGING "Enable logging support" ON)
 option(QB_WITH_SSL "Enable SSL/TLS support" ON)
 option(QB_WITH_COMPRESSION "Enable compression support" ON)
+# The zstd and brotli codecs beside zlib (Huly QB-79): opt-in -- no new dependency for anyone who does not ask -- and
+# only with QB_WITH_COMPRESSION. Asked for and not found is a configure error, never a silent downgrade.
+option(QB_WITH_ZSTD "Enable the zstd codec (Content-Encoding: zstd); needs QB_WITH_COMPRESSION" OFF)
+option(QB_WITH_BROTLI "Enable the brotli codec (Content-Encoding: br); needs QB_WITH_COMPRESSION" OFF)
 # Tri-state: AUTO (enable iff libngtcp2 is found, quiet when absent), ON (require
 # it, warn if missing), OFF (disabled). AUTO mirrors how SSL/compression behave.
 set(QB_WITH_QUIC "AUTO" CACHE STRING "QUIC transport via libngtcp2: AUTO, ON, or OFF")
@@ -558,6 +562,7 @@ function(qb_print_configuration)
     qb_status_message("  - Logging: ${QB_WITH_LOGGING}")
     qb_status_message("  - SSL: ${QB_WITH_SSL}")
     qb_status_message("  - Compression: ${QB_WITH_COMPRESSION}")
+    qb_status_message("  - zstd / brotli: ${QB_WITH_ZSTD} / ${QB_WITH_BROTLI}")
     qb_status_message("  - Optimizations: ${QB_ENABLE_OPTIMIZATIONS}")
     qb_status_message("========================================")
 endfunction()

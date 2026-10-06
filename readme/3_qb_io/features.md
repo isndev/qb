@@ -16,6 +16,8 @@ Three capability groups are compiled conditionally. The CMake option is what you
 |---|---|---|---|
 | SSL/TLS and crypto | `QB_WITH_SSL` (default `ON`) | `QB_HAS_SSL` | OpenSSL |
 | Compression | `QB_WITH_COMPRESSION` (default `ON`) | `QB_HAS_COMPRESSION` | zlib |
+| zstd codec (3.3) | `QB_WITH_ZSTD` (default `OFF`; needs compression) | `QB_HAS_ZSTD` | libzstd |
+| brotli codec (3.3) | `QB_WITH_BROTLI` (default `OFF`; needs compression) | `QB_HAS_BROTLI` | libbrotlienc / libbrotlidec |
 | QUIC / HTTP/3 transport | `QB_WITH_QUIC` (default `AUTO`) | `QB_HAS_QUIC` | ngtcp2 (requires SSL) |
 
 <!-- src: src/qb/io/CMakeLists.txt (QB_HAS_* definitions); README.md (QB_WITH_* options) -->

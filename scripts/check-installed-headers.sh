@@ -220,7 +220,7 @@ say "phase 2: ${entries} entry points to compile AND link"
 #   IMPORTED_NO_SYSTEM (3.23) / SYSTEM (3.25) are the documented knobs, and on qb they change
 #   NOTHING on their own. qb's export writes an EXPLICIT
 #     INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_IMPORT_PREFIX}/include"
-#   on qb::nlohmann (qbDependencies.cmake:336 marks the bundled copy SYSTEM, and the bundled
+#   on qb::nlohmann (qbDependencies.cmake:372 marks the bundled copy SYSTEM, and the bundled
 #   copy's include dir IS <prefix>/include, i.e. qb's whole public include root). An explicit
 #   entry outranks both knobs, so a gate that sets only IMPORTED_NO_SYSTEM runs with -isystem
 #   and is indistinguishable from the non-hostile gate. Clearing the list is what flips the

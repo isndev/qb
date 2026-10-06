@@ -88,7 +88,10 @@ if ($installBase) {
     $packages += @(
         "openssl:x64-windows",
         "argon2:x64-windows",
-        "zlib:x64-windows"
+        "zlib:x64-windows",
+        # The opt-in zstd and brotli codecs (Huly QB-79): the CI lanes and the superproject presets build them.
+        "zstd:x64-windows",
+        "brotli:x64-windows"
     )
 }
 

@@ -152,6 +152,9 @@ jobs:
             # package first and falls back to the pinned v1.9.5 fetch when it is under the floor,
             # which is the behaviour the docs promise and what this lane now exercises.
             -DQB_ENABLE_NATIVE_ARCH=OFF
+            # The opt-in codecs (Huly QB-79) are OFF by default; every lane builds and tests them.
+            -DQB_WITH_ZSTD=ON
+            -DQB_WITH_BROTLI=ON
           )
 
           if [ "$RUNNER_OS" != "Windows" ]; then

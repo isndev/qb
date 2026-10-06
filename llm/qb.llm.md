@@ -648,7 +648,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 C++20/23, CMake ≥ 3.24. Embed with `add_subdirectory(qb)` then
 `target_link_libraries(app PRIVATE qb::core qb::io)`, or `find_package(qb CONFIG REQUIRED)`. Optional
 features default ON and self-disable if their system dep is missing: `QB_WITH_SSL` (OpenSSL, gates crypto/TLS),
-`QB_WITH_COMPRESSION` (zlib), `QB_WITH_QUIC=AUTO` (ngtcp2, needs SSL). libev and stduuid are bundled.
+`QB_WITH_COMPRESSION` (zlib), `QB_WITH_QUIC=AUTO` (ngtcp2, needs SSL). Opt-in, OFF by default and a configure error when
+asked for without the library: `QB_WITH_ZSTD` / `QB_WITH_BROTLI` (3.3; read `QB_HAS_ZSTD` / `QB_HAS_BROTLI`). libev and stduuid are bundled.
 qbm modules are **compiled libraries** (not header-only): HTTP/1.1 + HTTP/2 + HTTP/3 + WebSocket as `qbm::http`,
 PostgreSQL as `qbm::pgsql`, Redis as `qbm::redis`. WebSocket lives inside qbm-http (`qb::http::ws`); there is no
 separate ws module. Load them with `qb_load_modules("${CMAKE_CURRENT_SOURCE_DIR}/qbm")` then

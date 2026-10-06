@@ -366,6 +366,12 @@ if (QB_INSTALL)
     if (QB_HAS_QUIC)
         list(APPEND _qb_find_modules "${QB_CMAKE_DIR}/FindNgtcp2.cmake")
     endif ()
+    if (QB_HAS_ZSTD)
+        list(APPEND _qb_find_modules "${QB_CMAKE_DIR}/FindZstd.cmake")
+    endif ()
+    if (QB_HAS_BROTLI)
+        list(APPEND _qb_find_modules "${QB_CMAKE_DIR}/FindBrotli.cmake")
+    endif ()
 
     # THE install/export rule -- qb_install_package() in cmake/qbPackage.cmake, the same one
     # call every qbm module makes. Everything above this line is qb-only because it is about

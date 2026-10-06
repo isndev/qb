@@ -231,6 +231,9 @@ packages=(
   pkg-config
   wget
   zlib1g-dev
+  # The opt-in zstd and brotli codecs (Huly QB-79): the CI lanes and the superproject presets build them.
+  libzstd-dev
+  libbrotli-dev
 )
 
 if [[ "${install_gcc}" == true ]]; then

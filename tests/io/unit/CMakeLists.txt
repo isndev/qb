@@ -113,3 +113,7 @@ qb_add_test(MODULE qb-io TIER unit NAME handler-detection SOURCES async/handler-
 qb_add_test(MODULE qb-io TIER unit NAME listener-dispatch-timing SOURCES async/listener-dispatch-timing.cpp DEPENDS ${PROJECT_NAME})
 
 qb_debug_message("Configured qb-io unit tests")
+
+# The opt-in codecs (Huly QB-79): one binary each, built only when the codec is (REQUIRES <codec>).
+qb_add_test(MODULE qb-io TIER unit NAME compression-zstd SOURCES compression/compression-zstd.cpp DEPENDS ${PROJECT_NAME} REQUIRES compression zstd)
+qb_add_test(MODULE qb-io TIER unit NAME compression-brotli SOURCES compression/compression-brotli.cpp DEPENDS ${PROJECT_NAME} REQUIRES compression brotli)

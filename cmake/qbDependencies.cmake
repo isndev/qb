@@ -223,6 +223,42 @@ else()
     set(QB_HAS_COMPRESSION FALSE)
 endif()
 
+# zstd / brotli codecs (Huly QB-79): opt-in, system-only (never fetched), and only beside zlib. A request that cannot be
+# met is a configure-time error naming the package: the build asked for a codec, and shipping without it would change
+# what a server negotiates without anyone being told. FindZstd.cmake / FindBrotli.cmake travel with an installed qb.
+set(QB_HAS_ZSTD FALSE)
+set(QB_HAS_BROTLI FALSE)
+if((QB_WITH_ZSTD OR QB_WITH_BROTLI) AND NOT QB_HAS_COMPRESSION)
+    # One string: qb_error_message() interpolates ${ARGN}, and several arguments come back joined by ";".
+    string(CONCAT _qb_codec_msg "QB_WITH_ZSTD / QB_WITH_BROTLI need compression (QB_WITH_COMPRESSION and a zlib): the codecs "
+                                "are registered beside gzip and deflate. Turn compression on, or the codec options off.")
+    qb_error_message("${_qb_codec_msg}")
+endif()
+if(QB_WITH_ZSTD)
+    find_package(Zstd)
+    if(Zstd_FOUND)
+        qb_status_message("Found zstd: ${Zstd_VERSION}")
+        list(APPEND QB_EXTERNAL_LIBRARIES Zstd::Zstd)
+        set(QB_HAS_ZSTD TRUE)
+    else()
+        string(CONCAT _qb_codec_msg "QB_WITH_ZSTD=ON but zstd was not found: apt install libzstd-dev, brew install zstd, or "
+                                    "vcpkg install zstd (and put it on CMAKE_PREFIX_PATH) -- or -DQB_WITH_ZSTD=OFF.")
+        qb_error_message("${_qb_codec_msg}")
+    endif()
+endif()
+if(QB_WITH_BROTLI)
+    find_package(Brotli)
+    if(Brotli_FOUND)
+        qb_status_message("Found brotli: ${Brotli_VERSION}")
+        list(APPEND QB_EXTERNAL_LIBRARIES Brotli::Encoder Brotli::Decoder)
+        set(QB_HAS_BROTLI TRUE)
+    else()
+        string(CONCAT _qb_codec_msg "QB_WITH_BROTLI=ON but brotli was not found: apt install libbrotli-dev, brew install "
+                                    "brotli, or vcpkg install brotli (and put it on CMAKE_PREFIX_PATH) -- or -DQB_WITH_BROTLI=OFF.")
+        qb_error_message("${_qb_codec_msg}")
+    endif()
+endif()
+
 # QUIC transport (optional, via libngtcp2). Tri-state QB_WITH_QUIC:
 #   AUTO (default) - enable iff libngtcp2 is found; quiet (no warning) when absent
 #   ON  / TRUE / 1 - require libngtcp2; warn and disable if it (or SSL) is missing
@@ -526,6 +562,14 @@ function(qb_resolve_dependencies target)
     if(QB_HAS_COMPRESSION)
         target_compile_definitions(${target} PRIVATE QB_HAS_COMPRESSION=1)
     endif()
+
+    if(QB_HAS_ZSTD)
+        target_compile_definitions(${target} PRIVATE QB_HAS_ZSTD=1)
+    endif()
+
+    if(QB_HAS_BROTLI)
+        target_compile_definitions(${target} PRIVATE QB_HAS_BROTLI=1)
+    endif()
     
     if(QB_HAS_ARGON2)
         target_compile_definitions(${target} PRIVATE QB_HAS_ARGON2=1)
@@ -598,6 +642,8 @@ function(qb_print_dependencies)
         qb_status_message("    Argon2: ${QB_HAS_ARGON2}")
     endif()
     qb_status_message("    ZLIB: ${QB_HAS_COMPRESSION}")
+    qb_status_message("    zstd: ${QB_HAS_ZSTD}")
+    qb_status_message("    brotli: ${QB_HAS_BROTLI}")
     qb_status_message("    QUIC/libngtcp2: ${QB_HAS_QUIC}")
     qb_status_message("    Google Test: ${QB_HAS_GTEST}")
     qb_status_message("    Google Benchmark: ${QB_HAS_BENCHMARK}")
@@ -629,6 +675,14 @@ endif()
 
 if(QB_HAS_COMPRESSION)
     list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_COMPRESSION=1")
+endif()
+
+if(QB_HAS_ZSTD)
+    list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_ZSTD=1")
+endif()
+
+if(QB_HAS_BROTLI)
+    list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_BROTLI=1")
 endif()
 
 if(QB_HAS_ARGON2)

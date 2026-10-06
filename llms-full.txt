@@ -663,7 +663,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 C++20/23, CMake ≥ 3.24. Embed with `add_subdirectory(qb)` then
 `target_link_libraries(app PRIVATE qb::core qb::io)`, or `find_package(qb CONFIG REQUIRED)`. Optional
 features default ON and self-disable if their system dep is missing: `QB_WITH_SSL` (OpenSSL, gates crypto/TLS),
-`QB_WITH_COMPRESSION` (zlib), `QB_WITH_QUIC=AUTO` (ngtcp2, needs SSL). libev and stduuid are bundled.
+`QB_WITH_COMPRESSION` (zlib), `QB_WITH_QUIC=AUTO` (ngtcp2, needs SSL). Opt-in, OFF by default and a configure error when
+asked for without the library: `QB_WITH_ZSTD` / `QB_WITH_BROTLI` (3.3; read `QB_HAS_ZSTD` / `QB_HAS_BROTLI`). libev and stduuid are bundled.
 qbm modules are **compiled libraries** (not header-only): HTTP/1.1 + HTTP/2 + HTTP/3 + WebSocket as `qbm::http`,
 PostgreSQL as `qbm::pgsql`, Redis as `qbm::redis`. WebSocket lives inside qbm-http (`qb::http::ws`); there is no
 separate ws module. Load them with `qb_load_modules("${CMAKE_CURRENT_SOURCE_DIR}/qbm")` then
@@ -1574,6 +1575,13 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `[T] class async_stream<T>` — pull-based async sequence. Factories `from_channel`/`from_vector`/`empty`/`single`; transforms `map`/`filter`/`take`/`skip`/`chain`/`buffer`/`debounce(qb::duration)`/`throttle(qb::duration)`/`backpressure`; terminals `for_each`/`collect`/`first`/`reduce(init, f)`/`count`/`any`/`all`/`find`/`drain_to` — `reduce` takes the seed FIRST and its accumulator need not be the element type, matching `reduce(async_generator<T>, init, f)`. Combinators `merge_streams`/`zip`/`from_generator`/`repeat_value`/`interval(qb::duration)`/`timer(T, qb::duration)`/`range_stream`.
 *   `[T] class shared_task<T>` — copyable multi-awaiter handle: `valid()`, `is_ready()`, `operator co_await`.
 *   `[T<T>] shared_task<T> make_shared_task(task<T>&& t)` — spawn now, return a copyable handle.
+
+## Namespace `qb::compression` (`<qb/io/compression.h>`, requires `QB_HAS_COMPRESSION`/zlib)
+
+*   One-shot: `qb::gzip::compress(const char*, std::size_t, int level = Z_DEFAULT_COMPRESSION)` / `uncompress(const char*, std::size_t)` -> `std::string`; `qb::deflate::` the same; `uncompress(Output&, data, size, std::size_t max = 0)` takes an output budget (`max = 0` is NONE: pass one for untrusted input); `qb::gzip::is_compressed(data, size)`.
+*   Streaming: `class compress_provider` / `decompress_provider` — `compress(input, input_size, output, output_size, operation_hint, std::size_t& input_bytes_processed, bool& done)` (same shape for `decompress`), `reset()`, `algorithm()`; `enum operation_hint { is_last, has_more }`. Contract (every provider): an `is_last` call is repeated until `done`, through any output window; a decompress call with no input still hands back output an earlier call had no room for (since 3.3, Huly QB-464); a truncated stream never reports `done`; a corrupt one throws `std::runtime_error`.
+*   `qb::compression::builtin`: `make_compressor(name)` / `make_decompressor(name)` (nullptr when unregistered), `get_compress_factories()` / `get_decompress_factories()` (registration order = the server's preference: gzip, deflate, then the opt-in codecs), `algorithm::supported(name)`, names `algorithm::GZIP` (`"gzip"`), `DEFLATE`, and since 3.3 `ZSTD` (`"zstd"`), `BROTLI` (`"br"`); `make_gzip_compressor(level, method, strategy, memLevel)`, `make_deflate_compressor(...)`, and since 3.3 `make_zstd_compressor(int level = 3)` / `make_brotli_compressor(int quality = 5, int window_bits = 22)` (nullptr without the codec). zstd / brotli are registered only with `QB_WITH_ZSTD` / `QB_WITH_BROTLI` (OFF by default; `QB_HAS_ZSTD` / `QB_HAS_BROTLI`).
+*   Custom codecs: `qb::compression::make_compress_factory(name, fn)` / `make_decompress_factory(name, weight, fn)`.
 
 ## Namespace `qb::crypto` (`<qb/io/crypto.h>`, requires OpenSSL)
 

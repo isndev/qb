@@ -114,6 +114,9 @@ packages=(
   nlohmann-json
   openssl@3
   zlib
+  # The opt-in zstd and brotli codecs (Huly QB-79): the CI lanes and the superproject presets build them.
+  zstd
+  brotli
 )
 
 if [[ "${install_google_test}" == true ]]; then

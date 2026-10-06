@@ -48,7 +48,7 @@ where the declaration writes a literal, and spelled out as a rule where it does 
 |---|---|---|
 | `QB_CXX_STANDARD` | `20` | C++ standard required by qb targets. `STRING` cache variable accepting `20` or `23` (configure fails otherwise); pass `-DQB_CXX_STANDARD=23` for the modern path, as the `debug-cxx23`/`dev-cxx23` presets do. |
 | `QB_BUILD_TESTS` | `ON` standalone / `${BUILD_TESTING}` (else `OFF`) embedded | Build the qb GoogleTest suites. Gates GoogleTest resolution and the `qb_add_test` helper. The default is **computed**, not fixed: `ON` only when qb is the top-level project; under `add_subdirectory` it follows `BUILD_TESTING` when the parent defined it, otherwise `OFF`. |
-| `QB_BUILD_EXAMPLES` | `ON` standalone / `OFF` embedded | Build the examples. Same computed default as `QB_BUILD_TESTS`, except that an embedded qb is flatly `OFF` — `BUILD_TESTING` does not apply to examples. **This repository ships no `examples/` tree**: the examples are a separate submodule owned by the qb-dev superproject, and only that submodule's `examples/CMakeLists.txt` reads this option, so in a standalone `qb` checkout `ON` builds nothing extra. The configure summary says so when it cannot find the tree (`qb/cmake/qbConfig.cmake:552-555`). |
+| `QB_BUILD_EXAMPLES` | `ON` standalone / `OFF` embedded | Build the examples. Same computed default as `QB_BUILD_TESTS`, except that an embedded qb is flatly `OFF` — `BUILD_TESTING` does not apply to examples. **This repository ships no `examples/` tree**: the examples are a separate submodule owned by the qb-dev superproject, and only that submodule's `examples/CMakeLists.txt` reads this option, so in a standalone `qb` checkout `ON` builds nothing extra. The configure summary says so when it cannot find the tree (`qb/cmake/qbConfig.cmake:556-559`). |
 | `QB_BUILD_BENCHMARKS` | `OFF` | Build the Google Benchmark suites. Gates Google Benchmark resolution. |
 | `QB_BUILD_DOCS` | `OFF` | Build the documentation target (`add_subdirectory(docs)`). |
 | `QB_BUILD_SHARED_LIBS` | `${BUILD_SHARED_LIBS}` | Build the qb libraries as shared objects instead of static. Defaults to the standard `BUILD_SHARED_LIBS`, so `-DBUILD_SHARED_LIBS=ON` also switches qb to shared, while still allowing a qb-only override. |
@@ -64,7 +64,7 @@ plain cache default cannot overwrite an existing cache entry, so that root line 
 preset: `dev`, `release`, `sanitize`, `sanitize-thread`, `coverage`, `feature-gates` and
 `relwithdebinfo` all build **zero** benchmarks. `coverage` is not an exception that switches them off —
 it only restates the `OFF` it already inherited. The single preset that turns them back on is
-`benchmarks` (`qb-dev/CMakePresets.json:128-135`). `-DQB_BUILD_BENCHMARKS=ON` on the configure line
+`benchmarks` (`qb-dev/CMakePresets.json:130-137`). `-DQB_BUILD_BENCHMARKS=ON` on the configure line
 also works, because a command-line `-D` overrides a preset's `cacheVariables`; and in a preset-free
 superproject configure `-DQB_BUILD_BENCHMARKS=OFF` is honoured as well — that is what the missing
 `FORCE` buys, and it is exactly what `QB_BUILD_TESTS` and `QB_BUILD_EXAMPLES` do **not** grant you.
@@ -98,6 +98,8 @@ The four `QB_*_GIT_TAG` variables are marked advanced (`mark_as_advanced`); they
 | `QB_WITH_LOGGING` | `ON` | Enable logging support; defines `QB_WITH_LOGGING=1`. |
 | `QB_WITH_SSL` | `ON` | Enable SSL/TLS via OpenSSL; defines `QB_WITH_SSL=1`. Forced off (and `QB_HAS_SSL` set to `FALSE`) when OpenSSL is not found. |
 | `QB_WITH_COMPRESSION` | `ON` | Enable compression via Zlib; defines `QB_WITH_COMPRESSION=1`. |
+| `QB_WITH_ZSTD` | `OFF` | The zstd codec (`Content-Encoding: zstd`) beside zlib's, since 3.3 (Huly QB-79); defines `QB_HAS_ZSTD=1`. Needs `QB_WITH_COMPRESSION` and a system libzstd: asked for and not found is a configure error. ON in the superproject's presets. |
+| `QB_WITH_BROTLI` | `OFF` | The brotli codec (`Content-Encoding: br`), since 3.3 (Huly QB-79); defines `QB_HAS_BROTLI=1`. Needs `QB_WITH_COMPRESSION` and a system libbrotli: asked for and not found is a configure error. ON in the superproject's presets. |
 | `QB_WITH_QUIC` | `AUTO` | Tri-state QUIC transport via libngtcp2. `AUTO`: enable if libngtcp2 is found, stay quiet when absent. `ON`: require it, warn if missing. `OFF`: disabled. Requires SSL. |
 | `QB_WITH_PROFILING` | `OFF` | Enable profiling. On GCC/Clang adds the gprof flags `-pg` and `-fno-omit-frame-pointer` (compile and link); also links gperftools (tcmalloc/profiler) when `find_package(Gperftools)` succeeds, otherwise the option is forced off. Incompatible with `QB_SANITIZE`. |
 

@@ -475,6 +475,7 @@ error: bulk data travels behind a pointer, not by value.
 |---|---|---|
 | `QB_WITH_SSL` | `ON` | SSL/TLS and crypto (OpenSSL); auto-disabled if OpenSSL is absent |
 | `QB_WITH_COMPRESSION` | `ON` | Compression (zlib) |
+| `QB_WITH_ZSTD` / `QB_WITH_BROTLI` | `OFF` | The zstd / brotli codecs beside zlib's (3.3); need the system library |
 | `QB_WITH_QUIC` | `AUTO` | QUIC/HTTP3 via ngtcp2, on when found |
 | `QB_WITH_LOGGING` | `ON` | Logging support |
 | `QB_BUILD_TESTS` | `ON` | Build the test suite |

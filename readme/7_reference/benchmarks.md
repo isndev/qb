@@ -15,14 +15,14 @@ The suite uses [Google Benchmark](https://github.com/google/benchmark) (pinned t
 
 Two properties distinguish the benchmark targets from the test targets:
 
-- **They are not CTest targets.** `ctest` never runs them. They build only when `QB_BUILD_BENCHMARKS=ON` and must be launched manually. (`qb/tests/core/CMakeLists.txt:37-38`; `qb/cmake/qbFunctions.cmake:745-748`.)
-- **They live in their own output directory.** Every benchmark executable is written to `<build>/bin/benchmarks/`, not next to the test binaries. (`qb/cmake/qbFunctions.cmake:816-819`.)
+- **They are not CTest targets.** `ctest` never runs them. They build only when `QB_BUILD_BENCHMARKS=ON` and must be launched manually. (`qb/tests/core/CMakeLists.txt:37-38`; `qb/cmake/qbFunctions.cmake:755-758`.)
+- **They live in their own output directory.** Every benchmark executable is written to `<build>/bin/benchmarks/`, not next to the test binaries. (`qb/cmake/qbFunctions.cmake:826-829`.)
 
 The sources are organized into topic subgroups under each library's `tests/benchmark/` directory, with the source named for the subject it measures (`<subgroup>/<name>.cpp`). The build derives each target name by prepending `<module>-bench-`, so `messaging/ping-pong-throughput.cpp` produces the executable `qb-core-bench-ping-pong-throughput`. (`qb/tests/core/benchmark/CMakeLists.txt:31-43`.)
 
 ### How a target is created
 
-The CMake helper `qb_add_benchmark` builds the executable, applies the shared compiler/property set, and links Google Benchmark — preferring the imported `benchmark::benchmark` target and falling back to a plain `benchmark` target. It returns early (building nothing) when `QB_BUILD_BENCHMARKS` is off. Each directory wraps it in a small per-suite helper (`qbc_bench`/`qbio_bench`) that fixes the `<module>-bench-<name>` naming and the IDE folder. (`qb/cmake/qbFunctions.cmake:734-853`.)
+The CMake helper `qb_add_benchmark` builds the executable, applies the shared compiler/property set, and links Google Benchmark — preferring the imported `benchmark::benchmark` target and falling back to a plain `benchmark` target. It returns early (building nothing) when `QB_BUILD_BENCHMARKS` is off. Each directory wraps it in a small per-suite helper (`qbc_bench`/`qbio_bench`) that fixes the `<module>-bench-<name>` naming and the IDE folder. (`qb/cmake/qbFunctions.cmake:744-863`.)
 
 ```cmake
 # src: qb/tests/core/benchmark/CMakeLists.txt:32-43
@@ -121,7 +121,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_BENCHMARKS=ON -B build
 cmake --build build --parallel
 ```
 
-The repository-root `CMakeLists.txt` sets `QB_BUILD_BENCHMARKS=ON` (`qb-dev/CMakeLists.txt:39`) — but **without** `FORCE`, unlike the tests and examples lines around it, so a preset that already put the variable in the cache wins. The superproject's `dev` preset does exactly that: it inherits `debug` → `base`, and `base` sets `QB_BUILD_BENCHMARKS=OFF` (`qb-dev/CMakePresets.json:21`), adding nothing of its own. **`cmake --preset dev` from the repository root therefore does not build the benchmarks** — use the `benchmarks` preset, which is `release` plus `-march=native` (`qb-dev/CMakePresets.json:128-135`), or pass the flag explicitly. In a *standalone* `qb` checkout the qb-only `dev` preset does enable them (`qb/CMakePresets.json:45-51`).
+The repository-root `CMakeLists.txt` sets `QB_BUILD_BENCHMARKS=ON` (`qb-dev/CMakeLists.txt:39`) — but **without** `FORCE`, unlike the tests and examples lines around it, so a preset that already put the variable in the cache wins. The superproject's `dev` preset does exactly that: it inherits `debug` → `base`, and `base` sets `QB_BUILD_BENCHMARKS=OFF` (`qb-dev/CMakePresets.json:21`), adding nothing of its own. **`cmake --preset dev` from the repository root therefore does not build the benchmarks** — use the `benchmarks` preset, which is `release` plus `-march=native` (`qb-dev/CMakePresets.json:130-137`), or pass the flag explicitly. In a *standalone* `qb` checkout the qb-only `dev` preset does enable them (`qb/CMakePresets.json:45-51`).
 
 ```bash
 # src: qb-dev/CMakePresets.json (benchmarks preset)
@@ -170,7 +170,7 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 
 ## The qb-io benchmark suite
 
-`qb-io` ships its own Google Benchmark suite under `qb/tests/io/benchmark/`, following the same conventions as the core suite: each `<subgroup>/<name>.cpp` source is a standalone Google Benchmark program (`#include <benchmark/benchmark.h>`, `BENCHMARK(...)` registrations, `BENCHMARK_MAIN()`), built by `qb_add_benchmark` into a `qb-io-bench-<name>` target under `<build>/bin/benchmarks/`. The directory is gated by `QB_BUILD_BENCHMARKS` exactly like the core suite — the parent `CMakeLists.txt` wraps `add_subdirectory(benchmark)` in `if (QB_BUILD_BENCHMARKS)`, so nothing builds when the switch is off. Like the core benchmarks, these are not CTest targets and must be launched manually. Three subgroups carry a `REQUIRES ssl` / `REQUIRES compression` compile-gate, so they register only when `QB_HAS_SSL` / `QB_HAS_COMPRESSION` is set. (`qb/tests/io/CMakeLists.txt:37-38`; `qb/tests/io/benchmark/CMakeLists.txt:24-34`; `qb/cmake/qbFunctions.cmake:734-853`.)
+`qb-io` ships its own Google Benchmark suite under `qb/tests/io/benchmark/`, following the same conventions as the core suite: each `<subgroup>/<name>.cpp` source is a standalone Google Benchmark program (`#include <benchmark/benchmark.h>`, `BENCHMARK(...)` registrations, `BENCHMARK_MAIN()`), built by `qb_add_benchmark` into a `qb-io-bench-<name>` target under `<build>/bin/benchmarks/`. The directory is gated by `QB_BUILD_BENCHMARKS` exactly like the core suite — the parent `CMakeLists.txt` wraps `add_subdirectory(benchmark)` in `if (QB_BUILD_BENCHMARKS)`, so nothing builds when the switch is off. Like the core benchmarks, these are not CTest targets and must be launched manually. Three subgroups carry a `REQUIRES ssl` / `REQUIRES compression` compile-gate, so they register only when `QB_HAS_SSL` / `QB_HAS_COMPRESSION` is set. (`qb/tests/io/CMakeLists.txt:37-38`; `qb/tests/io/benchmark/CMakeLists.txt:24-34`; `qb/cmake/qbFunctions.cmake:744-863`.)
 
 | Source | Executable suffix | Measures |
 |---|---|---|

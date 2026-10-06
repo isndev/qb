@@ -79,7 +79,7 @@ TLS lives in `qb-io` and is gated by `QB_WITH_SSL` (default **`ON`**, backed by 
 
 Verify with the configuration banner the build prints, or check that `QB_WITH_SSL=1` is in the compile definitions — since 3.2 that definition is emitted after the OpenSSL probe, so it agrees with the banner (until then a host without OpenSSL compiled with `QB_WITH_SSL=1` while the banner said `SSL: OFF`).
 
-<!-- src: qb/cmake/qbDependencies.cmake:619-621 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:536-563 (configuration banner; the SSL line is :559) -->
+<!-- src: qb/cmake/qbDependencies.cmake:665-667 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:540-568 (configuration banner; the SSL line is :563) -->
 
 ### Client connections are secure by default
 
@@ -198,7 +198,7 @@ For a busy server every active core at zero latency pins a CPU; on a shared or o
 
 Logging is gated by `QB_WITH_LOGGING` (default **`ON`**), which defines `QB_WITH_LOGGING=1` and compiles in the nanolog-backed `qb::io::log` API. When the option is off, the `qb::io::log` namespace (init/setLevel/Level) is not available. The `LOG_*` macros remain defined — as a `qb::io::cout()` fallback when `QB_STDOUT_LOGGING` is set, otherwise as no-ops.
 
-<!-- src: qb/cmake/qbConfig.cmake:159 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:461-463 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:39-86 (the QB_WITH_LOGGING-guarded qb::io::log namespace) -->
+<!-- src: qb/cmake/qbConfig.cmake:159 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:465-467 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:39-86 (the QB_WITH_LOGGING-guarded qb::io::log namespace) -->
 
 Initialize logging once at startup, before any logging call. `init` takes the log-file path and a roll size in megabytes (default 128):
 
@@ -221,7 +221,7 @@ int main() {
 
 Two related options affect diagnostics rather than the file logger: `QB_STDOUT_LOGGING` (default **OFF**) enables a stdout fallback, and `QB_DEBUG_ACTOR` (default **OFF**) enables actor debugging output. Leave both off in production unless you are actively debugging.
 
-<!-- src: qb/cmake/qbConfig.cmake:194-195 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), :473-478 (compile defs) -->
+<!-- src: qb/cmake/qbConfig.cmake:198-199 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), :477-482 (compile defs) -->
 
 `qb::io::cout()` is a thread-safe console wrapper, but the header itself notes that production code should prefer the logging system over direct console output.
 

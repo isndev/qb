@@ -39,6 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           cmake --preset sanitize-thread -G Ninja \
+            -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON \
             -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" \
             -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" \
             -DQB_CXX_STANDARD=20 \

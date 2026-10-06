@@ -18,6 +18,8 @@ qb groups its dependencies into resolution classes — vendored forks that are q
 | GoogleTest | fetched or system | dev-only (`QB_BUILD_TESTS`) | test suite | `qbFetchGoogleDeps.cmake` |
 | Google Benchmark | fetched or system | dev-only (`QB_BUILD_BENCHMARKS`) | benchmarks | `qbFetchGoogleDeps.cmake` |
 | zlib | fetched or system | optional (`QB_WITH_COMPRESSION`) | compression | `qbDependencies.cmake` |
+| zstd | system only | opt-in (`QB_WITH_ZSTD`, 3.3) | the zstd codec | `FindZstd.cmake` (installed with qb) |
+| brotli | system only | opt-in (`QB_WITH_BROTLI`, 3.3) | the brotli codec | `FindBrotli.cmake` (installed with qb) |
 | OpenSSL | system only | optional (`QB_WITH_SSL`) | SSL/TLS, crypto | `qbDependencies.cmake` |
 | Argon2 | system only | optional (under SSL) | password hashing | `qbDependencies.cmake` |
 | libngtcp2 (+ crypto_ossl) | system only | optional (`QB_WITH_QUIC`) | QUIC / HTTP/3 | `qbDependencies.cmake` |
@@ -43,7 +45,7 @@ The C **API** is libev's, unchanged — `ev_run`, `ev_io_start`, `struct ev_loop
 
 That path is not cosmetic. Their headers used to be published by bare name, so an installed qb dropped `ev.h`, `ev++.h`, `event.h`, `event_compat.h`, `ev_config.h`, `uuid.h` and the directories `ev/`, `uuid/`, `nanolog/`, `ska_hash/` straight into the consumer's include root — 12 top-level names, every one of them able to shadow, or be shadowed by, a header the consumer already owned. Living under `qb/vendor/` makes that collision structurally impossible. Being physically inside the include root (`src/`) also means one include root serves the build tree and the installed tree, with no separate `BUILD_INTERFACE`/`INSTALL_INTERFACE` pair to drift apart.
 
-- **libev** — REQUIRED. `qbDependencies.cmake:105-117` checks that `src/qb/ev` exists and sets `QB_HAS_LIBEV`; if it is missing, configuration fails with a fatal error. The tree is compiled by `add_subdirectory("${QB_VENDOR_DIR}/qev")` (`qb/CMakeLists.txt:106`), producing the static `qev` target (`src/qb/ev/CMakeLists.txt:387`). Resolving libev defines `QB_HAS_LIBEV=1` on every qb target (`qbDependencies.cmake:542-544`).
+- **libev** — REQUIRED. `qbDependencies.cmake:105-117` checks that `src/qb/ev` exists and sets `QB_HAS_LIBEV`; if it is missing, configuration fails with a fatal error. The tree is compiled by `add_subdirectory("${QB_VENDOR_DIR}/qev")` (`qb/CMakeLists.txt:106`), producing the static `qev` target (`src/qb/ev/CMakeLists.txt:387`). Resolving libev defines `QB_HAS_LIBEV=1` on every qb target (`qbDependencies.cmake:586-588`).
   The fork's generated configuration header is reached through `-DEV_CONFIG_H=<qb/ev/ev_config.h>`, a `PUBLIC` compile definition on the `qev` target, because `ev.h`'s own fallback lookup for `ev_config.h` is `__has_include`-guarded and would fail *silently* — flipping `EV_MULTIPLICITY` from 1 to 4 and desynchronising every `ev_*` prototype from the compiled library. `qb/io/async/event/base.h` and `qb/io/async/coroutine/scheduler.h` carry an `#error` guard on `EV_MULTIPLICITY` so that miss is a compile error rather than a runtime mystery.
 - **stduuid** — REQUIRED in practice. `qbDependencies.cmake:44-47` detects `src/qb/vendor/uuid` and sets `QB_HAS_UUID`. It is added by `add_subdirectory("${QB_VENDOR_DIR}/uuid")` (`qb/CMakeLists.txt:105`), which declares the header-only `stduuid` `INTERFACE` target (`src/qb/vendor/uuid/CMakeLists.txt:22`). The framework pins its options before adding it (`qb/CMakeLists.txt:83-91`): `UUID_BUILD_TESTS`, `UUID_SYSTEM_GENERATOR` and `UUID_TIME_GENERATOR` are forced **off**, while `UUID_USING_CXX20_SPAN` is forced **on**. That last one is load-bearing, not cosmetic: qb requires C++20 so `std::span` always exists, and with it off stduuid takes a `gsl` fallback branch whose directory was deleted in the C++20 migration -- which made `cmake --install` fail outright. Only when the vendored directory is absent does `qbDependencies.cmake:50-95` fall back to a system UUID (pkg-config `uuid`, then `find_path`/`find_library`); if neither is found, the build emits a warning and clears `QB_HAS_UUID` rather than failing.
 - **nanolog, ska_hash** — header-only, no CMake target at all. They are ordinary files under `src/qb/vendor/`, reached through qb's single include root like any other qb header. `src/qb/io/io.cpp` compiles `nanolog.cpp` by textual inclusion.
@@ -99,7 +101,7 @@ copy of both caveats is the comment block at the top of the installed header its
 
 ### Third-party: nlohmann/json
 
-nlohmann is the one genuine upstream dependency, and it is handled the opposite way. `nlohmann::json` crosses qb's API boundary (`qb::json` is an alias for it, and `qb/json.h` defines `to_json`/`from_json` for `qb::uuid`), so a consumer compiling against *their* copy while qb was compiled against a private one is an ODR violation on the type — something no include-path rename can fix. `qbDependencies.cmake:365` therefore does `find_package(nlohmann_json 3.11 QUIET)` first, and falls back to `FetchContent` at the pinned `QB_NLOHMANN_GIT_TAG` (`qbDependencies.cmake:489`). Either way the result is the `qb-nlohmann` `INTERFACE` target (`qbDependencies.cmake:384-385`, exported as `qb::nlohmann`), linked `PUBLIC` by `qb-io`.
+nlohmann is the one genuine upstream dependency, and it is handled the opposite way. `nlohmann::json` crosses qb's API boundary (`qb::json` is an alias for it, and `qb/json.h` defines `to_json`/`from_json` for `qb::uuid`), so a consumer compiling against *their* copy while qb was compiled against a private one is an ODR violation on the type — something no include-path rename can fix. `qbDependencies.cmake:401` therefore does `find_package(nlohmann_json 3.11 QUIET)` first, and falls back to `FetchContent` at the pinned `QB_NLOHMANN_GIT_TAG` (`qbDependencies.cmake:525`). Either way the result is the `qb-nlohmann` `INTERFACE` target (`qbDependencies.cmake:420-421`, exported as `qb::nlohmann`), linked `PUBLIC` by `qb-io`.
 
 **qb does not vendor nlohmann.** It did until 3.0 — `modules/nlohmann/json.hpp`, an untagged post-3.12.0 snapshot that nonetheless declared `NLOHMANN_JSON_VERSION_* = 3/12/0`. Because nlohmann encodes the version in an inline namespace (`nlohmann::json_abi_v3_12_0`), that copy presented the *same* namespace tag as a genuine 3.12.0 over a *different* set of definitions, so a program linking both got one namespace spanning two definition sets with no linker diagnostic. It is deleted; see the qb [CHANGELOG](../../CHANGELOG.md) for the migration.
 
@@ -126,8 +128,8 @@ System-only dependencies have no clean CMake source build, so qb never fetches t
 
 - **OpenSSL** — `find_package(OpenSSL QUIET)`, only when `QB_WITH_SSL` is ON (the default), at `qbDependencies.cmake:125-151`. On success it links `OpenSSL::SSL` and `OpenSSL::Crypto` and sets `QB_HAS_SSL`. If absent, it warns, clears `QB_HAS_SSL`, and forces `QB_WITH_SSL` off (`qbDependencies.cmake:143-147`). `QB_HAS_SSL=1` is defined on qb targets when present.
 - **Argon2** — `find_package(Argon2 QUIET)`, searched **only inside the OpenSSL-found branch** (`qbDependencies.cmake:133-142`). A build without OpenSSL can therefore never have `QB_HAS_ARGON2`. The bundled `cmake/FindArgon2.cmake` creates the `Argon2::Argon2` imported target (`FindArgon2.cmake:135-139`); on success qb links it and defines `QB_HAS_ARGON2=1`. If Argon2 is missing, qb falls back to its non-Argon2 crypto paths (`qbDependencies.cmake:140`).
-- **libngtcp2 (+ ngtcp2_crypto_ossl)** — the QUIC transport stack, governed by the tri-state `QB_WITH_QUIC` (`qbDependencies.cmake:226-264`). QUIC **requires SSL**: if `QB_HAS_SSL` is false, QUIC is disabled regardless of the request. When SSL is present, `find_package(Ngtcp2 QUIET)` (bundled `cmake/FindNgtcp2.cmake`) creates the `Ngtcp2::ngtcp2` and `Ngtcp2::crypto_ossl` imported targets (`FindNgtcp2.cmake:79-90`); on success qb links both and defines `QB_HAS_QUIC=1`. Distro packages may also provide `libngtcp2-crypto-gnutls-dev`, but that is not a drop-in replacement for qb's current native backend because `src/qb/io/quic.cpp` calls the ngtcp2 OpenSSL helper APIs. See [QUIC tri-state](#quic-tri-state-qb_with_quic) for the AUTO/ON/OFF semantics.
-- **gperftools** — `find_package(Gperftools QUIET)`, only when `QB_WITH_PROFILING` is ON (off by default), at `qbDependencies.cmake:275-296`. The bundled `cmake/FindGperftools.cmake` creates `Gperftools::Profiler` and `Gperftools::TCMalloc` (among other targets); qb links whichever exist and sets `QB_HAS_PROFILING`. If absent, it warns and forces `QB_WITH_PROFILING` off.
+- **libngtcp2 (+ ngtcp2_crypto_ossl)** — the QUIC transport stack, governed by the tri-state `QB_WITH_QUIC` (`qbDependencies.cmake:262-300`). QUIC **requires SSL**: if `QB_HAS_SSL` is false, QUIC is disabled regardless of the request. When SSL is present, `find_package(Ngtcp2 QUIET)` (bundled `cmake/FindNgtcp2.cmake`) creates the `Ngtcp2::ngtcp2` and `Ngtcp2::crypto_ossl` imported targets (`FindNgtcp2.cmake:79-90`); on success qb links both and defines `QB_HAS_QUIC=1`. Distro packages may also provide `libngtcp2-crypto-gnutls-dev`, but that is not a drop-in replacement for qb's current native backend because `src/qb/io/quic.cpp` calls the ngtcp2 OpenSSL helper APIs. See [QUIC tri-state](#quic-tri-state-qb_with_quic) for the AUTO/ON/OFF semantics.
+- **gperftools** — `find_package(Gperftools QUIET)`, only when `QB_WITH_PROFILING` is ON (off by default), at `qbDependencies.cmake:311-332`. The bundled `cmake/FindGperftools.cmake` creates `Gperftools::Profiler` and `Gperftools::TCMalloc` (among other targets); qb links whichever exist and sets `QB_HAS_PROFILING`. If absent, it warns and forces `QB_WITH_PROFILING` off.
 
 The bundled find-modules for Argon2 and ngtcp2 are installed alongside the package config so that `find_package(qb)` consumers of an Argon2- or QUIC-enabled build can recreate the same imported targets (`qb/CMakeLists.txt:359-368`).
 
@@ -138,7 +140,7 @@ The two prefixes are not interchangeable.
 - `QB_WITH_*` are **user-facing requests** — options you set on the command line (`QB_WITH_SSL`, `QB_WITH_COMPRESSION`, `QB_WITH_QUIC`, `QB_WITH_PROFILING`).
 - `QB_HAS_*` are **resolved results** — what qb actually found after probing (`QB_HAS_SSL`, `QB_HAS_COMPRESSION`, `QB_HAS_QUIC`, `QB_HAS_ARGON2`, `QB_HAS_PROFILING`, `QB_HAS_UUID`, `QB_HAS_LIBEV`).
 
-A `QB_HAS_*` flag drives the corresponding `QB_HAS_*=1` compile definition on qb targets (`qbDependencies.cmake:526-544`). When a requested feature's dependency is missing, qb forces the `QB_WITH_*` option back off so the recorded request matches reality.
+A `QB_HAS_*` flag drives the corresponding `QB_HAS_*=1` compile definition on qb targets (`qbDependencies.cmake:562-588`). When a requested feature's dependency is missing, qb forces the `QB_WITH_*` option back off so the recorded request matches reality.
 
 ## Resolution policy: QB_DEPS_FETCH_FALLBACK
 
@@ -196,15 +198,15 @@ This issues `find_package(GTest CONFIG REQUIRED)` and `find_package(benchmark CO
 
 ## QUIC tri-state: QB_WITH_QUIC
 
-`QB_WITH_QUIC` is a three-valued cache string with default **AUTO** (`qbConfig.cmake:164`), resolved at `qbDependencies.cmake:230-237`:
+`QB_WITH_QUIC` is a three-valued cache string with default **AUTO** (`qbConfig.cmake:168`), resolved at `qbDependencies.cmake:266-273`:
 
-The value is matched case-insensitively (`qbDependencies.cmake:230`). The OFF set is matched explicitly; AUTO is matched explicitly; any other value is treated as a required ON.
+The value is matched case-insensitively (`qbDependencies.cmake:266`). The OFF set is matched explicitly; AUTO is matched explicitly; any other value is treated as a required ON.
 
 | Value | Behavior when libngtcp2 is missing |
 |---|---|
 | `AUTO` (default) | Enable QUIC if libngtcp2 is found; stay silent (no warning) when absent. |
 | Any value not in the OFF set and not `AUTO` (for example `ON`, `TRUE`, `1`, `YES`, `Y`) | Require libngtcp2; warn and disable QUIC if it (or SSL) is missing. |
-| `OFF`, `FALSE`, `0`, `NO`, or `N` | Disabled outright; no search performed (`qbDependencies.cmake:231-232`). |
+| `OFF`, `FALSE`, `0`, `NO`, or `N` | Disabled outright; no search performed (`qbDependencies.cmake:267-268`). |
 
 In every case, QUIC additionally requires `QB_HAS_SSL` — without OpenSSL, QUIC is disabled regardless of `QB_WITH_QUIC` (and a required ON warns about it). AUTO mirrors how SSL and compression silently auto-detect.
 

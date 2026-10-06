@@ -103,7 +103,7 @@ find_dependency(nlohmann_json 3.11)
 # silently shadowed by ours for the rest of their configure. Exit 0, no diagnostic.
 # qbmModuleConfig.cmake.in carries the same save/restore for the same reason.
 set(_qb_saved_module_path "${CMAKE_MODULE_PATH}")
-if(@QB_HAS_ARGON2@ OR @QB_HAS_QUIC@)
+if(@QB_HAS_ARGON2@ OR @QB_HAS_QUIC@ OR @QB_HAS_ZSTD@ OR @QB_HAS_BROTLI@)
     list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 endif()
 
@@ -130,6 +130,28 @@ if(@QB_HAS_QUIC@)
         endif()
     endif()
     find_dependency(Ngtcp2)
+endif()
+
+# The zstd / brotli codecs (Huly QB-79): qb::io links Zstd::Zstd and Brotli::Encoder / Brotli::Decoder by name, which
+# the Find modules shipped beside this file recreate for the consumer.
+if(@QB_HAS_ZSTD@)
+    if(NOT Zstd_FOUND)
+        find_package(Zstd QUIET)
+        if(NOT Zstd_FOUND)
+            set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
+        endif()
+    endif()
+    find_dependency(Zstd)
+endif()
+
+if(@QB_HAS_BROTLI@)
+    if(NOT Brotli_FOUND)
+        find_package(Brotli QUIET)
+        if(NOT Brotli_FOUND)
+            set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
+        endif()
+    endif()
+    find_dependency(Brotli)
 endif()
 
 set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
@@ -241,6 +263,8 @@ endif()
 # Feature information (set during build)
 set(QB_HAS_SSL @QB_HAS_SSL@)
 set(QB_HAS_COMPRESSION @QB_HAS_COMPRESSION@)
+set(QB_HAS_ZSTD @QB_HAS_ZSTD@)
+set(QB_HAS_BROTLI @QB_HAS_BROTLI@)
 set(QB_HAS_ARGON2 @QB_HAS_ARGON2@)
 set(QB_HAS_QUIC @QB_HAS_QUIC@)
 

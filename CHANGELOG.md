@@ -140,6 +140,19 @@ policy.
   race), which catches a reload that changes nothing and one that installs a falsy context; a reload that rewrites
   the served context in place is caught only by its identity check, since OpenSSL copies the certificate into each
   `SSL` at accept -- its harm is the race with the other holders of the context, which no single-thread test shows.
+- **The zstd and brotli codecs, opt-in (Huly QB-79).** `QB_WITH_ZSTD` / `QB_WITH_BROTLI` (OFF by default, both need
+  `QB_WITH_COMPRESSION`) register `algorithm::ZSTD` (`"zstd"`) and `algorithm::BROTLI` (`"br"`) in
+  `qb::compression::builtin`, in both directions and AFTER gzip and deflate, so a server that takes the first registered
+  codec when the client leaves the choice still takes gzip; `make_zstd_compressor(level)` and
+  `make_brotli_compressor(quality, window_bits)` build tuned compressors. Resolution is system-only (`FindZstd.cmake`,
+  `FindBrotli.cmake`, installed with qb so `find_package(qb)` recreates `Zstd::Zstd` / `Brotli::Encoder` /
+  `Brotli::Decoder`); a codec asked for without its library is a configure error. The superproject's presets and qb's CI
+  lanes turn both on (`libzstd-dev libbrotli-dev`, `brew install zstd brotli`, vcpkg `zstd brotli`); qb's own presets
+  do not. New test tokens `REQUIRES zstd` / `brotli`. One provider contract (`codec_contract.h`) holds every codec --
+  `compression-zstd`, `compression-brotli`, and gzip and deflate in `compression-codec`: any input piece and output
+  window, a truncated stream never done, a corrupt one refused, `reset()` reusable. It catches four defects planted one
+  at a time in the providers: zstd reporting `done` early when compressing and when decompressing, brotli fed new input
+  while a flush still drains (which brotli refuses), and the zlib early return under Fixed.
 - **One listener per core on one port: `tcp::listen_options{.reuse_port = true}` (Huly QB-78).** Every `listen`
   overload takes it (a defaulted last parameter), and `socket::reuse_port(bool)` is its low-level twin; both set
   `SO_REUSEPORT` before the bind. On Linux the kernel balances the accept across the listeners sharing the port --
@@ -206,6 +219,12 @@ policy.
   signature and the value are unchanged; the router now loads the destination once.
 
 ### Fixed
+
+- **A zlib decompressor called with no input hands back what it was still holding (Huly QB-464).** A decompress call
+  with an empty input returned at once, so output that an earlier call had no room for -- a match copy cut by a full
+  window -- stayed inside inflate until more input came, and a caller whose input was all consumed could never get it.
+  An empty call now runs inflate, which returns the pending bytes or, with nothing pending, nothing. Found with
+  qbm-http's truncated bodies (its CHANGELOG); caught by the provider contract with that early return planted back.
 
 - **A typed TLS callback that throws no longer terminates the process (Huly QB-83).** `Context::on_verify`,
   `on_sni` and `on_keylog` were called from OpenSSL's C code with nothing between the user's `std::function` and

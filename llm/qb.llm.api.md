@@ -898,6 +898,13 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `[T] class shared_task<T>` — copyable multi-awaiter handle: `valid()`, `is_ready()`, `operator co_await`.
 *   `[T<T>] shared_task<T> make_shared_task(task<T>&& t)` — spawn now, return a copyable handle.
 
+## Namespace `qb::compression` (`<qb/io/compression.h>`, requires `QB_HAS_COMPRESSION`/zlib)
+
+*   One-shot: `qb::gzip::compress(const char*, std::size_t, int level = Z_DEFAULT_COMPRESSION)` / `uncompress(const char*, std::size_t)` -> `std::string`; `qb::deflate::` the same; `uncompress(Output&, data, size, std::size_t max = 0)` takes an output budget (`max = 0` is NONE: pass one for untrusted input); `qb::gzip::is_compressed(data, size)`.
+*   Streaming: `class compress_provider` / `decompress_provider` — `compress(input, input_size, output, output_size, operation_hint, std::size_t& input_bytes_processed, bool& done)` (same shape for `decompress`), `reset()`, `algorithm()`; `enum operation_hint { is_last, has_more }`. Contract (every provider): an `is_last` call is repeated until `done`, through any output window; a decompress call with no input still hands back output an earlier call had no room for (since 3.3, Huly QB-464); a truncated stream never reports `done`; a corrupt one throws `std::runtime_error`.
+*   `qb::compression::builtin`: `make_compressor(name)` / `make_decompressor(name)` (nullptr when unregistered), `get_compress_factories()` / `get_decompress_factories()` (registration order = the server's preference: gzip, deflate, then the opt-in codecs), `algorithm::supported(name)`, names `algorithm::GZIP` (`"gzip"`), `DEFLATE`, and since 3.3 `ZSTD` (`"zstd"`), `BROTLI` (`"br"`); `make_gzip_compressor(level, method, strategy, memLevel)`, `make_deflate_compressor(...)`, and since 3.3 `make_zstd_compressor(int level = 3)` / `make_brotli_compressor(int quality = 5, int window_bits = 22)` (nullptr without the codec). zstd / brotli are registered only with `QB_WITH_ZSTD` / `QB_WITH_BROTLI` (OFF by default; `QB_HAS_ZSTD` / `QB_HAS_BROTLI`).
+*   Custom codecs: `qb::compression::make_compress_factory(name, fn)` / `make_decompress_factory(name, weight, fn)`.
+
 ## Namespace `qb::crypto` (`<qb/io/crypto.h>`, requires OpenSSL)
 
 `class qb::crypto` — container of **static** cryptographic operations (not instantiated).

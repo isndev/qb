@@ -31,6 +31,8 @@
 #include <thread>
 #include <vector>
 
+#include "codec_contract.h"
+
 TEST(Compression, Gzip) {
     auto                      compressor   = qb::compression::builtin::make_compressor("gzip");
     auto                      decompressor = qb::compression::builtin::make_decompressor("gzip");
@@ -266,6 +268,18 @@ TEST(Compression, GenericTemplateTruncatedStreamRejected) {
     EXPECT_EQ(out_ok, original);
 }
 
+// gzip and deflate under the same provider contract as the opt-in codecs (codec_contract.h): any input piece and
+// output window, a truncated stream never done, a corrupt one refused, reset() reusable -- and the decompressor hands
+// back on an empty call what an earlier call had no room for (Huly QB-464).
+TEST(Compression, GzipAndDeflateHonourTheProviderContract) {
+    namespace contract = qb::io::test::codec_contract;
+    for (const char *name : {qb::compression::builtin::algorithm::GZIP, qb::compression::builtin::algorithm::DEFLATE}) {
+        contract::expect_round_trips(name);
+        contract::expect_truncation_never_done_and_corruption_throws(name);
+        contract::expect_reset_reuses(name);
+    }
+}
+
 TEST(Compression, BuiltinFactoriesAndAlgorithms) {
     namespace builtin = qb::compression::builtin;
 
@@ -273,7 +287,12 @@ TEST(Compression, BuiltinFactoriesAndAlgorithms) {
     EXPECT_TRUE(builtin::algorithm::supported("gzip"));
     EXPECT_TRUE(builtin::algorithm::supported("GZIP"));
     EXPECT_TRUE(builtin::algorithm::supported("DefLate"));
+#if defined(QB_HAS_BROTLI)
+    EXPECT_TRUE(builtin::algorithm::supported("br")); // the opt-in codec (Huly QB-79): compression-brotli.cpp holds it
+#else
     EXPECT_FALSE(builtin::algorithm::supported("br"));
+#endif
+    EXPECT_FALSE(builtin::algorithm::supported("lzma")); // a name no build registers
 
     const auto compressors   = builtin::get_compress_factories();
     const auto decompressors = builtin::get_decompress_factories();
